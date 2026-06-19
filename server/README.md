@@ -56,6 +56,27 @@ Tables (after `001_init`):
 - `src/migrate.js` — migration runner (also runnable via `npm run migrate`).
 - `src/migrations/` — ordered migration files (`001_init.js`, ...).
 
+## Production
+
+Live at **https://space.bagaiev.com** on a shared Hetzner VPS (178.104.91.144).
+
+- Runs as Docker container `spacegame_app` (built from the repo `Dockerfile`, 1 GB mem limit),
+  behind **Traefik** (auto-HTTPS via Let's Encrypt) on the shared `proxy` + `backend` networks.
+- Uses the shared `shared_postgres` (database + role `spacegame`) — selected via `DATABASE_URL`.
+- Files live at `/opt/projects/spacegame/`; the server-only `.env` (not in git) holds
+  `DATABASE_URL=postgres://spacegame:***@shared_postgres:5432/spacegame` and `PORT=4000`.
+
+### Deploy
+Automated via GitHub Actions (`.github/workflows/ci-cd.yml`): push to `main` runs the tests, then
+rsyncs the repo to the server and runs `docker compose up -d --build`. Required repo secrets:
+`DEPLOY_SSH_KEY` (private key), `DEPLOY_HOST` (178.104.91.144), `DEPLOY_USER` (root).
+
+Manual deploy (from a machine with SSH access):
+```
+rsync -az --exclude node_modules --exclude .git --exclude server/data ./ root@178.104.91.144:/opt/projects/spacegame/
+ssh root@178.104.91.144 "cd /opt/projects/spacegame && docker compose up -d --build"
+```
+
 ## Planned next
 
 Server-issued identity token (harden against id spoofing), leaderboards, matchmaking,

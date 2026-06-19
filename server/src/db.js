@@ -14,6 +14,12 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 // run at server startup. This module only opens the database and exposes queries.
 export const db = new DatabaseSync(dbPath);
 
+// Apply schema migrations (versioned runner; see migrate.js + migrations/).
+export async function migrate() {
+  const { runMigrations } = await import('./migrate.js');
+  await runMigrations(db);
+}
+
 // Auto-register: create the player if new, otherwise just bump last_seen.
 export function registerPlayer(id) {
   const now = Date.now();

@@ -79,16 +79,28 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
 
 ## Backend
 - **Node.js + Express** server (`server/`): serves the game client (static) AND a JSON API on
-  the same origin (no CORS); storage is **SQLite** via the built-in `node:sqlite` (no native deps).
+  the same origin (no CORS).
+- **Storage is pluggable** (`datastore.js`): **Postgres** when `DATABASE_URL` is set (production),
+  otherwise **SQLite** via built-in `node:sqlite` (local dev / tests). Same async API either way
+  (`db.js` = SQLite, `db_postgres.js` = Postgres via `pg`).
 - **Auto-registration by browser:** the client makes a UUID on first visit (kept in `localStorage`)
   and posts it on load; the server creates the player if new. Anonymous, minimal friction.
 - **Game history:** on game over the client posts `{ score, kills, durationMs }`, saved per player.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`, `GET /api/health`.
-- **Schema migrations:** minimal dependency-free runner (`src/migrate.js`) versioned by SQLite's
-  `PRAGMA user_version`; migration files `src/migrations/NNN_name.js` (`up(db)`). Run on startup and
-  via `npm run migrate`. On a fresh/remote server the schema is created automatically.
-- Run: `cd server && npm install && npm start` → open **http://localhost:4000** (the server serves the game).
-- Client calls are best-effort (`fetch` with `.catch`): the game still works if opened without the backend.
+- **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
+  Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
+  Migrations run on startup; `npm run migrate` runs them for the active backend.
+- Run locally: `cd server && npm install && npm start` → open **http://localhost:4000**.
+- Client calls are best-effort (`fetch` with `.catch`): the game still works if served without the API.
+
+## Deployment & CI/CD
+- **Live: https://space.bagaiev.com** — Hetzner VPS (178.104.91.144) shared with another project.
+  Runs as a Docker container `spacegame_app` (1 GB mem limit) behind **Traefik** (auto-HTTPS via
+  Let's Encrypt), on the shared **`backend`** + **`proxy`** networks; uses the shared `shared_postgres`
+  (DB+user `spacegame`). Files at `/opt/projects/spacegame/`; server-only `.env` holds `DATABASE_URL`.
+- **CI/CD:** `.github/workflows/ci-cd.yml` — runs client + server tests on every push/PR, and on
+  push to `main` deploys (rsync → `docker compose up -d --build`). Needs GitHub secrets
+  `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`.
 
 ## Testable logic (extracted from index.html)
 - Pure, Three.js-free logic lives in `client/src/`: `components.js` (catalogs + `deriveDrive` +
@@ -98,7 +110,7 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
 - More of the simulation can be extracted incrementally (it's still tied to Three.js objects + the render loop).
 
 ## Tests (built-in `node:test`, no deps)
-- **Client logic** — `client/src/*.test.js` (12): component derivation, balance, steering math.
+- **Client logic** — `client/src/*.test.js` (17): component derivation, mass, balance, steering math.
   Run: `cd client && npm test`.
 - **Backend API** — `server/src/server.test.js` (9): register / record game / history / validation /
   health / serves client. Mounts the Express app on an ephemeral port against a temp SQLite DB

@@ -5,6 +5,12 @@
 
 ## 2026-06-19
 
+- **Deployed to production: https://space.bagaiev.com.** Dockerized (`Dockerfile`, `docker-compose.yml`,
+  1 GB mem limit) on the existing Hetzner VPS behind Traefik (auto-HTTPS), on the shared `backend`/`proxy`
+  networks, using the shared Postgres (`spacegame` DB+user). Backend storage is now **pluggable**
+  (`datastore.js`): Postgres (`pg`, `db_postgres.js`) when `DATABASE_URL` is set, else SQLite for
+  local/tests; API handlers made async. Added **GitHub Actions CI/CD** (`.github/workflows/ci-cd.yml`):
+  tests on every push/PR, deploy on push to main (needs secrets `DEPLOY_SSH_KEY/HOST/USER`).
 - **Acceleration and turn rate now depend on ship MASS.** Mass = sum of all component weights
   (`shipMass`; weapons gained a `weight`). `deriveDrive` applies `massFactor = REFERENCE_MASS / mass`
   to both: heavier ships accelerate and turn slower, lighter ones faster. `REFERENCE_MASS = 48`

@@ -6,10 +6,11 @@
   "description": "Backend for the space-combat game: serves the client and stores players & game history.",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
-    "migrate": "node --disable-warning=ExperimentalWarning src/migrate.js",
+    "migrate": "node --disable-warning=ExperimentalWarning -e \"import('./src/datastore.js').then(m=>m.migrate())\"",
     "test": "node --disable-warning=ExperimentalWarning --test"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
   }
 }

@@ -1,0 +1,11 @@
+// Data backend selector: PostgreSQL when DATABASE_URL is set (production),
+// otherwise SQLite (local dev / tests). Both expose the same async API.
+const usePostgres = !!process.env.DATABASE_URL;
+const impl = usePostgres ? await import('./db_postgres.js') : await import('./db.js');
+
+export const backend = usePostgres ? 'postgres' : 'sqlite';
+export const migrate = (...a) => impl.migrate(...a);
+export const registerPlayer = (...a) => impl.registerPlayer(...a);
+export const recordGame = (...a) => impl.recordGame(...a);
+export const getPlayerGames = (...a) => impl.getPlayerGames(...a);
+export const stats = (...a) => impl.stats(...a);
