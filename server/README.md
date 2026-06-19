@@ -1,11 +1,11 @@
-# Server (бэкенд)
+# Server (backend)
 
-Пока пусто — задел на будущее. Здесь появится серверная часть:
+Empty for now — groundwork for the future. The server side will appear here:
 
-- **Регистрация / аккаунты игроков** (логин, профили, прогресс).
-- **Мультиплеер** — синхронизация состояния боя между игроками (вероятно WebSocket;
-  для браузерной игры это отдельный сервер на Node.js).
-- Возможно: лидерборды, матчмейкинг, сохранения.
+- **Player registration / accounts** (login, profiles, progress).
+- **Multiplayer** — synchronizing combat state between players (probably WebSocket;
+  for a browser game this is a separate Node.js server).
+- Possibly: leaderboards, matchmaking, saves.
 
-Технологии не зафиксированы. Ориентир — Node.js + WebSocket (ws / Socket.IO).
-Клиент (Three.js) лежит в `../client`.
+The technologies aren't locked in. The likely direction is Node.js + WebSocket (ws / Socket.IO).
+The client (Three.js) lives in `../client`.

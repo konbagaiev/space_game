@@ -1,118 +1,139 @@
-# Космический бой — решения и заметки
+# Space combat — decisions and notes
 
-Прототип: один файл `index.html`, Three.js с CDN (через importmap). Открывается двойным
-кликом в браузере, ничего ставить не нужно.
-
----
-
-## 1. Движок: Three.js (а не Godot/Unity)
-
-**Почему:** для «несколько 3D-корабликов дерутся на плоскости» нужен самый быстрый старт.
-Three.js = один HTML-файл, без установки, мгновенный результат, легко расшарить.
-Unity — тяжёлый (Hub, лицензия, C#), Godot — нужен редактор и установка.
-
-**Когда пересмотреть Godot:** когда дойдём до физики (настоящие столкновения),
-визуального редактора уровней или мультиплеера — вот там движок реально окупится.
-Пока Three.js нас не сдерживает.
+The prototype: a single `index.html` file, Three.js from a CDN (via importmap). Opens with a
+double click in the browser, nothing to install.
 
 ---
 
-## 2. Управление и физика корабля (инерция)
+## 1. Engine: Three.js (not Godot/Unity)
 
-Модель «как в Asteroids»:
-- `W/S` (или `↑/↓`) — тяга вперёд/назад вдоль носа.
-- `A/D` (или `←/→`) — поворачивают только нос, не трогая вектор движения.
-- `Пробел` — огонь.
+**Why:** for "a few 3D ships fighting on a plane" we need the fastest possible start.
+Three.js = one HTML file, no installation, instant result, easy to share.
+Unity is heavy (Hub, license, C#), Godot needs an editor and installation.
 
-Особенности:
-- **Чистая инерция:** ни трения, ни ограничения скорости при тяге — летим по набранному
-  вектору, куда бы ни смотрел нос (можно дрейфовать боком и стрелять вперёд).
-- **Пассивное торможение:** если не нажата НИ ОДНА кнопка управления — скорость плавно
-  гаснет (`IDLE_DRAG`). Держишь поворот для прицеливания — инерция сохраняется.
-- **Границы арены:** у стенки скорость по оси обнуляется (без отскока). Арена ±240.
-
-Рычаги: `ACCEL` (разгон), `TURN` (поворот), `IDLE_DRAG` (торможение), `ARENA` (размер).
+**When to reconsider Godot:** when we get to physics (real collisions),
+a visual level editor, or multiplayer — that's where an engine truly pays off.
+For now Three.js isn't holding us back.
 
 ---
 
-## 3. Камера
+## 2. Ship controls and physics (inertia)
 
-- Почти вертикальная (вид сверху), **фиксированный угол**, НЕ вращается за поворотом корабля.
-- **Жёстко привязана к игроку** (`CAM_OFFSET`), без сглаживания/лага — иначе при смене
-  направления была «дёрганость» и лёгкое «плавание».
+An "Asteroids-like" model:
+- `W/S` (or `↑/↓`) — thrust forward/backward along the nose.
+- `A/D` (or `←/→`) — turn only the nose, without touching the movement vector.
+- `Space` — fire.
 
----
+Specifics:
+- **Pure inertia:** no friction, no speed limit while thrusting — we fly along the accumulated
+  vector, wherever the nose is pointing (you can drift sideways and shoot forward).
+- **Passive braking:** if NOT a SINGLE control button is pressed — velocity smoothly
+  decays (`IDLE_DRAG`). Hold a turn to aim and the inertia is preserved.
+- **Arena boundaries:** at the wall the velocity along the axis is zeroed (no bounce). Arena ±240.
 
-## 4. Фон: три слоя по глубине
-
-1. **Звёзды** — далёкий статичный задник, приклеены к камере (без параллакса). Разная
-   яркость (степенное распределение: много тусклых, редкие яркие).
-2. **Астероиды** — мелкий слой ПОЗАДИ плоскости боя, в мировых координатах (НЕ привязаны
-   к камере). При полёте проносятся мимо → дают ощущение скорости. Один `InstancedMesh`
-   (1 draw call). Рычаги: `ROCK_COUNT`, размер, `ROCK_SPREAD`.
-3. **Планета + 2 спутника** — лёгкий параллакс (`PARALLAX`), чтобы чувствовалась глубина.
-   Спутники облетают планету (`updateMoons`), сами не вращаются → терминаторы согласованы.
+Knobs: `ACCEL` (acceleration), `TURN` (turning), `IDLE_DRAG` (braking), `ARENA` (size).
 
 ---
 
-## 5. Освещение — ДВА независимых света через два прохода рендера (важно!)
+## 3. Camera
 
-**Задача:** бой освещать одним светом, планету/спутники — другим (с настоящим день/ночь).
-
-**Что НЕ сработало (тупики):**
-- **Слои света (`layers`)** — не дали чистого разделения. Как минимум `AmbientLight`
-  глобален и слои игнорирует → заливал планету плоско, убивая терминатор.
-- **Запекание день/ночи в вершинные цвета** (`MeshBasic`) — работало, но планета выходила
-  плоской/ненастоящей (нет объёма и мягкого терминатора от реального света).
-
-**Что сработало (текущее решение):** два прохода рендера, у каждого своя сцена и свой свет.
-- `scene` (бой: корабли, камни, пули, взрывы) — свой свет: `AmbientLight` + `sun`.
-- `skyScene` (планета, спутники, звёзды) — свой свет: слабый ambient (ночная сторона) +
-  боковой `skySun` (даёт настоящий терминатор).
-- Цикл: `renderer.autoClear=false`; `clear()` → `render(skyScene)` → `clearDepth()` →
-  `render(scene)`. Фон космоса рисует `skyScene.background`, у `scene.background = null`.
-
-Рычаги: день планеты — интенсивность `skySun` и его позиция (= направление «солнца»);
-ночь — ambient в `skyScene`; бой — свет в `scene` (трогать не надо, он «правильный»).
-
-**Звёзды vs прозрачность:** звёзды сделаны НЕпрозрачными (`transparent:false`) + `depthWrite:false`
-+ `renderOrder:-1`. Иначе (как transparent) они рисовались ПОСЛЕ планеты и лезли на её диск.
+- Nearly vertical (top-down view), **fixed angle**, does NOT rotate with the ship's turn.
+- **Rigidly attached to the player** (`CAM_OFFSET`), without smoothing/lag — otherwise switching
+  direction caused "jitter" and a slight "floating".
 
 ---
 
-## 6. Бой
+## 4. Background: three layers by depth
 
-- Враги: **2 попадания** (hp 2, урон выстрела 1). 4 врага, спавнятся кольцом вокруг игрока.
-- ИИ врага: доворачивайся к игроку → держи дистанцию (~14–22) → стреляй, когда навёлся.
-- **Микро-взрыв** в точке попадания: короткая (`EXPLOSION_LIFE ≈ 0.16с`) огненная вспышка
-  (аддитивная сфера, быстро расширяется и гаснет).
-
-### След от двигателя (выхлоп)
-
-Система `trail` (по аналогии со взрывами): при тяге вперёд (`W`/`↑`) из сопла вылетают
-светящиеся аддитивные частицы, гаснут и сжимаются за `TRAIL_LIFE` (~0.55с).
-
-Физика частицы важна: **стартовая скорость = скорость корабля + выброс назад вдоль сопла**
-(`shipVel + (-fwd) * EXHAUST_SPEED`). Поэтому выхлоп зависит от хода корабля (на скорости
-летит вместе с ним, а не отстаёт) и от направления сопла (`-fwd`); при развороте на дрейфе
-струя идёт по новому направлению носа.
-
-Рычаги: `EXHAUST_SPEED` (как быстро частицы отделяются назад — длина/плотность струи),
-`TRAIL_LIFE` (длина следа), радиус `trailGeo` и разброс при спавне (ширина), цвет `0x6fd0ff`.
+1. **Stars** — a distant static backdrop, glued to the camera (no parallax). Varying
+   brightness (a power-law distribution: many dim ones, rare bright ones).
+2. **Asteroids** — a small layer BEHIND the combat plane, in world coordinates (NOT attached
+   to the camera). When flying they rush past → giving a sense of speed. A single `InstancedMesh`
+   (1 draw call). Knobs: `ROCK_COUNT`, size, `ROCK_SPREAD`.
+3. **Planet + 2 moons** — light parallax (`PARALLAX`), so depth is felt.
+   The moons orbit the planet (`updateMoons`), they don't rotate themselves → terminators stay consistent.
 
 ---
 
-## 7. Как проверять картинку (для разработки)
+## 5. Lighting — TWO independent lights via two render passes (important!)
 
-Обычный скриншот экрана система блокирует. Вместо этого — headless-рендер через Playwright:
-`/tmp/shoot.mjs` грузит `index.html` в headless Chromium и пишет PNG.
-⚠️ Оговорка: swiftshader в headless иногда расходится с реальным браузером в тонких вещах
-(порядок прозрачности) — финально проверять в настоящем браузере.
+**The task:** light the combat with one light, the planet/moons with another (with a real day/night).
+
+**What did NOT work (dead ends):**
+- **Light layers (`layers`)** — didn't give a clean separation. At the very least `AmbientLight`
+  is global and ignores layers → it flooded the planet flatly, killing the terminator.
+- **Baking day/night into vertex colors** (`MeshBasic`) — it worked, but the planet came out
+  flat/unrealistic (no volume and no soft terminator from real light).
+
+**What worked (the current solution):** two render passes, each with its own scene and its own light.
+- `scene` (combat: ships, rocks, bullets, explosions) — its own light: `AmbientLight` + `sun`.
+- `skyScene` (planet, moons, stars) — its own light: a weak ambient (the night side) +
+  a side `skySun` (gives a real terminator).
+- The loop: `renderer.autoClear=false`; `clear()` → `render(skyScene)` → `clearDepth()` →
+  `render(scene)`. The space background is drawn by `skyScene.background`, with `scene.background = null`.
+
+Knobs: planet day — the intensity of `skySun` and its position (= the "sun" direction);
+night — the ambient in `skyScene`; combat — the light in `scene` (no need to touch it, it's "correct").
+
+**Stars vs transparency:** the stars are made NON-transparent (`transparent:false`) + `depthWrite:false`
++ `renderOrder:-1`. Otherwise (as transparent) they were drawn AFTER the planet and crept onto its disk.
 
 ---
 
-## Идеи на будущее
+## 6. Combat
 
-Взрывы кораблей при гибели · звук · твёрдые астероиды с отскоком ·
-поведение ботов (уклонение, облёт по дуге) · свои `.glb`-модели · мультиплеер (WebSocket) ·
-след двигателя у врагов.
+- Enemies: **2 hits** (hp 2, shot damage 1). 4 enemies, spawning in a ring around the player.
+- Enemy AI: turn toward the player → keep your distance (~14–22) → shoot once aimed.
+- A **micro-explosion** at the hit point: a short (`EXPLOSION_LIFE ≈ 0.16s`) fiery flash
+  (an additive sphere, quickly expanding and fading).
+
+### Engine trail (exhaust)
+
+The `trail` system (analogous to explosions): when thrusting forward (`W`/`↑`), glowing additive
+particles fly out of the nozzle, fading and shrinking over `TRAIL_LIFE` (~0.55s).
+
+The particle physics matters: **the starting velocity = the ship's velocity + ejection backward along the nozzle**
+(`shipVel + (-fwd) * EXHAUST_SPEED`). So the exhaust depends on the ship's motion (at speed
+it flies along with it rather than lagging behind) and on the nozzle direction (`-fwd`); when turning while drifting
+the jet goes along the new nose direction.
+
+The exhaust parameters now live in the **engine** (`engine.exhaust`): `speed` (how fast
+the particles separate backward), `life` (trail length), `size` (thickness), `spread` (scatter), `color`.
+See section 8 about the component-based model.
+
+---
+
+## 7. How to check the picture (for development)
+
+A regular screen capture is blocked by the system. Instead — a headless render via Playwright:
+`/tmp/shoot.mjs` loads `index.html` in headless Chromium and writes a PNG.
+⚠️ Caveat: swiftshader in headless sometimes diverges from a real browser in subtle things
+(transparency order) — do the final check in a real browser.
+
+---
+
+## 8. Ship model: data components
+
+**Why:** to move away from a scatter of hardcoded constants toward a structure from which a ship
+is assembled — groundwork for upgrades, different ships/enemies, and balance.
+
+Catalogs in `client/index.html`: `ENGINES`, `HULLS`, `WEAPONS`. A ship (player/enemy) references
+components (loadout: `hull` / `engine` / `weapon`), and the logic reads stats from there.
+
+- **The engine** includes the **exhaust** (`exhaust`) as its own part — the trail parameters are taken from
+  the engine, not from global constants.
+- **Projectiles** carry the damage and speed of their weapon — that's why different weapons produce different bullets from
+  a single `spawnBullet(from, dir, weapon, fromPlayer)` function.
+- Some fields are intentionally **groundwork** and don't affect logic yet: `weight`, `durability`
+  (on the engine), `volume`. They're easy to start using (mass → inertia, durability → failures).
+
+The principle: **a new mechanic = first a stat on a component, then reading it in the logic**,
+not a new global constant.
+
+---
+
+## Future ideas
+
+Ship explosions on death · sound · solid asteroids with bounce ·
+bot behavior (evasion, arc flybys) · custom `.glb` models · multiplayer (WebSocket) ·
+engine trails on enemies.

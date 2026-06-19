@@ -1,19 +1,19 @@
-# Зависимости
+# Dependencies
 node_modules/
 
-# Сборки
+# Builds
 dist/
 build/
 
-# Логи
+# Logs
 *.log
 npm-debug.log*
 
-# Окружение / секреты
+# Environment / secrets
 .env
 .env.*
 
-# ОС / редакторы
+# OS / editors
 .DS_Store
 Thumbs.db
 .vscode/

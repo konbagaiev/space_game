@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Космический бой — прототип</title>
+<title>Space Combat — Prototype</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #05060d; }
@@ -40,30 +40,79 @@
     padding: 12px 30px; font-size: 16px; border: 0; border-radius: 8px;
     background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; font-weight: 700;
   }
+  /* Perf overlay (load) */
+  #perf {
+    position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+    color: #9fe8b0; background: rgba(0,0,0,.45); padding: 4px 10px; border-radius: 6px;
+    pointer-events: none; white-space: nowrap; letter-spacing: .3px;
+  }
+  /* Touch controls (touch devices only) */
+  #touch { position: fixed; inset: 0; display: none; pointer-events: none; touch-action: none; z-index: 5; }
+  #touch.on { display: block; }
+  #stick-zone { position: absolute; left: 0; top: 0; width: 58%; height: 100%; pointer-events: auto; }
+  #overlay { z-index: 10; } /* "Game over"/"Restart" screen - above touch controls */
+  #stick-base {
+    position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px;
+    border: 2px solid rgba(120,170,255,.5); border-radius: 50%;
+    background: rgba(40,70,120,.18); display: none;
+  }
+  #stick-knob {
+    position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px;
+    border-radius: 50%; background: rgba(120,170,255,.55); display: none;
+  }
+  #fire-btn {
+    position: absolute; right: 28px; bottom: 38px; width: 96px; height: 96px;
+    margin: 0; border-radius: 50%; pointer-events: auto;
+    background: radial-gradient(circle at 50% 40%, rgba(255,140,90,.85), rgba(200,60,40,.7));
+    border: 2px solid rgba(255,180,140,.8);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font: 700 16px system-ui, sans-serif; user-select: none;
+  }
+  #fire-btn:active { filter: brightness(1.3); }
+  /* Rocket button = reload indicator (circle fills as it reloads). Shown on PC and mobile. */
+  #rocket-btn {
+    position: fixed; right: 28px; bottom: 40px; width: 84px; height: 84px;
+    border-radius: 50%; pointer-events: auto; user-select: none; overflow: hidden;
+    border: 2px solid rgba(255,180,120,.55); background: rgba(20,16,12,.5);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #rocket-fill { position: absolute; inset: 0; border-radius: 50%; }
+  #rocket-btn .rb-icon { position: relative; z-index: 1; font-size: 34px; text-shadow: 0 0 5px #000; }
+  #rocket-btn.ready { border-color: #77ee77; box-shadow: 0 0 12px rgba(110,238,110,.5); }
+  #rocket-btn:active { filter: brightness(1.25); }
 </style>
 </head>
 <body>
 <div id="hud">
   <div>
-    <div class="label">Здоровье</div>
+    <div class="label">Health</div>
     <div id="hpbar"><div id="hpfill"></div></div>
   </div>
   <div class="right">
-    <div class="label">Уничтожено</div>
+    <div class="label">Destroyed</div>
     <div class="bigval" id="score">0</div>
-    <div class="label" style="margin-top:6px">Врагов на арене</div>
+    <div class="label" style="margin-top:6px">Enemies</div>
     <div id="enemies" style="font-size:18px">0</div>
   </div>
 </div>
 <div id="help">
-  <b>W / ↑</b> — тяга вперёд &nbsp;·&nbsp; <b>S / ↓</b> — назад &nbsp;·&nbsp;
-  <b>A / D</b> или <b>← →</b> — поворот &nbsp;·&nbsp; <b>Пробел</b> — огонь
+  <b>W / ↑</b> — thrust &nbsp;·&nbsp; <b>S / ↓</b> — reverse &nbsp;·&nbsp;
+  <b>A / D</b> or <b>← →</b> — turn &nbsp;·&nbsp; <b>Space</b> — fire &nbsp;·&nbsp; <b>F</b> — rocket
 </div>
 <div id="overlay">
-  <h1 id="overlay-title">Конец</h1>
+  <h1 id="overlay-title">Game over</h1>
   <p id="overlay-sub"></p>
-  <button id="restart">Заново</button>
+  <button id="restart">Restart</button>
 </div>
+<div id="perf">FPS — · draw — · tris —</div>
+<div id="touch">
+  <div id="stick-zone"></div>
+  <div id="stick-base"></div>
+  <div id="stick-knob"></div>
+  <div id="fire-btn">FIRE</div>
+</div>
+<div id="rocket-btn"><div id="rocket-fill"></div><span class="rb-icon">🚀</span></div>
 
 <script type="importmap">
 {
@@ -76,60 +125,61 @@
 <script type="module">
 import * as THREE from 'three';
 
-// ---------- Базовая сцена ----------
+// ---------- Base scene ----------
 const scene = new THREE.Scene();
-scene.background = null; // фон рисует сцена неба (первый проход); бой — прозрачно поверх
+scene.background = null; // background is drawn by the sky scene (first pass); combat is transparent on top
 scene.fog = new THREE.Fog(0x05060d, 240, 600);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.info.autoReset = false; // count load across both render passes
 document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 900);
-const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // фиксированное смещение камеры от корабля
+const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // fixed camera offset from the ship
 
-// === ДВА НЕЗАВИСИМЫХ ОСВЕЩЕНИЯ через два прохода рендера ===
-// Небо (планета, спутники, звёзды) рисуется отдельной сценой со своим светом,
-// бой — основной сценой со своим. Каждая сцена видит только свои источники,
-// поэтому освещение настоящее и не «протекает» между группами.
+// === TWO INDEPENDENT LIGHTING SETUPS via two render passes ===
+// The sky (planet, moons, stars) is drawn by a separate scene with its own light,
+// combat by the main scene with its own. Each scene sees only its own sources,
+// so lighting is real and does not "leak" between groups.
 renderer.autoClear = false;
 
-// СВЕТ БОЯ (основная сцена) — ровно как было
+// COMBAT LIGHT (main scene) - exactly as before
 scene.add(new THREE.AmbientLight(0x405070, 1.2));
 const sun = new THREE.DirectionalLight(0xffffff, 1.4);
 sun.position.set(30, 60, 20);
 scene.add(sun);
 
-// СЦЕНА НЕБА со своим светом (реальный боковой источник → настоящий терминатор)
+// SKY SCENE with its own light (real side source -> real terminator)
 const skyScene = new THREE.Scene();
-skyScene.background = new THREE.Color(0x05060d); // фон космоса рисует именно сцена неба
-skyScene.add(new THREE.AmbientLight(0x3a506e, 0.7)); // подсветка ночной стороны (поярче)
+skyScene.background = new THREE.Color(0x05060d); // the space background is drawn by the sky scene itself
+skyScene.add(new THREE.AmbientLight(0x3a506e, 0.7)); // night-side fill light (brighter)
 const skySun = new THREE.DirectionalLight(0xfff2e0, 3.4);
-skySun.position.set(170, -80, 40); // сбоку → терминатор поперёк видимого диска
+skySun.position.set(170, -80, 40); // from the side -> terminator across the visible disc
 skyScene.add(skySun);
 
-// ---------- Арена ----------
-// Видимого пола нет — корабли парят в открытом космосе.
-// ARENA задаёт лишь невидимые границы, за которые корабли не вылетают.
-const ARENA = 240; // полу-размер квадратной арены (×4)
+// ---------- Arena ----------
+// There is no visible floor - ships hover in open space.
+// ARENA only defines invisible boundaries that ships cannot fly past.
+const ARENA = 240; // half-size of the square arena (x4)
 
-// ---------- Звёздное небо ----------
+// ---------- Starry sky ----------
 function makeStars(count, radius) {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const c = new THREE.Color();
   for (let i = 0; i < count; i++) {
-    // равномерно по сфере вокруг арены
+    // evenly over the sphere around the arena
     const u = Math.random() * 2 - 1;
     const theta = Math.random() * Math.PI * 2;
     const r = Math.sqrt(1 - u * u);
     const dist = radius * (0.7 + Math.random() * 0.3);
     positions[i * 3]     = Math.cos(theta) * r * dist;
-    positions[i * 3 + 1] = u * dist; // по всей сфере, в т.ч. под платформой
+    positions[i * 3 + 1] = u * dist; // across the whole sphere, including below the platform
     positions[i * 3 + 2] = Math.sin(theta) * r * dist;
-    // лёгкая вариация оттенка (голубоватые ↔ тёплые) + РАЗНАЯ ЯРКОСТЬ.
-    // Степень >1 даёт много тусклых звёзд и редкие яркие — как в реальном небе.
+    // slight hue variation (bluish <-> warm) + VARYING BRIGHTNESS.
+    // An exponent >1 yields many dim stars and a few bright ones - like a real sky.
     c.setHSL(0.55 + Math.random() * 0.12, 0.25 + Math.random() * 0.3, 0.7);
     const b = 0.15 + Math.pow(Math.random(), 2.2) * 0.85;
     colors[i * 3] = c.r * b; colors[i * 3 + 1] = c.g * b; colors[i * 3 + 2] = c.b * b;
@@ -139,22 +189,22 @@ function makeStars(count, radius) {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const mat = new THREE.PointsMaterial({
     size: 1.4,
-    sizeAttenuation: false, // звёзды одинакового размера независимо от дистанции
+    sizeAttenuation: false, // stars are the same size regardless of distance
     vertexColors: true,
-    transparent: false,     // НЕпрозрачные → рисуются в проходе до планеты
-    fog: false,             // туман не должен гасить звёзды
-    depthTest: false,       // чистый задник — планета/спутники всегда перекрывают
+    transparent: false,     // opaque -> drawn in the pass before the planet
+    fog: false,             // fog must not dim the stars
+    depthTest: false,       // pure backdrop - planet/moons always occlude them
     depthWrite: false,
   });
   return new THREE.Points(geo, mat);
 }
 const stars = makeStars(2500, 400);
-stars.renderOrder = -1; // рисуем звёзды первыми, до планеты и спутников
+stars.renderOrder = -1; // draw stars first, before the planet and moons
 skyScene.add(stars);
 
-// ---------- Планета со спутниками ----------
-// Камера смотрит почти вертикально вниз, поэтому "небо" видно лишь у верхнего
-// края экрана (направление -Z). Туда и помещаем планету как далёкий фон.
+// ---------- Planet with moons ----------
+// The camera looks almost straight down, so the "sky" is visible only near the top
+// edge of the screen (the -Z direction). That is where we place the planet as a distant background.
 const sky = new THREE.Group();
 skyScene.add(sky);
 
@@ -167,7 +217,7 @@ const planet = new THREE.Mesh(
 planet.position.copy(PLANET_POS);
 sky.add(planet);
 
-// атмосферный ободок (свечение по краю)
+// atmospheric rim (glow along the edge)
 const halo = new THREE.Mesh(
   new THREE.SphereGeometry(64, 48, 48),
   new THREE.MeshBasicMaterial({
@@ -178,8 +228,8 @@ const halo = new THREE.Mesh(
 halo.position.copy(PLANET_POS);
 sky.add(halo);
 
-// спутники: ОБЛЕТАЮТ планету (меняется только позиция). Освещаются тем же
-// настоящим светом сцены неба, что и планета → терминаторы согласованы.
+// moons: ORBIT the planet (only position changes). Lit by the same
+// real sky-scene light as the planet -> terminators are consistent.
 const moons = [];
 function makeMoon(radius, color, orbitR, tilt, speed) {
   const geo = new THREE.SphereGeometry(radius, 32, 32);
@@ -192,7 +242,7 @@ function makeMoon(radius, color, orbitR, tilt, speed) {
 makeMoon(11, 0xb9b2a6, 96, 0.5, 0.0625);
 makeMoon(7, 0x8f9aa6, 136, -0.35, -0.04);
 
-// позиция спутника на наклонённой орбите вокруг планеты (без вращения самого тела)
+// position of a moon on a tilted orbit around the planet (the body itself does not rotate)
 function updateMoons(dt) {
   for (const m of moons) {
     m.angle += m.speed * dt;
@@ -206,14 +256,14 @@ function updateMoons(dt) {
   }
 }
 
-// ---------- Параллакс-слой астероидов (ориентир скорости) ----------
-// Слой мелких камней ПОЗАДИ плоскости боя, в МИРОВЫХ координатах (не привязаны
-// к камере). Поэтому при полёте они проносятся мимо и дают ощущение скорости —
-// в отличие от далёких звёзд, которые приклеены к камере. 1 InstancedMesh = 1 draw call.
+// ---------- Parallax asteroid layer (speed reference) ----------
+// A layer of small rocks BEHIND the combat plane, in WORLD coordinates (not tied
+// to the camera). So while flying they rush past and give a sense of speed -
+// unlike the distant stars, which are stuck to the camera. 1 InstancedMesh = 1 draw call.
 const ROCK_COUNT = 500;
-const ROCK_SPREAD = ARENA + 200; // раскинуты повсюду (и немного за краями)
+const ROCK_SPREAD = ARENA + 200; // scattered everywhere (and a bit past the edges)
 const rocks = new THREE.InstancedMesh(
-  new THREE.IcosahedronGeometry(1, 0), // низкополигональный камень
+  new THREE.IcosahedronGeometry(1, 0), // low-poly rock
   new THREE.MeshStandardMaterial({ color: 0x6b6f78, roughness: 1.0, metalness: 0.05, flatShading: true }),
   ROCK_COUNT
 );
@@ -226,12 +276,12 @@ const rocks = new THREE.InstancedMesh(
   for (let i = 0; i < ROCK_COUNT; i++) {
     pos.set(
       (Math.random() * 2 - 1) * ROCK_SPREAD,
-      -6 - Math.random() * 10, // слой ПОЗАДИ (ниже) плоскости боя
+      -6 - Math.random() * 10, // layer BEHIND (below) the combat plane
       (Math.random() * 2 - 1) * ROCK_SPREAD
     );
     eul.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
     quat.setFromEuler(eul);
-    const s = 0.4 + Math.random() * 0.9; // мелкие камешки, но заметно крупнее звёзд
+    const s = 0.4 + Math.random() * 0.9; // small pebbles, but noticeably larger than stars
     scl.set(s, s, s);
     m4.compose(pos, quat, scl);
     rocks.setMatrixAt(i, m4);
@@ -240,19 +290,19 @@ const rocks = new THREE.InstancedMesh(
 }
 scene.add(rocks);
 
-// ---------- Фабрика корабля ----------
+// ---------- Ship factory ----------
 function makeShip(color) {
   const g = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.5 });
-  // корпус (нос смотрит в +Z)
+  // hull (nose points in +Z)
   const body = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.2, 12), mat);
   body.rotation.x = Math.PI / 2;
   g.add(body);
-  // крылья
+  // wings
   const wing = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.25, 1.0), mat);
   wing.position.z = -0.4;
   g.add(wing);
-  // двигатель-свечение
+  // engine glow
   const glow = new THREE.Mesh(
     new THREE.SphereGeometry(0.45, 10, 10),
     new THREE.MeshBasicMaterial({ color })
@@ -260,29 +310,32 @@ function makeShip(color) {
   glow.position.z = -1.6;
   g.add(glow);
   g.position.y = 0.6;
-  g.scale.setScalar(1.8); // крупнее — арена отдалена, иначе корабли мелкие
+  g.scale.setScalar(1.8); // larger - the arena is far away, otherwise ships look tiny
   return g;
 }
 
-// ---------- Снаряды ----------
+// ---------- Projectiles ----------
 const bullets = [];
 const bulletGeo = new THREE.SphereGeometry(0.28, 8, 8);
 
-function spawnBullet(from, dir, fromPlayer) {
-  const mat = new THREE.MeshBasicMaterial({ color: fromPlayer ? 0x6fe6ff : 0xff6b6b });
+function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
+  const mat = new THREE.MeshBasicMaterial({ color: weapon.projectileColor });
   const m = new THREE.Mesh(bulletGeo, mat);
   m.position.copy(from);
   scene.add(m);
-  bullets.push({ mesh: m, dir: dir.clone().normalize(), life: 2.2, fromPlayer });
+  // velocity = projectile speed along the nose + ship velocity (inherited)
+  const vel = dir.clone().normalize().multiplyScalar(weapon.projectileSpeed);
+  if (shooterVel) vel.add(shooterVel);
+  bullets.push({ mesh: m, vel, life: 2.2, fromPlayer, damage: weapon.power });
 }
 
-// ---------- Микро-взрывы в точке импакта ----------
+// ---------- Micro-explosions at the impact point ----------
 const explosions = [];
-const EXPLOSION_LIFE = 0.16; // очень короткая вспышка, сек
+const EXPLOSION_LIFE = 0.16; // very short flash, sec
 const explosionGeo = new THREE.SphereGeometry(1, 10, 10);
 
-function spawnExplosion(pos) {
-  // светящаяся огненная сфера: аддитивное смешивание + быстрое затухание
+function spawnExplosion(pos, maxScale = 3) {
+  // glowing fiery sphere: additive blending + fast fade-out
   const mat = new THREE.MeshBasicMaterial({
     color: 0xffb050, transparent: true, opacity: 1,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
@@ -291,54 +344,257 @@ function spawnExplosion(pos) {
   m.position.copy(pos);
   m.scale.setScalar(0.6);
   scene.add(m);
-  explosions.push({ mesh: m, life: EXPLOSION_LIFE });
+  explosions.push({ mesh: m, life: EXPLOSION_LIFE, maxScale });
 }
 
-// ---------- След от двигателя ----------
+// ---------- Engine trail (exhaust is part of the engine) ----------
 const trail = [];
-const TRAIL_LIFE = 0.55;
-const EXHAUST_SPEED = 12; // скорость выброса относительно корабля (назад вдоль сопла)
-const trailGeo = new THREE.SphereGeometry(0.5, 6, 6);
+const trailGeo = new THREE.SphereGeometry(1, 6, 6); // unit sphere, scale set by the exhaust
 
-function spawnTrail(pos, fwd, shipVel) {
-  // светящаяся частица выхлопа: аддитивная, гаснет.
-  // Стартовая скорость = скорость корабля + выброс назад вдоль сопла (-fwd).
+function spawnTrail(pos, fwd, shipVel, exhaust) {
+  // glowing exhaust particle: additive, fades out.
+  // Start velocity = ship velocity + ejection backward along the nozzle (-fwd).
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x6fd0ff, transparent: true, opacity: 0.85,
+    color: exhaust.color, transparent: true, opacity: 0.85,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   const m = new THREE.Mesh(trailGeo, mat);
   m.position.copy(pos);
+  m.scale.setScalar(exhaust.size);
   scene.add(m);
-  const vel = shipVel.clone().addScaledVector(fwd, -EXHAUST_SPEED);
-  trail.push({ mesh: m, vel, life: TRAIL_LIFE });
+  const vel = shipVel.clone().addScaledVector(fwd, -exhaust.speed);
+  trail.push({ mesh: m, vel, life: exhaust.life, maxLife: exhaust.life, baseSize: exhaust.size });
 }
 
-// ---------- Игрок ----------
+// ---------- Rockets (homing) ----------
+const rockets = [];
+const rocketGeo = new THREE.ConeGeometry(0.6, 2.4, 8); // nose in +Z (like the ship)
+
+// Find the nearest enemy in the front sector [fwd +/- halfAngle].
+function findTargetInSector(pos, fwd, halfAngle) {
+  let best = null, bestDist = Infinity;
+  for (const e of enemies) {
+    const to = e.mesh.position.clone().sub(pos);
+    const d = to.length();
+    if (d < 0.001) continue;
+    to.divideScalar(d);
+    if (fwd.dot(to) >= Math.cos(halfAngle) && d < bestDist) { best = e; bestDist = d; }
+  }
+  return best;
+}
+
+function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
+  const mat = new THREE.MeshBasicMaterial({ color: weapon.projectileColor });
+  const m = new THREE.Mesh(rocketGeo, mat);
+  m.rotation.x = Math.PI / 2; // cone points along +Z
+  const holder = new THREE.Group(); // to steer by heading around Y
+  holder.add(m);
+  holder.position.copy(from);
+  scene.add(holder);
+  // start direction - strictly along the ship's nose (without the ship's inertia)
+  const vel = fwd.clone().multiplyScalar(weapon.launchSpeed);
+  rockets.push({
+    obj: holder, vel, accel, turnRate: weapon.turnRate,
+    target, fromPlayer,
+    damage: weapon.power, detonateR: weapon.detonateRadius,
+    blastR: weapon.blastRadius, blastVis: weapon.blastVisual, life: weapon.life,
+  });
+}
+
+// dealDamage=false - the rocket was shot down by gunfire (explosion without damage)
+function detonateRocket(r, dealDamage = true) {
+  if (dealDamage) {
+    if (r.fromPlayer) {
+      for (const e of enemies) {
+        if (e.mesh.position.distanceTo(r.obj.position) <= r.blastR) e.hp -= r.damage;
+      }
+    } else if (player.alive && player.mesh.position.distanceTo(r.obj.position) <= r.blastR) {
+      player.hp -= r.damage;
+    }
+  }
+  spawnExplosion(r.obj.position, r.blastVis);
+  scene.remove(r.obj);
+  r.obj.children[0].material.dispose();
+}
+
+// Light rocket smoke trail: soft gray puffs (no glow, expand and fade away).
+const smoke = [];
+const smokeGeo = new THREE.SphereGeometry(1, 6, 6);
+function spawnSmoke(pos) {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x9aa6b4, transparent: true, opacity: 0.35, depthWrite: false, fog: false,
+  });
+  const m = new THREE.Mesh(smokeGeo, mat);
+  m.position.copy(pos);
+  m.scale.setScalar(0.4);
+  scene.add(m);
+  smoke.push({ mesh: m, life: 0.6, maxLife: 0.6 });
+}
+
+// ==================================================================
+// Data model: the components that ships are assembled from.
+// Some stats are not yet used by the logic (weight, durability,
+// volume) - reserved for the future (upgrades, balance, different ships).
+// ==================================================================
+
+// Main engines: power -> ACCELERATION. Exhaust is part of the engine.
+const ENGINES = {
+  basic: {
+    name: 'Basic main engine',
+    power: 10,        // thrust power -> acceleration
+    maxSpeed: 0,      // 0 = no limit (for the player)
+    weight: 10,       // [not used yet]
+    durability: 30,   // [not used yet]
+    exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 },
+  },
+  scout: {            // enemy engine - weaker
+    name: 'Scout main engine',
+    power: 12.6,
+    maxSpeed: 10.5,
+    weight: 6,
+    durability: 20,
+    exhaust: { color: 0xff8a5a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 },
+  },
+};
+
+// Maneuvering thrusters: power -> TURN RATE (rad/s at coefficient 1).
+const THRUSTERS = {
+  basic: { name: 'Basic thrusters', power: 2.0, weight: 4, durability: 15 },
+  scout: { name: 'Scout thrusters', power: 1.6, weight: 3, durability: 10 },
+};
+
+// Coefficients converting component power into ship stats (derived).
+const THRUST_TO_ACCEL = 1;    // acceleration = main engine power x this coefficient
+const THRUSTER_TO_TURN = 1;   // maneuverability = thruster power x this coefficient
+// Derive ship stats from its engines.
+function deriveDrive(ship) {
+  ship.acceleration = ship.engine.power * THRUST_TO_ACCEL;
+  ship.turnRate = ship.thrusters.power * THRUSTER_TO_TURN;
+}
+
+// Hulls.
+const HULLS = {
+  basic: {
+    name: 'Basic hull',
+    durability: 100,  // = maxHp
+    weight: 20,       // [not used yet]
+    volume: 100,      // [not used yet]
+  },
+  fighter: {          // enemy hull
+    name: 'Light hull',
+    durability: 20,   // 2 hits of the basic weapon (10 damage)
+    weight: 8,
+    volume: 40,
+  },
+  rocketeer: {        // hull of the yellow "rocketeer" - sturdier
+    name: 'Rocketeer hull',
+    durability: 40,   // 4 hits of the basic weapon
+    weight: 14,
+    volume: 60,
+  },
+};
+
+// Weapons.
+const WEAPONS = {
+  basicKinetic: {
+    name: 'Basic kinetic',
+    type: 'kinetic',
+    power: 10,           // damage per hit
+    projectileSpeed: 40, // projectile speed
+    fireCooldown: 0.18,  // reload, sec
+    projectileColor: 0x6fe6ff,
+  },
+  enemyKinetic: {
+    name: 'Kinetic (enemy)',
+    type: 'kinetic',
+    power: 5,
+    projectileSpeed: 40,
+    fireCooldown: 1.1,
+    projectileColor: 0xff6b6b,
+  },
+  homingRocket: {
+    name: 'Rocket (homing)',
+    type: 'rocket',
+    power: 50,                          // damage
+    fireCooldown: 5,                    // reload, sec
+    seekHalfAngle: 60 * Math.PI / 180,  // search half-sector (120 deg total)
+    turnRate: 1.0,                      // maneuverability: turn rate toward target, rad/s
+    launchSpeed: 12,                    // initial speed
+    detonateRadius: 3.2,                // detonation distance near the enemy
+    blastRadius: 5,                     // blast radius (slightly larger than a bullet)
+    blastVisual: 4.5,                   // visual explosion size (bullet is ~3)
+    life: 4,                            // self-destruct, sec
+    projectileColor: 0xffaa44,
+    // acceleration toward target = player's engine.power
+  },
+  enemyRocket: {
+    name: 'Rocket (enemy)',
+    type: 'rocket',
+    power: 30,
+    fireCooldown: 4,
+    turnRate: 1.0,
+    launchSpeed: 12,
+    accel: 9,                           // the enemy has its own homing acceleration
+    detonateRadius: 3.2,
+    blastRadius: 5,
+    blastVisual: 4.5,
+    life: 4,
+    projectileColor: 0xffcc66,
+  },
+};
+
+// ---------- Player ----------
 const player = {
   mesh: makeShip(0x4d8bff),
   vel: new THREE.Vector3(),
-  heading: 0,        // угол поворота вокруг Y
-  hp: 200, maxHp: 200,
+  heading: 0,        // rotation angle around Y
+  hull: HULLS.basic,
+  engine: ENGINES.basic,
+  thrusters: THRUSTERS.basic,
+  weapon: WEAPONS.basicKinetic,
+  secondary: WEAPONS.homingRocket,
+  hp: HULLS.basic.durability, maxHp: HULLS.basic.durability,
   cooldown: 0,
+  secondaryCooldown: 0,
   alive: true,
 };
+deriveDrive(player); // acceleration <- main engine, turnRate <- thrusters
 scene.add(player.mesh);
 
-// ---------- Враги ----------
+// ---------- Enemies ----------
+// Enemy types: a regular fighter and a yellow "rocketeer" (can launch rockets).
+const ENEMY_KINDS = {
+  fighter: {
+    color: 0xff5d5d, hull: HULLS.fighter, engine: ENGINES.scout, thrusters: THRUSTERS.scout,
+    weapon: WEAPONS.enemyKinetic, rocket: null,
+  },
+  rocketeer: {
+    color: 0xffd24d, hull: HULLS.rocketeer, engine: ENGINES.scout, thrusters: THRUSTERS.scout,
+    weapon: WEAPONS.enemyKinetic, rocket: WEAPONS.enemyRocket,
+  },
+};
+
 const enemies = [];
-function spawnEnemy() {
+function spawnEnemy(kindName) {
+  const k = ENEMY_KINDS[kindName] || ENEMY_KINDS.fighter;
   const e = {
-    mesh: makeShip(0xff5d5d),
+    kind: kindName, mesh: makeShip(k.color),
     vel: new THREE.Vector3(),
     heading: Math.random() * Math.PI * 2,
-    hp: 2, // 2 попадания
+    hull: k.hull,
+    engine: k.engine,
+    thrusters: k.thrusters,
+    weapon: k.weapon,
+    rocket: k.rocket,                 // null or a rocket weapon
+    hp: k.hull.durability,
     cooldown: Math.random() * 1.5,
+    rocketCooldown: 1 + Math.random() * 3,
     alive: true,
   };
-  // появляемся кольцом вокруг игрока (чуть за краем экрана), а не у краёв арены
+  deriveDrive(e); // acceleration <- main engine, turnRate <- thrusters
+  // spawn in a ring around the player (just off-screen), not at the arena edges
   const ang = Math.random() * Math.PI * 2;
-  const d = 70 + Math.random() * 60; // 70..130 от игрока
+  const d = 70 + Math.random() * 60; // 70..130 from the player
   const lim = ARENA - 5;
   e.mesh.position.set(
     Math.max(-lim, Math.min(lim, player.mesh.position.x + Math.cos(ang) * d)),
@@ -350,8 +606,10 @@ function spawnEnemy() {
 }
 
 const TARGET_ENEMIES = 4;
+// ~30% of spawns are yellow rocketeers
+function spawnRandomEnemy() { spawnEnemy(Math.random() < 0.3 ? 'rocketeer' : 'fighter'); }
 
-// ---------- Ввод ----------
+// ---------- Input ----------
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
@@ -359,9 +617,94 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 
-// ---------- Вспомогательное ----------
+// ---------- Touch controls (touch devices) ----------
+// "steer by touch direction" model: stick angle = desired nose direction,
+// the ship turns toward it; the magnitude of the deflection = thrust.
+const touchAim = { active: false, heading: 0, thrust: 0 };
+const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+if (isTouch) {
+  document.getElementById('touch').classList.add('on');
+  document.getElementById('help').style.display = 'none'; // keyboard hints not needed
+
+  const zone = document.getElementById('stick-zone');
+  const base = document.getElementById('stick-base');
+  const knob = document.getElementById('stick-knob');
+  const fire = document.getElementById('fire-btn');
+  const R = 60;          // stick radius
+  const DEAD = 0.2;      // dead zone (fraction of radius) - below it no steering/thrust
+  let stickId = null;    // id of the touch holding the stick
+  let stickCx = 0, stickCy = 0;
+
+  function showStick(x, y) {
+    base.style.left = knob.style.left = x + 'px';
+    base.style.top = knob.style.top = y + 'px';
+    base.style.display = knob.style.display = 'block';
+  }
+  function moveKnob(cx, cy, x, y) {
+    const dx = x - cx, dy = y - cy;
+    const len = Math.hypot(dx, dy);
+    const clamped = Math.min(len, R);
+    const kx = len > 0 ? dx / len * clamped : 0;
+    const ky = len > 0 ? dy / len * clamped : 0;
+    knob.style.left = (cx + kx) + 'px';
+    knob.style.top = (cy + ky) + 'px';
+    const mag = clamped / R; // 0..1
+    if (mag > DEAD) {
+      touchAim.active = true;
+      // screen->world: x->X (right), y->Z (down). heading: forwardVec(h)=(sin h,0,cos h)
+      touchAim.heading = Math.atan2(dx, dy);
+      touchAim.thrust = (mag - DEAD) / (1 - DEAD); // 0..1 beyond the dead zone
+    } else {
+      touchAim.active = false; touchAim.thrust = 0;
+    }
+  }
+  function clearStick() {
+    stickId = null;
+    touchAim.active = false; touchAim.thrust = 0;
+    base.style.display = knob.style.display = 'none';
+  }
+
+  zone.addEventListener('touchstart', e => {
+    if (stickId !== null) return;
+    const t = e.changedTouches[0];
+    stickId = t.identifier; stickCx = t.clientX; stickCy = t.clientY;
+    showStick(stickCx, stickCy);
+    moveKnob(stickCx, stickCy, t.clientX, t.clientY);
+    e.preventDefault();
+  }, { passive: false });
+  zone.addEventListener('touchmove', e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) { moveKnob(stickCx, stickCy, t.clientX, t.clientY); e.preventDefault(); }
+    }
+  }, { passive: false });
+  function endStick(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) clearStick();
+    }
+  }
+  zone.addEventListener('touchend', endStick);
+  zone.addEventListener('touchcancel', endStick);
+
+  // fire button
+  fire.addEventListener('touchstart', e => { keys['Space'] = true; e.preventDefault(); }, { passive: false });
+  fire.addEventListener('touchend', e => { keys['Space'] = false; e.preventDefault(); }, { passive: false });
+  fire.addEventListener('touchcancel', () => { keys['Space'] = false; });
+
+  // rocket button
+  const rocketBtn = document.getElementById('rocket-btn');
+  rocketBtn.addEventListener('touchstart', e => { keys['_rocket'] = true; e.preventDefault(); }, { passive: false });
+  rocketBtn.addEventListener('touchend', e => { keys['_rocket'] = false; e.preventDefault(); }, { passive: false });
+  rocketBtn.addEventListener('touchcancel', () => { keys['_rocket'] = false; });
+} else {
+  // PC: the rocket circle is also clickable (besides the F key)
+  const rocketBtn = document.getElementById('rocket-btn');
+  rocketBtn.addEventListener('mousedown', () => { keys['_rocket'] = true; });
+  addEventListener('mouseup', () => { keys['_rocket'] = false; });
+}
+
+// ---------- Helpers ----------
 function forwardVec(heading) {
-  // нос смотрит в +Z при heading=0
+  // nose points in +Z when heading=0
   return new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
 }
 function clampToArena(pos) {
@@ -377,49 +720,69 @@ const elHp = document.getElementById('hpfill');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySub = document.getElementById('overlay-sub');
+const elRocketBtn = document.getElementById('rocket-btn');
+const elRocketFill = document.getElementById('rocket-fill');
 let score = 0;
 
 function updateHud() {
   elScore.textContent = score;
   elEnemies.textContent = enemies.length;
   elHp.style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
+
+  // rocket reload: the 🚀 circle fills up (radial) as it reloads
+  const cd = player.secondary.fireCooldown;
+  const left = Math.max(0, player.secondaryCooldown);
+  const ready = left <= 0;
+  const deg = Math.round((cd > 0 ? 1 - left / cd : 1) * 360);
+  const col = ready ? '#77ee77' : '#ffaa55';
+  elRocketFill.style.background = `conic-gradient(${col} ${deg}deg, rgba(120,90,60,.22) ${deg}deg)`;
+  elRocketBtn.classList.toggle('ready', ready);
 }
 
-// ---------- Игровой цикл ----------
-const TURN = 2.0;        // скорость поворота, рад/с
-const ACCEL = 18;        // ускорение тяги
-const DRAG = 1.8;        // трение
-const MAX_SPEED = 15;
-const IDLE_DRAG = 0.8;    // мягкое торможение, когда тяга не нажата
-const PLAYER_FIRE_CD = 0.18;
-const ENEMY_FIRE_CD = 1.1;
-const BULLET_SPEED = 40;
+// ---------- Game loop ----------
+// Thrust/turn/speed/weapon are now taken from the ship's components (engine/weapon).
+const DRAG = 1.8;        // friction (enemies)
+const IDLE_DRAG = 0.8;   // soft braking for the player when controls are released
 
 const clock = new THREE.Clock();
 
 function update(dt) {
   if (!player.alive) return;
 
-  // --- игрок: поворот ---
-  if (keys['KeyA'] || keys['ArrowLeft'])  player.heading += TURN * dt;
-  if (keys['KeyD'] || keys['ArrowRight']) player.heading -= TURN * dt;
+  const eng = player.engine;         // main engine (for exhaust)
+  const accel = player.acceleration; // derived: acceleration <- main engine power
+  const turn = player.turnRate;      // derived: maneuverability <- thruster power
 
-  // --- игрок: тяга ---
+  // --- player: turn ---
+  if (keys['KeyA'] || keys['ArrowLeft'])  player.heading += turn * dt;
+  if (keys['KeyD'] || keys['ArrowRight']) player.heading -= turn * dt;
+
+  // touch: turn the nose toward the touch direction (directional steering)
+  if (touchAim.active) {
+    let diff = touchAim.heading - player.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    player.heading += Math.sign(diff) * Math.min(Math.abs(diff), turn * dt);
+  }
+
+  // --- player: thrust ---
   const fwd = forwardVec(player.heading);
-  if (keys['KeyW'] || keys['ArrowUp'])   player.vel.addScaledVector(fwd, ACCEL * dt);
-  if (keys['KeyS'] || keys['ArrowDown']) player.vel.addScaledVector(fwd, -ACCEL * dt);
+  if (keys['KeyW'] || keys['ArrowUp'])   player.vel.addScaledVector(fwd, accel * dt);
+  if (keys['KeyS'] || keys['ArrowDown']) player.vel.addScaledVector(fwd, -accel * dt);
+  if (touchAim.active) player.vel.addScaledVector(fwd, accel * touchAim.thrust * dt); // touch thrust
 
-  // пассивное торможение, когда не нажата ни одна кнопка управления
-  // (держишь поворот для прицеливания на дрейфе — инерция сохраняется)
-  const controlling = keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
+  // passive braking when no control button is pressed
+  // (hold the turn to aim while drifting - inertia is preserved)
+  const controlling = touchAim.active
+                   || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
                    || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight'];
   if (!controlling) player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
 
-  // чистая инерция: ни трения, ни ограничения скорости — корабль
-  // продолжает лететь в набранном направлении, куда бы ни смотрел нос
+  // pure inertia: no friction, no speed limit - the ship
+  // keeps flying in its current direction, no matter where the nose points
   player.mesh.position.addScaledVector(player.vel, dt);
 
-  // у границ арены просто останавливаемся: скорость по этой оси в ноль (без отскока)
+  // at the arena edges we simply stop: velocity along that axis goes to zero (no bounce)
   const lim = ARENA - 2;
   const p = player.mesh.position;
   if (p.x >  lim && player.vel.x > 0) { p.x =  lim; player.vel.x = 0; }
@@ -429,89 +792,158 @@ function update(dt) {
 
   player.mesh.rotation.y = player.heading;
 
-  // --- след от двигателя (при тяге вперёд) ---
-  if (keys['KeyW'] || keys['ArrowUp']) {
+  // --- engine trail (when thrusting forward) ---
+  if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
+    const ex = eng.exhaust;
     const enginePos = player.mesh.position.clone().addScaledVector(fwd, -2.6);
-    enginePos.x += (Math.random() - 0.5) * 0.35; // узкий разброс по ширине
-    enginePos.z += (Math.random() - 0.5) * 0.35;
-    spawnTrail(enginePos, fwd, player.vel);
+    enginePos.x += (Math.random() - 0.5) * ex.spread; // width spread from the exhaust
+    enginePos.z += (Math.random() - 0.5) * ex.spread;
+    spawnTrail(enginePos, fwd, player.vel, ex);
   }
 
-  // --- игрок: стрельба ---
+  // --- player: firing (primary weapon) ---
   player.cooldown -= dt;
   if (keys['Space'] && player.cooldown <= 0) {
     const muzzle = player.mesh.position.clone().addScaledVector(fwd, 3);
-    spawnBullet(muzzle, fwd, true);
-    player.cooldown = PLAYER_FIRE_CD;
+    spawnBullet(muzzle, fwd, player.weapon, true, player.vel);
+    player.cooldown = player.weapon.fireCooldown;
   }
 
-  // --- враги ИИ ---
+  // --- player: rockets (secondary weapon, F key / touch button) ---
+  player.secondaryCooldown -= dt;
+  if ((keys['KeyF'] || keys['_rocket']) && player.secondaryCooldown <= 0) {
+    const muzzle = player.mesh.position.clone().addScaledVector(fwd, 3);
+    const target = findTargetInSector(muzzle, fwd, player.secondary.seekHalfAngle);
+    spawnRocket(muzzle, fwd, player.secondary, player.acceleration, true, target);
+    player.secondaryCooldown = player.secondary.fireCooldown;
+  }
+
+  // --- enemy AI ---
   for (const e of enemies) {
     const toPlayer = player.mesh.position.clone().sub(e.mesh.position);
     const dist = toPlayer.length();
     toPlayer.normalize();
 
-    // целевой угол на игрока
+    // target angle toward the player
     const desired = Math.atan2(toPlayer.x, toPlayer.z);
     let diff = desired - e.heading;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    e.heading += Math.sign(diff) * Math.min(Math.abs(diff), TURN * 0.8 * dt);
+    e.heading += Math.sign(diff) * Math.min(Math.abs(diff), e.turnRate * dt);
 
     const ef = forwardVec(e.heading);
-    // держим дистанцию ~20: приближаемся издалека, отходим если слишком близко
+    // keep distance ~20: close in from afar, back off if too close
     const thrust = dist > 22 ? 1 : (dist < 14 ? -0.6 : 0.15);
-    e.vel.addScaledVector(ef, ACCEL * 0.7 * thrust * dt);
+    e.vel.addScaledVector(ef, e.acceleration * thrust * dt);
     e.vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
-    if (e.vel.length() > MAX_SPEED * 0.7) e.vel.setLength(MAX_SPEED * 0.7);
+    if (e.engine.maxSpeed && e.vel.length() > e.engine.maxSpeed) e.vel.setLength(e.engine.maxSpeed);
 
     e.mesh.position.addScaledVector(e.vel, dt);
     clampToArena(e.mesh.position);
     e.mesh.rotation.y = e.heading;
 
-    // стрельба, если примерно смотрит на игрока и не слишком далеко
+    // fire the gun if roughly facing the player and not too far away
     e.cooldown -= dt;
     if (e.cooldown <= 0 && dist < 45 && Math.abs(diff) < 0.25) {
       const muzzle = e.mesh.position.clone().addScaledVector(ef, 3);
-      spawnBullet(muzzle, ef, false);
-      e.cooldown = ENEMY_FIRE_CD + Math.random() * 0.5;
+      spawnBullet(muzzle, ef, e.weapon, false, e.vel);
+      e.cooldown = e.weapon.fireCooldown + Math.random() * 0.5;
+    }
+
+    // rocketeer: launch a rocket at the player when aimed and in range
+    if (e.rocket) {
+      e.rocketCooldown -= dt;
+      if (e.rocketCooldown <= 0 && dist < 80 && Math.abs(diff) < 0.4) {
+        const muzzle = e.mesh.position.clone().addScaledVector(ef, 3);
+        spawnRocket(muzzle, ef, e.rocket, e.rocket.accel, false, player);
+        e.rocketCooldown = e.rocket.fireCooldown + Math.random() * 1.5;
+      }
     }
   }
 
-  // --- снаряды ---
+  // --- projectiles ---
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
-    b.mesh.position.addScaledVector(b.dir, BULLET_SPEED * dt);
+    b.mesh.position.addScaledVector(b.vel, dt);
     b.life -= dt;
 
     let hit = false;
     if (b.fromPlayer) {
       for (const e of enemies) {
         if (b.mesh.position.distanceTo(e.mesh.position) < 2.6) {
-          e.hp -= 1; hit = true; break;
+          e.hp -= b.damage; hit = true; break;
         }
       }
     } else {
       if (player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
-        player.hp -= 8; hit = true;
+        player.hp -= b.damage; hit = true;
+      }
+    }
+
+    // interception: a bullet shoots down an ENEMY rocket (explosion without damage)
+    if (!hit) {
+      for (let j = rockets.length - 1; j >= 0; j--) {
+        const r = rockets[j];
+        if (r.fromPlayer === b.fromPlayer) continue; // only rockets of the opposite side
+        if (b.mesh.position.distanceTo(r.obj.position) < 2.4) {
+          detonateRocket(r, false);
+          rockets.splice(j, 1);
+          hit = true; break;
+        }
       }
     }
 
     const out = Math.abs(b.mesh.position.x) > ARENA || Math.abs(b.mesh.position.z) > ARENA;
     if (hit || b.life <= 0 || out) {
-      if (hit) spawnExplosion(b.mesh.position); // микро-вспышка в точке импакта
+      if (hit) spawnExplosion(b.mesh.position); // micro-flash at the impact point
       scene.remove(b.mesh);
+      b.mesh.material.dispose();
       bullets.splice(i, 1);
     }
   }
 
-  // --- микро-взрывы (короткая огненная вспышка) ---
+  // --- rockets: homing (accelerate toward target), detonate near the enemy ---
+  for (let i = rockets.length - 1; i >= 0; i--) {
+    const r = rockets[i];
+    // target lost: for a player rocket - if the enemy died; for an enemy one - if the player died
+    if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !player.alive)) r.target = null;
+    if (r.target) {
+      // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
+      const to = r.target.mesh.position.clone().sub(r.obj.position);
+      const desired = Math.atan2(to.x, to.z);
+      let cur = Math.atan2(r.vel.x, r.vel.z);
+      let diff = desired - cur;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      cur += Math.sign(diff) * Math.min(Math.abs(diff), r.turnRate * dt);
+      const speed = r.vel.length() + r.accel * dt;
+      r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
+    }
+    r.obj.position.addScaledVector(r.vel, dt);
+    if (r.vel.lengthSq() > 0.01) r.obj.rotation.y = Math.atan2(r.vel.x, r.vel.z);
+    spawnSmoke(r.obj.position); // light smoke trail
+    r.life -= dt;
+
+    let det = false;
+    if (r.fromPlayer) {
+      for (const e of enemies) {
+        if (e.mesh.position.distanceTo(r.obj.position) <= r.detonateR) { det = true; break; }
+      }
+    } else if (player.alive && player.mesh.position.distanceTo(r.obj.position) <= r.detonateR) {
+      det = true;
+    }
+    const out = Math.abs(r.obj.position.x) > ARENA || Math.abs(r.obj.position.z) > ARENA;
+    if (det || r.life <= 0) { detonateRocket(r); rockets.splice(i, 1); }
+    else if (out) { scene.remove(r.obj); r.obj.children[0].material.dispose(); rockets.splice(i, 1); }
+  }
+
+  // --- micro-explosions (short fiery flash) ---
   for (let i = explosions.length - 1; i >= 0; i--) {
     const x = explosions[i];
     x.life -= dt;
     const t = 1 - Math.max(0, x.life) / EXPLOSION_LIFE; // 0 → 1
-    x.mesh.scale.setScalar(0.6 + t * 2.4);              // быстро расширяется
-    x.mesh.material.opacity = (1 - t);                  // и гаснет
+    x.mesh.scale.setScalar(0.6 + t * (x.maxScale - 0.6)); // expands quickly
+    x.mesh.material.opacity = (1 - t);                  // and fades out
     if (x.life <= 0) {
       scene.remove(x.mesh);
       x.mesh.material.dispose();
@@ -519,14 +951,14 @@ function update(dt) {
     }
   }
 
-  // --- след от двигателя: частицы летят назад, гаснут и сжимаются ---
+  // --- engine trail: particles fly backward, fade out and shrink ---
   for (let i = trail.length - 1; i >= 0; i--) {
     const p = trail[i];
     p.mesh.position.addScaledVector(p.vel, dt);
     p.life -= dt;
-    const t = 1 - Math.max(0, p.life) / TRAIL_LIFE; // 0 → 1
+    const t = 1 - Math.max(0, p.life) / p.maxLife; // 0 → 1
     p.mesh.material.opacity = (1 - t) * 0.85;
-    p.mesh.scale.setScalar(1.1 - t * 0.8);
+    p.mesh.scale.setScalar(p.baseSize * (1.1 - t * 0.8));
     if (p.life <= 0) {
       scene.remove(p.mesh);
       p.mesh.material.dispose();
@@ -534,7 +966,21 @@ function update(dt) {
     }
   }
 
-  // --- смерть врагов ---
+  // --- rocket smoke trail: puffs expand and fade away ---
+  for (let i = smoke.length - 1; i >= 0; i--) {
+    const s = smoke[i];
+    s.life -= dt;
+    const t = 1 - Math.max(0, s.life) / s.maxLife; // 0 → 1
+    s.mesh.material.opacity = (1 - t) * 0.35;
+    s.mesh.scale.setScalar(0.4 + t * 1.2); // smoke expands
+    if (s.life <= 0) {
+      scene.remove(s.mesh);
+      s.mesh.material.dispose();
+      smoke.splice(i, 1);
+    }
+  }
+
+  // --- enemy deaths ---
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].hp <= 0) {
       scene.remove(enemies[i].mesh);
@@ -542,30 +988,47 @@ function update(dt) {
       score++;
     }
   }
-  // поддерживаем количество врагов
-  while (enemies.length < TARGET_ENEMIES) spawnEnemy();
+  // maintain the enemy count
+  while (enemies.length < TARGET_ENEMIES) spawnRandomEnemy();
 
-  // --- смерть игрока ---
+  // --- player death ---
   if (player.hp <= 0) {
     player.alive = false;
-    overlayTitle.textContent = 'Корабль уничтожен';
-    overlaySub.textContent = `Ты сбил кораблей: ${score}`;
+    overlayTitle.textContent = 'Ship destroyed';
+    overlaySub.textContent = `Ships destroyed: ${score}`;
     overlay.style.display = 'flex';
   }
 
-  // --- камера: жёстко привязана к игроку (без лага и «плавания» — не дёргается),
-  //     фиксированный угол — НЕ вращается за поворотом корабля ---
+  // --- camera: rigidly attached to the player (no lag or "floating" - no jitter),
+  //     fixed angle - does NOT rotate with the ship's turn ---
   camera.position.copy(player.mesh.position).add(CAM_OFFSET);
   camera.lookAt(player.mesh.position);
 
-  // звёзды — бесконечно далёкий задник (приклеены к камере, без параллакса)
+  // stars - an infinitely distant backdrop (stuck to the camera, no parallax)
   stars.position.copy(camera.position);
-  // планета чуть смещается при движении игрока — лёгкий параллакс (глубина)
+  // the planet shifts slightly as the player moves - a light parallax (depth)
   const PARALLAX = 0.6;
   sky.position.copy(camera.position).addScaledVector(player.mesh.position, -PARALLAX);
 
-  // спутники облетают планету (сами не вращаются — терминатор не «гуляет»)
+  // moons orbit the planet (they do not rotate themselves - the terminator does not "wander")
   updateMoons(dt);
+}
+
+// ---------- Perf overlay (load) ----------
+const elPerf = document.getElementById('perf');
+let perfAccum = 0, perfFrames = 0, perfFps = 0;
+function updatePerf(dt) {
+  perfAccum += dt; perfFrames++;
+  if (perfAccum >= 0.4) { // update ~2.5 times per sec
+    perfFps = Math.round(perfFrames / perfAccum);
+    const r = renderer.info.render;
+    const tris = r.triangles >= 1e6
+      ? (r.triangles / 1e6).toFixed(2) + 'M'
+      : Math.round(r.triangles / 1e3) + 'k';
+    const ms = (perfAccum / perfFrames * 1000).toFixed(1);
+    elPerf.textContent = `FPS ${perfFps} · ${ms}ms · draw ${r.calls} · tris ${tris}`;
+    perfAccum = 0; perfFrames = 0;
+  }
 }
 
 function animate() {
@@ -573,21 +1036,27 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   update(dt);
   updateHud();
-  // два прохода: сначала задник-небо (со своим светом), потом бой поверх
+  // two passes: first the sky backdrop (with its own light), then combat on top
+  renderer.info.reset();
   renderer.clear();
   renderer.render(skyScene, camera);
   renderer.clearDepth();
   renderer.render(scene, camera);
+  updatePerf(dt);
 }
 
-// ---------- Рестарт ----------
+// ---------- Restart ----------
 function reset() {
-  for (const b of bullets) scene.remove(b.mesh);
+  for (const b of bullets) { scene.remove(b.mesh); b.mesh.material.dispose(); }
   bullets.length = 0;
   for (const x of explosions) { scene.remove(x.mesh); x.mesh.material.dispose(); }
   explosions.length = 0;
   for (const p of trail) { scene.remove(p.mesh); p.mesh.material.dispose(); }
   trail.length = 0;
+  for (const r of rockets) { scene.remove(r.obj); r.obj.children[0].material.dispose(); }
+  rockets.length = 0;
+  for (const s of smoke) { scene.remove(s.mesh); s.mesh.material.dispose(); }
+  smoke.length = 0;
   for (const e of enemies) scene.remove(e.mesh);
   enemies.length = 0;
   player.mesh.position.set(0, 0.6, 0);
@@ -595,9 +1064,10 @@ function reset() {
   player.heading = 0;
   player.hp = player.maxHp;
   player.cooldown = 0;
+  player.secondaryCooldown = 0;
   player.alive = true;
   score = 0;
-  for (let i = 0; i < TARGET_ENEMIES; i++) spawnEnemy();
+  for (let i = 0; i < TARGET_ENEMIES; i++) spawnRandomEnemy();
   overlay.style.display = 'none';
 }
 document.getElementById('restart').addEventListener('click', reset);

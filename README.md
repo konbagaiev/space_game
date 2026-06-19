@@ -1,25 +1,25 @@
 # Space Game
 
-Прототип браузерной игры: несколько 3D-космических корабликов сражаются на плоскости.
-Сделано на **Three.js** (фронтенд), бэкенд (регистрация игроков, мультиплеер) — в планах.
+A browser game prototype: several 3D spaceships fighting on a plane.
+Built on **Three.js** (frontend), the backend (player registration, multiplayer) is planned.
 
-## Структура
+## Structure
 
 ```
 .
-├── client/      Код игры на Three.js (фронтенд)
+├── client/      Three.js game code (frontend)
 │   └── index.html
-├── server/      Бэкенд: регистрация игроков, мультиплеер (в разработке)
-├── docs/        Документация и принятые решения
+├── server/      Backend: player registration, multiplayer (in development)
+├── docs/        Documentation and decisions made
 │   └── DECISIONS.md
 └── README.md
 ```
 
-## Как запустить
+## How to run
 
-Открыть `client/index.html` в браузере (двойной клик). Установка не требуется —
-Three.js подгружается с CDN. Нужен интернет.
+Open `client/index.html` in a browser (double click). No installation required —
+Three.js is loaded from a CDN. Internet access is needed.
 
-## Документация
+## Documentation
 
-Ключевые решения, причины и параметры для подкрутки — в [`docs/DECISIONS.md`](docs/DECISIONS.md).
+Key decisions, reasons, and parameters to tweak are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
