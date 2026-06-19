@@ -60,7 +60,16 @@ export async function createApp() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const app = await createApp();
   const PORT = process.env.PORT || 4000;
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Space game server running: http://localhost:${PORT}`);
   });
+  // Graceful shutdown: on stop, stop accepting new connections and let in-flight
+  // requests finish before exiting -> no dropped requests when the old container is
+  // removed during a zero-downtime rollout.
+  const shutdown = () => {
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 8000).unref(); // hard cap
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
