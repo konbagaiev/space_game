@@ -106,6 +106,10 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
   picks it up, then removes the old one — no dropped requests (verified by polling during a rollout).
   Migrations run on container startup and are gated by the healthcheck (a failed migration ⇒ unhealthy
   ⇒ rollout keeps the old container). Note: deploys that *change docker-compose.yml itself* may blip once.
+- **Rollback:** each deploy tags the image `spacegame:<git-sha>`; CI keeps the 3 newest (current + 2).
+  `rollback.sh` re-tags a previous version to `:latest` and `docker rollout`s — zero-downtime, no rebuild.
+  Migrations are **forward-only** (expand/contract), so a code rollback is safe without reversing the DB
+  (see DECISIONS §9).
 
 ## Testable logic (extracted from index.html)
 - Pure, Three.js-free logic lives in `client/src/`: `components.js` (catalogs + `deriveDrive` +

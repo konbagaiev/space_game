@@ -5,6 +5,10 @@
 
 ## 2026-06-19
 
+- **Rollback support.** Each deploy tags the image `spacegame:<git-sha>` and CI keeps the 3 newest
+  versions (current + 2 to roll back to). Added `rollback.sh` (re-tag a previous version to `:latest`
+  + `docker rollout` → zero-downtime, no rebuild). Documented the migration strategy: forward-only /
+  expand-contract, so code rollback is safe without reversing the DB (DECISIONS §9).
 - **Zero-downtime deploys.** Deploy now uses blue-green via `docker rollout -w 10 app`: a Docker
   `healthcheck` gates Traefik routing (only routes once `/api/health` passes, i.e. after migrations),
   the new container comes up alongside the old, and the old is removed only after the new is healthy +

@@ -49,10 +49,15 @@ jobs:
                 -o ~/.docker/cli-plugins/docker-rollout
               chmod +x ~/.docker/cli-plugins/docker-rollout
             fi
+            TAG=$(echo ${{ github.sha }} | cut -c1-12)
             docker compose build app
+            docker tag spacegame:latest spacegame:"$TAG"   # version tag for rollback
             # blue-green: new container up, wait until healthy (incl. migrations) + 10s so
             # Traefik registers it before the old one is removed -> zero downtime.
             docker rollout -w 10 app
+            # keep the 3 newest version tags (current + 2 to roll back to); drop older + dangling
+            docker images spacegame --format "{{.Tag}}" | grep -v "^latest$" | tail -n +4 \
+              | xargs -r -I{} docker rmi -f spacegame:{} 2>/dev/null || true
             docker image prune -f
           '
       - name: Smoke check

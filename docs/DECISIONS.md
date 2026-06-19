@@ -132,6 +132,31 @@ not a new global constant.
 
 ---
 
+## 9. Deployment, rollback, and migrations
+
+Live at **https://space.bagaiev.com** (Docker on a shared Hetzner VPS, behind Traefik, on the
+shared Postgres). Details in `server/README.md`. Key decisions:
+
+**Zero-downtime deploys (blue-green).** The container has a Docker `healthcheck` — Traefik only
+routes to it once `/api/health` passes (i.e. after migrations run on startup). Deploy uses
+`docker rollout -w 10 app`: new container up → healthy → Traefik picks it up → old removed.
+A failed migration ⇒ container never becomes healthy ⇒ rollout keeps the old one. Verified by
+polling during a rollout (0 dropped requests). Deploys that change `docker-compose.yml` itself may
+blip once (the old container gets recreated for the config change).
+
+**Rollback = swap the image, not the DB.** Each deploy tags the image `spacegame:<git-sha>`; the
+CI keeps the 3 newest (current + 2 to roll back to). `rollback.sh` re-tags a previous version to
+`:latest` and runs `docker rollout` — zero-downtime, no rebuild.
+
+**Migrations are forward-only.** We do NOT run down-migrations in production (rolling back a
+destructive change = data loss). Instead, schema changes follow **expand/contract**: add new
+columns/tables (backward-compatible) → ship code that uses them → remove the old ones only in a
+LATER release, once the old code can no longer come back. This keeps a code rollback always safe
+(the schema works for both versions). Catastrophes are handled by restoring a DB backup, not by
+reversing a migration. Current migrations are additive/idempotent, so already backward-compatible.
+
+---
+
 ## Future ideas
 
 Ship explosions on death · sound · solid asteroids with bounce ·
