@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Космический бой — прототип</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05060d; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 14px 18px;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: #cfe6ff; pointer-events: none;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    text-shadow: 0 0 6px rgba(0,0,0,.8);
+  }
+  #hud .right { text-align: right; }
+  .bigval { font-size: 26px; font-weight: 700; }
+  .label { font-size: 12px; letter-spacing: 1px; opacity: .6; text-transform: uppercase; }
+  #hpbar { width: 220px; height: 14px; border: 1px solid #3a6ea5; border-radius: 7px; overflow: hidden; margin-top: 4px; background: rgba(0,0,0,.4); }
+  #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg,#36d1dc,#5b86e5); transition: width .15s; }
+  #help {
+    position: fixed; bottom: 14px; left: 18px;
+    font-family: system-ui, sans-serif; font-size: 13px; color: #7f93b5;
+    pointer-events: none; line-height: 1.6;
+  }
+  #help b { color: #cfe6ff; }
+  #overlay {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: rgba(5,6,13,.82); color: #e8f1ff;
+    font-family: system-ui, sans-serif; text-align: center;
+  }
+  #overlay h1 { font-size: 44px; margin-bottom: 8px; }
+  #overlay p { opacity: .75; margin-bottom: 24px; }
+  #overlay button {
+    pointer-events: auto; cursor: pointer;
+    padding: 12px 30px; font-size: 16px; border: 0; border-radius: 8px;
+    background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div>
+    <div class="label">Здоровье</div>
+    <div id="hpbar"><div id="hpfill"></div></div>
+  </div>
+  <div class="right">
+    <div class="label">Уничтожено</div>
+    <div class="bigval" id="score">0</div>
+    <div class="label" style="margin-top:6px">Врагов на арене</div>
+    <div id="enemies" style="font-size:18px">0</div>
+  </div>
+</div>
+<div id="help">
+  <b>W / ↑</b> — тяга вперёд &nbsp;·&nbsp; <b>S / ↓</b> — назад &nbsp;·&nbsp;
+  <b>A / D</b> или <b>← →</b> — поворот &nbsp;·&nbsp; <b>Пробел</b> — огонь
+</div>
+<div id="overlay">
+  <h1 id="overlay-title">Конец</h1>
+  <p id="overlay-sub"></p>
+  <button id="restart">Заново</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- Базовая сцена ----------
+const scene = new THREE.Scene();
+scene.background = null; // фон рисует сцена неба (первый проход); бой — прозрачно поверх
+scene.fog = new THREE.Fog(0x05060d, 240, 600);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 900);
+const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // фиксированное смещение камеры от корабля
+
+// === ДВА НЕЗАВИСИМЫХ ОСВЕЩЕНИЯ через два прохода рендера ===
+// Небо (планета, спутники, звёзды) рисуется отдельной сценой со своим светом,
+// бой — основной сценой со своим. Каждая сцена видит только свои источники,
+// поэтому освещение настоящее и не «протекает» между группами.
+renderer.autoClear = false;
+
+// СВЕТ БОЯ (основная сцена) — ровно как было
+scene.add(new THREE.AmbientLight(0x405070, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(30, 60, 20);
+scene.add(sun);
+
+// СЦЕНА НЕБА со своим светом (реальный боковой источник → настоящий терминатор)
+const skyScene = new THREE.Scene();
+skyScene.background = new THREE.Color(0x05060d); // фон космоса рисует именно сцена неба
+skyScene.add(new THREE.AmbientLight(0x3a506e, 0.7)); // подсветка ночной стороны (поярче)
+const skySun = new THREE.DirectionalLight(0xfff2e0, 3.4);
+skySun.position.set(170, -80, 40); // сбоку → терминатор поперёк видимого диска
+skyScene.add(skySun);
+
+// ---------- Арена ----------
+// Видимого пола нет — корабли парят в открытом космосе.
+// ARENA задаёт лишь невидимые границы, за которые корабли не вылетают.
+const ARENA = 240; // полу-размер квадратной арены (×4)
+
+// ---------- Звёздное небо ----------
+function makeStars(count, radius) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    // равномерно по сфере вокруг арены
+    const u = Math.random() * 2 - 1;
+    const theta = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(1 - u * u);
+    const dist = radius * (0.7 + Math.random() * 0.3);
+    positions[i * 3]     = Math.cos(theta) * r * dist;
+    positions[i * 3 + 1] = u * dist; // по всей сфере, в т.ч. под платформой
+    positions[i * 3 + 2] = Math.sin(theta) * r * dist;
+    // лёгкая вариация оттенка (голубоватые ↔ тёплые) + РАЗНАЯ ЯРКОСТЬ.
+    // Степень >1 даёт много тусклых звёзд и редкие яркие — как в реальном небе.
+    c.setHSL(0.55 + Math.random() * 0.12, 0.25 + Math.random() * 0.3, 0.7);
+    const b = 0.15 + Math.pow(Math.random(), 2.2) * 0.85;
+    colors[i * 3] = c.r * b; colors[i * 3 + 1] = c.g * b; colors[i * 3 + 2] = c.b * b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 1.4,
+    sizeAttenuation: false, // звёзды одинакового размера независимо от дистанции
+    vertexColors: true,
+    transparent: false,     // НЕпрозрачные → рисуются в проходе до планеты
+    fog: false,             // туман не должен гасить звёзды
+    depthTest: false,       // чистый задник — планета/спутники всегда перекрывают
+    depthWrite: false,
+  });
+  return new THREE.Points(geo, mat);
+}
+const stars = makeStars(2500, 400);
+stars.renderOrder = -1; // рисуем звёзды первыми, до планеты и спутников
+skyScene.add(stars);
+
+// ---------- Планета со спутниками ----------
+// Камера смотрит почти вертикально вниз, поэтому "небо" видно лишь у верхнего
+// края экрана (направление -Z). Туда и помещаем планету как далёкий фон.
+const sky = new THREE.Group();
+skyScene.add(sky);
+
+const PLANET_POS = new THREE.Vector3(-150, -285, -110);
+
+const planet = new THREE.Mesh(
+  new THREE.SphereGeometry(60, 64, 64),
+  new THREE.MeshStandardMaterial({ color: 0x5a82c0, roughness: 0.9, metalness: 0.0, fog: false })
+);
+planet.position.copy(PLANET_POS);
+sky.add(planet);
+
+// атмосферный ободок (свечение по краю)
+const halo = new THREE.Mesh(
+  new THREE.SphereGeometry(64, 48, 48),
+  new THREE.MeshBasicMaterial({
+    color: 0x6fa8ff, transparent: true, opacity: 0.13,
+    side: THREE.BackSide, fog: false,
+  })
+);
+halo.position.copy(PLANET_POS);
+sky.add(halo);
+
+// спутники: ОБЛЕТАЮТ планету (меняется только позиция). Освещаются тем же
+// настоящим светом сцены неба, что и планета → терминаторы согласованы.
+const moons = [];
+function makeMoon(radius, color, orbitR, tilt, speed) {
+  const geo = new THREE.SphereGeometry(radius, 32, 32);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1.0, metalness: 0.0, fog: false }));
+  sky.add(mesh);
+  const m = { mesh, orbitR, tilt, speed, angle: Math.random() * Math.PI * 2 };
+  moons.push(m);
+  return m;
+}
+makeMoon(11, 0xb9b2a6, 96, 0.5, 0.0625);
+makeMoon(7, 0x8f9aa6, 136, -0.35, -0.04);
+
+// позиция спутника на наклонённой орбите вокруг планеты (без вращения самого тела)
+function updateMoons(dt) {
+  for (const m of moons) {
+    m.angle += m.speed * dt;
+    const px = Math.cos(m.angle) * m.orbitR;
+    const pz = Math.sin(m.angle) * m.orbitR;
+    m.mesh.position.set(
+      PLANET_POS.x + px,
+      PLANET_POS.y - pz * Math.sin(m.tilt),
+      PLANET_POS.z + pz * Math.cos(m.tilt)
+    );
+  }
+}
+
+// ---------- Параллакс-слой астероидов (ориентир скорости) ----------
+// Слой мелких камней ПОЗАДИ плоскости боя, в МИРОВЫХ координатах (не привязаны
+// к камере). Поэтому при полёте они проносятся мимо и дают ощущение скорости —
+// в отличие от далёких звёзд, которые приклеены к камере. 1 InstancedMesh = 1 draw call.
+const ROCK_COUNT = 500;
+const ROCK_SPREAD = ARENA + 200; // раскинуты повсюду (и немного за краями)
+const rocks = new THREE.InstancedMesh(
+  new THREE.IcosahedronGeometry(1, 0), // низкополигональный камень
+  new THREE.MeshStandardMaterial({ color: 0x6b6f78, roughness: 1.0, metalness: 0.05, flatShading: true }),
+  ROCK_COUNT
+);
+{
+  const m4 = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  const eul = new THREE.Euler();
+  const scl = new THREE.Vector3();
+  for (let i = 0; i < ROCK_COUNT; i++) {
+    pos.set(
+      (Math.random() * 2 - 1) * ROCK_SPREAD,
+      -6 - Math.random() * 10, // слой ПОЗАДИ (ниже) плоскости боя
+      (Math.random() * 2 - 1) * ROCK_SPREAD
+    );
+    eul.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
+    quat.setFromEuler(eul);
+    const s = 0.4 + Math.random() * 0.9; // мелкие камешки, но заметно крупнее звёзд
+    scl.set(s, s, s);
+    m4.compose(pos, quat, scl);
+    rocks.setMatrixAt(i, m4);
+  }
+  rocks.instanceMatrix.needsUpdate = true;
+}
+scene.add(rocks);
+
+// ---------- Фабрика корабля ----------
+function makeShip(color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.5 });
+  // корпус (нос смотрит в +Z)
+  const body = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.2, 12), mat);
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  // крылья
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.25, 1.0), mat);
+  wing.position.z = -0.4;
+  g.add(wing);
+  // двигатель-свечение
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.45, 10, 10),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  glow.position.z = -1.6;
+  g.add(glow);
+  g.position.y = 0.6;
+  g.scale.setScalar(1.8); // крупнее — арена отдалена, иначе корабли мелкие
+  return g;
+}
+
+// ---------- Снаряды ----------
+const bullets = [];
+const bulletGeo = new THREE.SphereGeometry(0.28, 8, 8);
+
+function spawnBullet(from, dir, fromPlayer) {
+  const mat = new THREE.MeshBasicMaterial({ color: fromPlayer ? 0x6fe6ff : 0xff6b6b });
+  const m = new THREE.Mesh(bulletGeo, mat);
+  m.position.copy(from);
+  scene.add(m);
+  bullets.push({ mesh: m, dir: dir.clone().normalize(), life: 2.2, fromPlayer });
+}
+
+// ---------- Микро-взрывы в точке импакта ----------
+const explosions = [];
+const EXPLOSION_LIFE = 0.16; // очень короткая вспышка, сек
+const explosionGeo = new THREE.SphereGeometry(1, 10, 10);
+
+function spawnExplosion(pos) {
+  // светящаяся огненная сфера: аддитивное смешивание + быстрое затухание
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffb050, transparent: true, opacity: 1,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  const m = new THREE.Mesh(explosionGeo, mat);
+  m.position.copy(pos);
+  m.scale.setScalar(0.6);
+  scene.add(m);
+  explosions.push({ mesh: m, life: EXPLOSION_LIFE });
+}
+
+// ---------- След от двигателя ----------
+const trail = [];
+const TRAIL_LIFE = 0.55;
+const EXHAUST_SPEED = 12; // скорость выброса относительно корабля (назад вдоль сопла)
+const trailGeo = new THREE.SphereGeometry(0.5, 6, 6);
+
+function spawnTrail(pos, fwd, shipVel) {
+  // светящаяся частица выхлопа: аддитивная, гаснет.
+  // Стартовая скорость = скорость корабля + выброс назад вдоль сопла (-fwd).
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x6fd0ff, transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  const m = new THREE.Mesh(trailGeo, mat);
+  m.position.copy(pos);
+  scene.add(m);
+  const vel = shipVel.clone().addScaledVector(fwd, -EXHAUST_SPEED);
+  trail.push({ mesh: m, vel, life: TRAIL_LIFE });
+}
+
+// ---------- Игрок ----------
+const player = {
+  mesh: makeShip(0x4d8bff),
+  vel: new THREE.Vector3(),
+  heading: 0,        // угол поворота вокруг Y
+  hp: 200, maxHp: 200,
+  cooldown: 0,
+  alive: true,
+};
+scene.add(player.mesh);
+
+// ---------- Враги ----------
+const enemies = [];
+function spawnEnemy() {
+  const e = {
+    mesh: makeShip(0xff5d5d),
+    vel: new THREE.Vector3(),
+    heading: Math.random() * Math.PI * 2,
+    hp: 2, // 2 попадания
+    cooldown: Math.random() * 1.5,
+    alive: true,
+  };
+  // появляемся кольцом вокруг игрока (чуть за краем экрана), а не у краёв арены
+  const ang = Math.random() * Math.PI * 2;
+  const d = 70 + Math.random() * 60; // 70..130 от игрока
+  const lim = ARENA - 5;
+  e.mesh.position.set(
+    Math.max(-lim, Math.min(lim, player.mesh.position.x + Math.cos(ang) * d)),
+    0.6,
+    Math.max(-lim, Math.min(lim, player.mesh.position.z + Math.sin(ang) * d))
+  );
+  scene.add(e.mesh);
+  enemies.push(e);
+}
+
+const TARGET_ENEMIES = 4;
+
+// ---------- Ввод ----------
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ---------- Вспомогательное ----------
+function forwardVec(heading) {
+  // нос смотрит в +Z при heading=0
+  return new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
+}
+function clampToArena(pos) {
+  const lim = ARENA - 2;
+  pos.x = Math.max(-lim, Math.min(lim, pos.x));
+  pos.z = Math.max(-lim, Math.min(lim, pos.z));
+}
+
+// ---------- HUD ----------
+const elScore = document.getElementById('score');
+const elEnemies = document.getElementById('enemies');
+const elHp = document.getElementById('hpfill');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlaySub = document.getElementById('overlay-sub');
+let score = 0;
+
+function updateHud() {
+  elScore.textContent = score;
+  elEnemies.textContent = enemies.length;
+  elHp.style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
+}
+
+// ---------- Игровой цикл ----------
+const TURN = 2.0;        // скорость поворота, рад/с
+const ACCEL = 18;        // ускорение тяги
+const DRAG = 1.8;        // трение
+const MAX_SPEED = 15;
+const IDLE_DRAG = 0.8;    // мягкое торможение, когда тяга не нажата
+const PLAYER_FIRE_CD = 0.18;
+const ENEMY_FIRE_CD = 1.1;
+const BULLET_SPEED = 40;
+
+const clock = new THREE.Clock();
+
+function update(dt) {
+  if (!player.alive) return;
+
+  // --- игрок: поворот ---
+  if (keys['KeyA'] || keys['ArrowLeft'])  player.heading += TURN * dt;
+  if (keys['KeyD'] || keys['ArrowRight']) player.heading -= TURN * dt;
+
+  // --- игрок: тяга ---
+  const fwd = forwardVec(player.heading);
+  if (keys['KeyW'] || keys['ArrowUp'])   player.vel.addScaledVector(fwd, ACCEL * dt);
+  if (keys['KeyS'] || keys['ArrowDown']) player.vel.addScaledVector(fwd, -ACCEL * dt);
+
+  // пассивное торможение, когда не нажата ни одна кнопка управления
+  // (держишь поворот для прицеливания на дрейфе — инерция сохраняется)
+  const controlling = keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
+                   || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight'];
+  if (!controlling) player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
+
+  // чистая инерция: ни трения, ни ограничения скорости — корабль
+  // продолжает лететь в набранном направлении, куда бы ни смотрел нос
+  player.mesh.position.addScaledVector(player.vel, dt);
+
+  // у границ арены просто останавливаемся: скорость по этой оси в ноль (без отскока)
+  const lim = ARENA - 2;
+  const p = player.mesh.position;
+  if (p.x >  lim && player.vel.x > 0) { p.x =  lim; player.vel.x = 0; }
+  if (p.x < -lim && player.vel.x < 0) { p.x = -lim; player.vel.x = 0; }
+  if (p.z >  lim && player.vel.z > 0) { p.z =  lim; player.vel.z = 0; }
+  if (p.z < -lim && player.vel.z < 0) { p.z = -lim; player.vel.z = 0; }
+
+  player.mesh.rotation.y = player.heading;
+
+  // --- след от двигателя (при тяге вперёд) ---
+  if (keys['KeyW'] || keys['ArrowUp']) {
+    const enginePos = player.mesh.position.clone().addScaledVector(fwd, -2.6);
+    enginePos.x += (Math.random() - 0.5) * 0.35; // узкий разброс по ширине
+    enginePos.z += (Math.random() - 0.5) * 0.35;
+    spawnTrail(enginePos, fwd, player.vel);
+  }
+
+  // --- игрок: стрельба ---
+  player.cooldown -= dt;
+  if (keys['Space'] && player.cooldown <= 0) {
+    const muzzle = player.mesh.position.clone().addScaledVector(fwd, 3);
+    spawnBullet(muzzle, fwd, true);
+    player.cooldown = PLAYER_FIRE_CD;
+  }
+
+  // --- враги ИИ ---
+  for (const e of enemies) {
+    const toPlayer = player.mesh.position.clone().sub(e.mesh.position);
+    const dist = toPlayer.length();
+    toPlayer.normalize();
+
+    // целевой угол на игрока
+    const desired = Math.atan2(toPlayer.x, toPlayer.z);
+    let diff = desired - e.heading;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    e.heading += Math.sign(diff) * Math.min(Math.abs(diff), TURN * 0.8 * dt);
+
+    const ef = forwardVec(e.heading);
+    // держим дистанцию ~20: приближаемся издалека, отходим если слишком близко
+    const thrust = dist > 22 ? 1 : (dist < 14 ? -0.6 : 0.15);
+    e.vel.addScaledVector(ef, ACCEL * 0.7 * thrust * dt);
+    e.vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
+    if (e.vel.length() > MAX_SPEED * 0.7) e.vel.setLength(MAX_SPEED * 0.7);
+
+    e.mesh.position.addScaledVector(e.vel, dt);
+    clampToArena(e.mesh.position);
+    e.mesh.rotation.y = e.heading;
+
+    // стрельба, если примерно смотрит на игрока и не слишком далеко
+    e.cooldown -= dt;
+    if (e.cooldown <= 0 && dist < 45 && Math.abs(diff) < 0.25) {
+      const muzzle = e.mesh.position.clone().addScaledVector(ef, 3);
+      spawnBullet(muzzle, ef, false);
+      e.cooldown = ENEMY_FIRE_CD + Math.random() * 0.5;
+    }
+  }
+
+  // --- снаряды ---
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.mesh.position.addScaledVector(b.dir, BULLET_SPEED * dt);
+    b.life -= dt;
+
+    let hit = false;
+    if (b.fromPlayer) {
+      for (const e of enemies) {
+        if (b.mesh.position.distanceTo(e.mesh.position) < 2.6) {
+          e.hp -= 1; hit = true; break;
+        }
+      }
+    } else {
+      if (player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
+        player.hp -= 8; hit = true;
+      }
+    }
+
+    const out = Math.abs(b.mesh.position.x) > ARENA || Math.abs(b.mesh.position.z) > ARENA;
+    if (hit || b.life <= 0 || out) {
+      if (hit) spawnExplosion(b.mesh.position); // микро-вспышка в точке импакта
+      scene.remove(b.mesh);
+      bullets.splice(i, 1);
+    }
+  }
+
+  // --- микро-взрывы (короткая огненная вспышка) ---
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const x = explosions[i];
+    x.life -= dt;
+    const t = 1 - Math.max(0, x.life) / EXPLOSION_LIFE; // 0 → 1
+    x.mesh.scale.setScalar(0.6 + t * 2.4);              // быстро расширяется
+    x.mesh.material.opacity = (1 - t);                  // и гаснет
+    if (x.life <= 0) {
+      scene.remove(x.mesh);
+      x.mesh.material.dispose();
+      explosions.splice(i, 1);
+    }
+  }
+
+  // --- след от двигателя: частицы летят назад, гаснут и сжимаются ---
+  for (let i = trail.length - 1; i >= 0; i--) {
+    const p = trail[i];
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.life -= dt;
+    const t = 1 - Math.max(0, p.life) / TRAIL_LIFE; // 0 → 1
+    p.mesh.material.opacity = (1 - t) * 0.85;
+    p.mesh.scale.setScalar(1.1 - t * 0.8);
+    if (p.life <= 0) {
+      scene.remove(p.mesh);
+      p.mesh.material.dispose();
+      trail.splice(i, 1);
+    }
+  }
+
+  // --- смерть врагов ---
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    if (enemies[i].hp <= 0) {
+      scene.remove(enemies[i].mesh);
+      enemies.splice(i, 1);
+      score++;
+    }
+  }
+  // поддерживаем количество врагов
+  while (enemies.length < TARGET_ENEMIES) spawnEnemy();
+
+  // --- смерть игрока ---
+  if (player.hp <= 0) {
+    player.alive = false;
+    overlayTitle.textContent = 'Корабль уничтожен';
+    overlaySub.textContent = `Ты сбил кораблей: ${score}`;
+    overlay.style.display = 'flex';
+  }
+
+  // --- камера: жёстко привязана к игроку (без лага и «плавания» — не дёргается),
+  //     фиксированный угол — НЕ вращается за поворотом корабля ---
+  camera.position.copy(player.mesh.position).add(CAM_OFFSET);
+  camera.lookAt(player.mesh.position);
+
+  // звёзды — бесконечно далёкий задник (приклеены к камере, без параллакса)
+  stars.position.copy(camera.position);
+  // планета чуть смещается при движении игрока — лёгкий параллакс (глубина)
+  const PARALLAX = 0.6;
+  sky.position.copy(camera.position).addScaledVector(player.mesh.position, -PARALLAX);
+
+  // спутники облетают планету (сами не вращаются — терминатор не «гуляет»)
+  updateMoons(dt);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  update(dt);
+  updateHud();
+  // два прохода: сначала задник-небо (со своим светом), потом бой поверх
+  renderer.clear();
+  renderer.render(skyScene, camera);
+  renderer.clearDepth();
+  renderer.render(scene, camera);
+}
+
+// ---------- Рестарт ----------
+function reset() {
+  for (const b of bullets) scene.remove(b.mesh);
+  bullets.length = 0;
+  for (const x of explosions) { scene.remove(x.mesh); x.mesh.material.dispose(); }
+  explosions.length = 0;
+  for (const p of trail) { scene.remove(p.mesh); p.mesh.material.dispose(); }
+  trail.length = 0;
+  for (const e of enemies) scene.remove(e.mesh);
+  enemies.length = 0;
+  player.mesh.position.set(0, 0.6, 0);
+  player.vel.set(0, 0, 0);
+  player.heading = 0;
+  player.hp = player.maxHp;
+  player.cooldown = 0;
+  player.alive = true;
+  score = 0;
+  for (let i = 0; i < TARGET_ENEMIES; i++) spawnEnemy();
+  overlay.style.display = 'none';
+}
+document.getElementById('restart').addEventListener('click', reset);
+
+addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+reset();
+animate();
+</script>
+</body>
+</html>

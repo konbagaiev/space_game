@@ -1,0 +1,20 @@
+# Зависимости
+node_modules/
+
+# Сборки
+dist/
+build/
+
+# Логи
+*.log
+npm-debug.log*
+
+# Окружение / секреты
+.env
+.env.*
+
+# ОС / редакторы
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
