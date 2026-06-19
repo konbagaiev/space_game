@@ -5,6 +5,11 @@
 
 ## 2026-06-19
 
+- **Zero-downtime deploys.** Deploy now uses blue-green via `docker rollout -w 10 app`: a Docker
+  `healthcheck` gates Traefik routing (only routes once `/api/health` passes, i.e. after migrations),
+  the new container comes up alongside the old, and the old is removed only after the new is healthy +
+  registered. Verified by polling `/api/health` throughout a rollout (0 dropped requests). Migrations
+  run on startup, gated by the healthcheck. CI deploys on push to main (incl. PR merges) after tests.
 - **Deployed to production: https://space.bagaiev.com.** Dockerized (`Dockerfile`, `docker-compose.yml`,
   1 GB mem limit) on the existing Hetzner VPS behind Traefik (auto-HTTPS), on the shared `backend`/`proxy`
   networks, using the shared Postgres (`spacegame` DB+user). Backend storage is now **pluggable**

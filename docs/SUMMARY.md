@@ -98,9 +98,14 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
   Runs as a Docker container `spacegame_app` (1 GB mem limit) behind **Traefik** (auto-HTTPS via
   Let's Encrypt), on the shared **`backend`** + **`proxy`** networks; uses the shared `shared_postgres`
   (DB+user `spacegame`). Files at `/opt/projects/spacegame/`; server-only `.env` holds `DATABASE_URL`.
-- **CI/CD:** `.github/workflows/ci-cd.yml` — runs client + server tests on every push/PR, and on
-  push to `main` deploys (rsync → `docker compose up -d --build`). Needs GitHub secrets
-  `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`.
+- **CI/CD:** `.github/workflows/ci-cd.yml` — runs client + server tests on every push/PR (incl.
+  PR merges), and on push to `main` deploys. Secrets: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`.
+- **Zero-downtime deploy** (blue-green): the container has a Docker `healthcheck` (so Traefik only
+  routes to it once `/api/health` passes — i.e. after migrations). The deploy uses
+  `docker rollout -w 10 app`: it starts the new container, waits until it's healthy + 10s so Traefik
+  picks it up, then removes the old one — no dropped requests (verified by polling during a rollout).
+  Migrations run on container startup and are gated by the healthcheck (a failed migration ⇒ unhealthy
+  ⇒ rollout keeps the old container). Note: deploys that *change docker-compose.yml itself* may blip once.
 
 ## Testable logic (extracted from index.html)
 - Pure, Three.js-free logic lives in `client/src/`: `components.js` (catalogs + `deriveDrive` +

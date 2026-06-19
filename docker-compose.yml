@@ -2,11 +2,19 @@ services:
   app:
     build: .
     image: spacegame
-    container_name: spacegame_app
     restart: unless-stopped
     env_file:
       - .env            # server-only: DATABASE_URL, PORT (not in git)
     mem_limit: 1g       # cap memory at 1 GB as requested
+    # Healthcheck: ready only after the server is listening (which is after migrations).
+    # docker rollout waits for this before removing the old container; Traefik (below)
+    # waits for it before routing traffic -> zero-downtime deploys.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.spacegame.rule=Host(`space.bagaiev.com`)"

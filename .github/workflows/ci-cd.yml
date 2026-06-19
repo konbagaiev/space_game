@@ -37,11 +37,23 @@ jobs:
           rsync -az -e "ssh -i ~/.ssh/id_deploy" \
             --exclude node_modules --exclude .git --exclude server/data --exclude '*.log' \
             ./ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/opt/projects/spacegame/"
-      - name: Build & restart container
+      - name: Build & zero-downtime deploy (blue-green via docker rollout)
         run: |
-          ssh -i ~/.ssh/id_deploy "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd /opt/projects/spacegame && docker compose up -d --build && docker image prune -f"
+          ssh -i ~/.ssh/id_deploy "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            set -e
+            cd /opt/projects/spacegame
+            # ensure the docker-rollout CLI plugin is installed (idempotent)
+            mkdir -p ~/.docker/cli-plugins
+            if [ ! -x ~/.docker/cli-plugins/docker-rollout ]; then
+              curl -fsSL https://raw.githubusercontent.com/Wowu/docker-rollout/master/docker-rollout \
+                -o ~/.docker/cli-plugins/docker-rollout
+              chmod +x ~/.docker/cli-plugins/docker-rollout
+            fi
+            docker compose build app
+            # blue-green: new container up, wait until healthy (incl. migrations) + 10s so
+            # Traefik registers it before the old one is removed -> zero downtime.
+            docker rollout -w 10 app
+            docker image prune -f
+          '
       - name: Smoke check
-        run: |
-          sleep 5
-          curl -fsS --max-time 20 https://space.bagaiev.com/api/health
+        run: curl -fsS --max-time 20 https://space.bagaiev.com/api/health
