@@ -5,6 +5,41 @@
 
 ## 2026-06-19
 
+- **Acceleration and turn rate now depend on ship MASS.** Mass = sum of all component weights
+  (`shipMass`; weapons gained a `weight`). `deriveDrive` applies `massFactor = REFERENCE_MASS / mass`
+  to both: heavier ships accelerate and turn slower, lighter ones faster. `REFERENCE_MASS = 48`
+  (player's basic loadout) keeps the player at accel 10 / turn 2.0; enemies rebalanced by their mass
+  (fighters lighter → nimble, the heavy → sluggish). Added unit tests for mass and the new derivation
+  (client suite now 17). Tunable via component `weight`s and `REFERENCE_MASS`.
+- **Backend tests added** (`server/src/server.test.js`, 9, via `node:test`): register / record game /
+  history / validation (400s) / health / serves client. Made the backend testable — `server.js`
+  exports `createApp()` (listens only when run directly) and `db.js` honors a `DB_PATH` env (tests
+  use a temp SQLite file; real `game.db` untouched). `getPlayerGames` now orders by `id DESC`
+  (deterministic newest-first). Run: `cd server && npm test`.
+- **Extracted pure game logic from `index.html` into testable ES modules** (`client/src/`):
+  `components.js` (component catalogs + `deriveDrive` + `hitsToKill`) and `steering.js`
+  (`headingToDir`, `shortestAngleDelta`, `steerToward`, `enemyThrustFactor`, `inForwardSector`).
+  `index.html` now imports them and uses `steerToward`/`enemyThrustFactor`/`headingToDir` in
+  player/enemy/rocket steering. Added unit tests via built-in `node:test` (`client/src/*.test.js`,
+  `npm test`), 12 passing. Note: the client now uses ES modules, so it must be served over http
+  (not opened as `file://`). Full simulation extraction will continue incrementally.
+- Added a **minimal schema migration runner** (`server/src/migrate.js`, no dependencies):
+  schema version in SQLite's `PRAGMA user_version`; ordered migrations `src/migrations/NNN_name.js`
+  (`up(db)`), each applied in a transaction. Runs on server startup and via `npm run migrate`
+  (standalone, for deploys). Moved the initial schema into `001_init`; `db.js` no longer creates
+  tables inline.
+- **Backend added (Node.js + Express + SQLite via `node:sqlite`).** The server (`server/`) serves
+  the game client and a JSON API on one origin. **Auto-registration by browser:** the client makes
+  a UUID (localStorage) and posts it on load; the server upserts the player. **Game history:** on
+  game over the client posts the result, stored per player. Endpoints: `/api/players/register`,
+  `/api/games`, `/api/players/:id/games`, `/api/health`. Runs on http://localhost:4000
+  (`cd server && npm install && npm start`). Client calls are best-effort (game works without it).
+- HUD Health panel now also shows the remaining health as a percentage with one decimal
+  (e.g. "87.5%") below the bar.
+- Third enemy type — the **purple "heavy"** (`ENEMY_KINDS.heavy`): slow, rocket-only (no gun),
+  150 hp, 2x model. Unlocks after 10 kills (`score >= 10`), then ~20% of spawns. Added heavy
+  engine/thrusters/hull components; ships now have a `radius` (hit size scales with model);
+  enemy gun fire is guarded so gun-less enemies don't shoot bullets.
 - **Project rule: English only** — all UI text, docs, code comments and commits must be English
   (recorded in `CLAUDE.md`). All existing UI strings, documentation and code comments were
   translated from Russian to English.

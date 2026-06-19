@@ -1,7 +1,8 @@
 # Space Game
 
 A browser game prototype: several 3D spaceships fighting on a plane.
-Built on **Three.js** (frontend), the backend (player registration, multiplayer) is planned.
+Built on **Three.js** (frontend) with a **Node.js + Express + SQLite** backend
+(anonymous player auto-registration and game history; multiplayer is planned).
 
 ## Structure
 
@@ -17,8 +18,22 @@ Built on **Three.js** (frontend), the backend (player registration, multiplayer)
 
 ## How to run
 
-Open `client/index.html` in a browser (double click). No installation required —
-Three.js is loaded from a CDN. Internet access is needed.
+With the backend (recommended — enables player registration & game history):
+
+```
+cd server
+npm install      # first time only
+npm start        # http://localhost:4000
+```
+
+Then open **http://localhost:4000** (the server serves the game). Internet access is needed
+(Three.js loads from a CDN).
+
+The client uses ES modules (`client/src/*.js`), so it must be **served over http** — opening
+`client/index.html` as a `file://` won't load the modules. The backend server above serves it;
+to run the client alone (without the API), use any static server, e.g.
+`npx serve client` or `python3 -m http.server -d client`. Backend calls then fail silently
+(no registration/history).
 
 ## Documentation
 

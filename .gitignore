@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Server data (SQLite db)
+server/data/
+
 # Builds
 dist/
 build/

@@ -1,0 +1,15 @@
+{
+  "name": "space-game-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend for the space-combat game: serves the client and stores players & game history.",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "migrate": "node --disable-warning=ExperimentalWarning src/migrate.js",
+    "test": "node --disable-warning=ExperimentalWarning --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

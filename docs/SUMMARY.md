@@ -31,8 +31,12 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
 - **Main engine** (`ENGINES`): `power` → **acceleration**; plus `maxSpeed` (0 = no limit),
   `weight`/`durability` (for later) and **exhaust** `exhaust` (part of the engine).
 - **Maneuvering thrusters** (`THRUSTERS`): `power` → **turn rate**.
-- Acceleration and maneuverability are **derived** (`deriveDrive`): `acceleration = engine.power ×
-  THRUST_TO_ACCEL`, `turnRate = thrusters.power × THRUSTER_TO_TURN` (coefficients are 1 for now).
+- **Mass** = sum of weights of all components (`shipMass`; every component, incl. weapons, has `weight`).
+- Acceleration and maneuverability are **derived from power AND mass** (`deriveDrive`):
+  `massFactor = REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`,
+  `turnRate = thrusters.power × massFactor`. `REFERENCE_MASS` (48 = player's basic loadout) keeps the
+  player at accel 10 / turn 2.0; heavier ships are slower, lighter ones faster. Tunable via component
+  `weight`s and `REFERENCE_MASS`.
 - **Hull** (`HULLS`): `durability` (= maxHp), `weight`, `volume` (weight/volume — for later).
 - **Weapon** (`WEAPONS`): `power` (damage), `projectileSpeed`, `fireCooldown`, color, `type`.
   - `basicKinetic` ("Basic kinetic") — primary (`Space`).
@@ -41,8 +45,9 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
     and accelerates with the player's engine acceleration (10), 50 damage, an explosion slightly larger
     than the machine-gun one (small AoE), **a light smoke trail**. The player has a `secondary` slot.
   - `enemyRocket` ("Rocket (enemy)") — used by the yellow rocketeer, hits the player (30 damage).
-- Enemy types are `ENEMY_KINDS` (color + hull/engine/weapon + optional `rocket`): `fighter`
-  (red, kinetic) and `rocketeer` (yellow, tough hull + `enemyRocket`).
+- Enemy types are `ENEMY_KINDS` (color + hull/engine/thrusters/weapon + optional `rocket`/`sizeScale`):
+  `fighter` (red, kinetic), `rocketeer` (yellow, tough hull + `enemyRocket`), and `heavy`
+  (purple, 150 hp, rocket-only, slow, 2x model; unlocks after 10 kills). Ship `radius` scales with model size.
 - Bullets and rockets carry damage/speed from the weapon and remember their side (`fromPlayer`).
 - **Base configuration (the reference point for balance):** player — 100 hp hull, weapon
   basicKinetic (10 damage); enemy — light 20 hp hull, enemyKinetic (5 damage).
@@ -53,13 +58,16 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
   buttons are released — smooth braking. At the arena boundaries (±240) the velocity along the axis is zeroed.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate.
-- Enemies (4 of them, spawning in a ring around the player, the AI keeps its distance and shoots), two types:
+- Enemies (4 at a time, spawning in a ring around the player, the AI keeps its distance and shoots), three types:
   - **red fighter** — machine gun (dies in 2 hits);
   - **yellow "rocketeer"** — tougher (4 hits), shoots bullets AND periodically launches homing rockets
     at the player. Spawns ~30% of the time.
+  - **purple "heavy"** — slow tank, rocket only (no gun), 150 hp, 2x model. Unlocks after 10 kills
+    (then ~20% of spawns).
 - **Rockets can be shot down by the machine gun:** a bullet destroys a rocket of the opposite side (a harmless
   explosion) — you can deflect enemy rockets, and an enemy can theoretically shoot down yours.
-- Player health is 100; score for kills.
+- Player health is 100; HUD shows the remaining health as a percentage with one decimal
+  (e.g. "87.5%") below the bar. Score for kills.
 
 ## Visuals
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer,
@@ -69,5 +77,34 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
 - Effects: a micro-explosion at the hit point; a narrow glowing engine trail (particle speed
   = ship speed + ejection backward along the nozzle).
 
+## Backend
+- **Node.js + Express** server (`server/`): serves the game client (static) AND a JSON API on
+  the same origin (no CORS); storage is **SQLite** via the built-in `node:sqlite` (no native deps).
+- **Auto-registration by browser:** the client makes a UUID on first visit (kept in `localStorage`)
+  and posts it on load; the server creates the player if new. Anonymous, minimal friction.
+- **Game history:** on game over the client posts `{ score, kills, durationMs }`, saved per player.
+- API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`, `GET /api/health`.
+- **Schema migrations:** minimal dependency-free runner (`src/migrate.js`) versioned by SQLite's
+  `PRAGMA user_version`; migration files `src/migrations/NNN_name.js` (`up(db)`). Run on startup and
+  via `npm run migrate`. On a fresh/remote server the schema is created automatically.
+- Run: `cd server && npm install && npm start` → open **http://localhost:4000** (the server serves the game).
+- Client calls are best-effort (`fetch` with `.catch`): the game still works if opened without the backend.
+
+## Testable logic (extracted from index.html)
+- Pure, Three.js-free logic lives in `client/src/`: `components.js` (catalogs + `deriveDrive` +
+  `hitsToKill`) and `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
+  `enemyThrustFactor`, `inForwardSector`). `index.html` imports and uses them.
+- Because the client now uses ES modules, it must be **served over http** (not opened as `file://`).
+- More of the simulation can be extracted incrementally (it's still tied to Three.js objects + the render loop).
+
+## Tests (built-in `node:test`, no deps)
+- **Client logic** — `client/src/*.test.js` (12): component derivation, balance, steering math.
+  Run: `cd client && npm test`.
+- **Backend API** — `server/src/server.test.js` (9): register / record game / history / validation /
+  health / serves client. Mounts the Express app on an ephemeral port against a temp SQLite DB
+  (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
+- The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
+  run directly), `db.js` honors `DB_PATH`.
+
 ## Project structure
-- `client/` — the game (Three.js), `server/` — the backend (planned), `docs/` — documentation.
+- `client/` — the game (Three.js), `server/` — Node.js/Express backend + SQLite, `docs/` — documentation.

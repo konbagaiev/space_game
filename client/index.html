@@ -21,6 +21,7 @@
   .label { font-size: 12px; letter-spacing: 1px; opacity: .6; text-transform: uppercase; }
   #hpbar { width: 220px; height: 14px; border: 1px solid #3a6ea5; border-radius: 7px; overflow: hidden; margin-top: 4px; background: rgba(0,0,0,.4); }
   #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg,#36d1dc,#5b86e5); transition: width .15s; }
+  #hppct { margin-top: 4px; font: 700 14px system-ui, sans-serif; color: #cfe6ff; }
   #help {
     position: fixed; bottom: 14px; left: 18px;
     font-family: system-ui, sans-serif; font-size: 13px; color: #7f93b5;
@@ -88,6 +89,7 @@
   <div>
     <div class="label">Health</div>
     <div id="hpbar"><div id="hpfill"></div></div>
+    <div id="hppct">100.0%</div>
   </div>
   <div class="right">
     <div class="label">Destroyed</div>
@@ -124,6 +126,8 @@
 
 <script type="module">
 import * as THREE from 'three';
+import { ENGINES, THRUSTERS, HULLS, WEAPONS, ENEMY_KINDS, deriveDrive } from './src/components.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 
 // ---------- Base scene ----------
 const scene = new THREE.Scene();
@@ -431,117 +435,8 @@ function spawnSmoke(pos) {
   smoke.push({ mesh: m, life: 0.6, maxLife: 0.6 });
 }
 
-// ==================================================================
-// Data model: the components that ships are assembled from.
-// Some stats are not yet used by the logic (weight, durability,
-// volume) - reserved for the future (upgrades, balance, different ships).
-// ==================================================================
-
-// Main engines: power -> ACCELERATION. Exhaust is part of the engine.
-const ENGINES = {
-  basic: {
-    name: 'Basic main engine',
-    power: 10,        // thrust power -> acceleration
-    maxSpeed: 0,      // 0 = no limit (for the player)
-    weight: 10,       // [not used yet]
-    durability: 30,   // [not used yet]
-    exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 },
-  },
-  scout: {            // enemy engine - weaker
-    name: 'Scout main engine',
-    power: 12.6,
-    maxSpeed: 10.5,
-    weight: 6,
-    durability: 20,
-    exhaust: { color: 0xff8a5a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 },
-  },
-};
-
-// Maneuvering thrusters: power -> TURN RATE (rad/s at coefficient 1).
-const THRUSTERS = {
-  basic: { name: 'Basic thrusters', power: 2.0, weight: 4, durability: 15 },
-  scout: { name: 'Scout thrusters', power: 1.6, weight: 3, durability: 10 },
-};
-
-// Coefficients converting component power into ship stats (derived).
-const THRUST_TO_ACCEL = 1;    // acceleration = main engine power x this coefficient
-const THRUSTER_TO_TURN = 1;   // maneuverability = thruster power x this coefficient
-// Derive ship stats from its engines.
-function deriveDrive(ship) {
-  ship.acceleration = ship.engine.power * THRUST_TO_ACCEL;
-  ship.turnRate = ship.thrusters.power * THRUSTER_TO_TURN;
-}
-
-// Hulls.
-const HULLS = {
-  basic: {
-    name: 'Basic hull',
-    durability: 100,  // = maxHp
-    weight: 20,       // [not used yet]
-    volume: 100,      // [not used yet]
-  },
-  fighter: {          // enemy hull
-    name: 'Light hull',
-    durability: 20,   // 2 hits of the basic weapon (10 damage)
-    weight: 8,
-    volume: 40,
-  },
-  rocketeer: {        // hull of the yellow "rocketeer" - sturdier
-    name: 'Rocketeer hull',
-    durability: 40,   // 4 hits of the basic weapon
-    weight: 14,
-    volume: 60,
-  },
-};
-
-// Weapons.
-const WEAPONS = {
-  basicKinetic: {
-    name: 'Basic kinetic',
-    type: 'kinetic',
-    power: 10,           // damage per hit
-    projectileSpeed: 40, // projectile speed
-    fireCooldown: 0.18,  // reload, sec
-    projectileColor: 0x6fe6ff,
-  },
-  enemyKinetic: {
-    name: 'Kinetic (enemy)',
-    type: 'kinetic',
-    power: 5,
-    projectileSpeed: 40,
-    fireCooldown: 1.1,
-    projectileColor: 0xff6b6b,
-  },
-  homingRocket: {
-    name: 'Rocket (homing)',
-    type: 'rocket',
-    power: 50,                          // damage
-    fireCooldown: 5,                    // reload, sec
-    seekHalfAngle: 60 * Math.PI / 180,  // search half-sector (120 deg total)
-    turnRate: 1.0,                      // maneuverability: turn rate toward target, rad/s
-    launchSpeed: 12,                    // initial speed
-    detonateRadius: 3.2,                // detonation distance near the enemy
-    blastRadius: 5,                     // blast radius (slightly larger than a bullet)
-    blastVisual: 4.5,                   // visual explosion size (bullet is ~3)
-    life: 4,                            // self-destruct, sec
-    projectileColor: 0xffaa44,
-    // acceleration toward target = player's engine.power
-  },
-  enemyRocket: {
-    name: 'Rocket (enemy)',
-    type: 'rocket',
-    power: 30,
-    fireCooldown: 4,
-    turnRate: 1.0,
-    launchSpeed: 12,
-    accel: 9,                           // the enemy has its own homing acceleration
-    detonateRadius: 3.2,
-    blastRadius: 5,
-    blastVisual: 4.5,
-    life: 4,
-    projectileColor: 0xffcc66,
-  },
-};
+// Ship components (ENGINES, THRUSTERS, HULLS, WEAPONS, ENEMY_KINDS) and deriveDrive
+// are imported from ./src/components.js (pure data/logic, unit-tested).
 
 // ---------- Player ----------
 const player = {
@@ -562,18 +457,6 @@ deriveDrive(player); // acceleration <- main engine, turnRate <- thrusters
 scene.add(player.mesh);
 
 // ---------- Enemies ----------
-// Enemy types: a regular fighter and a yellow "rocketeer" (can launch rockets).
-const ENEMY_KINDS = {
-  fighter: {
-    color: 0xff5d5d, hull: HULLS.fighter, engine: ENGINES.scout, thrusters: THRUSTERS.scout,
-    weapon: WEAPONS.enemyKinetic, rocket: null,
-  },
-  rocketeer: {
-    color: 0xffd24d, hull: HULLS.rocketeer, engine: ENGINES.scout, thrusters: THRUSTERS.scout,
-    weapon: WEAPONS.enemyKinetic, rocket: WEAPONS.enemyRocket,
-  },
-};
-
 const enemies = [];
 function spawnEnemy(kindName) {
   const k = ENEMY_KINDS[kindName] || ENEMY_KINDS.fighter;
@@ -589,8 +472,10 @@ function spawnEnemy(kindName) {
     hp: k.hull.durability,
     cooldown: Math.random() * 1.5,
     rocketCooldown: 1 + Math.random() * 3,
+    radius: 2.6 * (k.sizeScale || 1), // hit radius scales with model size
     alive: true,
   };
+  e.mesh.scale.multiplyScalar(k.sizeScale || 1); // bigger model for heavy enemies
   deriveDrive(e); // acceleration <- main engine, turnRate <- thrusters
   // spawn in a ring around the player (just off-screen), not at the arena edges
   const ang = Math.random() * Math.PI * 2;
@@ -606,8 +491,14 @@ function spawnEnemy(kindName) {
 }
 
 const TARGET_ENEMIES = 4;
-// ~30% of spawns are yellow rocketeers
-function spawnRandomEnemy() { spawnEnemy(Math.random() < 0.3 ? 'rocketeer' : 'fighter'); }
+// Spawn mix: heavy tanks unlock after 10 kills (~20%); ~30% rocketeers; rest fighters.
+function spawnRandomEnemy() {
+  const r = Math.random();
+  let kind = 'fighter';
+  if (score >= 10 && r < 0.2) kind = 'heavy';
+  else if (r < 0.5) kind = 'rocketeer';
+  spawnEnemy(kind);
+}
 
 // ---------- Input ----------
 const keys = {};
@@ -702,10 +593,37 @@ if (isTouch) {
   addEventListener('mouseup', () => { keys['_rocket'] = false; });
 }
 
+// ---------- Backend: anonymous player identity + game history ----------
+// Identify the player by a browser-generated id kept in localStorage (auto-register).
+// All calls are best-effort: if the backend isn't running (e.g. opened via file://),
+// they fail silently and the game still works. Served same-origin -> relative /api URLs.
+const playerId = (() => {
+  try {
+    let id = localStorage.getItem('playerId');
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem('playerId', id); }
+    return id;
+  } catch { return null; }
+})();
+if (playerId) {
+  fetch('/api/players/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId }),
+  }).catch(() => {});
+}
+function reportGame(score, durationMs) {
+  if (!playerId) return;
+  fetch('/api/games', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playerId, score, kills: score, durationMs: Math.round(durationMs) }),
+  }).catch(() => {});
+}
+let gameStartTime = performance.now();
+
 // ---------- Helpers ----------
 function forwardVec(heading) {
-  // nose points in +Z when heading=0
-  return new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
+  // nose points in +Z when heading=0 (math lives in steering.js)
+  const d = headingToDir(heading);
+  return new THREE.Vector3(d.x, 0, d.z);
 }
 function clampToArena(pos) {
   const lim = ARENA - 2;
@@ -717,6 +635,7 @@ function clampToArena(pos) {
 const elScore = document.getElementById('score');
 const elEnemies = document.getElementById('enemies');
 const elHp = document.getElementById('hpfill');
+const elHpPct = document.getElementById('hppct');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySub = document.getElementById('overlay-sub');
@@ -727,7 +646,9 @@ let score = 0;
 function updateHud() {
   elScore.textContent = score;
   elEnemies.textContent = enemies.length;
-  elHp.style.width = Math.max(0, player.hp / player.maxHp * 100) + '%';
+  const hpPct = Math.max(0, player.hp / player.maxHp * 100);
+  elHp.style.width = hpPct + '%';
+  elHpPct.textContent = hpPct.toFixed(1) + '%'; // remaining health, one decimal
 
   // rocket reload: the 🚀 circle fills up (radial) as it reloads
   const cd = player.secondary.fireCooldown;
@@ -759,10 +680,7 @@ function update(dt) {
 
   // touch: turn the nose toward the touch direction (directional steering)
   if (touchAim.active) {
-    let diff = touchAim.heading - player.heading;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    player.heading += Math.sign(diff) * Math.min(Math.abs(diff), turn * dt);
+    player.heading = steerToward(player.heading, touchAim.heading, turn * dt);
   }
 
   // --- player: thrust ---
@@ -826,14 +744,12 @@ function update(dt) {
 
     // target angle toward the player
     const desired = Math.atan2(toPlayer.x, toPlayer.z);
-    let diff = desired - e.heading;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    e.heading += Math.sign(diff) * Math.min(Math.abs(diff), e.turnRate * dt);
+    const diff = shortestAngleDelta(e.heading, desired); // used below for aim checks
+    e.heading = steerToward(e.heading, desired, e.turnRate * dt);
 
     const ef = forwardVec(e.heading);
     // keep distance ~20: close in from afar, back off if too close
-    const thrust = dist > 22 ? 1 : (dist < 14 ? -0.6 : 0.15);
+    const thrust = enemyThrustFactor(dist);
     e.vel.addScaledVector(ef, e.acceleration * thrust * dt);
     e.vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
     if (e.engine.maxSpeed && e.vel.length() > e.engine.maxSpeed) e.vel.setLength(e.engine.maxSpeed);
@@ -842,9 +758,9 @@ function update(dt) {
     clampToArena(e.mesh.position);
     e.mesh.rotation.y = e.heading;
 
-    // fire the gun if roughly facing the player and not too far away
+    // fire the gun (only if the enemy has one) when roughly facing the player and in range
     e.cooldown -= dt;
-    if (e.cooldown <= 0 && dist < 45 && Math.abs(diff) < 0.25) {
+    if (e.weapon && e.cooldown <= 0 && dist < 45 && Math.abs(diff) < 0.25) {
       const muzzle = e.mesh.position.clone().addScaledVector(ef, 3);
       spawnBullet(muzzle, ef, e.weapon, false, e.vel);
       e.cooldown = e.weapon.fireCooldown + Math.random() * 0.5;
@@ -870,7 +786,7 @@ function update(dt) {
     let hit = false;
     if (b.fromPlayer) {
       for (const e of enemies) {
-        if (b.mesh.position.distanceTo(e.mesh.position) < 2.6) {
+        if (b.mesh.position.distanceTo(e.mesh.position) < e.radius) {
           e.hp -= b.damage; hit = true; break;
         }
       }
@@ -911,11 +827,7 @@ function update(dt) {
       // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
       const to = r.target.mesh.position.clone().sub(r.obj.position);
       const desired = Math.atan2(to.x, to.z);
-      let cur = Math.atan2(r.vel.x, r.vel.z);
-      let diff = desired - cur;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      cur += Math.sign(diff) * Math.min(Math.abs(diff), r.turnRate * dt);
+      const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
       const speed = r.vel.length() + r.accel * dt;
       r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
     }
@@ -927,7 +839,7 @@ function update(dt) {
     let det = false;
     if (r.fromPlayer) {
       for (const e of enemies) {
-        if (e.mesh.position.distanceTo(r.obj.position) <= r.detonateR) { det = true; break; }
+        if (e.mesh.position.distanceTo(r.obj.position) <= Math.max(r.detonateR, e.radius)) { det = true; break; }
       }
     } else if (player.alive && player.mesh.position.distanceTo(r.obj.position) <= r.detonateR) {
       det = true;
@@ -994,6 +906,7 @@ function update(dt) {
   // --- player death ---
   if (player.hp <= 0) {
     player.alive = false;
+    reportGame(score, performance.now() - gameStartTime); // save game to history
     overlayTitle.textContent = 'Ship destroyed';
     overlaySub.textContent = `Ships destroyed: ${score}`;
     overlay.style.display = 'flex';
@@ -1067,6 +980,7 @@ function reset() {
   player.secondaryCooldown = 0;
   player.alive = true;
   score = 0;
+  gameStartTime = performance.now(); // start timing a new game (for history)
   for (let i = 0; i < TARGET_ENEMIES; i++) spawnRandomEnemy();
   overlay.style.display = 'none';
 }
