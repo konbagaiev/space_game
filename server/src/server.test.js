@@ -89,6 +89,30 @@ test('progress: current level is level-1, and advancing unlocks the next levels'
   assert.equal(reg.currentProgress, 3);
 });
 
+test('briefing: advancing into level-2 returns its message and swaps the basic gun for the Machine Gun', async () => {
+  // a fresh player starts with the basic kinetic (weapon 1) as the gun
+  const before = await getJson('/api/players/brief-1/active-ship');
+  const gunBefore = before.loadout.mounts.find((m) => m.group === 'gun');
+  assert.equal(gunBefore.weapon, 1); // Basic kinetic
+
+  // clearing level-1 advances to level-2 → runs its briefing (message + replaceWeapon action)
+  const adv = await (await post('/api/players/brief-1/advance', {})).json();
+  assert.equal(adv.advanced, true);
+  assert.equal(adv.briefing.textKey, 'level.2.briefing');
+  assert.match(adv.briefing.text, /machine gun/i);
+
+  // the active ship's gun is now the Machine Gun (weapon 5); the rocket is untouched
+  const after = await getJson('/api/players/brief-1/active-ship');
+  assert.equal(after.loadout.mounts.find((m) => m.group === 'gun').weapon, 5);
+  assert.equal(after.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3);
+  assert.ok(!after.loadout.mounts.some((m) => m.weapon === 1), 'no basic kinetic remains');
+
+  // advancing to the last level (no briefing there) returns briefing: null
+  const adv2 = await (await post('/api/players/brief-1/advance', {})).json();
+  assert.equal(adv2.advanced, true);
+  assert.equal(adv2.briefing, null);
+});
+
 test('register: missing playerId -> 400', async () => {
   const r = await post('/api/players/register', {});
   assert.equal(r.status, 400);
@@ -228,7 +252,7 @@ test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector bo
 
 test('catalog: weapons are seeded with type bullet/rocket', async () => {
   const weapons = await getJson('/api/weapons');
-  assert.equal(weapons.length, 4);
+  assert.equal(weapons.length, 5);
   const types = new Set(weapons.map((w) => w.type));
   assert.deepEqual([...types].sort(), ['bullet', 'rocket']);
   const basic = weapons.find((w) => w.name === 'Basic kinetic');
@@ -236,6 +260,14 @@ test('catalog: weapons are seeded with type bullet/rocket', async () => {
   assert.equal(basic.stats.power, 10);
   assert.equal(basic.id, 1);            // stable id, referenced by ship mounts
   assert.equal(basic.stats.maxRange, 88); // bullet range is data-driven now
+  // Machine Gun: rapid-fire kinetic (low damage, fast cooldown)
+  const mg = weapons.find((w) => w.name === 'Machine Gun');
+  assert.equal(mg.id, 5);
+  assert.equal(mg.type, 'bullet');
+  assert.equal(mg.stats.power, 7);
+  assert.equal(mg.stats.fireCooldown, 0.1);
+  assert.equal(mg.stats.projectileSpeed, 50);
+  assert.equal(mg.stats.maxRange, 100);
   const rocket = weapons.find((w) => w.name === 'Rocket (homing)');
   assert.equal(rocket.type, 'rocket');
   assert.equal(rocket.id, 3);

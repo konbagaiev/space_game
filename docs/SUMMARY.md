@@ -58,7 +58,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
   player's homing rocket seeks the nearest enemy in a forward cone and trails smoke; a bullet subtracts
   its `power` from an opposite-side rocket's HP, shooting it down at 0 (enemy rocket 20 HP = two player
-  gun hits).
+  gun hits). Seeded bullets: **Basic kinetic** (id 1, power 10 / cooldown 0.18), **Kinetic (enemy)** (id 2),
+  and **Machine Gun** (id 5 — rapid-fire kinetic: power 7, cooldown 0.1, projectile speed 50, range 100,
+  weight 8). Rockets: **Rocket (homing)** (id 3), **Rocket (enemy)** (id 4).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun, 30 hp light hull),
   `rocketeer` (yellow, gun + rocket, same 30 hp light hull), `medium` (purple ex-mini-boss, two rocket
   launchers, 150 hp medium hull → sluggish, 2× model), and the `boss` (`first boss` — orange, its own
@@ -82,6 +84,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Backend). On load the client fetches **that** level (`GET /api/players/:id/level`, not a hard-coded
   one); clearing a level **unlocks the next** (the `win` handler POSTs `/advance`, then loads the new
   level so the next **Restart** plays it). A new player starts on `level-1`; the last level stays put.
+- **Between-level briefings** — a level descriptor can carry an optional **`briefing`** (`{ textKey,
+  text, actions[] }`). When the player advances **into** a level, the server runs that briefing's
+  `actions` (server-authoritative, once — progress only moves forward) and returns the message; the
+  client shows it on a **briefing overlay** between the victory screen and the next run. Actions are a
+  typed, extensible list dispatched server-side; the one type today is **`replaceWeapon` `{from, to}`**
+  (swaps a mounted weapon id on the active `player_ships` loadout). `level-2`'s briefing narrates the
+  weapons-factory mission and swaps the basic gun (1) for the **Machine Gun** (5). After advancing, the
+  client reloads the active ship and rebuilds the player so the new loadout takes effect. (Future action
+  types: add credits, add to a stash, etc.)
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
   `levelRunner`. Three levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%
@@ -167,7 +178,8 @@ first translation). See DECISIONS §10.
   whose `ALTER TABLE` can't add a FK column with a non-null default, and which doesn't enforce FKs
   anyway). Defaults to **1** (`level-1`). `registerPlayer` returns it as `currentProgress`;
   `GET /api/players/:id/level` returns that level's descriptor; `POST /api/players/:id/advance` unlocks
-  the next level (smallest level id greater than the current — gap-tolerant; a no-op at the last level).
+  the next level (smallest level id greater than the current — gap-tolerant; a no-op at the last level),
+  runs the newly-unlocked level's `briefing.actions` server-side, and returns its `briefing` message.
 - **Game history & credits:** at the end of each run the client posts `{ credits, kills, durationMs }`
   to `/api/games`; the server stores it (`games.credits`, renamed from `score` in migration 008) **and
   banks the earned credits** into `players.credits` (the persistent balance, default **1000** for new
@@ -242,9 +254,9 @@ first translation). See DECISIONS §10.
 - **Client logic** — `client/src/*.test.js` (22): drive derivation (engine + mass), balance, steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (19): register / record game + credit banking / history /
+- **Backend API** — `server/src/server.test.js` (20): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
-  player progress (current level + advance) + language preference + credits balance. Mounts the Express app on an ephemeral port against a temp SQLite DB
+  player progress (current level + advance) + language preference + credits balance + level briefing (weapon swap). Mounts the Express app on an ephemeral port against a temp SQLite DB
   (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly), `db.js` honors `DB_PATH`.

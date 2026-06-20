@@ -165,6 +165,35 @@ export async function getCurrentLevel(playerId) {
 }
 
 // Unlock the next level after the player's current one. No-op at the last level.
+// Replace a mounted weapon on the player's active ship (idempotent; no-op if `fromId` isn't mounted).
+async function replaceActiveShipWeapon(playerId, fromId, toId) {
+  const { rows } = await pool.query(`SELECT ps.loadout, s.stats FROM player_ships ps JOIN ships s ON s.id = ps.ship_id
+    WHERE ps.player_id = $1 AND ps.is_active LIMIT 1`, [playerId]);
+  if (!rows[0]) return;
+  const loadout = rows[0].loadout || {};   // JSONB → already parsed
+  const stats = rows[0].stats;
+  loadout.mounts = (loadout.mounts ?? stats.mounts ?? []).map((m) => (m.weapon === fromId ? { ...m, weapon: toId } : m));
+  await pool.query('UPDATE player_ships SET loadout = $1::jsonb WHERE player_id = $2 AND is_active',
+    [JSON.stringify(loadout), playerId]);
+}
+
+// Run a level briefing's actions (extend with new action types as the game grows).
+async function applyBriefingActions(playerId, actions) {
+  for (const a of (actions || [])) {
+    if (a.type === 'replaceWeapon') await replaceActiveShipWeapon(playerId, a.from, a.to);
+  }
+}
+
+// The briefing for a level (message + actions run server-side), or null. Returns only { textKey, text }.
+async function runLevelBriefing(playerId, levelId) {
+  const { rows } = await pool.query('SELECT descriptor FROM levels WHERE id = $1', [levelId]);
+  if (!rows[0]) return null;
+  const briefing = rows[0].descriptor.briefing;
+  if (!briefing) return null;
+  await applyBriefingActions(playerId, briefing.actions);
+  return { textKey: briefing.textKey ?? null, text: briefing.text ?? null };
+}
+
 export async function advanceProgress(playerId) {
   await registerPlayer(playerId);
   const cur = await pool.query('SELECT current_progress FROM players WHERE id = $1', [playerId]);
@@ -172,9 +201,10 @@ export async function advanceProgress(playerId) {
   if (next.rows[0] && next.rows[0].id != null) {
     const id = Number(next.rows[0].id);
     await pool.query('UPDATE players SET current_progress = $1 WHERE id = $2', [id, playerId]);
-    return { currentProgress: id, advanced: true };
+    const briefing = await runLevelBriefing(playerId, id);
+    return { currentProgress: id, advanced: true, briefing };
   }
-  return { currentProgress: cur.rows[0].current_progress, advanced: false };
+  return { currentProgress: cur.rows[0].current_progress, advanced: false, briefing: null };
 }
 
 export async function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0 } = {}) {

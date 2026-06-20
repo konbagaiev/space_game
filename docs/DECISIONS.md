@@ -325,6 +325,29 @@ coordinated production/domain migration done with the deploy, not a text edit.
 
 ---
 
+## 13. Between-level briefings — data-driven message + server-side actions
+
+**Decision.** Progression beats (a story message + state changes) between levels are **data on the
+level**, not hardcoded. A level descriptor carries an optional `briefing = { textKey, text, actions[] }`
+shown when the player advances **into** that level (i.e. after clearing the previous one — "what's next").
+
+**Actions run server-side, on advance, exactly once.** `advanceProgress` dispatches each action through a
+typed switch (`replaceWeapon` today; `addCredits` / `addToStash` later). They mutate authoritative player
+state (`player_ships.loadout` for a weapon swap), so they must be server-side — the client can't be trusted
+and the change must persist. Because `current_progress` only moves **forward** (monotonic), advancing into a
+given level happens once, so its actions run once; individual actions are also written to be **idempotent**
+(`replaceWeapon` is a no-op if the `from` weapon isn't mounted), so a retry can't double-apply.
+
+**Why on the *next* level (not an `onComplete` of the finished one):** the narrative is "here's a tougher
+mission and a better weapon for it", which belongs to the upcoming level; it also means the last level needs
+no briefing (there's no "next"). The client shows the returned message on a dedicated briefing overlay
+between the victory screen and the next run, then reloads the active ship so the swap is visible.
+
+**Side fix:** `buildPlayerFor` now uses the active ship's **persisted loadout/components** (it previously
+always used catalog defaults), which is what makes a stored weapon swap actually take effect in-game.
+
+---
+
 ## Future ideas
 
 sound · solid asteroids with bounce ·

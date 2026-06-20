@@ -86,17 +86,51 @@ export function getCurrentLevel(playerId) {
   return { name: row.name, descriptor: JSON.parse(row.descriptor) };
 }
 
-// Unlock the next level after the player's current one (smallest level id greater than
-// the current). No-op (already at the last level) returns advanced:false.
+// Replace a mounted weapon on the player's active ship (materializes the effective mounts into the
+// loadout override with `fromId` swapped to `toId`). Idempotent: a no-op if `fromId` isn't mounted.
+function replaceActiveShipWeapon(playerId, fromId, toId) {
+  const row = db.prepare(`SELECT ps.loadout, s.stats FROM player_ships ps JOIN ships s ON s.id = ps.ship_id
+    WHERE ps.player_id = ? AND ps.is_active = 1 LIMIT 1`).get(playerId);
+  if (!row) return;
+  const loadout = JSON.parse(row.loadout || '{}');
+  const stats = JSON.parse(row.stats);
+  loadout.mounts = (loadout.mounts ?? stats.mounts ?? []).map((m) => (m.weapon === fromId ? { ...m, weapon: toId } : m));
+  db.prepare('UPDATE player_ships SET loadout = ? WHERE player_id = ? AND is_active = 1')
+    .run(JSON.stringify(loadout), playerId);
+}
+
+// Run a level briefing's actions (server-authoritative, persistent). Extend the switch with new
+// action types as the game grows (e.g. addCredits, addToStash). Unknown types are ignored.
+function applyBriefingActions(playerId, actions) {
+  for (const a of (actions || [])) {
+    if (a.type === 'replaceWeapon') replaceActiveShipWeapon(playerId, a.from, a.to);
+  }
+}
+
+// The briefing attached to a level (message + actions), or null. Returns only what the client needs
+// to display ({ textKey, text }); actions are run server-side, not sent to the client.
+function runLevelBriefing(playerId, levelId) {
+  const row = db.prepare('SELECT descriptor FROM levels WHERE id = ?').get(levelId);
+  if (!row) return null;
+  const briefing = JSON.parse(row.descriptor).briefing;
+  if (!briefing) return null;
+  applyBriefingActions(playerId, briefing.actions);
+  return { textKey: briefing.textKey ?? null, text: briefing.text ?? null };
+}
+
+// Unlock the next level after the player's current one (smallest level id greater than the current).
+// On a real advance, runs the newly-unlocked level's briefing (actions + message). No-op (already at
+// the last level) returns advanced:false. Because progress only moves forward, each briefing runs once.
 export function advanceProgress(playerId) {
   registerPlayer(playerId);
   const p = db.prepare('SELECT current_progress FROM players WHERE id = ?').get(playerId);
   const next = db.prepare('SELECT MIN(id) AS id FROM levels WHERE id > ?').get(p.current_progress);
   if (next && next.id != null) {
     db.prepare('UPDATE players SET current_progress = ? WHERE id = ?').run(next.id, playerId);
-    return { currentProgress: next.id, advanced: true };
+    const briefing = runLevelBriefing(playerId, next.id);
+    return { currentProgress: next.id, advanced: true, briefing };
   }
-  return { currentProgress: p.current_progress, advanced: false };
+  return { currentProgress: p.current_progress, advanced: false, briefing: null };
 }
 
 // Record one finished game in the player's history AND bank the credits earned into the player's

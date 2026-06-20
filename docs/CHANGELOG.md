@@ -5,6 +5,20 @@
 
 ## 2026-06-20
 
+- **Between-level briefings (data-driven message + actions).** A level descriptor can now carry an
+  optional `briefing` (`{ textKey, text, actions[] }`). When a player advances **into** a level, the
+  server (`advanceProgress`) runs that briefing's `actions` server-side (once — progress only moves
+  forward) and returns the message; the client shows it on a new **briefing overlay** between the
+  victory screen and the next run. Actions are typed/extensible (dispatched server-side); the first is
+  **`replaceWeapon {from,to}`**, which swaps a mounted weapon id on the active `player_ships` loadout.
+  `level-2` now narrates the weapons-factory mission and swaps the basic gun (1) → **Machine Gun** (5).
+  Also fixed `buildPlayerFor` to actually use the active ship's persisted loadout/components (it was
+  ignoring them), and the client reloads the active ship after advancing so the swap takes effect.
+  No migration (briefing lives in the level descriptor JSON). i18n: `level.2.briefing`, `ui.briefing.title`
+  (EN+RU). Verified end-to-end (beat level-1 → briefing shows → gun becomes the Machine Gun). Server tests 20.
+- **New weapon: Machine Gun.** A second kinetic bullet (`weapons` id 5): power 7 (vs Basic kinetic's 10)
+  but twice the rate of fire (cooldown 0.1), projectile speed 50, range 100, weight 8, tracer-yellow
+  rounds. Added to the catalog seed (no migration — upserts on startup); not yet mounted on any ship.
 - **Renamed the game to "Vega Sentinels" (Phase A: text).** Brand/wordmark Space Ninjas → Vega Sentinels
   (stays Latin in every locale); player in-game title Ninja → Sentinel (RU Ниндзя → Страж). Updated the
   i18n catalogs (`ui.title`, `ui.welcome.greeting`, `level.1/3.victory` values + context — keys unchanged),

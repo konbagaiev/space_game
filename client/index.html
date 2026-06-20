@@ -45,7 +45,7 @@
     background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; font-weight: 700;
   }
   /* Welcome / start screen */
-  #welcome {
+  #welcome, #briefing {
     position: fixed; inset: 0; z-index: 12; display: none;
     align-items: center; justify-content: center; flex-direction: column;
     background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
@@ -58,8 +58,10 @@
     border-radius: 7px; padding: 5px 11px;
   }
   #lang-switch button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
-  #welcome h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
-  #welcome .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
+  #welcome h1, #briefing h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
+  #briefing h1 { font-size: 30px; }
+  #welcome .intro, #briefing .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
+  #briefing .intro { opacity: .9; max-width: 600px; line-height: 1.55; }
   #welcome .pick { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: .6; margin-bottom: 12px; }
   #ship-choices { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 28px; }
   .ship-card {
@@ -72,12 +74,12 @@
   .ship-card .ship-name { font-weight: 700; font-size: 17px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
   .ship-card .ship-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
   .ship-card .ship-stat { font-size: 13px; opacity: .8; line-height: 1.7; }
-  #takeoff {
+  #takeoff, #briefing-go {
     pointer-events: auto; cursor: pointer;
     padding: 14px 44px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
     background: linear-gradient(90deg,#ffb35a,#ff7a3c); color: #1a0c02; letter-spacing: 1px;
   }
-  #takeoff:hover { filter: brightness(1.08); }
+  #takeoff:hover, #briefing-go:hover { filter: brightness(1.08); }
   /* hide the in-game HUD while the welcome screen is up */
   body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers { display: none; }
   /* Perf overlay (load) */
@@ -173,6 +175,11 @@
   <div class="pick" data-i18n="ui.welcome.pick">Pick your ship</div>
   <div id="ship-choices"></div>
   <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
+</div>
+<div id="briefing">
+  <h1 id="briefing-title" data-i18n="ui.briefing.title">Briefing</h1>
+  <p class="intro" id="briefing-text"></p>
+  <button id="briefing-go" data-i18n="ui.button.take_off">Take off 🚀</button>
 </div>
 <div id="gametitle" data-i18n="ui.title">Vega Sentinels</div>
 <div id="markers"></div>
@@ -1059,18 +1066,25 @@ function bankRun() {
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
-// On victory: tell the server to unlock the next level, then load that level so the next
-// Restart plays it (rebuilding the map if the new level uses a different one). Best-effort.
+// On victory: tell the server to unlock the next level, then load that level so the next Restart
+// plays it (rebuilding the map if it changed). The advance may return a `briefing` (message + the
+// server already ran its actions, e.g. a weapon swap) and may have changed the active ship — so we
+// reload the active ship and rebuild the player, and stash the briefing to show before the next run.
+let pendingBriefing = null; // a level briefing to display before the next Restart (set on advance)
 async function unlockNextLevel() {
   if (!playerId) return;
   try {
-    await fetch(`/api/players/${playerId}/advance`, { method: 'POST' });
+    const adv = await (await fetch(`/api/players/${playerId}/advance`, { method: 'POST' })).json();
+    if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) pendingBriefing = adv.briefing;
     const level = await fetchJson(`/api/players/${playerId}/level`);
     if (level.descriptor.map !== CATALOG.level.map) {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
     }
     CATALOG.level = level.descriptor; // reset() restarts CATALOG.level → next Restart is the new level
+    // a briefing action may have changed the loadout (weapon swap) — reload the active ship + rebuild
+    const refreshed = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
+    if (refreshed) { activeShip = refreshed; if (refreshed.ship) buildPlayerFor(refreshed.ship); }
   } catch { /* progression is best-effort; on failure the same level replays */ }
 }
 let gameStartTime = performance.now();
@@ -1503,7 +1517,24 @@ function reset() {
   levelRunner.start(CATALOG.level); // restart the level from phase 1 (spawns via update())
   overlay.style.display = 'none';
 }
-document.getElementById('restart').addEventListener('click', reset);
+// Leaving the game-over / victory overlay: if a level briefing is pending (set when the player just
+// advanced a level), show it first; otherwise start the next run immediately.
+const briefingEl = document.getElementById('briefing');
+function showBriefing(b) {
+  document.getElementById('briefing-text').textContent = b.textKey ? t(b.textKey) : (b.text || '');
+  overlay.style.display = 'none';
+  briefingEl.style.display = 'flex';
+}
+function leaveOverlay() {
+  if (pendingBriefing) { showBriefing(pendingBriefing); return; }
+  reset();
+}
+document.getElementById('restart').addEventListener('click', leaveOverlay);
+document.getElementById('briefing-go').addEventListener('click', () => {
+  pendingBriefing = null;
+  briefingEl.style.display = 'none';
+  reset();
+});
 
 // Test/inspection hook for the headless visual tests (client/visual/). Inert during normal
 // play — only attached when the page is opened with `?debug`. It exposes simulation internals
@@ -1536,11 +1567,17 @@ const fetchJson = async (url) => {
   return r.json();
 };
 
-// (Re)build the player ship and swap it into the scene.
+// (Re)build the player ship and swap it into the scene. For the player's *active* ship we use its
+// persisted loadout/components (so a DB weapon swap from a level briefing actually takes effect);
+// other (preview) ships fall back to their catalog defaults.
 let currentShipName = null;
+let activeShip = null; // the player's active-ship record { ship, loadout, components, ... }
 function buildPlayerFor(ship) {
   if (player) scene.remove(player.mesh);
-  player = buildPlayer({ ship, loadout: { mounts: ship.stats.mounts }, components: ship.components });
+  const useActive = activeShip && activeShip.ship && activeShip.ship.name === ship.name;
+  const loadout = useActive ? activeShip.loadout : { mounts: ship.stats.mounts };
+  const components = useActive ? activeShip.components : ship.components;
+  player = buildPlayer({ ship, loadout, components });
   currentShipName = ship.name;
   scene.add(player.mesh);
 }
@@ -1668,6 +1705,7 @@ async function bootstrap() {
     // the player's active ship (auto-registers) decides the default selection
     let active = null;
     if (playerId) active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
+    activeShip = active; // drives the persisted loadout in buildPlayerFor (weapon swaps, etc.)
     if (active && typeof active.credits === 'number') balance = active.credits; // account balance for the HUD
     const playerShips = ships.filter((s) => s.type === 'player');
     buildPlayerFor((active && active.ship) || playerShips[0]); // idle ship behind the welcome screen

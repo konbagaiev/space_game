@@ -47,6 +47,8 @@ export const WEAPONS = [
       power: 30, accel: 9, turnRate: 1.0, launchSpeed: 12, maxRange: 120, health: 20,
       detonateRadius: 3.2, blastRadius: 5, blastVisual: 4.5,
       fireCooldown: 4, weight: 6, projectileColor: 0xffcc66 } },
+  { id: 5, name: 'Machine Gun', type: 'bullet', stats: { // rapid-fire kinetic: low per-hit damage, high rate of fire
+      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066 } },
 ];
 
 // fire-group presets (a group can carry a player key and/or an enemy AI rule; ships use what fits)
@@ -129,8 +131,15 @@ export const LEVELS = [
         { name: 'victory', event: 'win', delay: 2, textKey: 'level.1.victory', text: 'Level 1 cleared! Nice flying, Sentinel.' },
       ] } },
   // Level 2 — medium: ends with a single mini-boss (the medium) as the boss.
+  // `briefing` is shown when the player unlocks this level (after clearing level 1); its `actions`
+  // run server-side once, on advance (see advanceProgress). Here: swap the basic gun for a Machine Gun.
   { name: 'level-2', descriptor: {
       title: 'Level 2', map: 'home-system',
+      briefing: {
+        textKey: 'level.2.briefing',
+        text: 'The pirates are storming our weapons factory — we have to push them back before they arm their fleet. Their heavier squadrons are dug in there, so command has refitted your ship: the basic gun is out, a Machine Gun is in. Go take it back, Sentinel.',
+        actions: [ { type: 'replaceWeapon', from: 1, to: 5 } ], // Basic kinetic -> Machine Gun
+      },
       phases: [
         { name: 'wave-1', // only fighters until 5 kills
           spawn: { maxConcurrent: 4, pool: [ { ship: 'basic enemy ship', chance: 100 } ] },
