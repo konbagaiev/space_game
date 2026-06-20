@@ -5,6 +5,21 @@
 
 ## 2026-06-20
 
+- **Ships are assembled from DB components (hull + engine + maneuvering thrusters).** New `components`
+  table (migration 005): `name`, `type` (`hull`/`engine`/`thruster`), `weight` (→ mass), `stats` JSON —
+  hull `{durability,volume}`, engine `{power → acceleration, maxSpeed, exhaust}`, thruster
+  `{power → turn rate}`. Ships + player_ships got a `components` JSON ref column (`{hull,engine,thruster}`;
+  player_ships overrides the ship's defaults). The client fetches `/api/components` and assembles ships
+  from them; `deriveDrive` = `acceleration = engine.power × 48/mass`, `turnRate = thruster.power ×
+  48/mass`. Rebalance: fighter + rocketeer share one **Light hull (30 HP, durability equalised)** + Scout
+  engine + Scout thrusters (rocketeer is a touch less agile only from its extra rocket weight); the
+  ex-mini-boss is `medium` (role renamed from `heavy`) — Medium hull (150 HP) + the same Scout engine +
+  weak thrusters → sluggish (turn ~0.35, as before); the boss has its own heavy hull (weight 100) +
+  bigger engine + thrusters tuned to **turn = 1.2× the medium** (~0.42), a heavy tank (mass 190). Player
+  baseline preserved (mass 48 → accel 10 / turn 2.0). Weapon weight counts in mass. `components.js`
+  trimmed to the pure drive math (dead hardcoded catalogs removed); unit tests rewritten.
+  **Clarified the level pool field `weight` → `chance`** (spawn frequency, not ship mass).
+  API: `GET /api/components`.
 - **Welcome / start screen.** On load the game shows a welcome overlay — "Welcome, Ninja. Our home
   system is under attack. Pick your ship and help us clear it." — with a **ship picker** (cards built
   from the player-type ships in the DB, showing hull HP + weapon summary) and a **Take off** button.

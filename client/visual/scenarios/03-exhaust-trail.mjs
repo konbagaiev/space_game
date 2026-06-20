@@ -9,7 +9,7 @@ export default async function ({ page, assert, shot }) {
     g.enemies.forEach((e) => g.scene.remove(e.mesh));
     g.enemies.length = 0; // clear the default ring (mostly off-screen)
     const base = g.player.mesh.position;
-    ['fighter', 'heavy'].forEach((k, i) => {
+    ['fighter', 'medium'].forEach((k, i) => {
       g.spawnEnemy(k);
       const e = g.enemies[g.enemies.length - 1];
       e.mesh.position.set(base.x + (i ? 34 : -34), 0.6, base.z - 34); // ~48 away → thrust toward player
@@ -21,17 +21,16 @@ export default async function ({ page, assert, shot }) {
 
   const data = await page.evaluate(() => {
     const g = window.__game;
-    const exhaustOf = (role) => g.catalog.enemyShips.find((s) => s.stats.role === role).stats.engine.exhaust.color;
     return {
       trailCount: g.trail.length,
       colors: [...new Set(g.trail.map((t) => t.mesh.material.color.getHex()))],
-      scout: exhaustOf('fighter'), // fighter + rocketeer use the scout engine
-      heavy: exhaustOf('heavy'),
+      // the exhaust color of the actually-spawned enemies (resolved from their engine component)
+      enemyExhausts: [...new Set(g.enemies.map((e) => e.engine.exhaust.color))],
     };
   });
 
   assert.ok(data.trailCount > 0, 'enemies emit exhaust trail particles while thrusting');
-  const usesEnemyColor = data.colors.includes(data.scout) || data.colors.includes(data.heavy);
+  const usesEnemyColor = data.colors.some((c) => data.enemyExhausts.includes(c));
   assert.ok(usesEnemyColor, `trail uses an enemy exhaust color (saw ${data.colors.map((c) => '0x' + c.toString(16))})`);
   await shot('thrusting');
 }

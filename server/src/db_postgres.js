@@ -24,13 +24,22 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_games_player ON games(player_id);
 
-    CREATE TABLE IF NOT EXISTS ships (
-      id        BIGSERIAL PRIMARY KEY,
-      name      TEXT  NOT NULL UNIQUE,
-      type      TEXT  NOT NULL,   -- 'player' | 'enemy'
-      stats     JSONB NOT NULL,   -- hull/engine/thrusters, weapon refs, color, sizeScale, ...
-      model_url TEXT              -- 3D model link (nullable; primitive if null)
+    CREATE TABLE IF NOT EXISTS components (
+      id     BIGINT  PRIMARY KEY,  -- stable explicit ids (referenced from ships/player_ships)
+      name   TEXT    NOT NULL UNIQUE,
+      type   TEXT    NOT NULL,     -- 'hull' | 'engine'
+      weight INTEGER NOT NULL,     -- contributes to ship mass
+      stats  JSONB   NOT NULL      -- hull {durability,volume} / engine {power,turnPower,maxSpeed,exhaust}
     );
+    CREATE TABLE IF NOT EXISTS ships (
+      id         BIGSERIAL PRIMARY KEY,
+      name       TEXT  NOT NULL UNIQUE,
+      type       TEXT  NOT NULL,   -- 'player' | 'enemy'
+      stats      JSONB NOT NULL,   -- role/color/sizeScale, groups + mounts (weapons by id)
+      model_url  TEXT,             -- 3D model link (nullable; primitive if null)
+      components JSONB             -- { hull: <id>, engine: <id> }
+    );
+    ALTER TABLE ships ADD COLUMN IF NOT EXISTS components JSONB;
     CREATE TABLE IF NOT EXISTS weapons (
       id    BIGINT PRIMARY KEY,   -- stable explicit ids (referenced from ships/loadout)
       name  TEXT  NOT NULL UNIQUE,
@@ -42,10 +51,12 @@ export async function migrate() {
       player_id  TEXT    NOT NULL REFERENCES players(id),
       ship_id    BIGINT  NOT NULL REFERENCES ships(id),
       is_active  BOOLEAN NOT NULL DEFAULT false,
-      loadout    JSONB   NOT NULL DEFAULT '{}'::jsonb,  -- weapon ids by slot ({} = ship defaults)
+      loadout    JSONB   NOT NULL DEFAULT '{}'::jsonb,  -- may override mounts ({} = ship defaults)
       meta       JSONB,                                 -- future data/overrides
+      components JSONB,                                 -- override the ship's components (null = ship defaults)
       created_at BIGINT  NOT NULL
     );
+    ALTER TABLE player_ships ADD COLUMN IF NOT EXISTS components JSONB;
     CREATE INDEX IF NOT EXISTS idx_player_ships_player ON player_ships(player_id);
     CREATE UNIQUE INDEX IF NOT EXISTS uniq_player_active_ship ON player_ships(player_id) WHERE is_active;
 
@@ -63,7 +74,13 @@ export async function migrate() {
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
   // propagates on deploy (ids/foreign keys preserved — weapons keyed by id, ships/maps/levels by name).
-  const { SHIPS, WEAPONS, MAPS, LEVELS } = await import('./catalog_seed.js');
+  const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS } = await import('./catalog_seed.js');
+  for (const c of COMPONENTS) {
+    await pool.query(
+      `INSERT INTO components (id, name, type, weight, stats) VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, stats = EXCLUDED.stats`,
+      [c.id, c.name, c.type, c.weight, JSON.stringify(c.stats)]);
+  }
   for (const w of WEAPONS) {
     await pool.query(
       `INSERT INTO weapons (id, name, type, stats) VALUES ($1, $2, $3, $4::jsonb)
@@ -72,9 +89,9 @@ export async function migrate() {
   }
   for (const s of SHIPS) {
     await pool.query(
-      `INSERT INTO ships (name, type, stats, model_url) VALUES ($1, $2, $3::jsonb, $4)
-       ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url`,
-      [s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null]);
+      `INSERT INTO ships (name, type, stats, model_url, components) VALUES ($1, $2, $3::jsonb, $4, $5::jsonb)
+       ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, components = EXCLUDED.components`,
+      [s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, JSON.stringify(s.components)]);
   }
   for (const m of MAPS) {
     await pool.query(
@@ -143,15 +160,20 @@ export async function stats() {
   return { players: p.rows[0].n, games: g.rows[0].n };
 }
 
-// Catalog: ships (player + enemies) and weapons. stats is JSONB -> pg returns it already parsed.
+// Catalog: ships, weapons, components. JSONB columns come back already parsed.
 export async function getShips() {
-  const { rows } = await pool.query('SELECT id, name, type, stats, model_url FROM ships ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats, modelUrl: r.model_url }));
+  const { rows } = await pool.query('SELECT id, name, type, stats, model_url, components FROM ships ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats, modelUrl: r.model_url, components: r.components }));
 }
 
 export async function getWeapons() {
   const { rows } = await pool.query('SELECT id, name, type, stats FROM weapons ORDER BY id');
   return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats }));
+}
+
+export async function getComponents() {
+  const { rows } = await pool.query('SELECT id, name, type, weight, stats FROM components ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, stats: r.stats }));
 }
 
 export async function getMap(name) {
@@ -168,7 +190,8 @@ export async function getLevel(name) {
 export async function getActivePlayerShip(playerId) {
   await registerPlayer(playerId);
   const { rows } = await pool.query(`
-    SELECT ps.id AS player_ship_id, ps.loadout, s.id AS ship_id, s.name, s.type, s.stats, s.model_url
+    SELECT ps.id AS player_ship_id, ps.loadout, ps.components AS ps_components,
+           s.id AS ship_id, s.name, s.type, s.stats, s.model_url, s.components AS ship_components
     FROM player_ships ps JOIN ships s ON s.id = ps.ship_id
     WHERE ps.player_id = $1 AND ps.is_active LIMIT 1`, [playerId]);
   const row = rows[0];
@@ -176,7 +199,8 @@ export async function getActivePlayerShip(playerId) {
   const stats = row.stats, loadout = row.loadout || {};
   return {
     playerShipId: Number(row.player_ship_id),
-    ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url },
+    ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url, components: row.ship_components },
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
+    components: row.ps_components ?? row.ship_components,
   };
 }

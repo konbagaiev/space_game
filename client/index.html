@@ -710,12 +710,19 @@ function spawnSmoke(pos) {
 // Runtime catalog, populated from the DB in bootstrap() (bottom of the script). Pure derivation
 // (deriveDrive / mass) still comes from components.js; the DATA (ships, weapons) comes from the API.
 const CATALOG = {
-  weapons: new Map(),   // id -> { id, name, type, ...stats }
-  enemyShips: [],       // DB ship rows with type 'enemy' (used by spawnEnemy(role) / tests)
-  shipByName: new Map(),// name -> ship row (any type; the level's spawn pools reference these)
-  level: null,          // the active level descriptor (phase/wave script)
+  weapons: new Map(),    // id -> { id, name, type, ...stats }
+  components: new Map(), // id -> { id, name, type, weight, ...stats }  (hulls + engines)
+  enemyShips: [],        // DB ship rows with type 'enemy' (used by spawnEnemy(role) / tests)
+  shipByName: new Map(), // name -> ship row (any type; the level's spawn pools reference these)
+  level: null,           // the active level descriptor (phase/wave script)
 };
 const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
+// Resolve a ship's component refs ({ hull, engine, thruster }) to objects (stats + weight).
+function resolveComponents(refs) {
+  const r = refs || {};
+  const get = (id) => { const c = CATALOG.components.get(id); return c ? { name: c.name, weight: c.weight, ...c.stats } : null; };
+  return { hull: get(r.hull), engine: get(r.engine), thruster: get(r.thruster) };
+}
 
 // ---------- Player (built from the player's active ship in bootstrap) ----------
 let player = null;
@@ -740,18 +747,19 @@ function buildGroups(groupDefs, mounts) {
 
 function buildPlayer(active) {
   const s = active.ship.stats;
+  const { hull, engine, thruster } = resolveComponents(active.components); // effective hull + engine + thrusters
   const p = {
     mesh: makeShip(s.color, modelSpec(active.ship.modelUrl)),
     vel: new THREE.Vector3(),
     heading: 0,                       // rotation angle around Y
     sizeScale: s.sizeScale || 1,
-    hull: s.hull, engine: s.engine, thrusters: s.thrusters,
+    hull, engine, thruster,
     mounts: buildMounts(active.loadout.mounts), // resolved weapons; also feeds ship mass
-    hp: s.hull.durability, maxHp: s.hull.durability,
+    hp: hull.durability, maxHp: hull.durability,
     alive: true,
   };
   p.groups = buildGroups(s.groups, p.mounts); // fire channels (gun / rocket / ...)
-  deriveDrive(p); // acceleration <- engine power, turnRate <- thrusters, scaled by mass (incl. mounts)
+  deriveDrive(p); // acceleration <- engine power, turnRate <- engine turnPower, scaled by mass
   return p;
 }
 
@@ -761,14 +769,15 @@ const enemies = [];
 // Build one enemy from a DB ship row (type 'enemy'); weapons + fire groups come from its stats.
 function spawnEnemyShip(shipDef) {
   const s = shipDef.stats;
+  const { hull, engine, thruster } = resolveComponents(shipDef.components);
   const e = {
     role: s.role, color: s.color, sizeScale: s.sizeScale || 1,
     mesh: makeShip(s.color, modelSpec(shipDef.modelUrl)),
     vel: new THREE.Vector3(),
     heading: Math.random() * Math.PI * 2,
-    hull: s.hull, engine: s.engine, thrusters: s.thrusters,
+    hull, engine, thruster,
     mounts: buildMounts(s.mounts),
-    hp: s.hull.durability,
+    hp: hull.durability,
     radius: 2.6 * (s.sizeScale || 1),  // hit radius scales with model size
     alive: true,
   };
@@ -829,9 +838,9 @@ const levelRunner = {
   },
 
   pickShip(pool) {
-    const total = pool.reduce((s, p) => s + (p.weight || 1), 0);
+    const total = pool.reduce((s, p) => s + (p.chance || 1), 0); // `chance` = spawn frequency
     let r = Math.random() * total;
-    for (const p of pool) { r -= (p.weight || 1); if (r < 0) return p.ship; }
+    for (const p of pool) { r -= (p.chance || 1); if (r < 0) return p.ship; }
     return pool[0].ship;
   },
 
@@ -1469,10 +1478,12 @@ const fetchJson = async (url) => {
 let currentShipName = null;
 function buildPlayerFor(ship) {
   if (player) scene.remove(player.mesh);
-  player = buildPlayer({ ship, loadout: { mounts: ship.stats.mounts } });
+  player = buildPlayer({ ship, loadout: { mounts: ship.stats.mounts }, components: ship.components });
   currentShipName = ship.name;
   scene.add(player.mesh);
 }
+// A ship's hull HP for the welcome card (resolved from its hull component).
+const shipHullHp = (ship) => CATALOG.components.get(ship.components?.hull)?.stats.durability ?? '?';
 
 // ---------- Welcome screen: pick a ship, then take off ----------
 const welcomeEl = document.getElementById('welcome');
@@ -1494,7 +1505,7 @@ function showWelcome(playerShips) {
     card.className = 'ship-card' + (s === selectedShip ? ' selected' : '');
     card.innerHTML =
       `<div class="ship-name"><span class="ship-dot" style="background:${cssColor(s.stats.color)}"></span>${s.name}</div>` +
-      `<div class="ship-stat">Hull: ${s.stats.hull.durability} HP</div>` +
+      `<div class="ship-stat">Hull: ${shipHullHp(s)} HP</div>` +
       `<div class="ship-stat">Weapons: ${mountSummary(s.stats)}</div>`;
     card.addEventListener('click', () => {
       selectedShip = s;
@@ -1526,10 +1537,12 @@ document.getElementById('takeoff').addEventListener('click', takeOff);
 
 async function bootstrap() {
   try {
-    const [weapons, ships, level] = await Promise.all([
-      fetchJson('/api/weapons'), fetchJson('/api/ships'), fetchJson('/api/levels/level-1'),
+    const [weapons, components, ships, level] = await Promise.all([
+      fetchJson('/api/weapons'), fetchJson('/api/components'),
+      fetchJson('/api/ships'), fetchJson('/api/levels/level-1'),
     ]);
     for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, ...w.stats });
+    for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);
     CATALOG.level = level.descriptor;

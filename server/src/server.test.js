@@ -104,22 +104,42 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   const player = ships.find((s) => s.name === 'Basic player ship');
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player.glb');
-  assert.equal(player.stats.hull.durability, 100);     // stats parsed from JSON
-  assert.equal(player.stats.mounts[0].weapon, 1);      // mounts reference weapons BY ID
+  assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8 }); // assembled from components
+  assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');
   assert.equal(enemies.length, 4); // fighter, rocketeer, mini-boss, first boss
+  // fighter + rocketeer share the same light hull + scout engine + scout thrusters
+  const fighter = ships.find((s) => s.name === 'basic enemy ship');
+  const rocketeer = ships.find((s) => s.name === 'basic rocket enemy');
+  assert.deepEqual(fighter.components, { hull: 2, engine: 6, thruster: 9 });
+  assert.deepEqual(rocketeer.components, fighter.components);
   const mini = ships.find((s) => s.name === 'basic mini boss');
-  assert.equal(mini.stats.sizeScale, 2);
-  // the mini-boss has TWO rocket launchers (the multi-weapon showcase), staggered
-  assert.equal(mini.stats.mounts.length, 2);
-  assert.ok(mini.stats.mounts.every((m) => m.weapon === 4 && m.group === 'rocket'));
+  assert.equal(mini.stats.role, 'medium');
+  assert.deepEqual(mini.components, { hull: 3, engine: 6, thruster: 10 }); // medium hull + scout engine + weak thrusters
+  assert.equal(mini.stats.mounts.length, 2);                 // two staggered rocket launchers
   assert.deepEqual(mini.stats.mounts.map((m) => m.delay).sort(), [0, 0.2]);
   const boss = ships.find((s) => s.name === 'first boss');
   assert.equal(boss.stats.role, 'boss');
-  assert.equal(boss.stats.hull.durability, 210);
-  assert.equal(boss.modelUrl, 'assets/ships/boss.glb');
+  assert.deepEqual(boss.components, { hull: 4, engine: 7, thruster: 11 }); // its own hull + engine + thrusters
   assert.equal(boss.stats.mounts.length, 4); // two guns + two rockets
+});
+
+test('catalog: components (hulls + engines + thrusters) are seeded', async () => {
+  const comps = await getJson('/api/components');
+  assert.equal(comps.length, 11); // 4 hulls + 3 engines + 4 thrusters
+  const light = comps.find((c) => c.name === 'Light hull');
+  assert.equal(light.type, 'hull');
+  assert.equal(light.weight, 8);
+  assert.equal(light.stats.durability, 30); // fighter + rocketeer durability equalized to 30
+  const scout = comps.find((c) => c.name === 'Scout engine');
+  assert.equal(scout.type, 'engine');
+  assert.equal(scout.stats.power, 12.6); // acceleration (no turnPower — that's the thruster's job now)
+  const scoutThr = comps.find((c) => c.name === 'Scout thrusters');
+  assert.equal(scoutThr.type, 'thruster');
+  assert.equal(scoutThr.stats.power, 1.6); // maneuverability (turn rate)
+  const medium = comps.find((c) => c.name === 'Medium hull');
+  assert.equal(medium.weight, 60);         // heavier hull -> sluggish via mass
 });
 
 test('levels: level-1 phase script is served', async () => {
@@ -168,8 +188,9 @@ test('active ship: a new player gets a default active ship (empty loadout -> shi
   assert.equal(active.ship.name, 'Basic player ship');
   assert.equal(active.ship.type, 'player');
   assert.equal(active.ship.modelUrl, 'assets/ships/player.glb');
-  // empty loadout falls back to the ship's default mounts
+  // empty loadout/components fall back to the ship's defaults
   assert.equal(active.loadout.mounts.length, 2);
   assert.equal(active.loadout.mounts.find((m) => m.group === 'gun').weapon, 1);    // Basic kinetic
   assert.equal(active.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3); // Rocket (homing)
+  assert.deepEqual(active.components, { hull: 1, engine: 5, thruster: 8 });
 });

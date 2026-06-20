@@ -1,85 +1,68 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  ENGINES, THRUSTERS, HULLS, WEAPONS, ENEMY_KINDS,
-  deriveDrive, hitsToKill, shipMass, REFERENCE_MASS,
-} from './components.js';
+import { deriveDrive, hitsToKill, shipMass, REFERENCE_MASS } from './components.js';
 
-// Fresh loadouts per call (deriveDrive mutates the ship object).
-const playerLoadout = () => ({
-  hull: HULLS.basic, engine: ENGINES.basic, thrusters: THRUSTERS.basic,
-  weapon: WEAPONS.basicKinetic, secondary: WEAPONS.homingRocket,
-});
-const shipFromKind = (k) => ({
-  hull: k.hull, engine: k.engine, thrusters: k.thrusters, weapon: k.weapon, rocket: k.rocket,
-});
+// Synthetic components mirroring the DB seed: hull {weight,durability}, engine {weight,power},
+// thruster {weight,power}.
+const HULL = {
+  basic:  { weight: 20, durability: 100 },
+  light:  { weight: 8,  durability: 30 },
+  medium: { weight: 60, durability: 150 },
+};
+const ENGINE = {
+  basic: { weight: 10, power: 10 },
+  scout: { weight: 6,  power: 12.6 },
+};
+const THR = {
+  basic: { weight: 4, power: 2.0 },
+  scout: { weight: 3, power: 1.6 },
+};
+const W = { gun: { weight: 6 }, rocket: { weight: 8 } };
+const mount = (weapon) => ({ weapon });
+const playerShip = () => ({ hull: HULL.basic, engine: ENGINE.basic, thruster: THR.basic, mounts: [mount(W.gun), mount(W.rocket)] });
 
-test('shipMass = sum of all component weights', () => {
-  const expected = HULLS.basic.weight + ENGINES.basic.weight + THRUSTERS.basic.weight
-    + WEAPONS.basicKinetic.weight + WEAPONS.homingRocket.weight;
-  assert.equal(shipMass(playerLoadout()), expected);
-  assert.equal(shipMass(playerLoadout()), 48);
-});
-
-test('shipMass ignores empty slots (e.g. no gun)', () => {
-  const heavy = shipFromKind(ENEMY_KINDS.heavy); // weapon: null
-  assert.equal(heavy.weapon, null);
-  const expected = HULLS.heavy.weight + ENGINES.heavy.weight + THRUSTERS.heavy.weight + WEAPONS.enemyRocket.weight;
-  assert.equal(shipMass(heavy), expected);
+test('shipMass = hull + engine + thruster + every mounted weapon weight', () => {
+  assert.equal(shipMass(playerShip()), 20 + 10 + 4 + 6 + 8);
+  assert.equal(shipMass(playerShip()), REFERENCE_MASS); // 48
 });
 
-test('deriveDrive: at the reference mass, stats equal raw component power', () => {
-  const ship = deriveDrive(playerLoadout());
-  assert.equal(ship.mass, REFERENCE_MASS);
-  assert.equal(ship.acceleration, 10);  // engine.power, massFactor = 1
-  assert.equal(ship.turnRate, 2.0);     // thrusters.power, massFactor = 1
+test('shipMass with no mounts = hull + engine + thruster only', () => {
+  assert.equal(shipMass({ hull: HULL.light, engine: ENGINE.scout, thruster: THR.scout, mounts: [] }), 8 + 6 + 3);
 });
 
-test('deriveDrive: heavier ship has lower acceleration AND turn rate', () => {
-  const base = deriveDrive(playerLoadout());
-  const heavier = deriveDrive({ ...playerLoadout(), hull: HULLS.heavy }); // +130 weight
-  assert.ok(heavier.mass > base.mass);
-  assert.ok(heavier.acceleration < base.acceleration);
-  assert.ok(heavier.turnRate < base.turnRate);
+test('deriveDrive: at the reference mass, stats equal the engine/thruster power', () => {
+  const s = deriveDrive(playerShip());
+  assert.equal(s.mass, REFERENCE_MASS);
+  assert.equal(s.acceleration, 10);  // engine.power, massFactor = 1
+  assert.equal(s.turnRate, 2.0);     // thruster.power, massFactor = 1
 });
 
-test('deriveDrive: adding a component (weapon) increases mass and lowers stats', () => {
-  const without = deriveDrive({ hull: HULLS.basic, engine: ENGINES.basic, thrusters: THRUSTERS.basic });
-  const withGun = deriveDrive({ hull: HULLS.basic, engine: ENGINES.basic, thrusters: THRUSTERS.basic, weapon: WEAPONS.basicKinetic });
+test('deriveDrive: a heavier hull lowers acceleration AND turn rate (same engine + thruster)', () => {
+  const light  = deriveDrive({ hull: HULL.light,  engine: ENGINE.scout, thruster: THR.scout, mounts: [] });
+  const medium = deriveDrive({ hull: HULL.medium, engine: ENGINE.scout, thruster: THR.scout, mounts: [] });
+  assert.ok(medium.mass > light.mass);
+  assert.ok(medium.acceleration < light.acceleration); // same drive, more mass -> slower
+  assert.ok(medium.turnRate < light.turnRate);
+});
+
+test('deriveDrive: adding a weapon increases mass and lowers mobility', () => {
+  const without = deriveDrive({ hull: HULL.light, engine: ENGINE.scout, thruster: THR.scout, mounts: [] });
+  const withGun = deriveDrive({ hull: HULL.light, engine: ENGINE.scout, thruster: THR.scout, mounts: [mount(W.gun)] });
   assert.ok(withGun.mass > without.mass);
   assert.ok(withGun.acceleration < without.acceleration);
   assert.ok(withGun.turnRate < without.turnRate);
 });
 
-test('deriveDrive: lighter ship is faster than the reference', () => {
-  const light = deriveDrive({ hull: HULLS.fighter, engine: ENGINES.basic, thrusters: THRUSTERS.basic });
+test('deriveDrive: a light ship out-accelerates the raw engine power', () => {
+  const light = deriveDrive({ hull: HULL.light, engine: ENGINE.scout, thruster: THR.scout, mounts: [] });
   assert.ok(light.mass < REFERENCE_MASS);
-  assert.ok(light.acceleration > ENGINES.basic.power); // massFactor > 1
+  assert.ok(light.acceleration > ENGINE.scout.power); // massFactor > 1
 });
 
-test('heavy enemy is slower than the fighter in both acceleration and turn rate', () => {
-  const heavy = deriveDrive(shipFromKind(ENEMY_KINDS.heavy));
-  const fighter = deriveDrive(shipFromKind(ENEMY_KINDS.fighter));
-  assert.ok(heavy.mass > fighter.mass);
-  assert.ok(heavy.acceleration < fighter.acceleration);
-  assert.ok(heavy.turnRate < fighter.turnRate);
+test('hitsToKill: light hull (30hp) dies in 3 player gun hits (10 dmg)', () => {
+  assert.equal(hitsToKill(HULL.light.durability, 10), 3);
 });
 
-test('base balance: fighter dies in 2 player hits', () => {
-  assert.equal(hitsToKill(HULLS.fighter.durability, WEAPONS.basicKinetic.power), 2);
-});
-
-test('heavy hull is 150 hp (15 gun hits)', () => {
-  assert.equal(HULLS.heavy.durability, 150);
-  assert.equal(hitsToKill(HULLS.heavy.durability, WEAPONS.basicKinetic.power), 15);
-});
-
-test('heavy enemy kind is rocket-only and double-sized', () => {
-  assert.equal(ENEMY_KINDS.heavy.weapon, null);
-  assert.ok(ENEMY_KINDS.heavy.rocket);
-  assert.equal(ENEMY_KINDS.heavy.sizeScale, 2);
-});
-
-test('player rocket out-damages the gun', () => {
-  assert.ok(WEAPONS.homingRocket.power > WEAPONS.basicKinetic.power);
+test('hitsToKill: medium hull (150hp) takes 15 gun hits', () => {
+  assert.equal(hitsToKill(HULL.medium.durability, 10), 15);
 });

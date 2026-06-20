@@ -11,6 +11,7 @@ export const getPlayerGames = (...a) => impl.getPlayerGames(...a);
 export const stats = (...a) => impl.stats(...a);
 export const getShips = (...a) => impl.getShips(...a);
 export const getWeapons = (...a) => impl.getWeapons(...a);
+export const getComponents = (...a) => impl.getComponents(...a);
 export const getActivePlayerShip = (...a) => impl.getActivePlayerShip(...a);
 export const getMap = (...a) => impl.getMap(...a);
 export const getLevel = (...a) => impl.getLevel(...a);

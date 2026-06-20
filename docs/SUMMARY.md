@@ -29,40 +29,42 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   overlay (game over / victory) is up.
 
 ## Ship model (DB-driven)
-Ships and weapons are **defined in the database** (`ships`, `weapons`); the client fetches them on
-startup (`bootstrap()`) and builds every ship from that data. Only the pure derivation
-(`deriveDrive`/`shipMass` in `client/src/components.js`) stays client-side; the hardcoded catalogs
-there (`ENGINES`/`HULLS`/`WEAPONS`/`ENEMY_KINDS`) are no longer used by the game (kept as the seed's
-mirror + unit tests). A ship's `stats` (JSON) carry hull/engine/thrusters, **fire `groups`** (named channels — a key for
-the player, an AI range/aim rule for enemies) and **`mounts`** (each: a weapon id, its `group`, a
-lateral `offset` for side-by-side fire, a `delay` for staggered volleys). One ship can mount several
-of the same weapon (the mini-boss has two rocket launchers). Weapons (`bullet`/`rocket`) carry their
-characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets add `accel`/`turnRate`/
-`health` (HP — reduced by a bullet's `power`, shot down at 0)/`blastRadius`/`detonateRadius`/`maxRange`. The player's active ship + loadout
-(which may override `mounts`) come from `player_ships` (see Backend).
+Ships, components and weapons are **defined in the database** (`ships`, `components`, `weapons`); the
+client fetches them on startup (`bootstrap()`) and assembles every ship from that data. Only the pure
+derivation (`deriveDrive`/`shipMass` in `client/src/components.js`) stays client-side. A ship is a
+**hull + an engine + maneuvering thrusters** (referenced by id in the ship's `components` field) plus
+**mounted weapons** (`stats.mounts`). `stats` (JSON) also carry **fire `groups`** (named channels — a
+key for the player, an AI range/aim rule for enemies), `role`, `color`, `sizeScale`. A `mount` = a
+weapon id, its `group`, a lateral `offset` (side-by-side fire), a `delay` (staggered volley); a ship
+can mount several of the same weapon (the mini-boss has two rocket launchers). The player's active ship
++ its loadout/components overrides come from `player_ships` (see Backend).
+- **Components** (DB `components`, `type` `hull`/`engine`/`thruster`; `weight` column + `stats` JSON):
+  a **hull** has `{ durability (= maxHp), volume }`; an **engine** has `{ power → acceleration, maxSpeed,
+  exhaust }`; a **thruster** has `{ power → maneuverability (turn rate) }`. Seeded: hulls
+  Basic(100hp)/Light(30hp)/Medium(150hp)/Boss(210hp); engines + thrusters Basic/Scout/Medium/Boss. The
+  fighter, rocketeer and the medium (ex-mini-boss) share the **same Scout engine**; fighter + rocketeer
+  also share the Scout thrusters, while the medium has weak (Medium) thrusters → it's sluggish.
+- **Mass** = hull + engine + thruster weight + every mounted weapon's `weight` (`shipMass`).
+  Acceleration and turn rate are **derived AND scaled by mass** (`deriveDrive`): `massFactor =
+  REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`, `turnRate = thruster.power ×
+  massFactor`. `REFERENCE_MASS` = 48 (the player's loadout: hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8)
+  keeps the player at accel 10 / turn 2.0; heavier ships are slower & less agile.
 - **Visual model:** each ship's `model_url` (in the DB) points to a `.glb` (the exported primitives
   live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it loads /
   as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. Swap a `model_url` for a
   real model later. See `client/assets/README.md` + `CREDITS.md`.
-- Each ship's `stats` (in the DB) carry: **hull** (`durability` = maxHp, `weight`, `volume`),
-  **main engine** (`power` → acceleration, `maxSpeed`, `weight`, `exhaust`), **maneuvering thrusters**
-  (`power` → turn rate, `weight`), `color`, `sizeScale`, and its `groups` + `mounts` (above).
-- **Mass** = hull + engine + thrusters + every mounted weapon's `weight` (`shipMass`). Acceleration and
-  turn rate are **derived from power AND mass** (`deriveDrive`): `massFactor = REFERENCE_MASS / mass`;
-  `acceleration = engine.power × massFactor`, `turnRate = thrusters.power × massFactor`.
-  `REFERENCE_MASS` = 48 (the player's loadout: hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8)
-  keeps the player at accel 10 / turn 2.0; heavier ships are slower.
 - **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
   `maxRange`, `fireCooldown`; rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
   player's homing rocket seeks the nearest enemy in a forward cone and trails smoke; a bullet subtracts
   its `power` from an opposite-side rocket's HP, shooting it down at 0 (enemy rocket 20 HP = two player
   gun hits).
-- **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun), `rocketeer`
-  (yellow, gun + rocket), `heavy` (purple mini-boss, two rocket launchers, 150 hp, slow, 2× model),
-  and the `boss` (`first boss` — orange, its own `boss.glb` model, 210 hp, 3× model, moves like the
-  heavy, two guns + two rocket launchers; spawned only in the level's boss phase). When/which enemies spawn is decided by the **level** (see Gameplay),
-  not the ship; ship `radius` scales with model size.
+- **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun, 30 hp light hull),
+  `rocketeer` (yellow, gun + rocket, same 30 hp light hull), `medium` (purple ex-mini-boss, two rocket
+  launchers, 150 hp medium hull → sluggish, 2× model), and the `boss` (`first boss` — orange, its own
+  `boss.glb` model + own hull/engine, 210 hp, 3× model, two guns + two rocket launchers; spawned only
+  in the level's boss phase). Which enemies spawn is decided by the **level** (see Gameplay), not the
+  ship; ship `radius` scales with model size.
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 20 hp hull, gun 5 damage
   (an enemy dies in 2 player hits; the player survives 20 enemy hits).
 
@@ -116,26 +118,27 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
 - **Auto-registration by browser:** the client makes a UUID on first visit (kept in `localStorage`)
   and posts it on load; the server creates the player if new. Anonymous, minimal friction.
 - **Game history:** on game over the client posts `{ score, kills, durationMs }`, saved per player.
-- **Catalog tables:** `ships` (one table for the player + enemies; `name`, `type`
-  `player`/`enemy`, `stats` JSON — references weapons by id, plus enemy spawn rules
-  `spawnWeight`/`unlockAfterKills` — and `model_url`) and `weapons` (`name`, `type`
-  `bullet`/`rocket`, `stats` JSON; stable ids 1–4), seeded from a shared snapshot
-  (`server/src/catalog_seed.js`). **The client builds all ships from these.**
+- **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url`,
+  `components` JSON ref `{hull,engine,thruster}`), `components` (`name`, `type`
+  `hull`/`engine`/`thruster`, `weight`, `stats` JSON; stable ids) and `weapons` (`name`, `type`
+  `bullet`/`rocket`, `stats` JSON; stable ids), seeded from a shared snapshot
+  (`server/src/catalog_seed.js`). **The client assembles all ships from these.**
 - **`player_ships`:** ships a player owns; exactly one `is_active` goes into battle. `loadout` JSON
-  holds weapon ids by slot (empty ⇒ the ship's default weapons), `meta` JSON for future overrides.
-  A new player auto-gets a default active ship on registration.
+  overrides `mounts` (empty ⇒ the ship's default weapons), `components` JSON overrides the ship's
+  hull/engine (null ⇒ ship defaults), `meta` JSON for the future. A new player auto-gets a default
+  active ship on registration.
 - **Maps & levels:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`),
   built by `buildMap`. `levels` table holds a JSON descriptor per level (a map + a phase/wave script,
   seeded as `level-1`), played by the client's `levelRunner`. Served via `GET /api/maps/:name` and
   `GET /api/levels/:name`.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
-  `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/players/:id/active-ship`,
-  `GET /api/maps/:name`, `GET /api/levels/:name`.
+  `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
+  `GET /api/players/:id/active-ship`, `GET /api/maps/:name`, `GET /api/levels/:name`.
 - **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
   Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
   Migrations run on startup; `npm run migrate` runs them for the active backend.
 - **Catalog seeding (data safety):** `server/src/catalog_seed.js` is the single source of truth for the
-  **reference tables** (`weapons`, `ships`, `maps`, `levels`). On **every server startup** both backends
+  **reference tables** (`components`, `weapons`, `ships`, `maps`, `levels`). On **every server startup** both backends
   **upsert** these rows from the seed (`INSERT … ON CONFLICT DO UPDATE`, keyed by weapon `id` / ship/map/
   level `name`) — so editing `catalog_seed.js` ships content/balance changes to prod on the next deploy.
   This is **update-and-insert, not a wipe**: nothing is deleted, so removing/renaming a seed entry leaves
@@ -177,10 +180,10 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
 - More of the simulation can be extracted incrementally (it's still tied to Three.js objects + the render loop).
 
 ## Tests (built-in `node:test`, no deps)
-- **Client logic** — `client/src/*.test.js` (17): component derivation, mass, balance, steering math.
+- **Client logic** — `client/src/*.test.js` (14): drive derivation (engine + mass), balance, steering math.
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (11): register / record game / history / validation /
-  health / serves client / ships + weapons catalog. Mounts the Express app on an ephemeral port against a temp SQLite DB
+- **Backend API** — `server/src/server.test.js` (15): register / record game / history / validation /
+  health / serves client / ships + weapons + components + maps + levels catalog + active ship. Mounts the Express app on an ephemeral port against a temp SQLite DB
   (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly), `db.js` honors `DB_PATH`.

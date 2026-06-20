@@ -24,13 +24,16 @@ export async function migrate() {
 // Upsert the ship/weapon catalog from the shared snapshot. Runs on every startup, so editing
 // catalog_seed.js updates the rows (ids/foreign keys preserved — weapons keyed by id, ships by name).
 async function seedCatalog() {
-  const { SHIPS, WEAPONS, MAPS, LEVELS } = await import('./catalog_seed.js');
+  const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS } = await import('./catalog_seed.js');
+  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, stats) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, stats = excluded.stats`);
+  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, JSON.stringify(c.stats));
   const upW = db.prepare(`INSERT INTO weapons (id, name, type, stats) VALUES (?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, stats = excluded.stats`);
   for (const w of WEAPONS) upW.run(w.id, w.name, w.type, JSON.stringify(w.stats));
-  const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url) VALUES (?, ?, ?, ?)
-    ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url`);
-  for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null);
+  const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url, components) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url, components = excluded.components`);
+  for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, JSON.stringify(s.components));
   const upM = db.prepare(`INSERT INTO maps (name, descriptor) VALUES (?, ?)
     ON CONFLICT(name) DO UPDATE SET descriptor = excluded.descriptor`);
   for (const m of MAPS) upM.run(m.name, JSON.stringify(m.descriptor));
@@ -90,15 +93,21 @@ export function stats() {
   };
 }
 
-// Catalog: ships (player + enemies) and weapons. stats is stored as JSON text -> parse on read.
+// Catalog: ships (player + enemies), weapons, components. JSON columns parsed on read.
 export function getShips() {
-  return db.prepare('SELECT id, name, type, stats, model_url FROM ships ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, stats: JSON.parse(r.stats), modelUrl: r.model_url }));
+  return db.prepare('SELECT id, name, type, stats, model_url, components FROM ships ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, stats: JSON.parse(r.stats), modelUrl: r.model_url,
+      components: r.components ? JSON.parse(r.components) : null }));
 }
 
 export function getWeapons() {
   return db.prepare('SELECT id, name, type, stats FROM weapons ORDER BY id').all()
     .map((r) => ({ id: r.id, name: r.name, type: r.type, stats: JSON.parse(r.stats) }));
+}
+
+export function getComponents() {
+  return db.prepare('SELECT id, name, type, weight, stats FROM components ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, stats: JSON.parse(r.stats) }));
 }
 
 // A map's scene descriptor (the client renders it via buildMap).
@@ -118,16 +127,20 @@ export function getLevel(name) {
 export function getActivePlayerShip(playerId) {
   registerPlayer(playerId);
   const row = db.prepare(`
-    SELECT ps.id AS player_ship_id, ps.loadout, s.id AS ship_id, s.name, s.type, s.stats, s.model_url
+    SELECT ps.id AS player_ship_id, ps.loadout, ps.components AS ps_components,
+           s.id AS ship_id, s.name, s.type, s.stats, s.model_url, s.components AS ship_components
     FROM player_ships ps JOIN ships s ON s.id = ps.ship_id
     WHERE ps.player_id = ? AND ps.is_active = 1 LIMIT 1`).get(playerId);
   if (!row) return null;
   const stats = JSON.parse(row.stats);
   const loadout = JSON.parse(row.loadout || '{}');
+  const shipComponents = row.ship_components ? JSON.parse(row.ship_components) : null;
+  const psComponents = row.ps_components ? JSON.parse(row.ps_components) : null;
   return {
     playerShipId: row.player_ship_id,
-    ship: { id: row.ship_id, name: row.name, type: row.type, stats, modelUrl: row.model_url },
-    // effective loadout: an explicit loadout may override the mounts, else use the ship's defaults
+    ship: { id: row.ship_id, name: row.name, type: row.type, stats, modelUrl: row.model_url, components: shipComponents },
+    // effective loadout/components: a player override falls back to the ship's defaults
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
+    components: psComponents ?? shipComponents,
   };
 }

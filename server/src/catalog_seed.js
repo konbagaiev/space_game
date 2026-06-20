@@ -7,24 +7,26 @@
 // group with a lateral offset (side-by-side fire) and a delay (staggered volley). A player's
 // loadout (player_ships.loadout) may override `mounts`; empty ⇒ the ship's default mounts.
 
-// --- shared ship components ---
-const HULL = {
-  basic:     { name: 'Basic hull',     durability: 100, weight: 20,  volume: 100 },
-  fighter:   { name: 'Light hull',     durability: 20,  weight: 8,   volume: 40 },
-  rocketeer: { name: 'Rocketeer hull', durability: 40,  weight: 14,  volume: 60 },
-  heavy:     { name: 'Heavy hull',     durability: 150, weight: 60, volume: 200 },
-  boss:      { name: 'Boss hull',      durability: 210, weight: 60, volume: 400 }, // tanky but moves like heavy
-};
-const ENGINE = {
-  basic: { name: 'Basic main engine', power: 10,   maxSpeed: 0,    weight: 10, durability: 30, exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 } },
-  scout: { name: 'Scout main engine', power: 12.6, maxSpeed: 10.5, weight: 6,  durability: 20, exhaust: { color: 0xff8a5a, speed: 10, life: 0.4,  size: 0.4, spread: 0.3 } },
-  heavy: { name: 'Heavy main engine', power: 6,    maxSpeed: 5,    weight: 30, durability: 60, exhaust: { color: 0xff7040, speed: 9,  life: 0.5,  size: 0.7, spread: 0.4 } },
-};
-const THRUSTER = {
-  basic: { name: 'Basic thrusters', power: 2.0, weight: 4, durability: 15 },
-  scout: { name: 'Scout thrusters', power: 1.6, weight: 3, durability: 10 },
-  heavy: { name: 'Heavy thrusters', power: 0.8, weight: 8, durability: 25 },
-};
+// --- components: ships are assembled from a hull + an engine + maneuvering thrusters (weapons are
+// separate, in WEAPONS). `weight` (a column) sums into the ship's mass; `stats` (json) hold the rest.
+//   hull     : { durability (= maxHp), volume }
+//   engine   : { power -> acceleration, maxSpeed, exhaust }
+//   thruster : { power -> turn rate (maneuverability) }
+// So mobility = engine power (accel) / thruster power (turn), each scaled by mass. Stable explicit
+// ids (referenced from ships.components / player_ships.components as { hull, engine, thruster }).
+export const COMPONENTS = [
+  { id: 1, name: 'Basic hull',  type: 'hull', weight: 20,  stats: { durability: 100, volume: 100 } },
+  { id: 2, name: 'Light hull',  type: 'hull', weight: 8,   stats: { durability: 30,  volume: 40 } },
+  { id: 3, name: 'Medium hull', type: 'hull', weight: 60,  stats: { durability: 150, volume: 200 } },
+  { id: 4, name: 'Boss hull',   type: 'hull', weight: 100, stats: { durability: 210, volume: 400 } },
+  { id: 5, name: 'Basic engine', type: 'engine', weight: 10, stats: { power: 10,   maxSpeed: 0,    exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 } } },
+  { id: 6, name: 'Scout engine', type: 'engine', weight: 6,  stats: { power: 12.6, maxSpeed: 10.5, exhaust: { color: 0xff8a5a, speed: 10, life: 0.4,  size: 0.4, spread: 0.3 } } },
+  { id: 7, name: 'Boss engine',  type: 'engine', weight: 50, stats: { power: 19,   maxSpeed: 8,    exhaust: { color: 0xff5a3a, speed: 10, life: 0.6,  size: 0.9, spread: 0.45 } } },
+  { id: 8,  name: 'Basic thrusters',  type: 'thruster', weight: 4,  stats: { power: 2.0 } },
+  { id: 9,  name: 'Scout thrusters',  type: 'thruster', weight: 3,  stats: { power: 1.6 } },
+  { id: 10, name: 'Medium thrusters', type: 'thruster', weight: 8,  stats: { power: 0.63 } }, // sluggish (turn ~0.35)
+  { id: 11, name: 'Boss thrusters',   type: 'thruster', weight: 20, stats: { power: 1.66 } }, // turn ~0.42 = 1.2× medium
+];
 
 // --- weapons: type 'bullet' | 'rocket'; stats hold the (now fully DB-driven) characteristics ---
 // bullets: power (damage), projectileSpeed, maxRange (units), fireCooldown, weight, projectileColor.
@@ -51,44 +53,46 @@ export const WEAPONS = [
 const GUN = { key: 'Space', ai: { range: 45, aimTol: 0.25 } };
 const ROCKET = { key: 'KeyF', ai: { range: 80, aimTol: 0.40 } };
 
-// --- ships: one table for player + enemies; stats carry groups + mounts (weapons by id).
-// Enemy ships also carry spawn rules (spawnWeight, unlockAfterKills) so spawning is data-driven.
+// --- ships: one table for player + enemies. `components` references a hull + an engine by id
+// (player_ships.components may override them); `stats` carry role/color/sizeScale + groups + mounts.
+// fighter, rocketeer and the medium share the SAME engine (6); the medium is sluggish only because of
+// its heavier hull (mass). The boss has its own hull + engine; weapons are shared (in WEAPONS).
 export const SHIPS = [
-  { name: 'Basic player ship', type: 'player', modelUrl: 'assets/ships/player.glb', stats: {
-      role: 'player', color: 0x4d8bff, hull: HULL.basic, engine: ENGINE.basic, thrusters: THRUSTER.basic,
-      sizeScale: 1,
+  { name: 'Basic player ship', type: 'player', modelUrl: 'assets/ships/player.glb',
+    components: { hull: 1, engine: 5, thruster: 8 }, stats: {
+      role: 'player', color: 0x4d8bff, sizeScale: 1,
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 1, group: 'gun',    offset: 0, delay: 0 },
         { weapon: 3, group: 'rocket', offset: 0, delay: 0 },
       ] } },
-  { name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/fighter.glb', stats: {
-      role: 'fighter', color: 0xff5d5d, hull: HULL.fighter, engine: ENGINE.scout, thrusters: THRUSTER.scout,
-      sizeScale: 1,
+  { name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/fighter.glb',
+    components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
+      role: 'fighter', color: 0xff5d5d, sizeScale: 1,
       groups: { gun: GUN },
       mounts: [ { weapon: 2, group: 'gun', offset: 0, delay: 0 } ] } },
-  { name: 'basic rocket enemy', type: 'enemy', modelUrl: 'assets/ships/rocketeer.glb', stats: {
-      role: 'rocketeer', color: 0xffd24d, hull: HULL.rocketeer, engine: ENGINE.scout, thrusters: THRUSTER.scout,
-      sizeScale: 1,
+  { name: 'basic rocket enemy', type: 'enemy', modelUrl: 'assets/ships/rocketeer.glb',
+    components: { hull: 2, engine: 6, thruster: 9 }, stats: { // same hull + engine + thrusters as the fighter
+      role: 'rocketeer', color: 0xffd24d, sizeScale: 1,
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun',    offset: 0, delay: 0 },
         { weapon: 4, group: 'rocket', offset: 0, delay: 0 },
       ] } },
-  { name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/heavy.glb', stats: {
-      role: 'heavy', color: 0xb267e6, hull: HULL.heavy, engine: ENGINE.heavy, thrusters: THRUSTER.heavy,
-      sizeScale: 2,
+  { name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/heavy.glb',
+    components: { hull: 3, engine: 6, thruster: 10 }, stats: { // medium hull + scout engine + weak (Medium) thrusters
+      role: 'medium', color: 0xb267e6, sizeScale: 2,
       groups: { rocket: ROCKET },
       // two rocket launchers side by side, fired one after the other (0.2s stagger)
       mounts: [
         { weapon: 4, group: 'rocket', offset: -0.8, delay: 0 },
         { weapon: 4, group: 'rocket', offset:  0.8, delay: 0.2 },
       ] } },
-  // The end-of-level boss: big orange ship (its own .glb model), 210 HP, moves like the heavy, with
-  // two guns side by side + two staggered rocket launchers.
-  { name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb', stats: {
-      role: 'boss', color: 0xff8c2a, hull: HULL.boss, engine: ENGINE.heavy, thrusters: THRUSTER.heavy,
-      sizeScale: 3,
+  // The end-of-level boss: big orange ship (its own .glb), its own hull + engine, two guns side by
+  // side + two staggered rocket launchers.
+  { name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb',
+    components: { hull: 4, engine: 7, thruster: 11 }, stats: {
+      role: 'boss', color: 0xff8c2a, sizeScale: 3,
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun',    offset: -0.6, delay: 0 },
@@ -99,8 +103,9 @@ export const SHIPS = [
 ];
 
 // --- levels: a JSON descriptor the client's level runner plays. A level uses a map and runs an
-// ordered list of phases. Each phase optionally spawns enemies (a weighted pool, up to
-// `maxConcurrent`, with an optional `total` cap) and advances when a condition is met:
+// ordered list of phases. Each phase optionally spawns enemies from a pool weighted by `chance`
+// (spawn frequency — NOT ship mass), up to `maxConcurrent`, with an optional `total` cap, and
+// advances when a condition is met:
 //   { kills: N }           — N cumulative kills this level
 //   { killsSincePhase: N }  — N kills since entering this phase
 //   { allCleared: true }    — no enemies left (and the phase's `total` has all spawned)
@@ -111,18 +116,18 @@ export const LEVELS = [
       phases: [
         { name: 'wave-1',
           spawn: { maxConcurrent: 4, pool: [
-            { ship: 'basic enemy ship', weight: 75 },   // gun
-            { ship: 'basic rocket enemy', weight: 25 } ] }, // rocket
+            { ship: 'basic enemy ship', chance: 75 },   // gun
+            { ship: 'basic rocket enemy', chance: 25 } ] }, // rocket
           advanceWhen: { kills: 10 } },
         { name: 'wave-2',
           spawn: { maxConcurrent: 4, pool: [
-            { ship: 'basic enemy ship', weight: 65 },   // gun
-            { ship: 'basic rocket enemy', weight: 20 }, // rocket
-            { ship: 'basic mini boss', weight: 15 } ] }, // heavy
+            { ship: 'basic enemy ship', chance: 65 },   // gun
+            { ship: 'basic rocket enemy', chance: 20 }, // rocket
+            { ship: 'basic mini boss', chance: 15 } ] }, // medium
           advanceWhen: { kills: 20 } }, // stop spawning at 20 total kills
         { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
         { name: 'boss',
-          spawn: { maxConcurrent: 1, total: 1, pool: [ { ship: 'first boss', weight: 1 } ] },
+          spawn: { maxConcurrent: 1, total: 1, pool: [ { ship: 'first boss', chance: 1 } ] },
           advanceWhen: { allCleared: true } },
         { name: 'victory', event: 'win', delay: 5, text: 'Sector cleared. Congratulations, Space Ninja!' },
       ] } },

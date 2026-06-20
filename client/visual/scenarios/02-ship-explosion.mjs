@@ -10,8 +10,8 @@ export default async function ({ page, assert, shot }) {
     const base = g.player.mesh.position;
     const before = { ex: g.explosions.length, sp: g.sparks.length, sw: g.shockwaves.length };
     const playerExhaust = g.player.engine.exhaust.color;
-    const heavy = g.catalog.enemyShips.find((s) => s.stats.role === 'heavy');
-    const heavyExhaust = heavy.stats.engine.exhaust.color;
+    const medium = g.catalog.enemyShips.find((s) => s.stats.role === 'medium');
+    const heavyExhaust = g.catalog.components.get(medium.components.engine).stats.exhaust.color;
     // left: player engine exhaust, size 1 — right: heavy enemy exhaust, size 2
     g.spawnShipExplosion(new V(base.x - 40, 0.6, base.z - 22), playerExhaust, 1);
     g.spawnShipExplosion(new V(base.x + 40, 0.6, base.z - 22), heavyExhaust, 2);
