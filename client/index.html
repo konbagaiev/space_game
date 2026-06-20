@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Space Combat — Prototype</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #05060d; }
@@ -214,9 +215,57 @@ skyScene.add(sky);
 
 const PLANET_POS = new THREE.Vector3(-150, -285, -110);
 
+// Minimal procedural surface: a blue ocean world with depth variation and soft white clouds.
+// Drawn once onto a canvas (no asset files) and used as the planet's color map. The planet does
+// not rotate (to keep the terminator consistent), so a static, baked texture is enough.
+function makePlanetTexture() {
+  const w = 1024, h = 512;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = '#5a82c0'; // ocean base = the planet's original water color (keep this brightness)
+  ctx.fillRect(0, 0, w, h);
+
+  // soft radial blob helper (fades to transparent at the rim)
+  const blob = (x, y, r, color, alpha) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, color);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+  };
+
+  // keep features in the central latitude band: at the poles an equirectangular map pinches
+  // into visible streaks, so we avoid the top/bottom edges of the canvas.
+  const yBand = () => h * (0.14 + Math.random() * 0.72);
+
+  // ocean depth variation: gentle lighter shallows and slightly darker deeps, kept close to the
+  // base so the planet's overall brightness stays the same (it shouldn't look darker/unlit).
+  for (let i = 0; i < 26; i++) {
+    blob(Math.random() * w, yBand(), 60 + Math.random() * 140,
+      Math.random() < 0.5 ? '#7ba3da' : '#496ea6', 0.45);
+  }
+  // a few faint teal landmasses / reefs for variety
+  for (let i = 0; i < 8; i++) {
+    blob(Math.random() * w, yBand(), 50 + Math.random() * 90, '#4a8b86', 0.3);
+  }
+  // clouds: soft white wisps over the oceans
+  for (let i = 0; i < 60; i++) {
+    blob(Math.random() * w, yBand(), 25 + Math.random() * 70, '#eaf2ff', 0.18 + Math.random() * 0.22);
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 const planet = new THREE.Mesh(
   new THREE.SphereGeometry(60, 64, 64),
-  new THREE.MeshStandardMaterial({ color: 0x5a82c0, roughness: 0.9, metalness: 0.0, fog: false })
+  new THREE.MeshStandardMaterial({ map: makePlanetTexture(), roughness: 0.9, metalness: 0.0, fog: false })
 );
 planet.position.copy(PLANET_POS);
 sky.add(planet);
@@ -232,12 +281,60 @@ const halo = new THREE.Mesh(
 halo.position.copy(PLANET_POS);
 sky.add(halo);
 
+// Simple procedural moon surface: the base rock color with a scatter of craters (a darker floor
+// plus a lighter rim ring) and faint maria. Albedo only (no directional shading baked in) so it
+// doesn't fight the real sky-scene light. Drawn once onto a canvas, no asset files.
+function makeMoonTexture(baseHex) {
+  const w = 512, h = 256;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+
+  const br = (baseHex >> 16) & 255, bg = (baseHex >> 8) & 255, bb = baseHex & 255;
+  const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  const shade = (f) => `rgb(${clamp(br * f)},${clamp(bg * f)},${clamp(bb * f)})`;
+  // keep features off the poles (equirectangular pinching)
+  const yBand = () => h * (0.16 + Math.random() * 0.68);
+
+  ctx.fillStyle = shade(1);
+  ctx.fillRect(0, 0, w, h);
+
+  // faint maria (large soft light/dark patches)
+  for (let i = 0; i < 10; i++) {
+    const x = Math.random() * w, y = yBand(), r = 40 + Math.random() * 70;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, Math.random() < 0.5 ? shade(0.86) : shade(1.12));
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.4; ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // craters: darker floor + lighter rim ring
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * w, y = yBand(), r = 5 + Math.random() * 16;
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = shade(0.7);
+    ctx.beginPath(); ctx.arc(x, y, r * 0.78, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = shade(1.3);
+    ctx.lineWidth = Math.max(1, r * 0.16);
+    ctx.beginPath(); ctx.arc(x, y, r * 0.9, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 // moons: ORBIT the planet (only position changes). Lit by the same
 // real sky-scene light as the planet -> terminators are consistent.
 const moons = [];
 function makeMoon(radius, color, orbitR, tilt, speed) {
   const geo = new THREE.SphereGeometry(radius, 32, 32);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 1.0, metalness: 0.0, fog: false }));
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: makeMoonTexture(color), roughness: 1.0, metalness: 0.0, fog: false }));
   sky.add(mesh);
   const m = { mesh, orbitR, tilt, speed, angle: Math.random() * Math.PI * 2 };
   moons.push(m);

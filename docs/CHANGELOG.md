@@ -3,6 +3,19 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-20
+
+- **Minimal planet & moon textures.** The sky bodies got procedural surfaces (canvas color maps, no
+  asset files). Planet (`makePlanetTexture`): a blue ocean world (base = the original water color, so
+  brightness is unchanged) with depth variation and soft white clouds. Moons (`makeMoonTexture`,
+  per-moon from its base color): a scatter of craters (darker floor + lighter rim ring) plus faint
+  maria — albedo only, so it doesn't fight the real light. Features stay in the central latitude band
+  to avoid equirectangular pole-pinching; the bodies don't rotate, so the baked maps keep the day/night
+  terminator consistent.
+- **Favicon** (`client/favicon.svg`, linked from `index.html`): the game's signature blue planet with
+  a day/night terminator and a small moon on a deep-space tile (an SVG icon — crisp at any size; no
+  rocket/ship). Colors echo the game.
+
 ## 2026-06-19
 
 - **Headless visual / e2e test suite** (`client/visual/`, **not in CI**). Boots the real game in

@@ -74,6 +74,10 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
   the sense of speed) → planet + 2 moons (light parallax).
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the planet and moons).
+- The planet and moons have minimal **procedural textures** (baked canvas maps, no asset files):
+  `makePlanetTexture` — a blue ocean world with depth variation and soft clouds; `makeMoonTexture` —
+  craters (darker floor + lighter rim) plus faint maria, per moon from its base color. The bodies
+  don't rotate, so the terminator stays consistent.
 - Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
   (player and enemies), via the shared `emitExhaust` — particle speed = ship speed + ejection backward
   along the nozzle, colored by the engine's `exhaust.color`, emitted while thrusting forward.
