@@ -167,13 +167,13 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.4);
 sun.position.set(30, 60, 20);
 scene.add(sun);
 
-// SKY SCENE with its own light (real side source -> real terminator)
+// SKY SCENE — its own light (real side source -> real terminator). Its contents (background,
+// lights, planet, moons, stars) are built from the map descriptor by buildMap() during bootstrap.
 const skyScene = new THREE.Scene();
-skyScene.background = new THREE.Color(0x05060d); // the space background is drawn by the sky scene itself
-skyScene.add(new THREE.AmbientLight(0x3a506e, 0.7)); // night-side fill light (brighter)
-const skySun = new THREE.DirectionalLight(0xfff2e0, 3.4);
-skySun.position.set(170, -80, 40); // from the side -> terminator across the visible disc
-skyScene.add(skySun);
+
+// Per-map scene objects, built by buildMap(). At module scope so the render loop can reach them.
+let sky = null, stars = null, rocks = null, planetPos = new THREE.Vector3();
+const moons = [];
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -214,28 +214,27 @@ function makeStars(count, radius) {
   });
   return new THREE.Points(geo, mat);
 }
-const stars = makeStars(2500, 400);
-stars.renderOrder = -1; // draw stars first, before the planet and moons
-skyScene.add(stars);
 
-// ---------- Planet with moons ----------
-// The camera looks almost straight down, so the "sky" is visible only near the top
-// edge of the screen (the -Z direction). That is where we place the planet as a distant background.
-const sky = new THREE.Group();
-skyScene.add(sky);
+// ---------- Planet with moons (built by buildMap from the map descriptor) ----------
+// The camera looks almost straight down, so the "sky" is visible only near the top edge of the
+// screen (the -Z direction). That is where the planet sits as a distant background.
 
-const PLANET_POS = new THREE.Vector3(-150, -285, -110);
-
-// Minimal procedural surface: a blue ocean world with depth variation and soft white clouds.
+// Minimal procedural surface: an ocean world with depth variation and soft white clouds, tinted to
+// the map's ocean color.
 // Drawn once onto a canvas (no asset files) and used as the planet's color map. The planet does
 // not rotate (to keep the terminator consistent), so a static, baked texture is enough.
-function makePlanetTexture() {
+function makePlanetTexture(oceanHex = 0x5a82c0) {
   const w = 1024, h = 512;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
 
-  ctx.fillStyle = '#5a82c0'; // ocean base = the planet's original water color (keep this brightness)
+  // depth variation is derived from the ocean color so any tint works (lighter shallows / darker deeps)
+  const br = (oceanHex >> 16) & 255, bg = (oceanHex >> 8) & 255, bb = oceanHex & 255;
+  const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  const shade = (f) => `rgb(${clamp(br * f)},${clamp(bg * f)},${clamp(bb * f)})`;
+
+  ctx.fillStyle = shade(1); // ocean base
   ctx.fillRect(0, 0, w, h);
 
   // soft radial blob helper (fades to transparent at the rim)
@@ -253,11 +252,11 @@ function makePlanetTexture() {
   // into visible streaks, so we avoid the top/bottom edges of the canvas.
   const yBand = () => h * (0.14 + Math.random() * 0.72);
 
-  // ocean depth variation: gentle lighter shallows and slightly darker deeps, kept close to the
-  // base so the planet's overall brightness stays the same (it shouldn't look darker/unlit).
+  // ocean depth variation: gentle lighter shallows and slightly darker deeps, close to the base
+  // so the planet's overall brightness stays the same (it shouldn't look darker/unlit).
   for (let i = 0; i < 26; i++) {
     blob(Math.random() * w, yBand(), 60 + Math.random() * 140,
-      Math.random() < 0.5 ? '#7ba3da' : '#496ea6', 0.45);
+      Math.random() < 0.5 ? shade(1.36) : shade(0.82), 0.45);
   }
   // a few faint teal landmasses / reefs for variety
   for (let i = 0; i < 8; i++) {
@@ -273,24 +272,6 @@ function makePlanetTexture() {
   tex.anisotropy = 4;
   return tex;
 }
-
-const planet = new THREE.Mesh(
-  new THREE.SphereGeometry(60, 64, 64),
-  new THREE.MeshStandardMaterial({ map: makePlanetTexture(), roughness: 0.9, metalness: 0.0, fog: false })
-);
-planet.position.copy(PLANET_POS);
-sky.add(planet);
-
-// atmospheric rim (glow along the edge)
-const halo = new THREE.Mesh(
-  new THREE.SphereGeometry(64, 48, 48),
-  new THREE.MeshBasicMaterial({
-    color: 0x6fa8ff, transparent: true, opacity: 0.13,
-    side: THREE.BackSide, fog: false,
-  })
-);
-halo.position.copy(PLANET_POS);
-sky.add(halo);
 
 // Simple procedural moon surface: the base rock color with a scatter of craters (a darker floor
 // plus a lighter rim ring) and faint maria. Albedo only (no directional shading baked in) so it
@@ -340,9 +321,8 @@ function makeMoonTexture(baseHex) {
   return tex;
 }
 
-// moons: ORBIT the planet (only position changes). Lit by the same
-// real sky-scene light as the planet -> terminators are consistent.
-const moons = [];
+// One moon: ORBITs the planet (only its position changes). Lit by the same real sky-scene light as
+// the planet -> terminators are consistent. Added to the `sky` group; tracked in `moons`.
 function makeMoon(radius, color, orbitR, tilt, speed) {
   const geo = new THREE.SphereGeometry(radius, 32, 32);
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: makeMoonTexture(color), roughness: 1.0, metalness: 0.0, fog: false }));
@@ -351,8 +331,6 @@ function makeMoon(radius, color, orbitR, tilt, speed) {
   moons.push(m);
   return m;
 }
-makeMoon(11, 0xb9b2a6, 96, 0.5, 0.0625);
-makeMoon(7, 0x8f9aa6, 136, -0.35, -0.04);
 
 // position of a moon on a tilted orbit around the planet (the body itself does not rotate)
 function updateMoons(dt) {
@@ -361,46 +339,75 @@ function updateMoons(dt) {
     const px = Math.cos(m.angle) * m.orbitR;
     const pz = Math.sin(m.angle) * m.orbitR;
     m.mesh.position.set(
-      PLANET_POS.x + px,
-      PLANET_POS.y - pz * Math.sin(m.tilt),
-      PLANET_POS.z + pz * Math.cos(m.tilt)
+      planetPos.x + px,
+      planetPos.y - pz * Math.sin(m.tilt),
+      planetPos.z + pz * Math.cos(m.tilt)
     );
   }
 }
 
-// ---------- Parallax asteroid layer (speed reference) ----------
-// A layer of small rocks BEHIND the combat plane, in WORLD coordinates (not tied
-// to the camera). So while flying they rush past and give a sense of speed -
-// unlike the distant stars, which are stuck to the camera. 1 InstancedMesh = 1 draw call.
-const ROCK_COUNT = 500;
-const ROCK_SPREAD = ARENA + 200; // scattered everywhere (and a bit past the edges)
-const rocks = new THREE.InstancedMesh(
-  new THREE.IcosahedronGeometry(1, 0), // low-poly rock
-  new THREE.MeshStandardMaterial({ color: 0x6b6f78, roughness: 1.0, metalness: 0.05, flatShading: true }),
-  ROCK_COUNT
-);
-{
-  const m4 = new THREE.Matrix4();
-  const pos = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  const eul = new THREE.Euler();
-  const scl = new THREE.Vector3();
-  for (let i = 0; i < ROCK_COUNT; i++) {
-    pos.set(
-      (Math.random() * 2 - 1) * ROCK_SPREAD,
-      -6 - Math.random() * 10, // layer BEHIND (below) the combat plane
-      (Math.random() * 2 - 1) * ROCK_SPREAD
-    );
+// A parallax asteroid layer (one InstancedMesh = one draw call): small rocks BEHIND the combat
+// plane in WORLD coordinates (not stuck to the camera), so flying past them gives a sense of speed.
+function makeAsteroids(count, spread, color) {
+  const mesh = new THREE.InstancedMesh(
+    new THREE.IcosahedronGeometry(1, 0), // low-poly rock
+    new THREE.MeshStandardMaterial({ color, roughness: 1.0, metalness: 0.05, flatShading: true }),
+    count
+  );
+  const m4 = new THREE.Matrix4(), pos = new THREE.Vector3(), quat = new THREE.Quaternion();
+  const eul = new THREE.Euler(), scl = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    pos.set((Math.random() * 2 - 1) * spread, -6 - Math.random() * 10, (Math.random() * 2 - 1) * spread);
     eul.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
     quat.setFromEuler(eul);
     const s = 0.4 + Math.random() * 0.9; // small pebbles, but noticeably larger than stars
     scl.set(s, s, s);
     m4.compose(pos, quat, scl);
-    rocks.setMatrixAt(i, m4);
+    mesh.setMatrixAt(i, m4);
   }
-  rocks.instanceMatrix.needsUpdate = true;
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
 }
-scene.add(rocks);
+
+// ---------- Build the scene from a map descriptor (see server catalog_seed.js MAPS) ----------
+// Generic generator: builds the sky backdrop (background, lights, planet, moons, stars) and the
+// asteroid layer from `descriptor.params`. The combat-scene light is constant (gameplay readability).
+function buildMap(descriptor) {
+  const d = descriptor;
+  skyScene.background = new THREE.Color(d.background);
+  skyScene.add(new THREE.AmbientLight(d.sky.ambient.color, d.sky.ambient.intensity)); // night-side fill
+  const skySun = new THREE.DirectionalLight(d.sky.sun.color, d.sky.sun.intensity);    // side light -> terminator
+  skySun.position.set(...d.sky.sun.pos);
+  skyScene.add(skySun);
+
+  stars = makeStars(d.stars.count, d.stars.radius);
+  stars.renderOrder = -1; // draw stars first, before the planet and moons
+  skyScene.add(stars);
+
+  sky = new THREE.Group();
+  skyScene.add(sky);
+  planetPos.set(...d.planet.pos);
+
+  const planet = new THREE.Mesh(
+    new THREE.SphereGeometry(d.planet.radius, 64, 64),
+    new THREE.MeshStandardMaterial({ map: makePlanetTexture(d.planet.ocean), roughness: 0.9, metalness: 0.0, fog: false })
+  );
+  planet.position.copy(planetPos);
+  sky.add(planet);
+  if (d.planet.halo) { // atmospheric rim (glow along the edge)
+    const halo = new THREE.Mesh(
+      new THREE.SphereGeometry(d.planet.radius + 4, 48, 48),
+      new THREE.MeshBasicMaterial({ color: d.planet.halo.color, transparent: true, opacity: d.planet.halo.opacity, side: THREE.BackSide, fog: false })
+    );
+    halo.position.copy(planetPos);
+    sky.add(halo);
+  }
+
+  for (const mn of d.moons) makeMoon(mn.radius, mn.color, mn.orbitR, mn.tilt, mn.speed);
+
+  rocks = makeAsteroids(d.asteroids.count, d.asteroids.spread, d.asteroids.color);
+  scene.add(rocks);
+}
 
 // ---------- Ship factory ----------
 // A ship's 3D model comes from the DB (ships.model_url): null = the built-in primitive ship.
@@ -1306,16 +1313,20 @@ const fetchJson = async (url) => {
 
 async function bootstrap() {
   try {
-    const [weapons, ships] = await Promise.all([fetchJson('/api/weapons'), fetchJson('/api/ships')]);
+    const [weapons, ships, map] = await Promise.all([
+      fetchJson('/api/weapons'), fetchJson('/api/ships'), fetchJson('/api/maps/home-system'),
+    ]);
     for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, ...w.stats });
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
+
+    buildMap(map.descriptor); // build the scene backdrop: planet, moons, stars, asteroids, sky light
 
     // the player's active ship (auto-registers); fall back to the player-type template if needed
     let active = null;
     if (playerId) active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
     if (!active) {
       const t = ships.find((s) => s.type === 'player');
-      active = { ship: t, loadout: { weapon: t.stats.weapon, secondary: t.stats.secondary } };
+      active = { ship: t, loadout: { mounts: t.stats.mounts } };
     }
 
     player = buildPlayer(active);
@@ -1323,7 +1334,7 @@ async function bootstrap() {
     reset();   // position the player + spawn the initial enemies (from the catalog)
     animate(); // start the render/update loop
   } catch (err) {
-    console.error('Failed to load the game catalog from the API:', err);
+    console.error('Failed to load the game from the API:', err);
   }
 }
 bootstrap();

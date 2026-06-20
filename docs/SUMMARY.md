@@ -82,9 +82,12 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the planet and moons).
 - The planet and moons have minimal **procedural textures** (baked canvas maps, no asset files):
-  `makePlanetTexture` — a blue ocean world with depth variation and soft clouds; `makeMoonTexture` —
+  `makePlanetTexture(ocean)` — an ocean world with depth variation and soft clouds; `makeMoonTexture` —
   craters (darker floor + lighter rim) plus faint maria, per moon from its base color. The bodies
   don't rotate, so the terminator stays consistent.
+- **The whole scene is data-driven:** it's described by a JSON **map descriptor** in the DB (`maps`
+  table, seeded as `home-system`) and built generically by `buildMap(descriptor)` in `bootstrap()`
+  (planet/moons/stars/asteroids/sky-light from params). API: `GET /api/maps/:name`.
 - Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
   (player and enemies), via the shared `emitExhaust` — particle speed = ship speed + ejection backward
   along the nozzle, colored by the engine's `exhaust.color`, emitted while thrusting forward.
@@ -112,8 +115,11 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
 - **`player_ships`:** ships a player owns; exactly one `is_active` goes into battle. `loadout` JSON
   holds weapon ids by slot (empty ⇒ the ship's default weapons), `meta` JSON for future overrides.
   A new player auto-gets a default active ship on registration.
+- **Maps:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`); the
+  client builds it with `buildMap`. Served via `GET /api/maps/:name`.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
-  `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/players/:id/active-ship`.
+  `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/players/:id/active-ship`,
+  `GET /api/maps/:name`.
 - **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
   Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
   Migrations run on startup; `npm run migrate` runs them for the active backend.
@@ -129,6 +135,10 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
   (DB+user `spacegame`). Files at `/opt/projects/spacegame/`; server-only `.env` holds `DATABASE_URL`.
 - **CI/CD:** `.github/workflows/ci-cd.yml` — runs client + server tests on every push/PR (incl.
   PR merges), and on push to `main` deploys. Secrets: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`.
+- **Graceful shutdown:** on `SIGTERM`/`SIGINT` the server stops accepting new connections and lets
+  in-flight requests finish (`server.close()`) before exiting, with an 8 s hard cap so a hung request
+  can't block exit forever (`server.js`). This drains the old container cleanly when it's removed
+  during a rollout, eliminating the occasional transient 502.
 - **Zero-downtime deploy** (blue-green): the container has a Docker `healthcheck` (so Traefik only
   routes to it once `/api/health` passes — i.e. after migrations). The deploy uses
   `docker rollout -w 10 app`: it starts the new container, waits until it's healthy + 10s so Traefik

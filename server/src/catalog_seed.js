@@ -84,3 +84,25 @@ export const SHIPS = [
         { weapon: 4, group: 'rocket', offset:  0.8, delay: 0.2 },
       ] } },
 ];
+
+// --- maps: a JSON descriptor the client renders generically (buildMap). `generator` picks the code
+// generator; `params` are its inputs. The current scene (blue ocean planet + two cratered moons +
+// stars + a parallax asteroid layer + sky lighting) is the 'home-system' map. No binary assets —
+// the textures are procedural from these colors/params.
+export const MAPS = [
+  { name: 'home-system', descriptor: {
+      generator: 'planet-system',
+      background: 0x05060d,
+      sky: {
+        ambient: { color: 0x3a506e, intensity: 0.7 },           // night-side fill
+        sun: { color: 0xfff2e0, intensity: 3.4, pos: [170, -80, 40] }, // side light -> terminator
+      },
+      stars: { count: 2500, radius: 400 },
+      planet: { pos: [-150, -285, -110], radius: 60, ocean: 0x5a82c0, halo: { color: 0x6fa8ff, opacity: 0.13 } },
+      moons: [
+        { radius: 11, color: 0xb9b2a6, orbitR: 96,  tilt: 0.5,  speed: 0.0625 },
+        { radius: 7,  color: 0x8f9aa6, orbitR: 136, tilt: -0.35, speed: -0.04 },
+      ],
+      asteroids: { count: 500, spread: 440, color: 0x6b6f78 },
+  } },
+];

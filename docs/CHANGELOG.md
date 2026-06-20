@@ -5,6 +5,14 @@
 
 ## 2026-06-20
 
+- **Maps are data-driven (DB).** The scene (blue ocean planet + two cratered moons + stars + parallax
+  asteroids + sky lighting) is now described by a JSON **map descriptor** in a new `maps` table
+  (`generator` + params), seeded as `home-system` via the startup upsert. The client builds it
+  generically with `buildMap(descriptor)` — the hardcoded scene construction was extracted into
+  parameterized helpers (`makeStars`, `makePlanetTexture(ocean)`, `makeMoonTexture`, `makeAsteroids`)
+  + `buildMap`, and `bootstrap()` fetches `/api/maps/home-system` and builds it before the player.
+  Same look, no binary assets (textures stay procedural). API: `GET /api/maps/:name`. (Step 1 of
+  maps/levels; the level/wave runner + a boss + victory come next.)
 - **Multiple weapons per ship (mounts + fire groups), fully DB-driven.** A ship's stats now hold
   `groups` (named fire channels — a key for the player, an AI range/aim rule for enemies) and
   `mounts` (each: a weapon id, its `group`, a lateral `offset`, and a `delay`). Firing a group fires
@@ -93,6 +101,11 @@
   versions (current + 2 to roll back to). Added `rollback.sh` (re-tag a previous version to `:latest`
   + `docker rollout` → zero-downtime, no rebuild). Documented the migration strategy: forward-only /
   expand-contract, so code rollback is safe without reversing the DB (DECISIONS §9).
+- **Graceful shutdown (SIGTERM).** On `SIGTERM`/`SIGINT` the server now stops accepting new
+  connections and lets in-flight requests finish (`server.close()`) before exiting, with an 8 s hard
+  cap (`setTimeout(...).unref()`) so a hung request can't block exit forever (`server.js`). This drains
+  the old container cleanly when it's removed during a zero-downtime rollout, eliminating the occasional
+  transient 502 (the last gap left by the blue-green deploy).
 - **Zero-downtime deploys.** Deploy now uses blue-green via `docker rollout -w 10 app`: a Docker
   `healthcheck` gates Traefik routing (only routes once `/api/health` passes, i.e. after migrations),
   the new container comes up alongside the old, and the old is removed only after the new is healthy +

@@ -48,11 +48,17 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_player_ships_player ON player_ships(player_id);
     CREATE UNIQUE INDEX IF NOT EXISTS uniq_player_active_ship ON player_ships(player_id) WHERE is_active;
+
+    CREATE TABLE IF NOT EXISTS maps (
+      id         BIGSERIAL PRIMARY KEY,
+      name       TEXT  NOT NULL UNIQUE,
+      descriptor JSONB NOT NULL   -- { generator, ...params } describing the scene
+    );
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
-  // propagates on deploy (ids/foreign keys preserved — weapons keyed by id, ships by name).
-  const { SHIPS, WEAPONS } = await import('./catalog_seed.js');
+  // propagates on deploy (ids/foreign keys preserved — weapons keyed by id, ships/maps by name).
+  const { SHIPS, WEAPONS, MAPS } = await import('./catalog_seed.js');
   for (const w of WEAPONS) {
     await pool.query(
       `INSERT INTO weapons (id, name, type, stats) VALUES ($1, $2, $3, $4::jsonb)
@@ -64,6 +70,12 @@ export async function migrate() {
       `INSERT INTO ships (name, type, stats, model_url) VALUES ($1, $2, $3::jsonb, $4)
        ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url`,
       [s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null]);
+  }
+  for (const m of MAPS) {
+    await pool.query(
+      `INSERT INTO maps (name, descriptor) VALUES ($1, $2::jsonb)
+       ON CONFLICT (name) DO UPDATE SET descriptor = EXCLUDED.descriptor`,
+      [m.name, JSON.stringify(m.descriptor)]);
   }
   console.log('[migrate] postgres schema ready');
 }
@@ -129,6 +141,11 @@ export async function getShips() {
 export async function getWeapons() {
   const { rows } = await pool.query('SELECT id, name, type, stats FROM weapons ORDER BY id');
   return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats }));
+}
+
+export async function getMap(name) {
+  const { rows } = await pool.query('SELECT name, descriptor FROM maps WHERE name = $1', [name]);
+  return rows[0] ? { name: rows[0].name, descriptor: rows[0].descriptor } : null;
 }
 
 // The player's active ship: ship template + effective loadout (loadout falls back to ship defaults).

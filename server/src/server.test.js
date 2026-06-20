@@ -136,6 +136,16 @@ test('catalog: weapons are seeded with type bullet/rocket', async () => {
   assert.equal(rocket.stats.maxRange, 150);
 });
 
+test('maps: home-system descriptor is served', async () => {
+  const map = await getJson('/api/maps/home-system');
+  assert.equal(map.name, 'home-system');
+  assert.equal(map.descriptor.generator, 'planet-system');
+  assert.equal(map.descriptor.planet.radius, 60);
+  assert.equal(map.descriptor.moons.length, 2);
+  const missing = await fetch(base + '/api/maps/nope');
+  assert.equal(missing.status, 404);
+});
+
 test('active ship: a new player gets a default active ship (empty loadout -> ship mounts)', async () => {
   // /active-ship auto-registers the player and grants the starter ship
   const active = await getJson('/api/players/ship-test-1/active-ship');
