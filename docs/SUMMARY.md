@@ -73,9 +73,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
   buttons are released — smooth braking. At the arena boundaries (±240) the velocity along the axis is zeroed.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate.
-- **Welcome screen** — on load, a start overlay greets the player ("Welcome, Ninja. Our home system
-  is under attack…"), lets them **pick a ship** (cards from the player-type ships, with HP + weapon
-  summary) and **Take off**. The scene backdrop renders behind it; the level only starts on take-off.
+- **Welcome screen** — on load, a start overlay greets the player ("Welcome, Ninja") with an intro that
+  frames the threat as a pirate raid and nudges them to use the ship's maneuverability ("Pirates are
+  raiding our home system… you've got a fast, nimble ship. Use that agility…"), lets them **pick a ship**
+  (cards from the player-type ships, with HP + weapon summary) and **Take off**. The scene backdrop
+  renders behind it; the level only starts on take-off.
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
   `levelRunner`. Three levels are seeded (the client currently always plays **`level-1`**):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%
@@ -140,7 +142,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   active ship on registration.
 - **Maps & levels:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`),
   built by `buildMap`. `levels` table holds a JSON descriptor per level (a map + a phase/wave script,
-  seeded as `level-1`), played by the client's `levelRunner`. Served via `GET /api/maps/:name` and
+  seeded as `level-1`/`level-2`/`level-3`), played by the client's `levelRunner`. Served via `GET /api/maps/:name` and
   `GET /api/levels/:name`.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
