@@ -93,6 +93,12 @@ async function main() {
       await page.goto(BASE_URL, { waitUntil: 'load' });
       // bootstrap() builds the player asynchronously after fetching the catalog from the API
       await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
+      // dismiss the welcome screen and start the game (scenarios test the running game)
+      await page.evaluate(() => {
+        const w = document.getElementById('welcome');
+        if (w && w.style.display !== 'none') document.getElementById('takeoff').click();
+      });
+      await page.waitForTimeout(150);
 
       const shot = async (label) => {
         const p = path.join(shotsDir, `${name}__${label}.png`);

@@ -42,6 +42,35 @@
     padding: 12px 30px; font-size: 16px; border: 0; border-radius: 8px;
     background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; font-weight: 700;
   }
+  /* Welcome / start screen */
+  #welcome {
+    position: fixed; inset: 0; z-index: 12; display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
+    color: #e8f1ff; font-family: system-ui, sans-serif; text-align: center; padding: 24px;
+  }
+  #welcome h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
+  #welcome .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
+  #welcome .pick { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: .6; margin-bottom: 12px; }
+  #ship-choices { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 28px; }
+  .ship-card {
+    pointer-events: auto; cursor: pointer; width: 200px; text-align: left;
+    background: rgba(20,28,48,.6); border: 2px solid rgba(120,150,210,.25); border-radius: 12px;
+    padding: 16px; transition: border-color .15s, transform .1s;
+  }
+  .ship-card:hover { transform: translateY(-2px); }
+  .ship-card.selected { border-color: #5b86e5; box-shadow: 0 0 16px rgba(91,134,229,.4); }
+  .ship-card .ship-name { font-weight: 700; font-size: 17px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .ship-card .ship-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+  .ship-card .ship-stat { font-size: 13px; opacity: .8; line-height: 1.7; }
+  #takeoff {
+    pointer-events: auto; cursor: pointer;
+    padding: 14px 44px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
+    background: linear-gradient(90deg,#ffb35a,#ff7a3c); color: #1a0c02; letter-spacing: 1px;
+  }
+  #takeoff:hover { filter: brightness(1.08); }
+  /* hide the in-game HUD while the welcome screen is up */
+  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers { display: none; }
   /* Perf overlay (load) */
   /* Game title (wordmark), centered at the very top */
   #gametitle {
@@ -72,7 +101,8 @@
     border-radius: 50%; background: rgba(120,170,255,.55); display: none;
   }
   #fire-btn {
-    position: absolute; right: 28px; bottom: 38px; width: 96px; height: 96px;
+    /* sit to the LEFT of the rocket button so the two don't overlap on touch */
+    position: absolute; right: 134px; bottom: 34px; width: 96px; height: 96px;
     margin: 0; border-radius: 50%; pointer-events: auto;
     background: radial-gradient(circle at 50% 40%, rgba(255,140,90,.85), rgba(200,60,40,.7));
     border: 2px solid rgba(255,180,140,.8);
@@ -123,6 +153,13 @@
   <h1 id="overlay-title">Game over</h1>
   <p id="overlay-sub"></p>
   <button id="restart">Restart</button>
+</div>
+<div id="welcome">
+  <h1>Welcome, Ninja</h1>
+  <p class="intro">Our home system is under attack. Pick your ship and help us clear it.</p>
+  <div class="pick">Pick your ship</div>
+  <div id="ship-choices"></div>
+  <button id="takeoff">Take off 🚀</button>
 </div>
 <div id="gametitle">Space Ninjas</div>
 <div id="markers"></div>
@@ -1006,6 +1043,7 @@ const overlaySub = document.getElementById('overlay-sub');
 const elRocketBtn = document.getElementById('rocket-btn');
 const elRocketFill = document.getElementById('rocket-fill');
 let score = 0;
+let gameStarted = false; // false on the welcome screen (backdrop renders, but the level isn't running)
 
 function updateHud() {
   elScore.textContent = score;
@@ -1033,7 +1071,7 @@ const IDLE_DRAG = 0.8;   // soft braking for the player when controls are releas
 const clock = new THREE.Clock();
 
 function update(dt) {
-  if (!player.alive || levelRunner.won) return; // frozen on death or victory
+  if (!gameStarted || !player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
 
   const eng = player.engine;         // main engine (for exhaust)
   const accel = player.acceleration; // derived: acceleration <- main engine power
@@ -1425,6 +1463,56 @@ const fetchJson = async (url) => {
   return r.json();
 };
 
+// (Re)build the player ship and swap it into the scene.
+let currentShipName = null;
+function buildPlayerFor(ship) {
+  if (player) scene.remove(player.mesh);
+  player = buildPlayer({ ship, loadout: { mounts: ship.stats.mounts } });
+  currentShipName = ship.name;
+  scene.add(player.mesh);
+}
+
+// ---------- Welcome screen: pick a ship, then take off ----------
+const welcomeEl = document.getElementById('welcome');
+let selectedShip = null;
+
+function mountSummary(stats) { // "2× gun · 2× rocket" from the ship's mounts
+  const count = (type) => stats.mounts.filter((m) => CATALOG.weapons.get(m.weapon)?.type === type).length;
+  const parts = [];
+  if (count('bullet')) parts.push(`${count('bullet')}× gun`);
+  if (count('rocket')) parts.push(`${count('rocket')}× rocket`);
+  return parts.join(' · ') || 'unarmed';
+}
+function showWelcome(playerShips) {
+  const wrap = document.getElementById('ship-choices');
+  wrap.innerHTML = '';
+  selectedShip = playerShips[0] || null;
+  playerShips.forEach((s) => {
+    const card = document.createElement('div');
+    card.className = 'ship-card' + (s === selectedShip ? ' selected' : '');
+    card.innerHTML =
+      `<div class="ship-name"><span class="ship-dot" style="background:${cssColor(s.stats.color)}"></span>${s.name}</div>` +
+      `<div class="ship-stat">Hull: ${s.stats.hull.durability} HP</div>` +
+      `<div class="ship-stat">Weapons: ${mountSummary(s.stats)}</div>`;
+    card.addEventListener('click', () => {
+      selectedShip = s;
+      [...wrap.children].forEach((c, i) => c.classList.toggle('selected', playerShips[i] === s));
+    });
+    wrap.appendChild(card);
+  });
+  document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
+  welcomeEl.style.display = 'flex';
+}
+function takeOff() {
+  if (!selectedShip) return;
+  if (selectedShip.name !== currentShipName) buildPlayerFor(selectedShip);
+  welcomeEl.style.display = 'none';
+  document.body.classList.remove('menu'); // restore the in-game HUD
+  gameStarted = true;
+  reset(); // position the player + start the level
+}
+document.getElementById('takeoff').addEventListener('click', takeOff);
+
 async function bootstrap() {
   try {
     const [weapons, ships, level] = await Promise.all([
@@ -1438,18 +1526,17 @@ async function bootstrap() {
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map
     buildMap(map.descriptor); // build the scene backdrop: planet, moons, stars, asteroids, sky light
 
-    // the player's active ship (auto-registers); fall back to the player-type template if needed
+    // the player's active ship (auto-registers) decides the default selection
     let active = null;
     if (playerId) active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
-    if (!active) {
-      const t = ships.find((s) => s.type === 'player');
-      active = { ship: t, loadout: { mounts: t.stats.mounts } };
-    }
+    const playerShips = ships.filter((s) => s.type === 'player');
+    buildPlayerFor((active && active.ship) || playerShips[0]); // idle ship behind the welcome screen
 
-    player = buildPlayer(active);
-    scene.add(player.mesh);
-    reset();   // position the player + spawn the initial enemies (from the catalog)
-    animate(); // start the render/update loop
+    // position the camera once (update() doesn't run until take-off), then show the welcome screen
+    camera.position.copy(player.mesh.position).add(CAM_OFFSET);
+    camera.lookAt(player.mesh.position);
+    showWelcome(playerShips);
+    animate(); // render loop (idle until Take off)
   } catch (err) {
     console.error('Failed to load the game from the API:', err);
   }

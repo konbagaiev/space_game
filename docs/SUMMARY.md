@@ -70,6 +70,9 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
   buttons are released — smooth braking. At the arena boundaries (±240) the velocity along the axis is zeroed.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate.
+- **Welcome screen** — on load, a start overlay greets the player ("Welcome, Ninja. Our home system
+  is under attack…"), lets them **pick a ship** (cards from the player-type ships, with HP + weapon
+  summary) and **Take off**. The scene backdrop renders behind it; the level only starts on take-off.
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
   `levelRunner`. `level-1`: wave 1 (red fighter + yellow rocketeer, up to 4 at once) → after **10 kills**
   → wave 2 (adds the purple mini-boss) → at **20 total kills** → **spawning stops**; clear the rest →

@@ -5,6 +5,14 @@
 
 ## 2026-06-20
 
+- **Welcome / start screen.** On load the game shows a welcome overlay — "Welcome, Ninja. Our home
+  system is under attack. Pick your ship and help us clear it." — with a **ship picker** (cards built
+  from the player-type ships in the DB, showing hull HP + weapon summary) and a **Take off** button.
+  The scene backdrop renders behind it; the level doesn't start until take-off (`gameStarted` gate).
+  `bootstrap()` now builds the map + an idle player and shows the picker; `takeOff()` (re)builds the
+  player from the chosen ship and starts the level. The in-game HUD is hidden behind the welcome screen.
+- **Mobile: FIRE and rocket buttons no longer overlap.** On touch the FIRE button sat on top of the
+  rocket button (both bottom-right); FIRE moved to the left of the rocket (≈22 px gap).
 - **Off-screen enemy markers.** For every enemy that's off-screen, an arrow on the screen edge points
   toward it, tinted by the enemy's type color. Implemented as a pooled DOM overlay (`#markers` +
   `updateMarkers`): each enemy's world position is projected to NDC; if outside the viewport, the
