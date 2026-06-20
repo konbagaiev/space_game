@@ -38,6 +38,36 @@ test('register: same id again is not new', async () => {
   assert.equal(j.isNew, false);
 });
 
+test('register: a new player starts at progress 1 (level-1 unlocked)', async () => {
+  const j = await (await post('/api/players/register', { playerId: 'prog-1' })).json();
+  assert.equal(j.currentProgress, 1);
+});
+
+test('progress: current level is level-1, and advancing unlocks the next levels', async () => {
+  // a fresh player is on level-1
+  const lvl1 = await getJson('/api/players/prog-2/level');
+  assert.equal(lvl1.name, 'level-1');
+  assert.ok(lvl1.descriptor.phases, 'returns the full descriptor');
+
+  // clearing it unlocks level-2, then level-3
+  const a1 = await (await post('/api/players/prog-2/advance', {})).json();
+  assert.equal(a1.advanced, true);
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-2');
+
+  const a2 = await (await post('/api/players/prog-2/advance', {})).json();
+  assert.equal(a2.advanced, true);
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-3');
+
+  // already at the last level → no-op
+  const a3 = await (await post('/api/players/prog-2/advance', {})).json();
+  assert.equal(a3.advanced, false);
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-3');
+
+  // progress persists on re-register
+  const reg = await (await post('/api/players/register', { playerId: 'prog-2' })).json();
+  assert.equal(reg.currentProgress, 3);
+});
+
 test('register: missing playerId -> 400', async () => {
   const r = await post('/api/players/register', {});
   assert.equal(r.status, 400);

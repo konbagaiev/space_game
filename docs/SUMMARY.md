@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-19
+**Updated:** 2026-06-20
 
 ## What this is
 **Space Ninjas** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -78,8 +78,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   raiding our home system… you've got a fast, nimble ship. Use that agility…"), lets them **pick a ship**
   (cards from the player-type ships, with HP + weapon summary) and **Take off**. The scene backdrop
   renders behind it; the level only starts on take-off.
+- **Progression** — each player has a **`current_progress`** (their highest unlocked level; see
+  Backend). On load the client fetches **that** level (`GET /api/players/:id/level`, not a hard-coded
+  one); clearing a level **unlocks the next** (the `win` handler POSTs `/advance`, then loads the new
+  level so the next **Restart** plays it). A new player starts on `level-1`; the last level stays put.
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
-  `levelRunner`. Three levels are seeded (the client currently always plays **`level-1`**):
+  `levelRunner`. Three levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%
     → at **15 kills** spawning stops, one last rocketeer appears, clear the field → **Victory!** No boss.
   - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 15 kills →
@@ -112,6 +116,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **The whole scene is data-driven:** it's described by a JSON **map descriptor** in the DB (`maps`
   table, seeded as `home-system`) and built generically by `buildMap(descriptor)` in `bootstrap()`
   (planet/moons/stars/asteroids/sky-light from params). API: `GET /api/maps/:name`.
+- **Enemy spawn ("warp in"):** a newly spawned enemy grows from a dot to its full size over
+  `SPAWN_GROW_TIME` (1 s, ease-out cubic) — it scales up in place while the AI is already active.
 - Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
   (player and enemies), via the shared `emitExhaust` — particle speed = ship speed + ejection backward
   along the nozzle, colored by the engine's `exhaust.color`, emitted while thrusting forward.
@@ -130,6 +136,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (`db.js` = SQLite, `db_postgres.js` = Postgres via `pg`).
 - **Auto-registration by browser:** the client makes a UUID on first visit (kept in `localStorage`)
   and posts it on load; the server creates the player if new. Anonymous, minimal friction.
+- **Player progress:** `players.current_progress` stores the player's currently-available level — an
+  integer **foreign key into `levels(id)`** (a real, enforced FK in Postgres; a plain integer in SQLite,
+  whose `ALTER TABLE` can't add a FK column with a non-null default, and which doesn't enforce FKs
+  anyway). Defaults to **1** (`level-1`). `registerPlayer` returns it as `currentProgress`;
+  `GET /api/players/:id/level` returns that level's descriptor; `POST /api/players/:id/advance` unlocks
+  the next level (smallest level id greater than the current — gap-tolerant; a no-op at the last level).
 - **Game history:** on game over the client posts `{ score, kills, durationMs }`, saved per player.
 - **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url`,
   `components` JSON ref `{hull,engine,thruster}`), `components` (`name`, `type`
@@ -146,7 +158,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `GET /api/levels/:name`.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
-  `GET /api/players/:id/active-ship`, `GET /api/maps/:name`, `GET /api/levels/:name`.
+  `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
+  `GET /api/maps/:name`, `GET /api/levels/:name`.
 - **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
   Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
   Migrations run on startup; `npm run migrate` runs them for the active backend.
@@ -195,8 +208,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 ## Tests (built-in `node:test`, no deps)
 - **Client logic** — `client/src/*.test.js` (14): drive derivation (engine + mass), balance, steering math.
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (15): register / record game / history / validation /
-  health / serves client / ships + weapons + components + maps + levels catalog + active ship. Mounts the Express app on an ephemeral port against a temp SQLite DB
+- **Backend API** — `server/src/server.test.js` (17): register / record game / history / validation /
+  health / serves client / ships + weapons + components + maps + levels catalog + active ship +
+  player progress (current level + advance). Mounts the Express app on an ephemeral port against a temp SQLite DB
   (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly), `db.js` honors `DB_PATH`.

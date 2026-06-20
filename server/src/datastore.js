@@ -6,6 +6,8 @@ const impl = usePostgres ? await import('./db_postgres.js') : await import('./db
 export const backend = usePostgres ? 'postgres' : 'sqlite';
 export const migrate = (...a) => impl.migrate(...a);
 export const registerPlayer = (...a) => impl.registerPlayer(...a);
+export const getCurrentLevel = (...a) => impl.getCurrentLevel(...a);
+export const advanceProgress = (...a) => impl.advanceProgress(...a);
 export const recordGame = (...a) => impl.recordGame(...a);
 export const getPlayerGames = (...a) => impl.getPlayerGames(...a);
 export const stats = (...a) => impl.stats(...a);

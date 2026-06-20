@@ -70,6 +70,10 @@ export async function migrate() {
       name       TEXT  NOT NULL UNIQUE,
       descriptor JSONB NOT NULL   -- { title, map, phases:[...] }
     );
+    -- player progress: the currently-available level (FK into levels). Added after the
+    -- levels table exists; defaults to 1 (level-1). On an existing DB the levels rows
+    -- already exist from prior startups, so the FK default validates.
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS current_progress INTEGER NOT NULL DEFAULT 1 REFERENCES levels(id);
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
@@ -121,15 +125,39 @@ async function ensureDefaultShip(playerId) {
 
 export async function registerPlayer(id) {
   const now = Date.now();
-  const { rows } = await pool.query('SELECT created_at, games_played FROM players WHERE id = $1', [id]);
+  const { rows } = await pool.query('SELECT created_at, games_played, current_progress FROM players WHERE id = $1', [id]);
   if (rows[0]) {
     await pool.query('UPDATE players SET last_seen = $1 WHERE id = $2', [now, id]);
     await ensureDefaultShip(id);
-    return { id, isNew: false, gamesPlayed: rows[0].games_played, createdAt: Number(rows[0].created_at) };
+    return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, createdAt: Number(rows[0].created_at) };
   }
   await pool.query('INSERT INTO players (id, created_at, last_seen) VALUES ($1, $2, $3)', [id, now, now]);
   await ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, createdAt: now };
+}
+
+// The level a player is currently on (their highest unlocked level).
+export async function getCurrentLevel(playerId) {
+  await registerPlayer(playerId); // make sure the player exists (new players default to level-1)
+  const { rows } = await pool.query(
+    'SELECT l.name, l.descriptor FROM players p JOIN levels l ON l.id = p.current_progress WHERE p.id = $1',
+    [playerId]
+  );
+  if (!rows[0]) return null;
+  return { name: rows[0].name, descriptor: rows[0].descriptor };
+}
+
+// Unlock the next level after the player's current one. No-op at the last level.
+export async function advanceProgress(playerId) {
+  await registerPlayer(playerId);
+  const cur = await pool.query('SELECT current_progress FROM players WHERE id = $1', [playerId]);
+  const next = await pool.query('SELECT MIN(id) AS id FROM levels WHERE id > $1', [cur.rows[0].current_progress]);
+  if (next.rows[0] && next.rows[0].id != null) {
+    const id = Number(next.rows[0].id);
+    await pool.query('UPDATE players SET current_progress = $1 WHERE id = $2', [id, playerId]);
+    return { currentProgress: id, advanced: true };
+  }
+  return { currentProgress: cur.rows[0].current_progress, advanced: false };
 }
 
 export async function recordGame(playerId, { score = 0, kills = 0, durationMs = 0 } = {}) {

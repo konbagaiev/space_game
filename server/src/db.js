@@ -57,15 +57,39 @@ function ensureDefaultShip(playerId) {
 // up owning their default active ship.
 export function registerPlayer(id) {
   const now = Date.now();
-  const existing = db.prepare('SELECT created_at, games_played FROM players WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT created_at, games_played, current_progress FROM players WHERE id = ?').get(id);
   if (existing) {
     db.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(now, id);
     ensureDefaultShip(id);
-    return { id, isNew: false, gamesPlayed: existing.games_played, createdAt: existing.created_at };
+    return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, createdAt: existing.created_at };
   }
   db.prepare('INSERT INTO players (id, created_at, last_seen) VALUES (?, ?, ?)').run(id, now, now);
   ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, createdAt: now };
+}
+
+// The level a player is currently on (their highest unlocked level). Joins the
+// player's current_progress FK to the levels table; null if the player/level is gone.
+export function getCurrentLevel(playerId) {
+  registerPlayer(playerId); // make sure the player exists (new players default to level-1)
+  const row = db.prepare(
+    'SELECT l.name, l.descriptor FROM players p JOIN levels l ON l.id = p.current_progress WHERE p.id = ?'
+  ).get(playerId);
+  if (!row) return null;
+  return { name: row.name, descriptor: JSON.parse(row.descriptor) };
+}
+
+// Unlock the next level after the player's current one (smallest level id greater than
+// the current). No-op (already at the last level) returns advanced:false.
+export function advanceProgress(playerId) {
+  registerPlayer(playerId);
+  const p = db.prepare('SELECT current_progress FROM players WHERE id = ?').get(playerId);
+  const next = db.prepare('SELECT MIN(id) AS id FROM levels WHERE id > ?').get(p.current_progress);
+  if (next && next.id != null) {
+    db.prepare('UPDATE players SET current_progress = ? WHERE id = ?').run(next.id, playerId);
+    return { currentProgress: next.id, advanced: true };
+  }
+  return { currentProgress: p.current_progress, advanced: false };
 }
 
 // Record one finished game in the player's history.

@@ -785,6 +785,10 @@ function spawnEnemyShip(shipDef) {
   };
   e.groups = buildGroups(s.groups, e.mounts);
   e.mesh.scale.multiplyScalar(s.sizeScale || 1); // bigger model for heavy enemies
+  // "warp in": grow from a dot to full size over SPAWN_GROW_TIME (see the enemy update loop)
+  e.spawnScale = e.mesh.scale.clone(); // the full target scale to grow into
+  e.spawnAge = 0;
+  e.mesh.scale.setScalar(0.001); // start as a dot
   deriveDrive(e);
   // spawn in a ring around the player (just off-screen), not at the arena edges
   const ang = Math.random() * Math.PI * 2;
@@ -838,6 +842,7 @@ const levelRunner = {
     overlayTitle.textContent = 'Victory!';
     overlaySub.textContent = `${text || 'Sector cleared.'} — Score ×2 = ${score}`;
     overlay.style.display = 'flex';
+    unlockNextLevel(); // record progress + load the next level for the next Restart
   },
 
   pickShip(pool) {
@@ -1032,6 +1037,21 @@ function reportGame(score, kills, durationMs) {
     body: JSON.stringify({ playerId, score, kills, durationMs: Math.round(durationMs) }),
   }).catch(() => {});
 }
+
+// On victory: tell the server to unlock the next level, then load that level so the next
+// Restart plays it (rebuilding the map if the new level uses a different one). Best-effort.
+async function unlockNextLevel() {
+  if (!playerId) return;
+  try {
+    await fetch(`/api/players/${playerId}/advance`, { method: 'POST' });
+    const level = await fetchJson(`/api/players/${playerId}/level`);
+    if (level.descriptor.map !== CATALOG.level.map) {
+      const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
+      buildMap(map.descriptor);
+    }
+    CATALOG.level = level.descriptor; // reset() restarts CATALOG.level → next Restart is the new level
+  } catch { /* progression is best-effort; on failure the same level replays */ }
+}
 let gameStartTime = performance.now();
 
 // ---------- Helpers ----------
@@ -1084,6 +1104,7 @@ function updateHud() {
 // Thrust/turn/speed/weapon are now taken from the ship's components (engine/weapon).
 const DRAG = 1.8;        // friction (enemies)
 const IDLE_DRAG = 0.8;   // soft braking for the player when controls are released
+const SPAWN_GROW_TIME = 1.0; // enemies grow from a dot to full size over this many seconds
 
 const clock = new THREE.Clock();
 
@@ -1140,6 +1161,14 @@ function update(dt) {
 
   // --- enemy AI ---
   for (const e of enemies) {
+    // spawn animation: grow from a dot to full size over SPAWN_GROW_TIME (ease-out)
+    if (e.spawnAge < SPAWN_GROW_TIME) {
+      e.spawnAge = Math.min(SPAWN_GROW_TIME, e.spawnAge + dt);
+      const t = e.spawnAge / SPAWN_GROW_TIME;
+      const k = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      e.mesh.scale.copy(e.spawnScale).multiplyScalar(Math.max(0.001, k));
+    }
+
     const toPlayer = player.mesh.position.clone().sub(e.mesh.position);
     const dist = toPlayer.length();
     toPlayer.normalize();
@@ -1545,9 +1574,12 @@ document.getElementById('takeoff').addEventListener('click', takeOff);
 
 async function bootstrap() {
   try {
+    // The level comes from the player's progress (their highest unlocked level); fall back to
+    // level-1 if the player isn't identified (e.g. localStorage blocked).
+    const levelUrl = playerId ? `/api/players/${playerId}/level` : '/api/levels/level-1';
     const [weapons, components, ships, level] = await Promise.all([
       fetchJson('/api/weapons'), fetchJson('/api/components'),
-      fetchJson('/api/ships'), fetchJson('/api/levels/level-1'),
+      fetchJson('/api/ships'), fetchJson(levelUrl),
     ]);
     for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, ...w.stats });
     for (const c of components) CATALOG.components.set(c.id, c);

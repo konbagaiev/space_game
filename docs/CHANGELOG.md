@@ -5,6 +5,18 @@
 
 ## 2026-06-20
 
+- **Enemy spawn animation.** Newly spawned enemies now "warp in" — they grow from a dot to full size
+  over 1 s (`SPAWN_GROW_TIME`, ease-out cubic) instead of popping in at full scale. Purely visual; the
+  AI runs during the grow (enemies spawn off-screen, so they're full-grown before they reach the player).
+- **Per-player level progression.** Players now have a `current_progress` column (migration 006) — the
+  highest unlocked level, an integer **foreign key into `levels(id)`** (enforced in Postgres; a plain
+  integer in SQLite, which can't `ALTER`-add a FK column with a non-null default and doesn't enforce FKs
+  anyway). Defaults to `1` (`level-1`). New API: `GET /api/players/:id/level` (the player's current
+  level descriptor) and `POST /api/players/:id/advance` (unlock the next level — smallest level id above
+  the current, gap-tolerant, no-op at the last). `registerPlayer` now returns `currentProgress`. The
+  client loads the player's current level on boot (instead of hard-coded `level-1`), and on **Victory**
+  it POSTs `/advance` then loads the newly-unlocked level so the next **Restart** plays it. Verified
+  end-to-end (win level-1 → progress moves to level-2).
 - **Welcome copy reworded.** The intro now reads naturally for a US audience and frames the threat as
   pirates, plus a gameplay nudge: "Pirates are raiding our home system — we need you to push them back.
   Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't

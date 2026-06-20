@@ -3,7 +3,7 @@
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { migrate, registerPlayer, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getActivePlayerShip, getMap, getLevel, backend } from './datastore.js';
+import { migrate, registerPlayer, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getActivePlayerShip, getMap, getLevel, backend } from './datastore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.join(__dirname, '..', '..', 'client');
@@ -54,6 +54,18 @@ export async function createApp() {
     const active = await getActivePlayerShip(req.params.id);
     if (!active) return res.status(404).json({ error: 'no active ship' });
     res.json(active);
+  }));
+
+  // The level the player is currently on (their highest unlocked level). Auto-registers.
+  app.get('/api/players/:id/level', wrap(async (req, res) => {
+    const level = await getCurrentLevel(req.params.id);
+    if (!level) return res.status(404).json({ error: 'no current level' });
+    res.json(level);
+  }));
+
+  // Unlock the next level (called by the client when the player clears their current level).
+  app.post('/api/players/:id/advance', wrap(async (req, res) => {
+    res.json(await advanceProgress(req.params.id));
   }));
 
   // A map's scene descriptor (the client renders it via buildMap). Read-only.
