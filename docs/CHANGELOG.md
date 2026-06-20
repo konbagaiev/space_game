@@ -5,6 +5,16 @@
 
 ## 2026-06-20
 
+- **Money: credits currency + persistent balance.** The former "score" is now **credits** (the
+  currency). The HUD shows two counters: **Earned** (credits this run — the old score, ×2 on level
+  clear) and **Credits** (a persistent account balance). At the end of every run (death OR victory) the
+  Earned credits are **banked** into the balance server-side; closing the browser mid-run loses the
+  unbanked amount. New players start with **1000 credits**. DB: migration 008 renames `games.score` →
+  `games.credits` and adds `players.credits INTEGER NOT NULL DEFAULT 1000` (no FK; Postgres bootstrap
+  mirrors both, with an idempotent column rename). `POST /api/games` now takes `{ credits, … }` (still
+  accepts legacy `score`), banks it, and returns the new balance; `registerPlayer`/active-ship return
+  `credits`. i18n labels updated (Credits/Earned, RU Кредиты/Заработано). Verified end-to-end (new
+  player 1000 → win banks earned×2 → balance persists across reload). Tests: server 19, client 22.
 - **Localization (i18n): English source + Russian translation.** Player-facing text is now localized
   (EN canonical, RU first locale). New `client/src/i18n.js` (`t(key, params)` with `{var}` interpolation,
   language resolution, `loadLanguage`) + file catalogs `client/locales/source.json` (canonical

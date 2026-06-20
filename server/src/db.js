@@ -57,15 +57,15 @@ function ensureDefaultShip(playerId) {
 // up owning their default active ship.
 export function registerPlayer(id) {
   const now = Date.now();
-  const existing = db.prepare('SELECT created_at, games_played, current_progress, language FROM players WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT created_at, games_played, current_progress, language, credits FROM players WHERE id = ?').get(id);
   if (existing) {
     db.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(now, id);
     ensureDefaultShip(id);
-    return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, language: existing.language, createdAt: existing.created_at };
+    return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, language: existing.language, credits: existing.credits, createdAt: existing.created_at };
   }
   db.prepare('INSERT INTO players (id, created_at, last_seen) VALUES (?, ?, ?)').run(id, now, now);
   ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, createdAt: now };
 }
 
 // Persist a player's language preference (validated to a supported code by the caller/route).
@@ -99,21 +99,25 @@ export function advanceProgress(playerId) {
   return { currentProgress: p.current_progress, advanced: false };
 }
 
-// Record one finished game in the player's history.
-export function recordGame(playerId, { score = 0, kills = 0, durationMs = 0 } = {}) {
+// Record one finished game in the player's history AND bank the credits earned into the player's
+// balance (this is the only place credits are awarded). Returns the new balance.
+export function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0 } = {}) {
   const now = Date.now();
   registerPlayer(playerId); // make sure the player exists
+  const earned = credits | 0;
   const info = db.prepare(
-    'INSERT INTO games (player_id, score, kills, duration_ms, ended_at) VALUES (?, ?, ?, ?, ?)'
-  ).run(playerId, score | 0, kills | 0, durationMs | 0, now);
-  db.prepare('UPDATE players SET games_played = games_played + 1, last_seen = ? WHERE id = ?').run(now, playerId);
-  return { gameId: Number(info.lastInsertRowid) };
+    'INSERT INTO games (player_id, credits, kills, duration_ms, ended_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(playerId, earned, kills | 0, durationMs | 0, now);
+  db.prepare('UPDATE players SET games_played = games_played + 1, credits = credits + ?, last_seen = ? WHERE id = ?')
+    .run(earned, now, playerId);
+  const { credits: balance } = db.prepare('SELECT credits FROM players WHERE id = ?').get(playerId);
+  return { gameId: Number(info.lastInsertRowid), credits: balance };
 }
 
 export function getPlayerGames(playerId, limit = 50) {
   // id is autoincrement, so DESC = newest first (deterministic even within the same ms).
   return db.prepare(
-    'SELECT id, score, kills, duration_ms, ended_at FROM games WHERE player_id = ? ORDER BY id DESC LIMIT ?'
+    'SELECT id, credits, kills, duration_ms, ended_at FROM games WHERE player_id = ? ORDER BY id DESC LIMIT ?'
   ).all(playerId, limit);
 }
 
@@ -174,5 +178,6 @@ export function getActivePlayerShip(playerId) {
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
     components: psComponents ?? shipComponents,
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)
+    credits: reg.credits,   // the player's persistent credit balance
   };
 }

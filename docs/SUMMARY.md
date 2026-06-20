@@ -65,7 +65,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `boss.glb` model + own hull/engine, 210 hp, 3× model, two guns + two rocket launchers; spawned only
   in the level's boss phase). Which enemies spawn is decided by the **level** (see Gameplay), not the
   ship; ship `radius` scales with model size. Each enemy also carries a **`reward`** (`stats.reward`,
-  fighter 20 / rocketeer 40 / medium 100 / boss 200) added to the score on destruction.
+  fighter 20 / rocketeer 40 / medium 100 / boss 200) in **credits**, earned on destruction.
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 20 hp hull, gun 5 damage
   (an enemy dies in 2 player hits; the player survives 20 enemy hits).
 
@@ -97,12 +97,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   rocket's HP (shot down at 0) — you can deflect enemy rockets, and an enemy can shoot down yours.
 - Player health is 100; HUD shows the remaining health as a percentage with one decimal
   (e.g. "87.5%") below the bar.
-- **Scoring** — every enemy ship carries a `reward` (`stats.reward`, passed to the client): fighter 20,
-  rocketeer 40, medium 100, first boss 200. Destroying an enemy adds its reward to the **score**; the
-  separate **kill count** drives level thresholds. Completing a level **doubles** the score (the `win`
-  phase applies `score ×= 2` and the Victory overlay shows the doubled total). HUD (top-right) shows
-  **Score** (points), **Destroyed** (kills) and **Enemies** (alive). Game over / victory both report
-  `{ score, kills, durationMs }` to the backend.
+- **Economy (credits)** — the currency is **credits**. Every enemy carries a `reward` (`stats.reward`:
+  fighter 20, rocketeer 40, medium 100, first boss 200); destroying one adds it to the run's **Earned**
+  total. Completing a level **doubles** Earned (`win` applies `earned ×= 2`). The separate **kill count**
+  drives level thresholds. At the **end of each run — death OR victory — Earned is banked** into the
+  player's persistent **Credits** balance (server-authoritative; closing the browser mid-run loses the
+  unbanked amount). New players start at **1000 credits**. HUD (top-right) shows two counters — **Credits**
+  (the persistent balance) and **Earned** (this run) — plus **Destroyed** (kills) and **Enemies** (alive).
+  Banking posts `{ credits, kills, durationMs }` to `POST /api/games`, which returns the new balance.
 
 ## Visuals
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer,
@@ -166,7 +168,10 @@ first translation). See DECISIONS §10.
   anyway). Defaults to **1** (`level-1`). `registerPlayer` returns it as `currentProgress`;
   `GET /api/players/:id/level` returns that level's descriptor; `POST /api/players/:id/advance` unlocks
   the next level (smallest level id greater than the current — gap-tolerant; a no-op at the last level).
-- **Game history:** on game over the client posts `{ score, kills, durationMs }`, saved per player.
+- **Game history & credits:** at the end of each run the client posts `{ credits, kills, durationMs }`
+  to `/api/games`; the server stores it (`games.credits`, renamed from `score` in migration 008) **and
+  banks the earned credits** into `players.credits` (the persistent balance, default **1000** for new
+  players, no FK), returning the new balance. `registerPlayer`/active-ship also return `credits`.
 - **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url`,
   `components` JSON ref `{hull,engine,thruster}`), `components` (`name`, `type`
   `hull`/`engine`/`thruster`, `weight`, `stats` JSON; stable ids) and `weapons` (`name`, `type`
@@ -234,9 +239,9 @@ first translation). See DECISIONS §10.
 - **Client logic** — `client/src/*.test.js` (22): drive derivation (engine + mass), balance, steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (18): register / record game / history / validation /
-  health / serves client / ships + weapons + components + maps + levels catalog + active ship +
-  player progress (current level + advance) + language preference. Mounts the Express app on an ephemeral port against a temp SQLite DB
+- **Backend API** — `server/src/server.test.js` (19): register / record game + credit banking / history /
+  validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
+  player progress (current level + advance) + language preference + credits balance. Mounts the Express app on an ephemeral port against a temp SQLite DB
   (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly), `db.js` honors `DB_PATH`.

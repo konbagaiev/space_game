@@ -148,8 +148,10 @@
     <div id="hppct">100.0%</div>
   </div>
   <div class="right">
-    <div class="label" data-i18n="ui.hud.score">Score</div>
-    <div class="bigval" id="score">0</div>
+    <div class="label" data-i18n="ui.hud.credits">Credits</div>
+    <div id="credits" style="font-size:20px">0</div>
+    <div class="label" style="margin-top:6px" data-i18n="ui.hud.earned">Earned</div>
+    <div class="bigval" id="earned">0</div>
     <div class="label" style="margin-top:6px" data-i18n="ui.hud.destroyed">Destroyed</div>
     <div id="kills" style="font-size:18px">0</div>
     <div class="label" style="margin-top:6px" data-i18n="ui.hud.enemies">Enemies</div>
@@ -846,12 +848,13 @@ const levelRunner = {
   },
   win() {
     this.won = true;
-    score *= 2; // double the score for clearing the level
+    earned *= 2; // double the credits earned for clearing the level
     overlayTitle.textContent = t('ui.overlay.victory');
     // resolve the level's victory line through i18n (key → translation → English fallback)
     const cleared = this.winTextKey ? t(this.winTextKey) : (this.winText || t('ui.overlay.sector_cleared'));
-    overlaySub.textContent = `${cleared} — ${t('ui.score.doubled', { score })}`;
+    overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: earned })}`;
     overlay.style.display = 'flex';
+    bankRun(); // bank the earned credits into the account balance
     unlockNextLevel(); // record progress + load the next level for the next Restart
   },
 
@@ -1040,12 +1043,20 @@ const playerId = (() => {
   } catch { return null; }
 })();
 // (Registration happens in bootstrap() via the active-ship fetch, which upserts the player.)
-function reportGame(score, kills, durationMs) {
-  if (!playerId) return;
+// Bank the credits earned this run into the account balance and record the game. Runs once per run
+// (on victory or death); closing the browser before a run ends loses the unbanked session credits.
+let banked = false; // guard so a run banks exactly once
+function bankRun() {
+  if (banked) return;
+  banked = true;
+  const durationMs = Math.round(performance.now() - gameStartTime);
+  if (!playerId) { balance += earned; updateHud(); return; } // offline: reflect locally, best-effort
   fetch('/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ playerId, score, kills, durationMs: Math.round(durationMs) }),
-  }).catch(() => {});
+    body: JSON.stringify({ playerId, credits: earned, kills, durationMs }),
+  }).then((r) => (r.ok ? r.json() : null))
+    .then((res) => { if (res && typeof res.credits === 'number') { balance = res.credits; updateHud(); } })
+    .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
 // On victory: tell the server to unlock the next level, then load that level so the next
@@ -1077,7 +1088,8 @@ function clampToArena(pos) {
 }
 
 // ---------- HUD ----------
-const elScore = document.getElementById('score');
+const elEarned = document.getElementById('earned');
+const elCredits = document.getElementById('credits');
 const elKills = document.getElementById('kills');
 const elEnemies = document.getElementById('enemies');
 const elHp = document.getElementById('hpfill');
@@ -1087,12 +1099,14 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlaySub = document.getElementById('overlay-sub');
 const elRocketBtn = document.getElementById('rocket-btn');
 const elRocketFill = document.getElementById('rocket-fill');
-let kills = 0;  // count of destroyed enemies (drives the level runner's thresholds + "Destroyed")
-let score = 0;  // points: each kill adds the ship's `reward`; doubled on level completion
+let kills = 0;   // count of destroyed enemies (drives the level runner's thresholds + "Destroyed")
+let earned = 0;  // credits earned this run: each kill adds the ship's `reward`; doubled on level completion
+let balance = 0; // persistent credit account balance (loaded from the server; banked at run end)
 let gameStarted = false; // false on the welcome screen (backdrop renders, but the level isn't running)
 
 function updateHud() {
-  elScore.textContent = score;
+  elEarned.textContent = earned;
+  elCredits.textContent = balance;
   elKills.textContent = kills;
   elEnemies.textContent = enemies.length;
   const hpPct = Math.max(0, player.hp / player.maxHp * 100);
@@ -1359,8 +1373,8 @@ function update(dt) {
       spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
-      kills++;                 // count (drives level thresholds + HUD)
-      score += e.reward || 0;  // points (reward for this ship type)
+      kills++;                  // count (drives level thresholds + HUD)
+      earned += e.reward || 0;  // credits (reward for this ship type)
     }
   }
   // drive spawning + phase transitions from the active level
@@ -1370,9 +1384,9 @@ function update(dt) {
   if (player.hp <= 0 && player.alive) {
     player.alive = false;
     spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
-    reportGame(score, kills, performance.now() - gameStartTime); // save game to history
+    bankRun(); // bank the earned credits into the account balance + record the game
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');
-    overlaySub.textContent = t('ui.gameover.sub', { kills, score });
+    overlaySub.textContent = t('ui.gameover.sub', { kills, credits: earned });
     overlay.style.display = 'flex';
   }
 
@@ -1484,7 +1498,7 @@ function reset() {
   player.hp = player.maxHp;
   for (const g of Object.values(player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   player.alive = true;
-  score = 0; kills = 0;
+  earned = 0; kills = 0; banked = false; // new run: reset session credits + the bank-once guard (balance persists)
   gameStartTime = performance.now(); // start timing a new game (for history)
   levelRunner.start(CATALOG.level); // restart the level from phase 1 (spawns via update())
   overlay.style.display = 'none';
@@ -1501,7 +1515,8 @@ if (location.search.includes('debug')) {
     spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, reset, levelRunner,
     get player() { return player; },   // built asynchronously in bootstrap()
     get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB
-    get score() { return score; },
+    get earned() { return earned; },   // credits earned this run
+    get balance() { return balance; }, // persistent account balance
     get kills() { return kills; },
   };
 }
@@ -1653,6 +1668,7 @@ async function bootstrap() {
     // the player's active ship (auto-registers) decides the default selection
     let active = null;
     if (playerId) active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
+    if (active && typeof active.credits === 'number') balance = active.credits; // account balance for the HUD
     const playerShips = ships.filter((s) => s.type === 'player');
     buildPlayerFor((active && active.ship) || playerShips[0]); // idle ship behind the welcome screen
 

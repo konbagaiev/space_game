@@ -30,13 +30,14 @@ export async function createApp() {
     res.json(await registerPlayer(playerId));
   }));
 
-  // Record one finished game in the player's history.
+  // Record one finished game and bank the credits earned into the player's balance.
   app.post('/api/games', wrap(async (req, res) => {
-    const { playerId, score, kills, durationMs } = req.body || {};
+    const { playerId, credits, score, kills, durationMs } = req.body || {};
     if (!playerId || typeof playerId !== 'string') {
       return res.status(400).json({ error: 'playerId (string) required' });
     }
-    res.json(await recordGame(playerId, { score, kills, durationMs }));
+    // `credits` is the field name; accept legacy `score` too so older clients still bank correctly
+    res.json(await recordGame(playerId, { credits: credits ?? score, kills, durationMs }));
   }));
 
   // A player's game history (handy for testing / future UI).

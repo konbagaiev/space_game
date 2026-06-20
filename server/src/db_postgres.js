@@ -13,17 +13,25 @@ export async function migrate() {
       created_at   BIGINT  NOT NULL,
       last_seen    BIGINT  NOT NULL,
       games_played INTEGER NOT NULL DEFAULT 0,
-      language     TEXT    NOT NULL DEFAULT 'en'   -- UI/content language preference (resolution is client-side)
+      language     TEXT    NOT NULL DEFAULT 'en',  -- UI/content language preference (resolution is client-side)
+      credits      INTEGER NOT NULL DEFAULT 1000   -- persistent credit balance (new players start at 1000)
     );
     ALTER TABLE players ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en';
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS credits INTEGER NOT NULL DEFAULT 1000;
     CREATE TABLE IF NOT EXISTS games (
       id          BIGSERIAL PRIMARY KEY,
       player_id   TEXT    NOT NULL REFERENCES players(id),
-      score       INTEGER NOT NULL DEFAULT 0,
+      credits     INTEGER NOT NULL DEFAULT 0,  -- credits earned that game (renamed from score)
       kills       INTEGER NOT NULL DEFAULT 0,
       duration_ms INTEGER NOT NULL DEFAULT 0,
       ended_at    BIGINT  NOT NULL
     );
+    -- rename the legacy games.score → credits on databases created before this change (idempotent)
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'games' AND column_name = 'score') THEN
+        ALTER TABLE games RENAME COLUMN score TO credits;
+      END IF;
+    END $$;
     CREATE INDEX IF NOT EXISTS idx_games_player ON games(player_id);
 
     CREATE TABLE IF NOT EXISTS components (
@@ -127,15 +135,15 @@ async function ensureDefaultShip(playerId) {
 
 export async function registerPlayer(id) {
   const now = Date.now();
-  const { rows } = await pool.query('SELECT created_at, games_played, current_progress, language FROM players WHERE id = $1', [id]);
+  const { rows } = await pool.query('SELECT created_at, games_played, current_progress, language, credits FROM players WHERE id = $1', [id]);
   if (rows[0]) {
     await pool.query('UPDATE players SET last_seen = $1 WHERE id = $2', [now, id]);
     await ensureDefaultShip(id);
-    return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, language: rows[0].language, createdAt: Number(rows[0].created_at) };
+    return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, language: rows[0].language, credits: rows[0].credits, createdAt: Number(rows[0].created_at) };
   }
   await pool.query('INSERT INTO players (id, created_at, last_seen) VALUES ($1, $2, $3)', [id, now, now]);
   await ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, createdAt: now };
 }
 
 // Persist a player's language preference (validated to a supported code by the caller/route).
@@ -169,24 +177,29 @@ export async function advanceProgress(playerId) {
   return { currentProgress: cur.rows[0].current_progress, advanced: false };
 }
 
-export async function recordGame(playerId, { score = 0, kills = 0, durationMs = 0 } = {}) {
+export async function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0 } = {}) {
   const now = Date.now();
   await registerPlayer(playerId); // make sure the player exists
-  const { rows } = await pool.query(
-    'INSERT INTO games (player_id, score, kills, duration_ms, ended_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-    [playerId, score | 0, kills | 0, durationMs | 0, now]
+  const earned = credits | 0;
+  const ins = await pool.query(
+    'INSERT INTO games (player_id, credits, kills, duration_ms, ended_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+    [playerId, earned, kills | 0, durationMs | 0, now]
   );
-  await pool.query('UPDATE players SET games_played = games_played + 1, last_seen = $1 WHERE id = $2', [now, playerId]);
-  return { gameId: Number(rows[0].id) };
+  // bank the earned credits into the player's balance and read back the new total
+  const upd = await pool.query(
+    'UPDATE players SET games_played = games_played + 1, credits = credits + $1, last_seen = $2 WHERE id = $3 RETURNING credits',
+    [earned, now, playerId]
+  );
+  return { gameId: Number(ins.rows[0].id), credits: upd.rows[0].credits };
 }
 
 export async function getPlayerGames(playerId, limit = 50) {
   const { rows } = await pool.query(
-    'SELECT id, score, kills, duration_ms, ended_at FROM games WHERE player_id = $1 ORDER BY id DESC LIMIT $2',
+    'SELECT id, credits, kills, duration_ms, ended_at FROM games WHERE player_id = $1 ORDER BY id DESC LIMIT $2',
     [playerId, limit]
   );
   return rows.map((r) => ({
-    id: Number(r.id), score: r.score, kills: r.kills,
+    id: Number(r.id), credits: r.credits, kills: r.kills,
     duration_ms: r.duration_ms, ended_at: Number(r.ended_at),
   }));
 }
@@ -240,5 +253,6 @@ export async function getActivePlayerShip(playerId) {
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
     components: row.ps_components ?? row.ship_components,
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)
+    credits: reg.credits,   // the player's persistent credit balance
   };
 }

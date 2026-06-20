@@ -1,5 +1,5 @@
 // Combat smoke: hold fire while sweeping the aim for a couple of seconds. Asserts the sim stays
-// healthy (no errors — checked by the runner — enemy count maintained, score tracked) and saves a
+// healthy (no errors — checked by the runner — enemy count maintained, credits tracked) and saves a
 // mid-fight frame.
 export const name = '04-combat';
 
@@ -14,9 +14,9 @@ export default async function ({ page, assert, shot }) {
 
   const data = await page.evaluate(() => {
     const g = window.__game;
-    return { enemies: g.enemies.length, score: g.score, bulletsIsArray: Array.isArray(g.bullets) };
+    return { enemies: g.enemies.length, earned: g.earned, bulletsIsArray: Array.isArray(g.bullets) };
   });
   assert.ok(data.enemies > 0, 'the level keeps the arena populated during combat');
-  assert.equal(typeof data.score, 'number', 'score is tracked');
+  assert.equal(typeof data.earned, 'number', 'credits earned are tracked');
   assert.ok(data.bulletsIsArray, 'bullets pool exists');
 }

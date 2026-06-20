@@ -244,6 +244,66 @@ migration). Do i18n **after** maps/levels merges to `main`, to avoid a large mer
 
 ---
 
+## 11. Economy — credits, earned-this-run vs persistent balance
+
+**Decision.** The game currency is **credits**. There are two distinct quantities, intentionally separate:
+- **Earned** — credits accrued during the current run (each kill adds the enemy's `reward`; the level-clear
+  bonus doubles it). This is the former "score". It's provisional and lives only in the client.
+- **Credits** (balance) — the player's persistent account, `players.credits` (default **1000** for new
+  players). Server-authoritative.
+
+**Banking happens once, at run end.** On death OR victory the client posts the earned credits to
+`/api/games`; the server records the game and atomically adds them to `players.credits`, returning the new
+balance (the client trusts that number, never its own arithmetic). A `banked` guard + the server being the
+source of truth prevent double-counting. **Closing the browser mid-run loses the unbanked Earned** — by
+design: credits are only real once a run completes. Dying still pays out (you keep what you earned), and the
+×2 victory bonus is applied to Earned *before* banking.
+
+**Why a persistent balance now** (vs. just renaming score): it's the foundation for spending — buying
+hulls/engines/thrusters/weapons from the components catalog. The balance is a plain `INTEGER` column (no FK).
+
+**`games.score` was renamed to `games.credits`** (migration 008; Postgres via an idempotent
+`information_schema`-guarded rename) so the history table speaks the same currency. The `/api/games` body
+field is `credits`, but the route still accepts a legacy `score` field so an old cached client keeps working.
+
+---
+
+## 11. Player authentication (anonymous-first, optional email/password account) (planned)
+
+**Flow.** Stay anonymous-first. A player keeps the localStorage UUID and auto-registers as today.
+**After clearing level 1**, prompt for a **username** (display name) and offer to **register**. Decline →
+keep playing anonymously (the username is still saved). Accept → email + password upgrade the *same*
+player row in place (progress preserved). Cross-device **progress sync requires a verified email**.
+
+**Decisions:**
+- **Password hashing: built-in `crypto.scrypt`** (no dependency — matches the project ethos). Per-user
+  random salt; compare with `crypto.timingSafeEqual`.
+- **Session: server-side token in an httpOnly, Secure, SameSite cookie.** The DB stores a hash of the
+  token (a DB leak doesn't expose live sessions); the cookie holds the raw token. Same-origin + HTTPS
+  (Traefik) already in place. No `cookie-parser` dep — parse the `Cookie` header with a small helper.
+- **Username = display name; login is by email.** Not unique, not a credential. (Unique handles can come
+  later.)
+- **Identity model:** the `players.id` UUID stays the stable game identity; credentials attach to that
+  row (in-place upgrade preserves progress). On login from a fresh device the client **adopts the
+  account's player row**; merging two non-trivial anonymous progresses is out of scope for v1.
+- **Email: Amazon SES** (us-east-1, account `140065018525`), outbound only. Sender identity
+  `space.bagaiev.com`, from `noreply@space.bagaiev.com`. A scoped IAM user (`spacegame-mailer`, only
+  `ses:SendEmail`/`SendRawEmail`) supplies keys via the server-only `.env` (like `DATABASE_URL`).
+  - **SES is called via hand-rolled AWS SigV4 over the built-in `fetch`**, isolated in its own file
+    (`server/src/ses.js`) — **no `@aws-sdk` dependency for now**, keeping the built-in-only ethos.
+    **Future:** if SigV4-by-hand becomes a maintenance burden (more AWS calls, signing edge cases), we
+    may add `@aws-sdk/client-ses` — the isolated module is the single swap point.
+  - **⚠️ SES is in sandbox** (`ProductionAccessEnabled: false`, 200/day, verified recipients only).
+    Dev/test works against verified addresses; **production access must be requested before public
+    launch** (account-level AWS request, ~24 h; the account is shared with the TendNook/Salesforce
+    project).
+
+**Sequencing.** Like i18n, this adds a migration and touches `server.js` + `client/index.html` — land it
+relative to the other in-flight features deliberately and coordinate migration numbers (don't let two
+branches both grab the same `00N`).
+
+---
+
 ## Future ideas
 
 sound · solid asteroids with bounce ·

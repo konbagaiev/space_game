@@ -94,42 +94,53 @@ test('register: missing playerId -> 400', async () => {
   assert.equal(r.status, 400);
 });
 
-test('record game: stored and returned in history', async () => {
-  const r = await post('/api/games', { playerId: 'p1', score: 7, kills: 7, durationMs: 42000 });
+test('record game: stored in history and credits banked into the balance', async () => {
+  // p1 starts at the default 1000 balance
+  assert.equal((await (await post('/api/players/register', { playerId: 'p1' })).json()).credits, 1000);
+  const r = await post('/api/games', { playerId: 'p1', credits: 7, kills: 7, durationMs: 42000 });
   assert.equal(r.status, 200);
-  const { gameId } = await r.json();
-  assert.ok(Number.isInteger(gameId) && gameId > 0);
+  const body = await r.json();
+  assert.ok(Number.isInteger(body.gameId) && body.gameId > 0);
+  assert.equal(body.credits, 1007); // earned credits banked → new balance returned
 
   const history = await getJson('/api/players/p1/games');
   assert.equal(history.length, 1);
-  assert.equal(history[0].score, 7);
+  assert.equal(history[0].credits, 7);
   assert.equal(history[0].kills, 7);
   assert.equal(history[0].duration_ms, 42000);
+  // the balance persists on re-register
+  assert.equal((await (await post('/api/players/register', { playerId: 'p1' })).json()).credits, 1007);
+});
+
+test('register: a new player starts with a 1000-credit balance', async () => {
+  const j = await (await post('/api/players/register', { playerId: 'rich-1' })).json();
+  assert.equal(j.credits, 1000);
 });
 
 test('record game: missing playerId -> 400', async () => {
-  const r = await post('/api/games', { score: 1 });
+  const r = await post('/api/games', { credits: 1 });
   assert.equal(r.status, 400);
 });
 
 test('record game: auto-creates an unknown player', async () => {
-  await post('/api/games', { playerId: 'ghost', score: 1, kills: 1, durationMs: 1000 });
+  await post('/api/games', { playerId: 'ghost', credits: 1, kills: 1, durationMs: 1000 });
   const history = await getJson('/api/players/ghost/games');
   assert.equal(history.length, 1);
 });
 
-test('history is newest-first and games_played increments', async () => {
+test('history is newest-first, games_played increments, and credits accumulate', async () => {
   await post('/api/players/register', { playerId: 'p2' });
-  await post('/api/games', { playerId: 'p2', score: 1, kills: 1, durationMs: 100 });
-  await post('/api/games', { playerId: 'p2', score: 2, kills: 2, durationMs: 200 });
-  await post('/api/games', { playerId: 'p2', score: 3, kills: 3, durationMs: 300 });
+  await post('/api/games', { playerId: 'p2', credits: 10, kills: 1, durationMs: 100 });
+  await post('/api/games', { playerId: 'p2', credits: 20, kills: 2, durationMs: 200 });
+  await post('/api/games', { playerId: 'p2', credits: 30, kills: 3, durationMs: 300 });
 
   const history = await getJson('/api/players/p2/games');
   assert.equal(history.length, 3);
-  assert.deepEqual(history.map((g) => g.score), [3, 2, 1]); // newest first
+  assert.deepEqual(history.map((g) => g.credits), [30, 20, 10]); // newest first
 
   const reg = await (await post('/api/players/register', { playerId: 'p2' })).json();
   assert.equal(reg.gamesPlayed, 3);
+  assert.equal(reg.credits, 1060); // 1000 + 10 + 20 + 30
 });
 
 test('health reports ok and aggregate counts', async () => {
