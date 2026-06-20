@@ -5,6 +5,12 @@
 
 ## 2026-06-20
 
+- **Hangar screen + victory "Continue".** A win now shows a **Continue** button (a loss still shows
+  **Restart**/retry) that opens a new **Hangar screen** — the between-battles screen (future home for ship
+  management). For now it shows the next mission's briefing in large 2× text with a **Take off** button to
+  launch the next level. (The old post-victory briefing overlay became the Hangar.) Added **`level-3`'s
+  briefing** (text-only, no actions): the "reach the factory / flank the slow big ships with your machine
+  gun" hint. i18n: `ui.button.continue`, `ui.hangar.title`, `ui.hangar.default`, `level.3.briefing` (EN+RU).
 - **Between-level briefings (data-driven message + actions).** A level descriptor can now carry an
   optional `briefing` (`{ textKey, text, actions[] }`). When a player advances **into** a level, the
   server (`advanceProgress`) runs that briefing's `actions` server-side (once — progress only moves

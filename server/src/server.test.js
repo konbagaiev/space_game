@@ -107,10 +107,15 @@ test('briefing: advancing into level-2 returns its message and swaps the basic g
   assert.equal(after.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3);
   assert.ok(!after.loadout.mounts.some((m) => m.weapon === 1), 'no basic kinetic remains');
 
-  // advancing to the last level (no briefing there) returns briefing: null
+  // advancing to level-3 returns its (action-less) briefing
   const adv2 = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv2.advanced, true);
-  assert.equal(adv2.briefing, null);
+  assert.equal(adv2.briefing.textKey, 'level.3.briefing');
+
+  // already at the last level → no advance, no briefing
+  const adv3 = await (await post('/api/players/brief-1/advance', {})).json();
+  assert.equal(adv3.advanced, false);
+  assert.equal(adv3.briefing, null);
 });
 
 test('register: missing playerId -> 400', async () => {

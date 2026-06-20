@@ -340,8 +340,10 @@ given level happens once, so its actions run once; individual actions are also w
 
 **Why on the *next* level (not an `onComplete` of the finished one):** the narrative is "here's a tougher
 mission and a better weapon for it", which belongs to the upcoming level; it also means the last level needs
-no briefing (there's no "next"). The client shows the returned message on a dedicated briefing overlay
-between the victory screen and the next run, then reloads the active ship so the swap is visible.
+no briefing (there's no "next"). On a win the result overlay shows a **Continue** button (a loss shows
+Restart/retry) that opens the **Hangar** screen — the between-battles screen (future home for ship
+management) — which displays the returned briefing (large text) and launches the next level; the client
+also reloads the active ship so the swap is visible.
 
 **Side fix:** `buildPlayerFor` now uses the active ship's **persisted loadout/components** (it previously
 always used catalog defaults), which is what makes a stored weapon swap actually take effect in-game.

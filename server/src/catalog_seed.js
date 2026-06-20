@@ -156,8 +156,13 @@ export const LEVELS = [
         { name: 'victory', event: 'win', delay: 5, textKey: 'level.2.victory', text: 'Level 2 cleared! The mid-boss is down.' },
       ] } },
   // Level 3 — the full fight: waves of all three enemy types, then the Sector boss.
+  // Briefing shown when the player reaches level 3 (after clearing level 2). Text only — no actions.
   { name: 'level-3', descriptor: {
       title: 'Level 3', map: 'home-system',
+      briefing: {
+        textKey: 'level.3.briefing',
+        text: "Nice — you've reached the factory! Now we have to push them back. A number of big ships have been spotted there, but they should be slow, so you can use your machine gun to destroy them from behind. Good luck, Sentinel.",
+      },
       phases: [
         { name: 'wave-1',
           spawn: { maxConcurrent: 4, pool: [

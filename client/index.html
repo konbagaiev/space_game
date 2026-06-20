@@ -45,7 +45,7 @@
     background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; font-weight: 700;
   }
   /* Welcome / start screen */
-  #welcome, #briefing {
+  #welcome, #hangar {
     position: fixed; inset: 0; z-index: 12; display: none;
     align-items: center; justify-content: center; flex-direction: column;
     background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
@@ -58,10 +58,11 @@
     border-radius: 7px; padding: 5px 11px;
   }
   #lang-switch button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
-  #welcome h1, #briefing h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
-  #briefing h1 { font-size: 30px; }
-  #welcome .intro, #briefing .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
-  #briefing .intro { opacity: .9; max-width: 600px; line-height: 1.55; }
+  #welcome h1, #hangar h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
+  #hangar h1 { font-size: 34px; }
+  #welcome .intro, #hangar .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
+  /* Hangar briefing text is ~2x the normal paragraph size (16px -> 32px) */
+  #hangar .intro { opacity: .92; max-width: 820px; font-size: 32px; line-height: 1.4; margin-bottom: 32px; }
   #welcome .pick { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: .6; margin-bottom: 12px; }
   #ship-choices { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 28px; }
   .ship-card {
@@ -74,12 +75,12 @@
   .ship-card .ship-name { font-weight: 700; font-size: 17px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
   .ship-card .ship-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
   .ship-card .ship-stat { font-size: 13px; opacity: .8; line-height: 1.7; }
-  #takeoff, #briefing-go {
+  #takeoff, #hangar-go {
     pointer-events: auto; cursor: pointer;
     padding: 14px 44px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
     background: linear-gradient(90deg,#ffb35a,#ff7a3c); color: #1a0c02; letter-spacing: 1px;
   }
-  #takeoff:hover, #briefing-go:hover { filter: brightness(1.08); }
+  #takeoff:hover, #hangar-go:hover { filter: brightness(1.08); }
   /* hide the in-game HUD while the welcome screen is up */
   body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers { display: none; }
   /* Perf overlay (load) */
@@ -176,10 +177,10 @@
   <div id="ship-choices"></div>
   <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
 </div>
-<div id="briefing">
-  <h1 id="briefing-title" data-i18n="ui.briefing.title">Briefing</h1>
-  <p class="intro" id="briefing-text"></p>
-  <button id="briefing-go" data-i18n="ui.button.take_off">Take off 🚀</button>
+<div id="hangar">
+  <h1 id="hangar-title" data-i18n="ui.hangar.title">Hangar</h1>
+  <p class="intro" id="hangar-text"></p>
+  <button id="hangar-go" data-i18n="ui.button.take_off">Take off 🚀</button>
 </div>
 <div id="gametitle" data-i18n="ui.title">Vega Sentinels</div>
 <div id="markers"></div>
@@ -860,6 +861,7 @@ const levelRunner = {
     // resolve the level's victory line through i18n (key → translation → English fallback)
     const cleared = this.winTextKey ? t(this.winTextKey) : (this.winText || t('ui.overlay.sector_cleared'));
     overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: earned })}`;
+    elRestart.textContent = t('ui.button.continue'); // a win continues to the Hangar
     overlay.style.display = 'flex';
     bankRun(); // bank the earned credits into the account balance
     unlockNextLevel(); // record progress + load the next level for the next Restart
@@ -1111,6 +1113,7 @@ const elHpPct = document.getElementById('hppct');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySub = document.getElementById('overlay-sub');
+const elRestart = document.getElementById('restart'); // overlay button: "Continue" on a win, "Restart" on a loss
 const elRocketBtn = document.getElementById('rocket-btn');
 const elRocketFill = document.getElementById('rocket-fill');
 let kills = 0;   // count of destroyed enemies (drives the level runner's thresholds + "Destroyed")
@@ -1401,6 +1404,7 @@ function update(dt) {
     bankRun(); // bank the earned credits into the account balance + record the game
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');
     overlaySub.textContent = t('ui.gameover.sub', { kills, credits: earned });
+    elRestart.textContent = t('ui.button.restart'); // a loss retries the level
     overlay.style.display = 'flex';
   }
 
@@ -1517,22 +1521,25 @@ function reset() {
   levelRunner.start(CATALOG.level); // restart the level from phase 1 (spawns via update())
   overlay.style.display = 'none';
 }
-// Leaving the game-over / victory overlay: if a level briefing is pending (set when the player just
-// advanced a level), show it first; otherwise start the next run immediately.
-const briefingEl = document.getElementById('briefing');
-function showBriefing(b) {
-  document.getElementById('briefing-text').textContent = b.textKey ? t(b.textKey) : (b.text || '');
+// Leaving the result overlay: a win goes to the Hangar (next-mission briefing + launch); a loss
+// retries the level immediately. The Hangar shows the pending briefing, or a default standby line.
+const hangarEl = document.getElementById('hangar');
+function showHangar() {
+  const text = pendingBriefing
+    ? (pendingBriefing.textKey ? t(pendingBriefing.textKey) : (pendingBriefing.text || ''))
+    : t('ui.hangar.default');
+  document.getElementById('hangar-text').textContent = text;
   overlay.style.display = 'none';
-  briefingEl.style.display = 'flex';
+  hangarEl.style.display = 'flex';
 }
 function leaveOverlay() {
-  if (pendingBriefing) { showBriefing(pendingBriefing); return; }
+  if (levelRunner.won) { showHangar(); return; } // victory → Hangar; loss → straight retry
   reset();
 }
-document.getElementById('restart').addEventListener('click', leaveOverlay);
-document.getElementById('briefing-go').addEventListener('click', () => {
+elRestart.addEventListener('click', leaveOverlay);
+document.getElementById('hangar-go').addEventListener('click', () => {
   pendingBriefing = null;
-  briefingEl.style.display = 'none';
+  hangarEl.style.display = 'none';
   reset();
 });
 

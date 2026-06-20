@@ -9,12 +9,15 @@
   "ui.overlay.ship_destroyed": { "source": "Ship destroyed", "context": "Overlay title on player death (variant). Short." },
   "ui.overlay.victory": { "source": "Victory!", "context": "Overlay title when a level is cleared. Upbeat." },
   "ui.overlay.sector_cleared": { "source": "Sector cleared.", "context": "Fallback victory subtitle when a level has no custom victory line." },
-  "ui.button.restart": { "source": "Restart", "context": "Button on the game-over/victory overlay. Short." },
+  "ui.button.restart": { "source": "Restart", "context": "Button on the game-over overlay (retry the level). Short." },
+  "ui.button.continue": { "source": "Continue", "context": "Button on the victory overlay — proceeds to the Hangar screen. Short." },
   "ui.button.take_off": { "source": "Take off 🚀", "context": "Primary button on the welcome screen that starts the game. Keep the 🚀 emoji." },
   "ui.welcome.greeting": { "source": "Welcome, Sentinel", "context": "Welcome-screen heading. 'Sentinel' is the player's in-game title — keep it." },
   "ui.welcome.intro": { "source": "Pirates are raiding our home system — we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't let them pin you down.", "context": "Welcome-screen intro paragraph. 2–3 sentences, motivating, second person." },
   "ui.welcome.pick": { "source": "Pick your ship", "context": "Label above the ship-picker cards on the welcome screen." },
   "ui.briefing.title": { "source": "Briefing", "context": "Title of the between-levels briefing overlay (shown after clearing a level, before the next). Short." },
+  "ui.hangar.title": { "source": "Hangar", "context": "Title of the Hangar screen — the between-battles screen shown after a victory (currently shows the next mission briefing). Short." },
+  "ui.hangar.default": { "source": "Stand by for new orders, Sentinel.", "context": "Hangar message shown when there is no mission briefing (e.g. after the final level). 'Sentinel' is the player's title." },
   "ui.title": { "source": "Vega Sentinels", "context": "Game wordmark / brand name. Stays Latin in every locale." },
   "ui.touch.fire": { "source": "FIRE", "context": "Touch-control fire button label (mobile). Uppercase, short." },
   "ui.credits.doubled": { "source": "Earned ×2 = {credits}", "context": "Victory subtitle tail; {credits} is the doubled credits earned (integer). '×2' is the level-clear bonus notation." },
@@ -31,5 +34,6 @@
   "level.1.victory": { "source": "Level 1 cleared! Nice flying, Sentinel.", "context": "Victory overlay subtitle after level 1. Upbeat. 'Sentinel' is the player's in-game title — keep it." },
   "level.2.briefing": { "source": "The pirates are storming our weapons factory — we have to push them back before they arm their fleet. Their heavier squadrons are dug in there, so command has refitted your ship: the basic gun is out, a Machine Gun is in. Go take it back, Sentinel.", "context": "Briefing paragraph shown after clearing level 1, before level 2. Explains the mission and that the player's gun was swapped for a Machine Gun. Keep 'Machine Gun' (a weapon name) and 'Sentinel' (the player's title)." },
   "level.2.victory": { "source": "Level 2 cleared! The mid-boss is down.", "context": "Victory overlay subtitle after level 2. Upbeat." },
-  "level.3.victory": { "source": "Sector cleared. Congratulations, Sentinel!", "context": "Victory overlay subtitle after the final level. Celebratory. 'Sentinel' is the player's title." }
+  "level.3.victory": { "source": "Sector cleared. Congratulations, Sentinel!", "context": "Victory overlay subtitle after the final level. Celebratory. 'Sentinel' is the player's title." },
+  "level.3.briefing": { "source": "Nice — you've reached the factory! Now we have to push them back. A number of big ships have been spotted there, but they should be slow, so you can use your machine gun to destroy them from behind. Good luck, Sentinel.", "context": "Briefing shown in the Hangar after clearing level 2, before level 3. Tactical hint: big slow ships, flank them with the machine gun. Keep 'machine gun' and 'Sentinel' (the player's title)." }
 }

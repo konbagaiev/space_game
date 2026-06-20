@@ -84,13 +84,18 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Backend). On load the client fetches **that** level (`GET /api/players/:id/level`, not a hard-coded
   one); clearing a level **unlocks the next** (the `win` handler POSTs `/advance`, then loads the new
   level so the next **Restart** plays it). A new player starts on `level-1`; the last level stays put.
+- **Victory → Hangar → next level.** On a win the result overlay shows a **Continue** button (a loss
+  shows **Restart**/retry); Continue opens the **Hangar screen** — the between-battles screen (future home
+  for ship management). It shows the next mission's briefing in large (2×) text, with a **Take off** button
+  that launches the next level.
 - **Between-level briefings** — a level descriptor can carry an optional **`briefing`** (`{ textKey,
   text, actions[] }`). When the player advances **into** a level, the server runs that briefing's
   `actions` (server-authoritative, once — progress only moves forward) and returns the message; the
-  client shows it on a **briefing overlay** between the victory screen and the next run. Actions are a
-  typed, extensible list dispatched server-side; the one type today is **`replaceWeapon` `{from, to}`**
-  (swaps a mounted weapon id on the active `player_ships` loadout). `level-2`'s briefing narrates the
-  weapons-factory mission and swaps the basic gun (1) for the **Machine Gun** (5). After advancing, the
+  client shows it on the **Hangar screen** between the victory overlay and the next run (or a default
+  "standby" line when there's none). Actions are a typed, extensible list dispatched server-side; the one
+  type today is **`replaceWeapon` `{from, to}`** (swaps a mounted weapon id on the active `player_ships`
+  loadout). `level-2`'s briefing narrates the weapons-factory mission and swaps the basic gun (1) for the
+  **Machine Gun** (5); `level-3`'s briefing is text-only (tactical hint, no actions). After advancing, the
   client reloads the active ship and rebuilds the player so the new loadout takes effect. (Future action
   types: add credits, add to a stash, etc.)
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
