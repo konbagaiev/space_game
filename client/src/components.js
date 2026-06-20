@@ -47,12 +47,24 @@ export const THRUSTER_TO_TURN = 1;   // maneuverability = thruster power x this 
 // Component slots whose weight adds to a ship's total mass.
 export const COMPONENT_SLOTS = ['hull', 'engine', 'thrusters', 'weapon', 'secondary', 'rocket'];
 
-// Total ship mass = sum of the weights of all its components.
+// Total ship mass = hull + engine + thrusters + the weight of every mounted weapon.
+// Weapons come from `ship.mounts` (the current model: each mount references a weapon object); the
+// legacy `weapon`/`secondary`/`rocket` slots are still summed when there are no mounts (unit tests).
 export function shipMass(ship) {
   let mass = 0;
-  for (const slot of COMPONENT_SLOTS) {
+  for (const slot of ['hull', 'engine', 'thrusters']) {
     const c = ship[slot];
     if (c && typeof c.weight === 'number') mass += c.weight;
+  }
+  if (Array.isArray(ship.mounts)) {
+    for (const m of ship.mounts) {
+      if (m && m.weapon && typeof m.weapon.weight === 'number') mass += m.weapon.weight;
+    }
+  } else {
+    for (const slot of ['weapon', 'secondary', 'rocket']) {
+      const c = ship[slot];
+      if (c && typeof c.weight === 'number') mass += c.weight;
+    }
   }
   return mass;
 }

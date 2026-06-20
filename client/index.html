@@ -483,7 +483,8 @@ function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
   // velocity = projectile speed along the nose + ship velocity (inherited)
   const vel = dir.clone().normalize().multiplyScalar(weapon.projectileSpeed);
   if (shooterVel) vel.add(shooterVel);
-  bullets.push({ mesh: m, vel, life: 2.2, fromPlayer, damage: weapon.power });
+  // despawn by distance traveled (maxRange), not time
+  bullets.push({ mesh: m, vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power });
 }
 
 // ---------- Micro-explosions at the impact point ----------
@@ -615,7 +616,9 @@ function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
     obj: holder, vel, accel, turnRate: weapon.turnRate,
     target, fromPlayer,
     damage: weapon.power, detonateR: weapon.detonateRadius,
-    blastR: weapon.blastRadius, blastVis: weapon.blastVisual, life: weapon.life,
+    blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
+    hp: weapon.health ?? 1,                              // HP: reduced by bullet damage, shot down at 0
+    traveled: 0, maxRange: weapon.maxRange ?? 120,       // self-destructs at max flight range
   });
 }
 
@@ -660,26 +663,45 @@ const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : nu
 // ---------- Player (built from the player's active ship in bootstrap) ----------
 let player = null;
 
+// Resolve a ship's mounts (weapon ids -> weapon objects).
+function buildMounts(mountDefs) {
+  return (mountDefs || [])
+    .map((m) => ({ weapon: resolveWeapon(m.weapon), group: m.group, offset: m.offset || 0, delay: m.delay || 0 }))
+    .filter((m) => m.weapon);
+}
+// Group a ship's mounts into fire channels. A group has a player key and/or an enemy AI rule, its
+// own cooldown (= the slowest mounted weapon's reload), and a `pending` queue for staggered volleys.
+function buildGroups(groupDefs, mounts) {
+  const groups = {};
+  for (const [name, def] of Object.entries(groupDefs || {})) {
+    const gm = mounts.filter((m) => m.group === name);
+    const reload = gm.reduce((mx, m) => Math.max(mx, m.weapon.fireCooldown || 0), 0);
+    groups[name] = { name, key: def.key, ai: def.ai || null, mounts: gm, reload, cooldown: 0, pending: [] };
+  }
+  return groups;
+}
+
 function buildPlayer(active) {
   const s = active.ship.stats;
   const p = {
     mesh: makeShip(s.color, modelSpec(active.ship.modelUrl)),
     vel: new THREE.Vector3(),
     heading: 0,                       // rotation angle around Y
+    sizeScale: s.sizeScale || 1,
     hull: s.hull, engine: s.engine, thrusters: s.thrusters,
-    weapon: resolveWeapon(active.loadout.weapon),
-    secondary: resolveWeapon(active.loadout.secondary),
+    mounts: buildMounts(active.loadout.mounts), // resolved weapons; also feeds ship mass
     hp: s.hull.durability, maxHp: s.hull.durability,
-    cooldown: 0, secondaryCooldown: 0, alive: true,
+    alive: true,
   };
-  deriveDrive(p); // acceleration <- engine power, turnRate <- thrusters, scaled by mass
+  p.groups = buildGroups(s.groups, p.mounts); // fire channels (gun / rocket / ...)
+  deriveDrive(p); // acceleration <- engine power, turnRate <- thrusters, scaled by mass (incl. mounts)
   return p;
 }
 
 // ---------- Enemies ----------
 const enemies = [];
 
-// Build one enemy from a DB ship row (type 'enemy'); weapons resolve from the catalog by id.
+// Build one enemy from a DB ship row (type 'enemy'); weapons + fire groups come from its stats.
 function spawnEnemyShip(shipDef) {
   const s = shipDef.stats;
   const e = {
@@ -688,14 +710,12 @@ function spawnEnemyShip(shipDef) {
     vel: new THREE.Vector3(),
     heading: Math.random() * Math.PI * 2,
     hull: s.hull, engine: s.engine, thrusters: s.thrusters,
-    weapon: resolveWeapon(s.weapon),
-    rocket: resolveWeapon(s.rocket),   // null or a rocket weapon
+    mounts: buildMounts(s.mounts),
     hp: s.hull.durability,
-    cooldown: Math.random() * 1.5,
-    rocketCooldown: 1 + Math.random() * 3,
     radius: 2.6 * (s.sizeScale || 1),  // hit radius scales with model size
     alive: true,
   };
+  e.groups = buildGroups(s.groups, e.mounts);
   e.mesh.scale.multiplyScalar(s.sizeScale || 1); // bigger model for heavy enemies
   deriveDrive(e);
   // spawn in a ring around the player (just off-screen), not at the arena edges
@@ -729,6 +749,41 @@ function spawnRandomEnemy() {
   let r = Math.random() * total, pick = list[0];
   for (const s of list) { r -= (s.stats.spawnWeight || 1); if (r < 0) { pick = s; break; } }
   spawnEnemyShip(pick);
+}
+
+// ---------- Weapons: mounts fire in groups (a key for the player, an AI rule for enemies) ----------
+const rightVec = (fwd) => new THREE.Vector3(fwd.z, 0, -fwd.x); // perpendicular to fwd, in the plane
+
+// Fire one mount: spawn its projectile at the muzzle + lateral offset (side-by-side fire).
+function fireMount(ship, mount, fwd, isPlayer) {
+  const muzzle = ship.mesh.position.clone()
+    .addScaledVector(fwd, 3)
+    .addScaledVector(rightVec(fwd), mount.offset * (ship.sizeScale || 1));
+  const w = mount.weapon;
+  if (w.type === 'rocket') {
+    const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : player;
+    const accel = isPlayer ? ship.acceleration : (w.accel ?? ship.acceleration);
+    spawnRocket(muzzle, fwd, w, accel, isPlayer, target);
+  } else {
+    spawnBullet(muzzle, fwd, w, isPlayer, ship.vel);
+  }
+}
+
+// Advance a ship's fire groups: drain queued (staggered) volleys, and start a new volley when
+// `wantsFire(group)` is true and the group is off cooldown. One trigger fires ALL the group's
+// mounts, each after its own `delay` (so two launchers fire one after the other).
+function updateGroups(ship, fwd, isPlayer, dt, wantsFire) {
+  for (const g of Object.values(ship.groups)) {
+    g.cooldown -= dt;
+    for (let i = g.pending.length - 1; i >= 0; i--) {
+      g.pending[i].t -= dt;
+      if (g.pending[i].t <= 0) { fireMount(ship, g.pending[i].mount, fwd, isPlayer); g.pending.splice(i, 1); }
+    }
+    if (g.mounts.length && g.cooldown <= 0 && wantsFire(g)) {
+      g.cooldown = g.reload + (isPlayer ? 0 : Math.random() * 0.5); // enemies stagger their reloads a bit
+      for (const m of g.mounts) g.pending.push({ mount: m, t: m.delay });
+    }
+  }
 }
 
 // ---------- Input ----------
@@ -876,9 +931,10 @@ function updateHud() {
   elHp.style.width = hpPct + '%';
   elHpPct.textContent = hpPct.toFixed(1) + '%'; // remaining health, one decimal
 
-  // rocket reload: the 🚀 circle fills up (radial) as it reloads
-  const cd = player.secondary.fireCooldown;
-  const left = Math.max(0, player.secondaryCooldown);
+  // rocket reload: the 🚀 circle fills up (radial) as the rocket group reloads
+  const rg = player.groups.rocket;
+  const cd = rg ? rg.reload : 1;
+  const left = rg ? Math.max(0, rg.cooldown) : 0;
   const ready = left <= 0;
   const deg = Math.round((cd > 0 ? 1 - left / cd : 1) * 360);
   const col = ready ? '#77ee77' : '#ffaa55';
@@ -941,22 +997,8 @@ function update(dt) {
     emitExhaust(player.mesh.position, fwd, player.vel, eng.exhaust);
   }
 
-  // --- player: firing (primary weapon) ---
-  player.cooldown -= dt;
-  if (keys['Space'] && player.cooldown <= 0) {
-    const muzzle = player.mesh.position.clone().addScaledVector(fwd, 3);
-    spawnBullet(muzzle, fwd, player.weapon, true, player.vel);
-    player.cooldown = player.weapon.fireCooldown;
-  }
-
-  // --- player: rockets (secondary weapon, F key / touch button) ---
-  player.secondaryCooldown -= dt;
-  if ((keys['KeyF'] || keys['_rocket']) && player.secondaryCooldown <= 0) {
-    const muzzle = player.mesh.position.clone().addScaledVector(fwd, 3);
-    const target = findTargetInSector(muzzle, fwd, player.secondary.seekHalfAngle);
-    spawnRocket(muzzle, fwd, player.secondary, player.acceleration, true, target);
-    player.secondaryCooldown = player.secondary.fireCooldown;
-  }
+  // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
+  updateGroups(player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
 
   // --- enemy AI ---
   for (const e of enemies) {
@@ -983,30 +1025,15 @@ function update(dt) {
     // engine trail: same exhaust behavior as the player, when thrusting forward
     if (thrust > 0.1) emitExhaust(e.mesh.position, ef, e.vel, e.engine.exhaust, e.sizeScale || 1);
 
-    // fire the gun (only if the enemy has one) when roughly facing the player and in range
-    e.cooldown -= dt;
-    if (e.weapon && e.cooldown <= 0 && dist < 45 && Math.abs(diff) < 0.25) {
-      const muzzle = e.mesh.position.clone().addScaledVector(ef, 3);
-      spawnBullet(muzzle, ef, e.weapon, false, e.vel);
-      e.cooldown = e.weapon.fireCooldown + Math.random() * 0.5;
-    }
-
-    // rocketeer: launch a rocket at the player when aimed and in range
-    if (e.rocket) {
-      e.rocketCooldown -= dt;
-      if (e.rocketCooldown <= 0 && dist < 80 && Math.abs(diff) < 0.4) {
-        const muzzle = e.mesh.position.clone().addScaledVector(ef, 3);
-        spawnRocket(muzzle, ef, e.rocket, e.rocket.accel, false, player);
-        e.rocketCooldown = e.rocket.fireCooldown + Math.random() * 1.5;
-      }
-    }
+    // fire each group whose AI rule (range + aim tolerance) is satisfied
+    updateGroups(e, ef, false, dt, (g) => g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
   }
 
   // --- projectiles ---
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
+    b.traveled += b.vel.length() * dt;
     b.mesh.position.addScaledVector(b.vel, dt);
-    b.life -= dt;
 
     let hit = false;
     if (b.fromPlayer) {
@@ -1021,21 +1048,21 @@ function update(dt) {
       }
     }
 
-    // interception: a bullet shoots down an ENEMY rocket (explosion without damage)
+    // interception: a bullet damages an opposite-side rocket; it's shot down when its hp runs out
     if (!hit) {
       for (let j = rockets.length - 1; j >= 0; j--) {
         const r = rockets[j];
         if (r.fromPlayer === b.fromPlayer) continue; // only rockets of the opposite side
         if (b.mesh.position.distanceTo(r.obj.position) < 2.4) {
-          detonateRocket(r, false);
-          rockets.splice(j, 1);
-          hit = true; break;
+          r.hp -= b.damage;
+          if (r.hp <= 0) { detonateRocket(r, false); rockets.splice(j, 1); } // destroyed
+          hit = true; break;                                                 // else it survives, takes another
         }
       }
     }
 
     const out = Math.abs(b.mesh.position.x) > ARENA || Math.abs(b.mesh.position.z) > ARENA;
-    if (hit || b.life <= 0 || out) {
+    if (hit || b.traveled >= b.maxRange || out) {
       if (hit) spawnExplosion(b.mesh.position); // micro-flash at the impact point
       scene.remove(b.mesh);
       b.mesh.material.dispose();
@@ -1056,10 +1083,10 @@ function update(dt) {
       const speed = r.vel.length() + r.accel * dt;
       r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
     }
+    r.traveled += r.vel.length() * dt;
     r.obj.position.addScaledVector(r.vel, dt);
     if (r.vel.lengthSq() > 0.01) r.obj.rotation.y = Math.atan2(r.vel.x, r.vel.z);
     spawnSmoke(r.obj.position); // light smoke trail
-    r.life -= dt;
 
     let det = false;
     if (r.fromPlayer) {
@@ -1070,7 +1097,7 @@ function update(dt) {
       det = true;
     }
     const out = Math.abs(r.obj.position.x) > ARENA || Math.abs(r.obj.position.z) > ARENA;
-    if (det || r.life <= 0) { detonateRocket(r); rockets.splice(i, 1); }
+    if (det || r.traveled >= r.maxRange) { detonateRocket(r); rockets.splice(i, 1); }
     else if (out) { scene.remove(r.obj); r.obj.children[0].material.dispose(); rockets.splice(i, 1); }
   }
 
@@ -1239,8 +1266,7 @@ function reset() {
   player.vel.set(0, 0, 0);
   player.heading = 0;
   player.hp = player.maxHp;
-  player.cooldown = 0;
-  player.secondaryCooldown = 0;
+  for (const g of Object.values(player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   player.alive = true;
   score = 0;
   gameStartTime = performance.now(); // start timing a new game (for history)

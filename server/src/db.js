@@ -14,10 +14,23 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 // run at server startup. This module only opens the database and exposes queries.
 export const db = new DatabaseSync(dbPath);
 
-// Apply schema migrations (versioned runner; see migrate.js + migrations/).
+// Apply schema migrations, then seed/refresh the catalog (idempotent upsert).
 export async function migrate() {
   const { runMigrations } = await import('./migrate.js');
   await runMigrations(db);
+  await seedCatalog();
+}
+
+// Upsert the ship/weapon catalog from the shared snapshot. Runs on every startup, so editing
+// catalog_seed.js updates the rows (ids/foreign keys preserved — weapons keyed by id, ships by name).
+async function seedCatalog() {
+  const { SHIPS, WEAPONS } = await import('./catalog_seed.js');
+  const upW = db.prepare(`INSERT INTO weapons (id, name, type, stats) VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, stats = excluded.stats`);
+  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, JSON.stringify(w.stats));
+  const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url) VALUES (?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url`);
+  for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null);
 }
 
 // Give a player their starter ship if they don't own one yet: the default 'player' ship,
@@ -96,9 +109,7 @@ export function getActivePlayerShip(playerId) {
   return {
     playerShipId: row.player_ship_id,
     ship: { id: row.ship_id, name: row.name, type: row.type, stats, modelUrl: row.model_url },
-    loadout: {
-      weapon: loadout.weapon ?? stats.weapon ?? null,
-      secondary: loadout.secondary ?? stats.secondary ?? null,
-    },
+    // effective loadout: an explicit loadout may override the mounts, else use the ship's defaults
+    loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
   };
 }

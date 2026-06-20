@@ -61,4 +61,13 @@ jobs:
             docker image prune -f
           '
       - name: Smoke check
-        run: curl -fsS --max-time 20 https://space.bagaiev.com/api/health
+        # Retry: a rollout can briefly 502 while Traefik swaps to the new container (e.g. a
+        # slower first-time migration). Give it several tries before failing the deploy.
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS --max-time 10 https://space.bagaiev.com/api/health; then
+              echo " ✓ healthy (attempt $i)"; exit 0
+            fi
+            echo "attempt $i failed; retrying in 3s..."; sleep 3
+          done
+          echo "smoke check failed after 10 attempts" >&2; exit 1

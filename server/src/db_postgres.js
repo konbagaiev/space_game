@@ -50,23 +50,20 @@ export async function migrate() {
     CREATE UNIQUE INDEX IF NOT EXISTS uniq_player_active_ship ON player_ships(player_id) WHERE is_active;
   `);
 
-  // Seed the catalog from the shared snapshot if the tables are empty (idempotent).
+  // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
+  // propagates on deploy (ids/foreign keys preserved — weapons keyed by id, ships by name).
   const { SHIPS, WEAPONS } = await import('./catalog_seed.js');
-  const wc = await pool.query('SELECT COUNT(*)::int AS n FROM weapons');
-  if (wc.rows[0].n === 0) {
-    for (const w of WEAPONS) {
-      await pool.query(
-        'INSERT INTO weapons (id, name, type, stats) VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT (id) DO NOTHING',
-        [w.id, w.name, w.type, JSON.stringify(w.stats)]);
-    }
+  for (const w of WEAPONS) {
+    await pool.query(
+      `INSERT INTO weapons (id, name, type, stats) VALUES ($1, $2, $3, $4::jsonb)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, stats = EXCLUDED.stats`,
+      [w.id, w.name, w.type, JSON.stringify(w.stats)]);
   }
-  const sc = await pool.query('SELECT COUNT(*)::int AS n FROM ships');
-  if (sc.rows[0].n === 0) {
-    for (const s of SHIPS) {
-      await pool.query(
-        'INSERT INTO ships (name, type, stats, model_url) VALUES ($1, $2, $3::jsonb, $4) ON CONFLICT (name) DO NOTHING',
-        [s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null]);
-    }
+  for (const s of SHIPS) {
+    await pool.query(
+      `INSERT INTO ships (name, type, stats, model_url) VALUES ($1, $2, $3::jsonb, $4)
+       ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url`,
+      [s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null]);
   }
   console.log('[migrate] postgres schema ready');
 }
@@ -147,9 +144,6 @@ export async function getActivePlayerShip(playerId) {
   return {
     playerShipId: Number(row.player_ship_id),
     ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url },
-    loadout: {
-      weapon: loadout.weapon ?? stats.weapon ?? null,
-      secondary: loadout.secondary ?? stats.secondary ?? null,
-    },
+    loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
   };
 }

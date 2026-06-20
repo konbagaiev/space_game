@@ -103,14 +103,19 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   const player = ships.find((s) => s.name === 'Basic player ship');
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player.glb');
-  assert.equal(player.stats.hull.durability, 100);  // stats parsed from JSON
-  assert.equal(player.stats.weapon, 1);             // references a weapon BY ID
+  assert.equal(player.stats.hull.durability, 100);     // stats parsed from JSON
+  assert.equal(player.stats.mounts[0].weapon, 1);      // mounts reference weapons BY ID
+  assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');
   assert.equal(enemies.length, 3);
   const boss = ships.find((s) => s.name === 'basic mini boss');
   assert.equal(boss.stats.sizeScale, 2);
-  assert.equal(boss.stats.unlockAfterKills, 10);    // spawn rules live in the data
+  assert.equal(boss.stats.unlockAfterKills, 10);       // spawn rules live in the data
   assert.equal(boss.stats.spawnWeight, 2);
+  // the mini-boss has TWO rocket launchers (the multi-weapon showcase), staggered
+  assert.equal(boss.stats.mounts.length, 2);
+  assert.ok(boss.stats.mounts.every((m) => m.weapon === 4 && m.group === 'rocket'));
+  assert.deepEqual(boss.stats.mounts.map((m) => m.delay).sort(), [0, 0.2]);
 });
 
 test('catalog: weapons are seeded with type bullet/rocket', async () => {
@@ -121,20 +126,24 @@ test('catalog: weapons are seeded with type bullet/rocket', async () => {
   const basic = weapons.find((w) => w.name === 'Basic kinetic');
   assert.equal(basic.type, 'bullet');
   assert.equal(basic.stats.power, 10);
-  assert.equal(basic.id, 1); // stable id, referenced by ships/loadout
+  assert.equal(basic.id, 1);            // stable id, referenced by ship mounts
+  assert.equal(basic.stats.maxRange, 88); // bullet range is data-driven now
   const rocket = weapons.find((w) => w.name === 'Rocket (homing)');
   assert.equal(rocket.type, 'rocket');
   assert.equal(rocket.id, 3);
   assert.equal(rocket.stats.power, 50);
+  assert.equal(rocket.stats.health, 30);  // HP, reduced by a bullet's damage
+  assert.equal(rocket.stats.maxRange, 150);
 });
 
-test('active ship: a new player gets a default active ship (empty loadout -> ship defaults)', async () => {
+test('active ship: a new player gets a default active ship (empty loadout -> ship mounts)', async () => {
   // /active-ship auto-registers the player and grants the starter ship
   const active = await getJson('/api/players/ship-test-1/active-ship');
   assert.equal(active.ship.name, 'Basic player ship');
   assert.equal(active.ship.type, 'player');
   assert.equal(active.ship.modelUrl, 'assets/ships/player.glb');
-  // empty loadout falls back to the ship's default weapon ids
-  assert.equal(active.loadout.weapon, 1);     // Basic kinetic
-  assert.equal(active.loadout.secondary, 3);  // Rocket (homing)
+  // empty loadout falls back to the ship's default mounts
+  assert.equal(active.loadout.mounts.length, 2);
+  assert.equal(active.loadout.mounts.find((m) => m.group === 'gun').weapon, 1);    // Basic kinetic
+  assert.equal(active.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3); // Rocket (homing)
 });

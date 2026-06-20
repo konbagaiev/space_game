@@ -30,37 +30,36 @@ Ships and weapons are **defined in the database** (`ships`, `weapons`); the clie
 startup (`bootstrap()`) and builds every ship from that data. Only the pure derivation
 (`deriveDrive`/`shipMass` in `client/src/components.js`) stays client-side; the hardcoded catalogs
 there (`ENGINES`/`HULLS`/`WEAPONS`/`ENEMY_KINDS`) are no longer used by the game (kept as the seed's
-mirror + unit tests). A ship's `stats` (JSON) carry hull/engine/thrusters and reference weapons **by
-id**; the player's active ship + loadout come from `player_ships` (see Backend).
+mirror + unit tests). A ship's `stats` (JSON) carry hull/engine/thrusters, **fire `groups`** (named channels — a key for
+the player, an AI range/aim rule for enemies) and **`mounts`** (each: a weapon id, its `group`, a
+lateral `offset` for side-by-side fire, a `delay` for staggered volleys). One ship can mount several
+of the same weapon (the mini-boss has two rocket launchers). Weapons (`bullet`/`rocket`) carry their
+characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets add `accel`/`turnRate`/
+`health` (HP — reduced by a bullet's `power`, shot down at 0)/`blastRadius`/`detonateRadius`/`maxRange`. The player's active ship + loadout
+(which may override `mounts`) come from `player_ships` (see Backend).
 - **Visual model:** each ship's `model_url` (in the DB) points to a `.glb` (the exported primitives
   live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it loads /
   as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. Swap a `model_url` for a
   real model later. See `client/assets/README.md` + `CREDITS.md`.
-- **Main engine** (`ENGINES`): `power` → **acceleration**; plus `maxSpeed` (0 = no limit),
-  `weight`/`durability` (for later) and **exhaust** `exhaust` (part of the engine).
-- **Maneuvering thrusters** (`THRUSTERS`): `power` → **turn rate**.
-- **Mass** = sum of weights of all components (`shipMass`; every component, incl. weapons, has `weight`).
-- Acceleration and maneuverability are **derived from power AND mass** (`deriveDrive`):
-  `massFactor = REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`,
-  `turnRate = thrusters.power × massFactor`. `REFERENCE_MASS` (48 = player's basic loadout) keeps the
-  player at accel 10 / turn 2.0; heavier ships are slower, lighter ones faster. Tunable via component
-  `weight`s and `REFERENCE_MASS`.
-- **Hull** (`HULLS`): `durability` (= maxHp), `weight`, `volume` (weight/volume — for later).
-- **Weapon** (`WEAPONS`): `power` (damage), `projectileSpeed`, `fireCooldown`, color, `type`.
-  - `basicKinetic` ("Basic kinetic") — primary (`Space`).
-  - `homingRocket` ("Rocket") — secondary (`F`/🚀): 5 s cooldown, on launch it finds the nearest
-    enemy in the forward 120° sector, **maneuvers** toward it (turning its velocity vector, `turnRate`)
-    and accelerates with the player's engine acceleration (10), 50 damage, an explosion slightly larger
-    than the machine-gun one (small AoE), **a light smoke trail**. The player has a `secondary` slot.
-  - `enemyRocket` ("Rocket (enemy)") — used by the yellow rocketeer, hits the player (30 damage).
-- Enemy types are `ENEMY_KINDS` (color + hull/engine/thrusters/weapon + optional `rocket`/`sizeScale`):
-  `fighter` (red, kinetic), `rocketeer` (yellow, tough hull + `enemyRocket`), and `heavy`
-  (purple, 150 hp, rocket-only, slow, 2x model; unlocks after 10 kills). Ship `radius` scales with model size.
-- Bullets and rockets carry damage/speed from the weapon and remember their side (`fromPlayer`).
-- **Base configuration (the reference point for balance):** player — 100 hp hull, weapon
-  basicKinetic (10 damage); enemy — light 20 hp hull, enemyKinetic (5 damage).
-  Net result: an enemy dies in 2 player hits, the player survives 20 enemy hits.
-  Bullets carry their own damage/speed from the weapon.
+- Each ship's `stats` (in the DB) carry: **hull** (`durability` = maxHp, `weight`, `volume`),
+  **main engine** (`power` → acceleration, `maxSpeed`, `weight`, `exhaust`), **maneuvering thrusters**
+  (`power` → turn rate, `weight`), `color`, `sizeScale`, and its `groups` + `mounts` (above).
+- **Mass** = hull + engine + thrusters + every mounted weapon's `weight` (`shipMass`). Acceleration and
+  turn rate are **derived from power AND mass** (`deriveDrive`): `massFactor = REFERENCE_MASS / mass`;
+  `acceleration = engine.power × massFactor`, `turnRate = thrusters.power × massFactor`.
+  `REFERENCE_MASS` = 48 (the player's loadout: hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8)
+  keeps the player at accel 10 / turn 2.0; heavier ships are slower.
+- **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
+  `maxRange`, `fireCooldown`; rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
+  `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
+  player's homing rocket seeks the nearest enemy in a forward cone and trails smoke; a bullet subtracts
+  its `power` from an opposite-side rocket's HP, shooting it down at 0 (enemy rocket 20 HP = two player
+  gun hits).
+- **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun), `rocketeer`
+  (yellow, gun + rocket), `heavy` (purple, two rocket launchers, 150 hp, slow, 2× model). Spawn mix
+  (`spawnWeight`/`unlockAfterKills`) is in the data; ship `radius` scales with model size.
+- **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 20 hp hull, gun 5 damage
+  (an enemy dies in 2 player hits; the player survives 20 enemy hits).
 
 ## Gameplay
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all

@@ -5,6 +5,20 @@
 
 ## 2026-06-20
 
+- **Multiple weapons per ship (mounts + fire groups), fully DB-driven.** A ship's stats now hold
+  `groups` (named fire channels — a key for the player, an AI range/aim rule for enemies) and
+  `mounts` (each: a weapon id, its `group`, a lateral `offset`, and a `delay`). Firing a group fires
+  ALL its mounts: `offset` puts bullets side by side, `delay` staggers a volley. The mini-boss now
+  carries **two rocket launchers** firing one after another (0.2 s apart). Any number of groups is
+  supported (player binds them to keys; rocket group also fires via the touch button). Weapons gained
+  data-driven characteristics: bullets `maxRange`; rockets `health` (HP — reduced by a bullet's
+  `power`, shot down at 0; e.g. 20 HP = two 10-damage hits), `maxRange`, plus the existing
+  accel/turnRate/power/blastRadius — projectiles now despawn by distance and rockets take damage from
+  gunfire (hp), instead of the old hardcoded life/instant-kill. The
+  player's loadout (`player_ships.loadout`) may override `mounts` (empty ⇒ the ship's defaults). Ship
+  mass now sums all mounted weapons (`shipMass`). The catalog is re-seeded by an idempotent **upsert on
+  every startup** (editing `catalog_seed.js` propagates on deploy; ids/FKs preserved). Gameplay
+  preserved (player still accel 10 / turn 2.0; one bullet still downs a rocket at `health` 1).
 - **Ships are now generated from the database.** The client fetches the catalog (`/api/ships`,
   `/api/weapons`) and the player's active ship (`/api/players/:id/active-ship`) on startup
   (`bootstrap()`), then builds the player and spawns enemies from that data — the hardcoded client
