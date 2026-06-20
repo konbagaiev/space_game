@@ -24,6 +24,9 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Rocket cooldown indicator** — the 🚀 circle (bottom-right) fills radially as it reloads
   (orange while reloading, green when ready). Shown on both PC and mobile; on PC it's also
   clickable to fire (besides the `F` key), on mobile it's the rocket button.
+- **Off-screen enemy markers** — for each enemy that's off-screen, an arrow on the screen edge points
+  toward it, tinted by the enemy's type color (`updateMarkers`, a pooled DOM overlay). Hidden while an
+  overlay (game over / victory) is up.
 
 ## Ship model (DB-driven)
 Ships and weapons are **defined in the database** (`ships`, `weapons`); the client fetches them on

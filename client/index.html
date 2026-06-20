@@ -91,6 +91,14 @@
   #rocket-btn .rb-icon { position: relative; z-index: 1; font-size: 34px; text-shadow: 0 0 5px #000; }
   #rocket-btn.ready { border-color: #77ee77; box-shadow: 0 0 12px rgba(110,238,110,.5); }
   #rocket-btn:active { filter: brightness(1.25); }
+  /* Off-screen enemy indicators: arrows on the screen edge pointing toward off-screen enemies */
+  #markers { position: fixed; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+  .marker {
+    position: absolute; width: 0; height: 0; will-change: transform;
+    border-top: 8px solid transparent; border-bottom: 8px solid transparent;
+    border-left: 15px solid #fff; /* points +x by default; color set per enemy; rotated to aim */
+    filter: drop-shadow(0 0 3px rgba(0,0,0,.85)); display: none;
+  }
 </style>
 </head>
 <body>
@@ -117,6 +125,7 @@
   <button id="restart">Restart</button>
 </div>
 <div id="gametitle">Space Ninjas</div>
+<div id="markers"></div>
 <div id="perf">FPS — · draw — · tris —</div>
 <div id="touch">
   <div id="stick-zone"></div>
@@ -1304,11 +1313,49 @@ function updatePerf(dt) {
   }
 }
 
+// ---------- Off-screen enemy markers: edge arrows pointing toward enemies that are off-screen ----------
+const markersEl = document.getElementById('markers');
+const markerPool = [];
+const _ndc = new THREE.Vector3();
+const cssColor = (hex) => '#' + (hex >>> 0).toString(16).padStart(6, '0').slice(-6);
+function getMarker(i) {
+  while (markerPool.length <= i) {
+    const d = document.createElement('div');
+    d.className = 'marker';
+    markersEl.appendChild(d);
+    markerPool.push(d);
+  }
+  return markerPool[i];
+}
+function updateMarkers() {
+  // hide everything while there's no player or an overlay (game over / victory) is up
+  if (!player || overlay.style.display !== 'none') { for (const m of markerPool) m.style.display = 'none'; return; }
+  const w = window.innerWidth, h = window.innerHeight, margin = 0.92;
+  let used = 0;
+  for (const e of enemies) {
+    _ndc.copy(e.mesh.position).project(camera);
+    const behind = _ndc.z > 1;            // point is behind the camera -> NDC is mirrored
+    let x = _ndc.x, y = _ndc.y;
+    if (behind) { x = -x; y = -y; }
+    if (!behind && x >= -1 && x <= 1 && y >= -1 && y <= 1) continue; // on screen -> no marker
+    const k = margin / Math.max(Math.abs(x), Math.abs(y), 1e-4);     // clamp dir to the edge box
+    const cx = x * k, cy = y * k;
+    const m = getMarker(used++);
+    m.style.display = 'block';
+    m.style.left = ((cx * 0.5 + 0.5) * w) + 'px';
+    m.style.top = ((-cy * 0.5 + 0.5) * h) + 'px';
+    m.style.borderLeftColor = cssColor(e.color ?? 0xffffff);          // tint by enemy type
+    m.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(-cy, cx) * 180 / Math.PI}deg)`;
+  }
+  for (let i = used; i < markerPool.length; i++) markerPool[i].style.display = 'none';
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   update(dt);
   updateHud();
+  updateMarkers();
   // two passes: first the sky backdrop (with its own light), then combat on top
   renderer.info.reset();
   renderer.clear();

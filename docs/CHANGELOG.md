@@ -5,6 +5,11 @@
 
 ## 2026-06-20
 
+- **Off-screen enemy markers.** For every enemy that's off-screen, an arrow on the screen edge points
+  toward it, tinted by the enemy's type color. Implemented as a pooled DOM overlay (`#markers` +
+  `updateMarkers`): each enemy's world position is projected to NDC; if outside the viewport, the
+  direction is clamped to the screen-edge box and the arrow rotated to aim at it (with behind-camera
+  handling). Hidden while a game-over/victory overlay is up.
 - **Levels are data-driven (DB) + a level runner.** New `levels` table (migration 004): a JSON
   descriptor per level = a `map` + an ordered list of **phases**, seeded as `level-1` via the startup
   upsert. Each phase optionally spawns a weighted ship `pool` up to `maxConcurrent` (with an optional
