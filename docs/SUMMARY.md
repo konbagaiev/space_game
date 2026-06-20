@@ -74,8 +74,15 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
   the sense of speed) → planet + 2 moons (light parallax).
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the planet and moons).
-- Effects: a micro-explosion at the hit point; a narrow glowing engine trail (particle speed
-  = ship speed + ejection backward along the nozzle).
+- Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
+  (player and enemies), via the shared `emitExhaust` — particle speed = ship speed + ejection backward
+  along the nozzle, colored by the engine's `exhaust.color`, emitted while thrusting forward.
+- **Ship destruction** (`spawnShipExplosion`): a destroyed ship bursts in a layered fireball
+  (white-hot flash → exhaust-colored glow → orange → red cloud), a radial spray of sparks, and an
+  expanding shockwave ring — much louder than the hit micro-flash, and slow (~3.75 s). **Sized to the
+  ship** (scales by `sizeScale`) and **tinted by the engine's exhaust color** (`engine.exhaust.color` —
+  the glow layer, accent sparks and ring), so the player's burst is cyan-blue, enemies' orange. Used on
+  enemy and player death.
 
 ## Backend
 - **Node.js + Express** server (`server/`): serves the game client (static) AND a JSON API on
@@ -126,6 +133,12 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
   (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly), `db.js` honors `DB_PATH`.
+- **Visual / e2e** — `client/visual/` (Playwright headless, **not in CI**): boots the real game and
+  asserts on simulation state (particle counts, size ratios, exhaust colors) via a `?debug`-gated
+  `window.__game` hook; saves frames to `__screenshots__/` for review (no pixel diffing). Self-contained
+  runner starts its own server + throwaway DB. Setup + run from `client/`:
+  `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for
+  occasional larger releases. See `client/visual/README.md`.
 
 ## Project structure
 - `client/` — the game (Three.js), `server/` — Node.js/Express backend + SQLite, `docs/` — documentation.

@@ -8,6 +8,9 @@ server/data/
 dist/
 build/
 
+# Visual-test artifacts (screenshots are for review, not committed)
+client/visual/__screenshots__/
+
 # Logs
 *.log
 npm-debug.log*

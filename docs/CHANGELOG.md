@@ -5,6 +5,33 @@
 
 ## 2026-06-19
 
+- **Headless visual / e2e test suite** (`client/visual/`, **not in CI**). Boots the real game in
+  headless Chromium (Playwright, software WebGL) and asserts on **simulation state** (particle
+  counts, size ratios, exhaust colors) via a `?debug`-gated `window.__game` hook — no pixel diffing
+  (flaky under software rendering); screenshots are saved to `__screenshots__/` as review artifacts.
+  Self-contained runner (`visual/run.mjs`): starts its own server on an isolated port + throwaway DB,
+  auto-discovers `visual/scenarios/*.mjs`. Initial scenarios: smoke, ship-explosion (counts + size
+  scaling + exhaust tint), exhaust-trail (enemies emit colored trails), combat. Run from `client/`:
+  `npm install && npx playwright install chromium && npm run test:visual`. Kept as a stable, growing
+  suite for occasional larger releases; CI still runs only the fast unit tests.
+- **Engine exhaust trail on every ship.** Exhaust emission was generalized into a shared
+  `emitExhaust(pos, fwd, vel, exhaust, sizeScale)` (nozzle offset scales with ship size); the player
+  and **all enemies** now use it. Enemies leave a glowing trail in their engine's `exhaust.color`
+  (orange for the scout-engine fighter/rocketeer, orange-red for the heavy) while thrusting forward
+  (thrust factor > 0.1). Previously only the player rendered a trail, so the enemies' exhaust color
+  was defined but never visible.
+- **Colorful ship-destruction explosions.** A destroyed ship (enemy or player) now bursts instead of
+  just vanishing: a layered fireball (white-hot flash core → orange ball → red cloud), a radial spray
+  of ~22 colored sparks (warm fire palette + a few in the ship's own color) flying outward and fading,
+  and a flat shockwave ring expanding on the plane. New `spawnShipExplosion(pos, shipColor)` (tinted by
+  the enemy's color); `spawnExplosion` gained tunable `life`/`color` so the same primitive serves both
+  the quick hit-flash and the slower fireball layers. Distinct from the small impact micro-flash, which
+  is unchanged. `reset()` cleans up the new `sparks`/`shockwaves` pools. The burst plays out **slowly**
+  (~3.75 s: fireball layers 1.05/2.55/3.75 s, sparks up to 5.4 s as cooling embers, shockwave 2.4 s)
+  for a weighty, drawn-out feel. **Sized to the ship** (every dimension scales by the ship's `sizeScale`,
+  so the 2× heavy enemy bursts twice as big) and **tinted by the engine's exhaust color**
+  (`engine.exhaust.color`): an exhaust-colored glow layer, accent sparks and the shockwave ring take it,
+  so the player's burst glows cyan-blue and the enemies' orange — the destroyed engine's signature.
 - **Rollback support.** Each deploy tags the image `spacegame:<git-sha>` and CI keeps the 3 newest
   versions (current + 2 to roll back to). Added `rollback.sh` (re-tag a previous version to `:latest`
   + `docker rollout` → zero-downtime, no rebuild). Documented the migration strategy: forward-only /

@@ -338,17 +338,69 @@ const explosions = [];
 const EXPLOSION_LIFE = 0.16; // very short flash, sec
 const explosionGeo = new THREE.SphereGeometry(1, 10, 10);
 
-function spawnExplosion(pos, maxScale = 3) {
-  // glowing fiery sphere: additive blending + fast fade-out
+function spawnExplosion(pos, maxScale = 3, life = EXPLOSION_LIFE, color = 0xffb050) {
+  // glowing fiery sphere: additive blending + fade-out (life/color tunable so the same
+  // primitive serves a quick hit-flash and a slower, layered ship-death fireball).
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xffb050, transparent: true, opacity: 1,
+    color, transparent: true, opacity: 1,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   const m = new THREE.Mesh(explosionGeo, mat);
   m.position.copy(pos);
   m.scale.setScalar(0.6);
   scene.add(m);
-  explosions.push({ mesh: m, life: EXPLOSION_LIFE, maxScale });
+  explosions.push({ mesh: m, life, maxLife: life, maxScale });
+}
+
+// ---------- Ship destruction: a big, colorful burst (layered fireball + sparks + shockwave) ----------
+// Much louder than the hit-flash: stacked fireballs (white-hot core -> exhaust-colored glow ->
+// orange -> red cloud), a radial spray of sparks, and a flat shockwave ring on the arena plane.
+// Scaled by the ship's size (sizeScale) and tinted by its engine's exhaust color.
+const sparks = [];
+const sparkGeo = new THREE.SphereGeometry(1, 6, 6);
+// warm ember palette; a few sparks take the engine's exhaust color for variety
+const SPARK_COLORS = [0xffffff, 0xfff0a0, 0xffd040, 0xff8030, 0xff3020];
+const shockwaves = [];
+const shockGeo = new THREE.RingGeometry(0.78, 1, 28); // unit ring, scaled up as it expands
+
+function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
+  const s = sizeScale; // scales every spatial dimension to the ship's size
+  // Layered fireball: each layer bigger, dimmer-colored and slower than the last. The
+  // second layer glows in the engine's exhaust color (the destroyed engine's signature).
+  spawnExplosion(pos, 5 * s, 1.05, 0xffffff);     // white-hot flash core
+  spawnExplosion(pos, 8 * s, 1.8, exhaustColor);  // exhaust-colored glow (engine signature)
+  spawnExplosion(pos, 11 * s, 2.55, 0xffc040);    // orange fireball
+  spawnExplosion(pos, 14 * s, 3.75, 0xff3a18);    // red outer cloud
+
+  // Radial spark spray: warm embers + a few in the engine's exhaust color, flung outward.
+  const N = 22;
+  for (let i = 0; i < N; i++) {
+    const col = (i % 4 === 0) ? exhaustColor : SPARK_COLORS[i % SPARK_COLORS.length];
+    const mat = new THREE.MeshBasicMaterial({
+      color: col, transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    });
+    const m = new THREE.Mesh(sparkGeo, mat);
+    m.position.copy(pos);
+    const size = (0.35 + Math.random() * 0.5) * s;
+    m.scale.setScalar(size);
+    scene.add(m);
+    const a = (i / N) * Math.PI * 2 + Math.random() * 0.5;       // spread around the circle
+    const sp = (14 + Math.random() * 26) * s;                    // outward speed scales with size
+    const vel = new THREE.Vector3(Math.cos(a) * sp, (Math.random() - 0.5) * 6 * s, Math.sin(a) * sp);
+    sparks.push({ mesh: m, vel, life: 2.7 + Math.random() * 2.7, maxLife: 5.4, size });
+  }
+
+  // Shockwave: a flat additive ring (tinted by the exhaust color) that expands and fades.
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: exhaustColor, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(shockGeo, ringMat);
+  ring.position.copy(pos); ring.position.y = 0.6;
+  ring.rotation.x = -Math.PI / 2; // lay it flat on the arena
+  scene.add(ring);
+  shockwaves.push({ mesh: ring, life: 2.4, maxLife: 2.4, maxScale: 22 * s });
 }
 
 // ---------- Engine trail (exhaust is part of the engine) ----------
@@ -368,6 +420,15 @@ function spawnTrail(pos, fwd, shipVel, exhaust) {
   scene.add(m);
   const vel = shipVel.clone().addScaledVector(fwd, -exhaust.speed);
   trail.push({ mesh: m, vel, life: exhaust.life, maxLife: exhaust.life, baseSize: exhaust.size });
+}
+
+// Emit one exhaust puff from a ship's nozzle. Shared by every ship (player and enemies):
+// the nozzle sits behind the hull (scaled by the ship's size) with a little width spread.
+function emitExhaust(shipPos, fwd, shipVel, exhaust, sizeScale = 1) {
+  const pos = shipPos.clone().addScaledVector(fwd, -2.6 * sizeScale);
+  pos.x += (Math.random() - 0.5) * exhaust.spread;
+  pos.z += (Math.random() - 0.5) * exhaust.spread;
+  spawnTrail(pos, fwd, shipVel, exhaust);
 }
 
 // ---------- Rockets (homing) ----------
@@ -712,11 +773,7 @@ function update(dt) {
 
   // --- engine trail (when thrusting forward) ---
   if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
-    const ex = eng.exhaust;
-    const enginePos = player.mesh.position.clone().addScaledVector(fwd, -2.6);
-    enginePos.x += (Math.random() - 0.5) * ex.spread; // width spread from the exhaust
-    enginePos.z += (Math.random() - 0.5) * ex.spread;
-    spawnTrail(enginePos, fwd, player.vel, ex);
+    emitExhaust(player.mesh.position, fwd, player.vel, eng.exhaust);
   }
 
   // --- player: firing (primary weapon) ---
@@ -757,6 +814,9 @@ function update(dt) {
     e.mesh.position.addScaledVector(e.vel, dt);
     clampToArena(e.mesh.position);
     e.mesh.rotation.y = e.heading;
+
+    // engine trail: same exhaust behavior as the player, when thrusting forward
+    if (thrust > 0.1) emitExhaust(e.mesh.position, ef, e.vel, e.engine.exhaust, ENEMY_KINDS[e.kind].sizeScale || 1);
 
     // fire the gun (only if the enemy has one) when roughly facing the player and in range
     e.cooldown -= dt;
@@ -853,7 +913,7 @@ function update(dt) {
   for (let i = explosions.length - 1; i >= 0; i--) {
     const x = explosions[i];
     x.life -= dt;
-    const t = 1 - Math.max(0, x.life) / EXPLOSION_LIFE; // 0 → 1
+    const t = 1 - Math.max(0, x.life) / x.maxLife; // 0 → 1
     x.mesh.scale.setScalar(0.6 + t * (x.maxScale - 0.6)); // expands quickly
     x.mesh.material.opacity = (1 - t);                  // and fades out
     if (x.life <= 0) {
@@ -892,9 +952,42 @@ function update(dt) {
     }
   }
 
+  // --- ship-explosion sparks: colored debris flying outward, slowing, fading + shrinking ---
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.mesh.position.addScaledVector(s.vel, dt);
+    s.vel.multiplyScalar(1 - 2.5 * dt); // drag
+    s.life -= dt;
+    const t = 1 - Math.max(0, s.life) / s.maxLife; // 0 → 1
+    s.mesh.material.opacity = 1 - t;
+    s.mesh.scale.setScalar(s.size * (1 - t * 0.7));
+    if (s.life <= 0) {
+      scene.remove(s.mesh);
+      s.mesh.material.dispose();
+      sparks.splice(i, 1);
+    }
+  }
+
+  // --- ship-explosion shockwave: a flat ring expanding outward on the plane ---
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const w = shockwaves[i];
+    w.life -= dt;
+    const t = 1 - Math.max(0, w.life) / w.maxLife; // 0 → 1
+    w.mesh.scale.setScalar(1 + t * (w.maxScale - 1)); // expands fast
+    w.mesh.material.opacity = (1 - t) * 0.9;          // and fades out
+    if (w.life <= 0) {
+      scene.remove(w.mesh);
+      w.mesh.material.dispose();
+      shockwaves.splice(i, 1);
+    }
+  }
+
   // --- enemy deaths ---
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].hp <= 0) {
+      // colorful death burst: sized to the ship, tinted by its engine's exhaust color
+      const e = enemies[i];
+      spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, ENEMY_KINDS[e.kind].sizeScale || 1);
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
       score++;
@@ -904,8 +997,9 @@ function update(dt) {
   while (enemies.length < TARGET_ENEMIES) spawnRandomEnemy();
 
   // --- player death ---
-  if (player.hp <= 0) {
+  if (player.hp <= 0 && player.alive) {
     player.alive = false;
+    spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
     reportGame(score, performance.now() - gameStartTime); // save game to history
     overlayTitle.textContent = 'Ship destroyed';
     overlaySub.textContent = `Ships destroyed: ${score}`;
@@ -970,6 +1064,10 @@ function reset() {
   rockets.length = 0;
   for (const s of smoke) { scene.remove(s.mesh); s.mesh.material.dispose(); }
   smoke.length = 0;
+  for (const s of sparks) { scene.remove(s.mesh); s.mesh.material.dispose(); }
+  sparks.length = 0;
+  for (const w of shockwaves) { scene.remove(w.mesh); w.mesh.material.dispose(); }
+  shockwaves.length = 0;
   for (const e of enemies) scene.remove(e.mesh);
   enemies.length = 0;
   player.mesh.position.set(0, 0.6, 0);
@@ -985,6 +1083,19 @@ function reset() {
   overlay.style.display = 'none';
 }
 document.getElementById('restart').addEventListener('click', reset);
+
+// Test/inspection hook for the headless visual tests (client/visual/). Inert during normal
+// play — only attached when the page is opened with `?debug`. It exposes simulation internals
+// so a scenario can seed entities and assert on state (counts, colors) instead of diffing pixels.
+if (location.search.includes('debug')) {
+  window.__game = {
+    scene, player, enemies, bullets, rockets,
+    explosions, sparks, shockwaves, trail, smoke,
+    spawnEnemy, spawnRandomEnemy, spawnShipExplosion, emitExhaust, reset,
+    ENEMY_KINDS, ENGINES,
+    get score() { return score; },
+  };
+}
 
 addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

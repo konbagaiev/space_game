@@ -86,6 +86,10 @@ night — the ambient in `skyScene`; combat — the light in `scene` (no need to
 - Enemy AI: turn toward the player → keep your distance (~14–22) → shoot once aimed.
 - A **micro-explosion** at the hit point: a short (`EXPLOSION_LIFE ≈ 0.16s`) fiery flash
   (an additive sphere, quickly expanding and fading).
+- A **ship-destruction burst** (`spawnShipExplosion`) when a ship dies — deliberately louder than the
+  hit-flash: stacked fireball layers (white core → orange → red, each bigger/slower via the now
+  tunable `life`/`color` of `spawnExplosion`), a radial spray of ~22 colored sparks (own pool, with
+  drag), and a flat additive shockwave ring expanding on the plane. Tinted by the ship's color.
 
 ### Engine trail (exhaust)
 
@@ -105,8 +109,16 @@ See section 8 about the component-based model.
 
 ## 7. How to check the picture (for development)
 
-A regular screen capture is blocked by the system. Instead — a headless render via Playwright:
-`/tmp/shoot.mjs` loads `index.html` in headless Chromium and writes a PNG.
+A regular screen capture is blocked by the system. Instead — a headless render via Playwright
+(headless Chromium, software WebGL). This is now a committed, stable suite: **`client/visual/`**
+(`npm run test:visual` from `client/`), see `client/visual/README.md`. It boots the real game and
+asserts on **simulation state** (particle counts, size ratios, exhaust colors) through a
+`?debug`-gated `window.__game` hook, and saves PNG frames to `__screenshots__/` for the eye.
+
+Design choices: **no pixel diffing** (software WebGL differs between machines → flaky baselines;
+screenshots are review artifacts, not pass/fail), and the suite is **kept out of CI** (slower, needs
+a browser binary) — run it by hand before a larger/rarer release. CI keeps running only the fast unit
+tests. For one-off experiments, an ad-hoc script under `/tmp` loading `http://localhost:4000/` works too.
 ⚠️ Caveat: swiftshader in headless sometimes diverges from a real browser in subtle things
 (transparency order) — do the final check in a real browser.
 
@@ -159,6 +171,6 @@ reversing a migration. Current migrations are additive/idempotent, so already ba
 
 ## Future ideas
 
-Ship explosions on death · sound · solid asteroids with bounce ·
+sound · solid asteroids with bounce ·
 bot behavior (evasion, arc flybys) · custom `.glb` models · multiplayer (WebSocket) ·
 engine trails on enemies.

@@ -5,6 +5,10 @@
   "type": "module",
   "description": "Three.js game client. Pure logic lives in src/ and is unit-tested with node:test.",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:visual": "node visual/run.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
   }
 }
