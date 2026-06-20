@@ -9,10 +9,11 @@
 
 // --- shared ship components ---
 const HULL = {
-  basic:     { name: 'Basic hull',     durability: 100, weight: 20, volume: 100 },
-  fighter:   { name: 'Light hull',     durability: 20,  weight: 8,  volume: 40 },
-  rocketeer: { name: 'Rocketeer hull', durability: 40,  weight: 14, volume: 60 },
+  basic:     { name: 'Basic hull',     durability: 100, weight: 20,  volume: 100 },
+  fighter:   { name: 'Light hull',     durability: 20,  weight: 8,   volume: 40 },
+  rocketeer: { name: 'Rocketeer hull', durability: 40,  weight: 14,  volume: 60 },
   heavy:     { name: 'Heavy hull',     durability: 150, weight: 60, volume: 200 },
+  boss:      { name: 'Boss hull',      durability: 210, weight: 60, volume: 400 }, // tanky but moves like heavy
 };
 const ENGINE = {
   basic: { name: 'Basic main engine', power: 10,   maxSpeed: 0,    weight: 10, durability: 30, exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 } },
@@ -63,12 +64,12 @@ export const SHIPS = [
       ] } },
   { name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/fighter.glb', stats: {
       role: 'fighter', color: 0xff5d5d, hull: HULL.fighter, engine: ENGINE.scout, thrusters: THRUSTER.scout,
-      sizeScale: 1, spawnWeight: 5, unlockAfterKills: 0,
+      sizeScale: 1,
       groups: { gun: GUN },
       mounts: [ { weapon: 2, group: 'gun', offset: 0, delay: 0 } ] } },
   { name: 'basic rocket enemy', type: 'enemy', modelUrl: 'assets/ships/rocketeer.glb', stats: {
       role: 'rocketeer', color: 0xffd24d, hull: HULL.rocketeer, engine: ENGINE.scout, thrusters: THRUSTER.scout,
-      sizeScale: 1, spawnWeight: 3, unlockAfterKills: 0,
+      sizeScale: 1,
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun',    offset: 0, delay: 0 },
@@ -76,12 +77,54 @@ export const SHIPS = [
       ] } },
   { name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/heavy.glb', stats: {
       role: 'heavy', color: 0xb267e6, hull: HULL.heavy, engine: ENGINE.heavy, thrusters: THRUSTER.heavy,
-      sizeScale: 2, spawnWeight: 2, unlockAfterKills: 10,
+      sizeScale: 2,
       groups: { rocket: ROCKET },
       // two rocket launchers side by side, fired one after the other (0.2s stagger)
       mounts: [
         { weapon: 4, group: 'rocket', offset: -0.8, delay: 0 },
         { weapon: 4, group: 'rocket', offset:  0.8, delay: 0.2 },
+      ] } },
+  // The end-of-level boss: big orange ship (its own .glb model), 210 HP, moves like the heavy, with
+  // two guns side by side + two staggered rocket launchers.
+  { name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb', stats: {
+      role: 'boss', color: 0xff8c2a, hull: HULL.boss, engine: ENGINE.heavy, thrusters: THRUSTER.heavy,
+      sizeScale: 3,
+      groups: { gun: GUN, rocket: ROCKET },
+      mounts: [
+        { weapon: 2, group: 'gun',    offset: -0.6, delay: 0 },
+        { weapon: 2, group: 'gun',    offset:  0.6, delay: 0 },
+        { weapon: 4, group: 'rocket', offset: -0.9, delay: 0 },
+        { weapon: 4, group: 'rocket', offset:  0.9, delay: 0.2 },
+      ] } },
+];
+
+// --- levels: a JSON descriptor the client's level runner plays. A level uses a map and runs an
+// ordered list of phases. Each phase optionally spawns enemies (a weighted pool, up to
+// `maxConcurrent`, with an optional `total` cap) and advances when a condition is met:
+//   { kills: N }           — N cumulative kills this level
+//   { killsSincePhase: N }  — N kills since entering this phase
+//   { allCleared: true }    — no enemies left (and the phase's `total` has all spawned)
+// A phase with `event: 'win'` ends the level with a victory overlay.
+export const LEVELS = [
+  { name: 'level-1', descriptor: {
+      title: 'Level 1', map: 'home-system',
+      phases: [
+        { name: 'wave-1',
+          spawn: { maxConcurrent: 4, pool: [
+            { ship: 'basic enemy ship', weight: 75 },   // gun
+            { ship: 'basic rocket enemy', weight: 25 } ] }, // rocket
+          advanceWhen: { kills: 10 } },
+        { name: 'wave-2',
+          spawn: { maxConcurrent: 4, pool: [
+            { ship: 'basic enemy ship', weight: 65 },   // gun
+            { ship: 'basic rocket enemy', weight: 20 }, // rocket
+            { ship: 'basic mini boss', weight: 15 } ] }, // heavy
+          advanceWhen: { kills: 20 } }, // stop spawning at 20 total kills
+        { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
+        { name: 'boss',
+          spawn: { maxConcurrent: 1, total: 1, pool: [ { ship: 'first boss', weight: 1 } ] },
+          advanceWhen: { allCleared: true } },
+        { name: 'victory', event: 'win', delay: 5, text: 'Sector cleared. Congratulations, Space Ninja!' },
       ] } },
 ];
 

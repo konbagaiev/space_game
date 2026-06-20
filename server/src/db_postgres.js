@@ -54,11 +54,16 @@ export async function migrate() {
       name       TEXT  NOT NULL UNIQUE,
       descriptor JSONB NOT NULL   -- { generator, ...params } describing the scene
     );
+    CREATE TABLE IF NOT EXISTS levels (
+      id         BIGSERIAL PRIMARY KEY,
+      name       TEXT  NOT NULL UNIQUE,
+      descriptor JSONB NOT NULL   -- { title, map, phases:[...] }
+    );
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
-  // propagates on deploy (ids/foreign keys preserved — weapons keyed by id, ships/maps by name).
-  const { SHIPS, WEAPONS, MAPS } = await import('./catalog_seed.js');
+  // propagates on deploy (ids/foreign keys preserved — weapons keyed by id, ships/maps/levels by name).
+  const { SHIPS, WEAPONS, MAPS, LEVELS } = await import('./catalog_seed.js');
   for (const w of WEAPONS) {
     await pool.query(
       `INSERT INTO weapons (id, name, type, stats) VALUES ($1, $2, $3, $4::jsonb)
@@ -76,6 +81,12 @@ export async function migrate() {
       `INSERT INTO maps (name, descriptor) VALUES ($1, $2::jsonb)
        ON CONFLICT (name) DO UPDATE SET descriptor = EXCLUDED.descriptor`,
       [m.name, JSON.stringify(m.descriptor)]);
+  }
+  for (const l of LEVELS) {
+    await pool.query(
+      `INSERT INTO levels (name, descriptor) VALUES ($1, $2::jsonb)
+       ON CONFLICT (name) DO UPDATE SET descriptor = EXCLUDED.descriptor`,
+      [l.name, JSON.stringify(l.descriptor)]);
   }
   console.log('[migrate] postgres schema ready');
 }
@@ -145,6 +156,11 @@ export async function getWeapons() {
 
 export async function getMap(name) {
   const { rows } = await pool.query('SELECT name, descriptor FROM maps WHERE name = $1', [name]);
+  return rows[0] ? { name: rows[0].name, descriptor: rows[0].descriptor } : null;
+}
+
+export async function getLevel(name) {
+  const { rows } = await pool.query('SELECT name, descriptor FROM levels WHERE name = $1', [name]);
   return rows[0] ? { name: rows[0].name, descriptor: rows[0].descriptor } : null;
 }
 

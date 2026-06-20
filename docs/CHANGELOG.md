@@ -5,6 +5,19 @@
 
 ## 2026-06-20
 
+- **Levels are data-driven (DB) + a level runner.** New `levels` table (migration 004): a JSON
+  descriptor per level = a `map` + an ordered list of **phases**, seeded as `level-1` via the startup
+  upsert. Each phase optionally spawns a weighted ship `pool` up to `maxConcurrent` (with an optional
+  `total` cap) and advances on a condition (`kills` / `killsSincePhase` / `allCleared`); a phase with
+  `event: 'win'` shows a **victory overlay** (after an optional `delay`, so the boss explosion plays
+  out first — `level-1` waits 5 s). The client's `levelRunner` (a small state machine)
+  replaces the old `spawnRandomEnemy`/`TARGET_ENEMIES`. `level-1` plays the designed flow: wave 1
+  (fighter + rocketeer) → after 10 kills → wave 2 (adds the mini-boss) → at 20 total kills → **spawn stops**
+  → clear the rest → the **boss spawns alone** → victory. New **boss ship** ("first boss": 210 HP,
+  3× size, its own orange multi-color `boss.glb` model, moves like the heavy, two guns + two rocket
+  launchers; spawned only in its phase). Per-ship
+  `spawnWeight`/`unlockAfterKills` were removed from `ships.stats` (spawn composition now lives in the
+  level). API: `GET /api/levels/:name`; `bootstrap()` fetches the level, then its map.
 - **Maps are data-driven (DB).** The scene (blue ocean planet + two cratered moons + stars + parallax
   asteroids + sky lighting) is now described by a JSON **map descriptor** in a new `maps` table
   (`generator` + params), seeded as `home-system` via the startup upsert. The client builds it

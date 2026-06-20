@@ -663,7 +663,9 @@ function spawnSmoke(pos) {
 // (deriveDrive / mass) still comes from components.js; the DATA (ships, weapons) comes from the API.
 const CATALOG = {
   weapons: new Map(),   // id -> { id, name, type, ...stats }
-  enemyShips: [],       // DB ship rows with type 'enemy' (spawn rules live in their stats)
+  enemyShips: [],       // DB ship rows with type 'enemy' (used by spawnEnemy(role) / tests)
+  shipByName: new Map(),// name -> ship row (any type; the level's spawn pools reference these)
+  level: null,          // the active level descriptor (phase/wave script)
 };
 const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
 
@@ -745,18 +747,83 @@ function spawnEnemy(role) {
   return def ? spawnEnemyShip(def) : null;
 }
 
-const TARGET_ENEMIES = 4;
-// Data-driven spawn: pick among the enemy ships unlocked at the current score (score >=
-// stats.unlockAfterKills), weighted by stats.spawnWeight. The mix lives in the DB, not here.
-function spawnRandomEnemy() {
-  const pool = CATALOG.enemyShips.filter((s) => score >= (s.stats.unlockAfterKills || 0));
-  const list = pool.length ? pool : CATALOG.enemyShips;
-  if (!list.length) return;
-  const total = list.reduce((sum, s) => sum + (s.stats.spawnWeight || 1), 0);
-  let r = Math.random() * total, pick = list[0];
-  for (const s of list) { r -= (s.stats.spawnWeight || 1); if (r < 0) { pick = s; break; } }
-  spawnEnemyShip(pick);
-}
+// ---------- Level runner: plays a DB level descriptor (an ordered phase/wave script) ----------
+// Each phase optionally spawns a weighted pool up to `maxConcurrent` (with an optional `total` cap),
+// and advances when its condition is met: { kills } (cumulative), { killsSincePhase }, or
+// { allCleared } (map empty AND the phase's total fully spawned). A phase with `event: 'win'` ends
+// the level with a victory overlay. The boss phase pool is the boss only, after clear-out empties
+// the arena -> the boss always appears alone.
+const levelRunner = {
+  level: null, phaseIndex: 0, killsAtPhaseStart: 0, spawnedThisPhase: 0, won: false,
+  winPending: 0, winText: '',
+
+  start(level) {
+    this.level = level; this.phaseIndex = 0; this.won = false; this.winPending = 0;
+    this.enterPhase();
+  },
+  get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },
+
+  enterPhase() {
+    this.killsAtPhaseStart = score; this.spawnedThisPhase = 0;
+    const ph = this.phase;
+    if (ph && ph.event === 'win') {
+      // defer the overlay by `delay` seconds so the boss explosion can play out first
+      this.winText = ph.text;
+      this.winPending = ph.delay ?? 0;
+      if (this.winPending <= 0) this.win(this.winText);
+    }
+  },
+  win(text) {
+    this.won = true;
+    overlayTitle.textContent = 'Victory!';
+    overlaySub.textContent = text || 'Sector cleared.';
+    overlay.style.display = 'flex';
+  },
+
+  pickShip(pool) {
+    const total = pool.reduce((s, p) => s + (p.weight || 1), 0);
+    let r = Math.random() * total;
+    for (const p of pool) { r -= (p.weight || 1); if (r < 0) return p.ship; }
+    return pool[0].ship;
+  },
+
+  update(dt) {
+    const ph = this.phase;
+    if (!ph || this.won) return;
+    // victory pending: keep the game running (so the boss explosion animates) until the delay ends
+    if (this.winPending > 0) {
+      this.winPending -= dt;
+      if (this.winPending <= 0) this.win(this.winText);
+      return;
+    }
+    // spawn up to maxConcurrent (respecting an optional total cap for this phase)
+    if (ph.spawn) {
+      const cap = ph.spawn.total;
+      while (enemies.length < ph.spawn.maxConcurrent && (cap == null || this.spawnedThisPhase < cap)) {
+        const def = CATALOG.shipByName.get(this.pickShip(ph.spawn.pool));
+        if (!def) break;
+        spawnEnemyShip(def);
+        this.spawnedThisPhase++;
+      }
+    }
+    // advance to the next phase when this one's condition is met
+    if (this.shouldAdvance(ph) && this.phaseIndex < this.level.phases.length - 1) {
+      this.phaseIndex++;
+      this.enterPhase();
+    }
+  },
+  shouldAdvance(ph) {
+    const c = ph.advanceWhen;
+    if (!c) return false;
+    if (c.kills != null) return score >= c.kills;
+    if (c.killsSincePhase != null) return (score - this.killsAtPhaseStart) >= c.killsSincePhase;
+    if (c.allCleared) {
+      const spawnDone = !ph.spawn || (ph.spawn.total != null && this.spawnedThisPhase >= ph.spawn.total);
+      return enemies.length === 0 && spawnDone;
+    }
+    return false;
+  },
+};
 
 // ---------- Weapons: mounts fire in groups (a key for the player, an AI rule for enemies) ----------
 const rightVec = (fwd) => new THREE.Vector3(fwd.z, 0, -fwd.x); // perpendicular to fwd, in the plane
@@ -957,7 +1024,7 @@ const IDLE_DRAG = 0.8;   // soft braking for the player when controls are releas
 const clock = new THREE.Clock();
 
 function update(dt) {
-  if (!player.alive) return;
+  if (!player.alive || levelRunner.won) return; // frozen on death or victory
 
   const eng = player.engine;         // main engine (for exhaust)
   const accel = player.acceleration; // derived: acceleration <- main engine power
@@ -1192,8 +1259,8 @@ function update(dt) {
       score++;
     }
   }
-  // maintain the enemy count
-  while (enemies.length < TARGET_ENEMIES) spawnRandomEnemy();
+  // drive spawning + phase transitions from the active level
+  levelRunner.update(dt);
 
   // --- player death ---
   if (player.hp <= 0 && player.alive) {
@@ -1277,7 +1344,7 @@ function reset() {
   player.alive = true;
   score = 0;
   gameStartTime = performance.now(); // start timing a new game (for history)
-  for (let i = 0; i < TARGET_ENEMIES; i++) spawnRandomEnemy();
+  levelRunner.start(CATALOG.level); // restart the level from phase 1 (spawns via update())
   overlay.style.display = 'none';
 }
 document.getElementById('restart').addEventListener('click', reset);
@@ -1289,9 +1356,9 @@ if (location.search.includes('debug')) {
   window.__game = {
     scene, enemies, bullets, rockets,
     explosions, sparks, shockwaves, trail, smoke,
-    spawnEnemy, spawnRandomEnemy, spawnShipExplosion, emitExhaust, reset,
+    spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, reset, levelRunner,
     get player() { return player; },   // built asynchronously in bootstrap()
-    get catalog() { return CATALOG; }, // ships/weapons loaded from the DB
+    get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB
     get score() { return score; },
   };
 }
@@ -1313,12 +1380,15 @@ const fetchJson = async (url) => {
 
 async function bootstrap() {
   try {
-    const [weapons, ships, map] = await Promise.all([
-      fetchJson('/api/weapons'), fetchJson('/api/ships'), fetchJson('/api/maps/home-system'),
+    const [weapons, ships, level] = await Promise.all([
+      fetchJson('/api/weapons'), fetchJson('/api/ships'), fetchJson('/api/levels/level-1'),
     ]);
     for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, ...w.stats });
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
+    for (const s of ships) CATALOG.shipByName.set(s.name, s);
+    CATALOG.level = level.descriptor;
 
+    const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map
     buildMap(map.descriptor); // build the scene backdrop: planet, moons, stars, asteroids, sky light
 
     // the player's active ship (auto-registers); fall back to the player-type template if needed

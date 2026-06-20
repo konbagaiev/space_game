@@ -97,9 +97,10 @@ test('serves the game client at /', async () => {
 
 test('catalog: ships are seeded (player + enemies) with stats', async () => {
   const ships = await getJson('/api/ships');
-  assert.equal(ships.length, 4);
+  assert.equal(ships.length, 5);
   const names = ships.map((s) => s.name);
-  assert.deepEqual(names.sort(), ['Basic player ship', 'basic enemy ship', 'basic mini boss', 'basic rocket enemy'].sort());
+  assert.deepEqual(names.sort(),
+    ['Basic player ship', 'basic enemy ship', 'basic mini boss', 'basic rocket enemy', 'first boss'].sort());
   const player = ships.find((s) => s.name === 'Basic player ship');
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player.glb');
@@ -107,15 +108,30 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.stats.mounts[0].weapon, 1);      // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');
-  assert.equal(enemies.length, 3);
-  const boss = ships.find((s) => s.name === 'basic mini boss');
-  assert.equal(boss.stats.sizeScale, 2);
-  assert.equal(boss.stats.unlockAfterKills, 10);       // spawn rules live in the data
-  assert.equal(boss.stats.spawnWeight, 2);
+  assert.equal(enemies.length, 4); // fighter, rocketeer, mini-boss, first boss
+  const mini = ships.find((s) => s.name === 'basic mini boss');
+  assert.equal(mini.stats.sizeScale, 2);
   // the mini-boss has TWO rocket launchers (the multi-weapon showcase), staggered
-  assert.equal(boss.stats.mounts.length, 2);
-  assert.ok(boss.stats.mounts.every((m) => m.weapon === 4 && m.group === 'rocket'));
-  assert.deepEqual(boss.stats.mounts.map((m) => m.delay).sort(), [0, 0.2]);
+  assert.equal(mini.stats.mounts.length, 2);
+  assert.ok(mini.stats.mounts.every((m) => m.weapon === 4 && m.group === 'rocket'));
+  assert.deepEqual(mini.stats.mounts.map((m) => m.delay).sort(), [0, 0.2]);
+  const boss = ships.find((s) => s.name === 'first boss');
+  assert.equal(boss.stats.role, 'boss');
+  assert.equal(boss.stats.hull.durability, 210);
+  assert.equal(boss.modelUrl, 'assets/ships/boss.glb');
+  assert.equal(boss.stats.mounts.length, 4); // two guns + two rockets
+});
+
+test('levels: level-1 phase script is served', async () => {
+  const lvl = await getJson('/api/levels/level-1');
+  assert.equal(lvl.name, 'level-1');
+  assert.equal(lvl.descriptor.map, 'home-system');
+  const phases = lvl.descriptor.phases;
+  assert.equal(phases[0].advanceWhen.kills, 10);  // wave 1 -> after 10 total kills
+  assert.equal(phases[1].advanceWhen.kills, 20);  // wave 2 -> stop spawning at 20 total kills
+  assert.equal(phases.at(-2).spawn.pool[0].ship, 'first boss'); // boss phase
+  assert.equal(phases.at(-1).event, 'win');                 // victory
+  assert.equal((await fetch(base + '/api/levels/nope')).status, 404);
 });
 
 test('catalog: weapons are seeded with type bullet/rocket', async () => {

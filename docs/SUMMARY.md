@@ -56,8 +56,10 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
   its `power` from an opposite-side rocket's HP, shooting it down at 0 (enemy rocket 20 HP = two player
   gun hits).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun), `rocketeer`
-  (yellow, gun + rocket), `heavy` (purple, two rocket launchers, 150 hp, slow, 2× model). Spawn mix
-  (`spawnWeight`/`unlockAfterKills`) is in the data; ship `radius` scales with model size.
+  (yellow, gun + rocket), `heavy` (purple mini-boss, two rocket launchers, 150 hp, slow, 2× model),
+  and the `boss` (`first boss` — orange, its own `boss.glb` model, 210 hp, 3× model, moves like the
+  heavy, two guns + two rocket launchers; spawned only in the level's boss phase). When/which enemies spawn is decided by the **level** (see Gameplay),
+  not the ship; ship `radius` scales with model size.
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 20 hp hull, gun 5 damage
   (an enemy dies in 2 player hits; the player survives 20 enemy hits).
 
@@ -65,14 +67,15 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
   buttons are released — smooth braking. At the arena boundaries (±240) the velocity along the axis is zeroed.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate.
-- Enemies (4 at a time, spawning in a ring around the player, the AI keeps its distance and shoots), three types:
-  - **red fighter** — machine gun (dies in 2 hits);
-  - **yellow "rocketeer"** — tougher (4 hits), shoots bullets AND periodically launches homing rockets
-    at the player. Spawns ~30% of the time.
-  - **purple "heavy"** — slow tank, rocket only (no gun), 150 hp, 2x model. Unlocks after 10 kills
-    (then ~20% of spawns).
-- **Rockets can be shot down by the machine gun:** a bullet destroys a rocket of the opposite side (a harmless
-  explosion) — you can deflect enemy rockets, and an enemy can theoretically shoot down yours.
+- **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
+  `levelRunner`. `level-1`: wave 1 (red fighter + yellow rocketeer, up to 4 at once) → after **10 kills**
+  → wave 2 (adds the purple mini-boss) → at **20 total kills** → **spawning stops**; clear the rest →
+  the **boss spawns alone** → on its death the game keeps running for ~5 s (so you can watch the boss
+  explode) before the **Victory!** overlay (the win phase's `delay`). The AI keeps its distance and
+  fires its weapon groups by range/aim. Spawn composition (which ships + weights + max concurrent) is
+  per-phase in the level, not per-ship.
+- **Rockets can be shot down by the machine gun:** a bullet subtracts its damage from an opposite-side
+  rocket's HP (shot down at 0) — you can deflect enemy rockets, and an enemy can shoot down yours.
 - Player health is 100; HUD shows the remaining health as a percentage with one decimal
   (e.g. "87.5%") below the bar. Score for kills.
 
@@ -115,14 +118,24 @@ characteristics in stats: bullets `power`/`projectileSpeed`/`maxRange`; rockets 
 - **`player_ships`:** ships a player owns; exactly one `is_active` goes into battle. `loadout` JSON
   holds weapon ids by slot (empty ⇒ the ship's default weapons), `meta` JSON for future overrides.
   A new player auto-gets a default active ship on registration.
-- **Maps:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`); the
-  client builds it with `buildMap`. Served via `GET /api/maps/:name`.
+- **Maps & levels:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`),
+  built by `buildMap`. `levels` table holds a JSON descriptor per level (a map + a phase/wave script,
+  seeded as `level-1`), played by the client's `levelRunner`. Served via `GET /api/maps/:name` and
+  `GET /api/levels/:name`.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/players/:id/active-ship`,
-  `GET /api/maps/:name`.
+  `GET /api/maps/:name`, `GET /api/levels/:name`.
 - **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
   Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
   Migrations run on startup; `npm run migrate` runs them for the active backend.
+- **Catalog seeding (data safety):** `server/src/catalog_seed.js` is the single source of truth for the
+  **reference tables** (`weapons`, `ships`, `maps`, `levels`). On **every server startup** both backends
+  **upsert** these rows from the seed (`INSERT … ON CONFLICT DO UPDATE`, keyed by weapon `id` / ship/map/
+  level `name`) — so editing `catalog_seed.js` ships content/balance changes to prod on the next deploy.
+  This is **update-and-insert, not a wipe**: nothing is deleted, so removing/renaming a seed entry leaves
+  the old row orphaned (harmless, but it lingers). **Player data is never touched by seeding** — `players`,
+  `games`, `player_ships` persist across deploys. (If we ever want the catalog editable in prod, switch to
+  seed-only-when-empty + migrations for changes.)
 - Run locally: `cd server && npm install && npm start` → open **http://localhost:4000**.
 - The client now **requires the API to start** (it fetches the ship/weapon catalog + active ship in
   `bootstrap()`). Since the game is always served same-origin by this server, the API is available.

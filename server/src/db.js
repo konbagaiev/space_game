@@ -24,7 +24,7 @@ export async function migrate() {
 // Upsert the ship/weapon catalog from the shared snapshot. Runs on every startup, so editing
 // catalog_seed.js updates the rows (ids/foreign keys preserved — weapons keyed by id, ships by name).
 async function seedCatalog() {
-  const { SHIPS, WEAPONS, MAPS } = await import('./catalog_seed.js');
+  const { SHIPS, WEAPONS, MAPS, LEVELS } = await import('./catalog_seed.js');
   const upW = db.prepare(`INSERT INTO weapons (id, name, type, stats) VALUES (?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, stats = excluded.stats`);
   for (const w of WEAPONS) upW.run(w.id, w.name, w.type, JSON.stringify(w.stats));
@@ -34,6 +34,9 @@ async function seedCatalog() {
   const upM = db.prepare(`INSERT INTO maps (name, descriptor) VALUES (?, ?)
     ON CONFLICT(name) DO UPDATE SET descriptor = excluded.descriptor`);
   for (const m of MAPS) upM.run(m.name, JSON.stringify(m.descriptor));
+  const upL = db.prepare(`INSERT INTO levels (name, descriptor) VALUES (?, ?)
+    ON CONFLICT(name) DO UPDATE SET descriptor = excluded.descriptor`);
+  for (const l of LEVELS) upL.run(l.name, JSON.stringify(l.descriptor));
 }
 
 // Give a player their starter ship if they don't own one yet: the default 'player' ship,
@@ -101,6 +104,12 @@ export function getWeapons() {
 // A map's scene descriptor (the client renders it via buildMap).
 export function getMap(name) {
   const row = db.prepare('SELECT name, descriptor FROM maps WHERE name = ?').get(name);
+  return row ? { name: row.name, descriptor: JSON.parse(row.descriptor) } : null;
+}
+
+// A level's descriptor (map + phase/wave script; the client's level runner plays it).
+export function getLevel(name) {
+  const row = db.prepare('SELECT name, descriptor FROM levels WHERE name = ?').get(name);
   return row ? { name: row.name, descriptor: JSON.parse(row.descriptor) } : null;
 }
 

@@ -3,7 +3,7 @@
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { migrate, registerPlayer, recordGame, getPlayerGames, stats, getShips, getWeapons, getActivePlayerShip, getMap, backend } from './datastore.js';
+import { migrate, registerPlayer, recordGame, getPlayerGames, stats, getShips, getWeapons, getActivePlayerShip, getMap, getLevel, backend } from './datastore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.join(__dirname, '..', '..', 'client');
@@ -60,6 +60,13 @@ export async function createApp() {
     const map = await getMap(req.params.name);
     if (!map) return res.status(404).json({ error: 'no such map' });
     res.json(map);
+  }));
+
+  // A level's descriptor (map + phase/wave script; the client's level runner plays it). Read-only.
+  app.get('/api/levels/:name', wrap(async (req, res) => {
+    const level = await getLevel(req.params.name);
+    if (!level) return res.status(404).json({ error: 'no such level' });
+    res.json(level);
   }));
 
   // Serve the game client (index.html etc.) from the same origin as the API.
