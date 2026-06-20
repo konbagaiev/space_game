@@ -6,7 +6,7 @@
 **Updated:** 2026-06-20
 
 ## What this is
-**Space Ninjas** — a browser prototype built on Three.js (`client/index.html`): little spaceships
+**Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
 fighting on a plane. Opens in a browser with no installation (Three.js from a CDN).
 
 ## Controls
@@ -73,7 +73,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
   buttons are released — smooth braking. At the arena boundaries (±240) the velocity along the axis is zeroed.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate.
-- **Welcome screen** — on load, a start overlay greets the player ("Welcome, Ninja") with an intro that
+- **Welcome screen** — on load, a start overlay greets the player ("Welcome, Sentinel") with an intro that
   frames the threat as a pirate raid and nudges them to use the ship's maneuverability ("Pirates are
   raiding our home system… you've got a fast, nimble ship. Use that agility…"), lets them **pick a ship**
   (cards from the player-type ships, with HP + weapon summary) and **Take off**. The scene backdrop
@@ -206,10 +206,13 @@ first translation). See DECISIONS §10.
   Game-history posting (`reportGame`) stays best-effort.
 
 ## Deployment & CI/CD
-- **Live: https://space.bagaiev.com** — Hetzner VPS (178.104.91.144) shared with another project.
-  Runs as a Docker container `spacegame_app` (1 GB mem limit) behind **Traefik** (auto-HTTPS via
-  Let's Encrypt), on the shared **`backend`** + **`proxy`** networks; uses the shared `shared_postgres`
-  (DB+user `spacegame`). Files at `/opt/projects/spacegame/`; server-only `.env` holds `DATABASE_URL`.
+- **Live: https://vega.tenony.com** (canonical) — Hetzner VPS (178.104.91.144) shared with another
+  project. The legacy host **https://space.bagaiev.com** stays routed to the same container during the
+  transition (Traefik rule `Host(vega.tenony.com) || Host(space.bagaiev.com)`, a Let's Encrypt cert per
+  host). Runs as a Docker container `spacegame_app` (1 GB mem limit) behind **Traefik** (auto-HTTPS), on
+  the shared **`backend`** + **`proxy`** networks; uses the shared `shared_postgres` (DB+user
+  `spacegame`). Files at `/opt/projects/spacegame/`; server-only `.env` holds `DATABASE_URL`. The
+  internal `spacegame` container/image/router/dir/DB names are unchanged (renaming is cosmetic churn).
 - **CI/CD:** `.github/workflows/ci-cd.yml` — runs client + server tests on every push/PR (incl.
   PR merges), and on push to `main` deploys. Secrets: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`.
 - **Graceful shutdown:** on `SIGTERM`/`SIGINT` the server stops accepting new connections and lets

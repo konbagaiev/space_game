@@ -1,4 +1,4 @@
-# Space Ninjas — decisions and notes
+# Vega Sentinels — decisions and notes
 
 The prototype: a single `index.html` file, Three.js from a CDN (via importmap). Opens with a
 double click in the browser, nothing to install.
@@ -146,8 +146,9 @@ not a new global constant.
 
 ## 9. Deployment, rollback, and migrations
 
-Live at **https://space.bagaiev.com** (Docker on a shared Hetzner VPS, behind Traefik, on the
-shared Postgres). Details in `server/README.md`. Key decisions:
+Live at **https://vega.tenony.com** (legacy **https://space.bagaiev.com** still routed during the
+transition — see §12). Docker on a shared Hetzner VPS, behind Traefik, on the shared Postgres.
+Details in `server/README.md`. Key decisions:
 
 **Zero-downtime deploys (blue-green).** The container has a Docker `healthcheck` — Traefik only
 routes to it once `/api/health` passes (i.e. after migrations run on startup). Deploy uses
@@ -287,7 +288,7 @@ player row in place (progress preserved). Cross-device **progress sync requires 
   row (in-place upgrade preserves progress). On login from a fresh device the client **adopts the
   account's player row**; merging two non-trivial anonymous progresses is out of scope for v1.
 - **Email: Amazon SES** (us-east-1, account `140065018525`), outbound only. Sender identity
-  `space.bagaiev.com`, from `noreply@space.bagaiev.com`. A scoped IAM user (`spacegame-mailer`, only
+  `vega.tenony.com`, from `noreply@vega.tenony.com`. A scoped IAM user (`vega-sentinels-mailer`, only
   `ses:SendEmail`/`SendRawEmail`) supplies keys via the server-only `.env` (like `DATABASE_URL`).
   - **SES is called via hand-rolled AWS SigV4 over the built-in `fetch`**, isolated in its own file
     (`server/src/ses.js`) — **no `@aws-sdk` dependency for now**, keeping the built-in-only ethos.
@@ -301,6 +302,26 @@ player row in place (progress preserved). Cross-device **progress sync requires 
 **Sequencing.** Like i18n, this adds a migration and touches `server.js` + `client/index.html` — land it
 relative to the other in-flight features deliberately and coordinate migration numbers (don't let two
 branches both grab the same `00N`).
+
+---
+
+## 12. Project name & domain — Vega Sentinels / vega.tenony.com
+
+Renamed from the working title **Space Ninjas** to **Vega Sentinels** (Vega = a well-known star;
+"Sentinels" = the player archetype, replacing the "ninja" theme). The player's in-game title becomes
+**Sentinel** (was "Ninja"). Canonical domain **https://vega.tenony.com** (a subdomain of `tenony.com`),
+replacing `space.bagaiev.com`.
+
+**Why this name:** an exact "Vega Sentinels" is unclaimed on stores; bare star `.com`s are all long
+taken, so we host on the `tenony.com` subdomain — store/trademark uniqueness matters more than owning
+the `.com`. Both words are common individually ("Sentinels" especially; `Astra Sentinel` is a near
+neighbour) — accepted as a working brand.
+
+**Execution order:** the rename is done **first**, before auth/email — see
+`docs/plans/rename-vega-sentinels.md`. It splits into **Phase A** (user-facing text + docs — small now
+that i18n centralized strings into `client/locales/`) and **Phase B** (infra: the `spacegame`
+container/image/Traefik router, the `space.bagaiev.com` host rule, `/opt/projects/spacegame`, DNS) — a
+coordinated production/domain migration done with the deploy, not a text edit.
 
 ---
 

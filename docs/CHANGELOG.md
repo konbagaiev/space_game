@@ -5,6 +5,17 @@
 
 ## 2026-06-20
 
+- **Renamed the game to "Vega Sentinels" (Phase A: text).** Brand/wordmark Space Ninjas → Vega Sentinels
+  (stays Latin in every locale); player in-game title Ninja → Sentinel (RU Ниндзя → Страж). Updated the
+  i18n catalogs (`ui.title`, `ui.welcome.greeting`, `level.1/3.victory` values + context — keys unchanged),
+  the matching `index.html` fallbacks and `<title>`, the `catalog_seed.js` victory `text` fallbacks, the
+  served-client test assertion, and the README/SUMMARY/DECISIONS titles.
+- **Vega Sentinels rename — Phase B (domain cutover).** The canonical host is now **https://vega.tenony.com**
+  (DNS A → 178.104.91.144). Traefik now serves both hosts (`Host(vega.tenony.com) || Host(space.bagaiev.com)`,
+  a Let's Encrypt cert per host), so the legacy `space.bagaiev.com` keeps working during the transition. The
+  CI smoke check verifies `vega.tenony.com` first and falls back to the legacy host while the new cert issues.
+  The internal `spacegame` container/image/router/deploy-dir/DB-role names are **left unchanged** (cosmetic
+  churn with rollback/CI/host-move risk; the Postgres role stays for safety). Infra docs updated.
 - **Money: credits currency + persistent balance.** The former "score" is now **credits** (the
   currency). The HUD shows two counters: **Earned** (credits this run — the old score, ×2 on level
   clear) and **Credits** (a persistent account balance). At the end of every run (death OR victory) the

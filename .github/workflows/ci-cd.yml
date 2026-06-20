@@ -62,12 +62,18 @@ jobs:
           '
       - name: Smoke check
         # Retry: a rollout can briefly 502 while Traefik swaps to the new container (e.g. a
-        # slower first-time migration). Give it several tries before failing the deploy.
+        # slower first-time migration), and on the first cutover Traefik needs a few seconds to
+        # issue the vega.tenony.com cert via ACME. Verify the new canonical host, then fall back
+        # to the legacy host (same container) so a still-pending cert doesn't fail a healthy deploy.
         run: |
           for i in $(seq 1 10); do
-            if curl -fsS --max-time 10 https://space.bagaiev.com/api/health; then
-              echo " ✓ healthy (attempt $i)"; exit 0
+            if curl -fsS --max-time 10 https://vega.tenony.com/api/health; then
+              echo " ✓ vega.tenony.com healthy (attempt $i)"; exit 0
             fi
-            echo "attempt $i failed; retrying in 3s..."; sleep 3
+            echo "vega attempt $i failed; retrying in 3s..."; sleep 3
           done
-          echo "smoke check failed after 10 attempts" >&2; exit 1
+          echo "vega.tenony.com not ready; checking legacy host space.bagaiev.com ..."
+          if curl -fsS --max-time 10 https://space.bagaiev.com/api/health; then
+            echo " ✓ space.bagaiev.com healthy (vega cert may still be issuing)"; exit 0
+          fi
+          echo "smoke check failed: neither host healthy" >&2; exit 1

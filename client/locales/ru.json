@@ -11,10 +11,10 @@
   "ui.overlay.sector_cleared": "Сектор зачищен.",
   "ui.button.restart": "Заново",
   "ui.button.take_off": "Взлёт 🚀",
-  "ui.welcome.greeting": "Привет, Ниндзя",
+  "ui.welcome.greeting": "Привет, Страж",
   "ui.welcome.intro": "Пираты разоряют нашу родную систему — нужно дать им отпор. Хорошая новость: у тебя быстрый и манёвренный корабль. Используй манёвренность — двигайся, переигрывай их в поворотах и не дай себя зажать.",
   "ui.welcome.pick": "Выбери корабль",
-  "ui.title": "Space Ninjas",
+  "ui.title": "Vega Sentinels",
   "ui.touch.fire": "ОГОНЬ",
   "ui.credits.doubled": "Заработано ×2 = {credits}",
   "ui.gameover.sub": "Уничтожено: {kills} — Заработано: {credits}",
@@ -27,7 +27,7 @@
   "ui.mount.unarmed": "без оружия",
 
   "ship.player_basic.name": "Базовый корабль",
-  "level.1.victory": "Уровень 1 пройден! Отличный полёт, Ниндзя.",
+  "level.1.victory": "Уровень 1 пройден! Отличный полёт, Страж.",
   "level.2.victory": "Уровень 2 пройден! Мини-босс повержен.",
-  "level.3.victory": "Сектор зачищен. Поздравляем, Космический Ниндзя!"
+  "level.3.victory": "Сектор зачищен. Поздравляем, Страж!"
 }

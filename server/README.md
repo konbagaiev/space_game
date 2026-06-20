@@ -58,10 +58,13 @@ Tables (after `001_init`):
 
 ## Production
 
-Live at **https://space.bagaiev.com** on a shared Hetzner VPS (178.104.91.144).
+Live at **https://vega.tenony.com** on a shared Hetzner VPS (178.104.91.144). The legacy host
+**https://space.bagaiev.com** stays routed to the same container during the transition.
 
 - Runs as Docker container `spacegame_app` (built from the repo `Dockerfile`, 1 GB mem limit),
   behind **Traefik** (auto-HTTPS via Let's Encrypt) on the shared `proxy` + `backend` networks.
+  The Traefik router serves both hosts (`Host(vega.tenony.com) || Host(space.bagaiev.com)`); the
+  internal container/image/router name stays `spacegame` (renaming is cosmetic churn).
 - Uses the shared `shared_postgres` (database + role `spacegame`) — selected via `DATABASE_URL`.
 - Files live at `/opt/projects/spacegame/`; the server-only `.env` (not in git) holds
   `DATABASE_URL=postgres://spacegame:***@shared_postgres:5432/spacegame` and `PORT=4000`.

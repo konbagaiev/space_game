@@ -1,4 +1,4 @@
-# i18n implementation brief — Space Ninjas
+# i18n implementation brief — Vega Sentinels
 
 > Self-contained handoff for a fresh session. Implements multi-language support for players.
 > The architecture is already decided — see **DECISIONS.md §10**. This file is the build plan.

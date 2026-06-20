@@ -11,10 +11,10 @@
   "ui.overlay.sector_cleared": { "source": "Sector cleared.", "context": "Fallback victory subtitle when a level has no custom victory line." },
   "ui.button.restart": { "source": "Restart", "context": "Button on the game-over/victory overlay. Short." },
   "ui.button.take_off": { "source": "Take off 🚀", "context": "Primary button on the welcome screen that starts the game. Keep the 🚀 emoji." },
-  "ui.welcome.greeting": { "source": "Welcome, Ninja", "context": "Welcome-screen heading. 'Ninja' is the player's in-game title — keep it." },
+  "ui.welcome.greeting": { "source": "Welcome, Sentinel", "context": "Welcome-screen heading. 'Sentinel' is the player's in-game title — keep it." },
   "ui.welcome.intro": { "source": "Pirates are raiding our home system — we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't let them pin you down.", "context": "Welcome-screen intro paragraph. 2–3 sentences, motivating, second person." },
   "ui.welcome.pick": { "source": "Pick your ship", "context": "Label above the ship-picker cards on the welcome screen." },
-  "ui.title": { "source": "Space Ninjas", "context": "Game wordmark / brand name. May stay English in any locale." },
+  "ui.title": { "source": "Vega Sentinels", "context": "Game wordmark / brand name. Stays Latin in every locale." },
   "ui.touch.fire": { "source": "FIRE", "context": "Touch-control fire button label (mobile). Uppercase, short." },
   "ui.credits.doubled": { "source": "Earned ×2 = {credits}", "context": "Victory subtitle tail; {credits} is the doubled credits earned (integer). '×2' is the level-clear bonus notation." },
   "ui.gameover.sub": { "source": "Destroyed: {kills} — Earned: {credits}", "context": "Game-over subtitle. {kills},{credits} are integers placed after labels, so no plural form is needed." },
@@ -27,7 +27,7 @@
   "ui.mount.unarmed": { "source": "unarmed", "context": "Weapon summary when a ship has no weapons." },
 
   "ship.player_basic.name": { "source": "Basic player ship", "context": "Display name of the starter player ship on the ship-picker card. ≤24 chars. May stay English if there's no natural local form." },
-  "level.1.victory": { "source": "Level 1 cleared! Nice flying, Ninja.", "context": "Victory overlay subtitle after level 1. Upbeat. 'Ninja' is the player's in-game title — keep it." },
+  "level.1.victory": { "source": "Level 1 cleared! Nice flying, Sentinel.", "context": "Victory overlay subtitle after level 1. Upbeat. 'Sentinel' is the player's in-game title — keep it." },
   "level.2.victory": { "source": "Level 2 cleared! The mid-boss is down.", "context": "Victory overlay subtitle after level 2. Upbeat." },
-  "level.3.victory": { "source": "Sector cleared. Congratulations, Space Ninja!", "context": "Victory overlay subtitle after the final level. Celebratory. 'Space Ninja' is the player's title." }
+  "level.3.victory": { "source": "Sector cleared. Congratulations, Sentinel!", "context": "Victory overlay subtitle after the final level. Celebratory. 'Sentinel' is the player's title." }
 }

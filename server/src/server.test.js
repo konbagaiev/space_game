@@ -154,7 +154,7 @@ test('serves the game client at /', async () => {
   const r = await fetch(base + '/');
   assert.equal(r.status, 200);
   const html = await r.text();
-  assert.match(html, /<canvas|<script type="module"|Space Ninjas/i);
+  assert.match(html, /<canvas|<script type="module"|Vega Sentinels/i);
 });
 
 test('catalog: ships are seeded (player + enemies) with stats', async () => {
