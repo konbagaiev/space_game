@@ -13,6 +13,11 @@ This applies to:
 When adding or changing anything, write it in English. If you encounter
 non-English text, translate it to English as part of your change.
 
+**Localization exception (planned, see DECISIONS §10):** English is the *source of truth* — all
+code, identifiers, string keys, docs, commits, and the **default/base UI text** stay English. Player
+localizations (e.g. Russian) are a separate layer keyed off the English originals; they don't relax
+this rule for anything we author or version.
+
 ## Project layout
 - `client/` — Three.js game (frontend), single `index.html`.
 - `server/` — backend (player accounts, multiplayer) — planned.

@@ -167,6 +167,68 @@ LATER release, once the old code can no longer come back. This keeps a code roll
 (the schema works for both versions). Catastrophes are handled by restoring a DB backup, not by
 reversing a migration. Current migrations are additive/idempotent, so already backward-compatible.
 
+**Player progress is a FK to `levels(id)`, enforced only in Postgres.** `players.current_progress`
+points at the player's highest unlocked level. Postgres declares it as a real `REFERENCES levels(id)`
+FK (prod gets referential integrity). SQLite **can't** `ALTER TABLE ... ADD COLUMN` with both a
+`REFERENCES` clause and a non-NULL default (it errors regardless of `PRAGMA foreign_keys`), and we'd
+rather not do a full table rebuild for the dev/test backend — which doesn't enforce FKs anyway. So the
+SQLite column is a plain `INTEGER NOT NULL DEFAULT 1`, treated as the same logical FK in queries (the
+JOIN works either way). Advancing uses `MIN(id) WHERE id > current` rather than `current + 1`, so it
+tolerates non-contiguous level ids (the local DB has gaps from re-seed history). The default `1` assumes
+`level-1` is the first seeded level (id 1) — true by seed order in every backend.
+
+---
+
+## 10. Localization (i18n) — English is the source, translations layer on top (planned)
+
+**Decision.** English is the **canonical, source-of-truth language**; multi-language support is a
+**localization layer added on top**, not a replacement. **Russian is the first localization language.**
+
+**How this reconciles the "English only" project rule (`CLAUDE.md`).** That rule governs the
+*source of truth* — code, identifiers, string **keys**, docs, commits, and the **default/base UI
+text** all stay English. It does **not** forbid showing a player translated text: a localized string
+is a derived artifact keyed off the English original. So English-only stands for everything we author
+and version; locales are generated views of it.
+
+**Planned approach (queued — see sequencing below):**
+- **Client UI (~35–40 strings, `client/index.html`):** centralize into a keyed dictionary
+  (`client/src/i18n.js`, `t(key, params)`); `en` values are the current English text, so the English
+  source is preserved. DOM via `data-i18n` attributes + `t()` for JS-set strings.
+- **All translatable text (UI + DB content) flows through ONE file-based message catalog** — the
+  source of truth, version-controlled, English-only-rule friendly:
+  - `client/locales/source.json` — the canonical catalog: `{ key: { source, context } }`. `source` is
+    the English text; `context` is the per-string note for the translator (where it appears, tone,
+    length limits) — authored once, travels to the translator (human or AI) automatically. This is the
+    gettext `#.` / FormatJS `description` pattern, and it's the whole reason we reject per-column
+    translations (a column has nowhere to hold context, and adding a language ALTERs every table).
+  - `client/locales/<lang>.json` (e.g. `ru.json`) — `{ key: value }`, the translations. English is NOT
+    duplicated here; it comes from `source.json`. **Adding a language = add one file, zero schema change.**
+  - **DB content stores stable keys, not display text.** A row carries an i18n key (e.g.
+    `ship.player_basic.name`); the canonical English `name`/`text` stays for fallback/debug. Level
+    victory `descriptor.phases[].text` becomes `textKey`.
+  - **Resolution is client-side:** the client loads `source.json` + the active `<lang>.json` and
+    resolves everything through one `t(key, params)` — UI labels and DB content identically. The DB and
+    API stay language-agnostic (keys only); the server never resolves content.
+  - **Interpolation:** values support simple named placeholders (`Score: {score}`). That's all the
+    runtime formatter needs for now.
+  - **Plurals/composite phrases — deferred on purpose.** Grammatical number (esp. Russian: 1 враг /
+    2 врага / 5 врагов) is the hard part of i18n. **For now we avoid authoring such phrases at all** —
+    prefer designs that sidestep grammatical number: a static label next to a separate number
+    (`Enemies` + `4`), the `N×` notation (`2× gun`), or a value after a colon (`Destroyed: 12`). At
+    planning time **no string requires plurals**, so we don't build plural support yet.
+  - **When we do need plurals** (revisit once copy/scale demands it): the chosen mechanism is the
+    **built-in `Intl.PluralRules`** (`new Intl.PluralRules('ru').select(5) === 'many'`) — correct CLDR
+    categories for free, **zero dependencies** — plus a tiny ICU-subset formatter to pick the branch.
+    We will NOT hand-code language plural rules, and NOT add `@formatjs`/any runtime dep (keeps the
+    project's built-in-only ethos). Keep new translatable strings simple until then.
+- **Language selection:** explicit choice (`players.language`, persisted via a new migration +
+  endpoint, mirrored to `localStorage`) → `navigator.language` → `en` fallback. Only `en`/`ru` for now.
+  The server stores only the *preference*; resolution stays on the client.
+
+**Sequencing (parallel-work hazard).** i18n heavily overlaps the maps/levels feature in the exact same
+files (`index.html`, `catalog_seed.js`, and the migrations sequence — both would add the next `00N`
+migration). Do i18n **after** maps/levels merges to `main`, to avoid a large merge-conflict surface.
+
 ---
 
 ## Future ideas
