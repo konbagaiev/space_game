@@ -5,6 +5,26 @@
 
 ## 2026-06-20
 
+- **Welcome copy reworded.** The intro now reads naturally for a US audience and frames the threat as
+  pirates, plus a gameplay nudge: "Pirates are raiding our home system — we need you to push them back.
+  Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't
+  let them pin you down." Points the player at the ship's maneuverability.
+- **Scoring system (per-enemy rewards + level bonus).** Every enemy ship now carries a `reward`
+  (`stats.reward` in `catalog_seed.js`, passed to the client): fighter 20, rocketeer 40, medium 100,
+  first boss 200. The client now tracks **score** (points) separately from **kills** (the count that
+  drives level thresholds): destroying an enemy adds `reward` to the score, and **completing a level
+  doubles** it (the `win` phase does `score ×= 2`, shown on the Victory overlay). HUD (top-right) gained
+  a **Score** readout above **Destroyed** (kills) and **Enemies**. Game over / victory report
+  `{ score, kills, durationMs }`. Server test asserts the four reward values; verified end-to-end
+  (level-1: 19 kills → 460 → ×2 = 920).
+- **Three levels (easier on-ramp).** The old single level was a steep first experience, so it's now
+  **`level-3`** and two gentler levels lead up to it (the client still plays `level-1`):
+  - `level-1` (beginner): fighters only (3 at once) → 7 kills → rocketeers at 25% → 15 kills: spawning
+    stops, one last rocketeer, clear → Victory. No boss.
+  - `level-2` (medium): fighters only until 5 kills → fighters+rocketeers 75/25 until 15 kills → a lone
+    **medium** appears as the boss → clear → Victory.
+  - `level-3`: the original full fight (all three enemy types → the Sector boss).
+  All seeded in `catalog_seed.js`; the smoke/combat visual scenarios no longer hard-code "4 enemies".
 - **Ships are assembled from DB components (hull + engine + maneuvering thrusters).** New `components`
   table (migration 005): `name`, `type` (`hull`/`engine`/`thruster`), `weight` (→ mass), `stats` JSON —
   hull `{durability,volume}`, engine `{power → acceleration, maxSpeed, exhaust}`, thruster

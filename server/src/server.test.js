@@ -123,6 +123,11 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(boss.stats.role, 'boss');
   assert.deepEqual(boss.components, { hull: 4, engine: 7, thruster: 11 }); // its own hull + engine + thrusters
   assert.equal(boss.stats.mounts.length, 4); // two guns + two rockets
+  // score rewards per enemy type
+  assert.equal(fighter.stats.reward, 20);
+  assert.equal(rocketeer.stats.reward, 40);
+  assert.equal(mini.stats.reward, 100);
+  assert.equal(boss.stats.reward, 200);
 });
 
 test('catalog: components (hulls + engines + thrusters) are seeded', async () => {
@@ -142,15 +147,20 @@ test('catalog: components (hulls + engines + thrusters) are seeded', async () =>
   assert.equal(medium.weight, 60);         // heavier hull -> sluggish via mass
 });
 
-test('levels: level-1 phase script is served', async () => {
-  const lvl = await getJson('/api/levels/level-1');
-  assert.equal(lvl.name, 'level-1');
-  assert.equal(lvl.descriptor.map, 'home-system');
-  const phases = lvl.descriptor.phases;
-  assert.equal(phases[0].advanceWhen.kills, 10);  // wave 1 -> after 10 total kills
-  assert.equal(phases[1].advanceWhen.kills, 20);  // wave 2 -> stop spawning at 20 total kills
-  assert.equal(phases.at(-2).spawn.pool[0].ship, 'first boss'); // boss phase
-  assert.equal(phases.at(-1).event, 'win');                 // victory
+test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector boss) are served', async () => {
+  const l1 = await getJson('/api/levels/level-1');
+  assert.equal(l1.descriptor.map, 'home-system');
+  assert.equal(l1.descriptor.phases[0].advanceWhen.kills, 7);              // gentle ramp
+  assert.equal(l1.descriptor.phases[0].spawn.pool[0].ship, 'basic enemy ship'); // fighters only
+  assert.equal(l1.descriptor.phases.at(-1).event, 'win');
+  assert.ok(!JSON.stringify(l1.descriptor).includes('first boss'), 'level-1 has no boss');
+
+  const l2 = await getJson('/api/levels/level-2');
+  assert.equal(l2.descriptor.phases.at(-2).spawn.pool[0].ship, 'basic mini boss'); // the medium IS the boss
+
+  const l3 = await getJson('/api/levels/level-3');
+  assert.equal(l3.descriptor.phases.at(-2).spawn.pool[0].ship, 'first boss');       // the Sector boss
+
   assert.equal((await fetch(base + '/api/levels/nope')).status, 404);
 });
 

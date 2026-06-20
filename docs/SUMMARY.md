@@ -64,7 +64,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   launchers, 150 hp medium hull → sluggish, 2× model), and the `boss` (`first boss` — orange, its own
   `boss.glb` model + own hull/engine, 210 hp, 3× model, two guns + two rocket launchers; spawned only
   in the level's boss phase). Which enemies spawn is decided by the **level** (see Gameplay), not the
-  ship; ship `radius` scales with model size.
+  ship; ship `radius` scales with model size. Each enemy also carries a **`reward`** (`stats.reward`,
+  fighter 20 / rocketeer 40 / medium 100 / boss 200) added to the score on destruction.
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 20 hp hull, gun 5 damage
   (an enemy dies in 2 player hits; the player survives 20 enemy hits).
 
@@ -76,16 +77,26 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   is under attack…"), lets them **pick a ship** (cards from the player-type ships, with HP + weapon
   summary) and **Take off**. The scene backdrop renders behind it; the level only starts on take-off.
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
-  `levelRunner`. `level-1`: wave 1 (red fighter + yellow rocketeer, up to 4 at once) → after **10 kills**
-  → wave 2 (adds the purple mini-boss) → at **20 total kills** → **spawning stops**; clear the rest →
-  the **boss spawns alone** → on its death the game keeps running for ~5 s (so you can watch the boss
-  explode) before the **Victory!** overlay (the win phase's `delay`). The AI keeps its distance and
-  fires its weapon groups by range/aim. Spawn composition (which ships + weights + max concurrent) is
-  per-phase in the level, not per-ship.
+  `levelRunner`. Three levels are seeded (the client currently always plays **`level-1`**):
+  - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%
+    → at **15 kills** spawning stops, one last rocketeer appears, clear the field → **Victory!** No boss.
+  - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 15 kills →
+    spawning stops → a single **medium** appears alone as the boss → clear → Victory.
+  - **`level-3` (full fight):** waves of all three enemy types → after 20 kills spawning stops → the
+    **Sector boss** spawns alone → on its death the game runs ~5 s (watch it explode) → Victory.
+  The AI keeps its distance and fires its weapon groups by range/aim. Spawn composition (ships +
+  `chance` weights + max concurrent) is per-phase in the level; a `win` phase's `delay` defers the
+  overlay so the last/boss explosion plays out.
 - **Rockets can be shot down by the machine gun:** a bullet subtracts its damage from an opposite-side
   rocket's HP (shot down at 0) — you can deflect enemy rockets, and an enemy can shoot down yours.
 - Player health is 100; HUD shows the remaining health as a percentage with one decimal
-  (e.g. "87.5%") below the bar. Score for kills.
+  (e.g. "87.5%") below the bar.
+- **Scoring** — every enemy ship carries a `reward` (`stats.reward`, passed to the client): fighter 20,
+  rocketeer 40, medium 100, first boss 200. Destroying an enemy adds its reward to the **score**; the
+  separate **kill count** drives level thresholds. Completing a level **doubles** the score (the `win`
+  phase applies `score ×= 2` and the Victory overlay shows the doubled total). HUD (top-right) shows
+  **Score** (points), **Destroyed** (kills) and **Enemies** (alive). Game over / victory both report
+  `{ score, kills, durationMs }` to the backend.
 
 ## Visuals
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer,

@@ -141,8 +141,10 @@
     <div id="hppct">100.0%</div>
   </div>
   <div class="right">
-    <div class="label">Destroyed</div>
+    <div class="label">Score</div>
     <div class="bigval" id="score">0</div>
+    <div class="label" style="margin-top:6px">Destroyed</div>
+    <div id="kills" style="font-size:18px">0</div>
     <div class="label" style="margin-top:6px">Enemies</div>
     <div id="enemies" style="font-size:18px">0</div>
   </div>
@@ -158,7 +160,7 @@
 </div>
 <div id="welcome">
   <h1>Welcome, Ninja</h1>
-  <p class="intro">Our home system is under attack. Pick your ship and help us clear it.</p>
+  <p class="intro">Pirates are raiding our home system &mdash; we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility &mdash; keep moving, out-turn them, and don't let them pin you down.</p>
   <div class="pick">Pick your ship</div>
   <div id="ship-choices"></div>
   <button id="takeoff">Take off 🚀</button>
@@ -771,7 +773,7 @@ function spawnEnemyShip(shipDef) {
   const s = shipDef.stats;
   const { hull, engine, thruster } = resolveComponents(shipDef.components);
   const e = {
-    role: s.role, color: s.color, sizeScale: s.sizeScale || 1,
+    role: s.role, color: s.color, sizeScale: s.sizeScale || 1, reward: s.reward || 0,
     mesh: makeShip(s.color, modelSpec(shipDef.modelUrl)),
     vel: new THREE.Vector3(),
     heading: Math.random() * Math.PI * 2,
@@ -821,7 +823,7 @@ const levelRunner = {
   get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },
 
   enterPhase() {
-    this.killsAtPhaseStart = score; this.spawnedThisPhase = 0;
+    this.killsAtPhaseStart = kills; this.spawnedThisPhase = 0;
     const ph = this.phase;
     if (ph && ph.event === 'win') {
       // defer the overlay by `delay` seconds so the boss explosion can play out first
@@ -832,8 +834,9 @@ const levelRunner = {
   },
   win(text) {
     this.won = true;
+    score *= 2; // double the score for clearing the level
     overlayTitle.textContent = 'Victory!';
-    overlaySub.textContent = text || 'Sector cleared.';
+    overlaySub.textContent = `${text || 'Sector cleared.'} — Score ×2 = ${score}`;
     overlay.style.display = 'flex';
   },
 
@@ -872,8 +875,8 @@ const levelRunner = {
   shouldAdvance(ph) {
     const c = ph.advanceWhen;
     if (!c) return false;
-    if (c.kills != null) return score >= c.kills;
-    if (c.killsSincePhase != null) return (score - this.killsAtPhaseStart) >= c.killsSincePhase;
+    if (c.kills != null) return kills >= c.kills;
+    if (c.killsSincePhase != null) return (kills - this.killsAtPhaseStart) >= c.killsSincePhase;
     if (c.allCleared) {
       const spawnDone = !ph.spawn || (ph.spawn.total != null && this.spawnedThisPhase >= ph.spawn.total);
       return enemies.length === 0 && spawnDone;
@@ -1022,11 +1025,11 @@ const playerId = (() => {
   } catch { return null; }
 })();
 // (Registration happens in bootstrap() via the active-ship fetch, which upserts the player.)
-function reportGame(score, durationMs) {
+function reportGame(score, kills, durationMs) {
   if (!playerId) return;
   fetch('/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ playerId, score, kills: score, durationMs: Math.round(durationMs) }),
+    body: JSON.stringify({ playerId, score, kills, durationMs: Math.round(durationMs) }),
   }).catch(() => {});
 }
 let gameStartTime = performance.now();
@@ -1045,6 +1048,7 @@ function clampToArena(pos) {
 
 // ---------- HUD ----------
 const elScore = document.getElementById('score');
+const elKills = document.getElementById('kills');
 const elEnemies = document.getElementById('enemies');
 const elHp = document.getElementById('hpfill');
 const elHpPct = document.getElementById('hppct');
@@ -1053,11 +1057,13 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlaySub = document.getElementById('overlay-sub');
 const elRocketBtn = document.getElementById('rocket-btn');
 const elRocketFill = document.getElementById('rocket-fill');
-let score = 0;
+let kills = 0;  // count of destroyed enemies (drives the level runner's thresholds + "Destroyed")
+let score = 0;  // points: each kill adds the ship's `reward`; doubled on level completion
 let gameStarted = false; // false on the welcome screen (backdrop renders, but the level isn't running)
 
 function updateHud() {
   elScore.textContent = score;
+  elKills.textContent = kills;
   elEnemies.textContent = enemies.length;
   const hpPct = Math.max(0, player.hp / player.maxHp * 100);
   elHp.style.width = hpPct + '%';
@@ -1314,7 +1320,8 @@ function update(dt) {
       spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
-      score++;
+      kills++;                 // count (drives level thresholds + HUD)
+      score += e.reward || 0;  // points (reward for this ship type)
     }
   }
   // drive spawning + phase transitions from the active level
@@ -1324,9 +1331,9 @@ function update(dt) {
   if (player.hp <= 0 && player.alive) {
     player.alive = false;
     spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
-    reportGame(score, performance.now() - gameStartTime); // save game to history
+    reportGame(score, kills, performance.now() - gameStartTime); // save game to history
     overlayTitle.textContent = 'Ship destroyed';
-    overlaySub.textContent = `Ships destroyed: ${score}`;
+    overlaySub.textContent = `Destroyed: ${kills} — Score: ${score}`;
     overlay.style.display = 'flex';
   }
 
@@ -1438,7 +1445,7 @@ function reset() {
   player.hp = player.maxHp;
   for (const g of Object.values(player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   player.alive = true;
-  score = 0;
+  score = 0; kills = 0;
   gameStartTime = performance.now(); // start timing a new game (for history)
   levelRunner.start(CATALOG.level); // restart the level from phase 1 (spawns via update())
   overlay.style.display = 'none';
@@ -1456,6 +1463,7 @@ if (location.search.includes('debug')) {
     get player() { return player; },   // built asynchronously in bootstrap()
     get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB
     get score() { return score; },
+    get kills() { return kills; },
   };
 }
 

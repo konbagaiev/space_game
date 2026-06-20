@@ -68,12 +68,12 @@ export const SHIPS = [
       ] } },
   { name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/fighter.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
-      role: 'fighter', color: 0xff5d5d, sizeScale: 1,
+      role: 'fighter', color: 0xff5d5d, sizeScale: 1, reward: 20,
       groups: { gun: GUN },
       mounts: [ { weapon: 2, group: 'gun', offset: 0, delay: 0 } ] } },
   { name: 'basic rocket enemy', type: 'enemy', modelUrl: 'assets/ships/rocketeer.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // same hull + engine + thrusters as the fighter
-      role: 'rocketeer', color: 0xffd24d, sizeScale: 1,
+      role: 'rocketeer', color: 0xffd24d, sizeScale: 1, reward: 40,
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun',    offset: 0, delay: 0 },
@@ -81,7 +81,7 @@ export const SHIPS = [
       ] } },
   { name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/heavy.glb',
     components: { hull: 3, engine: 6, thruster: 10 }, stats: { // medium hull + scout engine + weak (Medium) thrusters
-      role: 'medium', color: 0xb267e6, sizeScale: 2,
+      role: 'medium', color: 0xb267e6, sizeScale: 2, reward: 100,
       groups: { rocket: ROCKET },
       // two rocket launchers side by side, fired one after the other (0.2s stagger)
       mounts: [
@@ -92,7 +92,7 @@ export const SHIPS = [
   // side + two staggered rocket launchers.
   { name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb',
     components: { hull: 4, engine: 7, thruster: 11 }, stats: {
-      role: 'boss', color: 0xff8c2a, sizeScale: 3,
+      role: 'boss', color: 0xff8c2a, sizeScale: 3, reward: 200,
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun',    offset: -0.6, delay: 0 },
@@ -111,20 +111,56 @@ export const SHIPS = [
 //   { allCleared: true }    — no enemies left (and the phase's `total` has all spawned)
 // A phase with `event: 'win'` ends the level with a victory overlay.
 export const LEVELS = [
+  // Level 1 — beginner-friendly: gentle ramp, no boss.
   { name: 'level-1', descriptor: {
       title: 'Level 1', map: 'home-system',
       phases: [
+        { name: 'wave-1', // only plain fighters, 3 at a time
+          spawn: { maxConcurrent: 3, pool: [ { ship: 'basic enemy ship', chance: 100 } ] },
+          advanceWhen: { kills: 7 } },
+        { name: 'wave-2', // rocketeers join at 25%
+          spawn: { maxConcurrent: 3, pool: [
+            { ship: 'basic enemy ship', chance: 75 },
+            { ship: 'basic rocket enemy', chance: 25 } ] },
+          advanceWhen: { kills: 15 } },
+        { name: 'finale', // spawning stops; one last rocketeer, then clear the field
+          spawn: { maxConcurrent: 4, total: 1, pool: [ { ship: 'basic rocket enemy', chance: 100 } ] },
+          advanceWhen: { allCleared: true } },
+        { name: 'victory', event: 'win', delay: 2, text: 'Level 1 cleared! Nice flying, Ninja.' },
+      ] } },
+  // Level 2 — medium: ends with a single mini-boss (the medium) as the boss.
+  { name: 'level-2', descriptor: {
+      title: 'Level 2', map: 'home-system',
+      phases: [
+        { name: 'wave-1', // only fighters until 5 kills
+          spawn: { maxConcurrent: 4, pool: [ { ship: 'basic enemy ship', chance: 100 } ] },
+          advanceWhen: { kills: 5 } },
+        { name: 'wave-2', // fighters + rocketeers 75/25 until 15 kills
+          spawn: { maxConcurrent: 4, pool: [
+            { ship: 'basic enemy ship', chance: 75 },
+            { ship: 'basic rocket enemy', chance: 25 } ] },
+          advanceWhen: { kills: 15 } },
+        { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
+        { name: 'boss', // a single medium appears alone — it's the level's boss
+          spawn: { maxConcurrent: 1, total: 1, pool: [ { ship: 'basic mini boss', chance: 1 } ] },
+          advanceWhen: { allCleared: true } },
+        { name: 'victory', event: 'win', delay: 5, text: 'Level 2 cleared! The mid-boss is down.' },
+      ] } },
+  // Level 3 — the full fight: waves of all three enemy types, then the Sector boss.
+  { name: 'level-3', descriptor: {
+      title: 'Level 3', map: 'home-system',
+      phases: [
         { name: 'wave-1',
           spawn: { maxConcurrent: 4, pool: [
-            { ship: 'basic enemy ship', chance: 75 },   // gun
-            { ship: 'basic rocket enemy', chance: 25 } ] }, // rocket
+            { ship: 'basic enemy ship', chance: 75 },
+            { ship: 'basic rocket enemy', chance: 25 } ] },
           advanceWhen: { kills: 10 } },
         { name: 'wave-2',
           spawn: { maxConcurrent: 4, pool: [
-            { ship: 'basic enemy ship', chance: 65 },   // gun
-            { ship: 'basic rocket enemy', chance: 20 }, // rocket
-            { ship: 'basic mini boss', chance: 15 } ] }, // medium
-          advanceWhen: { kills: 20 } }, // stop spawning at 20 total kills
+            { ship: 'basic enemy ship', chance: 65 },
+            { ship: 'basic rocket enemy', chance: 20 },
+            { ship: 'basic mini boss', chance: 15 } ] },
+          advanceWhen: { kills: 20 } },
         { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
         { name: 'boss',
           spawn: { maxConcurrent: 1, total: 1, pool: [ { ship: 'first boss', chance: 1 } ] },
