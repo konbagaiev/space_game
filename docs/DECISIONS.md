@@ -1,4 +1,4 @@
-# Space combat — decisions and notes
+# Space Ninjas — decisions and notes
 
 The prototype: a single `index.html` file, Three.js from a CDN (via importmap). Opens with a
 double click in the browser, nothing to install.

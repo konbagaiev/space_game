@@ -91,7 +91,8 @@ async function main() {
       const errBefore = pageErrors.length;
       // clean slate: a full reload resets all game state
       await page.goto(BASE_URL, { waitUntil: 'load' });
-      await page.waitForFunction('!!window.__game', null, { timeout: 5000 });
+      // bootstrap() builds the player asynchronously after fetching the catalog from the API
+      await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
 
       const shot = async (label) => {
         const p = path.join(shotsDir, `${name}__${label}.png`);

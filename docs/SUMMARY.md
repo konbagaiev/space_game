@@ -6,8 +6,8 @@
 **Updated:** 2026-06-19
 
 ## What this is
-A browser prototype built on Three.js (`client/index.html`): little spaceships fighting on a
-plane. Opens in a browser with no installation (Three.js from a CDN).
+**Space Ninjas** — a browser prototype built on Three.js (`client/index.html`): little spaceships
+fighting on a plane. Opens in a browser with no installation (Three.js from a CDN).
 
 ## Controls
 - `W`/`↑` — thrust forward, `S`/`↓` — backward
@@ -25,9 +25,17 @@ plane. Opens in a browser with no installation (Three.js from a CDN).
   (orange while reloading, green when ready). Shown on both PC and mobile; on PC it's also
   clickable to fire (besides the `F` key), on mobile it's the rocket button.
 
-## Ship model (components)
-A ship is assembled from data components (in `client/index.html`, catalogs `ENGINES`,
-`THRUSTERS`, `HULLS`, `WEAPONS`); all logic reads the stats from them.
+## Ship model (DB-driven)
+Ships and weapons are **defined in the database** (`ships`, `weapons`); the client fetches them on
+startup (`bootstrap()`) and builds every ship from that data. Only the pure derivation
+(`deriveDrive`/`shipMass` in `client/src/components.js`) stays client-side; the hardcoded catalogs
+there (`ENGINES`/`HULLS`/`WEAPONS`/`ENEMY_KINDS`) are no longer used by the game (kept as the seed's
+mirror + unit tests). A ship's `stats` (JSON) carry hull/engine/thrusters and reference weapons **by
+id**; the player's active ship + loadout come from `player_ships` (see Backend).
+- **Visual model:** each ship's `model_url` (in the DB) points to a `.glb` (the exported primitives
+  live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it loads /
+  as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. Swap a `model_url` for a
+  real model later. See `client/assets/README.md` + `CREDITS.md`.
 - **Main engine** (`ENGINES`): `power` → **acceleration**; plus `maxSpeed` (0 = no limit),
   `weight`/`durability` (for later) and **exhaust** `exhaust` (part of the engine).
 - **Maneuvering thrusters** (`THRUSTERS`): `power` → **turn rate**.
@@ -97,12 +105,23 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
 - **Auto-registration by browser:** the client makes a UUID on first visit (kept in `localStorage`)
   and posts it on load; the server creates the player if new. Anonymous, minimal friction.
 - **Game history:** on game over the client posts `{ score, kills, durationMs }`, saved per player.
-- API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`, `GET /api/health`.
+- **Catalog tables:** `ships` (one table for the player + enemies; `name`, `type`
+  `player`/`enemy`, `stats` JSON — references weapons by id, plus enemy spawn rules
+  `spawnWeight`/`unlockAfterKills` — and `model_url`) and `weapons` (`name`, `type`
+  `bullet`/`rocket`, `stats` JSON; stable ids 1–4), seeded from a shared snapshot
+  (`server/src/catalog_seed.js`). **The client builds all ships from these.**
+- **`player_ships`:** ships a player owns; exactly one `is_active` goes into battle. `loadout` JSON
+  holds weapon ids by slot (empty ⇒ the ship's default weapons), `meta` JSON for future overrides.
+  A new player auto-gets a default active ship on registration.
+- API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
+  `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/players/:id/active-ship`.
 - **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
   Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
   Migrations run on startup; `npm run migrate` runs them for the active backend.
 - Run locally: `cd server && npm install && npm start` → open **http://localhost:4000**.
-- Client calls are best-effort (`fetch` with `.catch`): the game still works if served without the API.
+- The client now **requires the API to start** (it fetches the ship/weapon catalog + active ship in
+  `bootstrap()`). Since the game is always served same-origin by this server, the API is available.
+  Game-history posting (`reportGame`) stays best-effort.
 
 ## Deployment & CI/CD
 - **Live: https://space.bagaiev.com** — Hetzner VPS (178.104.91.144) shared with another project.
@@ -132,8 +151,8 @@ A ship is assembled from data components (in `client/index.html`, catalogs `ENGI
 ## Tests (built-in `node:test`, no deps)
 - **Client logic** — `client/src/*.test.js` (17): component derivation, mass, balance, steering math.
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (9): register / record game / history / validation /
-  health / serves client. Mounts the Express app on an ephemeral port against a temp SQLite DB
+- **Backend API** — `server/src/server.test.js` (11): register / record game / history / validation /
+  health / serves client / ships + weapons catalog. Mounts the Express app on an ephemeral port against a temp SQLite DB
   (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly), `db.js` honors `DB_PATH`.

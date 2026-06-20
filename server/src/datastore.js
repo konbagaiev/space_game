@@ -9,3 +9,6 @@ export const registerPlayer = (...a) => impl.registerPlayer(...a);
 export const recordGame = (...a) => impl.recordGame(...a);
 export const getPlayerGames = (...a) => impl.getPlayerGames(...a);
 export const stats = (...a) => impl.stats(...a);
+export const getShips = (...a) => impl.getShips(...a);
+export const getWeapons = (...a) => impl.getWeapons(...a);
+export const getActivePlayerShip = (...a) => impl.getActivePlayerShip(...a);

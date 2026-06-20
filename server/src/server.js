@@ -3,7 +3,7 @@
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { migrate, registerPlayer, recordGame, getPlayerGames, stats, backend } from './datastore.js';
+import { migrate, registerPlayer, recordGame, getPlayerGames, stats, getShips, getWeapons, getActivePlayerShip, backend } from './datastore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.join(__dirname, '..', '..', 'client');
@@ -43,6 +43,17 @@ export async function createApp() {
   }));
 
   app.get('/api/health', wrap(async (req, res) => res.json({ ok: true, backend, ...(await stats()) })));
+
+  // Catalog: ships (player + enemies) and weapons, with their stats. Read-only.
+  app.get('/api/ships', wrap(async (req, res) => res.json(await getShips())));
+  app.get('/api/weapons', wrap(async (req, res) => res.json(await getWeapons())));
+
+  // The player's active ship (template + effective loadout). Auto-registers + gives a default ship.
+  app.get('/api/players/:id/active-ship', wrap(async (req, res) => {
+    const active = await getActivePlayerShip(req.params.id);
+    if (!active) return res.status(404).json({ error: 'no active ship' });
+    res.json(active);
+  }));
 
   // Serve the game client (index.html etc.) from the same origin as the API.
   app.use(express.static(clientDir));

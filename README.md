@@ -1,4 +1,4 @@
-# Space Game
+# Space Ninjas
 
 A browser game prototype: several 3D spaceships fighting on a plane.
 Built on **Three.js** (frontend) with a **Node.js + Express + SQLite** backend

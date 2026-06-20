@@ -21,11 +21,12 @@ export default async function ({ page, assert, shot }) {
 
   const data = await page.evaluate(() => {
     const g = window.__game;
+    const exhaustOf = (role) => g.catalog.enemyShips.find((s) => s.stats.role === role).stats.engine.exhaust.color;
     return {
       trailCount: g.trail.length,
       colors: [...new Set(g.trail.map((t) => t.mesh.material.color.getHex()))],
-      scout: g.ENGINES.scout.exhaust.color,
-      heavy: g.ENGINES.heavy.exhaust.color,
+      scout: exhaustOf('fighter'), // fighter + rocketeer use the scout engine
+      heavy: exhaustOf('heavy'),
     };
   });
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Space Combat — Prototype</title>
+<title>Space Ninjas</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -43,8 +43,16 @@
     background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; font-weight: 700;
   }
   /* Perf overlay (load) */
+  /* Game title (wordmark), centered at the very top */
+  #gametitle {
+    position: fixed; top: 9px; left: 50%; transform: translateX(-50%);
+    font-family: "Segoe UI", system-ui, sans-serif; font-weight: 700;
+    font-size: 16px; letter-spacing: 4px; text-transform: uppercase;
+    color: #cfe0ff; opacity: .92; pointer-events: none; white-space: nowrap;
+    text-shadow: 0 0 10px rgba(90,140,230,.6), 0 0 2px rgba(0,0,0,.9);
+  }
   #perf {
-    position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+    position: fixed; top: 34px; left: 50%; transform: translateX(-50%);
     font-family: ui-monospace, Menlo, monospace; font-size: 12px;
     color: #9fe8b0; background: rgba(0,0,0,.45); padding: 4px 10px; border-radius: 6px;
     pointer-events: none; white-space: nowrap; letter-spacing: .3px;
@@ -108,6 +116,7 @@
   <p id="overlay-sub"></p>
   <button id="restart">Restart</button>
 </div>
+<div id="gametitle">Space Ninjas</div>
 <div id="perf">FPS — · draw — · tris —</div>
 <div id="touch">
   <div id="stick-zone"></div>
@@ -120,14 +129,16 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
   }
 }
 </script>
 
 <script type="module">
 import * as THREE from 'three';
-import { ENGINES, THRUSTERS, HULLS, WEAPONS, ENEMY_KINDS, deriveDrive } from './src/components.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { deriveDrive } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 
 // ---------- Base scene ----------
@@ -392,7 +403,51 @@ const rocks = new THREE.InstancedMesh(
 scene.add(rocks);
 
 // ---------- Ship factory ----------
-function makeShip(color) {
+// A ship's 3D model comes from the DB (ships.model_url): null = the built-in primitive ship.
+// makeShip builds the primitive immediately (shown while a model loads, and as a fallback), then
+// applyShipModel swaps in the .glb. The exported assets bake the color in, so we load with tint off.
+// (For a model whose nose isn't +Z, or that needs runtime tinting, pass {url, yaw, tint, scaleMul} —
+// see assets/README.md.)
+const modelSpec = (url) => (url ? { url, tint: false } : null);
+
+const gltfLoader = new GLTFLoader();
+const SHIP_MODEL_LEN = 3.4; // auto-normalize a model's longest axis to ~ the primitive ship's footprint
+
+// Load a .glb and swap it in for the placeholder primitive, keeping the SAME group object (all
+// gameplay logic keeps referencing it). The model is auto-centered, scaled to a consistent size,
+// optionally recolored, and oriented. Falls back to the primitive on error.
+function applyShipModel(group, spec, color) {
+  const cfg = (typeof spec === 'string') ? { url: spec } : spec;
+  const { url, yaw = 0, tint = true, scaleMul = 1 } = cfg;
+  gltfLoader.load(url, (gltf) => {
+    const model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const s = (SHIP_MODEL_LEN / (Math.max(size.x, size.y, size.z) || 1)) * scaleMul;
+    model.scale.setScalar(s);
+    model.position.copy(center).multiplyScalar(-s); // recenter at the group origin
+    if (tint) model.traverse((o) => {
+      if (o.isMesh && o.material) {
+        o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => m.color && m.color.set(color));
+      }
+    });
+    const pivot = new THREE.Group(); // rotate the centered model without disturbing its centering
+    pivot.rotation.y = yaw;
+    pivot.add(model);
+    for (let i = group.children.length - 1; i >= 0; i--) { // drop the placeholder primitive
+      const c = group.children[i];
+      group.remove(c);
+      c.geometry?.dispose?.();
+      c.material?.dispose?.();
+    }
+    group.add(pivot);
+  }, undefined, (err) => console.warn('Ship model failed to load, keeping primitive:', url, err));
+}
+
+function makeShip(color, model = null) {
   const g = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.5 });
   // hull (nose points in +Z)
@@ -412,6 +467,7 @@ function makeShip(color) {
   g.add(glow);
   g.position.y = 0.6;
   g.scale.setScalar(1.8); // larger - the arena is far away, otherwise ships look tiny
+  if (model) applyShipModel(g, model, color); // optionally replace the primitive with a .glb
   return g;
 }
 
@@ -593,48 +649,55 @@ function spawnSmoke(pos) {
   smoke.push({ mesh: m, life: 0.6, maxLife: 0.6 });
 }
 
-// Ship components (ENGINES, THRUSTERS, HULLS, WEAPONS, ENEMY_KINDS) and deriveDrive
-// are imported from ./src/components.js (pure data/logic, unit-tested).
-
-// ---------- Player ----------
-const player = {
-  mesh: makeShip(0x4d8bff),
-  vel: new THREE.Vector3(),
-  heading: 0,        // rotation angle around Y
-  hull: HULLS.basic,
-  engine: ENGINES.basic,
-  thrusters: THRUSTERS.basic,
-  weapon: WEAPONS.basicKinetic,
-  secondary: WEAPONS.homingRocket,
-  hp: HULLS.basic.durability, maxHp: HULLS.basic.durability,
-  cooldown: 0,
-  secondaryCooldown: 0,
-  alive: true,
+// Runtime catalog, populated from the DB in bootstrap() (bottom of the script). Pure derivation
+// (deriveDrive / mass) still comes from components.js; the DATA (ships, weapons) comes from the API.
+const CATALOG = {
+  weapons: new Map(),   // id -> { id, name, type, ...stats }
+  enemyShips: [],       // DB ship rows with type 'enemy' (spawn rules live in their stats)
 };
-deriveDrive(player); // acceleration <- main engine, turnRate <- thrusters
-scene.add(player.mesh);
+const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
+
+// ---------- Player (built from the player's active ship in bootstrap) ----------
+let player = null;
+
+function buildPlayer(active) {
+  const s = active.ship.stats;
+  const p = {
+    mesh: makeShip(s.color, modelSpec(active.ship.modelUrl)),
+    vel: new THREE.Vector3(),
+    heading: 0,                       // rotation angle around Y
+    hull: s.hull, engine: s.engine, thrusters: s.thrusters,
+    weapon: resolveWeapon(active.loadout.weapon),
+    secondary: resolveWeapon(active.loadout.secondary),
+    hp: s.hull.durability, maxHp: s.hull.durability,
+    cooldown: 0, secondaryCooldown: 0, alive: true,
+  };
+  deriveDrive(p); // acceleration <- engine power, turnRate <- thrusters, scaled by mass
+  return p;
+}
 
 // ---------- Enemies ----------
 const enemies = [];
-function spawnEnemy(kindName) {
-  const k = ENEMY_KINDS[kindName] || ENEMY_KINDS.fighter;
+
+// Build one enemy from a DB ship row (type 'enemy'); weapons resolve from the catalog by id.
+function spawnEnemyShip(shipDef) {
+  const s = shipDef.stats;
   const e = {
-    kind: kindName, mesh: makeShip(k.color),
+    role: s.role, color: s.color, sizeScale: s.sizeScale || 1,
+    mesh: makeShip(s.color, modelSpec(shipDef.modelUrl)),
     vel: new THREE.Vector3(),
     heading: Math.random() * Math.PI * 2,
-    hull: k.hull,
-    engine: k.engine,
-    thrusters: k.thrusters,
-    weapon: k.weapon,
-    rocket: k.rocket,                 // null or a rocket weapon
-    hp: k.hull.durability,
+    hull: s.hull, engine: s.engine, thrusters: s.thrusters,
+    weapon: resolveWeapon(s.weapon),
+    rocket: resolveWeapon(s.rocket),   // null or a rocket weapon
+    hp: s.hull.durability,
     cooldown: Math.random() * 1.5,
     rocketCooldown: 1 + Math.random() * 3,
-    radius: 2.6 * (k.sizeScale || 1), // hit radius scales with model size
+    radius: 2.6 * (s.sizeScale || 1),  // hit radius scales with model size
     alive: true,
   };
-  e.mesh.scale.multiplyScalar(k.sizeScale || 1); // bigger model for heavy enemies
-  deriveDrive(e); // acceleration <- main engine, turnRate <- thrusters
+  e.mesh.scale.multiplyScalar(s.sizeScale || 1); // bigger model for heavy enemies
+  deriveDrive(e);
   // spawn in a ring around the player (just off-screen), not at the arena edges
   const ang = Math.random() * Math.PI * 2;
   const d = 70 + Math.random() * 60; // 70..130 from the player
@@ -646,16 +709,26 @@ function spawnEnemy(kindName) {
   );
   scene.add(e.mesh);
   enemies.push(e);
+  return e;
+}
+
+// Spawn a specific enemy by role name (used by tests/tools), falling back to the first kind.
+function spawnEnemy(role) {
+  const def = CATALOG.enemyShips.find((s) => s.stats.role === role) || CATALOG.enemyShips[0];
+  return def ? spawnEnemyShip(def) : null;
 }
 
 const TARGET_ENEMIES = 4;
-// Spawn mix: heavy tanks unlock after 10 kills (~20%); ~30% rocketeers; rest fighters.
+// Data-driven spawn: pick among the enemy ships unlocked at the current score (score >=
+// stats.unlockAfterKills), weighted by stats.spawnWeight. The mix lives in the DB, not here.
 function spawnRandomEnemy() {
-  const r = Math.random();
-  let kind = 'fighter';
-  if (score >= 10 && r < 0.2) kind = 'heavy';
-  else if (r < 0.5) kind = 'rocketeer';
-  spawnEnemy(kind);
+  const pool = CATALOG.enemyShips.filter((s) => score >= (s.stats.unlockAfterKills || 0));
+  const list = pool.length ? pool : CATALOG.enemyShips;
+  if (!list.length) return;
+  const total = list.reduce((sum, s) => sum + (s.stats.spawnWeight || 1), 0);
+  let r = Math.random() * total, pick = list[0];
+  for (const s of list) { r -= (s.stats.spawnWeight || 1); if (r < 0) { pick = s; break; } }
+  spawnEnemyShip(pick);
 }
 
 // ---------- Input ----------
@@ -762,12 +835,7 @@ const playerId = (() => {
     return id;
   } catch { return null; }
 })();
-if (playerId) {
-  fetch('/api/players/register', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ playerId }),
-  }).catch(() => {});
-}
+// (Registration happens in bootstrap() via the active-ship fetch, which upserts the player.)
 function reportGame(score, durationMs) {
   if (!playerId) return;
   fetch('/api/games', {
@@ -913,7 +981,7 @@ function update(dt) {
     e.mesh.rotation.y = e.heading;
 
     // engine trail: same exhaust behavior as the player, when thrusting forward
-    if (thrust > 0.1) emitExhaust(e.mesh.position, ef, e.vel, e.engine.exhaust, ENEMY_KINDS[e.kind].sizeScale || 1);
+    if (thrust > 0.1) emitExhaust(e.mesh.position, ef, e.vel, e.engine.exhaust, e.sizeScale || 1);
 
     // fire the gun (only if the enemy has one) when roughly facing the player and in range
     e.cooldown -= dt;
@@ -1084,7 +1152,7 @@ function update(dt) {
     if (enemies[i].hp <= 0) {
       // colorful death burst: sized to the ship, tinted by its engine's exhaust color
       const e = enemies[i];
-      spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, ENEMY_KINDS[e.kind].sizeScale || 1);
+      spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
       score++;
@@ -1186,10 +1254,11 @@ document.getElementById('restart').addEventListener('click', reset);
 // so a scenario can seed entities and assert on state (counts, colors) instead of diffing pixels.
 if (location.search.includes('debug')) {
   window.__game = {
-    scene, player, enemies, bullets, rockets,
+    scene, enemies, bullets, rockets,
     explosions, sparks, shockwaves, trail, smoke,
     spawnEnemy, spawnRandomEnemy, spawnShipExplosion, emitExhaust, reset,
-    ENEMY_KINDS, ENGINES,
+    get player() { return player; },   // built asynchronously in bootstrap()
+    get catalog() { return CATALOG; }, // ships/weapons loaded from the DB
     get score() { return score; },
   };
 }
@@ -1200,8 +1269,38 @@ addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-reset();
-animate();
+// ---------- Bootstrap: build the world from the DB, then start ----------
+// Fetch the ship/weapon catalog and the player's active ship from the API, build the runtime
+// catalog + the player, then start the game. Served same-origin, so the API is always available.
+const fetchJson = async (url) => {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url} -> ${r.status}`);
+  return r.json();
+};
+
+async function bootstrap() {
+  try {
+    const [weapons, ships] = await Promise.all([fetchJson('/api/weapons'), fetchJson('/api/ships')]);
+    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, ...w.stats });
+    CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
+
+    // the player's active ship (auto-registers); fall back to the player-type template if needed
+    let active = null;
+    if (playerId) active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
+    if (!active) {
+      const t = ships.find((s) => s.type === 'player');
+      active = { ship: t, loadout: { weapon: t.stats.weapon, secondary: t.stats.secondary } };
+    }
+
+    player = buildPlayer(active);
+    scene.add(player.mesh);
+    reset();   // position the player + spawn the initial enemies (from the catalog)
+    animate(); // start the render/update loop
+  } catch (err) {
+    console.error('Failed to load the game catalog from the API:', err);
+  }
+}
+bootstrap();
 </script>
 </body>
 </html>

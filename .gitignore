@@ -11,6 +11,13 @@ build/
 # Visual-test artifacts (screenshots are for review, not committed)
 client/visual/__screenshots__/
 
+# Heavy / source 3D assets — keep OUT of git (too big for a web game + they bloat history forever).
+# Commit only web-optimized .glb (KB to ~1-2 MB). Put heavy originals in an _source/ folder, or use
+# Git LFS if you truly must version them.
+client/assets/**/_source/
+client/assets/ships/*_4k.glb
+client/assets/ships/spaceship_colaid1_50k.glb
+
 # Logs
 *.log
 npm-debug.log*

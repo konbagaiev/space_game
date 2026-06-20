@@ -92,5 +92,49 @@ test('serves the game client at /', async () => {
   const r = await fetch(base + '/');
   assert.equal(r.status, 200);
   const html = await r.text();
-  assert.match(html, /<canvas|<script type="module"|Space Combat/i);
+  assert.match(html, /<canvas|<script type="module"|Space Ninjas/i);
+});
+
+test('catalog: ships are seeded (player + enemies) with stats', async () => {
+  const ships = await getJson('/api/ships');
+  assert.equal(ships.length, 4);
+  const names = ships.map((s) => s.name);
+  assert.deepEqual(names.sort(), ['Basic player ship', 'basic enemy ship', 'basic mini boss', 'basic rocket enemy'].sort());
+  const player = ships.find((s) => s.name === 'Basic player ship');
+  assert.equal(player.type, 'player');
+  assert.equal(player.modelUrl, 'assets/ships/player.glb');
+  assert.equal(player.stats.hull.durability, 100);  // stats parsed from JSON
+  assert.equal(player.stats.weapon, 1);             // references a weapon BY ID
+  const enemies = ships.filter((s) => s.type === 'enemy');
+  assert.equal(enemies.length, 3);
+  const boss = ships.find((s) => s.name === 'basic mini boss');
+  assert.equal(boss.stats.sizeScale, 2);
+  assert.equal(boss.stats.unlockAfterKills, 10);    // spawn rules live in the data
+  assert.equal(boss.stats.spawnWeight, 2);
+});
+
+test('catalog: weapons are seeded with type bullet/rocket', async () => {
+  const weapons = await getJson('/api/weapons');
+  assert.equal(weapons.length, 4);
+  const types = new Set(weapons.map((w) => w.type));
+  assert.deepEqual([...types].sort(), ['bullet', 'rocket']);
+  const basic = weapons.find((w) => w.name === 'Basic kinetic');
+  assert.equal(basic.type, 'bullet');
+  assert.equal(basic.stats.power, 10);
+  assert.equal(basic.id, 1); // stable id, referenced by ships/loadout
+  const rocket = weapons.find((w) => w.name === 'Rocket (homing)');
+  assert.equal(rocket.type, 'rocket');
+  assert.equal(rocket.id, 3);
+  assert.equal(rocket.stats.power, 50);
+});
+
+test('active ship: a new player gets a default active ship (empty loadout -> ship defaults)', async () => {
+  // /active-ship auto-registers the player and grants the starter ship
+  const active = await getJson('/api/players/ship-test-1/active-ship');
+  assert.equal(active.ship.name, 'Basic player ship');
+  assert.equal(active.ship.type, 'player');
+  assert.equal(active.ship.modelUrl, 'assets/ships/player.glb');
+  // empty loadout falls back to the ship's default weapon ids
+  assert.equal(active.loadout.weapon, 1);     // Basic kinetic
+  assert.equal(active.loadout.secondary, 3);  // Rocket (homing)
 });

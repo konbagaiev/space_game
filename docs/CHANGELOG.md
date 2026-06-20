@@ -5,6 +5,36 @@
 
 ## 2026-06-20
 
+- **Ships are now generated from the database.** The client fetches the catalog (`/api/ships`,
+  `/api/weapons`) and the player's active ship (`/api/players/:id/active-ship`) on startup
+  (`bootstrap()`), then builds the player and spawns enemies from that data — the hardcoded client
+  catalogs (`ENGINES`/`HULLS`/`WEAPONS`/`ENEMY_KINDS`) are no longer used (only the pure `deriveDrive`
+  remains). New **`player_ships`** table: ships a player owns, exactly one `is_active` goes into battle;
+  `loadout` JSON holds weapon ids by slot (empty ⇒ the ship's default weapons), `meta` JSON for the
+  future. A new player auto-gets a default active ship on registration. Weapons are referenced **by id**
+  everywhere (catalog seeded with stable ids 1–4). **Enemy spawning is data-driven**: `spawnWeight` +
+  `unlockAfterKills` live in each enemy ship's stats (the mini-boss still unlocks at 10 kills), not in
+  client code. The game now needs the API to start (it's always served same-origin, so it's available);
+  `reportGame` stays best-effort. Gameplay is unchanged (player still accel 10 / turn 2.0). Server suite 12.
+- **Ship & weapon catalog in the database.** New `ships` table (one for the player AND enemies:
+  `name`, `type` = `player`/`enemy`, `stats` JSON, `model_url`) and `weapons` table (`name`,
+  `type` = `bullet`/`rocket`, `stats` JSON). Seeded from a shared snapshot (`server/src/catalog_seed.js`)
+  by both backends — a SQLite migration (`002_catalog.js`, schema v2) and the Postgres bootstrap.
+  Ships reference weapons by name; characteristics live in the JSON `stats`. Seeded ships:
+  "Basic player ship", "basic enemy ship", "basic rocket enemy", "basic mini boss". Read-only API:
+  `GET /api/ships`, `GET /api/weapons` (+ tests; server suite now 11). The client still uses its own
+  catalogs for now — wiring it to read from the API is a later step.
+- **Ship-model pipeline (optional `.glb`).** Added `GLTFLoader` (via the `three/addons/` importmap)
+  and an asset folder (`client/assets/` with `README.md` + `CREDITS.md` license log + `ships/`).
+  `makeShip(color, model)` still builds the primitive immediately (shown while loading, and as a
+  fallback on error), then `applyShipModel()` loads a `.glb`, auto-centers + scales it to the ship's
+  footprint, optionally tints it to the ship color (keeps the color-coding) and rotates it, and swaps
+  it into the same object — so all gameplay (movement, hit radius, exhaust, explosions, `sizeScale`)
+  is unchanged. Models are configured in the `SHIP_MODELS` map (player + per enemy kind); all `null`
+  for now, so the look is unchanged until a model is dropped in. See `client/assets/README.md`.
+- **Named the game "Space Ninjas".** Set the document `<title>`, added an on-screen wordmark at the
+  top-center of the HUD (the perf badge moved just below it), and updated the docs (`README.md`,
+  `DECISIONS.md`) and the served-client test.
 - **Minimal planet & moon textures.** The sky bodies got procedural surfaces (canvas color maps, no
   asset files). Planet (`makePlanetTexture`): a blue ocean world (base = the original water color, so
   brightness is unchanged) with depth variation and soft white clouds. Moons (`makeMoonTexture`,
