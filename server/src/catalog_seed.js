@@ -60,7 +60,7 @@ const ROCKET = { key: 'KeyF', ai: { range: 80, aimTol: 0.40 } };
 export const SHIPS = [
   { name: 'Basic player ship', type: 'player', modelUrl: 'assets/ships/player.glb',
     components: { hull: 1, engine: 5, thruster: 8 }, stats: {
-      role: 'player', color: 0x4d8bff, sizeScale: 1,
+      role: 'player', color: 0x4d8bff, sizeScale: 1, nameKey: 'ship.player_basic.name',
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 1, group: 'gun',    offset: 0, delay: 0 },
@@ -126,7 +126,7 @@ export const LEVELS = [
         { name: 'finale', // spawning stops; one last rocketeer, then clear the field
           spawn: { maxConcurrent: 4, total: 1, pool: [ { ship: 'basic rocket enemy', chance: 100 } ] },
           advanceWhen: { allCleared: true } },
-        { name: 'victory', event: 'win', delay: 2, text: 'Level 1 cleared! Nice flying, Ninja.' },
+        { name: 'victory', event: 'win', delay: 2, textKey: 'level.1.victory', text: 'Level 1 cleared! Nice flying, Ninja.' },
       ] } },
   // Level 2 — medium: ends with a single mini-boss (the medium) as the boss.
   { name: 'level-2', descriptor: {
@@ -144,7 +144,7 @@ export const LEVELS = [
         { name: 'boss', // a single medium appears alone — it's the level's boss
           spawn: { maxConcurrent: 1, total: 1, pool: [ { ship: 'basic mini boss', chance: 1 } ] },
           advanceWhen: { allCleared: true } },
-        { name: 'victory', event: 'win', delay: 5, text: 'Level 2 cleared! The mid-boss is down.' },
+        { name: 'victory', event: 'win', delay: 5, textKey: 'level.2.victory', text: 'Level 2 cleared! The mid-boss is down.' },
       ] } },
   // Level 3 — the full fight: waves of all three enemy types, then the Sector boss.
   { name: 'level-3', descriptor: {
@@ -165,7 +165,7 @@ export const LEVELS = [
         { name: 'boss',
           spawn: { maxConcurrent: 1, total: 1, pool: [ { ship: 'first boss', chance: 1 } ] },
           advanceWhen: { allCleared: true } },
-        { name: 'victory', event: 'win', delay: 5, text: 'Sector cleared. Congratulations, Space Ninja!' },
+        { name: 'victory', event: 'win', delay: 5, textKey: 'level.3.victory', text: 'Sector cleared. Congratulations, Space Ninja!' },
       ] } },
 ];
 

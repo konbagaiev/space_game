@@ -57,15 +57,22 @@ function ensureDefaultShip(playerId) {
 // up owning their default active ship.
 export function registerPlayer(id) {
   const now = Date.now();
-  const existing = db.prepare('SELECT created_at, games_played, current_progress FROM players WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT created_at, games_played, current_progress, language FROM players WHERE id = ?').get(id);
   if (existing) {
     db.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(now, id);
     ensureDefaultShip(id);
-    return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, createdAt: existing.created_at };
+    return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, language: existing.language, createdAt: existing.created_at };
   }
   db.prepare('INSERT INTO players (id, created_at, last_seen) VALUES (?, ?, ?)').run(id, now, now);
   ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', createdAt: now };
+}
+
+// Persist a player's language preference (validated to a supported code by the caller/route).
+export function setPlayerLanguage(playerId, language) {
+  registerPlayer(playerId);
+  db.prepare('UPDATE players SET language = ?, last_seen = ? WHERE id = ?').run(language, Date.now(), playerId);
+  return { id: playerId, language };
 }
 
 // The level a player is currently on (their highest unlocked level). Joins the
@@ -149,7 +156,7 @@ export function getLevel(name) {
 // The player's active ship: the ship template + the effective loadout (explicit loadout falls
 // back to the ship's default weapon ids). Registers the player (and their default ship) first.
 export function getActivePlayerShip(playerId) {
-  registerPlayer(playerId);
+  const reg = registerPlayer(playerId);
   const row = db.prepare(`
     SELECT ps.id AS player_ship_id, ps.loadout, ps.components AS ps_components,
            s.id AS ship_id, s.name, s.type, s.stats, s.model_url, s.components AS ship_components
@@ -166,5 +173,6 @@ export function getActivePlayerShip(playerId) {
     // effective loadout/components: a player override falls back to the ship's defaults
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
     components: psComponents ?? shipComponents,
+    language: reg.language, // the player's stored language preference (client adopts it if unset locally)
   };
 }

@@ -43,6 +43,27 @@ test('register: a new player starts at progress 1 (level-1 unlocked)', async () 
   assert.equal(j.currentProgress, 1);
 });
 
+test('language: defaults to en, can be set to ru, rejects unsupported, and is returned with the ship', async () => {
+  // a new player defaults to English
+  const reg = await (await post('/api/players/register', { playerId: 'lang-1' })).json();
+  assert.equal(reg.language, 'en');
+
+  // set to ru
+  const set = await post('/api/players/lang-1/language', { language: 'ru' });
+  assert.equal(set.status, 200);
+  assert.equal((await set.json()).language, 'ru');
+
+  // active-ship carries the stored preference (so the client can adopt it)
+  const active = await getJson('/api/players/lang-1/active-ship');
+  assert.equal(active.language, 'ru');
+  // and so does a re-register
+  assert.equal((await (await post('/api/players/register', { playerId: 'lang-1' })).json()).language, 'ru');
+
+  // unsupported language -> 400
+  assert.equal((await post('/api/players/lang-1/language', { language: 'de' })).status, 400);
+  assert.equal((await post('/api/players/lang-1/language', {})).status, 400);
+});
+
 test('progress: current level is level-1, and advancing unlocks the next levels', async () => {
   // a fresh player is on level-1
   const lvl1 = await getJson('/api/players/prog-2/level');

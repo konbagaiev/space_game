@@ -5,6 +5,17 @@
 
 ## 2026-06-20
 
+- **Localization (i18n): English source + Russian translation.** Player-facing text is now localized
+  (EN canonical, RU first locale). New `client/src/i18n.js` (`t(key, params)` with `{var}` interpolation,
+  language resolution, `loadLanguage`) + file catalogs `client/locales/source.json` (canonical
+  `{key:{source,context}}`) and `ru.json`. UI strings in `index.html` moved to `data-i18n` attributes +
+  `t()` calls; DB content carries i18n keys in existing JSON (`ships.stats.nameKey`, level
+  `phases[].textKey`) with English kept as fallback — no content migration. Language preference persists in
+  `players.language` (migration 007, `TEXT NOT NULL DEFAULT 'en'`, no FK) and `localStorage`; new endpoint
+  `POST /api/players/:id/language` (validates en/ru); `registerPlayer`/active-ship return `language`.
+  Selection: explicit → `navigator.language` → en; an EN/RU toggle on the welcome screen switches live.
+  Verified: EN↔RU re-render (chrome + ship names + victory text), `ru-RU` browser auto-detect, and a chosen
+  language surviving a `localStorage` clear via the server preference. Tests: client 22, server 18.
 - **Enemy spawn animation.** Newly spawned enemies now "warp in" — they grow from a dot to full size
   over 1 s (`SPAWN_GROW_TIME`, ease-out cubic) instead of popping in at full scale. Purely visual; the
   AI runs during the grow (enemies spawn off-screen, so they're full-grown before they reach the player).

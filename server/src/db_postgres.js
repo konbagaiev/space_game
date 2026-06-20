@@ -12,8 +12,10 @@ export async function migrate() {
       id           TEXT PRIMARY KEY,
       created_at   BIGINT  NOT NULL,
       last_seen    BIGINT  NOT NULL,
-      games_played INTEGER NOT NULL DEFAULT 0
+      games_played INTEGER NOT NULL DEFAULT 0,
+      language     TEXT    NOT NULL DEFAULT 'en'   -- UI/content language preference (resolution is client-side)
     );
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en';
     CREATE TABLE IF NOT EXISTS games (
       id          BIGSERIAL PRIMARY KEY,
       player_id   TEXT    NOT NULL REFERENCES players(id),
@@ -125,15 +127,22 @@ async function ensureDefaultShip(playerId) {
 
 export async function registerPlayer(id) {
   const now = Date.now();
-  const { rows } = await pool.query('SELECT created_at, games_played, current_progress FROM players WHERE id = $1', [id]);
+  const { rows } = await pool.query('SELECT created_at, games_played, current_progress, language FROM players WHERE id = $1', [id]);
   if (rows[0]) {
     await pool.query('UPDATE players SET last_seen = $1 WHERE id = $2', [now, id]);
     await ensureDefaultShip(id);
-    return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, createdAt: Number(rows[0].created_at) };
+    return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, language: rows[0].language, createdAt: Number(rows[0].created_at) };
   }
   await pool.query('INSERT INTO players (id, created_at, last_seen) VALUES ($1, $2, $3)', [id, now, now]);
   await ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', createdAt: now };
+}
+
+// Persist a player's language preference (validated to a supported code by the caller/route).
+export async function setPlayerLanguage(playerId, language) {
+  await registerPlayer(playerId);
+  await pool.query('UPDATE players SET language = $1, last_seen = $2 WHERE id = $3', [language, Date.now(), playerId]);
+  return { id: playerId, language };
 }
 
 // The level a player is currently on (their highest unlocked level).
@@ -216,7 +225,7 @@ export async function getLevel(name) {
 
 // The player's active ship: ship template + effective loadout (loadout falls back to ship defaults).
 export async function getActivePlayerShip(playerId) {
-  await registerPlayer(playerId);
+  const reg = await registerPlayer(playerId);
   const { rows } = await pool.query(`
     SELECT ps.id AS player_ship_id, ps.loadout, ps.components AS ps_components,
            s.id AS ship_id, s.name, s.type, s.stats, s.model_url, s.components AS ship_components
@@ -230,5 +239,6 @@ export async function getActivePlayerShip(playerId) {
     ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url, components: row.ship_components },
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
     components: row.ps_components ?? row.ship_components,
+    language: reg.language, // the player's stored language preference (client adopts it if unset locally)
   };
 }

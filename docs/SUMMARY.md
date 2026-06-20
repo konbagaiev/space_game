@@ -128,6 +128,30 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the glow layer, accent sparks and ring), so the player's burst is cyan-blue, enemies' orange. Used on
   enemy and player death.
 
+## Localization (i18n)
+English is the **source of truth**; other languages are a derived layer. **EN + RU** today (RU is the
+first translation). See DECISIONS §10.
+- **Catalogs** (`client/locales/`): `source.json` — the canonical `{ key: { source, context } }` (English
+  text + a translator note per string); `<lang>.json` (e.g. `ru.json`) — `{ key: value }` translations.
+  English is **not** duplicated into an `en.json`; it comes from `source.json`. **Adding a language = add
+  one `<lang>.json` file, zero schema/code change.**
+- **Resolution is client-side** (`client/src/i18n.js`): `t(key, params)` → `bundle[key] ?? source[key].source
+  ?? key`, with simple `{var}` interpolation (no plural logic — deferred, see DECISIONS §10). UI uses
+  `data-i18n="key"` attributes (`applyTranslations()` walks them; `data-i18n-html` for markup like the help
+  line) and `t()` for JS-set strings (victory/game-over/perf/ship cards).
+- **DB content carries keys, not display text.** Player-visible content stores its i18n key in the existing
+  JSON columns — `ships.stats.nameKey` (only the player ship is shown to players) and the level victory
+  line's `descriptor.phases[].textKey` — with the English `name`/`text` kept as fallback. The DB/API stay
+  language-agnostic; the client resolves keys through `t()`. (No content migration needed — keys ride in the
+  JSON that already upserts on startup.)
+- **Language selection:** explicit choice → `navigator.language` (`ru*`→`ru`, else `en`) → `en`, clamped to
+  `{en, ru}`. Persisted in `players.language` (migration 007, `TEXT NOT NULL DEFAULT 'en'`, no FK) **and**
+  mirrored to `localStorage.lang`. On load the client adopts the server preference only when it's a real
+  non-default choice (so it restores a chosen language after a `localStorage` clear without overriding a new
+  player's browser language). An **EN/RU toggle** on the welcome screen switches live (no reload), re-rendering
+  chrome + DB-sourced names. `POST /api/players/:id/language` (validates `en`/`ru`) stores it; `registerPlayer`
+  / active-ship return it.
+
 ## Backend
 - **Node.js + Express** server (`server/`): serves the game client (static) AND a JSON API on
   the same origin (no CORS).
@@ -159,7 +183,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
-  `GET /api/maps/:name`, `GET /api/levels/:name`.
+  `POST /api/players/:id/language`, `GET /api/maps/:name`, `GET /api/levels/:name`.
 - **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
   Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
   Migrations run on startup; `npm run migrate` runs them for the active backend.
@@ -200,17 +224,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 
 ## Testable logic (extracted from index.html)
 - Pure, Three.js-free logic lives in `client/src/`: `components.js` (catalogs + `deriveDrive` +
-  `hitsToKill`) and `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
-  `enemyThrustFactor`, `inForwardSector`). `index.html` imports and uses them.
+  `hitsToKill`), `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
+  `enemyThrustFactor`, `inForwardSector`), and `i18n.js` (`t`, `resolveLanguage`, `normalizeLang`,
+  `loadLanguage`). `index.html` imports and uses them.
 - Because the client now uses ES modules, it must be **served over http** (not opened as `file://`).
 - More of the simulation can be extracted incrementally (it's still tied to Three.js objects + the render loop).
 
 ## Tests (built-in `node:test`, no deps)
-- **Client logic** — `client/src/*.test.js` (14): drive derivation (engine + mass), balance, steering math.
+- **Client logic** — `client/src/*.test.js` (22): drive derivation (engine + mass), balance, steering math,
+  i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (17): register / record game / history / validation /
+- **Backend API** — `server/src/server.test.js` (18): register / record game / history / validation /
   health / serves client / ships + weapons + components + maps + levels catalog + active ship +
-  player progress (current level + advance). Mounts the Express app on an ephemeral port against a temp SQLite DB
+  player progress (current level + advance) + language preference. Mounts the Express app on an ephemeral port against a temp SQLite DB
   (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly), `db.js` honors `DB_PATH`.
@@ -222,4 +248,5 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   occasional larger releases. See `client/visual/README.md`.
 
 ## Project structure
-- `client/` — the game (Three.js), `server/` — Node.js/Express backend + SQLite, `docs/` — documentation.
+- `client/` — the game (Three.js); `client/locales/` — i18n catalogs (`source.json` + `<lang>.json`);
+  `server/` — Node.js/Express backend + SQLite; `docs/` — documentation.

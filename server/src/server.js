@@ -3,7 +3,9 @@
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { migrate, registerPlayer, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getActivePlayerShip, getMap, getLevel, backend } from './datastore.js';
+import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getActivePlayerShip, getMap, getLevel, backend } from './datastore.js';
+
+const SUPPORTED_LANGUAGES = ['en', 'ru']; // mirror of client SUPPORTED (DECISIONS §10)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.join(__dirname, '..', '..', 'client');
@@ -66,6 +68,13 @@ export async function createApp() {
   // Unlock the next level (called by the client when the player clears their current level).
   app.post('/api/players/:id/advance', wrap(async (req, res) => {
     res.json(await advanceProgress(req.params.id));
+  }));
+
+  // Persist the player's language preference (client mirrors it to localStorage). Only en/ru.
+  app.post('/api/players/:id/language', wrap(async (req, res) => {
+    const { language } = req.body || {};
+    if (!SUPPORTED_LANGUAGES.includes(language)) return res.status(400).json({ error: 'unsupported language' });
+    res.json(await setPlayerLanguage(req.params.id, language));
   }));
 
   // A map's scene descriptor (the client renders it via buildMap). Read-only.

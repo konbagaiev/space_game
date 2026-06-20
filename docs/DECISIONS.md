@@ -229,6 +229,19 @@ and version; locales are generated views of it.
 files (`index.html`, `catalog_seed.js`, and the migrations sequence — both would add the next `00N`
 migration). Do i18n **after** maps/levels merges to `main`, to avoid a large merge-conflict surface.
 
+**As built (deviations from the plan above).** Three small, deliberate divergences:
+1. **DB content keys ride in the existing JSON columns, not a new `name_key` column.** The player ship's
+   key lives in `ships.stats.nameKey` and the victory line's in `levels.descriptor.phases[].textKey` —
+   both upsert with the catalog on startup, so **no content migration** was needed (only `players.language`,
+   migration 007, required one). Same architecture (rows carry keys, English stays as fallback), less schema churn.
+2. **Only player-visible content is keyed.** Just the player ship gets a `nameKey` (it's the only ship name
+   shown — the picker lists player ships only; enemy names never render). Weapon/component names aren't
+   displayed, so they aren't keyed yet; adding one later = a key in its JSON + a `source.json`/`ru.json` entry.
+3. **The server preference adopts only when non-default.** `players.language` defaults to `'en'`, which is
+   indistinguishable from an explicit "I chose English". So the client adopts the server value only when it's
+   **non-default** — otherwise a brand-new player's `navigator.language` would be wrongly overridden by the
+   `'en'` default. A chosen language still survives a `localStorage` clear (it's a non-default value on the server).
+
 ---
 
 ## Future ideas

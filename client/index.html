@@ -51,6 +51,13 @@
     background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
     color: #e8f1ff; font-family: system-ui, sans-serif; text-align: center; padding: 24px;
   }
+  #lang-switch { position: absolute; top: 18px; right: 18px; display: flex; gap: 6px; }
+  #lang-switch button {
+    font: inherit; font-size: 13px; letter-spacing: 1px; color: #cfe0ff; cursor: pointer;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.28);
+    border-radius: 7px; padding: 5px 11px;
+  }
+  #lang-switch button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
   #welcome h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
   #welcome .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
   #welcome .pick { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: .6; margin-bottom: 12px; }
@@ -136,43 +143,43 @@
 <body>
 <div id="hud">
   <div>
-    <div class="label">Health</div>
+    <div class="label" data-i18n="ui.hud.health">Health</div>
     <div id="hpbar"><div id="hpfill"></div></div>
     <div id="hppct">100.0%</div>
   </div>
   <div class="right">
-    <div class="label">Score</div>
+    <div class="label" data-i18n="ui.hud.score">Score</div>
     <div class="bigval" id="score">0</div>
-    <div class="label" style="margin-top:6px">Destroyed</div>
+    <div class="label" style="margin-top:6px" data-i18n="ui.hud.destroyed">Destroyed</div>
     <div id="kills" style="font-size:18px">0</div>
-    <div class="label" style="margin-top:6px">Enemies</div>
+    <div class="label" style="margin-top:6px" data-i18n="ui.hud.enemies">Enemies</div>
     <div id="enemies" style="font-size:18px">0</div>
   </div>
 </div>
-<div id="help">
-  <b>W / ↑</b> — thrust &nbsp;·&nbsp; <b>S / ↓</b> — reverse &nbsp;·&nbsp;
-  <b>A / D</b> or <b>← →</b> — turn &nbsp;·&nbsp; <b>Space</b> — fire &nbsp;·&nbsp; <b>F</b> — rocket
+<div id="help" data-i18n="ui.help" data-i18n-html>
+  <b>W / ↑</b> — thrust · <b>S / ↓</b> — reverse · <b>A / D</b> or <b>← →</b> — turn · <b>Space</b> — fire · <b>F</b> — rocket
 </div>
 <div id="overlay">
-  <h1 id="overlay-title">Game over</h1>
+  <h1 id="overlay-title" data-i18n="ui.overlay.gameover">Game over</h1>
   <p id="overlay-sub"></p>
-  <button id="restart">Restart</button>
+  <button id="restart" data-i18n="ui.button.restart">Restart</button>
 </div>
 <div id="welcome">
-  <h1>Welcome, Ninja</h1>
-  <p class="intro">Pirates are raiding our home system &mdash; we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility &mdash; keep moving, out-turn them, and don't let them pin you down.</p>
-  <div class="pick">Pick your ship</div>
+  <div id="lang-switch"></div>
+  <h1 data-i18n="ui.welcome.greeting">Welcome, Ninja</h1>
+  <p class="intro" data-i18n="ui.welcome.intro">Pirates are raiding our home system — we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't let them pin you down.</p>
+  <div class="pick" data-i18n="ui.welcome.pick">Pick your ship</div>
   <div id="ship-choices"></div>
-  <button id="takeoff">Take off 🚀</button>
+  <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
 </div>
-<div id="gametitle">Space Ninjas</div>
+<div id="gametitle" data-i18n="ui.title">Space Ninjas</div>
 <div id="markers"></div>
-<div id="perf">FPS — · draw — · tris —</div>
+<div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
 <div id="touch">
   <div id="stick-zone"></div>
   <div id="stick-base"></div>
   <div id="stick-knob"></div>
-  <div id="fire-btn">FIRE</div>
+  <div id="fire-btn" data-i18n="ui.touch.fire">FIRE</div>
 </div>
 <div id="rocket-btn"><div id="rocket-fill"></div><span class="rb-icon">🚀</span></div>
 
@@ -190,6 +197,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { deriveDrive } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
+import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
 
 // ---------- Base scene ----------
 const scene = new THREE.Scene();
@@ -831,16 +839,18 @@ const levelRunner = {
     const ph = this.phase;
     if (ph && ph.event === 'win') {
       // defer the overlay by `delay` seconds so the boss explosion can play out first
-      this.winText = ph.text;
+      this.winTextKey = ph.textKey; this.winText = ph.text; // i18n key (+ English fallback)
       this.winPending = ph.delay ?? 0;
-      if (this.winPending <= 0) this.win(this.winText);
+      if (this.winPending <= 0) this.win();
     }
   },
-  win(text) {
+  win() {
     this.won = true;
     score *= 2; // double the score for clearing the level
-    overlayTitle.textContent = 'Victory!';
-    overlaySub.textContent = `${text || 'Sector cleared.'} — Score ×2 = ${score}`;
+    overlayTitle.textContent = t('ui.overlay.victory');
+    // resolve the level's victory line through i18n (key → translation → English fallback)
+    const cleared = this.winTextKey ? t(this.winTextKey) : (this.winText || t('ui.overlay.sector_cleared'));
+    overlaySub.textContent = `${cleared} — ${t('ui.score.doubled', { score })}`;
     overlay.style.display = 'flex';
     unlockNextLevel(); // record progress + load the next level for the next Restart
   },
@@ -858,7 +868,7 @@ const levelRunner = {
     // victory pending: keep the game running (so the boss explosion animates) until the delay ends
     if (this.winPending > 0) {
       this.winPending -= dt;
-      if (this.winPending <= 0) this.win(this.winText);
+      if (this.winPending <= 0) this.win();
       return;
     }
     // spawn up to maxConcurrent (respecting an optional total cap for this phase)
@@ -1361,8 +1371,8 @@ function update(dt) {
     player.alive = false;
     spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
     reportGame(score, kills, performance.now() - gameStartTime); // save game to history
-    overlayTitle.textContent = 'Ship destroyed';
-    overlaySub.textContent = `Destroyed: ${kills} — Score: ${score}`;
+    overlayTitle.textContent = t('ui.overlay.ship_destroyed');
+    overlaySub.textContent = t('ui.gameover.sub', { kills, score });
     overlay.style.display = 'flex';
   }
 
@@ -1393,7 +1403,7 @@ function updatePerf(dt) {
       ? (r.triangles / 1e6).toFixed(2) + 'M'
       : Math.round(r.triangles / 1e3) + 'k';
     const ms = (perfAccum / perfFrames * 1000).toFixed(1);
-    elPerf.textContent = `FPS ${perfFps} · ${ms}ms · draw ${r.calls} · tris ${tris}`;
+    elPerf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris });
     perfAccum = 0; perfFrames = 0;
   }
 }
@@ -1529,29 +1539,73 @@ let selectedShip = null;
 function mountSummary(stats) { // "2× gun · 2× rocket" from the ship's mounts
   const count = (type) => stats.mounts.filter((m) => CATALOG.weapons.get(m.weapon)?.type === type).length;
   const parts = [];
-  if (count('bullet')) parts.push(`${count('bullet')}× gun`);
-  if (count('rocket')) parts.push(`${count('rocket')}× rocket`);
-  return parts.join(' · ') || 'unarmed';
+  if (count('bullet')) parts.push(t('ui.mount.gun', { n: count('bullet') }));
+  if (count('rocket')) parts.push(t('ui.mount.rocket', { n: count('rocket') }));
+  return parts.join(' · ') || t('ui.mount.unarmed');
 }
-function showWelcome(playerShips) {
+let lastPlayerShips = []; // remembered so a language switch can re-render the (DB-sourced) cards
+function renderShipCards(playerShips) {
   const wrap = document.getElementById('ship-choices');
   wrap.innerHTML = '';
-  selectedShip = playerShips[0] || null;
+  if (!selectedShip || !playerShips.includes(selectedShip)) selectedShip = playerShips[0] || null;
   playerShips.forEach((s) => {
     const card = document.createElement('div');
     card.className = 'ship-card' + (s === selectedShip ? ' selected' : '');
     card.innerHTML =
-      `<div class="ship-name"><span class="ship-dot" style="background:${cssColor(s.stats.color)}"></span>${s.name}</div>` +
-      `<div class="ship-stat">Hull: ${shipHullHp(s)} HP</div>` +
-      `<div class="ship-stat">Weapons: ${mountSummary(s.stats)}</div>`;
+      `<div class="ship-name"><span class="ship-dot" style="background:${cssColor(s.stats.color)}"></span>${shipName(s)}</div>` +
+      `<div class="ship-stat">${t('ui.card.hull', { hp: shipHullHp(s) })}</div>` +
+      `<div class="ship-stat">${t('ui.card.weapons', { summary: mountSummary(s.stats) })}</div>`;
     card.addEventListener('click', () => {
       selectedShip = s;
       [...wrap.children].forEach((c, i) => c.classList.toggle('selected', playerShips[i] === s));
     });
     wrap.appendChild(card);
   });
+}
+function showWelcome(playerShips) {
+  lastPlayerShips = playerShips;
+  renderShipCards(playerShips);
+  buildLangSwitch();
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   welcomeEl.style.display = 'flex';
+}
+
+// ---------- Localization (i18n) UI glue ----------
+// Resolve a ship's display name through i18n (key → translation → English fallback).
+function shipName(s) { return s.stats.nameKey ? t(s.stats.nameKey) : s.name; }
+// Apply every [data-i18n] element's text (or innerHTML for [data-i18n-html]) for the active language.
+function applyTranslations(root = document) {
+  root.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    if (el.hasAttribute('data-i18n-html')) el.innerHTML = t(key);
+    else el.textContent = t(key);
+  });
+  document.documentElement.lang = getLanguage();
+}
+// EN/RU toggle on the welcome screen.
+function buildLangSwitch() {
+  const host = document.getElementById('lang-switch');
+  if (!host) return;
+  host.innerHTML = '';
+  SUPPORTED.forEach((lang) => {
+    const b = document.createElement('button');
+    b.textContent = lang.toUpperCase();
+    if (getLanguage() === lang) b.className = 'active';
+    b.addEventListener('click', () => { if (getLanguage() !== lang) setLanguage(lang); });
+    host.appendChild(b);
+  });
+}
+// Switch language at runtime: load the bundle, re-render static + dynamic strings, persist both ways.
+async function setLanguage(lang) {
+  await loadLanguage(lang, fetchJson);
+  try { localStorage.setItem('lang', getLanguage()); } catch {}
+  applyTranslations();
+  buildLangSwitch();
+  if (lastPlayerShips.length) renderShipCards(lastPlayerShips); // re-render DB-sourced ship names
+  if (playerId) fetch(`/api/players/${playerId}/language`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language: getLanguage() }),
+  }).catch(() => {}); // best-effort: persist the preference server-side
 }
 // Go fullscreen so the mobile browser chrome (address bar) doesn't eat the screen — must run inside
 // the click gesture. Works on Android/iPad; silently ignored where unsupported (e.g. iPhone Safari).
@@ -1574,6 +1628,12 @@ document.getElementById('takeoff').addEventListener('click', takeOff);
 
 async function bootstrap() {
   try {
+    // Pick the language and load the message catalogs before the first render. Initial guess from
+    // the explicit local choice → browser language → en; the server preference is adopted below.
+    let explicitLang = null; try { explicitLang = localStorage.getItem('lang'); } catch {}
+    let browserLang = ''; try { browserLang = navigator.language || (navigator.languages || [])[0] || ''; } catch {}
+    await loadLanguage(resolveLanguage({ explicit: explicitLang, browser: browserLang }), fetchJson);
+
     // The level comes from the player's progress (their highest unlocked level); fall back to
     // level-1 if the player isn't identified (e.g. localStorage blocked).
     const levelUrl = playerId ? `/api/players/${playerId}/level` : '/api/levels/level-1';
@@ -1596,9 +1656,18 @@ async function bootstrap() {
     const playerShips = ships.filter((s) => s.type === 'player');
     buildPlayerFor((active && active.ship) || playerShips[0]); // idle ship behind the welcome screen
 
+    // Adopt the player's server-stored language if they made no explicit local choice — but only a
+    // real, non-default preference (the column defaults to 'en', which must not override browser
+    // detection for a brand-new player). This is what restores a chosen language after a localStorage clear.
+    if (!explicitLang && active && SUPPORTED.includes(active.language)
+        && active.language !== DEFAULT_LANG && active.language !== getLanguage()) {
+      await loadLanguage(active.language, fetchJson);
+    }
+
     // position the camera once (update() doesn't run until take-off), then show the welcome screen
     camera.position.copy(player.mesh.position).add(CAM_OFFSET);
     camera.lookAt(player.mesh.position);
+    applyTranslations(); // localize all static [data-i18n] chrome for the active language
     showWelcome(playerShips);
     animate(); // render loop (idle until Take off)
   } catch (err) {
