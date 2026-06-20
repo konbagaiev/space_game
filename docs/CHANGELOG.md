@@ -13,6 +13,10 @@
   player from the chosen ship and starts the level. The in-game HUD is hidden behind the welcome screen.
 - **Mobile: FIRE and rocket buttons no longer overlap.** On touch the FIRE button sat on top of the
   rocket button (both bottom-right); FIRE moved to the left of the rocket (≈22 px gap).
+- **Mobile: take-off goes fullscreen.** On touch devices, "Take off" requests fullscreen (inside the
+  click gesture) so the browser address bar stops eating the screen (an issue in landscape). Works on
+  Android/iPad; silently ignored where unsupported (iPhone Safari). Added `viewport-fit=cover` +
+  web-app-capable meta tags.
 - **Off-screen enemy markers.** For every enemy that's off-screen, an arrow on the screen edge points
   toward it, tinted by the enemy's type color. Implemented as a pooled DOM overlay (`#markers` +
   `updateMarkers`): each enemy's world position is projected to NDC; if outside the viewport, the

@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
 <title>Space Ninjas</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <style>
@@ -1503,8 +1505,17 @@ function showWelcome(playerShips) {
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   welcomeEl.style.display = 'flex';
 }
+// Go fullscreen so the mobile browser chrome (address bar) doesn't eat the screen — must run inside
+// the click gesture. Works on Android/iPad; silently ignored where unsupported (e.g. iPhone Safari).
+function requestFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req || document.fullscreenElement) return;
+  try { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } catch {}
+}
 function takeOff() {
   if (!selectedShip) return;
+  if (isTouch) requestFullscreen(); // hide the browser chrome on mobile (landscape especially)
   if (selectedShip.name !== currentShipName) buildPlayerFor(selectedShip);
   welcomeEl.style.display = 'none';
   document.body.classList.remove('menu'); // restore the in-game HUD
