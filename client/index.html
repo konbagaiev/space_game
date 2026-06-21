@@ -55,7 +55,11 @@
     align-items: center; justify-content: center; flex-direction: column;
     background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
     color: #e8f1ff; font-family: system-ui, sans-serif; text-align: center; padding: 24px;
+    overflow-y: auto; /* content taller than the viewport (e.g. the shop bay on short/landscape screens) scrolls */
   }
+  /* On short viewports (mobile landscape) the content can exceed the height — align to top so it all
+     scrolls into reach (e.g. the Take-off button below the shop bay) instead of being centred + clipped. */
+  @media (max-height: 600px) { #welcome, #hangar { justify-content: flex-start; } }
   #lang-switch { position: absolute; top: 18px; right: 18px; display: flex; gap: 6px; }
   #lang-switch button {
     font: inherit; font-size: 13px; letter-spacing: 1px; color: #cfe0ff; cursor: pointer;
@@ -87,6 +91,15 @@
   }
   #takeoff:hover, #hangar-go:hover { filter: brightness(1.08); }
   #hangar-go:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
+  /* Full-screen button — touch devices only (re-hides the browser chrome after minimizing). */
+  .touch-only { display: none; }
+  body.touch .touch-only { display: inline-flex; }
+  .fullscreen-btn {
+    pointer-events: auto; cursor: pointer; align-items: center; justify-content: center; margin-top: 12px;
+    padding: 10px 22px; font: inherit; font-size: 15px; font-weight: 600; color: #cfe0ff;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.3); border-radius: 9px;
+  }
+  .fullscreen-btn:hover { background: rgba(255,255,255,.12); }
   #hangar-go-note { font-size: 13px; color: #ff9a8a; margin-top: 8px; min-height: 16px; }
   /* Hangar shop + stash (docs/plans/hangar-shop.md). Shown only once the shop is unlocked. */
   #hangar-bay { pointer-events: auto; width: min(1040px, 96vw); margin: 6px 0 22px; text-align: left; zoom: 0.9; } /* zoom: overall 10% smaller */
@@ -140,6 +153,10 @@
   .bay-item .meta { flex: none; margin-left: auto; } /* margin-left:auto pushes meta + actions to the right end */
   .bay-item .slot-tag { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; opacity: .5; }
   .bay-item .price { color: #ffd86b; font-size: 13px; white-space: nowrap; }
+  .bay-item .owned-badge {
+    flex: none; font-size: 16px; padding: 2px 9px; border-radius: 11px; white-space: nowrap;
+    background: rgba(110,226,154,.15); border: 1px solid rgba(110,226,154,.4); color: #9ff0b8;
+  }
   .bay-item .stats { font-size: 12px; opacity: .72; margin-top: 3px; line-height: 1.45; }
   .bay-item .stats.hidden { display: none; }
   /* characteristics show only when the (i) button is tapped (it toggles .hidden) — no hover reveal */
@@ -345,6 +362,7 @@
   <div class="pick" data-i18n="ui.welcome.pick">Pick your ship</div>
   <div id="ship-choices"></div>
   <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
+  <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
   <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
      target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
 </div>
@@ -370,6 +388,7 @@
   </div>
   <button id="hangar-go" data-i18n="ui.button.take_off">Take off 🚀</button>
   <div id="hangar-go-note"></div>
+  <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
 </div>
 <div id="account-bar"></div>
 <div id="account">
@@ -394,6 +413,7 @@
 <div id="pause-overlay">
   <div class="pause-title" data-i18n="ui.pause.paused">Paused</div>
   <button id="pause-play" data-i18n="ui.pause.play">▶ Play</button>
+  <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
 </div>
 <div id="markers"></div>
 <div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
@@ -1176,6 +1196,7 @@ addEventListener('keyup', e => { keys[e.code] = false; });
 const touchAim = { active: false, heading: 0, thrust: 0 };
 const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
 if (isTouch) {
+  document.body.classList.add('touch'); // gates touch-only UI (e.g. the Full screen button)
   document.getElementById('touch').classList.add('on');
   document.getElementById('help').style.display = 'none'; // keyboard hints not needed
 
@@ -1958,15 +1979,33 @@ function itemCard(n, slotTag, actions, extraClass = '') {
   const qty = n.qty > 1 ? ` ×${n.qty}` : '';
   const data = (n.kind && n.refId != null) ? `data-kind="${n.kind}" data-ref-id="${n.refId}"` : '';
   const acts = actions.map((a) => `<button class="${a.cls || ''}" data-act="${a.act}" ${a.slot ? `data-slot="${a.slot}"` : data}>${esc(a.label)}</button>`).join('');
+  // "owned" badge (shop only): how many of this item the player already has (equipped + in stash)
+  const owned = n.owned > 0 ? `<span class="owned-badge">${esc(t('ui.shop.owned', { n: n.owned }))}</span>` : '';
   return `<div class="bay-item ${extraClass}">
     <div class="head">
       <span class="name-text" title="${esc(n.name)}">${esc(n.name)}${qty}</span>
+      ${owned}
       ${stats ? `<button class="info-btn" data-act="info" aria-label="info">i</button>` : ''}
       ${meta}
       ${acts ? `<span class="actions">${acts}</span>` : ''}
     </div>
     ${stats ? `<div class="stats hidden">${esc(stats)}</div>` : ''}
   </div>`;
+}
+
+// How many of (kind, refId) the player already owns = equipped on the active ship + qty in the stash.
+function ownedCount(kind, refId) {
+  let n = 0;
+  for (const it of (shopData && shopData.stash) || []) if (it.kind === kind && it.refId === refId) n += it.qty;
+  const active = shopData && shopData.activeShip;
+  if (active) {
+    if (kind === 'component') {
+      for (const slot of ['hull', 'engine', 'thruster', 'repair']) if (active.components && active.components[slot] === refId) n++;
+    } else {
+      for (const m of (active.loadout && active.loadout.mounts) || []) if (m.weapon === refId) n++;
+    }
+  }
+  return n;
 }
 
 // An empty loadout slot (dashed; required-empty slots are flagged in red — they block take-off).
@@ -2032,6 +2071,7 @@ function renderShop() {
   const host = document.getElementById('shop-list');
   const items = shopCatalog().filter((n) => (n.price ?? 0) > 0 &&
     (shopType === 'weapon' ? n.kind === 'weapon' : n.type === shopType));
+  for (const n of items) n.owned = ownedCount(n.kind, n.refId); // tag each with how many you already have
   host.innerHTML = items.length
     ? items.map((n) => itemCard(n, null, [{ act: 'buy', label: t('ui.shop.action.buy'), cls: 'primary' }])).join('')
     : `<div class="bay-empty-note">${esc(t('ui.shop.empty_shop'))}</div>`;
@@ -2265,6 +2305,9 @@ function requestFullscreen() {
   if (!req || document.fullscreenElement) return;
   try { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } catch {}
 }
+// Touch "Full screen" buttons (welcome / hangar / pause overlay): re-enter fullscreen on demand, e.g.
+// after minimizing the app brought the browser chrome (URL bar, tabs) back. Must run in a tap gesture.
+document.querySelectorAll('.fullscreen-btn').forEach((b) => b.addEventListener('click', requestFullscreen));
 function takeOff() {
   if (!selectedShip) return;
   if (isTouch) requestFullscreen(); // hide the browser chrome on mobile (landscape especially)

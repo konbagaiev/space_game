@@ -17,6 +17,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Touch (mobile browsers):** "steer toward direction" — the angle of the left stick = desired
   nose direction (the ship turns toward it), the magnitude of deflection = thrust; on the right are the
   "FIRE" and "🚀" (rocket) buttons. Shown only on touch devices.
+- **Mobile menus:** the welcome/hangar screens **scroll** (top-aligned + `overflow-y:auto` on short/landscape
+  viewports) so the **Take off** button below the shop bay stays reachable. A touch-only **"Full screen"**
+  button (welcome / hangar / pause overlay) re-enters fullscreen on demand to hide the browser chrome (URL
+  bar, tabs) after the app is minimized/restored (`body.touch` gates it; `requestFullscreen` no-ops if
+  already fullscreen).
 
 ## Tools
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
@@ -170,7 +175,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the player's **starter gear is cheap-but-buyable** (Basic hull 300 / engine 500 / thrusters 400 / repair
   drone 500 / homing rocket 600) so each type's ladder starts low. Each item's **full characteristics show
   on hover (desktop) or the (i) tap (mobile)** — for weapons: damage, RoF/reload, projectile speed, range,
-  blast, weight. Flows, all
+  blast, weight. A shop item the player **already owns shows an "Owned ×N" badge** (N = total equipped on
+  the active ship **+** in the stash). Flows, all
   **server-authoritative + transactional**: **buy** (credits down → item into stash), **sell** (stash item
   or an *optional* equipped item → 75% of price back), **install/equip** (stash → ship; the displaced item
   returns to the stash), **unequip** (ship → stash). A **live ship-stats panel** shows **HP / acceleration /

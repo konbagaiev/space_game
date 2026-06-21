@@ -52,6 +52,10 @@ export default async function ({ page, assert, shot }) {
     [...document.querySelectorAll('#shop-list .bay-item .stats')].map((s) => s.textContent).join(' | '));
   assert.match(wstats, /Speed \d/, 'weapon stats include projectile speed');
   assert.match(wstats, /Range \d/, 'weapon stats include max range');
+  // items already owned (equipped or in the stash — e.g. the backfilled Basic kinetic, the equipped
+  // Machine Gun) show an "Owned ×N" badge
+  const ownedBadges = await page.evaluate(() => [...document.querySelectorAll('#shop-list .owned-badge')].map((b) => b.textContent.trim()));
+  assert.ok(ownedBadges.some((t) => /Owned ×\d/.test(t)), 'owned weapons show an "Owned ×N" badge in the shop');
   // characteristics are hidden until the (i) button is tapped (no hover reveal)
   const hiddenBefore = await page.evaluate(() => document.querySelector('#shop-list .bay-item .stats').classList.contains('hidden'));
   assert.ok(hiddenBefore, 'stats are hidden by default');

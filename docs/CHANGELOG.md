@@ -3,6 +3,23 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-22
+
+- **Mobile hangar fixes.** **(1)** The welcome/hangar screens now **scroll** — on short/landscape viewports
+  the shop bay made them taller than the screen and the **Take off** button was clipped/unreachable; added
+  `overflow-y:auto` and top-aligned layout under `@media (max-height:600px)` so you can scroll down to launch.
+  **(2)** New touch-only **"Full screen"** button (welcome / hangar / pause overlay) that re-enters fullscreen
+  on demand — after minimizing the app and coming back, the browser chrome (URL bar, tabs) reappears, and
+  this re-hides it. Gated by a `body.touch` class; new `ui.fullscreen` i18n (EN "⛶ Full screen" / RU
+  "⛶ Во весь экран"). Client-only (`index.html`); new visual scenario `07-mobile-hangar` (short viewport →
+  hangar scrolls, Take off reachable; Full-screen buttons present + touch-gated).
+
+- **Shop "Owned ×N" badge.** Each shop item the player already has shows a green **"Owned ×N"** badge next
+  to its name, where N = how many are **equipped on the active ship + sitting in the stash** (`ownedCount`
+  sums `activeShip.components`/`loadout.mounts` matches + stash qty). New `ui.shop.owned` i18n (EN "Owned
+  ×{n}", RU "В наличии ×{n}"). Client-only (`index.html`); visual scenario `05-hangar-shop` asserts the
+  badge for owned weapons.
+
 ## 2026-06-21
 
 - **Paused overlay.** While paused, a large centered **"Paused"** label with a **▶ Play** button (resume)
