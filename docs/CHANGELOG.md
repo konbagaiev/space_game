@@ -5,6 +5,22 @@
 
 ## 2026-06-21
 
+- **Monitoring-grade `/api/health`.** Upgraded the existing health endpoint into a proper uptime probe
+  for UptimeRobot: it now returns **200** `{ ok, status:"ok", backend, uptimeSec, players, games }` when
+  healthy and **503** `{ ok:false, status:"error", error }` when the DB is unreachable (was a generic
+  500). Added `status` + `uptimeSec`; kept `ok`/`players`/`games` so the Docker healthcheck, CI smoke
+  check, and visual runner are unaffected. Test updated. Point UptimeRobot at
+  `https://vega.tenony.com/api/health` (alert on non-2xx or keyword `"status":"ok"`).
+- **Deployed accounts + repair drone to production.** Pushed the auth + repair-drone work to `main`;
+  CI/CD ran the suites (server 34, client 28) and rolled out a new container (`spacegame-app-28`,
+  zero-downtime). Verified live on https://vega.tenony.com: migration 009 applied (`sessions` table +
+  auth columns), repair-drone component seeded, level-3 briefing updated, `GET /api/auth/me` → 401.
+  Confirmed the server `.env` has all SES vars (`SES_REGION`, `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`, `SES_FROM_ADDRESS=noreply@vega.tenony.com`, `APP_BASE_URL`), so verification
+  emails send for real (not the no-op path). Verified the full SES chain via AWS CLI (profile
+  `claude_admin`, account `140065018525`, us-east-1): production access enabled, sending HEALTHY, and the
+  `vega.tenony.com` identity verified with DKIM signing on. Full-wiped prod player data afterward for a
+  clean slate.
 - **Repair drone (4th component type).** Added a `repair`-type component (`Repair drone`, id 12: heal
   1 HP every 3 s, capped at 80% of max HP, weight 4) that passively repairs the hull during combat.
   Installed on the player's ship via the **level-3 briefing** (new server action `installComponent`

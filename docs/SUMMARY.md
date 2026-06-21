@@ -219,6 +219,11 @@ first translation). See DECISIONS §10.
   `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
   `GET /api/levels/:name`, and the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
   `POST /api/auth/resend-verification`, `GET /api/auth/me`, `GET /api/auth/verify`).
+- **Health / uptime** — `GET /api/health` is the monitoring endpoint (UptimeRobot, the Docker
+  healthcheck, the CI smoke check all use it). It touches the DB (via `stats`), so it reflects DB
+  outages, not just process liveness: **200** `{ ok:true, status:"ok", backend, uptimeSec, players,
+  games }` when healthy, **503** `{ ok:false, status:"error", backend, error }` when a dependency is
+  down. Monitor it at `https://vega.tenony.com/api/health` (alert on non-2xx, or keyword `"status":"ok"`).
 
 ### Accounts / authentication (DECISIONS §11)
 - **Anonymous-first, optional account.** Players keep the localStorage UUID and auto-register as
@@ -250,6 +255,10 @@ first translation). See DECISIONS §10.
   `APP_BASE_URL` from the server `.env`. **If creds are absent (local dev/tests) it no-ops**: logs the
   verification link and records it to an in-memory `outbox` (which tests assert on). **SES has
   production access** (granted 2026-06-21) — out of sandbox, so it can email arbitrary player addresses.
+  **Prod is fully configured + verified** (via AWS CLI, account `140065018525`, us-east-1): account
+  `SendingEnabled`/`HEALTHY`, the `vega.tenony.com` identity is verified with DKIM, and all
+  `SES_*`/`AWS_*`/`APP_BASE_URL` vars are in the server `.env` — verification emails send for real
+  (DKIM-signed), not the no-op path.
 - **Verification flow:** register/resend generates a token, stores its hash + `sent_at`, emails a
   `/api/auth/verify?token=…` link; the route hashes + matches an unexpired token (24 h TTL), flips
   `email_verified`, clears the token, and **redirects** to `/?verified=1` (the client shows a

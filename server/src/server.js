@@ -72,7 +72,18 @@ export async function createApp() {
     res.json(await getPlayerGames(req.params.id));
   }));
 
-  app.get('/api/health', wrap(async (req, res) => res.json({ ok: true, backend, ...(await stats()) })));
+  // Health / uptime endpoint — used by external monitoring (UptimeRobot), the Docker healthcheck, and
+  // the CI smoke check. Touches the DB (via stats) so it reports unhealthy when the database is
+  // unreachable: 200 + { ok:true, status:'ok', ... } when healthy, 503 + { ok:false, status:'error' }
+  // when a dependency is down. `uptimeSec` = process uptime (handy on a monitoring dashboard).
+  app.get('/api/health', wrap(async (req, res) => {
+    try {
+      const s = await stats();
+      res.json({ ok: true, status: 'ok', backend, uptimeSec: Math.round(process.uptime()), ...s });
+    } catch (e) {
+      res.status(503).json({ ok: false, status: 'error', backend, error: String((e && e.message) || e) });
+    }
+  }));
 
   // Catalog: ships (player + enemies) and weapons, with their stats. Read-only.
   app.get('/api/ships', wrap(async (req, res) => res.json(await getShips())));

@@ -188,9 +188,13 @@ test('history is newest-first, games_played increments, and credits accumulate',
   assert.equal(reg.credits, 1060); // 1000 + 10 + 20 + 30
 });
 
-test('health reports ok and aggregate counts', async () => {
-  const j = await getJson('/api/health');
+test('health reports ok, status, uptime, and aggregate counts', async () => {
+  const r = await fetch(base + '/api/health');
+  assert.equal(r.status, 200);
+  const j = await r.json();
   assert.equal(j.ok, true);
+  assert.equal(j.status, 'ok');                 // keyword for UptimeRobot to match
+  assert.equal(typeof j.uptimeSec, 'number');   // process uptime for the dashboard
   assert.ok(j.players >= 3); // p1, ghost, p2
   assert.ok(j.games >= 5);
 });

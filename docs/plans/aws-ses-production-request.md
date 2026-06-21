@@ -1,9 +1,17 @@
 # AWS SES setup for Vega Sentinels — what to submit / do
 
-> **STATUS (2026-06-21): ✅ production access GRANTED.** SES is out of sandbox in us-east-1 — it can now
-> email verification links to arbitrary player addresses. Section #1 below is kept for the record; the
-> remaining live work is #2 (domain verify + DKIM/SPF DNS) and #3 (scoped IAM keys in the server `.env`)
-> if not already done.
+> **STATUS (2026-06-21): ✅ FULLY SET UP — all of #1, #2, #3 done.** Verified via AWS CLI:
+> account `ProductionAccessEnabled: true`, `SendingEnabled: true`, `EnforcementStatus: HEALTHY`; the
+> `vega.tenony.com` identity is `Verified: true` with `DkimStatus: SUCCESS` (DKIM signing on); the prod
+> server `.env` holds the IAM keys + all `SES_*`/`APP_BASE_URL` vars. Prod sends real, DKIM-signed
+> verification email. Sections below are kept for the record.
+
+> **AWS CLI access (for future sessions):** Claude has admin AWS access on this machine — the **default
+> profile** is `claude_admin` in account **`140065018525`** (`aws sts get-caller-identity` confirms it),
+> the same account/credentials used by `~/Projects/Salesforce`. SES is in **us-east-1**. So AWS checks
+> here need no extra setup — e.g.:
+> `aws sesv2 get-account --region us-east-1`,
+> `aws sesv2 get-email-identity --email-identity vega.tenony.com --region us-east-1`.
 
 Account `140065018525`, region **us-east-1**. SES has **production access** (out of sandbox). For a
 public game that emails verification links to arbitrary players, production access was required before
@@ -70,7 +78,10 @@ against those.
 
 ---
 
-## 2. Sender domain + DKIM (Claude runs the AWS part; YOU add the DNS records)
+## 2. Sender domain + DKIM (Claude runs the AWS part; YOU add the DNS records) — ✅ DONE
+
+> Verified 2026-06-21 via AWS CLI: `vega.tenony.com` is `Verified: true`, `DkimStatus: SUCCESS`,
+> DKIM signing enabled. The DNS records below are live in the `tenony.com` zone.
 
 Claude will run (when you authorize the AWS mutation):
 ```bash
@@ -89,7 +100,12 @@ doesn't receive email).
 
 ---
 
-## 3. IAM sending user (Claude runs this, scoped least-privilege)
+## 3. IAM sending user (Claude runs this, scoped least-privilege) — ✅ DONE
+
+> Verified 2026-06-21: the prod server `.env` (`/opt/projects/spacegame/.env`) contains
+> `AWS_ACCESS_KEY_ID` (20 chars), `AWS_SECRET_ACCESS_KEY` (40 chars), `SES_REGION=us-east-1`,
+> `SES_FROM_ADDRESS=noreply@vega.tenony.com`, and `APP_BASE_URL=https://vega.tenony.com`. So the app
+> sends via real SES (not the no-op path). Keys are server-only, kept by CI (rsync excludes `.env`).
 
 Modeled on the other project's `TendNookAppPolicy`. Claude will create:
 ```bash
