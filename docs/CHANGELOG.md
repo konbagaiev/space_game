@@ -5,6 +5,17 @@
 
 ## 2026-06-21
 
+- **Pause button.** Added a ⏸/▶ toggle at the top (between the *Vega Sentinels* wordmark and the Credits
+  HUD) that **freezes the whole fight** — the render loop skips the sim `update()` while paused, so
+  enemies, bullets, rockets, cooldowns, repair regen and spawns all stop (the frozen frame keeps
+  rendering); the label flips to ▶ to resume. Only active during a running fight (hidden on menus; below
+  the result overlay); a fresh run starts unpaused (`reset()`). **Mobile auto-pause:** on touch devices
+  the fight auto-pauses when the browser/tab loses focus (`visibilitychange`/`blur`). New `ui.pause.*`
+  i18n (EN "Pause"/"Resume", RU "Пауза"/"Продолжить") for the button's aria-label/tooltip, re-localized on
+  live language switch. Client-only (`index.html`). New headless visual scenario `06-pause` (asserts the
+  world freezes while paused and advances again on resume). **Pause is single-player/client-side — flagged
+  for rework when multiplayer lands (DECISIONS §16).**
+
 - **Catalog balance-tuning pass.** Playtest tuning on the shop ladder + combat values (`catalog_seed.js`):
   new **Advanced thrusters** (id 21 — power 3.0 / weight 5 / 2500), a buyable turn upgrade. Engine bump:
   **Ion engine** power 16→**18**. Starter-gear prices: Basic engine 300→**500**, Basic thrusters

@@ -61,6 +61,8 @@
   "ui.shop.err_generic": "Не удалось выполнить действие.",
   "ui.title": "Vega Sentinels",
   "ui.touch.fire": "ОГОНЬ",
+  "ui.pause.pause": "Пауза",
+  "ui.pause.resume": "Продолжить",
   "ui.credits.doubled": "Заработано ×2 = {credits}",
   "ui.gameover.sub": "Уничтожено: {kills} — Заработано: {credits}",
   "ui.gameover.back_to_hangar": "В ангар",

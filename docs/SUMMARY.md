@@ -19,6 +19,15 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   "FIRE" and "🚀" (rocket) buttons. Shown only on touch devices.
 
 ## Tools
+- **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
+  HUD. Pausing **freezes the whole fight** (the render loop skips the sim `update` — enemies, bullets,
+  rockets, cooldowns, repair-drone regen and spawns all stop; the frozen frame keeps rendering) and the
+  label flips to ▶ (tap to resume). Only active during a running fight (hidden on menus via `body.menu`;
+  the result overlay sits above it); a fresh run always starts unpaused. **Mobile auto-pause:** on touch
+  devices the fight auto-pauses when the browser/tab loses focus (`visibilitychange`/`blur`) so a
+  backgrounded fight doesn't run on; the player resumes manually. **This is a client-side, single-player
+  freeze — it must be reworked server-side when multiplayer lands (a client can't freeze a shared world);
+  see DECISIONS §16.**
 - **Perf overlay** at the top center: FPS, frame time (ms), draw calls, triangles
   (across both render passes). A proxy for hardware load.
 - **Rocket cooldown indicator** — the 🚀 circle (bottom-right) fills radially as it reloads

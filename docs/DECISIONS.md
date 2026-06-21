@@ -429,6 +429,22 @@ See `docs/plans/hangar-shop.md` for the full brief. Key choices:
 
 ---
 
+## 16. Pause — client-side freeze (revisit for multiplayer)
+
+The pause button freezes the fight by **skipping the simulation `update()` in the render loop** (the frame
+keeps rendering, so the scene just holds). It's a single-player convenience: cheap, no state to snapshot,
+and it doubles as a **mobile auto-pause** when the tab/app loses focus (`visibilitychange`/`blur`, gated to
+touch devices) so a backgrounded fight doesn't run on.
+
+**This does NOT survive the move to multiplayer.** In a shared, server-authoritative world a client cannot
+stop time for everyone — "pause" there is a different feature (e.g. a host/lobby pause, a per-player
+ready/AFK state, or simply disabled in live matches), and the **mobile-blur auto-pause becomes a
+disconnect/AFK concern**, not a freeze. So when multiplayer lands: **re-evaluate pause** — decide whether
+it's host-authoritative, lobby-only, or removed in PvP, and replace blur-auto-pause with an AFK/grace
+policy. Until then the client-side freeze is the right, simplest thing.
+
+---
+
 ## Future ideas
 
 sound · solid asteroids with bounce ·

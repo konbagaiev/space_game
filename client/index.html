@@ -174,7 +174,7 @@
   .community-link:hover { opacity: 1; color: #cfe7ff; }
   #overlay .community-link { margin-top: 18px; }
   /* hide the in-game HUD while the welcome screen is up */
-  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers { display: none; }
+  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers, body.menu #pause-btn { display: none; }
   /* Account dialog (login / register / post-level-1 name prompt) */
   #account {
     position: fixed; inset: 0; z-index: 14; display: none;
@@ -230,6 +230,17 @@
     color: #cfe0ff; opacity: .92; pointer-events: none; white-space: nowrap;
     text-shadow: 0 0 10px rgba(90,140,230,.6), 0 0 2px rgba(0,0,0,.9);
   }
+  /* Pause/resume toggle — top bar, between the title and the Credits HUD. Freezes the fight (skips the
+     sim update; rendering continues). Hidden on menus via body.menu; the result overlay (z-index 10) sits
+     above it. */
+  #pause-btn {
+    position: fixed; top: 3px; left: 50%; transform: translateX(108px); z-index: 6;
+    pointer-events: auto; cursor: pointer; width: 34px; height: 30px; line-height: 1;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; color: #cfe0ff;
+    background: rgba(20,30,55,.6); border: 1px solid rgba(140,175,255,.35); border-radius: 7px;
+    text-shadow: 0 0 6px rgba(0,0,0,.8);
+  }
+  #pause-btn:hover { background: rgba(40,60,100,.7); }
   #perf {
     position: fixed; top: 34px; left: 50%; transform: translateX(-50%);
     font-family: ui-monospace, Menlo, monospace; font-size: 12px;
@@ -362,6 +373,7 @@
   </div>
 </div>
 <div id="gametitle" data-i18n="ui.title">Vega Sentinels</div>
+<button id="pause-btn" aria-label="Pause" title="Pause">⏸</button>
 <div id="markers"></div>
 <div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
 <div id="touch">
@@ -1702,10 +1714,38 @@ function updateMarkers() {
   for (let i = used; i < markerPool.length; i++) markerPool[i].style.display = 'none';
 }
 
+// ---------- Pause ----------
+// `paused` freezes the fight by skipping the sim update (rendering keeps running, so the frozen frame
+// stays on screen). The button toggles between ⏸ (playing) and ▶ (paused). NOTE: this is a purely
+// client-side, single-player freeze — when multiplayer lands, pause must be reworked server-side (a
+// client can't stop a shared world). See DECISIONS §16.
+let paused = false;
+const pauseBtn = document.getElementById('pause-btn');
+function setPaused(p) {
+  paused = p;
+  pauseBtn.textContent = p ? '▶' : '⏸';
+  const label = t(p ? 'ui.pause.resume' : 'ui.pause.pause');
+  pauseBtn.setAttribute('aria-label', label);
+  pauseBtn.title = label;
+}
+// Toggle only while a fight is actually running (no-op on menus / after death/victory).
+function togglePause() {
+  if (!gameStarted || !player || !player.alive || levelRunner.won) return;
+  setPaused(!paused);
+}
+pauseBtn.addEventListener('click', togglePause);
+setPaused(false); // localize the initial label
+// Mobile: auto-pause when the browser/tab loses focus, so a backgrounded fight doesn't keep running.
+function autoPauseOnBlur() {
+  if (isTouch && gameStarted && player && player.alive && !levelRunner.won && !paused) setPaused(true);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) autoPauseOnBlur(); });
+window.addEventListener('blur', autoPauseOnBlur);
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
-  update(dt);
+  if (!paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
   updateHud();
   updateMarkers();
   // two passes: first the sky backdrop (with its own light), then combat on top
@@ -1745,6 +1785,7 @@ function reset() {
   earned = 0; kills = 0; banked = false; // new run: reset session credits + the bank-once guard (balance persists)
   gameStartTime = performance.now(); // start timing a new game (for history)
   levelRunner.start(CATALOG.level); // restart the level from phase 1 (spawns via update())
+  setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
   overlay.style.display = 'none';
   // funnel telemetry: game_start once per session, level_start per run; tag Sentry's scope with the level
   const level = currentLevelLabel();
@@ -2184,6 +2225,7 @@ async function setLanguage(lang) {
   await loadLanguage(lang, fetchJson);
   try { localStorage.setItem('lang', getLanguage()); } catch {}
   applyTranslations();
+  setPaused(paused); // re-localize the pause button's aria-label/tooltip (JS-set, not data-i18n)
   buildLangSwitch();
   if (lastPlayerShips.length) renderShipCards(lastPlayerShips); // re-render DB-sourced ship names
   if (playerId) fetch(`/api/players/${playerId}/language`, {

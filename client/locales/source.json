@@ -61,6 +61,8 @@
   "ui.shop.err_generic": { "source": "Action failed.", "context": "Fallback error for a shop action that the server rejected." },
   "ui.title": { "source": "Vega Sentinels", "context": "Game wordmark / brand name. Stays Latin in every locale." },
   "ui.touch.fire": { "source": "FIRE", "context": "Touch-control fire button label (mobile). Uppercase, short." },
+  "ui.pause.pause": { "source": "Pause", "context": "Accessible label/tooltip for the pause button (shows a ⏸ icon) at the top of the screen. Freezes the fight. Short." },
+  "ui.pause.resume": { "source": "Resume", "context": "Accessible label/tooltip for the pause button once paused (shows a ▶ play icon) — tap to continue the fight. Short." },
   "ui.credits.doubled": { "source": "Earned ×2 = {credits}", "context": "Victory subtitle tail; {credits} is the doubled credits earned (integer). '×2' is the level-clear bonus notation." },
   "ui.gameover.sub": { "source": "Destroyed: {kills} — Earned: {credits}", "context": "Game-over subtitle. {kills},{credits} are integers placed after labels, so no plural form is needed." },
   "ui.gameover.back_to_hangar": { "source": "Back to Hangar", "context": "Secondary button on the death/game-over overlay (only after the hangar shop is unlocked): return to the Hangar to shop / change loadout instead of an instant retry. Short." },
