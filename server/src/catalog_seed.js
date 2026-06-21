@@ -86,7 +86,7 @@ export const WEAPONS = [
   // --- Player shop ladder weapons (docs/plans/catalog-economy.md). Trade-offs: damage ↔ fire-rate ↔ range ↔ weight.
   {
     id: 6, name: 'Heavy cannon', type: 'bullet', price: 2000, stats: { // hard-hitting, slow fire, long range
-      power: 25, projectileSpeed: 55, maxRange: 130, fireCooldown: 0.5, weight: 10, projectileColor: 0xff8a3c
+      power: 35, projectileSpeed: 65, maxRange: 140, fireCooldown: 0.5, weight: 10, projectileColor: 0xff8a3c
     }
   },
   {
