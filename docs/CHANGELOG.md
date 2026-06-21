@@ -5,6 +5,12 @@
 
 ## 2026-06-21
 
+- **Paused overlay.** While paused, a large centered **"Paused"** label with a **▶ Play** button (resume)
+  now shows over the frozen battlefield (button is the only interactive part; the rest passes through).
+  Complements the top ⏸/▶ toggle — either resumes. New `ui.pause.paused` / `ui.pause.play` i18n (EN
+  "Paused" / "▶ Play", RU "Пауза" / "▶ Продолжить"). Client-only; visual scenario `06-pause` extended to
+  assert the overlay + Play.
+
 - **Pause button.** Added a ⏸/▶ toggle at the top (between the *Vega Sentinels* wordmark and the Credits
   HUD) that **freezes the whole fight** — the render loop skips the sim `update()` while paused, so
   enemies, bullets, rockets, cooldowns, repair regen and spawns all stop (the frozen frame keeps

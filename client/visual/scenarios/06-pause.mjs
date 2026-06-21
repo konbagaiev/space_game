@@ -25,17 +25,25 @@ export default async function ({ page, assert, shot }) {
   assert.ok(await page.evaluate(() => getComputedStyle(document.querySelector('#pause-btn')).display !== 'none'),
     'pause button is visible during play');
 
-  // pause → label becomes ▶, and the world stops changing
+  // pause → label becomes ▶, the centered "Paused" + Play overlay appears, and the world stops changing
   await page.click(btn);
   assert.equal(await page.evaluate(() => document.querySelector('#pause-btn').textContent), '▶', 'shows the play icon when paused');
+  const overlay = await page.evaluate(() => {
+    const o = document.getElementById('pause-overlay');
+    return { shown: getComputedStyle(o).display !== 'none', title: o.querySelector('.pause-title').textContent.trim(), hasPlay: !!document.getElementById('pause-play') };
+  });
+  assert.ok(overlay.shown, 'the Paused overlay is shown');
+  assert.equal(overlay.title, 'Paused', 'overlay shows the "Paused" label');
+  assert.ok(overlay.hasPlay, 'overlay has a Play button');
   const atPause = await worldSig(page);
   await page.waitForTimeout(500);
   assert.equal(await worldSig(page), atPause, 'the fight is frozen while paused');
   await shot('paused');
 
-  // resume → label becomes ⏸, and the world advances again
-  await page.click(btn);
+  // resume via the overlay's Play button → overlay hides, top label becomes ⏸, world advances again
+  await page.click('#pause-play');
+  assert.ok(await page.evaluate(() => getComputedStyle(document.getElementById('pause-overlay')).display === 'none'), 'overlay hides after Play');
   assert.equal(await page.evaluate(() => document.querySelector('#pause-btn').textContent), '⏸', 'shows the pause icon again after resuming');
   await page.waitForTimeout(400);
-  assert.notEqual(await worldSig(page), atPause, 'the fight resumes (world advances) after pressing play');
+  assert.notEqual(await worldSig(page), atPause, 'the fight resumes (world advances) after pressing Play');
 }

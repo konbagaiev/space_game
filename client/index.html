@@ -174,7 +174,7 @@
   .community-link:hover { opacity: 1; color: #cfe7ff; }
   #overlay .community-link { margin-top: 18px; }
   /* hide the in-game HUD while the welcome screen is up */
-  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers, body.menu #pause-btn { display: none; }
+  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers, body.menu #pause-btn, body.menu #pause-overlay { display: none; }
   /* Account dialog (login / register / post-level-1 name prompt) */
   #account {
     position: fixed; inset: 0; z-index: 14; display: none;
@@ -241,6 +241,23 @@
     text-shadow: 0 0 6px rgba(0,0,0,.8);
   }
   #pause-btn:hover { background: rgba(40,60,100,.7); }
+  /* Centered "Paused" label + Play button (shown while paused). pointer-events pass through except the
+     button, so the frozen battlefield stays visible/uninteractive behind it. */
+  #pause-overlay {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 8;
+    display: none; flex-direction: column; align-items: center; gap: 18px; pointer-events: none; text-align: center;
+  }
+  #pause-overlay.on { display: flex; }
+  #pause-overlay .pause-title {
+    font-family: system-ui, sans-serif; font-weight: 700; font-size: 52px; letter-spacing: 3px;
+    color: #e8f1ff; text-transform: uppercase; text-shadow: 0 0 18px rgba(0,0,0,.85), 0 0 4px rgba(0,0,0,.95);
+  }
+  #pause-play {
+    pointer-events: auto; cursor: pointer;
+    padding: 12px 40px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
+    background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; letter-spacing: 1px;
+  }
+  #pause-play:hover { filter: brightness(1.08); }
   #perf {
     position: fixed; top: 34px; left: 50%; transform: translateX(-50%);
     font-family: ui-monospace, Menlo, monospace; font-size: 12px;
@@ -374,6 +391,10 @@
 </div>
 <div id="gametitle" data-i18n="ui.title">Vega Sentinels</div>
 <button id="pause-btn" aria-label="Pause" title="Pause">⏸</button>
+<div id="pause-overlay">
+  <div class="pause-title" data-i18n="ui.pause.paused">Paused</div>
+  <button id="pause-play" data-i18n="ui.pause.play">▶ Play</button>
+</div>
 <div id="markers"></div>
 <div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
 <div id="touch">
@@ -1721,13 +1742,16 @@ function updateMarkers() {
 // client can't stop a shared world). See DECISIONS §16.
 let paused = false;
 const pauseBtn = document.getElementById('pause-btn');
+const pauseOverlay = document.getElementById('pause-overlay');
 function setPaused(p) {
   paused = p;
   pauseBtn.textContent = p ? '▶' : '⏸';
   const label = t(p ? 'ui.pause.resume' : 'ui.pause.pause');
   pauseBtn.setAttribute('aria-label', label);
   pauseBtn.title = label;
+  pauseOverlay.classList.toggle('on', p); // centered "Paused" + Play while paused
 }
+document.getElementById('pause-play').addEventListener('click', () => setPaused(false)); // Play = resume
 // Toggle only while a fight is actually running (no-op on menus / after death/victory).
 function togglePause() {
   if (!gameStarted || !player || !player.alive || levelRunner.won) return;

@@ -22,7 +22,9 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
   HUD. Pausing **freezes the whole fight** (the render loop skips the sim `update` — enemies, bullets,
   rockets, cooldowns, repair-drone regen and spawns all stop; the frozen frame keeps rendering) and the
-  label flips to ▶ (tap to resume). Only active during a running fight (hidden on menus via `body.menu`;
+  label flips to ▶. While paused, a large centered **"Paused"** label with a **▶ Play** button (resume)
+  shows over the frozen battlefield (the button is the only interactive part — the rest passes through).
+  Resume via either the top toggle or the Play button. Only active during a running fight (hidden on menus via `body.menu`;
   the result overlay sits above it); a fresh run always starts unpaused. **Mobile auto-pause:** on touch
   devices the fight auto-pauses when the browser/tab loses focus (`visibilitychange`/`blur`) so a
   backgrounded fight doesn't run on; the player resumes manually. **This is a client-side, single-player
