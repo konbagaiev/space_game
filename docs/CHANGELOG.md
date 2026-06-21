@@ -5,6 +5,18 @@
 
 ## 2026-06-21
 
+- **Monitoring: Sentry errors + product funnel events** (`docs/plans/monitoring.md`). **Sentry (errors
+  only, `tracesSampleRate: 0`):** server via `@sentry/node` (new dep) initialized in
+  `server/src/instrument.js` (imported first) + `Sentry.setupExpressErrorHandler`; browser via the
+  Sentry CDN bundle loaded on demand by `initSentry()`. Both **no-op when their DSN is unset** (dev/tests
+  unchanged); the public browser DSN + environment/release are served by the new **`GET /api/config`**
+  (no hardcoded DSN in the buildless client). **Funnel events:** new `events` table (migration 010 +
+  Postgres bootstrap) + **`POST /api/events`** (one or batched; allowlist `game_start`/`level_start`/
+  `level_clear`/`player_death`/`victory`/`quit`; 204 ok / 400 junk; best-effort). Client fires them
+  fire-and-forget via `track()` (`quit` uses `sendBeacon` to survive tab close) and tags Sentry's scope
+  with the level. Tests: `/api/config` + `/api/events` (server now 36); verified events land via a
+  headless playthrough. New env (server `.env`, optional): `SENTRY_DSN_SERVER`, `SENTRY_DSN_WEB`,
+  `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`. UptimeRobot is owned separately (not in this change).
 - **Monitoring-grade `/api/health`.** Upgraded the existing health endpoint into a proper uptime probe
   for UptimeRobot: it now returns **200** `{ ok, status:"ok", backend, uptimeSec, players, games }` when
   healthy and **503** `{ ok:false, status:"error", error }` when the DB is unreachable (was a generic

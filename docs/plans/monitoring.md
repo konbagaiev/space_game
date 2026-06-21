@@ -1,5 +1,14 @@
 # Monitoring — implementation brief (Vega Sentinels)
 
+> **STATUS (2026-06-21): ✅ IMPLEMENTED.** Sentry (server `@sentry/node` via `instrument.js` +
+> `setupExpressErrorHandler`; browser via CDN bundle loaded by `initSentry()`) and DB funnel events
+> (migration 010 `events` table, `POST /api/events`, client `track()` helper) are built and tested; both
+> Sentry sides no-op until their DSN env is set. **Deviation from the brief:** the browser DSN is served
+> at runtime by `GET /api/config` (from `SENTRY_DSN_WEB`) rather than hardcoded inline — so the buildless
+> client needs no committed DSN and the value lives in the server `.env` like other config. **To go live
+> on prod:** set `SENTRY_DSN_SERVER` + `SENTRY_DSN_WEB` (+ optional `SENTRY_ENVIRONMENT`/`SENTRY_RELEASE`)
+> in the server `.env`. UptimeRobot is owned separately (Kostya).
+
 > Self-contained handoff for the work session. Launch-readiness monitoring: **Sentry** (errors, server +
 > browser) and **DB events** (product funnel). **UptimeRobot is owned separately by Kostya** (external
 > ping of `/api/health` → Telegram) — not in this brief. Grafana stack deferred. English-only.

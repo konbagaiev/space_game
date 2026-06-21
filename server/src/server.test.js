@@ -206,6 +206,28 @@ test('serves the game client at /', async () => {
   assert.match(html, /<canvas|<script type="module"|Vega Sentinels/i);
 });
 
+test('config: returns sentry:null when no web DSN is configured (no secrets leaked)', async () => {
+  const cfg = await getJson('/api/config');
+  assert.equal(cfg.sentry, null); // SENTRY_DSN_WEB unset in tests
+});
+
+test('events: records an allowlisted event (204), rejects unknown/junk (400), stores data', async () => {
+  // allowlisted single event -> 204
+  const ok = await post('/api/events', { playerId: 'ev-1', type: 'level_start', data: { level: 'Level 1' } });
+  assert.equal(ok.status, 204);
+  // unknown type -> 400 (allowlist), missing playerId -> 400, missing type -> 400
+  assert.equal((await post('/api/events', { playerId: 'ev-1', type: 'cheat_enabled' })).status, 400);
+  assert.equal((await post('/api/events', { type: 'level_start' })).status, 400);
+  assert.equal((await post('/api/events', { playerId: 'ev-1' })).status, 400);
+  // a batch with a mix records the valid ones -> 204
+  const batch = await post('/api/events', { playerId: 'ev-1', events: [
+    { type: 'player_death', data: { level: 'Level 1' } },
+    { type: 'nope' },              // dropped
+    { type: 'victory' },
+  ] });
+  assert.equal(batch.status, 204);
+});
+
 test('catalog: ships are seeded (player + enemies) with stats', async () => {
   const ships = await getJson('/api/ships');
   assert.equal(ships.length, 5);

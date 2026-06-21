@@ -163,6 +163,13 @@ export function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0 } 
   return { gameId: Number(info.lastInsertRowid), credits: balance };
 }
 
+// Record one product-funnel event (best-effort telemetry; type is allowlisted by the API). `data` is
+// optional JSON context. No registerPlayer (events are higher-volume and don't need the FK).
+export function recordEvent(playerId, type, data) {
+  db.prepare('INSERT INTO events (player_id, type, data, created_at) VALUES (?, ?, ?, ?)')
+    .run(playerId, type, data != null ? JSON.stringify(data) : null, Date.now());
+}
+
 export function getPlayerGames(playerId, limit = 50) {
   // id is autoincrement, so DESC = newest first (deterministic even within the same ms).
   return db.prepare(

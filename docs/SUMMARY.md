@@ -217,13 +217,30 @@ first translation). See DECISIONS §10.
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
   `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
-  `GET /api/levels/:name`, and the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
-  `POST /api/auth/resend-verification`, `GET /api/auth/me`, `GET /api/auth/verify`).
+  `GET /api/levels/:name`, the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
+  `POST /api/auth/resend-verification`, `GET /api/auth/me`, `GET /api/auth/verify`), plus
+  `GET /api/config` (public client config) and `POST /api/events` (funnel telemetry).
 - **Health / uptime** — `GET /api/health` is the monitoring endpoint (UptimeRobot, the Docker
   healthcheck, the CI smoke check all use it). It touches the DB (via `stats`), so it reflects DB
   outages, not just process liveness: **200** `{ ok:true, status:"ok", backend, uptimeSec, players,
   games }` when healthy, **503** `{ ok:false, status:"error", backend, error }` when a dependency is
   down. Monitor it at `https://vega.tenony.com/api/health` (alert on non-2xx, or keyword `"status":"ok"`).
+- **Monitoring / observability** (`docs/plans/monitoring.md`):
+  - **Sentry (errors only, no perf tracing).** Server uses `@sentry/node` (the only runtime dep beyond
+    express/pg), initialized in `server/src/instrument.js` (imported first in `server.js`), with
+    `Sentry.setupExpressErrorHandler` before the custom error middleware. Browser uses the Sentry **CDN
+    bundle**, loaded on demand by `initSentry()` only when the server hands it a public DSN. **Both
+    no-op when their DSN env is unset** (local dev / tests unaffected). Server reads `SENTRY_DSN_SERVER`;
+    the public browser DSN + `SENTRY_ENVIRONMENT`/`SENTRY_RELEASE` come from **`GET /api/config`** (so
+    the buildless client needs no hardcoded DSN). `tracesSampleRate: 0` keeps it within the free tier.
+  - **Product funnel events.** `events` table (migration 010 / Postgres bootstrap): `id`, `player_id`
+    (logical FK, no hard FK — best-effort), `type`, `data` (JSON), `created_at`; indexed on
+    `(type, created_at)` and `(player_id)`. **`POST /api/events`** records one event or a batch
+    (`{ events:[…] }`), validating `type` against an allowlist (`game_start`, `level_start`,
+    `level_clear`, `player_death`, `victory`, `quit`) — unknown/junk dropped, **204** if anything stored
+    else **400**; never blocks gameplay. The client fires these fire-and-forget via a `track()` helper
+    (`quit` uses `navigator.sendBeacon` so it survives tab close), and tags the Sentry scope with the
+    current level. Read the funnel with plain SQL over `events`.
 
 ### Accounts / authentication (DECISIONS §11)
 - **Anonymous-first, optional account.** Players keep the localStorage UUID and auto-register as
@@ -320,12 +337,14 @@ first translation). See DECISIONS §10.
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (29): register / record game + credit banking / history /
+- **Backend API** — `server/src/server.test.js` (36): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
   player progress (current level + advance) + language preference + credits balance + level briefings
   (level-2 weapon swap, level-3 repair-drone install) + repair-drone component seed +
   **auth** (username, register happy/duplicate-409/weak-400, login happy/wrong-401, `/me` authed vs 401,
-  logout clears the session, verify-token flips `email_verified`, cross-device login adopts progress).
+  logout clears the session, verify-token flips `email_verified`, cross-device login adopts progress) +
+  **monitoring** (`/api/config` returns `sentry:null` when unset; `/api/events` 204 allowlisted / 400
+  junk / batch).
   Mounts the Express app on an ephemeral port against a temp SQLite DB (`DB_PATH` env, `NODE_ENV=test`)
   — the real `game.db` is untouched; SES uses its no-creds outbox. Run: `cd server && npm test`.
 - **Auth unit** — `server/src/auth.test.js` (5): scrypt round-trip (right/wrong password), per-user

@@ -1,14 +1,18 @@
 // Backend server: serves the game client (static) AND the JSON API on one origin
 // (so the client can call /api/... without CORS). Storage is SQLite (see db.js).
+import { sentryEnabled } from './instrument.js'; // MUST be first: Sentry.init before anything else loads
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getActivePlayerShip, getMap, getLevel, backend,
-  getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession } from './datastore.js';
+  getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { sendVerificationEmail, verificationUrl } from './ses.js';
 
 const SUPPORTED_LANGUAGES = ['en', 'ru']; // mirror of client SUPPORTED (DECISIONS §10)
+// Allowlisted product-funnel event types (docs/plans/monitoring.md). Anything else is dropped.
+const EVENT_TYPES = new Set(['game_start', 'level_start', 'level_clear', 'player_death', 'victory', 'quit']);
 
 // Lightweight input validation (no dep). Email is a loose shape check; password ≥ 8.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -220,8 +224,39 @@ export async function createApp() {
     res.json({ ok: true });
   }));
 
+  // Public client config (no secrets — the browser Sentry DSN is public by design). Lets the client
+  // enable Sentry without a build step or a hardcoded DSN; null when unset (client skips Sentry).
+  app.get('/api/config', (req, res) => {
+    res.json({
+      sentry: process.env.SENTRY_DSN_WEB ? {
+        dsn: process.env.SENTRY_DSN_WEB,
+        environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'production',
+        release: process.env.SENTRY_RELEASE || null,
+      } : null,
+    });
+  });
+
+  // Product funnel events (DECISIONS / docs/plans/monitoring.md). Best-effort, fire-and-forget from the
+  // client; never blocks gameplay. Accepts one event or a batch ({ events: [...] }). Unknown types are
+  // dropped (allowlist). 204 if anything was recorded, 400 if nothing valid was sent.
+  app.post('/api/events', wrap(async (req, res) => {
+    const body = req.body || {};
+    const items = Array.isArray(body.events) ? body.events : [body];
+    let accepted = 0;
+    for (const e of items.slice(0, 50)) { // cap a batch to bound abuse
+      const playerId = e.playerId || body.playerId;
+      if (!playerId || typeof playerId !== 'string' || !EVENT_TYPES.has(e.type)) continue;
+      try { await recordEvent(playerId, e.type, e.data ?? null); accepted++; } catch { /* best-effort */ }
+    }
+    res.status(accepted ? 204 : 400).end();
+  }));
+
   // Serve the game client (index.html etc.) from the same origin as the API.
   app.use(express.static(clientDir));
+
+  // Sentry's Express error handler — reports unhandled route errors, then falls through to ours.
+  // Must come after the routes and before our own error middleware. No-op when Sentry isn't enabled.
+  if (sentryEnabled) Sentry.setupExpressErrorHandler(app);
 
   // Error handler — log and return the message (so failures are visible).
   app.use((err, req, res, next) => {

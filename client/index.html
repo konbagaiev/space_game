@@ -928,6 +928,7 @@ const levelRunner = {
     overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: earned })}`;
     elRestart.textContent = t('ui.button.continue'); // a win continues to the Hangar
     overlay.style.display = 'flex';
+    track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
     bankRun(); // bank the earned credits into the account balance
     unlockNextLevel(); // record progress + load the next level for the next Restart
   },
@@ -1134,6 +1135,32 @@ function bankRun() {
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
+// ---------- Product funnel telemetry (best-effort; docs/plans/monitoring.md) ----------
+// A short label for the current level (e.g. "Level 3"); used as event context + the Sentry `level` tag.
+const currentLevelLabel = () => (CATALOG.level && (CATALOG.level.title || CATALOG.level.map)) || 'unknown';
+// Fire-and-forget a gameplay event. `quit` uses sendBeacon so it survives tab close; others use fetch
+// with keepalive. Never throws, never blocks gameplay (the endpoint is best-effort server-side too).
+function track(type, data) {
+  if (!playerId) return;
+  const payload = JSON.stringify({ playerId, type, data });
+  try {
+    if (type === 'quit' && navigator.sendBeacon) {
+      navigator.sendBeacon('/api/events', new Blob([payload], { type: 'application/json' }));
+    } else {
+      fetch('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+    }
+  } catch { /* telemetry must never break the game */ }
+}
+let gameStartSent = false; // game_start fires once per page-load session (the funnel's top)
+// Fire `quit` once when the player leaves mid-session (drop-off signal). pagehide is more reliable than
+// beforeunload (covers tab close, navigation, and mobile backgrounding).
+let quitSent = false;
+addEventListener('pagehide', () => {
+  if (quitSent || !gameStarted) return;
+  quitSent = true;
+  track('quit', { level: currentLevelLabel() });
+});
+
 // On victory: tell the server to unlock the next level, then load that level so the next Restart
 // plays it (rebuilding the map if it changed). The advance may return a `briefing` (message + the
 // server already ran its actions, e.g. a weapon swap) and may have changed the active ship — so we
@@ -1141,8 +1168,10 @@ function bankRun() {
 let pendingBriefing = null; // a level briefing to display before the next Restart (set on advance)
 async function unlockNextLevel() {
   if (!playerId) return;
+  const clearedLevel = currentLevelLabel(); // before CATALOG.level is swapped to the next level
   try {
     const adv = await (await fetch(`/api/players/${playerId}/advance`, { method: 'POST' })).json();
+    if (adv && !adv.advanced) track('victory', { level: clearedLevel }); // no next level → final win
     if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) pendingBriefing = adv.briefing;
     const level = await fetchJson(`/api/players/${playerId}/level`);
     if (level.descriptor.map !== CATALOG.level.map) {
@@ -1473,6 +1502,7 @@ function update(dt) {
   if (player.hp <= 0 && player.alive) {
     player.alive = false;
     spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
+    track('player_death', { level: currentLevelLabel(), kills }); // funnel: where players die
     bankRun(); // bank the earned credits into the account balance + record the game
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');
     overlaySub.textContent = t('ui.gameover.sub', { kills, credits: earned });
@@ -1593,6 +1623,11 @@ function reset() {
   gameStartTime = performance.now(); // start timing a new game (for history)
   levelRunner.start(CATALOG.level); // restart the level from phase 1 (spawns via update())
   overlay.style.display = 'none';
+  // funnel telemetry: game_start once per session, level_start per run; tag Sentry's scope with the level
+  const level = currentLevelLabel();
+  if (!gameStartSent) { gameStartSent = true; track('game_start', { level }); }
+  track('level_start', { level });
+  if (window.Sentry) try { window.Sentry.setTag('level', level); } catch {}
 }
 // Leaving the result overlay: a win goes to the Hangar (next-mission briefing + launch); a loss
 // retries the level immediately. The Hangar shows the pending briefing, or a default standby line.
@@ -1981,7 +2016,29 @@ for (const el of [acc.username, acc.email, acc.password]) {
   el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); accountPrimary(); } });
 }
 
+// Browser error monitoring (Sentry), errors-only. Enabled only when the server returns a public DSN
+// from /api/config — loaded from the CDN on demand (no build step; nothing shipped when disabled).
+// Best-effort: any failure here must never break the game. See docs/plans/monitoring.md.
+async function initSentry() {
+  let cfg = null;
+  try { cfg = (await (await fetch('/api/config')).json()).sentry; } catch { return; }
+  if (!cfg || !cfg.dsn || window.Sentry) return;
+  await new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = 'https://browser.sentry-cdn.com/10.59.0/bundle.min.js';
+    s.crossOrigin = 'anonymous';
+    s.onload = resolve; s.onerror = resolve; // resolve either way — never block boot
+    document.head.appendChild(s);
+  });
+  if (!window.Sentry) return;
+  try {
+    window.Sentry.init({ dsn: cfg.dsn, environment: cfg.environment, release: cfg.release || undefined, tracesSampleRate: 0 });
+    if (playerId) window.Sentry.setUser({ id: playerId }); // the localStorage/account player id
+  } catch { /* best-effort */ }
+}
+
 async function bootstrap() {
+  initSentry(); // fire-and-forget: don't delay the game waiting on the monitoring SDK
   try {
     // Pick the language and load the message catalogs before the first render. Initial guess from
     // the explicit local choice → browser language → en; the server preference is adopted below.

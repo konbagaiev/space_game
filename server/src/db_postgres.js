@@ -108,6 +108,18 @@ export async function migrate() {
       user_agent TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_player ON sessions(player_id);
+
+    -- product funnel events (docs/plans/monitoring.md). Best-effort telemetry — NO FK on player_id
+    -- (logical FK; kept plain so a stray/early event never fails the insert). data is JSONB context.
+    CREATE TABLE IF NOT EXISTS events (
+      id         BIGSERIAL PRIMARY KEY,
+      player_id  TEXT   NOT NULL,
+      type       TEXT   NOT NULL,
+      data       JSONB,
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(type, created_at);
+    CREATE INDEX IF NOT EXISTS idx_events_player ON events(player_id);
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
@@ -258,6 +270,12 @@ export async function recordGame(playerId, { credits = 0, kills = 0, durationMs 
     [earned, now, playerId]
   );
   return { gameId: Number(ins.rows[0].id), credits: upd.rows[0].credits };
+}
+
+// Record one product-funnel event (best-effort; type allowlisted by the API). data is JSONB context.
+export async function recordEvent(playerId, type, data) {
+  await pool.query('INSERT INTO events (player_id, type, data, created_at) VALUES ($1, $2, $3::jsonb, $4)',
+    [playerId, type, data != null ? JSON.stringify(data) : null, Date.now()]);
 }
 
 export async function getPlayerGames(playerId, limit = 50) {
