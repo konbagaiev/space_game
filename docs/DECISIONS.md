@@ -394,6 +394,39 @@ blocked) → CloudFront `d1843uwjdjg4vs.cloudfront.net` (distribution `E10277HTP
 `https://d1843uwjdjg4vs.cloudfront.net/ships/<name>_hangar.glb`. A custom domain
 (e.g. `cdn.vega.tenony.com` via ACM) can be added later.
 
+## 15. Hangar shop & stash (the "spend" side of the economy)
+
+See `docs/plans/hangar-shop.md` for the full brief. Key choices:
+
+- **Server-authoritative + transactional, from day one.** Buy/sell/equip/unequip all mutate credits +
+  the persistent loadout via endpoints, each wrapped in a DB transaction (SQLite `BEGIN/COMMIT`; Postgres
+  a checked-out client with `SELECT … FOR UPDATE` on the balance). This is the first place real money is
+  spent, so no client trust and no double-spend / item-dupe window — even under repeated/parallel calls.
+- **Stash = qty model**, keyed by `(player_id, kind, ref_id)`, `kind ∈ {component, weapon}` (two separate
+  catalogs / id-spaces). One-row-per-instance is deferred until items gain individual state (upgrades/wear).
+- **Unlock gate = a `shop_unlocked` flag, not progress.** The shop opens only after the player **clears the
+  final level**. `current_progress` can't move past the last level, so reached-vs-cleared the final level is
+  indistinguishable from it — hence a dedicated flag, flipped when `advanceProgress` runs with no next level
+  (advance is only POSTed on a win, so that *is* the clear). On the first flip we **backfill the basic gun
+  (id 1)** into the stash, and `replaceWeapon` briefings now deposit the replaced weapon too; the backfill
+  uses `INSERT … ON CONFLICT DO NOTHING` so the two paths converge to exactly one owned gun (uniform whether
+  or not the deposit already ran).
+- **Required slots block take-off, they don't block unequip.** `hull`/`engine`/`thruster` are required;
+  `repair` + weapons are optional. We **allow** emptying a required slot into the stash but report
+  `launchable=false` + `missingRequired` on the active-ship payload, and the client greys out Take-off. This
+  is simpler than a launch endpoint (there isn't one — the client just loads the level) and keeps the server
+  authoritative on the *config* while the client enforces the *gate*. Optional equipped items (weapons,
+  repair drone) **sell directly** from the hangar (no unequip step); required ones can't be sold while
+  equipped (would strand the ship with no replacement).
+- **Weapons slot by fire-group, components by type.** A component's slot = its `type` (`hull`/`engine`/…);
+  a weapon's slot = its fire-group (`bullet`→`gun`, `rocket`→`rocket`), replacing the first mount in that
+  group (or appending). Enough for the single-gun/single-rocket player ship; multi-mount curation comes with
+  real weapon variants. **Same-id equip is net-zero** (the displaced item is always returned to the stash,
+  even when it equals the installed id) so it can never silently lose or dupe an item.
+- **`price` seeded 0 (economy inert).** A top-level `price` column on `components` + `weapons` (sibling of
+  `weight`); sell = `floor(price*0.75)`, server-computed. With everything at 0 the flows work (buy free, sell
+  for 0); real prices + a curated/`buyable` shop list + around-model slot icons slot in later.
+
 ---
 
 ## Future ideas

@@ -44,6 +44,11 @@
     padding: 12px 30px; font-size: 16px; border: 0; border-radius: 8px;
     background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; font-weight: 700;
   }
+  /* secondary overlay button (e.g. "Back to Hangar" beside Restart) — muted outline, sits below */
+  #overlay button.secondary {
+    margin-top: 10px; background: rgba(255,255,255,.08); color: #dce8ff;
+    border: 1px solid rgba(160,190,255,.35);
+  }
   /* Welcome / start screen */
   #welcome, #hangar {
     position: fixed; inset: 0; z-index: 12; display: none;
@@ -81,6 +86,85 @@
     background: linear-gradient(90deg,#ffb35a,#ff7a3c); color: #1a0c02; letter-spacing: 1px;
   }
   #takeoff:hover, #hangar-go:hover { filter: brightness(1.08); }
+  #hangar-go:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
+  #hangar-go-note { font-size: 13px; color: #ff9a8a; margin-top: 8px; min-height: 16px; }
+  /* Hangar shop + stash (docs/plans/hangar-shop.md). Shown only once the shop is unlocked. */
+  #hangar-bay { pointer-events: auto; width: min(1040px, 96vw); margin: 6px 0 22px; text-align: left; zoom: 0.9; } /* zoom: overall 10% smaller */
+  #hangar-bay .bay-credits { text-align: center; font-size: 20px; margin-bottom: 14px; }
+  #hangar-bay .bay-credits b { color: #ffd86b; }
+  /* live ship-stats bar with deltas vs the previous config */
+  #ship-stats { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 16px; }
+  #ship-stats .stat {
+    background: rgba(20,28,48,.6); border: 1px solid rgba(120,150,210,.25); border-radius: 9px;
+    padding: 8px 14px; min-width: 110px; text-align: center;
+  }
+  #ship-stats .stat .k { font-size: 16px; letter-spacing: 1px; text-transform: uppercase; opacity: .6; } /* 1.5× — final-characteristics labels */
+  #ship-stats .stat .v { font-size: 20px; font-weight: 700; }
+  #ship-stats .stat .d { font-size: 12px; margin-left: 4px; }
+  #ship-stats .stat .d.up { color: #6ee29a; } #ship-stats .stat .d.down { color: #ff8a7a; }
+  /* Loadout / Stash / Shop are separate screens, switched by the nav (not side-by-side columns). */
+  .bay-nav { display: flex; gap: 8px; justify-content: center; margin-bottom: 14px; }
+  .bay-nav button { /* 2× — primary screen switcher */
+    font: inherit; font-size: 26px; letter-spacing: .5px; cursor: pointer; pointer-events: auto; color: #cfe0ff;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(160,190,255,.25); border-radius: 8px; padding: 14px 36px;
+  }
+  .bay-nav button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
+  .bay-view { display: none; background: rgba(12,18,34,.55); border: 1px solid rgba(120,150,210,.18);
+    border-radius: 12px; padding: 12px; max-height: 46vh; overflow-y: auto; }
+  .bay-view.active { display: block; }
+  /* Shop screen = two panes: a type list on the left, the items of the selected type on the right. */
+  .shop-pane { display: grid; grid-template-columns: 168px 1fr; gap: 14px; }
+  .shop-types { display: flex; flex-direction: column; gap: 6px; }
+  .shop-types button {
+    font: inherit; font-size: 13px; cursor: pointer; pointer-events: auto; color: #cfe0ff; text-align: left;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(160,190,255,.25); border-radius: 7px; padding: 7px 11px;
+  }
+  .shop-types button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
+  @media (max-width: 760px) {
+    .shop-pane { grid-template-columns: 1fr; }
+    .shop-types { flex-direction: row; flex-wrap: wrap; }
+    #hangar .intro { font-size: 22px; }
+  }
+  /* one item card (loadout slot / stash item / shop item): text-in-rectangle, no art */
+  .bay-item {
+    background: rgba(26,36,60,.7); border: 1px solid rgba(120,150,210,.22);
+    border-radius: 9px; padding: 9px 10px; margin-bottom: 8px;
+  }
+  .bay-item.empty { opacity: .55; border-style: dashed; }
+  .bay-item.required-empty { border-color: rgba(255,120,100,.6); color: #ffb3a8; opacity: .9; }
+  /* header row: name (ellipsizes) · meta (slot tag / price) · (i) — each its own cell, never overlap */
+  .bay-item .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bay-item .head .info-btn { margin-left: -2px; } /* hug the title */
+  /* layout: [name][i] on the left, then empty space, then the meta (price/slot) + buttons at the END */
+  .bay-item .name-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
+  .bay-item .meta { flex: none; margin-left: auto; } /* margin-left:auto pushes meta + actions to the right end */
+  .bay-item .slot-tag { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; opacity: .5; }
+  .bay-item .price { color: #ffd86b; font-size: 13px; white-space: nowrap; }
+  .bay-item .stats { font-size: 12px; opacity: .72; margin-top: 3px; line-height: 1.45; }
+  .bay-item .stats.hidden { display: none; }
+  /* characteristics show only when the (i) button is tapped (it toggles .hidden) — no hover reveal */
+  .bay-item .actions { display: inline-flex; gap: 6px; flex: none; }
+  .bay-item .actions button, .bay-item .info-btn {
+    font: inherit; font-size: 12px; cursor: pointer; pointer-events: auto;
+    background: rgba(255,255,255,.07); border: 1px solid rgba(160,190,255,.3);
+    color: #dce8ff; border-radius: 6px; padding: 4px 10px;
+  }
+  .bay-item .actions button:hover, .bay-item .info-btn:hover { background: rgba(255,255,255,.14); }
+  .bay-item .actions button.sell { border-color: rgba(255,160,120,.4); color: #ffcaa8; }
+  .bay-item .actions button.primary { border-color: #4a7dff; background: rgba(74,125,255,.25); }
+  .bay-item .info-btn { flex: none; align-self: center; padding: 1px 8px; line-height: 1.4; }
+  .bay-empty-note { font-size: 13px; opacity: .55; padding: 6px 2px; }
+  /* Per-screen sizing (requested): Loadout/Stash/Shop item text (incl. the hover characteristics) 2×;
+     buttons 1.5× (Loadout) / 2× (Stash + Shop); the Shop type column 2×. (The final-characteristics
+     panel labels are bumped 1.5× separately, on #ship-stats .stat .k above.) */
+  #view-loadout .name-text, #view-stash .name-text, #view-shop .name-text { font-size: 28px; }
+  #view-loadout .slot-tag { font-size: 20px; }
+  #view-stash .price, #view-shop .price { font-size: 26px; }
+  #view-loadout .stats, #view-stash .stats, #view-shop .stats { font-size: 24px; line-height: 1.4; }
+  #view-loadout .actions button, #view-loadout .info-btn { font-size: 18px; padding: 7px 15px; } /* 1.5× */
+  #view-stash .actions button, #view-stash .info-btn,
+  #view-shop  .actions button, #view-shop  .info-btn { font-size: 24px; padding: 8px 20px; } /* 2× */
+  #view-shop .shop-types button { font-size: 26px; padding: 14px 22px; } /* 2× type list */
   /* Telegram community / feedback link (welcome screen + result overlay) */
   .community-link {
     pointer-events: auto; display: inline-block; margin-top: 20px;
@@ -222,6 +306,7 @@
   <h1 id="overlay-title" data-i18n="ui.overlay.gameover">Game over</h1>
   <p id="overlay-sub"></p>
   <button id="restart" data-i18n="ui.button.restart">Restart</button>
+  <button id="back-hangar" class="secondary" data-i18n="ui.gameover.back_to_hangar" style="display:none">Back to Hangar</button>
   <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
      target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
 </div>
@@ -238,7 +323,25 @@
 <div id="hangar">
   <h1 id="hangar-title" data-i18n="ui.hangar.title">Hangar</h1>
   <p class="intro" id="hangar-text"></p>
+  <div id="hangar-bay">
+    <div class="bay-credits"><span data-i18n="ui.hud.credits">Credits</span>: <b id="bay-credits-val">0</b></div>
+    <div id="ship-stats"></div>
+    <div class="bay-nav" id="bay-nav">
+      <button data-act="view" data-view="loadout" data-i18n="ui.shop.loadout">Loadout</button>
+      <button data-act="view" data-view="stash" data-i18n="ui.shop.stash">Stash</button>
+      <button data-act="view" data-view="shop" data-i18n="ui.shop.shop">Shop</button>
+    </div>
+    <div class="bay-view" id="view-loadout"><div id="loadout-list"></div></div>
+    <div class="bay-view" id="view-stash"><div id="stash-list"></div></div>
+    <div class="bay-view" id="view-shop">
+      <div class="shop-pane">
+        <div class="shop-types" id="shop-types"></div>
+        <div class="shop-items" id="shop-list"></div>
+      </div>
+    </div>
+  </div>
   <button id="hangar-go" data-i18n="ui.button.take_off">Take off 🚀</button>
+  <div id="hangar-go-note"></div>
 </div>
 <div id="account-bar"></div>
 <div id="account">
@@ -281,7 +384,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { deriveDrive, repairTick } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
+import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
 
@@ -939,6 +1042,7 @@ const levelRunner = {
     const cleared = this.winTextKey ? t(this.winTextKey) : (this.winText || t('ui.overlay.sector_cleared'));
     overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: earned })}`;
     elRestart.textContent = t('ui.button.continue'); // a win continues to the Hangar
+    elBackHangar.style.display = 'none'; // Continue already goes to the Hangar — no separate button on a win
     overlay.style.display = 'flex';
     track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
     bankRun(); // bank the earned credits into the account balance
@@ -1225,6 +1329,7 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySub = document.getElementById('overlay-sub');
 const elRestart = document.getElementById('restart'); // overlay button: "Continue" on a win, "Restart" on a loss
+const elBackHangar = document.getElementById('back-hangar'); // shown on death once the shop is unlocked
 const elRocketBtn = document.getElementById('rocket-btn');
 const elRocketFill = document.getElementById('rocket-fill');
 let kills = 0;   // count of destroyed enemies (drives the level runner's thresholds + "Destroyed")
@@ -1523,6 +1628,8 @@ function update(dt) {
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');
     overlaySub.textContent = t('ui.gameover.sub', { kills, credits: earned });
     elRestart.textContent = t('ui.button.restart'); // a loss retries the level
+    // once the shop is unlocked, offer returning to the hangar (shop/loadout) instead of an instant retry
+    elBackHangar.style.display = (activeShip && activeShip.shopUnlocked) ? 'inline-block' : 'none';
     overlay.style.display = 'flex';
   }
 
@@ -1660,6 +1767,7 @@ function showHangar(briefing) {
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the Hangar
   hangarEl.style.display = 'flex';
+  openHangarShop(); // show the shop/stash bay if it's unlocked (cleared the final level)
 }
 function launchFromHangar() {
   pendingBriefing = null;
@@ -1679,7 +1787,280 @@ function leaveOverlay() {
   reset(); // loss → straight retry
 }
 elRestart.addEventListener('click', leaveOverlay);
+// "Back to Hangar" on the death overlay (shop unlocked): banked credits already applied → go to the Hangar
+// (shop/loadout), where Take off retries the mission.
+elBackHangar.addEventListener('click', () => { overlay.style.display = 'none'; showHangar(null); });
 document.getElementById('hangar-go').addEventListener('click', launchFromHangar);
+
+// ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
+// The "spend" side of the economy: equipped loadout + stash + a simple shop, with a live ship-stats
+// panel (HP / acceleration / maneuverability / weight) that shows the delta vs the previous config.
+// The server stays authoritative — every action posts to an endpoint and re-renders from the response.
+let shopData = null;     // { credits, shopUnlocked, stash, activeShip } — last server state
+let bayView = 'loadout'; // which screen is open: 'loadout' | 'stash' | 'shop' (separate screens, not columns)
+let shopType = 'hull';   // selected type in the two-pane shop ('hull'|'engine'|'thruster'|'repair'|'weapon')
+let shopBusy = false;    // guard against double-submits
+let lastShipStats = null; // previous ship-stats snapshot (for the delta arrows)
+const REQUIRED_SLOTS = ['hull', 'engine', 'thruster']; // can't be empty at take-off
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const slotLabel = (slot) => t(`ui.shop.slot.${slot}`) || slot;
+const priceLabel = (p) => (p > 0 ? `${p} ◈` : t('ui.shop.free'));
+
+// Normalize the three item sources (catalog component / catalog weapon / server stash row) to one
+// shape { kind, refId, name, type, price, s (stat fields), weight } the renderers + statLine share.
+const normComponent = (c) => (c ? { kind: 'component', refId: c.id, name: c.name, type: c.type, price: c.price ?? 0, s: c.stats, weight: c.weight } : null);
+const normWeapon = (w) => (w ? { kind: 'weapon', refId: w.id, name: w.name, type: w.type, price: w.price ?? 0, s: w, weight: w.weight } : null);
+const normStash = (it) => (it.kind === 'component'
+  ? { kind: it.kind, refId: it.refId, name: it.name, type: it.type, price: it.price, qty: it.qty, s: it.stats, weight: it.weight }
+  : { kind: it.kind, refId: it.refId, name: it.name, type: it.type, price: it.price, qty: it.qty, s: it.stats, weight: it.stats.weight });
+
+// A full, localized list of an item's characteristics (text only — no art), shown on hover / (i).
+function statLine(kind, type, s, weight) {
+  const parts = [];
+  const add = (label, val) => { if (val != null && val !== 0) parts.push(`${t(label)} ${val}`); };
+  if (kind === 'component') {
+    if (type === 'hull') add('ui.shop.stat.hp', s.durability);
+    else if (type === 'engine') { add('ui.shop.stat.accel', s.power); add('ui.shop.stat.maxspeed', s.maxSpeed); }
+    else if (type === 'thruster') add('ui.shop.stat.maneuver', s.power);
+    else if (type === 'repair') {
+      parts.push(`${t('ui.shop.stat.heal')} +${s.repairPerTick}/${s.intervalSec}s`);
+      if (s.maxFraction != null) parts.push(`${t('ui.shop.stat.cap')} ${Math.round(s.maxFraction * 100)}%`);
+    }
+  } else { // weapon
+    add('ui.shop.stat.dmg', s.power);
+    if (s.fireCooldown) parts.push(type === 'rocket'
+      ? `${t('ui.shop.stat.reload')} ${s.fireCooldown}s`
+      : `${t('ui.shop.stat.rof')} ${(1 / s.fireCooldown).toFixed(1)}/s`);
+    add('ui.shop.stat.speed', s.projectileSpeed);
+    add('ui.shop.stat.range', s.maxRange);
+    add('ui.shop.stat.blast', s.blastRadius);
+  }
+  if (typeof weight === 'number') add('ui.shop.stat.weight', weight);
+  return parts.join(' · ');
+}
+
+// Derive the ship's HP / acceleration / maneuverability / weight client-side from a candidate config
+// (the server stays authoritative on the saved config; this is just for the live preview panel).
+function deriveShipStats(components, mounts) {
+  const rc = resolveComponents(components);
+  const ship = {
+    hull: rc.hull, engine: rc.engine, thruster: rc.thruster, repair: rc.repair,
+    mounts: (mounts || []).map((m) => ({ weapon: CATALOG.weapons.get(m.weapon) })).filter((m) => m.weapon),
+  };
+  const weight = shipMass(ship);
+  let acceleration = 0, turnRate = 0;
+  if (rc.engine) { deriveDrive(ship); acceleration = ship.acceleration; turnRate = ship.turnRate; }
+  return { hp: rc.hull ? rc.hull.durability : 0, acceleration, turnRate, weight };
+}
+
+// Render the live stats bar with ▲/▼ deltas vs the previous config (green = better, red = worse;
+// for weight, lighter is better so the colors invert while the arrow still tracks the raw direction).
+function renderShipStatsBar(st) {
+  const host = document.getElementById('ship-stats');
+  const defs = [
+    { key: 'hp', label: t('ui.shop.stat.hp'), dp: 0 },
+    { key: 'acceleration', label: t('ui.shop.stat.accel'), dp: 1 },
+    { key: 'turnRate', label: t('ui.shop.stat.maneuver'), dp: 2 },
+    { key: 'weight', label: t('ui.shop.stat.weight'), dp: 0, lowerBetter: true },
+  ];
+  host.innerHTML = defs.map((d) => {
+    const cur = d.dp ? st[d.key].toFixed(d.dp) : Math.round(st[d.key]);
+    let delta = '';
+    if (lastShipStats) {
+      const diff = st[d.key] - lastShipStats[d.key];
+      if (Math.abs(diff) > 1e-6) {
+        const up = diff > 0;
+        const good = d.lowerBetter ? !up : up;
+        const num = d.dp ? Math.abs(diff).toFixed(d.dp) : Math.abs(Math.round(diff));
+        delta = `<span class="d ${good ? 'up' : 'down'}">${up ? '▲' : '▼'}${num}</span>`;
+      }
+    }
+    return `<div class="stat"><div class="k">${esc(d.label)}</div><div class="v">${cur}${delta}</div></div>`;
+  }).join('');
+  lastShipStats = st;
+}
+
+// One item card. `actions` is an array of { act, label, cls } → buttons with data-* the click
+// delegator reads. Stats are hidden by default; the (i) button reveals them (mobile), and the
+// card's title shows them on hover (desktop).
+function itemCard(n, slotTag, actions, extraClass = '') {
+  const stats = statLine(n.kind, n.type, n.s, n.weight);
+  // header row: name (ellipsizes) · meta (slot tag for loadout, price for shop) · (i) — own cells, no overlap
+  const meta = slotTag
+    ? `<span class="meta slot-tag">${esc(slotTag)}</span>`
+    : (n.price != null ? `<span class="meta price">${esc(priceLabel(n.price))}</span>` : '');
+  const qty = n.qty > 1 ? ` ×${n.qty}` : '';
+  const data = (n.kind && n.refId != null) ? `data-kind="${n.kind}" data-ref-id="${n.refId}"` : '';
+  const acts = actions.map((a) => `<button class="${a.cls || ''}" data-act="${a.act}" ${a.slot ? `data-slot="${a.slot}"` : data}>${esc(a.label)}</button>`).join('');
+  return `<div class="bay-item ${extraClass}">
+    <div class="head">
+      <span class="name-text" title="${esc(n.name)}">${esc(n.name)}${qty}</span>
+      ${stats ? `<button class="info-btn" data-act="info" aria-label="info">i</button>` : ''}
+      ${meta}
+      ${acts ? `<span class="actions">${acts}</span>` : ''}
+    </div>
+    ${stats ? `<div class="stats hidden">${esc(stats)}</div>` : ''}
+  </div>`;
+}
+
+// An empty loadout slot (dashed; required-empty slots are flagged in red — they block take-off).
+function emptySlotCard(slot, required) {
+  return `<div class="bay-item empty ${required ? 'required-empty' : ''}">
+    <div class="head"><span class="name-text">${esc(t('ui.shop.empty'))}</span><span class="meta slot-tag">${esc(slotLabel(slot))}</span></div>
+  </div>`;
+}
+
+function renderLoadout(active) {
+  const host = document.getElementById('loadout-list');
+  const comps = active.components || {};
+  const groups = Object.keys((active.ship && active.ship.stats && active.ship.stats.groups) || {});
+  const rows = [];
+  for (const slot of ['hull', 'engine', 'thruster', 'repair']) {
+    const required = REQUIRED_SLOTS.includes(slot);
+    const id = comps[slot];
+    if (id == null) { if (slot !== 'repair') rows.push(emptySlotCard(slot, required)); continue; } // hide an empty optional repair slot
+    const actions = [{ act: 'unequip', label: t('ui.shop.action.unequip'), slot }];
+    if (!required) actions.push({ act: 'sell-equipped', label: t('ui.shop.action.sell'), cls: 'sell', slot });
+    rows.push(itemCard(normComponent(CATALOG.components.get(id)), slotLabel(slot), actions));
+  }
+  for (const g of groups) {
+    const mount = (active.loadout && active.loadout.mounts || []).find((m) => m.group === g);
+    if (!mount) { rows.push(emptySlotCard(g, false)); continue; }
+    const actions = [
+      { act: 'unequip', label: t('ui.shop.action.unequip'), slot: g },
+      { act: 'sell-equipped', label: t('ui.shop.action.sell'), cls: 'sell', slot: g },
+    ];
+    rows.push(itemCard(normWeapon(CATALOG.weapons.get(mount.weapon)), slotLabel(g), actions));
+  }
+  host.innerHTML = rows.join('');
+}
+
+function renderStash(stash) {
+  const host = document.getElementById('stash-list');
+  if (!stash.length) { host.innerHTML = `<div class="bay-empty-note">${esc(t('ui.shop.empty_stash'))}</div>`; return; }
+  host.innerHTML = stash.map((it) => {
+    const n = normStash(it);
+    const actions = [
+      { act: 'equip', label: t('ui.shop.action.install'), cls: 'primary' },
+      { act: 'sell', label: t('ui.shop.action.sell'), cls: 'sell' },
+    ];
+    return itemCard(n, null, actions);
+  }).join('');
+}
+
+// The shop is a two-pane screen: a type list (left) → the items of that type (right). It lists buyable
+// items only — catalog entries with price > 0 (economy-shop-v2.md). Enemy/starter parts are priced 0 and
+// stay hidden; the player ladder (priced) shows. Weapons are one of the "types".
+const SHOP_TYPES = ['hull', 'engine', 'thruster', 'repair', 'weapon'];
+function renderShopTypes() {
+  document.getElementById('shop-types').innerHTML = SHOP_TYPES.map((tp) =>
+    `<button class="${tp === shopType ? 'active' : ''}" data-act="type" data-type="${tp}">${esc(t(`ui.shop.filter.${tp}`))}</button>`).join('');
+}
+function shopCatalog() {
+  const items = [];
+  for (const c of CATALOG.components.values()) items.push(normComponent(c));
+  for (const w of CATALOG.weapons.values()) items.push(normWeapon(w));
+  return items;
+}
+function renderShop() {
+  const host = document.getElementById('shop-list');
+  const items = shopCatalog().filter((n) => (n.price ?? 0) > 0 &&
+    (shopType === 'weapon' ? n.kind === 'weapon' : n.type === shopType));
+  host.innerHTML = items.length
+    ? items.map((n) => itemCard(n, null, [{ act: 'buy', label: t('ui.shop.action.buy'), cls: 'primary' }])).join('')
+    : `<div class="bay-empty-note">${esc(t('ui.shop.empty_shop'))}</div>`;
+}
+
+// Show the active screen (Loadout / Stash / Shop) and highlight its nav button.
+function renderNav() {
+  document.querySelectorAll('#bay-nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === bayView));
+  for (const v of ['loadout', 'stash', 'shop']) document.getElementById('view-' + v).classList.toggle('active', v === bayView);
+}
+
+function updateTakeoffGate(active) {
+  const btn = document.getElementById('hangar-go');
+  const note = document.getElementById('hangar-go-note');
+  const ok = !active || active.launchable !== false;
+  btn.disabled = !ok;
+  note.textContent = ok ? '' : t('ui.shop.cant_launch');
+}
+
+function renderBay() {
+  if (!shopData || !shopData.activeShip) return;
+  const active = shopData.activeShip;
+  document.getElementById('bay-credits-val').textContent = shopData.credits;
+  renderShipStatsBar(deriveShipStats(active.components, active.loadout && active.loadout.mounts));
+  renderLoadout(active);
+  renderStash(shopData.stash || []);
+  renderShopTypes();
+  renderShop();
+  renderNav();
+  updateTakeoffGate(active);
+}
+
+const setShopNote = (msg) => { document.getElementById('hangar-go-note').textContent = msg; };
+function shopErr(status, j) {
+  if (status === 402) return t('ui.shop.err_credits');
+  if (status === 403) return t('ui.shop.err_locked');
+  return (j && j.error) || t('ui.shop.err_generic');
+}
+// Apply a fresh server state: update globals, rebuild the 3D player to reflect the new loadout, re-render.
+function applyShopState(j) {
+  shopData = j;
+  if (j.activeShip) { activeShip = j.activeShip; balance = j.credits; if (j.activeShip.ship) buildPlayerFor(j.activeShip.ship); }
+  updateHud();
+  renderBay();
+}
+async function shopAction(path, body) {
+  if (shopBusy || !playerId) return;
+  shopBusy = true; setShopNote('');
+  try {
+    const r = await fetch(`/api/players/${playerId}/${path}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setShopNote(shopErr(r.status, j)); return; }
+    applyShopState(j);
+  } catch { setShopNote(t('ui.shop.err_network')); }
+  finally { shopBusy = false; }
+}
+
+// One delegated click handler for every bay action (filter / info toggle / buy / sell / equip / unequip).
+document.getElementById('hangar-bay').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  if (act === 'view') { bayView = el.dataset.view; renderNav(); return; }
+  if (act === 'type') { shopType = el.dataset.type; renderShopTypes(); renderShop(); return; }
+  if (act === 'info') { const card = el.closest('.bay-item'); const s = card && card.querySelector('.stats'); if (s) s.classList.toggle('hidden'); return; }
+  const kind = el.dataset.kind, slot = el.dataset.slot;
+  const refId = el.dataset.refId != null ? Number(el.dataset.refId) : null;
+  if (act === 'buy') return void shopAction('buy', { kind, refId });
+  if (act === 'equip') return void shopAction('equip', { kind, refId });
+  if (act === 'sell') return void shopAction('sell', { kind, refId });
+  if (act === 'sell-equipped') return void shopAction('sell', { slot });
+  if (act === 'unequip') return void shopAction('unequip', { slot });
+});
+
+// Open the shop bay when the hangar is shown — only if the player has unlocked it (cleared the final
+// level). Fetches fresh state so the loadout/stash/balance are authoritative.
+async function openHangarShop() {
+  const bay = document.getElementById('hangar-bay');
+  if (!playerId || !activeShip || !activeShip.shopUnlocked) {
+    bay.style.display = 'none';
+    updateTakeoffGate(activeShip);
+    return;
+  }
+  bay.style.display = 'block';
+  bayView = 'loadout';  // always open on the ship/loadout screen
+  lastShipStats = null; // first render after opening shows no deltas
+  try {
+    const j = await fetchJson(`/api/players/${playerId}/stash`);
+    shopData = j;
+    if (j.activeShip) activeShip = j.activeShip;
+    renderBay();
+  } catch { bay.style.display = 'none'; }
+}
 
 // Test/inspection hook for the headless visual tests (client/visual/). Inert during normal
 // play — only attached when the page is opened with `?debug`. It exposes simulation internals
@@ -2093,7 +2474,7 @@ async function bootstrap() {
       fetchJson('/api/weapons'), fetchJson('/api/components'),
       fetchJson('/api/ships'), fetchJson(levelUrl),
     ]);
-    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, ...w.stats });
+    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, ...w.stats });
     for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);

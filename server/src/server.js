@@ -6,7 +6,8 @@ import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getActivePlayerShip, getMap, getLevel, backend,
-  getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent } from './datastore.js';
+  getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent,
+  getStash, buyItem, sellItem, equipItem, unequipItem } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { sendVerificationEmail, verificationUrl } from './ses.js';
 
@@ -118,6 +119,56 @@ export async function createApp() {
     const { language } = req.body || {};
     if (!SUPPORTED_LANGUAGES.includes(language)) return res.status(400).json({ error: 'unsupported language' });
     res.json(await setPlayerLanguage(req.params.id, language));
+  }));
+
+  // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
+  // After any shop mutation, return the fresh state the client re-renders from: the stash, the active
+  // ship (loadout/components + launchable), and the credit balance. Server stays authoritative.
+  const shopState = async (playerId) => {
+    const [stash, activeShip] = await Promise.all([getStash(playerId), getActivePlayerShip(playerId)]);
+    return { credits: activeShip ? activeShip.credits : 0, shopUnlocked: !!(activeShip && activeShip.shopUnlocked), stash, activeShip };
+  };
+  // Run a gated shop mutation: 403 until the shop is unlocked (cleared the final level), then dispatch
+  // to `op` and translate its { ok,status,error } into an HTTP response with the refreshed state.
+  const shopMutation = (op) => wrap(async (req, res) => {
+    const playerId = req.params.id;
+    const active = await getActivePlayerShip(playerId);
+    if (!active || !active.shopUnlocked) return res.status(403).json({ error: 'shop locked' });
+    const result = await op(playerId, req.body || {});
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'shop error' });
+    res.json(await shopState(playerId));
+  });
+
+  // The player's stash + active ship + balance (and whether the shop is unlocked yet).
+  app.get('/api/players/:id/stash', wrap(async (req, res) => res.json(await shopState(req.params.id))));
+
+  // Buy a catalog item into the stash (credits down). Body: { kind: 'component'|'weapon', refId }.
+  app.post('/api/players/:id/buy', shopMutation((playerId, body) => {
+    const { kind, refId } = body;
+    if ((kind !== 'component' && kind !== 'weapon') || !Number.isInteger(refId)) return { ok: false, status: 400, error: 'kind and refId required' };
+    return buyItem(playerId, kind, refId);
+  }));
+
+  // Sell a stash item ({ kind, refId }) or an optional equipped item ({ slot }) for 75% of its price.
+  app.post('/api/players/:id/sell', shopMutation((playerId, body) => {
+    const { kind, refId, slot } = body;
+    if (slot) { if (typeof slot !== 'string') return { ok: false, status: 400, error: 'slot must be a string' }; return sellItem(playerId, { slot }); }
+    if ((kind !== 'component' && kind !== 'weapon') || !Number.isInteger(refId)) return { ok: false, status: 400, error: 'kind and refId (or slot) required' };
+    return sellItem(playerId, { kind, refId });
+  }));
+
+  // Equip a stash item onto the active ship (the displaced item, if any, returns to the stash).
+  app.post('/api/players/:id/equip', shopMutation((playerId, body) => {
+    const { kind, refId } = body;
+    if ((kind !== 'component' && kind !== 'weapon') || !Number.isInteger(refId)) return { ok: false, status: 400, error: 'kind and refId required' };
+    return equipItem(playerId, kind, refId);
+  }));
+
+  // Unequip the item in a slot (component slot or weapon group) back into the stash. Body: { slot }.
+  app.post('/api/players/:id/unequip', shopMutation((playerId, body) => {
+    const { slot } = body;
+    if (typeof slot !== 'string' || !slot) return { ok: false, status: 400, error: 'slot required' };
+    return unequipItem(playerId, slot);
   }));
 
   // A map's scene descriptor (the client renders it via buildMap). Read-only.

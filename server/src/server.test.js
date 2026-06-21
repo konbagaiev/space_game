@@ -265,7 +265,9 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
 
 test('catalog: components (hulls + engines + thrusters + repair drone) are seeded', async () => {
   const comps = await getJson('/api/components');
-  assert.equal(comps.length, 12); // 4 hulls + 3 engines + 4 thrusters + 1 repair drone
+  // 4 hulls + 3 engines + 4 thrusters + 1 repair drone (enemy/starter) + 6 player-shop ladder rows
+  // (Heavy hull 13, Solid-fuel 15, Ion 16, Repair II 19, Nanobot 20, Advanced thrusters 21)
+  assert.equal(comps.length, 18);
   const drone = comps.find((c) => c.name === 'Repair drone');
   assert.equal(drone.id, 12);
   assert.equal(drone.type, 'repair');
@@ -304,7 +306,8 @@ test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector bo
 
 test('catalog: weapons are seeded with type bullet/rocket', async () => {
   const weapons = await getJson('/api/weapons');
-  assert.equal(weapons.length, 5);
+  // 5 base (ids 1–5) + 3 player-shop ladder weapons (Heavy cannon 6, Heavy Machine Gun 7, Heavy rocket 8)
+  assert.equal(weapons.length, 8);
   const types = new Set(weapons.map((w) => w.type));
   assert.deepEqual([...types].sort(), ['bullet', 'rocket']);
   const basic = weapons.find((w) => w.name === 'Basic kinetic');
@@ -323,8 +326,8 @@ test('catalog: weapons are seeded with type bullet/rocket', async () => {
   const rocket = weapons.find((w) => w.name === 'Rocket (homing)');
   assert.equal(rocket.type, 'rocket');
   assert.equal(rocket.id, 3);
-  assert.equal(rocket.stats.power, 50);
-  assert.equal(rocket.stats.health, 30);  // HP, reduced by a bullet's damage
+  assert.equal(rocket.stats.power, 60);
+  assert.equal(rocket.stats.health, 10);  // HP, reduced by a bullet's damage
   assert.equal(rocket.stats.maxRange, 150);
 });
 
@@ -453,4 +456,148 @@ test('active ship: a new player gets a default active ship (empty loadout -> shi
   assert.equal(active.loadout.mounts.find((m) => m.group === 'gun').weapon, 1);    // Basic kinetic
   assert.equal(active.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3); // Rocket (homing)
   assert.deepEqual(active.components, { hull: 1, engine: 5, thruster: 8 });
+});
+
+// ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
+// Clear the campaign (advance off the last level) so the shop unlocks for `playerId`.
+async function clearCampaign(playerId) {
+  for (let i = 0; i < 4; i++) await post(`/api/players/${playerId}/advance`, {});
+}
+
+test('shop: locked until the final level is cleared', async () => {
+  await getJson('/api/players/shop-lock/active-ship'); // register
+  const s = await getJson('/api/players/shop-lock/stash');
+  assert.equal(s.shopUnlocked, false);
+  assert.deepEqual(s.stash, []);
+  // mutations are 403 while locked
+  assert.equal((await post('/api/players/shop-lock/buy', { kind: 'weapon', refId: 1 })).status, 403);
+  assert.equal((await post('/api/players/shop-lock/equip', { kind: 'weapon', refId: 1 })).status, 403);
+});
+
+test('shop: unlocks on clearing the campaign and backfills the basic gun into the stash', async () => {
+  await clearCampaign('shop-1');
+  const s = await getJson('/api/players/shop-1/stash');
+  assert.equal(s.shopUnlocked, true);
+  // the basic kinetic (id 1), swapped out after level 2, is now owned in the stash
+  const gun = s.stash.find((it) => it.kind === 'weapon' && it.refId === 1);
+  assert.ok(gun, 'basic gun present in stash');
+  assert.equal(gun.qty, 1);
+  assert.equal(gun.name, 'Basic kinetic');
+  assert.equal(gun.price, 800); // priced (economy-shop-v2.md) — sells ~600 toward the Heavy hull
+  // active ship is launchable (all required slots filled), with the Machine Gun equipped
+  assert.equal(s.activeShip.launchable, true);
+  assert.deepEqual(s.activeShip.missingRequired, []);
+  assert.equal(s.activeShip.loadout.mounts.find((m) => m.group === 'gun').weapon, 5);
+});
+
+test('shop: equip from stash swaps the displaced item back into the stash', async () => {
+  await clearCampaign('shop-equip');
+  // equip the basic gun (1) → it replaces the Machine Gun (5) in the gun group; the MG returns to stash
+  const r = await (await post('/api/players/shop-equip/equip', { kind: 'weapon', refId: 1 })).json();
+  assert.equal(r.activeShip.loadout.mounts.find((m) => m.group === 'gun').weapon, 1);
+  assert.ok(!r.stash.some((it) => it.refId === 1), 'basic gun left the stash');
+  assert.ok(r.stash.some((it) => it.kind === 'weapon' && it.refId === 5), 'Machine Gun is now in the stash');
+});
+
+test('shop: buy adds to the stash; sell removes it; credits move by price (0 for now)', async () => {
+  await clearCampaign('shop-trade');
+  const start = (await getJson('/api/players/shop-trade/stash')).credits;
+  // buy a Light hull (component 2) — free at price 0
+  const bought = await (await post('/api/players/shop-trade/buy', { kind: 'component', refId: 2 })).json();
+  assert.equal(bought.credits, start); // price 0 → no change
+  assert.ok(bought.stash.some((it) => it.kind === 'component' && it.refId === 2));
+  // sell it back — credit floor(0 * 0.75) = 0
+  const sold = await (await post('/api/players/shop-trade/sell', { kind: 'component', refId: 2 })).json();
+  assert.equal(sold.credits, start);
+  assert.ok(!sold.stash.some((it) => it.kind === 'component' && it.refId === 2), 'sold item left the stash');
+});
+
+test('shop: selling a stash item you do not own -> 409', async () => {
+  await clearCampaign('shop-409');
+  const r = await post('/api/players/shop-409/sell', { kind: 'component', refId: 3 });
+  assert.equal(r.status, 409);
+});
+
+test('shop: optional equipped items sell directly; required ones cannot', async () => {
+  await clearCampaign('shop-sell-eq');
+  // selling the equipped rocket (optional, group 'rocket') directly from the hangar works
+  const sold = await post('/api/players/shop-sell-eq/sell', { slot: 'rocket' });
+  assert.equal(sold.status, 200);
+  const after = await sold.json();
+  assert.ok(!after.activeShip.loadout.mounts.some((m) => m.group === 'rocket'), 'rocket unmounted');
+  // a required slot (hull) cannot be sold while equipped
+  assert.equal((await post('/api/players/shop-sell-eq/sell', { slot: 'hull' })).status, 409);
+});
+
+test('shop: unequipping a required slot blocks take-off (launchable=false)', async () => {
+  await clearCampaign('shop-launch');
+  const r = await (await post('/api/players/shop-launch/unequip', { slot: 'engine' })).json();
+  assert.equal(r.activeShip.launchable, false);
+  assert.ok(r.activeShip.missingRequired.includes('engine'));
+  // the engine is now sitting in the stash
+  assert.ok(r.stash.some((it) => it.kind === 'component' && it.refId === 5));
+  // re-equipping it restores launchability
+  const back = await (await post('/api/players/shop-launch/equip', { kind: 'component', refId: 5 })).json();
+  assert.equal(back.activeShip.launchable, true);
+});
+
+test('shop: no double-spend / dupe under repeated sell of a single stash item', async () => {
+  await clearCampaign('shop-dupe');
+  // own exactly one basic gun (the backfill). Two sells: the first succeeds, the second 409s (qty 0).
+  assert.equal((await post('/api/players/shop-dupe/sell', { kind: 'weapon', refId: 1 })).status, 200);
+  assert.equal((await post('/api/players/shop-dupe/sell', { kind: 'weapon', refId: 1 })).status, 409);
+});
+
+test('shop: equipping a duplicate of the equipped item never loses an item (net-zero)', async () => {
+  await clearCampaign('shop-dup-equip');
+  // install the basic gun (1) → the Machine Gun (5) is displaced to the stash; the basic gun leaves it
+  await post('/api/players/shop-dup-equip/equip', { kind: 'weapon', refId: 1 });
+  // own one basic gun again (stash) while an identical basic gun is equipped → two id-1 guns total
+  await post('/api/players/shop-dup-equip/buy', { kind: 'weapon', refId: 1 });
+  // re-equip the same id: the equipped one returns to the stash as the stash one installs (net-zero)
+  const r = await (await post('/api/players/shop-dup-equip/equip', { kind: 'weapon', refId: 1 })).json();
+  const stashGun = r.stash.find((it) => it.kind === 'weapon' && it.refId === 1);
+  const equipped = r.activeShip.loadout.mounts.filter((m) => m.weapon === 1).length;
+  // still exactly one equipped + one in the stash — nothing lost, nothing duplicated
+  assert.equal(equipped, 1);
+  assert.equal(stashGun ? stashGun.qty : 0, 1, 'no item lost or duplicated on same-id equip');
+});
+
+test('shop: real catalog prices — buy deducts, sell refunds 75%, overspend -> 402', async () => {
+  await clearCampaign('shop-price');
+  const start = (await getJson('/api/players/shop-price/stash')).credits; // fresh player: 1000
+  assert.equal(start, 1000);
+  // Basic kinetic (weapon 1) costs 800 — affordable from 1000
+  const bought = await (await post('/api/players/shop-price/buy', { kind: 'weapon', refId: 1 })).json();
+  assert.equal(bought.credits, 200);
+  // a second basic kinetic is now owned (the backfill + this purchase), priced 800
+  const owned = bought.stash.find((it) => it.kind === 'weapon' && it.refId === 1);
+  assert.equal(owned.qty, 2);
+  assert.equal(owned.price, 800);
+  // sell one back for floor(800 * 0.75) = 600
+  const sold = await (await post('/api/players/shop-price/sell', { kind: 'weapon', refId: 1 })).json();
+  assert.equal(sold.credits, 800);
+  // Heavy hull (component 13) costs 6000 — can't afford from 800 → 402, nothing spent
+  const broke = await post('/api/players/shop-price/buy', { kind: 'component', refId: 13 });
+  assert.equal(broke.status, 402);
+  assert.equal((await getJson('/api/players/shop-price/stash')).credits, 800);
+});
+
+test('catalog: the player shop ladder is seeded with prices (components + weapons)', async () => {
+  const components = await getJson('/api/components');
+  const heavyHull = components.find((c) => c.id === 13);
+  assert.equal(heavyHull.name, 'Heavy hull');
+  assert.equal(heavyHull.stats.durability, 200);
+  assert.equal(heavyHull.weight, 50);
+  assert.equal(heavyHull.price, 6000);
+  assert.equal(components.find((c) => c.id === 19).price, 1800);  // Repair drone II
+  // starter gear is cheap-but-buyable (no longer free/hidden)
+  assert.equal(components.find((c) => c.id === 1).price, 300);   // Basic hull
+  assert.equal(components.find((c) => c.id === 8).price, 400);   // Basic thrusters
+  assert.equal(components.find((c) => c.id === 21).price, 2500); // Advanced thrusters (new shop entry)
+  const weapons = await getJson('/api/weapons');
+  assert.equal(weapons.find((w) => w.id === 8).name, 'Heavy rocket'); // homing heavy rocket
+  assert.equal(weapons.find((w) => w.id === 8).price, 2600);
+  assert.equal(weapons.find((w) => w.id === 1).price, 800);          // Basic kinetic now priced
+  assert.equal(weapons.find((w) => w.id === 5).price, 1500);        // Machine Gun — strong, so not cheap
 });

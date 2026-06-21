@@ -19,6 +19,12 @@ export const getComponents = (...a) => impl.getComponents(...a);
 export const getActivePlayerShip = (...a) => impl.getActivePlayerShip(...a);
 export const getMap = (...a) => impl.getMap(...a);
 export const getLevel = (...a) => impl.getLevel(...a);
+// Hangar shop + stash (docs/plans/hangar-shop.md)
+export const getStash = (...a) => impl.getStash(...a);
+export const buyItem = (...a) => impl.buyItem(...a);
+export const sellItem = (...a) => impl.sellItem(...a);
+export const equipItem = (...a) => impl.equipItem(...a);
+export const unequipItem = (...a) => impl.unequipItem(...a);
 // Authentication (DECISIONS §11)
 export const getPlayerPublic = (...a) => impl.getPlayerPublic(...a);
 export const setUsername = (...a) => impl.setUsername(...a);

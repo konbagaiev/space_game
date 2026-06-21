@@ -5,6 +5,93 @@
 
 ## 2026-06-21
 
+- **Catalog balance-tuning pass.** Playtest tuning on the shop ladder + combat values (`catalog_seed.js`):
+  new **Advanced thrusters** (id 21 — power 3.0 / weight 5 / 2500), a buyable turn upgrade. Engine bump:
+  **Ion engine** power 16→**18**. Starter-gear prices: Basic engine 300→**500**, Basic thrusters
+  200→**400** (Basic hull 300, Repair drone 500 unchanged). Weapon balance: **Rocket (homing)** power
+  50→**60** / health 30→**10** (now downed by a single Machine Gun burst), **Heavy rocket** power 80→**90**
+  / health 40→**20**, **Heavy cannon** power 20→**25**; enemy nerfs — **Kinetic (enemy)** 5→**4**, **Rocket
+  (enemy)** 30→**25**. Renames (final): id 15 *Racing → **Solid-fuel engine***, id 7 *Plasma repeater →
+  **Heavy Machine Gun***. (catalog_seed.js also reformatted to multi-line objects.) Server tests updated
+  (18 components, new prices); 47/47 green.
+
+- **Hangar bay readability pass (sizing + button placement).** Enlarged the shop UI per request: the
+  **Loadout / Stash / Shop screen switchers** and all **Stash + Shop item text** (and the Shop type-list
+  column) are **2×**; **Loadout** item text is 2× with **1.5× buttons**; the **final-characteristics panel
+  labels** (ship HP/accel/turn/weight) are **1.5×**. Action buttons (**Unequip / Sell / Install / Buy**)
+  moved **into the item header row**, with the **(i)** attached right after the title and the price /
+  slot tag + buttons pushed to the **right end** (`[name][i] … [meta][buttons]`; no longer a separate row
+  below). Item **characteristics reveal only on tapping the (i)** (no hover reveal), keeping rows clean.
+  The whole bay is **`zoom: 0.9`** (10% smaller overall). Client-only (CSS + `itemCard` markup in
+  `index.html`); the header row wraps if a card gets cramped. Visual suite green.
+
+- **Cheap starter prices + full hover stats.** The previously-free **starter gear** now has cheap,
+  buyable prices so the shop ladder starts low instead of hiding them: Basic hull **300**, Basic engine
+  **300**, Basic thrusters **200**, Repair drone **500**, Rocket (homing) **600**, Basic kinetic 800. The
+  **Machine Gun** is the exception at **1500** (it's strong in a fight, so not cheap). The shop's item
+  characteristics on hover/(i) are now **comprehensive** — for weapons that means **damage, rate of fire /
+  reload, projectile speed, range, blast, weight** (previously only damage + RoF + weight); engines show
+  top speed, repair drones show heal/cap. New stat-label i18n keys (`ui.shop.stat.speed|range|reload|blast|
+  maxspeed|heal|cap`, EN + RU), and the stats reveal on hover (desktop) as well as the (i) tap (touch).
+
+- **Engine names swapped.** The two shop engines traded names so **Ion engine** is now the premium
+  top-tier (id 16 — power 16, light, 6400) and **Racing engine** is the cheaper T2 (id 15 — power 14,
+  1400). Stats/prices/ids unchanged — names only (`catalog_seed.js`). (Re-seeding can't swap two
+  `UNIQUE` names in place, so the local dev rows were dropped to re-insert fresh; prod inserts fresh on
+  first deploy, so no migration is needed.)
+
+- **Economy + shop v2** (`docs/plans/economy-shop-v2.md`). Three fixes. **(1) Doubled all ladder prices**
+  — v1 anchored to ~2700 but each level clear **doubles** that run's Earned (`earned *= 2`), so the real
+  first-shop budget is ~4300 (flawless) to ~5800 (with retries); prices were ~half what they should be.
+  New prices: Heavy hull **6000**, Racing engine 6400, Nanobot 7000, Plasma repeater 6000, Heavy rocket
+  2600, Heavy cannon 2000, Repair II 1800, Ion engine 1400, Basic kinetic **800**. The Heavy hull is now
+  the aspirational big buy (needs a retry or two — confirmed intentional). **(2) Shop UI rework** — the
+  hangar bay's Loadout / Stash / Shop are now **separate nav-switched screens** (not cramped side-by-side
+  columns); the **Shop is a two-pane screen** (a type list — Hull / Engine / Thrusters / Repair / Weapon —
+  → the items of the selected type on the right); and the **type-label / (i)-icon overlap is fixed** (item
+  cards now lay name → meta → (i) in a flex row, name ellipsizes). **(3) Game-over "Back to Hangar"** — once
+  the shop is unlocked, the **death overlay** offers a secondary **Back to Hangar** button (banked credits
+  already applied) beside Restart, so the player can re-shop/change loadout instead of an instant retry;
+  before unlock (the L1–L3 campaign) only Restart shows. New `ui.gameover.back_to_hangar` (EN "Back to
+  Hangar" / RU "В ангар"). Server **47** (price assertions updated); client **28**; visual `05-hangar-shop`
+  extended (nav screens, two-pane shop, death → Back to Hangar) — all green.
+
+- **Catalog expansion + pricing** (`docs/plans/catalog-economy.md`). Seeded the **player shop ladder**
+  with draft (strawman) prices anchored to the ~2700-credit first-shop budget. New **components**: **Heavy
+  hull** (id 13 — 200 HP / weight 50 / 3000, the upgrade "ship": 2× HP for accel ~6.2 / turn ~1.2),
+  **Ion engine** (id 15 — power 14 / 700) + **Racing engine** (id 16 — power 16, light / 3200), **Repair
+  drone II** (id 19 — 1 HP / 2 s / 85% / 900) + **Nanobot repair** (id 20 — 2 HP / 3 s / 90% / 3500). New
+  **weapons**: **Heavy cannon** (id 6 — power 20, slow / long range / 1000), **Plasma repeater** (id 7 —
+  power 12, high RoF / 3000), **Heavy rocket** (id 8 — homing, power 80, slow reload, big blast / 1300).
+  Existing **Basic kinetic** (id 1) now **priced 400** (granted into the stash on unlock; sells ~300 toward
+  the hull). Upgrades are **mass trade-offs, not power-creep**; thrusters are intentionally left out of the
+  shop. All via `catalog_seed.js` (idempotent re-seed on startup — no migration). **Shop now lists only
+  buyable items (`price > 0`)** so the curated ladder shows and enemy/starter parts stay hidden; new
+  `ui.shop.empty_shop` i18n string (EN + RU). Tests: server **47** (+2: real-price buy/sell/overspend-402,
+  ladder seeded; updated catalog counts 17 components / 8 weapons); visual `05-hangar-shop` still green.
+
+- **Hangar shop + stash** (`docs/plans/hangar-shop.md`). The "spend" side of the economy: a player
+  **stash** (inventory) plus **buy / sell / equip / unequip**, all **server-authoritative + transactional**
+  (no double-spend / item dupe). New `stash` table (qty model, keyed by `(player_id, kind, ref_id)`,
+  `kind ∈ {component, weapon}`; SQLite **migration 011_stash.js**, mirrored in the Postgres bootstrap);
+  a top-level **`price`** column on `components` + `weapons` (seeded 0 — the economy is inert until real
+  prices land); a **`players.shop_unlocked`** flag. Datastore methods `getStash` / `buyItem` / `sellItem`
+  / `equipItem` / `unequipItem` in both backends; endpoints `GET /api/players/:id/stash` and
+  `POST .../buy|sell|equip|unequip` (403 until unlocked, 400/402/409 on bad input / insufficient credits /
+  conflict), each returning the refreshed `{ credits, shopUnlocked, stash, activeShip }`. **Gating:** the
+  shop unlocks only after the player **clears the final level** (advance off the last level flips
+  `shop_unlocked` and backfills the **basic gun (id 1)** — swapped out after level 2 — into the stash);
+  `replaceWeapon` briefings now also deposit the replaced weapon. **Required slots** (hull/engine/thruster)
+  can't be sold while equipped and block take-off when empty (`active-ship` now reports
+  `launchable` / `missingRequired`); **optional** equipped items (weapons, repair drone) sell directly.
+  Sell price = `floor(price * 0.75)`, server-computed. **Client:** a Hangar **bay** (shown once unlocked)
+  with Loadout / Stash / Shop columns (text-in-rectangle items, hover/(i) stats, type filter), a **live
+  ship-stats panel** (HP / acceleration / maneuverability / weight with ▲/▼ deltas vs the previous config,
+  derived client-side), and a **disabled Take-off** + note while a required slot is empty. New `ui.shop.*`
+  i18n keys (EN + RU). Tests: server **45** (9 new shop tests: lock/unlock, backfill, buy/sell/equip/unequip,
+  optional-vs-required sell, launch gating, no double-spend, net-zero same-id equip); client **28**; new
+  headless visual scenario `05-hangar-shop`. Around-model slot icons (Phase C step 10) deferred.
+
 - **Feedback / community Telegram link** (`docs/plans/feedback-link.md`). Added a localized in-game link
   to the Phase-0 feedback channel (Telegram), shown on the **welcome screen** and the **game-over/victory
   overlay**. Both the link text and the target URL are locale values — new i18n keys `ui.community.label`

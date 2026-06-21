@@ -26,12 +26,12 @@ export async function migrate() {
 // catalog_seed.js updates the rows (ids/foreign keys preserved — weapons keyed by id, ships by name).
 async function seedCatalog() {
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS } = await import('./catalog_seed.js');
-  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, stats) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, stats = excluded.stats`);
-  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, JSON.stringify(c.stats));
-  const upW = db.prepare(`INSERT INTO weapons (id, name, type, stats) VALUES (?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, stats = excluded.stats`);
-  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, JSON.stringify(w.stats));
+  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, price, stats) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, price = excluded.price, stats = excluded.stats`);
+  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats));
+  const upW = db.prepare(`INSERT INTO weapons (id, name, type, price, stats) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, price = excluded.price, stats = excluded.stats`);
+  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats));
   const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url, components) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url, components = excluded.components`);
   for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, JSON.stringify(s.components));
@@ -58,15 +58,15 @@ function ensureDefaultShip(playerId) {
 // up owning their default active ship.
 export function registerPlayer(id) {
   const now = Date.now();
-  const existing = db.prepare('SELECT created_at, games_played, current_progress, language, credits FROM players WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT created_at, games_played, current_progress, language, credits, shop_unlocked FROM players WHERE id = ?').get(id);
   if (existing) {
     db.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(now, id);
     ensureDefaultShip(id);
-    return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, language: existing.language, credits: existing.credits, createdAt: existing.created_at };
+    return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, language: existing.language, credits: existing.credits, shopUnlocked: !!existing.shop_unlocked, createdAt: existing.created_at };
   }
   db.prepare('INSERT INTO players (id, created_at, last_seen) VALUES (?, ?, ?)').run(id, now, now);
   ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
 
 // Persist a player's language preference (validated to a supported code by the caller/route).
@@ -95,9 +95,19 @@ function replaceActiveShipWeapon(playerId, fromId, toId) {
   if (!row) return;
   const loadout = JSON.parse(row.loadout || '{}');
   const stats = JSON.parse(row.stats);
-  loadout.mounts = (loadout.mounts ?? stats.mounts ?? []).map((m) => (m.weapon === fromId ? { ...m, weapon: toId } : m));
+  const mounts = loadout.mounts ?? stats.mounts ?? [];
+  const replaced = mounts.some((m) => m.weapon === fromId); // was the gun actually mounted?
+  loadout.mounts = mounts.map((m) => (m.weapon === fromId ? { ...m, weapon: toId } : m));
   db.prepare('UPDATE player_ships SET loadout = ? WHERE player_id = ? AND is_active = 1')
     .run(JSON.stringify(loadout), playerId);
+  if (replaced) depositStash(playerId, 'weapon', fromId); // the removed weapon is now owned (→ stash)
+}
+
+// Add one item to a player's stash (qty++), creating the row if absent. The single place items enter
+// the stash. Caller runs it inside the surrounding mutation (briefing/buy/equip/unequip).
+function depositStash(playerId, kind, refId, qty = 1) {
+  db.prepare(`INSERT INTO stash (player_id, kind, ref_id, qty) VALUES (?, ?, ?, ?)
+    ON CONFLICT(player_id, kind, ref_id) DO UPDATE SET qty = qty + excluded.qty`).run(playerId, kind, refId, qty);
 }
 
 // Install a component into a slot on the player's active ship (materializes the effective components
@@ -145,7 +155,21 @@ export function advanceProgress(playerId) {
     const briefing = runLevelBriefing(playerId, next.id);
     return { currentProgress: next.id, advanced: true, briefing };
   }
+  // No next level → the player just cleared the final level: unlock the hangar shop (once) and
+  // backfill the basic gun (id 1) that was swapped out earlier, so it's owned in the stash.
+  unlockShop(playerId);
   return { currentProgress: p.current_progress, advanced: false, briefing: null };
+}
+
+// Flip the shop_unlocked flag (idempotent) and, the first time, seed the basic kinetic gun (weapon 1)
+// into the stash if it isn't already there (uniform whether or not replaceWeapon deposited it).
+function unlockShop(playerId) {
+  const row = db.prepare('SELECT shop_unlocked FROM players WHERE id = ?').get(playerId);
+  if (row && row.shop_unlocked) return false;
+  db.prepare('UPDATE players SET shop_unlocked = 1 WHERE id = ?').run(playerId);
+  db.prepare(`INSERT INTO stash (player_id, kind, ref_id, qty) VALUES (?, 'weapon', 1, 1)
+    ON CONFLICT(player_id, kind, ref_id) DO NOTHING`).run(playerId);
+  return true;
 }
 
 // Record one finished game in the player's history AND bank the credits earned into the player's
@@ -192,13 +216,13 @@ export function getShips() {
 }
 
 export function getWeapons() {
-  return db.prepare('SELECT id, name, type, stats FROM weapons ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, stats: JSON.parse(r.stats) }));
+  return db.prepare('SELECT id, name, type, price, stats FROM weapons ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, price: r.price, stats: JSON.parse(r.stats) }));
 }
 
 export function getComponents() {
-  return db.prepare('SELECT id, name, type, weight, stats FROM components ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, stats: JSON.parse(r.stats) }));
+  return db.prepare('SELECT id, name, type, weight, price, stats FROM components ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats) }));
 }
 
 // A map's scene descriptor (the client renders it via buildMap).
@@ -211,6 +235,180 @@ export function getMap(name) {
 export function getLevel(name) {
   const row = db.prepare('SELECT name, descriptor FROM levels WHERE name = ?').get(name);
   return row ? { name: row.name, descriptor: JSON.parse(row.descriptor) } : null;
+}
+
+// ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
+// All mutations here are server-authoritative + transactional (no double-spend / item dupe).
+const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']); // a ship can't take off without these
+const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair']);
+const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket' }; // which fire-group a weapon type slots into
+const sellPrice = (price) => Math.floor((price | 0) * 0.75); // resale value (server-computed)
+
+// Catalog lookup for a stash/shop item (component or weapon), with parsed stats. null if missing.
+function catalogItem(kind, refId) {
+  if (kind === 'component') {
+    const r = db.prepare('SELECT id, name, type, weight, price, stats FROM components WHERE id = ?').get(refId);
+    return r ? { kind, refId: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats) } : null;
+  }
+  if (kind === 'weapon') {
+    const r = db.prepare('SELECT id, name, type, price, stats FROM weapons WHERE id = ?').get(refId);
+    return r ? { kind, refId: r.id, name: r.name, type: r.type, price: r.price, stats: JSON.parse(r.stats) } : null;
+  }
+  return null;
+}
+
+// Remove one unit of an item from the stash (and drop the row when it hits 0).
+function decStash(playerId, kind, refId) {
+  db.prepare('UPDATE stash SET qty = qty - 1 WHERE player_id = ? AND kind = ? AND ref_id = ?').run(playerId, kind, refId);
+  db.prepare('DELETE FROM stash WHERE player_id = ? AND kind = ? AND ref_id = ? AND qty <= 0').run(playerId, kind, refId);
+}
+const stashQty = (playerId, kind, refId) =>
+  db.prepare('SELECT qty FROM stash WHERE player_id = ? AND kind = ? AND ref_id = ?').get(playerId, kind, refId)?.qty ?? 0;
+const credit = (playerId, amount) =>
+  db.prepare('UPDATE players SET credits = credits + ? WHERE id = ?').run(amount | 0, playerId);
+
+// The active ship's effective loadout (mounts) + components, materialized from the override or the
+// ship defaults, ready to mutate + save back.
+function activeLoadoutComponents(playerId) {
+  const row = db.prepare(`SELECT ps.loadout, ps.components AS ps_components, s.stats, s.components AS ship_components
+    FROM player_ships ps JOIN ships s ON s.id = ps.ship_id WHERE ps.player_id = ? AND ps.is_active = 1 LIMIT 1`).get(playerId);
+  if (!row) return null;
+  const stats = JSON.parse(row.stats);
+  const loadout = JSON.parse(row.loadout || '{}');
+  return {
+    mounts: loadout.mounts ?? stats.mounts ?? [],
+    components: JSON.parse(row.ps_components || row.ship_components || '{}'),
+  };
+}
+const saveActiveLoadout = (playerId, mounts) =>
+  db.prepare('UPDATE player_ships SET loadout = ? WHERE player_id = ? AND is_active = 1')
+    .run(JSON.stringify({ mounts }), playerId);
+const saveActiveComponents = (playerId, components) =>
+  db.prepare('UPDATE player_ships SET components = ? WHERE player_id = ? AND is_active = 1')
+    .run(JSON.stringify(components), playerId);
+
+const tx = (fn) => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
+
+// The player's stash, joined to the catalog (name/type/stats/price). Empty rows (qty 0) excluded.
+export function getStash(playerId) {
+  registerPlayer(playerId);
+  return db.prepare('SELECT kind, ref_id, qty FROM stash WHERE player_id = ? AND qty > 0 ORDER BY kind, ref_id').all(playerId)
+    .map((r) => { const it = catalogItem(r.kind, r.ref_id); return it ? { ...it, qty: r.qty } : null; })
+    .filter(Boolean);
+}
+
+// Buy a catalog item into the stash: price ≤ balance → deduct credits → stash qty++. Transactional.
+export function buyItem(playerId, kind, refId) {
+  registerPlayer(playerId);
+  const item = catalogItem(kind, refId);
+  if (!item) return { ok: false, status: 400, error: 'no such item' };
+  const price = item.price | 0;
+  return tx(() => {
+    const { credits } = db.prepare('SELECT credits FROM players WHERE id = ?').get(playerId);
+    if (price > credits) return { ok: false, status: 402, error: 'insufficient credits' };
+    credit(playerId, -price);
+    depositStash(playerId, kind, refId);
+    return { ok: true };
+  });
+}
+
+// Sell an item for floor(price*0.75). From the stash (kind+refId), or — when `slot` is given — an
+// OPTIONAL equipped item (weapon group / repair) directly from the ship. Required slots can't be sold.
+export function sellItem(playerId, { kind, refId, slot } = {}) {
+  registerPlayer(playerId);
+  if (slot) return sellEquipped(playerId, slot);
+  const item = catalogItem(kind, refId);
+  if (!item) return { ok: false, status: 400, error: 'no such item' };
+  return tx(() => {
+    if (stashQty(playerId, kind, refId) <= 0) return { ok: false, status: 409, error: 'not in stash' };
+    decStash(playerId, kind, refId);
+    credit(playerId, sellPrice(item.price));
+    return { ok: true };
+  });
+}
+
+// Sell an optional equipped item directly (no unequip step). `slot` is a component slot ('repair') or
+// a weapon group ('gun'/'rocket'). Required component slots (hull/engine/thruster) are rejected.
+function sellEquipped(playerId, slot) {
+  if (REQUIRED_SLOTS.has(slot)) return { ok: false, status: 409, error: 'required slot can\'t be sold while equipped' };
+  return tx(() => {
+    const cfg = activeLoadoutComponents(playerId);
+    if (!cfg) return { ok: false, status: 404, error: 'no active ship' };
+    if (COMPONENT_SLOTS.has(slot)) {
+      const refId = cfg.components[slot];
+      if (refId == null) return { ok: false, status: 409, error: 'slot is empty' };
+      const item = catalogItem('component', refId);
+      delete cfg.components[slot];
+      saveActiveComponents(playerId, cfg.components);
+      credit(playerId, sellPrice(item ? item.price : 0));
+      return { ok: true };
+    }
+    // weapon group: sell the first mount in that group
+    const idx = cfg.mounts.findIndex((m) => m.group === slot);
+    if (idx < 0) return { ok: false, status: 409, error: 'slot is empty' };
+    const item = catalogItem('weapon', cfg.mounts[idx].weapon);
+    cfg.mounts.splice(idx, 1);
+    saveActiveLoadout(playerId, cfg.mounts);
+    credit(playerId, sellPrice(item ? item.price : 0));
+    return { ok: true };
+  });
+}
+
+// Equip an item from the stash onto the active ship; the previously-equipped item (if any) returns to
+// the stash. Components slot by their type (hull/engine/thruster/repair); weapons by their fire-group.
+export function equipItem(playerId, kind, refId) {
+  registerPlayer(playerId);
+  const item = catalogItem(kind, refId);
+  if (!item) return { ok: false, status: 400, error: 'no such item' };
+  return tx(() => {
+    if (stashQty(playerId, kind, refId) <= 0) return { ok: false, status: 409, error: 'not in stash' };
+    const cfg = activeLoadoutComponents(playerId);
+    if (!cfg) return { ok: false, status: 404, error: 'no active ship' };
+    if (kind === 'component') {
+      const slot = item.type; // hull/engine/thruster/repair
+      const prev = cfg.components[slot];
+      cfg.components[slot] = refId;
+      saveActiveComponents(playerId, cfg.components);
+      decStash(playerId, kind, refId);
+      if (prev != null) depositStash(playerId, 'component', prev); // displaced item → stash (net-zero if same id)
+      return { ok: true };
+    }
+    // weapon: replace the first mount in its group, or add one if the group has none
+    const group = WEAPON_GROUP[item.type] || 'gun';
+    const idx = cfg.mounts.findIndex((m) => m.group === group);
+    let prev = null;
+    if (idx >= 0) { prev = cfg.mounts[idx].weapon; cfg.mounts[idx] = { ...cfg.mounts[idx], weapon: refId }; }
+    else cfg.mounts.push({ weapon: refId, group, offset: 0, delay: 0 });
+    saveActiveLoadout(playerId, cfg.mounts);
+    decStash(playerId, kind, refId);
+    if (prev != null) depositStash(playerId, 'weapon', prev); // displaced weapon → stash (net-zero if same id)
+    return { ok: true };
+  });
+}
+
+// Unequip the item in a slot back into the stash. `slot` is a component slot or a weapon group.
+// Allowed even for required slots (emptying one just blocks take-off; see getActivePlayerShip).
+export function unequipItem(playerId, slot) {
+  registerPlayer(playerId);
+  return tx(() => {
+    const cfg = activeLoadoutComponents(playerId);
+    if (!cfg) return { ok: false, status: 404, error: 'no active ship' };
+    if (COMPONENT_SLOTS.has(slot)) {
+      const refId = cfg.components[slot];
+      if (refId == null) return { ok: false, status: 409, error: 'slot is empty' };
+      delete cfg.components[slot];
+      saveActiveComponents(playerId, cfg.components);
+      depositStash(playerId, 'component', refId);
+      return { ok: true };
+    }
+    const idx = cfg.mounts.findIndex((m) => m.group === slot);
+    if (idx < 0) return { ok: false, status: 409, error: 'slot is empty' };
+    const refId = cfg.mounts[idx].weapon;
+    cfg.mounts.splice(idx, 1);
+    saveActiveLoadout(playerId, cfg.mounts);
+    depositStash(playerId, 'weapon', refId);
+    return { ok: true };
+  });
 }
 
 // ---------- Authentication (DECISIONS §11) ----------
@@ -308,13 +506,18 @@ export function getActivePlayerShip(playerId) {
   const loadout = JSON.parse(row.loadout || '{}');
   const shipComponents = row.ship_components ? JSON.parse(row.ship_components) : null;
   const psComponents = row.ps_components ? JSON.parse(row.ps_components) : null;
+  const components = psComponents ?? shipComponents ?? {};
+  const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null); // empty required slots
   return {
     playerShipId: row.player_ship_id,
     ship: { id: row.ship_id, name: row.name, type: row.type, stats, modelUrl: row.model_url, components: shipComponents },
     // effective loadout/components: a player override falls back to the ship's defaults
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
-    components: psComponents ?? shipComponents,
+    components,
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)
     credits: reg.credits,   // the player's persistent credit balance
+    shopUnlocked: reg.shopUnlocked, // hangar shop gate (cleared the final level)
+    launchable: missingRequired.length === 0, // false ⇒ a required slot is empty (block take-off)
+    missingRequired,
   };
 }

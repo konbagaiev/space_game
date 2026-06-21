@@ -54,15 +54,20 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
       stash), and *shop* (buy/sell). Server-authoritative; sell = 75% of price; prices seeded 0 first.
       **Spec'd → `docs/plans/hangar-shop.md`** (phased: data+server → stash UI → shop + around-model
       slot icons). This is the "spend" side that closes the grind loop. Item ladder + pricing draft:
-      **`docs/plans/catalog-economy.md`** (tuned in parallel while the shop mechanic is built).
+      **`docs/plans/catalog-economy.md`** (v1, applied). v2 revisions — price ×2 (forgot the victory
+      bonus) + shop UI rework (separate Stash/Shop screens, two-column shop): **`docs/plans/economy-shop-v2.md`**.
+- [ ] **Playtest shop balance (Kostya)** — once catalog prices + shop are live: verify the two purchase
+      paths feel right, the Heavy hull (weight 50) isn't too sluggish, and grind length is good. **Needs
+      the mission generator (Phase 2)** to earn credits for testing. Ref `docs/plans/catalog-economy.md`.
 - [x] **Repair-drone component (4th component type)** — **DONE/shipped.** Base: heal 1 HP / 3 s up to
       80% max HP, installed via the level-3 briefing (spec: `docs/plans/repair-drone.md`). Regen knobs
       are data-driven — tune from playtests/feedback.
 
 ## Phase 2 — Content engine (repeatable grind)
 - [ ] **Mission generator** — procedural missions feeding the economy: clear an asteroid field of
-      pirates, hunt the pirate leader, intercept a pirate convoy. Needs variety params + anti-repetition
-      + reward scaling so grind doesn't feel samey.
+      pirates, hunt the pirate leader, intercept a pirate convoy. **Spec'd → `docs/plans/mission-generator.md`**
+      (missions = generated level descriptors reusing `levelRunner`; server-owned rewards; phased 2a MVP
+      → 2b more types → 2c scaling). **2a MVP unblocks shop-balance playtesting** (repeatable credits).
 
 ## Phase 3 — Setpiece
 - [ ] **Pirate base assault** — a harder mission with a new boss (destroy the pirate base).

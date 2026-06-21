@@ -40,8 +40,10 @@ export async function migrate() {
       name   TEXT    NOT NULL UNIQUE,
       type   TEXT    NOT NULL,     -- 'hull' | 'engine'
       weight INTEGER NOT NULL,     -- contributes to ship mass
+      price  INTEGER NOT NULL DEFAULT 0,  -- credits (hangar shop); 0 until real prices are set
       stats  JSONB   NOT NULL      -- hull {durability,volume} / engine {power,turnPower,maxSpeed,exhaust}
     );
+    ALTER TABLE components ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;
     CREATE TABLE IF NOT EXISTS ships (
       id         BIGSERIAL PRIMARY KEY,
       name       TEXT  NOT NULL UNIQUE,
@@ -55,8 +57,10 @@ export async function migrate() {
       id    BIGINT PRIMARY KEY,   -- stable explicit ids (referenced from ships/loadout)
       name  TEXT  NOT NULL UNIQUE,
       type  TEXT  NOT NULL,       -- 'bullet' | 'rocket'
+      price INTEGER NOT NULL DEFAULT 0,  -- credits (hangar shop); 0 until real prices are set
       stats JSONB NOT NULL        -- damage/speed/cooldown/...
     );
+    ALTER TABLE weapons ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;
     CREATE TABLE IF NOT EXISTS player_ships (
       id         BIGSERIAL PRIMARY KEY,
       player_id  TEXT    NOT NULL REFERENCES players(id),
@@ -120,6 +124,19 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(type, created_at);
     CREATE INDEX IF NOT EXISTS idx_events_player ON events(player_id);
+
+    -- hangar shop + stash (docs/plans/hangar-shop.md). Player inventory (qty model), keyed by
+    -- (player_id, kind, ref_id); kind ∈ {component, weapon} → components.id / weapons.id. The shop
+    -- unlocks only after the player clears the final level → players.shop_unlocked.
+    CREATE TABLE IF NOT EXISTS stash (
+      player_id TEXT    NOT NULL,
+      kind      TEXT    NOT NULL,   -- 'component' | 'weapon'
+      ref_id    BIGINT  NOT NULL,   -- components.id / weapons.id
+      qty       INTEGER NOT NULL DEFAULT 1,
+      UNIQUE (player_id, kind, ref_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_stash_player ON stash(player_id);
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS shop_unlocked INTEGER NOT NULL DEFAULT 0;
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
@@ -127,15 +144,15 @@ export async function migrate() {
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS } = await import('./catalog_seed.js');
   for (const c of COMPONENTS) {
     await pool.query(
-      `INSERT INTO components (id, name, type, weight, stats) VALUES ($1, $2, $3, $4, $5::jsonb)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, stats = EXCLUDED.stats`,
-      [c.id, c.name, c.type, c.weight, JSON.stringify(c.stats)]);
+      `INSERT INTO components (id, name, type, weight, price, stats) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, price = EXCLUDED.price, stats = EXCLUDED.stats`,
+      [c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats)]);
   }
   for (const w of WEAPONS) {
     await pool.query(
-      `INSERT INTO weapons (id, name, type, stats) VALUES ($1, $2, $3, $4::jsonb)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, stats = EXCLUDED.stats`,
-      [w.id, w.name, w.type, JSON.stringify(w.stats)]);
+      `INSERT INTO weapons (id, name, type, price, stats) VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, price = EXCLUDED.price, stats = EXCLUDED.stats`,
+      [w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats)]);
   }
   for (const s of SHIPS) {
     await pool.query(
@@ -171,15 +188,15 @@ async function ensureDefaultShip(playerId) {
 
 export async function registerPlayer(id) {
   const now = Date.now();
-  const { rows } = await pool.query('SELECT created_at, games_played, current_progress, language, credits FROM players WHERE id = $1', [id]);
+  const { rows } = await pool.query('SELECT created_at, games_played, current_progress, language, credits, shop_unlocked FROM players WHERE id = $1', [id]);
   if (rows[0]) {
     await pool.query('UPDATE players SET last_seen = $1 WHERE id = $2', [now, id]);
     await ensureDefaultShip(id);
-    return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, language: rows[0].language, credits: rows[0].credits, createdAt: Number(rows[0].created_at) };
+    return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, language: rows[0].language, credits: rows[0].credits, shopUnlocked: !!rows[0].shop_unlocked, createdAt: Number(rows[0].created_at) };
   }
   await pool.query('INSERT INTO players (id, created_at, last_seen) VALUES ($1, $2, $3)', [id, now, now]);
   await ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
 
 // Persist a player's language preference (validated to a supported code by the caller/route).
@@ -208,9 +225,19 @@ async function replaceActiveShipWeapon(playerId, fromId, toId) {
   if (!rows[0]) return;
   const loadout = rows[0].loadout || {};   // JSONB → already parsed
   const stats = rows[0].stats;
-  loadout.mounts = (loadout.mounts ?? stats.mounts ?? []).map((m) => (m.weapon === fromId ? { ...m, weapon: toId } : m));
+  const mounts = loadout.mounts ?? stats.mounts ?? [];
+  const replaced = mounts.some((m) => m.weapon === fromId);
+  loadout.mounts = mounts.map((m) => (m.weapon === fromId ? { ...m, weapon: toId } : m));
   await pool.query('UPDATE player_ships SET loadout = $1::jsonb WHERE player_id = $2 AND is_active',
     [JSON.stringify(loadout), playerId]);
+  if (replaced) await depositStash(playerId, 'weapon', fromId); // the removed weapon is now owned (→ stash)
+}
+
+// Add one item to a player's stash (qty++), creating the row if absent. `client` runs it inside a
+// transaction; otherwise it uses the pool. The single place items enter the stash.
+async function depositStash(playerId, kind, refId, qty = 1, client = pool) {
+  await client.query(`INSERT INTO stash (player_id, kind, ref_id, qty) VALUES ($1, $2, $3, $4)
+    ON CONFLICT (player_id, kind, ref_id) DO UPDATE SET qty = stash.qty + EXCLUDED.qty`, [playerId, kind, refId, qty]);
 }
 
 // Install a component into a slot on the player's active ship (idempotent; sets components[slot]).
@@ -253,7 +280,21 @@ export async function advanceProgress(playerId) {
     const briefing = await runLevelBriefing(playerId, id);
     return { currentProgress: id, advanced: true, briefing };
   }
+  // No next level → the player just cleared the final level: unlock the hangar shop (once) + backfill
+  // the basic gun (id 1) into the stash so it's owned.
+  await unlockShop(playerId);
   return { currentProgress: cur.rows[0].current_progress, advanced: false, briefing: null };
+}
+
+// Flip shop_unlocked (idempotent) and seed the basic kinetic gun (weapon 1) into the stash the first
+// time, if it isn't already there.
+async function unlockShop(playerId) {
+  const { rows } = await pool.query('SELECT shop_unlocked FROM players WHERE id = $1', [playerId]);
+  if (rows[0] && rows[0].shop_unlocked) return false;
+  await pool.query('UPDATE players SET shop_unlocked = 1 WHERE id = $1', [playerId]);
+  await pool.query(`INSERT INTO stash (player_id, kind, ref_id, qty) VALUES ($1, 'weapon', 1, 1)
+    ON CONFLICT (player_id, kind, ref_id) DO NOTHING`, [playerId]);
+  return true;
 }
 
 export async function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0 } = {}) {
@@ -302,13 +343,13 @@ export async function getShips() {
 }
 
 export async function getWeapons() {
-  const { rows } = await pool.query('SELECT id, name, type, stats FROM weapons ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats }));
+  const { rows } = await pool.query('SELECT id, name, type, price, stats FROM weapons ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats }));
 }
 
 export async function getComponents() {
-  const { rows } = await pool.query('SELECT id, name, type, weight, stats FROM components ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, stats: r.stats }));
+  const { rows } = await pool.query('SELECT id, name, type, weight, price, stats FROM components ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats }));
 }
 
 export async function getMap(name) {
@@ -319,6 +360,174 @@ export async function getMap(name) {
 export async function getLevel(name) {
   const { rows } = await pool.query('SELECT name, descriptor FROM levels WHERE name = $1', [name]);
   return rows[0] ? { name: rows[0].name, descriptor: rows[0].descriptor } : null;
+}
+
+// ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
+// Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
+const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']);
+const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair']);
+const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket' };
+const sellPrice = (price) => Math.floor((price | 0) * 0.75);
+
+async function catalogItem(kind, refId, client = pool) {
+  if (kind === 'component') {
+    const { rows } = await client.query('SELECT id, name, type, weight, price, stats FROM components WHERE id = $1', [refId]);
+    const r = rows[0];
+    return r ? { kind, refId: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats } : null;
+  }
+  if (kind === 'weapon') {
+    const { rows } = await client.query('SELECT id, name, type, price, stats FROM weapons WHERE id = $1', [refId]);
+    const r = rows[0];
+    return r ? { kind, refId: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats } : null;
+  }
+  return null;
+}
+
+async function decStash(playerId, kind, refId, client) {
+  await client.query('UPDATE stash SET qty = qty - 1 WHERE player_id = $1 AND kind = $2 AND ref_id = $3', [playerId, kind, refId]);
+  await client.query('DELETE FROM stash WHERE player_id = $1 AND kind = $2 AND ref_id = $3 AND qty <= 0', [playerId, kind, refId]);
+}
+async function stashQty(playerId, kind, refId, client) {
+  const { rows } = await client.query('SELECT qty FROM stash WHERE player_id = $1 AND kind = $2 AND ref_id = $3', [playerId, kind, refId]);
+  return rows[0]?.qty ?? 0;
+}
+const credit = (playerId, amount, client) =>
+  client.query('UPDATE players SET credits = credits + $1 WHERE id = $2', [amount | 0, playerId]);
+
+// The active ship's effective loadout (mounts) + components, materialized for mutation.
+async function activeLoadoutComponents(playerId, client) {
+  const { rows } = await client.query(`SELECT ps.loadout, ps.components AS ps_components, s.stats, s.components AS ship_components
+    FROM player_ships ps JOIN ships s ON s.id = ps.ship_id WHERE ps.player_id = $1 AND ps.is_active LIMIT 1`, [playerId]);
+  const row = rows[0];
+  if (!row) return null;
+  const loadout = row.loadout || {};
+  return {
+    mounts: loadout.mounts ?? row.stats.mounts ?? [],
+    components: row.ps_components ?? row.ship_components ?? {},
+  };
+}
+const saveActiveLoadout = (playerId, mounts, client) =>
+  client.query('UPDATE player_ships SET loadout = $1::jsonb WHERE player_id = $2 AND is_active', [JSON.stringify({ mounts }), playerId]);
+const saveActiveComponents = (playerId, components, client) =>
+  client.query('UPDATE player_ships SET components = $1::jsonb WHERE player_id = $2 AND is_active', [JSON.stringify(components), playerId]);
+
+// Run `fn(client)` inside a transaction (BEGIN/COMMIT, ROLLBACK on throw).
+async function withTx(fn) {
+  const client = await pool.connect();
+  try { await client.query('BEGIN'); const r = await fn(client); await client.query('COMMIT'); return r; }
+  catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+
+export async function getStash(playerId) {
+  await registerPlayer(playerId);
+  const { rows } = await pool.query('SELECT kind, ref_id, qty FROM stash WHERE player_id = $1 AND qty > 0 ORDER BY kind, ref_id', [playerId]);
+  const out = [];
+  for (const r of rows) { const it = await catalogItem(r.kind, Number(r.ref_id)); if (it) out.push({ ...it, qty: r.qty }); }
+  return out;
+}
+
+export async function buyItem(playerId, kind, refId) {
+  await registerPlayer(playerId);
+  const item = await catalogItem(kind, refId);
+  if (!item) return { ok: false, status: 400, error: 'no such item' };
+  const price = item.price | 0;
+  return withTx(async (client) => {
+    const { rows } = await client.query('SELECT credits FROM players WHERE id = $1 FOR UPDATE', [playerId]);
+    if (price > rows[0].credits) return { ok: false, status: 402, error: 'insufficient credits' };
+    await credit(playerId, -price, client);
+    await depositStash(playerId, kind, refId, 1, client);
+    return { ok: true };
+  });
+}
+
+export async function sellItem(playerId, { kind, refId, slot } = {}) {
+  await registerPlayer(playerId);
+  if (slot) return sellEquipped(playerId, slot);
+  const item = await catalogItem(kind, refId);
+  if (!item) return { ok: false, status: 400, error: 'no such item' };
+  return withTx(async (client) => {
+    if (await stashQty(playerId, kind, refId, client) <= 0) return { ok: false, status: 409, error: 'not in stash' };
+    await decStash(playerId, kind, refId, client);
+    await credit(playerId, sellPrice(item.price), client);
+    return { ok: true };
+  });
+}
+
+async function sellEquipped(playerId, slot) {
+  if (REQUIRED_SLOTS.has(slot)) return { ok: false, status: 409, error: 'required slot can\'t be sold while equipped' };
+  return withTx(async (client) => {
+    const cfg = await activeLoadoutComponents(playerId, client);
+    if (!cfg) return { ok: false, status: 404, error: 'no active ship' };
+    if (COMPONENT_SLOTS.has(slot)) {
+      const refId = cfg.components[slot];
+      if (refId == null) return { ok: false, status: 409, error: 'slot is empty' };
+      const item = await catalogItem('component', refId, client);
+      delete cfg.components[slot];
+      await saveActiveComponents(playerId, cfg.components, client);
+      await credit(playerId, sellPrice(item ? item.price : 0), client);
+      return { ok: true };
+    }
+    const idx = cfg.mounts.findIndex((m) => m.group === slot);
+    if (idx < 0) return { ok: false, status: 409, error: 'slot is empty' };
+    const item = await catalogItem('weapon', cfg.mounts[idx].weapon, client);
+    cfg.mounts.splice(idx, 1);
+    await saveActiveLoadout(playerId, cfg.mounts, client);
+    await credit(playerId, sellPrice(item ? item.price : 0), client);
+    return { ok: true };
+  });
+}
+
+export async function equipItem(playerId, kind, refId) {
+  await registerPlayer(playerId);
+  const item = await catalogItem(kind, refId);
+  if (!item) return { ok: false, status: 400, error: 'no such item' };
+  return withTx(async (client) => {
+    if (await stashQty(playerId, kind, refId, client) <= 0) return { ok: false, status: 409, error: 'not in stash' };
+    const cfg = await activeLoadoutComponents(playerId, client);
+    if (!cfg) return { ok: false, status: 404, error: 'no active ship' };
+    if (kind === 'component') {
+      const slot = item.type;
+      const prev = cfg.components[slot];
+      cfg.components[slot] = refId;
+      await saveActiveComponents(playerId, cfg.components, client);
+      await decStash(playerId, kind, refId, client);
+      if (prev != null) await depositStash(playerId, 'component', prev, 1, client); // displaced item → stash
+      return { ok: true };
+    }
+    const group = WEAPON_GROUP[item.type] || 'gun';
+    const idx = cfg.mounts.findIndex((m) => m.group === group);
+    let prev = null;
+    if (idx >= 0) { prev = cfg.mounts[idx].weapon; cfg.mounts[idx] = { ...cfg.mounts[idx], weapon: refId }; }
+    else cfg.mounts.push({ weapon: refId, group, offset: 0, delay: 0 });
+    await saveActiveLoadout(playerId, cfg.mounts, client);
+    await decStash(playerId, kind, refId, client);
+    if (prev != null) await depositStash(playerId, 'weapon', prev, 1, client); // displaced weapon → stash
+    return { ok: true };
+  });
+}
+
+export async function unequipItem(playerId, slot) {
+  await registerPlayer(playerId);
+  return withTx(async (client) => {
+    const cfg = await activeLoadoutComponents(playerId, client);
+    if (!cfg) return { ok: false, status: 404, error: 'no active ship' };
+    if (COMPONENT_SLOTS.has(slot)) {
+      const refId = cfg.components[slot];
+      if (refId == null) return { ok: false, status: 409, error: 'slot is empty' };
+      delete cfg.components[slot];
+      await saveActiveComponents(playerId, cfg.components, client);
+      await depositStash(playerId, 'component', refId, 1, client);
+      return { ok: true };
+    }
+    const idx = cfg.mounts.findIndex((m) => m.group === slot);
+    if (idx < 0) return { ok: false, status: 409, error: 'slot is empty' };
+    const refId = cfg.mounts[idx].weapon;
+    cfg.mounts.splice(idx, 1);
+    await saveActiveLoadout(playerId, cfg.mounts, client);
+    await depositStash(playerId, 'weapon', refId, 1, client);
+    return { ok: true };
+  });
 }
 
 // ---------- Authentication (DECISIONS §11) ----------
@@ -408,12 +617,17 @@ export async function getActivePlayerShip(playerId) {
   const row = rows[0];
   if (!row) return null;
   const stats = row.stats, loadout = row.loadout || {};
+  const components = row.ps_components ?? row.ship_components ?? {};
+  const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null);
   return {
     playerShipId: Number(row.player_ship_id),
     ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url, components: row.ship_components },
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
-    components: row.ps_components ?? row.ship_components,
+    components,
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)
     credits: reg.credits,   // the player's persistent credit balance
+    shopUnlocked: reg.shopUnlocked, // hangar shop gate (cleared the final level)
+    launchable: missingRequired.length === 0,
+    missingRequired,
   };
 }

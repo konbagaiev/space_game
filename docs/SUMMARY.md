@@ -46,6 +46,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **Repair drone** (id 12: heal 1 HP / 3 s, capped at 80% of max HP). The fighter, rocketeer and the
   medium (ex-mini-boss) share the **same Scout engine**; fighter + rocketeer also share the Scout
   thrusters, while the medium has weak (Medium) thrusters → it's sluggish.
+  - **Player shop ladder** (priced; `docs/plans/economy-shop-v2.md`) adds buyable upgrades beyond the
+    enemy/starter parts: **Heavy hull** (id 13: 200 hp / weight 50 / **6000** — the upgrade "ship": 2× HP for
+    accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 14 / **1400**) + **Ion engine** (id 16: power
+    18, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
+    **2500**), and repair tiers **Repair drone II** (id 19: 1 HP / 2 s / 85% / **1800**) + **Nanobot repair**
+    (id 20: 2 HP / 3 s / 90% / **7000**). Upgrades are **mass trade-offs, not power-creep**.
 - **Repair drone:** installed on the player's ship via the **level-3 briefing** (server-authoritative
   `installComponent` action; persisted in `player_ships.components.repair`). During live combat the
   client ticks `repairTick` (pure, in `components.js`) each frame, slowly healing the hull up to the
@@ -65,9 +71,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
   player's homing rocket seeks the nearest enemy in a forward cone and trails smoke; a bullet subtracts
   its `power` from an opposite-side rocket's HP, shooting it down at 0 (enemy rocket 20 HP = two player
-  gun hits). Seeded bullets: **Basic kinetic** (id 1, power 10 / cooldown 0.18), **Kinetic (enemy)** (id 2),
+  gun hits). Seeded bullets: **Basic kinetic** (id 1, power 10 / cooldown 0.18; **price 800** — granted
+  into the stash on shop unlock, sells ~600 toward the Heavy hull), **Kinetic (enemy)** (id 2, power 4),
   and **Machine Gun** (id 5 — rapid-fire kinetic: power 7, cooldown 0.1, projectile speed 50, range 100,
-  weight 8). Rockets: **Rocket (homing)** (id 3), **Rocket (enemy)** (id 4).
+  weight 8; **priced 1500** — strong, so not cheap). Rockets: **Rocket (homing)** (id 3, power 60 / health 10,
+  **priced 600**), **Rocket (enemy)** (id 4, power 25). **Player shop ladder** (priced;
+  `docs/plans/economy-shop-v2.md`): **Heavy cannon** (id 6: power 25, slow fire / long range / **2000**),
+  **Heavy Machine Gun** (id 7: power 12, high RoF / **6000**), **Heavy rocket** (id 8: homing, power 90, slow
+  reload, big blast / **2600**).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun, 30 hp light hull),
   `rocketeer` (yellow, gun + rocket, same 30 hp light hull), `medium` (purple ex-mini-boss, two rocket
   launchers, 150 hp medium hull → sluggish, 2× model), and the `boss` (`first boss` — orange, its own
@@ -75,8 +86,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   in the level's boss phase). Which enemies spawn is decided by the **level** (see Gameplay), not the
   ship; ship `radius` scales with model size. Each enemy also carries a **`reward`** (`stats.reward`,
   fighter 20 / rocketeer 40 / medium 100 / boss 200) in **credits**, earned on destruction.
-- **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 20 hp hull, gun 5 damage
-  (an enemy dies in 2 player hits; the player survives 20 enemy hits).
+- **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 30 hp light hull, gun 4 damage
+  (an enemy dies in 3 player hits; the player survives ~25 enemy hits).
 
 ## Gameplay
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
@@ -101,7 +112,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   shows **Restart**/retry); Continue opens the **Hangar screen** — the between-battles screen (also the
   landing/homepage; future home for ship management). It shows the current/next mission's briefing in large
   (2×) text, with a **Take off** button that launches the level. The same Hangar is used on page load and
-  after a win (and `launchFromHangar` starts the loop the first time).
+  after a win (and `launchFromHangar` starts the loop the first time). **Once the hangar shop is unlocked**
+  (cleared the final level), the **death overlay** also offers a secondary **Back to Hangar** button beside
+  Restart (banked credits already applied) → returns to the Hangar to shop / change loadout instead of an
+  instant retry; before unlock only Restart shows.
 - **Between-level briefings** — a level descriptor can carry an optional **`briefing`** (`{ textKey,
   text, actions[] }`). When the player advances **into** a level, the server runs that briefing's
   `actions` (server-authoritative, once — progress only moves forward) and returns the message; the
@@ -137,6 +151,28 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   unbanked amount). New players start at **1000 credits**. HUD (top-right) shows two counters — **Credits**
   (the persistent balance) and **Earned** (this run) — plus **Destroyed** (kills) and **Enemies** (alive).
   Banking posts `{ credits, kills, durationMs }` to `POST /api/games`, which returns the new balance.
+- **Hangar shop & stash (the "spend" side)** — once the player **clears the final level**, the Hangar
+  gains a **shop bay** with three **nav-switched screens** (not side-by-side columns): **Loadout** (what's
+  equipped), **Stash** (owned-but-not-equipped inventory, a qty model), and **Shop** — a **two-pane** screen
+  (a type list **Hull / Engine / Thrusters / Repair / Weapon** → the items of the selected type on the
+  right). The Shop lists only **buyable** items (`price > 0`); **enemy parts stay priced 0 (hidden)**, while
+  the player's **starter gear is cheap-but-buyable** (Basic hull 300 / engine 500 / thrusters 400 / repair
+  drone 500 / homing rocket 600) so each type's ladder starts low. Each item's **full characteristics show
+  on hover (desktop) or the (i) tap (mobile)** — for weapons: damage, RoF/reload, projectile speed, range,
+  blast, weight. Flows, all
+  **server-authoritative + transactional**: **buy** (credits down → item into stash), **sell** (stash item
+  or an *optional* equipped item → 75% of price back), **install/equip** (stash → ship; the displaced item
+  returns to the stash), **unequip** (ship → stash). A **live ship-stats panel** shows **HP / acceleration /
+  maneuverability / weight** with a **▲/▼ delta vs the previous config** on every change (derived client-side;
+  the server stays authoritative on the saved config). **Required slots** (hull/engine/thruster) can't be
+  sold while equipped and **block take-off when empty** (the button greys out); **optional** equipped items
+  (weapons, repair drone) sell directly from the hangar. On unlock the **basic gun (id 1)** swapped out after
+  level 2 is **backfilled into the stash**. **Prices:** the player ladder has draft prices (strawman, see
+  `docs/plans/economy-shop-v2.md`) anchored to the **corrected ~5800-credit first-shop budget** (the budget
+  includes the ×2 victory bonus per level; a flawless run banks ~4280, retries push it toward ~5800 — so the
+  Heavy hull at 6000 is the aspirational big buy); sell = `floor(price*0.75)`, server-computed. The shop
+  lists only `price > 0` items, so the curated ladder shows and enemy/starter parts
+  don't. Around-model slot icons are a later polish (not built yet).
 
 ## Visuals
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer,
@@ -208,13 +244,25 @@ first translation). See DECISIONS §10.
   players, no FK), returning the new balance. `registerPlayer`/active-ship also return `credits`.
 - **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url`,
   `components` JSON ref `{hull,engine,thruster[,repair]}`), `components` (`name`, `type`
-  `hull`/`engine`/`thruster`/`repair`, `weight`, `stats` JSON; stable ids) and `weapons` (`name`, `type`
-  `bullet`/`rocket`, `stats` JSON; stable ids), seeded from a shared snapshot
-  (`server/src/catalog_seed.js`). **The client assembles all ships from these.**
+  `hull`/`engine`/`thruster`/`repair`, `weight`, **`price`**, `stats` JSON; stable ids) and `weapons`
+  (`name`, `type` `bullet`/`rocket`, **`price`**, `stats` JSON; stable ids), seeded from a shared snapshot
+  (`server/src/catalog_seed.js`). **`price`** (credits, hangar shop) defaults to **0** until real prices
+  are set. **The client assembles all ships from these.**
 - **`player_ships`:** ships a player owns; exactly one `is_active` goes into battle. `loadout` JSON
   overrides `mounts` (empty ⇒ the ship's default weapons), `components` JSON overrides the ship's
   hull/engine (null ⇒ ship defaults), `meta` JSON for the future. A new player auto-gets a default
   active ship on registration.
+- **Stash & hangar shop (`stash` table, migration 011 / Postgres bootstrap):** a player inventory keyed by
+  `(player_id, kind, ref_id)` with a `qty` (`kind ∈ {component, weapon}` → `components.id` / `weapons.id`;
+  unique per `(player_id, kind, ref_id)`, indexed by player). **Gated by `players.shop_unlocked`** — flipped
+  the first time the player **advances off the last level** (i.e. clears the campaign), which also **backfills
+  the basic gun (id 1)** into the stash. `replaceWeapon` briefing actions now also deposit the replaced weapon.
+  Datastore methods (both backends, server-authoritative + transactional): `getStash` (joined to the catalog),
+  `buyItem` (price ≤ balance → deduct → qty++), `sellItem` (stash item, or an *optional* equipped item via a
+  `slot` → credit `floor(price*0.75)`), `equipItem` (stash → active ship; component slots by `type`, weapons
+  by fire-group; the displaced item returns to the stash), `unequipItem` (slot → stash; required slots allowed
+  but then take-off is blocked). `getActivePlayerShip` now also returns **`shopUnlocked`**, **`launchable`**,
+  and **`missingRequired`** (empty required slots).
 - **Maps & levels:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`),
   built by `buildMap`. `levels` table holds a JSON descriptor per level (a map + a phase/wave script,
   seeded as `level-1`/`level-2`/`level-3`), played by the client's `levelRunner`. Served via `GET /api/maps/:name` and
@@ -222,6 +270,8 @@ first translation). See DECISIONS §10.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
+  `GET /api/players/:id/stash`, `POST /api/players/:id/buy`, `.../sell`, `.../equip`, `.../unequip`
+  (hangar shop; 403 until the shop is unlocked),
   `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
   `GET /api/levels/:name`, the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
   `POST /api/auth/resend-verification`, `GET /api/auth/me`, `GET /api/auth/verify`), plus
@@ -349,10 +399,13 @@ first translation). See DECISIONS §10.
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (36): register / record game + credit banking / history /
+- **Backend API** — `server/src/server.test.js` (47): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
   player progress (current level + advance) + language preference + credits balance + level briefings
   (level-2 weapon swap, level-3 repair-drone install) + repair-drone component seed +
+  **hangar shop/stash** (lock until the final level is cleared, unlock + basic-gun backfill, buy/sell/equip/
+  unequip, optional-vs-required equipped sell, take-off launch gating, no double-spend, net-zero same-id equip,
+  real-price buy/sell/overspend-402, the priced player-shop ladder is seeded) +
   **auth** (username, register happy/duplicate-409/weak-400, login happy/wrong-401, `/me` authed vs 401,
   logout clears the session, verify-token flips `email_verified`, cross-device login adopts progress) +
   **monitoring** (`/api/config` returns `sentry:null` when unset; `/api/events` 204 allowlisted / 400
@@ -365,8 +418,10 @@ first translation). See DECISIONS §10.
   run directly), `db.js` honors `DB_PATH`.
 - **Visual / e2e** — `client/visual/` (Playwright headless, **not in CI**): boots the real game and
   asserts on simulation state (particle counts, size ratios, exhaust colors) via a `?debug`-gated
-  `window.__game` hook; saves frames to `__screenshots__/` for review (no pixel diffing). Self-contained
-  runner starts its own server + throwaway DB. Setup + run from `client/`:
+  `window.__game` hook; saves frames to `__screenshots__/` for review (no pixel diffing). Scenarios:
+  smoke, ship-explosion, exhaust-trail, combat, and **hangar-shop** (unlock the shop, render the bay +
+  live stats, install from the stash). Self-contained runner starts its own server + throwaway DB. Setup
+  + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for
   occasional larger releases. See `client/visual/README.md`.
 
