@@ -8,6 +8,20 @@
 > client needs no committed DSN and the value lives in the server `.env` like other config. **To go live
 > on prod:** set `SENTRY_DSN_SERVER` + `SENTRY_DSN_WEB` (+ optional `SENTRY_ENVIRONMENT`/`SENTRY_RELEASE`)
 > in the server `.env`. UptimeRobot is owned separately (Kostya).
+>
+> **ACTIVATED on prod (2026-06-21).** Decision: **one Sentry project for both** browser + server (not
+> the two-project split the brief suggested) — single repo / single deploy / single release SHA, so one
+> project is simpler; filter server vs browser by `sdk`/`platform`. The web DSN is reused as
+> `SENTRY_DSN_SERVER`. DSNs + `SENTRY_ENVIRONMENT` live in the server `.env`.
+>
+> **Releases (industry-standard, durable):** the **git SHA is baked into the image at build time** —
+> `Dockerfile` `ARG GIT_SHA` → `ENV SENTRY_RELEASE`, CI passes `--build-arg GIT_SHA=<full sha>`. So every
+> deployed artifact reports its own release automatically; **`SENTRY_RELEASE` is NOT in `.env`** (env_file
+> would override the baked value). Both SDKs read it (server from env; client via `/api/config`). CI also
+> **registers the release + commits** in Sentry (`@sentry/cli`: `releases new` / `set-commits --auto` /
+> `finalize` / `deploys … -e production`) for suspect-commits + regressions — that step is **gated on the
+> `SENTRY_AUTH_TOKEN` secret** (skipped until set). To enable it, add repo secrets `SENTRY_AUTH_TOKEN`,
+> `SENTRY_ORG`, `SENTRY_PROJECT`.
 
 > Self-contained handoff for the work session. Launch-readiness monitoring: **Sentry** (errors, server +
 > browser) and **DB events** (product funnel). **UptimeRobot is owned separately by Kostya** (external

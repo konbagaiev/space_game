@@ -17,6 +17,17 @@
   with the level. Tests: `/api/config` + `/api/events` (server now 36); verified events land via a
   headless playthrough. New env (server `.env`, optional): `SENTRY_DSN_SERVER`, `SENTRY_DSN_WEB`,
   `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`. UptimeRobot is owned separately (not in this change).
+  **Activated on prod (single Sentry project for browser + server — one repo/deploy/release):** set the
+  `SENTRY_*` vars in the server `.env` and recreated the container; verified the browser SDK loads/inits
+  and the server has its DSN.
+- **Durable Sentry release pipeline.** Replaced the static `.env` `SENTRY_RELEASE` with the
+  industry-standard approach: the **git SHA is baked into the image at build time** (`Dockerfile`
+  `ARG GIT_SHA` → `ENV SENTRY_RELEASE`; CI `docker compose build --build-arg GIT_SHA=<full sha>`), so
+  each deployed artifact reports its own release automatically (removed `SENTRY_RELEASE` from the server
+  `.env` so it no longer overrides). Both SDKs read it (server env; client via `/api/config`). Added a CI
+  step (`@sentry/cli`: `releases new`/`set-commits --auto`/`finalize`/`deploys -e production`, with
+  `fetch-depth: 0`) that registers the release + commits for suspect-commits/regressions — **gated on a
+  `SENTRY_AUTH_TOKEN` secret**, inert until `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` are added.
 - **Monitoring-grade `/api/health`.** Upgraded the existing health endpoint into a proper uptime probe
   for UptimeRobot: it now returns **200** `{ ok, status:"ok", backend, uptimeSec, players, games }` when
   healthy and **503** `{ ok:false, status:"error", error }` when the DB is unreachable (was a generic

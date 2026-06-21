@@ -34,11 +34,11 @@ EN/RU localization, between-level briefings. Asset CDN provisioned (S3 + CloudFr
 The goal of launching is *feedback*, so the missing pieces are the ones that capture it:
 - [ ] **Feedback channel** — in-game "Send feedback" button → DB table or a Discord/Telegram webhook,
       and/or a visible community link. *Without this, launching yields nothing.*
-- [ ] **Light funnel telemetry (DB events)** — `events` table + `POST /api/events` for level
-      started/cleared, death, victory, quit → see where players drop. **Spec'd → `docs/plans/monitoring.md`.**
-- [ ] **Monitoring** — **Sentry** (server + browser errors) spec'd in `docs/plans/monitoring.md`;
-      **UptimeRobot** (external `/api/health` ping → Telegram) owned by Kostya, separate session. Grafana
-      stack deferred (would over-burden the 1 GB shared VPS; revisit via Grafana Cloud if wanted).
+- [x] **Light funnel telemetry (DB events)** — **DONE** (`events` table, migration 010, `POST /api/events`,
+      client `track()`; `quit` via sendBeacon).
+- [x] **Monitoring** — **Sentry built** (server `@sentry/node` + browser via `/api/config` DSN; errors
+      only). ⚠️ **To go live in prod: set `SENTRY_DSN_SERVER` + `SENTRY_DSN_WEB` in the server `.env`**
+      (no-ops until set). **UptimeRobot** owned by Kostya (separate). Grafana deferred.
 - [ ] **First-time onboarding check** — make sure a stranger understands controls (esp. mobile/touch)
       in the first minute.
 - [ ] **Basic sound** (optional but high-impact polish) — shot, explosion, one combat track + one
@@ -47,10 +47,9 @@ The goal of launching is *feedback*, so the missing pieces are the ones that cap
 
 ## Phase 1 — Progression core (the grind loop)
 The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to spend it.
-- [ ] **Economy** — credits, earned-per-run vs persistent balance (DECISIONS §11). Persisted per player
-      (tie to accounts; anonymous keeps localStorage, synced on login).
-- [ ] **Hangar** — player ship centered, detailed (hi-poly) model via the CDN (`model_url_high`, lazy
-      load); PBR/IBL scene (see DECISIONS §14, hangar plan TBD).
+- [x] **Economy** — **DONE** (credits currency + persistent player balance, DECISIONS §11).
+- [~] **Hangar** — **basic screen shipped** (ship-pick + victory "Continue"). Still TODO: detailed
+      hi-poly model via the CDN (`model_url_high`, lazy load) + PBR/IBL scene (DECISIONS §14).
 - [ ] **Shop** — buy stronger weapons, reinforce hull; data-driven prices/payouts.
 - [ ] **Storage / inventory** — owned ships, weapons, components persisted per player.
 - [ ] **Upgrades** — weapon swaps + hull reinforcement (extends the existing component/loadout model).

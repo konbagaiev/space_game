@@ -24,8 +24,14 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    env:
+      # Exposed so the optional "Register Sentry release" step can gate on it (secrets can't be used
+      # directly in an `if:`). Empty until the SENTRY_AUTH_TOKEN repo secret is set → that step is skipped.
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so Sentry can associate commits with the release (set-commits --auto)
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
@@ -50,8 +56,9 @@ jobs:
               chmod +x ~/.docker/cli-plugins/docker-rollout
             fi
             TAG=$(echo ${{ github.sha }} | cut -c1-12)
-            docker compose build app
-            docker tag spacegame:latest spacegame:"$TAG"   # version tag for rollback
+            # bake the full git SHA into the image as SENTRY_RELEASE (artifact reports its own version)
+            docker compose build --build-arg GIT_SHA=${{ github.sha }} app
+            docker tag spacegame:latest spacegame:"$TAG"   # short-sha version tag for rollback
             # blue-green: new container up, wait until healthy (incl. migrations) + 10s so
             # Traefik registers it before the old one is removed -> zero downtime.
             docker rollout -w 10 app
@@ -77,3 +84,19 @@ jobs:
             echo " ✓ space.bagaiev.com healthy (vega cert may still be issuing)"; exit 0
           fi
           echo "smoke check failed: neither host healthy" >&2; exit 1
+
+      - name: Register Sentry release + commits
+        # Optional: runs only once the SENTRY_AUTH_TOKEN (+ SENTRY_ORG/SENTRY_PROJECT) repo secrets
+        # exist. version = the full git SHA, matching SENTRY_RELEASE baked into the image, so events
+        # group under it. set-commits --auto needs full history (fetch-depth: 0 above) for suspect
+        # commits / regressions; a deploy is marked for the production environment.
+        if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
+        env:
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          VERSION="${{ github.sha }}"
+          npx --yes @sentry/cli@^2 releases new "$VERSION"
+          npx --yes @sentry/cli@^2 releases set-commits "$VERSION" --auto
+          npx --yes @sentry/cli@^2 releases finalize "$VERSION"
+          npx --yes @sentry/cli@^2 releases deploys "$VERSION" new -e production

@@ -233,6 +233,10 @@ first translation). See DECISIONS §10.
     no-op when their DSN env is unset** (local dev / tests unaffected). Server reads `SENTRY_DSN_SERVER`;
     the public browser DSN + `SENTRY_ENVIRONMENT`/`SENTRY_RELEASE` come from **`GET /api/config`** (so
     the buildless client needs no hardcoded DSN). `tracesSampleRate: 0` keeps it within the free tier.
+    **Release = git SHA, baked into the image at build time** (`Dockerfile` `ARG GIT_SHA` →
+    `ENV SENTRY_RELEASE`; CI `--build-arg GIT_SHA=<full sha>`) — each artifact reports its own release,
+    so `SENTRY_RELEASE` is **not** in `.env` (env_file would override the baked value). CI optionally
+    registers the release + commits in Sentry via `@sentry/cli` (gated on `SENTRY_AUTH_TOKEN`).
   - **Product funnel events.** `events` table (migration 010 / Postgres bootstrap): `id`, `player_id`
     (logical FK, no hard FK — best-effort), `type`, `data` (JSON), `created_at`; indexed on
     `(type, created_at)` and `(player_id)`. **`POST /api/events`** records one event or a batch
