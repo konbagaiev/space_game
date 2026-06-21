@@ -26,6 +26,9 @@ export const COMPONENTS = [
   { id: 9,  name: 'Scout thrusters',  type: 'thruster', weight: 3,  stats: { power: 1.6 } },
   { id: 10, name: 'Medium thrusters', type: 'thruster', weight: 8,  stats: { power: 0.63 } }, // sluggish (turn ~0.35)
   { id: 11, name: 'Boss thrusters',   type: 'thruster', weight: 20, stats: { power: 1.66 } }, // turn ~0.42 = 1.2× medium
+  // repair drone (4th component type): passively heals the hull mid-combat, up to a fraction of max HP.
+  // Installed on the player's ship via the level-3 briefing's installComponent action.
+  { id: 12, name: 'Repair drone', type: 'repair', weight: 4, stats: { repairPerTick: 1, intervalSec: 3, maxFraction: 0.8 } },
 ];
 
 // --- weapons: type 'bullet' | 'rocket'; stats hold the (now fully DB-driven) characteristics ---
@@ -156,12 +159,13 @@ export const LEVELS = [
         { name: 'victory', event: 'win', delay: 5, textKey: 'level.2.victory', text: 'Level 2 cleared! The mid-boss is down.' },
       ] } },
   // Level 3 — the full fight: waves of all three enemy types, then the Sector boss.
-  // Briefing shown when the player reaches level 3 (after clearing level 2). Text only — no actions.
+  // Briefing shown when the player reaches level 3 (after clearing level 2). Installs the repair drone.
   { name: 'level-3', descriptor: {
       title: 'Level 3', map: 'home-system',
       briefing: {
         textKey: 'level.3.briefing',
-        text: "Nice — you've reached the factory! Now we have to push them back. A number of big ships have been spotted there, but they should be slow, so you can use your machine gun to destroy them from behind. Good luck, Sentinel.",
+        text: "Good news, Sentinel — we salvaged a spare repair drone and fitted it to your ship. It'll patch up your hull mid-fight, a little at a time. If you take heavy damage, peel off to a quiet corner of the map and let it work.",
+        actions: [ { type: 'installComponent', slot: 'repair', component: 12 } ],
       },
       phases: [
         { name: 'wave-1',

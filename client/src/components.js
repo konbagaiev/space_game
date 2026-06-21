@@ -10,10 +10,10 @@
 // (massFactor > 1), heavier ones a penalty (< 1).
 export const REFERENCE_MASS = 48;
 
-// Total ship mass = hull + engine + thruster weight + the weight of every mounted weapon.
+// Total ship mass = hull + engine + thruster + repair-drone weight + the weight of every mounted weapon.
 export function shipMass(ship) {
   let mass = 0;
-  for (const slot of ['hull', 'engine', 'thruster']) {
+  for (const slot of ['hull', 'engine', 'thruster', 'repair']) {
     if (ship[slot] && typeof ship[slot].weight === 'number') mass += ship[slot].weight;
   }
   if (Array.isArray(ship.mounts)) {
@@ -38,4 +38,22 @@ export function deriveDrive(ship) {
 // How many hits a hull takes to destroy (derived; handy for balance/tests).
 export function hitsToKill(hullDurability, weaponPower) {
   return Math.ceil(hullDurability / weaponPower);
+}
+
+// Passive hull repair from a repair-drone component. Pure/stateless: the caller holds the accumulator
+// (seconds since the last tick) and passes it in/out, like deriveDrive stays side-effect-free.
+// Heals `repairPerTick` HP every `intervalSec` seconds, capped at `maxFraction * maxHp`; never reduces
+// hp and never exceeds the cap. No-op (returns the inputs unchanged) when there's no drone, or hp is
+// already at/above the cap. Multiple ticks can land in one call if dt spans several intervals.
+export function repairTick(hp, maxHp, repairComp, dt, accum) {
+  if (!repairComp || !(repairComp.repairPerTick > 0) || !(repairComp.intervalSec > 0)) return { hp, accum: 0 };
+  const cap = (repairComp.maxFraction ?? 1) * maxHp;
+  if (hp >= cap) return { hp, accum: 0 }; // already topped up — don't bank time toward future ticks
+  accum += dt;
+  while (accum >= repairComp.intervalSec && hp < cap) {
+    accum -= repairComp.intervalSec;
+    hp = Math.min(cap, hp + repairComp.repairPerTick);
+  }
+  if (hp >= cap) accum = 0; // topped up: don't bank time toward an instant heal after the next hit
+  return { hp, accum };
 }

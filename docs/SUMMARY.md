@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-20
+**Updated:** 2026-06-21
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -38,13 +38,20 @@ key for the player, an AI range/aim rule for enemies), `role`, `color`, `sizeSca
 weapon id, its `group`, a lateral `offset` (side-by-side fire), a `delay` (staggered volley); a ship
 can mount several of the same weapon (the mini-boss has two rocket launchers). The player's active ship
 + its loadout/components overrides come from `player_ships` (see Backend).
-- **Components** (DB `components`, `type` `hull`/`engine`/`thruster`; `weight` column + `stats` JSON):
-  a **hull** has `{ durability (= maxHp), volume }`; an **engine** has `{ power → acceleration, maxSpeed,
-  exhaust }`; a **thruster** has `{ power → maneuverability (turn rate) }`. Seeded: hulls
-  Basic(100hp)/Light(30hp)/Medium(150hp)/Boss(210hp); engines + thrusters Basic/Scout/Medium/Boss. The
-  fighter, rocketeer and the medium (ex-mini-boss) share the **same Scout engine**; fighter + rocketeer
-  also share the Scout thrusters, while the medium has weak (Medium) thrusters → it's sluggish.
-- **Mass** = hull + engine + thruster weight + every mounted weapon's `weight` (`shipMass`).
+- **Components** (DB `components`, `type` `hull`/`engine`/`thruster`/`repair`; `weight` column + `stats`
+  JSON): a **hull** has `{ durability (= maxHp), volume }`; an **engine** has `{ power → acceleration,
+  maxSpeed, exhaust }`; a **thruster** has `{ power → maneuverability (turn rate) }`; a **repair drone**
+  (4th type) has `{ repairPerTick, intervalSec, maxFraction }` → passive hull regen. Seeded: hulls
+  Basic(100hp)/Light(30hp)/Medium(150hp)/Boss(210hp); engines + thrusters Basic/Scout/Medium/Boss; one
+  **Repair drone** (id 12: heal 1 HP / 3 s, capped at 80% of max HP). The fighter, rocketeer and the
+  medium (ex-mini-boss) share the **same Scout engine**; fighter + rocketeer also share the Scout
+  thrusters, while the medium has weak (Medium) thrusters → it's sluggish.
+- **Repair drone:** installed on the player's ship via the **level-3 briefing** (server-authoritative
+  `installComponent` action; persisted in `player_ships.components.repair`). During live combat the
+  client ticks `repairTick` (pure, in `components.js`) each frame, slowly healing the hull up to the
+  80% cap — never higher, never reducing hp; banked time is cleared once topped up. Its `weight` (4)
+  counts toward mass like any component.
+- **Mass** = hull + engine + thruster + repair-drone weight + every mounted weapon's `weight` (`shipMass`).
   Acceleration and turn rate are **derived AND scaled by mass** (`deriveDrive`): `massFactor =
   REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`, `turnRate = thruster.power ×
   massFactor`. `REFERENCE_MASS` = 48 (the player's loadout: hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8)
@@ -75,29 +82,33 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
   buttons are released — smooth braking. At the arena boundaries (±240) the velocity along the axis is zeroed.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate.
-- **Welcome screen** — on load, a start overlay greets the player ("Welcome, Sentinel") with an intro that
-  frames the threat as a pirate raid and nudges them to use the ship's maneuverability ("Pirates are
-  raiding our home system… you've got a fast, nimble ship. Use that agility…"), lets them **pick a ship**
-  (cards from the player-type ships, with HP + weapon summary) and **Take off**. The scene backdrop
-  renders behind it; the level only starts on take-off.
+- **Landing screen (reflects the current level)** — on load the homepage depends on the player's current
+  level: if it has a **briefing** (level 2+), the client lands on the **Hangar** showing that briefing (so a
+  returning player sees *their* mission, not the level-1 intro); otherwise (level 1 / new player) it shows
+  the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"), frames the threat
+  as a pirate raid, lets them **pick a ship** (cards with HP + weapon summary) and **Take off**. Either way
+  the scene backdrop renders behind it and the level only starts on take-off.
 - **Progression** — each player has a **`current_progress`** (their highest unlocked level; see
   Backend). On load the client fetches **that** level (`GET /api/players/:id/level`, not a hard-coded
   one); clearing a level **unlocks the next** (the `win` handler POSTs `/advance`, then loads the new
   level so the next **Restart** plays it). A new player starts on `level-1`; the last level stays put.
 - **Victory → Hangar → next level.** On a win the result overlay shows a **Continue** button (a loss
-  shows **Restart**/retry); Continue opens the **Hangar screen** — the between-battles screen (future home
-  for ship management). It shows the next mission's briefing in large (2×) text, with a **Take off** button
-  that launches the next level.
+  shows **Restart**/retry); Continue opens the **Hangar screen** — the between-battles screen (also the
+  landing/homepage; future home for ship management). It shows the current/next mission's briefing in large
+  (2×) text, with a **Take off** button that launches the level. The same Hangar is used on page load and
+  after a win (and `launchFromHangar` starts the loop the first time).
 - **Between-level briefings** — a level descriptor can carry an optional **`briefing`** (`{ textKey,
   text, actions[] }`). When the player advances **into** a level, the server runs that briefing's
   `actions` (server-authoritative, once — progress only moves forward) and returns the message; the
   client shows it on the **Hangar screen** between the victory overlay and the next run (or a default
   "standby" line when there's none). Actions are a typed, extensible list dispatched server-side; the one
-  type today is **`replaceWeapon` `{from, to}`** (swaps a mounted weapon id on the active `player_ships`
-  loadout). `level-2`'s briefing narrates the weapons-factory mission and swaps the basic gun (1) for the
-  **Machine Gun** (5); `level-3`'s briefing is text-only (tactical hint, no actions). After advancing, the
-  client reloads the active ship and rebuilds the player so the new loadout takes effect. (Future action
-  types: add credits, add to a stash, etc.)
+  types today are **`replaceWeapon` `{from, to}`** (swaps a mounted weapon id on the active `player_ships`
+  loadout) and **`installComponent` `{slot, component}`** (sets a component slot, e.g. `repair`, on the
+  active ship). `level-2`'s briefing narrates the weapons-factory mission and swaps the basic gun (1) for
+  the **Machine Gun** (5); `level-3`'s briefing narrates fitting the **repair drone** and installs it
+  (`installComponent` `repair` → 12). After advancing, the client reloads the active ship and rebuilds
+  the player so the new loadout/components take effect. (Future action types: add credits, add to a
+  stash, etc.)
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
   `levelRunner`. Three levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%
@@ -190,8 +201,8 @@ first translation). See DECISIONS §10.
   banks the earned credits** into `players.credits` (the persistent balance, default **1000** for new
   players, no FK), returning the new balance. `registerPlayer`/active-ship also return `credits`.
 - **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url`,
-  `components` JSON ref `{hull,engine,thruster}`), `components` (`name`, `type`
-  `hull`/`engine`/`thruster`, `weight`, `stats` JSON; stable ids) and `weapons` (`name`, `type`
+  `components` JSON ref `{hull,engine,thruster[,repair]}`), `components` (`name`, `type`
+  `hull`/`engine`/`thruster`/`repair`, `weight`, `stats` JSON; stable ids) and `weapons` (`name`, `type`
   `bullet`/`rocket`, `stats` JSON; stable ids), seeded from a shared snapshot
   (`server/src/catalog_seed.js`). **The client assembles all ships from these.**
 - **`player_ships`:** ships a player owns; exactly one `is_active` goes into battle. `loadout` JSON
@@ -205,7 +216,47 @@ first translation). See DECISIONS §10.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
-  `POST /api/players/:id/language`, `GET /api/maps/:name`, `GET /api/levels/:name`.
+  `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
+  `GET /api/levels/:name`, and the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
+  `POST /api/auth/resend-verification`, `GET /api/auth/me`, `GET /api/auth/verify`).
+
+### Accounts / authentication (DECISIONS §11)
+- **Anonymous-first, optional account.** Players keep the localStorage UUID and auto-register as
+  before. **After clearing level 1** the client prompts (once) for a **username** (display name) and
+  offers to **create an account**. Decline → keep playing as a guest (the username is still saved).
+  Accept → email + password **upgrade the same `players` row in place** (progress preserved).
+- **Identity:** `players.id` UUID stays the game identity; credentials attach to that row. **Login is
+  by email** (case-insensitive, stored lower-cased); the username is a non-unique display name.
+  Fresh-device login **adopts the account's player row** (the client swaps `localStorage.playerId`
+  and re-fetches level + active ship). Merging two anonymous progresses is out of scope (v1).
+- **Cross-device sync requires a verified email.** Until verified, the account works on the device it
+  was created on (session cookie) but can't be logged into elsewhere usefully; the UI shows a "verify
+  your email to sync" nudge with a resend button.
+- **Passwords:** built-in `crypto.scrypt` (N=16384, r=8, p=1, 64-byte key), per-user random salt,
+  `crypto.timingSafeEqual` compare — **no hashing dependency** (`server/src/auth.js`). Plaintext is
+  never stored or logged.
+- **Sessions:** a random token (`crypto.randomBytes(32).base64url`) in an **httpOnly, SameSite=Lax,
+  Path=/** cookie (Secure in prod; off when `NODE_ENV==='test'` for local http). The DB stores only
+  the token's **SHA-256 hash** in a `sessions` table (`token_hash` PK, `player_id`, `created_at`,
+  `expires_at`, `user_agent`; 30-day TTL). No `cookie-parser` — a tiny header parser in `auth.js`.
+- **Schema (migration 009 / Postgres bootstrap):** `players` gains `username`, `email`,
+  `password_hash`, `password_salt`, `email_verified`, `email_verify_token_hash`,
+  `email_verify_sent_at`; email uniqueness via a **partial unique index** (`WHERE email IS NOT NULL`,
+  since SQLite can't add a UNIQUE column). New `sessions` table (real FK on `player_id` in Postgres;
+  logical FK in SQLite).
+- **Email:** Amazon SES (`us-east-1`), outbound only, from `noreply@vega.tenony.com`, sent via
+  **hand-rolled AWS SigV4 over built-in `fetch`**, isolated in `server/src/ses.js` — **no `@aws-sdk`
+  dep**. Reads `SES_REGION`/`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`SES_FROM_ADDRESS`/
+  `APP_BASE_URL` from the server `.env`. **If creds are absent (local dev/tests) it no-ops**: logs the
+  verification link and records it to an in-memory `outbox` (which tests assert on). **SES has
+  production access** (granted 2026-06-21) — out of sandbox, so it can email arbitrary player addresses.
+- **Verification flow:** register/resend generates a token, stores its hash + `sent_at`, emails a
+  `/api/auth/verify?token=…` link; the route hashes + matches an unexpired token (24 h TTL), flips
+  `email_verified`, clears the token, and **redirects** to `/?verified=1` (the client shows a
+  confirmation). Resend is throttled per account by `email_verify_sent_at`.
+- **Rate limiting:** in-memory per-IP fixed-window limiter on register/login/resend (10/min); disabled
+  under the test suite. Input validation: email shape, password ≥ 8 chars → 400; bad creds → 401;
+  duplicate email → 409.
 - **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
   Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
   Migrations run on startup; `npm run migrate` runs them for the active backend.
@@ -249,20 +300,27 @@ first translation). See DECISIONS §10.
 
 ## Testable logic (extracted from index.html)
 - Pure, Three.js-free logic lives in `client/src/`: `components.js` (catalogs + `deriveDrive` +
-  `hitsToKill`), `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
-  `enemyThrustFactor`, `inForwardSector`), and `i18n.js` (`t`, `resolveLanguage`, `normalizeLang`,
-  `loadLanguage`). `index.html` imports and uses them.
+  `shipMass` + `hitsToKill` + `repairTick`), `steering.js` (`headingToDir`, `shortestAngleDelta`,
+  `steerToward`, `enemyThrustFactor`, `inForwardSector`), and `i18n.js` (`t`, `resolveLanguage`,
+  `normalizeLang`, `loadLanguage`). `index.html` imports and uses them.
 - Because the client now uses ES modules, it must be **served over http** (not opened as `file://`).
 - More of the simulation can be extracted incrementally (it's still tied to Three.js objects + the render loop).
 
 ## Tests (built-in `node:test`, no deps)
-- **Client logic** — `client/src/*.test.js` (22): drive derivation (engine + mass), balance, steering math,
+- **Client logic** — `client/src/*.test.js` (28): drive derivation (engine + mass), balance, repair-drone
+  regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (20): register / record game + credit banking / history /
+- **Backend API** — `server/src/server.test.js` (29): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
-  player progress (current level + advance) + language preference + credits balance + level briefing (weapon swap). Mounts the Express app on an ephemeral port against a temp SQLite DB
-  (`DB_PATH` env) — the real `game.db` is untouched. Run: `cd server && npm test`.
+  player progress (current level + advance) + language preference + credits balance + level briefings
+  (level-2 weapon swap, level-3 repair-drone install) + repair-drone component seed +
+  **auth** (username, register happy/duplicate-409/weak-400, login happy/wrong-401, `/me` authed vs 401,
+  logout clears the session, verify-token flips `email_verified`, cross-device login adopts progress).
+  Mounts the Express app on an ephemeral port against a temp SQLite DB (`DB_PATH` env, `NODE_ENV=test`)
+  — the real `game.db` is untouched; SES uses its no-creds outbox. Run: `cd server && npm test`.
+- **Auth unit** — `server/src/auth.test.js` (5): scrypt round-trip (right/wrong password), per-user
+  salt, token uniqueness + SHA-256 hashing, cookie-header parsing.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly), `db.js` honors `DB_PATH`.
 - **Visual / e2e** — `client/visual/` (Playwright headless, **not in CI**): boots the real game and

@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { SESSION_TTL_MS, VERIFY_TTL_MS } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DB path is configurable via DB_PATH (tests use a temp file); defaults to data/game.db.
@@ -99,11 +100,25 @@ function replaceActiveShipWeapon(playerId, fromId, toId) {
     .run(JSON.stringify(loadout), playerId);
 }
 
+// Install a component into a slot on the player's active ship (materializes the effective components
+// into the override with `slot` set to `componentId`). Idempotent: re-running sets the same slot.
+function installActiveShipComponent(playerId, slot, componentId) {
+  const row = db.prepare(`SELECT ps.components AS ps_components, s.components AS ship_components
+    FROM player_ships ps JOIN ships s ON s.id = ps.ship_id
+    WHERE ps.player_id = ? AND ps.is_active = 1 LIMIT 1`).get(playerId);
+  if (!row) return;
+  const components = JSON.parse(row.ps_components || row.ship_components || '{}');
+  components[slot] = componentId;
+  db.prepare('UPDATE player_ships SET components = ? WHERE player_id = ? AND is_active = 1')
+    .run(JSON.stringify(components), playerId);
+}
+
 // Run a level briefing's actions (server-authoritative, persistent). Extend the switch with new
 // action types as the game grows (e.g. addCredits, addToStash). Unknown types are ignored.
 function applyBriefingActions(playerId, actions) {
   for (const a of (actions || [])) {
     if (a.type === 'replaceWeapon') replaceActiveShipWeapon(playerId, a.from, a.to);
+    if (a.type === 'installComponent') installActiveShipComponent(playerId, a.slot, a.component);
   }
 }
 
@@ -189,6 +204,87 @@ export function getMap(name) {
 export function getLevel(name) {
   const row = db.prepare('SELECT name, descriptor FROM levels WHERE name = ?').get(name);
   return row ? { name: row.name, descriptor: JSON.parse(row.descriptor) } : null;
+}
+
+// ---------- Authentication (DECISIONS §11) ----------
+// Public player view: never includes password fields. `emailVerifySentAt` drives resend throttling.
+function playerSummary(r) {
+  if (!r) return null;
+  return {
+    id: r.id, username: r.username ?? null, email: r.email ?? null,
+    emailVerified: !!r.email_verified, currentProgress: r.current_progress,
+    credits: r.credits, gamesPlayed: r.games_played, language: r.language,
+    createdAt: r.created_at, emailVerifySentAt: r.email_verify_sent_at ?? null,
+  };
+}
+const PLAYER_COLS = 'id, username, email, email_verified, current_progress, credits, games_played, language, created_at, email_verify_sent_at';
+
+export function getPlayerPublic(id) {
+  return playerSummary(db.prepare(`SELECT ${PLAYER_COLS} FROM players WHERE id = ?`).get(id));
+}
+
+// Set the display name on a (possibly still anonymous) player.
+export function setUsername(playerId, username) {
+  registerPlayer(playerId);
+  db.prepare('UPDATE players SET username = ?, last_seen = ? WHERE id = ?').run(username, Date.now(), playerId);
+  return getPlayerPublic(playerId);
+}
+
+// Login lookup: the credential row for an email (or null). Carries the hash/salt for verifyPassword.
+export function findPlayerForLogin(email) {
+  return db.prepare('SELECT id, password_hash, password_salt FROM players WHERE email = ?').get(email) || null;
+}
+
+// True if `email` belongs to a different player (duplicate-email guard).
+export function emailInUse(email, exceptPlayerId) {
+  const r = db.prepare('SELECT id FROM players WHERE email = ?').get(email);
+  return !!(r && r.id !== exceptPlayerId);
+}
+
+// Attach credentials to an existing player row in place (progress preserved). Throws EMAIL_TAKEN
+// if the email already belongs to another player.
+export function registerAccount(playerId, { username, email, passwordHash, passwordSalt, verifyTokenHash, verifySentAt }) {
+  registerPlayer(playerId);
+  if (emailInUse(email, playerId)) { const e = new Error('email already in use'); e.code = 'EMAIL_TAKEN'; throw e; }
+  db.prepare(`UPDATE players SET username = ?, email = ?, password_hash = ?, password_salt = ?,
+      email_verified = 0, email_verify_token_hash = ?, email_verify_sent_at = ?, last_seen = ? WHERE id = ?`)
+    .run(username ?? null, email, passwordHash, passwordSalt, verifyTokenHash, verifySentAt, Date.now(), playerId);
+  return getPlayerPublic(playerId);
+}
+
+// Replace the email-verify token (resend flow).
+export function setVerifyToken(playerId, verifyTokenHash, verifySentAt) {
+  db.prepare('UPDATE players SET email_verify_token_hash = ?, email_verify_sent_at = ? WHERE id = ?')
+    .run(verifyTokenHash, verifySentAt, playerId);
+}
+
+// Consume a verify token: if it matches an unexpired token, flip email_verified and clear it.
+// Returns the player id on success, or null.
+export function verifyEmailToken(tokenHash) {
+  const minSentAt = Date.now() - VERIFY_TTL_MS;
+  const r = db.prepare('SELECT id FROM players WHERE email_verify_token_hash = ? AND email_verify_sent_at >= ?')
+    .get(tokenHash, minSentAt);
+  if (!r) return null;
+  db.prepare('UPDATE players SET email_verified = 1, email_verify_token_hash = NULL WHERE id = ?').run(r.id);
+  return r.id;
+}
+
+export function createSession(playerId, tokenHash, userAgent) {
+  const now = Date.now();
+  db.prepare('INSERT INTO sessions (token_hash, player_id, created_at, expires_at, user_agent) VALUES (?, ?, ?, ?, ?)')
+    .run(tokenHash, playerId, now, now + SESSION_TTL_MS, userAgent ?? null);
+}
+
+// The (unexpired) session's player, as a public summary, or null.
+export function getSessionPlayer(tokenHash) {
+  const cols = PLAYER_COLS.split(', ').map((c) => 'p.' + c).join(', ');
+  const r = db.prepare(`SELECT ${cols} FROM sessions s JOIN players p ON p.id = s.player_id
+    WHERE s.token_hash = ? AND s.expires_at > ?`).get(tokenHash, Date.now());
+  return playerSummary(r);
+}
+
+export function deleteSession(tokenHash) {
+  db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
 }
 
 // The player's active ship: the ship template + the effective loadout (explicit loadout falls

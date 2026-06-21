@@ -294,10 +294,10 @@ player row in place (progress preserved). Cross-device **progress sync requires 
     (`server/src/ses.js`) — **no `@aws-sdk` dependency for now**, keeping the built-in-only ethos.
     **Future:** if SigV4-by-hand becomes a maintenance burden (more AWS calls, signing edge cases), we
     may add `@aws-sdk/client-ses` — the isolated module is the single swap point.
-  - **⚠️ SES is in sandbox** (`ProductionAccessEnabled: false`, 200/day, verified recipients only).
-    Dev/test works against verified addresses; **production access must be requested before public
-    launch** (account-level AWS request, ~24 h; the account is shared with the TendNook/Salesforce
-    project).
+  - **✅ SES production access granted** (2026-06-21) — the account is out of sandbox, so verification
+    emails can be sent to arbitrary player addresses (no per-recipient verification). Production access
+    is account-level (shared with the TendNook/Salesforce project). Dev/test still works without creds
+    (the `ses.js` no-creds path logs/records the link).
 
 **Sequencing.** Like i18n, this adds a migration and touches `server.js` + `client/index.html` — land it
 relative to the other in-flight features deliberately and coordinate migration numbers (don't let two
@@ -347,6 +347,52 @@ also reloads the active ship so the swap is visible.
 
 **Side fix:** `buildPlayerFor` now uses the active ship's **persisted loadout/components** (it previously
 always used catalog defaults), which is what makes a stored weapon swap actually take effect in-game.
+
+---
+
+## 14. Asset management (ship/weapon models)
+
+**Split source from runtime.**
+- **Runtime, committed:** only web-optimized `.glb` in `client/assets/<kind>/` (KB-scale). Served
+  statically by Express, referenced from the DB by `model_url` (e.g. `assets/ships/player.glb`). The 5
+  in-use ships (`player/fighter/rocketeer/heavy/boss.glb`) are 11–28 KB.
+- **Source/heavy, NOT committed:** Blender files, downloaded packs, high-poly / 4k-texture originals go
+  in `client/assets/**/_source/` — **gitignored**, local-only. Keep your own backup; they're not
+  versioned (too big — would bloat git history forever). Moved the 7–31 MB originals
+  (`lowpoly_spaceships`, `spaceship_colaid1_50k*`) there out of the served `ships/` dir.
+
+**Why:** top-down arena game, ships are tiny on screen; 50k-poly / 4k-texture models (7–31 MB) are
+overkill and kill browser load. Budgets: ~1–5k tris, textures ≤512–1024 px, file size tens of KB. Run
+source → runtime through `gltf-transform` / `gltfpack` (Draco/meshopt + texture downscale) before
+committing the runtime `.glb`.
+
+**`model_url` indirection stays** — the DB points at a path/URL, so swapping/relocating a model is a
+data change, not code. **Scale path:** when assets grow, host runtime `.glb` on **S3 + CloudFront** (AWS
+account already in use) and point `model_url` at the CDN — deploys stop carrying asset weight, cache is
+effectively permanent. `model_url` already accepts absolute URLs.
+
+**Licensing:** every third-party asset's source + license goes in `client/assets/CREDITS.md` (packs in
+`_source/` need their license verified before any runtime use).
+
+**LOD per ship — combat (low) vs hangar (high).** A ship can carry two models: the tiny combat `.glb`
+(`model_url`, loaded at game start) and an optional detailed hangar `.glb` (`model_url_high`, **lazy-
+loaded only when the hangar opens**). Rendering one hi-poly hero model up close is no problem for
+Three.js (the bottleneck is download size, not draw calls) — so the detailed model can be 100k+ tris
+with PBR/IBL in the hangar, while combat stays minimal. Even the "detailed" model is optimized
+(`gltf-transform` meshopt/Draco + KTX2 textures → ~1–4 MB, not the raw 7–31 MB originals).
+
+**Heavy/hangar models are delivered via S3 + CloudFront, not git/deploy.** This is the first real use of
+the CDN path: high-detail `.glb` are uploaded to an S3 bucket (`vega-sentinels-assets`, us-east-1) and
+served through a CloudFront distribution (private bucket + Origin Access Control; CORS allows the app
+origin). `model_url_high` points at the CloudFront URL. The app repo/deploy never carries these files;
+cache is effectively permanent. The tiny combat `.glb` stay committed in `client/assets/` as before.
+
+**Live CDN coordinates (provisioned):** bucket `vega-sentinels-assets` (us-east-1, public access
+blocked) → CloudFront `d1843uwjdjg4vs.cloudfront.net` (distribution `E10277HTPK8ESK`, OAC
+`E1V1952Q4QWOXJ`, cache policy CachingOptimized, origin-request CORS-S3Origin). Upload:
+`aws s3 cp model.glb s3://vega-sentinels-assets/ships/<name>_hangar.glb` → URL
+`https://d1843uwjdjg4vs.cloudfront.net/ships/<name>_hangar.glb`. A custom domain
+(e.g. `cdn.vega.tenony.com` via ACM) can be added later.
 
 ---
 

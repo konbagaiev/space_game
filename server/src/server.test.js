@@ -7,8 +7,10 @@ import fs from 'node:fs';
 // Use a throwaway temp database (must be set before importing the server/db).
 const dbPath = path.join(os.tmpdir(), `spacegame-test-${process.pid}-${Date.now()}.db`);
 process.env.DB_PATH = dbPath;
+process.env.NODE_ENV = 'test'; // non-Secure cookies so local-http tests can read/replay them
 
 const { createApp } = await import('./server.js');
+const { outbox } = await import('./ses.js');
 const app = await createApp();
 const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
 const base = `http://localhost:${server.address().port}`;
@@ -20,9 +22,19 @@ after(() => {
   }
 });
 
-const post = (p, body) =>
-  fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const post = (p, body, headers = {}) =>
+  fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 const getJson = async (p) => (await fetch(base + p)).json();
+
+// Pull the raw `session` cookie value out of a response's Set-Cookie header(s).
+function sessionCookie(res) {
+  for (const c of (res.headers.getSetCookie?.() || [])) {
+    const m = /^session=([^;]*)/.exec(c);
+    if (m) return m[1];
+  }
+  return null;
+}
+const authHeader = (token) => (token ? { Cookie: `session=${token}` } : {});
 
 test('register: new player is created', async () => {
   const r = await post('/api/players/register', { playerId: 'p1' });
@@ -107,10 +119,14 @@ test('briefing: advancing into level-2 returns its message and swaps the basic g
   assert.equal(after.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3);
   assert.ok(!after.loadout.mounts.some((m) => m.weapon === 1), 'no basic kinetic remains');
 
-  // advancing to level-3 returns its (action-less) briefing
+  // advancing to level-3 returns its briefing and installs the repair drone on the active ship
   const adv2 = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv2.advanced, true);
   assert.equal(adv2.briefing.textKey, 'level.3.briefing');
+  const l3ship = await getJson('/api/players/brief-1/active-ship');
+  assert.equal(l3ship.components.repair, 12); // repair drone installed into the 'repair' slot
+  assert.equal(l3ship.components.hull, 1);    // existing slots untouched
+  assert.equal(l3ship.components.engine, 5);
 
   // already at the last level → no advance, no briefing
   const adv3 = await (await post('/api/players/brief-1/advance', {})).json();
@@ -221,9 +237,14 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(boss.stats.reward, 200);
 });
 
-test('catalog: components (hulls + engines + thrusters) are seeded', async () => {
+test('catalog: components (hulls + engines + thrusters + repair drone) are seeded', async () => {
   const comps = await getJson('/api/components');
-  assert.equal(comps.length, 11); // 4 hulls + 3 engines + 4 thrusters
+  assert.equal(comps.length, 12); // 4 hulls + 3 engines + 4 thrusters + 1 repair drone
+  const drone = comps.find((c) => c.name === 'Repair drone');
+  assert.equal(drone.id, 12);
+  assert.equal(drone.type, 'repair');
+  assert.equal(drone.weight, 4);
+  assert.deepEqual(drone.stats, { repairPerTick: 1, intervalSec: 3, maxFraction: 0.8 });
   const light = comps.find((c) => c.name === 'Light hull');
   assert.equal(light.type, 'hull');
   assert.equal(light.weight, 8);
@@ -289,6 +310,110 @@ test('maps: home-system descriptor is served', async () => {
   assert.equal(map.descriptor.moons.length, 2);
   const missing = await fetch(base + '/api/maps/nope');
   assert.equal(missing.status, 404);
+});
+
+// ---------- Authentication (DECISIONS §11) ----------
+
+test('username: set a display name on a (still anonymous) player', async () => {
+  const r = await post('/api/players/name-1/username', { username: 'Ace' });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).username, 'Ace');
+  // re-register shows the player row is unchanged otherwise (still anonymous: no email)
+  const me = (await (await post('/api/players/register', { playerId: 'name-1' })).json());
+  assert.equal(me.id, 'name-1');
+});
+
+test('username: empty/too-long -> 400', async () => {
+  assert.equal((await post('/api/players/name-2/username', { username: '   ' })).status, 400);
+  assert.equal((await post('/api/players/name-2/username', { username: 'x'.repeat(33) })).status, 400);
+});
+
+test('register: upgrades an anonymous player in place, preserves progress, sends a verify email, logs in', async () => {
+  // build an anonymous player with some progress first
+  await post('/api/players/acc-1/advance', {}); // -> level-2
+  const before = await (await post('/api/players/register', { playerId: 'acc-1' })).json();
+  assert.equal(before.currentProgress, 2);
+
+  const r = await post('/api/auth/register', { playerId: 'acc-1', username: 'Neo', email: 'Neo@Example.com', password: 'hunter2hunter' });
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  assert.equal(j.email, 'neo@example.com');   // normalized lower-case
+  assert.equal(j.username, 'Neo');
+  assert.equal(j.emailVerified, false);
+  assert.equal(j.currentProgress, 2);          // progress preserved through the upgrade
+  assert.ok(sessionCookie(r), 'a session cookie is set on register');
+  // a verification email was "sent" (no-creds dev path records it to the outbox)
+  const sent = outbox.at(-1);
+  assert.equal(sent.to, 'neo@example.com');
+  assert.match(sent.verifyUrl, /\/api\/auth\/verify\?token=/);
+});
+
+test('register: duplicate email -> 409', async () => {
+  await post('/api/auth/register', { playerId: 'dup-a', email: 'dup@example.com', password: 'password123' });
+  const r = await post('/api/auth/register', { playerId: 'dup-b', email: 'dup@example.com', password: 'password123' });
+  assert.equal(r.status, 409);
+});
+
+test('register: weak password -> 400, bad email -> 400', async () => {
+  assert.equal((await post('/api/auth/register', { playerId: 'weak-1', email: 'a@b.com', password: 'short' })).status, 400);
+  assert.equal((await post('/api/auth/register', { playerId: 'weak-2', email: 'not-an-email', password: 'password123' })).status, 400);
+});
+
+test('login: correct password opens a session; wrong password -> 401', async () => {
+  await post('/api/auth/register', { playerId: 'login-1', email: 'login@example.com', password: 'password123' });
+  const ok = await post('/api/auth/login', { email: 'login@example.com', password: 'password123' });
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).id, 'login-1'); // login returns the account's player row
+  assert.ok(sessionCookie(ok));
+
+  const bad = await post('/api/auth/login', { email: 'login@example.com', password: 'wrongpass1' });
+  assert.equal(bad.status, 401);
+  // login is by lower-cased email (case-insensitive)
+  assert.equal((await post('/api/auth/login', { email: 'LOGIN@example.com', password: 'password123' })).status, 200);
+});
+
+test('me: authed returns the player; no cookie -> 401; after logout -> 401', async () => {
+  const reg = await post('/api/auth/register', { playerId: 'me-1', email: 'me@example.com', password: 'password123' });
+  const token = sessionCookie(reg);
+
+  const me = await fetch(base + '/api/auth/me', { headers: authHeader(token) });
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).id, 'me-1');
+
+  assert.equal((await fetch(base + '/api/auth/me')).status, 401); // no cookie
+
+  const out = await post('/api/auth/logout', {}, authHeader(token));
+  assert.equal(out.status, 200);
+  assert.equal((await fetch(base + '/api/auth/me', { headers: authHeader(token) })).status, 401); // session gone
+});
+
+test('verify: the email link flips email_verified', async () => {
+  const reg = await post('/api/auth/register', { playerId: 'verify-1', email: 'verify@example.com', password: 'password123' });
+  const token = sessionCookie(reg);
+  assert.equal((await (await fetch(base + '/api/auth/me', { headers: authHeader(token) })).json()).emailVerified, false);
+
+  // pull the raw verify token out of the outbox link and hit the verify route
+  const url = new URL(outbox.at(-1).verifyUrl);
+  const verifyToken = url.searchParams.get('token');
+  const v = await fetch(base + `/api/auth/verify?token=${encodeURIComponent(verifyToken)}`, { redirect: 'manual' });
+  assert.ok(v.status >= 300 && v.status < 400);
+  assert.match(v.headers.get('location'), /verified=1/);
+
+  assert.equal((await (await fetch(base + '/api/auth/me', { headers: authHeader(token) })).json()).emailVerified, true);
+
+  // a bad token redirects with verified=0
+  const bad = await fetch(base + '/api/auth/verify?token=nope', { redirect: 'manual' });
+  assert.match(bad.headers.get('location'), /verified=0/);
+});
+
+test('cross-device: a second client can log in and adopt the same progress', async () => {
+  await post('/api/players/sync-1/advance', {}); // sync-1 -> level-2
+  await post('/api/auth/register', { playerId: 'sync-1', email: 'sync@example.com', password: 'password123' });
+  // a "fresh device" logs in by email and gets the account's player row + progress
+  const login = await post('/api/auth/login', { email: 'sync@example.com', password: 'password123' });
+  const j = await login.json();
+  assert.equal(j.id, 'sync-1');
+  assert.equal(j.currentProgress, 2);
 });
 
 test('active ship: a new player gets a default active ship (empty loadout -> ship mounts)', async () => {

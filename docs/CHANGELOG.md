@@ -3,8 +3,62 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-21
+
+- **Repair drone (4th component type).** Added a `repair`-type component (`Repair drone`, id 12: heal
+  1 HP every 3 s, capped at 80% of max HP, weight 4) that passively repairs the hull during combat.
+  Installed on the player's ship via the **level-3 briefing** (new server action `installComponent`
+  `{slot, component}`, applied once on advance, persisted in `player_ships.components` — mirrored in
+  SQLite + Postgres). Level-3 briefing copy (EN + RU) rewritten to narrate the drone (was a machine-gun
+  tactical hint); key `level.3.briefing` unchanged. Client: new pure `repairTick` helper in
+  `components.js` (per-interval heal, multi-tick, 80% cap, banked-time cleared when topped up),
+  `shipMass` now counts the `repair` slot, the player build stashes `player.repair` + `_repairAccum`,
+  and the game loop ticks it during live combat only. No DB migration (uses the existing
+  `player_ships.components`). Tests: updated the level-3 briefing + components-catalog server tests;
+  added 6 `repairTick`/mass client tests. Docs: SUMMARY updated.
+- **SES production access granted.** Amazon SES (us-east-1, account `140065018525`) is out of sandbox,
+  so account-verification emails can be sent to arbitrary player addresses (no per-recipient
+  verification, no 200/day sandbox cap). Updated DECISIONS §11, SUMMARY, and the AWS brief
+  (`docs/plans/aws-ses-production-request.md` item #1 → done). No code change — `ses.js` already sends
+  via SigV4 when creds are present.
+- **Player accounts (anonymous-first, optional email/password).** Added an optional account that
+  upgrades the existing anonymous player row in place (progress preserved). After clearing level 1 the
+  client prompts once for a **username** + offers to **create an account** (decline → keep playing as a
+  guest with the username saved). Login is by email; a small account bar on the menu screens shows the
+  signed-in identity, a "verify your email to sync across devices" nudge + resend, and log out.
+  - **Server (no new deps):** new `server/src/auth.js` (scrypt password hashing with per-user salt +
+    `timingSafeEqual`, random session tokens stored as SHA-256 hashes, a tiny cookie parser, httpOnly
+    `Secure` `SameSite=Lax` cookie helpers, a `requireAuth` middleware) and `server/src/ses.js` (Amazon
+    SES send via **hand-rolled AWS SigV4 over built-in `fetch`** — no `@aws-sdk`; no-ops + logs/records
+    the link to an `outbox` when creds are absent). New endpoints: `POST /api/players/:id/username`,
+    `POST /api/auth/register|login|logout|resend-verification`, `GET /api/auth/me|verify`. In-memory
+    per-IP rate limiting on register/login/resend; 400/401/409 validation.
+  - **Schema (migration 009 + Postgres bootstrap):** `players` gains `username`, `email`,
+    `password_hash`, `password_salt`, `email_verified`, `email_verify_token_hash`,
+    `email_verify_sent_at` (email uniqueness via a partial unique index); new `sessions` table.
+  - **Client:** account dialog (prompt / register / login modes) + status bar, `credentials:'include'`
+    on auth calls, boots via `GET /api/auth/me` (prefers a session over the local UUID), adopts the
+    account's player id on login and reloads progress + active ship, handles the `?verified=1` return.
+    Added `ui.account.*` strings to `locales/source.json` (+ `ru.json`).
+  - **Email verification** generates a hashed, 24 h token and emails a `/api/auth/verify` link that
+    flips `email_verified` and redirects back into the game; resend throttled by `email_verify_sent_at`.
+  - **Tests:** `server/src/auth.test.js` (5, scrypt/token/cookie units) + 9 new server integration
+    tests (register/login/me/logout/verify/username/cross-device); SES stubbed via its no-creds outbox.
+  - **Docs:** SUMMARY gains an "Accounts / authentication" subsection. DECISIONS §11 unchanged (the
+    build follows it). AWS-side SES production access + DKIM/IAM setup remain a launch prerequisite
+    (`docs/plans/aws-ses-production-request.md`).
+- **Extracted enemy ship models.** Split the multi-model `client/assets/ships/lowpoly_spaceships.glb`
+  (a Sketchfab export, 4 ships + a stray cylinder) into separate files `enemy_1.glb`..`enemy_4.glb` via
+  gltf-transform (per-model prune + dedup; no textures, colored materials only). Verified each loads in
+  Three.js `GLTFLoader` with valid geometry. **Not yet wired to any ship** (no `model_url` references them).
+
 ## 2026-06-20
 
+- **Landing screen reflects the current level (Hangar as homepage).** On load the client now lands on the
+  **Hangar** showing the **current level's briefing** when it has one (so a player who's reached level 3
+  sees the level-3 briefing on refresh, not the level-1 welcome intro). New players / level-1 (no briefing)
+  still get the welcome screen + ship picker. The Hangar's **Take off** now also starts the loop on first
+  launch (`launchFromHangar`: sets `gameStarted`, mobile fullscreen, clears the menu overlay).
 - **Hangar screen + victory "Continue".** A win now shows a **Continue** button (a loss still shows
   **Restart**/retry) that opens a new **Hangar screen** — the between-battles screen (future home for ship
   management). For now it shows the next mission's briefing in large 2× text with a **Take off** button to

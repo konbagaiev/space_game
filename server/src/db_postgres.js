@@ -1,6 +1,7 @@
 // PostgreSQL data layer (used in production when DATABASE_URL is set).
 // Same API as the SQLite layer (db.js), but async. Connects to the shared Postgres.
 import pg from 'pg';
+import { SESSION_TTL_MS, VERIFY_TTL_MS } from './auth.js';
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -84,6 +85,29 @@ export async function migrate() {
     -- levels table exists; defaults to 1 (level-1). On an existing DB the levels rows
     -- already exist from prior startups, so the FK default validates.
     ALTER TABLE players ADD COLUMN IF NOT EXISTS current_progress INTEGER NOT NULL DEFAULT 1 REFERENCES levels(id);
+
+    -- authentication (DECISIONS §11): optional email/password credentials attached in place to the
+    -- anonymous players row. Username is a non-unique display name; login is by email. Passwords are
+    -- scrypt-hashed (auth.js). Email uniqueness via a partial unique index (NULLs excluded).
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS username TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS password_hash TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS password_salt TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS email_verified INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS email_verify_token_hash TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS email_verify_sent_at BIGINT;
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_players_email ON players(email) WHERE email IS NOT NULL;
+
+    -- server-side sessions: the cookie holds the raw token, the DB stores only its SHA-256 hash
+    -- (a DB leak doesn't expose live sessions). Real FK on player_id here (Postgres path).
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT   PRIMARY KEY,
+      player_id  TEXT   NOT NULL REFERENCES players(id),
+      created_at BIGINT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      user_agent TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_player ON sessions(player_id);
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
@@ -177,10 +201,23 @@ async function replaceActiveShipWeapon(playerId, fromId, toId) {
     [JSON.stringify(loadout), playerId]);
 }
 
+// Install a component into a slot on the player's active ship (idempotent; sets components[slot]).
+async function installActiveShipComponent(playerId, slot, componentId) {
+  const { rows } = await pool.query(`SELECT ps.components AS ps_components, s.components AS ship_components
+    FROM player_ships ps JOIN ships s ON s.id = ps.ship_id
+    WHERE ps.player_id = $1 AND ps.is_active LIMIT 1`, [playerId]);
+  if (!rows[0]) return;
+  const components = rows[0].ps_components || rows[0].ship_components || {}; // JSONB → already parsed
+  components[slot] = componentId;
+  await pool.query('UPDATE player_ships SET components = $1::jsonb WHERE player_id = $2 AND is_active',
+    [JSON.stringify(components), playerId]);
+}
+
 // Run a level briefing's actions (extend with new action types as the game grows).
 async function applyBriefingActions(playerId, actions) {
   for (const a of (actions || [])) {
     if (a.type === 'replaceWeapon') await replaceActiveShipWeapon(playerId, a.from, a.to);
+    if (a.type === 'installComponent') await installActiveShipComponent(playerId, a.slot, a.component);
   }
 }
 
@@ -264,6 +301,82 @@ export async function getMap(name) {
 export async function getLevel(name) {
   const { rows } = await pool.query('SELECT name, descriptor FROM levels WHERE name = $1', [name]);
   return rows[0] ? { name: rows[0].name, descriptor: rows[0].descriptor } : null;
+}
+
+// ---------- Authentication (DECISIONS §11) ----------
+// Public player view: never includes password fields. BIGINT columns come back as strings → Number().
+function playerSummary(r) {
+  if (!r) return null;
+  return {
+    id: r.id, username: r.username ?? null, email: r.email ?? null,
+    emailVerified: !!r.email_verified, currentProgress: r.current_progress,
+    credits: r.credits, gamesPlayed: r.games_played, language: r.language,
+    createdAt: Number(r.created_at),
+    emailVerifySentAt: r.email_verify_sent_at != null ? Number(r.email_verify_sent_at) : null,
+  };
+}
+const PLAYER_COLS = 'id, username, email, email_verified, current_progress, credits, games_played, language, created_at, email_verify_sent_at';
+
+export async function getPlayerPublic(id) {
+  const { rows } = await pool.query(`SELECT ${PLAYER_COLS} FROM players WHERE id = $1`, [id]);
+  return playerSummary(rows[0]);
+}
+
+export async function setUsername(playerId, username) {
+  await registerPlayer(playerId);
+  await pool.query('UPDATE players SET username = $1, last_seen = $2 WHERE id = $3', [username, Date.now(), playerId]);
+  return getPlayerPublic(playerId);
+}
+
+export async function findPlayerForLogin(email) {
+  const { rows } = await pool.query('SELECT id, password_hash, password_salt FROM players WHERE email = $1', [email]);
+  return rows[0] || null;
+}
+
+export async function emailInUse(email, exceptPlayerId) {
+  const { rows } = await pool.query('SELECT id FROM players WHERE email = $1', [email]);
+  return !!(rows[0] && rows[0].id !== exceptPlayerId);
+}
+
+export async function registerAccount(playerId, { username, email, passwordHash, passwordSalt, verifyTokenHash, verifySentAt }) {
+  await registerPlayer(playerId);
+  if (await emailInUse(email, playerId)) { const e = new Error('email already in use'); e.code = 'EMAIL_TAKEN'; throw e; }
+  await pool.query(`UPDATE players SET username = $1, email = $2, password_hash = $3, password_salt = $4,
+      email_verified = 0, email_verify_token_hash = $5, email_verify_sent_at = $6, last_seen = $7 WHERE id = $8`,
+    [username ?? null, email, passwordHash, passwordSalt, verifyTokenHash, verifySentAt, Date.now(), playerId]);
+  return getPlayerPublic(playerId);
+}
+
+export async function setVerifyToken(playerId, verifyTokenHash, verifySentAt) {
+  await pool.query('UPDATE players SET email_verify_token_hash = $1, email_verify_sent_at = $2 WHERE id = $3',
+    [verifyTokenHash, verifySentAt, playerId]);
+}
+
+export async function verifyEmailToken(tokenHash) {
+  const minSentAt = Date.now() - VERIFY_TTL_MS;
+  const { rows } = await pool.query(
+    'SELECT id FROM players WHERE email_verify_token_hash = $1 AND email_verify_sent_at >= $2', [tokenHash, minSentAt]);
+  if (!rows[0]) return null;
+  await pool.query('UPDATE players SET email_verified = 1, email_verify_token_hash = NULL WHERE id = $1', [rows[0].id]);
+  return rows[0].id;
+}
+
+export async function createSession(playerId, tokenHash, userAgent) {
+  const now = Date.now();
+  await pool.query(
+    'INSERT INTO sessions (token_hash, player_id, created_at, expires_at, user_agent) VALUES ($1, $2, $3, $4, $5)',
+    [tokenHash, playerId, now, now + SESSION_TTL_MS, userAgent ?? null]);
+}
+
+export async function getSessionPlayer(tokenHash) {
+  const cols = PLAYER_COLS.split(', ').map((c) => 'p.' + c).join(', ');
+  const { rows } = await pool.query(`SELECT ${cols} FROM sessions s JOIN players p ON p.id = s.player_id
+    WHERE s.token_hash = $1 AND s.expires_at > $2`, [tokenHash, Date.now()]);
+  return playerSummary(rows[0]);
+}
+
+export async function deleteSession(tokenHash) {
+  await pool.query('DELETE FROM sessions WHERE token_hash = $1', [tokenHash]);
 }
 
 // The player's active ship: ship template + effective loadout (loadout falls back to ship defaults).

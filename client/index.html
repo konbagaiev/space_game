@@ -83,6 +83,52 @@
   #takeoff:hover, #hangar-go:hover { filter: brightness(1.08); }
   /* hide the in-game HUD while the welcome screen is up */
   body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers { display: none; }
+  /* Account dialog (login / register / post-level-1 name prompt) */
+  #account {
+    position: fixed; inset: 0; z-index: 14; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(5,6,13,.86); color: #e8f1ff;
+    font-family: system-ui, sans-serif; text-align: center; padding: 24px;
+  }
+  #account .account-box {
+    width: 380px; max-width: 92vw; background: rgba(18,26,46,.94);
+    border: 1px solid rgba(120,150,210,.3); border-radius: 14px; padding: 26px 24px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  }
+  #account h1 { font-size: 26px; margin-bottom: 10px; }
+  #account .intro { opacity: .82; font-size: 14px; line-height: 1.5; margin-bottom: 16px; }
+  #account input {
+    width: 100%; box-sizing: border-box; margin: 7px 0; padding: 11px 13px;
+    font: inherit; font-size: 15px; color: #eaf2ff;
+    background: rgba(8,12,22,.85); border: 1px solid rgba(120,150,210,.35); border-radius: 8px;
+  }
+  #account input:focus { outline: none; border-color: #5b86e5; }
+  #account .err { color: #ff9a8a; font-size: 13px; min-height: 17px; margin: 4px 0 0; }
+  #account .account-actions { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; }
+  #account button {
+    pointer-events: auto; cursor: pointer; width: 100%;
+    padding: 12px 18px; font: inherit; font-size: 15px; font-weight: 700; border: 0; border-radius: 9px;
+    background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f;
+  }
+  #account button.ghost {
+    background: transparent; color: #9fb6e6; font-weight: 600; border: 1px solid rgba(120,150,210,.3);
+  }
+  #account button:hover { filter: brightness(1.06); }
+  /* Account status bar (top-left, on menu screens only) */
+  #account-bar {
+    position: fixed; top: 18px; left: 18px; z-index: 13; display: none;
+    font-family: system-ui, sans-serif; font-size: 13px; color: #cfe0ff;
+    background: rgba(10,16,30,.6); border: 1px solid rgba(120,150,210,.25);
+    border-radius: 9px; padding: 8px 12px; max-width: 340px; text-align: left; line-height: 1.5;
+  }
+  body.menu #account-bar { display: block; }
+  #account-bar button {
+    pointer-events: auto; cursor: pointer; font: inherit; font-size: 12px; color: #cfe0ff;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.28);
+    border-radius: 7px; padding: 4px 9px; margin: 5px 6px 0 0;
+  }
+  #account-bar .verify-nudge { color: #ffd27a; display: block; margin-top: 4px; }
+  #account-bar .verified-ok { color: #9fe8b0; display: block; margin-top: 4px; }
   /* Perf overlay (load) */
   /* Game title (wordmark), centered at the very top */
   #gametitle {
@@ -182,6 +228,24 @@
   <p class="intro" id="hangar-text"></p>
   <button id="hangar-go" data-i18n="ui.button.take_off">Take off 🚀</button>
 </div>
+<div id="account-bar"></div>
+<div id="account">
+  <div class="account-box">
+    <h1 id="account-title">Account</h1>
+    <p class="intro" id="account-msg"></p>
+    <input id="account-username" type="text" maxlength="32" autocomplete="nickname" />
+    <div id="account-creds">
+      <input id="account-email" type="email" autocomplete="email" />
+      <input id="account-password" type="password" autocomplete="current-password" />
+    </div>
+    <p class="err" id="account-err"></p>
+    <div class="account-actions">
+      <button id="account-primary"></button>
+      <button id="account-secondary" class="ghost"></button>
+      <button id="account-close" class="ghost" data-i18n="ui.account.close">Close</button>
+    </div>
+  </div>
+</div>
 <div id="gametitle" data-i18n="ui.title">Vega Sentinels</div>
 <div id="markers"></div>
 <div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
@@ -205,7 +269,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { deriveDrive } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
+import { deriveDrive, repairTick } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
 
@@ -737,11 +801,11 @@ const CATALOG = {
   level: null,           // the active level descriptor (phase/wave script)
 };
 const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
-// Resolve a ship's component refs ({ hull, engine, thruster }) to objects (stats + weight).
+// Resolve a ship's component refs ({ hull, engine, thruster, repair }) to objects (stats + weight).
 function resolveComponents(refs) {
   const r = refs || {};
   const get = (id) => { const c = CATALOG.components.get(id); return c ? { name: c.name, weight: c.weight, ...c.stats } : null; };
-  return { hull: get(r.hull), engine: get(r.engine), thruster: get(r.thruster) };
+  return { hull: get(r.hull), engine: get(r.engine), thruster: get(r.thruster), repair: get(r.repair) };
 }
 
 // ---------- Player (built from the player's active ship in bootstrap) ----------
@@ -767,13 +831,14 @@ function buildGroups(groupDefs, mounts) {
 
 function buildPlayer(active) {
   const s = active.ship.stats;
-  const { hull, engine, thruster } = resolveComponents(active.components); // effective hull + engine + thrusters
+  const { hull, engine, thruster, repair } = resolveComponents(active.components); // hull + engine + thrusters + repair drone
   const p = {
     mesh: makeShip(s.color, modelSpec(active.ship.modelUrl)),
     vel: new THREE.Vector3(),
     heading: 0,                       // rotation angle around Y
     sizeScale: s.sizeScale || 1,
-    hull, engine, thruster,
+    hull, engine, thruster, repair,   // `repair` is the repair-drone stats (or null); feeds mass + repairTick
+    _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
     mounts: buildMounts(active.loadout.mounts), // resolved weapons; also feeds ship mass
     hp: hull.durability, maxHp: hull.durability,
     alive: true,
@@ -1044,7 +1109,8 @@ if (isTouch) {
 // Identify the player by a browser-generated id kept in localStorage (auto-register).
 // All calls are best-effort: if the backend isn't running (e.g. opened via file://),
 // they fail silently and the game still works. Served same-origin -> relative /api URLs.
-const playerId = (() => {
+// `let` (not const): an account login can adopt the account's player id (cross-device sync).
+let playerId = (() => {
   try {
     let id = localStorage.getItem('playerId');
     if (!id) { id = crypto.randomUUID(); localStorage.setItem('playerId', id); }
@@ -1151,6 +1217,12 @@ const clock = new THREE.Clock();
 
 function update(dt) {
   if (!gameStarted || !player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
+
+  // --- repair drone: passive hull regen, capped at a fraction of max HP (no-op without a drone) ---
+  if (player.repair) {
+    const r = repairTick(player.hp, player.maxHp, player.repair, dt, player._repairAccum);
+    player.hp = r.hp; player._repairAccum = r.accum;
+  }
 
   const eng = player.engine;         // main engine (for exhaust)
   const accel = player.acceleration; // derived: acceleration <- main engine power
@@ -1514,6 +1586,7 @@ function reset() {
   player.vel.set(0, 0, 0);
   player.heading = 0;
   player.hp = player.maxHp;
+  player._repairAccum = 0; // fresh run: clear banked repair-drone time
   for (const g of Object.values(player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   player.alive = true;
   earned = 0; kills = 0; banked = false; // new run: reset session credits + the bank-once guard (balance persists)
@@ -1523,25 +1596,39 @@ function reset() {
 }
 // Leaving the result overlay: a win goes to the Hangar (next-mission briefing + launch); a loss
 // retries the level immediately. The Hangar shows the pending briefing, or a default standby line.
+// The Hangar = the between-battles / landing screen. Shows the given level briefing (or a default
+// standby line) and launches the current level. Used both on page load (homepage for the current
+// level) and after a victory (next mission). `briefing` is { textKey, text } or null.
 const hangarEl = document.getElementById('hangar');
-function showHangar() {
-  const text = pendingBriefing
-    ? (pendingBriefing.textKey ? t(pendingBriefing.textKey) : (pendingBriefing.text || ''))
+function showHangar(briefing) {
+  const text = briefing
+    ? (briefing.textKey ? t(briefing.textKey) : (briefing.text || ''))
     : t('ui.hangar.default');
   document.getElementById('hangar-text').textContent = text;
   overlay.style.display = 'none';
+  renderAccountBar();
+  document.body.classList.add('menu'); // hide the in-game HUD behind the Hangar
   hangarEl.style.display = 'flex';
 }
+function launchFromHangar() {
+  pendingBriefing = null;
+  if (isTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
+  hangarEl.style.display = 'none';
+  document.body.classList.remove('menu');    // restore the in-game HUD
+  gameStarted = true;                        // first launch from the landing Hangar starts the loop
+  reset();                                   // (re)start the current level
+}
 function leaveOverlay() {
-  if (levelRunner.won) { showHangar(); return; } // victory → Hangar; loss → straight retry
-  reset();
+  if (levelRunner.won) {
+    // After clearing level 1, prompt once for a username + optional account (DECISIONS §11), then
+    // continue to the Hangar. Otherwise (or once prompted/registered) go straight to the Hangar.
+    if (shouldPromptAccount()) { openAccount('prompt', { after: () => showHangar(pendingBriefing) }); return; }
+    showHangar(pendingBriefing); return; // victory → Hangar
+  }
+  reset(); // loss → straight retry
 }
 elRestart.addEventListener('click', leaveOverlay);
-document.getElementById('hangar-go').addEventListener('click', () => {
-  pendingBriefing = null;
-  hangarEl.style.display = 'none';
-  reset();
-});
+document.getElementById('hangar-go').addEventListener('click', launchFromHangar);
 
 // Test/inspection hook for the headless visual tests (client/visual/). Inert during normal
 // play — only attached when the page is opened with `?debug`. It exposes simulation internals
@@ -1625,6 +1712,7 @@ function showWelcome(playerShips) {
   lastPlayerShips = playerShips;
   renderShipCards(playerShips);
   buildLangSwitch();
+  renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   welcomeEl.style.display = 'flex';
 }
@@ -1685,6 +1773,214 @@ function takeOff() {
 }
 document.getElementById('takeoff').addEventListener('click', takeOff);
 
+// ---------- Account / authentication (DECISIONS §11) ----------
+// Anonymous-first: the player always has a localStorage UUID. An optional email/password account
+// upgrades that same player row in place (progress preserved); logging in on a fresh device adopts
+// the account's player id. The session rides on an httpOnly cookie, so all calls send credentials.
+let accountPlayer = null;       // the signed-in account (/me, register, or login result) or null
+let playerShipsCache = [];      // the player-type ships (for re-rendering the welcome screen on login)
+let accountMode = 'login';      // 'prompt' | 'register' | 'login'
+let afterAccount = null;        // run when the dialog closes (e.g. continue to the Hangar)
+const accountEl = document.getElementById('account');
+const acc = {
+  title: document.getElementById('account-title'),
+  msg: document.getElementById('account-msg'),
+  username: document.getElementById('account-username'),
+  creds: document.getElementById('account-creds'),
+  email: document.getElementById('account-email'),
+  password: document.getElementById('account-password'),
+  primary: document.getElementById('account-primary'),
+  secondary: document.getElementById('account-secondary'),
+  err: document.getElementById('account-err'),
+};
+
+// All auth requests are same-origin; include credentials so the session cookie always rides along.
+const authFetch = (path, opts = {}) =>
+  fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, ...opts });
+
+// Render the menu-screen status bar: signed-in identity + verify nudge, or a "log in / sign up" CTA.
+function renderAccountBar() {
+  const bar = document.getElementById('account-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  const add = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; bar.appendChild(e); return e; };
+  if (accountPlayer && accountPlayer.email) {
+    add('div', null, t('ui.account.signed_in_as', { who: accountPlayer.username || accountPlayer.email }));
+    if (accountVerifiedJustNow) add('span', 'verified-ok', t('ui.account.verified'));
+    if (!accountPlayer.emailVerified) {
+      add('span', 'verify-nudge', t('ui.account.verify_nudge'));
+      const resend = add('button', null, t('ui.account.resend'));
+      resend.addEventListener('click', () => resendVerification(resend));
+    }
+    add('button', null, t('ui.account.log_out')).addEventListener('click', logout);
+  } else {
+    add('div', null, t('ui.account.anon'));
+    add('button', null, t('ui.account.sign_in')).addEventListener('click', () => openAccount('login'));
+  }
+}
+
+// Configure the dialog for a mode (which fields show + the button labels/placeholders).
+function setAccountMode(mode) {
+  accountMode = mode;
+  acc.err.textContent = '';
+  acc.username.style.display = (mode === 'prompt' || mode === 'register') ? 'block' : 'none';
+  acc.creds.style.display = (mode === 'register' || mode === 'login') ? 'block' : 'none';
+  acc.username.placeholder = t('ui.account.username_ph');
+  acc.email.placeholder = t('ui.account.email_ph');
+  acc.password.placeholder = t('ui.account.password_ph');
+  if (mode === 'prompt') {
+    acc.title.textContent = t('ui.account.prompt_title');
+    acc.msg.textContent = t('ui.account.prompt_msg');
+    acc.primary.textContent = t('ui.account.continue_anon');
+    acc.secondary.textContent = t('ui.account.create');
+    acc.password.autocomplete = 'new-password';
+  } else if (mode === 'register') {
+    acc.title.textContent = t('ui.account.create_title');
+    acc.msg.textContent = t('ui.account.create_msg');
+    acc.primary.textContent = t('ui.account.create');
+    acc.secondary.textContent = t('ui.account.have_account');
+    acc.password.autocomplete = 'new-password';
+  } else { // login
+    acc.title.textContent = t('ui.account.login_title');
+    acc.msg.textContent = t('ui.account.login_msg');
+    acc.primary.textContent = t('ui.account.log_in');
+    acc.secondary.textContent = t('ui.account.need_account');
+    acc.password.autocomplete = 'current-password';
+  }
+}
+
+function openAccount(mode, opts = {}) {
+  afterAccount = opts.after || null;
+  if (opts.username != null) acc.username.value = opts.username;
+  if (mode !== 'register') { acc.email.value = ''; acc.password.value = ''; }
+  setAccountMode(mode);
+  accountEl.style.display = 'flex';
+  setTimeout(() => (mode === 'login' ? acc.email : acc.username).focus(), 0);
+}
+function closeAccount() {
+  accountEl.style.display = 'none';
+  const after = afterAccount; afterAccount = null;
+  if (after) after();
+}
+
+// True only the first time the player clears level 1 while still anonymous (prompt once, then never).
+function shouldPromptAccount() {
+  if (accountPlayer) return false;                              // already has an account
+  if (levelRunner.winTextKey !== 'level.1.victory') return false; // only after level 1
+  let prompted = false; try { prompted = localStorage.getItem('accountPrompted') === '1'; } catch {}
+  if (prompted) return false;
+  try { localStorage.setItem('accountPrompted', '1'); } catch {}
+  return true;
+}
+
+async function saveUsername(username) {
+  if (!playerId) return;
+  try {
+    const r = await authFetch(`/api/players/${playerId}/username`, { method: 'POST', body: JSON.stringify({ username }) });
+    if (r.ok && accountPlayer) { accountPlayer.username = (await r.json()).username; renderAccountBar(); }
+  } catch {}
+}
+
+async function accountPrimary() {
+  acc.err.textContent = '';
+  if (accountMode === 'prompt') {
+    const username = acc.username.value.trim();
+    if (username) await saveUsername(username); // keep playing anonymously, but save the name
+    closeAccount();
+    return;
+  }
+  if (accountMode === 'register') return doRegister();
+  return doLogin();
+}
+function accountSecondary() {
+  if (accountMode === 'prompt') return setAccountMode('register'); // reveal email/password (keep username)
+  if (accountMode === 'register') return setAccountMode('login');
+  return setAccountMode('register'); // login → register
+}
+
+async function doRegister() {
+  const username = acc.username.value.trim();
+  const email = acc.email.value.trim();
+  const password = acc.password.value;
+  if (password.length < 8) { acc.err.textContent = t('ui.account.err_password'); return; }
+  acc.primary.disabled = true;
+  try {
+    const r = await authFetch('/api/auth/register', { method: 'POST', body: JSON.stringify({ playerId, username, email, password }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 409) { acc.err.textContent = t('ui.account.err_email_taken'); return; }
+    if (!r.ok) { acc.err.textContent = j.error || t('ui.account.err_generic'); return; }
+    accountPlayer = j; // upgraded the current player row in place — same playerId, progress preserved
+    renderAccountBar();
+    closeAccount();
+  } catch { acc.err.textContent = t('ui.account.err_network'); }
+  finally { acc.primary.disabled = false; }
+}
+
+async function doLogin() {
+  const email = acc.email.value.trim();
+  const password = acc.password.value;
+  acc.primary.disabled = true;
+  try {
+    const r = await authFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { acc.err.textContent = t('ui.account.err_credentials'); return; }
+    if (!r.ok) { acc.err.textContent = j.error || t('ui.account.err_generic'); return; }
+    accountPlayer = j;
+    if (j.id && j.id !== playerId) {            // adopt the account's player row (fresh-device login)
+      playerId = j.id;
+      try { localStorage.setItem('playerId', playerId); } catch {}
+      await reloadPlayerWorld();
+    }
+    renderAccountBar();
+    closeAccount();
+  } catch { acc.err.textContent = t('ui.account.err_network'); }
+  finally { acc.primary.disabled = false; }
+}
+
+// After adopting a different player (login), reload that player's level + active ship and re-render
+// the landing screen for their progress.
+async function reloadPlayerWorld() {
+  try {
+    const level = await fetchJson(`/api/players/${playerId}/level`);
+    if (level.descriptor.map !== CATALOG.level.map) {
+      const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
+      buildMap(map.descriptor);
+    }
+    CATALOG.level = level.descriptor;
+    const active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
+    activeShip = active;
+    if (active && typeof active.credits === 'number') balance = active.credits;
+    if (active && active.ship) buildPlayerFor(active.ship);
+    if (CATALOG.level.briefing) showHangar(CATALOG.level.briefing);
+    else showWelcome(playerShipsCache);
+  } catch {}
+}
+
+async function logout() {
+  try { await authFetch('/api/auth/logout', { method: 'POST' }); } catch {}
+  accountPlayer = null;
+  accountVerifiedJustNow = false;
+  // Keep the local anonymous id (don't clear localStorage.playerId): play continues on this device
+  // under the same row; a later login restores the session.
+  renderAccountBar();
+}
+
+async function resendVerification(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await authFetch('/api/auth/resend-verification', { method: 'POST' });
+    if (btn) btn.textContent = r.ok ? t('ui.account.resent') : t('ui.account.resend');
+  } catch {} finally { if (btn) setTimeout(() => { btn.disabled = false; }, 2000); }
+}
+
+let accountVerifiedJustNow = false; // set when returning from the email verify link (?verified=1)
+acc.primary.addEventListener('click', accountPrimary);
+acc.secondary.addEventListener('click', accountSecondary);
+document.getElementById('account-close').addEventListener('click', closeAccount);
+for (const el of [acc.username, acc.email, acc.password]) {
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); accountPrimary(); } });
+}
+
 async function bootstrap() {
   try {
     // Pick the language and load the message catalogs before the first render. Initial guess from
@@ -1692,6 +1988,25 @@ async function bootstrap() {
     let explicitLang = null; try { explicitLang = localStorage.getItem('lang'); } catch {}
     let browserLang = ''; try { browserLang = navigator.language || (navigator.languages || [])[0] || ''; } catch {}
     await loadLanguage(resolveLanguage({ explicit: explicitLang, browser: browserLang }), fetchJson);
+
+    // Prefer an authenticated session (httpOnly cookie) over the local anonymous UUID, so a logged-in
+    // account is restored on boot — even after a localStorage clear — and adopts its own player row.
+    try {
+      const me = await fetch('/api/auth/me', { credentials: 'include' });
+      if (me.ok) {
+        accountPlayer = await me.json();
+        if (accountPlayer && accountPlayer.id) {
+          playerId = accountPlayer.id;
+          try { localStorage.setItem('playerId', playerId); } catch {}
+        }
+      }
+    } catch {}
+    // Returning from the email verification link (/api/auth/verify redirects here with ?verified=1).
+    try {
+      const params = new URLSearchParams(location.search);
+      if (params.get('verified') === '1') accountVerifiedJustNow = true;
+      if (params.has('verified')) { params.delete('verified'); history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '')); }
+    } catch {}
 
     // The level comes from the player's progress (their highest unlocked level); fall back to
     // level-1 if the player isn't identified (e.g. localStorage blocked).
@@ -1715,6 +2030,7 @@ async function bootstrap() {
     activeShip = active; // drives the persisted loadout in buildPlayerFor (weapon swaps, etc.)
     if (active && typeof active.credits === 'number') balance = active.credits; // account balance for the HUD
     const playerShips = ships.filter((s) => s.type === 'player');
+    playerShipsCache = playerShips; // remembered so a login can re-render the welcome screen
     buildPlayerFor((active && active.ship) || playerShips[0]); // idle ship behind the welcome screen
 
     // Adopt the player's server-stored language if they made no explicit local choice — but only a
@@ -1725,11 +2041,14 @@ async function bootstrap() {
       await loadLanguage(active.language, fetchJson);
     }
 
-    // position the camera once (update() doesn't run until take-off), then show the welcome screen
+    // position the camera once (update() doesn't run until take-off), then show the landing screen
     camera.position.copy(player.mesh.position).add(CAM_OFFSET);
     camera.lookAt(player.mesh.position);
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
-    showWelcome(playerShips);
+    // Homepage reflects the current level: if it has a briefing (level 2+), land on the Hangar showing
+    // it; otherwise (level 1 / new player) show the welcome screen with the ship picker + intro.
+    if (CATALOG.level.briefing) showHangar(CATALOG.level.briefing);
+    else showWelcome(playerShips);
     animate(); // render loop (idle until Take off)
   } catch (err) {
     console.error('Failed to load the game from the API:', err);

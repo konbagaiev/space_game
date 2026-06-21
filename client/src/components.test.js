@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveDrive, hitsToKill, shipMass, REFERENCE_MASS } from './components.js';
+import { deriveDrive, hitsToKill, shipMass, REFERENCE_MASS, repairTick } from './components.js';
 
 // Synthetic components mirroring the DB seed: hull {weight,durability}, engine {weight,power},
 // thruster {weight,power}.
@@ -65,4 +65,43 @@ test('hitsToKill: light hull (30hp) dies in 3 player gun hits (10 dmg)', () => {
 
 test('hitsToKill: medium hull (150hp) takes 15 gun hits', () => {
   assert.equal(hitsToKill(HULL.medium.durability, 10), 15);
+});
+
+// --- repair drone (repairTick) ---
+const DRONE = { repairPerTick: 1, intervalSec: 3, maxFraction: 0.8 }; // mirrors the DB seed (id 12)
+
+test('repairTick: adds the repair weight to ship mass', () => {
+  const base = shipMass({ hull: HULL.light, engine: ENGINE.scout, thruster: THR.scout, mounts: [] });
+  const withDrone = shipMass({ hull: HULL.light, engine: ENGINE.scout, thruster: THR.scout, repair: { weight: 4 }, mounts: [] });
+  assert.equal(withDrone, base + 4);
+});
+
+test('repairTick: heals 1 HP once per interval (banks sub-interval time)', () => {
+  let { hp, accum } = repairTick(50, 100, DRONE, 1, 0); // 1s elapsed < 3s
+  assert.equal(hp, 50);   // no tick yet
+  assert.equal(accum, 1);
+  ({ hp, accum } = repairTick(hp, 100, DRONE, 2.5, accum)); // total 3.5s -> one tick, 0.5 banked
+  assert.equal(hp, 51);
+  assert.ok(Math.abs(accum - 0.5) < 1e-9);
+});
+
+test('repairTick: a large dt can apply several ticks at once', () => {
+  const { hp } = repairTick(50, 100, DRONE, 9, 0); // 9s / 3s = 3 ticks
+  assert.equal(hp, 53);
+});
+
+test('repairTick: clamps at maxFraction*maxHp and never exceeds it', () => {
+  const { hp, accum } = repairTick(79, 100, DRONE, 100, 0); // cap = 80
+  assert.equal(hp, 80);
+  assert.equal(accum, 0); // at the cap: don't bank time toward future ticks
+});
+
+test('repairTick: no-op when hp is already at/above the cap', () => {
+  assert.deepEqual(repairTick(80, 100, DRONE, 3, 0), { hp: 80, accum: 0 });
+  assert.deepEqual(repairTick(95, 100, DRONE, 3, 0), { hp: 95, accum: 0 }); // above cap: never reduces hp
+});
+
+test('repairTick: no drone (or disabled stats) is a no-op', () => {
+  assert.deepEqual(repairTick(50, 100, null, 5, 2), { hp: 50, accum: 0 });
+  assert.deepEqual(repairTick(50, 100, { repairPerTick: 0, intervalSec: 3 }, 5, 0), { hp: 50, accum: 0 });
 });

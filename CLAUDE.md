@@ -21,7 +21,8 @@ this rule for anything we author or version.
 ## Project layout
 - `client/` — Three.js game (frontend), single `index.html`.
 - `server/` — backend (player accounts, multiplayer) — planned.
-- `docs/` — `SUMMARY.md` (current state), `CHANGELOG.md` (change log), `DECISIONS.md` (rationale).
+- `docs/` — `ROADMAP.md` (end-to-end scope & phases), `SUMMARY.md` (current state), `CHANGELOG.md`
+  (change log), `DECISIONS.md` (rationale), `plans/*.md` (per-feature build briefs).
 
 ## Docs workflow
 
