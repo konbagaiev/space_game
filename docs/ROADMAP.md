@@ -34,8 +34,11 @@ EN/RU localization, between-level briefings. Asset CDN provisioned (S3 + CloudFr
 The goal of launching is *feedback*, so the missing pieces are the ones that capture it:
 - [ ] **Feedback channel** — in-game "Send feedback" button → DB table or a Discord/Telegram webhook,
       and/or a visible community link. *Without this, launching yields nothing.*
-- [ ] **Light funnel telemetry** — extend the existing game-history post with a few events (level
-      started, level cleared, died, quit) so we can see where players drop. Answers "what to fix next".
+- [ ] **Light funnel telemetry (DB events)** — `events` table + `POST /api/events` for level
+      started/cleared, death, victory, quit → see where players drop. **Spec'd → `docs/plans/monitoring.md`.**
+- [ ] **Monitoring** — **Sentry** (server + browser errors) spec'd in `docs/plans/monitoring.md`;
+      **UptimeRobot** (external `/api/health` ping → Telegram) owned by Kostya, separate session. Grafana
+      stack deferred (would over-burden the 1 GB shared VPS; revisit via Grafana Cloud if wanted).
 - [ ] **First-time onboarding check** — make sure a stranger understands controls (esp. mobile/touch)
       in the first minute.
 - [ ] **Basic sound** (optional but high-impact polish) — shot, explosion, one combat track + one
@@ -51,10 +54,9 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - [ ] **Shop** — buy stronger weapons, reinforce hull; data-driven prices/payouts.
 - [ ] **Storage / inventory** — owned ships, weapons, components persisted per player.
 - [ ] **Upgrades** — weapon swaps + hull reinforcement (extends the existing component/loadout model).
-- [x] **Repair-drone component (4th component type)** — base: heal 1 HP / 3 s up to 80% max HP.
-      **Spec'd → `docs/plans/repair-drone.md`** (ready to implement in the work session). Resolved: it's
-      **installed via the level-3 briefing** (player has it going *into* level 3), not awarded after.
-      Regen changes combat balance — knobs are data-driven, tune from playtests.
+- [x] **Repair-drone component (4th component type)** — **DONE/shipped.** Base: heal 1 HP / 3 s up to
+      80% max HP, installed via the level-3 briefing (spec: `docs/plans/repair-drone.md`). Regen knobs
+      are data-driven — tune from playtests/feedback.
 
 ## Phase 2 — Content engine (repeatable grind)
 - [ ] **Mission generator** — procedural missions feeding the economy: clear an asteroid field of
@@ -86,6 +88,23 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
   the real reason to reconsider Godot (DECISIONS §1), at the cost of the frictionless browser client.
   So the engine decision tracks **co-op vs competitive PvP**, not anti-cheat. A major re-platforming
   decision, not a feature bolt-on. Sequenced **after** the ~50-sortie campaign.
+
+### Netcode notes (parked — far future, from design discussion)
+- **Prereq work, not perf:** the bottleneck to *getting* server-authoritative MP is decoupling the sim
+  from Three.js (own vectors/structs, no `mesh.position`) + a **fixed-step loop** (~30 Hz via
+  accumulator, separate from rendering, deterministic). CPU for one 5v5 @30 Hz is trivial.
+- **Don't stream bullets.** Replicating every bullet 30×/s (esp. machine-gun fire, in JSON) is the real
+  bandwidth/GC hog. Instead send **fire events**; clients simulate the deterministic flight locally.
+- **Hits: server-authoritative, same bandwidth.** The *server* also simulates the same deterministic
+  bullets and **decides hits itself** (clients send inputs/fire+aim, not "I hit X"). Client may predict
+  the hit for feel; the server verdict wins. Hitscan → lag-compensated rewind to the shooter's view-time.
+  Avoid client-reported hits + mere position-plausibility checks (aimbot/fabricated-hit hole).
+- **Co-op can be simpler:** client-side hit handling is fine for PvE (cheating barely matters). Server-
+  authoritative hits + lag-comp are only mandatory for **PvP**.
+- **Transport:** co-op ~15–20 Hz over WebSocket + interpolation is fine. Fast PvP wants ~30–60 Hz and
+  UDP/ENet (native client, or WebRTC data channels in-browser) — TCP/WebSocket head-of-line blocking is
+  the limiter. Also: server-side fire-rate cap, client prediction + reconciliation.
+- Binary encoding + quantized floats + deltas when state *is* sent (ships), to cut size/serialization.
 
 ---
 
