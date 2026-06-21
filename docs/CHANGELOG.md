@@ -5,6 +5,16 @@
 
 ## 2026-06-21
 
+- **Feedback / community Telegram link** (`docs/plans/feedback-link.md`). Added a localized in-game link
+  to the Phase-0 feedback channel (Telegram), shown on the **welcome screen** and the **game-over/victory
+  overlay**. Both the link text and the target URL are locale values — new i18n keys `ui.community.label`
+  and `ui.community.url` (EN → the English group, `ru.json` overrides both with the Russian group). The
+  i18n renderer (`applyTranslations`) now also resolves a **`data-i18n-href`** attribute → `href`, so a
+  live language switch updates the text and the destination together; links open in a new tab
+  (`target="_blank" rel="noopener"`). Clicks fire a fire-and-forget **`community_click`** event via
+  `track()` (added to the `POST /api/events` allowlist). Verified EN/RU text+href resolution headlessly;
+  client/server test suites unchanged and green (16 / 36).
+
 - **Monitoring: Sentry errors + product funnel events** (`docs/plans/monitoring.md`). **Sentry (errors
   only, `tracesSampleRate: 0`):** server via `@sentry/node` (new dep) initialized in
   `server/src/instrument.js` (imported first) + `Sentry.setupExpressErrorHandler`; browser via the
@@ -26,8 +36,11 @@
   each deployed artifact reports its own release automatically (removed `SENTRY_RELEASE` from the server
   `.env` so it no longer overrides). Both SDKs read it (server env; client via `/api/config`). Added a CI
   step (`@sentry/cli`: `releases new`/`set-commits --auto`/`finalize`/`deploys -e production`, with
-  `fetch-depth: 0`) that registers the release + commits for suspect-commits/regressions — **gated on a
-  `SENTRY_AUTH_TOKEN` secret**, inert until `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` are added.
+  `fetch-depth: 0`) that registers the release + commits for suspect-commits/regressions. **Now active:**
+  repo secrets `SENTRY_AUTH_TOKEN`/`SENTRY_ORG=tenony`/`SENTRY_PROJECT=vega-sentinels` are set, so the
+  step runs on every deploy; verified by registering the live release `f13baf0…` (commit associated,
+  finalized, production deploy marked). **Monitoring is fully live on prod** — Sentry (browser + server)
+  errors, per-deploy release tracking, and the funnel `events` table + `POST /api/events`.
 - **Monitoring-grade `/api/health`.** Upgraded the existing health endpoint into a proper uptime probe
   for UptimeRobot: it now returns **200** `{ ok, status:"ok", backend, uptimeSec, players, games }` when
   healthy and **503** `{ ok:false, status:"error", error }` when the DB is unreachable (was a generic

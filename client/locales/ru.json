@@ -29,6 +29,8 @@
   "ui.mount.gun": "{n}× пушка",
   "ui.mount.rocket": "{n}× ракета",
   "ui.mount.unarmed": "без оружия",
+  "ui.community.label": "💬 Отзывы и идеи — наш Telegram",
+  "ui.community.url": "https://t.me/+BwclWW983-U5NWRi",
 
   "ui.account.prompt_title": "Назовись, Страж",
   "ui.account.prompt_msg": "Выбери позывной. Можно продолжить как гость или создать аккаунт, чтобы сохранить прогресс.",

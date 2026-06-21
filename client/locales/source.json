@@ -29,6 +29,8 @@
   "ui.mount.gun": { "source": "{n}× gun", "context": "Weapon-count chip in a ship's weapon summary. {n} is an integer; the 'N×' notation deliberately avoids grammatical plurals." },
   "ui.mount.rocket": { "source": "{n}× rocket", "context": "Weapon-count chip in a ship's weapon summary. {n} is an integer; 'N×' notation avoids plurals." },
   "ui.mount.unarmed": { "source": "unarmed", "context": "Weapon summary when a ship has no weapons." },
+  "ui.community.label": { "source": "💬 Feedback & community on Telegram", "context": "Link text to the game's Telegram community/feedback group. Shown on the welcome screen and the game-over/victory overlay." },
+  "ui.community.url": { "source": "https://t.me/+DZfK9rUqmVpkYTZi", "context": "URL, not prose — do not translate the text. The 'en' value is the English Telegram group; the ru locale overrides it with the Russian group link." },
 
   "ui.account.prompt_title": { "source": "Name yourself, Sentinel", "context": "Title of the prompt shown right after clearing level 1, asking the player to pick a display name. 'Sentinel' is the player's title." },
   "ui.account.prompt_msg": { "source": "Choose a callsign. You can keep playing as a guest, or create an account to save your progress.", "context": "Subtitle under the level-1 name prompt. Explains they can stay a guest or make an account." },

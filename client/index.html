@@ -81,6 +81,14 @@
     background: linear-gradient(90deg,#ffb35a,#ff7a3c); color: #1a0c02; letter-spacing: 1px;
   }
   #takeoff:hover, #hangar-go:hover { filter: brightness(1.08); }
+  /* Telegram community / feedback link (welcome screen + result overlay) */
+  .community-link {
+    pointer-events: auto; display: inline-block; margin-top: 20px;
+    font-family: system-ui, sans-serif; font-size: 14px; color: #9fd0ff; text-decoration: none;
+    opacity: .85; border-bottom: 1px dashed rgba(159,208,255,.45); padding-bottom: 1px;
+  }
+  .community-link:hover { opacity: 1; color: #cfe7ff; }
+  #overlay .community-link { margin-top: 18px; }
   /* hide the in-game HUD while the welcome screen is up */
   body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers { display: none; }
   /* Account dialog (login / register / post-level-1 name prompt) */
@@ -214,6 +222,8 @@
   <h1 id="overlay-title" data-i18n="ui.overlay.gameover">Game over</h1>
   <p id="overlay-sub"></p>
   <button id="restart" data-i18n="ui.button.restart">Restart</button>
+  <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
+     target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
 </div>
 <div id="welcome">
   <div id="lang-switch"></div>
@@ -222,6 +232,8 @@
   <div class="pick" data-i18n="ui.welcome.pick">Pick your ship</div>
   <div id="ship-choices"></div>
   <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
+  <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
+     target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
 </div>
 <div id="hangar">
   <h1 id="hangar-title" data-i18n="ui.hangar.title">Hangar</h1>
@@ -1151,6 +1163,10 @@ function track(type, data) {
     }
   } catch { /* telemetry must never break the game */ }
 }
+// Telemetry: how many players open the community/feedback group (fire-and-forget; navigation continues).
+document.querySelectorAll('.community-link').forEach((el) => {
+  el.addEventListener('click', () => track('community_click', { lang: getLanguage() }));
+});
 let gameStartSent = false; // game_start fires once per page-load session (the funnel's top)
 // Fire `quit` once when the player leaves mid-session (drop-off signal). pagehide is more reliable than
 // beforeunload (covers tab close, navigation, and mobile backgrounding).
@@ -1756,11 +1772,16 @@ function showWelcome(playerShips) {
 // Resolve a ship's display name through i18n (key → translation → English fallback).
 function shipName(s) { return s.stats.nameKey ? t(s.stats.nameKey) : s.name; }
 // Apply every [data-i18n] element's text (or innerHTML for [data-i18n-html]) for the active language.
+// Also resolves [data-i18n-href] → href, so links (e.g. the locale-specific community group) follow
+// the active language like the rest of the i18n flow.
 function applyTranslations(root = document) {
   root.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
     if (el.hasAttribute('data-i18n-html')) el.innerHTML = t(key);
     else el.textContent = t(key);
+  });
+  root.querySelectorAll('[data-i18n-href]').forEach((el) => {
+    el.setAttribute('href', t(el.getAttribute('data-i18n-href')));
   });
   document.documentElement.lang = getLanguage();
 }

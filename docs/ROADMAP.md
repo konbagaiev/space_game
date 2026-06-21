@@ -32,8 +32,8 @@ EN/RU localization, between-level briefings. Asset CDN provisioned (S3 + CloudFr
 
 ## Phase 0 — Launch v0 for feedback (NOW, days not weeks)
 The goal of launching is *feedback*, so the missing pieces are the ones that capture it:
-- [ ] **Feedback channel** — in-game "Send feedback" button → DB table or a Discord/Telegram webhook,
-      and/or a visible community link. *Without this, launching yields nothing.*
+- [ ] **Feedback channel** — in-game link to the Telegram community (locale-dependent EN/RU group via
+      i18n). **Spec'd → `docs/plans/feedback-link.md`.** *Without this, launching yields nothing.*
 - [x] **Light funnel telemetry (DB events)** — **DONE** (`events` table, migration 010, `POST /api/events`,
       client `track()`; `quit` via sendBeacon).
 - [x] **Monitoring** — **Sentry built** (server `@sentry/node` + browser via `/api/config` DSN; errors
@@ -50,9 +50,11 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - [x] **Economy** — **DONE** (credits currency + persistent player balance, DECISIONS §11).
 - [~] **Hangar** — **basic screen shipped** (ship-pick + victory "Continue"). Still TODO: detailed
       hi-poly model via the CDN (`model_url_high`, lazy load) + PBR/IBL scene (DECISIONS §14).
-- [ ] **Shop** — buy stronger weapons, reinforce hull; data-driven prices/payouts.
-- [ ] **Storage / inventory** — owned ships, weapons, components persisted per player.
-- [ ] **Upgrades** — weapon swaps + hull reinforcement (extends the existing component/loadout model).
+- [ ] **Hangar shop + stash** — consolidates *storage* (stash table), *upgrades* (equip/unequip from
+      stash), and *shop* (buy/sell). Server-authoritative; sell = 75% of price; prices seeded 0 first.
+      **Spec'd → `docs/plans/hangar-shop.md`** (phased: data+server → stash UI → shop + around-model
+      slot icons). This is the "spend" side that closes the grind loop. Item ladder + pricing draft:
+      **`docs/plans/catalog-economy.md`** (tuned in parallel while the shop mechanic is built).
 - [x] **Repair-drone component (4th component type)** — **DONE/shipped.** Base: heal 1 HP / 3 s up to
       80% max HP, installed via the level-3 briefing (spec: `docs/plans/repair-drone.md`). Regen knobs
       are data-driven — tune from playtests/feedback.
@@ -143,3 +145,4 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - Daily/repeatable missions for retention.
 - Leaderboards.
 - More ship classes / visual variety.
+- Weapon icons / 3D models (for the hangar shop stash + around-model slot icons).

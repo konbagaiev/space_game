@@ -88,6 +88,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"), frames the threat
   as a pirate raid, lets them **pick a ship** (cards with HP + weapon summary) and **Take off**. Either way
   the scene backdrop renders behind it and the level only starts on take-off.
+- **Community / feedback link.** A small localized link to the Telegram feedback group sits on the welcome
+  screen and the game-over/victory overlay (`.community-link`). Its text and URL are i18n values
+  (`ui.community.label` / `ui.community.url`, via `data-i18n` + `data-i18n-href`), so EN players get the
+  English group and RU players the Russian one; a live language switch updates both. Opens in a new tab and
+  fires a `community_click` funnel event on click.
 - **Progression** — each player has a **`current_progress`** (their highest unlocked level; see
   Backend). On load the client fetches **that** level (`GET /api/players/:id/level`, not a hard-coded
   one); clearing a level **unlocks the next** (the `win` handler POSTs `/advance`, then loads the new
@@ -167,7 +172,8 @@ first translation). See DECISIONS §10.
 - **Resolution is client-side** (`client/src/i18n.js`): `t(key, params)` → `bundle[key] ?? source[key].source
   ?? key`, with simple `{var}` interpolation (no plural logic — deferred, see DECISIONS §10). UI uses
   `data-i18n="key"` attributes (`applyTranslations()` walks them; `data-i18n-html` for markup like the help
-  line) and `t()` for JS-set strings (victory/game-over/perf/ship cards).
+  line; `data-i18n-href` resolves a key into the element's `href`, used by the localized community link) and
+  `t()` for JS-set strings (victory/game-over/perf/ship cards).
 - **DB content carries keys, not display text.** Player-visible content stores its i18n key in the existing
   JSON columns — `ships.stats.nameKey` (only the player ship is shown to players) and the level victory
   line's `descriptor.phases[].textKey` — with the English `name`/`text` kept as fallback. The DB/API stay
@@ -235,13 +241,15 @@ first translation). See DECISIONS §10.
     the buildless client needs no hardcoded DSN). `tracesSampleRate: 0` keeps it within the free tier.
     **Release = git SHA, baked into the image at build time** (`Dockerfile` `ARG GIT_SHA` →
     `ENV SENTRY_RELEASE`; CI `--build-arg GIT_SHA=<full sha>`) — each artifact reports its own release,
-    so `SENTRY_RELEASE` is **not** in `.env` (env_file would override the baked value). CI optionally
-    registers the release + commits in Sentry via `@sentry/cli` (gated on `SENTRY_AUTH_TOKEN`).
+    so `SENTRY_RELEASE` is **not** in `.env` (env_file would override the baked value). CI registers the
+    release + commits in Sentry via `@sentry/cli` on every deploy (repo secrets `SENTRY_AUTH_TOKEN` /
+    `SENTRY_ORG=tenony` / `SENTRY_PROJECT=vega-sentinels` are set). **Live on prod:** Sentry (browser +
+    server) + release tracking + funnel events are all active.
   - **Product funnel events.** `events` table (migration 010 / Postgres bootstrap): `id`, `player_id`
     (logical FK, no hard FK — best-effort), `type`, `data` (JSON), `created_at`; indexed on
     `(type, created_at)` and `(player_id)`. **`POST /api/events`** records one event or a batch
     (`{ events:[…] }`), validating `type` against an allowlist (`game_start`, `level_start`,
-    `level_clear`, `player_death`, `victory`, `quit`) — unknown/junk dropped, **204** if anything stored
+    `level_clear`, `player_death`, `victory`, `quit`, `community_click`) — unknown/junk dropped, **204** if anything stored
     else **400**; never blocks gameplay. The client fires these fire-and-forget via a `track()` helper
     (`quit` uses `navigator.sendBeacon` so it survives tab close), and tags the Sentry scope with the
     current level. Read the funnel with plain SQL over `events`.

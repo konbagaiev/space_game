@@ -12,7 +12,7 @@ import { sendVerificationEmail, verificationUrl } from './ses.js';
 
 const SUPPORTED_LANGUAGES = ['en', 'ru']; // mirror of client SUPPORTED (DECISIONS §10)
 // Allowlisted product-funnel event types (docs/plans/monitoring.md). Anything else is dropped.
-const EVENT_TYPES = new Set(['game_start', 'level_start', 'level_clear', 'player_death', 'victory', 'quit']);
+const EVENT_TYPES = new Set(['game_start', 'level_start', 'level_clear', 'player_death', 'victory', 'quit', 'community_click']);
 
 // Lightweight input validation (no dep). Email is a loose shape check; password ≥ 8.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

@@ -14,14 +14,18 @@
 > project is simpler; filter server vs browser by `sdk`/`platform`. The web DSN is reused as
 > `SENTRY_DSN_SERVER`. DSNs + `SENTRY_ENVIRONMENT` live in the server `.env`.
 >
-> **Releases (industry-standard, durable):** the **git SHA is baked into the image at build time** —
-> `Dockerfile` `ARG GIT_SHA` → `ENV SENTRY_RELEASE`, CI passes `--build-arg GIT_SHA=<full sha>`. So every
-> deployed artifact reports its own release automatically; **`SENTRY_RELEASE` is NOT in `.env`** (env_file
-> would override the baked value). Both SDKs read it (server from env; client via `/api/config`). CI also
-> **registers the release + commits** in Sentry (`@sentry/cli`: `releases new` / `set-commits --auto` /
-> `finalize` / `deploys … -e production`) for suspect-commits + regressions — that step is **gated on the
-> `SENTRY_AUTH_TOKEN` secret** (skipped until set). To enable it, add repo secrets `SENTRY_AUTH_TOKEN`,
-> `SENTRY_ORG`, `SENTRY_PROJECT`.
+> **Releases (industry-standard, durable) — DONE & live.** The **git SHA is baked into the image at
+> build time** — `Dockerfile` `ARG GIT_SHA` → `ENV SENTRY_RELEASE`, CI passes `--build-arg GIT_SHA=<full
+> sha>`. So every deployed artifact reports its own release automatically; **`SENTRY_RELEASE` is NOT in
+> `.env`** (env_file would override the baked value). Both SDKs read it (server from env; client via
+> `/api/config`). CI **registers the release + commits** in Sentry (`@sentry/cli`: `releases new` /
+> `set-commits --auto` / `finalize` / `deploys … -e production`) for suspect-commits + regressions —
+> **active now**: the repo secrets `SENTRY_AUTH_TOKEN` (org token, scope `org:ci`), `SENTRY_ORG`
+> (`tenony`), `SENTRY_PROJECT` (`vega-sentinels`) are set, so the step runs on every deploy. Verified by
+> registering the live release `f13baf0…` (commit associated, finalized, production deploy marked).
+>
+> **Everything is ready and live on prod:** Sentry (browser + server) capturing errors, release tracking
+> per deploy, and the funnel `events` table + `POST /api/events`. Nothing else required to operate it.
 
 > Self-contained handoff for the work session. Launch-readiness monitoring: **Sentry** (errors, server +
 > browser) and **DB events** (product funnel). **UptimeRobot is owned separately by Kostya** (external
