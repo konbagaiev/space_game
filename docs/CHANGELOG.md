@@ -3,7 +3,95 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-23
+
+- **Mission set-pieces spread further apart + resized.** Per playtest, in the shared `home-system` world:
+  the **asteroid field** moved 100 further left (`x` −400→−500), the **research station** 150 further right
+  (`x` +200→+350) and **1.5× smaller** (scale 0.9→0.6), and the **freighter** 100 further "up"/north
+  (`z` −300→−400), **1.5× smaller** (0.5→0.33) and faster (cruise `speed` 1→2). Mission `center`s updated
+  to match (`missions.js`) so each still spawns the player over its structure. `catalog_seed.js` + `missions.js`.
+
 ## 2026-06-22
+
+- **One shared world: all set-pieces on every mission.** Per request — a single unified map that differs
+  only by *where you fight*. Moved the three set-pieces (asteroid field + mining rigs, research station,
+  freighter) back into the `home-system` map at **fixed, far-apart world positions** (so they don't pile
+  up), where they exist on **every level/mission**; a side mission's `center` just spawns the player + arena
+  over the matching structure (the others sit at a distance). Dropped the per-mission `setpieces` from the
+  generator (`missions.js` now carries only `center`); the client rebuilds the map's set-pieces each run so
+  the cruising freighter resets (`mapSetpieces`). Visual `09-mission-setpieces` rewritten (all three present
+  on each mission; the mission's own one is centered). `catalog_seed.js` + `index.html` + `missions.js`.
+
+- **Freighter mission set-piece reworked.** Per playtest: the freighter is **much smaller** (scale
+  1.1→0.5), **a touch deeper** (−28→−48), and now **cruises slowly forward** (~1 unit/sec, a transport in
+  transit) via a new `speed` param in `makeFreighter` (distinct from the unused zone-drift escort mechanic).
+  Client + `missions.js`.
+
+- **Research mission set-piece reworked.** Per playtest: the research station is now **smaller**
+  (scale 1.3→0.9), **a touch deeper** (−95→−125), and has a **light tilt** (`tilt` 0.35 rad) so the ring
+  reads as a 3D wheel from the top-down camera instead of a flat circle; it now spins around its own
+  (tilted) axis (`rotateY`). New `makeResearchStation` `tilt` param. Client + `missions.js`.
+
+- **Mining mission set-piece reworked.** Per playtest: the asteroid-field now has **two tilted mining
+  rigs** (each a host rock + a station + a beam) instead of one; the rigs are **tilted off vertical** so
+  the beam reads from the top-down camera; **1.5× the rocks** (16→24) with **2× the spacing** (`spread`
+  120→240, shallower vertical scatter to stay below the plane); placed a touch deeper (~-100). New
+  `makeAsteroidField` params: `beamTilt`, multi-rig. Client (`index.html`) + `missions.js`.
+
+- **Each side mission fights at its own location with its own set-piece, pulled close to the plane.** Fixes
+  the side missions all running at the campaign spot with the asteroid field/station/freighter piled
+  together. Now each mission descriptor carries a **`center`** (mining `(-400,0)`, research `(200,0)`,
+  freighter `(-100,-300)`) — the player + arena (soft boundary, mini-map, warp-back) start there — and the
+  client **builds only that mission's set-piece** at the center (the campaign map no longer carries
+  set-pieces; set-piece materials are fog-exempt, so building only the active one prevents overlap). The
+  set-pieces now sit **just below the combat plane** (tops ~20 below the ships) instead of ~500 down, so you
+  fly over them with strong parallax like the background asteroids; they're **static** (no drift — the
+  drift mechanic stays in code for a future escort mission). Touches `catalog_seed.js` (set-pieces off the
+  map), `server/src/missions.js` (per-mission `center` + `setpieces`, compact mining station),
+  `index.html` (`reset()` centers the zone + builds the mission's set-piece). Visual `09-mission-setpieces`
+  rewritten to launch each mission and assert its lone, centered, just-below-the-plane set-piece (no drift).
+
+- **Side-mission board (3 missions) + pirate enemies + boss buff.** First slice of
+  `docs/plans/mission-generator.md` (2a) and `docs/plans/mission-enemies-difficulty.md`. **(1) New enemy
+  content** (`catalog_seed.js`): **Pirate machine gun** (weapon id 9 — long-range 90, rapid-fire, low
+  damage), **Pirate hull** (id 22, 36 HP) + **Pirate engine** (id 23, top speed +50%), and the **pirate
+  gunner** enemy (`role: pirate_gunner`, 1× long-range MG, deeper-crimson, reward 40). The **"first boss"
+  guns are swapped** from basic-kinetic to two Pirate machine guns — also buffs the level-3 boss (intended).
+  **(2) Mission generator** (`server/src/missions.js`) emits **3 flavored side missions** (mining /
+  research / freighter), all the **same difficulty** (40/40/20 → 35/35/30 gunner/rocketeer/heavy, then a
+  **2-boss finale**). **`GET /api/players/:id/missions`** returns them, gated behind the campaign-clear
+  (same gate as the shop). **(3) Client UI** (provisional): **3 buttons top-right** (Mission 1/2/3) on the
+  menus once unlocked; clicking opens a **panel** with the mission's flavor description + est. reward and a
+  **Take off** button. Playing a mission reuses the `levelRunner` and **banks per-kill ×2 credits like a
+  level but does NOT advance the story counter** (repeatable grind). New EN+RU i18n (`ui.mission.*`,
+  `mission.*`). Tests: server `missions`/`catalog` cases (49 total); visual `10-mission-board`. (Next per
+  the plan: server-sealed rewards, richer objectives, per-mission set-piece environments.)
+
+- **Mission set-pieces — asteroid field + mining beam, freighter, drifting arena.** Phases 2–3 of
+  `docs/plans/mission-maps.md`. **(1)** New **`asteroid-field`** set-piece: a cluster of **irregular,
+  cratered** rocks (noise-deformed icosahedra so they're lumpy not round, `makeMoonTexture` craters,
+  varied sizes — distinct from the round parallax-backdrop asteroids), a big host rock with a small
+  **mining station** and a **mining beam** (a particle stream flowing host→collector); rocks tumble.
+  **(2)** New **`freighter`** set-piece: a cargo ship (spine + containers + bridge + engine block/nozzles)
+  with a **fiery exhaust** particle stream (hot→orange→red). **(3)** **Drifting arena:** the soft
+  boundary, warp-back and mini-map now compute relative to a movable **`arenaCenter`**; a map descriptor
+  `drift` `{x,z}` pans the zone, the edge marker follows, warp-back returns to the drifted center, and a
+  `sync` set-piece (the freighter) tracks it — wired for a future escort mission (no campaign map drifts
+  yet). All three are decor-only (not collidable). Seeded into `home-system`; client (`index.html`) +
+  seed (`catalog_seed.js`); visual `09-mission-setpieces` extended (all three built + screenshotted, drift
+  verified). DECISIONS §17 updated.
+
+- **Mission set-pieces (procedural) — research station.** First slice of `docs/plans/mission-maps.md`:
+  the map descriptor can now carry a **`setpieces`** array of large structures generated **in code** (no
+  `.glb`). They're added to the **combat scene** (lit from above by the combat sun, like the ships),
+  sit **~500 below the combat plane** (real depth → render behind the ships; `fog: false` so they stay
+  readable), and are **pure decor** — not in the gameplay arrays, so bullets pass through and the AI
+  ignores them. `buildSetPiece` dispatches per `type` to a builder; the render loop ticks each
+  set-piece's `update(dt)`. Built the **`research-station`** (hub + flat ring on spokes, two solar-panel
+  wings, docking modules, emissive windows; slow spin), seeded into `home-system` lower-right below the
+  plane (scale 1.3). Client (`index.html`) + seed (`catalog_seed.js`); new visual scenario
+  `09-mission-setpieces`. (Next per the plan: irregular/cratered asteroid field + mining beam, then the
+  drifting freighter + arena drift.)
 
 - **Combat works out of bounds + distant asteroid field.** Follow-up to the soft boundary: **(1)** removed
   every remaining hard clamp to the arena — enemies are no longer pinned inside ±240 (dropped the

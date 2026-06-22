@@ -44,6 +44,12 @@ export const COMPONENTS = [
   { id: 19, name: 'Repair drone II', type: 'repair', weight: 6, price: 1800, stats: { repairPerTick: 1, intervalSec: 2, maxFraction: 0.85 } },
   { id: 20, name: 'Nanobot repair', type: 'repair', weight: 8, price: 7000, stats: { repairPerTick: 2, intervalSec: 3, maxFraction: 0.90 } },
   { id: 21, name: 'Advanced thrusters', type: 'thruster', weight: 5, price: 2500, stats: { power: 3.0 } },
+
+  // --- Pirate gunner parts (side missions, docs/plans/mission-enemies-difficulty.md). +20% HP and
+  // +50% top speed over the base enemy (fighter: Light hull 30 HP + Scout engine maxSpeed 10.5).
+  // Enemy gear → price 0 (hidden from the shop). ids continue past the max (21).
+  { id: 22, name: 'Pirate hull', type: 'hull', weight: 10, stats: { durability: 36, volume: 45 } },          // 30 × 1.2
+  { id: 23, name: 'Pirate engine', type: 'engine', weight: 6, stats: { power: 12.6, maxSpeed: 15.75, exhaust: { color: 0xff6a4a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 } } }, // maxSpeed 10.5 × 1.5; same accel as Scout
 ];
 
 // --- weapons: type 'bullet' | 'rocket'; stats hold the (now fully DB-driven) characteristics ---
@@ -101,10 +107,18 @@ export const WEAPONS = [
       fireCooldown: 7, weight: 12, projectileColor: 0xff7a3c
     }
   },
+  // Enemy weapon for the pirate gunner (side missions) + the upgraded boss: a long-range, rapid-fire
+  // kinetic mirroring the player's Machine Gun's reach. Low per-hit damage, high RoF. Price 0 (enemy gear).
+  {
+    id: 9, name: 'Pirate machine gun', type: 'bullet', stats: {
+      power: 3, projectileSpeed: 50, maxRange: 90, fireCooldown: 0.18, weight: 6, projectileColor: 0xff5a4a
+    }
+  },
 ];
 
 // fire-group presets (a group can carry a player key and/or an enemy AI rule; ships use what fits)
 const GUN = { key: 'Space', ai: { range: 45, aimTol: 0.25 } };
+const GUN_LONG = { ai: { range: 90, aimTol: 0.25 } }; // long-range MG (pirate gunner): engage from afar
 const ROCKET = { key: 'KeyF', ai: { range: 80, aimTol: 0.40 } };
 
 // --- ships: one table for player + enemies. `components` references a hull + an engine by id
@@ -143,6 +157,16 @@ export const SHIPS = [
     }
   },
   {
+    // Pirate gunner (side missions): a tougher, faster skirmisher — Pirate hull (36 HP) + Pirate engine
+    // (top speed +50%) + Scout thrusters, one long-range Pirate machine gun. Reuses the fighter model.
+    name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/fighter.glb',
+    components: { hull: 22, engine: 23, thruster: 9 }, stats: {
+      role: 'pirate_gunner', color: 0xe53935, sizeScale: 1, reward: 40,
+      groups: { gun: GUN_LONG },
+      mounts: [{ weapon: 9, group: 'gun', offset: 0, delay: 0 }]
+    }
+  },
+  {
     name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/heavy.glb',
     components: { hull: 3, engine: 6, thruster: 10 }, stats: { // medium hull + scout engine + weak (Medium) thrusters
       role: 'medium', color: 0xb267e6, sizeScale: 2, reward: 100,
@@ -160,10 +184,12 @@ export const SHIPS = [
     name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb',
     components: { hull: 4, engine: 7, thruster: 11 }, stats: {
       role: 'boss', color: 0xff8c2a, sizeScale: 3, reward: 200,
+      // Boss buff (docs/plans/mission-enemies-difficulty.md): two Pirate machine guns (id 9) replace the
+      // old basic-kinetic guns; rockets unchanged. Also buffs the level-3 boss (same ship) — intended.
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
-        { weapon: 2, group: 'gun', offset: -0.6, delay: 0 },
-        { weapon: 2, group: 'gun', offset: 0.6, delay: 0 },
+        { weapon: 9, group: 'gun', offset: -0.6, delay: 0 },
+        { weapon: 9, group: 'gun', offset: 0.6, delay: 0 },
         { weapon: 4, group: 'rocket', offset: -0.9, delay: 0 },
         { weapon: 4, group: 'rocket', offset: 0.9, delay: 0.2 },
       ]
@@ -309,6 +335,15 @@ export const MAPS = [
       // the arena AND far beyond it; the far edge fades into the fog (~600), so distant rocks read as
       // a faraway field you can fly out into
       asteroids: { count: 2000, inner: 0, spread: 1000, color: 0x6b6f78, minSize: 0.18, maxSize: 0.5, depth: 10, depthVar: 24 },
+      // Mission set-pieces live in ONE shared world at FIXED positions — they exist on every level/mission;
+      // a mission only changes WHERE you fight (its `center` in missions.js spawns you over the matching
+      // one; the others sit at a distance). Spread far apart so they don't overlap. Just below the plane
+      // (strong parallax like the background asteroids), static decor (not collidable). docs/plans/mission-maps.md.
+      setpieces: [
+        { type: 'asteroid-field', pos: [-500, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66 },
+        { type: 'research-station', pos: [350, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
+        { type: 'freighter', pos: [-100, -48, -400], scale: 0.33, hue: 0x8a8f9c, cargoHue: 0xb0763a, speed: 2 },
+      ],
     }
   },
 ];

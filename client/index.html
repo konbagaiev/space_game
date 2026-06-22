@@ -231,6 +231,33 @@
     border-radius: 9px; padding: 8px 12px; max-width: 340px; text-align: left; line-height: 1.5;
   }
   body.menu #account-bar { display: block; }
+  /* Side-mission board: 3 buttons top-right (on menus once unlocked) + a description panel */
+  #mission-btns {
+    position: fixed; top: 18px; right: 18px; z-index: 13; display: none; flex-direction: column; gap: 8px;
+  }
+  body.menu.missions-on #mission-btns { display: flex; }
+  #mission-btns button {
+    pointer-events: auto; cursor: pointer; font: inherit; font-size: 14px; color: #cfe0ff; min-width: 140px;
+    background: rgba(20,30,55,.6); border: 1px solid rgba(140,175,255,.35); border-radius: 8px; padding: 9px 16px; text-align: left;
+  }
+  #mission-btns button:hover { background: rgba(40,60,100,.7); }
+  #mission-panel {
+    position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
+    background: rgba(2,4,10,.62); padding: 24px;
+  }
+  #mission-panel.on { display: flex; }
+  #mission-panel .mp-box {
+    background: rgba(8,12,24,.96); border: 1px solid rgba(120,150,210,.35); border-radius: 12px;
+    padding: 24px 28px; max-width: 460px; text-align: center; color: #e8f1ff; font-family: system-ui, sans-serif;
+  }
+  #mission-panel h2 { margin: 0 0 10px; font-size: 22px; }
+  #mission-panel p { color: #bcd0ee; line-height: 1.55; margin: 0 0 4px; }
+  #mission-panel #mp-reward { color: #ffd86b; font-weight: 600; margin: 14px 0 18px; }
+  #mission-panel button {
+    pointer-events: auto; cursor: pointer; font: inherit; font-size: 15px; font-weight: 600; margin: 0 6px;
+    border: 0; border-radius: 10px; padding: 11px 26px; background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f;
+  }
+  #mission-panel button.secondary { background: rgba(255,255,255,.08); color: #dce8ff; font-weight: 500; }
   #account-bar button {
     pointer-events: auto; cursor: pointer; font: inherit; font-size: 12px; color: #cfe0ff;
     background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.28);
@@ -407,6 +434,17 @@
   <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
 </div>
 <div id="account-bar"></div>
+<!-- Side-mission board (3 buttons, top-right) — shown on menus once the campaign is cleared -->
+<div id="mission-btns"></div>
+<div id="mission-panel">
+  <div class="mp-box">
+    <h2 id="mp-title"></h2>
+    <p id="mp-desc"></p>
+    <div id="mp-reward"></div>
+    <button id="mp-launch" data-i18n="ui.button.take_off">Take off 🚀</button>
+    <button id="mp-close" class="secondary" data-i18n="ui.account.close">Close</button>
+  </div>
+</div>
 <div id="account">
   <div class="account-box">
     <h1 id="account-title">Account</h1>
@@ -492,6 +530,12 @@ const skyScene = new THREE.Scene();
 // Per-map scene objects, built by buildMap(). At module scope so the render loop can reach them.
 let sky = null, stars = null, rocks = null, planetPos = new THREE.Vector3();
 const moons = [];
+// Mission set-pieces (procedural decor in the COMBAT scene, just below the plane): { obj, update }.
+// Decor only — NOT registered in the gameplay arrays, so bullets/AI ignore them. They live in the shared
+// map at fixed world positions (built from the map descriptor); rebuilt each run so the freighter (which
+// cruises) resets. See docs/plans/mission-maps.md.
+const setPieces = [];
+let mapSetpieces = []; // the current map's set-piece specs (so reset() can rebuild them fresh each run)
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -501,6 +545,12 @@ const moons = [];
 const ARENA = 240; // half-size of the square arena (x4)
 const OOB_WARN_DELAY = 2.0;   // seconds continuously out of bounds before the warning shows
 const OOB_RETURN_TIME = 30.0; // seconds continuously out of bounds before the auto warp-back
+
+// The combat zone's CENTER. Usually (0,0), but for a drifting mission (e.g. escort a freighter) the map
+// descriptor's `drift` slowly moves it; the soft boundary, warp-back and mini-map all compute relative to
+// THIS, not world (0,0). The synced freighter set-piece follows it. See docs/plans/mission-maps.md.
+const arenaCenter = new THREE.Vector3(0, 0, 0);
+let arenaDrift = null; // THREE.Vector3 (units/sec on x,z) when the current map drifts, else null
 
 // A faint glowing square at the arena edge (±ARENA) so the player can SEE where the battlefield
 // ends. It sits just above the combat plane; its opacity ramps up as the player nears/crosses it
@@ -716,11 +766,240 @@ function makeAsteroids({ count, spread, color, inner = 0, minSize = 0.4, maxSize
   return mesh;
 }
 
+// ---------- Mission set-pieces (procedural decor in the combat scene) ----------
+// Generated in code (no .glb), added to the COMBAT scene so they're lit from above by the combat sun
+// like the ships — the near "battle environment" we fight around. They sit ~500 below the combat plane
+// (real depth, render behind the ships); materials use `fog: false` so they stay readable at that range.
+// Decoration only: not in the gameplay arrays, so bullets pass through and the AI ignores them.
+// See docs/plans/mission-maps.md.
+
+// Research station: a central hub + a flat ring on spokes, two solar-panel wings, a few modules, and
+// emissive windows. Big and readable from the arena; slowly rotates so it reads as "alive".
+function makeResearchStation(spec) {
+  const g = new THREE.Group();
+  const tint = spec.hue ?? 0x9aa7b5;
+  const body = new THREE.MeshStandardMaterial({ color: tint, metalness: 0.85, roughness: 0.42, flatShading: true, fog: false });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x556070, metalness: 0.7, roughness: 0.55, flatShading: true, fog: false });
+  const panel = new THREE.MeshStandardMaterial({ color: 0x16284c, metalness: 0.35, roughness: 0.5, emissive: 0x0b1c3a, emissiveIntensity: 0.6, flatShading: true, fog: false });
+  const glow = new THREE.MeshBasicMaterial({ color: 0x8fe3ff, fog: false }); // emissive windows / running lights
+
+  // central hub (vertical cylinder, axis = camera-facing y)
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(22, 22, 70, 18), body);
+  g.add(hub);
+  // a window band around the hub
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(22.6, 22.6, 8, 18, 1, true), glow);
+  band.position.y = 6; g.add(band);
+  // a capped dome on top
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(22, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), dark);
+  dome.position.y = 35; g.add(dome);
+
+  // outer ring lying flat in the XZ plane, on 4 spokes
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(92, 7, 12, 56), body);
+  ring.rotation.x = Math.PI / 2; g.add(ring);
+  for (let i = 0; i < 4; i++) {
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(86, 5, 8), dark);
+    spoke.position.set(Math.cos(i * Math.PI / 2) * 46, 0, Math.sin(i * Math.PI / 2) * 46);
+    spoke.rotation.y = -i * Math.PI / 2; g.add(spoke);
+  }
+  // running lights spaced around the ring
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const led = new THREE.Mesh(new THREE.SphereGeometry(2.2, 6, 6), glow);
+    led.position.set(Math.cos(a) * 92, 0, Math.sin(a) * 92); g.add(led);
+  }
+
+  // two solar-panel wings extending along x
+  for (const dir of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(40, 3, 4), dark);
+    arm.position.set(dir * 42, 22, 0); g.add(arm);
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(70, 1.5, 46), panel);
+    wing.position.set(dir * 96, 22, 0); g.add(wing);
+  }
+  // a couple of docking modules near the hub
+  for (const dz of [-1, 1]) {
+    const mod = new THREE.Mesh(new THREE.BoxGeometry(16, 16, 26), body);
+    mod.position.set(0, -8, dz * 30); g.add(mod);
+    const lite = new THREE.Mesh(new THREE.BoxGeometry(10, 2, 2), glow);
+    lite.position.set(0, -2, dz * 42); g.add(lite);
+  }
+
+  const spin = spec.spin ?? 0.06;
+  g.rotation.x = spec.tilt ?? 0; // a light tilt so the ring/face reads from the top-down camera
+  // spin around the station's OWN (tilted) vertical axis so the tilt is preserved as it rotates
+  return { obj: g, update: (dt) => { g.rotateY(spin * dt); } };
+}
+
+// One irregular asteroid: a subdivided icosahedron whose vertices are pushed in/out by a coherent
+// (position-based, seed-varied) noise so it's lumpy, not round — flat-shaded + a cratered moon texture.
+function makeIrregularAsteroid(radius, tex, seed) {
+  const geo = new THREE.IcosahedronGeometry(radius, 2);
+  const p = geo.attributes.position, v = new THREE.Vector3();
+  const a = seed * 1.7, b = seed * 2.3, c = seed * 0.9;
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const d = v.clone().normalize(); // noise on direction → shared verts move together (no cracks)
+    const n = 1 + 0.22 * Math.sin(d.x * 3.3 + a) + 0.18 * Math.sin(d.y * 4.1 + b)
+                + 0.20 * Math.sin(d.z * 3.7 + c) + 0.12 * Math.sin((d.x + d.z) * 6.2 + seed);
+    v.multiplyScalar(n);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 1.0, metalness: 0.05, flatShading: true, fog: false }));
+}
+
+// Asteroid field + mining stations: each station works a host asteroid with a beam = a stream of
+// microparticles flowing from the asteroid up to the station's collector. The rigs are TILTED off
+// vertical so the beam has horizontal extent and reads well from the top-down camera. Irregular/cratered
+// rocks (distinct from the round parallax-backdrop asteroids); decor only (not collidable).
+function makeAsteroidField(spec) {
+  const g = new THREE.Group();
+  const base = spec.color ?? 0x6e6a63;
+  const texes = [makeMoonTexture(base), makeMoonTexture(0x5f5a52), makeMoonTexture(0x726a60)];
+  const count = spec.count ?? 14, spread = spec.spread ?? 120;
+  const minS = spec.minSize ?? 6, maxS = spec.maxSize ?? 26;
+  const beamColor = spec.beamColor ?? 0xffcc66;
+  const metal = new THREE.MeshStandardMaterial({ color: 0x8b94a0, metalness: 0.8, roughness: 0.4, flatShading: true, fog: false });
+  const litMat = new THREE.MeshBasicMaterial({ color: beamColor, fog: false });
+
+  // scattered field rocks (vertical scatter kept shallow so the field stays just below the plane)
+  const rocks = [];
+  for (let i = 0; i < count; i++) {
+    const r = minS + Math.random() * (maxS - minS);
+    const m = makeIrregularAsteroid(r, texes[i % 3], i * 1.37 + 1);
+    m.position.set((Math.random() * 2 - 1) * spread, (Math.random() * 2 - 1) * spread * 0.22, (Math.random() * 2 - 1) * spread);
+    m.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
+    g.add(m);
+    rocks.push({ mesh: m, sx: (Math.random() - 0.5) * 0.2, sy: (Math.random() - 0.5) * 0.2, sz: (Math.random() - 0.5) * 0.2 });
+  }
+
+  // mining rigs: a host asteroid + a tilted station + a tilted beam. Two of them, placed apart.
+  const hostR = spec.hostSize ?? 26, beamLen = spec.beamLen ?? 34, tilt = spec.beamTilt ?? 0.5; // tilt rad off vertical
+  const N = spec.beamCount ?? 50, width = spec.beamWidth ?? 3, speed = spec.beamSpeed ?? 0.5;
+  const UP = new THREE.Vector3(0, 1, 0);
+  const placements = [
+    { pos: new THREE.Vector3(-spread * 0.30, -spread * 0.08, spread * 0.18), az: 0.6 },
+    { pos: new THREE.Vector3(spread * 0.32, spread * 0.08, -spread * 0.22), az: 3.6 },
+  ];
+  const rigs = placements.map((pl, k) => {
+    const dir = new THREE.Vector3(Math.sin(tilt) * Math.cos(pl.az), Math.cos(tilt), Math.sin(tilt) * Math.sin(pl.az)).normalize();
+    const host = makeIrregularAsteroid(hostR, texes[k % 3], 90 + k);
+    host.position.copy(pl.pos); g.add(host);
+
+    const station = new THREE.Group();
+    station.add(new THREE.Mesh(new THREE.BoxGeometry(22, 11, 16), metal));
+    const funnel = new THREE.Mesh(new THREE.CylinderGeometry(5, 9, 13, 12), metal); funnel.position.y = -10; station.add(funnel);
+    const slite = new THREE.Mesh(new THREE.SphereGeometry(2.6, 8, 8), litMat); slite.position.y = 8; station.add(slite);
+    const stationPos = pl.pos.clone().addScaledVector(dir, hostR + beamLen);
+    station.position.copy(stationPos);
+    station.quaternion.setFromUnitVectors(UP, dir); // tilt the station to align with the beam
+    g.add(station);
+
+    // beam from the host surface to the collector, along the tilted axis, with perpendicular wobble
+    const from = pl.pos.clone().addScaledVector(dir, hostR * 0.7);
+    const seg = stationPos.clone().addScaledVector(dir, -12).sub(from);
+    const axis = seg.clone().normalize();
+    const perp1 = new THREE.Vector3(0, 0, 1);
+    if (Math.abs(axis.z) > 0.9) perp1.set(1, 0, 0);
+    perp1.crossVectors(axis, perp1).normalize();
+    const perp2 = new THREE.Vector3().crossVectors(axis, perp1);
+    const bpos = new Float32Array(N * 3), bt = new Float32Array(N), boff = new Float32Array(N);
+    for (let i = 0; i < N; i++) { bt[i] = Math.random(); boff[i] = Math.random() * Math.PI * 2; }
+    const bgeo = new THREE.BufferGeometry(); bgeo.setAttribute('position', new THREE.BufferAttribute(bpos, 3));
+    const bmat = new THREE.PointsMaterial({ color: beamColor, size: 2.4, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    g.add(new THREE.Points(bgeo, bmat));
+    return { host, from, seg, perp1, perp2, bpos, bt, boff, bgeo };
+  });
+
+  return { obj: g, update: (dt) => {
+    for (const r of rocks) { r.mesh.rotation.x += r.sx * dt; r.mesh.rotation.y += r.sy * dt; r.mesh.rotation.z += r.sz * dt; }
+    for (const rig of rigs) {
+      rig.host.rotation.y += 0.05 * dt;
+      for (let i = 0; i < N; i++) {
+        rig.bt[i] += dt * speed; if (rig.bt[i] > 1) rig.bt[i] -= 1;
+        const t = rig.bt[i], c = Math.cos(rig.boff[i]), s = Math.sin(rig.boff[i]);
+        const wob = Math.sin(rig.boff[i] + t * 6) * width * (1 - t); // taper toward the collector
+        rig.bpos[i * 3]     = rig.from.x + rig.seg.x * t + (rig.perp1.x * c + rig.perp2.x * s) * wob;
+        rig.bpos[i * 3 + 1] = rig.from.y + rig.seg.y * t + (rig.perp1.y * c + rig.perp2.y * s) * wob;
+        rig.bpos[i * 3 + 2] = rig.from.z + rig.seg.z * t + (rig.perp1.z * c + rig.perp2.z * s) * wob;
+      }
+      rig.bgeo.attributes.position.needsUpdate = true;
+    }
+  } };
+}
+
+// Cargo freighter (for "save the transport"): a spine with cargo containers, a bridge, an engine block
+// with nozzles, and a fiery exhaust particle stream. Faces +z (bridge front, engines aft). When
+// `spec.sync`, it follows the drifting arena center so it stays "below the battlefield" as the zone pans.
+function makeFreighter(spec) {
+  const g = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: spec.hue ?? 0x8a8f9c, metalness: 0.7, roughness: 0.5, flatShading: true, fog: false });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x474c57, metalness: 0.6, roughness: 0.6, flatShading: true, fog: false });
+  const cargo = new THREE.MeshStandardMaterial({ color: spec.cargoHue ?? 0xb0763a, metalness: 0.3, roughness: 0.8, flatShading: true, fog: false });
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(16, 14, 130), body)); // spine
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(20, 16, 22), body); bridge.position.set(0, 6, 70); g.add(bridge);
+  const win = new THREE.Mesh(new THREE.BoxGeometry(14, 4, 2), new THREE.MeshBasicMaterial({ color: 0x9fe0ff, fog: false })); win.position.set(0, 10, 81); g.add(win);
+  for (let i = 0; i < 4; i++) { const c = new THREE.Mesh(new THREE.BoxGeometry(28, 18, 22), cargo); c.position.set(0, 3, 30 - i * 28); g.add(c); }
+  const eng = new THREE.Mesh(new THREE.BoxGeometry(26, 20, 18), dark); eng.position.set(0, 0, -72); g.add(eng);
+  const nozzles = [];
+  for (const dx of [-7, 7]) for (const dy of [-5, 5]) {
+    const nz = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 5, 8, 10), dark); nz.rotation.x = Math.PI / 2; nz.position.set(dx, dy, -82); g.add(nz);
+    nozzles.push(new THREE.Vector3(dx, dy, -86));
+  }
+  // fiery exhaust: additive points streaming aft from the nozzles, colored hot→orange→red along their life
+  const N = spec.exhaustCount ?? 90, len = spec.exhaustLen ?? 48;
+  const epos = new Float32Array(N * 3), ecol = new Float32Array(N * 3), et = new Float32Array(N);
+  const enz = new Int8Array(N), eoff = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) { et[i] = Math.random(); enz[i] = Math.floor(Math.random() * nozzles.length); eoff[i * 2] = Math.random() - 0.5; eoff[i * 2 + 1] = Math.random() - 0.5; }
+  const egeo = new THREE.BufferGeometry();
+  egeo.setAttribute('position', new THREE.BufferAttribute(epos, 3));
+  egeo.setAttribute('color', new THREE.BufferAttribute(ecol, 3));
+  const emat = new THREE.PointsMaterial({ size: 5, vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  g.add(new THREE.Points(egeo, emat));
+  const cHot = new THREE.Color(0xfff1c0), cMid = new THREE.Color(0xff7a2a), cEnd = new THREE.Color(0x7a1208), tmp = new THREE.Color();
+
+  return { obj: g, update: (dt) => {
+    for (let i = 0; i < N; i++) {
+      et[i] += dt * 1.4; if (et[i] > 1) et[i] -= 1;
+      const t = et[i], n = nozzles[enz[i]], sp = 1 + t * 4;
+      epos[i * 3] = n.x + eoff[i * 2] * sp; epos[i * 3 + 1] = n.y + eoff[i * 2 + 1] * sp; epos[i * 3 + 2] = n.z - t * len;
+      if (t < 0.5) tmp.copy(cHot).lerp(cMid, t / 0.5); else tmp.copy(cMid).lerp(cEnd, (t - 0.5) / 0.5);
+      ecol[i * 3] = tmp.r; ecol[i * 3 + 1] = tmp.g; ecol[i * 3 + 2] = tmp.b;
+    }
+    egeo.attributes.position.needsUpdate = true; egeo.attributes.color.needsUpdate = true;
+    // a transport in transit: it slowly cruises forward (along its nose, +z) at `speed` units/sec
+    if (spec.speed) g.position.z += spec.speed * dt;
+    // (escort drift) ride the zone center while the arena is drifting — off unless a mission turns it on
+    if (spec.sync && arenaDrift) { g.position.x = arenaCenter.x; g.position.z = arenaCenter.z; }
+  } };
+}
+
+// Dispatch a set-piece spec to its procedural builder, position it, and add it to the combat scene.
+function buildSetPiece(spec) {
+  let entry = null;
+  switch (spec.type) {
+    case 'research-station': entry = makeResearchStation(spec); break;
+    case 'asteroid-field':   entry = makeAsteroidField(spec); break;
+    case 'freighter':        entry = makeFreighter(spec); break;
+    default: return; // unknown type → skip (forward-compatible with new set-pieces)
+  }
+  if (spec.scale && spec.scale !== 1) entry.obj.scale.setScalar(spec.scale);
+  entry.obj.position.set(...spec.pos);
+  scene.add(entry.obj);
+  setPieces.push(entry);
+}
+
 // ---------- Build the scene from a map descriptor (see server catalog_seed.js MAPS) ----------
-// Generic generator: builds the sky backdrop (background, lights, planet, moons, stars) and the
-// asteroid layer from `descriptor.params`. The combat-scene light is constant (gameplay readability).
+// Generic generator: builds the sky backdrop (background, lights, planet, moons, stars), the asteroid
+// layer, and any mission set-pieces from `descriptor`. The combat-scene light is constant (readability).
 function buildMap(descriptor) {
   const d = descriptor;
+  // clear set-pieces from a previous map (switching maps between levels)
+  for (const sp of setPieces) scene.remove(sp.obj);
+  setPieces.length = 0;
+  // arena drift: maps with a `drift` (units/sec on x,z) slowly pan the combat zone; default = static
+  arenaDrift = d.drift ? new THREE.Vector3(d.drift.x || 0, 0, d.drift.z || 0) : null;
+  arenaCenter.set(0, 0, 0);
+  arenaBorder.line.position.set(0, 0, 0);
   skyScene.background = new THREE.Color(d.background);
   skyScene.add(new THREE.AmbientLight(d.sky.ambient.color, d.sky.ambient.intensity)); // night-side fill
   const skySun = new THREE.DirectionalLight(d.sky.sun.color, d.sky.sun.intensity);    // side light -> terminator
@@ -754,6 +1033,11 @@ function buildMap(descriptor) {
 
   rocks = makeAsteroids(d.asteroids);
   scene.add(rocks);
+
+  // mission set-pieces (decor in the combat scene), fixed in this shared world; remembered so each run
+  // rebuilds them fresh (resets the cruising freighter)
+  mapSetpieces = d.setpieces || [];
+  for (const sp of mapSetpieces) buildSetPiece(sp);
 }
 
 // ---------- Ship factory ----------
@@ -1149,7 +1433,9 @@ const levelRunner = {
     overlay.style.display = 'flex';
     track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
     bankRun(); // bank the earned credits into the account balance
-    unlockNextLevel(); // record progress + load the next level for the next Restart
+    // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
+    // levels advance progression as before.
+    if (!this.level.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
   },
 
   pickShip(pool) {
@@ -1357,7 +1643,10 @@ function bankRun() {
 
 // ---------- Product funnel telemetry (best-effort; docs/plans/monitoring.md) ----------
 // A short label for the current level (e.g. "Level 3"); used as event context + the Sentry `level` tag.
-const currentLevelLabel = () => (CATALOG.level && (CATALOG.level.title || CATALOG.level.map)) || 'unknown';
+// The descriptor a run plays: a chosen side mission overrides the campaign level (null = campaign).
+let activeMission = null;
+const currentLevelLabel = () => activeMission ? ('mission:' + (activeMission.title || 'side'))
+  : ((CATALOG.level && (CATALOG.level.title || CATALOG.level.map)) || 'unknown');
 // Fire-and-forget a gameplay event. `quit` uses sendBeacon so it survives tab close; others use fetch
 // with keepalive. Never throws, never blocks gameplay (the endpoint is best-effort server-side too).
 function track(type, data) {
@@ -1420,7 +1709,7 @@ function forwardVec(heading) {
 // Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,
 // and replay the warp-in animation so the return reads as intentional (not a glitch).
 function warpPlayerToCenter() {
-  player.mesh.position.set(0, 0.6, 0);
+  player.mesh.position.set(arenaCenter.x, 0.6, arenaCenter.z); // back to the (possibly drifted) arena center
   player.vel.set(0, 0, 0);
   player.oobTime = 0;
   if (!player.spawnScale) player.spawnScale = player.mesh.scale.clone(); // capture full size (model is loaded by now)
@@ -1529,11 +1818,20 @@ function update(dt) {
   // keeps flying in its current direction, no matter where the nose points
   player.mesh.position.addScaledVector(player.vel, dt);
 
-  // Soft boundary (DECISIONS §2): the player can fly past ±ARENA freely. Track how long the ship has
-  // been continuously outside; after a grace delay we warn (HUD), and after OOB_RETURN_TIME we warp
-  // it back to center. Re-entering resets the timer and clears the warning.
+  // Drifting arena (e.g. freighter escort): slowly pan the combat zone's center; the boundary, warp-back
+  // and mini-map all compute relative to it. Static maps (arenaDrift null) keep the center at (0,0).
+  if (arenaDrift) {
+    arenaCenter.x += arenaDrift.x * dt;
+    arenaCenter.z += arenaDrift.z * dt;
+    arenaBorder.line.position.set(arenaCenter.x, 0, arenaCenter.z);
+  }
+
+  // Soft boundary (DECISIONS §2): the player can fly past ±ARENA freely (measured from the arena center).
+  // Track how long it's been continuously outside; after a grace delay we warn (HUD), and after
+  // OOB_RETURN_TIME we warp it back to the center. Re-entering resets the timer and clears the warning.
   const p = player.mesh.position;
-  const oob = Math.abs(p.x) > ARENA || Math.abs(p.z) > ARENA;
+  const dxc = p.x - arenaCenter.x, dzc = p.z - arenaCenter.z;
+  const oob = Math.abs(dxc) > ARENA || Math.abs(dzc) > ARENA;
   if (oob) {
     player.oobTime += dt;
     if (player.oobTime >= OOB_RETURN_TIME) warpPlayerToCenter();
@@ -1541,7 +1839,7 @@ function update(dt) {
     player.oobTime = 0;
   }
   // edge marker brightens as the player approaches the wall, brightest while out of bounds
-  const edge = Math.max(Math.abs(p.x), Math.abs(p.z));
+  const edge = Math.max(Math.abs(dxc), Math.abs(dzc));
   const near = Math.min(1, Math.max(0, (edge - (ARENA - 60)) / 60));
   arenaBorder.mat.opacity = 0.12 + near * 0.5 + (oob ? 0.25 : 0);
 
@@ -1784,6 +2082,9 @@ function update(dt) {
 
   // moons orbit the planet (they do not rotate themselves - the terminator does not "wander")
   updateMoons(dt);
+
+  // mission set-pieces: their own slow animation (station spin, beams, exhaust, …)
+  for (const sp of setPieces) sp.update?.(dt);
 }
 
 // ---------- Perf overlay (load) ----------
@@ -1851,7 +2152,8 @@ function updateMiniMap() {
   if (!player || overlay.style.display !== 'none') { miniEl.style.visibility = 'hidden'; return; }
   miniEl.style.visibility = 'visible';
   const S = miniEl.width, c = S / 2, scale = (c - 6) / MINI_VIEW;
-  const toX = (x) => c + x * scale, toY = (z) => c + z * scale;
+  // map world → radar relative to the arena center (so the boundary square stays centered when it drifts)
+  const toX = (x) => c + (x - arenaCenter.x) * scale, toY = (z) => c + (z - arenaCenter.z) * scale;
   miniCtx.clearRect(0, 0, S, S);
 
   // arena boundary square
@@ -1950,7 +2252,19 @@ function reset() {
   shockwaves.length = 0;
   for (const e of enemies) scene.remove(e.mesh);
   enemies.length = 0;
-  player.mesh.position.set(0, 0.6, 0);
+  // A side mission fights over its own location in the world (its set-piece); the campaign uses (0,0).
+  const cx = (activeMission && activeMission.center && activeMission.center.x) || 0;
+  const cz = (activeMission && activeMission.center && activeMission.center.z) || 0;
+  arenaCenter.set(cx, 0, cz);             // fresh run: center the (possibly drifting) combat zone
+  arenaBorder.line.position.set(cx, 0, cz);
+  // a mission may drift its zone (the freighter escort); the campaign and other missions stay static
+  arenaDrift = (activeMission && activeMission.drift)
+    ? new THREE.Vector3(activeMission.drift.x || 0, 0, activeMission.drift.z || 0) : null;
+  // rebuild the shared world's set-pieces fresh each run (resets the cruising freighter to its start)
+  for (const sp of setPieces) scene.remove(sp.obj);
+  setPieces.length = 0;
+  for (const spec of mapSetpieces) buildSetPiece(spec);
+  player.mesh.position.set(cx, 0.6, cz);
   player.vel.set(0, 0, 0);
   player.heading = 0;
   player.hp = player.maxHp;
@@ -1962,7 +2276,7 @@ function reset() {
   player.alive = true;
   earned = 0; kills = 0; banked = false; // new run: reset session credits + the bank-once guard (balance persists)
   gameStartTime = performance.now(); // start timing a new game (for history)
-  levelRunner.start(CATALOG.level); // restart the level from phase 1 (spawns via update())
+  levelRunner.start(activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
   setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
   overlay.style.display = 'none';
   // funnel telemetry: game_start once per session, level_start per run; tag Sentry's scope with the level
@@ -1987,9 +2301,11 @@ function showHangar(briefing) {
   document.body.classList.add('menu'); // hide the in-game HUD behind the Hangar
   hangarEl.style.display = 'flex';
   openHangarShop(); // show the shop/stash bay if it's unlocked (cleared the final level)
+  refreshMissions(); // (re)load the side-mission board (top-right) if unlocked
 }
 function launchFromHangar() {
   pendingBriefing = null;
+  activeMission = null;                       // the hangar "Take off" plays the campaign level, not a side mission
   if (isTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
   hangarEl.style.display = 'none';
   document.body.classList.remove('menu');    // restore the in-game HUD
@@ -2010,6 +2326,59 @@ elRestart.addEventListener('click', leaveOverlay);
 // (shop/loadout), where Take off retries the mission.
 elBackHangar.addEventListener('click', () => { overlay.style.display = 'none'; showHangar(null); });
 document.getElementById('hangar-go').addEventListener('click', launchFromHangar);
+
+// ---------- Side missions: the 3-choice board (docs/plans/mission-generator.md) ----------
+// Provisional UI: three buttons top-right on the menus (once the campaign is cleared, same gate as the
+// shop). Clicking one opens a panel with that mission's flavor description + est. reward and a Take-off
+// button. Playing it banks per-kill ×2 credits (like a level) but does NOT advance the story counter.
+let missionOffers = [];
+const missionBtns = document.getElementById('mission-btns');
+const missionPanel = document.getElementById('mission-panel');
+async function refreshMissions() {
+  const unlocked = !!(playerId && activeShip && activeShip.shopUnlocked);
+  if (!unlocked) { missionOffers = []; missionBtns.innerHTML = ''; document.body.classList.remove('missions-on'); return; }
+  try {
+    const data = await fetchJson(`/api/players/${playerId}/missions`);
+    missionOffers = data.missions || [];
+  } catch { missionOffers = []; }
+  missionBtns.innerHTML = '';
+  if (!missionOffers.length) { document.body.classList.remove('missions-on'); return; }
+  missionOffers.forEach((m, i) => {
+    const b = document.createElement('button');
+    b.textContent = t('ui.mission.slot', { n: i + 1 });
+    b.addEventListener('click', () => openMissionPanel(i));
+    missionBtns.appendChild(b);
+  });
+  document.body.classList.add('missions-on');
+}
+function openMissionPanel(i) {
+  const m = missionOffers[i];
+  if (!m) return;
+  missionPanel._mission = m;
+  document.getElementById('mp-title').textContent = t(m.titleKey);
+  document.getElementById('mp-desc').textContent = t(m.descKey);
+  document.getElementById('mp-reward').textContent = t('ui.mission.est_reward', { credits: m.estReward });
+  missionPanel.classList.add('on');
+}
+function closeMissionPanel() { missionPanel.classList.remove('on'); missionPanel._mission = null; }
+document.getElementById('mp-close').addEventListener('click', closeMissionPanel);
+document.getElementById('mp-launch').addEventListener('click', () => {
+  const m = missionPanel._mission;
+  if (!m) return;
+  closeMissionPanel();
+  launchMission(m);
+});
+// Launch a chosen side mission (mirrors launchFromHangar, but plays the mission descriptor).
+function launchMission(m) {
+  activeMission = m.descriptor;
+  pendingBriefing = null;
+  if (isTouch) requestFullscreen();
+  hangarEl.style.display = 'none';
+  welcomeEl.style.display = 'none';
+  document.body.classList.remove('menu', 'missions-on');
+  gameStarted = true;
+  reset();
+}
 
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // The "spend" side of the economy: equipped loadout + stash + a simple shop, with a live ship-stats
@@ -2309,6 +2678,11 @@ if (location.search.includes('debug')) {
     explosions, sparks, shockwaves, trail, smoke,
     spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, reset, levelRunner,
     warpPlayerToCenter, arenaBorder, ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME,
+    setPieces, arenaCenter, // mission set-pieces + the (drifting) arena center
+    setArenaDrift(x, z) { arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
+    get activeMission() { return activeMission; }, // the side mission being played (null = campaign)
+    get missionOffers() { return missionOffers; },
+    launchMission, refreshMissions, // test/tool: drive the side-mission board
     get oobWarnVisible() { return oobWarnEl.style.display === 'block'; },
     get player() { return player; },   // built asynchronously in bootstrap()
     get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB
@@ -2387,6 +2761,7 @@ function showWelcome(playerShips) {
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   welcomeEl.style.display = 'flex';
+  refreshMissions(); // side-mission board (top-right) if unlocked
 }
 
 // ---------- Localization (i18n) UI glue ----------

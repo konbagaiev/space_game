@@ -9,6 +9,7 @@ import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advancePro
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent,
   getStash, buyItem, sellItem, equipItem, unequipItem } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
+import { generateMissions } from './missions.js';
 import { sendVerificationEmail, verificationUrl } from './ses.js';
 
 const SUPPORTED_LANGUAGES = ['en', 'ru']; // mirror of client SUPPORTED (DECISIONS §10)
@@ -141,6 +142,16 @@ export async function createApp() {
 
   // The player's stash + active ship + balance (and whether the shop is unlocked yet).
   app.get('/api/players/:id/stash', wrap(async (req, res) => res.json(await shopState(req.params.id))));
+
+  // ---------- Side missions (docs/plans/mission-generator.md) ----------
+  // The 3-choice side-mission board, unlocked after the campaign (same gate as the shop). Returns the
+  // currently-offered missions (each with a full level-style descriptor the client plays via levelRunner).
+  // Clearing one banks per-kill ×2 credits like a level and does NOT advance the story counter.
+  app.get('/api/players/:id/missions', wrap(async (req, res) => {
+    const active = await getActivePlayerShip(req.params.id);
+    if (!active || !active.shopUnlocked) return res.status(403).json({ error: 'missions locked' });
+    res.json({ missions: generateMissions() });
+  }));
 
   // Buy a catalog item into the stash (credits down). Body: { kind: 'component'|'weapon', refId }.
   app.post('/api/players/:id/buy', shopMutation((playerId, body) => {

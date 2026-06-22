@@ -454,6 +454,65 @@ policy. Until then the client-side freeze is the right, simplest thing.
 
 ---
 
+## 17. Mission set-pieces — procedural decor in the COMBAT scene, not collidable
+
+Mission environments (research station, asteroid field, freighter) are the **near "battle environment"
+we fight around**, so they go in the **combat `scene`, lit from above by the combat sun** — the same way
+we see the ships. This contrasts with §5 (the **planet & moons** live in `skyScene`, lit by a distant sun
+with a day/night terminator; **stars** are unlit): those are the far cosmic backdrop, the set-pieces are
+local. They sit **just below the combat plane** (close, so you fly over them with strong parallax like the
+background asteroids — tops ~20 below the ships so they don't poke through / occlude), with **`fog: false`**
+materials so they stay readable. (They started ~500 below as a backdrop; pulled close on playtest feedback.)
+
+Key call: **being in the combat scene does NOT make a mesh collidable.** Hit-tests and AI iterate the
+**gameplay entity arrays** (enemies / bullets / rockets / player), never "everything in the scene" — so a
+set-piece added as a plain visual mesh and **left out of those arrays** is pure decor: bullets pass
+through, the AI ignores it. To make an element collidable later (asteroid cover, a destructible base),
+register THAT element in the relevant gameplay array (scope B).
+
+They're **procedurally generated in code** (no CDN/`.glb`, no license; like the planet/moons/primitive
+ships) for now — swap to real `.glb` later (§14). Data-driven via a `setpieces` array on the **map**: there
+is **ONE shared world** (`home-system`) holding all the set-pieces at fixed, far-apart positions, so they
+exist on every level/mission. A side mission only changes **where you fight** — its `center` spawns the
+player + arena over the matching structure; the others sit at a distance. (An earlier iteration built only
+the active mission's set-piece at its center; the player asked for a single unified map differing only by
+combat location, so they moved back into the shared world — spread far enough apart that they don't pile
+up.) They're rebuilt each run so the cruising freighter resets. The **off-center / drifting-arena** coupling is
+**implemented**: the soft boundary/warp/mini-map compute relative to a movable `arenaCenter` (a side
+mission sets it to its `center`); a descriptor `drift` `{x,z}` can also pan it with a `sync` set-piece
+following — but **set-pieces are static today** (no mission turns drift on; it's for a future escort
+mission). Three builders exist: `research-station`,
+`asteroid-field` (irregular/cratered rocks + a mining station + a particle mining beam), and `freighter`
+(fiery exhaust). See `docs/plans/mission-maps.md`.
+
+---
+
+## 18. Side missions — generated level descriptors, repeatable, no story advance
+
+A "mission" **reuses the level engine**: it's the same `{ title, map, phases[] }` descriptor the campaign
+uses, played by the same client `levelRunner` — emitted by a generator (`server/src/missions.js`) instead
+of hand-authored. No new runtime. The board offers **three flavors** (mining / research / freighter) that
+are **identical in difficulty/composition** and differ only in flavor text (i18n) — *not* Easy/Med/Hard
+tiers (a deliberate call from `docs/plans/mission-generator.md`).
+
+Two decisions worth recording:
+- **Side missions don't advance the story counter** (`current_progress`). They're repeatable grind for
+  credits to fund the shop; the descriptor carries `sideMission: true` and the client's `win()` banks the
+  per-kill ×2 credits (via the existing `/api/games`) but **skips `unlockNextLevel()`**. Campaign levels
+  still advance as before.
+- **Reward = per-kill ×2, like a level** (2a). The generator is **stateless** and returns full descriptors
+  inline; the client plays them directly. **Server-sealed per-mission rewards** (so the payout can't be
+  forged) are deliberately deferred to the **integrity backlog** — it only matters once the sim isn't
+  client-trusted (PvP). The endpoint is still server-owned + gated by `shop_unlocked` (same gate as the
+  shop), so the *offering* is authoritative even though the reward isn't sealed yet.
+
+The **UI is provisional**: 3 buttons top-right + a description panel (not the eventual richer hangar board).
+Enemy mix/difficulty (the pirate gunner + the boss MG buff + the 2-boss finale) is
+`docs/plans/mission-enemies-difficulty.md`. Richer objectives + per-mission set-piece environments + reward
+sealing are later slices.
+
+---
+
 ## Future ideas
 
 sound · solid asteroids with bounce ·

@@ -99,14 +99,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **priced 600**), **Rocket (enemy)** (id 4, power 25). **Player shop ladder** (priced;
   `docs/plans/economy-shop-v2.md`): **Heavy cannon** (id 6: power 25, slow fire / long range / **2000**),
   **Heavy Machine Gun** (id 7: power 12, high RoF / **6000**), **Heavy rocket** (id 8: homing, power 90, slow
-  reload, big blast / **2600**).
+  reload, big blast / **2600**). Enemy: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
+  low damage 3; used by the pirate gunner and the buffed boss).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun, 30 hp light hull),
   `rocketeer` (yellow, gun + rocket, same 30 hp light hull), `medium` (purple ex-mini-boss, two rocket
-  launchers, 150 hp medium hull → sluggish, 2× model), and the `boss` (`first boss` — orange, its own
-  `boss.glb` model + own hull/engine, 210 hp, 3× model, two guns + two rocket launchers; spawned only
-  in the level's boss phase). Which enemies spawn is decided by the **level** (see Gameplay), not the
-  ship; ship `radius` scales with model size. Each enemy also carries a **`reward`** (`stats.reward`,
-  fighter 20 / rocketeer 40 / medium 100 / boss 200) in **credits**, earned on destruction.
+  launchers, 150 hp medium hull → sluggish, 2× model), `pirate_gunner` (deep-crimson skirmisher for the
+  side missions — Pirate hull 36 hp + Pirate engine top-speed +50% + one **long-range** Pirate machine
+  gun; reward 40), and the `boss` (`first boss` — orange, its own `boss.glb` model + own hull/engine,
+  210 hp, 3× model, **two Pirate machine guns** + two rocket launchers; spawned only in a boss phase).
+  Which enemies spawn is decided by the **level/mission** (see Gameplay), not the ship; ship `radius`
+  scales with model size. Each enemy also carries a **`reward`** (`stats.reward`, fighter 20 /
+  rocketeer 40 / pirate gunner 40 / medium 100 / boss 200) in **credits**, earned on destruction.
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 30 hp light hull, gun 4 damage
   (an enemy dies in 3 player hits; the player survives ~25 enemy hits).
 
@@ -122,6 +125,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   arena** — enemies chase the player out, spawn around it (no edge clamp), and bullets/rockets fly normally
   beyond ±240 (limited only by range/hits); combat works fully out of bounds. ±240 only drives the boundary
   UI (edge marker + warning/warp-back). See DECISIONS §2.
+- **Off-center / drifting arena.** The boundary, warp-back and mini-map all compute relative to a
+  **combat-zone center** (`arenaCenter`). A side mission sets it to the mission's `center` (so its fight
+  happens at that location); the campaign uses `(0,0)`. A `drift` `{x,z}` (units/sec) can also *pan* the
+  center over time (edge marker + warp-back + mini-map follow; a `sync` set-piece rides it) — the mechanic
+  is built and tested, but **no mission turns drift on today** (set-pieces are static). Wired for a future
+  escort mission.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate.
 - **Landing screen (reflects the current level)** — on load the homepage depends on the player's current
   level: if it has a **briefing** (level 2+), the client lands on the **Hangar** showing that briefing (so a
@@ -204,6 +213,21 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Heavy hull at 6000 is the aspirational big buy); sell = `floor(price*0.75)`, server-computed. The shop
   lists only `price > 0` items, so the curated ladder shows and enemy/starter parts
   don't. Around-model slot icons are a later polish (not built yet).
+- **Side missions — the 3-choice board** (`docs/plans/mission-generator.md`, provisional UI). Unlocked
+  **after clearing the campaign** (same gate as the shop). On the menus, **three buttons top-right**
+  (Mission 1/2/3); clicking one opens a **panel** with that mission's flavor description + est. reward and
+  a **Take off** button. The three flavors — **mining / research / freighter** (i18n flavor text only) —
+  are all the **same difficulty**: waves of **pirate gunner / rocketeer / heavy** (40/40/20 → 35/35/30),
+  then a **2-boss finale** (two buffed `first boss`). A mission is just a level-style descriptor played by
+  the existing `levelRunner`; clearing it **banks per-kill ×2 credits like a level but does NOT advance the
+  story counter** (repeatable grind to fund the shop). **Each mission fights at its own location in the
+  world** (`descriptor.center` — mining at `(-500, 0)`, research at `(350, 0)`, freighter at `(-100, -400)`),
+  away from the campaign center `(0,0)`. The map is **one shared world** — all three set-pieces exist at
+  fixed positions on every level/mission; the mission only moves the combat there (you spawn over the
+  matching structure, the others are in the distance). They sit **just below the combat plane** (strong
+  parallax like the background asteroids). Server-owned (`GET /api/players/:id/missions`,
+  gated); rewards bank via the existing `/api/games` (server-sealed per-mission rewards = later integrity
+  item). The board refreshes whenever a menu is shown.
 
 ## Visuals
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer)
@@ -219,7 +243,30 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   don't rotate, so the terminator stays consistent.
 - **The whole scene is data-driven:** it's described by a JSON **map descriptor** in the DB (`maps`
   table, seeded as `home-system`) and built generically by `buildMap(descriptor)` in `bootstrap()`
-  (planet/moons/stars/asteroids/sky-light from params). API: `GET /api/maps/:name`.
+  (planet/moons/stars/asteroids/sky-light/set-pieces from params). API: `GET /api/maps/:name`.
+- **Mission set-pieces (procedural decor).** The descriptor can carry a **`setpieces`** array — large
+  structures generated **in code** (no `.glb`) and added to the **combat `scene`** (so they're lit from
+  above by the combat sun, like the ships), sitting **just below the combat plane** (so you fly over them
+  with strong parallax, like the background asteroids; `fog: false` keeps them readable). **Decor only —
+  NOT registered in the gameplay arrays**, so bullets pass through and the AI ignores them (collidable
+  cover is a later scope). Each spec is `{ type, pos, scale, … }`; `buildSetPiece` dispatches to a
+  per-type builder, and each set-piece can self-animate (the render loop calls its `update(dt)`). **All
+  set-pieces live in ONE shared world** (the `home-system` map holds them at fixed, far-apart positions),
+  so they exist on every level/mission; a side mission only changes **where you fight** (its `center`
+  spawns you over the matching structure, the others sit at a distance). They're rebuilt each run (so the
+  cruising freighter resets). Three builders exist:
+  - **`research-station`** — a hub + a ring on spokes, two solar-panel wings, docking modules and
+    emissive windows; slowly rotates around its own axis. A `tilt` param tips it off-vertical so the ring
+    reads as a 3D wheel from the top-down camera (the research mission uses a light tilt).
+  - **`asteroid-field`** — a wide cluster of **irregular, cratered** rocks (noise-deformed icosahedra +
+    `makeMoonTexture`, varied sizes; distinct from the round parallax-backdrop asteroids) plus **two
+    mining rigs**, each a host rock + a **tilted station** + a **mining beam** (a particle stream flowing
+    from the host up to the collector). The rigs are tilted off vertical so the beam reads from the
+    top-down camera. Rocks tumble slowly. Tunable: `count`, `spread`, `hostSize`, `beamLen`, `beamTilt`.
+  - **`freighter`** — a cargo ship (spine + containers + bridge + engine block/nozzles) with a **fiery
+    exhaust** particle stream (hot→orange→red); **cruises slowly forward** (`speed` units/sec — a transport
+    in transit). (A separate `sync` + zone-drift escort mechanic exists but no mission turns it on.)
+  See `docs/plans/mission-maps.md`. (Collidable cover is later scope.)
 - **Enemy spawn ("warp in"):** a newly spawned enemy grows from a dot to its full size over
   `SPAWN_GROW_TIME` (1 s, ease-out cubic) — it scales up in place while the AI is already active.
 - Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
@@ -297,15 +344,21 @@ first translation). See DECISIONS §10.
   by fire-group; the displaced item returns to the stash), `unequipItem` (slot → stash; required slots allowed
   but then take-off is blocked). `getActivePlayerShip` now also returns **`shopUnlocked`**, **`launchable`**,
   and **`missingRequired`** (empty required slots).
-- **Maps & levels:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`),
-  built by `buildMap`. `levels` table holds a JSON descriptor per level (a map + a phase/wave script,
+- **Maps & levels:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`;
+  background, sky light, planet, moons, stars, asteroids, and an optional **`setpieces`** array of
+  procedural mission decor), built by `buildMap`. `levels` table holds a JSON descriptor per level (a map + a phase/wave script,
   seeded as `level-1`/`level-2`/`level-3`), played by the client's `levelRunner`. Served via `GET /api/maps/:name` and
   `GET /api/levels/:name`.
+- **Side missions:** `server/src/missions.js` is a stateless generator (`generateMissions()`) that emits
+  the 3 flavored side-mission descriptors (same composition; see Gameplay). `GET /api/players/:id/missions`
+  returns them, **gated by `shop_unlocked`** (403 until the campaign is cleared). Each descriptor carries
+  `sideMission: true`; the client plays it via `levelRunner` and banks via `/api/games` without advancing
+  progress. No new table (server-sealed rewards = later integrity item).
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
   `GET /api/players/:id/stash`, `POST /api/players/:id/buy`, `.../sell`, `.../equip`, `.../unequip`
-  (hangar shop; 403 until the shop is unlocked),
+  (hangar shop; 403 until the shop is unlocked), `GET /api/players/:id/missions` (side-mission board; 403 until unlocked),
   `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
   `GET /api/levels/:name`, the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
   `POST /api/auth/resend-verification`, `GET /api/auth/me`, `GET /api/auth/verify`), plus
@@ -433,13 +486,15 @@ first translation). See DECISIONS §10.
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (47): register / record game + credit banking / history /
+- **Backend API** — `server/src/server.test.js` (49): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
   player progress (current level + advance) + language preference + credits balance + level briefings
   (level-2 weapon swap, level-3 repair-drone install) + repair-drone component seed +
   **hangar shop/stash** (lock until the final level is cleared, unlock + basic-gun backfill, buy/sell/equip/
   unequip, optional-vs-required equipped sell, take-off launch gating, no double-spend, net-zero same-id equip,
   real-price buy/sell/overspend-402, the priced player-shop ladder is seeded) +
+  **side missions** (`/missions` 403 until unlocked → 3 same-difficulty offers with the 2-boss composition;
+  pirate gunner + Pirate machine gun id 9 seeded; boss guns swapped to the MG) +
   **auth** (username, register happy/duplicate-409/weak-400, login happy/wrong-401, `/me` authed vs 401,
   logout clears the session, verify-token flips `email_verified`, cross-device login adopts progress) +
   **monitoring** (`/api/config` returns `sentry:null` when unset; `/api/events` 204 allowlisted / 400
@@ -456,7 +511,11 @@ first translation). See DECISIONS §10.
   smoke, ship-explosion, exhaust-trail, combat, **hangar-shop** (unlock the shop, render the bay +
   live stats, install from the stash), pause, mobile-hangar, and **arena-boundaries** (the ship flies past
   the edge unclamped, the out-of-bounds warning shows after the grace delay, `warpPlayerToCenter` recenters +
-  zeroes velocity, and the edge marker + mini-map exist). Self-contained runner starts its own server + throwaway DB. Setup
+  zeroes velocity, and the edge marker + mini-map exist), and **mission-setpieces** (all three procedural
+  set-pieces are built into the combat scene below the plane and multi-part; the station rotates; the
+  drifting-arena mechanic moves the center/border and the synced freighter, and warp-back targets the drifted
+  center), and **mission-board** (after clearing the campaign, 3 mission buttons appear top-right, a button
+  opens the description panel, and Take off launches a `sideMission` via the levelRunner). Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for
   occasional larger releases. See `client/visual/README.md`.

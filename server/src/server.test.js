@@ -230,10 +230,10 @@ test('events: records an allowlisted event (204), rejects unknown/junk (400), st
 
 test('catalog: ships are seeded (player + enemies) with stats', async () => {
   const ships = await getJson('/api/ships');
-  assert.equal(ships.length, 5);
+  assert.equal(ships.length, 6);
   const names = ships.map((s) => s.name);
   assert.deepEqual(names.sort(),
-    ['Basic player ship', 'basic enemy ship', 'basic mini boss', 'basic rocket enemy', 'first boss'].sort());
+    ['Basic player ship', 'basic enemy ship', 'basic mini boss', 'basic rocket enemy', 'first boss', 'pirate gunner'].sort());
   const player = ships.find((s) => s.name === 'Basic player ship');
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player.glb');
@@ -241,7 +241,7 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');
-  assert.equal(enemies.length, 4); // fighter, rocketeer, mini-boss, first boss
+  assert.equal(enemies.length, 5); // fighter, rocketeer, mini-boss, first boss, pirate gunner
   // fighter + rocketeer share the same light hull + scout engine + scout thrusters
   const fighter = ships.find((s) => s.name === 'basic enemy ship');
   const rocketeer = ships.find((s) => s.name === 'basic rocket enemy');
@@ -267,7 +267,7 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   const comps = await getJson('/api/components');
   // 4 hulls + 3 engines + 4 thrusters + 1 repair drone (enemy/starter) + 6 player-shop ladder rows
   // (Heavy hull 13, Solid-fuel 15, Ion 16, Repair II 19, Nanobot 20, Advanced thrusters 21)
-  assert.equal(comps.length, 18);
+  assert.equal(comps.length, 20);
   const drone = comps.find((c) => c.name === 'Repair drone');
   assert.equal(drone.id, 12);
   assert.equal(drone.type, 'repair');
@@ -307,7 +307,7 @@ test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector bo
 test('catalog: weapons are seeded with type bullet/rocket', async () => {
   const weapons = await getJson('/api/weapons');
   // 5 base (ids 1–5) + 3 player-shop ladder weapons (Heavy cannon 6, Heavy Machine Gun 7, Heavy rocket 8)
-  assert.equal(weapons.length, 8);
+  assert.equal(weapons.length, 9);
   const types = new Set(weapons.map((w) => w.type));
   assert.deepEqual([...types].sort(), ['bullet', 'rocket']);
   const basic = weapons.find((w) => w.name === 'Basic kinetic');
@@ -472,6 +472,43 @@ test('shop: locked until the final level is cleared', async () => {
   // mutations are 403 while locked
   assert.equal((await post('/api/players/shop-lock/buy', { kind: 'weapon', refId: 1 })).status, 403);
   assert.equal((await post('/api/players/shop-lock/equip', { kind: 'weapon', refId: 1 })).status, 403);
+});
+
+test('missions: locked until the campaign is cleared, then 3 same-difficulty side missions are offered', async () => {
+  await getJson('/api/players/miss-lock/active-ship'); // register
+  assert.equal((await fetch(base + '/api/players/miss-lock/missions')).status, 403); // locked until cleared
+
+  await clearCampaign('miss-1');
+  const r = await getJson('/api/players/miss-1/missions');
+  assert.equal(r.missions.length, 3);
+  assert.deepEqual(r.missions.map((m) => m.type).sort(), ['freighter', 'mining', 'research']);
+  for (const m of r.missions) {
+    assert.ok(m.estReward > 0, 'has an est. reward');
+    assert.ok(m.descriptor.sideMission, 'flagged sideMission → banks credits but does not advance the story');
+    assert.equal(m.descriptor.map, 'home-system');
+    const ph = m.descriptor.phases;
+    assert.equal(ph.length, 5);
+    assert.ok(ph[0].spawn.pool.some((p) => p.ship === 'pirate gunner'), 'wave 1 includes the pirate gunner');
+    const bosses = ph.find((p) => p.name === 'bosses');
+    assert.equal(bosses.spawn.total, 2);                 // 2-boss finale
+    assert.equal(bosses.spawn.pool[0].ship, 'first boss');
+    assert.equal(ph[ph.length - 1].event, 'win');
+  }
+});
+
+test('catalog: pirate gunner + Pirate machine gun (id 9) are seeded; the boss guns use the MG', async () => {
+  const weapons = await getJson('/api/weapons');
+  const mg = weapons.find((w) => w.id === 9);
+  assert.ok(mg && mg.name === 'Pirate machine gun', 'Pirate machine gun seeded as weapon 9');
+  assert.equal(mg.stats.maxRange, 90);
+  const ships = await getJson('/api/ships');
+  const gunner = ships.find((s) => s.stats.role === 'pirate_gunner');
+  assert.ok(gunner, 'pirate gunner ship seeded');
+  assert.equal(gunner.components.hull, 22);            // Pirate hull
+  assert.equal(gunner.stats.mounts[0].weapon, 9);      // mounts the Pirate MG
+  const boss = ships.find((s) => s.stats.role === 'boss');
+  const bossGuns = boss.stats.mounts.filter((m) => m.group === 'gun');
+  assert.ok(bossGuns.length === 2 && bossGuns.every((m) => m.weapon === 9), 'boss guns swapped to the Pirate MG');
 });
 
 test('shop: unlocks on clearing the campaign and backfills the basic gun into the stash', async () => {
