@@ -305,7 +305,10 @@ export const MAPS = [
         { radius: 11, color: 0xb9b2a6, orbitR: 96, tilt: 0.5, speed: 0.0625 },
         { radius: 7, color: 0x8f9aa6, orbitR: 136, tilt: -0.35, speed: -0.04 },
       ],
-      asteroids: { count: 500, spread: 440, color: 0x6b6f78 },
+      // a field of small rocks filling the whole disk (inner=0) out to radius `spread`=1000 — inside
+      // the arena AND far beyond it; the far edge fades into the fog (~600), so distant rocks read as
+      // a faraway field you can fly out into
+      asteroids: { count: 2000, inner: 0, spread: 1000, color: 0x6b6f78, minSize: 0.18, maxSize: 0.5, depth: 10, depthVar: 24 },
     }
   },
 ];

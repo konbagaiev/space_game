@@ -5,6 +5,32 @@
 
 ## 2026-06-22
 
+- **Combat works out of bounds + distant asteroid field.** Follow-up to the soft boundary: **(1)** removed
+  every remaining hard clamp to the arena — enemies are no longer pinned inside ±240 (dropped the
+  `clampToArena` call + the now-unused function), they spawn in the ring around the player even when it's
+  out of bounds (no spawn clamp), and bullets/rockets are no longer culled at the boundary (limited only by
+  their range/hits). So the player can fight normally past the edge. **(2)** Reworked the asteroid layer into
+  a **distant ring well outside the arena**: `makeAsteroids` now takes the descriptor object and scatters
+  rocks in an annulus (`inner`..`spread` radius) instead of a square, with `minSize`/`maxSize`/`depth`
+  params; the `home-system` seed makes them **smaller** (≤0.5) and scatters **2000** of them across the
+  whole disk (`inner` 0 → `spread` **1000**) — inside the arena and far beyond it, the far edge fading into
+  the fog (~600). Client (`index.html`) + seed (`catalog_seed.js`); visual scenario `08-arena-boundaries`
+  extended (enemy spawns + stays out of bounds).
+
+- **Soft arena boundaries + mini-map.** Replaced the hard wall at ±240 (which zeroed the player's
+  velocity and read as a bug — the ship stuck to an invisible edge) with a **soft boundary**: the player
+  now flies past the edge freely. A faint glowing **edge marker** (a Line at ±240, additive blend, brightens
+  as you approach/cross) makes the battlefield bounds visible. After the ship is **2 s continuously out of
+  bounds** (`OOB_WARN_DELAY`) a centered HUD **warning + countdown** appears ("You've left the battlefield —
+  return to the combat zone" / "Returning in {seconds}s"); re-entering clears it. After **30 s** out
+  (`OOB_RETURN_TIME`) the ship **auto-warps back to center** — velocity zeroed, replaying the enemy warp-in
+  grow animation so it reads as intentional. Added a corner **mini-map/radar** (bottom-center, non-interactive)
+  showing the arena square, the player (heading triangle, clamped to the radar edge so it stays visible OOB,
+  red while out), and type-colored enemy dots; it **complements** the existing off-screen edge arrows.
+  **Enemies are still hard-clamped** inside the arena — only the player gets the soft boundary. New EN+RU
+  i18n (`ui.oob.warning`, `ui.oob.countdown`). Client-only (`index.html` + locales); new visual scenario
+  `08-arena-boundaries`. Supersedes the boundary behavior in DECISIONS §2. (`docs/plans/arena-boundaries.md`.)
+
 - **Mobile hangar fixes.** **(1)** The welcome/hangar screens now **scroll** — on short/landscape viewports
   the shop bay made them taller than the screen and the **Take off** button was clipped/unreachable; added
   `overflow-y:auto` and top-aligned layout under `@media (max-height:600px)` so you can scroll down to launch.

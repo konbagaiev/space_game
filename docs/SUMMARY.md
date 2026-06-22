@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-21
+**Updated:** 2026-06-22
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -43,6 +43,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Off-screen enemy markers** — for each enemy that's off-screen, an arrow on the screen edge points
   toward it, tinted by the enemy's type color (`updateMarkers`, a pooled DOM overlay). Hidden while an
   overlay (game over / victory) is up.
+- **Mini-map / radar** (left edge, vertically centered, `<canvas id="minimap">`, non-interactive) — an overview that
+  **complements** the edge arrows (arrows = immediate threat direction; radar = spatial overview, useful now
+  that the player can wander out of bounds). Shows the **arena boundary** square (±240), the **player** as a
+  heading triangle (clamped to the radar edge so it stays visible when far out, red while out of bounds), and
+  **enemies** as dots tinted by type color (`updateMiniMap`). Hidden on menus and while a result overlay is up.
 
 ## Ship model (DB-driven)
 Ships, components and weapons are **defined in the database** (`ships`, `components`, `weapons`); the
@@ -107,7 +112,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 
 ## Gameplay
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
-  buttons are released — smooth braking. At the arena boundaries (±240) the velocity along the axis is zeroed.
+  buttons are released — smooth braking.
+- **Soft arena boundary (±240).** The player can fly **past** the edge freely — there's no hard wall. A
+  faint glowing **edge marker** (a Line at ±240, brightens as you approach/cross) shows where the
+  battlefield ends. After **2 s continuously out of bounds** (`OOB_WARN_DELAY`) a centered HUD **warning +
+  countdown** appears ("You've left the battlefield — return to the combat zone" / "Returning in {seconds}s",
+  i18n keyed); re-entering clears it. After **30 s** out (`OOB_RETURN_TIME`) the ship is **warped back to
+  center** (velocity zeroed, replaying the enemy warp-in grow animation). **Nothing is hard-clamped to the
+  arena** — enemies chase the player out, spawn around it (no edge clamp), and bullets/rockets fly normally
+  beyond ±240 (limited only by range/hits); combat works fully out of bounds. ±240 only drives the boundary
+  UI (edge marker + warning/warp-back). See DECISIONS §2.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate.
 - **Landing screen (reflects the current level)** — on load the homepage depends on the player's current
   level: if it has a **briefing** (level 2+), the client lands on the **Hangar** showing that briefing (so a
@@ -192,8 +206,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   don't. Around-model slot icons are a later polish (not built yet).
 
 ## Visuals
-- Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer,
-  the sense of speed) → planet + 2 moons (light parallax).
+- Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer)
+  → planet + 2 moons (light parallax). The asteroids are a **field of small rocks filling the whole disk**
+  (annulus `inner`..`spread` radius; `inner` 0 → centered, `spread` 1000 in `home-system`) — inside the
+  ±240 arena **and** far beyond it, sunk below the combat plane; the far edge fades into the fog (~600), so
+  distant rocks read as a faraway field you can fly out into. Flying past them gives the sense of speed.
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the planet and moons).
 - The planet and moons have minimal **procedural textures** (baked canvas maps, no asset files):
@@ -436,8 +453,10 @@ first translation). See DECISIONS §10.
 - **Visual / e2e** — `client/visual/` (Playwright headless, **not in CI**): boots the real game and
   asserts on simulation state (particle counts, size ratios, exhaust colors) via a `?debug`-gated
   `window.__game` hook; saves frames to `__screenshots__/` for review (no pixel diffing). Scenarios:
-  smoke, ship-explosion, exhaust-trail, combat, and **hangar-shop** (unlock the shop, render the bay +
-  live stats, install from the stash). Self-contained runner starts its own server + throwaway DB. Setup
+  smoke, ship-explosion, exhaust-trail, combat, **hangar-shop** (unlock the shop, render the bay +
+  live stats, install from the stash), pause, mobile-hangar, and **arena-boundaries** (the ship flies past
+  the edge unclamped, the out-of-bounds warning shows after the grace delay, `warpPlayerToCenter` recenters +
+  zeroes velocity, and the edge marker + mini-map exist). Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for
   occasional larger releases. See `client/visual/README.md`.

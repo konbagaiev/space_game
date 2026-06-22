@@ -4,6 +4,8 @@
   "ui.hud.earned": "Заработано",
   "ui.hud.destroyed": "Уничтожено",
   "ui.hud.enemies": "Враги",
+  "ui.oob.warning": "Вы покинули поле боя — вернитесь в зону боевых действий",
+  "ui.oob.countdown": "Возврат через {seconds} с",
   "ui.help": "<b>W / ↑</b> — тяга · <b>S / ↓</b> — назад · <b>A / D</b> или <b>← →</b> — поворот · <b>Space</b> — огонь · <b>F</b> — ракета",
   "ui.overlay.gameover": "Игра окончена",
   "ui.overlay.ship_destroyed": "Корабль уничтожен",

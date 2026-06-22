@@ -29,9 +29,18 @@ Specifics:
   vector, wherever the nose is pointing (you can drift sideways and shoot forward).
 - **Passive braking:** if NOT a SINGLE control button is pressed — velocity smoothly
   decays (`IDLE_DRAG`). Hold a turn to aim and the inertia is preserved.
-- **Arena boundaries:** at the wall the velocity along the axis is zeroed (no bounce). Arena ±240.
+- **Arena boundaries (soft, since 2026-06-22):** the player may fly past ±240 freely — there is **no
+  hard wall**. Earlier we zeroed the axis velocity at the wall, which read as a bug (the ship "stuck"
+  to an invisible edge). Now a faint glowing edge marker shows where the battlefield ends; after the
+  ship is **2 s continuously out of bounds** a HUD warning + countdown appears, and after **30 s** out
+  the ship is **warped back to center** (velocity zeroed, reusing the enemy warp-in animation). A
+  corner mini-map/radar gives spatial awareness. **Nothing is hard-clamped to the arena** — enemies
+  chase the player out and spawn around it (no edge clamp), and bullets/rockets fly normally beyond
+  ±240 (limited only by range/hits), so combat works fully out of bounds; ±240 only drives the
+  boundary UI. (The old `clampToArena` clamp was removed.) See `docs/plans/arena-boundaries.md`.
 
-Knobs: `ACCEL` (acceleration), `TURN` (turning), `IDLE_DRAG` (braking), `ARENA` (size).
+Knobs: `ACCEL` (acceleration), `TURN` (turning), `IDLE_DRAG` (braking), `ARENA` (size),
+`OOB_WARN_DELAY` (warning grace, 2 s), `OOB_RETURN_TIME` (auto-return, 30 s).
 
 ---
 
