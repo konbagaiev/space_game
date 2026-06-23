@@ -1,9 +1,10 @@
-// Procedural audio for Vega Sentinels — built on the native Web Audio API (no library, no asset files).
-// Every sound effect is SYNTHESIZED (oscillators + filtered noise + envelopes) and the background music
-// is GENERATIVE (layered pads + an arpeggio over a slow chord progression). This matches the project's
-// "procedural, built-in only" ethos (canvas planet textures, code-generated set-pieces) and ships with
-// zero binaries / CDN / licensing. It's swappable for real audio files later (a BufferSource on the same
-// bus) without touching the call sites — see DECISIONS §21.
+// Audio for Vega Sentinels — built on the native Web Audio API (no library). The engine is PROCEDURAL by
+// default: every sound effect is SYNTHESIZED (oscillators + filtered noise + envelopes) and the background
+// music is GENERATIVE (layered pads + an arpeggio over a slow chord progression). On top of that sits an
+// optional SAMPLE layer (preloadSamples/playSample): a weapon can opt into a real recorded sound, which
+// plays as a BufferSource on the SAME sfx bus, with the synth as the fallback when the sample is missing.
+// This matches the project's "procedural, built-in only" ethos while allowing curated SFX where they help
+// (DECISIONS §22). Sample bytes live on S3 (content-hashed, pulled same-origin), never in git.
 //
 // Two layers live here:
 //   1) Pure settings helpers (clamp / load / save / effective gain) — Three.js- AND browser-free, unit-tested.
@@ -74,6 +75,7 @@ export function createAudio(initialSettings) {
   let schedTimer = null, nextNoteTime = 0, step = 0;
   let activeVoices = 0;          // crude polyphony cap so machine-gun fire / swarms can't run away
   let noiseBuf = null;
+  const buffers = new Map();     // logical SFX name → decoded AudioBuffer (sample layer; empty ⇒ all-synth)
   let unlockKicked = false;      // Safari needs a node played inside the gesture, not just resume()
 
   const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
@@ -132,9 +134,44 @@ export function createAudio(initialSettings) {
     return ctx && ctx.state === 'running' && settings.sfxOn && settings.sfx > 0 && activeVoices < 28;
   }
 
+  // Sample layer. Fetch + decode each URL into the buffer cache. Call AFTER unlock() (needs a live ctx).
+  // Failures are swallowed per-sound: a missing buffer just means the caller falls back to its synth voice.
+  // `map`: { logicalName: url }. Idempotent — already-loaded names are skipped.
+  async function preloadSamples(map) {
+    ensure();
+    if (!ctx || !map) return;
+    await Promise.all(Object.entries(map).map(async ([name, url]) => {
+      if (buffers.has(name) || !url) return;
+      try {
+        const data = await (await fetch(url)).arrayBuffer();
+        buffers.set(name, await ctx.decodeAudioData(data));
+      } catch { /* leave unset → synth fallback */ }
+    }));
+  }
+
+  // Play a preloaded sample on the sfx bus as a one-shot. Returns false if it couldn't (no buffer / capped),
+  // so a caller can fall back to a synth voice. `rate` pitches it (machine-gun variation); `gain` scales it.
+  function playSample(name, { rate = 1, gain = 1 } = {}) {
+    if (!sfxPlayable()) return false;
+    const buf = buffers.get(name);
+    if (!buf) return false;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate;
+    const g = ctx.createGain(); g.gain.value = gain;
+    src.connect(g); g.connect(sfxGain); src.start(t);
+    activeVoices++; src.onended = () => { activeVoices = Math.max(0, activeVoices - 1); };
+    return true;
+  }
+
   const sfx = {
-    // Player primary fire: a crisp descending zap.
-    shoot() {
+    // Player primary fire. With a `kind` (a weapon's stats.sfx, e.g. 'kinetic') it plays that preloaded
+    // sample with a subtle per-shot pitch jitter — so rapid machine-gun fire reusing one clip doesn't sound
+    // like a robotic loop. No kind (or the sample isn't loaded) → the synthesized descending zap below.
+    shoot(kind, opts) {
+      if (kind) {
+        const rate = opts && opts.rate != null ? opts.rate : 0.96 + Math.random() * 0.08;
+        if (playSample(kind, { rate, gain: (opts && opts.gain) ?? 1 })) return;
+      }
       if (!sfxPlayable()) return;
       const t = ctx.currentTime;
       const o = ctx.createOscillator(); o.type = 'square';
@@ -291,6 +328,7 @@ export function createAudio(initialSettings) {
     getSettings() { return { ...settings }; },
     setScene,
     sfx,
+    preloadSamples,   // load weapon SFX samples (call after unlock); missing buffers fall back to synth
     isReady() { return !!ctx && ctx.state === 'running'; },
   };
 }

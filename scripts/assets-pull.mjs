@@ -1,16 +1,24 @@
-// assets:pull — sync the combat (low-poly) models from S3 into the server's same-origin asset dir
-// (client/assets/ships/). For LOCAL dev (get the content-hashed models referenced by the seed) and the
-// model the CI deploy uses (CI runs the same sync before `docker build`, baking them into the image so
-// runtime has no S3/CORS dependency). The in-git primitive glbs are untouched (only hashed files sync in).
-// Uses the AWS profile from env (claude_admin locally; a scoped read-only key in CI). Run: `npm run assets:pull`.
+// assets:pull — sync the same-origin assets from S3 into the server's serve dirs: combat (low-poly)
+// models into client/assets/ships/, and SFX mp3s into client/assets/sounds/. For LOCAL dev (get the
+// content-hashed assets referenced by the seed / sfx manifest) and the deploy the CI uses (CI runs the
+// same sync before `docker build`, baking them into the image so runtime has no S3/CORS dependency). The
+// in-git primitive glbs are untouched (only hashed files sync in).
+// Uses the AWS profile from env (the default/claude_admin profile locally; a scoped read-only key in CI).
+// Run: `npm run assets:pull`.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { BUCKET, awsArgs, PREFIX, DIR } from './assets-config.mjs';
 
-fs.mkdirSync(DIR.combatServe, { recursive: true });
-// content-hashed names → only new models download; existing files (incl. the in-git primitives) stay
+const aws = (args) => execFileSync('aws', [...awsArgs(), ...args], { stdio: 'inherit' });
+
+// content-hashed names → only new files download; existing files (incl. the in-git primitives) stay
 // (no --delete). Empty prefix ⇒ a clean no-op.
-const args = ['s3', 'sync', `s3://${BUCKET}/${PREFIX.combat}`, DIR.combatServe, '--exclude', '*', '--include', '*.glb'];
-console.log(`[pull] s3://${BUCKET}/${PREFIX.combat} → ${DIR.combatServe}`);
-execFileSync('aws', [...awsArgs(), ...args], { stdio: 'inherit' });
-console.log('Done. Combat models are in place (same-origin).');
+function pull(prefix, dest, ext) {
+  fs.mkdirSync(dest, { recursive: true });
+  console.log(`[pull] s3://${BUCKET}/${prefix} → ${dest}`);
+  aws(['s3', 'sync', `s3://${BUCKET}/${prefix}`, dest, '--exclude', '*', '--include', `*.${ext}`]);
+}
+
+pull(PREFIX.combat, DIR.combatServe, 'glb');   // combat models → client/assets/ships/
+pull(PREFIX.sounds, DIR.soundsServe, 'mp3');    // SFX mp3s → client/assets/sounds/
+console.log('Done. Combat models + SFX are in place (same-origin).');

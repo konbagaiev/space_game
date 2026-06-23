@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-23 (`?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+**Updated:** 2026-06-23 (sampled SFX layer + audio asset pipeline — kinetic guns use a real sample; `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -97,14 +97,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `basic enemy ship` uses this (`modelYaw: Math.PI`; its `enemy_1` export faced `-Z`). An optional
   **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
   lazy-loaded; the basic enemy has one — `enemy_1_hangar`). See `client/assets/README.md` + `CREDITS.md`.
-- **Ship-model asset pipeline** (`docs/plans/ship-model-pipeline.md`, partial): repo-root `npm run
+- **Asset pipeline** (`docs/plans/ship-model-pipeline.md` + `audio-sample-pipeline.md`): repo-root `npm run
   assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb) / `assets:push`
-  (→ S3 `vega-sentinels-assets`) / `assets:pull` (S3 → `client/assets/ships/`) / `assets:check`
-  (drift-check: every pipeline `model_url*` in the seed exists on S3 — the deploy guard). **No binaries
-  in git** (S3 canonical; the in-git primitives stay as a fallback). `scripts/assets-*.mjs`. **CI is wired**
-  (the deploy job runs check + pull before the build, baking combat models into the image) via a scoped
-  **read-only IAM key** (`vega-assets-ci-read` → GitHub secrets `ASSETS_AWS_*`) — a safe no-op until a real
-  model is added. See DECISIONS §14.
+  (→ S3 `vega-sentinels-assets`: glbs to `ships-combat/`+`ships-hangar/`, **SFX mp3s to `sfx/`**, sources to
+  `source/`) / `assets:pull` (S3 → `client/assets/ships/` **+ `client/assets/sounds/`**) / `assets:check`
+  (drift-check: every pipeline `model_url*` in the seed **and every `SFX_SOURCES` url in `sfx_manifest.js`**
+  exists on S3 — the deploy guard). **No binaries in git** (S3 canonical; the in-git primitives stay as a
+  fallback). `scripts/assets-*.mjs`. **CI is wired** (the deploy job runs check + pull before the build,
+  baking combat models **and SFX** into the image) via a scoped **read-only IAM key** (`vega-assets-ci-read`,
+  bucket-wide read → GitHub secrets `ASSETS_AWS_*`). **Audio SFX**: drop a source in `assets-src/sounds/`,
+  extract/clean/encode an mp3 by hand (ffmpeg recipes in the audio plan), content-hash → `assets-dist/sounds/`,
+  push, then paste the hashed url into `sfx_manifest.js`. See DECISIONS §14 + §22.
 - **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
   `maxRange`, `fireCooldown`; rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
@@ -330,19 +333,26 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the glow layer, accent sparks and ring), so the player's burst is cyan-blue, enemies' orange. Used on
   enemy and player death.
 
-## Audio (procedural — `client/src/audio.js`)
-**Fully procedural, native Web Audio API — no library, no audio files, nothing on the CDN.** SFX are
-**synthesized** (oscillators + filtered white noise + gain envelopes) and the background music is
-**generative**. Matches the project's procedural/built-in-only ethos; swappable for real files later
-(DECISIONS §22). `createAudio()` builds a lazy `AudioContext` on the **first user gesture** (browser
-autoplay policy; `audio.unlock()` on first `pointerdown`/`keydown` + on opening settings). Graph:
-sources → `sfxGain` / `musicGain` → master → a `DynamicsCompressor` → output; a **polyphony cap** (~28
-voices) + the compressor keep machine-gun fire / stacked explosions from clipping.
-- **SFX** (`audio.sfx.*`, hooked in `index.html`): **shoot** (player gun), **enemyShoot** (lower,
+## Audio (procedural + sampled — `client/src/audio.js`)
+**Native Web Audio API, no library.** **Procedural by default** — SFX are **synthesized** (oscillators +
+filtered white noise + gain envelopes) and the background music is **generative** — plus an optional
+**sampled SFX layer** for curated sounds (DECISIONS §22). `createAudio()` builds a lazy `AudioContext` on
+the **first user gesture** (browser autoplay policy; `audio.unlock()` on first `pointerdown`/`keydown` + on
+opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `DynamicsCompressor` → output; a
+**polyphony cap** (~28 voices) + the compressor keep machine-gun fire / stacked explosions from clipping.
+- **SFX** (`audio.sfx.*`, hooked in `index.html`): **shoot(kind?)** (player gun), **enemyShoot** (lower,
   low-passed, **distance-attenuated** so a swarm doesn't drown the player), **hit** (bullet connects),
   **rocket** (launch whoosh), **explosion(size)** (ship death — sized to `sizeScale`; rocket detonation
   uses a smaller one), **uiClick** (every `<button>` via a capturing handler), and a **jingle** (ascending
   major on victory / descending minor on death).
+- **Sampled SFX layer.** `audio.preloadSamples(map)` fetches + decodes content-hashed mp3s into a buffer
+  cache (called once after unlock with `SFX_SOURCES` from `client/src/sfx_manifest.js`); `audio.sfx.shoot('kinetic')`
+  plays that sample as a `BufferSource` on `sfxGain` with a subtle per-shot pitch jitter (so rapid fire
+  reusing one clip isn't a robotic loop), **falling back to the synth zap** if the buffer is missing.
+  A weapon opts in via **`stats.sfx: '<key>'`** in `catalog_seed.js` (flows to the runtime weapon as
+  `w.sfx`, read at the fire site in `fireMount`). Currently **`Basic kinetic` (1), `Machine Gun` (5),
+  `Heavy Machine Gun` (7)** use the **`kinetic`** sample (a CC0 glock shot). Enemy fire stays synthesized.
+  Sample bytes live on S3 (`sfx/`), pulled same-origin into `client/assets/sounds/` — see the asset pipeline.
 - **Music** is generative: sustained pad triads + an arpeggio over a slow **Am–F–C–G** progression
   (look-ahead scheduler). It **follows game state** via `audio.setScene()` — a driving **combat** mood
   (faster + a bass pulse) during a live fight, a calmer **hangar** mood (slow, sparse) on

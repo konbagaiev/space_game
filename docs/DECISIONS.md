@@ -683,6 +683,23 @@ when a licensed track is chosen, without rework.
   screens + while paused) is the project's first dedicated settings menu; language/zoom intentionally stay
   where they are for now (scope kept to audio).
 
+**Amendment (2026-06-23) — the swap path is now partly realized: a sampled SFX layer.** The synth stays the
+default, but a weapon can now opt into a **real recorded sound**. Why hybrid-for-SFX (not just music): the
+user disliked the synthesized gun reports and preferred sourcing real shots; samples and synth coexist on the
+same `sfxGain` bus, so the mix safety (compressor + ~28-voice cap) and call sites are unchanged. Mechanics:
+`audio.preloadSamples(map)` decodes content-hashed mp3s into a buffer cache (loaded once after unlock from
+`client/src/sfx_manifest.js`); `sfx.shoot(kind)` plays the named buffer as a `BufferSource` with a subtle
+per-shot pitch jitter (rapid machine-gun fire reusing one clip would otherwise sound robotic), and falls back
+to the synth zap when the buffer is absent — so a missing/failed asset is never a hard error. Routing is
+**data-driven**: a weapon's `stats.sfx` key (in `catalog_seed.js`) flows to the runtime weapon as `w.sfx`,
+read at the fire site — no client hardcoding. **Distribution** reuses the ship-model pipeline (DECISIONS §14):
+the mp3 bytes are content-hashed, pushed to S3 (`sfx/`), pulled same-origin into `client/assets/sounds/`
+(gitignored, no binaries in git), and verified by the `assets:check` deploy guard. **Extraction stays manual
+/ agent-driven** ("a source file + a comment" → pick + clean the shot with ffmpeg) rather than an automated
+splitter, since judging which take and how much reverb tail to keep needs an ear. First sound: a CC0 glock
+shot (Freesound) on the kinetic guns. Format **mp3** (smallest, universal `decodeAudioData`). Full process:
+`docs/plans/audio-sample-pipeline.md`.
+
 ## 23. Performance quality tiers — High / Balance / Performance
 
 **Decision.** A player-facing **graphics quality** selector (3 tiers) in the settings menu, persisted in

@@ -33,25 +33,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history so Sentry can associate commits with the release (set-commits --auto)
-      # Ship-model asset pipeline (docs/plans/ship-model-pipeline.md): verify every pipeline model_url* in
-      # the seed exists on S3 (deploy guard — no ghost ships), then pull the combat models into
-      # client/assets/ships/ so the rsync + `docker compose build` below bake them into the image (runtime
-      # stays same-origin). Uses a scoped READ-ONLY key (vega-assets-ci-read). No-op today (in-git primitives,
-      # empty ships-combat/). Skipped if the secret is unset.
+      # Asset pipeline (docs/plans/ship-model-pipeline.md + audio-sample-pipeline.md): verify every pipeline
+      # asset referenced in code exists on S3 (deploy guard — no ghost ships / silent SFX), then pull the
+      # combat models into client/assets/ships/ and the SFX mp3s into client/assets/sounds/ so the rsync +
+      # `docker compose build` below bake them into the image (runtime stays same-origin). Uses a scoped
+      # READ-ONLY key (vega-assets-ci-read). Skipped if the secret is unset.
       - name: Set up Node (asset pipeline)
         if: ${{ env.ASSETS_AWS_ACCESS_KEY_ID != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: '23'
-      - name: Ship models — verify on S3 + pull combat models
+      - name: Assets — verify on S3 + pull combat models & SFX
         if: ${{ env.ASSETS_AWS_ACCESS_KEY_ID != '' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.ASSETS_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.ASSETS_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
         run: |
-          node scripts/assets-check.mjs   # deploy guard: every pipeline model must exist on S3
-          node scripts/assets-pull.mjs    # combat models → client/assets/ships/ (rsynced + baked next)
+          node scripts/assets-check.mjs   # deploy guard: every pipeline model + SFX must exist on S3
+          node scripts/assets-pull.mjs    # combat models → client/assets/ships/, SFX → client/assets/sounds/ (rsynced + baked next)
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh

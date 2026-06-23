@@ -14,14 +14,17 @@ export const PREFIX = {
   source: 'source/',        // high-poly originals (off-machine backup; lets the pipeline re-run)
   combat: 'ships-combat/',  // low-poly combat glbs (pulled onto the server at deploy, served same-origin)
   hangar: 'ships-hangar/',  // high-poly hangar glbs (served via CloudFront, lazy-loaded)
+  sounds: 'sfx/',           // content-hashed SFX mp3s (pulled at deploy, served same-origin like combat)
 };
 
-// Local working dirs — ALL gitignored (no binaries in git). Drop sources in `src`, build into `dist`;
-// `combatServe` is where the server serves combat glbs from (pulled there in CI / by `assets:pull`).
+// Local working dirs — ALL gitignored (no binaries in git). Drop sources in `src` (models or sounds/*),
+// build into `dist`; `*Serve` dirs are where the server serves the assets from (pulled there in CI / by
+// `assets:pull`). SFX sources live in `assets-src/sounds/`, built mp3s in `assets-dist/sounds/`.
 export const DIR = {
   src: 'assets-src',
   dist: 'assets-dist',
   combatServe: 'client/assets/ships',
+  soundsServe: 'client/assets/sounds',
 };
 
 // Build presets (tunable). Combat is aggressively decimated (the ship is tiny top-down) and uses NO
@@ -39,3 +42,5 @@ export const PRESET = {
 // A run-on-S3 URL for a combat/hangar object. Combat is served same-origin (relative path); hangar via CDN.
 export const combatPath = (file) => `assets/ships/${file}`;
 export const hangarUrl = (file) => `${CDN}/${PREFIX.hangar}${file}`;
+// SFX are tiny and latency-sensitive → served same-origin (relative path), like combat models.
+export const soundPath = (file) => `assets/sounds/${file}`;

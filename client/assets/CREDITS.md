@@ -8,7 +8,7 @@ asset page is also handy, in case the author later changes the terms).
 
 | Asset (file) | Author | Source URL | License | Date added |
 |--------------|--------|------------|---------|------------|
-| _none yet_   |        |            |         |            |
+| sounds/kinetic.\<hash\>.mp3 (kinetic gun SFX) | serutonin-deprivd | https://freesound.org/s/855652/ | CC0 1.0 | 2026-06-23 |
 
 <!--
 Example row:
@@ -17,7 +17,8 @@ Example row:
 
 ## Audio
 
-**All game audio is procedurally synthesized in code** (native Web Audio API, `client/src/audio.js`) —
-SFX and the generative background music. **There are no third-party audio assets**, so nothing to license
-here. If a real music track / SFX files are added later (DECISIONS §22 keeps that swap open), list each
-one in the table above with its source + license before use.
+**Most game audio is procedurally synthesized in code** (native Web Audio API, `client/src/audio.js`) —
+the generative background music and most SFX have no third-party assets. A **sampled SFX layer** (DECISIONS
+§22) adds curated recordings where they help; each sampled sound is a third-party asset and **must** be
+listed in the table above with its source + license before use. Sample bytes are content-hashed and live on
+S3 (`sfx/`), pulled into `client/assets/sounds/` (gitignored) — see `docs/plans/audio-sample-pipeline.md`.

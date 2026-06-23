@@ -588,12 +588,15 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
-import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // procedural Web Audio (SFX + generative music)
+import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // Web Audio (synth SFX + generative music + sampled SFX)
+import { SFX_SOURCES } from './src/sfx_manifest.js'; // logical SFX name → content-hashed same-origin mp3 (sample layer)
 import { loadTier, resolveTier, saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones)
 
-// Procedural audio engine: SFX are synthesized + music is generative (no asset files). The AudioContext
-// is created lazily on the first user gesture (autoplay policy) via audio.unlock(). See DECISIONS §21.
+// Audio engine: synthesized SFX + generative music (procedural), plus an optional sampled SFX layer
+// (preloadSamples). The AudioContext is created lazily on the first user gesture (autoplay) via
+// audio.unlock(); samples are fetched once the context is live. See DECISIONS §22.
 const audio = createAudio(loadAudioSettings(window.localStorage));
+let samplesLoaded = false; // one-time guard so the sample preload fires once, after the context unlocks
 
 // Graphics quality tier — read BEFORE the renderer (antialias is a constructor arg). `isTouch` is
 // defined later (used by the input layer), so detect touch locally here for the first-run default.
@@ -614,6 +617,7 @@ function refreshMusic() { audio.setScene(musicForState()); }
 const UNLOCK_EVENTS = ['pointerdown', 'touchend', 'click', 'keydown'];
 function tryUnlockAudio() {
   audio.unlock();
+  if (!samplesLoaded && audio.isReady()) { samplesLoaded = true; audio.preloadSamples(SFX_SOURCES); } // load weapon samples once the ctx is live
   refreshMusic();
   if (audio.isReady()) UNLOCK_EVENTS.forEach((ev) => removeEventListener(ev, tryUnlockAudio));
 }
@@ -1722,8 +1726,9 @@ function fireMount(ship, mount, fwd, isPlayer) {
     audio.sfx.rocket();
   } else {
     spawnBullet(muzzle, fwd, w, isPlayer, ship.vel);
-    // distinct, distance-attenuated report for enemies so a swarm doesn't drown the player's own fire
-    if (isPlayer) audio.sfx.shoot();
+    // distinct, distance-attenuated report for enemies so a swarm doesn't drown the player's own fire.
+    // w.sfx (a weapon's stats.sfx, e.g. 'kinetic') opts into a sampled report; unset → synthesized zap.
+    if (isPlayer) audio.sfx.shoot(w.sfx);
     else audio.sfx.enemyShoot(player && player.mesh ? ship.mesh.position.distanceTo(player.mesh.position) : 0);
   }
 }

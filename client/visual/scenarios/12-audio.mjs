@@ -1,10 +1,29 @@
 // Audio + settings menu: the settings gear opens an audio modal (Master/Music/SFX volumes + on/off
 // toggles), changes persist to localStorage and reach the engine, and the music scene follows game
 // state (hangar/menu mood ⇄ combat mood). SFX/music are inaudible in headless software audio, so we
-// assert on engine STATE (settings + scene) and the DOM, not on sound.
+// assert on engine STATE (settings + scene) and the DOM, not on sound. We DO verify the sampled-SFX
+// happy path (served same-origin + decodable) since that's deterministic regardless of autoplay.
+import { SFX_SOURCES } from '../../src/sfx_manifest.js';
+
 export const name = '12-audio';
 
 export default async function ({ page, assert, shot }) {
+  // Sampled weapon SFX: each manifest URL is served same-origin and decodes to a short clip. This is the
+  // sample layer's happy path; OfflineAudioContext.decodeAudioData needs no user gesture, so it's reliable
+  // headless (unlike the live AudioContext, which may stay suspended). A missing/undecodable file would
+  // silently fall back to synth at runtime — but in the seed it should always resolve, so we assert it here.
+  for (const [key, url] of Object.entries(SFX_SOURCES)) {
+    const r = await page.evaluate(async (u) => {
+      const res = await fetch(u);
+      if (!res.ok) return { ok: false, status: res.status };
+      const buf = await res.arrayBuffer();
+      const decoded = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(buf.slice(0));
+      return { ok: true, dur: decoded.duration, bytes: buf.byteLength };
+    }, url);
+    assert.ok(r.ok, `sfx '${key}' (${url}) is served same-origin (status ${r.status})`);
+    assert.ok(r.dur > 0.02 && r.dur < 2, `sfx '${key}' decodes to a short clip (${r.dur}s)`);
+  }
+
   // On a menu (Welcome or Hangar) the gear is visible; the engine starts on the menu mood once unlocked.
   const menuUp = await page.evaluate(() => {
     const vis = (id) => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; };

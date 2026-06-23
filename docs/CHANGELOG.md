@@ -5,6 +5,26 @@
 
 ## 2026-06-23
 
+- **Sampled SFX layer + audio asset pipeline — first real sound.** The audio engine
+  (`client/src/audio.js`) gains an optional sample layer alongside its procedural synth: `preloadSamples()`
+  fetches + decodes content-hashed mp3s into a buffer cache, and `sfx.shoot('kinetic')` plays the sample as
+  a `BufferSource` on `sfxGain` (with a per-shot pitch jitter so rapid machine-gun fire reusing one clip
+  isn't robotic), falling back to the synth zap if the buffer is missing. Weapons opt in **data-driven** via
+  `stats.sfx` in `catalog_seed.js` (`Basic kinetic` 1, `Machine Gun` 5, `Heavy Machine Gun` 7 → `kinetic`),
+  read as `w.sfx` at the fire site (`fireMount` in `index.html`); enemy fire stays synthesized. The first
+  sound is a **CC0 glock shot from Freesound** (serutonin-deprivd), one shot extracted + tail-trimmed +
+  loudness-normalized to a 0.22 s dry transient (ffmpeg). New manifest `client/src/sfx_manifest.js` pins the
+  hashed url (the audio analog of a ship's `modelUrl`). Plan: `docs/plans/audio-sample-pipeline.md`.
+- **Asset pipeline extended to audio (S3 + CI/CD).** `scripts/assets-config.mjs` gains a sounds lane
+  (`PREFIX.sounds='sfx/'`, `DIR.soundsServe='client/assets/sounds'`, `soundPath()`); `assets:push` uploads
+  built mp3s (`assets-dist/sounds/*.<hash>.mp3` → `sfx/`, `audio/mpeg`) + sound sources (→ `source/`);
+  `assets:pull` syncs `sfx/` → `client/assets/sounds/`; `assets:check` (deploy guard) now also verifies every
+  `SFX_SOURCES` url exists on S3. `.gitignore` excludes `client/assets/sounds/*.*.mp3` (no binaries in git).
+  CI/CD (`ci-cd.yml`) deploy step renamed/extended to pull models **and** SFX and bake them into the image;
+  the scoped read-only IAM key (`vega-assets-ci-read`) is already bucket-wide so no IAM change was needed.
+  Verified end-to-end (build→push→pull→serve→decode) + the headless `12-audio` visual scenario now asserts
+  each manifest sound is served same-origin and decodes. Fixed a stale `DECISIONS §21`→`§22` ref in
+  `audio.js` + `index.html`.
 - **Graphics quality tiers (High/Balance/Performance) — implemented.** Built the selector from
   `docs/plans/performance-quality-tiers.md` into the existing settings menu. New pure module
   `client/src/graphics.js` (+ `graphics.test.js`) holds the tier knob table and `localStorage`

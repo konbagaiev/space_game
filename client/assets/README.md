@@ -55,3 +55,29 @@ preview it (`scripts/assets-config.mjs`). Before `npm run assets:push`:
    (`-Z` → `Math.PI`); don't re-export just to rotate.
 3. After seeding, **eyeball it in-game** (open the game, or `npm run test:visual` from `client/` and
    check the screenshots) — confirm the ship flies nose-first, not engine-first.
+
+## Audio SFX (`.mp3`)
+
+Full process + ffmpeg recipes: **`docs/plans/audio-sample-pipeline.md`**. The short version:
+
+1. **Get a sound** — prefer **CC0** (e.g. [Freesound](https://freesound.org), filter license = Creative
+   Commons 0; also [Kenney](https://kenney.nl/assets?q=audio), [Sonniss GDC](https://sonniss.com/gameaudiogdc)).
+   Drop the original in **`assets-src/sounds/`** (gitignored). Avoid `*-NC`.
+2. **Extract + clean one shot** (by hand — judging the take + reverb tail needs an ear). Inspect with
+   `ffmpeg -i IN.wav -af silencedetect=noise=-30dB:d=0.2 -f null -`, cut the segment, then trim the tail +
+   normalize, e.g.:
+   ```bash
+   ffmpeg -y -accurate_seek -ss <START> -to <END> -i IN.wav -ac 1 -af \
+     "highpass=f=60,atrim=0:0.22,afade=t=out:st=0.17:d=0.05,loudnorm=I=-16:TP=-1.5:LRA=11,alimiter=limit=0.95" \
+     -codec:a libmp3lame -q:a 4 assets-dist/sounds/<name>.mp3
+   ```
+   Long reverb tails smear under rapid (machine-gun) fire — keep the clip short and dry.
+3. **Content-hash** → `mv … "<name>.$(shasum -a 256 <name>.mp3 | cut -c1-8).mp3"` (cache-forever; new
+   sound = new url).
+4. **Push** (`npm run assets:push` → `sfx/` on S3) and **register** the hashed url in
+   **`client/src/sfx_manifest.js`** (`SFX_SOURCES`).
+5. **Route it to a weapon** — set **`stats.sfx: '<name>'`** on the weapon in `server/src/catalog_seed.js`
+   (it flows to the client as `w.sfx` and plays via `audio.sfx.shoot(w.sfx)`; un-routed weapons keep the
+   synth sound). **Record the license** in `CREDITS.md`.
+6. **Verify** — `npm run test:visual` from `client/` (the `12-audio` scenario checks each manifest sound is
+   served same-origin + decodes), and listen in-game.

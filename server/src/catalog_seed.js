@@ -73,7 +73,7 @@ export const COMPONENTS = [
 export const WEAPONS = [
   {
     id: 1, name: 'Basic kinetic', type: 'bullet', price: 800, stats: { // granted into the stash on shop unlock; sells ~600 to help fund the Heavy hull
-      power: 10, projectileSpeed: 40, maxRange: 88, fireCooldown: 0.18, weight: 6, projectileColor: 0x6fe6ff
+      power: 10, projectileSpeed: 40, maxRange: 88, fireCooldown: 0.18, weight: 6, projectileColor: 0x6fe6ff, sfx: 'kinetic'
     }
   },
   {
@@ -97,7 +97,7 @@ export const WEAPONS = [
   },
   {
     id: 5, name: 'Machine Gun', type: 'bullet', price: 1500, stats: { // rapid-fire kinetic: low per-hit damage, high rate of fire — strong, so NOT cheap
-      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066
+      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066, sfx: 'kinetic'
     }
   },
   // --- Player shop ladder weapons (docs/plans/catalog-economy.md). Trade-offs: damage ↔ fire-rate ↔ range ↔ weight.
@@ -108,7 +108,7 @@ export const WEAPONS = [
   },
   {
     id: 7, name: 'Heavy Machine Gun', type: 'bullet', price: 6000, stats: { // strong all-rounder: med damage, high rate of fire
-      power: 12, projectileSpeed: 48, maxRange: 100, fireCooldown: 0.12, weight: 8, projectileColor: 0xb46bff
+      power: 12, projectileSpeed: 48, maxRange: 100, fireCooldown: 0.12, weight: 8, projectileColor: 0xb46bff, sfx: 'kinetic'
     }
   },
   {

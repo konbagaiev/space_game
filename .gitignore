@@ -26,6 +26,8 @@ assets-src/
 assets-dist/
 # content-hashed combat models pulled from S3 (in-git primitives have no hash → not matched)
 client/assets/ships/*.*.glb
+# content-hashed SFX mp3s pulled from S3 (sfx manifest holds the hashed URLs; bytes stay out of git)
+client/assets/sounds/*.*.mp3
 
 # Logs
 *.log
