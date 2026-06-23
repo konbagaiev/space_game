@@ -50,6 +50,16 @@ export const COMPONENTS = [
   // Enemy gear → price 0 (hidden from the shop). ids continue past the max (21).
   { id: 22, name: 'Pirate hull', type: 'hull', weight: 10, stats: { durability: 36, volume: 45 } },          // 30 × 1.2
   { id: 23, name: 'Pirate engine', type: 'engine', weight: 6, stats: { power: 12.6, maxSpeed: 15.75, exhaust: { color: 0xff6a4a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 } } }, // maxSpeed 10.5 × 1.5; same accel as Scout
+
+  // --- Level-4 enemies (docs/plans/level-4-difficulty.md). Tunable; net turn/accel are mass-scaled, so
+  // component power is bumped above the headline +30% to land roughly +30% NET after the heavier hulls.
+  // Advanced medium pirate (heavy bruiser, 300 HP, turns ~+30% vs the mini-boss):
+  { id: 24, name: 'Pirate heavy hull', type: 'hull', weight: 100, stats: { durability: 300, volume: 250 } }, // 2× mini-boss (150)
+  { id: 25, name: 'Pirate medium thruster', type: 'thruster', weight: 8, stats: { power: 1.25 } },          // ~+30% net turn vs Medium (0.63) once mass-scaled
+  // Second Boss (450 HP, speed/accel/turn ~+30% vs the first boss):
+  { id: 26, name: 'Second-boss engine', type: 'engine', weight: 50, stats: { power: 30, maxSpeed: 11, exhaust: { color: 0xff3a2a, speed: 11, life: 0.6, size: 0.95, spread: 0.45 } } }, // boss 19/8 bumped for ~+30% net
+  { id: 27, name: 'Second-boss thruster', type: 'thruster', weight: 20, stats: { power: 2.7 } },            // boss 1.66 bumped for ~+30% net turn
+  { id: 28, name: 'Second-boss hull', type: 'hull', weight: 140, stats: { durability: 450, volume: 600 } }, // first boss 210 → 450
 ];
 
 // --- weapons: type 'bullet' | 'rocket'; stats hold the (now fully DB-driven) characteristics ---
@@ -114,6 +124,12 @@ export const WEAPONS = [
       power: 3, projectileSpeed: 50, maxRange: 90, fireCooldown: 0.18, weight: 6, projectileColor: 0xff5a4a
     }
   },
+  // Second Boss main gun (level-4): a hard-hitting, slow, long-range cannon (one shot/sec). Enemy gear.
+  {
+    id: 10, name: 'Advanced pirate cannon', type: 'bullet', stats: {
+      power: 10, projectileSpeed: 60, maxRange: 110, fireCooldown: 1.0, weight: 10, projectileColor: 0xff4a3a
+    }
+  },
 ];
 
 // fire-group presets (a group can carry a player key and/or an enemy AI rule; ships use what fits)
@@ -125,6 +141,10 @@ const ROCKET = { key: 'KeyF', ai: { range: 80, aimTol: 0.40 } };
 // (player_ships.components may override them); `stats` carry role/color/sizeScale + groups + mounts.
 // fighter, rocketeer and the medium share the SAME engine (6); the medium is sluggish only because of
 // its heavier hull (mass). The boss has its own hull + engine; weapons are shared (in WEAPONS).
+// `modelUrl` = the COMBAT (low-poly, same-origin) model; the optional `modelUrlHigh` = the HANGAR
+// (high-poly, CloudFront, lazy-loaded) model. In-git primitives stay as `assets/ships/<ship>.glb`;
+// content-hashed CDN/S3 URLs come from the asset pipeline (docs/plans/ship-model-pipeline.md). No ship
+// has a high-poly model yet (all `modelUrlHigh` null).
 export const SHIPS = [
   {
     name: 'Basic player ship', type: 'player', modelUrl: 'assets/ships/player.glb',
@@ -192,6 +212,38 @@ export const SHIPS = [
         { weapon: 9, group: 'gun', offset: 0.6, delay: 0 },
         { weapon: 4, group: 'rocket', offset: -0.9, delay: 0 },
         { weapon: 4, group: 'rocket', offset: 0.9, delay: 0.2 },
+      ]
+    }
+  },
+  // --- Level-4 enemies (docs/plans/level-4-difficulty.md) ---
+  {
+    // Advanced medium pirate: the L4 heavy — mini-boss model recolored maroon, 300 HP, turns ~+30% faster,
+    // one long-range Pirate MG + two rocket launchers.
+    name: 'advanced medium pirate', type: 'enemy', modelUrl: 'assets/ships/heavy.glb',
+    components: { hull: 24, engine: 6, thruster: 25 }, stats: {
+      role: 'advanced_medium_pirate', color: 0x800020, sizeScale: 2, reward: 150,
+      groups: { gun: GUN_LONG, rocket: ROCKET },
+      mounts: [
+        { weapon: 9, group: 'gun', offset: 0, delay: 0 },
+        { weapon: 4, group: 'rocket', offset: -0.8, delay: 0 },
+        { weapon: 4, group: 'rocket', offset: 0.8, delay: 0.2 },
+      ]
+    }
+  },
+  {
+    // Second Boss (the L4 finale): first-boss model recolored crimson, 450 HP, ~+30% speed/accel/turn,
+    // three rocket launchers + two Advanced pirate cannons. Distinct role 'boss2' (the test helper
+    // spawnEnemy('boss') still resolves to the first boss).
+    name: 'second boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb',
+    components: { hull: 28, engine: 26, thruster: 27 }, stats: {
+      role: 'boss2', color: 0x8b0000, sizeScale: 3, reward: 400,
+      groups: { gun: GUN_LONG, rocket: ROCKET },
+      mounts: [
+        { weapon: 10, group: 'gun', offset: -0.6, delay: 0 },
+        { weapon: 10, group: 'gun', offset: 0.6, delay: 0 },
+        { weapon: 4, group: 'rocket', offset: -0.9, delay: 0 },
+        { weapon: 4, group: 'rocket', offset: 0, delay: 0.15 },
+        { weapon: 4, group: 'rocket', offset: 0.9, delay: 0.3 },
       ]
     }
   },
@@ -307,6 +359,49 @@ export const LEVELS = [
           advanceWhen: { allCleared: true }
         },
         { name: 'victory', event: 'win', delay: 5, textKey: 'level.3.victory', text: 'Sector cleared. Congratulations, Sentinel!' },
+      ]
+    }
+  },
+  // Level 4 — "Find the pirate base" (docs/plans/level-4-find-the-pirate-base.md). The story level after
+  // L3; reaching it (clearing L3) shows this briefing and OPENS THE HANGAR SHOP + side missions
+  // (`unlockShop` action — text-only otherwise). Clearly harder than L3: pirate gunners + more heavies,
+  // higher kill thresholds, and the upgraded boss (two pirate MGs). Sets up L5 ("Storm the pirate base").
+  {
+    name: 'level-4', descriptor: {
+      title: 'Level 4', map: 'home-system',
+      briefing: {
+        textKey: 'level.4.briefing',
+        text: "Several ships bolted from the factory just before we arrived — we tracked their heading, and your job is to find where they're hiding. While you're docked, look over the upgrade gear the factory has on hand: we counted a lot of heavy ships among the ones that fled, so kit out accordingly. Good hunting, Sentinel.",
+        actions: [{ type: 'unlockShop' }], // reaching L4 (after clearing L3) opens the shop + side missions
+      },
+      phases: [
+        {
+          name: 'wave-1', // pirate gunners + rocketeers + advanced medium pirates (docs/plans/level-4-difficulty.md)
+          spawn: {
+            maxConcurrent: 5, pool: [
+              { ship: 'pirate gunner', chance: 40 },
+              { ship: 'basic rocket enemy', chance: 40 },
+              { ship: 'advanced medium pirate', chance: 20 }]
+          },
+          advanceWhen: { kills: 8 }
+        },
+        {
+          name: 'wave-2', // more heavies as the trail closes in on the base
+          spawn: {
+            maxConcurrent: 5, pool: [
+              { ship: 'pirate gunner', chance: 35 },
+              { ship: 'basic rocket enemy', chance: 35 },
+              { ship: 'advanced medium pirate', chance: 30 }]
+          },
+          advanceWhen: { kills: 16 }
+        },
+        { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
+        {
+          name: 'boss', // the Second Boss guards the base's coordinates
+          spawn: { maxConcurrent: 1, total: 1, pool: [{ ship: 'second boss', chance: 1 }] },
+          advanceWhen: { allCleared: true }
+        },
+        { name: 'victory', event: 'win', delay: 5, textKey: 'level.4.victory', text: "Tracked. The pirate base just lit up our long-range scan — they're dug in deep. Rearm and regroup, Sentinel; next, we take it down." },
       ]
     }
   },

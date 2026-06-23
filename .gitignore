@@ -18,6 +18,11 @@ client/assets/**/_source/
 client/assets/ships/*_4k.glb
 client/assets/ships/spaceship_colaid1_50k.glb
 
+# Ship-model asset pipeline (docs/plans/ship-model-pipeline.md): NO binaries in git — S3 is canonical.
+assets-src/                              # high-poly source originals (scratch staging; canonical copy on S3 source/)
+assets-dist/                             # build outputs (uploaded to S3 by assets:push)
+client/assets/ships/*.*.glb             # content-hashed combat models pulled from S3 (in-git primitives have no hash)
+
 # Logs
 *.log
 npm-debug.log*

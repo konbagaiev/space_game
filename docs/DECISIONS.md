@@ -403,6 +403,33 @@ blocked) → CloudFront `d1843uwjdjg4vs.cloudfront.net` (distribution `E10277HTP
 `https://d1843uwjdjg4vs.cloudfront.net/ships/<name>_hangar.glb`. A custom domain
 (e.g. `cdn.vega.tenony.com` via ACM) can be added later.
 
+**Asset pipeline (`docs/plans/ship-model-pipeline.md`) — partially implemented (2026-06-23).** How models
+are sourced, optimized, stored and kept in sync:
+- **No binaries in git — S3 is canonical** (revised from "commit the tiny combat glb"): high-poly
+  **sources → S3 `source/`**, **combat low-poly → S3 `ships-combat/`**, **hangar high-poly → S3
+  `ships-hangar/`** (served via CloudFront). The repo carries only **URLs/paths in the seed**, not bytes.
+  (The handful of existing primitive `.glb` stay in git as a fallback; the pipeline is for real sourced
+  models.)
+- **Combat models are pulled onto the server at DEPLOY (CI), not runtime** — CI `aws s3 sync ships-combat/
+  → client/assets/ships/` before `docker build`, baked into the image → runtime stays same-origin (no
+  CORS / no startup S3 dependency; the blue-green healthcheck isn't gated on S3). Hangar high-poly stays
+  lazy-loaded from CloudFront.
+- **Content-hashed filenames** (`<ship>_combat.<hash>.glb`) — hash = version; caches forever, new model =
+  new URL, no invalidation. Bytes on S3 + hashed URL in git ⇒ they can't drift.
+- **Drift-check / deploy guard:** every pipeline `model_url*` in the seed must exist on S3 or the
+  deploy fails (no ghost ships) — `npm run assets:check`.
+- **Tooling:** local `npm run assets:build` (gltf-transform via npx → combat + hangar, content-hashed) /
+  `assets:push` (→ S3, `claude_admin`) / `assets:pull` (S3 → local) / `assets:check`. Generation stays
+  **local** (needs the source + human judgment on decimation). **Implemented:** the schema field
+  `ships.model_url_high` (migration 012 / PG bootstrap); the four `scripts/assets-*.mjs` + root
+  `package.json` scripts (build verified end-to-end); the scoped **read-only IAM user `vega-assets-ci-read`**
+  (S3 `GetObject`/`ListBucket` on the bucket only — verified read-allowed / write-denied) with its access key
+  stored as GitHub secrets `ASSETS_AWS_ACCESS_KEY_ID`/`ASSETS_AWS_SECRET_ACCESS_KEY`; and the **CI deploy
+  job** runs `assets:check` (guard) + `assets:pull` (S3 → `client/assets/ships/`, baked into the image)
+  before the rsync/build, gated on the secret. All a **safe no-op today** (in-git primitives, empty
+  `ships-combat/`). **Remaining:** produce the first real sourced model (run build → push → paste URLs →
+  commit). No ship has a `model_url_high` yet.
+
 ## 15. Hangar shop & stash (the "spend" side of the economy)
 
 See `docs/plans/hangar-shop.md` for the full brief. Key choices:

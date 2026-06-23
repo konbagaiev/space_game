@@ -5,6 +5,43 @@
 
 ## 2026-06-23
 
+- **Level 4 real balance — Advanced medium pirate, Second Boss, new waves** (`docs/plans/level-4-difficulty.md`).
+  New enemy **`advanced_medium_pirate`** (`heavy.glb` recolored maroon `0x800020`, **300 hp** hull, turns
+  ~+30% vs the medium, 1 Pirate MG + 2 rockets, reward 150) and the **Second Boss `boss2`** (`boss.glb`
+  recolored crimson `0x8b0000`, **450 hp**, ~+30% speed/accel/turn, **2× Advanced pirate cannons + 3
+  rockets**, reward 400), plus a new enemy weapon **Advanced pirate cannon** (id 10 — power 10, 1 shot/sec,
+  range 110) and the new components (ids 24–28: 300/450-HP hulls, a faster medium thruster, a +30% boss
+  engine/thruster — component power bumped above the headline +30% to land ~+30% NET after the heavier mass;
+  all tunable). **Level-4 waves** rebuilt: `pirate gunner / rocketeer / advanced medium pirate` 40/40/20 →
+  35/35/30 (maxConcurrent 5) to 8 then 16 kills → clear-out → the **Second Boss** finale. `catalog_seed.js`
+  only; server tests (50) updated; new visual scenario `11-l4-enemies`.
+
+- **Ship-model asset pipeline (local tooling + schema).** First slice of `docs/plans/ship-model-pipeline.md`.
+  **Schema:** new nullable **`ships.model_url_high`** (migration 012 / PG bootstrap + idempotent ALTER) for
+  the hangar high-poly model URL, wired through the seed + datastore + API (`modelUrlHigh`, null for all
+  ships today). **Tooling:** repo-root `package.json` + `scripts/assets-*.mjs` — **`assets:build`**
+  (gltf-transform via npx → a content-hashed combat + hangar `.glb`; verified end-to-end), **`assets:push`**
+  (→ S3 `vega-sentinels-assets`, content-hashed, immutable cache), **`assets:pull`** (S3 combat → 
+  `client/assets/ships/`), **`assets:check`** (drift-check / deploy guard: every pipeline `model_url*` in the
+  seed must exist on S3 — a safe no-op today since all models are in-git primitives). **Policy:** no binaries
+  in git (S3 canonical); `.gitignore` excludes `assets-src/`, `assets-dist/`, and content-hashed combat glbs.
+  **Infra wired:** created the scoped **read-only IAM user `vega-assets-ci-read`** (S3 GetObject/ListBucket
+  on the bucket only — verified read-allowed / write-denied), stored its key as GitHub secrets
+  `ASSETS_AWS_ACCESS_KEY_ID`/`ASSETS_AWS_SECRET_ACCESS_KEY`, and added an `assets:check` + `assets:pull` step
+  to the **`ci-cd.yml` deploy job** (before rsync/build, gated on the secret) so combat models are baked into
+  the image. All a safe **no-op today** (no real models yet). **Remaining:** produce the first real model.
+  See DECISIONS §14.
+
+- **Level 4 — "Find the pirate base."** New campaign level after L3 (`docs/plans/level-4-find-the-pirate-base.md`),
+  appended to `LEVELS` in `catalog_seed.js` (gets the next level id; `advance` is gap-tolerant). Clearing L3
+  now **advances into L4 and shows its briefing** — fixing the "L3 victory text lingers" symptom (there was
+  no next level before). The L4 briefing is text + a new **`unlockShop` briefing action** (added to both
+  backends' `applyBriefingActions`) that opens the hangar shop + side missions on reaching L4 — i.e. still on
+  clearing L3, the original campaign milestone (the old "unlock on advancing off the last level" stays as a
+  fallback). L4 is clearly harder than L3: **pirate gunners + more heavies** (40/35/25 → 30/25/45 to 12/24
+  kills) + the **upgraded boss**; its victory sets up the planned L5. New EN+RU `level.4.briefing` /
+  `level.4.victory`. Server tests updated (progression now L1→L4; L4 briefing unlocks the shop; L4 served).
+
 - **Mission set-pieces spread further apart + resized.** Per playtest, in the shared `home-system` world:
   the **asteroid field** moved 100 further left (`x` −400→−500), the **research station** 150 further right
   (`x` +200→+350) and **1.5× smaller** (scale 0.9→0.6), and the **freighter** 100 further "up"/north

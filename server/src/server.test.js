@@ -91,14 +91,19 @@ test('progress: current level is level-1, and advancing unlocks the next levels'
   assert.equal(a2.advanced, true);
   assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-3');
 
-  // already at the last level → no-op
+  // clearing level-3 advances into level-4
   const a3 = await (await post('/api/players/prog-2/advance', {})).json();
-  assert.equal(a3.advanced, false);
-  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-3');
+  assert.equal(a3.advanced, true);
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-4');
+
+  // already at the last level (level-4) → no-op
+  const a4 = await (await post('/api/players/prog-2/advance', {})).json();
+  assert.equal(a4.advanced, false);
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-4');
 
   // progress persists on re-register
   const reg = await (await post('/api/players/register', { playerId: 'prog-2' })).json();
-  assert.equal(reg.currentProgress, 3);
+  assert.equal(reg.currentProgress, 4);
 });
 
 test('briefing: advancing into level-2 returns its message and swaps the basic gun for the Machine Gun', async () => {
@@ -128,10 +133,18 @@ test('briefing: advancing into level-2 returns its message and swaps the basic g
   assert.equal(l3ship.components.hull, 1);    // existing slots untouched
   assert.equal(l3ship.components.engine, 5);
 
-  // already at the last level → no advance, no briefing
+  // advancing into level-4 returns its (text-only) briefing and OPENS THE SHOP (unlockShop action)
+  const beforeShop = (await getJson('/api/players/brief-1/active-ship')).shopUnlocked;
+  assert.equal(beforeShop, false, 'shop still locked while on level-3');
   const adv3 = await (await post('/api/players/brief-1/advance', {})).json();
-  assert.equal(adv3.advanced, false);
-  assert.equal(adv3.briefing, null);
+  assert.equal(adv3.advanced, true);
+  assert.equal(adv3.briefing.textKey, 'level.4.briefing');
+  assert.equal((await getJson('/api/players/brief-1/active-ship')).shopUnlocked, true, 'reaching level-4 unlocked the shop');
+
+  // already at the last level (level-4) → no advance, no briefing
+  const adv4 = await (await post('/api/players/brief-1/advance', {})).json();
+  assert.equal(adv4.advanced, false);
+  assert.equal(adv4.briefing, null);
 });
 
 test('register: missing playerId -> 400', async () => {
@@ -230,18 +243,20 @@ test('events: records an allowlisted event (204), rejects unknown/junk (400), st
 
 test('catalog: ships are seeded (player + enemies) with stats', async () => {
   const ships = await getJson('/api/ships');
-  assert.equal(ships.length, 6);
+  assert.equal(ships.length, 8);
   const names = ships.map((s) => s.name);
   assert.deepEqual(names.sort(),
-    ['Basic player ship', 'basic enemy ship', 'basic mini boss', 'basic rocket enemy', 'first boss', 'pirate gunner'].sort());
+    ['Basic player ship', 'basic enemy ship', 'basic mini boss', 'basic rocket enemy', 'first boss',
+     'pirate gunner', 'advanced medium pirate', 'second boss'].sort());
   const player = ships.find((s) => s.name === 'Basic player ship');
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player.glb');
+  assert.equal(player.modelUrlHigh ?? null, null); // hangar high-poly model: none yet (pipeline-ready)
   assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8 }); // assembled from components
   assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');
-  assert.equal(enemies.length, 5); // fighter, rocketeer, mini-boss, first boss, pirate gunner
+  assert.equal(enemies.length, 7); // fighter, rocketeer, mini-boss, first boss, pirate gunner, advanced medium pirate, second boss
   // fighter + rocketeer share the same light hull + scout engine + scout thrusters
   const fighter = ships.find((s) => s.name === 'basic enemy ship');
   const rocketeer = ships.find((s) => s.name === 'basic rocket enemy');
@@ -267,7 +282,7 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   const comps = await getJson('/api/components');
   // 4 hulls + 3 engines + 4 thrusters + 1 repair drone (enemy/starter) + 6 player-shop ladder rows
   // (Heavy hull 13, Solid-fuel 15, Ion 16, Repair II 19, Nanobot 20, Advanced thrusters 21)
-  assert.equal(comps.length, 20);
+  assert.equal(comps.length, 25);
   const drone = comps.find((c) => c.name === 'Repair drone');
   assert.equal(drone.id, 12);
   assert.equal(drone.type, 'repair');
@@ -301,13 +316,24 @@ test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector bo
   const l3 = await getJson('/api/levels/level-3');
   assert.equal(l3.descriptor.phases.at(-2).spawn.pool[0].ship, 'first boss');       // the Sector boss
 
+  // level-4 ("Find the pirate base"): advanced-medium-pirate waves (8/16 kills), the Second Boss finale,
+  // and an unlockShop briefing (docs/plans/level-4-difficulty.md)
+  const l4 = await getJson('/api/levels/level-4');
+  assert.equal(l4.descriptor.briefing.textKey, 'level.4.briefing');
+  assert.ok(l4.descriptor.briefing.actions.some((a) => a.type === 'unlockShop'), 'L4 briefing opens the shop');
+  assert.ok(l4.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'pirate gunner'), 'L4 wave-1 has pirate gunners');
+  assert.ok(l4.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'advanced medium pirate'), 'L4 waves use the advanced medium pirate');
+  assert.equal(l4.descriptor.phases[0].advanceWhen.kills, 8);
+  assert.equal(l4.descriptor.phases.at(-2).spawn.pool[0].ship, 'second boss'); // the Second Boss finale
+  assert.equal(l4.descriptor.phases.at(-1).textKey, 'level.4.victory');
+
   assert.equal((await fetch(base + '/api/levels/nope')).status, 404);
 });
 
 test('catalog: weapons are seeded with type bullet/rocket', async () => {
   const weapons = await getJson('/api/weapons');
   // 5 base (ids 1–5) + 3 player-shop ladder weapons (Heavy cannon 6, Heavy Machine Gun 7, Heavy rocket 8)
-  assert.equal(weapons.length, 9);
+  assert.equal(weapons.length, 10);
   const types = new Set(weapons.map((w) => w.type));
   assert.deepEqual([...types].sort(), ['bullet', 'rocket']);
   const basic = weapons.find((w) => w.name === 'Basic kinetic');
@@ -509,6 +535,27 @@ test('catalog: pirate gunner + Pirate machine gun (id 9) are seeded; the boss gu
   const boss = ships.find((s) => s.stats.role === 'boss');
   const bossGuns = boss.stats.mounts.filter((m) => m.group === 'gun');
   assert.ok(bossGuns.length === 2 && bossGuns.every((m) => m.weapon === 9), 'boss guns swapped to the Pirate MG');
+});
+
+test('catalog: level-4 enemies — advanced medium pirate (300 HP) + Second Boss (450 HP) + Advanced pirate cannon', async () => {
+  const weapons = await getJson('/api/weapons');
+  const cannon = weapons.find((w) => w.id === 10);
+  assert.ok(cannon && cannon.name === 'Advanced pirate cannon', 'Advanced pirate cannon seeded as weapon 10');
+  assert.equal(cannon.stats.maxRange, 110);
+  const comps = await getJson('/api/components');
+  assert.equal(comps.find((c) => c.id === 24).stats.durability, 300); // advanced medium pirate hull
+  assert.equal(comps.find((c) => c.id === 28).stats.durability, 450); // second-boss hull
+  const ships = await getJson('/api/ships');
+  const amp = ships.find((s) => s.stats.role === 'advanced_medium_pirate');
+  assert.ok(amp, 'advanced medium pirate seeded');
+  assert.equal(amp.components.hull, 24);
+  assert.equal(amp.stats.reward, 150);
+  assert.deepEqual(amp.stats.mounts.map((m) => m.weapon).sort((a, b) => a - b), [4, 4, 9]); // 1 MG + 2 rockets
+  const sb = ships.find((s) => s.stats.role === 'boss2');
+  assert.ok(sb, 'second boss seeded');
+  assert.equal(sb.name, 'second boss');
+  assert.equal(sb.components.hull, 28);
+  assert.deepEqual(sb.stats.mounts.map((m) => m.weapon).sort((a, b) => a - b), [4, 4, 4, 10, 10]); // 3 rockets + 2 cannons
 });
 
 test('shop: unlocks on clearing the campaign and backfills the basic gun into the stash', async () => {

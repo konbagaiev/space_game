@@ -32,9 +32,9 @@ async function seedCatalog() {
   const upW = db.prepare(`INSERT INTO weapons (id, name, type, price, stats) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, price = excluded.price, stats = excluded.stats`);
   for (const w of WEAPONS) upW.run(w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats));
-  const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url, components) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url, components = excluded.components`);
-  for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, JSON.stringify(s.components));
+  const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url, model_url_high, components) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, components = excluded.components`);
+  for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, s.modelUrlHigh ?? null, JSON.stringify(s.components));
   const upM = db.prepare(`INSERT INTO maps (name, descriptor) VALUES (?, ?)
     ON CONFLICT(name) DO UPDATE SET descriptor = excluded.descriptor`);
   for (const m of MAPS) upM.run(m.name, JSON.stringify(m.descriptor));
@@ -129,6 +129,7 @@ function applyBriefingActions(playerId, actions) {
   for (const a of (actions || [])) {
     if (a.type === 'replaceWeapon') replaceActiveShipWeapon(playerId, a.from, a.to);
     if (a.type === 'installComponent') installActiveShipComponent(playerId, a.slot, a.component);
+    if (a.type === 'unlockShop') unlockShop(playerId); // e.g. reaching level-4 opens the hangar shop + side missions
   }
 }
 
@@ -210,8 +211,8 @@ export function stats() {
 
 // Catalog: ships (player + enemies), weapons, components. JSON columns parsed on read.
 export function getShips() {
-  return db.prepare('SELECT id, name, type, stats, model_url, components FROM ships ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, stats: JSON.parse(r.stats), modelUrl: r.model_url,
+  return db.prepare('SELECT id, name, type, stats, model_url, model_url_high, components FROM ships ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high,
       components: r.components ? JSON.parse(r.components) : null }));
 }
 
@@ -498,7 +499,7 @@ export function getActivePlayerShip(playerId) {
   const reg = registerPlayer(playerId);
   const row = db.prepare(`
     SELECT ps.id AS player_ship_id, ps.loadout, ps.components AS ps_components,
-           s.id AS ship_id, s.name, s.type, s.stats, s.model_url, s.components AS ship_components
+           s.id AS ship_id, s.name, s.type, s.stats, s.model_url, s.model_url_high, s.components AS ship_components
     FROM player_ships ps JOIN ships s ON s.id = ps.ship_id
     WHERE ps.player_id = ? AND ps.is_active = 1 LIMIT 1`).get(playerId);
   if (!row) return null;
@@ -510,7 +511,7 @@ export function getActivePlayerShip(playerId) {
   const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null); // empty required slots
   return {
     playerShipId: row.player_ship_id,
-    ship: { id: row.ship_id, name: row.name, type: row.type, stats, modelUrl: row.model_url, components: shipComponents },
+    ship: { id: row.ship_id, name: row.name, type: row.type, stats, modelUrl: row.model_url, modelUrlHigh: row.model_url_high, components: shipComponents },
     // effective loadout/components: a player override falls back to the ship's defaults
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
     components,

@@ -49,10 +49,12 @@ export async function migrate() {
       name       TEXT  NOT NULL UNIQUE,
       type       TEXT  NOT NULL,   -- 'player' | 'enemy'
       stats      JSONB NOT NULL,   -- role/color/sizeScale, groups + mounts (weapons by id)
-      model_url  TEXT,             -- 3D model link (nullable; primitive if null)
+      model_url  TEXT,             -- combat (low-poly, same-origin) 3D model link (nullable; primitive if null)
+      model_url_high TEXT,         -- hangar (high-poly, CloudFront, lazy-loaded) model link (nullable)
       components JSONB             -- { hull: <id>, engine: <id> }
     );
     ALTER TABLE ships ADD COLUMN IF NOT EXISTS components JSONB;
+    ALTER TABLE ships ADD COLUMN IF NOT EXISTS model_url_high TEXT;
     CREATE TABLE IF NOT EXISTS weapons (
       id    BIGINT PRIMARY KEY,   -- stable explicit ids (referenced from ships/loadout)
       name  TEXT  NOT NULL UNIQUE,
@@ -156,9 +158,9 @@ export async function migrate() {
   }
   for (const s of SHIPS) {
     await pool.query(
-      `INSERT INTO ships (name, type, stats, model_url, components) VALUES ($1, $2, $3::jsonb, $4, $5::jsonb)
-       ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, components = EXCLUDED.components`,
-      [s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, JSON.stringify(s.components)]);
+      `INSERT INTO ships (name, type, stats, model_url, model_url_high, components) VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb)
+       ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high, components = EXCLUDED.components`,
+      [s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, s.modelUrlHigh ?? null, JSON.stringify(s.components)]);
   }
   for (const m of MAPS) {
     await pool.query(
@@ -257,6 +259,7 @@ async function applyBriefingActions(playerId, actions) {
   for (const a of (actions || [])) {
     if (a.type === 'replaceWeapon') await replaceActiveShipWeapon(playerId, a.from, a.to);
     if (a.type === 'installComponent') await installActiveShipComponent(playerId, a.slot, a.component);
+    if (a.type === 'unlockShop') await unlockShop(playerId); // e.g. reaching level-4 opens the hangar shop + side missions
   }
 }
 
@@ -338,8 +341,8 @@ export async function stats() {
 
 // Catalog: ships, weapons, components. JSONB columns come back already parsed.
 export async function getShips() {
-  const { rows } = await pool.query('SELECT id, name, type, stats, model_url, components FROM ships ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats, modelUrl: r.model_url, components: r.components }));
+  const { rows } = await pool.query('SELECT id, name, type, stats, model_url, model_url_high, components FROM ships ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, components: r.components }));
 }
 
 export async function getWeapons() {
@@ -611,7 +614,7 @@ export async function getActivePlayerShip(playerId) {
   const reg = await registerPlayer(playerId);
   const { rows } = await pool.query(`
     SELECT ps.id AS player_ship_id, ps.loadout, ps.components AS ps_components,
-           s.id AS ship_id, s.name, s.type, s.stats, s.model_url, s.components AS ship_components
+           s.id AS ship_id, s.name, s.type, s.stats, s.model_url, s.model_url_high, s.components AS ship_components
     FROM player_ships ps JOIN ships s ON s.id = ps.ship_id
     WHERE ps.player_id = $1 AND ps.is_active LIMIT 1`, [playerId]);
   const row = rows[0];
@@ -621,7 +624,7 @@ export async function getActivePlayerShip(playerId) {
   const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null);
   return {
     playerShipId: Number(row.player_ship_id),
-    ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url, components: row.ship_components },
+    ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url, modelUrlHigh: row.model_url_high, components: row.ship_components },
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
     components,
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)

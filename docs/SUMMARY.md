@@ -83,10 +83,20 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`, `turnRate = thruster.power ×
   massFactor`. `REFERENCE_MASS` = 48 (the player's loadout: hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8)
   keeps the player at accel 10 / turn 2.0; heavier ships are slower & less agile.
-- **Visual model:** each ship's `model_url` (in the DB) points to a `.glb` (the exported primitives
-  live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it loads /
-  as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. Swap a `model_url` for a
-  real model later. See `client/assets/README.md` + `CREDITS.md`.
+- **Visual model:** each ship's `model_url` (in the DB) points to the **combat** `.glb` (the exported
+  primitives live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it
+  loads / as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. An optional
+  **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
+  lazy-loaded — none set yet). Swap a `model_url` for a real model later. See `client/assets/README.md` +
+  `CREDITS.md`.
+- **Ship-model asset pipeline** (`docs/plans/ship-model-pipeline.md`, partial): repo-root `npm run
+  assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb) / `assets:push`
+  (→ S3 `vega-sentinels-assets`) / `assets:pull` (S3 → `client/assets/ships/`) / `assets:check`
+  (drift-check: every pipeline `model_url*` in the seed exists on S3 — the deploy guard). **No binaries
+  in git** (S3 canonical; the in-git primitives stay as a fallback). `scripts/assets-*.mjs`. **CI is wired**
+  (the deploy job runs check + pull before the build, baking combat models into the image) via a scoped
+  **read-only IAM key** (`vega-assets-ci-read` → GitHub secrets `ASSETS_AWS_*`) — a safe no-op until a real
+  model is added. See DECISIONS §14.
 - **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
   `maxRange`, `fireCooldown`; rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
@@ -99,17 +109,21 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **priced 600**), **Rocket (enemy)** (id 4, power 25). **Player shop ladder** (priced;
   `docs/plans/economy-shop-v2.md`): **Heavy cannon** (id 6: power 25, slow fire / long range / **2000**),
   **Heavy Machine Gun** (id 7: power 12, high RoF / **6000**), **Heavy rocket** (id 8: homing, power 90, slow
-  reload, big blast / **2600**). Enemy: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
-  low damage 3; used by the pirate gunner and the buffed boss).
+  reload, big blast / **2600**). Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
+  low damage 3; pirate gunner + buffed boss) and **Advanced pirate cannon** (id 10 — power 10, slow 1 shot/sec,
+  long range 110; the Second Boss's main gun).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun, 30 hp light hull),
   `rocketeer` (yellow, gun + rocket, same 30 hp light hull), `medium` (purple ex-mini-boss, two rocket
   launchers, 150 hp medium hull → sluggish, 2× model), `pirate_gunner` (deep-crimson skirmisher for the
   side missions — Pirate hull 36 hp + Pirate engine top-speed +50% + one **long-range** Pirate machine
-  gun; reward 40), and the `boss` (`first boss` — orange, its own `boss.glb` model + own hull/engine,
-  210 hp, 3× model, **two Pirate machine guns** + two rocket launchers; spawned only in a boss phase).
-  Which enemies spawn is decided by the **level/mission** (see Gameplay), not the ship; ship `radius`
-  scales with model size. Each enemy also carries a **`reward`** (`stats.reward`, fighter 20 /
-  rocketeer 40 / pirate gunner 40 / medium 100 / boss 200) in **credits**, earned on destruction.
+  gun; reward 40), `advanced_medium_pirate` (the L4 heavy — `heavy.glb` recolored maroon, **300 hp**, turns
+  ~+30% vs the medium, 1 Pirate MG + 2 rockets; reward 150), the `boss` (`first boss` — orange `boss.glb` +
+  own hull/engine, 210 hp, 3× model, **two Pirate machine guns** + two rocket launchers), and `boss2` (the
+  **Second Boss**, L4 finale — `boss.glb` recolored crimson, **450 hp**, ~+30% speed/accel/turn, **two
+  Advanced pirate cannons + three rockets**; reward 400). Which enemies spawn is decided by the
+  **level/mission** (see Gameplay), not the ship; ship `radius` scales with model size. Each enemy carries a
+  **`reward`** (`stats.reward`, fighter 20 / rocketeer 40 / pirate gunner 40 / medium 100 / advanced medium
+  pirate 150 / first boss 200 / Second Boss 400) in **credits**, earned on destruction.
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 30 hp light hull, gun 4 damage
   (an enemy dies in 3 player hits; the player survives ~25 enemy hits).
 
@@ -161,20 +175,27 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   client shows it on the **Hangar screen** between the victory overlay and the next run (or a default
   "standby" line when there's none). Actions are a typed, extensible list dispatched server-side; the one
   types today are **`replaceWeapon` `{from, to}`** (swaps a mounted weapon id on the active `player_ships`
-  loadout) and **`installComponent` `{slot, component}`** (sets a component slot, e.g. `repair`, on the
-  active ship). `level-2`'s briefing narrates the weapons-factory mission and swaps the basic gun (1) for
-  the **Machine Gun** (5); `level-3`'s briefing narrates fitting the **repair drone** and installs it
-  (`installComponent` `repair` → 12). After advancing, the client reloads the active ship and rebuilds
+  loadout), **`installComponent` `{slot, component}`** (sets a component slot, e.g. `repair`, on the
+  active ship), and **`unlockShop`** (flips `shop_unlocked` → opens the hangar shop + side missions).
+  `level-2`'s briefing narrates the weapons-factory mission and swaps the basic gun (1) for the **Machine
+  Gun** (5); `level-3`'s briefing narrates fitting the **repair drone** and installs it (`installComponent`
+  `repair` → 12); `level-4`'s briefing (text + `unlockShop`) directs the player to gear up at the shop
+  before finding the pirate base. After advancing, the client reloads the active ship and rebuilds
   the player so the new loadout/components take effect. (Future action types: add credits, add to a
   stash, etc.)
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
-  `levelRunner`. Three levels are seeded (played in order via the player's progress):
+  `levelRunner`. Four campaign levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%
     → at **15 kills** spawning stops, one last rocketeer appears, clear the field → **Victory!** No boss.
   - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 15 kills →
     spawning stops → a single **medium** appears alone as the boss → clear → Victory.
   - **`level-3` (full fight):** waves of all three enemy types → after 20 kills spawning stops → the
     **Sector boss** spawns alone → on its death the game runs ~5 s (watch it explode) → Victory.
+  - **`level-4` ("Find the pirate base"):** clearly harder — **pirate gunners + rocketeers + advanced
+    medium pirates** (40/40/20 → 35/35/30, maxConcurrent 5) to 8 then 16 kills → clear-out → the
+    **Second Boss** (450 hp, two Advanced pirate cannons + three rockets) → Victory. Its briefing **opens the
+    hangar shop + side missions** (`unlockShop` action — see Between-level briefings); its victory sets up the
+    planned L5 ("Storm the pirate base"). Currently the final level. (Balance: `docs/plans/level-4-difficulty.md`.)
   The AI keeps its distance and fires its weapon groups by range/aim. Spawn composition (ships +
   `chance` weights + max concurrent) is per-phase in the level; a `win` phase's `delay` defers the
   overlay so the last/boss explosion plays out.
@@ -323,8 +344,9 @@ first translation). See DECISIONS §10.
   to `/api/games`; the server stores it (`games.credits`, renamed from `score` in migration 008) **and
   banks the earned credits** into `players.credits` (the persistent balance, default **1000** for new
   players, no FK), returning the new balance. `registerPlayer`/active-ship also return `credits`.
-- **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url`,
-  `components` JSON ref `{hull,engine,thruster[,repair]}`), `components` (`name`, `type`
+- **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url` (combat),
+  `model_url_high` (hangar high-poly, nullable), `components` JSON ref `{hull,engine,thruster[,repair]}`),
+  `components` (`name`, `type`
   `hull`/`engine`/`thruster`/`repair`, `weight`, **`price`**, `stats` JSON; stable ids) and `weapons`
   (`name`, `type` `bullet`/`rocket`, **`price`**, `stats` JSON; stable ids), seeded from a shared snapshot
   (`server/src/catalog_seed.js`). **`price`** (credits, hangar shop) defaults to **0** until real prices
@@ -336,8 +358,9 @@ first translation). See DECISIONS §10.
 - **Stash & hangar shop (`stash` table, migration 011 / Postgres bootstrap):** a player inventory keyed by
   `(player_id, kind, ref_id)` with a `qty` (`kind ∈ {component, weapon}` → `components.id` / `weapons.id`;
   unique per `(player_id, kind, ref_id)`, indexed by player). **Gated by `players.shop_unlocked`** — flipped
-  the first time the player **advances off the last level** (i.e. clears the campaign), which also **backfills
-  the basic gun (id 1)** into the stash. `replaceWeapon` briefing actions now also deposit the replaced weapon.
+  by `level-4`'s **`unlockShop`** briefing action (i.e. on **clearing `level-3`**, the original campaign end),
+  or as a fallback when a player advances off the final level; it also **backfills the basic gun (id 1)** into
+  the stash. `replaceWeapon` briefing actions also deposit the replaced weapon.
   Datastore methods (both backends, server-authoritative + transactional): `getStash` (joined to the catalog),
   `buyItem` (price ≤ balance → deduct → qty++), `sellItem` (stash item, or an *optional* equipped item via a
   `slot` → credit `floor(price*0.75)`), `equipItem` (stash → active ship; component slots by `type`, weapons
@@ -486,7 +509,7 @@ first translation). See DECISIONS §10.
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
   Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (49): register / record game + credit banking / history /
+- **Backend API** — `server/src/server.test.js` (50): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
   player progress (current level + advance) + language preference + credits balance + level briefings
   (level-2 weapon swap, level-3 repair-drone install) + repair-drone component seed +
@@ -514,8 +537,9 @@ first translation). See DECISIONS §10.
   zeroes velocity, and the edge marker + mini-map exist), and **mission-setpieces** (all three procedural
   set-pieces are built into the combat scene below the plane and multi-part; the station rotates; the
   drifting-arena mechanic moves the center/border and the synced freighter, and warp-back targets the drifted
-  center), and **mission-board** (after clearing the campaign, 3 mission buttons appear top-right, a button
-  opens the description panel, and Take off launches a `sideMission` via the levelRunner). Self-contained runner starts its own server + throwaway DB. Setup
+  center), **mission-board** (after clearing the campaign, 3 mission buttons appear top-right, a button
+  opens the description panel, and Take off launches a `sideMission` via the levelRunner), and **l4-enemies**
+  (the Advanced medium pirate + Second Boss build with the right HP/tint/mounts/derived drive). Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for
   occasional larger releases. See `client/visual/README.md`.
