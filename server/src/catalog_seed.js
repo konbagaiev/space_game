@@ -437,9 +437,9 @@ export const MAPS = [
       // one; the others sit at a distance). Spread far apart so they don't overlap. Just below the plane
       // (strong parallax like the background asteroids), static decor (not collidable). docs/plans/mission-maps.md.
       setpieces: [
-        { type: 'asteroid-field', pos: [-500, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66 },
-        { type: 'research-station', pos: [350, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
-        { type: 'freighter', pos: [-100, -48, -400], scale: 0.33, hue: 0x8a8f9c, cargoHue: 0xb0763a, speed: 2 },
+        { type: 'asteroid-field', pos: [-550, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66 },
+        { type: 'research-station', pos: [400, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
+        { type: 'freighter', pos: [-100, -48, -450], scale: 0.33, hue: 0x8a8f9c, cargoHue: 0xb0763a, speed: 2 },
       ],
     }
   },

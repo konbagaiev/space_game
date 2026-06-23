@@ -38,9 +38,9 @@ const EST_REWARD = Math.round(((WAVE_KILLS * WAVE_AVG + 2 * 200) * 2) / 10) * 10
 // position in catalog_seed.js so each mission fights over its own structure, away from the campaign (0,0).
 // (left = -x, right = +x, "up"/north = -z.)
 const FLAVORS = [
-  { type: 'mining',    titleKey: 'mission.mining.title',    descKey: 'mission.mining.desc',    center: { x: -500, z: 0 } },
-  { type: 'research',  titleKey: 'mission.research.title',  descKey: 'mission.research.desc',  center: { x: 350, z: 0 } },
-  { type: 'freighter', titleKey: 'mission.freighter.title', descKey: 'mission.freighter.desc', center: { x: -100, z: -400 } },
+  { type: 'mining',    titleKey: 'mission.mining.title',    descKey: 'mission.mining.desc',    center: { x: -550, z: 0 } },
+  { type: 'research',  titleKey: 'mission.research.title',  descKey: 'mission.research.desc',  center: { x: 400, z: 0 } },
+  { type: 'freighter', titleKey: 'mission.freighter.title', descKey: 'mission.freighter.desc', center: { x: -100, z: -450 } },
 ];
 
 // The currently-offered side missions. Stateless for 2a (the three flavors are fixed); each carries a

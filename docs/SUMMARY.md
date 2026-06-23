@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-23 (added the `?tune` dev palette panel; `stats.modelYaw` ship-orientation knob; bright-star layer)
+**Updated:** 2026-06-23 (`?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -49,7 +49,7 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   overlay (game over / victory) is up.
 - **Mini-map / radar** (left edge, vertically centered, `<canvas id="minimap">`, non-interactive) — an overview that
   **complements** the edge arrows (arrows = immediate threat direction; radar = spatial overview, useful now
-  that the player can wander out of bounds). Shows the **arena boundary** square (±240), the **player** as a
+  that the player can wander out of bounds). Shows the **arena boundary** square (±360), the **player** as a
   heading triangle (clamped to the radar edge so it stays visible when far out, red while out of bounds), and
   **enemies** as dots tinted by type color (`updateMiniMap`). Hidden on menus and while a result overlay is up.
 
@@ -142,14 +142,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 ## Gameplay
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
   buttons are released — smooth braking.
-- **Soft arena boundary (±240).** The player can fly **past** the edge freely — there's no hard wall. A
-  faint glowing **edge marker** (a Line at ±240, brightens as you approach/cross) shows where the
+- **Soft arena boundary (±360).** The player can fly **past** the edge freely — there's no hard wall. A
+  faint glowing **edge marker** (a Line at ±360, brightens as you approach/cross) shows where the
   battlefield ends. After **2 s continuously out of bounds** (`OOB_WARN_DELAY`) a centered HUD **warning +
   countdown** appears ("You've left the battlefield — return to the combat zone" / "Returning in {seconds}s",
   i18n keyed); re-entering clears it. After **30 s** out (`OOB_RETURN_TIME`) the ship is **warped back to
   center** (velocity zeroed, replaying the enemy warp-in grow animation). **Nothing is hard-clamped to the
   arena** — enemies chase the player out, spawn around it (no edge clamp), and bullets/rockets fly normally
-  beyond ±240 (limited only by range/hits); combat works fully out of bounds. ±240 only drives the boundary
+  beyond ±360 (limited only by range/hits); combat works fully out of bounds. ±360 only drives the boundary
   UI (edge marker + warning/warp-back). See DECISIONS §2.
 - **Off-center / drifting arena.** The boundary, warp-back and mini-map all compute relative to a
   **combat-zone center** (`arenaCenter`). A side mission sets it to the mission's `center` (so its fight
@@ -256,7 +256,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   then a **2-boss finale** (two buffed `first boss`). A mission is just a level-style descriptor played by
   the existing `levelRunner`; clearing it **banks per-kill ×2 credits like a level but does NOT advance the
   story counter** (repeatable grind to fund the shop). **Each mission fights at its own location in the
-  world** (`descriptor.center` — mining at `(-500, 0)`, research at `(350, 0)`, freighter at `(-100, -400)`),
+  world** (`descriptor.center` — mining at `(-550, 0)`, research at `(400, 0)`, freighter at `(-100, -450)`),
   away from the campaign center `(0,0)`. The map is **one shared world** — all three set-pieces exist at
   fixed positions on every level/mission; the mission only moves the combat there (you spawn over the
   matching structure, the others are in the distance). They sit **just below the combat plane** (strong
@@ -274,7 +274,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   glow can't creep onto the planet disk (the transparency gotcha in DECISIONS §5). The asteroids are a
   **field of small rocks filling the whole disk**
   (annulus `inner`..`spread` radius; `inner` 0 → centered, `spread` 1000 in `home-system`) — inside the
-  ±240 arena **and** far beyond it, sunk below the combat plane; the far edge fades into the fog (~600), so
+  ±360 arena **and** far beyond it, sunk below the combat plane; the far edge fades into the fog (~600), so
   distant rocks read as a faraway field you can fly out into. Flying past them gives the sense of speed.
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the planet and moons).
@@ -539,10 +539,12 @@ first translation). See DECISIONS §10.
   Game-history posting (`reportGame`) stays best-effort.
 
 ## Deployment & CI/CD
-- **Live: https://vega.tenony.com** (canonical) — Hetzner VPS (178.104.91.144) shared with another
-  project. The legacy host **https://space.bagaiev.com** stays routed to the same container during the
-  transition (Traefik rule `Host(vega.tenony.com) || Host(space.bagaiev.com)`, a Let's Encrypt cert per
-  host). Runs as a Docker container `spacegame_app` (1 GB mem limit) behind **Traefik** (auto-HTTPS), on
+- **Live: https://vega.tenony.com** — the canonical production host and has been for a long time; the
+  domain cutover is **complete**, not in transition. Hetzner VPS (178.104.91.144) shared with another
+  project. The old **https://space.bagaiev.com** is a retired legacy host — it may still resolve to the
+  same container (Traefik rule `Host(vega.tenony.com) || Host(space.bagaiev.com)`, a Let's Encrypt cert
+  per host), but it is **not** the address we use, quote, or deploy against. Runs as a Docker container
+  `spacegame_app` (1 GB mem limit) behind **Traefik** (auto-HTTPS), on
   the shared **`backend`** + **`proxy`** networks; uses the shared `shared_postgres` (DB+user
   `spacegame`). Files at `/opt/projects/spacegame/`; server-only `.env` holds `DATABASE_URL`. The
   internal `spacegame` container/image/router/dir/DB names are unchanged (renaming is cosmetic churn).

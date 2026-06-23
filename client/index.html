@@ -670,7 +670,7 @@ let mapSetpieces = []; // the current map's set-piece specs (so reset() can rebu
 // ARENA is the half-size of the square battlefield, used only for the soft-boundary UI (the edge
 // marker + the out-of-bounds warning/warp-back; see the OOB logic in update()). NOTHING is hard-clamped
 // to it: the player, enemies, bullets and rockets all move and fight freely beyond it. See DECISIONS §2.
-const ARENA = 240; // half-size of the square arena (x4)
+const ARENA = 360; // half-size of the square arena (x4); 1.5x the original 240 -> a bigger combat zone
 const OOB_WARN_DELAY = 2.0;   // seconds continuously out of bounds before the warning shows
 const OOB_RETURN_TIME = 30.0; // seconds continuously out of bounds before the auto warp-back
 

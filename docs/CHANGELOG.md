@@ -5,6 +5,14 @@
 
 ## 2026-06-23
 
+- **Bigger combat zone (1.5×) + mission set-pieces relocated.** Grew the soft arena half-size `ARENA`
+  from 240 to **360** (`client/index.html`), so the battlefield boundary/mini-map/OOB region is 1.5× in
+  each direction (combat was never hard-clamped, so only the boundary UI grows). Shifted three mission
+  set-pieces by 50 units each, moving both the set-piece (`catalog_seed.js` `home-system.setpieces`) and
+  the mission's combat `center` (`server/src/missions.js`) in lockstep so each mission still spawns over
+  its structure: **mining/asteroids left** (`x −500 → −550`), **research station right** (`x 350 → 400`),
+  **freighter up/north** (`z −400 → −450`). (Axes: left = −x, right = +x, up = −z.)
+
 - **Settings gear is always available + doubles as pause.** The ⚙ gear now shows at all times (including
   during a live fight), not just on menus/while paused. Opening it from gameplay **freezes the battle like
   the pause button** and opens the menu in one click (no separate pause first); **closing resumes** — but

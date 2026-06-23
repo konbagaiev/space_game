@@ -29,14 +29,14 @@ Specifics:
   vector, wherever the nose is pointing (you can drift sideways and shoot forward).
 - **Passive braking:** if NOT a SINGLE control button is pressed — velocity smoothly
   decays (`IDLE_DRAG`). Hold a turn to aim and the inertia is preserved.
-- **Arena boundaries (soft, since 2026-06-22):** the player may fly past ±240 freely — there is **no
+- **Arena boundaries (soft, since 2026-06-22):** the player may fly past ±360 freely — there is **no
   hard wall**. Earlier we zeroed the axis velocity at the wall, which read as a bug (the ship "stuck"
   to an invisible edge). Now a faint glowing edge marker shows where the battlefield ends; after the
   ship is **2 s continuously out of bounds** a HUD warning + countdown appears, and after **30 s** out
   the ship is **warped back to center** (velocity zeroed, reusing the enemy warp-in animation). A
   corner mini-map/radar gives spatial awareness. **Nothing is hard-clamped to the arena** — enemies
   chase the player out and spawn around it (no edge clamp), and bullets/rockets fly normally beyond
-  ±240 (limited only by range/hits), so combat works fully out of bounds; ±240 only drives the
+  ±360 (limited only by range/hits), so combat works fully out of bounds; ±360 only drives the
   boundary UI. (The old `clampToArena` clamp was removed.) See `docs/plans/arena-boundaries.md`.
 
 Knobs: `ACCEL` (acceleration), `TURN` (turning), `IDLE_DRAG` (braking), `ARENA` (size),
@@ -164,8 +164,9 @@ not a new global constant.
 
 ## 9. Deployment, rollback, and migrations
 
-Live at **https://vega.tenony.com** (legacy **https://space.bagaiev.com** still routed during the
-transition — see §12). Docker on a shared Hetzner VPS, behind Traefik, on the shared Postgres.
+Live at **https://vega.tenony.com** — the long-standing canonical prod host; the cutover is done (the
+old **https://space.bagaiev.com** is a retired legacy host that may still route — see §12). Docker on a
+shared Hetzner VPS, behind Traefik, on the shared Postgres.
 Details in `server/README.md`. Key decisions:
 
 **Zero-downtime deploys (blue-green).** The container has a Docker `healthcheck` — Traefik only
@@ -328,7 +329,8 @@ branches both grab the same `00N`).
 Renamed from the working title **Space Ninjas** to **Vega Sentinels** (Vega = a well-known star;
 "Sentinels" = the player archetype, replacing the "ninja" theme). The player's in-game title becomes
 **Sentinel** (was "Ninja"). Canonical domain **https://vega.tenony.com** (a subdomain of `tenony.com`),
-replacing `space.bagaiev.com`.
+which **replaced** `space.bagaiev.com` — the cutover has long since completed and vega.tenony.com is the
+established production host.
 
 **Why this name:** an exact "Vega Sentinels" is unclaimed on stores; bare star `.com`s are all long
 taken, so we host on the `tenony.com` subdomain — store/trademark uniqueness matters more than owning
