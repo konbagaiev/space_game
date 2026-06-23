@@ -137,5 +137,10 @@
   "ui.settings.music": "Музыка",
   "ui.settings.sfx": "Звуковые эффекты",
   "ui.settings.on": "Вкл",
-  "ui.settings.off": "Выкл"
+  "ui.settings.off": "Выкл",
+  "ui.settings.quality": "Качество графики",
+  "ui.settings.quality.high": "Высокое",
+  "ui.settings.quality.balance": "Баланс",
+  "ui.settings.quality.performance": "Производительность",
+  "ui.settings.quality.note": "Изменения сглаживания применяются после перезагрузки."
 }

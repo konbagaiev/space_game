@@ -683,6 +683,29 @@ when a licensed track is chosen, without rework.
   screens + while paused) is the project's first dedicated settings menu; language/zoom intentionally stay
   where they are for now (scope kept to audio).
 
+## 23. Performance quality tiers — High / Balance / Performance
+
+**Decision.** A player-facing **graphics quality** selector (3 tiers) in the settings menu, persisted in
+`localStorage` (`gfxTier`). The knob table + persistence live in a pure, tested module
+`client/src/graphics.js` (mirrors `audio.js`). **Default High** for everyone, except a **touch device's
+first run defaults to Balance** so a phone doesn't open in the heaviest mode.
+
+**Why this, and what each tier changes.** Profiling intuition: the perf overlay shows `draw 74 · tris
+66k` — both trivial even for an entry mobile GPU. The real bottleneck on a weak phone (e.g. Galaxy A14)
+is **fragment fill rate**: `setPixelRatio(min(devicePixelRatio, 2))` renders at up to 2× resolution, the
+scene is drawn in **two full-screen passes** (sky + combat, §5), and **additive particles**
+(explosions/sparks/exhaust/shockwave/bright-star glow) multiply overdraw. So the tiers turn the
+fill-rate knobs, not geometry: **pixel-ratio cap** (2 / 1.5 / 1 — the dominant lever), **antialias** (on
+/ off / off), **star density** (×1 / .6 / .35), **particle density** (×1 / .6 / .4 — fewer sparks, drops
+the 2 middle fireball layers + the shockwave ring, thins the per-frame exhaust). Draw calls and triangle
+count are deliberately **not** touched — they aren't the bottleneck.
+
+**Live vs. reload.** Pixel ratio + star/particle density apply **live** (instant feel on the biggest
+lever). **Antialias only takes effect on the next page reload** — it's a `WebGLRenderer` constructor
+argument, and rebuilding the GL context mid-game (re-uploading textures, re-wiring the two-pass loop)
+isn't worth it; a small UI note says so. This is the standard "some options apply after restart"
+pattern and keeps the change small.
+
 ## Future ideas
 
 solid asteroids with bounce ·

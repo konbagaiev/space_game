@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-23 (`?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces)
+**Updated:** 2026-06-23 (`?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -348,15 +348,24 @@ voices) + the compressor keep machine-gun fire / stacked explosions from clippin
   (faster + a bass pulse) during a live fight, a calmer **hangar** mood (slow, sparse) on
   menus/overlays/while paused — with a ~1 s duck-and-switch transition (`refreshMusic()` is called at every
   state change; cheap + idempotent).
-- **Settings menu (audio only) — the project's first dedicated settings screen.** A ⚙ **gear**
+- **Settings menu — the project's dedicated settings screen.** A ⚙ **gear**
   (`#settings-btn`, **top-left corner, always visible** — incl. during a live fight; the HUD Health block is
   padded right so the gear never overlaps it) opens a modal (`#settings-overlay`). **Opening it doubles as
   pause:** during a live fight the gear freezes the battle (like the pause button) and opens the menu in one
   click; **closing resumes** — but only if the gear is what paused it (a manual pause stays paused). The
-  modal has **Master / Music / SFX volume** sliders +
-  **Music/SFX on-off toggles**. Changes apply live and persist to `localStorage` (keys `audioMaster`,
+  modal has **Master / Music / SFX volume** sliders + **Music/SFX on-off toggles**, and a **Graphics
+  quality** selector (see below). Changes apply live and persist to `localStorage` (audio keys `audioMaster`,
   `audioMusic`, `audioSfx`, `audioMusicOn`, `audioSfxOn`); a fresh player gets sane defaults
-  (master .7 / music .45 / sfx .8, both on). Language/zoom stay where they are (scope kept to audio).
+  (master .7 / music .45 / sfx .8, both on). Language/zoom stay where they are.
+- **Graphics quality tiers (`client/src/graphics.js`, DECISIONS §23).** A 3-way selector —
+  **High / Balance / Performance** — for weak phones, since the mobile bottleneck is fragment **fill
+  rate** (pixel ratio × the two render passes × additive-particle overdraw), not the draw calls/triangles
+  the perf overlay shows. Per tier: **pixel-ratio cap** (2 / 1.5 / 1), **antialias** (on / off / off),
+  **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales spark count, drops the 2
+  middle fireball layers + the shockwave, and thins the exhaust). Persisted in `localStorage` (key
+  `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. Pixel ratio + density
+  apply **live**; **antialias applies on the next reload** (it's a `WebGLRenderer` constructor arg — no
+  mid-game renderer rebuild), noted in the UI. The tier knob table lives in `graphics.js` (pure, tested).
 
 ## Localization (i18n)
 English is the **source of truth**; other languages are a derived layer. **EN + RU** today (RU is the

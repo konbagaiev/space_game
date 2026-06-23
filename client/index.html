@@ -331,6 +331,14 @@
     background: rgba(54,209,220,.18); color: #bff0f4;
   }
   #settings-overlay .set-toggle.off { background: rgba(120,130,150,.18); color: #9aa6bd; border-color: rgba(150,160,180,.35); }
+  /* Graphics-quality segmented control (3 mutually-exclusive tiers) */
+  #settings-overlay .seg { display: flex; gap: 8px; flex: 0 0 auto; }
+  #settings-overlay .seg-btn {
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 15px;
+    background: rgba(120,130,150,.18); color: #9aa6bd; border: 1px solid rgba(150,160,180,.35);
+  }
+  #settings-overlay .seg-btn.on { background: rgba(91,134,229,.35); color: #eaf1ff; border-color: #5b86e5; }
+  #settings-overlay .set-note { font-size: 13px; opacity: .6; margin: -10px 0 8px; }
   #settings-close {
     margin-top: 30px; width: 100%; cursor: pointer; pointer-events: auto; font: inherit;
     padding: 15px 18px; font-size: 18px; font-weight: 600; border-radius: 10px;
@@ -536,6 +544,15 @@
       <label for="set-sfx" data-i18n="ui.settings.sfx">Sound effects</label>
       <input type="range" id="set-sfx" min="0" max="100" step="1" />
     </div>
+    <div class="set-row">
+      <label data-i18n="ui.settings.quality">Graphics quality</label>
+      <div id="set-quality" class="seg">
+        <button class="seg-btn" data-tier="high" data-i18n="ui.settings.quality.high">High</button>
+        <button class="seg-btn" data-tier="balance" data-i18n="ui.settings.quality.balance">Balance</button>
+        <button class="seg-btn" data-tier="performance" data-i18n="ui.settings.quality.performance">Performance</button>
+      </div>
+    </div>
+    <div class="set-note" id="set-quality-note" data-i18n="ui.settings.quality.note">Antialiasing changes apply after reload.</div>
     <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
   </div>
 </div>
@@ -572,10 +589,16 @@ import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
 import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // procedural Web Audio (SFX + generative music)
+import { loadTier, resolveTier, saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones)
 
 // Procedural audio engine: SFX are synthesized + music is generative (no asset files). The AudioContext
 // is created lazily on the first user gesture (autoplay policy) via audio.unlock(). See DECISIONS §21.
 const audio = createAudio(loadAudioSettings(window.localStorage));
+
+// Graphics quality tier — read BEFORE the renderer (antialias is a constructor arg). `isTouch` is
+// defined later (used by the input layer), so detect touch locally here for the first-run default.
+const _touchEarly = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+let gfx = resolveTier(loadTier(window.localStorage, _touchEarly)); // current quality knobs (live-mutated on change)
 
 // Music follows game state: the driving combat mood during a live fight, the calmer hangar mood on
 // menus / overlays / while paused. refreshMusic() is cheap + idempotent (no-op when the mood is unchanged).
@@ -602,8 +625,8 @@ const scene = new THREE.Scene();
 scene.background = null; // background is drawn by the sky scene (first pass); combat is transparent on top
 scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so distant rocks fade into the backdrop
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ antialias: gfx.antialias });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.info.autoReset = false; // count load across both render passes
 document.body.appendChild(renderer.domElement);
@@ -1194,7 +1217,7 @@ function buildMap(descriptor) {
   skySun.position.set(...d.sky.sun.pos);
   skyScene.add(skySun);
 
-  stars = makeStars(d.stars.count, d.stars.radius);
+  stars = makeStars(Math.round(d.stars.count * gfx.starScale), d.stars.radius); // density scales with quality tier
   stars.renderOrder = -1; // draw stars first, before the planet and moons
   skyScene.add(stars);
 
@@ -1315,6 +1338,10 @@ function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
   bullets.push({ mesh: m, vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power });
 }
 
+// Scale a particle count by the current graphics tier (additive overdraw is the mobile fill-rate
+// cost). Reads the live `gfx`, so a tier switch affects subsequent spawns immediately. Min 1.
+const scaledCount = (n) => Math.max(1, Math.round(n * gfx.particleScale));
+
 // ---------- Micro-explosions at the impact point ----------
 const explosions = [];
 const EXPLOSION_LIFE = 0.16; // very short flash, sec
@@ -1349,13 +1376,13 @@ function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
   const s = sizeScale; // scales every spatial dimension to the ship's size
   // Layered fireball: each layer bigger, dimmer-colored and slower than the last. The
   // second layer glows in the engine's exhaust color (the destroyed engine's signature).
-  spawnExplosion(pos, 5 * s, 1.05, 0xffffff);     // white-hot flash core
-  spawnExplosion(pos, 8 * s, 1.8, exhaustColor);  // exhaust-colored glow (engine signature)
-  spawnExplosion(pos, 11 * s, 2.55, 0xffc040);    // orange fireball
-  spawnExplosion(pos, 14 * s, 3.75, 0xff3a18);    // red outer cloud
+  spawnExplosion(pos, 5 * s, 1.05, 0xffffff);     // white-hot flash core (always)
+  if (gfx.particleScale >= 0.7) spawnExplosion(pos, 8 * s, 1.8, exhaustColor);  // exhaust-colored glow (engine signature)
+  if (gfx.particleScale >= 0.7) spawnExplosion(pos, 11 * s, 2.55, 0xffc040);    // orange fireball
+  spawnExplosion(pos, 14 * s, 3.75, 0xff3a18);    // red outer cloud (always) — lower tiers drop the 2 middle layers (overdraw)
 
   // Radial spark spray: warm embers + a few in the engine's exhaust color, flung outward.
-  const N = 22;
+  const N = scaledCount(22);
   for (let i = 0; i < N; i++) {
     const col = (i % 4 === 0) ? exhaustColor : SPARK_COLORS[i % SPARK_COLORS.length];
     const mat = new THREE.MeshBasicMaterial({
@@ -1373,16 +1400,19 @@ function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
     sparks.push({ mesh: m, vel, life: 2.7 + Math.random() * 2.7, maxLife: 5.4, size });
   }
 
-  // Shockwave: a flat additive ring (tinted by the exhaust color) that expands and fades.
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: exhaustColor, transparent: true, opacity: 0.9,
-    blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
-  });
-  const ring = new THREE.Mesh(shockGeo, ringMat);
-  ring.position.copy(pos); ring.position.y = 0.6;
-  ring.rotation.x = -Math.PI / 2; // lay it flat on the arena
-  scene.add(ring);
-  shockwaves.push({ mesh: ring, life: 2.4, maxLife: 2.4, maxScale: 22 * s });
+  // Shockwave: a flat additive ring (tinted by the exhaust color) that expands and fades. It's one big
+  // DoubleSide additive quad per death — skip it on the lowest tier to cut overdraw.
+  if (gfx.particleScale >= 0.5) {
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: exhaustColor, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(shockGeo, ringMat);
+    ring.position.copy(pos); ring.position.y = 0.6;
+    ring.rotation.x = -Math.PI / 2; // lay it flat on the arena
+    scene.add(ring);
+    shockwaves.push({ mesh: ring, life: 2.4, maxLife: 2.4, maxScale: 22 * s });
+  }
 }
 
 // ---------- Engine trail (exhaust is part of the engine) ----------
@@ -1407,6 +1437,7 @@ function spawnTrail(pos, fwd, shipVel, exhaust) {
 // Emit one exhaust puff from a ship's nozzle. Shared by every ship (player and enemies):
 // the nozzle sits behind the hull (scaled by the ship's size) with a little width spread.
 function emitExhaust(shipPos, fwd, shipVel, exhaust, sizeScale = 1) {
+  if (gfx.particleScale < 1 && Math.random() > gfx.particleScale) return; // thin the trail on lower tiers (per-frame overdraw)
   const pos = shipPos.clone().addScaledVector(fwd, -2.6 * sizeScale);
   pos.x += (Math.random() - 0.5) * exhaust.spread;
   pos.z += (Math.random() - 0.5) * exhaust.spread;
@@ -2984,6 +3015,21 @@ addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Apply the live-changeable graphics knobs after a tier switch: pixel ratio (the dominant fill-rate
+// lever) + a star-density rebuild. `setPixelRatio` alone doesn't realloc the drawing buffer, so we
+// follow it with setSize. Antialias is NOT changed here — it's a constructor arg, so it only takes
+// effect on the next page load (see DECISIONS §23). Star/particle counts read the live `gfx`.
+function applyGraphicsLive() {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
+  renderer.setSize(window.innerWidth, window.innerHeight); // realloc buffers at the new ratio
+  if (stars && currentMapDescriptor) { // rebuild the starfield at the new density
+    skyScene.remove(stars);
+    stars = makeStars(Math.round(currentMapDescriptor.stars.count * gfx.starScale), currentMapDescriptor.stars.radius);
+    stars.renderOrder = -1;
+    skyScene.add(stars);
+  }
+}
+
 // ---------- Bootstrap: build the world from the DB, then start ----------
 // Fetch the ship/weapon catalog and the player's active ship from the API, build the runtime
 // catalog + the player, then start the game. Served same-origin, so the API is always available.
@@ -3124,7 +3170,19 @@ function renderSettingsUI() {
   setMusicOn.classList.toggle('off', !s.musicOn);
   setSfxOn.textContent = t(s.sfxOn ? 'ui.settings.on' : 'ui.settings.off');
   setSfxOn.classList.toggle('off', !s.sfxOn);
+  renderQualityUI();
 }
+// Graphics quality: highlight the active tier; clicking one persists it + applies the live knobs.
+const setQuality = document.getElementById('set-quality');
+function renderQualityUI() {
+  setQuality.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.tier === gfx.name));
+}
+setQuality.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn'); if (!b) return;
+  gfx = resolveTier(saveTier(window.localStorage, b.dataset.tier)); // persist + adopt the new knobs
+  applyGraphicsLive(); // pixel ratio + star density now; antialias on the next reload
+  renderQualityUI();
+});
 function applyAudioChange(patch) {
   audio.setSettings(patch);
   saveAudioSettings(window.localStorage, audio.getSettings()); // persist every change

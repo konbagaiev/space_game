@@ -5,6 +5,24 @@
 
 ## 2026-06-23
 
+- **Graphics quality tiers (High/Balance/Performance) — implemented.** Built the selector from
+  `docs/plans/performance-quality-tiers.md` into the existing settings menu. New pure module
+  `client/src/graphics.js` (+ `graphics.test.js`) holds the tier knob table and `localStorage`
+  persistence (key `gfxTier`); mirrors `audio.js`. Per tier: pixel-ratio cap (2/1.5/1), antialias
+  (on/off/off), star density (×1/.6/.35) and particle density (×1/.6/.4 — fewer sparks, drops the 2
+  middle fireball layers + the shockwave, thins the exhaust). Targets the real mobile bottleneck —
+  fragment **fill rate** (pixel ratio × two render passes × additive overdraw), not the draw
+  calls/triangles the perf overlay shows. Pixel ratio + density apply **live** (the dominant lever);
+  **antialias on the next reload** (constructor arg — no mid-game renderer rebuild), noted in the UI.
+  **Default High**, but a touch device's **first run defaults to Balance**. Verified live: emulating a
+  DPR-3 device, switching to Performance drops the backing buffer from ×2 to ×1 immediately. Added the
+  five `ui.settings.quality*` strings (EN + RU). See DECISIONS §23.
+- **Plan: performance quality tiers (High/Balance/Performance).** Wrote
+  `docs/plans/performance-quality-tiers.md` — a graphics-quality selector in the existing settings
+  menu, persisted in `localStorage`. Targets the real mobile bottleneck (fragment **fill rate** — pixel
+  ratio × two render passes × additive overdraw — not draw calls/triangles). Levers per tier: pixel
+  ratio cap (live), antialias (on reload), star + particle density (live). Default High; Balance on a
+  touch device's first run. Not yet implemented.
 - **Bigger combat zone (1.5×) + mission set-pieces relocated.** Grew the soft arena half-size `ARENA`
   from 240 to **360** (`client/index.html`), so the battlefield boundary/mini-map/OOB region is 1.5× in
   each direction (combat was never hard-clamped, so only the boundary UI grows). Shifted three mission
