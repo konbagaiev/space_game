@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-22
+**Updated:** 2026-06-23 (added the `?tune` dev palette panel; `stats.modelYaw` ship-orientation knob; bright-star layer)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -14,6 +14,10 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `A`/`D` or `←`/`→` — turn the nose
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
+- **Zoom** — **PC:** mouse **wheel** (scroll up = closer) + on-screen **＋/−** buttons (right edge,
+  vertically centered). **Mobile:** the **＋/−** buttons + two-finger **pinch**. Zoom scales the fixed
+  camera offset along its angle within `0.6–2.2×`, **eases smoothly** toward the target (~0.2 s, frame-rate
+  independent) instead of snapping, and is **persisted** across runs (`localStorage` key `camZoom`).
 - **Touch (mobile browsers):** "steer toward direction" — the angle of the left stick = desired
   nose direction (the ship turns toward it), the magnitude of deflection = thrust; on the right are the
   "FIRE" and "🚀" (rocket) buttons. Shown only on touch devices.
@@ -64,15 +68,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   maxSpeed, exhaust }`; a **thruster** has `{ power → maneuverability (turn rate) }`; a **repair drone**
   (4th type) has `{ repairPerTick, intervalSec, maxFraction }` → passive hull regen. Seeded: hulls
   Basic(100hp)/Light(30hp)/Medium(150hp)/Boss(210hp); engines + thrusters Basic/Scout/Medium/Boss; one
-  **Repair drone** (id 12: heal 1 HP / 3 s, capped at 80% of max HP). The fighter, rocketeer and the
+  **Repair drone** (id 12: heal 1 HP / 1 s, capped at 80% of max HP). The fighter, rocketeer and the
   medium (ex-mini-boss) share the **same Scout engine**; fighter + rocketeer also share the Scout
   thrusters, while the medium has weak (Medium) thrusters → it's sluggish.
   - **Player shop ladder** (priced; `docs/plans/economy-shop-v2.md`) adds buyable upgrades beyond the
     enemy/starter parts: **Heavy hull** (id 13: 200 hp / weight 50 / **6000** — the upgrade "ship": 2× HP for
     accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 14 / **1400**) + **Ion engine** (id 16: power
     18, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
-    **2500**), and repair tiers **Repair drone II** (id 19: 1 HP / 2 s / 85% / **1800**) + **Nanobot repair**
-    (id 20: 2 HP / 3 s / 90% / **7000**). Upgrades are **mass trade-offs, not power-creep**.
+    **2500**), and repair tiers **Repair drone II** (id 19: 1.5 HP / 1 s / 85% / **1800**) + **Nanobot repair**
+    (id 20: 2 HP / 1 s / 90% / **7000**). Upgrades are **mass trade-offs, not power-creep**.
 - **Repair drone:** installed on the player's ship via the **level-3 briefing** (server-authoritative
   `installComponent` action; persisted in `player_ships.components.repair`). During live combat the
   client ticks `repairTick` (pure, in `components.js`) each frame, slowly healing the hull up to the
@@ -85,10 +89,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   keeps the player at accel 10 / turn 2.0; heavier ships are slower & less agile.
 - **Visual model:** each ship's `model_url` (in the DB) points to the **combat** `.glb` (the exported
   primitives live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it
-  loads / as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. An optional
+  loads / as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. **Orientation
+  convention: ships face `+Z`.** A model whose nose points elsewhere is corrected at load time by
+  `stats.modelYaw` (radians; `Math.PI` for a `-Z`-facing export) — threaded seed → `modelSpec` →
+  `applyShipModel`. Center/scale/orientation are **runtime normalizations** (the asset's own transform
+  isn't trusted), so a wrong-way model is fixed with `modelYaw` in the seed, not by re-exporting. The
+  `basic enemy ship` uses this (`modelYaw: Math.PI`; its `enemy_1` export faced `-Z`). An optional
   **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
-  lazy-loaded — none set yet). Swap a `model_url` for a real model later. See `client/assets/README.md` +
-  `CREDITS.md`.
+  lazy-loaded; the basic enemy has one — `enemy_1_hangar`). See `client/assets/README.md` + `CREDITS.md`.
 - **Ship-model asset pipeline** (`docs/plans/ship-model-pipeline.md`, partial): repo-root `npm run
   assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb) / `assets:push`
   (→ S3 `vega-sentinels-assets`) / `assets:pull` (S3 → `client/assets/ships/`) / `assets:check`
@@ -149,7 +157,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   center over time (edge marker + warp-back + mini-map follow; a `sync` set-piece rides it) — the mechanic
   is built and tested, but **no mission turns drift on today** (set-pieces are static). Wired for a future
   escort mission.
-- Camera: nearly vertical, rigidly attached to the player, does not rotate.
+- Camera: nearly vertical, rigidly attached to the player, does not rotate. The fixed offset
+  (`CAM_OFFSET`) is scaled by the player's zoom (`0.6–2.2×`) along its angle — zoom never changes the
+  angle, FOV, or camera type.
 - **Landing screen (reflects the current level)** — on load the homepage depends on the player's current
   level: if it has a **briefing** (level 2+), the client lands on the **Hangar** showing that briefing (so a
   returning player sees *their* mission, not the level-1 intro); otherwise (level 1 / new player) it shows
@@ -256,7 +266,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 
 ## Visuals
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer)
-  → planet + 2 moons (light parallax). The asteroids are a **field of small rocks filling the whole disk**
+  → planet + 2 moons (light parallax). **Stars are two point layers (`makeStars`):** the dim majority
+  (small opaque points, power-law brightness — many faint, few less faint) plus a bright **~2%**
+  (`brightFraction`, default 0.02) that pops via a **bigger size (5 vs 1.4) + a soft additive glow
+  sprite + near-white full-luminance color** — the three cues that make a ~1px point read as brighter.
+  The bright layer uses `depthTest: true` (unlike the dim layer) so the planet/moons occlude it and the
+  glow can't creep onto the planet disk (the transparency gotcha in DECISIONS §5). The asteroids are a
+  **field of small rocks filling the whole disk**
   (annulus `inner`..`spread` radius; `inner` 0 → centered, `spread` 1000 in `home-system`) — inside the
   ±240 arena **and** far beyond it, sunk below the combat plane; the far edge fades into the fog (~600), so
   distant rocks read as a faraway field you can fly out into. Flying past them gives the sense of speed.
@@ -269,6 +285,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **The whole scene is data-driven:** it's described by a JSON **map descriptor** in the DB (`maps`
   table, seeded as `home-system`) and built generically by `buildMap(descriptor)` in `bootstrap()`
   (planet/moons/stars/asteroids/sky-light/set-pieces from params). API: `GET /api/maps/:name`.
+- **Dev palette tuning panel (`?tune`, dev-only).** Open the game with `?tune` to get a live lil-gui
+  panel for dialing in the backdrop palette: space `background` + `fog` (color/near/far), **sky light**
+  (ambient + sun color/intensity/position — the terminator) and **combat light** (ambient + sun
+  color/intensity — these affect ship readability, see the two-pass invariant in DECISIONS §5). A
+  **"Rebuild planet"** button re-bakes the ocean texture (it's a baked canvas map, so it only re-tints on
+  rebuild), and **"Dump palette → console"** prints a labeled `0x`-hex snapshot saying where each value
+  goes (sky/background live in the `home-system` map descriptor in `catalog_seed.js`; fog + combat lights
+  are currently hardcoded in `client/index.html`). **Never shipped to players:** lil-gui is
+  dynamically imported only inside the `?tune` guard, so the default build doesn't fetch it and is
+  unchanged. Mirrors the `?debug` dev-hook convention. See `docs/plans/color-tuning.md` and DECISIONS §21.
 - **Mission set-pieces (procedural decor).** The descriptor can carry a **`setpieces`** array — large
   structures generated **in code** (no `.glb`) and added to the **combat `scene`** (so they're lit from
   above by the combat sun, like the ships), sitting **just below the combat plane** (so you fly over them
@@ -303,6 +329,34 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   ship** (scales by `sizeScale`) and **tinted by the engine's exhaust color** (`engine.exhaust.color` —
   the glow layer, accent sparks and ring), so the player's burst is cyan-blue, enemies' orange. Used on
   enemy and player death.
+
+## Audio (procedural — `client/src/audio.js`)
+**Fully procedural, native Web Audio API — no library, no audio files, nothing on the CDN.** SFX are
+**synthesized** (oscillators + filtered white noise + gain envelopes) and the background music is
+**generative**. Matches the project's procedural/built-in-only ethos; swappable for real files later
+(DECISIONS §22). `createAudio()` builds a lazy `AudioContext` on the **first user gesture** (browser
+autoplay policy; `audio.unlock()` on first `pointerdown`/`keydown` + on opening settings). Graph:
+sources → `sfxGain` / `musicGain` → master → a `DynamicsCompressor` → output; a **polyphony cap** (~28
+voices) + the compressor keep machine-gun fire / stacked explosions from clipping.
+- **SFX** (`audio.sfx.*`, hooked in `index.html`): **shoot** (player gun), **enemyShoot** (lower,
+  low-passed, **distance-attenuated** so a swarm doesn't drown the player), **hit** (bullet connects),
+  **rocket** (launch whoosh), **explosion(size)** (ship death — sized to `sizeScale`; rocket detonation
+  uses a smaller one), **uiClick** (every `<button>` via a capturing handler), and a **jingle** (ascending
+  major on victory / descending minor on death).
+- **Music** is generative: sustained pad triads + an arpeggio over a slow **Am–F–C–G** progression
+  (look-ahead scheduler). It **follows game state** via `audio.setScene()` — a driving **combat** mood
+  (faster + a bass pulse) during a live fight, a calmer **hangar** mood (slow, sparse) on
+  menus/overlays/while paused — with a ~1 s duck-and-switch transition (`refreshMusic()` is called at every
+  state change; cheap + idempotent).
+- **Settings menu (audio only) — the project's first dedicated settings screen.** A ⚙ **gear**
+  (`#settings-btn`, **top-left corner, always visible** — incl. during a live fight; the HUD Health block is
+  padded right so the gear never overlaps it) opens a modal (`#settings-overlay`). **Opening it doubles as
+  pause:** during a live fight the gear freezes the battle (like the pause button) and opens the menu in one
+  click; **closing resumes** — but only if the gear is what paused it (a manual pause stays paused). The
+  modal has **Master / Music / SFX volume** sliders +
+  **Music/SFX on-off toggles**. Changes apply live and persist to `localStorage` (keys `audioMaster`,
+  `audioMusic`, `audioSfx`, `audioMusicOn`, `audioSfxOn`); a fresh player gets sane defaults
+  (master .7 / music .45 / sfx .8, both on). Language/zoom stay where they are (scope kept to audio).
 
 ## Localization (i18n)
 English is the **source of truth**; other languages are a derived layer. **EN + RU** today (RU is the
@@ -470,6 +524,15 @@ first translation). See DECISIONS §10.
   the old row orphaned (harmless, but it lingers). **Player data is never touched by seeding** — `players`,
   `games`, `player_ships` persist across deploys. (If we ever want the catalog editable in prod, switch to
   seed-only-when-empty + migrations for changes.)
+- **Player-data reset (admin):** `server/src/reset.js` is a CLI for wiping *progress* (never the
+  catalog). Two modes, both implemented per-backend in `db.js`/`db_postgres.js` (`resetPlayer` /
+  `resetAllPlayers`, re-exported via `datastore.js`): **`--player <id>`** clears one player's games,
+  ships, stash and events and resets level/credits/shop to the new-player baseline (re-granting the
+  starter ship) while **keeping the account, login session and language** (per-player SQL DELETEs,
+  correct for SQLite + Postgres); **`--all --yes`** wipes every player-scoped table (fresh DB —
+  SQLite `DELETE`s + `sqlite_sequence` reset; Postgres `TRUNCATE … RESTART IDENTITY CASCADE`), leaving
+  the catalog to re-seed on startup. Backend is auto-selected by `DATABASE_URL` (local SQLite unless
+  set). Wrapped by the **`reset-progress`** skill (`.claude/skills/reset-progress/`). See DECISIONS §19.
 - Run locally: `cd server && npm install && npm start` → open **http://localhost:4000**.
 - The client now **requires the API to start** (it fetches the ship/weapon catalog + active ship in
   `bootstrap()`). Since the game is always served same-origin by this server, the API is available.
@@ -503,16 +566,19 @@ first translation). See DECISIONS §10.
 ## Testable logic (extracted from index.html)
 - Pure, Three.js-free logic lives in `client/src/`: `components.js` (catalogs + `deriveDrive` +
   `shipMass` + `hitsToKill` + `repairTick`), `steering.js` (`headingToDir`, `shortestAngleDelta`,
-  `steerToward`, `enemyThrustFactor`, `inForwardSector`), and `i18n.js` (`t`, `resolveLanguage`,
-  `normalizeLang`, `loadLanguage`). `index.html` imports and uses them.
+  `steerToward`, `enemyThrustFactor`, `inForwardSector`), `i18n.js` (`t`, `resolveLanguage`,
+  `normalizeLang`, `loadLanguage`), and `audio.js` (the procedural Web Audio engine + the pure settings
+  helpers `clamp01`/`loadAudioSettings`/`saveAudioSettings`/`effectiveGain` — the engine is browser-only
+  and inert under node; only the settings helpers are unit-tested). `index.html` imports and uses them.
 - Because the client now uses ES modules, it must be **served over http** (not opened as `file://`).
 - More of the simulation can be extracted incrementally (it's still tied to Three.js objects + the render loop).
 
 ## Tests (built-in `node:test`, no deps)
-- **Client logic** — `client/src/*.test.js` (28): drive derivation (engine + mass), balance, repair-drone
+- **Client logic** — `client/src/*.test.js` (33): drive derivation (engine + mass), balance, repair-drone
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), steering math,
-  i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping).
-  Run: `cd client && npm test`.
+  i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping), and
+  **audio settings** (`clamp01`, `loadAudioSettings`/`saveAudioSettings` round-trip + defaults + garbage
+  handling, `effectiveGain` master×channel×toggle). Run: `cd client && npm test`.
 - **Backend API** — `server/src/server.test.js` (50): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
   player progress (current level + advance) + language preference + credits balance + level briefings
@@ -542,8 +608,10 @@ first translation). See DECISIONS §10.
   set-pieces are built into the combat scene below the plane and multi-part; the station rotates; the
   drifting-arena mechanic moves the center/border and the synced freighter, and warp-back targets the drifted
   center), **mission-board** (after clearing the campaign, 3 mission buttons appear top-right, a button
-  opens the description panel, and Take off launches a `sideMission` via the levelRunner), and **l4-enemies**
-  (the Advanced medium pirate + Second Boss build with the right HP/tint/mounts/derived drive). Self-contained runner starts its own server + throwaway DB. Setup
+  opens the description panel, and Take off launches a `sideMission` via the levelRunner), **l4-enemies**
+  (the Advanced medium pirate + Second Boss build with the right HP/tint/mounts/derived drive), and
+  **audio** (the settings gear opens the audio modal; the Master slider + Music toggle reach the engine and
+  persist to `localStorage`; the gear hides during a live fight). Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for
   occasional larger releases. See `client/visual/README.md`.

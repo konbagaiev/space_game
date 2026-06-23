@@ -55,7 +55,16 @@ Knobs: `ACCEL` (acceleration), `TURN` (turning), `IDLE_DRAG` (braking), `ARENA` 
 ## 4. Background: three layers by depth
 
 1. **Stars** — a distant static backdrop, glued to the camera (no parallax). Varying
-   brightness (a power-law distribution: many dim ones, rare bright ones).
+   brightness (a power-law distribution: many dim ones, rare bright ones). **A bright ~2% are a
+   separate point layer** (`makeStars`, `brightFraction`): for a ~1px point, raw color value caps at
+   white and barely reads as "brighter," so the bright subset uses the three cues that actually work —
+   **bigger size** (5 vs 1.4 px), a **soft additive glow sprite** (radial-gradient `CanvasTexture` → a
+   round bloom, not a hard square), and a **near-white, full-luminance color**. Considered but rejected
+   for now: a bloom post-process (`UnrealBloomPass`) — real HDR glow, but a whole extra pass that would
+   entangle the two-pass sky/combat split and risk combat readability (§5), overkill for a backdrop.
+   The bright layer is `depthTest: true` (the dim layer is `depthTest: false`) so the planet/moons
+   occlude it; this is the transparency-friendly alternative to the "make stars opaque" fix in §5 — it
+   keeps the additive glow from creeping onto the planet disk.
 2. **Asteroids** — a small layer BEHIND the combat plane, in world coordinates (NOT attached
    to the camera). When flying they rush past → giving a sense of speed. A single `InstancedMesh`
    (1 draw call). Knobs: `ROCK_COUNT`, size, `ROCK_SPREAD`.
@@ -441,8 +450,21 @@ are sourced, optimized, stored and kept in sync:
   extension, textures in their original format) so they load in the plain `GLTFLoader` AND preview in macOS
   Quick Look — size comes from decimation + small textures; **hangar glbs use meshopt + WebP** (the client
   wires `setMeshoptDecoder` so they load; too compressed for Quick Look — inspect in a web glTF viewer).
-  **Remaining:** produce the first real sourced model (run build → push → paste URLs → commit). No ship has
-  a `model_url_high` yet.
+  **First real sourced model shipped:** `enemy_1` (combat + hangar) is on S3 and wired to `basic enemy
+  ship` (`model_url` + `model_url_high`) — the pipeline is proven end-to-end, not just a no-op.
+
+**Model orientation is fixed in DATA (`stats.modelYaw`), not by re-exporting.** Our ships face `+Z`
+(`makeShip`'s primitive nose); `applyShipModel` already auto-centers and auto-scales every loaded `.glb`
+without trusting the asset's own transform, and **orientation joins that same set of runtime
+normalizations**. A model exported facing the wrong way (the `enemy_1` combat+hangar pair was authored
+nose-toward `-Z`, so the basic enemy flew engine-first) is corrected with a per-ship `stats.modelYaw`
+(radians; `Math.PI` for `-Z`), threaded seed → `modelSpec(url, yaw)` → `applyShipModel`'s pivot. **Why
+data over re-export:** one field corrects both the combat and hangar models (same source), needs no
+Blender/source round-trip or S3 re-push, and survives swapping in a differently-oriented source later.
+The knob is the documented escape hatch — it had silently regressed when ships went DB-driven
+(`modelSpec` dropped `yaw`), which is how the bug shipped. **Prevention:** combat `.glb` are kept
+Quick-Look-previewable on purpose — eyeball the nose (= `+Z`) before `assets:push`, then confirm in-game
+(see `client/assets/README.md`).
 
 ## 15. Hangar shop & stash (the "spend" side of the economy)
 
@@ -554,8 +576,113 @@ sealing are later slices.
 
 ---
 
+## 19. Player-data reset — per-player DELETE vs full wipe, kept out of the catalog path
+
+**Decision.** Two explicit reset operations, implemented per-backend (`resetPlayer` /
+`resetAllPlayers` in `db.js` + `db_postgres.js`) and driven by a CLI (`server/src/reset.js`) +
+a `reset-progress` skill — rather than the ad-hoc "delete `server/data/game.db`" we used before.
+
+- **One player** uses targeted `DELETE … WHERE player_id = ?` on the player-scoped tables plus an
+  `UPDATE players` back to the new-player baseline, then re-grants the starter ship. The **account,
+  auth columns, active `sessions` and language preference are deliberately kept** — "reset progress"
+  should leave the player able to log straight back in. It is *not* a row delete of `players`.
+- **All players** clears every player-scoped table and lets the **catalog** (`ships`/`weapons`/
+  `components`/`maps`/`levels`) re-seed on the next startup — never deleting catalog rows, consistent
+  with the seeding-is-upsert rule ("Catalog seeding" in SUMMARY). SQLite has no `TRUNCATE`, so it
+  uses `DELETE` + a `sqlite_sequence` reset; Postgres uses `TRUNCATE … RESTART IDENTITY CASCADE`
+  (one atomic statement, FK order handled by `CASCADE`).
+
+**Why not just delete the DB file?** That only works for local SQLite, loses the schema, and has no
+production analogue. Backend-symmetric functions work identically against prod Postgres, are unit-
+testable, and keep the destructive "all" path behind an explicit `--yes`. Backend is auto-selected by
+`DATABASE_URL`, so the same command is safe locally (SQLite) and intentional in prod (only if set).
+
+---
+
+## 20. Camera zoom — scale the offset, not FOV / camera swap
+
+**Decision.** Zoom multiplies the fixed `CAM_OFFSET` vector along its existing angle (clamped
+`0.6–2.2×`, persisted in `localStorage`), rather than changing the camera FOV or swapping camera type.
+This preserves the game's defining camera character — near-vertical, rigidly player-attached, no
+rotation (DECISIONS on the fixed camera) — so the change is minimal and can't distort the view. Inputs
+are platform-tuned: **PC** = wheel + ＋/− buttons, **mobile** = ＋/− buttons + two-finger pinch.
+
+**Why offset-scaling.** FOV zoom warps perspective and the perceived ship size non-uniformly; a camera
+swap (e.g. orthographic) would change the whole look. Scaling the offset just slides the same camera
+nearer/farther along its fixed ray — identical framing, only the distance changes.
+
+**Pinch vs. the steering stick.** Pinch listeners are on the canvas (`renderer.domElement`) and counted
+via `e.targetTouches`, which only includes fingers targeting the canvas. The stick lives in its own
+`#stick-zone` element (left 58%, `pointer-events:auto`) that captures its own touches, so a stick
+finger is never counted toward the two-finger pinch. The wheel listener is likewise on the canvas, so
+on menus (where the hangar/welcome DOM overlays the canvas) the wheel scrolls the shop instead of
+zooming.
+
+## 21. Color/lighting tuning — a dev tool (`?tune`), not a player setting
+
+**Decision.** Dialing in the space-backdrop palette + lighting is done with a **dev-only** lil-gui panel
+gated by `?tune` (dynamically imported inside the guard, so players never fetch it and the default build
+is unchanged), **not** a player-facing brightness slider. The panel gives per-element control
+(background, fog, sky ambient/sun, combat ambient/sun) and a "Dump palette → console" export of exact
+`0x`-hex/intensity values, which are then **baked** into the seed/code by hand. A narrow, clamped player
+"space brightness" setting can come later, but the dev panel is a prerequisite for choosing its safe
+range anyway.
+
+**Why.** A player slider can only move 1–2 global knobs, can't pick specific colors or read off exact
+values, and risks washing out bullets/exhaust/markers against the carefully-tuned near-black palette —
+which would break the two-pass lighting invariant (§5: combat and sky are lit by separate scenes so
+ship readability is independent of the backdrop). The dev tool gives exact, per-element control with
+zero combat-readability risk and produces paste-ready values. Fog + combat lights are still hardcoded in
+`index.html` (sky/background already live in the `catalog_seed.js` map descriptor); a later refactor can
+make the whole palette data-driven so the dump is one object to paste (color-tuning.md Step 4, deferred).
+
+## 22. Audio — procedural Web Audio (synthesized SFX + generative music), no asset files
+
+**Decision.** Game audio is **fully procedural**, built on the **native Web Audio API** — no library, no
+audio files, nothing on the CDN, no licensing. SFX are **synthesized** (oscillators + filtered white
+noise + gain envelopes); the background music is **generative** (sustained pad triads + an arpeggio over
+a slow Am–F–C–G progression, scheduled with a look-ahead timer). It lives in `client/src/audio.js`.
+
+**Why procedural (not Howler / not real files), resolving the two ROADMAP open questions:**
+- **Native Web Audio over Howler.js** — same reason as every other dependency call in this project
+  (built-in `node:sqlite`, hand-rolled SES SigV4, canvas planet textures, code-generated set-pieces): the
+  browser API is enough and adds zero deps. Howler mainly buys autoplay-unlock + buffer juggling, which we
+  don't need without files.
+- **Synthesis over sourced audio files** — keeps the "**no binaries in git**, procedural-first" ethos
+  (DECISIONS §14/§17). Real SFX/music would mean sourcing + **licensing** (CC0/CC-BY tracked in
+  `CREDITS.md`), an audio sprite, and hosting on S3+CloudFront — real infra/curation work for a feedback
+  prototype. Synthesis ships **immediately, in one PR, with nothing to find or host**. The trade-off is
+  fidelity: the music is atmospheric/ambient, not a scored track, and SFX read "arcade" — acceptable (often
+  fitting) for a top-down space shooter. (The user, unfamiliar with game-audio sourcing, chose this after a
+  walkthrough of the three options — procedural / hybrid / all-files.)
+
+**Swap path (kept open).** Every call site goes through `audio.sfx.*` / `audio.setScene(...)`, and all
+sound flows through named buses (`sfxGain`, `musicGain`, an internal `moodGain` for the scene crossfade).
+Replacing the generative music with a **real track is "add a `BufferSource` on `musicGain`"** — no call-site
+changes. So the **hybrid option (procedural SFX + a real music file on the CDN)** remains a small follow-up
+when a licensed track is chosen, without rework.
+
+**Mechanics worth recording:**
+- **Autoplay policy (cross-browser):** the `AudioContext` is created **lazily on the first user gesture**.
+  Browsers disagree on which event counts — **Chrome accepts `pointerdown`; Safari (esp. iOS) ignores it
+  for audio**, wants `click`/`touchend`/`keydown`, and stays suspended until a node actually *plays* in the
+  gesture. So `unlock()` plays a one-sample **silent "kick" buffer** (the standard Safari wake), and the
+  client listens on **all of `pointerdown`/`touchend`/`click`/`keydown` and retries on every gesture until
+  `isReady()`** (rather than detaching after the first, possibly-rejected, attempt). Importing the module
+  never touches the DOM/AudioContext, so it's safe under `node:test` (pure settings helpers are tested; the
+  engine is browser-only). *(This was the cause of an initial "no sound on macOS/Safari" report.)*
+- **Mix safety:** a `DynamicsCompressor` on the master bus + a **polyphony cap** (skip new SFX past ~28 live
+  voices) keep machine-gun fire and stacked explosions from clipping. Enemy fire is low-passed and
+  **distance-attenuated** so a swarm doesn't drown the player's own gun.
+- **Music = game state:** `combat` mood (faster, with a bass pulse) during a live fight; `hangar` mood
+  (slow, sparse) on menus / overlays / while paused. Transitions duck-and-switch over ~1 s.
+- **Settings:** Master/Music/SFX **volumes** + Music/SFX **on-off toggles**, persisted to `localStorage`
+  (keys `audio*`) and applied live. The audio-only **settings modal** (a ⚙ gear on the welcome/hangar
+  screens + while paused) is the project's first dedicated settings menu; language/zoom intentionally stay
+  where they are for now (scope kept to audio).
+
 ## Future ideas
 
-sound · solid asteroids with bounce ·
+solid asteroids with bounce ·
 bot behavior (evasion, arc flybys) · custom `.glb` models · multiplayer (WebSocket) ·
 engine trails on enemies.

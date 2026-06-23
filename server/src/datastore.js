@@ -6,6 +6,9 @@ const impl = usePostgres ? await import('./db_postgres.js') : await import('./db
 export const backend = usePostgres ? 'postgres' : 'sqlite';
 export const migrate = (...a) => impl.migrate(...a);
 export const registerPlayer = (...a) => impl.registerPlayer(...a);
+// Player-data reset (admin; see server/src/reset.js CLI + .claude/skills/reset-progress)
+export const resetPlayer = (...a) => impl.resetPlayer(...a);
+export const resetAllPlayers = (...a) => impl.resetAllPlayers(...a);
 export const setPlayerLanguage = (...a) => impl.setPlayerLanguage(...a);
 export const getCurrentLevel = (...a) => impl.getCurrentLevel(...a);
 export const advanceProgress = (...a) => impl.advanceProgress(...a);

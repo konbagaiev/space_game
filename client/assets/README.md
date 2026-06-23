@@ -19,30 +19,39 @@ Ships use built-in primitive shapes by default. To replace one with a real model
 
 3. **Drop the file** in `assets/ships/`, e.g. `assets/ships/fighter.glb`.
 
-4. **Point to it** in `client/index.html`, in the `SHIP_MODELS` map:
+4. **Point to it** from the **seed** (`server/src/catalog_seed.js`), not from `index.html` — ships are
+   DB-driven. Set the ship's **`modelUrl`** (combat, same-origin) and optional **`modelUrlHigh`**
+   (hangar, CloudFront), and put any orientation/size tuning in the ship's **`stats`**:
    ```js
-   const SHIP_MODELS = {
-     player:    'assets/ships/player.glb',
-     fighter:   'assets/ships/fighter.glb',
-     rocketeer: null,   // still the primitive
-     heavy:     { url: 'assets/ships/heavy.glb', yaw: Math.PI },
-   };
+   {
+     name: 'basic enemy ship', type: 'enemy',
+     modelUrl: 'assets/ships/enemy_1_combat.<hash>.glb',
+     modelUrlHigh: 'https://…/ships-hangar/enemy_1_hangar.<hash>.glb',
+     stats: { role: 'fighter', /* … */ modelYaw: Math.PI },
+   }
    ```
-   Each value is `null` (primitive), a path string, or an object with tuning knobs:
-   - **`url`** — path to the `.glb`.
-   - **`yaw`** — extra Y-rotation (radians) if the nose doesn't point `+Z`. Our ships face `+Z`;
-     many models face `-Z` → use `Math.PI`. (`±Math.PI/2` for models facing `+X`/`-X`.)
-   - **`tint`** — recolor the model to the ship's color so the color-coding holds (player blue;
-     enemies red/yellow/purple). Default `true`. Set `false` to keep the model's own materials.
-   - **`scaleMul`** — fine-tune size after auto-normalization (default `1`). The longest axis is
-     auto-scaled to match the primitive ship's footprint; this multiplies that.
+   The client (`makeShip` → `modelSpec` → `applyShipModel`) reads `modelUrl` + these `stats`:
+   - **`modelYaw`** — extra Y-rotation (radians) if the nose doesn't point `+Z`. **Our ships face
+     `+Z`; many exported models face `-Z` → use `Math.PI`** (`±Math.PI/2` for `+X`/`-X`). Both the
+     combat and hangar models come from the same source, so one `modelYaw` corrects both.
+   - **`sizeScale`** — gameplay+visual size multiplier (also scales the hit radius). The model's
+     longest axis is auto-normalized to the primitive footprint first; this multiplies that.
+   - Enemies are **never tinted** (`modelSpec` loads with `tint: false`) — appearance is the model
+     itself (see DECISIONS §14). `applyShipModel` still supports a `tint` knob for the primitive path.
 
 ### How it works
 `makeShip()` builds the primitive immediately (it shows while the model loads, and stays as a
-fallback if loading fails), then `applyShipModel()` loads the `.glb`, auto-centers and scales it,
-optionally tints and rotates it, and swaps it into the same object — so all gameplay logic
-(movement, hit radius, exhaust, explosions) is unchanged. The heavy enemy's 2× size still applies on
-top via `sizeScale`.
+fallback if loading fails), then `applyShipModel()` loads the `.glb`, **auto-centers, auto-scales, and
+re-orients (`yaw`)** it, and swaps it into the same object — so all gameplay logic (movement, hit
+radius, exhaust, explosions) is unchanged. Centering/scale/orientation are **runtime normalizations**:
+the asset's own transform is not trusted, so a model facing the wrong way is fixed with `modelYaw` in
+the seed, **not** by re-exporting.
 
-After adding a model, eyeball it with the visual tests (`npm run test:visual` from `client/`) or just
-open the game and check the orientation/size, tweaking `yaw`/`scaleMul` as needed.
+### Before you push a model to S3 — orientation check (avoids the "flying backwards" bug)
+The combat `.glb` is built with no geometry compression specifically so **macOS Quick Look** can
+preview it (`scripts/assets-config.mjs`). Before `npm run assets:push`:
+1. **Preview the combat `.glb`** (Quick Look / a glTF viewer) and note which way the nose points.
+2. **Our convention is nose = `+Z`.** If it faces any other way, set **`stats.modelYaw`** in the seed
+   (`-Z` → `Math.PI`); don't re-export just to rotate.
+3. After seeding, **eyeball it in-game** (open the game, or `npm run test:visual` from `client/` and
+   check the screenshots) — confirm the ship flies nose-first, not engine-first.

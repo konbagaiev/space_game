@@ -24,6 +24,32 @@ this rule for anything we author or version.
 - `docs/` — `ROADMAP.md` (end-to-end scope & phases), `SUMMARY.md` (current state), `CHANGELOG.md`
   (change log), `DECISIONS.md` (rationale), `plans/*.md` (per-feature build briefs).
 
+## Locate code via SUMMARY first (before grepping/Explore)
+
+Before searching the codebase or fanning out an Explore/grep for *where a feature lives*, **read
+`docs/SUMMARY.md` first** — it is the map. It describes every system as it is now and points at the
+exact files (e.g. repair drone → `catalog_seed.js` component id 12 + `repairTick` in
+`client/src/components.js`; player data reset → `server/src/reset.js`). Most "where is X?" questions
+are answered there in one read. Only fall back to broad code search when SUMMARY (and the relevant
+`docs/plans/*.md` brief) doesn't pin it down — and when it doesn't, that's a SUMMARY gap to fix as
+part of your change. Skip this only for a one-off lookup where you already know the file/symbol.
+
+## When asked to plan, write the plan to `docs/plans/`
+
+When the user asks you to **plan** a feature/change (rather than implement it), write the plan to a
+**`docs/plans/<kebab-case-name>.md`** file — don't leave it only in the chat. The user feeds these
+files to another terminal/agent, so each plan must be **self-contained and executable without this
+conversation's context**:
+- State the goal, then the concrete steps with **exact file paths and line/anchor references**
+  (e.g. `client/index.html:2076`), code snippets where helpful, and the affected docs to update.
+- Note open questions / decisions and their chosen answers inline, so the executing agent doesn't
+  re-ask.
+- Match the existing briefs in `docs/plans/` for tone and depth (e.g. `repair-drone.md`,
+  `mission-generator.md`).
+
+Planning-only means **write the plan file, change nothing else** (no code edits) unless the user says
+to implement.
+
 ## Docs workflow
 
 Three docs, three different jobs. On **every** change, update the docs as part of the

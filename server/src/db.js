@@ -69,6 +69,40 @@ export function registerPlayer(id) {
   return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
 
+// Reset ONE player's progress, keeping their account and active login intact. Identity/auth
+// columns (id, created_at, username, email, password_*, email_verified) and `sessions` rows are
+// preserved, as is the language preference; everything that represents *progress* is wiped:
+// game history, owned/active ships, stash and events, with games_played/current_progress/credits/
+// shop_unlocked reset to a brand-new player's baseline. The starter ship is re-granted so the
+// account stays immediately playable. Returns { found } — false (no-op) if the player is unknown.
+export function resetPlayer(playerId) {
+  const exists = db.prepare('SELECT 1 FROM players WHERE id = ?').get(playerId);
+  if (!exists) return { found: false };
+  db.exec('BEGIN');
+  try {
+    for (const t of ['games', 'player_ships', 'stash', 'events'])
+      db.prepare(`DELETE FROM ${t} WHERE player_id = ?`).run(playerId);
+    db.prepare('UPDATE players SET games_played = 0, current_progress = 1, credits = 1000, shop_unlocked = 0 WHERE id = ?').run(playerId);
+    ensureDefaultShip(playerId); // re-grant the starter ship so the reset account is playable
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  return { found: true };
+}
+
+// Reset ALL players: wipe every player-scoped table (accounts, sessions, game history, ships,
+// stash, events), leaving only the seeded reference catalog (ships/weapons/components/maps/levels).
+// Equivalent to a fresh database; the catalog is re-seeded idempotently on the next startup, so
+// it is intentionally left untouched here. Autoincrement counters are reset for a clean slate.
+export function resetAllPlayers() {
+  db.exec('BEGIN');
+  try {
+    for (const t of ['sessions', 'events', 'stash', 'player_ships', 'games', 'players'])
+      db.exec(`DELETE FROM ${t}`);
+    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('games', 'player_ships', 'events')");
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
+
 // Persist a player's language preference (validated to a supported code by the caller/route).
 export function setPlayerLanguage(playerId, language) {
   registerPlayer(playerId);

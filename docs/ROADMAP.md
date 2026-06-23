@@ -41,8 +41,13 @@ The goal of launching is *feedback*, so the missing pieces are the ones that cap
       (no-ops until set). **UptimeRobot** owned by Kostya (separate). Grafana deferred.
 - [ ] **First-time onboarding check** — make sure a stranger understands controls (esp. mobile/touch)
       in the first minute.
-- [ ] **Basic sound** (optional but high-impact polish) — shot, explosion, one combat track + one
-      hangar track, mute toggle. See the Audio track below.
+- [ ] **Arena boundary rework** (friend feedback) — soft visible boundary + "left the battlefield"
+      warning + 30 s auto-return; optional mini-map (enemies + bounds). **Spec'd →
+      `docs/plans/arena-boundaries.md`** (supersedes DECISIONS §2's hard-wall behavior).
+- [x] **Basic sound** — **DONE.** Procedural Web Audio (native API, no asset files): synthesized SFX
+      (fire/hit/rocket/explosion/UI/jingles) + **generative** background music that follows state (combat
+      vs hangar mood) + an **audio settings menu** (⚙ gear → Master/Music/SFX volumes + on/off toggles,
+      persisted). See DECISIONS §22 + the Audio track below.
 - [ ] Announce / share the link.
 
 ## Phase 1 — Progression core (the grind loop)
@@ -59,7 +64,7 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - [ ] **Playtest shop balance (Kostya)** — once catalog prices + shop are live: verify the two purchase
       paths feel right, the Heavy hull (weight 50) isn't too sluggish, and grind length is good. **Needs
       the mission generator (Phase 2)** to earn credits for testing. Ref `docs/plans/catalog-economy.md`.
-- [x] **Repair-drone component (4th component type)** — **DONE/shipped.** Base: heal 1 HP / 3 s up to
+- [x] **Repair-drone component (4th component type)** — **DONE/shipped.** Base: heal 1 HP / 1 s up to
       80% max HP, installed via the level-3 briefing (spec: `docs/plans/repair-drone.md`). Regen knobs
       are data-driven — tune from playtests/feedback.
 
@@ -68,9 +73,24 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
       pirates, hunt the pirate leader, intercept a pirate convoy. **Spec'd → `docs/plans/mission-generator.md`**
       (missions = generated level descriptors reusing `levelRunner`; server-owned rewards; phased 2a MVP
       → 2b more types → 2c scaling). **2a MVP unblocks shop-balance playtesting** (repeatable credits).
+      Side-mission enemies/difficulty (new **pirate gunner** + boss buff + 2-boss finale):
+      **`docs/plans/mission-enemies-difficulty.md`**.
+- [ ] **One giant map, missions at different points** — keep one world (the planet) and place
+      **procedural** set-pieces around it (research station, asteroid field + mining station with a
+      particle mining beam, drifting transport with a fiery trail); combat plane sits/drifts ~500 m above
+      each. **Spec'd → `docs/plans/mission-maps.md`.** Set-pieces code-generated for now (not CDN .glb).
+      Not a 2a blocker.
 
-## Phase 3 — Setpiece
-- [ ] **Pirate base assault** — a harder mission with a new boss (destroy the pirate base).
+## Phase 3 — Setpiece (story missions L4–L5)
+- [ ] **L4 — "Find the pirate base"** — authored campaign level after L3 (clearly harder; difficulty TBD).
+      **Implementing it fixes the current "L3 victory text lingers" symptom** — L4's briefing then shows
+      after L3 (briefing-on-advance), telling the player to **gear up first** (heavy ships). After L3 the
+      **hangar is the hub** (L4 + side missions launch on choice; not auto-replay).
+      **Spec'd → `docs/plans/level-4-find-the-pirate-base.md`** (+ Post-L3 flow in `mission-generator.md`);
+      **L4 balance/difficulty (Advanced medium pirate, Advanced pirate cannon, Second Boss, waves) →
+      `docs/plans/level-4-difficulty.md`**.
+- [ ] **L5 — "Storm the pirate base"** — the setpiece assault + a new boss (destroy the base).
+      (Generated side missions are separate, don't advance this story counter — see Phase 2.)
 
 ## Phase 4 — New factions (post-feedback content expansion)
 - [ ] Next enemies: automatons / aliens.
@@ -117,14 +137,15 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 ## Cross-cutting tracks (slot in across phases)
 
 ### Audio
-- Engine: native **Web Audio API** (no dep, project ethos) vs **Howler.js** (tiny lib, handles
-  autoplay-unlock + cross-browser). **Open decision.**
-- Autoplay policy: start audio only on the first user gesture (click/tap).
-- Combat vs hangar music with crossfade on scene change; **mute/volume** persisted (localStorage /
-  player settings).
-- SFX as short files (consider an audio sprite); music as loops; compressed ogg/mp3.
-- **Host SFX/music on the CDN** (S3 + CloudFront — good fit, audio is heavyish).
-- License every asset in `client/assets/CREDITS.md` (freesound / OpenGameArt / commissioned).
+- **DONE (v1, procedural).** Engine decided: **native Web Audio API** (no dep, project ethos) — not
+  Howler. **Source decided: fully procedural** (synthesized SFX + generative music, **no asset files /
+  CDN / licensing**), matching the procedural-first ethos. Built: `client/src/audio.js`, autoplay-unlock
+  on first gesture, combat↔hangar music with a duck-and-switch transition, and a persisted **audio
+  settings menu** (Master/Music/SFX volumes + on/off toggles). See DECISIONS §22.
+- **Follow-up (optional, kept open): real music track via the CDN.** The swap is "add a `BufferSource`
+  on `musicGain`" — no call-site changes. When a licensed track is chosen: host SFX/music on S3 +
+  CloudFront, consider an audio sprite + compressed ogg/mp3, and license every asset in
+  `client/assets/CREDITS.md` (freesound / OpenGameArt / commissioned).
 
 ### Telemetry & balance
 - Funnel events (Phase 0) → drop-off analysis. Keep economy/difficulty numbers data-driven and tune
@@ -136,12 +157,15 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 
 ### Assets pipeline
 - Source vs runtime split, budgets, optimize step, CDN delivery — DECISIONS §14.
+- **Ship-model pipeline** — **no binaries in git**; S3 canonical. Local script builds (gltf-transform
+  simplify/optimize) + pushes; **CI pulls combat models from S3 at deploy** (baked into image, served
+  same-origin), hangar high-poly on CloudFront; URLs in `catalog_seed.js`; CI drift-check. **`docs/plans/ship-model-pipeline.md`**.
 
 ---
 
 ## Open questions
 - Repair drone: "mission 3" = existing level 3, or a generated Phase-2 mission?
-- Audio: native Web Audio vs Howler.js?
+- ~~Audio: native Web Audio vs Howler.js?~~ **Resolved: native Web Audio, fully procedural (DECISIONS §22).**
 - Feedback channel: in-game form (own DB) vs Discord/Telegram webhook vs external link?
 - Custom CDN domain (`cdn.vega.tenony.com`) now or later?
 

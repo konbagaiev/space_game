@@ -191,7 +191,7 @@
   .community-link:hover { opacity: 1; color: #cfe7ff; }
   #overlay .community-link { margin-top: 18px; }
   /* hide the in-game HUD while the welcome screen is up */
-  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers, body.menu #oob-warn, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay { display: none; }
+  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers, body.menu #oob-warn, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay, body.menu #zoom { display: none; }
   /* Account dialog (login / register / post-level-1 name prompt) */
   #account {
     position: fixed; inset: 0; z-index: 14; display: none;
@@ -225,7 +225,7 @@
   #account button:hover { filter: brightness(1.06); }
   /* Account status bar (top-left, on menu screens only) */
   #account-bar {
-    position: fixed; top: 18px; left: 18px; z-index: 13; display: none;
+    position: fixed; top: 18px; left: 56px; z-index: 13; display: none; /* shifted right to clear the settings gear (top-left corner), like the HUD Health block */
     font-family: system-ui, sans-serif; font-size: 13px; color: #cfe0ff;
     background: rgba(10,16,30,.6); border: 1px solid rgba(120,150,210,.25);
     border-radius: 9px; padding: 8px 12px; max-width: 340px; text-align: left; line-height: 1.5;
@@ -302,6 +302,41 @@
     background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f; letter-spacing: 1px;
   }
   #pause-play:hover { filter: brightness(1.08); }
+  /* Settings gear — always available (top-left corner), above every overlay. Opening it also pauses a
+     live fight (see openSettings), so it doubles as a one-click "pause + menu". */
+  #settings-btn {
+    position: fixed; top: 11px; left: 12px; z-index: 13; display: flex;
+    width: 36px; height: 36px; line-height: 1; align-items: center; justify-content: center;
+    font-size: 19px; color: #cfe0ff; cursor: pointer; pointer-events: auto;
+    background: rgba(20,30,55,.6); border: 1px solid rgba(140,175,255,.35); border-radius: 8px;
+  }
+  #settings-btn:hover { background: rgba(40,60,100,.7); }
+  /* Audio settings modal */
+  #settings-overlay {
+    position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
+    background: rgba(5,6,13,.66); color: #e8f1ff; font-family: system-ui, sans-serif; padding: 20px;
+  }
+  #settings-overlay.on { display: flex; }
+  #settings-overlay .settings-box {
+    width: min(560px, 94vw); background: rgba(16,24,44,.96); border: 1px solid rgba(140,175,255,.28);
+    border-radius: 16px; padding: 32px 38px; box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  }
+  #settings-overlay h1 { font-size: 32px; letter-spacing: 1px; margin: 0 0 28px; }
+  #settings-overlay .set-row { display: flex; align-items: center; gap: 18px; margin: 24px 0; }
+  #settings-overlay .set-row label { flex: 1; font-size: 19px; opacity: .92; }
+  #settings-overlay input[type=range] { flex: 0 0 210px; height: 22px; accent-color: #5b86e5; cursor: pointer; }
+  #settings-overlay .set-toggle {
+    flex: 0 0 70px; font-size: 15px; font-weight: 700; letter-spacing: .5px; cursor: pointer;
+    padding: 8px 0; border-radius: 8px; border: 1px solid rgba(140,175,255,.4);
+    background: rgba(54,209,220,.18); color: #bff0f4;
+  }
+  #settings-overlay .set-toggle.off { background: rgba(120,130,150,.18); color: #9aa6bd; border-color: rgba(150,160,180,.35); }
+  #settings-close {
+    margin-top: 30px; width: 100%; cursor: pointer; pointer-events: auto; font: inherit;
+    padding: 15px 18px; font-size: 18px; font-weight: 600; border-radius: 10px;
+    background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.3);
+  }
+  #settings-close:hover { background: rgba(120,150,210,.12); }
   #perf {
     position: fixed; top: 34px; left: 50%; transform: translateX(-50%);
     font-family: ui-monospace, Menlo, monospace; font-size: 12px;
@@ -343,6 +378,19 @@
   #rocket-btn .rb-icon { position: relative; z-index: 1; font-size: 34px; text-shadow: 0 0 5px #000; }
   #rocket-btn.ready { border-color: #77ee77; box-shadow: 0 0 12px rgba(110,238,110,.5); }
   #rocket-btn:active { filter: brightness(1.25); }
+  /* Zoom controls (+/-): PC + mobile. Hidden on menus like the rest of the HUD. */
+  #zoom {
+    position: fixed; right: 16px; top: 50%; transform: translateY(-50%); z-index: 6;
+    display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  }
+  #zoom button {
+    pointer-events: auto; cursor: pointer; touch-action: manipulation; user-select: none;
+    width: 44px; height: 44px; line-height: 1; font-size: 24px; font-weight: 700; color: #cfe0ff;
+    background: rgba(20,30,55,.6); border: 1px solid rgba(140,175,255,.35); border-radius: 9px;
+    display: flex; align-items: center; justify-content: center; text-shadow: 0 0 6px rgba(0,0,0,.8);
+  }
+  #zoom button:hover { background: rgba(40,60,100,.7); }
+  #zoom button:active { filter: brightness(1.3); }
   /* Off-screen enemy indicators: arrows on the screen edge pointing toward off-screen enemies */
   #markers { position: fixed; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
   .marker {
@@ -371,7 +419,7 @@
 </head>
 <body>
 <div id="hud">
-  <div>
+  <div style="padding-left:44px"><!-- clear the settings gear (top-left corner) so the bar sits beside it -->
     <div class="label" data-i18n="ui.hud.health">Health</div>
     <div id="hpbar"><div id="hpfill"></div></div>
     <div id="hppct">100.0%</div>
@@ -469,6 +517,28 @@
   <button id="pause-play" data-i18n="ui.pause.play">▶ Play</button>
   <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
 </div>
+<!-- Settings gear — shown on menus (body.menu) + while paused (body.paused); opens the audio settings -->
+<button id="settings-btn" aria-label="Settings" title="Settings">⚙</button>
+<div id="settings-overlay">
+  <div class="settings-box">
+    <h1 data-i18n="ui.settings.title">Settings</h1>
+    <div class="set-row">
+      <label for="set-master" data-i18n="ui.settings.master">Master volume</label>
+      <input type="range" id="set-master" min="0" max="100" step="1" />
+    </div>
+    <div class="set-row">
+      <button class="set-toggle" id="set-music-on"></button>
+      <label for="set-music" data-i18n="ui.settings.music">Music</label>
+      <input type="range" id="set-music" min="0" max="100" step="1" />
+    </div>
+    <div class="set-row">
+      <button class="set-toggle" id="set-sfx-on"></button>
+      <label for="set-sfx" data-i18n="ui.settings.sfx">Sound effects</label>
+      <input type="range" id="set-sfx" min="0" max="100" step="1" />
+    </div>
+    <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
+  </div>
+</div>
 <div id="markers"></div>
 <div id="oob-warn"></div>
 <canvas id="minimap" width="132" height="132"></canvas>
@@ -480,6 +550,10 @@
   <div id="fire-btn" data-i18n="ui.touch.fire">FIRE</div>
 </div>
 <div id="rocket-btn"><div id="rocket-fill"></div><span class="rb-icon">🚀</span></div>
+<div id="zoom">
+  <button id="zoom-in"  aria-label="Zoom in"  title="Zoom in">＋</button>
+  <button id="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+</div>
 
 <script type="importmap">
 {
@@ -497,11 +571,36 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
+import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // procedural Web Audio (SFX + generative music)
+
+// Procedural audio engine: SFX are synthesized + music is generative (no asset files). The AudioContext
+// is created lazily on the first user gesture (autoplay policy) via audio.unlock(). See DECISIONS §21.
+const audio = createAudio(loadAudioSettings(window.localStorage));
+
+// Music follows game state: the driving combat mood during a live fight, the calmer hangar mood on
+// menus / overlays / while paused. refreshMusic() is cheap + idempotent (no-op when the mood is unchanged).
+function musicForState() {
+  return (gameStarted && player && player.alive && !levelRunner.won && !paused) ? 'combat' : 'hangar';
+}
+function refreshMusic() { audio.setScene(musicForState()); }
+// Autoplay policy: the AudioContext can only start inside a user gesture, and browsers disagree on which
+// events count (Chrome accepts pointerdown; Safari wants click/touchend/keydown and a node played in the
+// gesture). So listen broadly and KEEP retrying on every gesture until the context is actually running,
+// then detach. Each attempt also (re)starts the menu music. A capturing click handler gives every
+// <button> a soft UI tick.
+const UNLOCK_EVENTS = ['pointerdown', 'touchend', 'click', 'keydown'];
+function tryUnlockAudio() {
+  audio.unlock();
+  refreshMusic();
+  if (audio.isReady()) UNLOCK_EVENTS.forEach((ev) => removeEventListener(ev, tryUnlockAudio));
+}
+UNLOCK_EVENTS.forEach((ev) => addEventListener(ev, tryUnlockAudio));
+addEventListener('click', (e) => { if (e.target.closest('button')) audio.sfx.uiClick(); }, true);
 
 // ---------- Base scene ----------
 const scene = new THREE.Scene();
 scene.background = null; // background is drawn by the sky scene (first pass); combat is transparent on top
-scene.fog = new THREE.Fog(0x05060d, 240, 600);
+scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so distant rocks fade into the backdrop
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -512,6 +611,30 @@ document.body.appendChild(renderer.domElement);
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 900);
 const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // fixed camera offset from the ship
 
+// --- camera zoom: scale the offset toward/away along its fixed angle (smaller = closer/zoom-in).
+//     Input sets a target; camZoom eases toward it over ~ZOOM_SMOOTH s so zoom feels smooth, not snappy. ---
+const ZOOM_MIN = 0.6, ZOOM_MAX = 2.2;   // closest / farthest multiples of CAM_OFFSET
+const ZOOM_SMOOTH = 0.2;                // seconds to (almost) reach a new zoom target
+const camOffset = CAM_OFFSET.clone();   // effective offset used by the follow code (eased toward the target)
+const clampZoom = z => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+let camZoom = 1;        // current (animated) zoom
+let camZoomTarget = 1;  // where zoom is easing toward
+function setZoom(z){
+  camZoomTarget = clampZoom(z);
+  try { localStorage.setItem('camZoom', camZoomTarget.toFixed(3)); } catch {}
+}
+function zoomBy(f){ setZoom(camZoomTarget * f); }
+// Ease camZoom -> camZoomTarget each frame (frame-rate independent) and rebuild camOffset.
+function tickZoom(dt){
+  if (camZoom === camZoomTarget) return;
+  const k = 1 - Math.exp(-dt / (ZOOM_SMOOTH / 4)); // ~ZOOM_SMOOTH s to land (~98%)
+  camZoom += (camZoomTarget - camZoom) * k;
+  if (Math.abs(camZoomTarget - camZoom) < 1e-3) camZoom = camZoomTarget; // snap when close enough
+  camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);
+}
+camZoom = camZoomTarget = clampZoom(parseFloat(localStorage.getItem('camZoom')) || 1); // restore saved zoom
+camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);                                     // apply at once on load (no ease)
+
 // === TWO INDEPENDENT LIGHTING SETUPS via two render passes ===
 // The sky (planet, moons, stars) is drawn by a separate scene with its own light,
 // combat by the main scene with its own. Each scene sees only its own sources,
@@ -519,7 +642,8 @@ const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // fixed camera offset from th
 renderer.autoClear = false;
 
 // COMBAT LIGHT (main scene) - exactly as before
-scene.add(new THREE.AmbientLight(0x405070, 1.2));
+const combatAmbient = new THREE.AmbientLight(0x405070, 1.2); // named so the ?tune panel can mutate it live
+scene.add(combatAmbient);
 const sun = new THREE.DirectionalLight(0xffffff, 1.4);
 sun.position.set(30, 60, 20);
 scene.add(sun);
@@ -530,6 +654,9 @@ const skyScene = new THREE.Scene();
 
 // Per-map scene objects, built by buildMap(). At module scope so the render loop can reach them.
 let sky = null, stars = null, rocks = null, planetPos = new THREE.Vector3();
+// Sky lights are reassigned by buildMap(); held at module scope so the ?tune dev panel can mutate them.
+let skyAmbient = null, skySun = null;
+let currentMapDescriptor = null; // last descriptor passed to buildMap() (for the ?tune "Rebuild planet" button)
 const moons = [];
 // Mission set-pieces (procedural decor in the COMBAT scene, just below the plane): { obj, update }.
 // Decor only — NOT registered in the gameplay arrays, so bullets/AI ignore them. They live in the shared
@@ -573,38 +700,96 @@ const arenaBorder = (() => {
 })();
 
 // ---------- Starry sky ----------
-function makeStars(count, radius) {
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
+// A soft radial-gradient sprite (white core -> transparent edge), used as the point texture for the
+// bright-star layer so those stars bloom into a round halo instead of a hard square. Built once.
+let starGlowTexture = null;
+function getStarGlowTexture() {
+  if (starGlowTexture) return starGlowTexture;
+  const s = 64, cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0.0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.25, 'rgba(255,255,255,0.85)'); // tight bright core
+  g.addColorStop(0.55, 'rgba(255,255,255,0.25)'); // soft falloff
+  g.addColorStop(1.0, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  starGlowTexture = new THREE.CanvasTexture(cv);
+  return starGlowTexture;
+}
+
+// One random point on a sphere shell (radius * 0.7..1.0), written into `pos` at index i.
+function placeStar(pos, i, radius) {
+  const u = Math.random() * 2 - 1;
+  const theta = Math.random() * Math.PI * 2;
+  const r = Math.sqrt(1 - u * u);
+  const dist = radius * (0.7 + Math.random() * 0.3);
+  pos[i * 3]     = Math.cos(theta) * r * dist;
+  pos[i * 3 + 1] = u * dist; // across the whole sphere, including below the platform
+  pos[i * 3 + 2] = Math.sin(theta) * r * dist;
+}
+
+// The starfield is TWO point layers: the dim majority (small, opaque) and a bright ~2% that pops via a
+// bigger size + a soft additive glow sprite + a near-white, full-luminance color (the three cues that
+// actually make a ~1px point read as "brighter"; see DECISIONS §4). Returns a Group so the render loop
+// keeps gluing the whole field to the camera (`stars.position.copy(...)`).
+function makeStars(count, radius, brightFraction = 0.02) {
+  const brightCount = Math.round(count * brightFraction);
+  const dimCount = count - brightCount;
   const c = new THREE.Color();
-  for (let i = 0; i < count; i++) {
-    // evenly over the sphere around the arena
-    const u = Math.random() * 2 - 1;
-    const theta = Math.random() * Math.PI * 2;
-    const r = Math.sqrt(1 - u * u);
-    const dist = radius * (0.7 + Math.random() * 0.3);
-    positions[i * 3]     = Math.cos(theta) * r * dist;
-    positions[i * 3 + 1] = u * dist; // across the whole sphere, including below the platform
-    positions[i * 3 + 2] = Math.sin(theta) * r * dist;
-    // slight hue variation (bluish <-> warm) + VARYING BRIGHTNESS.
-    // An exponent >1 yields many dim stars and a few bright ones - like a real sky.
-    c.setHSL(0.55 + Math.random() * 0.12, 0.25 + Math.random() * 0.3, 0.7);
-    const b = 0.15 + Math.pow(Math.random(), 2.2) * 0.85;
-    colors[i * 3] = c.r * b; colors[i * 3 + 1] = c.g * b; colors[i * 3 + 2] = c.b * b;
+  const group = new THREE.Group();
+
+  // --- dim majority: small opaque points, power-law brightness (many dim, few less-dim) ---
+  const dPos = new Float32Array(dimCount * 3), dCol = new Float32Array(dimCount * 3);
+  for (let i = 0; i < dimCount; i++) {
+    placeStar(dPos, i, radius);
+    c.setHSL(0.55 + Math.random() * 0.12, 0.25 + Math.random() * 0.3, 0.7); // bluish <-> warm
+    const b = 0.15 + Math.pow(Math.random(), 2.2) * 0.85; // exponent >1 -> mostly dim
+    dCol[i * 3] = c.r * b; dCol[i * 3 + 1] = c.g * b; dCol[i * 3 + 2] = c.b * b;
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const mat = new THREE.PointsMaterial({
+  const dGeo = new THREE.BufferGeometry();
+  dGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
+  dGeo.setAttribute('color', new THREE.BufferAttribute(dCol, 3));
+  const dim = new THREE.Points(dGeo, new THREE.PointsMaterial({
     size: 1.4,
     sizeAttenuation: false, // stars are the same size regardless of distance
     vertexColors: true,
-    transparent: false,     // opaque -> drawn in the pass before the planet
+    transparent: false,     // opaque -> drawn in the pass before the planet (so the planet occludes them)
     fog: false,             // fog must not dim the stars
     depthTest: false,       // pure backdrop - planet/moons always occlude them
     depthWrite: false,
-  });
-  return new THREE.Points(geo, mat);
+  }));
+  dim.renderOrder = -1;
+  group.add(dim);
+
+  // --- bright ~2%: bigger glowing additive sprites, near-white at full luminance ---
+  if (brightCount > 0) {
+    const bPos = new Float32Array(brightCount * 3), bCol = new Float32Array(brightCount * 3);
+    for (let i = 0; i < brightCount; i++) {
+      placeStar(bPos, i, radius);
+      // near-white with a faint blue/warm tint, kept at full luminance (no dimming) so they read hot
+      c.setHSL(0.55 + Math.random() * 0.12, 0.15 + Math.random() * 0.2, 0.92);
+      bCol[i * 3] = c.r; bCol[i * 3 + 1] = c.g; bCol[i * 3 + 2] = c.b;
+    }
+    const bGeo = new THREE.BufferGeometry();
+    bGeo.setAttribute('position', new THREE.BufferAttribute(bPos, 3));
+    bGeo.setAttribute('color', new THREE.BufferAttribute(bCol, 3));
+    const bright = new THREE.Points(bGeo, new THREE.PointsMaterial({
+      size: 5.0,              // ~3.5x the dim size -> reads as a noticeably brighter star
+      map: getStarGlowTexture(),
+      sizeAttenuation: false,
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending, // bright core blooms over the dark backdrop
+      fog: false,
+      depthTest: true,        // UNLIKE the dim layer: lets the planet occlude them so the glow can't
+      depthWrite: false,      // creep onto the planet disk (the transparency gotcha in DECISIONS §5)
+    }));
+    bright.renderOrder = -1;
+    group.add(bright);
+  }
+  return group;
 }
 
 // ---------- Planet with moons (built by buildMap from the map descriptor) ----------
@@ -994,6 +1179,7 @@ function buildSetPiece(spec) {
 // layer, and any mission set-pieces from `descriptor`. The combat-scene light is constant (readability).
 function buildMap(descriptor) {
   const d = descriptor;
+  currentMapDescriptor = descriptor; // remembered for the ?tune panel's rebuild button
   // clear set-pieces from a previous map (switching maps between levels)
   for (const sp of setPieces) scene.remove(sp.obj);
   setPieces.length = 0;
@@ -1002,8 +1188,9 @@ function buildMap(descriptor) {
   arenaCenter.set(0, 0, 0);
   arenaBorder.line.position.set(0, 0, 0);
   skyScene.background = new THREE.Color(d.background);
-  skyScene.add(new THREE.AmbientLight(d.sky.ambient.color, d.sky.ambient.intensity)); // night-side fill
-  const skySun = new THREE.DirectionalLight(d.sky.sun.color, d.sky.sun.intensity);    // side light -> terminator
+  skyAmbient = new THREE.AmbientLight(d.sky.ambient.color, d.sky.ambient.intensity); // night-side fill
+  skyScene.add(skyAmbient);
+  skySun = new THREE.DirectionalLight(d.sky.sun.color, d.sky.sun.intensity);    // side light -> terminator
   skySun.position.set(...d.sky.sun.pos);
   skyScene.add(skySun);
 
@@ -1045,9 +1232,10 @@ function buildMap(descriptor) {
 // A ship's 3D model comes from the DB (ships.model_url): null = the built-in primitive ship.
 // makeShip builds the primitive immediately (shown while a model loads, and as a fallback), then
 // applyShipModel swaps in the .glb. The exported assets bake the color in, so we load with tint off.
-// (For a model whose nose isn't +Z, or that needs runtime tinting, pass {url, yaw, tint, scaleMul} —
-// see assets/README.md.)
-const modelSpec = (url) => (url ? { url, tint: false } : null);
+// Our ships face +Z; a model whose nose points elsewhere is corrected at load time by `yaw` (radians),
+// authored per-ship in the seed as `stats.modelYaw` (e.g. Math.PI for a model facing -Z). This is a
+// runtime normalization, just like the auto center/scale — see assets/README.md.
+const modelSpec = (url, yaw = 0) => (url ? { url, tint: false, yaw } : null);
 
 const gltfLoader = new GLTFLoader();
 gltfLoader.setMeshoptDecoder(MeshoptDecoder); // so meshopt-compressed glbs (hangar high-poly) load; combat glbs are uncompressed
@@ -1274,6 +1462,7 @@ function detonateRocket(r, dealDamage = true) {
     }
   }
   spawnExplosion(r.obj.position, r.blastVis);
+  audio.sfx.explosion(0.7); // rocket blast
   scene.remove(r.obj);
   r.obj.children[0].material.dispose();
 }
@@ -1334,7 +1523,7 @@ function buildPlayer(active) {
   const s = active.ship.stats;
   const { hull, engine, thruster, repair } = resolveComponents(active.components); // hull + engine + thrusters + repair drone
   const p = {
-    mesh: makeShip(s.color, modelSpec(active.ship.modelUrl)),
+    mesh: makeShip(s.color, modelSpec(active.ship.modelUrl, s.modelYaw)),
     vel: new THREE.Vector3(),
     heading: 0,                       // rotation angle around Y
     sizeScale: s.sizeScale || 1,
@@ -1361,7 +1550,7 @@ function spawnEnemyShip(shipDef) {
   const { hull, engine, thruster } = resolveComponents(shipDef.components);
   const e = {
     role: s.role, color: s.color, sizeScale: s.sizeScale || 1, reward: s.reward || 0,
-    mesh: makeShip(s.color, modelSpec(shipDef.modelUrl)), // model defines the look; never tint enemies by color
+    mesh: makeShip(s.color, modelSpec(shipDef.modelUrl, s.modelYaw)), // model defines the look; never tint enemies by color
     vel: new THREE.Vector3(),
     heading: Math.random() * Math.PI * 2,
     hull, engine, thruster,
@@ -1425,6 +1614,7 @@ const levelRunner = {
   },
   win() {
     this.won = true;
+    audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
     earned *= 2; // double the credits earned for clearing the level
     overlayTitle.textContent = t('ui.overlay.victory');
     // resolve the level's victory line through i18n (key → translation → English fallback)
@@ -1498,8 +1688,12 @@ function fireMount(ship, mount, fwd, isPlayer) {
     const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : player;
     const accel = isPlayer ? ship.acceleration : (w.accel ?? ship.acceleration);
     spawnRocket(muzzle, fwd, w, accel, isPlayer, target);
+    audio.sfx.rocket();
   } else {
     spawnBullet(muzzle, fwd, w, isPlayer, ship.vel);
+    // distinct, distance-attenuated report for enemies so a swarm doesn't drown the player's own fire
+    if (isPlayer) audio.sfx.shoot();
+    else audio.sfx.enemyShoot(player && player.mesh ? ship.mesh.position.distanceTo(player.mesh.position) : 0);
   }
 }
 
@@ -1607,12 +1801,39 @@ if (isTouch) {
   rocketBtn.addEventListener('touchstart', e => { keys['_rocket'] = true; e.preventDefault(); }, { passive: false });
   rocketBtn.addEventListener('touchend', e => { keys['_rocket'] = false; e.preventDefault(); }, { passive: false });
   rocketBtn.addEventListener('touchcancel', () => { keys['_rocket'] = false; });
+
+  // Pinch-to-zoom: two fingers over the open canvas area. Scoped to targetTouches so it never fights
+  // the steering stick (the stick lives in its own #stick-zone element with its own listeners).
+  let pinchDist = 0;
+  const pinchD = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  renderer.domElement.addEventListener('touchstart', e => {
+    if (e.targetTouches.length === 2) pinchDist = pinchD(e.targetTouches[0], e.targetTouches[1]);
+  }, { passive: false });
+  renderer.domElement.addEventListener('touchmove', e => {
+    if (e.targetTouches.length === 2 && pinchDist > 0) {
+      const d = pinchD(e.targetTouches[0], e.targetTouches[1]);
+      if (d > 0) { zoomBy(pinchDist / d); pinchDist = d; } // fingers apart (d↑) => ratio<1 => zoom in
+      e.preventDefault();
+    }
+  }, { passive: false });
+  renderer.domElement.addEventListener('touchend', e => {
+    if (e.targetTouches.length < 2) pinchDist = 0;
+  }, { passive: false });
 } else {
   // PC: the rocket circle is also clickable (besides the F key)
   const rocketBtn = document.getElementById('rocket-btn');
   rocketBtn.addEventListener('mousedown', () => { keys['_rocket'] = true; });
   addEventListener('mouseup', () => { keys['_rocket'] = false; });
 }
+
+// ---------- Zoom controls (both platforms): mouse wheel + on-screen +/- buttons ----------
+const ZOOM_WHEEL = 1.12, ZOOM_BTN = 1.25;
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomBy(e.deltaY < 0 ? 1/ZOOM_WHEEL : ZOOM_WHEEL); // scroll up = zoom in (closer)
+}, { passive: false });
+document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOOM_BTN));
+document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
 
 // ---------- Backend: anonymous player identity + game history ----------
 // Identify the player by a browser-generated id kept in localStorage (auto-register).
@@ -1908,12 +2129,12 @@ function update(dt) {
     if (b.fromPlayer) {
       for (const e of enemies) {
         if (b.mesh.position.distanceTo(e.mesh.position) < e.radius) {
-          e.hp -= b.damage; hit = true; break;
+          e.hp -= b.damage; hit = true; audio.sfx.hit(); break;
         }
       }
     } else {
       if (player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
-        player.hp -= b.damage; hit = true;
+        player.hp -= b.damage; hit = true; audio.sfx.hit();
       }
     }
 
@@ -2048,6 +2269,7 @@ function update(dt) {
       // colorful death burst: sized to the ship, tinted by its engine's exhaust color
       const e = enemies[i];
       spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
+      audio.sfx.explosion(e.sizeScale || 1);
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
       kills++;                  // count (drives level thresholds + HUD)
@@ -2061,6 +2283,7 @@ function update(dt) {
   if (player.hp <= 0 && player.alive) {
     player.alive = false;
     spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
+    audio.sfx.explosion(1.5); audio.sfx.jingle(false); refreshMusic(); // boom + loss sting, back to menu music
     track('player_death', { level: currentLevelLabel(), kills }); // funnel: where players die
     bankRun(); // bank the earned credits into the account balance + record the game
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');
@@ -2073,7 +2296,7 @@ function update(dt) {
 
   // --- camera: rigidly attached to the player (no lag or "floating" - no jitter),
   //     fixed angle - does NOT rotate with the ship's turn ---
-  camera.position.copy(player.mesh.position).add(CAM_OFFSET);
+  camera.position.copy(player.mesh.position).add(camOffset);
   camera.lookAt(player.mesh.position);
 
   // stars - an infinitely distant backdrop (stuck to the camera, no parallax)
@@ -2203,6 +2426,8 @@ function setPaused(p) {
   pauseBtn.setAttribute('aria-label', label);
   pauseBtn.title = label;
   pauseOverlay.classList.toggle('on', p); // centered "Paused" + Play while paused
+  document.body.classList.toggle('paused', p); // gates the settings gear (shown on menus + while paused)
+  refreshMusic(); // duck to the calmer menu mood while paused
 }
 document.getElementById('pause-play').addEventListener('click', () => setPaused(false)); // Play = resume
 // Toggle only while a fight is actually running (no-op on menus / after death/victory).
@@ -2222,6 +2447,7 @@ window.addEventListener('blur', autoPauseOnBlur);
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
+  tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
   if (!paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
   updateHud();
   updateMarkers();
@@ -2280,6 +2506,7 @@ function reset() {
   gameStartTime = performance.now(); // start timing a new game (for history)
   levelRunner.start(activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
   setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
+  refreshMusic();   // a live fight → combat music
   overlay.style.display = 'none';
   // funnel telemetry: game_start once per session, level_start per run; tag Sentry's scope with the level
   const level = currentLevelLabel();
@@ -2301,6 +2528,7 @@ function showHangar(briefing) {
   overlay.style.display = 'none';
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the Hangar
+  refreshMusic(); // menu → calmer hangar music
   hangarEl.style.display = 'flex';
   openHangarShop(); // show the shop/stash bay if it's unlocked (cleared the final level)
   refreshMissions(); // (re)load the side-mission board (top-right) if unlocked
@@ -2671,6 +2899,61 @@ async function openHangarShop() {
   } catch { bay.style.display = 'none'; }
 }
 
+// ---------- Dev color/lighting tuning panel (?tune) ----------
+// Dev-only. lil-gui is dynamically imported inside the ?tune guard (see bootstrap), so players never
+// fetch it and the default build is unchanged. Sliders mutate the live light/fog/background refs;
+// "Dump" prints a labeled snapshot saying where each value goes (seed vs. hardcoded). See
+// docs/plans/color-tuning.md.
+function dumpPalette(){
+  const H = c => '0x' + c.getHexString();
+  console.log('— catalog_seed.js  MAPS home-system.descriptor —', {
+    background: H(skyScene.background),
+    sky: {
+      ambient: { color: H(skyAmbient.color), intensity: skyAmbient.intensity },
+      sun: { color: H(skySun.color), intensity: skySun.intensity, pos: skySun.position.toArray() },
+    },
+  });
+  console.log('— index.html (currently hardcoded) —', {
+    fog: { color: H(scene.fog.color), near: scene.fog.near, far: scene.fog.far },
+    combatAmbient: { color: H(combatAmbient.color), intensity: combatAmbient.intensity },
+    combatSun: { color: H(sun.color), intensity: sun.intensity },
+  });
+}
+
+function buildTunePanel(GUI){
+  const gui = new GUI({ title: 'Palette (?tune)' });
+  const hx = c => '#' + c.getHexString();
+
+  const bg = gui.addFolder('Space backdrop');
+  const bgC = { background: hx(skyScene.background), fog: hx(scene.fog.color) };
+  bg.addColor(bgC, 'background').onChange(v => skyScene.background.set(v));
+  bg.addColor(bgC, 'fog').onChange(v => scene.fog.color.set(v));
+  bg.add(scene.fog, 'near', 0, 600);
+  bg.add(scene.fog, 'far', 100, 1200);
+
+  const sl = gui.addFolder('Sky light (terminator)');
+  const slC = { ambient: hx(skyAmbient.color), sun: hx(skySun.color) };
+  sl.addColor(slC, 'ambient').onChange(v => skyAmbient.color.set(v));
+  sl.add(skyAmbient, 'intensity', 0, 3).name('ambient intensity');
+  sl.addColor(slC, 'sun').onChange(v => skySun.color.set(v));
+  sl.add(skySun, 'intensity', 0, 8).name('sun intensity');
+  sl.add(skySun.position, 'x', -300, 300);
+  sl.add(skySun.position, 'y', -300, 300);
+  sl.add(skySun.position, 'z', -300, 300);
+
+  const cl = gui.addFolder('Combat light (affects ship readability)');
+  const clC = { ambient: hx(combatAmbient.color), sun: hx(sun.color) };
+  cl.addColor(clC, 'ambient').onChange(v => combatAmbient.color.set(v));
+  cl.add(combatAmbient, 'intensity', 0, 3).name('ambient intensity');
+  cl.addColor(clC, 'sun').onChange(v => sun.color.set(v));
+  cl.add(sun, 'intensity', 0, 4).name('sun intensity');
+
+  // Ocean is a baked texture (makePlanetTexture), so it only re-tints on a full rebuild.
+  gui.add({ rebuild: () => { if (currentMapDescriptor) buildMap(currentMapDescriptor); } }, 'rebuild')
+     .name('↻ Rebuild planet (re-bake ocean)');
+  gui.add({ dump: dumpPalette }, 'dump').name('⤓ Dump palette → console');
+}
+
 // Test/inspection hook for the headless visual tests (client/visual/). Inert during normal
 // play — only attached when the page is opened with `?debug`. It exposes simulation internals
 // so a scenario can seed entities and assert on state (counts, colors) instead of diffing pixels.
@@ -2679,6 +2962,7 @@ if (location.search.includes('debug')) {
     scene, enemies, bullets, rockets,
     explosions, sparks, shockwaves, trail, smoke,
     spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, reset, levelRunner,
+    audio, // procedural audio engine (settings + scene); SFX/music are inaudible in headless but state is assertable
     warpPlayerToCenter, arenaBorder, ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME,
     setPieces, arenaCenter, // mission set-pieces + the (drifting) arena center
     setArenaDrift(x, z) { arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
@@ -2762,6 +3046,7 @@ function showWelcome(playerShips) {
   buildLangSwitch();
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
+  refreshMusic(); // menu → calmer hangar music
   welcomeEl.style.display = 'flex';
   refreshMissions(); // side-mission board (top-right) if unlocked
 }
@@ -2802,6 +3087,7 @@ async function setLanguage(lang) {
   try { localStorage.setItem('lang', getLanguage()); } catch {}
   applyTranslations();
   setPaused(paused); // re-localize the pause button's aria-label/tooltip (JS-set, not data-i18n)
+  localizeSettings(); // re-localize the settings gear + audio toggles
   buildLangSwitch();
   if (lastPlayerShips.length) renderShipCards(lastPlayerShips); // re-render DB-sourced ship names
   if (playerId) fetch(`/api/players/${playerId}/language`, {
@@ -2820,6 +3106,60 @@ function requestFullscreen() {
 // Touch "Full screen" buttons (welcome / hangar / pause overlay): re-enter fullscreen on demand, e.g.
 // after minimizing the app brought the browser chrome (URL bar, tabs) back. Must run in a tap gesture.
 document.querySelectorAll('.fullscreen-btn').forEach((b) => b.addEventListener('click', requestFullscreen));
+
+// ---------- Audio settings modal (the gear on menus / pause) ----------
+const settingsBtn = document.getElementById('settings-btn');
+const settingsOverlay = document.getElementById('settings-overlay');
+const setMaster = document.getElementById('set-master');
+const setMusic = document.getElementById('set-music');
+const setSfx = document.getElementById('set-sfx');
+const setMusicOn = document.getElementById('set-music-on');
+const setSfxOn = document.getElementById('set-sfx-on');
+function renderSettingsUI() {
+  const s = audio.getSettings();
+  setMaster.value = Math.round(s.master * 100);
+  setMusic.value = Math.round(s.music * 100);
+  setSfx.value = Math.round(s.sfx * 100);
+  setMusicOn.textContent = t(s.musicOn ? 'ui.settings.on' : 'ui.settings.off');
+  setMusicOn.classList.toggle('off', !s.musicOn);
+  setSfxOn.textContent = t(s.sfxOn ? 'ui.settings.on' : 'ui.settings.off');
+  setSfxOn.classList.toggle('off', !s.sfxOn);
+}
+function applyAudioChange(patch) {
+  audio.setSettings(patch);
+  saveAudioSettings(window.localStorage, audio.getSettings()); // persist every change
+}
+// Opening settings doubles as pause: during a live fight the gear freezes the battle (like the pause
+// button) and opens the menu in one click — no separate pause first. Closing resumes only if the gear is
+// what paused it (a manual pause stays paused).
+let settingsPausedByGear = false;
+function openSettings() {
+  audio.unlock(); refreshMusic(); renderSettingsUI();
+  if (gameStarted && player && player.alive && !levelRunner.won && !paused) {
+    settingsPausedByGear = true; setPaused(true);
+  }
+  settingsOverlay.classList.add('on');
+}
+function closeSettings() {
+  settingsOverlay.classList.remove('on');
+  if (settingsPausedByGear) { settingsPausedByGear = false; setPaused(false); }
+}
+settingsBtn.addEventListener('click', openSettings);
+document.getElementById('settings-close').addEventListener('click', closeSettings);
+settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); }); // backdrop click closes
+setMaster.addEventListener('input', () => applyAudioChange({ master: setMaster.value / 100 }));
+setMusic.addEventListener('input', () => applyAudioChange({ music: setMusic.value / 100 }));
+setSfx.addEventListener('input', () => applyAudioChange({ sfx: setSfx.value / 100 }));
+setSfx.addEventListener('change', () => audio.sfx.hit()); // preview the SFX level when the slider is released
+setMusicOn.addEventListener('click', () => { applyAudioChange({ musicOn: !audio.getSettings().musicOn }); renderSettingsUI(); });
+setSfxOn.addEventListener('click', () => { applyAudioChange({ sfxOn: !audio.getSettings().sfxOn }); renderSettingsUI(); });
+// Localize the gear label + the On/Off toggles (JS-set, not data-i18n) — now and on language switch.
+function localizeSettings() {
+  const lbl = t('ui.settings.open');
+  settingsBtn.title = lbl; settingsBtn.setAttribute('aria-label', lbl);
+  renderSettingsUI();
+}
+localizeSettings();
 function takeOff() {
   if (!selectedShip) return;
   if (isTouch) requestFullscreen(); // hide the browser chrome on mobile (landscape especially)
@@ -3122,7 +3462,7 @@ async function bootstrap() {
     }
 
     // position the camera once (update() doesn't run until take-off), then show the landing screen
-    camera.position.copy(player.mesh.position).add(CAM_OFFSET);
+    camera.position.copy(player.mesh.position).add(camOffset);
     camera.lookAt(player.mesh.position);
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
     // Homepage reflects the current level: if it has a briefing (level 2+), land on the Hangar showing
@@ -3130,6 +3470,12 @@ async function bootstrap() {
     if (CATALOG.level.briefing) showHangar(CATALOG.level.briefing);
     else showWelcome(playerShips);
     animate(); // render loop (idle until Take off)
+
+    // Dev-only palette tuning panel; lil-gui is fetched only here so players never download it.
+    if (location.search.includes('tune')) {
+      const { default: GUI } = await import('three/addons/libs/lil-gui.module.min.js');
+      buildTunePanel(GUI);
+    }
   } catch (err) {
     console.error('Failed to load the game from the API:', err);
   }

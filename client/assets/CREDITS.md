@@ -14,3 +14,10 @@ asset page is also handy, in case the author later changes the terms).
 Example row:
 | ships/fighter.glb | Kenney | https://kenney.nl/assets/space-kit | CC0 1.0 | 2026-06-20 |
 -->
+
+## Audio
+
+**All game audio is procedurally synthesized in code** (native Web Audio API, `client/src/audio.js`) —
+SFX and the generative background music. **There are no third-party audio assets**, so nothing to license
+here. If a real music track / SFX files are added later (DECISIONS §22 keeps that swap open), list each
+one in the table above with its source + license before use.

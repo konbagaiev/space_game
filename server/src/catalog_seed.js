@@ -30,7 +30,7 @@ export const COMPONENTS = [
   { id: 11, name: 'Boss thrusters', type: 'thruster', weight: 20, stats: { power: 1.66 } }, // turn ~0.42 = 1.2× medium
   // repair drone (4th component type): passively heals the hull mid-combat, up to a fraction of max HP.
   // Installed on the player's ship via the level-3 briefing's installComponent action.
-  { id: 12, name: 'Repair drone', type: 'repair', weight: 4, price: 500, stats: { repairPerTick: 1, intervalSec: 3, maxFraction: 0.8 } }, // granted at L3; cheap to rebuy
+  { id: 12, name: 'Repair drone', type: 'repair', weight: 4, price: 500, stats: { repairPerTick: 1, intervalSec: 1, maxFraction: 0.8 } }, // granted at L3; cheap to rebuy. Ticks every 1 s (3× the old 3 s cadence) for the same HP per tick.
 
   // --- Player shop ladder (docs/plans/catalog-economy.md). Upgrades are mass trade-offs, not
   // power-creep; ids continue from 12. The enemy/starter parts above stay out of the shop (price 0 →
@@ -41,8 +41,9 @@ export const COMPONENTS = [
   { id: 15, name: 'Solid-fuel engine', type: 'engine', weight: 14, price: 1400, stats: { power: 14, maxSpeed: 12, exhaust: { color: 0x7fb0ff, speed: 13, life: 0.55, size: 0.55, spread: 0.35 } } },
   { id: 16, name: 'Ion engine', type: 'engine', weight: 10, price: 6400, stats: { power: 18, maxSpeed: 14, exhaust: { color: 0xffd24d, speed: 14, life: 0.45, size: 0.45, spread: 0.30 } } },
   // Repair drones: faster cadence + higher cap (the "future tiers" from the repair-drone spec).
-  { id: 19, name: 'Repair drone II', type: 'repair', weight: 6, price: 1800, stats: { repairPerTick: 1, intervalSec: 2, maxFraction: 0.85 } },
-  { id: 20, name: 'Nanobot repair', type: 'repair', weight: 8, price: 7000, stats: { repairPerTick: 2, intervalSec: 3, maxFraction: 0.90 } },
+  // All tick every 1 s; per-tick HP keeps each tier 3× its old healing rate and preserves the ladder.
+  { id: 19, name: 'Repair drone II', type: 'repair', weight: 6, price: 1800, stats: { repairPerTick: 1.5, intervalSec: 1, maxFraction: 0.85 } },
+  { id: 20, name: 'Nanobot repair', type: 'repair', weight: 8, price: 7000, stats: { repairPerTick: 2, intervalSec: 1, maxFraction: 0.90 } },
   { id: 21, name: 'Advanced thrusters', type: 'thruster', weight: 5, price: 2500, stats: { power: 3.0 } },
 
   // --- Pirate gunner parts (side missions, docs/plans/mission-enemies-difficulty.md). +20% HP and
@@ -161,6 +162,7 @@ export const SHIPS = [
     name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/enemy_1_combat.3ad179b9.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_hangar.3e0b9dc3.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
       role: 'fighter', color: 0xff5d5d, sizeScale: 1, reward: 20,
+      modelYaw: Math.PI, // the enemy_1 .glb was exported nose-toward -Z; rotate 180° so it faces +Z like all ships
       groups: { gun: GUN },
       mounts: [{ weapon: 2, group: 'gun', offset: 0, delay: 0 }]
     }
@@ -415,7 +417,7 @@ export const MAPS = [
   {
     name: 'home-system', descriptor: {
       generator: 'planet-system',
-      background: 0x05060d,
+      background: 0x0a1624, // very dark blue-cyan space tint (slightly lighter + bluer than near-black)
       sky: {
         ambient: { color: 0x3a506e, intensity: 0.7 },           // night-side fill
         sun: { color: 0xfff2e0, intensity: 3.4, pos: [170, -80, 40] }, // side light -> terminator

@@ -201,6 +201,27 @@ export async function registerPlayer(id) {
   return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
 
+// Reset ONE player's progress, keeping their account and active login intact (mirror of db.js's
+// resetPlayer for Postgres). Identity/auth columns and `sessions` rows are preserved, as is the
+// language preference; game history, ships, stash and events are wiped and the gameplay columns
+// reset to a new player's baseline, then the starter ship is re-granted. Returns { found }.
+export async function resetPlayer(playerId) {
+  const { rows } = await pool.query('SELECT 1 FROM players WHERE id = $1', [playerId]);
+  if (!rows[0]) return { found: false };
+  for (const t of ['games', 'player_ships', 'stash', 'events'])
+    await pool.query(`DELETE FROM ${t} WHERE player_id = $1`, [playerId]);
+  await pool.query('UPDATE players SET games_played = 0, current_progress = 1, credits = 1000, shop_unlocked = false WHERE id = $1', [playerId]);
+  await ensureDefaultShip(playerId); // re-grant the starter ship so the reset account is playable
+  return { found: true };
+}
+
+// Reset ALL players: TRUNCATE every player-scoped table (CASCADE handles the FKs, RESTART IDENTITY
+// resets the serial counters), leaving the seeded reference catalog untouched — it is re-upserted
+// idempotently on the next startup. Single atomic statement.
+export async function resetAllPlayers() {
+  await pool.query('TRUNCATE players, games, player_ships, stash, events, sessions RESTART IDENTITY CASCADE');
+}
+
 // Persist a player's language preference (validated to a supported code by the caller/route).
 export async function setPlayerLanguage(playerId, language) {
   await registerPlayer(playerId);

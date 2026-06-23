@@ -5,6 +5,113 @@
 
 ## 2026-06-23
 
+- **Settings gear is always available + doubles as pause.** The ⚙ gear now shows at all times (including
+  during a live fight), not just on menus/while paused. Opening it from gameplay **freezes the battle like
+  the pause button** and opens the menu in one click (no separate pause first); **closing resumes** — but
+  only when the gear is what paused it (a manual pause stays paused). Updated the `12-audio` visual scenario
+  accordingly (gear available mid-fight → opening pauses → closing resumes). Also shifted the **account bar
+  (Login/Sign up)** right so the always-on gear no longer overlaps it on the welcome/hangar screens (same
+  treatment as the HUD Health block).
+
+- **Brighter "hero" stars (~2% of the field).** `makeStars` now builds the starfield as two point
+  layers: the dim majority as before, plus a bright ~2% (`brightFraction`, default 0.02) that stands out
+  via three combined cues — a **bigger point size** (5 vs 1.4), a **soft additive glow sprite** (a
+  generated radial-gradient `CanvasTexture` so they bloom into a round halo instead of a square), and a
+  **near-white, full-luminance color**. The bright layer renders with `depthTest: true` (the dim layer
+  stays `depthTest: false`) so the planet/moons occlude it and the additive glow can't creep onto the
+  planet disk (the transparency pitfall from DECISIONS §5). Bright fraction is a `makeStars` parameter,
+  easy to tune. See DECISIONS §4.
+- **Audio follow-ups: cross-browser unlock fix + settings-menu polish.** (1) **Fixed "no sound on
+  macOS/Safari".** Safari doesn't accept `pointerdown` as a gesture for audio and stays suspended until a
+  node plays in the gesture — and the old code detached after the first (rejected) attempt. Now `unlock()`
+  plays a one-sample silent "kick" buffer, and the client listens on `pointerdown`/`touchend`/`click`/
+  `keydown` and **retries every gesture until the context is actually running** (verified the engine
+  outputs a healthy signal once running via an analyser tap). (2) **Settings menu:** enlarged the modal
+  (560px, bigger title/labels/sliders/toggles + a prominent Close), nudged the ⚙ gear firmly into the
+  top-left corner, and **shifted the HUD Health block right** so the gear no longer overlaps it while
+  paused. (Mute toggle confirmed working — the earlier report was a misread.)
+- **Audio + a settings menu — procedural Web Audio (no asset files), with an audio settings modal.**
+  Added sound to the game: synthesized SFX (player/enemy fire, bullet hits, rocket launch, ship/rocket
+  explosions sized to the ship, a victory/defeat sting, UI clicks) and **generative background music**
+  (layered pads + an arpeggio over a slow Am–F–C–G progression) that follows game state — a driving
+  **combat** mood during a live fight, a calmer **hangar** mood on menus/overlays/while paused, with a
+  short crossfade. **Everything is synthesized in code via the native Web Audio API** — no libraries, no
+  audio files, nothing on the CDN, no licensing (matches the project's procedural/built-in-only ethos;
+  swappable for real files later — see DECISIONS §21). The engine is new `client/src/audio.js`
+  (lazy `AudioContext`, created on the first user gesture per the browser autoplay policy; a
+  `DynamicsCompressor` + a polyphony cap tame stacked explosions). Added a **settings modal** opened by a
+  ⚙ gear (shown on the welcome/hangar screens + while paused): **Master / Music / SFX** volume sliders +
+  **Music/SFX on-off toggles**, all persisted to `localStorage` and live-applied. i18n: new
+  `ui.settings.*` keys (EN + RU). Tests: `client/src/audio.test.js` (5 — settings clamp/load/save/effective
+  gain) and visual scenario `12-audio` (gear → modal → slider/toggle persistence → music scene follows
+  state); 33 client unit + 12 visual scenarios pass. Resolves the Phase-0 "Basic sound" item + the
+  "native Web Audio vs Howler" open question (chose native).
+- **Fixed the basic enemy flying backwards + restored the ship-orientation knob.** The `enemy_1` model
+  on S3 was exported nose-toward `-Z` (our ships face `+Z`), so the basic enemy flew engine-first. Root
+  cause: `applyShipModel` supports a per-model `yaw`, but when ships went DB-driven, `modelSpec` was
+  written as `(url) => ({url, tint:false})` — silently dropping `yaw`, with no seed field to set it (and
+  the asset README still documented the long-gone `SHIP_MODELS` map). Restored it as data: added a
+  `stats.modelYaw` (radians) field, threaded seed → `modelSpec(url, yaw)` → `applyShipModel`, and set
+  `modelYaw: Math.PI` on `basic enemy ship`. Orientation is now a runtime normalization alongside
+  auto-center/scale, so a wrong-way model is corrected in the seed (one field fixes both the combat and
+  hangar models), not by re-exporting/re-pushing to S3. Rewrote `client/assets/README.md` (DB-driven
+  `modelYaw` + a "preview the combat `.glb` in Quick Look and confirm nose = `+Z` before `assets:push`"
+  checklist). See DECISIONS §14.
+- **Dev color/lighting tuning panel (`?tune`) — implemented.** Built the dev-only lil-gui panel from
+  `docs/plans/color-tuning.md`. Opening the game with `?tune` shows live controls for the space
+  `background` + `fog`, **sky light** (ambient/sun color, intensity, sun position) and **combat light**
+  (ambient/sun color, intensity), plus a "Rebuild planet" button (re-bakes the ocean texture) and a
+  "Dump palette → console" button that prints a labeled `0x`-hex snapshot saying where each value goes
+  (`catalog_seed.js` descriptor vs. hardcoded in `index.html`). To reach the lights, hoisted
+  `combatAmbient`/`skyAmbient`/`skySun` to module scope and recorded `currentMapDescriptor` in
+  `buildMap`. **Default build unchanged:** lil-gui is dynamically imported only inside the `?tune`
+  guard, so players never fetch it (verified via Network in a headless render; all 11 visual scenarios
+  still pass). See DECISIONS §21.
+- **Plan: dev color/lighting tuning panel (`?tune`).** Wrote `docs/plans/color-tuning.md` — a dev-only
+  lil-gui panel (gated by `?tune`, dynamically imported so players never fetch it) to live-tune the
+  space backdrop + sky/combat lighting and dump the chosen values for baking into
+  `catalog_seed.js`/`index.html`. Chosen over a player-facing brightness setting (per-element control +
+  exact export + zero combat-readability risk). Not yet implemented.
+- **Smooth camera zoom.** Zoom input now sets a *target* and the camera eases toward it over ~0.2 s
+  (frame-rate-independent exponential, `tickZoom` in the frame loop) instead of jumping instantly —
+  smoother for wheel notches, button taps, and pinch alike. Saved/restored zoom still applies at once
+  on load (no ease-in on boot).
+- **Camera zoom in/out (PC + mobile).** Implemented `docs/plans/zoom-controls.md`. The player can now
+  zoom the combat camera: **PC** via the mouse **wheel** (scroll up = closer) and on-screen **＋/−**
+  buttons; **mobile** via the **＋/−** buttons and two-finger **pinch**. Zoom scales the fixed camera
+  offset (`CAM_OFFSET`) along its angle within `0.6–2.2×` — the near-vertical, non-rotating angle, FOV,
+  and camera type are unchanged. The level is **persisted** across runs (`localStorage` key `camZoom`).
+  The ＋/− buttons sit at the right edge (vertically centered, `#zoom`, hidden on menus via `body.menu`);
+  wheel/pinch listen on the canvas so the hangar shop still scrolls with the wheel on menus and pinch
+  (scoped to `targetTouches`) never fights the steering stick. All inline in `client/index.html`.
+- **CLAUDE.md: "plans go to `docs/plans/*.md`" rule + zoom-controls plan.** Added a rule that when the
+  user asks to *plan* (not implement), the plan is written to a self-contained, executable
+  `docs/plans/<name>.md` (exact file paths/anchors, decisions inline) so it can be handed to another
+  terminal/agent — planning-only means write the plan file and change nothing else. First application:
+  `docs/plans/zoom-controls.md` (camera Zoom-In/Out for PC + mobile — not yet implemented).
+- **Lighter, slightly bluer space backdrop.** Nudged the `home-system` map background from near-black
+  `0x05060d` to a faint blue-cyan `0x0a1624` (blue/green lifted more than red) — a subtle lift toward
+  blue/light-blue. The combat scene's `Fog` color (`client/index.html`) was moved to match so distant
+  asteroids still fade cleanly into the backdrop.
+- **CLAUDE.md: "locate code via SUMMARY first" rule.** Added a read-first rule so we consult
+  `docs/SUMMARY.md` (the map → exact files) before grepping/Explore-ing the codebase, falling back to
+  broad search only when SUMMARY + the relevant `docs/plans/*.md` don't pin the location down (and
+  treating that as a SUMMARY gap to fix).
+- **Player-data reset tooling (CLI + skill).** Added a reusable way to wipe *progress* without
+  touching the catalog, replacing the ad-hoc "delete `game.db`" step. `server/src/reset.js`:
+  `--player <id>` resets one player (games, ships, stash, events → baseline; **account, login &
+  language kept**; starter ship re-granted) via per-backend SQL DELETEs; `--all --yes` wipes every
+  player-scoped table (SQLite `DELETE` + `sqlite_sequence` reset / Postgres `TRUNCATE … RESTART
+  IDENTITY CASCADE`) for a fresh DB, catalog re-seeds on startup. Both modes are `resetPlayer` /
+  `resetAllPlayers` in `db.js` + `db_postgres.js`, re-exported via `datastore.js`. Wrapped by the new
+  `reset-progress` skill (`.claude/skills/`). Backend auto-selected by `DATABASE_URL` (local SQLite by
+  default — prod is only touched if it's set). See DECISIONS §19. (All 50 server tests still pass.)
+- **Repair drones 3× faster — once-per-second cadence.** Repair drones now tick every **1 s** instead of
+  every 3 s, healing the same HP per tick → 3× the regen rate (`catalog_seed.js` `intervalSec` 3→1). To
+  keep the upgrade ladder intact at the new cadence, the tiers' per-tick HP was scaled so each stays 3× its
+  old rate: **Repair drone** id 12 → 1 HP/s, **Repair drone II** id 19 → 1.5 HP/s, **Nanobot repair** id 20
+  → 2 HP/s (caps/weights/prices unchanged). Updated the `repairTick` tests to the 1 s interval. Also did a
+  **full wipe of the local SQLite DB** (`server/data/game.db` deleted; schema + catalog reseeded on restart).
 - **First real model through the pipeline: basic enemy ship → `enemy_1` (recolored), + "model defines the
   look" rule.** The `basic enemy ship` now uses a sourced `.glb` (`enemy_1`) instead of the `fighter.glb`
   primitive — built/pushed via the asset pipeline (combat on S3 `ships-combat/`, hangar on the CDN; URLs in

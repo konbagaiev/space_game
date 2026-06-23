@@ -68,7 +68,7 @@ test('hitsToKill: medium hull (150hp) takes 15 gun hits', () => {
 });
 
 // --- repair drone (repairTick) ---
-const DRONE = { repairPerTick: 1, intervalSec: 3, maxFraction: 0.8 }; // mirrors the DB seed (id 12)
+const DRONE = { repairPerTick: 1, intervalSec: 1, maxFraction: 0.8 }; // mirrors the DB seed (id 12)
 
 test('repairTick: adds the repair weight to ship mass', () => {
   const base = shipMass({ hull: HULL.light, engine: ENGINE.scout, thruster: THR.scout, mounts: [] });
@@ -77,16 +77,16 @@ test('repairTick: adds the repair weight to ship mass', () => {
 });
 
 test('repairTick: heals 1 HP once per interval (banks sub-interval time)', () => {
-  let { hp, accum } = repairTick(50, 100, DRONE, 1, 0); // 1s elapsed < 3s
+  let { hp, accum } = repairTick(50, 100, DRONE, 0.5, 0); // 0.5s elapsed < 1s
   assert.equal(hp, 50);   // no tick yet
-  assert.equal(accum, 1);
-  ({ hp, accum } = repairTick(hp, 100, DRONE, 2.5, accum)); // total 3.5s -> one tick, 0.5 banked
+  assert.equal(accum, 0.5);
+  ({ hp, accum } = repairTick(hp, 100, DRONE, 0.7, accum)); // total 1.2s -> one tick, 0.2 banked
   assert.equal(hp, 51);
-  assert.ok(Math.abs(accum - 0.5) < 1e-9);
+  assert.ok(Math.abs(accum - 0.2) < 1e-9);
 });
 
 test('repairTick: a large dt can apply several ticks at once', () => {
-  const { hp } = repairTick(50, 100, DRONE, 9, 0); // 9s / 3s = 3 ticks
+  const { hp } = repairTick(50, 100, DRONE, 3, 0); // 3s / 1s = 3 ticks
   assert.equal(hp, 53);
 });
 
