@@ -11,6 +11,15 @@
 > today (in-git primitives, empty `ships-combat/`). **Remaining:** produce the first real sourced model
 > (drop source in `assets-src/` → `npm run assets:build` → `assets:push` → paste the printed URLs into
 > `catalog_seed.js` → commit). See DECISIONS §14.
+>
+> **Compression policy (so models actually load + preview):** the client uses a plain `GLTFLoader`, so
+> **combat glbs are built vanilla** — no meshopt geometry compression, no `EXT_mesh_gpu_instancing`,
+> textures kept in their original format — which means they load in-game AND **open in macOS Quick Look /
+> Preview**. Size comes from decimation (`--simplify`) + 256px textures. **Hangar** glbs keep **meshopt +
+> WebP** (download size); the client wires `setMeshoptDecoder` so they load, but Quick Look can't show them.
+> **Viewing a compressed (hangar) glb on macOS:** drag it into a browser viewer — `gltf-viewer.donmccurdy.com`,
+> `gltf.report`, `sandbox.babylonjs.com`, or `modelviewer.dev/editor` (all support meshopt/Draco/KTX2); or
+> `npx @gltf-transform/cli inspect file.glb` for stats. Quick Look only handles vanilla glb (= the combat ones).
 
 > How to source, optimize, store, and keep ship models in sync. Extends DECISIONS §14 (source↔runtime
 > split, CDN) and uses the provisioned CDN: bucket `vega-sentinels-assets`, CloudFront

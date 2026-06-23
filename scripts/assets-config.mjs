@@ -24,10 +24,16 @@ export const DIR = {
   combatServe: 'client/assets/ships',
 };
 
-// Build presets (tunable). Combat is aggressively decimated (the ship is tiny top-down); hangar keeps detail.
+// Build presets (tunable). Combat is aggressively decimated (the ship is tiny top-down) and uses NO
+// geometry compression so it loads in a plain GLTFLoader AND previews in macOS Quick Look. The hangar
+// model keeps detail + meshopt geometry compression (needs the MeshoptDecoder, wired in the client) — too
+// big for Quick Look, inspect it in a web glTF viewer (see the pipeline doc).
 export const PRESET = {
-  combat: { simplifyRatio: 0.2, simplifyError: 0.02, textureSize: 256, compress: 'meshopt' },
-  hangar: { simplifyRatio: 1.0, simplifyError: 0.0, textureSize: 1024, compress: 'meshopt' },
+  // combat: plain glb (no geometry compression, no GPU-instancing extension, textures kept in their
+  // original format) so macOS Quick Look shows it; size comes from decimation + small textures.
+  combat: { simplifyRatio: 0.2, simplifyError: 0.04, textureSize: 256, compress: false, textureCompress: false, instance: false },
+  // hangar: optimize hard for download size (meshopt + WebP); inspect in a web glTF viewer, not Quick Look.
+  hangar: { simplifyRatio: 1.0, simplifyError: 0.0, textureSize: 1024, compress: 'meshopt', textureCompress: 'webp', instance: true },
 };
 
 // A run-on-S3 URL for a combat/hangar object. Combat is served same-origin (relative path); hangar via CDN.

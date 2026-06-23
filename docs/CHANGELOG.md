@@ -5,6 +5,14 @@
 
 ## 2026-06-23
 
+- **Asset pipeline: combat glbs are vanilla (load + Quick-Look-able); hangar uses meshopt.** Fix after the
+  first build: the combat preset was `--compress meshopt` (+ GPU-instancing), which the client's plain
+  `GLTFLoader` can't decode (it would fall back to the primitive) and which macOS Quick Look can't preview.
+  Combat is now uncompressed/vanilla (no meshopt, `--instance false`, textures kept in their original format)
+  — small via decimation + 256px textures. Hangar keeps meshopt + WebP; the client now wires
+  `gltfLoader.setMeshoptDecoder(MeshoptDecoder)` so the (lazy, future) hangar high-poly models load.
+  `scripts/assets-config.mjs` + `assets-build.mjs` + `client/index.html`.
+
 - **Level 4 real balance — Advanced medium pirate, Second Boss, new waves** (`docs/plans/level-4-difficulty.md`).
   New enemy **`advanced_medium_pirate`** (`heavy.glb` recolored maroon `0x800020`, **300 hp** hull, turns
   ~+30% vs the medium, 1 Pirate MG + 2 rockets, reward 150) and the **Second Boss `boss2`** (`boss.glb`

@@ -493,6 +493,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
@@ -1049,6 +1050,7 @@ function buildMap(descriptor) {
 const modelSpec = (url) => (url ? { url, tint: false } : null);
 
 const gltfLoader = new GLTFLoader();
+gltfLoader.setMeshoptDecoder(MeshoptDecoder); // so meshopt-compressed glbs (hangar high-poly) load; combat glbs are uncompressed
 const SHIP_MODEL_LEN = 3.4; // auto-normalize a model's longest axis to ~ the primitive ship's footprint
 
 // Load a .glb and swap it in for the placeholder primitive, keeping the SAME group object (all

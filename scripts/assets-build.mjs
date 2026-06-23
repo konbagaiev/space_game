@@ -18,10 +18,12 @@ const hash8 = (file) => createHash('sha256').update(fs.readFileSync(file)).diges
 
 function optimize(input, output, p) {
   // gltf-transform `optimize`: dedup/weld + optional mesh simplification + geometry + texture compression.
+  // `compress`/`textureCompress` can be false to keep plain (Quick-Look-friendly) geometry/textures.
   sh([...GLTF, 'optimize', input, output,
-    '--compress', p.compress,
-    '--texture-compress', 'webp',
+    '--compress', String(p.compress),                  // 'meshopt' | false
+    '--texture-compress', String(p.textureCompress),    // 'webp' | false (keep original format)
     '--texture-size', String(p.textureSize),
+    '--instance', String(p.instance ?? true),           // EXT_mesh_gpu_instancing — off for Quick-Look-friendly combat
     '--simplify', p.simplifyRatio < 1 ? 'true' : 'false',
     ...(p.simplifyRatio < 1 ? ['--simplify-error', String(p.simplifyError)] : []),
   ]);

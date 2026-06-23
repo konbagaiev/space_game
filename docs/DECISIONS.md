@@ -427,8 +427,12 @@ are sourced, optimized, stored and kept in sync:
   stored as GitHub secrets `ASSETS_AWS_ACCESS_KEY_ID`/`ASSETS_AWS_SECRET_ACCESS_KEY`; and the **CI deploy
   job** runs `assets:check` (guard) + `assets:pull` (S3 → `client/assets/ships/`, baked into the image)
   before the rsync/build, gated on the secret. All a **safe no-op today** (in-git primitives, empty
-  `ships-combat/`). **Remaining:** produce the first real sourced model (run build → push → paste URLs →
-  commit). No ship has a `model_url_high` yet.
+  `ships-combat/`). **Compression policy:** **combat glbs are vanilla** (no meshopt, no GPU-instancing
+  extension, textures in their original format) so they load in the plain `GLTFLoader` AND preview in macOS
+  Quick Look — size comes from decimation + small textures; **hangar glbs use meshopt + WebP** (the client
+  wires `setMeshoptDecoder` so they load; too compressed for Quick Look — inspect in a web glTF viewer).
+  **Remaining:** produce the first real sourced model (run build → push → paste URLs → commit). No ship has
+  a `model_url_high` yet.
 
 ## 15. Hangar shop & stash (the "spend" side of the economy)
 
