@@ -9,5 +9,5 @@
 // missing/failed buffer is non-fatal — the engine falls back to its procedural synth (DECISIONS §22).
 // Weapons opt into a sample via `stats.sfx: '<key>'` in catalog_seed.js (read as `w.sfx` at the fire site).
 export const SFX_SOURCES = {
-  kinetic: 'assets/sounds/kinetic.e177a4ae.mp3', // glock shot (Freesound CC0) — Basic kinetic + Machine Guns
+  kinetic: 'assets/sounds/kinetic.6d8dda6a.mp3', // glock shot (Freesound CC0), level baked ≈−10 dB — Basic kinetic + Machine Guns
 };

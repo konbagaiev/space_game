@@ -5,6 +5,11 @@
 
 ## 2026-06-23
 
+- **Kinetic gun SFX: quieter + more reliable loading.** Re-baked the kinetic sample ≈10 dB quieter (it was
+  louder than the synth SFX it replaced) — the level is baked into the mp3 (new content hash), no runtime
+  knob. Also made the sample preload fire on the **first user gesture** (decode works on a still-suspended
+  AudioContext) instead of waiting for the context to report running, so the sample is ready before the
+  first shot. Old orphaned sfx mp3s pruned from S3.
 - **Graphics quality: reload-on-change + a mobile layout fix.** Two fixes after a phone playtest. (1) On a
   narrow screen the High/Balance/Performance buttons overflowed the settings modal — the row now **stacks**
   (label on its own line, the 3 equal-width buttons share the row below; they shrink to fit). (2) Picking a
