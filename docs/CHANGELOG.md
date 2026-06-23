@@ -5,6 +5,14 @@
 
 ## 2026-06-23
 
+- **Settings modal fits on phones (no overflow).** Fixed the modal spilling off narrow screens: the
+  volume **sliders were fixed-width (`flex: 0 0 210px`, shrink 0)** so they ran off the right edge —
+  now they're **shrinkable + capped** (`flex: 1 1 90px; min-width:0; max-width:180px`) and the labels
+  can shrink too. The quality buttons were equal-thirds (`flex: 1 1 0`) which **clipped "Performance"** —
+  now `flex: 1 1 auto` so each sizes to its text (Performance gets its natural, wider width). All modal
+  fonts trimmed (h1 32→26, labels 19→16, toggles/seg/note down a step), horizontal padding `clamp`ed for
+  small screens, and the box got `max-height: 92vh` + `overflow-y:auto` as a safety net. Verified at
+  360px width: box 320px, zero elements past the edge, no horizontal scroll.
 - **Kinetic gun SFX: quieter + more reliable loading.** Re-baked the kinetic sample ≈10 dB quieter (it was
   louder than the synth SFX it replaced) — the level is baked into the mp3 (new content hash), no runtime
   knob. Also made the sample preload fire on the **first user gesture** (decode works on a still-suspended

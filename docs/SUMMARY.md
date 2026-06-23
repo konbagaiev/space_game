@@ -366,7 +366,10 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   modal has **Master / Music / SFX volume** sliders + **Music/SFX on-off toggles**, and a **Graphics
   quality** selector (see below). Changes apply live and persist to `localStorage` (audio keys `audioMaster`,
   `audioMusic`, `audioSfx`, `audioMusicOn`, `audioSfxOn`); a fresh player gets sane defaults
-  (master .7 / music .45 / sfx .8, both on). Language/zoom stay where they are.
+  (master .7 / music .45 / sfx .8, both on). Language/zoom stay where they are. **Mobile-fit:** the modal
+  is sized so nothing overflows on a narrow phone — sliders are shrinkable + capped (not fixed-width),
+  the quality buttons size to their text, fonts are compact, horizontal padding is `clamp`ed, and the
+  box `max-height: 92vh` + scrolls if it ever gets taller than the viewport.
 - **Graphics quality tiers (`client/src/graphics.js`, DECISIONS §23).** A 3-way selector —
   **High / Balance / Performance** — for weak phones, since the mobile bottleneck is fragment **fill
   rate** (pixel ratio × the two render passes × additive-particle overdraw), not the draw calls/triangles

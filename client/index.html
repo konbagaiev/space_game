@@ -318,33 +318,38 @@
   }
   #settings-overlay.on { display: flex; }
   #settings-overlay .settings-box {
-    width: min(560px, 94vw); background: rgba(16,24,44,.96); border: 1px solid rgba(140,175,255,.28);
-    border-radius: 16px; padding: 32px 38px; box-shadow: 0 18px 60px rgba(0,0,0,.55);
+    width: min(560px, 94vw); max-height: 92vh; overflow-y: auto; box-sizing: border-box;
+    background: rgba(16,24,44,.96); border: 1px solid rgba(140,175,255,.28);
+    border-radius: 16px; padding: 26px clamp(16px, 5vw, 36px); box-shadow: 0 18px 60px rgba(0,0,0,.55);
   }
-  #settings-overlay h1 { font-size: 32px; letter-spacing: 1px; margin: 0 0 28px; }
-  #settings-overlay .set-row { display: flex; align-items: center; gap: 18px; margin: 24px 0; }
-  #settings-overlay .set-row label { flex: 1; font-size: 19px; opacity: .92; }
-  #settings-overlay input[type=range] { flex: 0 0 210px; height: 22px; accent-color: #5b86e5; cursor: pointer; }
+  #settings-overlay h1 { font-size: 26px; letter-spacing: 1px; margin: 0 0 22px; }
+  #settings-overlay .set-row { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
+  /* label shrinks (min-width:0) so it never forces the slider off the edge */
+  #settings-overlay .set-row label { flex: 1 1 auto; min-width: 0; font-size: 16px; opacity: .92; }
+  /* slider is shrinkable (flex-shrink 1) + capped — never overflows a narrow modal */
+  #settings-overlay input[type=range] { flex: 1 1 90px; min-width: 0; max-width: 180px; height: 20px; accent-color: #5b86e5; cursor: pointer; }
   #settings-overlay .set-toggle {
-    flex: 0 0 70px; font-size: 15px; font-weight: 700; letter-spacing: .5px; cursor: pointer;
-    padding: 8px 0; border-radius: 8px; border: 1px solid rgba(140,175,255,.4);
+    flex: 0 0 60px; font-size: 14px; font-weight: 700; letter-spacing: .5px; cursor: pointer;
+    padding: 7px 0; border-radius: 8px; border: 1px solid rgba(140,175,255,.4);
     background: rgba(54,209,220,.18); color: #bff0f4;
   }
   #settings-overlay .set-toggle.off { background: rgba(120,130,150,.18); color: #9aa6bd; border-color: rgba(150,160,180,.35); }
   /* Graphics-quality segmented control (3 mutually-exclusive tiers) */
-  /* the quality row stacks: label on its own line, the three buttons on the row below, sharing the width */
-  #settings-overlay .set-row.stack { flex-direction: column; align-items: stretch; gap: 12px; }
+  /* the quality row stacks: label on its own line, the three buttons on the row below */
+  #settings-overlay .set-row.stack { flex-direction: column; align-items: stretch; gap: 10px; }
   #settings-overlay .seg { display: flex; gap: 8px; }
+  /* flex-basis:auto -> each button sizes to its text (so "Performance" gets the width it needs, no clip),
+     then grows to share the row */
   #settings-overlay .seg-btn {
-    flex: 1 1 0; min-width: 0; padding: 9px 6px; border-radius: 8px; cursor: pointer; font: inherit;
-    font-size: 14px; text-align: center; white-space: nowrap;
+    flex: 1 1 auto; min-width: 0; padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit;
+    font-size: 13px; text-align: center; white-space: nowrap;
     background: rgba(120,130,150,.18); color: #9aa6bd; border: 1px solid rgba(150,160,180,.35);
   }
   #settings-overlay .seg-btn.on { background: rgba(91,134,229,.35); color: #eaf1ff; border-color: #5b86e5; }
-  #settings-overlay .set-note { font-size: 13px; opacity: .6; margin: -10px 0 8px; }
+  #settings-overlay .set-note { font-size: 12px; opacity: .6; margin: -6px 0 6px; }
   #settings-close {
-    margin-top: 30px; width: 100%; cursor: pointer; pointer-events: auto; font: inherit;
-    padding: 15px 18px; font-size: 18px; font-weight: 600; border-radius: 10px;
+    margin-top: 24px; width: 100%; cursor: pointer; pointer-events: auto; font: inherit;
+    padding: 13px 18px; font-size: 16px; font-weight: 600; border-radius: 10px;
     background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.3);
   }
   #settings-close:hover { background: rgba(120,150,210,.12); }
@@ -1726,7 +1731,7 @@ function fireMount(ship, mount, fwd, isPlayer) {
     const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : player;
     const accel = isPlayer ? ship.acceleration : (w.accel ?? ship.acceleration);
     spawnRocket(muzzle, fwd, w, accel, isPlayer, target);
-    audio.sfx.rocket();
+    audio.sfx.rocket(isPlayer ? w.sfx : undefined); // player rockets use the sampled launch; enemies stay synth
   } else {
     spawnBullet(muzzle, fwd, w, isPlayer, ship.vel);
     // distinct, distance-attenuated report for enemies so a swarm doesn't drown the player's own fire.
