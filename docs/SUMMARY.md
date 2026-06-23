@@ -373,9 +373,11 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   the perf overlay shows. Per tier: **pixel-ratio cap** (2 / 1.5 / 1), **antialias** (on / off / off),
   **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales spark count, drops the 2
   middle fireball layers + the shockwave, and thins the exhaust). Persisted in `localStorage` (key
-  `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. Pixel ratio + density
-  apply **live**; **antialias applies on the next reload** (it's a `WebGLRenderer` constructor arg — no
-  mid-game renderer rebuild), noted in the UI. The tier knob table lives in `graphics.js` (pure, tested).
+  `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. **Picking a tier
+  reloads the page** so the whole preset (antialias — a `WebGLRenderer` constructor arg — + pixel ratio +
+  star/particle density) applies cleanly from startup, no half-applied state (server-side progress is
+  untouched). The selector sits below its label (the 3 buttons share one row). The tier knob table lives
+  in `graphics.js` (pure, tested).
 
 ## Localization (i18n)
 English is the **source of truth**; other languages are a derived layer. **EN + RU** today (RU is the

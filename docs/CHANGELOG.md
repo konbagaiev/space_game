@@ -5,6 +5,16 @@
 
 ## 2026-06-23
 
+- **Graphics quality: reload-on-change + a mobile layout fix.** Two fixes after a phone playtest. (1) On a
+  narrow screen the High/Balance/Performance buttons overflowed the settings modal — the row now **stacks**
+  (label on its own line, the 3 equal-width buttons share the row below; they shrink to fit). (2) Picking a
+  tier now **reloads the page** instead of applying live: antialias is a `WebGLRenderer` constructor arg, so
+  the old "applies after reload" half-state meant the AA cost never dropped without a manual reload — a
+  Galaxy A03s tester saw "no FPS change." Reload guarantees the whole preset (AA + pixel ratio + density)
+  applies cleanly; progress is server-side so it just returns to the menu. Verified on an emulated phone:
+  Performance → pixel ratio 1 **and antialias off**. Note + i18n updated ("Changing quality reloads the
+  game"). Also documented the measurement caveat: FPS is vsync-capped and the gear pauses the fight, so the
+  overlay reads ≈60 on every tier in the menu — judge tiers during combat, not in the paused menu.
 - **Sampled SFX layer + audio asset pipeline — first real sound.** The audio engine
   (`client/src/audio.js`) gains an optional sample layer alongside its procedural synth: `preloadSamples()`
   fetches + decodes content-hashed mp3s into a buffer cache, and `sfx.shoot('kinetic')` plays the sample as

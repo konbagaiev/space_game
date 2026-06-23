@@ -332,9 +332,12 @@
   }
   #settings-overlay .set-toggle.off { background: rgba(120,130,150,.18); color: #9aa6bd; border-color: rgba(150,160,180,.35); }
   /* Graphics-quality segmented control (3 mutually-exclusive tiers) */
-  #settings-overlay .seg { display: flex; gap: 8px; flex: 0 0 auto; }
+  /* the quality row stacks: label on its own line, the three buttons on the row below, sharing the width */
+  #settings-overlay .set-row.stack { flex-direction: column; align-items: stretch; gap: 12px; }
+  #settings-overlay .seg { display: flex; gap: 8px; }
   #settings-overlay .seg-btn {
-    padding: 8px 14px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 15px;
+    flex: 1 1 0; min-width: 0; padding: 9px 6px; border-radius: 8px; cursor: pointer; font: inherit;
+    font-size: 14px; text-align: center; white-space: nowrap;
     background: rgba(120,130,150,.18); color: #9aa6bd; border: 1px solid rgba(150,160,180,.35);
   }
   #settings-overlay .seg-btn.on { background: rgba(91,134,229,.35); color: #eaf1ff; border-color: #5b86e5; }
@@ -544,7 +547,7 @@
       <label for="set-sfx" data-i18n="ui.settings.sfx">Sound effects</label>
       <input type="range" id="set-sfx" min="0" max="100" step="1" />
     </div>
-    <div class="set-row">
+    <div class="set-row stack">
       <label data-i18n="ui.settings.quality">Graphics quality</label>
       <div id="set-quality" class="seg">
         <button class="seg-btn" data-tier="high" data-i18n="ui.settings.quality.high">High</button>
@@ -552,7 +555,7 @@
         <button class="seg-btn" data-tier="performance" data-i18n="ui.settings.quality.performance">Performance</button>
       </div>
     </div>
-    <div class="set-note" id="set-quality-note" data-i18n="ui.settings.quality.note">Antialiasing changes apply after reload.</div>
+    <div class="set-note" id="set-quality-note" data-i18n="ui.settings.quality.note">Changing quality reloads the game.</div>
     <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
   </div>
 </div>
@@ -3020,20 +3023,8 @@ addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Apply the live-changeable graphics knobs after a tier switch: pixel ratio (the dominant fill-rate
-// lever) + a star-density rebuild. `setPixelRatio` alone doesn't realloc the drawing buffer, so we
-// follow it with setSize. Antialias is NOT changed here — it's a constructor arg, so it only takes
-// effect on the next page load (see DECISIONS §23). Star/particle counts read the live `gfx`.
-function applyGraphicsLive() {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
-  renderer.setSize(window.innerWidth, window.innerHeight); // realloc buffers at the new ratio
-  if (stars && currentMapDescriptor) { // rebuild the starfield at the new density
-    skyScene.remove(stars);
-    stars = makeStars(Math.round(currentMapDescriptor.stars.count * gfx.starScale), currentMapDescriptor.stars.radius);
-    stars.renderOrder = -1;
-    skyScene.add(stars);
-  }
-}
+// (Graphics-tier changes reload the page so the whole preset — antialias + pixel ratio + star/particle
+// density — applies cleanly from startup; see the settings wiring + DECISIONS §23.)
 
 // ---------- Bootstrap: build the world from the DB, then start ----------
 // Fetch the ship/weapon catalog and the player's active ship from the API, build the runtime
@@ -3177,16 +3168,20 @@ function renderSettingsUI() {
   setSfxOn.classList.toggle('off', !s.sfxOn);
   renderQualityUI();
 }
-// Graphics quality: highlight the active tier; clicking one persists it + applies the live knobs.
+// Graphics quality: highlight the active tier; picking one persists it and RELOADS so the whole preset
+// applies cleanly. Antialias is a WebGLRenderer constructor arg (can't change live), and pixel ratio /
+// star+particle density all read the tier at startup — so a reload is the simplest way to guarantee the
+// full effect with no half-applied state. (The page reloads to the welcome/hangar; server-side progress
+// is untouched.)
 const setQuality = document.getElementById('set-quality');
 function renderQualityUI() {
   setQuality.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.tier === gfx.name));
 }
 setQuality.addEventListener('click', (e) => {
   const b = e.target.closest('.seg-btn'); if (!b) return;
-  gfx = resolveTier(saveTier(window.localStorage, b.dataset.tier)); // persist + adopt the new knobs
-  applyGraphicsLive(); // pixel ratio + star density now; antialias on the next reload
-  renderQualityUI();
+  if (b.dataset.tier === gfx.name) return; // already active
+  saveTier(window.localStorage, b.dataset.tier);
+  location.reload();
 });
 function applyAudioChange(patch) {
   audio.setSettings(patch);

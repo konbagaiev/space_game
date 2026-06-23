@@ -717,11 +717,19 @@ fill-rate knobs, not geometry: **pixel-ratio cap** (2 / 1.5 / 1 — the dominant
 the 2 middle fireball layers + the shockwave ring, thins the per-frame exhaust). Draw calls and triangle
 count are deliberately **not** touched — they aren't the bottleneck.
 
-**Live vs. reload.** Pixel ratio + star/particle density apply **live** (instant feel on the biggest
-lever). **Antialias only takes effect on the next page reload** — it's a `WebGLRenderer` constructor
-argument, and rebuilding the GL context mid-game (re-uploading textures, re-wiring the two-pass loop)
-isn't worth it; a small UI note says so. This is the standard "some options apply after restart"
-pattern and keeps the change small.
+**Applied via reload (not live).** Picking a tier saves it and **reloads the page**. The first cut tried
+live-applying pixel ratio + density while leaving antialias for "the next reload" — but `antialias` is a
+`WebGLRenderer` constructor argument (can't change on a live renderer), and rebuilding the GL context
+mid-game is messy (re-uploading textures, and the zoom/pinch listeners live on `renderer.domElement`, so
+a new canvas would lose them). The half-applied state was also confusing on a phone — a tester on a
+Galaxy A03s reported "switching quality doesn't change anything," partly because antialias (a real cost)
+never turned off without a manual reload. Reloading is the simplest guarantee: on startup the renderer is
+built with the tier's `antialias` + `pixelRatio`, and `buildMap`/particle spawns read the tier's
+star/particle scales from the start. Server-side progress is untouched, so a reload just returns to the
+welcome/hangar. **Measurement caveat (documented for testers):** FPS is vsync-capped (≈60) and the
+settings gear **pauses** the fight, so the perf overlay reads ≈60 on every tier *in the menu* — the
+tiers' benefit is fewer dips below 60 in heavy combat and less thermal throttling over time, observed
+**during gameplay**, not a higher peak in the paused menu.
 
 ## Future ideas
 

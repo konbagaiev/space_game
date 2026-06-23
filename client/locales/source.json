@@ -142,5 +142,5 @@
   "ui.settings.quality.high": { "source": "High", "context": "Graphics quality tier: full resolution + antialiasing + all effects (desktop default). Short, one word if possible." },
   "ui.settings.quality.balance": { "source": "Balance", "context": "Graphics quality tier: middle ground between quality and frame rate. Short." },
   "ui.settings.quality.performance": { "source": "Performance", "context": "Graphics quality tier: lowest resolution + fewest effects for weak phones, highest frame rate. Short." },
-  "ui.settings.quality.note": { "source": "Antialiasing changes apply after reload.", "context": "Small hint under the quality selector: most changes are instant, but the antialiasing part takes effect only after the page is reloaded." }
+  "ui.settings.quality.note": { "source": "Changing quality reloads the game.", "context": "Small hint under the graphics-quality selector: picking a different quality tier reloads the page so the whole preset applies." }
 }
