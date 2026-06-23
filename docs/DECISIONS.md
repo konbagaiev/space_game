@@ -380,6 +380,16 @@ data change, not code. **Scale path:** when assets grow, host runtime `.glb` on 
 account already in use) and point `model_url` at the CDN — deploys stop carrying asset weight, cache is
 effectively permanent. `model_url` already accepts absolute URLs.
 
+**A ship's look comes from its MODEL, never from a tint.** `applyShipModel` loads the `.glb` with
+`tint: false` — the model's own materials/colors are what you see. **We do NOT recolor a ship by its
+`stats.color`** (a brief experiment that tinted enemy models by `color` was reverted). When a design note
+asks for a differently-colored enemy ("maroon medium", "crimson boss"), that means **author a model in
+that color**, not set a `color` value. Consequence: enemies that currently *reuse* a base model
+(`advanced_medium_pirate` → `heavy.glb`, `second boss` → `boss.glb`, `pirate gunner` → `fighter.glb`) look
+like that base model until a distinct model exists — they're only mechanically different for now.
+`stats.color` survives **only as metadata** for the off-screen edge markers + mini-map dots, the ship
+explosion tint, and the placeholder primitive shown while the `.glb` loads — it never paints the model.
+
 **Licensing:** every third-party asset's source + license goes in `client/assets/CREDITS.md` (packs in
 `_source/` need their license verified before any runtime use).
 

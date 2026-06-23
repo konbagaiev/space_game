@@ -1361,7 +1361,7 @@ function spawnEnemyShip(shipDef) {
   const { hull, engine, thruster } = resolveComponents(shipDef.components);
   const e = {
     role: s.role, color: s.color, sizeScale: s.sizeScale || 1, reward: s.reward || 0,
-    mesh: makeShip(s.color, modelSpec(shipDef.modelUrl)),
+    mesh: makeShip(s.color, modelSpec(shipDef.modelUrl)), // model defines the look; never tint enemies by color
     vel: new THREE.Vector3(),
     heading: Math.random() * Math.PI * 2,
     hull, engine, thruster,

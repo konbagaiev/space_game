@@ -112,18 +112,22 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   reload, big blast / **2600**). Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
   low damage 3; pirate gunner + buffed boss) and **Advanced pirate cannon** (id 10 — power 10, slow 1 shot/sec,
   long range 110; the Second Boss's main gun).
-- **Enemy types** (DB ships, `type` `enemy`, `stats.role`): `fighter` (red, gun, 30 hp light hull),
-  `rocketeer` (yellow, gun + rocket, same 30 hp light hull), `medium` (purple ex-mini-boss, two rocket
-  launchers, 150 hp medium hull → sluggish, 2× model), `pirate_gunner` (deep-crimson skirmisher for the
-  side missions — Pirate hull 36 hp + Pirate engine top-speed +50% + one **long-range** Pirate machine
-  gun; reward 40), `advanced_medium_pirate` (the L4 heavy — `heavy.glb` recolored maroon, **300 hp**, turns
-  ~+30% vs the medium, 1 Pirate MG + 2 rockets; reward 150), the `boss` (`first boss` — orange `boss.glb` +
-  own hull/engine, 210 hp, 3× model, **two Pirate machine guns** + two rocket launchers), and `boss2` (the
-  **Second Boss**, L4 finale — `boss.glb` recolored crimson, **450 hp**, ~+30% speed/accel/turn, **two
-  Advanced pirate cannons + three rockets**; reward 400). Which enemies spawn is decided by the
-  **level/mission** (see Gameplay), not the ship; ship `radius` scales with model size. Each enemy carries a
-  **`reward`** (`stats.reward`, fighter 20 / rocketeer 40 / pirate gunner 40 / medium 100 / advanced medium
-  pirate 150 / first boss 200 / Second Boss 400) in **credits**, earned on destruction.
+- **Enemy types** (DB ships, `type` `enemy`, `stats.role`). **Appearance = the ship's `.glb` model; we
+  never tint by `color`** (see DECISIONS §14), so enemies that reuse a base model look like it until a
+  distinct model is authored — they differ only mechanically for now. `fighter` (`fighter.glb`, gun, 30 hp
+  light hull), `rocketeer` (`rocketeer.glb`, gun + rocket, same 30 hp light hull), `medium`
+  (`heavy.glb` ex-mini-boss, two rocket launchers, 150 hp medium hull → sluggish, 2× model),
+  `pirate_gunner` (a fast skirmisher for the side missions — **reuses `fighter.glb`** — Pirate hull 36 hp +
+  Pirate engine top-speed +50% + one **long-range** Pirate machine gun; reward 40), `advanced_medium_pirate`
+  (the L4 heavy — **reuses `heavy.glb`** — **300 hp**, turns ~+30% vs the medium, 1 Pirate MG + 2 rockets;
+  reward 150), the `boss` (`first boss` — `boss.glb` + own hull/engine, 210 hp, 3× model, **two Pirate
+  machine guns** + two rocket launchers), and `boss2` (the **Second Boss**, L4 finale — **reuses `boss.glb`**
+  — **450 hp**, ~+30% speed/accel/turn, **two Advanced pirate cannons + three rockets**; reward 400). Which
+  enemies spawn is decided by the **level/mission** (see Gameplay), not the ship; ship `radius` scales with
+  model size. Each enemy carries a **`reward`** (`stats.reward`, fighter 20 / rocketeer 40 / pirate gunner 40 /
+  medium 100 / advanced medium pirate 150 / first boss 200 / Second Boss 400) in **credits**, earned on
+  destruction. (`stats.color` is metadata for the radar markers/mini-map + explosion tint + the loading
+  placeholder — not a model tint.)
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 30 hp light hull, gun 4 damage
   (an enemy dies in 3 player hits; the player survives ~25 enemy hits).
 

@@ -5,6 +5,17 @@
 
 ## 2026-06-23
 
+- **First real model through the pipeline: basic enemy ship → `enemy_1` (recolored), + "model defines the
+  look" rule.** The `basic enemy ship` now uses a sourced `.glb` (`enemy_1`) instead of the `fighter.glb`
+  primitive — built/pushed via the asset pipeline (combat on S3 `ships-combat/`, hangar on the CDN; URLs in
+  `catalog_seed.js`, `assets:check` green). The model's **black body material was recolored to dark-grey**
+  *in the glb itself* (gltf-transform `@gltf-transform/core` material edit), not at runtime. **Codified the
+  rule:** a ship's appearance comes from its **model, never a `color` tint** — `applyShipModel` loads with
+  `tint: false`, and `stats.color` is only metadata (radar markers/mini-map + explosion + the loading
+  placeholder). A brief experiment that tinted enemy models by `color` was reverted. Consequence (noted in
+  SUMMARY/DECISIONS §14): enemies that *reuse* a base model (pirate gunner, advanced medium pirate, Second
+  Boss) look like that base until a distinct model is authored — they differ only mechanically for now.
+
 - **Asset pipeline: combat glbs are vanilla (load + Quick-Look-able); hangar uses meshopt.** Fix after the
   first build: the combat preset was `--compress meshopt` (+ GPU-instancing), which the client's plain
   `GLTFLoader` can't decode (it would fall back to the primitive) and which macOS Quick Look can't preview.

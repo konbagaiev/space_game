@@ -158,7 +158,7 @@ export const SHIPS = [
     }
   },
   {
-    name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/fighter.glb',
+    name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/enemy_1_combat.3ad179b9.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_hangar.3e0b9dc3.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
       role: 'fighter', color: 0xff5d5d, sizeScale: 1, reward: 20,
       groups: { gun: GUN },
