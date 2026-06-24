@@ -761,11 +761,28 @@ no gameplay reads it.
 **Why.** The root already carries `rotation.y = heading`; setting `rotation.z` on the *same* object makes
 the final orientation depend on Euler order (yaw and roll would interact, and a roll could subtly skew the
 heading the sim trusts). A child group whose local Z is the ship's forward axis (ships face `+Z`) gives a
-**pure roll about the nose** that composes cleanly with the parent's heading yaw and the model's `modelYaw`
+**pure roll about the nose** that composes cleanly with the parent's heading yaw and the model's `model.yaw`
 pivot — independent axes, no order risk. The primitives **and** the loaded `.glb` live in this group (so a
 ship banks whether or not its model has loaded), and the spawn-grow / warp-back scale animations write the
 **root** scale, so roll and grow don't interact. The sign (roll *into* the turn) was confirmed by eye /
 the `13-ship-bank` visual scenario.
+
+## 25. Per-ship model presentation — a grouped `stats.model` block, not loose keys
+
+**Decision.** The per-ship model-presentation knobs live in **one JSON sub-object** `stats.model`
+(`{ yaw, scale, scaleMul?, muzzle?, exhaust? }`) in the seed, not as loose top-level `stats.*` keys.
+`yaw`/`scale` are the renames of the old `modelYaw`/`sizeScale`; `muzzle`/`exhaust` are new optional
+overrides for the projectile/exhaust spawn point (group-local units, same as `userData.noseZ`/`tailZ`;
+`null` → auto-derive from the glb bounds). The client resolves it through `shipModelCfg(s)`, which still
+**falls back to the old loose keys** if `stats.model` is absent.
+
+**Why.** Discoverability + a documented onboarding path: a grouped block has one place to look and one
+doc (`docs/plans/adding-a-ship-model.md`) describing every knob, so adding a model is "fill this block,
+no code reading"; future model-only knobs land here instead of growing the flat `stats` namespace. The
+back-compat fallback costs nothing and protects against a stale/legacy `player_ships` row or a cached
+`/api/ships` response carrying the old keys — so the migration of all 8 seed ships can't break an
+already-loaded client. Muzzle/exhaust units are **group-local** (independent of `scale`, which is
+re-applied at spawn via `mesh.scale.x`) so they read like the primitive's ±1.6 reference.
 
 ## Future ideas
 

@@ -5,6 +5,16 @@
 
 ## 2026-06-24
 
+- **Refactor: per-ship model knobs consolidated into a documented `stats.model` block.** The loose,
+  undocumented `stats.modelYaw` / `stats.sizeScale` keys (scattered across all 8 seed ships) are now one
+  JSON sub-object `model: { yaw, scale, scaleMul?, muzzle?, exhaust? }` (`server/src/catalog_seed.js`).
+  Added optional **`muzzle`/`exhaust` overrides** (group-local units) to nudge the projectile/exhaust
+  spawn when the auto-derived glb nose/tail bounds are slightly off — `applyShipModel` honors them
+  (default `null` keeps the auto behavior). Client reads route through a new `shipModelCfg(s)` resolver
+  with **back-compat fallback** to the old loose keys (a stale `player_ships` row or cache can't break).
+  No gameplay/balance change. New convention doc **`docs/plans/adding-a-ship-model.md`** ("fill this
+  block" onboarding); `client/assets/README.md` + SUMMARY updated.
+
 - **Fix: muzzle/exhaust spawned far off the model (regression).** `applyShipModel` measured the model's
   forward/back bounds with `Box3.setFromObject` **after** attaching it to the live, world-positioned group,
   so the box was in **world** space — it folded in the group's 1.8×sizeScale scale *and* the ship's world

@@ -174,7 +174,9 @@ const GUN_LONG = { ai: { range: 90, aimTol: 0.25 } }; // long-range MG (pirate g
 const ROCKET = { key: 'KeyF', ai: { range: 80, aimTol: 0.40 } };
 
 // --- ships: one table for player + enemies. `components` references a hull + an engine by id
-// (player_ships.components may override them); `stats` carry role/color/sizeScale + groups + mounts.
+// (player_ships.components may override them); `stats` carry role/color + groups + mounts, plus a
+// `model` block (per-ship model presentation: yaw/scale + optional scaleMul/muzzle/exhaust overrides —
+// see docs/plans/adding-a-ship-model.md).
 // fighter, rocketeer and the medium share the SAME engine (6); the medium is sluggish only because of
 // its heavier hull (mass). The boss has its own hull + engine; weapons are shared (in WEAPONS).
 // `modelUrl` = the COMBAT (low-poly, same-origin) model; the optional `modelUrlHigh` = the HANGAR
@@ -187,8 +189,9 @@ export const SHIPS = [
     modelUrl: 'assets/ships/player_combat.f7171045.glb',
     modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb',
     components: { hull: 1, engine: 5, thruster: 8 }, stats: {
-      role: 'player', class: 'player', color: 0x4d8bff, sizeScale: 1.1, nameKey: 'ship.player_basic.name',
-      modelYaw: 0, // "Air & Space Vessel" by Raven (CC-BY); orientation set via visual check (nose leads travel)
+      role: 'player', class: 'player', color: 0x4d8bff, nameKey: 'ship.player_basic.name',
+      // "Air & Space Vessel" by Raven (CC-BY); yaw 0 (nose already leads travel), set via visual check
+      model: { yaw: 0, scale: 1.1 },
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 1, group: 'gun', offset: 0, delay: 0 },
@@ -199,8 +202,9 @@ export const SHIPS = [
   {
     name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/enemy_1_combat.3ad179b9.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_hangar.3e0b9dc3.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
-      role: 'fighter', class: 'fighter', color: 0xff5d5d, sizeScale: 1, reward: 20,
-      modelYaw: Math.PI, // the enemy_1 .glb was exported nose-toward -Z; rotate 180° so it faces +Z like all ships
+      role: 'fighter', class: 'fighter', color: 0xff5d5d, reward: 20,
+      // the enemy_1 .glb was exported nose-toward -Z; yaw Math.PI rotates it 180° so it faces +Z like all ships
+      model: { yaw: Math.PI, scale: 1 },
       groups: { gun: GUN },
       mounts: [{ weapon: 2, group: 'gun', offset: 0, delay: 0 }]
     }
@@ -208,8 +212,9 @@ export const SHIPS = [
   {
     name: 'basic rocket enemy', type: 'enemy', modelUrl: 'assets/ships/enemy_2_combat.98adc95d.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // same hull + engine + thrusters as the fighter
-      role: 'rocketeer', class: 'fighter', color: 0xffd24d, sizeScale: 1, reward: 40,
-      modelYaw: Math.PI, // enemy_2 export faces -Z (same pack as enemy_1); rotate 180° to face +Z
+      role: 'rocketeer', class: 'fighter', color: 0xffd24d, reward: 40,
+      // enemy_2 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
+      model: { yaw: Math.PI, scale: 1 },
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun', offset: 0, delay: 0 },
@@ -222,7 +227,8 @@ export const SHIPS = [
     // (top speed +50%) + Scout thrusters, one long-range Pirate machine gun. Reuses the fighter model.
     name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/fighter.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
-      role: 'pirate_gunner', class: 'fighter', color: 0xe53935, sizeScale: 1, reward: 40,
+      role: 'pirate_gunner', class: 'fighter', color: 0xe53935, reward: 40,
+      model: { scale: 1 }, // reuses fighter.glb (yaw defaults 0)
       groups: { gun: GUN_LONG },
       mounts: [{ weapon: 9, group: 'gun', offset: 0, delay: 0 }]
     }
@@ -230,8 +236,9 @@ export const SHIPS = [
   {
     name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/enemy_3_combat.d728c4fa.glb',
     components: { hull: 3, engine: 6, thruster: 10 }, stats: { // medium hull + scout engine + weak (Medium) thrusters
-      role: 'medium', class: 'capital', color: 0xb267e6, sizeScale: 2, reward: 100,
-      modelYaw: Math.PI, // enemy_3 export faces -Z (same pack as enemy_1); rotate 180° to face +Z
+      role: 'medium', class: 'capital', color: 0xb267e6, reward: 100,
+      // enemy_3 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
+      model: { yaw: Math.PI, scale: 2 },
       groups: { rocket: ROCKET },
       // two rocket launchers side by side, fired one after the other (0.2s stagger)
       mounts: [
@@ -245,8 +252,9 @@ export const SHIPS = [
   {
     name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/enemy_4_combat.fdfc942d.glb',
     components: { hull: 4, engine: 7, thruster: 11 }, stats: {
-      role: 'boss', class: 'capital', color: 0xff8c2a, sizeScale: 3, reward: 200,
-      modelYaw: Math.PI, // enemy_4 export faces -Z (same pack as enemy_1); rotate 180° to face +Z
+      role: 'boss', class: 'capital', color: 0xff8c2a, reward: 200,
+      // enemy_4 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
+      model: { yaw: Math.PI, scale: 3 },
       // Boss buff (docs/plans/mission-enemies-difficulty.md): two Pirate machine guns (id 9) replace the
       // old basic-kinetic guns; rockets unchanged. Also buffs the level-3 boss (same ship) — intended.
       groups: { gun: GUN, rocket: ROCKET },
@@ -264,7 +272,8 @@ export const SHIPS = [
     // one long-range Pirate MG + two rocket launchers.
     name: 'advanced medium pirate', type: 'enemy', modelUrl: 'assets/ships/heavy.glb',
     components: { hull: 24, engine: 6, thruster: 25 }, stats: {
-      role: 'advanced_medium_pirate', class: 'capital', color: 0x800020, sizeScale: 2, reward: 150,
+      role: 'advanced_medium_pirate', class: 'capital', color: 0x800020, reward: 150,
+      model: { scale: 2 }, // reuses heavy.glb (yaw defaults 0)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
         { weapon: 9, group: 'gun', offset: 0, delay: 0 },
@@ -279,7 +288,8 @@ export const SHIPS = [
     // spawnEnemy('boss') still resolves to the first boss).
     name: 'second boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb',
     components: { hull: 28, engine: 26, thruster: 27 }, stats: {
-      role: 'boss2', class: 'capital', color: 0x8b0000, sizeScale: 3, reward: 400,
+      role: 'boss2', class: 'capital', color: 0x8b0000, reward: 400,
+      model: { scale: 3 }, // reuses boss.glb (yaw defaults 0)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
         { weapon: 10, group: 'gun', offset: -0.6, delay: 0 },

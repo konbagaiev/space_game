@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-24 (player ship = real textured "Air & Space Vessel" model (downscaled textures → player_combat/_hangar, sizeScale 1.1); tier-gated env-map reflections on ships; muzzle/exhaust spawn from the model's real nose/tail bounds; enemy weapon fire silenced (rocket detonations kept); "Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+**Updated:** 2026-06-24 (per-ship model presentation consolidated into a documented `stats.model` block — yaw/scale + optional muzzle/exhaust spawn overrides — replacing loose `modelYaw`/`sizeScale` keys (back-compat reads kept); new `docs/plans/adding-a-ship-model.md` convention; player ship = real textured "Air & Space Vessel" model (downscaled textures → player_combat/_hangar, model.scale 1.1); tier-gated env-map reflections on ships; muzzle/exhaust spawn from the model's real nose/tail bounds; enemy weapon fire silenced (rocket detonations kept); "Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -59,7 +59,8 @@ client fetches them on startup (`bootstrap()`) and assembles every ship from tha
 derivation (`deriveDrive`/`shipMass` in `client/src/components.js`) stays client-side. A ship is a
 **hull + an engine + maneuvering thrusters** (referenced by id in the ship's `components` field) plus
 **mounted weapons** (`stats.mounts`). `stats` (JSON) also carry **fire `groups`** (named channels — a
-key for the player, an AI range/aim rule for enemies), `role`, `color`, `sizeScale`. A `mount` = a
+key for the player, an AI range/aim rule for enemies), `role`, `color`, and a `model` block (per-ship
+model presentation — see the Visual model section). A `mount` = a
 weapon id, its `group`, a lateral `offset` (side-by-side fire), a `delay` (staggered volley); a ship
 can mount several of the same weapon (the mini-boss has two rocket launchers). The player's active ship
 + its loadout/components overrides come from `player_ships` (see Backend).
@@ -90,23 +91,29 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **Visual model:** the **visual-model rendering lives in `client/index.html`** — `makeShip` builds a
   ship's **root group** (owns world position, the `1.8` scale, and per-frame `rotation.y` = heading) plus
   an **inner "bank" group** (`g.userData.bankGroup`) that holds the primitives / `.glb` and rolls about the
-  nose; `applyShipModel` swaps the loaded `.glb` into that bank group (applying `modelYaw`). The per-frame
+  nose; `applyShipModel` swaps the loaded `.glb` into that bank group (applying `model.yaw`). The per-frame
   heading is written as `mesh.rotation.y` in the update loop (player ~`index.html:2153`, enemies ~`:2191`).
   Each ship's `model_url` (in the DB) points to the **combat** `.glb` (the exported
   primitives live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it
-  loads / as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. **Orientation
-  convention: ships face `+Z`.** A model whose nose points elsewhere is corrected at load time by
-  `stats.modelYaw` (radians; `Math.PI` for a `-Z`-facing export) — threaded seed → `modelSpec` →
-  `applyShipModel`. Center/scale/orientation are **runtime normalizations** (the asset's own transform
-  isn't trusted), so a wrong-way model is fixed with `modelYaw` in the seed, not by re-exporting. The
-  `basic enemy ship` uses this (`modelYaw: Math.PI`; its `enemy_1` export faced `-Z`), as do the
-  rocketeer, medium and first boss (the `enemy_2/3/4` exports share that `-Z` convention); the **player
-  ship** (`player_combat`) uses `modelYaw: 0`. An optional
+  loads / as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. **Per-ship model
+  presentation lives in one documented block, `stats.model`** (`{ yaw, scale, scaleMul?, muzzle?, exhaust? }`),
+  resolved client-side by `shipModelCfg(s)` (with back-compat fallback to the old loose `stats.modelYaw` /
+  `stats.sizeScale` keys so a stale row/cache can't break) and threaded seed → `modelSpec` → `applyShipModel`.
+  Full convention + onboarding steps: **`docs/plans/adding-a-ship-model.md`**.
+  **Orientation convention: ships face `+Z`.** A model whose nose points elsewhere is corrected at load
+  time by `model.yaw` (radians; `Math.PI` for a `-Z`-facing export). Center/scale/orientation are **runtime
+  normalizations** (the asset's own transform isn't trusted), so a wrong-way model is fixed with `model.yaw`
+  in the seed, not by re-exporting. The `basic enemy ship` uses this (`model.yaw: Math.PI`; its `enemy_1`
+  export faced `-Z`), as do the rocketeer, medium and first boss (the `enemy_2/3/4` exports share that `-Z`
+  convention); the **player ship** (`player_combat`) uses `model.yaw: 0`. `model.scale` is the size
+  multiplier (auto-normalize the longest axis to `SHIP_MODEL_LEN` 3.4 first, then scale; also scales the hit
+  radius). Muzzle/exhaust spawn at the model's real nose/tail (`userData.noseZ`/`tailZ`, auto-derived from
+  the glb bounds); `model.muzzle` / `model.exhaust` optionally override them in group-local units. An optional
   **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
   lazy-loaded; the basic enemy + the player have one — `enemy_1_hangar` / `player_hangar`). See
   `client/assets/README.md` + `CREDITS.md`.
   - **Player ship** = the real **"Air & Space Vessel"** model (Raven, CC-BY): a light-grey/red textured
-    fighter, **`sizeScale: 1.1`**. Unlike the flat low-poly enemy pack, it **keeps its textures** (paint,
+    fighter, **`model.scale: 1.1`**. Unlike the flat low-poly enemy pack, it **keeps its textures** (paint,
     decals, markings) — `assets:build` just **downscales** them via the `player` preset override
     (`PRESET_OVERRIDES` in `assets-config.mjs`): combat `player_combat` ~371 KB (128px textures + meshopt
     geometry, same-origin — loads through the wired meshopt decoder) + hangar `player_hangar` ~1.7 MB (512px,

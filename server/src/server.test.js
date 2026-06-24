@@ -281,6 +281,7 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.modelUrl, 'assets/ships/player_combat.f7171045.glb'); // real "Air & Space Vessel" model (textured)
   assert.equal(player.modelUrlHigh, 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb');
   assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8 }); // assembled from components
+  assert.deepEqual(player.stats.model, { yaw: 0, scale: 1.1 }); // model-presentation block (yaw/scale)
   assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');

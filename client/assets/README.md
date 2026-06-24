@@ -21,21 +21,25 @@ Ships use built-in primitive shapes by default. To replace one with a real model
 
 4. **Point to it** from the **seed** (`server/src/catalog_seed.js`), not from `index.html` — ships are
    DB-driven. Set the ship's **`modelUrl`** (combat, same-origin) and optional **`modelUrlHigh`**
-   (hangar, CloudFront), and put any orientation/size tuning in the ship's **`stats`**:
+   (hangar, CloudFront), and put any orientation/size tuning in the ship's **`stats.model`** block:
    ```js
    {
      name: 'basic enemy ship', type: 'enemy',
      modelUrl: 'assets/ships/enemy_1_combat.<hash>.glb',
      modelUrlHigh: 'https://…/ships-hangar/enemy_1_hangar.<hash>.glb',
-     stats: { role: 'fighter', /* … */ modelYaw: Math.PI },
+     stats: { role: 'fighter', /* … */ model: { yaw: Math.PI, scale: 1 } },
    }
    ```
-   The client (`makeShip` → `modelSpec` → `applyShipModel`) reads `modelUrl` + these `stats`:
-   - **`modelYaw`** — extra Y-rotation (radians) if the nose doesn't point `+Z`. **Our ships face
+   The full convention (every key, when to use `muzzle`/`exhaust`, the build steps) is documented in
+   **`docs/plans/adding-a-ship-model.md`**. The client (`makeShip` → `modelSpec` → `applyShipModel`,
+   via `shipModelCfg`) reads `modelUrl` + `stats.model`:
+   - **`model.yaw`** — extra Y-rotation (radians) if the nose doesn't point `+Z`. **Our ships face
      `+Z`; many exported models face `-Z` → use `Math.PI`** (`±Math.PI/2` for `+X`/`-X`). Both the
-     combat and hangar models come from the same source, so one `modelYaw` corrects both.
-   - **`sizeScale`** — gameplay+visual size multiplier (also scales the hit radius). The model's
+     combat and hangar models come from the same source, so one `yaw` corrects both.
+   - **`model.scale`** — gameplay+visual size multiplier (also scales the hit radius). The model's
      longest axis is auto-normalized to the primitive footprint first; this multiplies that.
+   - **`model.muzzle` / `model.exhaust`** — optional group-local overrides for the projectile / exhaust
+     spawn (default `null` → auto from the glb bounds). See the convention doc.
    - Enemies are **never tinted** (`modelSpec` loads with `tint: false`) — appearance is the model
      itself (see DECISIONS §14). `applyShipModel` still supports a `tint` knob for the primitive path.
 
@@ -44,14 +48,14 @@ Ships use built-in primitive shapes by default. To replace one with a real model
 fallback if loading fails), then `applyShipModel()` loads the `.glb`, **auto-centers, auto-scales, and
 re-orients (`yaw`)** it, and swaps it into the same object — so all gameplay logic (movement, hit
 radius, exhaust, explosions) is unchanged. Centering/scale/orientation are **runtime normalizations**:
-the asset's own transform is not trusted, so a model facing the wrong way is fixed with `modelYaw` in
+the asset's own transform is not trusted, so a model facing the wrong way is fixed with `model.yaw` in
 the seed, **not** by re-exporting.
 
 ### Before you push a model to S3 — orientation check (avoids the "flying backwards" bug)
 The combat `.glb` is built with no geometry compression specifically so **macOS Quick Look** can
 preview it (`scripts/assets-config.mjs`). Before `npm run assets:push`:
 1. **Preview the combat `.glb`** (Quick Look / a glTF viewer) and note which way the nose points.
-2. **Our convention is nose = `+Z`.** If it faces any other way, set **`stats.modelYaw`** in the seed
+2. **Our convention is nose = `+Z`.** If it faces any other way, set **`stats.model.yaw`** in the seed
    (`-Z` → `Math.PI`); don't re-export just to rotate.
 3. After seeding, **eyeball it in-game** (open the game, or `npm run test:visual` from `client/` and
    check the screenshots) — confirm the ship flies nose-first, not engine-first.
