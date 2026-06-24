@@ -139,11 +139,26 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_stash_player ON stash(player_id);
     ALTER TABLE players ADD COLUMN IF NOT EXISTS shop_unlocked INTEGER NOT NULL DEFAULT 0;
+
+    -- SFX (docs/plans/sound-classes-and-mapping.md): sounds = asset registry (key->url+gain);
+    -- sound_map = class-based routing (entity, class, event) -> sound key. Rows seeded below.
+    CREATE TABLE IF NOT EXISTS sounds (
+      key  TEXT PRIMARY KEY,
+      url  TEXT NOT NULL,
+      gain REAL NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS sound_map (
+      entity    TEXT NOT NULL,   -- 'ship' | 'weapon'
+      class     TEXT NOT NULL,
+      event     TEXT NOT NULL,   -- ship: 'explode'|'hit'; weapon: 'fire'|'explode'
+      sound_key TEXT NOT NULL REFERENCES sounds(key),
+      PRIMARY KEY (entity, class, event)
+    );
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
   // propagates on deploy (ids/foreign keys preserved — weapons keyed by id, ships/maps/levels by name).
-  const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS } = await import('./catalog_seed.js');
+  const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
   for (const c of COMPONENTS) {
     await pool.query(
       `INSERT INTO components (id, name, type, weight, price, stats) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
@@ -173,6 +188,18 @@ export async function migrate() {
       `INSERT INTO levels (name, descriptor) VALUES ($1, $2::jsonb)
        ON CONFLICT (name) DO UPDATE SET descriptor = EXCLUDED.descriptor`,
       [l.name, JSON.stringify(l.descriptor)]);
+  }
+  for (const s of (SOUNDS ?? [])) {
+    await pool.query(
+      `INSERT INTO sounds (key, url, gain) VALUES ($1, $2, $3)
+       ON CONFLICT (key) DO UPDATE SET url = EXCLUDED.url, gain = EXCLUDED.gain`,
+      [s.key, s.url, s.gain ?? 1]);
+  }
+  for (const m of (SOUND_MAP ?? [])) {
+    await pool.query(
+      `INSERT INTO sound_map (entity, class, event, sound_key) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (entity, class, event) DO UPDATE SET sound_key = EXCLUDED.sound_key`,
+      [m.entity, m.class, m.event, m.sound]);
   }
   console.log('[migrate] postgres schema ready');
 }
@@ -374,6 +401,13 @@ export async function getWeapons() {
 export async function getComponents() {
   const { rows } = await pool.query('SELECT id, name, type, weight, price, stats FROM components ORDER BY id');
   return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats }));
+}
+
+// SFX catalog: sounds registry (key->url) + class-based routing map (mirrors db.js).
+export async function getSoundCatalog() {
+  const s = await pool.query('SELECT key, url, gain FROM sounds ORDER BY key');
+  const m = await pool.query('SELECT entity, class, event, sound_key FROM sound_map ORDER BY entity, class, event');
+  return { sounds: s.rows, map: m.rows.map((r) => ({ entity: r.entity, class: r.class, event: r.event, sound: r.sound_key })) };
 }
 
 export async function getMap(name) {

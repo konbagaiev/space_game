@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-24 (sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+**Updated:** 2026-06-24 (SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -101,13 +101,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb) / `assets:push`
   (→ S3 `vega-sentinels-assets`: glbs to `ships-combat/`+`ships-hangar/`, **SFX mp3s to `sfx/`**, sources to
   `source/`) / `assets:pull` (S3 → `client/assets/ships/` **+ `client/assets/sounds/`**) / `assets:check`
-  (drift-check: every pipeline `model_url*` in the seed **and every `SFX_SOURCES` url in `sfx_manifest.js`**
+  (drift-check: every pipeline `model_url*` in the seed **and every `SOUNDS` url in `catalog_seed.js`**
   exists on S3 — the deploy guard). **No binaries in git** (S3 canonical; the in-git primitives stay as a
   fallback). `scripts/assets-*.mjs`. **CI is wired** (the deploy job runs check + pull before the build,
   baking combat models **and SFX** into the image) via a scoped **read-only IAM key** (`vega-assets-ci-read`,
   bucket-wide read → GitHub secrets `ASSETS_AWS_*`). **Audio SFX**: drop a source in `assets-src/sounds/`,
   extract/clean/encode an mp3 by hand (ffmpeg recipes in the audio plan), content-hash → `assets-dist/sounds/`,
-  push, then paste the hashed url into `sfx_manifest.js`. See DECISIONS §14 + §22.
+  push, then add the hashed url to **`SOUNDS`** in `catalog_seed.js` (+ a `SOUND_MAP` row to route it to a
+  ship/weapon class). See DECISIONS §14 + §22.
 - **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
   `maxRange`, `fireCooldown`; rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
@@ -346,20 +347,22 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   **explosion(size, kind?)** (ship death — sized to `sizeScale`; a `kind` plays a sample — `shipBoom` for
   medium/large ships, `blast` for small ships + rocket detonation), **uiClick** (every `<button>` via a
   capturing handler), and a **jingle** (ascending major on victory / descending minor on death).
-- **Sampled SFX layer.** `audio.preloadSamples(map)` fetches + decodes content-hashed mp3s into a buffer
-  cache (called once after unlock with `SFX_SOURCES` from `client/src/sfx_manifest.js`); `audio.sfx.shoot('kinetic')`
-  plays that sample as a `BufferSource` on `sfxGain` with a subtle per-shot pitch jitter (so rapid fire
-  reusing one clip isn't a robotic loop), **falling back to the synth zap** if the buffer is missing.
-  A weapon opts in via **`stats.sfx: '<key>'`** in `catalog_seed.js` (flows to the runtime weapon as
-  `w.sfx`, read at the fire site in `fireMount`). Samples beyond weapon fire are passed directly to the
-  matching `sfx.*` call. Current sampled sounds (`SFX_SOURCES`): **`kinetic`** (glock shot) on `Basic
-  kinetic` (1) / `Machine Gun` (5) / `Heavy Machine Gun` (7); **`rocket`** (launch) on player rockets;
-  **`cannon`** on the **`Heavy cannon` (6)**; **`shipHit`** — kinetic impact on the **player's** ship
-  (`audio.sfx.hit('shipHit')`; enemy hits stay synth); **`shipBoom`** — medium/large ship death
-  (`sizeScale ≥ 2` → `audio.sfx.explosion(size, 'shipBoom')`, trimmed to 2 s) **and the player's own
-  death** (also `shipBoom`); **`blast`** (first 0.7 s of blast.flac) — **rocket detonation + small ships**
-  (`sizeScale < 2`, `audio.sfx.explosion(size, 'blast')`). Enemy fire stays synthesized. Sample bytes live
-  on S3 (`sfx/`), pulled same-origin into `client/assets/sounds/` — see the asset pipeline.
+- **Sampled SFX layer — DB-driven routing** (`docs/plans/sound-classes-and-mapping.md`). `audio.preloadSamples(map)`
+  fetches + decodes content-hashed mp3s into a buffer cache; `audio.sfx.shoot/rocket/hit/explosion(kind)`
+  plays the named sample as a `BufferSource` on `sfxGain` (subtle per-shot pitch jitter), **falling back to
+  the synth** if the buffer/key is missing. **Routing lives in the DB, not the client:** two tables —
+  **`sounds`** (`key → url + gain`, the asset registry) and **`sound_map`** (`(entity, class, event) → sound
+  key`) — seeded from `SOUNDS`/`SOUND_MAP` in `catalog_seed.js`. Each **ship**/**weapon** carries a
+  **`stats.class`** (ship `fighter`/`capital`/`player`; weapon `kinetic`/`cannon`/`rocket`). The client
+  fetches both via **`GET /api/sounds`** in `bootstrap()`, preloads every `sounds` url, and resolves at each
+  call site with **`sfxFor(entity, class, event)`** (e.g. ship death → `sfxFor('ship', e.class, 'explode')`;
+  gun fire → `sfxFor('weapon', w.class, 'fire')`; rocket detonation resolves `(weapon, class, 'explode')`,
+  stored on the rocket at spawn). Adding a ship/weapon = give it a `class` + (if new) a `sound_map` row; no
+  client edit. Current map: weapon `kinetic`→`kinetic` (glock) on guns 1/5/7, `cannon`→`cannon` on Heavy
+  cannon (6), `rocket`→`rocket` launch on player rockets (3/8) + `rocket` detonation→`blast`; ship
+  `fighter`→`blast` (small), `capital`→`shipBoom` (medium/large), `player`→`shipBoom` death + `shipHit` when
+  struck. **Enemy fire stays synth** (gated by `isPlayer` at the call site). Sample bytes live on S3 (`sfx/`),
+  pulled same-origin into `client/assets/sounds/` — see the asset pipeline.
 - **Music** is generative: sustained pad triads + an arpeggio over a slow **Am–F–C–G** progression
   (look-ahead scheduler). It **follows game state** via `audio.setScene()` — a driving **combat** mood
   (faster + a bass pulse) during a live fight, a calmer **hangar** mood (slow, sparse) on

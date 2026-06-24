@@ -700,6 +700,15 @@ splitter, since judging which take and how much reverb tail to keep needs an ear
 shot (Freesound) on the kinetic guns. Format **mp3** (smallest, universal `decodeAudioData`). Full process:
 `docs/plans/audio-sample-pipeline.md`.
 
+**Amendment (2026-06-24) — SFX routing normalized into DB tables (sound classes).** With more sounds it
+became clear the client shouldn't name them inline ("100 different ships"). Routing now lives in two seeded
+tables: **`sounds`** (`key → url + gain`) and **`sound_map`** (`(entity, class, event) → key`); each ship/
+weapon carries a **`stats.class`**, and the client resolves at runtime via `sfxFor(entity, class, event)`
+(fetched from **`GET /api/sounds`**). **This supersedes the manifest** — `client/src/sfx_manifest.js` is
+gone; key→url is the `sounds` table (URL changes now need a re-seed/deploy, fine because volume is baked
+into the files). Chosen the normalized tables over a per-entity field (owner's call) so adding ships/weapons
+never edits client code. Full design + schema: `docs/plans/sound-classes-and-mapping.md`.
+
 ## 23. Performance quality tiers — High / Balance / Performance
 
 **Decision.** A player-facing **graphics quality** selector (3 tiers) in the settings menu, persisted in

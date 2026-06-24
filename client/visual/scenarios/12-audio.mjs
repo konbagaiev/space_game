@@ -3,16 +3,17 @@
 // state (hangar/menu mood ⇄ combat mood). SFX/music are inaudible in headless software audio, so we
 // assert on engine STATE (settings + scene) and the DOM, not on sound. We DO verify the sampled-SFX
 // happy path (served same-origin + decodable) since that's deterministic regardless of autoplay.
-import { SFX_SOURCES } from '../../src/sfx_manifest.js';
+import { SOUNDS } from '../../../server/src/catalog_seed.js';
 
 export const name = '12-audio';
 
 export default async function ({ page, assert, shot }) {
-  // Sampled weapon SFX: each manifest URL is served same-origin and decodes to a short clip. This is the
-  // sample layer's happy path; OfflineAudioContext.decodeAudioData needs no user gesture, so it's reliable
-  // headless (unlike the live AudioContext, which may stay suspended). A missing/undecodable file would
-  // silently fall back to synth at runtime — but in the seed it should always resolve, so we assert it here.
-  for (const [key, url] of Object.entries(SFX_SOURCES)) {
+  // Sampled SFX: each registry URL (catalog_seed SOUNDS, served via /api/sounds) is served same-origin and
+  // decodes to a short clip. This is the sample layer's happy path; OfflineAudioContext.decodeAudioData
+  // needs no user gesture, so it's reliable headless (unlike the live AudioContext, which may stay
+  // suspended). A missing/undecodable file would silently fall back to synth — in the seed it should
+  // always resolve, so we assert it here.
+  for (const { key, url } of SOUNDS) {
     const r = await page.evaluate(async (u) => {
       const res = await fetch(u);
       if (!res.ok) return { ok: false, status: res.status };

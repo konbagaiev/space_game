@@ -25,7 +25,7 @@ export async function migrate() {
 // Upsert the ship/weapon catalog from the shared snapshot. Runs on every startup, so editing
 // catalog_seed.js updates the rows (ids/foreign keys preserved — weapons keyed by id, ships by name).
 async function seedCatalog() {
-  const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS } = await import('./catalog_seed.js');
+  const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
   const upC = db.prepare(`INSERT INTO components (id, name, type, weight, price, stats) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, price = excluded.price, stats = excluded.stats`);
   for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats));
@@ -41,6 +41,12 @@ async function seedCatalog() {
   const upL = db.prepare(`INSERT INTO levels (name, descriptor) VALUES (?, ?)
     ON CONFLICT(name) DO UPDATE SET descriptor = excluded.descriptor`);
   for (const l of LEVELS) upL.run(l.name, JSON.stringify(l.descriptor));
+  const upSnd = db.prepare(`INSERT INTO sounds (key, url, gain) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET url = excluded.url, gain = excluded.gain`);
+  for (const s of (SOUNDS ?? [])) upSnd.run(s.key, s.url, s.gain ?? 1);
+  const upSm = db.prepare(`INSERT INTO sound_map (entity, class, event, sound_key) VALUES (?, ?, ?, ?)
+    ON CONFLICT(entity, class, event) DO UPDATE SET sound_key = excluded.sound_key`);
+  for (const m of (SOUND_MAP ?? [])) upSm.run(m.entity, m.class, m.event, m.sound);
 }
 
 // Give a player their starter ship if they don't own one yet: the default 'player' ship,
@@ -258,6 +264,15 @@ export function getWeapons() {
 export function getComponents() {
   return db.prepare('SELECT id, name, type, weight, price, stats FROM components ORDER BY id').all()
     .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats) }));
+}
+
+// SFX catalog: the sounds registry (key->url) + the class-based routing map. The client preloads the
+// sounds and resolves (entity, class, event) -> key at runtime (no hardcoded routing).
+export function getSoundCatalog() {
+  const sounds = db.prepare('SELECT key, url, gain FROM sounds ORDER BY key').all();
+  const map = db.prepare('SELECT entity, class, event, sound_key FROM sound_map ORDER BY entity, class, event').all()
+    .map((r) => ({ entity: r.entity, class: r.class, event: r.event, sound: r.sound_key }));
+  return { sounds, map };
 }
 
 // A map's scene descriptor (the client renders it via buildMap).

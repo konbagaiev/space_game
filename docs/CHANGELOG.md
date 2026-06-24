@@ -3,6 +3,21 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-24
+
+- **SFX routing moved into the DB (sound classes + a sound_map table).** Removed all hardcoded sound
+  routing from the client so adding ships/weapons never touches `index.html`
+  (`docs/plans/sound-classes-and-mapping.md`). New tables: **`sounds`** (asset registry: `key → url + gain`)
+  and **`sound_map`** (`(entity, class, event) → sound key`); seeded from `SOUNDS`/`SOUND_MAP` in
+  `catalog_seed.js` (idempotent upsert, both sqlite migration `013_sounds.js` + postgres). Each ship and
+  weapon now carries a **`stats.class`** (ship `fighter`/`capital`/`player`; weapon `kinetic`/`cannon`/
+  `rocket`). New `GET /api/sounds` returns the registry + map; the client (`bootstrap`) builds a resolver
+  `sfxFor(entity, class, event)` and the fire/death/hit/detonation call sites look the sound up instead of
+  naming it inline. **Deleted `client/src/sfx_manifest.js`** (its key→url job is now the `sounds` table);
+  `assets:check` + the `12-audio` scenario now source URLs from `catalog_seed.SOUNDS`. Behavior is
+  unchanged (same sounds as before); only the wiring is data-driven. Verified: client 40, server 50 (+
+  migration 013), `assets:check` (8 assets), visual suite 12/12.
+
 ## 2026-06-23
 
 - **Sampled SFX: rocket launch, cannon, player-ship hit, ship explosions (+ blast).** Processed new CC0

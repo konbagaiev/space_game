@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/node';
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getActivePlayerShip, getMap, getLevel, backend,
+import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend,
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent,
   getStash, buyItem, sellItem, equipItem, unequipItem } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
@@ -95,6 +95,7 @@ export async function createApp() {
   app.get('/api/ships', wrap(async (req, res) => res.json(await getShips())));
   app.get('/api/weapons', wrap(async (req, res) => res.json(await getWeapons())));
   app.get('/api/components', wrap(async (req, res) => res.json(await getComponents())));
+  app.get('/api/sounds', wrap(async (req, res) => res.json(await getSoundCatalog()))); // SFX registry + class routing
 
   // The player's active ship (template + effective loadout). Auto-registers + gives a default ship.
   app.get('/api/players/:id/active-ship', wrap(async (req, res) => {

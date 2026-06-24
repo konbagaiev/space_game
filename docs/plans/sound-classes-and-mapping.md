@@ -1,8 +1,9 @@
 # Sound classes + a DB sound-mapping table (data-driven SFX routing)
 
-**Status:** plan only (no code yet). Chosen architecture (owner): **classes + a sounds table** (the
-normalized option), so adding ships/weapons never touches the client. This brief is self-contained and
-executable without the originating chat.
+**Status:** ✅ implemented (2026-06-24). Architecture: **classes + a sounds table** (normalized) — adding
+ships/weapons never touches the client. Shipped: sqlite migration `013_sounds.js` + postgres tables,
+`SOUNDS`/`SOUND_MAP` seed + `stats.class` on ships/weapons, `GET /api/sounds`, client `sfxFor()` resolver,
+`sfx_manifest.js` deleted. Current state lives in `docs/SUMMARY.md` (Audio); this file is the design brief.
 
 ## Goal
 

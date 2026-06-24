@@ -597,7 +597,6 @@ import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
 import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // Web Audio (synth SFX + generative music + sampled SFX)
-import { SFX_SOURCES } from './src/sfx_manifest.js'; // logical SFX name → content-hashed same-origin mp3 (sample layer)
 import { loadTier, resolveTier, saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones)
 
 // Audio engine: synthesized SFX + generative music (procedural), plus an optional sampled SFX layer
@@ -605,6 +604,12 @@ import { loadTier, resolveTier, saveTier } from './src/graphics.js'; // graphics
 // audio.unlock(); samples are fetched once the context is live. See DECISIONS §22.
 const audio = createAudio(loadAudioSettings(window.localStorage));
 let samplesLoaded = false; // one-time guard so the sample preload fires once, after the context unlocks
+// SFX routing is DB-driven (docs/plans/sound-classes-and-mapping.md): /api/sounds gives the registry
+// (key→url) + the class map ((entity,class,event)→key), both filled in bootstrap(). No hardcoded routing.
+let soundUrls = {};                 // logical key → same-origin url (fed to audio.preloadSamples)
+const soundMap = new Map();         // 'entity|class|event' → sound key
+// Resolve a ship/weapon event to its sound key (or undefined → the engine uses its synth fallback).
+function sfxFor(entity, cls, event) { return cls ? soundMap.get(`${entity}|${cls}|${event}`) : undefined; }
 
 // Graphics quality tier — read BEFORE the renderer (antialias is a constructor arg). `isTouch` is
 // defined later (used by the input layer), so detect touch locally here for the first-run default.
@@ -625,7 +630,7 @@ function refreshMusic() { audio.setScene(musicForState()); }
 const UNLOCK_EVENTS = ['pointerdown', 'touchend', 'click', 'keydown'];
 function tryUnlockAudio() {
   audio.unlock();
-  if (!samplesLoaded) { samplesLoaded = true; audio.preloadSamples(SFX_SOURCES); } // load weapon samples on first gesture (decode works even while the ctx is still suspended)
+  if (!samplesLoaded) { samplesLoaded = true; audio.preloadSamples(soundUrls); } // load samples on first gesture (decode works even while the ctx is still suspended)
   refreshMusic();
   if (audio.isReady()) UNLOCK_EVENTS.forEach((ev) => removeEventListener(ev, tryUnlockAudio));
 }
@@ -1488,6 +1493,7 @@ function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
     target, fromPlayer,
     damage: weapon.power, detonateR: weapon.detonateRadius,
     blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
+    sfxExplode: sfxFor('weapon', weapon.class, 'explode'), // detonation sound (DB map); resolved once at spawn
     hp: weapon.health ?? 1,                              // HP: reduced by bullet damage, shot down at 0
     traveled: 0, maxRange: weapon.maxRange ?? 120,       // self-destructs at max flight range
   });
@@ -1505,7 +1511,7 @@ function detonateRocket(r, dealDamage = true) {
     }
   }
   spawnExplosion(r.obj.position, r.blastVis);
-  audio.sfx.explosion(0.7, 'blast'); // rocket blast (sampled)
+  audio.sfx.explosion(0.7, r.sfxExplode); // rocket blast (sampled via the weapon-class map)
   scene.remove(r.obj);
   r.obj.children[0].material.dispose();
 }
@@ -1570,6 +1576,7 @@ function buildPlayer(active) {
     vel: new THREE.Vector3(),
     heading: 0,                       // rotation angle around Y
     sizeScale: s.sizeScale || 1,
+    class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
     hull, engine, thruster, repair,   // `repair` is the repair-drone stats (or null); feeds mass + repairTick
     _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
     mounts: buildMounts(active.loadout.mounts), // resolved weapons; also feeds ship mass
@@ -1592,7 +1599,7 @@ function spawnEnemyShip(shipDef) {
   const s = shipDef.stats;
   const { hull, engine, thruster } = resolveComponents(shipDef.components);
   const e = {
-    role: s.role, color: s.color, sizeScale: s.sizeScale || 1, reward: s.reward || 0,
+    role: s.role, class: s.class, color: s.color, sizeScale: s.sizeScale || 1, reward: s.reward || 0,
     mesh: makeShip(s.color, modelSpec(shipDef.modelUrl, s.modelYaw)), // model defines the look; never tint enemies by color
     vel: new THREE.Vector3(),
     heading: Math.random() * Math.PI * 2,
@@ -1731,12 +1738,12 @@ function fireMount(ship, mount, fwd, isPlayer) {
     const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : player;
     const accel = isPlayer ? ship.acceleration : (w.accel ?? ship.acceleration);
     spawnRocket(muzzle, fwd, w, accel, isPlayer, target);
-    audio.sfx.rocket(isPlayer ? w.sfx : undefined); // player rockets use the sampled launch; enemies stay synth
+    audio.sfx.rocket(isPlayer ? sfxFor('weapon', w.class, 'fire') : undefined); // player rockets sampled; enemies synth
   } else {
     spawnBullet(muzzle, fwd, w, isPlayer, ship.vel);
     // distinct, distance-attenuated report for enemies so a swarm doesn't drown the player's own fire.
-    // w.sfx (a weapon's stats.sfx, e.g. 'kinetic') opts into a sampled report; unset → synthesized zap.
-    if (isPlayer) audio.sfx.shoot(w.sfx);
+    // The weapon's class → its 'fire' sound via the DB map (sfxFor); unset → synthesized zap.
+    if (isPlayer) audio.sfx.shoot(sfxFor('weapon', w.class, 'fire'));
     else audio.sfx.enemyShoot(player && player.mesh ? ship.mesh.position.distanceTo(player.mesh.position) : 0);
   }
 }
@@ -2178,7 +2185,7 @@ function update(dt) {
       }
     } else {
       if (player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
-        player.hp -= b.damage; hit = true; audio.sfx.hit('shipHit'); // sampled impact when OUR ship is struck
+        player.hp -= b.damage; hit = true; audio.sfx.hit(sfxFor('ship', player.class, 'hit')); // sampled impact when OUR ship is struck
       }
     }
 
@@ -2313,7 +2320,7 @@ function update(dt) {
       // colorful death burst: sized to the ship, tinted by its engine's exhaust color
       const e = enemies[i];
       spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
-      audio.sfx.explosion(e.sizeScale || 1, (e.sizeScale || 1) >= 2 ? 'shipBoom' : 'blast'); // large ships → shipBoom, small ships → blast
+      audio.sfx.explosion(e.sizeScale || 1, sfxFor('ship', e.class, 'explode')); // explosion sound from the ship-class map
 
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
@@ -2328,7 +2335,7 @@ function update(dt) {
   if (player.hp <= 0 && player.alive) {
     player.alive = false;
     spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
-    audio.sfx.explosion(1.5, 'shipBoom'); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
+    audio.sfx.explosion(1.5, sfxFor('ship', player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
     track('player_death', { level: currentLevelLabel(), kills }); // funnel: where players die
     bankRun(); // bank the earned credits into the account balance + record the game
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');
@@ -3495,10 +3502,14 @@ async function bootstrap() {
     // The level comes from the player's progress (their highest unlocked level); fall back to
     // level-1 if the player isn't identified (e.g. localStorage blocked).
     const levelUrl = playerId ? `/api/players/${playerId}/level` : '/api/levels/level-1';
-    const [weapons, components, ships, level] = await Promise.all([
+    const [weapons, components, ships, level, sounds] = await Promise.all([
       fetchJson('/api/weapons'), fetchJson('/api/components'),
-      fetchJson('/api/ships'), fetchJson(levelUrl),
+      fetchJson('/api/ships'), fetchJson(levelUrl), fetchJson('/api/sounds').catch(() => ({ sounds: [], map: [] })),
     ]);
+    // SFX catalog → preload registry + the class routing map (sfxFor). A failed fetch ⇒ all-synth.
+    soundUrls = Object.fromEntries((sounds.sounds || []).map((s) => [s.key, s.url]));
+    for (const m of (sounds.map || [])) soundMap.set(`${m.entity}|${m.class}|${m.event}`, m.sound);
+    if (samplesLoaded) audio.preloadSamples(soundUrls); // a gesture already unlocked the ctx before bootstrap finished
     for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, ...w.stats });
     for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');

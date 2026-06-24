@@ -4,15 +4,14 @@
 //  - Ship models in catalog_seed.js — content-hashed combat paths (assets/ships/<...>.<hash>.glb) under
 //    ships-combat/; CloudFront hangar URLs (modelUrlHigh) under ships-hangar/. In-git primitive paths
 //    (assets/ships/<ship>.glb, no hash) are skipped — they live in the repo.
-//  - SFX in client/src/sfx_manifest.js — content-hashed same-origin paths (assets/sounds/<name>.<hash>.mp3)
+//  - SFX in catalog_seed.js SOUNDS — content-hashed same-origin paths (assets/sounds/<name>.<hash>.mp3)
 //    under sfx/.
 // Because the bytes live on S3 and the content-hashed URLs live in git, they can't drift — a URL only
 // resolves if that exact build was pushed. Run: `npm run assets:check`. See docs/plans/ship-model-pipeline.md
 // and docs/plans/audio-sample-pipeline.md.
 import { execFileSync } from 'node:child_process';
 import { BUCKET, awsArgs, PREFIX, CDN } from './assets-config.mjs';
-import { SHIPS } from '../server/src/catalog_seed.js';
-import { SFX_SOURCES } from '../client/src/sfx_manifest.js';
+import { SHIPS, SOUNDS } from '../server/src/catalog_seed.js';
 
 const HASHED_GLB = /\.[0-9a-f]{8}\.glb$/; // content-hashed → a pipeline (S3) model, not an in-git primitive
 const HASHED_MP3 = /\.[0-9a-f]{8}\.mp3$/; // content-hashed SFX → must be on S3
@@ -49,9 +48,9 @@ for (const s of SHIPS) {
     if (key) targets.push({ name: s.name, field, url, key });
   }
 }
-for (const [sfx, url] of Object.entries(SFX_SOURCES)) {
-  const key = soundKey(url);
-  if (key) targets.push({ name: `sfx:${sfx}`, field: 'url', url, key });
+for (const s of SOUNDS) {
+  const key = soundKey(s.url);
+  if (key) targets.push({ name: `sfx:${s.key}`, field: 'url', url: s.url, key });
 }
 
 if (!targets.length) {

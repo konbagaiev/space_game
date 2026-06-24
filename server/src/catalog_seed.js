@@ -73,7 +73,7 @@ export const COMPONENTS = [
 export const WEAPONS = [
   {
     id: 1, name: 'Basic kinetic', type: 'bullet', price: 800, stats: { // granted into the stash on shop unlock; sells ~600 to help fund the Heavy hull
-      power: 10, projectileSpeed: 40, maxRange: 88, fireCooldown: 0.18, weight: 6, projectileColor: 0x6fe6ff, sfx: 'kinetic'
+      power: 10, projectileSpeed: 40, maxRange: 88, fireCooldown: 0.18, weight: 6, projectileColor: 0x6fe6ff, class: 'kinetic'
     }
   },
   {
@@ -85,37 +85,37 @@ export const WEAPONS = [
     id: 3, name: 'Rocket (homing)', type: 'rocket', price: 600, stats: { // player starter rocket: cheap to rebuy
       power: 60, accel: 10, turnRate: 1.0, launchSpeed: 12, maxRange: 150, health: 10,
       seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 3.2, blastRadius: 5, blastVisual: 4.5,
-      fireCooldown: 5, weight: 8, projectileColor: 0xffaa44, sfx: 'rocket'
+      fireCooldown: 5, weight: 8, projectileColor: 0xffaa44, class: 'rocket'
     }
   },
   {
     id: 4, name: 'Rocket (enemy)', type: 'rocket', stats: {
       power: 25, accel: 9, turnRate: 1.0, launchSpeed: 12, maxRange: 120, health: 20,
       detonateRadius: 3.2, blastRadius: 5, blastVisual: 4.5,
-      fireCooldown: 4, weight: 6, projectileColor: 0xffcc66
+      fireCooldown: 4, weight: 6, projectileColor: 0xffcc66, class: 'rocket' // class only drives detonation (→ blast); enemy fire stays synth (isPlayer gate)
     }
   },
   {
     id: 5, name: 'Machine Gun', type: 'bullet', price: 1500, stats: { // rapid-fire kinetic: low per-hit damage, high rate of fire — strong, so NOT cheap
-      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066, sfx: 'kinetic'
+      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066, class: 'kinetic'
     }
   },
   // --- Player shop ladder weapons (docs/plans/catalog-economy.md). Trade-offs: damage ↔ fire-rate ↔ range ↔ weight.
   {
     id: 6, name: 'Heavy cannon', type: 'bullet', price: 2000, stats: { // hard-hitting, slow fire, long range
-      power: 35, projectileSpeed: 65, maxRange: 140, fireCooldown: 0.6, weight: 10, projectileColor: 0xff8a3c, sfx: 'cannon'
+      power: 35, projectileSpeed: 65, maxRange: 140, fireCooldown: 0.6, weight: 10, projectileColor: 0xff8a3c, class: 'cannon'
     }
   },
   {
     id: 7, name: 'Heavy Machine Gun', type: 'bullet', price: 6000, stats: { // strong all-rounder: med damage, high rate of fire
-      power: 12, projectileSpeed: 48, maxRange: 100, fireCooldown: 0.12, weight: 8, projectileColor: 0xb46bff, sfx: 'kinetic'
+      power: 12, projectileSpeed: 48, maxRange: 100, fireCooldown: 0.12, weight: 8, projectileColor: 0xb46bff, class: 'kinetic'
     }
   },
   {
     id: 8, name: 'Heavy rocket', type: 'rocket', price: 2600, stats: { // homing: high damage, slow reload, big blast
       power: 90, accel: 9, turnRate: 0.8, launchSpeed: 12, maxRange: 180, health: 20,
       seekHalfAngle: 50 * Math.PI / 180, detonateRadius: 3.5, blastRadius: 7, blastVisual: 6,
-      fireCooldown: 7, weight: 12, projectileColor: 0xff7a3c, sfx: 'rocket'
+      fireCooldown: 7, weight: 12, projectileColor: 0xff7a3c, class: 'rocket'
     }
   },
   // Enemy weapon for the pirate gunner (side missions) + the upgraded boss: a long-range, rapid-fire
@@ -131,6 +131,34 @@ export const WEAPONS = [
       power: 10, projectileSpeed: 60, maxRange: 110, fireCooldown: 1.0, weight: 10, projectileColor: 0xff4a3a
     }
   },
+];
+
+// --- sounds: the SFX asset registry (key -> same-origin content-hashed url, optional playback gain).
+// Volume is baked into the files, so gain stays 1. These are the rows of the `sounds` table; the client
+// fetches them (/api/sounds), preloads each, and plays by key. All CC0 (see client/assets/CREDITS.md).
+export const SOUNDS = [
+  { key: 'kinetic',  url: 'assets/sounds/kinetic.6d8dda6a.mp3' },
+  { key: 'rocket',   url: 'assets/sounds/rocket.0e10b34a.mp3' },
+  { key: 'cannon',   url: 'assets/sounds/cannon.689d2b52.mp3' },
+  { key: 'shipHit',  url: 'assets/sounds/shipHit.8b58950e.mp3' },
+  { key: 'shipBoom', url: 'assets/sounds/shipBoom.dcd028da.mp3' },
+  { key: 'blast',    url: 'assets/sounds/blast.fcd21671.mp3' },
+];
+
+// --- sound_map: routing. (entity, class, event) -> sound key. `entity` is 'ship' | 'weapon'; `class` is
+// the entity's stats.class; `event` is ship 'explode'/'hit' or weapon 'fire'/'explode' (rocket detonation).
+// The client resolves at runtime (sfxFor) — NO hardcoded routing. Unmapped (entity,class,event) -> synth.
+// Enemy weapon FIRE is never sampled (gated by isPlayer at the call site), so only the rocket 'explode'
+// row affects enemies (their rocket detonation = blast, matching the old hardcoded behavior).
+export const SOUND_MAP = [
+  { entity: 'weapon', class: 'kinetic', event: 'fire',    sound: 'kinetic' },
+  { entity: 'weapon', class: 'cannon',  event: 'fire',    sound: 'cannon' },
+  { entity: 'weapon', class: 'rocket',  event: 'fire',    sound: 'rocket' },
+  { entity: 'weapon', class: 'rocket',  event: 'explode', sound: 'blast' },   // rocket detonation
+  { entity: 'ship',   class: 'fighter', event: 'explode', sound: 'blast' },   // small ships
+  { entity: 'ship',   class: 'capital', event: 'explode', sound: 'shipBoom' },// medium/large ships
+  { entity: 'ship',   class: 'player',  event: 'explode', sound: 'shipBoom' },
+  { entity: 'ship',   class: 'player',  event: 'hit',     sound: 'shipHit' },
 ];
 
 // fire-group presets (a group can carry a player key and/or an enemy AI rule; ships use what fits)
@@ -150,7 +178,7 @@ export const SHIPS = [
   {
     name: 'Basic player ship', type: 'player', modelUrl: 'assets/ships/player.glb',
     components: { hull: 1, engine: 5, thruster: 8 }, stats: {
-      role: 'player', color: 0x4d8bff, sizeScale: 1, nameKey: 'ship.player_basic.name',
+      role: 'player', class: 'player', color: 0x4d8bff, sizeScale: 1, nameKey: 'ship.player_basic.name',
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 1, group: 'gun', offset: 0, delay: 0 },
@@ -161,7 +189,7 @@ export const SHIPS = [
   {
     name: 'basic enemy ship', type: 'enemy', modelUrl: 'assets/ships/enemy_1_combat.3ad179b9.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_hangar.3e0b9dc3.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
-      role: 'fighter', color: 0xff5d5d, sizeScale: 1, reward: 20,
+      role: 'fighter', class: 'fighter', color: 0xff5d5d, sizeScale: 1, reward: 20,
       modelYaw: Math.PI, // the enemy_1 .glb was exported nose-toward -Z; rotate 180° so it faces +Z like all ships
       groups: { gun: GUN },
       mounts: [{ weapon: 2, group: 'gun', offset: 0, delay: 0 }]
@@ -170,7 +198,7 @@ export const SHIPS = [
   {
     name: 'basic rocket enemy', type: 'enemy', modelUrl: 'assets/ships/rocketeer.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // same hull + engine + thrusters as the fighter
-      role: 'rocketeer', color: 0xffd24d, sizeScale: 1, reward: 40,
+      role: 'rocketeer', class: 'fighter', color: 0xffd24d, sizeScale: 1, reward: 40,
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun', offset: 0, delay: 0 },
@@ -183,7 +211,7 @@ export const SHIPS = [
     // (top speed +50%) + Scout thrusters, one long-range Pirate machine gun. Reuses the fighter model.
     name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/fighter.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
-      role: 'pirate_gunner', color: 0xe53935, sizeScale: 1, reward: 40,
+      role: 'pirate_gunner', class: 'fighter', color: 0xe53935, sizeScale: 1, reward: 40,
       groups: { gun: GUN_LONG },
       mounts: [{ weapon: 9, group: 'gun', offset: 0, delay: 0 }]
     }
@@ -191,7 +219,7 @@ export const SHIPS = [
   {
     name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/heavy.glb',
     components: { hull: 3, engine: 6, thruster: 10 }, stats: { // medium hull + scout engine + weak (Medium) thrusters
-      role: 'medium', color: 0xb267e6, sizeScale: 2, reward: 100,
+      role: 'medium', class: 'capital', color: 0xb267e6, sizeScale: 2, reward: 100,
       groups: { rocket: ROCKET },
       // two rocket launchers side by side, fired one after the other (0.2s stagger)
       mounts: [
@@ -205,7 +233,7 @@ export const SHIPS = [
   {
     name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb',
     components: { hull: 4, engine: 7, thruster: 11 }, stats: {
-      role: 'boss', color: 0xff8c2a, sizeScale: 3, reward: 200,
+      role: 'boss', class: 'capital', color: 0xff8c2a, sizeScale: 3, reward: 200,
       // Boss buff (docs/plans/mission-enemies-difficulty.md): two Pirate machine guns (id 9) replace the
       // old basic-kinetic guns; rockets unchanged. Also buffs the level-3 boss (same ship) — intended.
       groups: { gun: GUN, rocket: ROCKET },
@@ -223,7 +251,7 @@ export const SHIPS = [
     // one long-range Pirate MG + two rocket launchers.
     name: 'advanced medium pirate', type: 'enemy', modelUrl: 'assets/ships/heavy.glb',
     components: { hull: 24, engine: 6, thruster: 25 }, stats: {
-      role: 'advanced_medium_pirate', color: 0x800020, sizeScale: 2, reward: 150,
+      role: 'advanced_medium_pirate', class: 'capital', color: 0x800020, sizeScale: 2, reward: 150,
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
         { weapon: 9, group: 'gun', offset: 0, delay: 0 },
@@ -238,7 +266,7 @@ export const SHIPS = [
     // spawnEnemy('boss') still resolves to the first boss).
     name: 'second boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb',
     components: { hull: 28, engine: 26, thruster: 27 }, stats: {
-      role: 'boss2', color: 0x8b0000, sizeScale: 3, reward: 400,
+      role: 'boss2', class: 'capital', color: 0x8b0000, sizeScale: 3, reward: 400,
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
         { weapon: 10, group: 'gun', offset: -0.6, delay: 0 },
