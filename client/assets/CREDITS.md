@@ -14,6 +14,8 @@ asset page is also handy, in case the author later changes the terms).
 | sounds/shipHit.\<hash\>.mp3 (kinetic hit on player ship) | Freesound (CC0 filter) | _id not retained (renamed my_ship_hit_by_kinetic.wav)_ | CC0 1.0 | 2026-06-23 |
 | sounds/shipBoom.\<hash\>.mp3 (medium/large ship explosion) | Freesound (CC0 filter) | _id not retained (renamed "medium_ship destroyed.mp3")_ | CC0 1.0 | 2026-06-23 |
 | sounds/blast.\<hash\>.mp3 (rocket + small ship explosion, from blast.flac) | Freesound (CC0 filter) | _id not retained (renamed blast.flac)_ | CC0 1.0 | 2026-06-24 |
+| sounds/music_hangar_1.\<hash\>.mp3 (hangar background loop) | Freesound (CC0 filter) | _id not retained (renamed menu-background-sound-1.wav)_ | CC0 1.0 | 2026-06-24 |
+| sounds/music_combat_1.\<hash\>.mp3 (combat background loop) | Freesound (CC0 filter) | _id not retained (renamed game-background-dragons-breath.wav)_ | CC0 1.0 | 2026-06-24 |
 
 <!--
 Example row:

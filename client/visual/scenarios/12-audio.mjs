@@ -22,7 +22,7 @@ export default async function ({ page, assert, shot }) {
       return { ok: true, dur: decoded.duration, bytes: buf.byteLength };
     }, url);
     assert.ok(r.ok, `sfx '${key}' (${url}) is served same-origin (status ${r.status})`);
-    assert.ok(r.dur > 0.02 && r.dur < 5, `sfx '${key}' decodes to a clip (${r.dur}s)`);
+    assert.ok(r.dur > 0.02 && r.dur < 60, `sfx '${key}' decodes to a clip (${r.dur}s)`); // SFX are short; music loops are ~20 s
   }
 
   // On a menu (Welcome or Hangar) the gear is visible; the engine starts on the menu mood once unlocked.

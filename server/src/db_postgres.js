@@ -148,12 +148,16 @@ export async function migrate() {
       gain REAL NOT NULL DEFAULT 1
     );
     CREATE TABLE IF NOT EXISTS sound_map (
-      entity    TEXT NOT NULL,   -- 'ship' | 'weapon'
-      class     TEXT NOT NULL,
-      event     TEXT NOT NULL,   -- ship: 'explode'|'hit'; weapon: 'fire'|'explode'
+      entity    TEXT NOT NULL,   -- 'ship' | 'weapon' | 'scene'
+      class     TEXT NOT NULL,   -- entity's stats.class, or the scene name for music
+      event     TEXT NOT NULL,   -- ship 'explode'/'hit'; weapon 'fire'/'explode'; scene 'music'
       sound_key TEXT NOT NULL REFERENCES sounds(key),
-      PRIMARY KEY (entity, class, event)
+      PRIMARY KEY (entity, class, event, sound_key)
     );
+    -- widen the PK to allow several sounds per (entity,class,event) (e.g. random music tracks per scene);
+    -- idempotent so an existing DB created with the old 3-col PK migrates in place.
+    ALTER TABLE sound_map DROP CONSTRAINT IF EXISTS sound_map_pkey;
+    ALTER TABLE sound_map ADD CONSTRAINT sound_map_pkey PRIMARY KEY (entity, class, event, sound_key);
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
@@ -195,10 +199,11 @@ export async function migrate() {
        ON CONFLICT (key) DO UPDATE SET url = EXCLUDED.url, gain = EXCLUDED.gain`,
       [s.key, s.url, s.gain ?? 1]);
   }
+  // sound_map is fully derived (possibly multiple rows per entity/class/event) → rebuild it each startup.
+  await pool.query('DELETE FROM sound_map');
   for (const m of (SOUND_MAP ?? [])) {
     await pool.query(
-      `INSERT INTO sound_map (entity, class, event, sound_key) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (entity, class, event) DO UPDATE SET sound_key = EXCLUDED.sound_key`,
+      'INSERT INTO sound_map (entity, class, event, sound_key) VALUES ($1, $2, $3, $4)',
       [m.entity, m.class, m.event, m.sound]);
   }
   console.log('[migrate] postgres schema ready');

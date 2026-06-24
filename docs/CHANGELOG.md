@@ -5,6 +5,18 @@
 
 ## 2026-06-24
 
+- **Background music: looping sampled tracks per scene (generative synth removed).** Replaced the
+  generative Web-Audio music (chord progression + arpeggio scheduler) with real **looping mp3 tracks** —
+  one for the **hangar** and one for **combat** (CC0, stereo ~18–20 s). Routed through the same DB map as
+  SFX under a new **`entity: 'scene'`** (`(scene,'hangar','music')` / `(scene,'combat','music')`); the
+  `sound_map` PK widened to `(entity,class,event,sound_key)` so a scene can hold **several tracks played at
+  random** (migration `014_sound_map_multi.js` + postgres; `sound_map` is now rebuilt each startup). The
+  audio engine plays a random track on the music bus, **crossfading** (~0.8 s) on scene change; a
+  single-track scene loops seamlessly, multiple tracks chain at random (no immediate repeat); a track not
+  yet decoded starts via the preload hook. New `setMusicTracks()`; the client passes per-scene lists from
+  the DB map (`tracksFor`). Add more tracks later = drop the mp3, add a `SOUNDS` row + a `SOUND_MAP`
+  `(scene,…, 'music')` row. Verified: client 40, server 50 (+migration 014), assets:check (10 assets),
+  visual 12/12.
 - **SFX routing moved into the DB (sound classes + a sound_map table).** Removed all hardcoded sound
   routing from the client so adding ships/weapons never touches `index.html`
   (`docs/plans/sound-classes-and-mapping.md`). New tables: **`sounds`** (asset registry: `key → url + gain`)

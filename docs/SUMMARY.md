@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-24 (SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+**Updated:** 2026-06-24 (background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -334,10 +334,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the glow layer, accent sparks and ring), so the player's burst is cyan-blue, enemies' orange. Used on
   enemy and player death.
 
-## Audio (procedural + sampled — `client/src/audio.js`)
-**Native Web Audio API, no library.** **Procedural by default** — SFX are **synthesized** (oscillators +
-filtered white noise + gain envelopes) and the background music is **generative** — plus an optional
-**sampled SFX layer** for curated sounds (DECISIONS §22). `createAudio()` builds a lazy `AudioContext` on
+## Audio (synth + sampled — `client/src/audio.js`)
+**Native Web Audio API, no library.** SFX are **synthesized** by default (oscillators + filtered white
+noise + gain envelopes) with an optional **sampled SFX layer** for curated sounds; **background music is
+sampled looping tracks** per scene (the generative synth music was removed). All routing is DB-driven
+(DECISIONS §22). `createAudio()` builds a lazy `AudioContext` on
 the **first user gesture** (browser autoplay policy; `audio.unlock()` on first `pointerdown`/`keydown` + on
 opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `DynamicsCompressor` → output; a
 **polyphony cap** (~28 voices) + the compressor keep machine-gun fire / stacked explosions from clipping.
@@ -363,11 +364,15 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   `fighter`→`blast` (small), `capital`→`shipBoom` (medium/large), `player`→`shipBoom` death + `shipHit` when
   struck. **Enemy fire stays synth** (gated by `isPlayer` at the call site). Sample bytes live on S3 (`sfx/`),
   pulled same-origin into `client/assets/sounds/` — see the asset pipeline.
-- **Music** is generative: sustained pad triads + an arpeggio over a slow **Am–F–C–G** progression
-  (look-ahead scheduler). It **follows game state** via `audio.setScene()` — a driving **combat** mood
-  (faster + a bass pulse) during a live fight, a calmer **hangar** mood (slow, sparse) on
-  menus/overlays/while paused — with a ~1 s duck-and-switch transition (`refreshMusic()` is called at every
-  state change; cheap + idempotent).
+- **Music** is **sampled, looping background tracks** (no more generative synth). Routed through the same
+  DB map under **`entity: 'scene'`** — `(scene, 'hangar', 'music')` / `(scene, 'combat', 'music')` → track
+  key(s). The client passes the per-scene lists to `audio.setMusicTracks(...)`; `audio.setScene()` (via
+  `refreshMusic()`, called at every state change) **crossfades** (~0.8 s) to a **random track** of the new
+  scene — **combat** during a live fight, **hangar** on menus/overlays/while paused. A scene with one track
+  loops it seamlessly; **multiple tracks per scene rotate at random** (no immediate repeat) — add more rows
+  with the same `(scene, …, 'music')` in `SOUND_MAP`. Tracks are stereo mp3s preloaded with the SFX; if a
+  track isn't decoded yet when the scene starts, the preload-completion hook starts it. Volume follows the
+  Music slider/toggle (`musicGain`).
 - **Settings menu — the project's dedicated settings screen.** A ⚙ **gear**
   (`#settings-btn`, **top-left corner, always visible** — incl. during a live fight; the HUD Health block is
   padded right so the gear never overlaps it) opens a modal (`#settings-overlay`). **Opening it doubles as

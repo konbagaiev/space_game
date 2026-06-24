@@ -1,10 +1,10 @@
-// Audio for Vega Sentinels — built on the native Web Audio API (no library). The engine is PROCEDURAL by
-// default: every sound effect is SYNTHESIZED (oscillators + filtered noise + envelopes) and the background
-// music is GENERATIVE (layered pads + an arpeggio over a slow chord progression). On top of that sits an
-// optional SAMPLE layer (preloadSamples/playSample): a weapon can opt into a real recorded sound, which
-// plays as a BufferSource on the SAME sfx bus, with the synth as the fallback when the sample is missing.
-// This matches the project's "procedural, built-in only" ethos while allowing curated SFX where they help
-// (DECISIONS §22). Sample bytes live on S3 (content-hashed, pulled same-origin), never in git.
+// Audio for Vega Sentinels — built on the native Web Audio API (no library). SFX are SYNTHESIZED by default
+// (oscillators + filtered noise + envelopes), with an optional SAMPLE layer (preloadSamples/playSample): a
+// weapon/ship can opt into a real recorded sound, played as a BufferSource on the SAME sfx bus, with the
+// synth as the fallback when the sample is missing. Background MUSIC is sampled too — per-scene looping
+// tracks on the music bus (setMusicTracks/setScene), picked at random; there is no generative music. All
+// routing is DB-driven (sound classes + sound_map; DECISIONS §22). Sample bytes live on S3 (content-hashed,
+// pulled same-origin), never in git.
 //
 // Two layers live here:
 //   1) Pure settings helpers (clamp / load / save / effective gain) — Three.js- AND browser-free, unit-tested.
@@ -59,20 +59,13 @@ export function effectiveGain(s, channel) {
 }
 
 // ---------- Engine (browser-only; lazy) ----------
-// A slow minor chord progression (Am–F–C–G), one chord per bar, voiced as low triads (Hz). The pads sit
-// here, the arpeggio plays an octave up, the combat bass an octave down.
-const PROG = [
-  [110.00, 130.81, 164.81], // Am  (A2 C3 E3)
-  [87.31, 110.00, 130.81],  // F   (F2 A2 C3)
-  [130.81, 164.81, 196.00], // C   (C3 E3 G3)
-  [98.00, 123.47, 146.83],  // G   (G2 B2 D3)
-];
-
 export function createAudio(initialSettings) {
   let settings = { ...AUDIO_DEFAULTS, ...(initialSettings || {}) };
-  let ctx = null, master = null, musicGain = null, sfxGain = null, moodGain = null;
-  let scene = null;              // 'combat' | 'hangar' | null (which music mood is playing)
-  let schedTimer = null, nextNoteTime = 0, step = 0;
+  let ctx = null, master = null, musicGain = null, sfxGain = null;
+  let scene = null;              // 'combat' | 'hangar' | null (which scene's music is playing)
+  let musicTracks = {};          // scene → [sound keys] (set via setMusicTracks; a random one is played)
+  let curMusic = null;           // the playing track { src, gain, key } (or null)
+  let lastMusicKey = null;       // avoid repeating a track back-to-back when a scene has several
   let activeVoices = 0;          // crude polyphony cap so machine-gun fire / swarms can't run away
   let noiseBuf = null;
   const buffers = new Map();     // logical SFX name → decoded AudioBuffer (sample layer; empty ⇒ all-synth)
@@ -88,7 +81,6 @@ export function createAudio(initialSettings) {
     master = ctx.createGain(); master.connect(comp);
     sfxGain = ctx.createGain(); sfxGain.connect(master);
     musicGain = ctx.createGain(); musicGain.connect(master);
-    moodGain = ctx.createGain(); moodGain.gain.value = 0; moodGain.connect(musicGain); // internal scene fade
     applyVolumes(0.01);
     return ctx;
   }
@@ -147,6 +139,7 @@ export function createAudio(initialSettings) {
         buffers.set(name, await ctx.decodeAudioData(data));
       } catch { /* leave unset → synth fallback */ }
     }));
+    if (scene && !curMusic) startMusic(scene); // a scene was set before its track decoded → start it now
   }
 
   // Play a preloaded sample on the sfx bus as a one-shot. Returns false if it couldn't (no buffer / capped),
@@ -263,54 +256,61 @@ export function createAudio(initialSettings) {
     },
   };
 
-  // Mood knobs per scene: combat is faster + has a driving bass; the hangar is calm and sparse.
-  function moodParams() {
-    return scene === 'combat'
-      ? { bpm: 92, bass: true, arpGain: 0.10, padGain: 0.085, arpType: 'sawtooth' }
-      : { bpm: 64, bass: false, arpGain: 0.075, padGain: 0.09, arpType: 'triangle' };
-  }
-  function schedNote(freq, type, t, dur, peak) {
-    const o = ctx.createOscillator(); o.type = type; o.frequency.value = freq;
-    const e = env(moodGain, peak, Math.min(0.3, dur * 0.35), dur, t);
-    o.connect(e.g); o.start(t); o.stop(t + dur * 1.3 + 0.2);
-  }
-  // Look-ahead scheduler (classic Web Audio pattern): queue notes a fraction of a second ahead of the clock.
-  function tick() {
-    if (!ctx || !scene) return;
-    const mp = moodParams();
-    const spb = 60 / mp.bpm;     // seconds per beat
-    const stepDur = spb / 2;     // eighth notes
-    while (nextNoteTime < ctx.currentTime + 0.2) {
-      const bar = Math.floor(step / 8);
-      const chord = PROG[bar % PROG.length];
-      const inBar = step % 8;
-      schedNote(chord[step % chord.length] * 2, mp.arpType, nextNoteTime, stepDur * 0.9, mp.arpGain); // arpeggio
-      if (mp.bass && inBar % 2 === 0) schedNote(chord[0] / 2, 'sine', nextNoteTime, spb * 0.9, 0.13);  // bass
-      if (inBar === 0) for (const f of chord) schedNote(f, 'sine', nextNoteTime, spb * 4, mp.padGain);  // pad swell
-      nextNoteTime += stepDur;
-      step++;
-    }
+  // ---------- Background music: looping sampled tracks per scene (no more generative; DECISIONS §22) ----------
+  // The client feeds the scene→tracks lists (from the DB sound_map) via setMusicTracks. A scene with one
+  // track loops it seamlessly; with several, a random one plays and a fresh random track chains on end.
+  function setMusicTracks(map) { musicTracks = { ...musicTracks, ...(map || {}) }; }
+
+  function pickTrack(sc) {
+    const list = (musicTracks[sc] || []).filter((k) => buffers.has(k)); // only what's decoded so far
+    if (!list.length) return null;
+    if (list.length === 1) return list[0];
+    const fresh = list.filter((k) => k !== lastMusicKey);              // avoid an immediate repeat
+    const pool = fresh.length ? fresh : list;
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
-  // Switch the music mood with a short fade so transitions aren't jarring. null = fade music out.
+  // Start a scene's music (a random track), fading it in. No-op if the buffer isn't decoded yet — the
+  // preload-completion hook starts it once it is. Multi-track scenes chain a new random track on `ended`.
+  function startMusic(sc, fadeIn = 0.8) {
+    if (!ctx) return;
+    const key = pickTrack(sc);
+    if (!key) return;
+    const single = (musicTracks[sc] || []).length <= 1;
+    const src = ctx.createBufferSource(); src.buffer = buffers.get(key); src.loop = single;
+    const g = ctx.createGain();
+    const now = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(1, now + fadeIn);
+    src.connect(g); g.connect(musicGain); src.start(now);
+    lastMusicKey = key;
+    const mine = { src, gain: g, key };
+    curMusic = mine;
+    if (!single) src.onended = () => { if (curMusic === mine && scene === sc) { curMusic = null; startMusic(sc, 0.05); } };
+  }
+
+  // Fade a playing track out and stop it.
+  function stopMusic(m, fadeOut = 0.8) {
+    if (!m || !ctx) return;
+    const now = ctx.currentTime;
+    try {
+      m.src.onended = null;
+      m.gain.gain.cancelScheduledValues(now);
+      m.gain.gain.setValueAtTime(Math.max(0.0001, m.gain.gain.value), now);
+      m.gain.gain.linearRampToValueAtTime(0.0001, now + fadeOut);
+      m.src.stop(now + fadeOut + 0.05);
+    } catch {}
+  }
+
+  // Switch scenes: crossfade the current track out and a random track of the new scene in. null = silence.
   function setScene(next) {
     if (next === scene) return;
     ensure();
     if (!ctx) { scene = next; return; }
-    const prev = scene;
     scene = next;
-    if (next && !schedTimer) { nextNoteTime = ctx.currentTime + 0.1; schedTimer = setInterval(tick, 60); }
-    const now = ctx.currentTime;
-    moodGain.gain.cancelScheduledValues(now);
-    moodGain.gain.setValueAtTime(Math.max(0.0001, moodGain.gain.value), now);
-    if (prev && next) {            // mood↔mood: a quick dip then back up, so the change reads smooth
-      moodGain.gain.linearRampToValueAtTime(0.0001, now + 0.4);
-      moodGain.gain.linearRampToValueAtTime(1, now + 1.2);
-    } else if (next) {             // silence → music
-      moodGain.gain.linearRampToValueAtTime(1, now + 0.8);
-    } else {                       // music → silence
-      moodGain.gain.linearRampToValueAtTime(0.0001, now + 0.8);
-    }
+    const prev = curMusic; curMusic = null;
+    stopMusic(prev, 0.8);
+    if (next) startMusic(next, 0.8);
   }
 
   return {
@@ -334,8 +334,9 @@ export function createAudio(initialSettings) {
     setSettings(next) { settings = { ...settings, ...next }; applyVolumes(); return { ...settings }; },
     getSettings() { return { ...settings }; },
     setScene,
+    setMusicTracks,   // scene → [sound keys] for the looping background music (from the DB sound_map)
     sfx,
-    preloadSamples,   // load weapon SFX samples (call after unlock); missing buffers fall back to synth
+    preloadSamples,   // load SFX + music samples (call after unlock); missing buffers fall back to synth
     isReady() { return !!ctx && ctx.state === 'running'; },
   };
 }

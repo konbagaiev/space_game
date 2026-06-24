@@ -709,6 +709,15 @@ gone; key→url is the `sounds` table (URL changes now need a re-seed/deploy, fi
 into the files). Chosen the normalized tables over a per-entity field (owner's call) so adding ships/weapons
 never edits client code. Full design + schema: `docs/plans/sound-classes-and-mapping.md`.
 
+**Amendment (2026-06-24) — generative music dropped for sampled looping tracks.** The generative synth
+music (chord-progression scheduler) is **removed**; background music is now **real looping mp3 tracks**,
+one per scene, routed through the same `sound_map` under **`entity: 'scene'`** (so it's data-driven like
+SFX, as the owner asked). The map allows **multiple tracks per scene** (PK widened to include `sound_key`)
+played at **random** (no immediate repeat); the engine crossfades on scene change and loops a lone track.
+Why drop generative entirely (owner's call): with curated tracks it added nothing and was dead code. The
+"procedural-first / no asset files" stance in this section is now firmly relaxed for audio — both SFX and
+music are curated CC0 samples on S3, the engine keeps only the synth SFX as a per-sound fallback.
+
 ## 23. Performance quality tiers — High / Balance / Performance
 
 **Decision.** A player-facing **graphics quality** selector (3 tiers) in the settings menu, persisted in

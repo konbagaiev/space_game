@@ -44,9 +44,10 @@ async function seedCatalog() {
   const upSnd = db.prepare(`INSERT INTO sounds (key, url, gain) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET url = excluded.url, gain = excluded.gain`);
   for (const s of (SOUNDS ?? [])) upSnd.run(s.key, s.url, s.gain ?? 1);
-  const upSm = db.prepare(`INSERT INTO sound_map (entity, class, event, sound_key) VALUES (?, ?, ?, ?)
-    ON CONFLICT(entity, class, event) DO UPDATE SET sound_key = excluded.sound_key`);
-  for (const m of (SOUND_MAP ?? [])) upSm.run(m.entity, m.class, m.event, m.sound);
+  // sound_map is fully derived (and may have multiple rows per entity/class/event) → rebuild it each startup.
+  db.exec('DELETE FROM sound_map');
+  const insSm = db.prepare('INSERT INTO sound_map (entity, class, event, sound_key) VALUES (?, ?, ?, ?)');
+  for (const m of (SOUND_MAP ?? [])) insSm.run(m.entity, m.class, m.event, m.sound);
 }
 
 // Give a player their starter ship if they don't own one yet: the default 'player' ship,

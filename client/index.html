@@ -604,12 +604,14 @@ import { loadTier, resolveTier, saveTier } from './src/graphics.js'; // graphics
 // audio.unlock(); samples are fetched once the context is live. See DECISIONS §22.
 const audio = createAudio(loadAudioSettings(window.localStorage));
 let samplesLoaded = false; // one-time guard so the sample preload fires once, after the context unlocks
-// SFX routing is DB-driven (docs/plans/sound-classes-and-mapping.md): /api/sounds gives the registry
-// (key→url) + the class map ((entity,class,event)→key), both filled in bootstrap(). No hardcoded routing.
+// SFX + music routing is DB-driven (docs/plans/sound-classes-and-mapping.md): /api/sounds gives the
+// registry (key→url) + the map ((entity,class,event)→[keys]), both filled in bootstrap(). No hardcoded routing.
 let soundUrls = {};                 // logical key → same-origin url (fed to audio.preloadSamples)
-const soundMap = new Map();         // 'entity|class|event' → sound key
-// Resolve a ship/weapon event to its sound key (or undefined → the engine uses its synth fallback).
-function sfxFor(entity, cls, event) { return cls ? soundMap.get(`${entity}|${cls}|${event}`) : undefined; }
+const soundMap = new Map();         // 'entity|class|event' → [sound keys] (several = e.g. random music tracks)
+// All sound keys mapped to an event (weapon fire, ship explode, scene music, …).
+function tracksFor(entity, cls, event) { return (cls && soundMap.get(`${entity}|${cls}|${event}`)) || []; }
+// One sound key for an event (the first mapped), or undefined → the engine uses its synth fallback.
+function sfxFor(entity, cls, event) { return tracksFor(entity, cls, event)[0]; }
 
 // Graphics quality tier — read BEFORE the renderer (antialias is a constructor arg). `isTouch` is
 // defined later (used by the input layer), so detect touch locally here for the first-run default.
@@ -3506,9 +3508,10 @@ async function bootstrap() {
       fetchJson('/api/weapons'), fetchJson('/api/components'),
       fetchJson('/api/ships'), fetchJson(levelUrl), fetchJson('/api/sounds').catch(() => ({ sounds: [], map: [] })),
     ]);
-    // SFX catalog → preload registry + the class routing map (sfxFor). A failed fetch ⇒ all-synth.
+    // Sound catalog → preload registry + the routing map (sfxFor/tracksFor). A failed fetch ⇒ all-synth/silent.
     soundUrls = Object.fromEntries((sounds.sounds || []).map((s) => [s.key, s.url]));
-    for (const m of (sounds.map || [])) soundMap.set(`${m.entity}|${m.class}|${m.event}`, m.sound);
+    for (const m of (sounds.map || [])) { const k = `${m.entity}|${m.class}|${m.event}`; (soundMap.get(k) || soundMap.set(k, []).get(k)).push(m.sound); }
+    audio.setMusicTracks({ hangar: tracksFor('scene', 'hangar', 'music'), combat: tracksFor('scene', 'combat', 'music') }); // looping bg music per scene
     if (samplesLoaded) audio.preloadSamples(soundUrls); // a gesture already unlocked the ctx before bootstrap finished
     for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, ...w.stats });
     for (const c of components) CATALOG.components.set(c.id, c);

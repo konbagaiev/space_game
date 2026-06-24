@@ -143,11 +143,15 @@ export const SOUNDS = [
   { key: 'shipHit',  url: 'assets/sounds/shipHit.8b58950e.mp3' },
   { key: 'shipBoom', url: 'assets/sounds/shipBoom.dcd028da.mp3' },
   { key: 'blast',    url: 'assets/sounds/blast.fcd21671.mp3' },
+  // Background music (looping, stereo). Scenes pick a random track via sound_map (entity 'scene').
+  { key: 'music_hangar_1', url: 'assets/sounds/music_hangar_1.5c9e57e1.mp3' },
+  { key: 'music_combat_1', url: 'assets/sounds/music_combat_1.33e682a2.mp3' },
 ];
 
 // --- sound_map: routing. (entity, class, event) -> sound key. `entity` is 'ship' | 'weapon'; `class` is
 // the entity's stats.class; `event` is ship 'explode'/'hit' or weapon 'fire'/'explode' (rocket detonation).
-// The client resolves at runtime (sfxFor) — NO hardcoded routing. Unmapped (entity,class,event) -> synth.
+// The client resolves at runtime (sfxFor / tracksFor) — NO hardcoded routing. Unmapped -> synth/silent.
+// Multiple rows may share (entity,class,event) — e.g. several music tracks per scene, played at random.
 // Enemy weapon FIRE is never sampled (gated by isPlayer at the call site), so only the rocket 'explode'
 // row affects enemies (their rocket detonation = blast, matching the old hardcoded behavior).
 export const SOUND_MAP = [
@@ -159,6 +163,9 @@ export const SOUND_MAP = [
   { entity: 'ship',   class: 'capital', event: 'explode', sound: 'shipBoom' },// medium/large ships
   { entity: 'ship',   class: 'player',  event: 'explode', sound: 'shipBoom' },
   { entity: 'ship',   class: 'player',  event: 'hit',     sound: 'shipHit' },
+  // Background music per scene (add more rows with the same (scene,class,'music') for random rotation).
+  { entity: 'scene',  class: 'hangar',  event: 'music',   sound: 'music_hangar_1' },
+  { entity: 'scene',  class: 'combat',  event: 'music',   sound: 'music_combat_1' },
 ];
 
 // fire-group presets (a group can carry a player key and/or an enemy AI rule; ships use what fits)
