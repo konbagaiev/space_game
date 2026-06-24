@@ -5,6 +5,17 @@
 
 ## 2026-06-23
 
+- **Sampled SFX: rocket launch, cannon, player-ship hit, ship explosions (+ blast).** Processed new CC0
+  source clips (Freesound; ffmpeg → mono mp3, content-hashed, pushed to S3 `sfx/`), all routed through the
+  sample layer with a synth fallback: **`rocket`** — launch whoosh (trimmed 2.3 s) on the player's rockets
+  (ids 3/8, `stats.sfx`); **`cannon`** — on the `Heavy cannon` (id 6, `stats.sfx`); **`shipHit`** — kinetic
+  impact when the **player's** ship is struck (`audio.sfx.hit('shipHit')`; enemy hits stay synth);
+  **`shipBoom`** — death boom for **medium/large** ships (`sizeScale ≥ 2`) **and the player's destruction**
+  (trimmed 2 s, pitched down for the largest); **`blast`** (first 0.7 s of blast.flac) — **rocket
+  detonation + small-ship** death (`sizeScale < 2`). Added `kind` sample support to `sfx.rocket/hit/
+  explosion` in `audio.js` (were synth-only); registered the hashed urls in `sfx_manifest.js`. Verified:
+  `assets:check` (all sfx on S3) + the `12-audio` visual scenario decodes every clip. **All sounds are
+  CC0 1.0** (downloaded via the Freesound CC0 filter), recorded in `CREDITS.md`.
 - **Settings modal fits on phones (no overflow).** Fixed the modal spilling off narrow screens: the
   volume **sliders were fixed-width (`flex: 0 0 210px`, shrink 0)** so they ran off the right edge —
   now they're **shrinkable + capped** (`flex: 1 1 90px; min-width:0; max-width:180px`) and the labels

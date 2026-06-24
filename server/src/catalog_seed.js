@@ -85,7 +85,7 @@ export const WEAPONS = [
     id: 3, name: 'Rocket (homing)', type: 'rocket', price: 600, stats: { // player starter rocket: cheap to rebuy
       power: 60, accel: 10, turnRate: 1.0, launchSpeed: 12, maxRange: 150, health: 10,
       seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 3.2, blastRadius: 5, blastVisual: 4.5,
-      fireCooldown: 5, weight: 8, projectileColor: 0xffaa44
+      fireCooldown: 5, weight: 8, projectileColor: 0xffaa44, sfx: 'rocket'
     }
   },
   {
@@ -103,7 +103,7 @@ export const WEAPONS = [
   // --- Player shop ladder weapons (docs/plans/catalog-economy.md). Trade-offs: damage ↔ fire-rate ↔ range ↔ weight.
   {
     id: 6, name: 'Heavy cannon', type: 'bullet', price: 2000, stats: { // hard-hitting, slow fire, long range
-      power: 35, projectileSpeed: 65, maxRange: 140, fireCooldown: 0.6, weight: 10, projectileColor: 0xff8a3c
+      power: 35, projectileSpeed: 65, maxRange: 140, fireCooldown: 0.6, weight: 10, projectileColor: 0xff8a3c, sfx: 'cannon'
     }
   },
   {
@@ -115,7 +115,7 @@ export const WEAPONS = [
     id: 8, name: 'Heavy rocket', type: 'rocket', price: 2600, stats: { // homing: high damage, slow reload, big blast
       power: 90, accel: 9, turnRate: 0.8, launchSpeed: 12, maxRange: 180, health: 20,
       seekHalfAngle: 50 * Math.PI / 180, detonateRadius: 3.5, blastRadius: 7, blastVisual: 6,
-      fireCooldown: 7, weight: 12, projectileColor: 0xff7a3c
+      fireCooldown: 7, weight: 12, projectileColor: 0xff7a3c, sfx: 'rocket'
     }
   },
   // Enemy weapon for the pirate gunner (side missions) + the upgraded boss: a long-range, rapid-fire

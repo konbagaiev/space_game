@@ -1505,7 +1505,7 @@ function detonateRocket(r, dealDamage = true) {
     }
   }
   spawnExplosion(r.obj.position, r.blastVis);
-  audio.sfx.explosion(0.7); // rocket blast
+  audio.sfx.explosion(0.7, 'blast'); // rocket blast (sampled)
   scene.remove(r.obj);
   r.obj.children[0].material.dispose();
 }
@@ -2178,7 +2178,7 @@ function update(dt) {
       }
     } else {
       if (player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
-        player.hp -= b.damage; hit = true; audio.sfx.hit();
+        player.hp -= b.damage; hit = true; audio.sfx.hit('shipHit'); // sampled impact when OUR ship is struck
       }
     }
 
@@ -2313,7 +2313,8 @@ function update(dt) {
       // colorful death burst: sized to the ship, tinted by its engine's exhaust color
       const e = enemies[i];
       spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
-      audio.sfx.explosion(e.sizeScale || 1);
+      audio.sfx.explosion(e.sizeScale || 1, (e.sizeScale || 1) >= 2 ? 'shipBoom' : 'blast'); // large ships → shipBoom, small ships → blast
+
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
       kills++;                  // count (drives level thresholds + HUD)
@@ -2327,7 +2328,7 @@ function update(dt) {
   if (player.hp <= 0 && player.alive) {
     player.alive = false;
     spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
-    audio.sfx.explosion(1.5); audio.sfx.jingle(false); refreshMusic(); // boom + loss sting, back to menu music
+    audio.sfx.explosion(1.5, 'shipBoom'); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
     track('player_death', { level: currentLevelLabel(), kills }); // funnel: where players die
     bankRun(); // bank the earned credits into the account balance + record the game
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');

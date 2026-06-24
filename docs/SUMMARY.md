@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-23 (sampled SFX layer + audio asset pipeline — kinetic guns use a real sample; `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+**Updated:** 2026-06-24 (sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -341,18 +341,25 @@ the **first user gesture** (browser autoplay policy; `audio.unlock()` on first `
 opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `DynamicsCompressor` → output; a
 **polyphony cap** (~28 voices) + the compressor keep machine-gun fire / stacked explosions from clipping.
 - **SFX** (`audio.sfx.*`, hooked in `index.html`): **shoot(kind?)** (player gun), **enemyShoot** (lower,
-  low-passed, **distance-attenuated** so a swarm doesn't drown the player), **hit** (bullet connects),
-  **rocket** (launch whoosh), **explosion(size)** (ship death — sized to `sizeScale`; rocket detonation
-  uses a smaller one), **uiClick** (every `<button>` via a capturing handler), and a **jingle** (ascending
-  major on victory / descending minor on death).
+  low-passed, **distance-attenuated** so a swarm doesn't drown the player), **hit(kind?)** (bullet connects;
+  a `kind` plays a sample — used for the player-ship impact), **rocket** (launch whoosh),
+  **explosion(size, kind?)** (ship death — sized to `sizeScale`; a `kind` plays a sample — `shipBoom` for
+  medium/large ships, `blast` for small ships + rocket detonation), **uiClick** (every `<button>` via a
+  capturing handler), and a **jingle** (ascending major on victory / descending minor on death).
 - **Sampled SFX layer.** `audio.preloadSamples(map)` fetches + decodes content-hashed mp3s into a buffer
   cache (called once after unlock with `SFX_SOURCES` from `client/src/sfx_manifest.js`); `audio.sfx.shoot('kinetic')`
   plays that sample as a `BufferSource` on `sfxGain` with a subtle per-shot pitch jitter (so rapid fire
   reusing one clip isn't a robotic loop), **falling back to the synth zap** if the buffer is missing.
   A weapon opts in via **`stats.sfx: '<key>'`** in `catalog_seed.js` (flows to the runtime weapon as
-  `w.sfx`, read at the fire site in `fireMount`). Currently **`Basic kinetic` (1), `Machine Gun` (5),
-  `Heavy Machine Gun` (7)** use the **`kinetic`** sample (a CC0 glock shot). Enemy fire stays synthesized.
-  Sample bytes live on S3 (`sfx/`), pulled same-origin into `client/assets/sounds/` — see the asset pipeline.
+  `w.sfx`, read at the fire site in `fireMount`). Samples beyond weapon fire are passed directly to the
+  matching `sfx.*` call. Current sampled sounds (`SFX_SOURCES`): **`kinetic`** (glock shot) on `Basic
+  kinetic` (1) / `Machine Gun` (5) / `Heavy Machine Gun` (7); **`rocket`** (launch) on player rockets;
+  **`cannon`** on the **`Heavy cannon` (6)**; **`shipHit`** — kinetic impact on the **player's** ship
+  (`audio.sfx.hit('shipHit')`; enemy hits stay synth); **`shipBoom`** — medium/large ship death
+  (`sizeScale ≥ 2` → `audio.sfx.explosion(size, 'shipBoom')`, trimmed to 2 s) **and the player's own
+  death** (also `shipBoom`); **`blast`** (first 0.7 s of blast.flac) — **rocket detonation + small ships**
+  (`sizeScale < 2`, `audio.sfx.explosion(size, 'blast')`). Enemy fire stays synthesized. Sample bytes live
+  on S3 (`sfx/`), pulled same-origin into `client/assets/sounds/` — see the asset pipeline.
 - **Music** is generative: sustained pad triads + an arpeggio over a slow **Am–F–C–G** progression
   (look-ahead scheduler). It **follows game state** via `audio.setScene()` — a driving **combat** mood
   (faster + a bass pulse) during a live fight, a calmer **hangar** mood (slow, sparse) on

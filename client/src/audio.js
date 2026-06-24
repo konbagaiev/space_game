@@ -192,8 +192,10 @@ export function createAudio(initialSettings) {
       const e = env(sfxGain, 0.09 * atten, 0.005, 0.1, t);
       o.connect(lp); lp.connect(e.g); o.start(t); voice(o, e.end);
     },
-    // A bullet connects: a short metallic tick.
-    hit() {
+    // A bullet connects: a short metallic tick. With a `kind` (e.g. 'shipHit' when the PLAYER's ship is
+    // struck) it plays that preloaded sample with a tiny pitch jitter; no kind / not loaded → the synth tick.
+    hit(kind) {
+      if (kind && playSample(kind, { rate: 0.97 + Math.random() * 0.06 })) return;
       if (!sfxPlayable()) return;
       const t = ctx.currentTime;
       const n = noise();
@@ -201,8 +203,10 @@ export function createAudio(initialSettings) {
       const e = env(sfxGain, 0.11, 0.002, 0.05, t);
       n.connect(bp); bp.connect(e.g); n.start(t); voice(n, e.end);
     },
-    // Rocket launch: a rising filtered whoosh plus a low body.
-    rocket() {
+    // Rocket launch. With a `kind` (a rocket weapon's stats.sfx) it plays that preloaded sample (tiny pitch
+    // jitter); otherwise — or if the sample isn't loaded — the synthesized rising whoosh + low body below.
+    rocket(kind) {
+      if (kind && playSample(kind, { rate: 0.98 + Math.random() * 0.04 })) return;
       if (!sfxPlayable()) return;
       const t = ctx.currentTime;
       const n = noise();
@@ -216,8 +220,11 @@ export function createAudio(initialSettings) {
       const e2 = env(sfxGain, 0.12, 0.01, 0.3, t);
       o.connect(e2.g); o.start(t); voice(o, e2.end);
     },
-    // A ship dies: a filtered noise boom sized to the ship + a low thump.
-    explosion(size = 1) {
+    // A ship dies: a filtered noise boom sized to the ship + a low thump. With a `kind` (e.g. 'shipBoom'
+    // for medium/large ships) it plays that preloaded sample — pitched down a touch for bigger ships so one
+    // clip covers the range; no kind / not loaded → the synth boom below.
+    explosion(size = 1, kind) {
+      if (kind && playSample(kind, { rate: size >= 3 ? 0.9 : 1 })) return;
       if (!sfxPlayable()) return;
       size = Math.max(0.5, Math.min(3, size));
       const t = ctx.currentTime;
