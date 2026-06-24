@@ -39,6 +39,21 @@ export const PRESET = {
   hangar: { simplifyRatio: 1.0, simplifyError: 0.0, textureSize: 1024, compress: 'meshopt', textureCompress: 'webp', instance: true },
 };
 
+// Per-source preset overrides, keyed by the source base name (file minus .glb). Merged over PRESET[kind]
+// in assets:build. Use when one model needs different treatment than the default — e.g. the player ship
+// is a richly-TEXTURED model (not a flat low-poly pack), so its combat build KEEPS the textures but
+// shrinks them hard (128px) and meshopt-compresses the geometry (the combat loader has MeshoptDecoder
+// wired). That trades the macOS Quick Look preview (meshopt isn't QL-readable) for a ~370 KB textured
+// combat model — worth it here. See docs/plans/ship-model-pipeline.md.
+export const PRESET_OVERRIDES = {
+  player: {
+    combat: { textureSize: 128, compress: 'meshopt', textureCompress: 'webp' }, // keep paint/decals, ~370 KB
+    hangar: { textureSize: 512 },                                               // showcase detail, ~1.7 MB on CDN
+  },
+};
+// Merge the base preset for `kind` with any override for this source base name.
+export const presetFor = (base, kind) => ({ ...PRESET[kind], ...(PRESET_OVERRIDES[base]?.[kind]) });
+
 // A run-on-S3 URL for a combat/hangar object. Combat is served same-origin (relative path); hangar via CDN.
 export const combatPath = (file) => `assets/ships/${file}`;
 export const hangarUrl = (file) => `${CDN}/${PREFIX.hangar}${file}`;

@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-24 ("Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+**Updated:** 2026-06-24 (player ship = real textured "Air & Space Vessel" model (downscaled textures → player_combat/_hangar, sizeScale 1.1); tier-gated env-map reflections on ships; muzzle/exhaust spawn from the model's real nose/tail bounds; enemy weapon fire silenced (rocket detonations kept); "Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -100,11 +100,23 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `applyShipModel`. Center/scale/orientation are **runtime normalizations** (the asset's own transform
   isn't trusted), so a wrong-way model is fixed with `modelYaw` in the seed, not by re-exporting. The
   `basic enemy ship` uses this (`modelYaw: Math.PI`; its `enemy_1` export faced `-Z`), as do the
-  rocketeer, medium and first boss (the `enemy_2/3/4` exports share that `-Z` convention). An optional
+  rocketeer, medium and first boss (the `enemy_2/3/4` exports share that `-Z` convention); the **player
+  ship** (`player_combat`) uses `modelYaw: 0`. An optional
   **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
-  lazy-loaded; the basic enemy has one — `enemy_1_hangar`). See `client/assets/README.md` + `CREDITS.md`.
+  lazy-loaded; the basic enemy + the player have one — `enemy_1_hangar` / `player_hangar`). See
+  `client/assets/README.md` + `CREDITS.md`.
+  - **Player ship** = the real **"Air & Space Vessel"** model (Raven, CC-BY): a light-grey/red textured
+    fighter, **`sizeScale: 1.1`**. Unlike the flat low-poly enemy pack, it **keeps its textures** (paint,
+    decals, markings) — `assets:build` just **downscales** them via the `player` preset override
+    (`PRESET_OVERRIDES` in `assets-config.mjs`): combat `player_combat` ~371 KB (128px textures + meshopt
+    geometry, same-origin — loads through the wired meshopt decoder) + hangar `player_hangar` ~1.7 MB (512px,
+    CloudFront, lazy-loaded). The in-git `player.glb` primitive stays only as the pre-load fallback. Metal
+    surfaces shine via the env map (see Visuals).
 - **Asset pipeline** (`docs/plans/ship-model-pipeline.md` + `audio-sample-pipeline.md`): repo-root `npm run
-  assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb) / `assets:push`
+  assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb per `assets-src/*.glb`;
+  default `PRESET.combat`/`hangar` in `assets-config.mjs`, with optional per-source **`PRESET_OVERRIDES`**
+  merged by `presetFor` — the **player** model overrides combat to keep its textures, downscaled to 128px +
+  meshopt, so a richly-textured ship stays ~371 KB) / `assets:push`
   (→ S3 `vega-sentinels-assets`: glbs to `ships-combat/`+`ships-hangar/`, **SFX mp3s to `sfx/`**, sources to
   `source/`) / `assets:pull` (S3 → `client/assets/ships/` **+ `client/assets/sounds/`**) / `assets:check`
   (drift-check: every pipeline `model_url*` in the seed **and every `SOUNDS` url in `catalog_seed.js`**
@@ -289,6 +301,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   distant rocks read as a faraway field you can fly out into. Flying past them gives the sense of speed.
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the planet and moons).
+- **Ship reflections (env map).** The combat scene sets `scene.environment` to a PMREM of THREE's
+  `RoomEnvironment` (built once at startup), so metallic / low-roughness ship surfaces show real
+  reflections (the player ship's painted metal, enemy hulls) — the "shine" a single directional light
+  can't give. **Tier-gated** (`gfx.envMap` in `graphics.js`): on for High/Balance, **off on Performance**
+  (one prefiltered-cubemap lookup per lit fragment — spared on the weakest phones). Sky scene is unaffected.
 - The planet and moons have minimal **procedural textures** (baked canvas maps, no asset files):
   `makePlanetTexture(ocean)` — an ocean world with depth variation and soft clouds; `makeMoonTexture` —
   craters (darker floor + lighter rim) plus faint maria, per moon from its base color. The bodies
@@ -341,6 +358,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
   (player and enemies), via the shared `emitExhaust` — particle speed = ship speed + ejection backward
   along the nozzle, colored by the engine's `exhaust.color`, emitted while thrusting forward.
+- **Muzzle / exhaust spawn from the model's real bounds.** Bullets/rockets leave the **nose** and exhaust
+  the **engines** because `applyShipModel` caches each glb's forward/back extent (`mesh.userData.noseZ` /
+  `tailZ`, group-local); `fireMount` + `emitExhaust` spawn there × the mesh's current world scale (so it
+  tracks spawn-grow). Replaces the old fixed `fwd*3` / `fwd*-2.6` offsets that floated in empty space ahead
+  of a wingspan-dominant model (the primitive fallback keeps the old ±1.6 values).
 - **Ship destruction** (`spawnShipExplosion`): a destroyed ship bursts in a layered fireball
   (white-hot flash → exhaust-colored glow → orange → red cloud), a radial spray of sparks, and an
   expanding shockwave ring — much louder than the hit micro-flash, and slow (~3.75 s). **Sized to the
@@ -357,7 +379,8 @@ the **first user gesture** (browser autoplay policy; `audio.unlock()` on first `
 opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `DynamicsCompressor` → output; a
 **polyphony cap** (~28 voices) + the compressor keep machine-gun fire / stacked explosions from clipping.
 - **SFX** (`audio.sfx.*`, hooked in `index.html`): **shoot(kind?)** (player gun), **enemyShoot** (lower,
-  low-passed, **distance-attenuated** so a swarm doesn't drown the player), **hit(kind?)** (bullet connects;
+  low-passed, distance-attenuated — **defined but no longer called**: enemy fire is silent, see below),
+  **hit(kind?)** (bullet connects;
   a `kind` plays a sample — used for the player-ship impact), **rocket** (launch whoosh),
   **explosion(size, kind?)** (ship death — sized to `sizeScale`; a `kind` plays a sample — `shipBoom` for
   medium/large ships, `blast` for small ships + rocket detonation), **uiClick** (every `<button>` via a
@@ -376,7 +399,9 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   client edit. Current map: weapon `kinetic`→`kinetic` (glock) on guns 1/5/7, `cannon`→`cannon` on Heavy
   cannon (6), `rocket`→`rocket` launch on player rockets (3/8) + `rocket` detonation→`blast`; ship
   `fighter`→`blast` (small), `capital`→`shipBoom` (medium/large), `player`→`shipBoom` death + `shipHit` when
-  struck. **Enemy fire stays synth** (gated by `isPlayer` at the call site). Sample bytes live on S3 (`sfx/`),
+  struck. **Enemy fire is silent** — both bullet fire and rocket-launch SFX are gated to `isPlayer` at the
+  call site (`fireMount`), so only the player's own shots are audible; **enemy rocket *detonations* still
+  play** (the blast SFX is ungated). Sample bytes live on S3 (`sfx/`),
   pulled same-origin into `client/assets/sounds/` — see the asset pipeline.
 - **Music** is **sampled, looping background tracks** (no more generative synth). Routed through the same
   DB map under **`entity: 'scene'`** — `(scene, 'hangar', 'music')` / `(scene, 'combat', 'music')` → track

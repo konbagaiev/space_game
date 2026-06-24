@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DIR, PRESET, combatPath, hangarUrl } from './assets-config.mjs';
+import { DIR, presetFor, combatPath, hangarUrl } from './assets-config.mjs';
 
 const GLTF = ['--yes', '@gltf-transform/cli@^4']; // npx package (downloaded on first use)
 
@@ -49,8 +49,8 @@ function main() {
     const tmpCombat = path.join(DIR.dist, `${base}_combat.tmp.glb`);
     const tmpHangar = path.join(DIR.dist, `${base}_hangar.tmp.glb`);
     console.log(`\n[build] ${src}`);
-    optimize(input, tmpCombat, PRESET.combat);
-    optimize(input, tmpHangar, PRESET.hangar);
+    optimize(input, tmpCombat, presetFor(base, 'combat')); // base preset + any per-model override
+    optimize(input, tmpHangar, presetFor(base, 'hangar'));
     const combatFile = hashRename(tmpCombat, `${base}_combat`, DIR.dist);
     const hangarFile = hashRename(tmpHangar, `${base}_hangar`, DIR.dist);
     const kb = (f) => Math.round(fs.statSync(path.join(DIR.dist, f)).size / 1024);

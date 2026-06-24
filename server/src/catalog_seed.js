@@ -183,9 +183,12 @@ const ROCKET = { key: 'KeyF', ai: { range: 80, aimTol: 0.40 } };
 // has a high-poly model yet (all `modelUrlHigh` null).
 export const SHIPS = [
   {
-    name: 'Basic player ship', type: 'player', modelUrl: 'assets/ships/player.glb',
+    name: 'Basic player ship', type: 'player',
+    modelUrl: 'assets/ships/player_combat.f7171045.glb',
+    modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb',
     components: { hull: 1, engine: 5, thruster: 8 }, stats: {
-      role: 'player', class: 'player', color: 0x4d8bff, sizeScale: 1, nameKey: 'ship.player_basic.name',
+      role: 'player', class: 'player', color: 0x4d8bff, sizeScale: 1.1, nameKey: 'ship.player_basic.name',
+      modelYaw: 0, // "Air & Space Vessel" by Raven (CC-BY); orientation set via visual check (nose leads travel)
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 1, group: 'gun', offset: 0, delay: 0 },

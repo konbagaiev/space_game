@@ -5,6 +5,30 @@
 
 ## 2026-06-24
 
+- **Real player ship model ("Air & Space Vessel" by Raven, CC-BY 4.0) — textured.** Replaced the
+  placeholder `player.glb` primitive with a real fighter, keeping its **real paint/decals** (red side pods,
+  white belly stripe, markings). The Sketchfab source was 48.7 MB (~89 high-res PBR textures); a **new
+  per-model preset override** (`PRESET_OVERRIDES.player` in `scripts/assets-config.mjs`, merged by
+  `presetFor`) **downscales the textures** + meshopt-compresses geometry → **combat `player_combat` ~371 KB**
+  (128px, same-origin; loads via the meshopt decoder already wired) + **hangar `player_hangar` ~1.7 MB**
+  (512px, CloudFront, lazy-loaded). Enemy builds are untouched (their hashes didn't change). Wired into
+  `catalog_seed.js` (`modelUrl`/`modelUrlHigh`, `modelYaw: 0`, `sizeScale: 1.1` = +10%). Pushed to S3;
+  `assets:check` green (15 assets). Credited in `CREDITS.md` (CC-BY attribution verbatim).
+- **Ship reflections via a tier-gated environment map.** Added a PMREM of THREE's `RoomEnvironment` as
+  `scene.environment` (combat scene) so metallic/low-roughness ship surfaces show real reflections — the
+  "shine" a single directional light can't give. New `envMap` knob in `graphics.js` tiers: **on for
+  High/Balance, off for Performance** (one prefiltered-cubemap lookup per lit fragment; spared on the
+  weakest phones). Built once at startup, no per-frame CPU cost.
+- **Muzzle flashes + exhaust now spawn at the model's real nose/engines.** Previously hardcoded offsets
+  (`fwd*3` / `fwd*-2.6`) tuned to the old primitive left bullets/exhaust floating in empty space ahead of
+  the new (wingspan-dominant) model — obvious with the machine gun. `applyShipModel` now caches the glb's
+  forward/back bounds (`userData.noseZ/tailZ`); `fireMount` + `emitExhaust` spawn from there, scaled by the
+  mesh's current world scale (so it tracks spawn-grow too). Auto-correct for any future model. Also fixed:
+  the **player mesh never applied `sizeScale`** (only enemies did), so the +10% now actually shows.
+- **Silenced enemy weapon fire.** Enemy bullet shots and rocket-launch whooshes no longer play any sound
+  (both gated to `isPlayer` in `fireMount`, `client/index.html`) — only the player's own shots are
+  audible now. **Enemy rocket *detonations* are kept** (the blast SFX stays ungated). `enemyShoot` remains
+  defined in `audio.js` but is no longer called.
 - **"Reset my progress" in the settings menu (slide-to-confirm → confirm dialog).** Players can now wipe
   their own progress from the settings modal: a **slide-to-confirm** control (drag the knob left→right to
   arm — a partial slide snaps back) opens a **confirm/cancel** dialog; confirming POSTs the new

@@ -7,10 +7,13 @@ export const GRAPHICS_DEFAULT = 'high';
 // Each tier's knobs. pixelRatioCap + antialias drive fragment cost (the mobile bottleneck — fill rate,
 // not draw calls/triangles); starScale/particleScale thin the additive overdraw. Starting points —
 // tune on a real low-end phone.
+// `envMap` enables a PMREM environment so metallic ship surfaces show real reflections (premium look,
+// one extra prefiltered-cubemap lookup per fragment on lit materials) — off on Performance to spare the
+// weakest phones (the fill-rate-bound case; see DECISIONS §23).
 export const TIERS = {
-  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0 },
-  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6 },
-  performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4 },
+  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true },
+  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true },
+  performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false },
 };
 export const TIER_ORDER = ['high', 'balance', 'performance'];
 

@@ -17,6 +17,7 @@ asset page is also handy, in case the author later changes the terms).
 | sounds/music_hangar_1.\<hash\>.mp3 (hangar background loop) | Freesound (CC0 filter) | _id not retained (renamed menu-background-sound-1.wav)_ | CC0 1.0 | 2026-06-24 |
 | sounds/music_combat_1.\<hash\>.mp3 (combat background loop) | Freesound (CC0 filter) | _id not retained (renamed game-background-dragons-breath.wav)_ | CC0 1.0 | 2026-06-24 |
 | ships/enemy_1–4 (combat + hangar `.glb`, derived from `_source/lowpoly_spaceships.glb`) — basic enemy, rocketeer, medium, first boss | Pedram Ashoori | https://skfb.ly/6pxFX | CC-BY 4.0 | 2026-06-24 |
+| ships/player_combat + player_hangar `.glb` (player ship, textures downscaled) | Raven | https://skfb.ly/otR6F | CC-BY 4.0 | 2026-06-24 |
 
 <!--
 Example row:
@@ -33,8 +34,21 @@ combat/hangar `.glb`s are decimated/compressed derivatives of that source (`asse
 **Required attribution (use verbatim, e.g. in an in-game credits screen):**
 
 > "LowPoly Spaceships" (https://skfb.ly/6pxFX) by Pedram Ashoori is licensed under Creative Commons
-> Attribution (http://creativecommons.org/licenses/by/4.0/). The older primitive fallbacks (`player.glb`, `fighter.glb`, `rocketeer.glb`,
-`heavy.glb`, `boss.glb`, `Spaceship*.glb`) are placeholder geometry, not from this pack.
+> Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+The **player ship** (`player_combat`/`player_hangar`) is **"Air & Space Vessel"** by **Raven** (Sketchfab,
+**CC-BY 4.0** — attribution required, so this entry must stay). The source was 48 MB (~89 high-res PBR
+textures); `assets:build` (with the `player` preset override) **downscales the textures** (128px combat /
+512px hangar) + meshopt-compresses the geometry → ~370 KB combat / ~1.7 MB hangar, keeping the real
+paint/decals.
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "Air & Space Vessel" (https://skfb.ly/otR6F) by Raven is licensed under Creative Commons
+> Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+The older primitive fallbacks (`player.glb`, `fighter.glb`, `rocketeer.glb`,
+`heavy.glb`, `boss.glb`, `Spaceship*.glb`) are placeholder geometry, not from either pack.
 
 **CC-BY housekeeping:** if a model from this pack is ever removed and no longer used by any ship, drop
 its row here too (don't keep stale attribution); if a new model from a new source is added, add its row.

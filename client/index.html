@@ -652,6 +652,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
@@ -707,6 +708,17 @@ const renderer = new THREE.WebGLRenderer({ antialias: gfx.antialias });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.info.autoReset = false; // count load across both render passes
+
+// Environment map for ship reflections (tier-gated — off on Performance; see graphics.js / DECISIONS §23).
+// A PMREM of THREE's RoomEnvironment gives metallic / low-roughness surfaces (the player ship's chrome &
+// painted metal, enemy hulls) real reflections — the "shine" a single directional light can't provide.
+// Applied to the combat `scene` only; the sky scene keeps its own flat backdrop look. Built once at
+// startup (the room is static), so there's no per-frame cost beyond the shader's cubemap lookup.
+if (gfx.envMap) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+}
 document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 900);
@@ -1374,6 +1386,13 @@ function applyShipModel(group, spec, color) {
       c.material?.dispose?.();
     }
     host.add(pivot);
+    // Cache the model's real forward/back extent (group-local units) so muzzle flashes + exhaust spawn AT
+    // the nose / engines — not at a fixed offset tuned for the old primitive. This model is wingspan-
+    // dominant (the longest axis we normalize is the wingspan), so its nose sits closer in than a fixed
+    // forward offset, which left bullets/exhaust floating in empty space.
+    const pbox = new THREE.Box3().setFromObject(pivot);
+    group.userData.noseZ = pbox.max.z; // forward (+Z) tip
+    group.userData.tailZ = pbox.min.z; // rear (−Z) tip
   }, undefined, (err) => console.warn('Ship model failed to load, keeping primitive:', url, err));
 }
 
@@ -1400,6 +1419,8 @@ function makeShip(color, model = null) {
   bank.add(glow);
   g.position.y = 0.6;
   g.scale.setScalar(1.8); // larger - the arena is far away, otherwise ships look tiny
+  g.userData.noseZ = 1.6;  // muzzle/forward spawn (group-local: primitive cone nose) — replaced by the
+  g.userData.tailZ = -1.6; // exhaust/rear spawn (primitive engine glow) — real glb bounds in applyShipModel
   if (model) applyShipModel(g, model, color); // optionally replace the primitive with a .glb
   return g;
 }
@@ -1518,9 +1539,11 @@ function spawnTrail(pos, fwd, shipVel, exhaust) {
 
 // Emit one exhaust puff from a ship's nozzle. Shared by every ship (player and enemies):
 // the nozzle sits behind the hull (scaled by the ship's size) with a little width spread.
-function emitExhaust(shipPos, fwd, shipVel, exhaust, sizeScale = 1) {
+function emitExhaust(mesh, fwd, shipVel, exhaust) {
   if (gfx.particleScale < 1 && Math.random() > gfx.particleScale) return; // thin the trail on lower tiers (per-frame overdraw)
-  const pos = shipPos.clone().addScaledVector(fwd, -2.6 * sizeScale);
+  const sc = mesh.scale.x || 1;                          // world scale (incl. spawn-grow + sizeScale)
+  const back = (mesh.userData.tailZ ?? -1.6) * sc;       // spawn at the model's actual tail (engines)
+  const pos = mesh.position.clone().addScaledVector(fwd, back);
   pos.x += (Math.random() - 0.5) * exhaust.spread;
   pos.z += (Math.random() - 0.5) * exhaust.spread;
   spawnTrail(pos, fwd, shipVel, exhaust);
@@ -1651,6 +1674,7 @@ function buildPlayer(active) {
     spawnAge: SPAWN_GROW_TIME,   // == full size: no warp-in animation on a fresh build (set to 0 to play it)
     spawnScale: null,            // full target scale, captured lazily at the first warp-back
   };
+  p.mesh.scale.multiplyScalar(p.sizeScale); // apply sizeScale to the player too (enemies do this at spawn)
   p.groups = buildGroups(s.groups, p.mounts); // fire channels (gun / rocket / ...)
   deriveDrive(p); // acceleration <- engine power, turnRate <- engine turnPower, scaled by mass
   return p;
@@ -1795,21 +1819,22 @@ const rightVec = (fwd) => new THREE.Vector3(fwd.z, 0, -fwd.x); // perpendicular 
 
 // Fire one mount: spawn its projectile at the muzzle + lateral offset (side-by-side fire).
 function fireMount(ship, mount, fwd, isPlayer) {
+  const sc = ship.mesh.scale.x || 1;                       // current world scale (incl. spawn-grow + sizeScale)
+  const noseZ = (ship.mesh.userData.noseZ ?? 1.6) * sc;    // spawn at the model's actual nose, not a fixed offset
   const muzzle = ship.mesh.position.clone()
-    .addScaledVector(fwd, 3)
+    .addScaledVector(fwd, noseZ)
     .addScaledVector(rightVec(fwd), mount.offset * (ship.sizeScale || 1));
   const w = mount.weapon;
   if (w.type === 'rocket') {
     const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : player;
     const accel = isPlayer ? ship.acceleration : (w.accel ?? ship.acceleration);
     spawnRocket(muzzle, fwd, w, accel, isPlayer, target);
-    audio.sfx.rocket(isPlayer ? sfxFor('weapon', w.class, 'fire') : undefined); // player rockets sampled; enemies synth
+    if (isPlayer) audio.sfx.rocket(sfxFor('weapon', w.class, 'fire')); // player rockets sampled; enemy fire is silent (rocket detonations still play)
   } else {
     spawnBullet(muzzle, fwd, w, isPlayer, ship.vel);
-    // distinct, distance-attenuated report for enemies so a swarm doesn't drown the player's own fire.
     // The weapon's class → its 'fire' sound via the DB map (sfxFor); unset → synthesized zap.
+    // Enemy fire makes no sound at all (intentional — only the player's own shots are audible).
     if (isPlayer) audio.sfx.shoot(sfxFor('weapon', w.class, 'fire'));
-    else audio.sfx.enemyShoot(player && player.mesh ? ship.mesh.position.distanceTo(player.mesh.position) : 0);
   }
 }
 
@@ -2214,7 +2239,7 @@ function update(dt) {
 
   // --- engine trail (when thrusting forward) ---
   if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
-    emitExhaust(player.mesh.position, fwd, player.vel, eng.exhaust);
+    emitExhaust(player.mesh, fwd, player.vel, eng.exhaust);
   }
 
   // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
@@ -2251,7 +2276,7 @@ function update(dt) {
     updateBank(e, e.turnRate, dt); // cosmetic wing-bank for enemies
 
     // engine trail: same exhaust behavior as the player, when thrusting forward
-    if (thrust > 0.1) emitExhaust(e.mesh.position, ef, e.vel, e.engine.exhaust, e.sizeScale || 1);
+    if (thrust > 0.1) emitExhaust(e.mesh, ef, e.vel, e.engine.exhaust);
 
     // fire each group whose AI rule (range + aim tolerance) is satisfied
     updateGroups(e, ef, false, dt, (g) => g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
