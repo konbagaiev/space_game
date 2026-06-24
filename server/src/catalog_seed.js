@@ -203,9 +203,10 @@ export const SHIPS = [
     }
   },
   {
-    name: 'basic rocket enemy', type: 'enemy', modelUrl: 'assets/ships/rocketeer.glb',
+    name: 'basic rocket enemy', type: 'enemy', modelUrl: 'assets/ships/enemy_2_combat.98adc95d.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // same hull + engine + thrusters as the fighter
       role: 'rocketeer', class: 'fighter', color: 0xffd24d, sizeScale: 1, reward: 40,
+      modelYaw: Math.PI, // enemy_2 export faces -Z (same pack as enemy_1); rotate 180° to face +Z
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun', offset: 0, delay: 0 },
@@ -224,9 +225,10 @@ export const SHIPS = [
     }
   },
   {
-    name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/heavy.glb',
+    name: 'basic mini boss', type: 'enemy', modelUrl: 'assets/ships/enemy_3_combat.d728c4fa.glb',
     components: { hull: 3, engine: 6, thruster: 10 }, stats: { // medium hull + scout engine + weak (Medium) thrusters
       role: 'medium', class: 'capital', color: 0xb267e6, sizeScale: 2, reward: 100,
+      modelYaw: Math.PI, // enemy_3 export faces -Z (same pack as enemy_1); rotate 180° to face +Z
       groups: { rocket: ROCKET },
       // two rocket launchers side by side, fired one after the other (0.2s stagger)
       mounts: [
@@ -238,9 +240,10 @@ export const SHIPS = [
   // The end-of-level boss: big orange ship (its own .glb), its own hull + engine, two guns side by
   // side + two staggered rocket launchers.
   {
-    name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/boss.glb',
+    name: 'first boss', type: 'enemy', modelUrl: 'assets/ships/enemy_4_combat.fdfc942d.glb',
     components: { hull: 4, engine: 7, thruster: 11 }, stats: {
       role: 'boss', class: 'capital', color: 0xff8c2a, sizeScale: 3, reward: 200,
+      modelYaw: Math.PI, // enemy_4 export faces -Z (same pack as enemy_1); rotate 180° to face +Z
       // Boss buff (docs/plans/mission-enemies-difficulty.md): two Pirate machine guns (id 9) replace the
       // old basic-kinetic guns; rockets unchanged. Also buffs the level-3 boss (same ship) — intended.
       groups: { gun: GUN, rocket: ROCKET },
@@ -452,7 +455,7 @@ export const MAPS = [
   {
     name: 'home-system', descriptor: {
       generator: 'planet-system',
-      background: 0x0a1624, // very dark blue-cyan space tint (slightly lighter + bluer than near-black)
+      background: 0x1b2531, // dark slate-blue space tint (RGB 27,37,49; tuned via ?tune)
       sky: {
         ambient: { color: 0x3a506e, intensity: 0.7 },           // night-side fill
         sun: { color: 0xfff2e0, intensity: 3.4, pos: [170, -80, 40] }, // side light -> terminator

@@ -5,6 +5,39 @@
 
 ## 2026-06-24
 
+- **Palette/lighting tweaks (via `?tune`).** Space **background** retinted to **RGB 27,37,49**
+  (`0x1b2531`, a dark slate-blue) in the `home-system` map descriptor (`catalog_seed.js`). The **combat
+  "sun"** (the main-scene `DirectionalLight` lighting the battlefield from above, `client/index.html`) is
+  **+20% brighter** (intensity `1.4 → 1.68`) for better ship readability.
+- **Credited the enemy ship models + made the credits check a standing rule.** `enemy_1`–`enemy_4`
+  (basic enemy, rocketeer, medium, first boss) are cut from the **"LowPoly Spaceships"** pack by **Pedram
+  Ashoori** (Sketchfab, **CC-BY 4.0** — attribution required); added the row + a "## Models" note to
+  `client/assets/CREDITS.md` (the ship models were previously uncredited). Added an **asset-credits rule to
+  `CLAUDE.md`** and step 6 to `docs/plans/ship-model-pipeline.md`: when adding/replacing/removing any model
+  (or sound), **always ask the maintainer whether CREDITS.md changes** before finishing — never decide
+  silently; drop stale rows when an asset's last use is removed; CC-BY attribution stays while in use.
+- **Ship wing-bank on turn (cosmetic).** Every ship — player **and** enemies — now **rolls its wings into
+  a turn**, a smooth tilt capped at **20°** that eases back to level when straight
+  (`docs/plans/ship-bank-on-turn.md`). Implemented client-side in `client/index.html`: `makeShip` now wraps
+  the visual children in an inner **bank group** (`g.userData.bankGroup`) whose local Z is the ship's nose
+  axis, so `bankGroup.rotation.z` is a pure roll that never fights the heading yaw; `applyShipModel` loads
+  the `.glb` into that same group. A new `updateBank(ship, turnRate, dt)` derives the roll from the
+  **actual per-frame heading change** (vs `turnRate*dt`), eased with `BANK_TAU` (0.15 s) and clamped to
+  `BANK_MAX` (20°) — one path covers keyboard, touch, warp-back and enemy AI turning. Called right after the
+  player's and each enemy's heading is written. **Purely cosmetic** — heading/physics/aim/collision read
+  `heading`/`mesh.position`, never the bank. New visual scenario `13-ship-bank` (visual suite now 13/13).
+- **Real low-poly models for the rocketeer, medium, and first boss.** Ran three new sources
+  (`assets-src/enemy_2|3|4.glb`) through `assets:build` and pointed three enemies at the resulting
+  **combat** glbs in `catalog_seed.js`: **rocketeer** (`basic rocket enemy`) → `enemy_2_combat`,
+  **medium** (`basic mini boss`) → `enemy_3_combat`, **first boss** → `enemy_4_combat`. Each got
+  `modelYaw: Math.PI` (the pack faces `-Z`, like `enemy_1`). No size change needed — `applyShipModel`
+  normalizes every model's longest axis to a fixed base and the existing `sizeScale` (rocketeer 1 /
+  medium 2 / boss 3) sets the in-game scale, so the medium/boss stay their current size automatically.
+  The L4 pirate variants that *shared* these looks now diverge: **advanced medium pirate** still uses
+  `heavy.glb` and **second boss** still uses `boss.glb`; `rocketeer.glb` is now unused (kept as a
+  fallback primitive). Local-only so far: combat glbs copied into `client/assets/ships/` for testing;
+  **not yet pushed to S3** (`assets:push`) — the hashed `modelUrl`s won't pass `assets:check`/CI deploy
+  until then.
 - **Background music: looping sampled tracks per scene (generative synth removed).** Replaced the
   generative Web-Audio music (chord progression + arpeggio scheduler) with real **looping mp3 tracks** —
   one for the **hangar** and one for **combat** (CC0, stereo ~18–20 s). Routed through the same DB map as

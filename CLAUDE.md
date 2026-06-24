@@ -24,6 +24,16 @@ this rule for anything we author or version.
 - `docs/` — `ROADMAP.md` (end-to-end scope & phases), `SUMMARY.md` (current state), `CHANGELOG.md`
   (change log), `DECISIONS.md` (rationale), `plans/*.md` (per-feature build briefs).
 
+## Assets & credits (ALWAYS ask about credits on model changes)
+
+Third-party assets (3D models, sounds) are tracked in **`client/assets/CREDITS.md`** with source +
+license. **Whenever you add, replace, or remove a ship/3D model** (e.g. point a ship at a new `.glb`,
+swap a model, or drop one that's no longer used), **STOP and ask the maintainer whether `CREDITS.md`
+should change** before finishing — don't decide silently. Adding a model from a new source → add its
+row; removing the last use of an asset → offer to drop its (now-stale) row; a CC-BY asset's attribution
+**must** stay while it's in use. The same applies to sounds. Run the model asset pipeline via the
+`assets:*` scripts (see `docs/plans/ship-model-pipeline.md`).
+
 ## Locate code via SUMMARY first (before grepping/Explore)
 
 Before searching the codebase or fanning out an Explore/grep for *where a feature lives*, **read

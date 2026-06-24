@@ -61,6 +61,10 @@ the seed carrying the URLs); CDN binaries are already on S3.
 4. The script prints the resulting URLs → paste into `catalog_seed.js` (`model_url` / `model_url_high`).
 5. Commit `catalog_seed.js` (URL/path references only — **no binaries**). On deploy, CI `aws s3 sync`s the
    combat models onto the server (baked into the image) and seeds the URLs; hangar models already on CDN.
+6. **Credits check (mandatory — ask the maintainer).** Any time a model is **added, replaced, or removed**,
+   confirm whether **`client/assets/CREDITS.md`** changes before finishing: a new source → add its row; the
+   **last** use of an asset removed → offer to drop the stale row; a **CC-BY** asset's attribution must stay
+   while it's in use. Don't decide silently — this is the asset-credits rule in `CLAUDE.md`.
 
 Because content-hashed URLs live in git and the bytes live on S3, they **can't drift** — a URL only
 resolves if that exact build was pushed.

@@ -686,7 +686,7 @@ renderer.autoClear = false;
 // COMBAT LIGHT (main scene) - exactly as before
 const combatAmbient = new THREE.AmbientLight(0x405070, 1.2); // named so the ?tune panel can mutate it live
 scene.add(combatAmbient);
-const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+const sun = new THREE.DirectionalLight(0xffffff, 1.68); // combat "sun" from above; +20% (was 1.4)
 sun.position.set(30, 60, 20);
 scene.add(sun);
 
@@ -1307,34 +1307,38 @@ function applyShipModel(group, spec, color) {
     const pivot = new THREE.Group(); // rotate the centered model without disturbing its centering
     pivot.rotation.y = yaw;
     pivot.add(model);
-    for (let i = group.children.length - 1; i >= 0; i--) { // drop the placeholder primitive
-      const c = group.children[i];
-      group.remove(c);
+    const host = group.userData.bankGroup || group; // primitives + model live in the rolling group
+    for (let i = host.children.length - 1; i >= 0; i--) { // drop the placeholder primitive
+      const c = host.children[i];
+      host.remove(c);
       c.geometry?.dispose?.();
       c.material?.dispose?.();
     }
-    group.add(pivot);
+    host.add(pivot);
   }, undefined, (err) => console.warn('Ship model failed to load, keeping primitive:', url, err));
 }
 
 function makeShip(color, model = null) {
   const g = new THREE.Group();
+  const bank = new THREE.Group();         // inner group: holds the visual model, rolls about the nose (+Z)
+  g.add(bank);
+  g.userData.bankGroup = bank;            // gameplay still references g; the bank group is for cosmetics only
   const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.5 });
   // hull (nose points in +Z)
   const body = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.2, 12), mat);
   body.rotation.x = Math.PI / 2;
-  g.add(body);
+  bank.add(body);
   // wings
   const wing = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.25, 1.0), mat);
   wing.position.z = -0.4;
-  g.add(wing);
+  bank.add(wing);
   // engine glow
   const glow = new THREE.Mesh(
     new THREE.SphereGeometry(0.45, 10, 10),
     new THREE.MeshBasicMaterial({ color })
   );
   glow.position.z = -1.6;
-  g.add(glow);
+  bank.add(glow);
   g.position.y = 0.6;
   g.scale.setScalar(1.8); // larger - the arena is far away, otherwise ships look tiny
   if (model) applyShipModel(g, model, color); // optionally replace the primitive with a .glb
@@ -2052,6 +2056,26 @@ function updateHud() {
 const DRAG = 1.8;        // friction (enemies)
 const IDLE_DRAG = 0.8;   // soft braking for the player when controls are released
 const SPAWN_GROW_TIME = 1.0; // enemies grow from a dot to full size over this many seconds
+const BANK_MAX  = 20 * Math.PI / 180; // max wing bank, radians (~0.349) — hard cap, "20 degrees, no more"
+const BANK_TAU  = 0.15;               // smoothing time-constant (s); smaller = snappier, larger = lazier
+
+// Cosmetic wing-bank: roll the ship into its turn (capped at BANK_MAX), ease back to level when straight.
+// Reads the ACTUAL heading change this frame, so it covers keyboard, touch and AI turning uniformly.
+// Does not touch heading/physics. Call once per frame per ship, after heading is updated.
+function updateBank(ship, turnRate, dt) {
+  const bank = ship.mesh.userData.bankGroup;
+  if (!bank) return;
+  if (ship._prevHeading === undefined) ship._prevHeading = ship.heading;
+  const delta   = shortestAngleDelta(ship._prevHeading, ship.heading); // signed radians turned this frame
+  ship._prevHeading = ship.heading;
+  const maxStep = (turnRate || 0) * dt;                                 // most it could turn this frame
+  const strength = maxStep > 1e-6 ? Math.max(-1, Math.min(1, delta / maxStep)) : 0;
+  const target  = -strength * BANK_MAX;                                 // sign: roll INTO the turn (flip if wrong by eye)
+  if (ship.roll === undefined) ship.roll = 0;
+  const k = 1 - Math.exp(-dt / BANK_TAU);                               // frame-rate-independent easing
+  ship.roll += (target - ship.roll) * k;
+  bank.rotation.z = ship.roll;
+}
 
 const clock = new THREE.Clock();
 
@@ -2127,6 +2151,7 @@ function update(dt) {
   }
 
   player.mesh.rotation.y = player.heading;
+  updateBank(player, turn, dt); // cosmetic wing-bank; `turn` = player.turnRate, in scope above
 
   // --- engine trail (when thrusting forward) ---
   if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
@@ -2164,6 +2189,7 @@ function update(dt) {
 
     e.mesh.position.addScaledVector(e.vel, dt); // no arena clamp: enemies chase the player out of bounds
     e.mesh.rotation.y = e.heading;
+    updateBank(e, e.turnRate, dt); // cosmetic wing-bank for enemies
 
     // engine trail: same exhaust behavior as the player, when thrusting forward
     if (thrust > 0.1) emitExhaust(e.mesh.position, ef, e.vel, e.engine.exhaust, e.sizeScale || 1);

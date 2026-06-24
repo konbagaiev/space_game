@@ -749,6 +749,24 @@ settings gear **pauses** the fight, so the perf overlay reads ≈60 on every tie
 tiers' benefit is fewer dips below 60 in heavy combat and less thermal throttling over time, observed
 **during gameplay**, not a higher peak in the paused menu.
 
+## 24. Wing-bank on turn — an inner "bank" group, not `rotation.z` on the root
+
+**Decision.** The cosmetic wing-roll (ships tilt into a turn, capped 20°) is applied as
+`bankGroup.rotation.z` on a **dedicated inner group** that holds each ship's visual children, **not** by
+writing `rotation.z` on the ship's root group. The root keeps owning only `rotation.y` (heading),
+position and scale. Roll is derived from the **actual per-frame heading change** (vs `turnRate*dt`), so
+one code path (`updateBank`) covers keyboard, touch, warp-back and enemy AI turning. Cosmetic only —
+no gameplay reads it.
+
+**Why.** The root already carries `rotation.y = heading`; setting `rotation.z` on the *same* object makes
+the final orientation depend on Euler order (yaw and roll would interact, and a roll could subtly skew the
+heading the sim trusts). A child group whose local Z is the ship's forward axis (ships face `+Z`) gives a
+**pure roll about the nose** that composes cleanly with the parent's heading yaw and the model's `modelYaw`
+pivot — independent axes, no order risk. The primitives **and** the loaded `.glb` live in this group (so a
+ship banks whether or not its model has loaded), and the spawn-grow / warp-back scale animations write the
+**root** scale, so roll and grow don't interact. The sign (roll *into* the turn) was confirmed by eye /
+the `13-ship-bank` visual scenario.
+
 ## Future ideas
 
 solid asteroids with bounce ·

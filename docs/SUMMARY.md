@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-24 (background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+**Updated:** 2026-06-24 (ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -87,14 +87,20 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`, `turnRate = thruster.power ×
   massFactor`. `REFERENCE_MASS` = 48 (the player's loadout: hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8)
   keeps the player at accel 10 / turn 2.0; heavier ships are slower & less agile.
-- **Visual model:** each ship's `model_url` (in the DB) points to the **combat** `.glb` (the exported
+- **Visual model:** the **visual-model rendering lives in `client/index.html`** — `makeShip` builds a
+  ship's **root group** (owns world position, the `1.8` scale, and per-frame `rotation.y` = heading) plus
+  an **inner "bank" group** (`g.userData.bankGroup`) that holds the primitives / `.glb` and rolls about the
+  nose; `applyShipModel` swaps the loaded `.glb` into that bank group (applying `modelYaw`). The per-frame
+  heading is written as `mesh.rotation.y` in the update loop (player ~`index.html:2153`, enemies ~`:2191`).
+  Each ship's `model_url` (in the DB) points to the **combat** `.glb` (the exported
   primitives live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it
   loads / as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. **Orientation
   convention: ships face `+Z`.** A model whose nose points elsewhere is corrected at load time by
   `stats.modelYaw` (radians; `Math.PI` for a `-Z`-facing export) — threaded seed → `modelSpec` →
   `applyShipModel`. Center/scale/orientation are **runtime normalizations** (the asset's own transform
   isn't trusted), so a wrong-way model is fixed with `modelYaw` in the seed, not by re-exporting. The
-  `basic enemy ship` uses this (`modelYaw: Math.PI`; its `enemy_1` export faced `-Z`). An optional
+  `basic enemy ship` uses this (`modelYaw: Math.PI`; its `enemy_1` export faced `-Z`), as do the
+  rocketeer, medium and first boss (the `enemy_2/3/4` exports share that `-Z` convention). An optional
   **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
   lazy-loaded; the basic enemy has one — `enemy_1_hangar`). See `client/assets/README.md` + `CREDITS.md`.
 - **Asset pipeline** (`docs/plans/ship-model-pipeline.md` + `audio-sample-pipeline.md`): repo-root `npm run
@@ -126,14 +132,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   long range 110; the Second Boss's main gun).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`). **Appearance = the ship's `.glb` model; we
   never tint by `color`** (see DECISIONS §14), so enemies that reuse a base model look like it until a
-  distinct model is authored — they differ only mechanically for now. `fighter` (`fighter.glb`, gun, 30 hp
-  light hull), `rocketeer` (`rocketeer.glb`, gun + rocket, same 30 hp light hull), `medium`
-  (`heavy.glb` ex-mini-boss, two rocket launchers, 150 hp medium hull → sluggish, 2× model),
+  distinct model is authored — they differ only mechanically for now. `fighter` (`enemy_1_combat`, gun, 30 hp
+  light hull), `rocketeer` (`enemy_2_combat`, gun + rocket, same 30 hp light hull), `medium`
+  (`enemy_3_combat` ex-mini-boss, two rocket launchers, 150 hp medium hull → sluggish, 2× model),
   `pirate_gunner` (a fast skirmisher for the side missions — **reuses `fighter.glb`** — Pirate hull 36 hp +
   Pirate engine top-speed +50% + one **long-range** Pirate machine gun; reward 40), `advanced_medium_pirate`
-  (the L4 heavy — **reuses `heavy.glb`** — **300 hp**, turns ~+30% vs the medium, 1 Pirate MG + 2 rockets;
-  reward 150), the `boss` (`first boss` — `boss.glb` + own hull/engine, 210 hp, 3× model, **two Pirate
-  machine guns** + two rocket launchers), and `boss2` (the **Second Boss**, L4 finale — **reuses `boss.glb`**
+  (the L4 heavy — still **reuses `heavy.glb`** (no longer the same look as the medium) — **300 hp**, turns
+  ~+30% vs the medium, 1 Pirate MG + 2 rockets; reward 150), the `boss` (`first boss` — `enemy_4_combat` +
+  own hull/engine, 210 hp, 3× model, **two Pirate machine guns** + two rocket launchers), and `boss2` (the
+  **Second Boss**, L4 finale — still **reuses `boss.glb`** (no longer the same look as the first boss)
   — **450 hp**, ~+30% speed/accel/turn, **two Advanced pirate cannons + three rockets**; reward 400). Which
   enemies spawn is decided by the **level/mission** (see Gameplay), not the ship; ship `radius` scales with
   model size. Each enemy carries a **`reward`** (`stats.reward`, fighter 20 / rocketeer 40 / pirate gunner 40 /
@@ -322,6 +329,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     exhaust** particle stream (hot→orange→red); **cruises slowly forward** (`speed` units/sec — a transport
     in transit). (A separate `sync` + zone-drift escort mechanic exists but no mission turns it on.)
   See `docs/plans/mission-maps.md`. (Collidable cover is later scope.)
+- **Wing-bank on turn:** every ship (player + enemies) **rolls its wings into a turn**, a smooth tilt
+  capped at **20°** (`BANK_MAX`) that eases back to level when straight. `updateBank` derives the roll from
+  the **actual per-frame heading change** (vs the max possible `turnRate*dt`), eases it with `BANK_TAU`
+  (0.15 s, frame-rate-independent), and applies it as `bankGroup.rotation.z` (the inner bank group, so it
+  composes with the root's heading yaw + scale and the model's `modelYaw` without fighting them). One path
+  covers keyboard, touch, warp-back and enemy AI turning. **Cosmetic only** — nothing gameplay reads the
+  roll (aim/forward use `heading`, collisions use `mesh.position`).
 - **Enemy spawn ("warp in"):** a newly spawned enemy grows from a dot to its full size over
   `SPAWN_GROW_TIME` (1 s, ease-out cubic) — it scales up in place while the AI is already active.
 - Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
