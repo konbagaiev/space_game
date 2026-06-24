@@ -318,41 +318,79 @@
   }
   #settings-overlay.on { display: flex; }
   #settings-overlay .settings-box {
-    width: min(560px, 94vw); max-height: 92vh; overflow-y: auto; box-sizing: border-box;
+    width: min(560px, 94vw); max-height: 98vh; overflow-y: auto; box-sizing: border-box;
     background: rgba(16,24,44,.96); border: 1px solid rgba(140,175,255,.28);
-    border-radius: 16px; padding: 26px clamp(16px, 5vw, 36px); box-shadow: 0 18px 60px rgba(0,0,0,.55);
+    border-radius: 16px; padding: 12px clamp(16px, 5vw, 32px); box-shadow: 0 18px 60px rgba(0,0,0,.55);
   }
-  #settings-overlay h1 { font-size: 26px; letter-spacing: 1px; margin: 0 0 22px; }
-  #settings-overlay .set-row { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
+  #settings-overlay h1 { font-size: 20px; letter-spacing: 1px; margin: 0 0 6px; }
+  #settings-overlay .set-row { display: flex; align-items: center; gap: 12px; margin: 5px 0; }
   /* label shrinks (min-width:0) so it never forces the slider off the edge */
-  #settings-overlay .set-row label { flex: 1 1 auto; min-width: 0; font-size: 16px; opacity: .92; }
+  #settings-overlay .set-row label { flex: 1 1 auto; min-width: 0; font-size: 15px; opacity: .92; }
   /* slider is shrinkable (flex-shrink 1) + capped — never overflows a narrow modal */
-  #settings-overlay input[type=range] { flex: 1 1 90px; min-width: 0; max-width: 180px; height: 20px; accent-color: #5b86e5; cursor: pointer; }
+  #settings-overlay input[type=range] { flex: 1 1 90px; min-width: 0; max-width: 180px; height: 16px; accent-color: #5b86e5; cursor: pointer; }
   #settings-overlay .set-toggle {
-    flex: 0 0 60px; font-size: 14px; font-weight: 700; letter-spacing: .5px; cursor: pointer;
-    padding: 7px 0; border-radius: 8px; border: 1px solid rgba(140,175,255,.4);
+    flex: 0 0 56px; font-size: 13px; font-weight: 700; letter-spacing: .5px; cursor: pointer;
+    padding: 6px 0; border-radius: 8px; border: 1px solid rgba(140,175,255,.4);
     background: rgba(54,209,220,.18); color: #bff0f4;
   }
   #settings-overlay .set-toggle.off { background: rgba(120,130,150,.18); color: #9aa6bd; border-color: rgba(150,160,180,.35); }
   /* Graphics-quality segmented control (3 mutually-exclusive tiers) */
   /* the quality row stacks: label on its own line, the three buttons on the row below */
-  #settings-overlay .set-row.stack { flex-direction: column; align-items: stretch; gap: 10px; }
+  #settings-overlay .set-row.stack { flex-direction: column; align-items: stretch; gap: 7px; }
   #settings-overlay .seg { display: flex; gap: 8px; }
   /* flex-basis:auto -> each button sizes to its text (so "Performance" gets the width it needs, no clip),
      then grows to share the row */
   #settings-overlay .seg-btn {
-    flex: 1 1 auto; min-width: 0; padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit;
-    font-size: 13px; text-align: center; white-space: nowrap;
+    flex: 1 1 auto; min-width: 0; padding: 6px 9px; border-radius: 8px; cursor: pointer; font: inherit;
+    font-size: 12px; text-align: center; white-space: nowrap;
     background: rgba(120,130,150,.18); color: #9aa6bd; border: 1px solid rgba(150,160,180,.35);
   }
   #settings-overlay .seg-btn.on { background: rgba(91,134,229,.35); color: #eaf1ff; border-color: #5b86e5; }
-  #settings-overlay .set-note { font-size: 12px; opacity: .6; margin: -6px 0 6px; }
+  #settings-overlay .set-note { font-size: 11px; opacity: .6; margin: -3px 0 3px; }
+  /* Danger zone: "Reset my progress" — a slide-to-confirm control. Separated by a faint divider. */
+  #settings-overlay .set-row.danger { gap: 6px; margin: 8px 0 2px; padding-top: 8px; border-top: 1px solid rgba(255,120,120,.18); }
+  #settings-overlay .set-row.danger > label { font-size: 13px; color: #ffb3b3; opacity: 1; }
+  /* the slide track: a knob the user drags fully to the right; fill grows behind it */
+  #reset-slide {
+    position: relative; height: 32px; border-radius: 16px; overflow: hidden; cursor: grab; user-select: none;
+    background: rgba(120,40,50,.28); border: 1px solid rgba(255,120,120,.38); touch-action: none;
+  }
+  #reset-slide.dragging { cursor: grabbing; }
+  #reset-slide .slide-fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 30px; border-radius: 16px;
+    background: linear-gradient(90deg, rgba(229,80,80,.55), rgba(229,57,57,.8));
+  }
+  #reset-slide .slide-text {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; letter-spacing: .4px; color: #ffd7d7; pointer-events: none;
+  }
+  #reset-slide .slide-knob {
+    position: absolute; left: 2px; top: 2px; width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; line-height: 1;
+    color: #2a0c0c; background: #ff8a8a; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+  #reset-slide.armed .slide-knob { background: #ff5a5a; }
   #settings-close {
-    margin-top: 24px; width: 100%; cursor: pointer; pointer-events: auto; font: inherit;
-    padding: 13px 18px; font-size: 16px; font-weight: 600; border-radius: 10px;
+    margin-top: 7px; width: 100%; cursor: pointer; pointer-events: auto; font: inherit;
+    padding: 9px 18px; font-size: 15px; font-weight: 600; border-radius: 10px;
     background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.3);
   }
   #settings-close:hover { background: rgba(120,150,210,.12); }
+  /* Confirm step (sits above the settings box, within the same overlay) */
+  #reset-confirm { position: absolute; inset: 0; z-index: 1; display: none; align-items: center; justify-content: center; padding: 20px; }
+  #reset-confirm.on { display: flex; }
+  #reset-confirm .reset-confirm-box {
+    width: min(420px, 92vw); box-sizing: border-box; text-align: center;
+    background: rgba(28,16,20,.98); border: 1px solid rgba(255,120,120,.4);
+    border-radius: 14px; padding: 24px 22px; box-shadow: 0 18px 60px rgba(0,0,0,.6);
+  }
+  #reset-confirm h2 { margin: 0 0 12px; font-size: 20px; color: #ffb3b3; }
+  #reset-confirm p { margin: 0 0 20px; font-size: 14px; line-height: 1.5; opacity: .9; }
+  #reset-confirm .reset-confirm-actions { display: flex; gap: 12px; }
+  #reset-confirm .reset-confirm-actions button { flex: 1 1 0; padding: 11px 14px; font: inherit; font-size: 15px; font-weight: 600; border-radius: 10px; cursor: pointer; }
+  #reset-confirm .ghost { background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.35); }
+  #reset-confirm .danger-btn { background: linear-gradient(90deg,#e53935,#b71c1c); color: #fff; border: 0; }
+  #reset-confirm .danger-btn:disabled { opacity: .6; cursor: default; }
   #perf {
     position: fixed; top: 34px; left: 50%; transform: translateX(-50%);
     font-family: ui-monospace, Menlo, monospace; font-size: 12px;
@@ -561,7 +599,28 @@
       </div>
     </div>
     <div class="set-note" id="set-quality-note" data-i18n="ui.settings.quality.note">Changing quality reloads the game.</div>
+    <div class="set-row stack danger">
+      <label data-i18n="ui.settings.reset.label">Reset my progress</label>
+      <!-- slide-to-confirm: drag the knob left→right to arm the destructive reset -->
+      <div id="reset-slide" class="slide-confirm" role="button" tabindex="0" aria-label="Slide to reset progress">
+        <div class="slide-fill"></div>
+        <span class="slide-text" data-i18n="ui.settings.reset.slide">Slide to reset →</span>
+        <div class="slide-knob" aria-hidden="true">›</div>
+      </div>
+      <div class="set-note" data-i18n="ui.settings.reset.note">Wipes your level, credits, ships and upgrades. Your account and login stay.</div>
+    </div>
     <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
+  </div>
+  <!-- confirm step shown after the slide is completed (sits above the settings box) -->
+  <div id="reset-confirm" class="reset-confirm">
+    <div class="reset-confirm-box">
+      <h2 data-i18n="ui.settings.reset.confirm.title">Reset progress?</h2>
+      <p data-i18n="ui.settings.reset.confirm.body">This wipes your level, credits, ships and upgrades and starts you over from level 1. Your account and login stay. This can't be undone.</p>
+      <div class="reset-confirm-actions">
+        <button id="reset-cancel" class="ghost" data-i18n="ui.settings.reset.cancel">Cancel</button>
+        <button id="reset-do" class="danger-btn" data-i18n="ui.settings.reset.confirm.ok">Confirm reset</button>
+      </div>
+    </div>
   </div>
 </div>
 <div id="markers"></div>
@@ -3241,6 +3300,7 @@ function openSettings() {
 }
 function closeSettings() {
   settingsOverlay.classList.remove('on');
+  dismissResetConfirm(); // also drop the reset confirm + re-arm the slide if either was left open
   if (settingsPausedByGear) { settingsPausedByGear = false; setPaused(false); }
 }
 settingsBtn.addEventListener('click', openSettings);
@@ -3252,6 +3312,66 @@ setSfx.addEventListener('input', () => applyAudioChange({ sfx: setSfx.value / 10
 setSfx.addEventListener('change', () => audio.sfx.hit()); // preview the SFX level when the slider is released
 setMusicOn.addEventListener('click', () => { applyAudioChange({ musicOn: !audio.getSettings().musicOn }); renderSettingsUI(); });
 setSfxOn.addEventListener('click', () => { applyAudioChange({ sfxOn: !audio.getSettings().sfxOn }); renderSettingsUI(); });
+
+// ---- Reset my progress: a slide-to-confirm control, then a confirm/cancel step ----
+// The slide must be dragged (almost) fully left→right to "arm"; releasing short snaps back. Arming opens
+// the confirm dialog; Confirm POSTs /reset (server wipes progress to the new-player baseline, keeps the
+// account) and reloads for a clean re-fetch; Cancel snaps the slide back. Destructive, so two gestures.
+const resetSlide = document.getElementById('reset-slide');
+const resetKnob = resetSlide.querySelector('.slide-knob');
+const resetFill = resetSlide.querySelector('.slide-fill');
+const resetConfirm = document.getElementById('reset-confirm');
+const resetDoBtn = document.getElementById('reset-do');
+const ARM_FRACTION = 0.96; // knob must reach ~the far right to arm (deliberate gesture)
+let resetDragging = false;
+const knobMargin = 2;
+const knobTravel = () => Math.max(0, resetSlide.clientWidth - resetKnob.offsetWidth - knobMargin * 2);
+// Position the knob `x` px into its travel; returns the 0..1 fraction. `ease` animates the move (snap-back).
+function placeKnob(x, ease) {
+  const max = knobTravel();
+  const px = Math.max(0, Math.min(max, x));
+  const trans = ease ? 'left .18s ease, background .18s' : 'none';
+  resetKnob.style.transition = trans;
+  resetFill.style.transition = ease ? 'width .18s ease' : 'none';
+  resetKnob.style.left = (knobMargin + px) + 'px';
+  resetFill.style.width = (resetKnob.offsetWidth + px) + 'px';
+  const frac = max > 0 ? px / max : 0;
+  resetSlide.classList.toggle('armed', frac >= ARM_FRACTION);
+  return frac;
+}
+const knobXFromPointer = (clientX) => clientX - resetSlide.getBoundingClientRect().left - resetKnob.offsetWidth / 2;
+function snapResetSlideBack() { resetDragging = false; resetSlide.classList.remove('dragging'); placeKnob(0, true); }
+function dismissResetConfirm() { resetConfirm.classList.remove('on'); resetDoBtn.disabled = false; snapResetSlideBack(); }
+
+resetKnob.addEventListener('pointerdown', (e) => {
+  resetDragging = true; resetSlide.classList.add('dragging');
+  resetKnob.setPointerCapture(e.pointerId); e.preventDefault();
+});
+resetKnob.addEventListener('pointermove', (e) => { if (resetDragging) placeKnob(knobXFromPointer(e.clientX), false); });
+resetKnob.addEventListener('pointerup', (e) => {
+  if (!resetDragging) return;
+  resetDragging = false; resetSlide.classList.remove('dragging');
+  const frac = placeKnob(knobXFromPointer(e.clientX), true);
+  if (frac >= ARM_FRACTION) resetConfirm.classList.add('on'); // armed → ask to confirm
+  else snapResetSlideBack();
+});
+
+document.getElementById('reset-cancel').addEventListener('click', dismissResetConfirm);
+resetConfirm.addEventListener('click', (e) => { if (e.target === resetConfirm) dismissResetConfirm(); }); // backdrop
+resetDoBtn.addEventListener('click', async () => {
+  resetDoBtn.disabled = true;
+  try {
+    if (playerId) {
+      const r = await fetch(`/api/players/${playerId}/reset`, { method: 'POST' });
+      if (!r.ok) throw new Error('reset failed: ' + r.status);
+    }
+    location.reload(); // server is now at the new-player baseline; reload re-fetches level + active ship cleanly
+  } catch (err) {
+    console.warn('progress reset failed', err);
+    dismissResetConfirm();
+  }
+});
+
 // Localize the gear label + the On/Off toggles (JS-set, not data-i18n) — now and on language switch.
 function localizeSettings() {
   const lbl = t('ui.settings.open');

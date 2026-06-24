@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-24 (ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+**Updated:** 2026-06-24 ("Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -392,13 +392,21 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   padded right so the gear never overlaps it) opens a modal (`#settings-overlay`). **Opening it doubles as
   pause:** during a live fight the gear freezes the battle (like the pause button) and opens the menu in one
   click; **closing resumes** — but only if the gear is what paused it (a manual pause stays paused). The
-  modal has **Master / Music / SFX volume** sliders + **Music/SFX on-off toggles**, and a **Graphics
-  quality** selector (see below). Changes apply live and persist to `localStorage` (audio keys `audioMaster`,
+  modal has **Master / Music / SFX volume** sliders + **Music/SFX on-off toggles**, a **Graphics
+  quality** selector (see below), and a **danger zone: "Reset my progress"** (see next). Changes apply live
+  and persist to `localStorage` (audio keys `audioMaster`,
   `audioMusic`, `audioSfx`, `audioMusicOn`, `audioSfxOn`); a fresh player gets sane defaults
   (master .7 / music .45 / sfx .8, both on). Language/zoom stay where they are. **Mobile-fit:** the modal
   is sized so nothing overflows on a narrow phone — sliders are shrinkable + capped (not fixed-width),
-  the quality buttons size to their text, fonts are compact, horizontal padding is `clamp`ed, and the
-  box `max-height: 92vh` + scrolls if it ever gets taller than the viewport.
+  the quality buttons size to their text, fonts/paddings/row-gaps are compact, horizontal padding is
+  `clamp`ed, and the box `max-height: 98vh` (everything fits without internal scroll on a 1280×800 viewport).
+- **Reset my progress (settings danger zone).** A **slide-to-confirm** control (`#reset-slide` — drag the
+  knob left→right to ~96% to *arm*; a partial slide eases back) opens a **confirm/cancel** dialog
+  (`#reset-confirm`). Confirm POSTs **`/api/players/:id/reset`** then **reloads** the page (clean re-fetch of
+  level + active ship from the baseline); Cancel (or the backdrop) snaps the slide back. Two deliberate
+  gestures, since it's destructive. Server-side it's the per-player `resetPlayer` (clears
+  games/ships/stash/events, resets level/credits/shop to the new-player baseline, re-grants the starter
+  ship; **keeps the account, login and language**). i18n keys `ui.settings.reset.*` (EN+RU).
 - **Graphics quality tiers (`client/src/graphics.js`, DECISIONS §23).** A 3-way selector —
   **High / Balance / Performance** — for weak phones, since the mobile bottleneck is fragment **fill
   rate** (pixel ratio × the two render passes × additive-particle overdraw), not the draw calls/triangles
@@ -491,6 +499,7 @@ first translation). See DECISIONS §10.
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
   `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
+  `POST /api/players/:id/reset` (player-initiated progress reset → new-player baseline; 404 if unknown),
   `GET /api/players/:id/stash`, `POST /api/players/:id/buy`, `.../sell`, `.../equip`, `.../unequip`
   (hangar shop; 403 until the shop is unlocked), `GET /api/players/:id/missions` (side-mission board; 403 until unlocked),
   `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
@@ -585,7 +594,9 @@ first translation). See DECISIONS §10.
   correct for SQLite + Postgres); **`--all --yes`** wipes every player-scoped table (fresh DB —
   SQLite `DELETE`s + `sqlite_sequence` reset; Postgres `TRUNCATE … RESTART IDENTITY CASCADE`), leaving
   the catalog to re-seed on startup. Backend is auto-selected by `DATABASE_URL` (local SQLite unless
-  set). Wrapped by the **`reset-progress`** skill (`.claude/skills/reset-progress/`). See DECISIONS §19.
+  set). Wrapped by the **`reset-progress`** skill (`.claude/skills/reset-progress/`). The **per-player**
+  reset is also reachable by players themselves via **`POST /api/players/:id/reset`** (the settings
+  "Reset my progress" control) — same `resetPlayer` op. See DECISIONS §19.
 - Run locally: `cd server && npm install && npm start` → open **http://localhost:4000**.
 - The client now **requires the API to start** (it fetches the ship/weapon catalog + active ship in
   `bootstrap()`). Since the game is always served same-origin by this server, the API is available.
@@ -634,9 +645,10 @@ first translation). See DECISIONS §10.
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping), and
   **audio settings** (`clamp01`, `loadAudioSettings`/`saveAudioSettings` round-trip + defaults + garbage
   handling, `effectiveGain` master×channel×toggle). Run: `cd client && npm test`.
-- **Backend API** — `server/src/server.test.js` (50): register / record game + credit banking / history /
+- **Backend API** — `server/src/server.test.js` (52): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
-  player progress (current level + advance) + language preference + credits balance + level briefings
+  player progress (current level + advance) + **progress reset** (per-player → new-player baseline, unknown→404) +
+  language preference + credits balance + level briefings
   (level-2 weapon swap, level-3 repair-drone install) + repair-drone component seed +
   **hangar shop/stash** (lock until the final level is cleared, unlock + basic-gun backfill, buy/sell/equip/
   unequip, optional-vs-required equipped sell, take-off launch gating, no double-spend, net-zero same-id equip,
@@ -666,7 +678,11 @@ first translation). See DECISIONS §10.
   opens the description panel, and Take off launches a `sideMission` via the levelRunner), **l4-enemies**
   (the Advanced medium pirate + Second Boss build with the right HP/tint/mounts/derived drive), and
   **audio** (the settings gear opens the audio modal; the Master slider + Music toggle reach the engine and
-  persist to `localStorage`; the gear hides during a live fight). Self-contained runner starts its own server + throwaway DB. Setup
+  persist to `localStorage`; the gear hides during a live fight), **ship-bank** (the player rolls into a turn,
+  capped ≤20°, eases back to level on release, opposite turns bank opposite ways, enemies have a bank group),
+  and **reset-progress** (the settings modal fits the viewport with no internal scroll; the slide-to-confirm
+  arms only on a near-full drag and opens the confirm dialog; Cancel snaps it back; Confirm POSTs `/reset`).
+  Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for
   occasional larger releases. See `client/visual/README.md`.

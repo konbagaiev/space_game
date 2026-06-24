@@ -142,5 +142,12 @@
   "ui.settings.quality.high": { "source": "High", "context": "Graphics quality tier: full resolution + antialiasing + all effects (desktop default). Short, one word if possible." },
   "ui.settings.quality.balance": { "source": "Balance", "context": "Graphics quality tier: middle ground between quality and frame rate. Short." },
   "ui.settings.quality.performance": { "source": "Performance", "context": "Graphics quality tier: lowest resolution + fewest effects for weak phones, highest frame rate. Short." },
-  "ui.settings.quality.note": { "source": "Changing quality reloads the game.", "context": "Small hint under the graphics-quality selector: picking a different quality tier reloads the page so the whole preset applies." }
+  "ui.settings.quality.note": { "source": "Changing quality reloads the game.", "context": "Small hint under the graphics-quality selector: picking a different quality tier reloads the page so the whole preset applies." },
+  "ui.settings.reset.label": { "source": "Reset my progress", "context": "Label for the destructive 'reset my progress' control in the settings modal (danger zone)." },
+  "ui.settings.reset.slide": { "source": "Slide to reset →", "context": "Text inside a slide-to-confirm control; the player drags a knob left→right to arm the progress reset. Keep the arrow." },
+  "ui.settings.reset.note": { "source": "Wipes your level, credits, ships and upgrades. Your account and login stay.", "context": "Small hint under the reset slider explaining what a reset clears and what it keeps." },
+  "ui.settings.reset.confirm.title": { "source": "Reset progress?", "context": "Title of the confirm dialog shown after the player slides to reset. Short." },
+  "ui.settings.reset.confirm.body": { "source": "This wipes your level, credits, ships and upgrades and starts you over from level 1. Your account and login stay. This can't be undone.", "context": "Body of the reset confirmation dialog: what is wiped, what is kept, and that it is irreversible." },
+  "ui.settings.reset.confirm.ok": { "source": "Confirm reset", "context": "Button that performs the destructive progress reset. Short." },
+  "ui.settings.reset.cancel": { "source": "Cancel", "context": "Button that dismisses the reset confirmation without resetting. Short." }
 }

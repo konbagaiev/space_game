@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/node';
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend,
+import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend, resetPlayer,
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent,
   getStash, buyItem, sellItem, equipItem, unequipItem } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
@@ -114,6 +114,16 @@ export async function createApp() {
   // Unlock the next level (called by the client when the player clears their current level).
   app.post('/api/players/:id/advance', wrap(async (req, res) => {
     res.json(await advanceProgress(req.params.id));
+  }));
+
+  // Player-initiated progress reset (the "Reset my progress" control in settings). Per-player reset:
+  // clears games/ships/stash/events and resets level/credits/shop to the new-player baseline (re-granting
+  // the starter ship), while keeping the account, login session and language. Same op as the admin
+  // `reset.js --player`. 404 if the player is unknown.
+  app.post('/api/players/:id/reset', wrap(async (req, res) => {
+    const r = await resetPlayer(req.params.id);
+    if (!r.found) return res.status(404).json({ error: 'player not found' });
+    res.json({ ok: true });
   }));
 
   // Persist the player's language preference (client mirrors it to localStorage). Only en/ru.

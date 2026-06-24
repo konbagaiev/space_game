@@ -106,6 +106,34 @@ test('progress: current level is level-1, and advancing unlocks the next levels'
   assert.equal(reg.currentProgress, 4);
 });
 
+test('reset: POST /reset wipes progress to the new-player baseline, keeps the account', async () => {
+  // build up some progress + credits, then reset
+  await post('/api/players/register', { playerId: 'reset-1' });
+  await post('/api/players/reset-1/advance', {});                 // → level-2
+  await post('/api/games', { playerId: 'reset-1', credits: 50, kills: 5, durationMs: 1000 }); // banks credits, games_played++
+  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-2');
+
+  const r = await post('/api/players/reset-1/reset', {});
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true });
+
+  // back to baseline: level-1, 1000 credits, games_played 0 — but the account row (and id) remain
+  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-1');
+  const reg = await (await post('/api/players/register', { playerId: 'reset-1' })).json();
+  assert.equal(reg.isNew, false);            // the player row was kept, not recreated
+  assert.equal(reg.currentProgress, 1);
+  assert.equal(reg.credits, 1000);
+  assert.equal(reg.gamesPlayed, 0);
+  // the starter ship is re-granted so the reset account is immediately playable
+  const ship = await getJson('/api/players/reset-1/active-ship');
+  assert.ok(ship && ship.ship, 'an active ship exists after reset');
+});
+
+test('reset: unknown player -> 404', async () => {
+  const r = await post('/api/players/nobody-here/reset', {});
+  assert.equal(r.status, 404);
+});
+
 test('briefing: advancing into level-2 returns its message and swaps the basic gun for the Machine Gun', async () => {
   // a fresh player starts with the basic kinetic (weapon 1) as the gun
   const before = await getJson('/api/players/brief-1/active-ship');

@@ -5,6 +5,16 @@
 
 ## 2026-06-24
 
+- **"Reset my progress" in the settings menu (slide-to-confirm → confirm dialog).** Players can now wipe
+  their own progress from the settings modal: a **slide-to-confirm** control (drag the knob left→right to
+  arm — a partial slide snaps back) opens a **confirm/cancel** dialog; confirming POSTs the new
+  **`POST /api/players/:id/reset`** endpoint and reloads. Server-side it runs the existing per-player
+  `resetPlayer` (same op as `reset.js --player`): clears games/ships/stash/events and resets
+  level/credits/shop to the new-player baseline, re-granting the starter ship, while **keeping the account,
+  login and language**; 404 for an unknown player. Settings modal elements were **shrunk** (paddings,
+  row gaps, fonts, slider/knob sizes; cap 92→98vh) so everything **fits with no internal scroll**. New i18n
+  keys (`ui.settings.reset.*`, EN+RU). Tests: server 52 (+2: reset to baseline, unknown→404), visual 14
+  (+`reset-progress`: modal fits, slide arms the dialog, cancel snaps back, confirm POSTs /reset).
 - **Palette/lighting tweaks (via `?tune`).** Space **background** retinted to **RGB 27,37,49**
   (`0x1b2531`, a dark slate-blue) in the `home-system` map descriptor (`catalog_seed.js`). The **combat
   "sun"** (the main-scene `DirectionalLight` lighting the battlefield from above, `client/index.html`) is

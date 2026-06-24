@@ -142,5 +142,12 @@
   "ui.settings.quality.high": "Высокое",
   "ui.settings.quality.balance": "Баланс",
   "ui.settings.quality.performance": "Производительность",
-  "ui.settings.quality.note": "Смена качества перезагружает игру."
+  "ui.settings.quality.note": "Смена качества перезагружает игру.",
+  "ui.settings.reset.label": "Сбросить прогресс",
+  "ui.settings.reset.slide": "Проведите для сброса →",
+  "ui.settings.reset.note": "Стирает уровень, кредиты, корабли и улучшения. Аккаунт и вход сохраняются.",
+  "ui.settings.reset.confirm.title": "Сбросить прогресс?",
+  "ui.settings.reset.confirm.body": "Это сотрёт уровень, кредиты, корабли и улучшения и вернёт вас на уровень 1. Аккаунт и вход сохранятся. Отменить нельзя.",
+  "ui.settings.reset.confirm.ok": "Сбросить",
+  "ui.settings.reset.cancel": "Отмена"
 }
