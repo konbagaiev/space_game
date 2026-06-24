@@ -1378,6 +1378,16 @@ function applyShipModel(group, spec, color) {
     const pivot = new THREE.Group(); // rotate the centered model without disturbing its centering
     pivot.rotation.y = yaw;
     pivot.add(model);
+    // Cache the model's real forward/back extent (group-LOCAL units) so muzzle flashes + exhaust spawn AT
+    // the nose / engines, not at a fixed offset tuned for the old primitive. Measure NOW, while `pivot` has
+    // no parent — so its world matrix == its local matrix. Measuring after attaching to the live group
+    // would fold in the group's 1.8×sizeScale scale AND the ship's world position (enemies spawn far from
+    // origin!) → spawn points drift hundreds of units off the model. fireMount/emitExhaust re-apply the
+    // mesh's world scale themselves.
+    pivot.updateMatrixWorld(true);
+    const lbox = new THREE.Box3().setFromObject(pivot);
+    group.userData.noseZ = lbox.max.z; // forward (+Z) tip, group-local
+    group.userData.tailZ = lbox.min.z; // rear (−Z) tip
     const host = group.userData.bankGroup || group; // primitives + model live in the rolling group
     for (let i = host.children.length - 1; i >= 0; i--) { // drop the placeholder primitive
       const c = host.children[i];
@@ -1386,13 +1396,6 @@ function applyShipModel(group, spec, color) {
       c.material?.dispose?.();
     }
     host.add(pivot);
-    // Cache the model's real forward/back extent (group-local units) so muzzle flashes + exhaust spawn AT
-    // the nose / engines — not at a fixed offset tuned for the old primitive. This model is wingspan-
-    // dominant (the longest axis we normalize is the wingspan), so its nose sits closer in than a fixed
-    // forward offset, which left bullets/exhaust floating in empty space.
-    const pbox = new THREE.Box3().setFromObject(pivot);
-    group.userData.noseZ = pbox.max.z; // forward (+Z) tip
-    group.userData.tailZ = pbox.min.z; // rear (−Z) tip
   }, undefined, (err) => console.warn('Ship model failed to load, keeping primitive:', url, err));
 }
 

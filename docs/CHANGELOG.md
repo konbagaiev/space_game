@@ -5,6 +5,14 @@
 
 ## 2026-06-24
 
+- **Fix: muzzle/exhaust spawned far off the model (regression).** `applyShipModel` measured the model's
+  forward/back bounds with `Box3.setFromObject` **after** attaching it to the live, world-positioned group,
+  so the box was in **world** space — it folded in the group's 1.8×sizeScale scale *and* the ship's world
+  position (`fireMount`/`emitExhaust` then re-applied the scale). For the player (near origin) this widened
+  the gap; for **enemies** (spawned far from origin) `noseZ`/`tailZ` became hundreds of units, so their
+  bullets spawned off-screen (they "stopped shooting") and exhaust streamed off in the distance. Now the
+  bounds are measured in **group-local** space (pivot un-parented, `updateMatrixWorld(true)` first), so
+  spawn points sit on the model for every ship.
 - **Real player ship model ("Air & Space Vessel" by Raven, CC-BY 4.0) — textured.** Replaced the
   placeholder `player.glb` primitive with a real fighter, keeping its **real paint/decals** (red side pods,
   white belly stripe, markings). The Sketchfab source was 48.7 MB (~89 high-res PBR textures); a **new
