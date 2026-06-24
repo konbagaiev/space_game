@@ -216,8 +216,9 @@ export function createAudio(initialSettings) {
     // A ship dies: a filtered noise boom sized to the ship + a low thump. With a `kind` (e.g. 'shipBoom'
     // for medium/large ships) it plays that preloaded sample — pitched down a touch for bigger ships so one
     // clip covers the range; no kind / not loaded → the synth boom below.
-    explosion(size = 1, kind) {
-      if (kind && playSample(kind, { rate: size >= 3 ? 0.9 : 1 })) return;
+    // `vol` scales loudness (both the sampled clip and the synth fallback); 1 = unchanged.
+    explosion(size = 1, kind, vol = 1) {
+      if (kind && playSample(kind, { rate: size >= 3 ? 0.9 : 1, gain: vol })) return;
       if (!sfxPlayable()) return;
       size = Math.max(0.5, Math.min(3, size));
       const t = ctx.currentTime;
@@ -226,11 +227,11 @@ export function createAudio(initialSettings) {
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
       lp.frequency.setValueAtTime(1800, t);
       lp.frequency.exponentialRampToValueAtTime(150, t + dur);
-      const e = env(sfxGain, 0.28, 0.01, dur, t);
+      const e = env(sfxGain, 0.28 * vol, 0.01, dur, t);
       n.connect(lp); lp.connect(e.g); n.start(t); voice(n, e.end);
       const o = ctx.createOscillator(); o.type = 'sine';
       o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(40, t + dur * 0.7);
-      const e2 = env(sfxGain, 0.3 * size, 0.005, dur * 0.7, t);
+      const e2 = env(sfxGain, 0.3 * size * vol, 0.005, dur * 0.7, t);
       o.connect(e2.g); o.start(t); voice(o, e2.end);
     },
     // UI button feedback.

@@ -1621,7 +1621,7 @@ function detonateRocket(r, dealDamage = true) {
     }
   }
   spawnExplosion(r.obj.position, r.blastVis);
-  audio.sfx.explosion(0.7, r.sfxExplode); // rocket blast (sampled via the weapon-class map)
+  audio.sfx.explosion(0.7, r.sfxExplode, 0.3); // rocket blast — 70% quieter (sampled via the weapon-class map)
   scene.remove(r.obj);
   r.obj.children[0].material.dispose();
 }
@@ -2456,7 +2456,9 @@ function update(dt) {
       // colorful death burst: sized to the ship, tinted by its engine's exhaust color
       const e = enemies[i];
       spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
-      audio.sfx.explosion(e.sizeScale || 1, sfxFor('ship', e.class, 'explode')); // explosion sound from the ship-class map
+      // Per-size loudness: medium ships + bosses +50% louder; small ships 70% quieter.
+      const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(e.role);
+      audio.sfx.explosion(e.sizeScale || 1, sfxFor('ship', e.class, 'explode'), louderBoom ? 1.5 : 0.3); // ship-class map; vol by size
 
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
