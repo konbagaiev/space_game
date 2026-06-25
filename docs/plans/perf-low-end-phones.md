@@ -87,7 +87,12 @@ Tune `renderScale` against the tester's numbers; this alone may get the A03s ove
 > cutting per-frame CPU (throttle the DOM HUD/markers/minimap, profile `update`), not more pixel levers.
 > If fps rises → hypothesis (1) confirmed; tune `renderScale` (try 0.6–0.8).
 
-### Lever B — cheaper sky pass on Performance
+### Lever B — cheaper sky pass on Performance — ❌ CANCELLED 2026-06-25 (fill rate proven not the wall)
+> **Do not build.** The GE8320 capture (below) showed a **7× pixel reduction (High→Performance) changed
+> fps by nothing** → the device is *not* fill-rate bound, so a cheaper/less-frequent sky pass won't help.
+> Kept for the record only.
+
+### Lever B (original text)
 The sky scene (background + planet + 2 moons + stars) re-renders **every frame** as a full-screen pass.
 Two options (B1 is simpler/safer):
 - **B1 — render the sky pass less often.** Render the sky to its own render target every **N frames**
@@ -135,9 +140,26 @@ it only when a device is detected as very weak (or leave it as a manual pick). D
   `skyEveryNFrames`/sky-pass throttle, particle ceiling). **CHANGELOG** — one bullet. **DECISIONS §23** —
   extend with the resolution-scaling + sky-pass-throttle rationale (fill-rate, measured on device).
 
+## VERDICT from the first real capture (2026-06-25, ~500 samples, PowerVR Rogue GE8320 / A03s-class)
+The `?dev` data settled it: **this device is governed externally (GPU driver / thermal-DVFS / compositor),
+not by our render path.** Proofs: (1) Performance renders **7× fewer pixels** than High (597×268 vs
+1601×720) yet **fps is unchanged** → not fill-rate bound; (2) **fps uncorrelated with load** (140 draws →
+41 fps, 60 draws → 20 fps) → not draw/particle bound; (3) **heap flat 11-18 MB** → no leak/GC pressure.
+Steady-state JS is cheap (`update`/`dom` ~1.8 ms each); only the **render submit ~12 ms** is sizeable and it
+doesn't scale with draws. Full rationale in DECISIONS §23 (follow-up #2 + Verdict).
+
+**Decided:**
+- **Stop adding fill-rate levers / tiers for this class** — proven ineffective. `renderScale` stays
+  (harmless; marginally cooler over long sessions). **Lever B cancelled. No 4th "Potato" tier.**
+- **The one real defect: startup.** First 1-4 frames per session = **0.8-2.2 s** render submit (shader
+  compile + texture upload). → **NEXT FIX: shader pre-warm** (`renderer.compile(scene, camera)` + warm a
+  frame / pre-instantiate particle+explosion materials before/at take-off, ideally during the hangar).
+  Highest-value remaining work. (Not yet built.)
+- **Measurement fix (done):** FPS/`frameMs` now use the raw `clock.getDelta()` (the sim's clamped `dt`
+  saturated `frameMs` at 50 ms and overstated overlay FPS on slow devices).
+
 ## Open decisions
-- **Exact `renderScale` for Performance** — start 0.75, tune to the tester's fps (Step 0). Resolve on device.
-- **Lever B at all** — only if idle fps is low after Lever A. Measure before building B1.
-- **4th tier** — defer until A–C are measured; don't add speculative tiers.
+- **Exact `renderScale` for Performance** — currently 0.7; the 7× pixel cut had no fps effect on GE8320, so
+  tuning is moot for that class. Leave at 0.7 (sharper-is-pointless on a fill-bound *win* we don't get).
 - **Headless caveat:** the visual harness uses software WebGL (swiftshader) and can't reproduce the A03s
-  GPU — these levers must be **validated on the real device** via the perf overlay, not in CI.
+  GPU — device-facing perf must be **validated on the real device** via the `?dev` monitor, not in CI.

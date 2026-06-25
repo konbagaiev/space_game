@@ -609,6 +609,7 @@
       </div>
       <div class="set-note" data-i18n="ui.settings.reset.note">Wipes your level, credits, ships and upgrades. Your account and login stay.</div>
     </div>
+    <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
     <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
   </div>
   <!-- confirm step shown after the slide is completed (sits above the settings box) -->
@@ -2517,8 +2518,8 @@ function update(dt) {
 // ---------- Perf overlay (load) ----------
 const elPerf = document.getElementById('perf');
 let perfAccum = 0, perfFrames = 0, perfFps = 0;
-function updatePerf(dt) {
-  perfAccum += dt; perfFrames++;
+function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim's clamped dt — see animate)
+  perfAccum += sec; perfFrames++;
   if (perfAccum >= 0.4) { // update ~2.5 times per sec
     perfFps = Math.round(perfFrames / perfAccum);
     const r = renderer.info.render;
@@ -2723,8 +2724,10 @@ const devPerf = (() => {
   document.addEventListener('visibilitychange', () => { if (document.hidden) flushNow(); });
   window.addEventListener('pagehide', flushNow);
   return {
-    frame(dt, t0, t1, t2, t3) {
-      bucket.push({ frame: dt * 1000, update: t1 - t0, dom: t2 - t1, render: t3 - t2, total: t3 - t0 });
+    // `sec` is the RAW (unclamped) frame interval — frameMs must reflect true frame time, not the sim's
+    // clamped dt (which saturates at 50ms and would hide every frame slower than 20fps).
+    frame(sec, t0, t1, t2, t3) {
+      bucket.push({ frame: sec * 1000, update: t1 - t0, dom: t2 - t1, render: t3 - t2, total: t3 - t0 });
       if (performance.now() - bucketStart >= 1000) finalizeBucket(performance.now());
     },
   };
@@ -2732,7 +2735,8 @@ const devPerf = (() => {
 
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const rawSec = clock.getDelta();        // true frame interval (unclamped) — for the perf metrics
+  const dt = Math.min(rawSec, 0.05);      // clamped — for the sim only (stability on a long/background frame)
   const t0 = DEV ? performance.now() : 0;
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
   if (!paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
@@ -2749,8 +2753,8 @@ function animate() {
   renderer.clearDepth();
   renderer.render(scene, camera);
   const t3 = DEV ? performance.now() : 0; // end of render submit (GPU exec is async — this is CPU submit cost)
-  updatePerf(dt);
-  if (DEV) devPerf.frame(dt, t0, t1, t2, t3);
+  updatePerf(rawSec); // perf metrics use the RAW interval (clamped dt would cap fps/ms on slow devices)
+  if (DEV) devPerf.frame(rawSec, t0, t1, t2, t3);
 }
 
 // ---------- Restart ----------

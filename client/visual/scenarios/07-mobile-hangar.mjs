@@ -29,7 +29,8 @@ export default async function ({ page, assert, shot }) {
   assert.ok(inView, 'Take-off scrolls fully into view');
   await shot('mobile-hangar-takeoff');
 
-  // "Full screen" buttons: present on welcome + hangar + pause, touch-only (hidden unless body.touch)
+  // "Full screen" buttons: present on welcome + hangar + pause overlay + settings overlay, touch-only
+  // (hidden unless body.touch)
   const fs = await page.evaluate(() => {
     const btns = [...document.querySelectorAll('.fullscreen-btn.touch-only')];
     const hiddenNonTouch = btns.every((b) => getComputedStyle(b).display === 'none');
@@ -38,7 +39,7 @@ export default async function ({ page, assert, shot }) {
     document.body.classList.remove('touch');
     return { count: btns.length, hiddenNonTouch, revealedOnTouch };
   });
-  assert.equal(fs.count, 3, 'Full screen buttons on welcome + hangar + pause overlay');
+  assert.equal(fs.count, 4, 'Full screen buttons on welcome + hangar + pause overlay + settings overlay');
   assert.ok(fs.hiddenNonTouch, 'Full screen buttons are hidden on non-touch');
   assert.ok(fs.revealedOnTouch, 'Full screen buttons show under body.touch');
 }

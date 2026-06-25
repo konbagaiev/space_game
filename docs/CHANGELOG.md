@@ -5,6 +5,19 @@
 
 ## 2026-06-25
 
+- **Mobile: "Full screen" button on the settings overlay.** On a phone the gear doubles as pause, but the
+  settings overlay (`#settings-overlay`) had no way back to fullscreen — so opening the menu (or any
+  pause/menu that drops browser chrome back in) left the player out of fullscreen with no recovery. Added a
+  touch-only `.fullscreen-btn` to the settings box; it's auto-wired by the existing shared handler
+  (`client/index.html`), joining the welcome/hangar/pause-overlay copies. Visual scenario `07-mobile-hangar`
+  updated to expect 4 fullscreen buttons.
+- **Perf measurement fix: FPS/frame-ms use the raw frame interval, not the clamped sim `dt`.** The render
+  loop clamps `dt` to `0.05`s for sim stability, and that clamped value was also feeding the perf overlay
+  **and** the `?dev` monitor — so `frameMs` saturated at 50 ms and the overlay FPS was *overstated* on slow
+  devices (it under-counted elapsed time). Now `clock.getDelta()` is read raw for all perf metrics
+  (overlay + `devPerf.frameMs`/fps) while the sim keeps the clamped `dt`. Surfaced by the GE8320 analysis,
+  where every session's `frameMs.max` read exactly `50` regardless of real frame time.
+
 - **Perf: low-end-phone fill-rate pass (Lever A + cheap Lever C).** A tester on a Samsung Galaxy A03s
   (PowerVR GE8320) reported the **same 15-25 fps in combat on both High and Performance** — a ~4× pixel
   cut (pixelRatioCap 2→1) plus AA/envMap/particles off bought nothing, which points at either a

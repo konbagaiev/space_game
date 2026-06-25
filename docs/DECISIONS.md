@@ -794,6 +794,27 @@ single vsync-capped fps number can't prove it, so we built a measurement tool:
   SQL. Sampling is once/sec, batched every ~5 s (+ `sendBeacon` on tab-hide) to avoid the monitor itself
   adding jank. We give a friend a `/?dev` link and read the rows later.
 
+**Verdict from the first real capture (2026-06-25, ~500 samples, PowerVR Rogue GE8320 / A03s-class):** the
+data settled the question — **this device is governed externally (GPU driver / thermal-DVFS / compositor),
+not by anything our render path controls.** Three independent proofs: (1) **Performance renders 7× fewer
+pixels than High** (597×268 vs 1601×720 — `min(dpr,1)×0.7` vs `min(dpr,2)×1.0`) yet **fps is unchanged** →
+*not* fill-rate bound, so resolution levers (renderScale, a sky-pass throttle) can't help here; (2) **fps is
+uncorrelated with scene load** (140 draws → 41 fps, 60 draws → 20 fps) → not draw/particle bound — the same
+load yields wildly different fps across thermal windows; (3) **heap is flat at 11-18 MB** (limit ~1020) →
+no memory leak / GC pressure. Steady-state JS is cheap (`update` 1.8 ms, `dom` 1.8 ms); the only sizeable JS
+chunk is the **render submit ~12 ms**, and even that doesn't scale with draw count. **Consequence: stop
+adding graphics tiers / fill-rate levers for this class — they're proven ineffective.** `renderScale` stays
+(harmless, marginally cooler over long sessions) but **Lever B (sky-pass throttle) is cancelled** (fill rate
+isn't the wall). The one real, addressable defect the data exposed is **startup**: the first 1-4 frames of
+every session spend **0.8-2.2 s** in render submit (shader compilation + texture upload) — a shader
+pre-warm is the highest-value remaining fix (not yet built; see `docs/plans/perf-low-end-phones.md`).
+
+**Measurement fix (same day):** `frameMs`/FPS were fed the sim's **clamped** `dt` (`min(getDelta, 0.05)`),
+so `frameMs` saturated at 50 ms and the overlay FPS was *overstated* on slow devices — every GE8320 session
+read `frameMs.max = 50` exactly. The perf path now reads the **raw** `clock.getDelta()`; the sim keeps the
+clamp. (GPU execution time is still not directly measurable — `EXT_disjoint_timer_query` is disabled on
+mobile — but a low `js.total` against a high *raw* frame interval is enough to localize "not our JS".)
+
 ## 24. Wing-bank on turn — an inner "bank" group, not `rotation.z` on the root
 
 **Decision.** The cosmetic wing-roll (ships tilt into a turn, capped 20°) is applied as

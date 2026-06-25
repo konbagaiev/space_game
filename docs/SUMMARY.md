@@ -28,9 +28,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   "FIRE" and "🚀" (rocket) buttons. Shown only on touch devices.
 - **Mobile menus:** the welcome/hangar screens **scroll** (top-aligned + `overflow-y:auto` on short/landscape
   viewports) so the **Take off** button below the shop bay stays reachable. A touch-only **"Full screen"**
-  button (welcome / hangar / pause overlay) re-enters fullscreen on demand to hide the browser chrome (URL
-  bar, tabs) after the app is minimized/restored (`body.touch` gates it; `requestFullscreen` no-ops if
-  already fullscreen).
+  button (welcome / hangar / pause overlay / **settings overlay**) re-enters fullscreen on demand to hide
+  the browser chrome (URL bar, tabs) after the app is minimized/restored or after a pause/menu drops out of
+  fullscreen (`body.touch` gates it; all `.fullscreen-btn`s share one handler; `requestFullscreen` no-ops
+  if already fullscreen). The settings-overlay copy matters because the gear doubles as the mobile pause —
+  so the menu you land in always has a way back to fullscreen.
 
 ## Tools
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
@@ -46,9 +48,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   see DECISIONS §16.**
 - **Perf overlay** at the top center: FPS, frame time (ms), draw calls, triangles
   (across both render passes), and the **real backbuffer resolution** (`w×h` = CSS size × pixelRatio ×
-  renderScale — the actual pixels the GPU fills). A proxy for hardware load; the resolution lets a tester
-  confirm whether a tier/`renderScale` change actually moved the pixel count (a weak phone often reports
-  `devicePixelRatio` ~1, making the pixel-ratio cap a no-op).
+  renderScale — the actual pixels the GPU fills). FPS/frame-ms use the **raw rAF interval**
+  (`clock.getDelta()` before the sim's `0.05`s clamp), so they stay accurate below 20 fps instead of
+  saturating at the clamp. A proxy for hardware load; the resolution lets a tester confirm whether a
+  tier/`renderScale` change actually moved the pixel count (a weak phone often reports `devicePixelRatio`
+  ~1, making the pixel-ratio cap a no-op).
 - **Rocket cooldown indicator** — the 🚀 circle (bottom-right) fills radially as it reloads
   (orange while reloading, green when ready). Shown on both PC and mobile; on PC it's also
   clickable to fire (besides the `F` key), on mobile it's the rocket button.
