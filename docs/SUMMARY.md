@@ -320,6 +320,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   distant rocks read as a faraway field you can fly out into. Flying past them gives the sense of speed.
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the planet and moons).
+- **Shader pre-warm (`prewarmShaders`).** THREE compiles a material's GL program lazily on its first
+  render, so the opening frames of a fight used to stall 0.4-2.2 s (shader compile + texture upload — worst
+  on weak phones; see DECISIONS §23). `prewarmShaders()` compiles both scenes plus two throwaway off-screen
+  meshes matching the dynamic effect program keys (additive fog-off particles/explosions; opaque fog-on
+  bullets/rockets) up front. Runs **once, deferred two frames** after the loop starts (off the critical
+  path), during the menu. **Skipped under the `?debug` test hook** (software-GL compile is slow there and
+  flakes the visual suite; prewarm is perf-only / behaviorally inert).
 - **Ship reflections (env map).** The combat scene sets `scene.environment` to a PMREM of THREE's
   `RoomEnvironment` (built once at startup), so metallic / low-roughness ship surfaces show real
   reflections (the player ship's painted metal, enemy hulls) — the "shine" a single directional light

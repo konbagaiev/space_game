@@ -2733,6 +2733,28 @@ const devPerf = (() => {
   };
 })();
 
+// Pre-compile shaders so the first frames don't stall. Measured on weak phones (DECISIONS §23): the first
+// combat frame spent 0.4-2.2s compiling shaders + uploading textures (THREE compiles a material's program
+// lazily on its first render). `renderer.compile()` warms every material currently in a scene; the dynamic
+// effect programs (particles/bullets — not in the scene until they spawn) are warmed with two throwaway
+// off-screen meshes matching their program keys (additive fog-off vs opaque fog-on). Idempotent — THREE
+// caches compiled programs, so repeat calls are cheap. Best-effort; must never block startup.
+function prewarmShaders() {
+  try {
+    renderer.compile(skyScene, camera);
+    renderer.compile(scene, camera);
+    const warm = new THREE.Group();
+    const addMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }); // explosions/sparks/trail/shockwave
+    const fogMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // bullets/rockets (opaque, scene fog on)
+    warm.add(new THREE.Mesh(explosionGeo, addMat), new THREE.Mesh(bulletGeo, fogMat));
+    warm.position.y = -100000; // far off-camera (compile ignores culling, but keep it invisible if a frame slips in)
+    scene.add(warm);
+    renderer.compile(scene, camera);
+    scene.remove(warm);
+    addMat.dispose(); fogMat.dispose();
+  } catch { /* best-effort — shader warmup must never break startup */ }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const rawSec = clock.getDelta();        // true frame interval (unclamped) — for the perf metrics
@@ -3850,6 +3872,15 @@ async function bootstrap() {
     if (CATALOG.level.briefing) showHangar(CATALOG.level.briefing);
     else showWelcome(playerShips);
     animate(); // render loop (idle until Take off)
+    // Warm shaders a couple frames in — OFF the critical path (a synchronous compile here would block
+    // first paint / startup readiness). The menu renders meanwhile, and the player ship + sky already
+    // compile behind the welcome screen; this just makes the combat-effect programs explicit before the
+    // first take-off. The user spends seconds on the menu, so a deferred compile is invisible.
+    // Skipped under the `?debug` inspection hook: `renderer.compile` is very slow on the headless visual
+    // suite's software GL (swiftshader) and would flake its startup-sensitive scenarios. Prewarm is
+    // perf-only and behaviorally inert (it compiles shaders that would compile lazily anyway), so there's
+    // nothing for the suite to test, and headless can't measure the benefit. Real users always get it.
+    if (!location.search.includes('debug')) requestAnimationFrame(() => requestAnimationFrame(prewarmShaders));
 
     // Dev-only palette tuning panel; lil-gui is fetched only here so players never download it.
     if (location.search.includes('tune')) {

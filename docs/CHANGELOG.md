@@ -5,6 +5,20 @@
 
 ## 2026-06-25
 
+- **Perf: shader pre-warm to kill the startup freeze.** The `?dev` capture showed the **first 1-4 frames of
+  every session spend 0.4-2.2 s** in render submit — THREE compiles each material's GL program lazily on its
+  first render (shader compile + texture upload), so the opening of every fight stuttered (worst on the
+  GE8320 phone: ~2.2 s; ~0.4 s on the Mali tablet). Added `prewarmShaders()` (`client/index.html`):
+  `renderer.compile(skyScene)` + `renderer.compile(scene)` plus two throwaway off-screen meshes matching the
+  dynamic effect program keys (additive fog-off for particles/explosions, opaque fog-on for bullets/rockets),
+  so those programs compile up front instead of on first spawn. Runs **once, deferred two frames** after the
+  loop starts (off the critical path — a synchronous compile would block first paint), during the menu while
+  the player ship + sky already compile behind the welcome screen. **Skipped under the `?debug` inspection
+  hook** — `renderer.compile` is very slow on the headless visual suite's software GL and would flake its
+  startup-sensitive scenarios; prewarm is perf-only and behaviorally inert, so the suite loses nothing. Real
+  users always get it. Verified: runs error-free in a real load; the visual suite is stable again. (On-device
+  effect to be confirmed via the `?dev` first-sample render time.)
+
 - **Mobile: "Full screen" button on the settings overlay.** On a phone the gear doubles as pause, but the
   settings overlay (`#settings-overlay`) had no way back to fullscreen — so opening the menu (or any
   pause/menu that drops browser chrome back in) left the player out of fullscreen with no recovery. Added a

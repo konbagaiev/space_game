@@ -806,8 +806,22 @@ chunk is the **render submit ~12 ms**, and even that doesn't scale with draw cou
 adding graphics tiers / fill-rate levers for this class — they're proven ineffective.** `renderScale` stays
 (harmless, marginally cooler over long sessions) but **Lever B (sky-pass throttle) is cancelled** (fill rate
 isn't the wall). The one real, addressable defect the data exposed is **startup**: the first 1-4 frames of
-every session spend **0.8-2.2 s** in render submit (shader compilation + texture upload) — a shader
-pre-warm is the highest-value remaining fix (not yet built; see `docs/plans/perf-low-end-phones.md`).
+every session spend **0.8-2.2 s** in render submit (shader compilation + texture upload). **Confirmed on a
+second device** (Mali-G52 tablet: ~0.4 s first-frame spike, but otherwise a healthy 44 fps vs the GE8320's
+26 fps — and the same fill-rate-independence: a 5.5× pixel cut moved its fps by nothing either). So the
+startup hitch is the one cross-device win — **now built** as a shader pre-warm (next paragraph).
+
+**Shader pre-warm (built 2026-06-25).** `prewarmShaders()` compiles both scenes (`renderer.compile`) plus
+two throwaway off-screen meshes that match the dynamic effect program keys (additive fog-off for
+particles/explosions; opaque fog-on for bullets/rockets), so those programs are ready before the first
+spawn instead of compiling lazily mid-fight. **Runs once, deferred two `requestAnimationFrame`s** after the
+loop starts (a synchronous compile on the critical path would block first paint), during the menu — where
+the player ship + sky already compile behind the welcome screen anyway. **Gated off under the `?debug`
+inspection hook:** `renderer.compile` is very slow on the headless visual suite's software GL (swiftshader)
+and, even deferred, blocked the main thread enough to flake the startup-sensitive scenarios (`01-smoke`,
+`03-exhaust-trail` — proven: 5/5 clean vs ~2/8 flaky with prewarm on). Prewarm is perf-only and behaviorally
+inert (it compiles shaders that would compile anyway), so skipping it under the test hook costs the suite
+nothing; real users always get it. On-device effect is validated via the `?dev` first-sample render time.
 
 **Measurement fix (same day):** `frameMs`/FPS were fed the sim's **clamped** `dt` (`min(getDelta, 0.05)`),
 so `frameMs` saturated at 50 ms and the overlay FPS was *overstated* on slow devices — every GE8320 session

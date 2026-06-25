@@ -151,10 +151,13 @@ doesn't scale with draws. Full rationale in DECISIONS §23 (follow-up #2 + Verdi
 **Decided:**
 - **Stop adding fill-rate levers / tiers for this class** — proven ineffective. `renderScale` stays
   (harmless; marginally cooler over long sessions). **Lever B cancelled. No 4th "Potato" tier.**
-- **The one real defect: startup.** First 1-4 frames per session = **0.8-2.2 s** render submit (shader
-  compile + texture upload). → **NEXT FIX: shader pre-warm** (`renderer.compile(scene, camera)` + warm a
-  frame / pre-instantiate particle+explosion materials before/at take-off, ideally during the hangar).
-  Highest-value remaining work. (Not yet built.)
+- **The one real defect: startup — ✅ FIXED 2026-06-25 (shader pre-warm).** First 1-4 frames per session
+  spent **0.8-2.2 s** (GE8320) / ~0.4 s (Mali) in render submit (shader compile + texture upload).
+  `prewarmShaders()` compiles both scenes + two off-screen meshes matching the dynamic effect program keys
+  (additive fog-off; opaque fog-on), once, **deferred two rAFs** after the loop starts, during the menu.
+  **Gated off under `?debug`** — `renderer.compile` is slow on the suite's software GL and flaked
+  startup-sensitive scenarios; prewarm is perf-only/inert so the suite loses nothing. Confirmed cross-device
+  as the only real win. Validate on-device via the `?dev` first-sample render time.
 - **Measurement fix (done):** FPS/`frameMs` now use the raw `clock.getDelta()` (the sim's clamped `dt`
   saturated `frameMs` at 50 ms and overstated overlay FPS on slow devices).
 
