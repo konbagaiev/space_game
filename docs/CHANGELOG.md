@@ -3,6 +3,22 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-25
+
+- **Perf: low-end-phone fill-rate pass (Lever A + cheap Lever C).** A tester on a Samsung Galaxy A03s
+  (PowerVR GE8320) reported the **same 15-25 fps in combat on both High and Performance** — a ~4× pixel
+  cut (pixelRatioCap 2→1) plus AA/envMap/particles off bought nothing, which points at either a
+  `devicePixelRatio` ~1 (the cap was a no-op) or a CPU-bound frame. Two new Performance-tier knobs in
+  `client/src/graphics.js`, both **off on High/Balance** (no regression): **`renderScale` 0.7** —
+  multiplies into `setPixelRatio` (`client/index.html`) so the backbuffer renders *below* native and the
+  browser upscales the full-size canvas (the only fill-rate lever that bites below a pixel-ratio cap of 1);
+  **`maxParticles` 300** — a hard ceiling on live additive particles (exhaust trail + sparks), skipping new
+  emits over budget (caps overdraw *and* per-frame JS). The **perf overlay now appends the real backbuffer
+  resolution** (`w×h`), so a tester can confirm whether a tier/`renderScale` change actually moved the pixel
+  count — distinguishing the two hypotheses. Tier-table unit test extended; visual smoke unchanged at High.
+  The costlier sky-pass throttle ("Lever B") and a 4th "Potato" tier stay **deferred until measured** — see
+  `docs/plans/perf-low-end-phones.md` and DECISIONS §23.
+
 ## 2026-06-24
 
 - **Refactor: per-ship model knobs consolidated into a documented `stats.model` block.** The loose,

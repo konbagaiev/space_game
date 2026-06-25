@@ -705,7 +705,10 @@ scene.background = null; // background is drawn by the sky scene (first pass); c
 scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so distant rocks fade into the backdrop
 
 const renderer = new THREE.WebGLRenderer({ antialias: gfx.antialias });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
+// renderScale (<1 on Performance) renders below native resolution; the browser upscales the full-size
+// canvas. The only fill-rate lever that bites below a pixelRatioCap of 1 (devicePixelRatio is often ~1
+// on weak phones, making the cap a no-op). setSize() preserves this ratio, so the resize handler is fine.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap) * gfx.renderScale);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.info.autoReset = false; // count load across both render passes
 
@@ -1467,6 +1470,12 @@ function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
 // cost). Reads the live `gfx`, so a tier switch affects subsequent spawns immediately. Min 1.
 const scaledCount = (n) => Math.max(1, Math.round(n * gfx.particleScale));
 
+// Live count of the high-volume additive particles (continuous exhaust trail + burst sparks). The hard
+// ceiling `gfx.maxParticles` (Infinity off High/Balance) skips new emits when over budget — caps both
+// fill-rate overdraw and per-frame JS on the weakest phones. trail+sparks dominate; the few short-lived
+// explosion/shockwave meshes aren't counted.
+const liveParticles = () => trail.length + sparks.length;
+
 // ---------- Micro-explosions at the impact point ----------
 const explosions = [];
 const EXPLOSION_LIFE = 0.16; // very short flash, sec
@@ -1507,7 +1516,8 @@ function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
   spawnExplosion(pos, 14 * s, 3.75, 0xff3a18);    // red outer cloud (always) — lower tiers drop the 2 middle layers (overdraw)
 
   // Radial spark spray: warm embers + a few in the engine's exhaust color, flung outward.
-  const N = scaledCount(22);
+  // Clamp to the live-particle budget so a death mid-fight can't blow past the ceiling on the lowest tier.
+  const N = Math.max(0, Math.min(scaledCount(22), gfx.maxParticles - liveParticles()));
   for (let i = 0; i < N; i++) {
     const col = (i % 4 === 0) ? exhaustColor : SPARK_COLORS[i % SPARK_COLORS.length];
     const mat = new THREE.MeshBasicMaterial({
@@ -1562,6 +1572,7 @@ function spawnTrail(pos, fwd, shipVel, exhaust) {
 // Emit one exhaust puff from a ship's nozzle. Shared by every ship (player and enemies):
 // the nozzle sits behind the hull (scaled by the ship's size) with a little width spread.
 function emitExhaust(mesh, fwd, shipVel, exhaust) {
+  if (liveParticles() >= gfx.maxParticles) return; // hard ceiling on the lowest tier (overdraw + JS)
   if (gfx.particleScale < 1 && Math.random() > gfx.particleScale) return; // thin the trail on lower tiers (per-frame overdraw)
   const sc = mesh.scale.x || 1;                          // world scale (incl. spawn-grow + sizeScale)
   const back = (mesh.userData.tailZ ?? -1.6) * sc;       // spawn at the model's actual tail (engines)
@@ -2514,7 +2525,11 @@ function updatePerf(dt) {
       ? (r.triangles / 1e6).toFixed(2) + 'M'
       : Math.round(r.triangles / 1e3) + 'k';
     const ms = (perfAccum / perfFrames * 1000).toFixed(1);
-    elPerf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris });
+    // Append the real backbuffer size (CSS size × pixelRatio × renderScale) — the actual pixels the GPU
+    // fills. Lets a tester confirm whether a tier/renderScale change moved the pixel count at all (a weak
+    // phone often reports devicePixelRatio ~1, so the pixelRatioCap is a no-op and only renderScale bites).
+    const res = `${renderer.domElement.width}×${renderer.domElement.height}`;
+    elPerf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res;
     perfAccum = 0; perfFrames = 0;
   }
 }

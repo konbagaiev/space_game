@@ -749,6 +749,28 @@ settings gear **pauses** the fight, so the perf overlay reads ≈60 on every tie
 tiers' benefit is fewer dips below 60 in heavy combat and less thermal throttling over time, observed
 **during gameplay**, not a higher peak in the paused menu.
 
+**Follow-up (2026-06-25): `renderScale` + a particle ceiling + a resolution readout, after a tester
+reported the same 15-25 fps in *combat* on BOTH High and Performance.** That is the key datum: dropping
+Performance from High is a ~4× pixel cut (pixelRatioCap 2→1) plus AA/envMap/particles off, yet combat fps
+didn't move. Two hypotheses survive: **(1)** the device's `devicePixelRatio` is ~1, so `min(DPR, 2)` and
+`min(DPR, 1)` are *identical* — the cap never reduced pixels — or **(2)** the frame is **CPU-bound** (the
+per-frame `update` + the DOM HUD/markers/minimap work, or the fixed two-pass overhead), where resolution
+is irrelevant. The change tests both, measurement-first:
+- **`renderScale`** (tier knob, Performance 0.7; 1.0 = off on High/Balance) multiplies into
+  `setPixelRatio`, rendering the backbuffer **below native** and letting the browser upscale the
+  full-size canvas. It is the **only** lever that bites *below* a pixelRatioCap of 1, so under hypothesis
+  (1) it is the first genuine fill-rate test. Chosen over a second render-target sky pass (a "Lever B" in
+  the plan) because it is one multiply, zero new GL objects, and no risk of a stale-sky parallax judder —
+  build the costlier sky throttle only if idle fps stays low *after* this.
+- **`maxParticles`** (Performance 300; `Infinity` off on High/Balance) is a hard ceiling on live additive
+  particles (exhaust trail + sparks) — new emits are skipped over budget. Cuts both overdraw and
+  per-frame JS, so it also helps under hypothesis (2). Layered on top of the existing `particleScale`.
+- **Resolution readout:** the perf overlay now appends the real backbuffer size
+  (`renderer.domElement.width×height` = CSS × pixelRatio × renderScale). A tester can now see whether a
+  tier/renderScale change moved the pixel count *at all* — directly distinguishing hypothesis (1) from
+  (2). Both knobs (and a possible 4th "Potato" tier) stay deferred-until-measured; see
+  `docs/plans/perf-low-end-phones.md`.
+
 ## 24. Wing-bank on turn — an inner "bank" group, not `rotation.z` on the root
 
 **Decision.** The cosmetic wing-roll (ships tilt into a turn, capped 20°) is applied as

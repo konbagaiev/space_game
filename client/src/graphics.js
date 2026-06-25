@@ -10,10 +10,16 @@ export const GRAPHICS_DEFAULT = 'high';
 // `envMap` enables a PMREM environment so metallic ship surfaces show real reflections (premium look,
 // one extra prefiltered-cubemap lookup per fragment on lit materials) — off on Performance to spare the
 // weakest phones (the fill-rate-bound case; see DECISIONS §23).
+// `renderScale` (<1) renders the backbuffer BELOW native resolution and lets the browser upscale the
+// full-size canvas — the cheapest fill-rate lever, and the only one that probes *below* a pixelRatioCap
+// of 1 (so it bites even when devicePixelRatio is already ~1 and the cap is a no-op). It multiplies into
+// setPixelRatio; 1.0 = native (off). `maxParticles` is a hard ceiling on live additive particles
+// (trail + sparks) — new emits are skipped over budget — capping both overdraw and per-frame JS on the
+// weakest phones; Infinity = unlimited (off). Both are 1.0/off on High & Balance. See DECISIONS §23.
 export const TIERS = {
-  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true },
-  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true },
-  performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false },
+  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  renderScale: 1.0,  maxParticles: Infinity },
+  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  renderScale: 1.0,  maxParticles: Infinity },
+  performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false, renderScale: 0.7,  maxParticles: 300 },
 };
 export const TIER_ORDER = ['high', 'balance', 'performance'];
 
