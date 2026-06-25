@@ -127,6 +127,20 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS idx_events_type_time ON events(type, created_at);
     CREATE INDEX IF NOT EXISTS idx_events_player ON events(player_id);
 
+    -- client perf samples (docs/plans/perf-low-end-phones.md). Diagnostic telemetry from the ?dev perf
+    -- monitor: one row per ~1s aggregated sample (fps + frame-time percentiles + JS frame-cost breakdown
+    -- + device/GPU passport). Best-effort, NO FK (logical FK). sample is the full JSONB payload.
+    CREATE TABLE IF NOT EXISTS perf_samples (
+      id         BIGSERIAL PRIMARY KEY,
+      player_id  TEXT   NOT NULL,
+      session_id TEXT   NOT NULL,
+      sample     JSONB  NOT NULL,
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_perf_session ON perf_samples(session_id);
+    CREATE INDEX IF NOT EXISTS idx_perf_time ON perf_samples(created_at);
+    CREATE INDEX IF NOT EXISTS idx_perf_player ON perf_samples(player_id);
+
     -- hangar shop + stash (docs/plans/hangar-shop.md). Player inventory (qty model), keyed by
     -- (player_id, kind, ref_id); kind ∈ {component, weapon} → components.id / weapons.id. The shop
     -- unlocks only after the player clears the final level → players.shop_unlocked.
@@ -373,6 +387,20 @@ export async function recordGame(playerId, { credits = 0, kills = 0, durationMs 
 export async function recordEvent(playerId, type, data) {
   await pool.query('INSERT INTO events (player_id, type, data, created_at) VALUES ($1, $2, $3::jsonb, $4)',
     [playerId, type, data != null ? JSON.stringify(data) : null, Date.now()]);
+}
+
+// Record one aggregated client perf sample (best-effort diagnostic; docs/plans/perf-low-end-phones.md).
+export async function recordPerfSample(playerId, sessionId, sample) {
+  await pool.query('INSERT INTO perf_samples (player_id, session_id, sample, created_at) VALUES ($1, $2, $3::jsonb, $4)',
+    [playerId, sessionId, JSON.stringify(sample ?? null), Date.now()]);
+}
+
+// Read perf samples (newest first) — for analysis / tests; not exposed via a public route.
+export async function getPerfSamples(sessionId = null, limit = 500) {
+  const { rows } = sessionId
+    ? await pool.query('SELECT * FROM perf_samples WHERE session_id = $1 ORDER BY id DESC LIMIT $2', [sessionId, limit])
+    : await pool.query('SELECT * FROM perf_samples ORDER BY id DESC LIMIT $1', [limit]);
+  return rows; // sample is already a JS object (JSONB)
 }
 
 export async function getPlayerGames(playerId, limit = 50) {

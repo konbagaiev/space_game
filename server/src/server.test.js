@@ -180,6 +180,27 @@ test('register: missing playerId -> 400', async () => {
   assert.equal(r.status, 400);
 });
 
+test('perf: POST /api/perf stores a batch of samples; bad payloads -> 400', async () => {
+  const { getPerfSamples } = await import('./datastore.js');
+  const sessionId = 'sess-perf-1';
+  const samples = [
+    { t: 1, scene: 'combat', fps: 42.5, frameMs: { p50: 23, p95: 40, max: 60 }, js: { update: 2, dom: 1, render: 1, total: 4 } },
+    { t: 2, scene: 'menu', fps: 60, frameMs: { p50: 16, p95: 18, max: 22 }, js: { update: 0.5, dom: 1, render: 1, total: 2.5 } },
+  ];
+  const ok = await post('/api/perf', { playerId: 'perf-player', sessionId, samples });
+  assert.equal(ok.status, 204);
+
+  const rows = await getPerfSamples(sessionId);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].player_id, 'perf-player');
+  // sample round-trips as JSON (newest first → the menu sample is row 0)
+  assert.equal(rows[0].sample.scene, 'menu');
+  assert.equal(rows[1].sample.fps, 42.5);
+
+  assert.equal((await post('/api/perf', { sessionId, samples })).status, 400); // missing playerId
+  assert.equal((await post('/api/perf', { playerId: 'x', sessionId, samples: [] })).status, 400); // nothing accepted
+});
+
 test('record game: stored in history and credits banked into the balance', async () => {
   // p1 starts at the default 1000 balance
   assert.equal((await (await post('/api/players/register', { playerId: 'p1' })).json()).credits, 1000);

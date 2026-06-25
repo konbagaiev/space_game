@@ -19,6 +19,21 @@
   The costlier sky-pass throttle ("Lever B") and a 4th "Potato" tier stay **deferred until measured** — see
   `docs/plans/perf-low-end-phones.md` and DECISIONS §23.
 
+- **Perf: `?dev` client perf monitor + `perf_samples` telemetry.** A second tester (Redmi 10c) reported
+  fps **independent of our graphics tier AND of scene load** (High gave *higher* fps than Performance;
+  brief dips while simply turning, none during a heavy fight) — the signature of external governing
+  (thermal/DVFS/vsync), which a single fps number can't confirm. So: opening the game with **`?dev`**
+  (mirrors `?tune`/`?debug`) turns on a per-frame profiler (`devPerf` in `client/index.html`) that times
+  the JS work each frame — `update` (sim) / `dom` (HUD+markers+minimap+OOB) / `render` (two-pass submit) —
+  and once per second ships an aggregated sample (fps, frame-time p50/p95/max, the JS breakdown, a jank
+  count, scene load, backbuffer res, and a one-time device/GPU passport via `WEBGL_debug_renderer_info`)
+  to the new **`POST /api/perf`** → **`perf_samples`** table (migration 015 SQLite / Postgres bootstrap;
+  both datastores; `recordPerfSample`/`getPerfSamples`). Batched every ~5 s + on tab-hide (`sendBeacon`);
+  a `●dev` marker shows on the overlay while recording. **Off — zero overhead — for normal players.** The
+  diagnostic tell: if `js.total` ≪ `frameMs.p50`, the frame isn't CPU-bound → external/GPU-governed.
+  Server test added; verified end-to-end (page → POST 204 → rows stored). Give a friend a `/?dev` link and
+  read it with SQL over `perf_samples`. See DECISIONS §23.
+
 ## 2026-06-24
 
 - **Refactor: per-ship model knobs consolidated into a documented `stats.model` block.** The loose,

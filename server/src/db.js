@@ -236,6 +236,21 @@ export function recordEvent(playerId, type, data) {
     .run(playerId, type, data != null ? JSON.stringify(data) : null, Date.now());
 }
 
+// Record one aggregated client perf sample (best-effort diagnostic telemetry from the ?dev monitor;
+// docs/plans/perf-low-end-phones.md). `sample` is an arbitrary JSON object (1s of frame stats + device).
+export function recordPerfSample(playerId, sessionId, sample) {
+  db.prepare('INSERT INTO perf_samples (player_id, session_id, sample, created_at) VALUES (?, ?, ?, ?)')
+    .run(playerId, sessionId, JSON.stringify(sample ?? null), Date.now());
+}
+
+// Read perf samples (newest first) — for analysis / tests; not exposed via a public route.
+export function getPerfSamples(sessionId = null, limit = 500) {
+  const rows = sessionId
+    ? db.prepare('SELECT * FROM perf_samples WHERE session_id = ? ORDER BY id DESC LIMIT ?').all(sessionId, limit)
+    : db.prepare('SELECT * FROM perf_samples ORDER BY id DESC LIMIT ?').all(limit);
+  return rows.map((r) => ({ ...r, sample: JSON.parse(r.sample) }));
+}
+
 export function getPlayerGames(playerId, limit = 50) {
   // id is autoincrement, so DESC = newest first (deterministic even within the same ms).
   return db.prepare(

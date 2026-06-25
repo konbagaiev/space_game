@@ -6,7 +6,7 @@ import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend, resetPlayer,
-  getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent,
+  getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
   getStash, buyItem, sellItem, equipItem, unequipItem } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { generateMissions } from './missions.js';
@@ -320,6 +320,23 @@ export async function createApp() {
       const playerId = e.playerId || body.playerId;
       if (!playerId || typeof playerId !== 'string' || !EVENT_TYPES.has(e.type)) continue;
       try { await recordEvent(playerId, e.type, e.data ?? null); accepted++; } catch { /* best-effort */ }
+    }
+    res.status(accepted ? 204 : 400).end();
+  }));
+
+  // Client perf samples from the `?dev` monitor (docs/plans/perf-low-end-phones.md). Best-effort
+  // diagnostic telemetry: a batch of ~1s aggregated samples, one row each. Write-only (no public read).
+  app.post('/api/perf', wrap(async (req, res) => {
+    const body = req.body || {};
+    const { playerId, sessionId } = body;
+    if (!playerId || typeof playerId !== 'string' || !sessionId || typeof sessionId !== 'string') {
+      return res.status(400).end();
+    }
+    const samples = Array.isArray(body.samples) ? body.samples : [];
+    let accepted = 0;
+    for (const s of samples.slice(0, 120)) { // cap a batch to bound abuse
+      if (!s || typeof s !== 'object') continue;
+      try { await recordPerfSample(playerId, sessionId, s); accepted++; } catch { /* best-effort */ }
     }
     res.status(accepted ? 204 : 400).end();
   }));

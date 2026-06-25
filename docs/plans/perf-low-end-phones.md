@@ -40,6 +40,33 @@ Interpretation:
 > they test both at once**, and the new **resolution readout in the perf overlay** (`w×h`) lets the tester
 > see whether `renderScale` actually moved the pixel count — distinguishing (1) from (2) directly.
 
+> **MEASUREMENT FINDING #2 (2026-06-25) — second device, same story + a new clue.** A Redmi 10c tester:
+> fps **independent of the tier** (High gave a *higher* fps than Performance — impossible if our knobs were
+> the wall; a test-order thermal artifact) **and independent of scene load** (brief dips to ~35 while
+> *simply turning* with nothing happening; a steady 55-60 during two simultaneous explosions + a station on
+> screen). That's the fingerprint of **external governing** — thermal/DVFS + browser frame-pacing
+> (vsync/compositor) + GC — which none of our levers touch. Confirms: a single fps number is the wrong
+> instrument. → built the **`?dev` perf monitor** below.
+
+## The `?dev` perf monitor (SHIPPED 2026-06-25 — the real measurement instrument)
+Opening the game with **`?dev`** (mirrors `?tune`/`?debug`; **off/zero-overhead** otherwise) turns on
+`devPerf` in `client/index.html`. Each frame it times the JS work in three buckets — **`update`** (sim) /
+**`dom`** (HUD + markers + minimap + OOB) / **`render`** (the two-pass `renderer.render` *submit* cost) —
+and once per second ships an aggregated sample to **`POST /api/perf`** → **`perf_samples`** table
+(migration 015 SQLite / Postgres bootstrap; `recordPerfSample`/`getPerfSamples` in both datastores).
+- **Sample shape:** `{ t, scene, fps, frames, frameMs:{p50,p95,max}, js:{update,dom,render,total,totalP95},
+  jank, load:{enemies,particles,draws,tris}, res, device }`. `device` (once): `ua, dpr, cores, mem, screen,
+  gpu` (real chip via `WEBGL_debug_renderer_info`), `gpuVendor, tier, knobs`.
+- **Transport:** batched every ~5 s + on tab-hide (`sendBeacon`), cap 120 samples/batch, write-only (no
+  public read). A `●dev` marker shows on the perf overlay while recording. Workflow: **give a friend a
+  `/?dev` link**, then read `perf_samples` with SQL.
+- **The decisive read:** `js.total` ≪ `frameMs.p50` → **not** CPU-bound → external/GPU-governed (graphics
+  settings won't help — accept the device or chase GPU/compositor). `js.total ≈ frameMs.p50` → **CPU-bound**
+  → cut per-frame JS (throttle `updateMarkers`/`updateMiniMap`/`updateHud`, profile `update`).
+- **Caveat:** browsers don't expose true GPU execution time on mobile (`EXT_disjoint_timer_query` disabled),
+  so `render` is the CPU *submit* cost only — a low `js.total` with low fps still localizes the problem to
+  "not our JS", which is the answer we need.
+
 ## Levers (ranked; each is independent and tier-gated so capable devices are untouched)
 
 ### Lever A — render below native resolution on Performance (biggest, cheapest) — ✅ SHIPPED 2026-06-25

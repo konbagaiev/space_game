@@ -5,8 +5,10 @@
 
 **Updated:** 2026-06-25 (low-end-phone perf pass: Performance tier gains `renderScale` 0.7 (sub-native
 backbuffer) + a `maxParticles` 300 ceiling, and the perf overlay now shows the real backbuffer resolution
-— after a tester saw the same combat fps on High and Performance; per-ship model presentation consolidated
-into a documented `stats.model` block — yaw/scale + optional muzzle/exhaust spawn overrides — replacing loose `modelYaw`/`sizeScale` keys (back-compat reads kept); new `docs/plans/adding-a-ship-model.md` convention; player ship = real textured "Air & Space Vessel" model (downscaled textures → player_combat/_hangar, model.scale 1.1); tier-gated env-map reflections on ships; muzzle/exhaust spawn from the model's real nose/tail bounds; enemy weapon fire silenced (rocket detonations kept); "Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
+— after a tester saw the same combat fps on High and Performance; plus a **`?dev` perf monitor** that
+samples per-frame JS-cost breakdown + device/GPU passport once a second to `POST /api/perf` →
+`perf_samples` table, to tell CPU-bound from GPU/externally-governed; per-ship model presentation
+consolidated into a documented `stats.model` block — yaw/scale + optional muzzle/exhaust spawn overrides — replacing loose `modelYaw`/`sizeScale` keys (back-compat reads kept); new `docs/plans/adding-a-ship-model.md` convention; player ship = real textured "Air & Space Vessel" model (downscaled textures → player_combat/_hangar, model.scale 1.1); tier-gated env-map reflections on ships; muzzle/exhaust spawn from the model's real nose/tail bounds; enemy weapon fire silenced (rocket detonations kept); "Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -548,7 +550,8 @@ first translation). See DECISIONS §10.
   `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
   `GET /api/levels/:name`, the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
   `POST /api/auth/resend-verification`, `GET /api/auth/me`, `GET /api/auth/verify`), plus
-  `GET /api/config` (public client config) and `POST /api/events` (funnel telemetry).
+  `GET /api/config` (public client config), `POST /api/events` (funnel telemetry) and
+  `POST /api/perf` (client perf samples from the `?dev` monitor — write-only diagnostic telemetry).
 - **Health / uptime** — `GET /api/health` is the monitoring endpoint (UptimeRobot, the Docker
   healthcheck, the CI smoke check all use it). It touches the DB (via `stats`), so it reflects DB
   outages, not just process liveness: **200** `{ ok:true, status:"ok", backend, uptimeSec, players,
@@ -576,6 +579,21 @@ first translation). See DECISIONS §10.
     else **400**; never blocks gameplay. The client fires these fire-and-forget via a `track()` helper
     (`quit` uses `navigator.sendBeacon` so it survives tab close), and tags the Sentry scope with the
     current level. Read the funnel with plain SQL over `events`.
+  - **Client perf samples (`?dev` monitor).** `perf_samples` table (migration 015 / Postgres bootstrap):
+    `id`, `player_id` (logical FK), `session_id` (random per page load), `sample` (JSON/JSONB),
+    `created_at`; indexed on `(session_id)`, `(created_at)`, `(player_id)`. Diagnostic telemetry for weak
+    phones: opening the game with **`?dev`** (mirrors `?tune`/`?debug`) turns on a per-frame profiler
+    (`devPerf` in `index.html`) that times the JS work each frame — **`update` (sim) / `dom` (HUD, markers,
+    minimap, OOB) / `render` (the two-pass submit)** — and once per second emits an aggregated **sample**:
+    `fps`, `frameMs` (p50/p95/max), the `js` breakdown (means + `totalP95`), a `jank` count (frames >
+    1.5× p50), scene `load` (enemies/particles/draws/tris), backbuffer `res`, and a one-time **device
+    passport** (`ua`, `dpr`, `cores`, `mem`, `screen`, real **`gpu`** via `WEBGL_debug_renderer_info`, the
+    `tier` + its `knobs`). Batched to **`POST /api/perf`** (`{ playerId, sessionId, samples:[…] }`, cap
+    120/batch) every ~5 s and on tab-hide (`sendBeacon`); the perf overlay shows a `●dev` marker while
+    recording. **Off — zero overhead — without `?dev`.** Write-only over HTTP (no public read); analyze
+    with plain SQL over `perf_samples` (the key tell: if `js.total` ≪ `frameMs.p50` the frame isn't
+    CPU-bound → external/GPU-governed). Not wiped by a player reset. See DECISIONS §23 +
+    `docs/plans/perf-low-end-phones.md`.
 
 ### Accounts / authentication (DECISIONS §11)
 - **Anonymous-first, optional account.** Players keep the localStorage UUID and auto-register as

@@ -771,6 +771,29 @@ is irrelevant. The change tests both, measurement-first:
   (2). Both knobs (and a possible 4th "Potato" tier) stay deferred-until-measured; see
   `docs/plans/perf-low-end-phones.md`.
 
+**Follow-up #2 (2026-06-25): a `?dev` perf monitor + `perf_samples` telemetry — we were flying blind.** A
+second tester (Redmi 10c) reported fps **independent of the graphics tier AND of scene load**: High gave a
+*higher* fps than Performance (impossible if our knobs were the bottleneck — almost certainly a test-order
+thermal artifact), and brief dips happened while simply turning with nothing on screen, not during a heavy
+fight with two explosions + a station. That is the signature of **external governing** — thermal/DVFS clock
+scaling + browser frame-pacing (vsync/compositor) + occasional GC — none of which our settings touch. A
+single vsync-capped fps number can't prove it, so we built a measurement tool:
+- **`?dev` (dev-gated, like `?tune`/`?debug`)** turns on `devPerf` in `index.html`: each frame it times the
+  JS work in three buckets — **`update`** (the sim), **`dom`** (HUD + markers + minimap + OOB overlays),
+  **`render`** (the two-pass `renderer.render` *submit* cost; true GPU exec is async and not directly
+  measurable in a browser — `EXT_disjoint_timer_query` is disabled on mobile) — and once a second emits an
+  aggregated sample (see SUMMARY for the shape) with a one-time device/GPU passport. **Off → zero overhead**
+  for normal players (the per-frame `performance.now()` marks are guarded by the `DEV` flag).
+- **The decisive read:** if `js.total` is far below `frameMs.p50` (e.g. 6 ms of JS in a 28 ms frame), the
+  frame is **not CPU-bound** → it's external/GPU-governed and *no graphics setting will move it much*; if
+  `js.total ≈ frameMs.p50`, it's **CPU-bound** → cut per-frame JS (throttle the DOM overlays, profile
+  `update`). The `device.gpu` string finally tells us the real chip.
+- **Storage:** a **dedicated `perf_samples` table**, not the funnel `events` table — perf samples are
+  higher-volume, structurally different, and shouldn't pollute the funnel's allowlist/indexes or be wiped
+  by a player reset. **`POST /api/perf`** is write-only over HTTP (no public read route); analysis is plain
+  SQL. Sampling is once/sec, batched every ~5 s (+ `sendBeacon` on tab-hide) to avoid the monitor itself
+  adding jank. We give a friend a `/?dev` link and read the rows later.
+
 ## 24. Wing-bank on turn — an inner "bank" group, not `rotation.z` on the root
 
 **Decision.** The cosmetic wing-roll (ships tilt into a turn, capped 20°) is applied as

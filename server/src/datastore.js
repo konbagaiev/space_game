@@ -14,6 +14,8 @@ export const getCurrentLevel = (...a) => impl.getCurrentLevel(...a);
 export const advanceProgress = (...a) => impl.advanceProgress(...a);
 export const recordGame = (...a) => impl.recordGame(...a);
 export const recordEvent = (...a) => impl.recordEvent(...a);
+export const recordPerfSample = (...a) => impl.recordPerfSample(...a);
+export const getPerfSamples = (...a) => impl.getPerfSamples(...a);
 export const getPlayerGames = (...a) => impl.getPlayerGames(...a);
 export const stats = (...a) => impl.stats(...a);
 export const getShips = (...a) => impl.getShips(...a);
