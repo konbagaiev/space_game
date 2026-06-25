@@ -55,8 +55,10 @@ Opening the game with **`?dev`** (mirrors `?tune`/`?debug`; **off/zero-overhead*
 and once per second ships an aggregated sample to **`POST /api/perf`** → **`perf_samples`** table
 (migration 015 SQLite / Postgres bootstrap; `recordPerfSample`/`getPerfSamples` in both datastores).
 - **Sample shape:** `{ t, scene, fps, frames, frameMs:{p50,p95,max}, js:{update,dom,render,total,totalP95},
-  jank, load:{enemies,particles,draws,tris}, res, device }`. `device` (once): `ua, dpr, cores, mem, screen,
-  gpu` (real chip via `WEBGL_debug_renderer_info`), `gpuVendor, tier, knobs`.
+  jank, load:{enemies,particles,draws,tris}, heap:{used,total,limit}|null, res, device }`. `heap` is JS-heap
+  MB via `performance.memory` (Chrome-only; **not** process RSS or GPU memory — textures/buffers live in the
+  driver; the live overlay also shows `usedMB` in `?dev`). `device` (once): `ua, dpr, cores, mem` (=device
+  RAM GB), `screen, gpu` (real chip via `WEBGL_debug_renderer_info`), `gpuVendor, tier, knobs`.
 - **Transport:** batched every ~5 s + on tab-hide (`sendBeacon`), cap 120 samples/batch, write-only (no
   public read). A `●dev` marker shows on the perf overlay while recording. Workflow: **give a friend a
   `/?dev` link**, then read `perf_samples` with SQL.

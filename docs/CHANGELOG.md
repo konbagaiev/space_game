@@ -34,6 +34,12 @@
   Server test added; verified end-to-end (page → POST 204 → rows stored). Give a friend a `/?dev` link and
   read it with SQL over `perf_samples`. See DECISIONS §23.
 
+- **Perf monitor: capture JS-heap memory.** The `?dev` sampler now records a **`heap`** field (`used`/
+  `total`/`limit` MB via `performance.memory`) in each sample, and the `?dev` overlay shows live `usedMB`.
+  Chrome/Android-Chrome only (`null` elsewhere); it's the JS heap, **not** process RSS or GPU memory, but
+  it's the only in-page memory signal and catches JS-side growth/leaks over a session. (`navigator.device
+  Memory` — total device RAM — is already in the device passport.)
+
 ## 2026-06-24
 
 - **Refactor: per-ship model knobs consolidated into a documented `stats.model` block.** The loose,

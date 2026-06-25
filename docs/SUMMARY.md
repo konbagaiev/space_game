@@ -586,7 +586,9 @@ first translation). See DECISIONS §10.
     (`devPerf` in `index.html`) that times the JS work each frame — **`update` (sim) / `dom` (HUD, markers,
     minimap, OOB) / `render` (the two-pass submit)** — and once per second emits an aggregated **sample**:
     `fps`, `frameMs` (p50/p95/max), the `js` breakdown (means + `totalP95`), a `jank` count (frames >
-    1.5× p50), scene `load` (enemies/particles/draws/tris), backbuffer `res`, and a one-time **device
+    1.5× p50), scene `load` (enemies/particles/draws/tris), **`heap`** (JS-heap MB — `used`/`total`/`limit`
+    via `performance.memory`; Chrome-only, **not** process RSS or GPU memory, `null` elsewhere), backbuffer
+    `res`, and a one-time **device
     passport** (`ua`, `dpr`, `cores`, `mem`, `screen`, real **`gpu`** via `WEBGL_debug_renderer_info`, the
     `tier` + its `knobs`). Batched to **`POST /api/perf`** (`{ playerId, sessionId, samples:[…] }`, cap
     120/batch) every ~5 s and on tab-hide (`sendBeacon`); the perf overlay shows a `●dev` marker while

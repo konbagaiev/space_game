@@ -2530,7 +2530,9 @@ function updatePerf(dt) {
     // fills. Lets a tester confirm whether a tier/renderScale change moved the pixel count at all (a weak
     // phone often reports devicePixelRatio ~1, so the pixelRatioCap is a no-op and only renderScale bites).
     const res = `${renderer.domElement.width}×${renderer.domElement.height}`;
-    elPerf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + (DEV ? ' ●dev' : '');
+    // In ?dev, append live JS-heap usage (Chrome only) so the tester can eyeball current RAM.
+    const devSuffix = DEV ? (performance.memory ? ` · ${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '') + ' ●dev' : '';
+    elPerf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + devSuffix;
     perfAccum = 0; perfFrames = 0;
   }
 }
@@ -2678,6 +2680,14 @@ const devPerf = (() => {
   const pct = (sorted, p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p / 100 * sorted.length))] : 0;
   const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
   const r1 = (x) => Math.round(x * 10) / 10;
+  // JS heap usage (Chrome/Android-Chrome only; non-standard, bucketed for privacy). NOT the process RSS
+  // and NOT GPU memory (textures/buffers live in the driver) — but the only in-page memory signal, and it
+  // catches JS-side growth/leaks over a session. null where unavailable (Safari/Firefox).
+  const MB = 1048576;
+  const heapMB = () => {
+    const m = performance.memory;
+    return m ? { used: Math.round(m.usedJSHeapSize / MB), total: Math.round(m.totalJSHeapSize / MB), limit: Math.round(m.jsHeapSizeLimit / MB) } : null;
+  };
 
   function flush(beacon) {
     if (!outbox.length || !playerId) return;
@@ -2702,6 +2712,7 @@ const devPerf = (() => {
               render: r1(mean(bucket.map((f) => f.render))), total: r1(mean(totals)), totalP95: r1(pct(totals, 95)) },
         jank: frameMs.filter((m) => m > 1.5 * p50).length,
         load: { enemies: enemies.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
+        heap: heapMB(), // JS heap (MB) — Chrome only; null elsewhere
         res: `${renderer.domElement.width}x${renderer.domElement.height}`, device,
       });
     }
