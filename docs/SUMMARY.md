@@ -467,8 +467,12 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   off / off), **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales spark count,
   drops the 2 middle fireball layers + the shockwave, and thins the exhaust), and **maxParticles** (∞ / ∞ /
   **300** — a hard ceiling on live additive particles, exhaust trail + sparks; new emits skip over budget,
-  capping per-frame JS / draw-call submit). maxParticles is **off (∞) on High & Balance**. Persisted in
-  `localStorage` (key `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. **Picking a tier
+  capping per-frame JS / draw-call submit). maxParticles is **off (∞) on High & Balance**. **Performance
+  also batches the high-volume additive particles** — the exhaust **trail** and explosion **sparks** are
+  drawn as **one `THREE.Points` cloud each** (a pooled custom-shader field, `makeParticleField`) instead of
+  a Mesh — i.e. a draw call — per particle, since the measured weak-device cost is **CPU draw-call submit**
+  (DECISIONS §23). High/Balance keep the prettier mesh-per-particle path **untouched** (the batching is
+  gated to Performance via `BATCH_PARTICLES`). Persisted in `localStorage` (key `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. **Picking a tier
   reloads the page** so the whole preset (antialias — a `WebGLRenderer` constructor arg — + pixel ratio +
   star/particle density) applies cleanly from startup, no half-applied state (server-side progress is
   untouched). The selector sits below its label (the 3 buttons share one row). The tier knob table lives
