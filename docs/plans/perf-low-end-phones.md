@@ -151,13 +151,13 @@ doesn't scale with draws. Full rationale in DECISIONS §23 (follow-up #2 + Verdi
 **Decided:**
 - **Stop adding fill-rate levers / tiers for this class** — proven ineffective. **`renderScale` REMOVED
   (2026-06-27)** — it only blurred the image for zero fps gain. **Lever B cancelled. No 4th "Potato" tier.**
-- **The real lever is CPU draw-call submit** → **particle batching ✅ BUILT 2026-06-27 (Performance only).**
-  The exhaust trail + explosion sparks are drawn as one `THREE.Points` cloud each (`makeParticleField`,
-  pooled custom-shader field) instead of a Mesh per particle. ~80 → ~22-49 draws for the same burst, verified
-  headless (sparks/trail render with matching size/colour). Gated to Performance (`BATCH_PARTICLES`); High/
-  Balance keep the mesh path untouched. Fireball layers/shockwave stay meshes (few + too big for a point
-  sprite). **PBR→cheaper-shader was considered and dropped** — it targets per-fragment cost, which the
-  resolution-independence proves is NOT the wall (same refutation as `renderScale`).
+- **Particle batching (trail+sparks → one `THREE.Points` each) — TRIED 2026-06-27 and REVERTED same day.**
+  On-device (`?dev`) it lowered per-particle draw cost (~0.9 → ~0.5 draws/particle) but **combat fps didn't
+  move** (governor-capped) and **`js.render` rose ~1 ms** (the Points fields re-uploaded their full buffer
+  every frame — more bandwidth than the few draws saved). Zero measurable gain → removed. **5th proof the
+  GE8320 combat ceiling is hardware.** **PBR→cheaper-shader** was also dropped (targets per-fragment cost,
+  which resolution-independence proves is NOT the wall). **Conclusion: stop optimizing this device's combat
+  fps.** Shippable wins this pass = the shader pre-warm + `renderScale` removal (both kept).
 - **The one real defect: startup — ✅ FIXED 2026-06-25 (shader pre-warm).** First 1-4 frames per session
   spent **0.8-2.2 s** (GE8320) / ~0.4 s (Mali) in render submit (shader compile + texture upload).
   `prewarmShaders()` compiles both scenes + two off-screen meshes matching the dynamic effect program keys

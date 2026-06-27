@@ -831,18 +831,19 @@ read `frameMs.max = 50` exactly. The perf path now reads the **raw** `clock.getD
 clamp. (GPU execution time is still not directly measurable — `EXT_disjoint_timer_query` is disabled on
 mobile — but a low `js.total` against a high *raw* frame interval is enough to localize "not our JS".)
 
-**Particle batching (built 2026-06-27, Performance only).** The one data-supported CPU lever: the
-high-volume additive particles (exhaust **trail** + explosion **sparks**) were a `Mesh` — a separate draw
-call — *each* (dozens per frame), and CPU draw-call submit is the measured weak-device cost. On Performance
-they're now drawn as **one `THREE.Points` cloud each** (`makeParticleField` — a pooled field with a custom
-additive point-sprite shader; per-particle position/color/size in buffer attributes, velocity/life in
-parallel JS arrays, opacity baked into color, swap-with-last frees). Verified headless: ~80 → ~22-49 draw
-calls for the same burst, particles render with matching size/colour. **Gated to Performance only**
-(`BATCH_PARTICLES = gfx.name === 'performance'`) — High/Balance keep the mesh-per-particle path untouched,
-so the capable-device look is unchanged and the change carries zero risk there. The big fireball layers /
-shockwave ring stay meshes (few per death, and too large for a point sprite's `gl_PointSize` cap). The
-**renderScale knob was removed** the same day (measured: a 5.5-7× pixel cut changed fps by nothing on two
-GPUs — fill rate is not the wall — so it only blurred the image); resolution levers are a dead end here.
+**Particle batching — tried (2026-06-27) and REVERTED the same day.** The one data-supported CPU lever
+(draw-call submit): trail + sparks were batched into one `THREE.Points` cloud each (Performance only). The
+`?dev` telemetry was unambiguous: it **lowered per-particle draw cost** (~0.9 → ~0.5 draws/particle) but
+**combat fps didn't move** (~22-24, governor-capped) and **`js.render` rose ~1 ms** with particles present —
+the dynamic Points fields re-uploaded their whole buffer every frame (`needsUpdate` on the full capacity,
+not the live range), which on this weak GPU cost more bandwidth than the handful of draw calls it saved.
+Net: a custom-shader Points system + an un-prewarmed shader hitch for **zero measurable gain**. **Removed**
+(per "if you reverted it, remove it"); the mesh-per-particle path is restored everywhere. This is the **5th
+independent proof** that the GE8320's *combat* fps is set by its GPU/compositor governor, not anything we
+render: (1) 7× pixel cut, (2) load-independence, (3) tier-independence, (4) flat across the whole tier table,
+(5) a real draw-call reduction — all moved combat fps by nothing. **Conclusion: stop optimizing this
+device's combat fps; the ceiling is hardware.** The shippable wins were the **shader pre-warm** (startup
+freeze) and **`renderScale` removal** (sharpness) — both perceptible, both kept.
 
 ## 24. Wing-bank on turn — an inner "bank" group, not `rotation.z` on the root
 

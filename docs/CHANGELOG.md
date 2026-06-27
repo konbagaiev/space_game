@@ -5,18 +5,16 @@
 
 ## 2026-06-27
 
-- **Perf: batch trail + sparks into `THREE.Points` on Performance (the one real CPU lever).** The
-  high-volume additive particles (engine exhaust **trail** + ship-explosion **sparks**) were a `Mesh` — a
-  separate draw call — *each* (dozens per frame), and the measured weak-device bottleneck is CPU draw-call
-  submit (DECISIONS §23). On the **Performance tier only**, each is now drawn as a single pooled
-  `THREE.Points` cloud (`makeParticleField` in `client/index.html` — a custom additive point-sprite shader;
-  per-particle position/color/size in buffer attributes, velocity/life in parallel arrays, opacity baked
-  into colour, swap-with-last frees). Verified headless: ~80 → ~22-49 draw calls for the same explosion
-  burst, sparks/trail render with matching size + colour. **Gated to Performance** (`BATCH_PARTICLES =
-  gfx.name === 'performance'`) — High/Balance keep the prettier mesh-per-particle path untouched (zero risk
-  to capable devices). The fireball layers + shockwave ring stay meshes (few per death, and too large for a
-  point sprite's size cap). On-device fps effect to be confirmed via the `?dev` `js.render` + `draws`.
-
+- **Reverted the Performance particle batching — measured no benefit on the governor-bound device.**
+  Trail + sparks were batched into one `THREE.Points` each (commit reverted here) to cut CPU draw-call
+  submit. On-device telemetry (`?dev`, PowerVR GE8320) showed it **did** lower per-particle draw cost
+  (~0.9 → ~0.5 draws/particle) but **combat fps was unchanged** (~22-24, governor-capped — a 5th
+  independent proof the device's combat ceiling is its GPU/compositor governor, not our code) and
+  **`js.render` actually rose ~1 ms** when particles were present — the Points fields re-uploaded their
+  full buffer every frame, costing more than the few draw calls saved. So it added a custom-shader Points
+  system (plus an un-prewarmed point-shader compile hitch) for zero measurable gain. Removed it; the
+  prettier mesh-per-particle path is restored on all tiers. The real wins from this pass stay: the shader
+  **pre-warm** (startup freeze gone) and the **`renderScale` removal** (sharper image). See DECISIONS §23.
 
 - **Perf: removed the sub-1 `renderScale` knob (it blurred for no gain).** Measured on two GPUs (PowerVR
   GE8320 phone, Mali-G52 tablet), a 5.5-7× backbuffer-pixel cut moved fps by **nothing** — the weak-device

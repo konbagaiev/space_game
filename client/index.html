@@ -1469,95 +1469,11 @@ function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
 // cost). Reads the live `gfx`, so a tier switch affects subsequent spawns immediately. Min 1.
 const scaledCount = (n) => Math.max(1, Math.round(n * gfx.particleScale));
 
-// ---------- Batched particle field (Performance tier only) ----------
-// The measured weak-device cost is CPU draw-call submit (DECISIONS §23), and the high-volume additive
-// particles (exhaust trail + explosion sparks) were a Mesh — i.e. a separate draw call — EACH (dozens per
-// frame). On Performance we draw all of one kind as ONE `THREE.Points` (one draw call). High/Balance keep
-// the prettier mesh-per-particle path completely untouched — this is gated to Performance only, so capable
-// devices are unaffected. Per-particle position/color/size live in buffer attributes; velocity/life in
-// parallel JS arrays. Opacity is baked into color (additive: dimming toward black = fading). The soft
-// round sprite is procedural in the fragment shader (no texture). Pooled with swap-with-last frees.
-function makeParticleField(capacity) {
-  const position = new Float32Array(capacity * 3), aColor = new Float32Array(capacity * 3), aSize = new Float32Array(capacity);
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(position, 3).setUsage(THREE.DynamicDrawUsage));
-  geo.setAttribute('aColor', new THREE.BufferAttribute(aColor, 3).setUsage(THREE.DynamicDrawUsage));
-  geo.setAttribute('aSize', new THREE.BufferAttribute(aSize, 1).setUsage(THREE.DynamicDrawUsage));
-  geo.setDrawRange(0, 0);
-  const mat = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    uniforms: { uScale: { value: 1000 } }, // viewport-relative point size; recomputed each update
-    vertexShader: `
-      attribute float aSize; attribute vec3 aColor; varying vec3 vColor; uniform float uScale;
-      void main() {
-        vColor = aColor;
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * uScale / max(-mv.z, 1.0);
-        gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader: `
-      varying vec3 vColor;
-      void main() {
-        vec2 d = gl_PointCoord - 0.5;
-        float r2 = dot(d, d);
-        if (r2 > 0.25) discard;          // round sprite
-        gl_FragColor = vec4(vColor * (1.0 - r2 * 4.0), 1.0); // soft falloff; additive ignores alpha
-      }`,
-  });
-  const pts = new THREE.Points(geo, mat);
-  pts.frustumCulled = false; // the cloud spans the scene; culling by its origin bound would be wrong
-  scene.add(pts);
-  const vel = [], life = new Float32Array(capacity), maxLife = new Float32Array(capacity);
-  const baseSize = new Float32Array(capacity), bR = new Float32Array(capacity), bG = new Float32Array(capacity), bB = new Float32Array(capacity);
-  const _c = new THREE.Color();
-  let count = 0;
-  const writeColor = (i, a) => { aColor[i*3] = bR[i]*a; aColor[i*3+1] = bG[i]*a; aColor[i*3+2] = bB[i]*a; };
-  return {
-    get count() { return count; },
-    spawn(pos, v, lifeSec, size, colorHex, alpha0) {
-      if (count >= capacity) return;
-      const i = count++;
-      position[i*3] = pos.x; position[i*3+1] = pos.y; position[i*3+2] = pos.z;
-      vel[i] = v; life[i] = lifeSec; maxLife[i] = lifeSec; baseSize[i] = size; aSize[i] = size;
-      _c.set(colorHex); bR[i] = _c.r; bG[i] = _c.g; bB[i] = _c.b; writeColor(i, alpha0);
-    },
-    // sizeBirth/sizeDeath = size multiplier at t=0/1; alphaMul scales the (1-t) fade; drag decays velocity.
-    update(dt, drag, alphaMul, sizeBirth, sizeDeath) {
-      for (let i = count - 1; i >= 0; i--) {
-        const v = vel[i];
-        position[i*3] += v.x*dt; position[i*3+1] += v.y*dt; position[i*3+2] += v.z*dt;
-        if (drag) v.multiplyScalar(1 - drag*dt);
-        life[i] -= dt;
-        if (life[i] <= 0) { // free: swap the last live particle into this slot
-          const j = --count;
-          if (i !== j) {
-            position[i*3]=position[j*3]; position[i*3+1]=position[j*3+1]; position[i*3+2]=position[j*3+2];
-            aSize[i]=aSize[j]; aColor[i*3]=aColor[j*3]; aColor[i*3+1]=aColor[j*3+1]; aColor[i*3+2]=aColor[j*3+2];
-            vel[i]=vel[j]; life[i]=life[j]; maxLife[i]=maxLife[j]; baseSize[i]=baseSize[j]; bR[i]=bR[j]; bG[i]=bG[j]; bB[i]=bB[j];
-          }
-          continue;
-        }
-        const t = 1 - life[i] / maxLife[i];
-        aSize[i] = baseSize[i] * (sizeBirth + t * (sizeDeath - sizeBirth));
-        writeColor(i, (1 - t) * alphaMul);
-      }
-      geo.setDrawRange(0, count);
-      geo.attributes.position.needsUpdate = geo.attributes.aColor.needsUpdate = geo.attributes.aSize.needsUpdate = true;
-      // viewport-relative point size; ×0.9 ≈ the mesh sphere's diameter + its additive glow bleed.
-      mat.uniforms.uScale.value = renderer.domElement.height * camera.projectionMatrix.elements[5] * 0.9;
-    },
-    clear() { count = 0; geo.setDrawRange(0, 0); },
-  };
-}
-const BATCH_PARTICLES = gfx.name === 'performance'; // draw trail + sparks each as one Points (weak phones)
-const trailField = BATCH_PARTICLES ? makeParticleField(640) : null;
-const sparkField = BATCH_PARTICLES ? makeParticleField(640) : null;
-
-// Live count of the high-volume additive particles (exhaust trail + burst sparks). On Performance they
-// live in the batched Points fields; on High/Balance in the per-mesh arrays. The hard ceiling
-// `gfx.maxParticles` skips new emits when over budget. The few short-lived explosion/shockwave meshes
-// aren't counted.
-const liveParticles = () => BATCH_PARTICLES ? (trailField.count + sparkField.count) : (trail.length + sparks.length);
+// Live count of the high-volume additive particles (continuous exhaust trail + burst sparks). The hard
+// ceiling `gfx.maxParticles` (Infinity off High/Balance) skips new emits when over budget — caps both
+// fill-rate overdraw and per-frame JS on the weakest phones. trail+sparks dominate; the few short-lived
+// explosion/shockwave meshes aren't counted.
+const liveParticles = () => trail.length + sparks.length;
 
 // ---------- Micro-explosions at the impact point ----------
 const explosions = [];
@@ -1603,21 +1519,19 @@ function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
   const N = Math.max(0, Math.min(scaledCount(22), gfx.maxParticles - liveParticles()));
   for (let i = 0; i < N; i++) {
     const col = (i % 4 === 0) ? exhaustColor : SPARK_COLORS[i % SPARK_COLORS.length];
-    const size = (0.35 + Math.random() * 0.5) * s;
-    const a = (i / N) * Math.PI * 2 + Math.random() * 0.5;       // spread around the circle
-    const sp = (14 + Math.random() * 26) * s;                    // outward speed scales with size
-    const vel = new THREE.Vector3(Math.cos(a) * sp, (Math.random() - 0.5) * 6 * s, Math.sin(a) * sp);
-    const life = 2.7 + Math.random() * 2.7;
-    if (BATCH_PARTICLES) { sparkField.spawn(pos, vel, life, size, col, 1); continue; } // Performance: batched Points
     const mat = new THREE.MeshBasicMaterial({
       color: col, transparent: true, opacity: 1,
       blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
     });
     const m = new THREE.Mesh(sparkGeo, mat);
     m.position.copy(pos);
+    const size = (0.35 + Math.random() * 0.5) * s;
     m.scale.setScalar(size);
     scene.add(m);
-    sparks.push({ mesh: m, vel, life, maxLife: 5.4, size });
+    const a = (i / N) * Math.PI * 2 + Math.random() * 0.5;       // spread around the circle
+    const sp = (14 + Math.random() * 26) * s;                    // outward speed scales with size
+    const vel = new THREE.Vector3(Math.cos(a) * sp, (Math.random() - 0.5) * 6 * s, Math.sin(a) * sp);
+    sparks.push({ mesh: m, vel, life: 2.7 + Math.random() * 2.7, maxLife: 5.4, size });
   }
 
   // Shockwave: a flat additive ring (tinted by the exhaust color) that expands and fades. It's one big
@@ -1642,11 +1556,6 @@ const trailGeo = new THREE.SphereGeometry(1, 6, 6); // unit sphere, scale set by
 function spawnTrail(pos, fwd, shipVel, exhaust) {
   // glowing exhaust particle: additive, fades out.
   // Start velocity = ship velocity + ejection backward along the nozzle (-fwd).
-  const vel = shipVel.clone().addScaledVector(fwd, -exhaust.speed);
-  if (BATCH_PARTICLES) { // Performance: into the batched Points field (one draw call) instead of a mesh
-    trailField.spawn(pos, vel, exhaust.life, exhaust.size, exhaust.color, 0.85);
-    return;
-  }
   const mat = new THREE.MeshBasicMaterial({
     color: exhaust.color, transparent: true, opacity: 0.85,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
@@ -1655,6 +1564,7 @@ function spawnTrail(pos, fwd, shipVel, exhaust) {
   m.position.copy(pos);
   m.scale.setScalar(exhaust.size);
   scene.add(m);
+  const vel = shipVel.clone().addScaledVector(fwd, -exhaust.speed);
   trail.push({ mesh: m, vel, life: exhaust.life, maxLife: exhaust.life, baseSize: exhaust.size });
 }
 
@@ -2550,14 +2460,6 @@ function update(dt) {
     }
   }
 
-  // --- batched particle fields (Performance only): advance the Points clouds (the per-mesh trail/spark
-  // loops above no-op there, since nothing was pushed to those arrays). Same motion as the mesh paths:
-  // trail drifts + shrinks 1.1→0.3 + fades ×0.85; sparks drift with drag + shrink 1.0→0.3 + fade. ---
-  if (BATCH_PARTICLES) {
-    trailField.update(dt, 0,   0.85, 1.1, 0.3);
-    sparkField.update(dt, 2.5, 1.0,  1.0, 0.3);
-  }
-
   // --- enemy deaths ---
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].hp <= 0) {
@@ -2888,7 +2790,6 @@ function reset() {
   smoke.length = 0;
   for (const s of sparks) { scene.remove(s.mesh); s.mesh.material.dispose(); }
   sparks.length = 0;
-  if (BATCH_PARTICLES) { trailField.clear(); sparkField.clear(); } // empty the batched Points clouds (Performance)
   for (const w of shockwaves) { scene.remove(w.mesh); w.mesh.material.dispose(); }
   shockwaves.length = 0;
   for (const e of enemies) scene.remove(e.mesh);
