@@ -16,6 +16,17 @@
   lost). Fix: write `shop_unlocked = 0` and wrap the whole reset in `withTx` (matching the SQLite
   `resetPlayer`); `ensureDefaultShip` now takes an optional transaction client. SQLite was unaffected
   (loosely typed + already transactional), which is why the unit tests passed while prod broke.
+- **Tests now run against Postgres too (closes the gap that hid the bug above).** `server.test.js` is
+  backend-agnostic, but CI only ever ran it on SQLite — whose loose typing silently accepts a boolean
+  in an INTEGER column, so the Postgres-only 500 never showed up. The `test` CI job now runs the suite
+  **twice**: SQLite (`npm test`) and a throwaway `postgres:16` service container
+  (`DATABASE_URL=… npm test`). On Postgres the suite truncates the player tables up front for a clean
+  slate (catalog kept). Local equivalent: **`npm run test:pg`** (defaults to a `spacegame_test` DB).
+  Strengthened the reset test to clear the campaign (unlocking the shop) and assert `shopUnlocked` is
+  `false` after reset — the assertion that catches this exact regression (verified: it fails on the
+  Postgres pass when the bug is reintroduced, passes when fixed). An audit of every other
+  `db.js`/`db_postgres.js` mutation found no further boolean-vs-integer or missing-transaction
+  divergences.
 - **Orange (#f4541f) recolors of `enemy_1..4`, used as the ADVANCED-tier pirate models.** Ran the source
   models (`assets-src/enemy_1..4.glb`) through a recolor pass that maps every red `baseColorFactor`
   (#ff0000 / #c40000 / #bb0000) to #f4541f, preserving each shade's relative brightness (darker reds →

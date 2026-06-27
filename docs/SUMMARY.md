@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-27 (low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-06-28 (enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -115,14 +115,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **Orientation convention: ships face `+Z`.** A model whose nose points elsewhere is corrected at load
   time by `model.yaw` (radians; `Math.PI` for a `-Z`-facing export). Center/scale/orientation are **runtime
   normalizations** (the asset's own transform isn't trusted), so a wrong-way model is fixed with `model.yaw`
-  in the seed, not by re-exporting. The `basic enemy ship` uses this (`model.yaw: Math.PI`; its `enemy_1`
-  export faced `-Z`), as do the rocketeer, medium and first boss (the `enemy_2/3/4` exports share that `-Z`
+  in the seed, not by re-exporting. The `Basic pirate ship` uses this (`model.yaw: Math.PI`; its `enemy_1`
+  export faced `-Z`), as do all the other pirates (the `enemy_*` / `enemy_*_orange` exports share that `-Z`
   convention); the **player ship** (`player_combat`) uses `model.yaw: 0`. `model.scale` is the size
   multiplier (auto-normalize the longest axis to `SHIP_MODEL_LEN` 3.4 first, then scale; also scales the hit
   radius). Muzzle/exhaust spawn at the model's real nose/tail (`userData.noseZ`/`tailZ`, auto-derived from
   the glb bounds); `model.muzzle` / `model.exhaust` optionally override them in group-local units. An optional
   **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
-  lazy-loaded; the basic enemy + the player have one — `enemy_1_hangar` / `player_hangar`). See
+  lazy-loaded; the player + every real-model pirate have one — `player_hangar`, `enemy_1..4_hangar`,
+  `enemy_1/2/3/4_orange_hangar`). See
   `client/assets/README.md` + `CREDITS.md`.
   - **Player ship** = the real **"Air & Space Vessel"** model (Raven, CC-BY): a light-grey/red textured
     fighter, **`model.scale: 1.1`**. Unlike the flat low-poly enemy pack, it **keeps its textures** (paint,
@@ -134,8 +135,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **Asset pipeline** (`docs/plans/ship-model-pipeline.md` + `audio-sample-pipeline.md`): repo-root `npm run
   assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb per `assets-src/*.glb`;
   default `PRESET.combat`/`hangar` in `assets-config.mjs`, with optional per-source **`PRESET_OVERRIDES`**
-  merged by `presetFor` — the **player** model overrides combat to keep its textures, downscaled to 128px +
-  meshopt, so a richly-textured ship stays ~371 KB) / `assets:push`
+  merged by `presetFor` — combat geometry is **meshopt-compressed** to stay light for battle; the **player**
+  override only keeps its textures, downscaled to 128px + WebP, so a richly-textured ship stays ~371 KB) / `assets:push`
   (→ S3 `vega-sentinels-assets`: glbs to `ships-combat/`+`ships-hangar/`, **SFX mp3s to `sfx/`**, sources to
   `source/`) / `assets:pull` (S3 → `client/assets/ships/` **+ `client/assets/sounds/`**) / `assets:check`
   (drift-check: every pipeline `model_url*` in the seed **and every `SOUNDS` url in `catalog_seed.js`**
@@ -163,16 +164,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   long range 110; the Second Boss's main gun).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`). **Appearance = the ship's `.glb` model; we
   never tint by `color`** (see DECISIONS §14), so enemies that reuse a base model look like it until a
-  distinct model is authored — they differ only mechanically for now. `fighter` (`enemy_1_combat`, gun, 30 hp
-  light hull), `rocketeer` (`enemy_2_combat`, gun + rocket, same 30 hp light hull), `medium`
-  (`enemy_3_combat` ex-mini-boss, two rocket launchers, 150 hp medium hull → sluggish, 2× model),
-  `pirate_gunner` (a fast skirmisher for the side missions — **reuses `fighter.glb`** — Pirate hull 36 hp +
-  Pirate engine top-speed +50% + one **long-range** Pirate machine gun; reward 40), `advanced_medium_pirate`
-  (the L4 heavy — still **reuses `heavy.glb`** (no longer the same look as the medium) — **300 hp**, turns
-  ~+30% vs the medium, 1 Pirate MG + 2 rockets; reward 150), the `boss` (`first boss` — `enemy_4_combat` +
-  own hull/engine, 210 hp, 3× model, **two Pirate machine guns** + two rocket launchers), and `boss2` (the
-  **Second Boss**, L4 finale — still **reuses `boss.glb`** (no longer the same look as the first boss)
-  — **450 hp**, ~+30% speed/accel/turn, **two Advanced pirate cannons + three rockets**; reward 400). Which
+  distinct model is authored. The basic pirates use the **red `enemy_1..4` models**; the advanced tier uses
+  the **orange (`#f4541f`) `enemy_*_orange` recolors** so they read as distinct. `fighter` (`Basic pirate
+  ship`, `enemy_1`, gun, 30 hp light hull), `rocketeer` (`basic rocket pirate`, `enemy_2`, gun + rocket, same
+  30 hp light hull), `medium` (`pirate mini boss`, `enemy_3`, two rocket launchers, 150 hp medium hull →
+  sluggish, 2× model), `pirate_gunner` (a fast skirmisher for the side missions — **orange `enemy_1`** —
+  Pirate hull 36 hp + Pirate engine top-speed +50% + one **long-range** Pirate machine gun; reward 40),
+  `advanced_medium_pirate` (the L4 heavy — **orange `enemy_3`** — **300 hp**, turns ~+30% vs the medium,
+  1 Pirate MG + 2 rockets; reward 150), the `boss` (`first pirate boss` — `enemy_4` + own hull/engine,
+  210 hp, 3× model, **two Pirate machine guns** + two rocket launchers), and `boss2` (the **Second Boss**,
+  `second pirate boss`, L4 finale — **orange `enemy_4`** — **450 hp**, ~+30% speed/accel/turn, **two
+  Advanced pirate cannons + three rockets**; reward 400). One more ship is seeded but **not wired into any
+  level** yet: `advanced_rocket_pirate` (`advanced rocket pirate`, **orange `enemy_2`** — Pirate
+  hull/engine, Pirate MG + a rocket; reward 60), kept for a future harder rocketeer wave. Which
   enemies spawn is decided by the **level/mission** (see Gameplay), not the ship; ship `radius` scales with
   model size. Each enemy carries a **`reward`** (`stats.reward`, fighter 20 / rocketeer 40 / pirate gunner 40 /
   medium 100 / advanced medium pirate 150 / first boss 200 / Second Boss 400) in **credits**, earned on
@@ -295,7 +299,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (Mission 1/2/3); clicking one opens a **panel** with that mission's flavor description + est. reward and
   a **Take off** button. The three flavors — **mining / research / freighter** (i18n flavor text only) —
   are all the **same difficulty**: waves of **pirate gunner / rocketeer / heavy** (40/40/20 → 35/35/30),
-  then a **2-boss finale** (two buffed `first boss`). A mission is just a level-style descriptor played by
+  then a **2-boss finale** (two buffed `first pirate boss`). A mission is just a level-style descriptor played by
   the existing `levelRunner`; clearing it **banks per-kill ×2 credits like a level but does NOT advance the
   story counter** (repeatable grind to fund the shop). **Each mission fights at its own location in the
   world** (`descriptor.center` — mining at `(-550, 0)`, research at `(400, 0)`, freighter at `(-100, -450)`),
@@ -687,6 +691,13 @@ first translation). See DECISIONS §10.
   internal `spacegame` container/image/router/dir/DB names are unchanged (renaming is cosmetic churn).
 - **CI/CD:** `.github/workflows/ci-cd.yml` — runs client + server tests on every push/PR (incl.
   PR merges), and on push to `main` deploys. Secrets: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`.
+- **Server tests run against BOTH backends.** The `server.test.js` suite is backend-agnostic (the
+  backend is chosen by `DATABASE_URL`). The `test` CI job runs it twice — once on SQLite
+  (`npm test`) and once against a throwaway `postgres:16` service container
+  (`DATABASE_URL=… npm test`) — so Postgres-only regressions that SQLite's loose typing hides (e.g. a
+  JS boolean written to an `INTEGER` column) get caught. On Postgres the suite first
+  `resetAllPlayers()`-truncates for a clean slate (catalog kept). Locally: `npm run test:pg`
+  (defaults to `postgres://localhost:5432/spacegame_test` — `createdb spacegame_test` once first).
 - **Graceful shutdown:** on `SIGTERM`/`SIGINT` the server stops accepting new connections and lets
   in-flight requests finish (`server.close()`) before exiting, with an 8 s hard cap so a hung request
   can't block exit forever (`server.js`). This drains the old container cleanly when it's removed

@@ -12,6 +12,15 @@ process.env.NODE_ENV = 'test'; // non-Secure cookies so local-http tests can rea
 const { createApp } = await import('./server.js');
 const { outbox } = await import('./ses.js');
 const app = await createApp();
+// The same suite runs against either backend (the backend is chosen by DATABASE_URL in datastore.js).
+// SQLite uses a throwaway temp file (fresh every run); Postgres is a persistent server, so wipe the
+// player-scoped tables up front for a clean slate (the seeded catalog is kept). This is what lets the
+// suite catch Postgres-only regressions — e.g. a boolean written to an INTEGER column — that SQLite's
+// loose typing silently accepts. See `npm run test:pg` and the Postgres pass in .github/workflows.
+if (process.env.DATABASE_URL) {
+  const { resetAllPlayers } = await import('./datastore.js');
+  await resetAllPlayers();
+}
 const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
 const base = `http://localhost:${server.address().port}`;
 
@@ -107,11 +116,12 @@ test('progress: current level is level-1, and advancing unlocks the next levels'
 });
 
 test('reset: POST /reset wipes progress to the new-player baseline, keeps the account', async () => {
-  // build up some progress + credits, then reset
+  // build up FULL progress + credits + an unlocked shop, then reset
   await post('/api/players/register', { playerId: 'reset-1' });
-  await post('/api/players/reset-1/advance', {});                 // → level-2
+  await clearCampaign('reset-1'); // advance to the last level → unlocks the shop (shop_unlocked = 1)
   await post('/api/games', { playerId: 'reset-1', credits: 50, kills: 5, durationMs: 1000 }); // banks credits, games_played++
-  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-2');
+  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-4');
+  assert.equal((await getJson('/api/players/reset-1/stash')).shopUnlocked, true); // shop is unlocked pre-reset
 
   const r = await post('/api/players/reset-1/reset', {});
   assert.equal(r.status, 200);
@@ -124,6 +134,10 @@ test('reset: POST /reset wipes progress to the new-player baseline, keeps the ac
   assert.equal(reg.currentProgress, 1);
   assert.equal(reg.credits, 1000);
   assert.equal(reg.gamesPlayed, 0);
+  // shop_unlocked is reset too. This is the assertion that catches the prod bug: on Postgres,
+  // resetPlayer wrote `shop_unlocked = false` into an INTEGER column → the UPDATE threw a 500 and
+  // nothing reset. SQLite accepts the boolean, so this only fails under the Postgres test pass.
+  assert.equal((await getJson('/api/players/reset-1/stash')).shopUnlocked, false);
   // the starter ship is re-granted so the reset account is immediately playable
   const ship = await getJson('/api/players/reset-1/active-ship');
   assert.ok(ship && ship.ship, 'an active ship exists after reset');
@@ -292,11 +306,11 @@ test('events: records an allowlisted event (204), rejects unknown/junk (400), st
 
 test('catalog: ships are seeded (player + enemies) with stats', async () => {
   const ships = await getJson('/api/ships');
-  assert.equal(ships.length, 8);
+  assert.equal(ships.length, 9);
   const names = ships.map((s) => s.name);
   assert.deepEqual(names.sort(),
-    ['Basic player ship', 'basic enemy ship', 'basic mini boss', 'basic rocket enemy', 'first boss',
-     'pirate gunner', 'advanced medium pirate', 'second boss'].sort());
+    ['Basic player ship', 'Basic pirate ship', 'pirate mini boss', 'basic rocket pirate', 'first pirate boss',
+     'pirate gunner', 'advanced medium pirate', 'second pirate boss', 'advanced rocket pirate'].sort());
   const player = ships.find((s) => s.name === 'Basic player ship');
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player_combat.f7171045.glb'); // real "Air & Space Vessel" model (textured)
@@ -306,18 +320,18 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');
-  assert.equal(enemies.length, 7); // fighter, rocketeer, mini-boss, first boss, pirate gunner, advanced medium pirate, second boss
+  assert.equal(enemies.length, 8); // fighter, rocketeer, mini-boss, first boss, pirate gunner, advanced medium pirate, second boss, advanced rocket pirate
   // fighter + rocketeer share the same light hull + scout engine + scout thrusters
-  const fighter = ships.find((s) => s.name === 'basic enemy ship');
-  const rocketeer = ships.find((s) => s.name === 'basic rocket enemy');
+  const fighter = ships.find((s) => s.name === 'Basic pirate ship');
+  const rocketeer = ships.find((s) => s.name === 'basic rocket pirate');
   assert.deepEqual(fighter.components, { hull: 2, engine: 6, thruster: 9 });
   assert.deepEqual(rocketeer.components, fighter.components);
-  const mini = ships.find((s) => s.name === 'basic mini boss');
+  const mini = ships.find((s) => s.name === 'pirate mini boss');
   assert.equal(mini.stats.role, 'medium');
   assert.deepEqual(mini.components, { hull: 3, engine: 6, thruster: 10 }); // medium hull + scout engine + weak thrusters
   assert.equal(mini.stats.mounts.length, 2);                 // two staggered rocket launchers
   assert.deepEqual(mini.stats.mounts.map((m) => m.delay).sort(), [0, 0.2]);
-  const boss = ships.find((s) => s.name === 'first boss');
+  const boss = ships.find((s) => s.name === 'first pirate boss');
   assert.equal(boss.stats.role, 'boss');
   assert.deepEqual(boss.components, { hull: 4, engine: 7, thruster: 11 }); // its own hull + engine + thrusters
   assert.equal(boss.stats.mounts.length, 4); // two guns + two rockets
@@ -356,15 +370,15 @@ test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector bo
   const l1 = await getJson('/api/levels/level-1');
   assert.equal(l1.descriptor.map, 'home-system');
   assert.equal(l1.descriptor.phases[0].advanceWhen.kills, 7);              // gentle ramp
-  assert.equal(l1.descriptor.phases[0].spawn.pool[0].ship, 'basic enemy ship'); // fighters only
+  assert.equal(l1.descriptor.phases[0].spawn.pool[0].ship, 'Basic pirate ship'); // fighters only
   assert.equal(l1.descriptor.phases.at(-1).event, 'win');
-  assert.ok(!JSON.stringify(l1.descriptor).includes('first boss'), 'level-1 has no boss');
+  assert.ok(!JSON.stringify(l1.descriptor).includes('first pirate boss'), 'level-1 has no boss');
 
   const l2 = await getJson('/api/levels/level-2');
-  assert.equal(l2.descriptor.phases.at(-2).spawn.pool[0].ship, 'basic mini boss'); // the medium IS the boss
+  assert.equal(l2.descriptor.phases.at(-2).spawn.pool[0].ship, 'pirate mini boss'); // the medium IS the boss
 
   const l3 = await getJson('/api/levels/level-3');
-  assert.equal(l3.descriptor.phases.at(-2).spawn.pool[0].ship, 'first boss');       // the Sector boss
+  assert.equal(l3.descriptor.phases.at(-2).spawn.pool[0].ship, 'first pirate boss');       // the Sector boss
 
   // level-4 ("Find the pirate base"): advanced-medium-pirate waves (8/16 kills), the Second Boss finale,
   // and an unlockShop briefing (docs/plans/level-4-difficulty.md)
@@ -374,7 +388,7 @@ test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector bo
   assert.ok(l4.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'pirate gunner'), 'L4 wave-1 has pirate gunners');
   assert.ok(l4.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'advanced medium pirate'), 'L4 waves use the advanced medium pirate');
   assert.equal(l4.descriptor.phases[0].advanceWhen.kills, 8);
-  assert.equal(l4.descriptor.phases.at(-2).spawn.pool[0].ship, 'second boss'); // the Second Boss finale
+  assert.equal(l4.descriptor.phases.at(-2).spawn.pool[0].ship, 'second pirate boss'); // the Second Boss finale
   assert.equal(l4.descriptor.phases.at(-1).textKey, 'level.4.victory');
 
   assert.equal((await fetch(base + '/api/levels/nope')).status, 404);
@@ -567,7 +581,7 @@ test('missions: locked until the campaign is cleared, then 3 same-difficulty sid
     assert.ok(ph[0].spawn.pool.some((p) => p.ship === 'pirate gunner'), 'wave 1 includes the pirate gunner');
     const bosses = ph.find((p) => p.name === 'bosses');
     assert.equal(bosses.spawn.total, 2);                 // 2-boss finale
-    assert.equal(bosses.spawn.pool[0].ship, 'first boss');
+    assert.equal(bosses.spawn.pool[0].ship, 'first pirate boss');
     assert.equal(ph[ph.length - 1].event, 'win');
   }
 });
@@ -603,7 +617,7 @@ test('catalog: level-4 enemies — advanced medium pirate (300 HP) + Second Boss
   assert.deepEqual(amp.stats.mounts.map((m) => m.weapon).sort((a, b) => a - b), [4, 4, 9]); // 1 MG + 2 rockets
   const sb = ships.find((s) => s.stats.role === 'boss2');
   assert.ok(sb, 'second boss seeded');
-  assert.equal(sb.name, 'second boss');
+  assert.equal(sb.name, 'second pirate boss');
   assert.equal(sb.components.hull, 28);
   assert.deepEqual(sb.stats.mounts.map((m) => m.weapon).sort((a, b) => a - b), [4, 4, 4, 10, 10]); // 3 rockets + 2 cannons
 });
