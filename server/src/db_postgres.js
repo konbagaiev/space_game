@@ -224,12 +224,12 @@ export async function migrate() {
 }
 
 // Give a player their starter ship if they don't own one yet (default 'player' ship, active).
-async function ensureDefaultShip(playerId) {
-  const has = await pool.query('SELECT 1 FROM player_ships WHERE player_id = $1 LIMIT 1', [playerId]);
+async function ensureDefaultShip(playerId, db = pool) {
+  const has = await db.query('SELECT 1 FROM player_ships WHERE player_id = $1 LIMIT 1', [playerId]);
   if (has.rows[0]) return;
-  const ship = await pool.query("SELECT id FROM ships WHERE type = 'player' ORDER BY id LIMIT 1");
+  const ship = await db.query("SELECT id FROM ships WHERE type = 'player' ORDER BY id LIMIT 1");
   if (!ship.rows[0]) return;
-  await pool.query(
+  await db.query(
     'INSERT INTO player_ships (player_id, ship_id, is_active, loadout, created_at) VALUES ($1, $2, true, $3::jsonb, $4)',
     [playerId, ship.rows[0].id, '{}', Date.now()]);
 }
@@ -254,10 +254,14 @@ export async function registerPlayer(id) {
 export async function resetPlayer(playerId) {
   const { rows } = await pool.query('SELECT 1 FROM players WHERE id = $1', [playerId]);
   if (!rows[0]) return { found: false };
-  for (const t of ['games', 'player_ships', 'stash', 'events'])
-    await pool.query(`DELETE FROM ${t} WHERE player_id = $1`, [playerId]);
-  await pool.query('UPDATE players SET games_played = 0, current_progress = 1, credits = 1000, shop_unlocked = false WHERE id = $1', [playerId]);
-  await ensureDefaultShip(playerId); // re-grant the starter ship so the reset account is playable
+  // One transaction so a failure can't leave the account half-wiped (games/ships gone, progress kept).
+  // shop_unlocked is an INTEGER column (see migration) — write 0, not a boolean, or the UPDATE throws.
+  await withTx(async (client) => {
+    for (const t of ['games', 'player_ships', 'stash', 'events'])
+      await client.query(`DELETE FROM ${t} WHERE player_id = $1`, [playerId]);
+    await client.query('UPDATE players SET games_played = 0, current_progress = 1, credits = 1000, shop_unlocked = 0 WHERE id = $1', [playerId]);
+    await ensureDefaultShip(playerId, client); // re-grant the starter ship so the reset account is playable
+  });
   return { found: true };
 }
 

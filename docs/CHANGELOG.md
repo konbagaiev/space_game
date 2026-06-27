@@ -3,6 +3,51 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-28
+
+- **Fix: "Reset my progress" never reset anything on production (Postgres).** The Postgres
+  `resetPlayer` (`server/src/db_postgres.js`) wrote `shop_unlocked = false`, but the column is an
+  `INTEGER` (it's `0`/`1` everywhere else) — so the `UPDATE players …` threw
+  `column "shop_unlocked" is of type integer but expression is of type boolean`, the endpoint
+  returned **500**, and the client (which `throw`s on a non-OK reset and skips its reload) left the
+  player on their old credits/level/missions. Worse, the function had **no transaction** (the SQLite
+  version does), so the `DELETE`s of games/ships/stash that run *before* the failing UPDATE committed
+  anyway — a partial wipe (the starter ship is auto-restored on the next load, but stash items were
+  lost). Fix: write `shop_unlocked = 0` and wrap the whole reset in `withTx` (matching the SQLite
+  `resetPlayer`); `ensureDefaultShip` now takes an optional transaction client. SQLite was unaffected
+  (loosely typed + already transactional), which is why the unit tests passed while prod broke.
+- **Orange (#f4541f) recolors of `enemy_1..4`, used as the ADVANCED-tier pirate models.** Ran the source
+  models (`assets-src/enemy_1..4.glb`) through a recolor pass that maps every red `baseColorFactor`
+  (#ff0000 / #c40000 / #bb0000) to #f4541f, preserving each shade's relative brightness (darker reds →
+  proportionally darker orange); black/grey untouched (the models carry no textures — colors live in the
+  materials). Built combat + hangar `.glb`s (`assets-src/enemy_*_orange.glb`), pushed to S3. The advanced
+  enemies now use these orange models instead of placeholder primitives: **pirate gunner** ← orange `enemy_1`
+  (was `fighter.glb`), **advanced medium pirate** ← orange `enemy_3` (was `heavy.glb`), **second boss** ←
+  orange `enemy_4` (was `boss.glb`) — each with `model.yaw: Math.PI`. The orange `enemy_2` is seeded as a
+  new **`advanced rocket pirate`** ship (role `advanced_rocket_pirate`, Pirate hull/engine + Pirate MG +
+  rocket, reward 60) for future use — **not yet wired into any level**. (`fighter.glb` / `heavy.glb` /
+  `boss.glb` are now unused placeholders, left in git.)
+- **Renamed all enemies enemy→pirate.** `basic enemy ship`→`Basic pirate ship`, `basic rocket
+  enemy`→`basic rocket pirate`, `basic mini boss`→`pirate mini boss`, `first boss`→`first pirate boss`,
+  `second boss`→`second pirate boss` (`pirate gunner` / `advanced medium pirate` already named). Updated
+  every level/mission pool (`catalog_seed.js`, `missions.js`) and the tests that spawn/look up by name.
+  Updated `assets/CREDITS.md` (same CC-BY pack, attribution unchanged), SUMMARY, and the ship-count tests
+  (`ships.length` → 9, enemies → 8).
+- **Combat-model policy change: light for battle first (meshopt is now the combat default).** Dropped the
+  old "combat glbs must be vanilla so they open in macOS Quick Look" requirement — combat models are now
+  built as small as possible: aggressive decimation **+ meshopt geometry compression** (`PRESET.combat` in
+  `assets-config.mjs`). Motivated by the orange enemies above, which are hard-surface low-poly with
+  un-welded (flat-shaded) vertices: `simplify` cuts triangles but not vertices, so uncompressed they were
+  huge (enemy_4 combat **1.2 MB**, bigger than its source; raising the simplify error did nothing). With
+  meshopt the orange combat models are **28 / 93 / 63 / 211 KB**. The client already wires
+  `setMeshoptDecoder`, so combat + hangar both load; preview/orientation-check combat in a **web glTF
+  viewer** now, not Quick Look. Scrubbed the Quick Look requirement from the living docs (DECISIONS §14,
+  `ship-model-pipeline.md`, `adding-a-ship-model.md`, `client/assets/README.md`) and the pipeline-script
+  comments; removed the now-redundant per-source orange overrides (the default covers them — hash-neutral,
+  no re-push). Also **rebuilt the plain `enemy_1..4` originals** under the new default and re-pushed
+  (combat **223/536/275/1278 KB → 28/93/62/211 KB**; hangar hashes unchanged; old combat orphans deleted
+  from S3; catalog `modelUrl`s updated to the new hashes).
+
 ## 2026-06-27
 
 - **Reverted the Performance particle batching — measured no benefit on the governor-bound device.**
