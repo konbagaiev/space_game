@@ -4,22 +4,20 @@
 export const GRAPHICS_STORAGE_KEY = 'gfxTier';
 export const GRAPHICS_DEFAULT = 'high';
 
-// Each tier's knobs. pixelRatioCap + antialias drive fragment cost (the mobile bottleneck — fill rate,
-// not draw calls/triangles); starScale/particleScale thin the additive overdraw. Starting points —
-// tune on a real low-end phone.
+// Each tier's knobs. `pixelRatioCap` + `antialias` set the backbuffer resolution / AA;
+// `starScale`/`particleScale` thin the additive overdraw; `maxParticles` is a hard ceiling on live
+// additive particles (trail + sparks) — new emits skipped over budget — capping per-frame JS on the
+// weakest phones (Infinity = off). Tuned on real low-end phones (see DECISIONS §23).
 // `envMap` enables a PMREM environment so metallic ship surfaces show real reflections (premium look,
-// one extra prefiltered-cubemap lookup per fragment on lit materials) — off on Performance to spare the
-// weakest phones (the fill-rate-bound case; see DECISIONS §23).
-// `renderScale` (<1) renders the backbuffer BELOW native resolution and lets the browser upscale the
-// full-size canvas — the cheapest fill-rate lever, and the only one that probes *below* a pixelRatioCap
-// of 1 (so it bites even when devicePixelRatio is already ~1 and the cap is a no-op). It multiplies into
-// setPixelRatio; 1.0 = native (off). `maxParticles` is a hard ceiling on live additive particles
-// (trail + sparks) — new emits are skipped over budget — capping both overdraw and per-frame JS on the
-// weakest phones; Infinity = unlimited (off). Both are 1.0/off on High & Balance. See DECISIONS §23.
+// one extra prefiltered-cubemap lookup per fragment) — off on Performance.
+// NOTE: a sub-1 `renderScale` knob was tried and REMOVED (2026-06-27) — measured on two GPUs (PowerVR
+// GE8320, Mali-G52), a 5.5-7× backbuffer-pixel cut moved fps by *nothing* (the weak-device bottleneck is
+// CPU draw-call submit + the GPU/compositor governor, NOT fragment fill rate), so it only blurred the
+// image for no gain. Resolution levers are a dead end here; see DECISIONS §23.
 export const TIERS = {
-  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  renderScale: 1.0,  maxParticles: Infinity },
-  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  renderScale: 1.0,  maxParticles: Infinity },
-  performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false, renderScale: 0.7,  maxParticles: 300 },
+  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: Infinity },
+  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: Infinity },
+  performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false, maxParticles: 300 },
 };
 export const TIER_ORDER = ['high', 'balance', 'performance'];
 

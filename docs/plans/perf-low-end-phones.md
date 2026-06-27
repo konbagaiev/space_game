@@ -149,8 +149,11 @@ Steady-state JS is cheap (`update`/`dom` ~1.8 ms each); only the **render submit
 doesn't scale with draws. Full rationale in DECISIONS §23 (follow-up #2 + Verdict).
 
 **Decided:**
-- **Stop adding fill-rate levers / tiers for this class** — proven ineffective. `renderScale` stays
-  (harmless; marginally cooler over long sessions). **Lever B cancelled. No 4th "Potato" tier.**
+- **Stop adding fill-rate levers / tiers for this class** — proven ineffective. **`renderScale` REMOVED
+  (2026-06-27)** — it only blurred the image for zero fps gain. **Lever B cancelled. No 4th "Potato" tier.**
+- **The real lever is CPU draw-call submit** → **particle batching** (trail+sparks → one `THREE.Points`
+  each) is the next perf change. **PBR→cheaper-shader was considered and dropped** — it targets per-fragment
+  cost, which the resolution-independence proves is NOT the wall (same refutation as `renderScale`).
 - **The one real defect: startup — ✅ FIXED 2026-06-25 (shader pre-warm).** First 1-4 frames per session
   spent **0.8-2.2 s** (GE8320) / ~0.4 s (Mali) in render submit (shader compile + texture upload).
   `prewarmShaders()` compiles both scenes + two off-screen meshes matching the dynamic effect program keys
@@ -162,7 +165,5 @@ doesn't scale with draws. Full rationale in DECISIONS §23 (follow-up #2 + Verdi
   saturated `frameMs` at 50 ms and overstated overlay FPS on slow devices).
 
 ## Open decisions
-- **Exact `renderScale` for Performance** — currently 0.7; the 7× pixel cut had no fps effect on GE8320, so
-  tuning is moot for that class. Leave at 0.7 (sharper-is-pointless on a fill-bound *win* we don't get).
 - **Headless caveat:** the visual harness uses software WebGL (swiftshader) and can't reproduce the A03s
   GPU — device-facing perf must be **validated on the real device** via the `?dev` monitor, not in CI.

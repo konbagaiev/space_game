@@ -3,11 +3,11 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-25 (low-end-phone perf pass: Performance tier gains `renderScale` 0.7 (sub-native
-backbuffer) + a `maxParticles` 300 ceiling, and the perf overlay now shows the real backbuffer resolution
-— after a tester saw the same combat fps on High and Performance; plus a **`?dev` perf monitor** that
-samples per-frame JS-cost breakdown + device/GPU passport once a second to `POST /api/perf` →
-`perf_samples` table, to tell CPU-bound from GPU/externally-governed; per-ship model presentation
+**Updated:** 2026-06-27 (low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
+(blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
+ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
+passport + JS heap once a second to `POST /api/perf` → `perf_samples` table; per-ship model presentation
 consolidated into a documented `stats.model` block — yaw/scale + optional muzzle/exhaust spawn overrides — replacing loose `modelYaw`/`sizeScale` keys (back-compat reads kept); new `docs/plans/adding-a-ship-model.md` convention; player ship = real textured "Air & Space Vessel" model (downscaled textures → player_combat/_hangar, model.scale 1.1); tier-gated env-map reflections on ships; muzzle/exhaust spawn from the model's real nose/tail bounds; enemy weapon fire silenced (rocket detonations kept); "Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers)
 
 ## What this is
@@ -47,8 +47,8 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   freeze — it must be reworked server-side when multiplayer lands (a client can't freeze a shared world);
   see DECISIONS §16.**
 - **Perf overlay** at the top center: FPS, frame time (ms), draw calls, triangles
-  (across both render passes), and the **real backbuffer resolution** (`w×h` = CSS size × pixelRatio ×
-  renderScale — the actual pixels the GPU fills). FPS/frame-ms use the **raw rAF interval**
+  (across both render passes), and the **real backbuffer resolution** (`w×h` = CSS size × pixelRatio —
+  the actual pixels the GPU fills). FPS/frame-ms use the **raw rAF interval**
   (`clock.getDelta()` before the sim's `0.05`s clamp), so they stay accurate below 20 fps instead of
   saturating at the clamp. A proxy for hardware load; the resolution lets a tester confirm whether a
   tier/`renderScale` change actually moved the pixel count (a weak phone often reports `devicePixelRatio`
@@ -459,17 +459,16 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   games/ships/stash/events, resets level/credits/shop to the new-player baseline, re-grants the starter
   ship; **keeps the account, login and language**). i18n keys `ui.settings.reset.*` (EN+RU).
 - **Graphics quality tiers (`client/src/graphics.js`, DECISIONS §23).** A 3-way selector —
-  **High / Balance / Performance** — for weak phones, since the mobile bottleneck is fragment **fill
-  rate** (pixel ratio × the two render passes × additive-particle overdraw), not the draw calls/triangles
-  the perf overlay shows. Per tier: **pixel-ratio cap** (2 / 1.5 / 1), **antialias** (on / off / off),
-  **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales spark count, drops the 2
-  middle fireball layers + the shockwave, and thins the exhaust), **renderScale** (1 / 1 / **0.7** —
-  multiplies into `setPixelRatio` so Performance renders the backbuffer *below* native and the browser
-  upscales the full-size canvas; the only fill-rate lever that bites below a pixel-ratio cap of 1, which a
-  ~1-`devicePixelRatio` phone makes a no-op), and **maxParticles** (∞ / ∞ / **300** — a hard ceiling on
-  live additive particles, exhaust trail + sparks; new emits skip over budget, capping overdraw *and*
-  per-frame JS). renderScale + maxParticles are **off (1.0 / ∞) on High & Balance** — no regression on
-  capable devices. Persisted in `localStorage` (key `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. **Picking a tier
+  **High / Balance / Performance** — for weak phones. **Note (measured on two GPUs, see DECISIONS §23):
+  the weak-device bottleneck is NOT fragment fill rate** — a 5.5-7× backbuffer-pixel cut moved fps by
+  nothing; it's **CPU draw-call submit + the GPU/compositor thermal governor**. So the resolution levers
+  are largely cosmetic-quality knobs, not perf knobs (a sub-1 `renderScale` was tried and **removed** — it
+  only blurred the image for no fps gain). Per tier: **pixel-ratio cap** (2 / 1.5 / 1), **antialias** (on /
+  off / off), **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales spark count,
+  drops the 2 middle fireball layers + the shockwave, and thins the exhaust), and **maxParticles** (∞ / ∞ /
+  **300** — a hard ceiling on live additive particles, exhaust trail + sparks; new emits skip over budget,
+  capping per-frame JS / draw-call submit). maxParticles is **off (∞) on High & Balance**. Persisted in
+  `localStorage` (key `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. **Picking a tier
   reloads the page** so the whole preset (antialias — a `WebGLRenderer` constructor arg — + pixel ratio +
   star/particle density) applies cleanly from startup, no half-applied state (server-side progress is
   untouched). The selector sits below its label (the 3 buttons share one row). The tier knob table lives

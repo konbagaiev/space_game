@@ -803,9 +803,11 @@ uncorrelated with scene load** (140 draws → 41 fps, 60 draws → 20 fps) → n
 load yields wildly different fps across thermal windows; (3) **heap is flat at 11-18 MB** (limit ~1020) →
 no memory leak / GC pressure. Steady-state JS is cheap (`update` 1.8 ms, `dom` 1.8 ms); the only sizeable JS
 chunk is the **render submit ~12 ms**, and even that doesn't scale with draw count. **Consequence: stop
-adding graphics tiers / fill-rate levers for this class — they're proven ineffective.** `renderScale` stays
-(harmless, marginally cooler over long sessions) but **Lever B (sky-pass throttle) is cancelled** (fill rate
-isn't the wall). The one real, addressable defect the data exposed is **startup**: the first 1-4 frames of
+adding graphics tiers / fill-rate levers for this class — they're proven ineffective.** **Lever B (sky-pass
+throttle) is cancelled** (fill rate isn't the wall). **`renderScale` was REMOVED (2026-06-27):** the initial
+verdict kept it ("harmless, marginally cooler"), but on review it only **blurred the image for zero fps gain**
+(the 5.5-7× pixel cut on Mali/GE8320 changed nothing), so it's a pure quality regression — gone. The resolution
+levers that remain (`pixelRatioCap`, `antialias`) are kept as cosmetic-quality knobs, not perf knobs. The one real, addressable defect the data exposed is **startup**: the first 1-4 frames of
 every session spend **0.8-2.2 s** in render submit (shader compilation + texture upload). **Confirmed on a
 second device** (Mali-G52 tablet: ~0.4 s first-frame spike, but otherwise a healthy 44 fps vs the GE8320's
 26 fps — and the same fill-rate-independence: a 5.5× pixel cut moved its fps by nothing either). So the

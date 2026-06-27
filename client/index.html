@@ -707,10 +707,7 @@ scene.background = null; // background is drawn by the sky scene (first pass); c
 scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so distant rocks fade into the backdrop
 
 const renderer = new THREE.WebGLRenderer({ antialias: gfx.antialias });
-// renderScale (<1 on Performance) renders below native resolution; the browser upscales the full-size
-// canvas. The only fill-rate lever that bites below a pixelRatioCap of 1 (devicePixelRatio is often ~1
-// on weak phones, making the cap a no-op). setSize() preserves this ratio, so the resize handler is fine.
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap) * gfx.renderScale);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.info.autoReset = false; // count load across both render passes
 
@@ -2674,7 +2671,7 @@ const devPerf = (() => {
     ua: navigator.userAgent, dpr: window.devicePixelRatio,
     cores: navigator.hardwareConcurrency ?? null, mem: navigator.deviceMemory ?? null,
     screen: `${screen.width}x${screen.height}`, gpu, gpuVendor, tier: gfx.name,
-    knobs: { pixelRatioCap: gfx.pixelRatioCap, renderScale: gfx.renderScale, antialias: gfx.antialias,
+    knobs: { pixelRatioCap: gfx.pixelRatioCap, antialias: gfx.antialias,
              maxParticles: gfx.maxParticles === Infinity ? 'inf' : gfx.maxParticles },
   };
   let bucket = [], bucketStart = performance.now(), outbox = [], lastFlush = bucketStart;

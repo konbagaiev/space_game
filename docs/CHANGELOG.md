@@ -3,6 +3,17 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-27
+
+- **Perf: removed the sub-1 `renderScale` knob (it blurred for no gain).** Measured on two GPUs (PowerVR
+  GE8320 phone, Mali-G52 tablet), a 5.5-7× backbuffer-pixel cut moved fps by **nothing** — the weak-device
+  bottleneck is CPU draw-call submit + the thermal/compositor governor, **not** fragment fill rate. So the
+  Performance-tier `renderScale: 0.7` only degraded image sharpness for zero perf benefit. Removed the knob
+  entirely (`client/src/graphics.js` TIERS, the `setPixelRatio` multiply, the `?dev` device-passport field,
+  the tier-table test). `pixelRatioCap`/`antialias` remain as cosmetic-quality knobs. Docs (SUMMARY tiers /
+  DECISIONS §23 / plan) corrected — the "bottleneck is fill rate" framing is now marked disproven. Next
+  perf change is particle batching (trail+sparks → one `THREE.Points`), the one data-supported CPU lever.
+
 ## 2026-06-25
 
 - **Perf: shader pre-warm to kill the startup freeze.** The `?dev` capture showed the **first 1-4 frames of

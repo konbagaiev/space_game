@@ -26,13 +26,12 @@ test('resolveTier returns the tier knobs with its name attached', () => {
   assert.equal(p.starScale, TIERS.performance.starScale);
 });
 
-test('Performance renders below native + caps live particles; High/Balance leave both off', () => {
-  // renderScale < 1 is the fill-rate lever that bites below a pixelRatioCap of 1; maxParticles is the
-  // hard live-particle ceiling. Both must be off (1.0 / Infinity) on the capable tiers — no regression.
-  assert.ok(resolveTier('performance').renderScale < 1);
+test('Performance caps live particles; High/Balance leave it off (no renderScale knob — removed)', () => {
+  // maxParticles is the hard live-particle ceiling on the weakest tier; off (Infinity) on the capable
+  // tiers. renderScale was removed (measured useless on real GPUs) — assert it's gone so it isn't re-added.
   assert.ok(Number.isFinite(resolveTier('performance').maxParticles));
+  assert.equal(resolveTier('performance').renderScale, undefined);
   for (const tier of ['high', 'balance']) {
-    assert.equal(resolveTier(tier).renderScale, 1.0);
     assert.equal(resolveTier(tier).maxParticles, Infinity);
   }
 });
