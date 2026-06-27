@@ -3,9 +3,14 @@
   "private": true,
   "description": "Repo-level tooling for Vega Sentinels. The game client lives in client/, the server in server/. This package.json only holds the ship-model asset pipeline scripts (docs/plans/ship-model-pipeline.md).",
   "scripts": {
+    "assets:recolor": "node scripts/assets-recolor.mjs",
     "assets:build": "node scripts/assets-build.mjs",
     "assets:push": "node scripts/assets-push.mjs",
     "assets:pull": "node scripts/assets-pull.mjs",
     "assets:check": "node scripts/assets-check.mjs"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4",
+    "@gltf-transform/extensions": "^4"
   }
 }

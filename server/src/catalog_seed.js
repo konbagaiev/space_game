@@ -225,7 +225,7 @@ export const SHIPS = [
   {
     // Pirate gunner (side missions): a tougher, faster skirmisher — Pirate hull (36 HP) + Pirate engine
     // (top speed +50%) + Scout thrusters, one long-range Pirate machine gun. Uses the orange enemy_1 model.
-    name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/enemy_1_orange_combat.5d87819c.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_orange_hangar.c8789d88.glb',
+    name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/enemy_1_orange_combat.9c1e749a.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_orange_hangar.21a53c39.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
       role: 'pirate_gunner', class: 'fighter', color: 0xe53935, reward: 40,
       model: { yaw: Math.PI, scale: 1 }, // orange enemy_1 (faces -Z, yaw PI to face +Z)
@@ -270,7 +270,7 @@ export const SHIPS = [
   {
     // Advanced medium pirate: the L4 heavy — orange enemy_3 (mini-boss) model, 300 HP, turns ~+30% faster,
     // one long-range Pirate MG + two rocket launchers.
-    name: 'advanced medium pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_3_orange_combat.d5a4a238.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_3_orange_hangar.c13fcbfb.glb',
+    name: 'advanced medium pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_3_orange_combat.f848a735.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_3_orange_hangar.f14238c7.glb',
     components: { hull: 24, engine: 6, thruster: 25 }, stats: {
       role: 'advanced_medium_pirate', class: 'capital', color: 0x800020, reward: 150,
       model: { yaw: Math.PI, scale: 2 }, // orange enemy_3 (faces -Z, yaw PI to face +Z)
@@ -286,7 +286,7 @@ export const SHIPS = [
     // Second Boss (the L4 finale): orange enemy_4 (first-boss) model, 450 HP, ~+30% speed/accel/turn,
     // three rocket launchers + two Advanced pirate cannons. Distinct role 'boss2' (the test helper
     // spawnEnemy('boss') still resolves to the first boss).
-    name: 'second pirate boss', type: 'enemy', modelUrl: 'assets/ships/enemy_4_orange_combat.34e7bf5e.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_4_orange_hangar.f03b633c.glb',
+    name: 'second pirate boss', type: 'enemy', modelUrl: 'assets/ships/enemy_4_orange_combat.39a83261.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_4_orange_hangar.b66f341f.glb',
     components: { hull: 28, engine: 26, thruster: 27 }, stats: {
       role: 'boss2', class: 'capital', color: 0x8b0000, reward: 400,
       model: { yaw: Math.PI, scale: 3 }, // orange enemy_4 (faces -Z, yaw PI to face +Z)
@@ -304,9 +304,9 @@ export const SHIPS = [
     // Advanced rocket pirate: an advanced-tier rocketeer on the orange enemy_2 model — Pirate hull (36 HP) +
     // Pirate engine + Scout thrusters, a long-range Pirate MG + a rocket launcher. NOT yet wired into any
     // level (kept for future use, e.g. a harder rocketeer wave); stats are a sensible default, tune as needed.
-    name: 'advanced rocket pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_2_orange_combat.56e78485.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_2_orange_hangar.c78ab81e.glb',
+    name: 'advanced rocket pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_2_orange_combat.01d7a8d4.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_2_orange_hangar.cb830103.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
-      role: 'advanced_rocket_pirate', class: 'fighter', color: 0xf4541f, reward: 60,
+      role: 'advanced_rocket_pirate', class: 'fighter', color: 0xf4741f, reward: 60,
       model: { yaw: Math.PI, scale: 1 }, // orange enemy_2 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [

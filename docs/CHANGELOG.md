@@ -5,6 +5,19 @@
 
 ## 2026-06-28
 
+- **Enemy "orange" tint pushed warmer: `#f4541f` → `#f4741f`.** The advanced-tier pirate models
+  (`enemy_1..4_orange`) now read as a noticeably more orange (less red) hull. Made the recolor
+  **reproducible**: added `scripts/assets-recolor.mjs` (`npm run assets:recolor`) — it re-derives the
+  `enemy_*_orange` sources from the red `enemy_*` sources by re-tinting only the pack's RED materials
+  (linear G≈0, B≈0, R>0) to the target hex, scaling each red's brightness so light/dark shading is
+  preserved (black/gray untouched). The target hex is the single constant `TARGET` in that script.
+  Rebuilt the 4 orange combat+hangar glbs (new content hashes), pushed to S3, repointed
+  `catalog_seed.js` (`pirate gunner`, `advanced medium pirate`, `second pirate boss`, `advanced rocket
+  pirate`), and bumped the advanced-rocket-pirate marker `color` to `0xf4741f` to match. Also:
+  `assets:build` now accepts optional base-name args to rebuild a subset (so we skip the 48 MB player
+  rebuild); added `@gltf-transform/core`/`extensions` as repo **devDependencies** (the recolor script
+  uses the JS API, not just the CLI). Asset guard passes (all 23 referenced assets on S3). CREDITS.md +
+  SUMMARY.md updated to `#f4741f`.
 - **Fix: "Reset my progress" never reset anything on production (Postgres).** The Postgres
   `resetPlayer` (`server/src/db_postgres.js`) wrote `shop_unlocked = false`, but the column is an
   `INTEGER` (it's `0`/`1` everywhere else) — so the `UPDATE players …` threw

@@ -39,8 +39,11 @@ function hashRename(file, base, dir) {
 function main() {
   if (!fs.existsSync(DIR.src)) { console.error(`No ${DIR.src}/ — drop high-poly source .glb files there first.`); process.exit(1); }
   fs.mkdirSync(DIR.dist, { recursive: true });
-  const sources = fs.readdirSync(DIR.src).filter((f) => f.toLowerCase().endsWith('.glb'));
-  if (!sources.length) { console.error(`No .glb files in ${DIR.src}/.`); process.exit(1); }
+  // Optional CLI args = base names (with or without .glb) to build a subset; default = all sources.
+  const only = process.argv.slice(2).map((a) => a.replace(/\.glb$/i, ''));
+  let sources = fs.readdirSync(DIR.src).filter((f) => f.toLowerCase().endsWith('.glb'));
+  if (only.length) sources = sources.filter((f) => only.includes(path.basename(f, '.glb')));
+  if (!sources.length) { console.error(`No matching .glb files in ${DIR.src}/${only.length ? ` for [${only.join(', ')}]` : ''}.`); process.exit(1); }
 
   const rows = [];
   for (const src of sources) {

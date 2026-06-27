@@ -133,7 +133,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     CloudFront, lazy-loaded). The in-git `player.glb` primitive stays only as the pre-load fallback. Metal
     surfaces shine via the env map (see Visuals).
 - **Asset pipeline** (`docs/plans/ship-model-pipeline.md` + `audio-sample-pipeline.md`): repo-root `npm run
-  assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb per `assets-src/*.glb`;
+  assets:recolor` (`scripts/assets-recolor.mjs` — regenerates the `enemy_*_orange` sources by tinting the
+  pack's RED materials to the **target hex `#f4741f`** (constant in the script), scaling each red shade's
+  brightness so light/dark shading is preserved; black/gray untouched — uses the `@gltf-transform`
+  **devDependencies**) / `npm run
+  assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb per `assets-src/*.glb`,
+  or pass base names to build a subset, e.g. `assets:build enemy_1_orange`;
   default `PRESET.combat`/`hangar` in `assets-config.mjs`, with optional per-source **`PRESET_OVERRIDES`**
   merged by `presetFor` — combat geometry is **meshopt-compressed** to stay light for battle; the **player**
   override only keeps its textures, downscaled to 128px + WebP, so a richly-textured ship stays ~371 KB) / `assets:push`
@@ -165,7 +170,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`). **Appearance = the ship's `.glb` model; we
   never tint by `color`** (see DECISIONS §14), so enemies that reuse a base model look like it until a
   distinct model is authored. The basic pirates use the **red `enemy_1..4` models**; the advanced tier uses
-  the **orange (`#f4541f`) `enemy_*_orange` recolors** so they read as distinct. `fighter` (`Basic pirate
+  the **orange (`#f4741f`) `enemy_*_orange` recolors** so they read as distinct. `fighter` (`Basic pirate
   ship`, `enemy_1`, gun, 30 hp light hull), `rocketeer` (`basic rocket pirate`, `enemy_2`, gun + rocket, same
   30 hp light hull), `medium` (`pirate mini boss`, `enemy_3`, two rocket launchers, 150 hp medium hull →
   sluggish, 2× model), `pirate_gunner` (a fast skirmisher for the side missions — **orange `enemy_1`** —

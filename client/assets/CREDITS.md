@@ -16,7 +16,7 @@ asset page is also handy, in case the author later changes the terms).
 | sounds/blast.\<hash\>.mp3 (rocket + small ship explosion, from blast.flac) | Freesound (CC0 filter) | _id not retained (renamed blast.flac)_ | CC0 1.0 | 2026-06-24 |
 | sounds/music_hangar_1.\<hash\>.mp3 (hangar background loop) | Freesound (CC0 filter) | _id not retained (renamed menu-background-sound-1.wav)_ | CC0 1.0 | 2026-06-24 |
 | sounds/music_combat_1.\<hash\>.mp3 (combat background loop) | Freesound (CC0 filter) | _id not retained (renamed game-background-dragons-breath.wav)_ | CC0 1.0 | 2026-06-24 |
-| ships/enemy_1–4 + enemy_1–4_orange (combat + hangar `.glb`, derived from `_source/lowpoly_spaceships.glb`; the `_orange` set is the same models recolored red → #f4541f) — basic enemy, rocketeer, medium, first boss (+ orange variants) | Pedram Ashoori | https://skfb.ly/6pxFX | CC-BY 4.0 | 2026-06-24 |
+| ships/enemy_1–4 + enemy_1–4_orange (combat + hangar `.glb`, derived from `_source/lowpoly_spaceships.glb`; the `_orange` set is the same models recolored red → #f4741f) — basic enemy, rocketeer, medium, first boss (+ orange variants) | Pedram Ashoori | https://skfb.ly/6pxFX | CC-BY 4.0 | 2026-06-24 |
 | ships/player_combat + player_hangar `.glb` (player ship, textures downscaled) | Raven | https://skfb.ly/otR6F | CC-BY 4.0 | 2026-06-24 |
 
 <!--
@@ -30,7 +30,8 @@ The **`enemy_1`–`enemy_4`** ship models are cut from the **"LowPoly Spaceships
 Ashoori** (Sketchfab, **CC-BY 4.0** — attribution required, so this entry must stay). The in-game
 combat/hangar `.glb`s are decimated/compressed derivatives of that source (`assets-src/enemy_*.glb` →
 `assets:build`). The **`enemy_*_orange`** ships are the same models with the red material colors
-recolored to **#f4541f** (orange) — still derivatives of the same pack, same attribution.
+recolored to **#f4741f** (orange) — still derivatives of the same pack, same attribution. The tint is
+produced reproducibly by `npm run assets:recolor` (`scripts/assets-recolor.mjs`, target hex in the script).
 
 **Required attribution (use verbatim, e.g. in an in-game credits screen):**
 
