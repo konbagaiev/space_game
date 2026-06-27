@@ -24,7 +24,7 @@ Ships use built-in primitive shapes by default. To replace one with a real model
    (hangar, CloudFront), and put any orientation/size tuning in the ship's **`stats.model`** block:
    ```js
    {
-     name: 'basic enemy ship', type: 'enemy',
+     name: 'Basic pirate ship', type: 'enemy',
      modelUrl: 'assets/ships/enemy_1_combat.<hash>.glb',
      modelUrlHigh: 'https://…/ships-hangar/enemy_1_hangar.<hash>.glb',
      stats: { role: 'fighter', /* … */ model: { yaw: Math.PI, scale: 1 } },
@@ -52,9 +52,10 @@ the asset's own transform is not trusted, so a model facing the wrong way is fix
 the seed, **not** by re-exporting.
 
 ### Before you push a model to S3 — orientation check (avoids the "flying backwards" bug)
-The combat `.glb` is built with no geometry compression specifically so **macOS Quick Look** can
-preview it (`scripts/assets-config.mjs`). Before `npm run assets:push`:
-1. **Preview the combat `.glb`** (Quick Look / a glTF viewer) and note which way the nose points.
+Combat `.glb`s are built light for battle (decimated + meshopt-compressed, `scripts/assets-config.mjs`),
+so preview them in a **web glTF viewer** (e.g. `gltf-viewer.donmccurdy.com`), not macOS Quick Look. Before
+`npm run assets:push`:
+1. **Preview the combat `.glb`** in a web glTF viewer and note which way the nose points.
 2. **Our convention is nose = `+Z`.** If it faces any other way, set **`stats.model.yaw`** in the seed
    (`-Z` → `Math.PI`); don't re-export just to rotate.
 3. After seeding, **eyeball it in-game** (open the game, or `npm run test:visual` from `client/` and

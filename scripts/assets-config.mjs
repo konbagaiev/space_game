@@ -27,28 +27,25 @@ export const DIR = {
   soundsServe: 'client/assets/sounds',
 };
 
-// Build presets (tunable). Combat is aggressively decimated (the ship is tiny top-down) and uses NO
-// geometry compression so it loads in a plain GLTFLoader AND previews in macOS Quick Look. The hangar
-// model keeps detail + meshopt geometry compression (needs the MeshoptDecoder, wired in the client) — too
-// big for Quick Look, inspect it in a web glTF viewer (see the pipeline doc).
+// Build presets (tunable). Combat is built to be as LIGHT as possible for battle — the ship is tiny on a
+// top-down screen, so it is aggressively decimated AND meshopt-compressed. The hangar model keeps full
+// detail with meshopt + WebP. Both need the MeshoptDecoder, which the client wires (`setMeshoptDecoder`),
+// so both load in-game; inspect either in a web glTF viewer (see the pipeline doc).
 export const PRESET = {
-  // combat: plain glb (no geometry compression, no GPU-instancing extension, textures kept in their
-  // original format) so macOS Quick Look shows it; size comes from decimation + small textures.
-  combat: { simplifyRatio: 0.2, simplifyError: 0.04, textureSize: 256, compress: false, textureCompress: false, instance: false },
-  // hangar: optimize hard for download size (meshopt + WebP); inspect in a web glTF viewer, not Quick Look.
+  // combat: smallest possible runtime download — heavy decimation + meshopt geometry compression.
+  combat: { simplifyRatio: 0.2, simplifyError: 0.04, textureSize: 256, compress: 'meshopt', textureCompress: false, instance: false },
+  // hangar: keep detail; meshopt + WebP for the (larger) CloudFront download.
   hangar: { simplifyRatio: 1.0, simplifyError: 0.0, textureSize: 1024, compress: 'meshopt', textureCompress: 'webp', instance: true },
 };
 
 // Per-source preset overrides, keyed by the source base name (file minus .glb). Merged over PRESET[kind]
 // in assets:build. Use when one model needs different treatment than the default — e.g. the player ship
 // is a richly-TEXTURED model (not a flat low-poly pack), so its combat build KEEPS the textures but
-// shrinks them hard (128px) and meshopt-compresses the geometry (the combat loader has MeshoptDecoder
-// wired). That trades the macOS Quick Look preview (meshopt isn't QL-readable) for a ~370 KB textured
-// combat model — worth it here. See docs/plans/ship-model-pipeline.md.
+// shrinks them hard (128px → WebP) for a ~370 KB textured combat model. See docs/plans/ship-model-pipeline.md.
 export const PRESET_OVERRIDES = {
   player: {
-    combat: { textureSize: 128, compress: 'meshopt', textureCompress: 'webp' }, // keep paint/decals, ~370 KB
-    hangar: { textureSize: 512 },                                               // showcase detail, ~1.7 MB on CDN
+    combat: { textureSize: 128, textureCompress: 'webp' }, // keep paint/decals but tiny; geometry meshopt (the default)
+    hangar: { textureSize: 512 },                          // showcase detail, ~1.7 MB on CDN
   },
 };
 // Merge the base preset for `kind` with any override for this source base name.

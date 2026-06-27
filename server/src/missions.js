@@ -7,7 +7,7 @@
 // does NOT advance the story counter (`current_progress`) — pure repeatable grind content.
 
 // Enemy ship names (must match SHIPS in catalog_seed.js).
-const GUNNER = 'pirate gunner', ROCKETEER = 'basic rocket enemy', HEAVY = 'basic mini boss', BOSS = 'first boss';
+const GUNNER = 'pirate gunner', ROCKETEER = 'basic rocket pirate', HEAVY = 'pirate mini boss', BOSS = 'first pirate boss';
 
 // The shared wave script for every side mission (same composition / difficulty for all three).
 function sideMissionPhases() {

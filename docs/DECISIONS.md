@@ -448,10 +448,10 @@ are sourced, optimized, stored and kept in sync:
   stored as GitHub secrets `ASSETS_AWS_ACCESS_KEY_ID`/`ASSETS_AWS_SECRET_ACCESS_KEY`; and the **CI deploy
   job** runs `assets:check` (guard) + `assets:pull` (S3 → `client/assets/ships/`, baked into the image)
   before the rsync/build, gated on the secret. All a **safe no-op today** (in-git primitives, empty
-  `ships-combat/`). **Compression policy:** **combat glbs are vanilla** (no meshopt, no GPU-instancing
-  extension, textures in their original format) so they load in the plain `GLTFLoader` AND preview in macOS
-  Quick Look — size comes from decimation + small textures; **hangar glbs use meshopt + WebP** (the client
-  wires `setMeshoptDecoder` so they load; too compressed for Quick Look — inspect in a web glTF viewer).
+  `ships-combat/`). **Compression policy:** **combat glbs are built as light as possible for battle** —
+  aggressive decimation **+ meshopt geometry compression** (the ship is tiny on a top-down screen, so heavy
+  simplification is invisible); **hangar glbs keep full detail with meshopt + WebP**. Both use meshopt, so
+  both need the client's `setMeshoptDecoder` (wired) to load; inspect either in a web glTF viewer.
   **First real sourced model shipped:** `enemy_1` (combat + hangar) is on S3 and wired to `basic enemy
   ship` (`model_url` + `model_url_high`) — the pipeline is proven end-to-end, not just a no-op.
 
@@ -464,9 +464,9 @@ nose-toward `-Z`, so the basic enemy flew engine-first) is corrected with a per-
 data over re-export:** one field corrects both the combat and hangar models (same source), needs no
 Blender/source round-trip or S3 re-push, and survives swapping in a differently-oriented source later.
 The knob is the documented escape hatch — it had silently regressed when ships went DB-driven
-(`modelSpec` dropped `yaw`), which is how the bug shipped. **Prevention:** combat `.glb` are kept
-Quick-Look-previewable on purpose — eyeball the nose (= `+Z`) before `assets:push`, then confirm in-game
-(see `client/assets/README.md`).
+(`modelSpec` dropped `yaw`), which is how the bug shipped. **Prevention:** before `assets:push`, eyeball
+the nose (= `+Z`) in a web glTF viewer (e.g. `gltf-viewer.donmccurdy.com`), then confirm in-game (see
+`client/assets/README.md`).
 
 ## 15. Hangar shop & stash (the "spend" side of the economy)
 

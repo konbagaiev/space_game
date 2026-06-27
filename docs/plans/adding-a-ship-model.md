@@ -35,8 +35,8 @@ which also falls back to the **old loose keys** (`stats.modelYaw` / `stats.sizeS
 
 Orientation is fixed in **data**, not by re-exporting — the asset's own transform isn't trusted (see
 DECISIONS §"Model orientation is fixed in DATA"). The combat and hangar `.glb` come from the same
-source, so one `yaw` corrects both. **Preview the combat `.glb` in macOS Quick Look** (it's built
-uncompressed for exactly this) and confirm the nose direction before you push.
+source, so one `yaw` corrects both. **Preview the `.glb` in a web glTF viewer** (e.g.
+`gltf-viewer.donmccurdy.com`) and confirm the nose direction before you push.
 
 ### `scale` — size
 `applyShipModel` first auto-normalizes the model's **longest axis to `SHIP_MODEL_LEN` (3.4)** — the
@@ -60,7 +60,7 @@ so these values are independent of `scale`.
    textured model (see `ship-model-pipeline.md`), run `npm run assets:build`. Paste the resulting
    content-hashed paths into the seed's `modelUrl` (combat, same-origin) and `modelUrlHigh` (hangar,
    CloudFront — optional).
-3. **Fill `stats.model`** — `yaw` (from the Quick Look check), `scale` (relative size). Leave
+3. **Fill `stats.model`** — `yaw` (from the glTF-viewer check), `scale` (relative size). Leave
    `muzzle`/`exhaust` out unless step 5 shows the auto spawn is off.
 4. **Credits** — a CC-BY model **must** get a row in `client/assets/CREDITS.md` (the `CLAUDE.md`
    asset-credits rule: always confirm CREDITS changes with the maintainer on a model add/replace/remove).
