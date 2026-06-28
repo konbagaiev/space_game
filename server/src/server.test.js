@@ -601,6 +601,35 @@ test('catalog: pirate gunner + Pirate machine gun (id 9) are seeded; the boss gu
   assert.ok(bossGuns.length === 2 && bossGuns.every((m) => m.weapon === 9), 'boss guns swapped to the Pirate MG');
 });
 
+test('catalog: marker colors follow the size-tier palette (small=orange, medium=red, boss=maroon)', async () => {
+  const ships = await getJson('/api/ships');
+  const colorOf = (name) => ships.find((s) => s.name === name).stats.color;
+  // small → orange (enemy_1 fighters/gunners + enemy_2 rocketeers)
+  for (const n of ['Basic pirate ship', 'pirate gunner', 'basic rocket pirate', 'advanced rocket pirate']) {
+    assert.equal(colorOf(n), 0xf4741f, `${n} = small/orange marker`);
+  }
+  // medium → red (enemy_3)
+  for (const n of ['pirate mini boss', 'advanced medium pirate']) assert.equal(colorOf(n), 0xe53935, `${n} = medium/red marker`);
+  // boss → maroon (enemy_4)
+  for (const n of ['first pirate boss', 'second pirate boss']) assert.equal(colorOf(n), 0x800020, `${n} = boss/maroon marker`);
+});
+
+test('catalog: orphaned enemy ships are pruned on re-seed (rename/removal cleanup)', async () => {
+  const { backend, migrate } = await import('./datastore.js');
+  const STALE = 'zzz stale enemy (test)';
+  // insert an enemy row not present in the seed, the same way an old rename left one behind
+  if (backend === 'sqlite') {
+    const { db } = await import('./db.js');
+    db.prepare("INSERT INTO ships (name, type, stats, components) VALUES (?, 'enemy', '{}', '{}') ON CONFLICT(name) DO NOTHING").run(STALE);
+  } else {
+    const { pool } = await import('./db_postgres.js');
+    await pool.query("INSERT INTO ships (name, type, stats, components) VALUES ($1, 'enemy', '{}'::jsonb, '{}'::jsonb) ON CONFLICT (name) DO NOTHING", [STALE]);
+  }
+  assert.ok((await getJson('/api/ships')).some((s) => s.name === STALE), 'stale enemy inserted');
+  await migrate(); // re-run the seed → prune
+  assert.ok(!(await getJson('/api/ships')).some((s) => s.name === STALE), 'stale enemy pruned on re-seed');
+});
+
 test('catalog: level-4 enemies — advanced medium pirate (300 HP) + Second Boss (450 HP) + Advanced pirate cannon', async () => {
   const weapons = await getJson('/api/weapons');
   const cannon = weapons.find((w) => w.id === 10);

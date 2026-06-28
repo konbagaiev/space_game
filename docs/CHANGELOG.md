@@ -5,6 +5,28 @@
 
 ## 2026-06-28
 
+- **Seed now prunes orphaned enemy ships (cleans up after a rename/removal).** The catalog upsert
+  couldn't delete, so the earlier enemy→pirate rename left stale enemy rows (`basic enemy ship`,
+  `first boss`, `second boss`, …) lingering in every DB (harmless — nothing spawned them — but untidy).
+  `seedCatalog` (both `db.js` SQLite and `db_postgres.js` Postgres, kept in parity) now deletes
+  `type='enemy'` rows not in the seed **and owned by no player** (enemies never are, so no player can
+  lose a ship). Cleans local on restart and prod on the next deploy. Added a re-seed prune test +
+  exported the PG `pool` for it; 55/55 tests green on both backends.
+- **Formalized map/border marker colors by ship size tier.** The off-screen edge arrows, the mini-map
+  dots and the hangar ship-dot read each ship's `stats.color`; these were ad-hoc per ship. Introduced a
+  single `MARKER` palette in `catalog_seed.js` — **small → orange `#f4741f`** (enemy_1 fighters/gunners +
+  enemy_2 rocketeers), **medium → red `#e53935`** (enemy_3), **boss → maroon `#800020`** (enemy_4) — and
+  pointed every enemy's `color` at its tier (player keeps blue). Visible effect: consistent threat-tier
+  colors on the radar/edge arrows. Updated the L4 visual scenario's color assertions and the
+  `update-ship-model` skill (set the marker color from `MARKER` when adding/changing a ship). Does NOT
+  touch the 3D models. Requires the usual local server restart to reseed (done).
+- **New skill `update-ship-model`** (`.claude/skills/update-ship-model/SKILL.md`) — encodes the
+  add/replace/re-tint-a-model workflow end-to-end so it's done consistently: build the optimized glbs →
+  `assets:push` to S3 (always) → wire the hashes into `catalog_seed.js` → refresh the local serve dir →
+  `assets:check` → **restart the local server** (the catalog reseeds only on startup — skipping this is
+  what made a replaced model show the generic primitive locally) → for a replacement, delete the
+  superseded S3 objects via an atomic `aws s3api delete-objects` (NOT a zsh `for` loop, which silently
+  no-ops) → CREDITS check → docs + commit + push (CI bakes combat glbs + reseeds prod on deploy).
 - **Enemy "orange" tint pushed warmer: `#f4541f` → `#f4741f`.** The advanced-tier pirate models
   (`enemy_1..4_orange`) now read as a noticeably more orange (less red) hull. Made the recolor
   **reproducible**: added `scripts/assets-recolor.mjs` (`npm run assets:recolor`) — it re-derives the

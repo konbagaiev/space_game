@@ -57,8 +57,13 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   (orange while reloading, green when ready). Shown on both PC and mobile; on PC it's also
   clickable to fire (besides the `F` key), on mobile it's the rocket button.
 - **Off-screen enemy markers** — for each enemy that's off-screen, an arrow on the screen edge points
-  toward it, tinted by the enemy's type color (`updateMarkers`, a pooled DOM overlay). Hidden while an
+  toward it, tinted by the enemy's marker color (`updateMarkers`, a pooled DOM overlay). Hidden while an
   overlay (game over / victory) is up.
+- **Marker colors by size tier** — the edge arrows, the mini-map dots and the hangar ship-dot all read a
+  ship's `stats.color`, sourced from the `MARKER` palette in `catalog_seed.js` (NOT ad-hoc per ship; it
+  does not tint the 3D model). Convention: **small → orange `#f4741f`** (enemy_1 fighters/gunners +
+  enemy_2 rocketeers), **medium → red `#e53935`** (enemy_3), **boss → maroon `#800020`** (enemy_4); the
+  player keeps blue.
 - **Mini-map / radar** (left edge, vertically centered, `<canvas id="minimap">`, non-interactive) — an overview that
   **complements** the edge arrows (arrows = immediate threat direction; radar = spatial overview, useful now
   that the player can wander out of bounds). Shows the **arena boundary** square (±360), the **player** as a
@@ -186,7 +191,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   model size. Each enemy carries a **`reward`** (`stats.reward`, fighter 20 / rocketeer 40 / pirate gunner 40 /
   medium 100 / advanced medium pirate 150 / first boss 200 / Second Boss 400) in **credits**, earned on
   destruction. (`stats.color` is metadata for the radar markers/mini-map + explosion tint + the loading
-  placeholder — not a model tint.)
+  placeholder — not a model tint; set from the `MARKER` size-tier palette, see HUD above.)
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 30 hp light hull, gun 4 damage
   (an enemy dies in 3 player hits; the player survives ~25 enemy hits).
 
@@ -664,8 +669,11 @@ first translation). See DECISIONS §10.
   **reference tables** (`components`, `weapons`, `ships`, `maps`, `levels`). On **every server startup** both backends
   **upsert** these rows from the seed (`INSERT … ON CONFLICT DO UPDATE`, keyed by weapon `id` / ship/map/
   level `name`) — so editing `catalog_seed.js` ships content/balance changes to prod on the next deploy.
-  This is **update-and-insert, not a wipe**: nothing is deleted, so removing/renaming a seed entry leaves
-  the old row orphaned (harmless, but it lingers). **Player data is never touched by seeding** — `players`,
+  This is **update-and-insert, not a wipe** — with one exception: **orphaned `enemy` ships are pruned**
+  (a rename/removal would otherwise leave the old enemy row lingering). The prune deletes only
+  `type='enemy'` rows no longer in the seed **and owned by no player** (enemies never are), so a player
+  can't lose an owned ship; other removed/renamed entries (components/weapons/maps/levels/player ships)
+  still linger harmlessly. **Player data is never touched by seeding** — `players`,
   `games`, `player_ships` persist across deploys. (If we ever want the catalog editable in prod, switch to
   seed-only-when-empty + migrations for changes.)
 - **Player-data reset (admin):** `server/src/reset.js` is a CLI for wiping *progress* (never the

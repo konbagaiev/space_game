@@ -1,5 +1,6 @@
-// Level-4 enemies (docs/plans/level-4-difficulty.md): the Advanced medium pirate (maroon, 300 HP) and the
-// Second Boss (crimson, 450 HP) build + render via the existing tint/mount system with sane derived drive.
+// Level-4 enemies (docs/plans/level-4-difficulty.md): the Advanced medium pirate (red marker, 300 HP) and
+// the Second Boss (maroon marker, 450 HP) build + render with sane derived drive. Marker colors follow the
+// size-tier convention (MARKER in catalog_seed.js): medium → red, boss → maroon.
 export const name = '11-l4-enemies';
 
 export default async function ({ page, assert, shot }) {
@@ -29,13 +30,13 @@ export default async function ({ page, assert, shot }) {
   });
   assert.ok(info.amp, 'advanced medium pirate spawned');
   assert.equal(info.amp.hp, 300, 'advanced medium pirate has 300 HP');
-  assert.equal(info.amp.color, 0x800020, 'maroon tint');
+  assert.equal(info.amp.color, 0xe53935, 'medium tier → red marker');
   assert.ok(info.amp.accel && info.amp.turn, 'advanced medium pirate has sane derived drive');
   assert.equal(info.amp.mounts, 3, 'advanced medium pirate has 3 mounts (1 MG + 2 rockets)');
 
   assert.ok(info.sb, 'second boss spawned');
   assert.equal(info.sb.hp, 450, 'second boss has 450 HP');
-  assert.equal(info.sb.color, 0x8b0000, 'crimson tint');
+  assert.equal(info.sb.color, 0x800020, 'boss tier → maroon marker');
   assert.ok(info.sb.accel && info.sb.turn, 'second boss has sane derived drive');
   assert.equal(info.sb.mounts, 5, 'second boss has 5 mounts (2 cannons + 3 rockets)');
 

@@ -35,6 +35,14 @@ async function seedCatalog() {
   const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url, model_url_high, components) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, components = excluded.components`);
   for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, s.modelUrlHigh ?? null, JSON.stringify(s.components));
+  // Prune orphaned ENEMY ships left over from a rename/removal (the upsert above can't delete). Only
+  // enemy rows that are no longer in the seed AND owned by no player (enemies never are) — player ships
+  // are never pruned so a player can't lose an owned ship.
+  const enemyNames = SHIPS.filter((s) => s.type === 'enemy').map((s) => s.name);
+  if (enemyNames.length) {
+    db.prepare(`DELETE FROM ships WHERE type = 'enemy' AND name NOT IN (${enemyNames.map(() => '?').join(',')})
+      AND id NOT IN (SELECT ship_id FROM player_ships)`).run(...enemyNames);
+  }
   const upM = db.prepare(`INSERT INTO maps (name, descriptor) VALUES (?, ?)
     ON CONFLICT(name) DO UPDATE SET descriptor = excluded.descriptor`);
   for (const m of MAPS) upM.run(m.name, JSON.stringify(m.descriptor));
