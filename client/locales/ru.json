@@ -70,7 +70,7 @@
   "ui.pause.resume": "Продолжить",
   "ui.pause.paused": "Пауза",
   "ui.pause.play": "▶ Продолжить",
-  "ui.fullscreen": "⛶ Во весь экран",
+  "ui.fullscreen": "Во весь экран",
   "ui.credits.doubled": "Заработано ×2 = {credits}",
   "ui.gameover.sub": "Уничтожено: {kills} — Заработано: {credits}",
   "ui.gameover.back_to_hangar": "В ангар",

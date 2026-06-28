@@ -1,6 +1,6 @@
 // Mobile hangar: on a short (landscape) viewport the shop bay makes the hangar taller than the screen,
-// so it must SCROLL and the Take-off button must be reachable. Also checks the touch-only "Full screen"
-// buttons exist and are gated to touch devices (body.touch). Runs last (it shrinks the viewport).
+// so it must SCROLL and the Take-off button must be reachable. Also checks the single touch-only floating
+// "Full screen" button is gated to touch menus (body.touch + body.menu). Runs last (it shrinks the viewport).
 export const name = '07-mobile-hangar';
 
 export default async function ({ page, assert, shot }) {
@@ -29,17 +29,30 @@ export default async function ({ page, assert, shot }) {
   assert.ok(inView, 'Take-off scrolls fully into view');
   await shot('mobile-hangar-takeoff');
 
-  // "Full screen" buttons: present on welcome + hangar + pause overlay + settings overlay, touch-only
-  // (hidden unless body.touch)
+  // Single floating "Full screen" button: hidden on non-touch; shown on touch menus (the Hangar adds
+  // body.menu); hidden once fullscreen (body.fs). It carries the translated words on aria-label/title.
   const fs = await page.evaluate(() => {
-    const btns = [...document.querySelectorAll('.fullscreen-btn.touch-only')];
-    const hiddenNonTouch = btns.every((b) => getComputedStyle(b).display === 'none');
-    document.body.classList.add('touch');
-    const revealedOnTouch = btns.every((b) => getComputedStyle(b).display !== 'none');
-    document.body.classList.remove('touch');
-    return { count: btns.length, hiddenNonTouch, revealedOnTouch };
+    const btn = document.getElementById('fullscreen-btn');
+    const disp = () => getComputedStyle(btn).display;
+    const hiddenNonTouch = disp() === 'none';
+    document.body.classList.add('touch'); // hangar already set body.menu
+    const shownOnTouchMenu = disp() !== 'none';
+    document.body.classList.add('fs');
+    const hiddenWhenFs = disp() === 'none';
+    document.body.classList.remove('fs', 'touch');
+    return {
+      exists: !!btn,
+      hiddenNonTouch,
+      shownOnTouchMenu,
+      hiddenWhenFs,
+      label: btn.getAttribute('aria-label'),
+      text: btn.textContent.trim(),
+    };
   });
-  assert.equal(fs.count, 4, 'Full screen buttons on welcome + hangar + pause overlay + settings overlay');
-  assert.ok(fs.hiddenNonTouch, 'Full screen buttons are hidden on non-touch');
-  assert.ok(fs.revealedOnTouch, 'Full screen buttons show under body.touch');
+  assert.ok(fs.exists, 'a single floating #fullscreen-btn exists');
+  assert.ok(fs.hiddenNonTouch, 'the floating Full screen button is hidden on non-touch');
+  assert.ok(fs.shownOnTouchMenu, 'it shows on touch menus (body.touch + body.menu)');
+  assert.ok(fs.hiddenWhenFs, 'it hides once fullscreen (body.fs)');
+  assert.equal(fs.text, '⛶', 'the button is icon-only (⛶ glyph, no words)');
+  assert.ok(fs.label && /full screen/i.test(fs.label), 'the words live on aria-label/title');
 }

@@ -5,6 +5,18 @@
 
 ## 2026-06-28
 
+- **Mobile landscape + floating fullscreen button.** Phones are now forced to landscape: held in
+  portrait, a full-screen rotate-to-landscape cover (`#rotate-cover`, icon-only `📱↻`) hides the game
+  via a touch-gated `@media (orientation: portrait)` query, backed by a best-effort
+  `screen.orientation.lock('landscape')` (Android in fullscreen; iOS Safari ignores it → the cover is the
+  fallback), and rotating to portrait mid-fight auto-pauses (`autoPauseOnPortrait`, mirrors
+  `autoPauseOnBlur`, no auto-resume). The four inline "⛶ Full screen" buttons (welcome / hangar / pause /
+  settings) are replaced by **one** fixed, icon-only, brighter button in the bottom-right
+  (`#fullscreen-btn`), gated to touch menus (`body.touch.menu`) so it never overlaps the in-fight rocket
+  button, and hidden once fullscreen (a `fullscreenchange` listener toggles `body.fs`). `ui.fullscreen`
+  now drops the leading glyph and is applied to the button's `aria-label`/`title` (re-applied on language
+  change) — source.json + ru.json updated. Visual scenarios: `07-mobile-hangar` updated for the single
+  button; new `15-mobile-landscape` covers the rotate cover + no-overlap gating.
 - **Seed now prunes orphaned enemy ships (cleans up after a rename/removal).** The catalog upsert
   couldn't delete, so the earlier enemy→pirate rename left stale enemy rows (`basic enemy ship`,
   `first boss`, `second boss`, …) lingering in every DB (harmless — nothing spawned them — but untidy).

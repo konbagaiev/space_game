@@ -70,7 +70,7 @@
   "ui.pause.resume": { "source": "Resume", "context": "Accessible label/tooltip for the pause button once paused (shows a ▶ play icon) — tap to continue the fight. Short." },
   "ui.pause.paused": { "source": "Paused", "context": "Large centered label shown over the frozen battlefield while the game is paused. One word." },
   "ui.pause.play": { "source": "▶ Play", "context": "Button under the centered 'Paused' label — resumes the fight. Keep the ▶ play glyph; translate the word." },
-  "ui.fullscreen": { "source": "⛶ Full screen", "context": "Touch-only button (welcome / hangar / pause) that re-enters fullscreen to hide the mobile browser chrome (URL bar, tabs). Keep the ⛶ glyph; translate the words." },
+  "ui.fullscreen": { "source": "Full screen", "context": "Accessible name (aria-label/title) of the floating, icon-only ⛶ button (touch menus, bottom-right) that re-enters fullscreen to hide the mobile browser chrome (URL bar, tabs). The ⛶ glyph lives in the markup — translate only the words, no glyph." },
   "ui.credits.doubled": { "source": "Earned ×2 = {credits}", "context": "Victory subtitle tail; {credits} is the doubled credits earned (integer). '×2' is the level-clear bonus notation." },
   "ui.gameover.sub": { "source": "Destroyed: {kills} — Earned: {credits}", "context": "Game-over subtitle. {kills},{credits} are integers placed after labels, so no plural form is needed." },
   "ui.gameover.back_to_hangar": { "source": "Back to Hangar", "context": "Secondary button on the death/game-over overlay (only after the hangar shop is unlocked): return to the Hangar to shop / change loadout instead of an instant retry. Short." },

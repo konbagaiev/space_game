@@ -91,15 +91,35 @@
   }
   #takeoff:hover, #hangar-go:hover { filter: brightness(1.08); }
   #hangar-go:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
-  /* Full-screen button — touch devices only (re-hides the browser chrome after minimizing). */
+  /* Touch-only UI gate (e.g. the floating Full-screen button + rotate-to-landscape cover). */
   .touch-only { display: none; }
   body.touch .touch-only { display: inline-flex; }
-  .fullscreen-btn {
-    pointer-events: auto; cursor: pointer; align-items: center; justify-content: center; margin-top: 12px;
-    padding: 10px 22px; font: inherit; font-size: 15px; font-weight: 600; color: #cfe0ff;
-    background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.3); border-radius: 9px;
+  /* Floating full-screen button — touch-only, bottom-right corner, hidden when already fullscreen.
+     Only shown on menus (body.menu): during a live fight the bottom-right corner is the rocket
+     button, so gating to menus avoids the overlap. */
+  #fullscreen-btn {
+    position: fixed; right: 14px; bottom: 14px; z-index: 60;
+    width: 46px; height: 46px; padding: 0; border-radius: 12px;
+    display: none; align-items: center; justify-content: center;
+    font-size: 22px; line-height: 1; cursor: pointer; pointer-events: auto;
+    color: #eaf2ff;                                   /* brighter than the old #cfe0ff */
+    background: rgba(40,60,110,.55);                   /* brighter/more solid than the old .06 */
+    border: 1px solid rgba(170,200,255,.55);
+    box-shadow: 0 2px 10px rgba(0,0,0,.35);
   }
-  .fullscreen-btn:hover { background: rgba(255,255,255,.12); }
+  body.touch.menu #fullscreen-btn { display: flex; }   /* show on touch menus … */
+  body.fs #fullscreen-btn { display: none !important; } /* … but hide once fullscreen */
+  #fullscreen-btn:active { background: rgba(60,85,150,.7); }
+  /* Rotate-to-landscape cover — touch-only, shown when a phone is held in portrait (see media query). */
+  #rotate-cover {
+    position: fixed; inset: 0; z-index: 9999;
+    display: none; align-items: center; justify-content: center;
+    background: #05080f;
+  }
+  #rotate-cover .rotate-icon { font-size: 64px; opacity: .9; }
+  @media (orientation: portrait) {
+    body.touch #rotate-cover { display: flex; }
+  }
   #hangar-go-note { font-size: 13px; color: #ff9a8a; margin-top: 8px; min-height: 16px; }
   /* Hangar shop + stash (docs/plans/hangar-shop.md). Shown only once the shop is unlocked. */
   #hangar-bay { pointer-events: auto; width: min(1040px, 96vw); margin: 6px 0 22px; text-align: left; zoom: 0.9; } /* zoom: overall 10% smaller */
@@ -507,7 +527,6 @@
   <div class="pick" data-i18n="ui.welcome.pick">Pick your ship</div>
   <div id="ship-choices"></div>
   <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
-  <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
   <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
      target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
 </div>
@@ -533,7 +552,6 @@
   </div>
   <button id="hangar-go" data-i18n="ui.button.take_off">Take off 🚀</button>
   <div id="hangar-go-note"></div>
-  <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
 </div>
 <div id="account-bar"></div>
 <!-- Side-mission board (3 buttons, top-right) — shown on menus once the campaign is cleared -->
@@ -569,7 +587,6 @@
 <div id="pause-overlay">
   <div class="pause-title" data-i18n="ui.pause.paused">Paused</div>
   <button id="pause-play" data-i18n="ui.pause.play">▶ Play</button>
-  <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
 </div>
 <!-- Settings gear — shown on menus (body.menu) + while paused (body.paused); opens the audio settings -->
 <button id="settings-btn" aria-label="Settings" title="Settings">⚙</button>
@@ -609,7 +626,6 @@
       </div>
       <div class="set-note" data-i18n="ui.settings.reset.note">Wipes your level, credits, ships and upgrades. Your account and login stay.</div>
     </div>
-    <button class="fullscreen-btn touch-only" data-i18n="ui.fullscreen">⛶ Full screen</button>
     <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
   </div>
   <!-- confirm step shown after the slide is completed (sits above the settings box) -->
@@ -638,6 +654,13 @@
 <div id="zoom">
   <button id="zoom-in"  aria-label="Zoom in"  title="Zoom in">＋</button>
   <button id="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>
+</div>
+<!-- Floating fullscreen toggle: touch-only, bottom-right, shown on menus, hidden once fullscreen (CSS + JS). -->
+<button id="fullscreen-btn" class="touch-only" aria-label="Full screen" title="Full screen">⛶</button>
+<!-- Touch-only: shown when the phone is held in portrait (CSS media query). Forces landscape play.
+     Icon only, no text — the landscape-oriented layout is its own cue, so nothing to explain. -->
+<div id="rotate-cover" class="touch-only" aria-hidden="true">
+  <div class="rotate-icon">📱↻</div>
 </div>
 
 <script type="importmap">
@@ -3298,6 +3321,18 @@ addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Mobile: auto-pause a live fight when the phone is rotated to portrait (the #rotate-cover hides the
+// battlefield behind a "rotate to landscape" screen, so the player isn't dying unseen). Mirrors
+// autoPauseOnBlur; like it, we do NOT auto-resume on returning to landscape — the player resumes manually.
+function autoPauseOnPortrait() {
+  if (isTouch && matchMedia('(orientation: portrait)').matches
+      && gameStarted && player && player.alive && !levelRunner.won && !paused) {
+    setPaused(true);
+  }
+}
+addEventListener('orientationchange', autoPauseOnPortrait);
+matchMedia('(orientation: portrait)').addEventListener?.('change', autoPauseOnPortrait);
+
 // (Graphics-tier changes reload the page so the whole preset — antialias + pixel ratio + star/particle
 // density — applies cleanly from startup; see the settings wiring + DECISIONS §23.)
 
@@ -3383,6 +3418,13 @@ function applyTranslations(root = document) {
   root.querySelectorAll('[data-i18n-href]').forEach((el) => {
     el.setAttribute('href', t(el.getAttribute('data-i18n-href')));
   });
+  // Floating fullscreen button: icon-only in markup, so the words live in aria-label/title (not text).
+  const fsBtn = document.getElementById('fullscreen-btn');
+  if (fsBtn) {
+    const fsLabel = t('ui.fullscreen').replace(/^⛶\s*/, ''); // strip any leading glyph; words only
+    fsBtn.setAttribute('aria-label', fsLabel);
+    fsBtn.setAttribute('title', fsLabel);
+  }
   document.documentElement.lang = getLanguage();
 }
 // EN/RU toggle on the welcome screen.
@@ -3412,17 +3454,34 @@ async function setLanguage(lang) {
     body: JSON.stringify({ language: getLanguage() }),
   }).catch(() => {}); // best-effort: persist the preference server-side
 }
+// Best-effort: lock to landscape where supported (Android in fullscreen). iOS Safari ignores this —
+// the #rotate-cover (CSS) is the reliable fallback.
+function lockLandscape() {
+  const o = screen.orientation;
+  if (o && o.lock) { try { const r = o.lock('landscape'); if (r && r.catch) r.catch(() => {}); } catch {} }
+}
 // Go fullscreen so the mobile browser chrome (address bar) doesn't eat the screen — must run inside
 // the click gesture. Works on Android/iPad; silently ignored where unsupported (e.g. iPhone Safari).
 function requestFullscreen() {
   const el = document.documentElement;
   const req = el.requestFullscreen || el.webkitRequestFullscreen;
   if (!req || document.fullscreenElement) return;
-  try { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } catch {}
+  try {
+    const r = req.call(el);
+    if (r && r.then) r.then(lockLandscape, () => {}); // lock often requires fullscreen first
+    else lockLandscape();
+  } catch {}
 }
-// Touch "Full screen" buttons (welcome / hangar / pause overlay): re-enter fullscreen on demand, e.g.
-// after minimizing the app brought the browser chrome (URL bar, tabs) back. Must run in a tap gesture.
-document.querySelectorAll('.fullscreen-btn').forEach((b) => b.addEventListener('click', requestFullscreen));
+// Single floating "Full screen" button (touch, bottom-right, menus only): re-enter fullscreen on
+// demand, e.g. after minimizing the app brought the browser chrome (URL bar, tabs) back. Tap gesture.
+document.getElementById('fullscreen-btn').addEventListener('click', requestFullscreen);
+// Hide the floating button once we're actually fullscreen (toggles body.fs; CSS hides it).
+function syncFsClass() {
+  document.body.classList.toggle('fs', !!document.fullscreenElement);
+}
+document.addEventListener('fullscreenchange', syncFsClass);
+document.addEventListener('webkitfullscreenchange', syncFsClass);
+syncFsClass(); // initial state
 
 // ---------- Audio settings modal (the gear on menus / pause) ----------
 const settingsBtn = document.getElementById('settings-btn');

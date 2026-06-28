@@ -880,6 +880,23 @@ back-compat fallback costs nothing and protects against a stale/legacy `player_s
 already-loaded client. Muzzle/exhaust units are **group-local** (independent of `scale`, which is
 re-applied at spawn via `mesh.scale.x`) so they read like the primitive's ±1.6 reference.
 
+## 26. Force landscape on phones via a CSS cover, not `screen.orientation.lock` alone
+
+**Decision.** Phones are kept in landscape by a full-screen **rotate-to-landscape cover** (`#rotate-cover`,
+shown via `@media (orientation: portrait)` gated on `body.touch`), with `screen.orientation.lock('landscape')`
+called only as a **best-effort enhancement** after entering fullscreen. The cover is icon-only (no i18n).
+The single Full-screen button is likewise **gated to touch menus** (`body.touch.menu`) rather than shown
+everywhere, and a `fullscreenchange` listener hides it once fullscreen (`body.fs`).
+
+**Why.** `screen.orientation.lock` is not portable: it requires fullscreen and is **unsupported on iOS
+Safari**, so it can't be the only mechanism — relied on alone, iPhones would still render the
+landscape-tuned HUD squashed into portrait. A CSS orientation media query works on every mobile browser,
+so it's the reliable layer and the lock is a nice-to-have on Android. The button is gated to menus because
+the bottom-right corner is the **rocket button** during a fight (`#rocket-btn`); a floating fullscreen
+button there would overlap it — and re-entering fullscreen is a menu-time action anyway (you don't fiddle
+with chrome mid-dogfight). Auto-pause-on-portrait mirrors the existing `autoPauseOnBlur` (no auto-resume:
+the player resumes manually) so a fight doesn't continue unseen behind the cover.
+
 ## Future ideas
 
 solid asteroids with bounce ·
