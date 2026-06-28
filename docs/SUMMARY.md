@@ -8,7 +8,7 @@ draw-call submit + thermal governor, NOT fill rate** — so the sub-native `rend
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
 passport + JS heap once a second to `POST /api/perf` → `perf_samples` table; per-ship model presentation
-consolidated into a documented `stats.model` block — yaw/scale + optional muzzle/exhaust spawn overrides — replacing loose `modelYaw`/`sizeScale` keys (back-compat reads kept); new `docs/plans/adding-a-ship-model.md` convention; player ship = real textured "Air & Space Vessel" model (downscaled textures → player_combat/_hangar, model.scale 1.1); tier-gated env-map reflections on ships; muzzle/exhaust spawn from the model's real nose/tail bounds; enemy weapon fire silenced (rocket detonations kept); "Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers; mobile forced to landscape (rotate-to-landscape cover + best-effort orientation lock + auto-pause on portrait); the four inline "⛶ Full screen" buttons replaced by one floating, icon-only, brighter bottom-right button that hides once fullscreen)
+consolidated into a documented `stats.model` block — yaw/scale + optional muzzle/exhaust spawn overrides — replacing loose `modelYaw`/`sizeScale` keys (back-compat reads kept); new `docs/plans/adding-a-ship-model.md` convention; player ship = real textured "Air & Space Vessel" model (downscaled textures → player_combat/_hangar, model.scale 1.1); tier-gated env-map reflections on ships; muzzle/exhaust spawn from the model's real nose/tail bounds; enemy weapon fire silenced (rocket detonations kept); "Reset my progress" in settings (slide-to-confirm → POST /reset; modal shrunk to fit); ships bank their wings into turns, capped 20° (cosmetic, player + enemies); rocketeer/medium/first-boss now use real low-poly models enemy_2/3/4_combat; background music = looping sampled tracks per scene via the sound_map (generative synth removed); SFX routing moved to DB — `sounds`/`sound_map` tables + ship/weapon `class`, `/api/sounds`, no client hardcoding; sampled SFX: kinetic/rocket/cannon + ship hit + ship explosions (shipBoom/blast); `?tune` dev palette panel; `stats.modelYaw`; bright-star layer; arena ±360 + shifted mission set-pieces; graphics quality tiers; mobile forced to landscape by rotating the whole body 90° in portrait (CSS `body.rot`; renderer/touch run in swapped game dims via applyOrientation/gameW/gameH/toGame); the four inline "⛶ Full screen" buttons replaced by one floating, icon-only, brighter bottom-right button that hides once fullscreen)
 
 ## What this is
 **Vega Sentinels** — a browser prototype built on Three.js (`client/index.html`): little spaceships
@@ -26,12 +26,18 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Touch (mobile browsers):** "steer toward direction" — the angle of the left stick = desired
   nose direction (the ship turns toward it), the magnitude of deflection = thrust; on the right are the
   "FIRE" and "🚀" (rocket) buttons. Shown only on touch devices.
-- **Landscape-only on phones:** touch devices must play in landscape. When held in portrait, a full-screen
-  **rotate-to-landscape cover** (`#rotate-cover`, icon-only `📱↻`, no text/i18n) hides the game via a CSS
-  `@media (orientation: portrait)` query gated on `body.touch` (desktop is unaffected). On top of the cover
-  it makes a **best-effort `screen.orientation.lock('landscape')`** (works on Android in fullscreen; iOS
-  Safari ignores it — the cover is the reliable fallback). Rotating to portrait mid-fight **auto-pauses**
-  the fight (`autoPauseOnPortrait`, mirrors `autoPauseOnBlur`; no auto-resume — the player resumes manually).
+- **Landscape on phones (forced via rotation):** touch devices always play in landscape. When a phone is
+  held in **portrait**, the whole `<body>` is rotated 90° in CSS (`body.rot`, `transform: translateX(100vw)
+  rotate(90deg)`) and the game runs in the **swapped** dimensions — the browser can't widen its viewport
+  past the physical screen and `screen.orientation.lock` is unsupported on iOS Safari, so a CSS rotation is
+  the only cross-browser way to render horizontally on a portrait screen. `applyOrientation()` (called at
+  boot + on every `resize`/`orientationchange`) toggles the class and is the **single place** the
+  renderer/camera are sized — to `gameW()/gameH()` (innerHeight/innerWidth swapped when rotated). Because a
+  `transform` makes `position:fixed` children relative to `<body>`, the whole HUD/menus/buttons rotate with
+  it for free. `toGame(clientX,clientY)` maps pointer/touch coords into the rotated game space (used by the
+  steering stick and the reset-progress slider); pinch distance is rotation-invariant so it needs no mapping.
+  When auto-rotate is on and the user turns the phone to real landscape, `rotated` becomes false and the
+  native landscape viewport takes over seamlessly. Desktop is unaffected (`rotated` is touch-only).
 - **Mobile menus & Full screen:** the welcome/hangar screens **scroll** (top-aligned + `overflow-y:auto` on
   short/landscape viewports) so the **Take off** button below the shop bay stays reachable. A single
   touch-only **floating Full-screen button** (`#fullscreen-btn`, fixed bottom-right, **icon-only `⛶`**,

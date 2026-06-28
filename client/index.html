@@ -91,9 +91,21 @@
   }
   #takeoff:hover, #hangar-go:hover { filter: brightness(1.08); }
   #hangar-go:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
-  /* Touch-only UI gate (e.g. the floating Full-screen button + rotate-to-landscape cover). */
+  /* Touch-only UI gate (e.g. the floating Full-screen button). */
   .touch-only { display: none; }
   body.touch .touch-only { display: inline-flex; }
+  /* Mobile landscape: the web platform can't widen the viewport past the physical screen, and
+     screen.orientation.lock is unsupported on iOS Safari — so when a touch phone is held in PORTRAIT
+     we rotate the whole <body> 90° and run the game in the swapped (landscape) dimensions. The class is
+     toggled by applyOrientation(); gameW/gameH + toGame() keep the renderer and touch input in this
+     rotated space. transform makes position:fixed children relative to body, so all HUD/buttons follow. */
+  body.rot {
+    width: 100vh; height: 100vw;
+    transform-origin: top left;
+    transform: translateX(100vw) rotate(90deg);
+  }
+  /* Rotated game area is short (it's a phone's narrow side) → top-align menus so they scroll into reach. */
+  body.rot #welcome, body.rot #hangar { justify-content: flex-start; }
   /* Floating full-screen button — touch-only, bottom-right corner, hidden when already fullscreen.
      Only shown on menus (body.menu): during a live fight the bottom-right corner is the rocket
      button, so gating to menus avoids the overlap. */
@@ -110,16 +122,6 @@
   body.touch.menu #fullscreen-btn { display: flex; }   /* show on touch menus … */
   body.fs #fullscreen-btn { display: none !important; } /* … but hide once fullscreen */
   #fullscreen-btn:active { background: rgba(60,85,150,.7); }
-  /* Rotate-to-landscape cover — touch-only, shown when a phone is held in portrait (see media query). */
-  #rotate-cover {
-    position: fixed; inset: 0; z-index: 9999;
-    display: none; align-items: center; justify-content: center;
-    background: #05080f;
-  }
-  #rotate-cover .rotate-icon { font-size: 64px; opacity: .9; }
-  @media (orientation: portrait) {
-    body.touch #rotate-cover { display: flex; }
-  }
   #hangar-go-note { font-size: 13px; color: #ff9a8a; margin-top: 8px; min-height: 16px; }
   /* Hangar shop + stash (docs/plans/hangar-shop.md). Shown only once the shop is unlocked. */
   #hangar-bay { pointer-events: auto; width: min(1040px, 96vw); margin: 6px 0 22px; text-align: left; zoom: 0.9; } /* zoom: overall 10% smaller */
@@ -657,11 +659,6 @@
 </div>
 <!-- Floating fullscreen toggle: touch-only, bottom-right, shown on menus, hidden once fullscreen (CSS + JS). -->
 <button id="fullscreen-btn" class="touch-only" aria-label="Full screen" title="Full screen">⛶</button>
-<!-- Touch-only: shown when the phone is held in portrait (CSS media query). Forces landscape play.
-     Icon only, no text — the landscape-oriented layout is its own cue, so nothing to explain. -->
-<div id="rotate-cover" class="touch-only" aria-hidden="true">
-  <div class="rotate-icon">📱↻</div>
-</div>
 
 <script type="importmap">
 {
@@ -729,6 +726,22 @@ const scene = new THREE.Scene();
 scene.background = null; // background is drawn by the sky scene (first pass); combat is transparent on top
 scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so distant rocks fade into the backdrop
 
+// ---------- Mobile landscape: render the game horizontally even when the phone is held in portrait ----------
+// The browser can't make its viewport wider than the physical screen, and screen.orientation.lock is
+// unsupported on iOS Safari — so on a touch device in portrait we rotate the whole <body> 90° (CSS class
+// `rot`) and run the game in the SWAPPED dimensions. `gameW`/`gameH` are the logical game size the renderer,
+// camera and all screen-space math use (swapped when rotated); `toGame(x,y)` maps a pointer's viewport
+// coords into game space (inverse of the CSS transform). applyOrientation() (defined below the camera)
+// flips this on resize/orientation change.
+const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+let rotated = false;
+const gameW = () => rotated ? window.innerHeight : window.innerWidth;
+const gameH = () => rotated ? window.innerWidth : window.innerHeight;
+// Inverse of CSS `transform: translateX(100vw) rotate(90deg); transform-origin: top left` → game coords.
+function toGame(clientX, clientY) {
+  return rotated ? { x: clientY, y: window.innerWidth - clientX } : { x: clientX, y: clientY };
+}
+
 const renderer = new THREE.WebGLRenderer({ antialias: gfx.antialias });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -748,6 +761,18 @@ document.body.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 900);
 const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // fixed camera offset from the ship
+
+// Toggle the portrait→landscape rotation and size the renderer/camera to the logical game dimensions.
+// Called at boot and on every resize/orientationchange (the only place we size the renderer).
+function applyOrientation() {
+  rotated = isTouch && window.innerHeight > window.innerWidth; // touch device held in portrait
+  document.body.classList.toggle('rot', rotated);
+  const w = gameW(), h = gameH();
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+applyOrientation(); // correct the initial portrait sizing before the first frame
 
 // --- camera zoom: scale the offset toward/away along its fixed angle (smaller = closer/zoom-in).
 //     Input sets a target; camZoom eases toward it over ~ZOOM_SMOOTH s so zoom feels smooth, not snappy. ---
@@ -1924,7 +1949,6 @@ addEventListener('keyup', e => { keys[e.code] = false; });
 // "steer by touch direction" model: stick angle = desired nose direction,
 // the ship turns toward it; the magnitude of the deflection = thrust.
 const touchAim = { active: false, heading: 0, thrust: 0 };
-const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
 if (isTouch) {
   document.body.classList.add('touch'); // gates touch-only UI (e.g. the Full screen button)
   document.getElementById('touch').classList.add('on');
@@ -1971,14 +1995,15 @@ if (isTouch) {
   zone.addEventListener('touchstart', e => {
     if (stickId !== null) return;
     const t = e.changedTouches[0];
-    stickId = t.identifier; stickCx = t.clientX; stickCy = t.clientY;
+    const p = toGame(t.clientX, t.clientY); // map viewport coords into (possibly rotated) game space
+    stickId = t.identifier; stickCx = p.x; stickCy = p.y;
     showStick(stickCx, stickCy);
-    moveKnob(stickCx, stickCy, t.clientX, t.clientY);
+    moveKnob(stickCx, stickCy, p.x, p.y);
     e.preventDefault();
   }, { passive: false });
   zone.addEventListener('touchmove', e => {
     for (const t of e.changedTouches) {
-      if (t.identifier === stickId) { moveKnob(stickCx, stickCy, t.clientX, t.clientY); e.preventDefault(); }
+      if (t.identifier === stickId) { const p = toGame(t.clientX, t.clientY); moveKnob(stickCx, stickCy, p.x, p.y); e.preventDefault(); }
     }
   }, { passive: false });
   function endStick(e) {
@@ -2575,7 +2600,7 @@ function getMarker(i) {
 function updateMarkers() {
   // hide everything while there's no player or an overlay (game over / victory) is up
   if (!player || overlay.style.display !== 'none') { for (const m of markerPool) m.style.display = 'none'; return; }
-  const w = window.innerWidth, h = window.innerHeight, margin = 0.92;
+  const w = gameW(), h = gameH(), margin = 0.92; // game (rotated) screen size, not the raw viewport
   let used = 0;
   for (const e of enemies) {
     _ndc.copy(e.mesh.position).project(camera);
@@ -3315,23 +3340,10 @@ if (location.search.includes('debug')) {
   };
 }
 
-addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-// Mobile: auto-pause a live fight when the phone is rotated to portrait (the #rotate-cover hides the
-// battlefield behind a "rotate to landscape" screen, so the player isn't dying unseen). Mirrors
-// autoPauseOnBlur; like it, we do NOT auto-resume on returning to landscape — the player resumes manually.
-function autoPauseOnPortrait() {
-  if (isTouch && matchMedia('(orientation: portrait)').matches
-      && gameStarted && player && player.alive && !levelRunner.won && !paused) {
-    setPaused(true);
-  }
-}
-addEventListener('orientationchange', autoPauseOnPortrait);
-matchMedia('(orientation: portrait)').addEventListener?.('change', autoPauseOnPortrait);
+// Re-evaluate the portrait→landscape rotation and resize the renderer/camera to the game dimensions.
+// (applyOrientation is the single place we size the renderer; see its definition near the camera.)
+addEventListener('resize', applyOrientation);
+addEventListener('orientationchange', applyOrientation);
 
 // (Graphics-tier changes reload the page so the whole preset — antialias + pixel ratio + star/particle
 // density — applies cleanly from startup; see the settings wiring + DECISIONS §23.)
@@ -3454,23 +3466,14 @@ async function setLanguage(lang) {
     body: JSON.stringify({ language: getLanguage() }),
   }).catch(() => {}); // best-effort: persist the preference server-side
 }
-// Best-effort: lock to landscape where supported (Android in fullscreen). iOS Safari ignores this —
-// the #rotate-cover (CSS) is the reliable fallback.
-function lockLandscape() {
-  const o = screen.orientation;
-  if (o && o.lock) { try { const r = o.lock('landscape'); if (r && r.catch) r.catch(() => {}); } catch {} }
-}
 // Go fullscreen so the mobile browser chrome (address bar) doesn't eat the screen — must run inside
 // the click gesture. Works on Android/iPad; silently ignored where unsupported (e.g. iPhone Safari).
+// (Landscape is enforced by the CSS body rotation, not orientation.lock, so nothing extra to do here.)
 function requestFullscreen() {
   const el = document.documentElement;
   const req = el.requestFullscreen || el.webkitRequestFullscreen;
   if (!req || document.fullscreenElement) return;
-  try {
-    const r = req.call(el);
-    if (r && r.then) r.then(lockLandscape, () => {}); // lock often requires fullscreen first
-    else lockLandscape();
-  } catch {}
+  try { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } catch {}
 }
 // Single floating "Full screen" button (touch, bottom-right, menus only): re-enter fullscreen on
 // demand, e.g. after minimizing the app brought the browser chrome (URL bar, tabs) back. Tap gesture.
@@ -3573,7 +3576,14 @@ function placeKnob(x, ease) {
   resetSlide.classList.toggle('armed', frac >= ARM_FRACTION);
   return frac;
 }
-const knobXFromPointer = (clientX) => clientX - resetSlide.getBoundingClientRect().left - resetKnob.offsetWidth / 2;
+// Distance of the pointer along the slide's travel axis, in the slide's local px. When the body is
+// rotated 90° (portrait phone) the visually-horizontal slide runs along the viewport's Y axis, so we
+// measure clientY against the rect's top instead of clientX against its left (see toGame / applyOrientation).
+const knobXFromPointer = (clientX, clientY) => {
+  const r = resetSlide.getBoundingClientRect();
+  const along = rotated ? (clientY - r.top) : (clientX - r.left);
+  return along - resetKnob.offsetWidth / 2;
+};
 function snapResetSlideBack() { resetDragging = false; resetSlide.classList.remove('dragging'); placeKnob(0, true); }
 function dismissResetConfirm() { resetConfirm.classList.remove('on'); resetDoBtn.disabled = false; snapResetSlideBack(); }
 
@@ -3581,11 +3591,11 @@ resetKnob.addEventListener('pointerdown', (e) => {
   resetDragging = true; resetSlide.classList.add('dragging');
   resetKnob.setPointerCapture(e.pointerId); e.preventDefault();
 });
-resetKnob.addEventListener('pointermove', (e) => { if (resetDragging) placeKnob(knobXFromPointer(e.clientX), false); });
+resetKnob.addEventListener('pointermove', (e) => { if (resetDragging) placeKnob(knobXFromPointer(e.clientX, e.clientY), false); });
 resetKnob.addEventListener('pointerup', (e) => {
   if (!resetDragging) return;
   resetDragging = false; resetSlide.classList.remove('dragging');
-  const frac = placeKnob(knobXFromPointer(e.clientX), true);
+  const frac = placeKnob(knobXFromPointer(e.clientX, e.clientY), true);
   if (frac >= ARM_FRACTION) resetConfirm.classList.add('on'); // armed → ask to confirm
   else snapResetSlideBack();
 });

@@ -880,22 +880,35 @@ back-compat fallback costs nothing and protects against a stale/legacy `player_s
 already-loaded client. Muzzle/exhaust units are **group-local** (independent of `scale`, which is
 re-applied at spawn via `mesh.scale.x`) so they read like the primitive's ±1.6 reference.
 
-## 26. Force landscape on phones via a CSS cover, not `screen.orientation.lock` alone
+## 26. Force landscape on phones by rotating the whole body 90° (not a cover, not `orientation.lock`)
 
-**Decision.** Phones are kept in landscape by a full-screen **rotate-to-landscape cover** (`#rotate-cover`,
-shown via `@media (orientation: portrait)` gated on `body.touch`), with `screen.orientation.lock('landscape')`
-called only as a **best-effort enhancement** after entering fullscreen. The cover is icon-only (no i18n).
-The single Full-screen button is likewise **gated to touch menus** (`body.touch.menu`) rather than shown
-everywhere, and a `fullscreenchange` listener hides it once fullscreen (`body.fs`).
+**Decision.** On a touch device held in **portrait**, the entire `<body>` is rotated 90° in CSS
+(`body.rot`, `transform: translateX(100vw) rotate(90deg); transform-origin: top left`) and the game runs in
+the **swapped** dimensions, so it renders horizontally on the portrait screen. `applyOrientation()` (boot +
+`resize`/`orientationchange`) toggles the class and is the single place the renderer/camera are sized — to
+`gameW()/gameH()` (innerHeight/innerWidth swapped when rotated). Pointer/touch coords are mapped into the
+rotated frame by `toGame()` (the algebraic inverse of the transform); pinch distance is rotation-invariant.
+The single Full-screen button is **gated to touch menus** (`body.touch.menu`) and a `fullscreenchange`
+listener hides it once fullscreen (`body.fs`).
 
-**Why.** `screen.orientation.lock` is not portable: it requires fullscreen and is **unsupported on iOS
-Safari**, so it can't be the only mechanism — relied on alone, iPhones would still render the
-landscape-tuned HUD squashed into portrait. A CSS orientation media query works on every mobile browser,
-so it's the reliable layer and the lock is a nice-to-have on Android. The button is gated to menus because
-the bottom-right corner is the **rocket button** during a fight (`#rocket-btn`); a floating fullscreen
-button there would overlap it — and re-entering fullscreen is a menu-time action anyway (you don't fiddle
-with chrome mid-dogfight). Auto-pause-on-portrait mirrors the existing `autoPauseOnBlur` (no auto-resume:
-the player resumes manually) so a fight doesn't continue unseen behind the cover.
+**Why.** Three options were considered: (a) a "rotate your device" cover, (b) `screen.orientation.lock`,
+(c) CSS-rotating the content. (b) is not portable — it needs fullscreen and is **unsupported on iOS
+Safari**, so iPhones would still render the landscape-tuned HUD squashed into portrait. (a) works
+everywhere but is a dead-end screen the user must act on. The maintainer chose (c): the browser physically
+cannot make its viewport wider than the screen, so the *only* way to actually play in landscape on a
+portrait-held phone is to rotate the content — which (c) does, with no extra tap. The cost is real but
+contained: the renderer/camera must size to swapped dims and touch math must be un-rotated (`toGame`), both
+centralized so the rest of the code is oblivious. A key bonus: when auto-rotate is on and the user turns the
+phone to true landscape, `rotated` flips to false and the **native** landscape viewport takes over
+seamlessly — the CSS rotation only fills the held-portrait / rotation-locked case. The earlier cover +
+`orientation.lock` + auto-pause-on-portrait approach was removed entirely (there's no unseen portrait fight
+to pause once the game itself is landscape). The button stays menu-gated because the bottom-right corner is
+the **rocket button** mid-fight; re-entering fullscreen is a menu-time action anyway.
+
+*Open follow-up:* the rotation direction (game-top lands on the screen's right) is a one-line flip
+(`translateY(100vh) rotate(-90deg)` + invert `toGame`) if it reads backwards on a real device; a few
+`vw`/`vh`-sized UI bits (e.g. the hangar shop bay's `min(1040px,96vw)`) measure against the real viewport,
+not the rotated game box, so they can look slightly narrow until switched to the game dimensions.
 
 ## Future ideas
 

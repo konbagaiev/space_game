@@ -5,6 +5,19 @@
 
 ## 2026-06-28
 
+- **Mobile landscape is now real rotation, not a "please rotate" cover.** Replaced the rotate-to-landscape
+  cover with actually rendering the game horizontally on a portrait phone: when a touch device is in
+  portrait, the whole `<body>` is rotated 90° in CSS (`body.rot`, `transform: translateX(100vw)
+  rotate(90deg)`) and the game runs in the swapped dimensions. `applyOrientation()` (boot + `resize`/
+  `orientationchange`) toggles the class and is the single place the renderer/camera are sized, via new
+  `gameW()/gameH()` (innerHeight/innerWidth swapped when rotated). Touch input is mapped into the rotated
+  frame with `toGame()` (steering stick + reset-progress slider; pinch is rotation-invariant), and the
+  off-screen enemy markers project against the game dims. Removed the now-obsolete `#rotate-cover`
+  (markup + CSS), `screen.orientation.lock` best-effort, and `autoPauseOnPortrait` — there's no unseen
+  portrait fight to pause anymore. When auto-rotate is on, turning the phone to real landscape disables the
+  CSS rotation and the native landscape viewport takes over. Visual: `15-mobile-landscape` now asserts the
+  rotation geometry (rotated body stays full-screen + lays out landscape); the real touch+portrait render
+  was eyeballed via a touch-emulated Playwright context. (Supersedes the cover described in the next bullet.)
 - **Mobile landscape + floating fullscreen button.** Phones are now forced to landscape: held in
   portrait, a full-screen rotate-to-landscape cover (`#rotate-cover`, icon-only `📱↻`) hides the game
   via a touch-gated `@media (orientation: portrait)` query, backed by a best-effort
