@@ -5,6 +5,12 @@
 
 ## 2026-06-29
 
+- **Main Window layout polish.** Left-menu **Loadout/Stash/Shop** buttons got centered labels and are
+  ~30% shorter than the Missions item; the **Mission 1/2/3** (and primary) sub-rows are centered too. The
+  work-zone **title/description fonts dropped 4px** (title 26→22, description 22→18; mobile 18→14). The
+  **Take off** button is centered in the work zone. The **left menu no longer overlaps** the auth
+  (nickname / Log in / Sign up) block — it starts below it (`#mw-menu padding-top`).
+
 - **Main Window redesign — dropped the "Hangar" name.** The between-battles / landing screen is now the
   **Main Window**, a fixed landscape layout instead of a centered, vertically-scrolling column. Top bar:
   the settings gear (top-left, top-aligned with the auth block), the **auth block** next to it, the

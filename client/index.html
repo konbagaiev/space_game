@@ -84,7 +84,9 @@
   }
   #mainwin.on { display: grid; }
   /* left menu */
-  #mw-menu { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow-y: auto; }
+  /* padding-top clears the auth (nickname / login-signup) block, which sits taller than the wordmark in
+     the top-left — so the left menu never overlaps it. */
+  #mw-menu { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow-y: auto; padding-top: 34px; }
   #mw-menu .mw-row { display: flex; align-items: center; gap: 6px; }
   .mw-collapse {
     pointer-events: auto; cursor: pointer; flex: none; width: 30px; height: 38px; line-height: 1;
@@ -100,10 +102,12 @@
   .mw-item:hover { background: rgba(40,60,100,.5); }
   .mw-item.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
   .mw-item.mw-hidden { display: none; }            /* Loadout/Stash/Shop hidden until the shop is unlocked */
+  /* Loadout/Stash/Shop: centered label + ~30% shorter than the Missions item. */
+  .mw-shop-item { text-align: center; padding-top: 5px; padding-bottom: 5px; line-height: 1.1; }
   .mw-sublist { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 4px 36px; }
   #mw-missions-group[data-collapsed="1"] .mw-sublist { display: none; }
   .mw-sub {
-    pointer-events: auto; cursor: pointer; text-align: left; font: inherit; font-size: 15px; color: #bcd0ee;
+    pointer-events: auto; cursor: pointer; text-align: center; font: inherit; font-size: 15px; color: #bcd0ee;
     background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.25); border-radius: 7px; padding: 8px 12px;
   }
   .mw-sub:hover { background: rgba(40,60,100,.6); }
@@ -113,10 +117,10 @@
   .mw-view { display: none; flex: 1; min-width: 0; min-height: 0; }
   .mw-view.active { display: flex; flex-direction: column; }
   #mw-view-mission { gap: 10px; }
-  #mw-mission-title { font-size: 26px; margin: 0; }
-  #mw-mission-desc { flex: 1; min-height: 0; overflow-y: auto; font-size: 22px; line-height: 1.45; opacity: .92; padding-right: 8px; }
+  #mw-mission-title { font-size: 22px; margin: 0; }
+  #mw-mission-desc { flex: 1; min-height: 0; overflow-y: auto; font-size: 18px; line-height: 1.45; opacity: .92; padding-right: 8px; }
   #mw-mission-reward { color: #ffd86b; font-weight: 600; }
-  #mw-go { align-self: flex-start; }
+  #mw-go { align-self: center; }
   #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; }
   #mw-view-bay { overflow-y: auto; }
   #mw-bay-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
@@ -205,7 +209,7 @@
   @media (max-width: 760px) {
     .shop-pane { grid-template-columns: 1fr; }
     .shop-types { flex-direction: row; flex-wrap: wrap; }
-    #mw-mission-desc { font-size: 18px; }
+    #mw-mission-desc { font-size: 14px; }
   }
   /* one item card (loadout slot / stash item / shop item): text-in-rectangle, no art */
   .bay-item {
