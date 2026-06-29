@@ -111,9 +111,9 @@ export function resetPlayer(playerId) {
 export function resetAllPlayers() {
   db.exec('BEGIN');
   try {
-    for (const t of ['sessions', 'events', 'stash', 'player_ships', 'games', 'players'])
+    for (const t of ['perf_samples', 'sessions', 'events', 'stash', 'player_ships', 'games', 'players'])
       db.exec(`DELETE FROM ${t}`);
-    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('games', 'player_ships', 'events')");
+    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('games', 'player_ships', 'events', 'perf_samples')");
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 }

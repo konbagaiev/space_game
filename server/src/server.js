@@ -212,9 +212,13 @@ export async function createApp() {
   const authLimiter = rateLimit({ windowMs: 60_000, max: 10 }); // per-IP, per-minute on auth routes
 
   // Open a fresh session for a player: random token in an httpOnly cookie, hash stored server-side.
-  const startSession = (res, playerId, req) => {
+  // MUST await the insert before responding: on Postgres a fire-and-forget createSession can still be
+  // in flight when the client makes its next (authenticated) request, so the session lookup misses and
+  // auth fails intermittently. node:sqlite runs the insert synchronously, which is why this only bit
+  // the Postgres path (see the SQLite/Postgres parity note in DECISIONS).
+  const startSession = async (res, playerId, req) => {
     const token = newSessionToken();
-    createSession(playerId, hashToken(token), req.headers['user-agent']);
+    await createSession(playerId, hashToken(token), req.headers['user-agent']);
     setSessionCookie(res, token);
   };
 
@@ -250,7 +254,7 @@ export async function createApp() {
       throw e;
     }
     await sendVerificationEmail(email, verificationUrl(verifyToken));
-    startSession(res, playerId, req);
+    await startSession(res, playerId, req);
     res.json(player);
   }));
 
@@ -263,7 +267,7 @@ export async function createApp() {
     if (!row || !verifyPassword(password, row.password_hash, row.password_salt)) {
       return res.status(401).json({ error: 'invalid email or password' });
     }
-    startSession(res, row.id, req);
+    await startSession(res, row.id, req);
     res.json(await getPlayerPublic(row.id));
   }));
 

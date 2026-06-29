@@ -279,7 +279,7 @@ export async function resetPlayer(playerId) {
 // resets the serial counters), leaving the seeded reference catalog untouched — it is re-upserted
 // idempotently on the next startup. Single atomic statement.
 export async function resetAllPlayers() {
-  await pool.query('TRUNCATE players, games, player_ships, stash, events, sessions RESTART IDENTITY CASCADE');
+  await pool.query('TRUNCATE players, games, player_ships, stash, events, sessions, perf_samples RESTART IDENTITY CASCADE');
 }
 
 // Persist a player's language preference (validated to a supported code by the caller/route).

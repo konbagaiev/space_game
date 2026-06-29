@@ -5,6 +5,15 @@
 
 ## 2026-06-29
 
+- **Fixed a Postgres auth-session race (and the CI flake it caused).** `startSession` fired the session
+  `INSERT` **without awaiting it** before sending the cookie — on Postgres that insert could still be in
+  flight when the client's next authenticated request arrived, so auth failed intermittently (a real prod
+  race; `node:sqlite`'s synchronous insert hid it locally, which is why the SQLite suite never caught it).
+  Now `register`/`login` **await** the insert before responding. Also added `perf_samples` to
+  `resetAllPlayers` (both backends) so the suite is **re-runnable against a persistent Postgres** (the perf
+  test no longer accumulates rows across runs). This is what made the visual-redesign deploy's CI job flake
+  on `verify: the email link flips email_verified`.
+
 - **Main Window layout polish.** Left-menu **Loadout/Stash/Shop** buttons got centered labels and are
   ~30% shorter than the Missions item; the **Mission 1/2/3** (and primary) sub-rows are centered too. The
   work-zone **title/description fonts dropped 4px** (title 26→22, description 22→18; mobile 18→14). The
