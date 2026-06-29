@@ -631,14 +631,14 @@ test('catalog: orphaned enemy ships are pruned on re-seed (rename/removal cleanu
   assert.ok(!(await getJson('/api/ships')).some((s) => s.name === STALE), 'stale enemy pruned on re-seed');
 });
 
-test('catalog: level-4 enemies — advanced medium pirate (300 HP) + Second Boss (450 HP) + Advanced pirate cannon', async () => {
+test('catalog: level-4 enemies — advanced medium pirate (300 HP) + Second Boss (550 HP) + Advanced pirate cannon', async () => {
   const weapons = await getJson('/api/weapons');
   const cannon = weapons.find((w) => w.id === 10);
   assert.ok(cannon && cannon.name === 'Advanced pirate cannon', 'Advanced pirate cannon seeded as weapon 10');
   assert.equal(cannon.stats.maxRange, 110);
   const comps = await getJson('/api/components');
   assert.equal(comps.find((c) => c.id === 24).stats.durability, 300); // advanced medium pirate hull
-  assert.equal(comps.find((c) => c.id === 28).stats.durability, 450); // second-boss hull
+  assert.equal(comps.find((c) => c.id === 28).stats.durability, 550); // second-boss hull (boss buff: 450 → 550)
   const ships = await getJson('/api/ships');
   const amp = ships.find((s) => s.stats.role === 'advanced_medium_pirate');
   assert.ok(amp, 'advanced medium pirate seeded');

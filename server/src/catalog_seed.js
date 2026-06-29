@@ -20,10 +20,10 @@ export const COMPONENTS = [
   { id: 1, name: 'Basic hull', type: 'hull', weight: 20, price: 300, stats: { durability: 100, volume: 100 } }, // starter gear: cheap, buyable
   { id: 2, name: 'Light hull', type: 'hull', weight: 8, stats: { durability: 30, volume: 40 } },
   { id: 3, name: 'Medium hull', type: 'hull', weight: 60, stats: { durability: 150, volume: 200 } },
-  { id: 4, name: 'Boss hull', type: 'hull', weight: 100, stats: { durability: 210, volume: 400 } },
+  { id: 4, name: 'Boss hull', type: 'hull', weight: 100, stats: { durability: 310, volume: 400 } }, // boss buff: 210 → 310 (+100 HP)
   { id: 5, name: 'Basic engine', type: 'engine', weight: 10, price: 500, stats: { power: 10, maxSpeed: 0, exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 } } }, // starter gear: cheap
   { id: 6, name: 'Scout engine', type: 'engine', weight: 6, stats: { power: 12.6, maxSpeed: 10.5, exhaust: { color: 0xff8a5a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 } } },
-  { id: 7, name: 'Boss engine', type: 'engine', weight: 50, stats: { power: 19, maxSpeed: 8, exhaust: { color: 0xff5a3a, speed: 10, life: 0.6, size: 0.9, spread: 0.45 } } },
+  { id: 7, name: 'Boss engine', type: 'engine', weight: 50, stats: { power: 19, maxSpeed: 10.4, exhaust: { color: 0xff5a3a, speed: 10, life: 0.6, size: 0.9, spread: 0.45 } } }, // boss buff: maxSpeed 8 → 10.4 (+30%)
   { id: 8, name: 'Basic thrusters', type: 'thruster', weight: 4, price: 400, stats: { power: 2.0 } }, // starter gear: cheap
   { id: 9, name: 'Scout thrusters', type: 'thruster', weight: 3, stats: { power: 1.6 } },
   { id: 10, name: 'Medium thrusters', type: 'thruster', weight: 8, stats: { power: 0.63 } }, // sluggish (turn ~0.35)
@@ -59,10 +59,10 @@ export const COMPONENTS = [
   // Advanced medium pirate (heavy bruiser, 300 HP, turns ~+30% vs the mini-boss):
   { id: 24, name: 'Pirate heavy hull', type: 'hull', weight: 100, stats: { durability: 300, volume: 250 } }, // 2× mini-boss (150)
   { id: 25, name: 'Pirate medium thruster', type: 'thruster', weight: 8, stats: { power: 1.25 } },          // ~+30% net turn vs Medium (0.63) once mass-scaled
-  // Second Boss (450 HP, speed/accel/turn ~+30% vs the first boss):
-  { id: 26, name: 'Second-boss engine', type: 'engine', weight: 50, stats: { power: 30, maxSpeed: 11, exhaust: { color: 0xff3a2a, speed: 11, life: 0.6, size: 0.95, spread: 0.45 } } }, // boss 19/8 bumped for ~+30% net
+  // Second Boss (550 HP, speed/accel/turn ~+30% vs the first boss):
+  { id: 26, name: 'Second-boss engine', type: 'engine', weight: 50, stats: { power: 30, maxSpeed: 14.3, exhaust: { color: 0xff3a2a, speed: 11, life: 0.6, size: 0.95, spread: 0.45 } } }, // boss buff: maxSpeed 11 → 14.3 (+30%)
   { id: 27, name: 'Second-boss thruster', type: 'thruster', weight: 20, stats: { power: 2.7 } },            // boss 1.66 bumped for ~+30% net turn
-  { id: 28, name: 'Second-boss hull', type: 'hull', weight: 140, stats: { durability: 450, volume: 600 } }, // first boss 210 → 450
+  { id: 28, name: 'Second-boss hull', type: 'hull', weight: 140, stats: { durability: 550, volume: 600 } }, // boss buff: 450 → 550 (+100 HP)
 ];
 
 // --- weapons: type 'bullet' | 'rocket'; stats hold the (now fully DB-driven) characteristics ---

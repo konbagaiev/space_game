@@ -204,8 +204,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Pirate hull 36 hp + Pirate engine top-speed +50% + one **long-range** Pirate machine gun; reward 40),
   `advanced_medium_pirate` (the L4 heavy — **orange `enemy_3`** — **300 hp**, turns ~+30% vs the medium,
   1 Pirate MG + 2 rockets; reward 150), the `boss` (`first pirate boss` — `enemy_4` + own hull/engine,
-  210 hp, 3× model, **two Pirate machine guns** + two rocket launchers), and `boss2` (the **Second Boss**,
-  `second pirate boss`, L4 finale — **orange `enemy_4`** — **450 hp**, ~+30% speed/accel/turn, **two
+  **310 hp** (boss buff: 210 +100), 3× model, max speed 10.4 (+30%), **two Pirate machine guns** + two rocket
+  launchers), and `boss2` (the **Second Boss**, `second pirate boss`, L4 finale — **orange `enemy_4`** —
+  **550 hp** (boss buff: 450 +100), max speed 14.3 (+30%), ~+30% accel/turn vs the first boss, **two
   Advanced pirate cannons + three rockets**; reward 400). One more ship is seeded but **not wired into any
   level** yet: `advanced_rocket_pirate` (`advanced rocket pirate`, **orange `enemy_2`** — Pirate
   hull/engine, Pirate MG + a rocket; reward 60), kept for a future harder rocketeer wave. Which

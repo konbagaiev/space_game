@@ -5,6 +5,12 @@
 
 ## 2026-06-29
 
+- **Boss buff: +100 HP and +30% max speed.** The **first pirate boss** (Boss hull 210→**310** HP, Boss
+  engine maxSpeed 8→**10.4**) and the **Second Boss** (Second-boss hull 450→**550** HP, Second-boss engine
+  maxSpeed 11→**14.3**) are tougher and faster. Edited the boss-exclusive hull/engine components in
+  `catalog_seed.js` (so the side-mission finale, which reuses the first boss, is buffed too); the
+  mini-boss/medium (a wave enemy, not an end boss) is unchanged. Updated the level-4 catalog test (550 HP).
+
 - **Stash/Loadout show the resale value; single-row cards off the Shop.** The **Stash** and **Loadout**
   screens now display each item's **resale value** (`floor(price*0.75)` — what the player actually gets on
   sale) instead of the full catalog price; the **Shop** keeps the full **buy** price. Added a client
