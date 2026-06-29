@@ -5,6 +5,13 @@
 
 ## 2026-06-29
 
+- **Main Window: ship-stats strip relocated + bay shrunk.** The ship characteristics
+  (HP / Accel / Turn / Weight) moved out of the shop bay to a **compact one-line strip above the model**
+  (in the right column, under the "Ships" label) — fonts halved, **no boxes** — and it now renders
+  whenever the Main Window opens (not only when the shop is unlocked). The work-zone **bay
+  (Loadout/Stash/Shop)** content — fonts, buttons, accompanying elements — is scaled **~1.5× smaller**
+  (`#mw-view-bay { zoom: 0.67 }`).
+
 - **Fixed a Postgres auth-session race (and the CI flake it caused).** `startSession` fired the session
   `INSERT` **without awaiting it** before sending the cookie — on Postgres that insert could still be in
   flight when the client's next authenticated request arrived, so auth failed intermittently (a real prod

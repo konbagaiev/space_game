@@ -125,8 +125,8 @@
   #mw-view-bay { overflow-y: auto; }
   #mw-bay-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
   /* ship-model preview (right ~25%) */
-  #mw-ship-col { position: relative; min-width: 0; }
-  #mw-ship { width: 100%; height: 100%; display: block; }
+  #mw-ship-col { display: flex; flex-direction: column; min-width: 0; }   /* stats strip on top, model fills the rest */
+  #mw-ship { flex: 1 1 auto; width: 100%; min-height: 0; display: block; }
   #welcome .pick { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: .6; margin-bottom: 12px; }
   #ship-choices { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 28px; }
   .ship-card {
@@ -180,18 +180,18 @@
   #fullscreen-btn:active { background: rgba(60,85,150,.7); }
   /* Shop bay (docs/plans/hangar-shop.md). Now the "bay" work-zone view in the Main Window — shown when a
      Loadout/Stash/Shop menu item is picked (the items are gated to the shop being unlocked). */
-  #mw-view-bay { pointer-events: auto; text-align: left; }
+  /* zoom 0.67 = everything in the bay (Loadout/Stash/Shop) — fonts, buttons, paddings — ~1.5× smaller. */
+  #mw-view-bay { pointer-events: auto; text-align: left; zoom: 0.67; }
   #mw-view-bay .bay-credits { text-align: center; font-size: 20px; margin-bottom: 14px; }
   #mw-view-bay .bay-credits b { color: #ffd86b; }
   /* live ship-stats bar with deltas vs the previous config */
-  #ship-stats { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 16px; }
-  #ship-stats .stat {
-    background: rgba(20,28,48,.6); border: 1px solid rgba(120,150,210,.25); border-radius: 9px;
-    padding: 8px 14px; min-width: 110px; text-align: center;
-  }
-  #ship-stats .stat .k { font-size: 16px; letter-spacing: 1px; text-transform: uppercase; opacity: .6; } /* 1.5× — final-characteristics labels */
-  #ship-stats .stat .v { font-size: 20px; font-weight: 700; }
-  #ship-stats .stat .d { font-size: 12px; margin-left: 4px; }
+  /* Ship characteristics — a compact one-line strip ABOVE the model (no boxes), half the previous fonts,
+     so HP / Accel / Turn / Weight fit on a single row under the "Ships" label. */
+  #ship-stats { display: flex; flex-wrap: nowrap; gap: 8px; justify-content: center; margin: 0 0 6px; }
+  #ship-stats .stat { display: flex; align-items: baseline; gap: 2px; background: none; border: 0; padding: 0; min-width: 0; }
+  #ship-stats .stat .k { font-size: 8px; letter-spacing: .5px; text-transform: uppercase; opacity: .6; }
+  #ship-stats .stat .v { font-size: 10px; font-weight: 700; }
+  #ship-stats .stat .d { font-size: 6px; margin-left: 2px; }
   #ship-stats .stat .d.up { color: #6ee29a; } #ship-stats .stat .d.down { color: #ff8a7a; }
   /* Loadout / Stash / Shop are separate screens, switched by the left menu (not a nav strip). The
      work zone bounds the height + scrolls, so the inner view needs no max-height of its own. */
@@ -244,9 +244,10 @@
   .bay-item .actions button.primary { border-color: #4a7dff; background: rgba(74,125,255,.25); }
   .bay-item .info-btn { flex: none; align-self: center; padding: 1px 8px; line-height: 1.4; }
   .bay-empty-note { font-size: 13px; opacity: .55; padding: 6px 2px; }
-  /* Per-screen sizing (requested): Loadout/Stash/Shop item text (incl. the hover characteristics) 2×;
-     buttons 1.5× (Loadout) / 2× (Stash + Shop); the Shop type column 2×. (The final-characteristics
-     panel labels are bumped 1.5× separately, on #ship-stats .stat .k above.) */
+  /* Per-screen sizing: Loadout/Stash/Shop item text (incl. the hover characteristics) 2×; buttons 1.5×
+     (Loadout) / 2× (Stash + Shop); the Shop type column 2×. The whole bay is then scaled DOWN ~1.5× by
+     `#mw-view-bay { zoom }` (so these are the pre-zoom sizes). The ship-characteristics strip is separate
+     now — it lives above the model (#mw-ship-col), styled on #ship-stats above. */
   #view-loadout .name-text, #view-stash .name-text, #view-shop .name-text { font-size: 28px; }
   #view-loadout .slot-tag { font-size: 20px; }
   #view-stash .price, #view-shop .price { font-size: 26px; }
@@ -593,7 +594,6 @@
     <!-- shop bay view: Loadout / Stash / Shop content (switched from the left menu) -->
     <div class="mw-view" id="mw-view-bay">
       <div class="bay-credits"><span data-i18n="ui.hud.credits">Credits</span>: <b id="bay-credits-val">0</b></div>
-      <div id="ship-stats"></div>
       <div class="bay-view" id="view-loadout"><div id="loadout-list"></div></div>
       <div class="bay-view" id="view-stash"><div id="stash-list"></div></div>
       <div class="bay-view" id="view-shop">
@@ -605,7 +605,10 @@
       <div id="mw-bay-note"></div>
     </div>
   </section>
-  <aside id="mw-ship-col"><canvas id="mw-ship"></canvas></aside>
+  <aside id="mw-ship-col">
+    <div id="ship-stats"></div>
+    <canvas id="mw-ship"></canvas>
+  </aside>
 </div>
 <div id="account-bar"></div>
 <div id="account">
@@ -2942,6 +2945,12 @@ function showMain(briefing) {
   selectMenu('missions');              // open the mission view (renders the campaign briefing)
   openBay();                           // load shop state + gate the Loadout/Stash/Shop menu items
   refreshMissions();                   // (re)load the side missions, then rebuild the list
+  // ship-characteristics strip above the model — always, not only when the shop is open (the shop
+  // re-renders it with ▲/▼ deltas on each change via renderBay).
+  if (activeShip && activeShip.components) {
+    lastShipStats = null;
+    renderShipStatsBar(deriveShipStats(activeShip.components, activeShip.loadout && activeShip.loadout.mounts));
+  }
   startShipPreview();                  // spin up the right-column ship model
 }
 function launchCampaign() {
