@@ -978,14 +978,18 @@ ignorant of asset URLs (they live in the catalog/seed the client already loads).
 `docs/plans/briefing-item-showcase.md`.
 
 **Update (placement).** The granted item now renders in a **dedicated viewer in the work zone**
-(`#mw-item`, between the mission text and the Take-off button) at **1/3 scale** (`ITEM_SHOWCASE_SCALE`),
-**not** in the right-column ship preview — the ship preview keeps showing the player's ship at all times.
-The original plan (decision #2 in `briefing-item-showcase.md`) put the item *in* the right preview,
-replacing the ship; the maintainer asked for the item beside the briefing text **without** displacing the
-ship. The viewer machinery was factored into `buildModelViewer`/`startViewer`/`stopViewer`/`resizeViewer`
-+ `setViewerModel(viewer,…)` so the same code drives **two** small GL contexts (ship preview + item
-showcase); the second is built lazily and its rAF loop is stopped on launch / when the bay view hides the
-mission canvas, so it costs nothing outside an active briefing.
+(`#mw-item`) at **2/3 scale** (`ITEM_SHOWCASE_SCALE`), **not** in the right-column ship preview — the ship
+preview keeps showing the player's ship at all times. The original plan (decision #2 in
+`briefing-item-showcase.md`) put the item *in* the right preview, replacing the ship; the maintainer asked
+for the item beside the briefing text **without** displacing the ship. **Layout:** the description and the
+item canvas share a flex **body row** (`#mw-mission-body`) — text scrolls on the **left**, the canvas is a
+**half-width, bottom-aligned block on the right** docked against the ship column (ship just right of it).
+Side-by-side rather than a full-width block stacked above the Take-off button, because the stacked block
+**stole the description's vertical space and pushed the mission text off-screen on phones**. The viewer
+machinery was factored into `buildModelViewer`/`startViewer`/`stopViewer`/`resizeViewer` +
+`setViewerModel(viewer,…)` so the same code drives **two** small GL contexts (ship preview + item showcase);
+the second is built lazily and its rAF loop is stopped on launch / when the bay view hides the mission
+canvas, so it costs nothing outside an active briefing.
 
 ## Future ideas
 

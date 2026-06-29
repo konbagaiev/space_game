@@ -5,6 +5,13 @@
 
 ## 2026-06-29
 
+- **Briefing item showcase — bigger model, side-by-side layout (phone fix).** Follow-up to the move below.
+  The granted item now renders at **2/3 scale** (was 1/3 — it was too small) in a **half-width canvas docked
+  to the right of the work zone**: the mission text scrolls on the left, the item sits bottom-right against
+  the ship column (ship just right of it). Restructured into a flex **body row** (`#mw-mission-body`,
+  text + canvas) so the canvas no longer steals the description's vertical space — fixes the phone bug where
+  the full-width item block pushed the mission text off-screen. `ITEM_SHOWCASE_SCALE` 1/3 → 2/3. Client-only.
+
 - **Briefing item showcase moved into the work zone (no longer replaces the ship).** The granted item
   (Machine Gun on L2, Repair drone on L3) now spins in a **dedicated viewer between the mission text and
   the Take-off button** (`#mw-item`) at **1/3 scale** (`ITEM_SHOWCASE_SCALE`), instead of swapping the
