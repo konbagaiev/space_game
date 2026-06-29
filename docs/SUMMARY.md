@@ -367,7 +367,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   drone 500 / homing rocket 600) so each type's ladder starts low. Each item's **full characteristics show
   on hover (desktop) or the (i) tap (mobile)** — for weapons: damage, RoF/reload, projectile speed, range,
   blast, weight. A shop item the player **already owns shows an "Owned ×N" badge** (N = total equipped on
-  the active ship **+** in the stash). Flows, all
+  the active ship **+** in the stash). **Price shown per screen:** the **Shop** shows the **full buy price**;
+  **Stash + Loadout** show the **resale value** (`floor(price*0.75)` — the amount the player actually gets on
+  sale, computed client-side via `sellLabel`/`SELL_RATE` to mirror the server), so the player reads "what I'd
+  get" right on the card. **Card layout:** Loadout/Stash item cards stay on a **single row** everywhere (incl.
+  phones); only the **Shop** stacks into two rows on touch (its long name + price + Buy don't share a phone
+  line). Flows, all
   **server-authoritative + transactional**: **buy** (credits down → item into stash), **sell** (stash item
   or an *optional* equipped item → 75% of price back), **install/equip** (stash → ship; the displaced item
   returns to the stash), **unequip** (ship → stash). A **live ship-stats panel** shows **HP / acceleration /

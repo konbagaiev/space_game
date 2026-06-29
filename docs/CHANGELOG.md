@@ -5,6 +5,14 @@
 
 ## 2026-06-29
 
+- **Stash/Loadout show the resale value; single-row cards off the Shop.** The **Stash** and **Loadout**
+  screens now display each item's **resale value** (`floor(price*0.75)` — what the player actually gets on
+  sale) instead of the full catalog price; the **Shop** keeps the full **buy** price. Added a client
+  `sellLabel`/`SELL_RATE` (mirrors the server's `sellPrice`) and a `priceMode` arg on `itemCard`
+  (`'buy'`/`'sell'`). Loadout cards also now carry the price (next to the slot's actions). **Layout:**
+  Loadout/Stash item cards stay on a **single row** everywhere; the two-row phone stacking is now scoped to
+  the **Shop** only. Sell rate unchanged (75%). Client-only.
+
 - **Briefing item showcase — pinned to the bottom-right corner, text wraps around it.** The granted item
   (Machine Gun on L2, Repair drone on L3) now floats into the **bottom-right corner of the mission text** so
   the briefing text wraps full-width above it and down its left side, instead of occupying a full-width band.

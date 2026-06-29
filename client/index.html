@@ -249,10 +249,11 @@
   }
   .bay-item .stats { font-size: 12px; opacity: .72; margin-top: 3px; line-height: 1.45; flex-basis: 100%; } /* desktop: own full-width line below head+foot */
   .bay-item .stats.hidden { display: none; }
-  /* Touch phones only: stack the card into TWO rows — name on top, price + button centered below (a long
-     item name + price + Buy don't fit one line on a phone). Desktop keeps everything on one line. */
-  body.touch .bay-item { flex-direction: column; align-items: stretch; }
-  body.touch .bay-item .head, body.touch .bay-item .foot, body.touch .bay-item .stats { flex: 0 0 auto; }
+  /* Touch phones: only the SHOP stacks a card into TWO rows — name on top, price + Buy centered below (a
+     long item name + price + Buy don't fit one line on a phone). Loadout/Stash stay on a SINGLE row
+     everywhere (simpler cards — the maintainer wants them one-line). Desktop keeps everything on one line. */
+  body.touch #view-shop .bay-item { flex-direction: column; align-items: stretch; }
+  body.touch #view-shop .bay-item .head, body.touch #view-shop .bay-item .foot, body.touch #view-shop .bay-item .stats { flex: 0 0 auto; }
   /* characteristics show only when the (i) button is tapped (it toggles .hidden) — no hover reveal */
   .bay-item .actions { display: inline-flex; gap: 6px; flex: none; }
   .bay-item .actions button, .bay-item .info-btn {
@@ -272,6 +273,7 @@
   #view-loadout .name-text, #view-stash .name-text, #view-shop .name-text { font-size: 28px; }
   #view-loadout .slot-tag { font-size: 20px; }
   #view-stash .price, #view-shop .price { font-size: 26px; }
+  #view-loadout .price { font-size: 22px; font-weight: 600; } /* resale value shown beside the slot's actions */
   #view-loadout .stats, #view-stash .stats, #view-shop .stats { font-size: 24px; line-height: 1.4; }
   #view-loadout .actions button, #view-loadout .info-btn { font-size: 18px; padding: 7px 15px; } /* 1.5× */
   #view-stash .actions button, #view-stash .info-btn,
@@ -3267,6 +3269,10 @@ const REQUIRED_SLOTS = ['hull', 'engine', 'thruster']; // can't be empty at take
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const slotLabel = (slot) => t(`ui.shop.slot.${slot}`) || slot;
 const priceLabel = (p) => (p > 0 ? `${p} ◈` : t('ui.shop.free'));
+// Resale value shown in Stash + Loadout — the amount the player actually gets for selling. Mirrors the
+// server's sellPrice (db.js / db_postgres.js): floor(price * 0.75). Keep in sync if the server rate changes.
+const SELL_RATE = 0.75;
+const sellLabel = (p) => (p > 0 ? `${Math.floor(p * SELL_RATE)} ◈` : t('ui.shop.free'));
 
 // Normalize the three item sources (catalog component / catalog weapon / server stash row) to one
 // shape { kind, refId, name, type, price, s (stat fields), weight } the renderers + statLine share.
@@ -3345,13 +3351,15 @@ function renderShipStatsBar(st) {
 // One item card. `actions` is an array of { act, label, cls } → buttons with data-* the click
 // delegator reads. Stats are hidden by default; the (i) button reveals them (mobile), and the
 // card's title shows them on hover (desktop).
-function itemCard(n, slotTag, actions, extraClass = '') {
+function itemCard(n, slotTag, actions, priceMode = null, extraClass = '') {
   const stats = statLine(n.kind, n.type, n.s, n.weight);
-  // header row: name (ellipsizes) · meta (slot tag for loadout, price for shop) · (i) — own cells, no overlap
-  // The slot tag (loadout) stays on the header row; the price moves to the centered second row, next to
-  // the action button(s).
+  // header row: name (ellipsizes) · slot tag (loadout) · (i) — own cells, no overlap. The price cell goes
+  // in the foot next to the action button(s): `priceMode` picks 'buy' (Shop → full catalog price) vs
+  // 'sell' (Stash/Loadout → resale value, what the player gets); null → no price.
   const slotMeta = slotTag ? `<span class="meta slot-tag">${esc(slotTag)}</span>` : '';
-  const priceMeta = (!slotTag && n.price != null) ? `<span class="meta price">${esc(priceLabel(n.price))}</span>` : '';
+  const priceMeta = (priceMode && n.price != null)
+    ? `<span class="meta price">${esc(priceMode === 'sell' ? sellLabel(n.price) : priceLabel(n.price))}</span>`
+    : '';
   const qty = n.qty > 1 ? ` ×${n.qty}` : '';
   const data = (n.kind && n.refId != null) ? `data-kind="${n.kind}" data-ref-id="${n.refId}"` : '';
   const acts = actions.map((a) => `<button class="${a.cls || ''}" data-act="${a.act}" ${a.slot ? `data-slot="${a.slot}"` : data}>${esc(a.label)}</button>`).join('');
@@ -3405,7 +3413,7 @@ function renderLoadout(active) {
     if (id == null) { if (slot !== 'repair') rows.push(emptySlotCard(slot, required)); continue; } // hide an empty optional repair slot
     const actions = [{ act: 'unequip', label: t('ui.shop.action.unequip'), slot }];
     if (!required) actions.push({ act: 'sell-equipped', label: t('ui.shop.action.sell'), cls: 'sell', slot });
-    rows.push(itemCard(normComponent(CATALOG.components.get(id)), slotLabel(slot), actions));
+    rows.push(itemCard(normComponent(CATALOG.components.get(id)), slotLabel(slot), actions, 'sell'));
   }
   for (const g of groups) {
     const mount = (active.loadout && active.loadout.mounts || []).find((m) => m.group === g);
@@ -3414,7 +3422,7 @@ function renderLoadout(active) {
       { act: 'unequip', label: t('ui.shop.action.unequip'), slot: g },
       { act: 'sell-equipped', label: t('ui.shop.action.sell'), cls: 'sell', slot: g },
     ];
-    rows.push(itemCard(normWeapon(CATALOG.weapons.get(mount.weapon)), slotLabel(g), actions));
+    rows.push(itemCard(normWeapon(CATALOG.weapons.get(mount.weapon)), slotLabel(g), actions, 'sell'));
   }
   host.innerHTML = rows.join('');
 }
@@ -3428,7 +3436,7 @@ function renderStash(stash) {
       { act: 'equip', label: t('ui.shop.action.install'), cls: 'primary' },
       { act: 'sell', label: t('ui.shop.action.sell'), cls: 'sell' },
     ];
-    return itemCard(n, null, actions);
+    return itemCard(n, null, actions, 'sell');
   }).join('');
 }
 
@@ -3452,7 +3460,7 @@ function renderShop() {
     (shopType === 'weapon' ? n.kind === 'weapon' : n.type === shopType));
   for (const n of items) n.owned = ownedCount(n.kind, n.refId); // tag each with how many you already have
   host.innerHTML = items.length
-    ? items.map((n) => itemCard(n, null, [{ act: 'buy', label: t('ui.shop.action.buy'), cls: 'primary' }])).join('')
+    ? items.map((n) => itemCard(n, null, [{ act: 'buy', label: t('ui.shop.action.buy'), cls: 'primary' }], 'buy')).join('')
     : `<div class="bay-empty-note">${esc(t('ui.shop.empty_shop'))}</div>`;
 }
 
