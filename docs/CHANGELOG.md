@@ -5,6 +5,16 @@
 
 ## 2026-06-29
 
+- **Briefing item showcase moved into the work zone (no longer replaces the ship).** The granted item
+  (Machine Gun on L2, Repair drone on L3) now spins in a **dedicated viewer between the mission text and
+  the Take-off button** (`#mw-item`) at **1/3 scale** (`ITEM_SHOWCASE_SCALE`), instead of swapping the
+  right-column ship preview — so the player always sees their ship *and* the new gear at once. Refactored
+  the preview machinery into reusable `buildModelViewer` / `startViewer` / `stopViewer` / `resizeViewer` +
+  `setViewerModel(viewer,…)` so the same code drives both GL contexts; the item viewer is built lazily and
+  its loop stops on launch / when the bay view hides the mission canvas. Hidden on L4 (no item) and on side
+  missions. Client-only change (no reseed). Updated the `97-briefing-showcase` visual scenario + a new
+  `itemShowcaseTarget` test hook. See DECISIONS §29.
+
 - **Mission briefings showcase the granted item's 3D model.** The level-2 briefing now spins the
   **Machine Gun** and the level-3 briefing the **Repair drone** in the right-column preview panel (instead
   of the player ship) while that briefing is up — the eye-catching item draws the player into the text.

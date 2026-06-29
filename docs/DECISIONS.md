@@ -974,9 +974,18 @@ duplication) and shipping `{kind,id}` solves that without a new endpoint (it rid
 The reload-landing path is different: there the client receives the **raw level descriptor** (which still
 carries `actions`, but no server-computed `showcase`), so the client derives the same mapping itself — one
 small helper makes **both** entry paths show the item. Sending `{kind,id}` (not the URL) keeps the server
-ignorant of asset URLs (they live in the catalog/seed the client already loads). The item renders in the
-**existing** preview panel (zero new GL context); no item / a side mission → it reverts to the ship. See
+ignorant of asset URLs (they live in the catalog/seed the client already loads). See
 `docs/plans/briefing-item-showcase.md`.
+
+**Update (placement).** The granted item now renders in a **dedicated viewer in the work zone**
+(`#mw-item`, between the mission text and the Take-off button) at **1/3 scale** (`ITEM_SHOWCASE_SCALE`),
+**not** in the right-column ship preview — the ship preview keeps showing the player's ship at all times.
+The original plan (decision #2 in `briefing-item-showcase.md`) put the item *in* the right preview,
+replacing the ship; the maintainer asked for the item beside the briefing text **without** displacing the
+ship. The viewer machinery was factored into `buildModelViewer`/`startViewer`/`stopViewer`/`resizeViewer`
++ `setViewerModel(viewer,…)` so the same code drives **two** small GL contexts (ship preview + item
+showcase); the second is built lazily and its rAF loop is stopped on launch / when the bay view hides the
+mission canvas, so it costs nothing outside an active briefing.
 
 ## Future ideas
 

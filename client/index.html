@@ -122,6 +122,10 @@
   #mw-mission-title { font-size: 22px; margin: 0; }
   #mw-mission-desc { flex: 1; min-height: 0; overflow-y: auto; font-size: 18px; line-height: 1.45; opacity: .92; padding-right: 8px; }
   #mw-mission-reward { color: #ffd86b; font-weight: 600; }
+  /* Briefing item showcase: a small spinning 3D model of the gear the mission grants, shown between the
+     description and the Take-off button (does NOT replace the right-column ship preview). Hidden by default. */
+  #mw-item { flex: 0 0 auto; width: 100%; height: clamp(96px, 17vh, 168px); display: none; }
+  #mw-item.on { display: block; }
   #mw-go { align-self: center; }
   #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; }
   #mw-view-bay { overflow-y: auto; }
@@ -600,6 +604,8 @@
       <h2 id="mw-mission-title"></h2>
       <div id="mw-mission-desc"></div>
       <div id="mw-mission-reward"></div>
+      <!-- granted-item showcase (briefing only): a small spinning model between the text and Take-off -->
+      <canvas id="mw-item"></canvas>
       <button id="mw-go" data-i18n="ui.button.take_off">Take off 🚀</button>
       <div id="mw-go-note"></div>
     </div>
@@ -2972,6 +2978,7 @@ function launchCampaign() {
   if (isTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
   mainEl.classList.remove('on');
   stopShipPreview();
+  stopViewer(mwItem);                        // stop the work-zone item showcase too
   document.body.classList.remove('menu');    // restore the in-game HUD
   gameStarted = true;                        // first launch from the landing Main Window starts the loop
   reset();                                   // (re)start the current level
@@ -3000,7 +3007,7 @@ function selectMenu(which) {
   document.getElementById('mw-view-mission').classList.toggle('active', isMissions);
   document.getElementById('mw-view-bay').classList.toggle('active', !isMissions);
   if (isMissions) { buildMissionList(); renderMissionView(mwMission); }
-  else { bayView = which; renderNav(); }
+  else { bayView = which; renderNav(); stopViewer(mwItem); } // bay view hides the mission canvas → idle the loop
 }
 document.getElementById('mw-menu').addEventListener('click', (e) => {
   const b = e.target.closest('.mw-item');
@@ -3048,6 +3055,7 @@ function renderMissionView(m) {
     rewEl.textContent = t('ui.mission.est_reward', { credits: m.estReward });
     rewEl.style.display = '';
     previewShip();            // a side mission grants nothing → show the ship, not a campaign showcase item
+    showShowcaseItem(null);   // …and hide the work-zone item showcase
   } else {
     titleEl.textContent = t('ui.mainwin.primary');
     descEl.textContent = mainBriefing
@@ -3084,6 +3092,7 @@ function launchMission(m) {
   if (isTouch) requestFullscreen();
   mainEl.classList.remove('on');
   stopShipPreview();
+  stopViewer(mwItem);                  // stop the work-zone item showcase too
   welcomeEl.style.display = 'none';
   document.body.classList.remove('menu');
   gameStarted = true;
@@ -3095,65 +3104,72 @@ function launchMission(m) {
 // player's active ship — the high-poly `_hangar` glb (model_url_high), falling back to the combat model.
 // Its render loop only runs while the Main Window is visible (started/stopped by showMain/launch*), so it
 // costs nothing during a fight. See docs/plans/main-window-redesign.md (§ ship preview) + DECISIONS.
-let mwPreview = null; // { renderer, scene, camera, group, raf, url } — built lazily on the first showMain
+// Build a self-contained spinning-model viewer on a canvas: renderer + scene + key/ambient light +
+// optional RoomEnvironment PMREM + a rotating group. Two instances exist — the right-column ship
+// preview (#mw-ship) and the work-zone briefing item showcase (#mw-item). Returns the viewer object.
+function buildModelViewer(canvas) {
+  const r = new THREE.WebGLRenderer({ canvas, antialias: gfx.antialias, alpha: true });
+  r.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
+  const sc = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+  cam.position.set(0, 1.4, 7);
+  cam.lookAt(0, 0, 0);
+  const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, 5, 4); sc.add(key);
+  sc.add(new THREE.AmbientLight(0x4a5878, 1.4));
+  if (gfx.envMap) { // same RoomEnvironment reflections as the combat scene (a fresh PMREM per GL context)
+    const pm = new THREE.PMREMGenerator(r);
+    sc.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
+  }
+  const group = new THREE.Group(); sc.add(group);
+  return { renderer: r, scene: sc, camera: cam, group, raf: 0, url: null };
+}
+// Start a viewer's auto-rotate render loop (idempotent — no-op if already running).
+function startViewer(v) {
+  if (!v || v.raf) return;
+  const loop = () => {
+    v.raf = requestAnimationFrame(loop);
+    v.group.rotation.y += 0.01; // slow auto-rotate
+    v.renderer.render(v.scene, v.camera);
+  };
+  loop();
+}
+function stopViewer(v) { if (v && v.raf) { cancelAnimationFrame(v.raf); v.raf = 0; } }
+function resizeViewer(v) {
+  if (!v) return;
+  const canvas = v.renderer.domElement;
+  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+  v.renderer.setSize(w, h, false); // false: don't override the CSS-driven canvas size
+  v.camera.aspect = w / h;
+  v.camera.updateProjectionMatrix();
+}
+
+let mwPreview = null; // right-column ship viewer — built lazily on the first showMain
 function startShipPreview() {
   const canvas = document.getElementById('mw-ship');
   if (!canvas) return;
-  if (!mwPreview) {
-    const r = new THREE.WebGLRenderer({ canvas, antialias: gfx.antialias, alpha: true });
-    r.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
-    const sc = new THREE.Scene();
-    const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-    cam.position.set(0, 1.4, 7);
-    cam.lookAt(0, 0, 0);
-    const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, 5, 4); sc.add(key);
-    sc.add(new THREE.AmbientLight(0x4a5878, 1.4));
-    if (gfx.envMap) { // same RoomEnvironment reflections as the combat scene (a fresh PMREM per GL context)
-      const pm = new THREE.PMREMGenerator(r);
-      sc.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-      pm.dispose();
-    }
-    const group = new THREE.Group(); sc.add(group);
-    mwPreview = { renderer: r, scene: sc, camera: cam, group, raf: 0, url: null };
-  }
+  if (!mwPreview) mwPreview = buildModelViewer(canvas);
   loadPreviewModel();
-  resizePreview();
-  if (!mwPreview.raf) {
-    const loop = () => {
-      mwPreview.raf = requestAnimationFrame(loop);
-      mwPreview.group.rotation.y += 0.01; // slow auto-rotate
-      mwPreview.renderer.render(mwPreview.scene, mwPreview.camera);
-    };
-    loop();
-  }
+  resizeViewer(mwPreview);
+  startViewer(mwPreview);
 }
-function stopShipPreview() {
-  if (mwPreview && mwPreview.raf) { cancelAnimationFrame(mwPreview.raf); mwPreview.raf = 0; }
-}
-function resizePreview() {
-  if (!mwPreview) return;
-  const canvas = mwPreview.renderer.domElement;
-  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
-  mwPreview.renderer.setSize(w, h, false); // false: don't override the CSS-driven canvas size
-  mwPreview.camera.aspect = w / h;
-  mwPreview.camera.updateProjectionMatrix();
-}
+function stopShipPreview() { stopViewer(mwPreview); }
 // yaw/scale for an ITEM (weapon/component) preview; mirrors shipModelCfg's defaults. Tolerant of both
 // catalog shapes: components keep `stats.model`, the flattened weapon entry has `model` at the top level.
 const itemModelCfg = (item) => {
   const m = (item && (item.model || (item.stats && item.stats.model))) || {};
   return { yaw: m.yaw ?? 0, scale: m.scale ?? 1, scaleMul: m.scaleMul ?? 1 };
 };
-// Show an arbitrary glb in the preview — a ship OR an item. Normalizes the longest axis to SHIP_MODEL_LEN,
+// Show an arbitrary glb in a viewer — a ship OR an item. Normalizes the longest axis to SHIP_MODEL_LEN,
 // recenters, applies the cfg yaw + scale; tint stays off (glbs bake their own colors). No-op if the same
 // url is already shown. cfg = { yaw, scale, scaleMul }.
-function setPreviewModel(url, cfg = {}) {
-  if (!mwPreview || !url || url === mwPreview.url) return;
-  mwPreview.url = url;
-  const clear = () => { for (let i = mwPreview.group.children.length - 1; i >= 0; i--) mwPreview.group.remove(mwPreview.group.children[i]); };
+function setViewerModel(v, url, cfg = {}) {
+  if (!v || !url || url === v.url) return;
+  v.url = url;
+  const clear = () => { for (let i = v.group.children.length - 1; i >= 0; i--) v.group.remove(v.group.children[i]); };
   clear();
   gltfLoader.load(url, (gltf) => {
-    if (!mwPreview || mwPreview.url !== url) return; // target changed mid-load
+    if (!v || v.url !== url) return; // target changed mid-load
     const model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
@@ -3165,9 +3181,11 @@ function setPreviewModel(url, cfg = {}) {
     pivot.rotation.y = cfg.yaw || 0;
     pivot.add(model);
     clear();
-    mwPreview.group.add(pivot);
+    v.group.add(pivot);
   }, undefined, (err) => console.warn('Preview model failed to load:', url, err));
 }
+// The right-column ship preview is the default consumer of the viewer setter.
+function setPreviewModel(url, cfg = {}) { setViewerModel(mwPreview, url, cfg); }
 // Default the preview to the player's active ship (the briefing showcase swaps in an item via setPreviewModel).
 function loadPreviewModel() {
   if (!mwPreview || !activeShip || !activeShip.ship) return;
@@ -3193,16 +3211,37 @@ function briefingShowcase(b) {
   return null;
 }
 function applyPreviewTarget() {
-  const sc = briefingShowcase(mainBriefing);
-  if (sc) {
-    const item = sc.kind === 'weapon' ? CATALOG.weapons.get(sc.id) : CATALOG.components.get(sc.id);
-    if (item && item.modelUrlHigh) { setPreviewModel(item.modelUrlHigh, itemModelCfg(item)); return; }
-  }
-  previewShip(); // no showcase (or no item model) → the active ship
+  previewShip();                                    // the right-column preview ALWAYS shows the active ship
+  showShowcaseItem(briefingShowcase(mainBriefing)); // the granted item (if any) shows in the work zone instead
 }
-// Keep the preview canvas crisp as the layout reflows (the grid column resizes with the window/rotation).
-window.addEventListener('resize', resizePreview);
-window.addEventListener('orientationchange', resizePreview);
+
+// ---------- Work-zone briefing item showcase (#mw-item) ----------
+// A second viewer in the mission work zone (between the description and the Take-off button) that shows
+// the 3D model of the gear a campaign briefing grants — Machine Gun on L2, Repair drone on L3 — at 1/3
+// scale, WITHOUT replacing the ship in the right-column preview. Hidden when the briefing grants nothing.
+const ITEM_SHOWCASE_SCALE = 1 / 3; // "reduce the model 3x" (maintainer request)
+let mwItem = null; // work-zone item viewer — built lazily the first time a showcase item is shown
+// Show the granted item in the work-zone viewer, or hide it when there's none (side mission / L1 / L4).
+function showShowcaseItem(sc) {
+  const canvas = document.getElementById('mw-item');
+  if (!canvas) return;
+  const item = sc ? (sc.kind === 'weapon' ? CATALOG.weapons.get(sc.id) : CATALOG.components.get(sc.id)) : null;
+  if (item && item.modelUrlHigh) {
+    if (!mwItem) mwItem = buildModelViewer(canvas);
+    const cfg = itemModelCfg(item);
+    setViewerModel(mwItem, item.modelUrlHigh, { ...cfg, scaleMul: (cfg.scaleMul ?? 1) * ITEM_SHOWCASE_SCALE });
+    canvas.classList.add('on');
+    resizeViewer(mwItem);
+    startViewer(mwItem);
+  } else {
+    canvas.classList.remove('on');
+    stopViewer(mwItem);
+  }
+}
+// Keep both preview canvases crisp as the layout reflows (the grid columns resize with window/rotation).
+function resizeViewers() { resizeViewer(mwPreview); resizeViewer(mwItem); }
+window.addEventListener('resize', resizeViewers);
+window.addEventListener('orientationchange', resizeViewers);
 
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // The "spend" side of the economy: equipped loadout + stash + a simple shop, with a live ship-stats
@@ -3563,7 +3602,9 @@ if (location.search.includes('debug')) {
     setArenaDrift(x, z) { arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
     get activeMission() { return activeMission; }, // the side mission being played (null = campaign)
     get missionOffers() { return missionOffers; },
-    get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url currently shown in the item/ship preview
+    get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url in the right-column ship preview
+    // the granted-item showcase (work zone): the glb url shown, and whether its canvas is visible
+    get itemShowcaseTarget() { const c = document.getElementById('mw-item'); return c && c.classList.contains('on') ? (mwItem && mwItem.url) : null; },
 
     launchMission, refreshMissions, // test/tool: drive the side-mission board
     get oobWarnVisible() { return oobWarnEl.style.display === 'block'; },

@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-29 (component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item in the preview [MG on L2, repair drone on L3, ship otherwise] via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-06-29 (component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at 1/3 scale in a dedicated work-zone viewer between the briefing text and Take-off — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -264,12 +264,21 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (was `openHangarShop`) gates + loads the bay.
 - **Model preview** (`#mw-ship`, right ~25%) — a **small self-contained Three.js view** (own
   `WebGLRenderer` + scene + camera + a directional light + the same RoomEnvironment PMREM reflections as the
-  combat scene) that **slowly auto-rotates** a glb. It's a general **ship-or-item viewer**:
-  `setPreviewModel(url, cfg)` normalizes/recenters/orients any model; `loadPreviewModel`/`previewShip`
-  default it to the player's active ship (`model_url_high` → `model_url`), and a **showcase briefing**
-  swaps in the granted item (see below). Its rAF loop runs **only while the Main Window is visible**
-  (`startShipPreview`/`stopShipPreview`), so it costs nothing during a fight; `resizePreview` keeps it crisp
-  on resize/rotation.
+  combat scene) that **slowly auto-rotates** a glb. The viewer machinery is factored into reusable helpers
+  (`buildModelViewer` builds a `{renderer,scene,camera,group,raf,url}` viewer; `startViewer`/`stopViewer`/
+  `resizeViewer` drive its rAF loop/size; `setViewerModel(viewer, url, cfg)` normalizes/recenters/orients
+  any glb — ship **or** item). The right-column preview (`mwPreview`) **always shows the player's active
+  ship** (`model_url_high` → `model_url`; `loadPreviewModel`/`previewShip`); the **granted item** of a
+  showcase briefing renders in a **separate work-zone viewer** instead (see "Briefing item showcase"). Both
+  loops run **only while the Main Window is visible** (`startShipPreview`/`stopShipPreview`), so they cost
+  nothing during a fight; `resizeViewers` keeps both crisp on resize/rotation.
+- **Work-zone item showcase** (`#mw-item`, `mwItem`) — a **second** small viewer in the mission work zone,
+  **between the briefing text and the Take-off button**, that shows the **3D model of the gear a campaign
+  briefing grants** (Machine Gun on L2, Repair drone on L3), spinning, at **1/3 scale**
+  (`ITEM_SHOWCASE_SCALE`) — **without** displacing the ship in the right-column preview. `showShowcaseItem(sc)`
+  shows/hides it (toggles the canvas `.on` class + starts/stops its loop); built lazily on first use, its
+  loop is stopped on launch and when the bay view hides the mission canvas. Hidden on L4 (no item) and side
+  missions. Test hook: `window.__game.itemShowcaseTarget` (the item glb url, or null when hidden).
 - **Community / feedback link.** A small localized link to the Telegram feedback group sits on the welcome
   screen and the game-over/victory overlay (`.community-link`). Its text and URL are i18n values
   (`ui.community.label` / `ui.community.url`, via `data-i18n` + `data-i18n-href`), so EN players get the
@@ -301,15 +310,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   before finding the pirate base. After advancing, the client reloads the active ship and rebuilds
   the player so the new loadout/components take effect. (Future action types: add credits, add to a
   stash, etc.)
-  - **Briefing item showcase.** When a briefing **grants gear**, the model preview panel shows that item
-    spinning instead of the ship (Machine Gun on L2, Repair drone on L3) — the eye-catching item pulls the
-    player into the text. The server attaches a **`showcase {kind,id}`** to the briefing response, derived
-    from its grant actions (`replaceWeapon`→`{weapon,to}`, `installComponent`→`{component}`; an explicit
-    `briefing.showcase` overrides). The client resolves the id in its catalog (which carries the item model
-    URLs) and calls `setPreviewModel`; on the **page-reload landing** path it gets the raw descriptor (no
+  - **Briefing item showcase.** When a briefing **grants gear**, a **dedicated work-zone viewer** (`#mw-item`,
+    between the mission text and the Take-off button) shows that item spinning at **1/3 scale** (Machine Gun on
+    L2, Repair drone on L3) — the eye-catching item pulls the player into the text **without** replacing the
+    ship in the right-column preview (the ship preview always shows the player's ship). The server attaches a
+    **`showcase {kind,id}`** to the briefing response, derived from its grant actions
+    (`replaceWeapon`→`{weapon,to}`, `installComponent`→`{component}`; an explicit `briefing.showcase`
+    overrides). The client resolves the id in its catalog (which carries the item model URLs) and renders it
+    via `showShowcaseItem`/`setViewerModel`; on the **page-reload landing** path it gets the raw descriptor (no
     server `showcase`) so it derives the same `{kind,id}` from the briefing `actions` client-side. No item
-    (L4 `unlockShop`) or a side mission → the preview stays/returns to the ship. See
-    `docs/plans/briefing-item-showcase.md`.
+    (L4 `unlockShop`) or a side mission → the work-zone viewer hides. See
+    `docs/plans/briefing-item-showcase.md` + DECISIONS §29.
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
   `levelRunner`. Four campaign levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%
