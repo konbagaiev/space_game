@@ -2963,7 +2963,11 @@ let mwMission = null;        // selected side-mission offer, or null = the campa
 let missionOffers = [];      // side missions from /api/players/:id/missions (unlocked after the campaign)
 
 function showMain(briefing) {
-  mainBriefing = briefing || null;
+  // The campaign (primary) row always reflects the CURRENT level's briefing. An explicit briefing
+  // (the server-derived one stashed on /advance) wins; otherwise fall back to the current level's
+  // descriptor briefing so returning from a side mission (showMain(null)) doesn't blank the campaign
+  // mission to the "standby" default. briefingShowcase() reads either shape (showcase or raw actions).
+  mainBriefing = briefing || (CATALOG.level && CATALOG.level.briefing) || null;
   overlay.style.display = 'none';
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the Main Window
@@ -3624,7 +3628,8 @@ if (location.search.includes('debug')) {
     // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
     get itemShowcaseTarget() { const d = document.getElementById('mw-mission-desc'); return d && d.classList.contains('show-item') ? (mwItem && mwItem.url) : null; },
 
-    launchMission, refreshMissions, // test/tool: drive the side-mission board
+    launchMission, refreshMissions, showMain, // test/tool: drive the side-mission board + the Main Window
+    get mainBriefing() { return mainBriefing; }, // the campaign (primary) briefing currently shown
     get oobWarnVisible() { return oobWarnEl.style.display === 'block'; },
     get player() { return player; },   // built asynchronously in bootstrap()
     get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB

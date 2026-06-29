@@ -5,6 +5,13 @@
 
 ## 2026-06-29
 
+- **Fix: side mission no longer blanks the campaign briefing.** When the shop is unlocked but the current
+  campaign level isn't cleared (e.g. on **level-4**), returning to the Main Window after playing a **side
+  mission** showed "Stand by for new orders" on the **primary (campaign)** row instead of that level's
+  briefing. `launchMission` clears `pendingBriefing`, so the return paths (`leaveOverlay`→`showMain(null)`
+  on win, `elBackHangar`→`showMain(null)` on loss) lost the briefing. `showMain` now falls back to
+  `CATALOG.level.briefing` when none is passed, so the campaign primary always reflects the current level.
+  Added `showMain` + a `mainBriefing` getter to the `?debug` test hook (`client/index.html`).
 - **Boss buff: +100 HP and +30% max speed.** The **first pirate boss** (Boss hull 210→**310** HP, Boss
   engine maxSpeed 8→**10.4**) and the **Second Boss** (Second-boss hull 450→**550** HP, Second-boss engine
   maxSpeed 11→**14.3**) are tougher and faster. Edited the boss-exclusive hull/engine components in

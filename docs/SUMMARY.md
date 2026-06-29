@@ -259,7 +259,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   description scrolls**, `#mw-mission-desc`). Loadout/Stash/Shop open the **shop bay in the work zone**
   (`#mw-view-bay`) — the bay's internals are unchanged, but the screen is switched from the **left menu**
   (no in-bay nav strip); those three menu items are hidden until the shop is unlocked. JS:
-  `showMain(briefing)` (was `showHangar`) shows it and starts the preview; `selectMenu(which)` switches the
+  `showMain(briefing)` (was `showHangar`) shows it and starts the preview — **the campaign (primary) row
+  always reflects the current level's briefing**: an explicit `briefing` (the server-derived one stashed on
+  `/advance`) wins, else it falls back to `CATALOG.level.briefing`, so returning from a **side mission**
+  (`showMain(null)`) keeps the campaign description instead of blanking to the `ui.hangar.default` standby
+  line; `selectMenu(which)` switches the
   work-zone view; `buildMissionList()` + `renderMissionView(m)` drive the mission list/description;
   `launchCampaign()` (was `launchFromHangar`) and `launchMission(m)` launch + stop the preview; `openBay()`
   (was `openHangarShop`) gates + loads the bay.
