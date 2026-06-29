@@ -134,10 +134,11 @@ export const WEAPONS = [
 ];
 
 // --- sounds: the SFX asset registry (key -> same-origin content-hashed url, optional playback gain).
-// Volume is baked into the files, so gain stays 1. These are the rows of the `sounds` table; the client
+// Volume is mostly baked into the files (gain defaults to 1); per-sound `gain` trims it at playback. These
+// are the rows of the `sounds` table; the client
 // fetches them (/api/sounds), preloads each, and plays by key. All CC0 (see client/assets/CREDITS.md).
 export const SOUNDS = [
-  { key: 'kinetic',  url: 'assets/sounds/kinetic.6d8dda6a.mp3' },
+  { key: 'kinetic',  url: 'assets/sounds/kinetic.6d8dda6a.mp3', gain: 0.7 }, // machine-gun fire, -30%
   { key: 'rocket',   url: 'assets/sounds/rocket.0e10b34a.mp3' },
   { key: 'cannon',   url: 'assets/sounds/cannon.689d2b52.mp3' },
   { key: 'shipHit',  url: 'assets/sounds/shipHit.8b58950e.mp3' },

@@ -69,6 +69,7 @@ export function createAudio(initialSettings) {
   let activeVoices = 0;          // crude polyphony cap so machine-gun fire / swarms can't run away
   let noiseBuf = null;
   const buffers = new Map();     // logical SFX name → decoded AudioBuffer (sample layer; empty ⇒ all-synth)
+  const sampleGains = new Map(); // logical SFX name → registered playback gain (DB sounds.gain; default 1)
   let unlockKicked = false;      // Safari needs a node played inside the gesture, not just resume()
 
   const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
@@ -150,7 +151,7 @@ export function createAudio(initialSettings) {
     if (!buf) return false;
     const t = ctx.currentTime;
     const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = rate;
-    const g = ctx.createGain(); g.gain.value = gain;
+    const g = ctx.createGain(); g.gain.value = gain * (sampleGains.get(name) ?? 1);
     src.connect(g); g.connect(sfxGain); src.start(t);
     activeVoices++; src.onended = () => { activeVoices = Math.max(0, activeVoices - 1); };
     return true;
@@ -338,6 +339,7 @@ export function createAudio(initialSettings) {
     setMusicTracks,   // scene → [sound keys] for the looping background music (from the DB sound_map)
     sfx,
     preloadSamples,   // load SFX + music samples (call after unlock); missing buffers fall back to synth
+    setSampleGains(map) { for (const [k, v] of Object.entries(map || {})) sampleGains.set(k, v); }, // per-sound gain (DB sounds.gain)
     isReady() { return !!ctx && ctx.state === 'running'; },
   };
 }
