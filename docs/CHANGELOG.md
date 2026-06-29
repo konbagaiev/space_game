@@ -5,6 +5,16 @@
 
 ## 2026-06-29
 
+- **Briefing item showcase — pinned to the bottom-right corner, text wraps around it.** The granted item
+  (Machine Gun on L2, Repair drone on L3) now floats into the **bottom-right corner of the mission text** so
+  the briefing text wraps full-width above it and down its left side, instead of occupying a full-width band.
+  Implemented with the **classic CSS strut-float trick**: the canvas moved **inside `#mw-mission-desc`** next
+  to a `#mw-mission-text` span and a 0-width `#mw-item-strut` (`height: calc(100% − var(--gun-h))`) that
+  reserves the top of the right column; the canvas `clear: right` then drops below it into the corner.
+  `renderMissionView` now sets the text on the `#mw-mission-text` span (not the whole description, which would
+  wipe the canvas); visibility toggles `#mw-mission-desc.show-item`; the `itemShowcaseTarget` test hook reads
+  that class. Client-only.
+
 - **Briefing item showcase — full-size model in the bottom-left quarter.** Final placement: the granted item
   (Machine Gun on L2, Repair drone on L3) now renders at **full size** (`ITEM_SHOWCASE_SCALE = 1`) in a
   **left-aligned, half-width canvas occupying ~the bottom-left quarter of the work zone**, below the mission

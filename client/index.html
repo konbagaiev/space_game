@@ -118,18 +118,19 @@
   #mw-work { min-width: 0; min-height: 0; display: flex; }
   .mw-view { display: none; flex: 1; min-width: 0; min-height: 0; }
   .mw-view.active { display: flex; flex-direction: column; }
-  #mw-view-mission { gap: 10px; }
+  #mw-view-mission { gap: 10px; --gun-h: clamp(150px, 36%, 280px); }
   #mw-mission-title { font-size: 22px; margin: 0; }
-  /* The title + mission text take the top ~3/4 of the work zone; min-height keeps the text on screen even
-     when the item showcase below claims its share (the old full-width block pushed the text off-screen). */
   #mw-mission-desc { flex: 1 1 auto; min-height: 3.5em; overflow-y: auto; font-size: 18px; line-height: 1.45; opacity: .92; padding-right: 8px; }
   #mw-mission-reward { color: #ffd86b; font-weight: 600; }
-  /* Briefing item showcase: a FULL-SIZE spinning 3D model of the gear the mission grants — Machine Gun on
-     L2, Repair drone on L3 — occupying roughly the BOTTOM-LEFT QUARTER of the work zone (half width,
-     left-aligned, below the text); the title + text fill the rest, the ship preview is the column to the
-     right. flex-basis as a % of the work-zone height (not vh) so it's stable under the phone rotation. */
-  #mw-item { flex: 0 1 42%; align-self: flex-start; width: 50%; min-width: 0; min-height: 0; display: none; }
-  #mw-item.on { display: block; }
+  /* Briefing item showcase pinned to the BOTTOM-RIGHT corner of the mission text, with the text wrapping
+     around it. A 0-width strut floats right and reserves the TOP of the right column (so the text flows
+     full-width past it), then the gun canvas `clear: right` drops below the strut into the bottom-right
+     corner — the text then wraps full-width above it and down its left side. (Floats can't anchor to the
+     bottom on their own; strut height = container − gun height is the classic CSS bottom-float trick.)
+     Both stay display:none until a showcase briefing adds `.show-item` to the description. */
+  #mw-item-strut { display: none; float: right; width: 0; height: calc(100% - var(--gun-h)); }
+  #mw-item { display: none; float: right; clear: right; width: 46%; height: var(--gun-h); margin: 2px 0 6px 14px; }
+  #mw-mission-desc.show-item #mw-item-strut, #mw-mission-desc.show-item #mw-item { display: block; }
   #mw-go { align-self: center; }
   #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; }
   #mw-view-bay { overflow-y: auto; }
@@ -606,9 +607,13 @@
     <!-- mission view: the selected mission's description + take-off (only the description scrolls) -->
     <div class="mw-view active" id="mw-view-mission">
       <h2 id="mw-mission-title"></h2>
-      <div id="mw-mission-desc"></div>
-      <!-- granted-item showcase (briefing only): full-size model in the bottom-left quarter of the work zone -->
-      <canvas id="mw-item"></canvas>
+      <!-- mission text with the granted-item showcase floated into its bottom-right corner (text wraps it);
+           strut + canvas are floats, so they precede the text span in source for the wrap to work -->
+      <div id="mw-mission-desc">
+        <div id="mw-item-strut"></div>
+        <canvas id="mw-item"></canvas>
+        <span id="mw-mission-text"></span>
+      </div>
       <div id="mw-mission-reward"></div>
       <button id="mw-go" data-i18n="ui.button.take_off">Take off 🚀</button>
       <div id="mw-go-note"></div>
@@ -3051,18 +3056,18 @@ function buildMissionList() {
 // otherwise a side mission's flavor + est. reward + launchMission.
 function renderMissionView(m) {
   const titleEl = document.getElementById('mw-mission-title');
-  const descEl = document.getElementById('mw-mission-desc');
+  const textEl = document.getElementById('mw-mission-text'); // text span beside the floated item canvas
   const rewEl = document.getElementById('mw-mission-reward');
   if (m) {
     titleEl.textContent = t(m.titleKey);
-    descEl.textContent = t(m.descKey);
+    textEl.textContent = t(m.descKey);
     rewEl.textContent = t('ui.mission.est_reward', { credits: m.estReward });
     rewEl.style.display = '';
     previewShip();            // a side mission grants nothing → show the ship, not a campaign showcase item
     showShowcaseItem(null);   // …and hide the work-zone item showcase
   } else {
     titleEl.textContent = t('ui.mainwin.primary');
-    descEl.textContent = mainBriefing
+    textEl.textContent = mainBriefing
       ? (mainBriefing.textKey ? t(mainBriefing.textKey) : (mainBriefing.text || ''))
       : t('ui.hangar.default');
     rewEl.textContent = '';
@@ -3220,25 +3225,26 @@ function applyPreviewTarget() {
 }
 
 // ---------- Work-zone briefing item showcase (#mw-item) ----------
-// A second viewer in the mission work zone (between the description and the Take-off button) that shows
-// the 3D model of the gear a campaign briefing grants — Machine Gun on L2, Repair drone on L3 — at 1/3
-// scale, WITHOUT replacing the ship in the right-column preview. Hidden when the briefing grants nothing.
-const ITEM_SHOWCASE_SCALE = 1; // full size — the model fills the bottom-left-quarter showcase canvas
+// A second viewer floated into the BOTTOM-RIGHT corner of the mission text (the text wraps around it),
+// showing the 3D model of the gear a campaign briefing grants — Machine Gun on L2, Repair drone on L3 — at
+// full size, WITHOUT replacing the ship in the right-column preview. Hidden when the briefing grants nothing.
+const ITEM_SHOWCASE_SCALE = 1; // full size — the model fills the bottom-right showcase canvas
 let mwItem = null; // work-zone item viewer — built lazily the first time a showcase item is shown
 // Show the granted item in the work-zone viewer, or hide it when there's none (side mission / L1 / L4).
 function showShowcaseItem(sc) {
   const canvas = document.getElementById('mw-item');
+  const desc = document.getElementById('mw-mission-desc');
   if (!canvas) return;
   const item = sc ? (sc.kind === 'weapon' ? CATALOG.weapons.get(sc.id) : CATALOG.components.get(sc.id)) : null;
   if (item && item.modelUrlHigh) {
     if (!mwItem) mwItem = buildModelViewer(canvas);
     const cfg = itemModelCfg(item);
     setViewerModel(mwItem, item.modelUrlHigh, { ...cfg, scaleMul: (cfg.scaleMul ?? 1) * ITEM_SHOWCASE_SCALE });
-    canvas.classList.add('on');
+    if (desc) desc.classList.add('show-item'); // reveals the strut + canvas (CSS) → floats into the corner
     resizeViewer(mwItem);
     startViewer(mwItem);
   } else {
-    canvas.classList.remove('on');
+    if (desc) desc.classList.remove('show-item');
     stopViewer(mwItem);
   }
 }
@@ -3607,8 +3613,8 @@ if (location.search.includes('debug')) {
     get activeMission() { return activeMission; }, // the side mission being played (null = campaign)
     get missionOffers() { return missionOffers; },
     get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url in the right-column ship preview
-    // the granted-item showcase (work zone): the glb url shown, and whether its canvas is visible
-    get itemShowcaseTarget() { const c = document.getElementById('mw-item'); return c && c.classList.contains('on') ? (mwItem && mwItem.url) : null; },
+    // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
+    get itemShowcaseTarget() { const d = document.getElementById('mw-mission-desc'); return d && d.classList.contains('show-item') ? (mwItem && mwItem.url) : null; },
 
     launchMission, refreshMissions, // test/tool: drive the side-mission board
     get oobWarnVisible() { return oobWarnEl.style.display === 'block'; },

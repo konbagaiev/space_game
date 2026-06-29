@@ -981,13 +981,18 @@ ignorant of asset URLs (they live in the catalog/seed the client already loads).
 (`#mw-item`) at **full size** (`ITEM_SHOWCASE_SCALE = 1`), **not** in the right-column ship preview — the ship
 preview keeps showing the player's ship at all times. The original plan (decision #2 in
 `briefing-item-showcase.md`) put the item *in* the right preview, replacing the ship; the maintainer asked
-for the item beside the briefing text **without** displacing the ship. **Layout (final):** the canvas
-occupies roughly the **bottom-left quarter** of the work zone — **left-aligned, half-width**
-(`align-self: flex-start; width: 50%`), **below the description**, with its height a **flex-basis % of the
-work-zone height** (`flex: 0 1 42%`, *not* `vh` — `vh` is unstable under the portrait→landscape body-rotation
-transform). The title + mission text fill the top ~3/4; the description carries a `min-height` so it's never
-pushed off-screen (an earlier full-width block stacked above Take-off **stole the description's vertical
-space and pushed the mission text off-screen on phones** — the bug this layout fixes). The viewer
+for the item beside the briefing text **without** displacing the ship. **Layout (final):** the canvas is
+**floated into the bottom-right corner of the mission text, with the text wrapping around it** — it lives
+**inside `#mw-mission-desc`** next to a `#mw-mission-text` span and a 0-width strut (`#mw-item-strut`), both
+floats preceding the text in source. Bottom-right-with-wrap is the **classic CSS strut-float trick**: the
+strut floats right with `height: calc(100% − var(--gun-h))` to reserve the **top** of the right column (text
+flows full-width past the 0-width strut), then the canvas `clear: right` drops **below** it into the
+bottom-right corner — the text then wraps full-width above the item and down its left side. (A plain
+`float: right` can't anchor to the bottom; absolute positioning would pin the corner but kill the text wrap —
+the strut gives both.) Earlier iterations were rejected by the maintainer: a full-width block stacked above
+Take-off **stole the description's vertical space and pushed the mission text off-screen on phones**; a
+half-width `flex` block (bottom-left, then bottom-right) **occupied a full horizontal band** instead of
+tucking into the corner. The viewer
 machinery was factored into `buildModelViewer`/`startViewer`/`stopViewer`/`resizeViewer` +
 `setViewerModel(viewer,…)` so the same code drives **two** small GL contexts (ship preview + item showcase);
 the second is built lazily and its rAF loop is stopped on launch / when the bay view hides the mission
