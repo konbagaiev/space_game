@@ -18,6 +18,8 @@ asset page is also handy, in case the author later changes the terms).
 | sounds/music_combat_1.\<hash\>.mp3 (combat background loop) | Freesound (CC0 filter) | _id not retained (renamed game-background-dragons-breath.wav)_ | CC0 1.0 | 2026-06-24 |
 | ships/enemy_1–4 + enemy_1–4_orange (combat + hangar `.glb`, derived from `_source/lowpoly_spaceships.glb`; the `_orange` set is the same models recolored red → #f4741f) — basic enemy, rocketeer, medium, first boss (+ orange variants) | Pedram Ashoori | https://skfb.ly/6pxFX | CC-BY 4.0 | 2026-06-24 |
 | ships/player_combat + player_hangar `.glb` (player ship, textures downscaled) | Raven | https://skfb.ly/otR6F | CC-BY 4.0 | 2026-06-24 |
+| ships/repair_drone_hangar.\<hash\>.glb (Repair drone item icon — menu only) | Ivan Potupin | https://skfb.ly/pGPyp | CC-BY 4.0 | 2026-06-29 |
+| ships/machine_gun_hangar.\<hash\>.glb (Machine Gun item icon — menu only) | suvee10 | https://skfb.ly/oHLZB | CC-BY 4.0 | 2026-06-29 |
 
 <!--
 Example row:
@@ -48,6 +50,20 @@ paint/decals.
 
 > "Air & Space Vessel" (https://skfb.ly/otR6F) by Raven is licensed under Creative Commons
 > Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+The **item icons** — `repair_drone_hangar` (the Repair drone component) and `machine_gun_hangar` (the
+Machine Gun weapon) — are **menu-only** 3D models (shown in the item preview; never rendered in combat).
+Both are **CC-BY 4.0** (attribution required, so these entries must stay while in use). They live under
+the `ships-hangar/` S3 prefix (reused for all high-poly menu glbs; see
+`docs/plans/component-weapon-models.md`).
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "Repair Drone - XYZ Homework (Detailing)" (https://skfb.ly/pGPyp) by Ivan Potupin is licensed under
+> Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+>
+> "machine gun" (https://skfb.ly/oHLZB) by suvee10 is licensed under Creative Commons Attribution
+> (http://creativecommons.org/licenses/by/4.0/).
 
 The older primitive fallbacks (`player.glb`, `fighter.glb`, `rocketeer.glb`,
 `heavy.glb`, `boss.glb`, `Spaceship*.glb`) are placeholder geometry, not from either pack.

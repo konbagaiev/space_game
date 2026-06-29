@@ -26,12 +26,12 @@ export async function migrate() {
 // catalog_seed.js updates the rows (ids/foreign keys preserved — weapons keyed by id, ships by name).
 async function seedCatalog() {
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
-  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, price, stats) VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, price = excluded.price, stats = excluded.stats`);
-  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats));
-  const upW = db.prepare(`INSERT INTO weapons (id, name, type, price, stats) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, price = excluded.price, stats = excluded.stats`);
-  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats));
+  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high`);
+  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null);
+  const upW = db.prepare(`INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high`);
+  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null);
   const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url, model_url_high, components) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, components = excluded.components`);
   for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, s.modelUrlHigh ?? null, JSON.stringify(s.components));
@@ -184,13 +184,25 @@ function applyBriefingActions(playerId, actions) {
 
 // The briefing attached to a level (message + actions), or null. Returns only what the client needs
 // to display ({ textKey, text }); actions are run server-side, not sent to the client.
+// Derive the showcase item ({ kind, id }) from a briefing's grant actions, or an explicit
+// briefing.showcase override. Cosmetic only: the client looks the id up in its catalog (which carries the
+// model URLs) to spin the granted item's 3D model in the preview. See docs/plans/briefing-item-showcase.md.
+function showcaseFromBriefing(b) {
+  if (b.showcase) return b.showcase;                          // explicit override wins
+  for (const a of (b.actions || [])) {
+    if (a.type === 'replaceWeapon') return { kind: 'weapon', id: a.to };
+    if (a.type === 'installComponent') return { kind: 'component', id: a.component };
+  }
+  return null;                                                // e.g. unlockShop → no item to show
+}
+
 function runLevelBriefing(playerId, levelId) {
   const row = db.prepare('SELECT descriptor FROM levels WHERE id = ?').get(levelId);
   if (!row) return null;
   const briefing = JSON.parse(row.descriptor).briefing;
   if (!briefing) return null;
   applyBriefingActions(playerId, briefing.actions);
-  return { textKey: briefing.textKey ?? null, text: briefing.text ?? null };
+  return { textKey: briefing.textKey ?? null, text: briefing.text ?? null, showcase: showcaseFromBriefing(briefing) };
 }
 
 // Unlock the next level after the player's current one (smallest level id greater than the current).
@@ -281,13 +293,13 @@ export function getShips() {
 }
 
 export function getWeapons() {
-  return db.prepare('SELECT id, name, type, price, stats FROM weapons ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, price: r.price, stats: JSON.parse(r.stats) }));
+  return db.prepare('SELECT id, name, type, price, stats, model_url, model_url_high FROM weapons ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
 }
 
 export function getComponents() {
-  return db.prepare('SELECT id, name, type, weight, price, stats FROM components ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats) }));
+  return db.prepare('SELECT id, name, type, weight, price, stats, model_url, model_url_high FROM components ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
 }
 
 // SFX catalog: the sounds registry (key->url) + the class-based routing map. The client preloads the

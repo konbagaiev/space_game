@@ -11,7 +11,7 @@
 // and docs/plans/audio-sample-pipeline.md.
 import { execFileSync } from 'node:child_process';
 import { BUCKET, awsArgs, PREFIX, CDN } from './assets-config.mjs';
-import { SHIPS, SOUNDS } from '../server/src/catalog_seed.js';
+import { SHIPS, SOUNDS, COMPONENTS, WEAPONS } from '../server/src/catalog_seed.js';
 
 const HASHED_GLB = /\.[0-9a-f]{8}\.glb$/; // content-hashed → a pipeline (S3) model, not an in-git primitive
 const HASHED_MP3 = /\.[0-9a-f]{8}\.mp3$/; // content-hashed SFX → must be on S3
@@ -42,10 +42,14 @@ function existsOnS3(key) {
 }
 
 const targets = [];
-for (const s of SHIPS) {
-  for (const [field, url] of [['modelUrl', s.modelUrl], ['modelUrlHigh', s.modelUrlHigh]]) {
-    const key = modelKey(url);
-    if (key) targets.push({ name: s.name, field, url, key });
+// Ships AND items (components/weapons) carry the same model URL shape; an item only wires modelUrlHigh
+// (menu-only icon), but check both fields the same way a ship does.
+for (const [label, rows] of [['', SHIPS], ['component:', COMPONENTS], ['weapon:', WEAPONS]]) {
+  for (const s of rows) {
+    for (const [field, url] of [['modelUrl', s.modelUrl], ['modelUrlHigh', s.modelUrlHigh]]) {
+      const key = modelKey(url);
+      if (key) targets.push({ name: `${label}${s.name}`, field, url, key });
+    }
   }
 }
 for (const s of SOUNDS) {

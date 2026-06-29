@@ -2964,6 +2964,7 @@ function showMain(briefing) {
     renderShipStatsBar(deriveShipStats(activeShip.components, activeShip.loadout && activeShip.loadout.mounts));
   }
   startShipPreview();                  // spin up the right-column ship model
+  applyPreviewTarget();                // …showing the granted item if this is a showcase briefing, else the ship
 }
 function launchCampaign() {
   pendingBriefing = null;
@@ -3046,6 +3047,7 @@ function renderMissionView(m) {
     descEl.textContent = t(m.descKey);
     rewEl.textContent = t('ui.mission.est_reward', { credits: m.estReward });
     rewEl.style.display = '';
+    previewShip();            // a side mission grants nothing → show the ship, not a campaign showcase item
   } else {
     titleEl.textContent = t('ui.mainwin.primary');
     descEl.textContent = mainBriefing
@@ -3053,6 +3055,7 @@ function renderMissionView(m) {
       : t('ui.hangar.default');
     rewEl.textContent = '';
     rewEl.style.display = 'none';
+    applyPreviewTarget();     // primary row → the campaign briefing's showcase item (if any), else the ship
   }
   updateTakeoffGate(activeShip);
 }
@@ -3135,32 +3138,67 @@ function resizePreview() {
   mwPreview.camera.aspect = w / h;
   mwPreview.camera.updateProjectionMatrix();
 }
-// Load the active ship's hangar model into the preview (no-op if it's already the loaded one). Mirrors
-// applyShipModel's auto center/normalize; tint stays off (the glb bakes its own colors).
-function loadPreviewModel() {
-  if (!mwPreview || !activeShip || !activeShip.ship) return;
-  const ship = activeShip.ship;
-  const url = ship.modelUrlHigh || ship.modelUrl;
-  if (!url || url === mwPreview.url) return;
+// yaw/scale for an ITEM (weapon/component) preview; mirrors shipModelCfg's defaults. Tolerant of both
+// catalog shapes: components keep `stats.model`, the flattened weapon entry has `model` at the top level.
+const itemModelCfg = (item) => {
+  const m = (item && (item.model || (item.stats && item.stats.model))) || {};
+  return { yaw: m.yaw ?? 0, scale: m.scale ?? 1, scaleMul: m.scaleMul ?? 1 };
+};
+// Show an arbitrary glb in the preview — a ship OR an item. Normalizes the longest axis to SHIP_MODEL_LEN,
+// recenters, applies the cfg yaw + scale; tint stays off (glbs bake their own colors). No-op if the same
+// url is already shown. cfg = { yaw, scale, scaleMul }.
+function setPreviewModel(url, cfg = {}) {
+  if (!mwPreview || !url || url === mwPreview.url) return;
   mwPreview.url = url;
-  const mc = shipModelCfg(ship.stats);
   const clear = () => { for (let i = mwPreview.group.children.length - 1; i >= 0; i--) mwPreview.group.remove(mwPreview.group.children[i]); };
   clear();
   gltfLoader.load(url, (gltf) => {
-    if (!mwPreview || mwPreview.url !== url) return; // ship changed mid-load
+    if (!mwPreview || mwPreview.url !== url) return; // target changed mid-load
     const model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
-    const s = SHIP_MODEL_LEN / (Math.max(size.x, size.y, size.z) || 1);
+    const s = (SHIP_MODEL_LEN / (Math.max(size.x, size.y, size.z) || 1)) * (cfg.scale ?? 1) * (cfg.scaleMul ?? 1);
     model.scale.setScalar(s);
     model.position.copy(center).multiplyScalar(-s);
     const pivot = new THREE.Group();
-    pivot.rotation.y = mc.yaw || 0;
+    pivot.rotation.y = cfg.yaw || 0;
     pivot.add(model);
     clear();
     mwPreview.group.add(pivot);
   }, undefined, (err) => console.warn('Preview model failed to load:', url, err));
+}
+// Default the preview to the player's active ship (the briefing showcase swaps in an item via setPreviewModel).
+function loadPreviewModel() {
+  if (!mwPreview || !activeShip || !activeShip.ship) return;
+  const ship = activeShip.ship;
+  setPreviewModel(ship.modelUrlHigh || ship.modelUrl, shipModelCfg(ship.stats));
+}
+// Point the preview at the right thing: the item a showcase briefing grants (Machine Gun on L2, Repair
+// drone on L3 — server attaches `showcase {kind,id}` to the briefing), else the active ship. The catalog
+// already carries the item model URLs (foundation brief). Falls back to the ship if the item has no model.
+function previewShip() {
+  if (activeShip && activeShip.ship) setPreviewModel(activeShip.ship.modelUrlHigh || activeShip.ship.modelUrl, shipModelCfg(activeShip.ship.stats));
+}
+// The showcased item for a briefing. The server attaches `showcase {kind,id}` on the /advance path (where
+// it strips `actions`); on a fresh page-load landing the client gets the raw descriptor briefing instead
+// (has `actions`, no `showcase`), so derive it from the actions as a fallback — both paths then work.
+function briefingShowcase(b) {
+  if (!b) return null;
+  if (b.showcase) return b.showcase;
+  for (const a of (b.actions || [])) {
+    if (a.type === 'replaceWeapon') return { kind: 'weapon', id: a.to };
+    if (a.type === 'installComponent') return { kind: 'component', id: a.component };
+  }
+  return null;
+}
+function applyPreviewTarget() {
+  const sc = briefingShowcase(mainBriefing);
+  if (sc) {
+    const item = sc.kind === 'weapon' ? CATALOG.weapons.get(sc.id) : CATALOG.components.get(sc.id);
+    if (item && item.modelUrlHigh) { setPreviewModel(item.modelUrlHigh, itemModelCfg(item)); return; }
+  }
+  previewShip(); // no showcase (or no item model) → the active ship
 }
 // Keep the preview canvas crisp as the layout reflows (the grid column resizes with the window/rotation).
 window.addEventListener('resize', resizePreview);
@@ -3525,6 +3563,8 @@ if (location.search.includes('debug')) {
     setArenaDrift(x, z) { arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
     get activeMission() { return activeMission; }, // the side mission being played (null = campaign)
     get missionOffers() { return missionOffers; },
+    get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url currently shown in the item/ship preview
+
     launchMission, refreshMissions, // test/tool: drive the side-mission board
     get oobWarnVisible() { return oobWarnEl.style.display === 'block'; },
     get player() { return player; },   // built asynchronously in bootstrap()
@@ -4098,7 +4138,10 @@ async function bootstrap() {
     for (const m of (sounds.map || [])) { const k = `${m.entity}|${m.class}|${m.event}`; (soundMap.get(k) || soundMap.set(k, []).get(k)).push(m.sound); }
     audio.setMusicTracks({ hangar: tracksFor('scene', 'hangar', 'music'), combat: tracksFor('scene', 'combat', 'music') }); // looping bg music per scene
     if (samplesLoaded) audio.preloadSamples(soundUrls); // a gesture already unlocked the ctx before bootstrap finished
-    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, ...w.stats });
+    // Weapons are flattened (stats spread to top level); keep the model URLs too (the `...w.stats` spread
+    // also lifts `stats.model` to a top-level `model` key — read by itemModelCfg). Components are stored
+    // whole, so their `modelUrlHigh` + nested `stats.model` flow through as-is.
+    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, modelUrl: w.modelUrl, modelUrlHigh: w.modelUrlHigh, ...w.stats });
     for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);

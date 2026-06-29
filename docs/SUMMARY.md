@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-29 (Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-06-29 (component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item in the preview [MG on L2, repair drone on L3, ship otherwise] via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -144,6 +144,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   lazy-loaded; the player + every real-model pirate have one — `player_hangar`, `enemy_1..4_hangar`,
   `enemy_1/2/3/4_orange_hangar`). See
   `client/assets/README.md` + `CREDITS.md`.
+- **Component & weapon models (menu-only icons).** Components and weapons also carry optional
+  `model_url` / `model_url_high` columns (**migration 016**, Postgres parity), exactly like ships, with the
+  same `stats.model` `{ yaw, scale }` convention. Only **`model_url_high`** (hangar, CloudFront) is wired —
+  items are **never rendered in combat** (they're part of the ship there), only shown as a spinning icon in
+  the menu preview — so `model_url` (combat) stays null/unused and the hangar glbs reuse the `ships-hangar/`
+  S3 prefix. Today two items have a model: the **Repair drone** (component 12) and the **Machine Gun**
+  (weapon 5), both CC-BY 4.0; every other item's `model_url_high` is null (the viewer degrades to nothing).
+  `assets:check` validates item model URLs alongside ships. See `docs/plans/component-weapon-models.md`.
   - **Player ship** = the real **"Air & Space Vessel"** model (Raven, CC-BY): a light-grey/red textured
     fighter, **`model.scale: 1.1`**. Unlike the flat low-poly enemy pack, it **keeps its textures** (paint,
     decals, markings) — `assets:build` just **downscales** them via the `player` preset override
@@ -254,10 +262,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   work-zone view; `buildMissionList()` + `renderMissionView(m)` drive the mission list/description;
   `launchCampaign()` (was `launchFromHangar`) and `launchMission(m)` launch + stop the preview; `openBay()`
   (was `openHangarShop`) gates + loads the bay.
-- **Ship-model preview** (`#mw-ship`, right ~25%) — a **small self-contained Three.js view** (own
+- **Model preview** (`#mw-ship`, right ~25%) — a **small self-contained Three.js view** (own
   `WebGLRenderer` + scene + camera + a directional light + the same RoomEnvironment PMREM reflections as the
-  combat scene) that loads the player's **`model_url_high`** (`_hangar` glb; falls back to `model_url`) and
-  **slowly auto-rotates** it. Its rAF loop runs **only while the Main Window is visible**
+  combat scene) that **slowly auto-rotates** a glb. It's a general **ship-or-item viewer**:
+  `setPreviewModel(url, cfg)` normalizes/recenters/orients any model; `loadPreviewModel`/`previewShip`
+  default it to the player's active ship (`model_url_high` → `model_url`), and a **showcase briefing**
+  swaps in the granted item (see below). Its rAF loop runs **only while the Main Window is visible**
   (`startShipPreview`/`stopShipPreview`), so it costs nothing during a fight; `resizePreview` keeps it crisp
   on resize/rotation.
 - **Community / feedback link.** A small localized link to the Telegram feedback group sits on the welcome
@@ -291,6 +301,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   before finding the pirate base. After advancing, the client reloads the active ship and rebuilds
   the player so the new loadout/components take effect. (Future action types: add credits, add to a
   stash, etc.)
+  - **Briefing item showcase.** When a briefing **grants gear**, the model preview panel shows that item
+    spinning instead of the ship (Machine Gun on L2, Repair drone on L3) — the eye-catching item pulls the
+    player into the text. The server attaches a **`showcase {kind,id}`** to the briefing response, derived
+    from its grant actions (`replaceWeapon`→`{weapon,to}`, `installComponent`→`{component}`; an explicit
+    `briefing.showcase` overrides). The client resolves the id in its catalog (which carries the item model
+    URLs) and calls `setPreviewModel`; on the **page-reload landing** path it gets the raw descriptor (no
+    server `showcase`) so it derives the same `{kind,id}` from the briefing `actions` client-side. No item
+    (L4 `unlockShop`) or a side mission → the preview stays/returns to the ship. See
+    `docs/plans/briefing-item-showcase.md`.
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
   `levelRunner`. Four campaign levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%

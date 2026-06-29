@@ -30,7 +30,9 @@ export const COMPONENTS = [
   { id: 11, name: 'Boss thrusters', type: 'thruster', weight: 20, stats: { power: 1.66 } }, // turn ~0.42 = 1.2× medium
   // repair drone (4th component type): passively heals the hull mid-combat, up to a fraction of max HP.
   // Installed on the player's ship via the level-3 briefing's installComponent action.
-  { id: 12, name: 'Repair drone', type: 'repair', weight: 4, price: 500, stats: { repairPerTick: 1, intervalSec: 1, maxFraction: 0.8 } }, // granted at L3; cheap to rebuy. Ticks every 1 s (3× the old 3 s cadence) for the same HP per tick.
+  { id: 12, name: 'Repair drone', type: 'repair', weight: 4, price: 500,
+    modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/repair_drone_hangar.b9d0fa33.glb', // menu-only item icon
+    stats: { repairPerTick: 1, intervalSec: 1, maxFraction: 0.8, model: { yaw: 0, scale: 1 } } }, // granted at L3; cheap to rebuy. Ticks every 1 s (3× the old 3 s cadence) for the same HP per tick. `model`: item-preview yaw/scale.
 
   // --- Player shop ladder (docs/plans/catalog-economy.md). Upgrades are mass trade-offs, not
   // power-creep; ids continue from 12. The enemy/starter parts above stay out of the shop (price 0 →
@@ -96,8 +98,11 @@ export const WEAPONS = [
     }
   },
   {
-    id: 5, name: 'Machine Gun', type: 'bullet', price: 1500, stats: { // rapid-fire kinetic: low per-hit damage, high rate of fire — strong, so NOT cheap
-      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066, class: 'kinetic'
+    id: 5, name: 'Machine Gun', type: 'bullet', price: 1500,
+    modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/machine_gun_hangar.aabc98c9.glb', // menu-only item icon
+    stats: { // rapid-fire kinetic: low per-hit damage, high rate of fire — strong, so NOT cheap
+      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066, class: 'kinetic',
+      model: { yaw: 0, scale: 1 } // item preview presentation (yaw/scale); tune after the visual check
     }
   },
   // --- Player shop ladder weapons (docs/plans/catalog-economy.md). Trade-offs: damage ↔ fire-rate ↔ range ↔ weight.

@@ -5,6 +5,25 @@
 
 ## 2026-06-29
 
+- **Mission briefings showcase the granted item's 3D model.** The level-2 briefing now spins the
+  **Machine Gun** and the level-3 briefing the **Repair drone** in the right-column preview panel (instead
+  of the player ship) while that briefing is up — the eye-catching item draws the player into the text.
+  The server attaches a **`showcase {kind,id}`** to the briefing response, derived from the briefing's
+  grant actions (`replaceWeapon`→weapon, `installComponent`→component; explicit `briefing.showcase` wins);
+  the client resolves the id in its catalog and swaps the preview via `setPreviewModel`. The client also
+  derives the showcase from the briefing `actions` on the **page-reload landing path** (where it gets the
+  raw descriptor, no server `showcase`). Reverts to the ship on level 4 (no granted item) and when a side
+  mission is selected. Postgres parity applied. See `docs/plans/briefing-item-showcase.md` + DECISIONS.
+
+- **Component & weapon 3D models + a reusable item viewer.** Components and weapons can now carry a 3D
+  model like ships do — `model_url` / `model_url_high` columns (**migration 016**, Postgres parity), seed
+  fields, getters, and client bootstrap. Only **`model_url_high`** (hangar, CloudFront, lazy-loaded) is
+  wired — items are **menu-only icons**, never rendered in combat. First two real item models, both
+  CC-BY 4.0 on CloudFront: the **Repair drone** (component 12) and the **Machine Gun** (weapon 5). The
+  hangar ship preview was generalized into a reusable **ship-or-item viewer** (`setPreviewModel(url,cfg)` +
+  `itemModelCfg`). `assets:check` now also validates component/weapon model URLs. CREDITS updated. See
+  `docs/plans/component-weapon-models.md` + DECISIONS.
+
 - **Main Window: left-menu scroll section + mobile 2-line shop cards.** The left menu now has its **own
   scroll section** that begins below the top-left auth block (`#mw-menu` uses `margin-top`, so
   `overflow-y` clips scrolled items there instead of sliding them up behind the block), and the

@@ -44,6 +44,8 @@ export async function migrate() {
       stats  JSONB   NOT NULL      -- hull {durability,volume} / engine {power,turnPower,maxSpeed,exhaust}
     );
     ALTER TABLE components ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE components ADD COLUMN IF NOT EXISTS model_url TEXT;       -- item 3D model (combat; unused for items)
+    ALTER TABLE components ADD COLUMN IF NOT EXISTS model_url_high TEXT;  -- item hangar model (CloudFront, menu icon)
     CREATE TABLE IF NOT EXISTS ships (
       id         BIGSERIAL PRIMARY KEY,
       name       TEXT  NOT NULL UNIQUE,
@@ -63,6 +65,8 @@ export async function migrate() {
       stats JSONB NOT NULL        -- damage/speed/cooldown/...
     );
     ALTER TABLE weapons ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE weapons ADD COLUMN IF NOT EXISTS model_url TEXT;       -- item 3D model (combat; unused for items)
+    ALTER TABLE weapons ADD COLUMN IF NOT EXISTS model_url_high TEXT;  -- item hangar model (CloudFront, menu icon)
     CREATE TABLE IF NOT EXISTS player_ships (
       id         BIGSERIAL PRIMARY KEY,
       player_id  TEXT    NOT NULL REFERENCES players(id),
@@ -179,15 +183,15 @@ export async function migrate() {
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
   for (const c of COMPONENTS) {
     await pool.query(
-      `INSERT INTO components (id, name, type, weight, price, stats) VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, price = EXCLUDED.price, stats = EXCLUDED.stats`,
-      [c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats)]);
+      `INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high`,
+      [c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null]);
   }
   for (const w of WEAPONS) {
     await pool.query(
-      `INSERT INTO weapons (id, name, type, price, stats) VALUES ($1, $2, $3, $4, $5::jsonb)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, price = EXCLUDED.price, stats = EXCLUDED.stats`,
-      [w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats)]);
+      `INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high`,
+      [w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null]);
   }
   for (const s of SHIPS) {
     await pool.query(
@@ -344,14 +348,25 @@ async function applyBriefingActions(playerId, actions) {
   }
 }
 
-// The briefing for a level (message + actions run server-side), or null. Returns only { textKey, text }.
+// Derive the showcase item ({ kind, id }) from a briefing's grant actions, or an explicit
+// briefing.showcase override (mirrors db.js). Cosmetic only — the client resolves the id in its catalog.
+function showcaseFromBriefing(b) {
+  if (b.showcase) return b.showcase;
+  for (const a of (b.actions || [])) {
+    if (a.type === 'replaceWeapon') return { kind: 'weapon', id: a.to };
+    if (a.type === 'installComponent') return { kind: 'component', id: a.component };
+  }
+  return null;
+}
+
+// The briefing for a level (message + actions run server-side), or null. Returns { textKey, text, showcase }.
 async function runLevelBriefing(playerId, levelId) {
   const { rows } = await pool.query('SELECT descriptor FROM levels WHERE id = $1', [levelId]);
   if (!rows[0]) return null;
   const briefing = rows[0].descriptor.briefing;
   if (!briefing) return null;
   await applyBriefingActions(playerId, briefing.actions);
-  return { textKey: briefing.textKey ?? null, text: briefing.text ?? null };
+  return { textKey: briefing.textKey ?? null, text: briefing.text ?? null, showcase: showcaseFromBriefing(briefing) };
 }
 
 export async function advanceProgress(playerId) {
@@ -441,13 +456,13 @@ export async function getShips() {
 }
 
 export async function getWeapons() {
-  const { rows } = await pool.query('SELECT id, name, type, price, stats FROM weapons ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats }));
+  const { rows } = await pool.query('SELECT id, name, type, price, stats, model_url, model_url_high FROM weapons ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
 }
 
 export async function getComponents() {
-  const { rows } = await pool.query('SELECT id, name, type, weight, price, stats FROM components ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats }));
+  const { rows } = await pool.query('SELECT id, name, type, weight, price, stats, model_url, model_url_high FROM components ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
 }
 
 // SFX catalog: sounds registry (key->url) + class-based routing map (mirrors db.js).

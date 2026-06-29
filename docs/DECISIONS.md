@@ -941,6 +941,43 @@ viewport on the existing renderer** (same context), not a new renderer. See
 alone — renaming keys ripples through every locale file for zero user benefit. The death-overlay button keeps
 `ui.gameover.back_to_hangar` for the same reason.
 
+## 28. Item (component/weapon) 3D models — hangar-only icons, reuse the ship pipeline & prefix
+
+**Decision.** Components and weapons get the **same** `model_url` / `model_url_high` columns + `stats.model`
+convention as ships, fed by the **same `assets:*` pipeline**. But we wire **only `model_url_high`** (the
+hangar/CloudFront glb) and leave `model_url` (combat/same-origin) null, and the item hangar glbs reuse the
+existing **`ships-hangar/`** S3 prefix rather than a new `items-hangar/` one.
+
+**Why.** Items are **never rendered in the combat scene** — there they're part of the ship — so an item
+model is a **menu-only icon** (shown spinning in the preview). Wiring the combat path would mean baking item
+glbs into the deploy image (the CI `ships-combat/` pull/bake step) for no gameplay use, and a new S3 prefix
+would mean pipeline surgery (`assets-config.mjs` + push/check) for what is just "another high-poly menu glb".
+So we reuse the ship machinery wholesale and only paste the hangar URL. The build still *emits* the unused
+combat glb (harmless). Minor naming wart (a machine-gun glb under `ships-hangar/`) accepted over churn;
+flagged as a future cleanup. The hangar **ship preview** was generalized to a ship-or-item viewer
+(`setPreviewModel`) rather than standing up a second Three.js context. See
+`docs/plans/component-weapon-models.md`.
+
+## 29. Briefing item showcase — server-derived `showcase {kind,id}`, client-derived on reload
+
+**Decision.** A level briefing that **grants gear** shows that item's spinning 3D model in the preview. The
+server attaches a **`showcase {kind,id}`** to the briefing it returns, **derived from the briefing's own
+grant actions** (`replaceWeapon`→weapon, `installComponent`→component; an explicit `briefing.showcase` in the
+seed overrides). It sends only `{kind,id}` — not a model URL — because the client already has the catalog
+(with the URLs). The **client also derives** the same `{kind,id}` from the briefing `actions` on the
+page-reload landing path.
+
+**Why.** The hard constraint: a briefing's `actions` run **server-side** and the advance response
+deliberately strips them, returning only `{textKey,text}` — so the client can't, by itself, know what an
+*advance* granted. Deriving `showcase` from the actions server-side (single source of truth, no seed
+duplication) and shipping `{kind,id}` solves that without a new endpoint (it rides the existing response).
+The reload-landing path is different: there the client receives the **raw level descriptor** (which still
+carries `actions`, but no server-computed `showcase`), so the client derives the same mapping itself — one
+small helper makes **both** entry paths show the item. Sending `{kind,id}` (not the URL) keeps the server
+ignorant of asset URLs (they live in the catalog/seed the client already loads). The item renders in the
+**existing** preview panel (zero new GL context); no item / a side mission → it reverts to the ship. See
+`docs/plans/briefing-item-showcase.md`.
+
 ## Future ideas
 
 solid asteroids with bounce ·

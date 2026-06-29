@@ -61,16 +61,21 @@ export default async function ({ page, assert, shot }) {
   assert.equal(afterCancel.confirmOn, false, 'Cancel closes the confirm dialog');
   assert.equal(afterCancel.armed, false, 'Cancel snaps the slide back (not armed)');
 
-  // Confirm path: intercept the reset call so we can assert it fires (the handler then reloads the page)
+  // Confirm path: intercept the reset call so we can assert it fires (the handler then reloads the page).
+  // try/finally so the mock is ALWAYS removed — otherwise a failure here leaks it into later scenarios
+  // (their real /reset gets stubbed → e.g. 97-briefing-showcase can't roll progress back).
   let resetCalled = null;
   await page.route('**/api/players/*/reset', async (route) => {
     resetCalled = route.request().method();
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
   });
-  await dragSlide(1.2);
-  await page.waitForTimeout(100);
-  await page.click('#reset-do');
-  await page.waitForTimeout(300);
-  assert.equal(resetCalled, 'POST', 'Confirm reset POSTs to /api/players/:id/reset');
-  await page.unroute('**/api/players/*/reset');
+  try {
+    await dragSlide(1.2);
+    await page.waitForTimeout(100);
+    await page.click('#reset-do');
+    await page.waitForTimeout(300);
+    assert.equal(resetCalled, 'POST', 'Confirm reset POSTs to /api/players/:id/reset');
+  } finally {
+    await page.unroute('**/api/players/*/reset');
+  }
 }

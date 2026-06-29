@@ -351,7 +351,8 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   assert.equal(drone.id, 12);
   assert.equal(drone.type, 'repair');
   assert.equal(drone.weight, 4);
-  assert.deepEqual(drone.stats, { repairPerTick: 1, intervalSec: 1, maxFraction: 0.8 });
+  assert.deepEqual(drone.stats, { repairPerTick: 1, intervalSec: 1, maxFraction: 0.8, model: { yaw: 0, scale: 1 } });
+  assert.match(drone.modelUrlHigh, /\/ships-hangar\/repair_drone_hangar\./); // item 3D model (menu icon) wired
   const light = comps.find((c) => c.name === 'Light hull');
   assert.equal(light.type, 'hull');
   assert.equal(light.weight, 8);
