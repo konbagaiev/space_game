@@ -5,6 +5,14 @@
 
 ## 2026-06-29
 
+- **Main Window: left-menu scroll section + mobile 2-line shop cards.** The left menu now has its **own
+  scroll section** that begins below the top-left auth block (`#mw-menu` uses `margin-top`, so
+  `overflow-y` clips scrolled items there instead of sliding them up behind the block), and the
+  **`#account-bar` is opaque** so nothing shows through it. Shop/loadout/stash item cards now lay out as
+  **two rows on touch phones** — the item name on top, the **price + action button centered** on a second
+  row (a long name + price + Buy don't fit one line on a phone) — while **desktop keeps them on one line**
+  (`body.touch .bay-item` switches to a stacked column).
+
 - **Main Window: ship-stats strip relocated + bay shrunk.** The ship characteristics
   (HP / Accel / Turn / Weight) moved out of the shop bay to a **compact one-line strip above the model**
   (in the right column, under the "Ships" label) — fonts halved, **no boxes** — and it now renders

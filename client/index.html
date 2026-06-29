@@ -84,9 +84,11 @@
   }
   #mainwin.on { display: grid; }
   /* left menu */
-  /* padding-top clears the auth (nickname / login-signup) block, which sits taller than the wordmark in
-     the top-left — so the left menu never overlaps it. */
-  #mw-menu { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow-y: auto; padding-top: 34px; }
+  /* margin-top (NOT padding) gives the menu its OWN scroll section starting BELOW the top-left auth
+     (nickname / login-signup) block: the overflow viewport begins below it, so scrolled menu items are
+     CLIPPED there instead of sliding up behind the auth block. The opaque #account-bar is a backstop
+     for taller auth states. */
+  #mw-menu { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow-y: auto; margin-top: 34px; }
   #mw-menu .mw-row { display: flex; align-items: center; gap: 6px; }
   .mw-collapse {
     pointer-events: auto; cursor: pointer; flex: none; width: 30px; height: 38px; line-height: 1;
@@ -215,23 +217,33 @@
   .bay-item {
     background: rgba(26,36,60,.7); border: 1px solid rgba(120,150,210,.22);
     border-radius: 9px; padding: 9px 10px; margin-bottom: 8px;
+    /* Desktop: head + foot share ONE line (name left, price/buttons right), stats wraps full-width below.
+       Touch phones stack into two rows instead — see `body.touch .bay-item` below. */
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
   }
   .bay-item.empty { opacity: .55; border-style: dashed; }
   .bay-item.required-empty { border-color: rgba(255,120,100,.6); color: #ffb3a8; opacity: .9; }
   /* header row: name (ellipsizes) · meta (slot tag / price) · (i) — each its own cell, never overlap */
-  .bay-item .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .bay-item .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
   .bay-item .head .info-btn { margin-left: -2px; } /* hug the title */
-  /* layout: [name][i] on the left, then empty space, then the meta (price/slot) + buttons at the END */
+  /* head row: [name][i] on the left, the slot tag (loadout) pushed to the right end. */
   .bay-item .name-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
-  .bay-item .meta { flex: none; margin-left: auto; } /* margin-left:auto pushes meta + actions to the right end */
+  .bay-item .meta { flex: none; margin-left: auto; } /* margin-left:auto pushes the slot tag to the right end */
+  /* price + action button(s). Desktop: sits inline at the right of the head. Touch: its own centered row. */
+  .bay-item .foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; flex: 0 0 auto; }
+  .bay-item .foot .meta { margin-left: 0; } /* in the centered foot the price must not be pushed aside */
   .bay-item .slot-tag { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; opacity: .5; }
   .bay-item .price { color: #ffd86b; font-size: 13px; white-space: nowrap; }
   .bay-item .owned-badge {
     flex: none; font-size: 16px; padding: 2px 9px; border-radius: 11px; white-space: nowrap;
     background: rgba(110,226,154,.15); border: 1px solid rgba(110,226,154,.4); color: #9ff0b8;
   }
-  .bay-item .stats { font-size: 12px; opacity: .72; margin-top: 3px; line-height: 1.45; }
+  .bay-item .stats { font-size: 12px; opacity: .72; margin-top: 3px; line-height: 1.45; flex-basis: 100%; } /* desktop: own full-width line below head+foot */
   .bay-item .stats.hidden { display: none; }
+  /* Touch phones only: stack the card into TWO rows — name on top, price + button centered below (a long
+     item name + price + Buy don't fit one line on a phone). Desktop keeps everything on one line. */
+  body.touch .bay-item { flex-direction: column; align-items: stretch; }
+  body.touch .bay-item .head, body.touch .bay-item .foot, body.touch .bay-item .stats { flex: 0 0 auto; }
   /* characteristics show only when the (i) button is tapped (it toggles .hidden) — no hover reveal */
   .bay-item .actions { display: inline-flex; gap: 6px; flex: none; }
   .bay-item .actions button, .bay-item .info-btn {
@@ -301,7 +313,7 @@
   #account-bar {
     position: fixed; top: 11px; left: 56px; z-index: 13; display: none; /* top-aligned with the settings gear; shifted right to clear it (top-left corner) */
     font-family: system-ui, sans-serif; font-size: 13px; color: #cfe0ff;
-    background: rgba(10,16,30,.6); border: 1px solid rgba(120,150,210,.25);
+    background: rgb(11,17,32); border: 1px solid rgba(120,150,210,.25); /* opaque: scrolled left-menu items must not show through it */
     border-radius: 9px; padding: 8px 12px; max-width: 340px; text-align: left; line-height: 1.5;
   }
   body.menu #account-bar { display: block; }
@@ -3249,22 +3261,26 @@ function renderShipStatsBar(st) {
 function itemCard(n, slotTag, actions, extraClass = '') {
   const stats = statLine(n.kind, n.type, n.s, n.weight);
   // header row: name (ellipsizes) · meta (slot tag for loadout, price for shop) · (i) — own cells, no overlap
-  const meta = slotTag
-    ? `<span class="meta slot-tag">${esc(slotTag)}</span>`
-    : (n.price != null ? `<span class="meta price">${esc(priceLabel(n.price))}</span>` : '');
+  // The slot tag (loadout) stays on the header row; the price moves to the centered second row, next to
+  // the action button(s).
+  const slotMeta = slotTag ? `<span class="meta slot-tag">${esc(slotTag)}</span>` : '';
+  const priceMeta = (!slotTag && n.price != null) ? `<span class="meta price">${esc(priceLabel(n.price))}</span>` : '';
   const qty = n.qty > 1 ? ` ×${n.qty}` : '';
   const data = (n.kind && n.refId != null) ? `data-kind="${n.kind}" data-ref-id="${n.refId}"` : '';
   const acts = actions.map((a) => `<button class="${a.cls || ''}" data-act="${a.act}" ${a.slot ? `data-slot="${a.slot}"` : data}>${esc(a.label)}</button>`).join('');
   // "owned" badge (shop only): how many of this item the player already has (equipped + in stash)
   const owned = n.owned > 0 ? `<span class="owned-badge">${esc(t('ui.shop.owned', { n: n.owned }))}</span>` : '';
+  // Two rows, always: the item name (+ owned + info + slot tag) on top, then the price + action button(s)
+  // CENTERED on a second row — so a long item name and the price/Buy never have to share one line (they
+  // don't fit on a phone). See docs/plans/main-window-redesign.md.
   return `<div class="bay-item ${extraClass}">
     <div class="head">
       <span class="name-text" title="${esc(n.name)}">${esc(n.name)}${qty}</span>
       ${owned}
       ${stats ? `<button class="info-btn" data-act="info" aria-label="info">i</button>` : ''}
-      ${meta}
-      ${acts ? `<span class="actions">${acts}</span>` : ''}
+      ${slotMeta}
     </div>
+    ${(priceMeta || acts) ? `<div class="foot">${priceMeta}${acts ? `<span class="actions">${acts}</span>` : ''}</div>` : ''}
     ${stats ? `<div class="stats hidden">${esc(stats)}</div>` : ''}
   </div>`;
 }
