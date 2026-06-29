@@ -15,7 +15,7 @@ export default async function ({ page, assert, shot }) {
   // runner's auto-takeoff may not have fired — launch from whichever screen is up.
   await page.evaluate(() => {
     const vis = (id) => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; };
-    if (vis('hangar')) document.getElementById('hangar-go').click();
+    if (vis('mainwin')) document.getElementById('mw-go').click();
     else if (vis('welcome')) document.getElementById('takeoff').click();
   });
   await page.waitForTimeout(400); // let the first wave spawn + start moving

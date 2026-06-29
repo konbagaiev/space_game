@@ -906,9 +906,40 @@ to pause once the game itself is landscape). The button stays menu-gated because
 the **rocket button** mid-fight; re-entering fullscreen is a menu-time action anyway.
 
 *Open follow-up:* the rotation direction (game-top lands on the screen's right) is a one-line flip
-(`translateY(100vh) rotate(-90deg)` + invert `toGame`) if it reads backwards on a real device; a few
-`vw`/`vh`-sized UI bits (e.g. the hangar shop bay's `min(1040px,96vw)`) measure against the real viewport,
-not the rotated game box, so they can look slightly narrow until switched to the game dimensions.
+(`translateY(100vh) rotate(-90deg)` + invert `toGame`) if it reads backwards on a real device.
+
+## 27. Main Window redesign — drop "Hangar"; a fixed landscape layout with a dedicated ship preview
+
+**Decision.** The between-battles / landing screen (formerly the **Hangar**) became the **Main Window**:
+a fixed CSS-grid landscape layout (top bar | left menu | work zone | 25% ship-model preview) instead of a
+centered, vertically-scrolling column. Two sub-decisions are worth recording:
+
+**(a) The "Missions" menu unifies the campaign briefing with the side missions.** The old UI split them —
+the campaign briefing was the big centered hangar text + Take-off, while the three side missions were a
+separate top-right button board opening a modal. The redesign folds both into **one left-menu list**: the
+campaign mission as the **primary** row, the side missions as **secondary** rows; selecting any row renders
+its description + Take-off into the work zone. *Why:* they are the same kind of thing (a launchable mission
+descriptor played by the `levelRunner`) presented two different ways; one list is simpler to build, one
+work-zone renderer (`renderMissionView`) serves both, and the top-right corner frees up for the (inactive)
+"Ships" entry. The old `#mission-btns` board + `#mission-panel` modal were deleted, not hidden.
+
+**(b) The ship preview is a dedicated mini Three.js view, not a hole punched in the menu to the battlefield.**
+The combat scene renders *behind* the menu's opaque gradient; showing the ship in the right 25% could either
+(i) make that region transparent and position the player ship in the live scene, or (ii) render a separate
+small scene. We chose **(ii)**: `#mw-ship` gets its own `WebGLRenderer` + scene + camera + light + a fresh
+RoomEnvironment PMREM, loads the player's `_hangar` glb, and auto-rotates — its rAF loop gated to Main-Window
+visibility. *Why:* (i) entangles the menu with the battlefield camera/arena state and the parallax backdrop
+for a simple "turntable" of one ship; (ii) is self-contained, reuses the existing hangar glbs (no new asset
+→ no `CREDITS.md` change), and is trivially start/stoppable so it costs nothing in a fight. The known cost is
+a **second GL context** on weak phones; if profiling shows it hurts, the fallback is a **scissored second
+viewport on the existing renderer** (same context), not a new renderer. See
+`docs/plans/main-window-redesign.md`.
+
+**Naming.** "Hangar" was dropped from on-screen text and from the code/DOM/i18n identifiers
+(`showHangar`→`showMain`, `launchFromHangar`→`launchCampaign`, `openHangarShop`→`openBay`, `#hangar`→
+`#mainwin`, `#hangar-go`→`#mw-go`, …). The i18n **string keys** (`ui.shop.*`, `ui.hangar.default`) were left
+alone — renaming keys ripples through every locale file for zero user benefit. The death-overlay button keeps
+`ui.gameover.back_to_hangar` for the same reason.
 
 ## Future ideas
 

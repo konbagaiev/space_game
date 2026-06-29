@@ -1,41 +1,48 @@
-// Mobile hangar: on a short (landscape) viewport the shop bay makes the hangar taller than the screen,
-// so it must SCROLL and the Take-off button must be reachable. Also checks the single touch-only floating
-// "Full screen" button is gated to touch menus (body.touch + body.menu). Runs last (it shrinks the viewport).
+// Mobile Main Window: on a short (landscape) viewport the redesigned Main Window is a fixed full-height
+// grid — left menu | work zone | ship-model preview — so nothing relies on page scroll and the Take-off
+// button is on-screen without scrolling. Also checks the single touch-only floating "Full screen" button
+// is gated to touch menus (body.touch + body.menu). Runs late (it shrinks the viewport).
 export const name = '07-mobile-hangar';
 
 export default async function ({ page, assert, shot }) {
   await page.setViewportSize({ width: 760, height: 360 }); // mobile-landscape-ish, short height
 
-  // the shared player is campaign-cleared (scenario 05) → reload lands on the Hangar with the shop bay
+  // the shared player is campaign-cleared (scenario 05) → reload lands on the Main Window
   await page.goto(page.url(), { waitUntil: 'load' });
   await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
-  await page.waitForSelector('#hangar', { state: 'visible', timeout: 5000 });
+  await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
 
-  // content overflows the short viewport → the hangar scrolls, and Take-off lives below the shop bay
+  // the 3-column grid lays out left→right: menu, work zone, ship preview — and Take-off is on-screen
   const m = await page.evaluate(() => {
-    const h = document.getElementById('hangar');
-    return { scrollable: h.scrollHeight > h.clientHeight + 4, hasGo: !!document.getElementById('hangar-go') };
+    const main = document.getElementById('mainwin');
+    const menu = document.getElementById('mw-menu').getBoundingClientRect();
+    const work = document.getElementById('mw-work').getBoundingClientRect();
+    const ship = document.getElementById('mw-ship-col').getBoundingClientRect();
+    const go = document.getElementById('mw-go').getBoundingClientRect();
+    return {
+      isGrid: getComputedStyle(main).display === 'grid',
+      ordered: menu.left < work.left && work.left < ship.left,
+      shipQuarter: ship.width / window.innerWidth, // ~25%
+      goInView: go.top >= 0 && go.bottom <= window.innerHeight && go.width > 0,
+    };
   });
-  assert.ok(m.scrollable, 'the hangar scrolls when content exceeds a short viewport');
-  assert.ok(m.hasGo, 'the Take-off button is present');
+  assert.ok(m.isGrid, 'the Main Window is a fixed grid (no page-scroll column)');
+  assert.ok(m.ordered, 'columns are laid out left→right: menu, work zone, ship preview');
+  assert.ok(m.shipQuarter > 0.18 && m.shipQuarter < 0.32, 'the ship-model column is ~25% of the width');
+  assert.ok(m.goInView, 'the Take-off button is on-screen without scrolling');
+  await shot('mobile-main-window');
 
-  // Take-off can be scrolled fully into view (the reported bug: it was clipped / unreachable)
-  const inView = await page.evaluate(() => {
-    const go = document.getElementById('hangar-go');
-    go.scrollIntoView({ block: 'center' });
-    const r = go.getBoundingClientRect();
-    return r.top >= 0 && r.bottom <= window.innerHeight;
-  });
-  assert.ok(inView, 'Take-off scrolls fully into view');
-  await shot('mobile-hangar-takeoff');
+  // Only the mission description scrolls (not the whole frame): it has its own overflow.
+  const descScrolls = await page.evaluate(() => getComputedStyle(document.getElementById('mw-mission-desc')).overflowY === 'auto');
+  assert.ok(descScrolls, 'the mission description is the independent scroller');
 
-  // Single floating "Full screen" button: hidden on non-touch; shown on touch menus (the Hangar adds
+  // Single floating "Full screen" button: hidden on non-touch; shown on touch menus (the Main Window adds
   // body.menu); hidden once fullscreen (body.fs). It carries the translated words on aria-label/title.
   const fs = await page.evaluate(() => {
     const btn = document.getElementById('fullscreen-btn');
     const disp = () => getComputedStyle(btn).display;
     const hiddenNonTouch = disp() === 'none';
-    document.body.classList.add('touch'); // hangar already set body.menu
+    document.body.classList.add('touch'); // the Main Window already set body.menu
     const shownOnTouchMenu = disp() !== 'none';
     document.body.classList.add('fs');
     const hiddenWhenFs = disp() === 'none';

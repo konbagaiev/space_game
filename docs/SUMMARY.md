@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-28 (enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-06-29 (Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -38,8 +38,9 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   steering stick and the reset-progress slider); pinch distance is rotation-invariant so it needs no mapping.
   When auto-rotate is on and the user turns the phone to real landscape, `rotated` becomes false and the
   native landscape viewport takes over seamlessly. Desktop is unaffected (`rotated` is touch-only).
-- **Mobile menus & Full screen:** the welcome/hangar screens **scroll** (top-aligned + `overflow-y:auto` on
-  short/landscape viewports) so the **Take off** button below the shop bay stays reachable. A single
+- **Mobile menus & Full screen:** the **welcome** screen still **scrolls** (top-aligned + `overflow-y:auto`
+  on short/landscape viewports); the **Main Window** is a fixed full-height grid (only its work-zone
+  description scrolls), so the **Take off** button is always on-screen. A single
   touch-only **floating Full-screen button** (`#fullscreen-btn`, fixed bottom-right, **icon-only `⛶`**,
   brighter than the old inline buttons) re-enters fullscreen to hide the browser chrome (URL bar, tabs) after
   the app is minimized/restored. It is gated to **touch menus** (`body.touch.menu`) so it never overlaps the
@@ -230,11 +231,35 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (`CAM_OFFSET`) is scaled by the player's zoom (`0.6–2.2×`) along its angle — zoom never changes the
   angle, FOV, or camera type.
 - **Landing screen (reflects the current level)** — on load the homepage depends on the player's current
-  level: if it has a **briefing** (level 2+), the client lands on the **Hangar** showing that briefing (so a
-  returning player sees *their* mission, not the level-1 intro); otherwise (level 1 / new player) it shows
-  the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"), frames the threat
-  as a pirate raid, lets them **pick a ship** (cards with HP + weapon summary) and **Take off**. Either way
-  the scene backdrop renders behind it and the level only starts on take-off.
+  level: if it has a **briefing** (level 2+), the client lands on the **Main Window** showing that briefing
+  (so a returning player sees *their* mission, not the level-1 intro); otherwise (level 1 / new player) it
+  shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"), frames the
+  threat as a pirate raid, lets them **pick a ship** (cards with HP + weapon summary) and **Take off**.
+  Either way the scene backdrop renders behind it and the level only starts on take-off.
+- **Main Window (the between-battles / landing screen; was the "Hangar")** — `#mainwin`, a **fixed
+  landscape layout** (CSS grid, not a scrolling column), built for mobile landscape but unified for desktop
+  (`docs/plans/main-window-redesign.md`). **Top bar** (fixed elements above the grid): the **settings gear**
+  (top-left), the **auth block** next to it (top-aligned with the gear; shows the player's **nickname** if
+  set, else "Guest", + a Login/Signup button until they have a real account), the enlarged **Vega
+  Sentinels** wordmark centered (`#gametitle`, scaled up on `body.menu`; the old on-screen "Hangar" title is
+  gone), and an **inactive "Ships"** label top-right (`#mw-ships`, reserved for future ship-buying).
+  **Below**: a 3-column grid — **left menu** (`#mw-menu`: Missions / Loadout / Stash / Shop) | **work zone**
+  (`#mw-work`) | a **25% live ship-model preview** (`#mw-ship`). The **Missions** item (collapsible via the
+  caret) lists the **campaign mission (primary)** and, once the shop is unlocked, the **three side missions
+  (secondary)**; selecting a row renders its description + Take-off into the work zone (**only the
+  description scrolls**, `#mw-mission-desc`). Loadout/Stash/Shop open the **shop bay in the work zone**
+  (`#mw-view-bay`) — the bay's internals are unchanged, but the screen is switched from the **left menu**
+  (no in-bay nav strip); those three menu items are hidden until the shop is unlocked. JS:
+  `showMain(briefing)` (was `showHangar`) shows it and starts the preview; `selectMenu(which)` switches the
+  work-zone view; `buildMissionList()` + `renderMissionView(m)` drive the mission list/description;
+  `launchCampaign()` (was `launchFromHangar`) and `launchMission(m)` launch + stop the preview; `openBay()`
+  (was `openHangarShop`) gates + loads the bay.
+- **Ship-model preview** (`#mw-ship`, right ~25%) — a **small self-contained Three.js view** (own
+  `WebGLRenderer` + scene + camera + a directional light + the same RoomEnvironment PMREM reflections as the
+  combat scene) that loads the player's **`model_url_high`** (`_hangar` glb; falls back to `model_url`) and
+  **slowly auto-rotates** it. Its rAF loop runs **only while the Main Window is visible**
+  (`startShipPreview`/`stopShipPreview`), so it costs nothing during a fight; `resizePreview` keeps it crisp
+  on resize/rotation.
 - **Community / feedback link.** A small localized link to the Telegram feedback group sits on the welcome
   screen and the game-over/victory overlay (`.community-link`). Its text and URL are i18n values
   (`ui.community.label` / `ui.community.url`, via `data-i18n` + `data-i18n-href`), so EN players get the
@@ -244,14 +269,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Backend). On load the client fetches **that** level (`GET /api/players/:id/level`, not a hard-coded
   one); clearing a level **unlocks the next** (the `win` handler POSTs `/advance`, then loads the new
   level so the next **Restart** plays it). A new player starts on `level-1`; the last level stays put.
-- **Victory → Hangar → next level.** On a win the result overlay shows a **Continue** button (a loss
-  shows **Restart**/retry); Continue opens the **Hangar screen** — the between-battles screen (also the
-  landing/homepage; future home for ship management). It shows the current/next mission's briefing in large
-  (2×) text, with a **Take off** button that launches the level. The same Hangar is used on page load and
-  after a win (and `launchFromHangar` starts the loop the first time). **Once the hangar shop is unlocked**
-  (cleared the final level), the **death overlay** also offers a secondary **Back to Hangar** button beside
-  Restart (banked credits already applied) → returns to the Hangar to shop / change loadout instead of an
-  instant retry; before unlock only Restart shows.
+- **Victory → Main Window → next level.** On a win the result overlay shows a **Continue** button (a loss
+  shows **Restart**/retry); Continue opens the **Main Window** (see above) — the between-battles screen (also
+  the landing/homepage). The campaign briefing shows as the **primary mission** in the work zone with a
+  **Take off** button that launches the level. The same Main Window is used on page load and after a win
+  (and `launchCampaign` starts the loop the first time). **Once the shop is unlocked** (cleared the final
+  level), the **death overlay** also offers a secondary **Back to Hangar** button beside Restart (banked
+  credits already applied) → returns to the Main Window to shop / change loadout instead of an instant
+  retry; before unlock only Restart shows. (The button keeps its i18n key `ui.gameover.back_to_hangar`.)
 - **Between-level briefings** — a level descriptor can carry an optional **`briefing`** (`{ textKey,
   text, actions[] }`). When the player advances **into** a level, the server runs that briefing's
   `actions` (server-authoritative, once — progress only moves forward) and returns the message; the
@@ -294,11 +319,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   unbanked amount). New players start at **1000 credits**. HUD (top-right) shows two counters — **Credits**
   (the persistent balance) and **Earned** (this run) — plus **Destroyed** (kills) and **Enemies** (alive).
   Banking posts `{ credits, kills, durationMs }` to `POST /api/games`, which returns the new balance.
-- **Hangar shop & stash (the "spend" side)** — once the player **clears the final level**, the Hangar
-  gains a **shop bay** with three **nav-switched screens** (not side-by-side columns): **Loadout** (what's
-  equipped), **Stash** (owned-but-not-equipped inventory, a qty model), and **Shop** — a **two-pane** screen
-  (a type list **Hull / Engine / Thrusters / Repair / Weapon** → the items of the selected type on the
-  right). The Shop lists only **buyable** items (`price > 0`); **enemy parts stay priced 0 (hidden)**, while
+- **Shop & stash (the "spend" side)** — once the player **clears the final level**, the Main Window's left
+  menu gains three items — **Loadout** (what's equipped), **Stash** (owned-but-not-equipped inventory, a qty
+  model), and **Shop** — each opening that screen as the **bay view in the work zone** (`#mw-view-bay`;
+  switched from the left menu, not an in-bay nav strip). **Shop** is a **two-pane** screen (a type list
+  **Hull / Engine / Thrusters / Repair / Weapon** → the items of the selected type on the right). The Shop lists only **buyable** items (`price > 0`); **enemy parts stay priced 0 (hidden)**, while
   the player's **starter gear is cheap-but-buyable** (Basic hull 300 / engine 500 / thrusters 400 / repair
   drone 500 / homing rocket 600) so each type's ladder starts low. Each item's **full characteristics show
   on hover (desktop) or the (i) tap (mobile)** — for weapons: damage, RoF/reload, projectile speed, range,
@@ -310,17 +335,18 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   maneuverability / weight** with a **▲/▼ delta vs the previous config** on every change (derived client-side;
   the server stays authoritative on the saved config). **Required slots** (hull/engine/thruster) can't be
   sold while equipped and **block take-off when empty** (the button greys out); **optional** equipped items
-  (weapons, repair drone) sell directly from the hangar. On unlock the **basic gun (id 1)** swapped out after
+  (weapons, repair drone) sell directly from the bay. On unlock the **basic gun (id 1)** swapped out after
   level 2 is **backfilled into the stash**. **Prices:** the player ladder has draft prices (strawman, see
   `docs/plans/economy-shop-v2.md`) anchored to the **corrected ~5800-credit first-shop budget** (the budget
   includes the ×2 victory bonus per level; a flawless run banks ~4280, retries push it toward ~5800 — so the
   Heavy hull at 6000 is the aspirational big buy); sell = `floor(price*0.75)`, server-computed. The shop
   lists only `price > 0` items, so the curated ladder shows and enemy/starter parts
   don't. Around-model slot icons are a later polish (not built yet).
-- **Side missions — the 3-choice board** (`docs/plans/mission-generator.md`, provisional UI). Unlocked
-  **after clearing the campaign** (same gate as the shop). On the menus, **three buttons top-right**
-  (Mission 1/2/3); clicking one opens a **panel** with that mission's flavor description + est. reward and
-  a **Take off** button. The three flavors — **mining / research / freighter** (i18n flavor text only) —
+- **Side missions — in the Main Window's Missions list** (`docs/plans/mission-generator.md` +
+  `main-window-redesign.md`). Unlocked **after clearing the campaign** (same gate as the shop). They render
+  as the **secondary rows** under the **Missions** menu item (below the primary campaign row); selecting one
+  shows its flavor description + est. reward + a **Take off** button in the work zone (`buildMissionList` /
+  `renderMissionView`). The three flavors — **mining / research / freighter** (i18n flavor text only) —
   are all the **same difficulty**: waves of **pirate gunner / rocketeer / heavy** (40/40/20 → 35/35/30),
   then a **2-boss finale** (two buffed `first pirate boss`). A mission is just a level-style descriptor played by
   the existing `levelRunner`; clearing it **banks per-kill ×2 credits like a level but does NOT advance the
@@ -331,7 +357,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   matching structure, the others are in the distance). They sit **just below the combat plane** (strong
   parallax like the background asteroids). Server-owned (`GET /api/players/:id/missions`,
   gated); rewards bank via the existing `/api/games` (server-sealed per-mission rewards = later integrity
-  item). The board refreshes whenever a menu is shown.
+  item). The list refreshes whenever the Main Window is shown (`refreshMissions`).
 
 ## Visuals
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer)
@@ -444,7 +470,10 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   the synth** if the buffer/key is missing. **Routing lives in the DB, not the client:** two tables —
   **`sounds`** (`key → url + gain`, the asset registry) and **`sound_map`** (`(entity, class, event) → sound
   key`) — seeded from `SOUNDS`/`SOUND_MAP` in `catalog_seed.js`. Each **ship**/**weapon** carries a
-  **`stats.class`** (ship `fighter`/`capital`/`player`; weapon `kinetic`/`cannon`/`rocket`). The client
+  **`stats.class`** (ship `fighter`/`capital`/`player`; weapon `kinetic`/`cannon`/`rocket`). The per-sound
+  **`gain`** (default 1) is a playback trim applied on top of the baked-in file volume — the client preloads
+  it via `audio.setSampleGains(...)` and `playSample` multiplies each one-shot by it (currently `kinetic`
+  machine-gun fire is at **0.7**, i.e. −30%). The client
   fetches both via **`GET /api/sounds`** in `bootstrap()`, preloads every `sounds` url, and resolves at each
   call site with **`sfxFor(entity, class, event)`** (e.g. ship death → `sfxFor('ship', e.class, 'explode')`;
   gun fire → `sfxFor('weapon', w.class, 'fire')`; rocket detonation resolves `(weapon, class, 'explode')`,

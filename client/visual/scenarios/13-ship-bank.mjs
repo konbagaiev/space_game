@@ -16,8 +16,8 @@ export default async function ({ page, assert, shot }) {
   // Launch from whichever menu is up (by scenario order the throwaway player may land on the Hangar,
   // not the welcome screen), then focus the canvas so keyboard turning reaches the game.
   await page.evaluate(() => {
-    const vis = (id) => { const el = document.getElementById(id); return el && el.style.display !== 'none'; };
-    if (vis('hangar')) document.getElementById('hangar-go').click();
+    const vis = (id) => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; };
+    if (vis('mainwin')) document.getElementById('mw-go').click();
     else if (vis('welcome')) document.getElementById('takeoff').click();
   });
   await page.waitForTimeout(200);

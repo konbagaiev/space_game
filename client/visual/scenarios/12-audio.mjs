@@ -28,7 +28,7 @@ export default async function ({ page, assert, shot }) {
   // On a menu (Welcome or Hangar) the gear is visible; the engine starts on the menu mood once unlocked.
   const menuUp = await page.evaluate(() => {
     const vis = (id) => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; };
-    return vis('welcome') || vis('hangar');
+    return vis('welcome') || vis('mainwin');
   });
   assert.ok(menuUp, 'a menu screen is up');
   assert.ok(await page.evaluate(() => getComputedStyle(document.getElementById('settings-btn')).display !== 'none'),
@@ -81,7 +81,7 @@ export default async function ({ page, assert, shot }) {
   // Music scene follows state: launch a fight → combat mood; the gear hides during a live fight.
   await page.evaluate(() => {
     const vis = (id) => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; };
-    if (vis('hangar')) document.getElementById('hangar-go').click();
+    if (vis('mainwin')) document.getElementById('mw-go').click();
     else if (vis('welcome')) document.getElementById('takeoff').click();
   });
   await page.waitForTimeout(300);

@@ -3,6 +3,32 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-29
+
+- **Main Window redesign — dropped the "Hangar" name.** The between-battles / landing screen is now the
+  **Main Window**, a fixed landscape layout instead of a centered, vertically-scrolling column. Top bar:
+  the settings gear (top-left, top-aligned with the auth block), the **auth block** next to it, the
+  enlarged **Vega Sentinels** wordmark centered (the on-screen "Hangar" title is gone), and an inactive
+  **Ships** label top-right (future ship-buying). Below it a 3-column grid — **left menu** (Missions /
+  Loadout / Stash / Shop) | **work zone** | a **25% live ship-model preview**. The **Missions** item
+  (collapsible) lists the campaign mission (primary) and, once unlocked, the three side missions
+  (secondary); selecting one renders its description + Take-off into the work zone (only the description
+  scrolls). The old top-right **side-mission board + its modal panel were removed** — selection moved into
+  the left menu. The shop bay (Loadout/Stash/Shop) is unchanged internally but now opens **in the work
+  zone** from the left menu (the in-bay nav strip is gone). The **auth block shows the player's nickname**
+  (not "Guest") whenever they've set one, even without a full account. New **ship-model preview**: a
+  small, self-contained Three.js view (`#mw-ship`) that loads the player's `_hangar` glb and slowly
+  rotates; its render loop runs only while the Main Window is visible (costs nothing in a fight).
+  Code/DOM/i18n renamed `hangar*`→`main*`/`mw-*` (`showHangar`→`showMain`, `launchFromHangar`→
+  `launchCampaign`, `openHangarShop`→`openBay`, `#hangar`→`#mainwin`, `#hangar-go`→`#mw-go`); new i18n
+  keys `ui.mainwin.missions|ships|primary` (EN+RU). Visual scenarios 05/07/10 reworked to the new layout.
+  See `docs/plans/main-window-redesign.md` + DECISIONS §24.
+
+- **Machine-gun fire is quieter (−30%).** The `kinetic` weapon-fire SFX (player guns 1/5/7) now plays at
+  `gain: 0.7`. Wired the long-unused per-sound `gain` from the `sounds` table through to playback: the
+  client preloads gains via `audio.setSampleGains(...)` and `playSample` multiplies each one-shot by its
+  registered gain (default 1). Set in `SOUNDS` (`catalog_seed.js`); re-seeded on server boot.
+
 ## 2026-06-28
 
 - **Mobile landscape is now real rotation, not a "please rotate" cover.** Replaced the rotate-to-landscape

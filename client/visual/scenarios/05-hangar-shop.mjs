@@ -1,7 +1,7 @@
-// Hangar shop + stash (docs/plans/hangar-shop.md + economy-shop-v2.md): unlock the shop (clear the
-// campaign), reload onto the Hangar, and assert the reworked bay — nav-switched Loadout / Stash / Shop
-// screens, a two-pane Shop (type list → items), the live ship-stats panel — then exercise an install.
-// Also catches any JS error in the shop module (the runner fails a scenario on any page error).
+// Shop + stash (docs/plans/hangar-shop.md + economy-shop-v2.md): unlock the shop (clear the campaign),
+// reload onto the Main Window, open the bay from the left menu, and assert the bay — left-menu-switched
+// Loadout / Stash / Shop screens, a two-pane Shop (type list → items), the live ship-stats panel — then
+// exercise an install. Also catches any JS error in the shop module (the runner fails on any page error).
 export const name = '05-hangar-shop';
 
 export default async function ({ page, assert, shot }) {
@@ -13,21 +13,26 @@ export default async function ({ page, assert, shot }) {
     for (let i = 0; i < 4; i++) await fetch(`/api/players/${pid}/advance`, { method: 'POST' });
   }, pid);
 
-  // reload → level-3 has a briefing, so the client lands on the Hangar; the bay opens (unlocked now)
+  // reload → the client lands on the Main Window; once unlocked, the Loadout/Stash/Shop menu items show
   await page.goto(page.url(), { waitUntil: 'load' });
   await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
-  await page.waitForSelector('#hangar-bay', { state: 'visible', timeout: 5000 });
+  await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
+  await page.waitForFunction('document.querySelectorAll(".mw-shop-item:not(.mw-hidden)").length === 3', null, { timeout: 5000 });
 
-  // opens on the Loadout screen by default
+  // open the bay via the left-menu Loadout item
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());
+  await page.waitForTimeout(100);
   const base = await page.evaluate(() => ({
-    nav: document.querySelectorAll('#bay-nav button').length,
+    shopItems: document.querySelectorAll('.mw-shop-item:not(.mw-hidden)').length,
+    bayActive: document.getElementById('mw-view-bay').classList.contains('active'),
     loadoutActive: document.getElementById('view-loadout').classList.contains('active'),
     loadout: document.querySelectorAll('#loadout-list .bay-item').length,
     stash: document.querySelectorAll('#stash-list .bay-item').length,
     stats: document.querySelectorAll('#ship-stats .stat').length,
     types: document.querySelectorAll('#shop-types button').length,
   }));
-  assert.equal(base.nav, 3, 'three nav screens: Loadout / Stash / Shop');
+  assert.equal(base.shopItems, 3, 'three bay menu items: Loadout / Stash / Shop');
+  assert.ok(base.bayActive, 'the bay work-zone view is shown');
   assert.ok(base.loadoutActive, 'opens on the Loadout screen');
   assert.ok(base.loadout >= 4, 'the loadout shows the equipped slots');
   assert.ok(base.stash >= 1, 'the stash holds the backfilled basic gun');
@@ -36,7 +41,7 @@ export default async function ({ page, assert, shot }) {
   await shot('loadout');
 
   // Shop screen → Weapon type → the buyable weapon ladder shows on the right pane
-  await page.evaluate(() => document.querySelector('#bay-nav [data-view="shop"]').click());
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="shop"]').click());
   await page.evaluate(() => document.querySelector('#shop-types [data-type="weapon"]').click());
   await page.waitForTimeout(100);
   const shop = await page.evaluate(() => ({
@@ -66,7 +71,7 @@ export default async function ({ page, assert, shot }) {
   await shot('shop-weapons');
 
   // Stash screen → install the basic gun → the player is rebuilt with it equipped
-  await page.evaluate(() => document.querySelector('#bay-nav [data-view="stash"]').click());
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="stash"]').click());
   await page.evaluate(() => {
     const btn = document.querySelector('#stash-list [data-act="equip"]');
     if (btn) btn.click();
@@ -76,8 +81,8 @@ export default async function ({ page, assert, shot }) {
   assert.ok(gun.includes('Basic kinetic'), 'installing the basic gun from the stash rebuilt the player');
   await shot('after-install');
 
-  // launch the mission, then die → the death overlay offers "Back to Hangar" (shop is unlocked)
-  await page.evaluate(() => document.getElementById('hangar-go').click());
+  // launch the mission (the mission view's Take-off), then die → the death overlay offers "Back to Hangar"
+  await page.evaluate(() => document.getElementById('mw-go').click());
   await page.waitForTimeout(200);
   await page.evaluate(() => { window.__game.player.hp = 0; });
   await page.waitForTimeout(400);
@@ -89,12 +94,13 @@ export default async function ({ page, assert, shot }) {
   assert.ok(death.backBtn, 'Back to Hangar is offered on death once the shop is unlocked');
   await shot('death-back-to-hangar');
 
-  // clicking it returns to the Hangar (with the bay), not an instant retry
+  // clicking it returns to the Main Window (shop reachable from the menu), not an instant retry
   await page.evaluate(() => document.getElementById('back-hangar').click());
   await page.waitForTimeout(200);
   const backHome = await page.evaluate(() => ({
-    hangar: getComputedStyle(document.getElementById('hangar')).display !== 'none',
-    bay: getComputedStyle(document.getElementById('hangar-bay')).display !== 'none',
+    mainOn: document.getElementById('mainwin').classList.contains('on'),
+    shopItemsVisible: document.querySelectorAll('.mw-shop-item:not(.mw-hidden)').length,
   }));
-  assert.ok(backHome.hangar && backHome.bay, 'Back to Hangar returns to the hangar with the shop bay');
+  assert.ok(backHome.mainOn, 'Back to Hangar returns to the Main Window');
+  assert.equal(backHome.shopItemsVisible, 3, 'the shop menu items are available there');
 }

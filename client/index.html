@@ -49,17 +49,17 @@
     margin-top: 10px; background: rgba(255,255,255,.08); color: #dce8ff;
     border: 1px solid rgba(160,190,255,.35);
   }
-  /* Welcome / start screen */
-  #welcome, #hangar {
+  /* Welcome / start screen (still a centered column; only the Main Window was redesigned) */
+  #welcome {
     position: fixed; inset: 0; z-index: 12; display: none;
     align-items: center; justify-content: center; flex-direction: column;
     background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
     color: #e8f1ff; font-family: system-ui, sans-serif; text-align: center; padding: 24px;
-    overflow-y: auto; /* content taller than the viewport (e.g. the shop bay on short/landscape screens) scrolls */
+    overflow-y: auto; /* content taller than the viewport (e.g. the ship picker on short/landscape screens) scrolls */
   }
   /* On short viewports (mobile landscape) the content can exceed the height — align to top so it all
-     scrolls into reach (e.g. the Take-off button below the shop bay) instead of being centred + clipped. */
-  @media (max-height: 600px) { #welcome, #hangar { justify-content: flex-start; } }
+     scrolls into reach instead of being centred + clipped. */
+  @media (max-height: 600px) { #welcome { justify-content: flex-start; } }
   #lang-switch { position: absolute; top: 18px; right: 18px; display: flex; gap: 6px; }
   #lang-switch button {
     font: inherit; font-size: 13px; letter-spacing: 1px; color: #cfe0ff; cursor: pointer;
@@ -67,11 +67,62 @@
     border-radius: 7px; padding: 5px 11px;
   }
   #lang-switch button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
-  #welcome h1, #hangar h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
-  #hangar h1 { font-size: 34px; }
-  #welcome .intro, #hangar .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
-  /* Hangar briefing text is ~2x the normal paragraph size (16px -> 32px) */
-  #hangar .intro { opacity: .92; max-width: 820px; font-size: 32px; line-height: 1.4; margin-bottom: 32px; }
+  #welcome h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
+  #welcome .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
+  /* ---- Main Window (the redesigned between-battles / landing screen; was the "Hangar") ----
+     A fixed landscape layout: the top bar (settings gear + auth + Vega Sentinels wordmark + inactive
+     Ships) lives in its own fixed elements; below it a 3-column grid — left menu | work zone |
+     ship-model preview. Only the work zone (mission description / shop) scrolls; the frame stays put.
+     One layout for mobile & desktop (designed against the forced mobile-landscape orientation). */
+  #mainwin {
+    position: fixed; inset: 0; z-index: 12; display: none;
+    grid-template-columns: minmax(160px, 18%) 1fr 25%;
+    grid-template-rows: 100%;
+    gap: 14px; padding: 52px 14px 14px; box-sizing: border-box;
+    background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
+    color: #e8f1ff; font-family: system-ui, sans-serif; text-align: left;
+  }
+  #mainwin.on { display: grid; }
+  /* left menu */
+  #mw-menu { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow-y: auto; }
+  #mw-menu .mw-row { display: flex; align-items: center; gap: 6px; }
+  .mw-collapse {
+    pointer-events: auto; cursor: pointer; flex: none; width: 30px; height: 38px; line-height: 1;
+    font-size: 14px; color: #cfe0ff; background: rgba(255,255,255,.05);
+    border: 1px solid rgba(160,190,255,.25); border-radius: 8px;
+  }
+  .mw-item {
+    pointer-events: auto; cursor: pointer; flex: 1 1 auto; text-align: left;
+    font: inherit; font-size: 20px; letter-spacing: .5px; color: #cfe0ff;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(160,190,255,.25);
+    border-radius: 8px; padding: 11px 16px;
+  }
+  .mw-item:hover { background: rgba(40,60,100,.5); }
+  .mw-item.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
+  .mw-item.mw-hidden { display: none; }            /* Loadout/Stash/Shop hidden until the shop is unlocked */
+  .mw-sublist { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 4px 36px; }
+  #mw-missions-group[data-collapsed="1"] .mw-sublist { display: none; }
+  .mw-sub {
+    pointer-events: auto; cursor: pointer; text-align: left; font: inherit; font-size: 15px; color: #bcd0ee;
+    background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.25); border-radius: 7px; padding: 8px 12px;
+  }
+  .mw-sub:hover { background: rgba(40,60,100,.6); }
+  .mw-sub.active { background: rgba(74,125,255,.35); border-color: #4a7dff; color: #fff; }
+  /* work zone (center): only the active view shows; the mission description is the only scroller */
+  #mw-work { min-width: 0; min-height: 0; display: flex; }
+  .mw-view { display: none; flex: 1; min-width: 0; min-height: 0; }
+  .mw-view.active { display: flex; flex-direction: column; }
+  #mw-view-mission { gap: 10px; }
+  #mw-mission-title { font-size: 26px; margin: 0; }
+  #mw-mission-desc { flex: 1; min-height: 0; overflow-y: auto; font-size: 22px; line-height: 1.45; opacity: .92; padding-right: 8px; }
+  #mw-mission-reward { color: #ffd86b; font-weight: 600; }
+  #mw-go { align-self: flex-start; }
+  #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; }
+  #mw-view-bay { overflow-y: auto; }
+  #mw-bay-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
+  /* ship-model preview (right ~25%) */
+  #mw-ship-col { position: relative; min-width: 0; }
+  #mw-ship { width: 100%; height: 100%; display: block; }
   #welcome .pick { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: .6; margin-bottom: 12px; }
   #ship-choices { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 28px; }
   .ship-card {
@@ -84,13 +135,13 @@
   .ship-card .ship-name { font-weight: 700; font-size: 17px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
   .ship-card .ship-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
   .ship-card .ship-stat { font-size: 13px; opacity: .8; line-height: 1.7; }
-  #takeoff, #hangar-go {
+  #takeoff, #mw-go {
     pointer-events: auto; cursor: pointer;
     padding: 14px 44px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
     background: linear-gradient(90deg,#ffb35a,#ff7a3c); color: #1a0c02; letter-spacing: 1px;
   }
-  #takeoff:hover, #hangar-go:hover { filter: brightness(1.08); }
-  #hangar-go:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
+  #takeoff:hover, #mw-go:hover { filter: brightness(1.08); }
+  #mw-go:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
   /* Touch-only UI gate (e.g. the floating Full-screen button). */
   .touch-only { display: none; }
   body.touch .touch-only { display: inline-flex; }
@@ -104,8 +155,9 @@
     transform-origin: top left;
     transform: translateX(100vw) rotate(90deg);
   }
-  /* Rotated game area is short (it's a phone's narrow side) → top-align menus so they scroll into reach. */
-  body.rot #welcome, body.rot #hangar { justify-content: flex-start; }
+  /* Rotated game area is short (it's a phone's narrow side) → top-align the welcome column so it scrolls
+     into reach. The Main Window is a fixed full-height grid, so it needs no top-align. */
+  body.rot #welcome { justify-content: flex-start; }
   /* Floating full-screen button — touch-only, bottom-right corner, hidden when already fullscreen.
      Only shown on menus (body.menu): during a live fight the bottom-right corner is the rocket
      button, so gating to menus avoids the overlap. */
@@ -122,11 +174,11 @@
   body.touch.menu #fullscreen-btn { display: flex; }   /* show on touch menus … */
   body.fs #fullscreen-btn { display: none !important; } /* … but hide once fullscreen */
   #fullscreen-btn:active { background: rgba(60,85,150,.7); }
-  #hangar-go-note { font-size: 13px; color: #ff9a8a; margin-top: 8px; min-height: 16px; }
-  /* Hangar shop + stash (docs/plans/hangar-shop.md). Shown only once the shop is unlocked. */
-  #hangar-bay { pointer-events: auto; width: min(1040px, 96vw); margin: 6px 0 22px; text-align: left; zoom: 0.9; } /* zoom: overall 10% smaller */
-  #hangar-bay .bay-credits { text-align: center; font-size: 20px; margin-bottom: 14px; }
-  #hangar-bay .bay-credits b { color: #ffd86b; }
+  /* Shop bay (docs/plans/hangar-shop.md). Now the "bay" work-zone view in the Main Window — shown when a
+     Loadout/Stash/Shop menu item is picked (the items are gated to the shop being unlocked). */
+  #mw-view-bay { pointer-events: auto; text-align: left; }
+  #mw-view-bay .bay-credits { text-align: center; font-size: 20px; margin-bottom: 14px; }
+  #mw-view-bay .bay-credits b { color: #ffd86b; }
   /* live ship-stats bar with deltas vs the previous config */
   #ship-stats { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 16px; }
   #ship-stats .stat {
@@ -137,15 +189,10 @@
   #ship-stats .stat .v { font-size: 20px; font-weight: 700; }
   #ship-stats .stat .d { font-size: 12px; margin-left: 4px; }
   #ship-stats .stat .d.up { color: #6ee29a; } #ship-stats .stat .d.down { color: #ff8a7a; }
-  /* Loadout / Stash / Shop are separate screens, switched by the nav (not side-by-side columns). */
-  .bay-nav { display: flex; gap: 8px; justify-content: center; margin-bottom: 14px; }
-  .bay-nav button { /* 2× — primary screen switcher */
-    font: inherit; font-size: 26px; letter-spacing: .5px; cursor: pointer; pointer-events: auto; color: #cfe0ff;
-    background: rgba(255,255,255,.05); border: 1px solid rgba(160,190,255,.25); border-radius: 8px; padding: 14px 36px;
-  }
-  .bay-nav button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
+  /* Loadout / Stash / Shop are separate screens, switched by the left menu (not a nav strip). The
+     work zone bounds the height + scrolls, so the inner view needs no max-height of its own. */
   .bay-view { display: none; background: rgba(12,18,34,.55); border: 1px solid rgba(120,150,210,.18);
-    border-radius: 12px; padding: 12px; max-height: 46vh; overflow-y: auto; }
+    border-radius: 12px; padding: 12px; }
   .bay-view.active { display: block; }
   /* Shop screen = two panes: a type list on the left, the items of the selected type on the right. */
   .shop-pane { display: grid; grid-template-columns: 168px 1fr; gap: 14px; }
@@ -158,7 +205,7 @@
   @media (max-width: 760px) {
     .shop-pane { grid-template-columns: 1fr; }
     .shop-types { flex-direction: row; flex-wrap: wrap; }
-    #hangar .intro { font-size: 22px; }
+    #mw-mission-desc { font-size: 18px; }
   }
   /* one item card (loadout slot / stash item / shop item): text-in-rectangle, no art */
   .bay-item {
@@ -247,39 +294,20 @@
   #account button:hover { filter: brightness(1.06); }
   /* Account status bar (top-left, on menu screens only) */
   #account-bar {
-    position: fixed; top: 18px; left: 56px; z-index: 13; display: none; /* shifted right to clear the settings gear (top-left corner), like the HUD Health block */
+    position: fixed; top: 11px; left: 56px; z-index: 13; display: none; /* top-aligned with the settings gear; shifted right to clear it (top-left corner) */
     font-family: system-ui, sans-serif; font-size: 13px; color: #cfe0ff;
     background: rgba(10,16,30,.6); border: 1px solid rgba(120,150,210,.25);
     border-radius: 9px; padding: 8px 12px; max-width: 340px; text-align: left; line-height: 1.5;
   }
   body.menu #account-bar { display: block; }
-  /* Side-mission board: 3 buttons top-right (on menus once unlocked) + a description panel */
-  #mission-btns {
-    position: fixed; top: 18px; right: 18px; z-index: 13; display: none; flex-direction: column; gap: 8px;
+  /* "Ships" — top-right of the Main Window. Inactive for now (future ship-buying); shown muted +
+     non-interactive on menus. (The side-mission board moved into the left menu's Missions list.) */
+  #mw-ships {
+    position: fixed; top: 14px; right: 18px; z-index: 13; display: none;
+    font-family: system-ui, sans-serif; font-size: 18px; letter-spacing: 1px; color: #cfe0ff;
+    opacity: .4; pointer-events: none;
   }
-  body.menu.missions-on #mission-btns { display: flex; }
-  #mission-btns button {
-    pointer-events: auto; cursor: pointer; font: inherit; font-size: 14px; color: #cfe0ff; min-width: 140px;
-    background: rgba(20,30,55,.6); border: 1px solid rgba(140,175,255,.35); border-radius: 8px; padding: 9px 16px; text-align: left;
-  }
-  #mission-btns button:hover { background: rgba(40,60,100,.7); }
-  #mission-panel {
-    position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
-    background: rgba(2,4,10,.62); padding: 24px;
-  }
-  #mission-panel.on { display: flex; }
-  #mission-panel .mp-box {
-    background: rgba(8,12,24,.96); border: 1px solid rgba(120,150,210,.35); border-radius: 12px;
-    padding: 24px 28px; max-width: 460px; text-align: center; color: #e8f1ff; font-family: system-ui, sans-serif;
-  }
-  #mission-panel h2 { margin: 0 0 10px; font-size: 22px; }
-  #mission-panel p { color: #bcd0ee; line-height: 1.55; margin: 0 0 4px; }
-  #mission-panel #mp-reward { color: #ffd86b; font-weight: 600; margin: 14px 0 18px; }
-  #mission-panel button {
-    pointer-events: auto; cursor: pointer; font: inherit; font-size: 15px; font-weight: 600; margin: 0 6px;
-    border: 0; border-radius: 10px; padding: 11px 26px; background: linear-gradient(90deg,#36d1dc,#5b86e5); color: #02101f;
-  }
-  #mission-panel button.secondary { background: rgba(255,255,255,.08); color: #dce8ff; font-weight: 500; }
+  body.menu #mw-ships { display: block; }
   #account-bar button {
     pointer-events: auto; cursor: pointer; font: inherit; font-size: 12px; color: #cfe0ff;
     background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.28);
@@ -296,6 +324,8 @@
     color: #cfe0ff; opacity: .92; pointer-events: none; white-space: nowrap;
     text-shadow: 0 0 10px rgba(90,140,230,.6), 0 0 2px rgba(0,0,0,.9);
   }
+  /* On the menus the wordmark is the centerpiece (the "Hangar" title is gone), so it's much larger. */
+  body.menu #gametitle { top: 6px; font-size: clamp(22px, 4.5vw, 40px); letter-spacing: 6px; opacity: .96; }
   /* Pause/resume toggle — top bar, between the title and the Credits HUD. Freezes the fight (skips the
      sim update; rendering continues). Hidden on menus via body.menu; the result overlay (z-index 10) sits
      above it. */
@@ -532,41 +562,48 @@
   <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
      target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
 </div>
-<div id="hangar">
-  <h1 id="hangar-title" data-i18n="ui.hangar.title">Hangar</h1>
-  <p class="intro" id="hangar-text"></p>
-  <div id="hangar-bay">
-    <div class="bay-credits"><span data-i18n="ui.hud.credits">Credits</span>: <b id="bay-credits-val">0</b></div>
-    <div id="ship-stats"></div>
-    <div class="bay-nav" id="bay-nav">
-      <button data-act="view" data-view="loadout" data-i18n="ui.shop.loadout">Loadout</button>
-      <button data-act="view" data-view="stash" data-i18n="ui.shop.stash">Stash</button>
-      <button data-act="view" data-view="shop" data-i18n="ui.shop.shop">Shop</button>
-    </div>
-    <div class="bay-view" id="view-loadout"><div id="loadout-list"></div></div>
-    <div class="bay-view" id="view-stash"><div id="stash-list"></div></div>
-    <div class="bay-view" id="view-shop">
-      <div class="shop-pane">
-        <div class="shop-types" id="shop-types"></div>
-        <div class="shop-items" id="shop-list"></div>
+<!-- Main Window (was the "Hangar"): top bar lives in fixed elements (gear/account-bar/wordmark/#mw-ships);
+     this grid is left menu | work zone | ship-model preview. See docs/plans/main-window-redesign.md. -->
+<div id="mainwin">
+  <nav id="mw-menu">
+    <div class="mw-group" id="mw-missions-group">
+      <div class="mw-row">
+        <button class="mw-collapse" id="mw-missions-toggle" aria-expanded="true" aria-label="Collapse missions">▾</button>
+        <button class="mw-item active" data-mw="missions" data-i18n="ui.mainwin.missions">Missions</button>
       </div>
+      <div class="mw-sublist" id="mw-mission-list"></div>
     </div>
-  </div>
-  <button id="hangar-go" data-i18n="ui.button.take_off">Take off 🚀</button>
-  <div id="hangar-go-note"></div>
+    <button class="mw-item mw-shop-item mw-hidden" data-mw="loadout" data-i18n="ui.shop.loadout">Loadout</button>
+    <button class="mw-item mw-shop-item mw-hidden" data-mw="stash" data-i18n="ui.shop.stash">Stash</button>
+    <button class="mw-item mw-shop-item mw-hidden" data-mw="shop" data-i18n="ui.shop.shop">Shop</button>
+  </nav>
+  <section id="mw-work">
+    <!-- mission view: the selected mission's description + take-off (only the description scrolls) -->
+    <div class="mw-view active" id="mw-view-mission">
+      <h2 id="mw-mission-title"></h2>
+      <div id="mw-mission-desc"></div>
+      <div id="mw-mission-reward"></div>
+      <button id="mw-go" data-i18n="ui.button.take_off">Take off 🚀</button>
+      <div id="mw-go-note"></div>
+    </div>
+    <!-- shop bay view: Loadout / Stash / Shop content (switched from the left menu) -->
+    <div class="mw-view" id="mw-view-bay">
+      <div class="bay-credits"><span data-i18n="ui.hud.credits">Credits</span>: <b id="bay-credits-val">0</b></div>
+      <div id="ship-stats"></div>
+      <div class="bay-view" id="view-loadout"><div id="loadout-list"></div></div>
+      <div class="bay-view" id="view-stash"><div id="stash-list"></div></div>
+      <div class="bay-view" id="view-shop">
+        <div class="shop-pane">
+          <div class="shop-types" id="shop-types"></div>
+          <div class="shop-items" id="shop-list"></div>
+        </div>
+      </div>
+      <div id="mw-bay-note"></div>
+    </div>
+  </section>
+  <aside id="mw-ship-col"><canvas id="mw-ship"></canvas></aside>
 </div>
 <div id="account-bar"></div>
-<!-- Side-mission board (3 buttons, top-right) — shown on menus once the campaign is cleared -->
-<div id="mission-btns"></div>
-<div id="mission-panel">
-  <div class="mp-box">
-    <h2 id="mp-title"></h2>
-    <p id="mp-desc"></p>
-    <div id="mp-reward"></div>
-    <button id="mp-launch" data-i18n="ui.button.take_off">Take off 🚀</button>
-    <button id="mp-close" class="secondary" data-i18n="ui.account.close">Close</button>
-  </div>
-</div>
 <div id="account">
   <div class="account-box">
     <h1 id="account-title">Account</h1>
@@ -585,6 +622,8 @@
   </div>
 </div>
 <div id="gametitle" data-i18n="ui.title">Vega Sentinels</div>
+<!-- Inactive "Ships" label (top-right, menus only) — future ship-buying -->
+<div id="mw-ships" data-i18n="ui.mainwin.ships" aria-disabled="true">Ships</div>
 <button id="pause-btn" aria-label="Pause" title="Pause">⏸</button>
 <div id="pause-overlay">
   <div class="pause-title" data-i18n="ui.pause.paused">Paused</div>
@@ -2876,101 +2915,231 @@ function reset() {
   track('level_start', { level });
   if (window.Sentry) try { window.Sentry.setTag('level', level); } catch {}
 }
-// Leaving the result overlay: a win goes to the Hangar (next-mission briefing + launch); a loss
-// retries the level immediately. The Hangar shows the pending briefing, or a default standby line.
-// The Hangar = the between-battles / landing screen. Shows the given level briefing (or a default
-// standby line) and launches the current level. Used both on page load (homepage for the current
-// level) and after a victory (next mission). `briefing` is { textKey, text } or null.
-const hangarEl = document.getElementById('hangar');
-function showHangar(briefing) {
-  const text = briefing
-    ? (briefing.textKey ? t(briefing.textKey) : (briefing.text || ''))
-    : t('ui.hangar.default');
-  document.getElementById('hangar-text').textContent = text;
+// ---------- Main Window (the between-battles / landing screen; was the "Hangar") ----------
+// Fixed landscape layout: a left menu (Missions / Loadout / Stash / Shop) + a center work zone + a 25%
+// ship-model preview. The Missions item lists the campaign mission (primary) and, once unlocked, the
+// side missions (secondary); picking one renders its description + Take-off into the work zone. Used on
+// page load (homepage for the current level) and after a victory. See docs/plans/main-window-redesign.md.
+const mainEl = document.getElementById('mainwin');
+let mainBriefing = null;     // the campaign briefing shown as the primary mission ({ textKey, text } or null)
+let mwView = 'missions';     // which work-zone view is active: 'missions' | 'bay'
+let mwMission = null;        // selected side-mission offer, or null = the campaign (primary) mission
+let missionOffers = [];      // side missions from /api/players/:id/missions (unlocked after the campaign)
+
+function showMain(briefing) {
+  mainBriefing = briefing || null;
   overlay.style.display = 'none';
   renderAccountBar();
-  document.body.classList.add('menu'); // hide the in-game HUD behind the Hangar
-  refreshMusic(); // menu → calmer hangar music
-  hangarEl.style.display = 'flex';
-  openHangarShop(); // show the shop/stash bay if it's unlocked (cleared the final level)
-  refreshMissions(); // (re)load the side-mission board (top-right) if unlocked
+  document.body.classList.add('menu'); // hide the in-game HUD behind the Main Window
+  refreshMusic();                      // menu → calmer hangar music
+  mainEl.classList.add('on');
+  mwMission = null;                    // default to the primary (campaign) mission
+  buildMissionList();                  // primary row + any cached secondary rows
+  selectMenu('missions');              // open the mission view (renders the campaign briefing)
+  openBay();                           // load shop state + gate the Loadout/Stash/Shop menu items
+  refreshMissions();                   // (re)load the side missions, then rebuild the list
+  startShipPreview();                  // spin up the right-column ship model
 }
-function launchFromHangar() {
+function launchCampaign() {
   pendingBriefing = null;
-  activeMission = null;                       // the hangar "Take off" plays the campaign level, not a side mission
+  activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
   if (isTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
-  hangarEl.style.display = 'none';
+  mainEl.classList.remove('on');
+  stopShipPreview();
   document.body.classList.remove('menu');    // restore the in-game HUD
-  gameStarted = true;                        // first launch from the landing Hangar starts the loop
+  gameStarted = true;                        // first launch from the landing Main Window starts the loop
   reset();                                   // (re)start the current level
 }
 function leaveOverlay() {
   if (levelRunner.won) {
     // After clearing level 1, prompt once for a username + optional account (DECISIONS §11), then
-    // continue to the Hangar. Otherwise (or once prompted/registered) go straight to the Hangar.
-    if (shouldPromptAccount()) { openAccount('prompt', { after: () => showHangar(pendingBriefing) }); return; }
-    showHangar(pendingBriefing); return; // victory → Hangar
+    // continue to the Main Window. Otherwise (or once prompted/registered) go straight there.
+    if (shouldPromptAccount()) { openAccount('prompt', { after: () => showMain(pendingBriefing) }); return; }
+    showMain(pendingBriefing); return; // victory → Main Window
   }
   reset(); // loss → straight retry
 }
 elRestart.addEventListener('click', leaveOverlay);
-// "Back to Hangar" on the death overlay (shop unlocked): banked credits already applied → go to the Hangar
-// (shop/loadout), where Take off retries the mission.
-elBackHangar.addEventListener('click', () => { overlay.style.display = 'none'; showHangar(null); });
-document.getElementById('hangar-go').addEventListener('click', launchFromHangar);
+// "Back to Main Window" on the death overlay (shop unlocked): banked credits already applied → go back
+// to the menu (shop/loadout), where Take off retries the mission.
+elBackHangar.addEventListener('click', () => { overlay.style.display = 'none'; showMain(null); });
 
-// ---------- Side missions: the 3-choice board (docs/plans/mission-generator.md) ----------
-// Provisional UI: three buttons top-right on the menus (once the campaign is cleared, same gate as the
-// shop). Clicking one opens a panel with that mission's flavor description + est. reward and a Take-off
-// button. Playing it banks per-kill ×2 credits (like a level) but does NOT advance the story counter.
-let missionOffers = [];
-const missionBtns = document.getElementById('mission-btns');
-const missionPanel = document.getElementById('mission-panel');
+// ---- Left-menu navigation + the work-zone views ----
+// Show one work-zone view and highlight its menu item. 'missions' → the mission view (description +
+// Take-off); 'loadout'|'stash'|'shop' → the shop bay view with that screen selected.
+function selectMenu(which) {
+  document.querySelectorAll('#mw-menu .mw-item').forEach((b) => b.classList.toggle('active', b.dataset.mw === which));
+  const isMissions = which === 'missions';
+  mwView = isMissions ? 'missions' : 'bay';
+  document.getElementById('mw-view-mission').classList.toggle('active', isMissions);
+  document.getElementById('mw-view-bay').classList.toggle('active', !isMissions);
+  if (isMissions) { buildMissionList(); renderMissionView(mwMission); }
+  else { bayView = which; renderNav(); }
+}
+document.getElementById('mw-menu').addEventListener('click', (e) => {
+  const b = e.target.closest('.mw-item');
+  if (b) selectMenu(b.dataset.mw);
+});
+// Collapse/expand the mission sublist (the caret left of "Missions").
+document.getElementById('mw-missions-toggle').addEventListener('click', () => {
+  const g = document.getElementById('mw-missions-group');
+  const collapsed = g.dataset.collapsed === '1';
+  g.dataset.collapsed = collapsed ? '0' : '1';
+  const tog = document.getElementById('mw-missions-toggle');
+  tog.textContent = collapsed ? '▾' : '▸';
+  tog.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
+});
+
+// Build the mission sublist: the campaign (primary) row, then the side missions (secondary, when
+// unlocked). Selecting a row renders it into the work zone via selectMenu('missions').
+function buildMissionList() {
+  const host = document.getElementById('mw-mission-list');
+  if (!host) return;
+  host.innerHTML = '';
+  const prim = document.createElement('button');
+  prim.className = 'mw-sub' + (mwMission == null ? ' active' : '');
+  prim.textContent = t('ui.mainwin.primary');
+  prim.addEventListener('click', () => { mwMission = null; selectMenu('missions'); });
+  host.appendChild(prim);
+  missionOffers.forEach((m, i) => {
+    const b = document.createElement('button');
+    b.className = 'mw-sub' + (mwMission === m ? ' active' : '');
+    b.textContent = t('ui.mission.slot', { n: i + 1 });
+    b.addEventListener('click', () => { mwMission = m; selectMenu('missions'); });
+    host.appendChild(b);
+  });
+}
+
+// Render the selected mission into the work zone. null → the campaign (primary) briefing + launchCampaign;
+// otherwise a side mission's flavor + est. reward + launchMission.
+function renderMissionView(m) {
+  const titleEl = document.getElementById('mw-mission-title');
+  const descEl = document.getElementById('mw-mission-desc');
+  const rewEl = document.getElementById('mw-mission-reward');
+  if (m) {
+    titleEl.textContent = t(m.titleKey);
+    descEl.textContent = t(m.descKey);
+    rewEl.textContent = t('ui.mission.est_reward', { credits: m.estReward });
+    rewEl.style.display = '';
+  } else {
+    titleEl.textContent = t('ui.mainwin.primary');
+    descEl.textContent = mainBriefing
+      ? (mainBriefing.textKey ? t(mainBriefing.textKey) : (mainBriefing.text || ''))
+      : t('ui.hangar.default');
+    rewEl.textContent = '';
+    rewEl.style.display = 'none';
+  }
+  updateTakeoffGate(activeShip);
+}
+// The single Take-off button in the mission view dispatches on the current selection.
+document.getElementById('mw-go').addEventListener('click', () => {
+  if (mwMission) launchMission(mwMission);
+  else launchCampaign();
+});
+
+// Reload the side missions (gated to the shop being unlocked), then rebuild the list + re-render if
+// the mission view is open.
 async function refreshMissions() {
   const unlocked = !!(playerId && activeShip && activeShip.shopUnlocked);
-  if (!unlocked) { missionOffers = []; missionBtns.innerHTML = ''; document.body.classList.remove('missions-on'); return; }
+  if (!unlocked) { missionOffers = []; buildMissionList(); return; }
   try {
     const data = await fetchJson(`/api/players/${playerId}/missions`);
     missionOffers = data.missions || [];
   } catch { missionOffers = []; }
-  missionBtns.innerHTML = '';
-  if (!missionOffers.length) { document.body.classList.remove('missions-on'); return; }
-  missionOffers.forEach((m, i) => {
-    const b = document.createElement('button');
-    b.textContent = t('ui.mission.slot', { n: i + 1 });
-    b.addEventListener('click', () => openMissionPanel(i));
-    missionBtns.appendChild(b);
-  });
-  document.body.classList.add('missions-on');
+  buildMissionList();
+  if (mwView === 'missions') renderMissionView(mwMission);
 }
-function openMissionPanel(i) {
-  const m = missionOffers[i];
-  if (!m) return;
-  missionPanel._mission = m;
-  document.getElementById('mp-title').textContent = t(m.titleKey);
-  document.getElementById('mp-desc').textContent = t(m.descKey);
-  document.getElementById('mp-reward').textContent = t('ui.mission.est_reward', { credits: m.estReward });
-  missionPanel.classList.add('on');
-}
-function closeMissionPanel() { missionPanel.classList.remove('on'); missionPanel._mission = null; }
-document.getElementById('mp-close').addEventListener('click', closeMissionPanel);
-document.getElementById('mp-launch').addEventListener('click', () => {
-  const m = missionPanel._mission;
-  if (!m) return;
-  closeMissionPanel();
-  launchMission(m);
-});
-// Launch a chosen side mission (mirrors launchFromHangar, but plays the mission descriptor).
+// Launch a chosen side mission (mirrors launchCampaign, but plays the mission descriptor).
 function launchMission(m) {
   activeMission = m.descriptor;
   pendingBriefing = null;
   if (isTouch) requestFullscreen();
-  hangarEl.style.display = 'none';
+  mainEl.classList.remove('on');
+  stopShipPreview();
   welcomeEl.style.display = 'none';
-  document.body.classList.remove('menu', 'missions-on');
+  document.body.classList.remove('menu');
   gameStarted = true;
   reset();
 }
+
+// ---------- Main Window ship-model preview (right column) ----------
+// A small, self-contained Three.js view (its own scene/camera/renderer on #mw-ship) that shows the
+// player's active ship — the high-poly `_hangar` glb (model_url_high), falling back to the combat model.
+// Its render loop only runs while the Main Window is visible (started/stopped by showMain/launch*), so it
+// costs nothing during a fight. See docs/plans/main-window-redesign.md (§ ship preview) + DECISIONS.
+let mwPreview = null; // { renderer, scene, camera, group, raf, url } — built lazily on the first showMain
+function startShipPreview() {
+  const canvas = document.getElementById('mw-ship');
+  if (!canvas) return;
+  if (!mwPreview) {
+    const r = new THREE.WebGLRenderer({ canvas, antialias: gfx.antialias, alpha: true });
+    r.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
+    const sc = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+    cam.position.set(0, 1.4, 7);
+    cam.lookAt(0, 0, 0);
+    const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, 5, 4); sc.add(key);
+    sc.add(new THREE.AmbientLight(0x4a5878, 1.4));
+    if (gfx.envMap) { // same RoomEnvironment reflections as the combat scene (a fresh PMREM per GL context)
+      const pm = new THREE.PMREMGenerator(r);
+      sc.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      pm.dispose();
+    }
+    const group = new THREE.Group(); sc.add(group);
+    mwPreview = { renderer: r, scene: sc, camera: cam, group, raf: 0, url: null };
+  }
+  loadPreviewModel();
+  resizePreview();
+  if (!mwPreview.raf) {
+    const loop = () => {
+      mwPreview.raf = requestAnimationFrame(loop);
+      mwPreview.group.rotation.y += 0.01; // slow auto-rotate
+      mwPreview.renderer.render(mwPreview.scene, mwPreview.camera);
+    };
+    loop();
+  }
+}
+function stopShipPreview() {
+  if (mwPreview && mwPreview.raf) { cancelAnimationFrame(mwPreview.raf); mwPreview.raf = 0; }
+}
+function resizePreview() {
+  if (!mwPreview) return;
+  const canvas = mwPreview.renderer.domElement;
+  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+  mwPreview.renderer.setSize(w, h, false); // false: don't override the CSS-driven canvas size
+  mwPreview.camera.aspect = w / h;
+  mwPreview.camera.updateProjectionMatrix();
+}
+// Load the active ship's hangar model into the preview (no-op if it's already the loaded one). Mirrors
+// applyShipModel's auto center/normalize; tint stays off (the glb bakes its own colors).
+function loadPreviewModel() {
+  if (!mwPreview || !activeShip || !activeShip.ship) return;
+  const ship = activeShip.ship;
+  const url = ship.modelUrlHigh || ship.modelUrl;
+  if (!url || url === mwPreview.url) return;
+  mwPreview.url = url;
+  const mc = shipModelCfg(ship.stats);
+  const clear = () => { for (let i = mwPreview.group.children.length - 1; i >= 0; i--) mwPreview.group.remove(mwPreview.group.children[i]); };
+  clear();
+  gltfLoader.load(url, (gltf) => {
+    if (!mwPreview || mwPreview.url !== url) return; // ship changed mid-load
+    const model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const s = SHIP_MODEL_LEN / (Math.max(size.x, size.y, size.z) || 1);
+    model.scale.setScalar(s);
+    model.position.copy(center).multiplyScalar(-s);
+    const pivot = new THREE.Group();
+    pivot.rotation.y = mc.yaw || 0;
+    pivot.add(model);
+    clear();
+    mwPreview.group.add(pivot);
+  }, undefined, (err) => console.warn('Preview model failed to load:', url, err));
+}
+// Keep the preview canvas crisp as the layout reflows (the grid column resizes with the window/rotation).
+window.addEventListener('resize', resizePreview);
+window.addEventListener('orientationchange', resizePreview);
 
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // The "spend" side of the economy: equipped loadout + stash + a simple shop, with a live ship-stats
@@ -3171,15 +3340,16 @@ function renderShop() {
     : `<div class="bay-empty-note">${esc(t('ui.shop.empty_shop'))}</div>`;
 }
 
-// Show the active screen (Loadout / Stash / Shop) and highlight its nav button.
+// Show the active bay screen (Loadout / Stash / Shop). Which one is chosen comes from the left menu
+// (which sets `bayView`); this just toggles the matching `.bay-view`.
 function renderNav() {
-  document.querySelectorAll('#bay-nav button').forEach((b) => b.classList.toggle('active', b.dataset.view === bayView));
   for (const v of ['loadout', 'stash', 'shop']) document.getElementById('view-' + v).classList.toggle('active', v === bayView);
 }
 
+// Gate the mission Take-off button: a missing required slot (sold hull/engine/thruster) blocks launch.
 function updateTakeoffGate(active) {
-  const btn = document.getElementById('hangar-go');
-  const note = document.getElementById('hangar-go-note');
+  const btn = document.getElementById('mw-go');
+  const note = document.getElementById('mw-go-note');
   const ok = !active || active.launchable !== false;
   btn.disabled = !ok;
   note.textContent = ok ? '' : t('ui.shop.cant_launch');
@@ -3198,7 +3368,7 @@ function renderBay() {
   updateTakeoffGate(active);
 }
 
-const setShopNote = (msg) => { document.getElementById('hangar-go-note').textContent = msg; };
+const setShopNote = (msg) => { document.getElementById('mw-bay-note').textContent = msg; };
 function shopErr(status, j) {
   if (status === 402) return t('ui.shop.err_credits');
   if (status === 403) return t('ui.shop.err_locked');
@@ -3225,11 +3395,10 @@ async function shopAction(path, body) {
 }
 
 // One delegated click handler for every bay action (filter / info toggle / buy / sell / equip / unequip).
-document.getElementById('hangar-bay').addEventListener('click', (e) => {
+document.getElementById('mw-view-bay').addEventListener('click', (e) => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const act = el.dataset.act;
-  if (act === 'view') { bayView = el.dataset.view; renderNav(); return; }
   if (act === 'type') { shopType = el.dataset.type; renderShopTypes(); renderShop(); return; }
   if (act === 'info') { const card = el.closest('.bay-item'); const s = card && card.querySelector('.stats'); if (s) s.classList.toggle('hidden'); return; }
   const kind = el.dataset.kind, slot = el.dataset.slot;
@@ -3241,24 +3410,21 @@ document.getElementById('hangar-bay').addEventListener('click', (e) => {
   if (act === 'unequip') return void shopAction('unequip', { slot });
 });
 
-// Open the shop bay when the hangar is shown — only if the player has unlocked it (cleared the final
-// level). Fetches fresh state so the loadout/stash/balance are authoritative.
-async function openHangarShop() {
-  const bay = document.getElementById('hangar-bay');
-  if (!playerId || !activeShip || !activeShip.shopUnlocked) {
-    bay.style.display = 'none';
-    updateTakeoffGate(activeShip);
-    return;
-  }
-  bay.style.display = 'block';
-  bayView = 'loadout';  // always open on the ship/loadout screen
+// Prepare the shop bay when the Main Window opens. The Loadout/Stash/Shop menu items only show once the
+// player has unlocked the shop (cleared the final level); when unlocked we fetch fresh state so the
+// loadout/stash/balance are authoritative.
+async function openBay() {
+  const unlocked = !!(playerId && activeShip && activeShip.shopUnlocked);
+  document.querySelectorAll('.mw-shop-item').forEach((b) => b.classList.toggle('mw-hidden', !unlocked));
+  if (!unlocked) { updateTakeoffGate(activeShip); return; }
+  bayView = 'loadout';  // default the bay to the ship/loadout screen
   lastShipStats = null; // first render after opening shows no deltas
   try {
     const j = await fetchJson(`/api/players/${playerId}/stash`);
     shopData = j;
     if (j.activeShip) activeShip = j.activeShip;
     renderBay();
-  } catch { bay.style.display = 'none'; }
+  } catch {}
 }
 
 // ---------- Dev color/lighting tuning panel (?tune) ----------
@@ -3412,7 +3578,6 @@ function showWelcome(playerShips) {
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   refreshMusic(); // menu → calmer hangar music
   welcomeEl.style.display = 'flex';
-  refreshMissions(); // side-mission board (top-right) if unlocked
 }
 
 // ---------- Localization (i18n) UI glue ----------
@@ -3812,7 +3977,7 @@ async function reloadPlayerWorld() {
     activeShip = active;
     if (active && typeof active.credits === 'number') balance = active.credits;
     if (active && active.ship) buildPlayerFor(active.ship);
-    if (CATALOG.level.briefing) showHangar(CATALOG.level.briefing);
+    if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
     else showWelcome(playerShipsCache);
   } catch {}
 }
@@ -3900,6 +4065,7 @@ async function bootstrap() {
     ]);
     // Sound catalog → preload registry + the routing map (sfxFor/tracksFor). A failed fetch ⇒ all-synth/silent.
     soundUrls = Object.fromEntries((sounds.sounds || []).map((s) => [s.key, s.url]));
+    audio.setSampleGains(Object.fromEntries((sounds.sounds || []).map((s) => [s.key, s.gain ?? 1]))); // per-sound playback gain (DB sounds.gain)
     for (const m of (sounds.map || [])) { const k = `${m.entity}|${m.class}|${m.event}`; (soundMap.get(k) || soundMap.set(k, []).get(k)).push(m.sound); }
     audio.setMusicTracks({ hangar: tracksFor('scene', 'hangar', 'music'), combat: tracksFor('scene', 'combat', 'music') }); // looping bg music per scene
     if (samplesLoaded) audio.preloadSamples(soundUrls); // a gesture already unlocked the ctx before bootstrap finished
@@ -3935,7 +4101,7 @@ async function bootstrap() {
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
     // Homepage reflects the current level: if it has a briefing (level 2+), land on the Hangar showing
     // it; otherwise (level 1 / new player) show the welcome screen with the ship picker + intro.
-    if (CATALOG.level.briefing) showHangar(CATALOG.level.briefing);
+    if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
     else showWelcome(playerShips);
     animate(); // render loop (idle until Take off)
     // Warm shaders a couple frames in — OFF the critical path (a synchronous compile here would block
