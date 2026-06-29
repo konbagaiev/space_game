@@ -120,16 +120,15 @@
   .mw-view.active { display: flex; flex-direction: column; }
   #mw-view-mission { gap: 10px; }
   #mw-mission-title { font-size: 22px; margin: 0; }
-  /* mission body: description (left, the only scroller) BESIDE the granted-item showcase (right, docked
-     against the ship column). Side-by-side so the canvas never steals the text's height — the old
-     full-width block pushed the mission text off-screen on phones. */
-  #mw-mission-body { flex: 1; min-height: 0; display: flex; gap: 10px; }
-  #mw-mission-desc { flex: 1 1 0; min-width: 0; min-height: 0; overflow-y: auto; font-size: 18px; line-height: 1.45; opacity: .92; padding-right: 8px; }
+  /* The title + mission text take the top ~3/4 of the work zone; min-height keeps the text on screen even
+     when the item showcase below claims its share (the old full-width block pushed the text off-screen). */
+  #mw-mission-desc { flex: 1 1 auto; min-height: 3.5em; overflow-y: auto; font-size: 18px; line-height: 1.45; opacity: .92; padding-right: 8px; }
   #mw-mission-reward { color: #ffd86b; font-weight: 600; }
-  /* Briefing item showcase: a spinning 3D model of the gear the mission grants — Machine Gun on L2, Repair
-     drone on L3 — docked to the RIGHT of the work zone (the ship preview sits just right of it, the mission
-     text to its left/above). Half-width, bottom-aligned; does NOT replace the ship preview. Hidden by default. */
-  #mw-item { flex: 0 0 46%; align-self: flex-end; min-width: 0; height: clamp(110px, 30vh, 210px); max-height: 100%; display: none; }
+  /* Briefing item showcase: a FULL-SIZE spinning 3D model of the gear the mission grants — Machine Gun on
+     L2, Repair drone on L3 — occupying roughly the BOTTOM-LEFT QUARTER of the work zone (half width,
+     left-aligned, below the text); the title + text fill the rest, the ship preview is the column to the
+     right. flex-basis as a % of the work-zone height (not vh) so it's stable under the phone rotation. */
+  #mw-item { flex: 0 1 42%; align-self: flex-start; width: 50%; min-width: 0; min-height: 0; display: none; }
   #mw-item.on { display: block; }
   #mw-go { align-self: center; }
   #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; }
@@ -607,11 +606,9 @@
     <!-- mission view: the selected mission's description + take-off (only the description scrolls) -->
     <div class="mw-view active" id="mw-view-mission">
       <h2 id="mw-mission-title"></h2>
-      <!-- body: mission text (left) beside the granted-item showcase (right, next to the ship preview) -->
-      <div id="mw-mission-body">
-        <div id="mw-mission-desc"></div>
-        <canvas id="mw-item"></canvas>
-      </div>
+      <div id="mw-mission-desc"></div>
+      <!-- granted-item showcase (briefing only): full-size model in the bottom-left quarter of the work zone -->
+      <canvas id="mw-item"></canvas>
       <div id="mw-mission-reward"></div>
       <button id="mw-go" data-i18n="ui.button.take_off">Take off 🚀</button>
       <div id="mw-go-note"></div>
@@ -3226,7 +3223,7 @@ function applyPreviewTarget() {
 // A second viewer in the mission work zone (between the description and the Take-off button) that shows
 // the 3D model of the gear a campaign briefing grants — Machine Gun on L2, Repair drone on L3 — at 1/3
 // scale, WITHOUT replacing the ship in the right-column preview. Hidden when the briefing grants nothing.
-const ITEM_SHOWCASE_SCALE = 2 / 3; // item shown at 2/3 size in the (half-width) work-zone showcase canvas
+const ITEM_SHOWCASE_SCALE = 1; // full size — the model fills the bottom-left-quarter showcase canvas
 let mwItem = null; // work-zone item viewer — built lazily the first time a showcase item is shown
 // Show the granted item in the work-zone viewer, or hide it when there's none (side mission / L1 / L4).
 function showShowcaseItem(sc) {

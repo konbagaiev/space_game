@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-29 (component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at 2/3 scale in a dedicated half-width work-zone viewer docked to the RIGHT of the work zone (mission text to its left, the ship preview just right of it) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-06-29 (component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a dedicated viewer occupying the BOTTOM-LEFT QUARTER of the work zone (title + text fill the top 3/4, the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -272,16 +272,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   showcase briefing renders in a **separate work-zone viewer** instead (see "Briefing item showcase"). Both
   loops run **only while the Main Window is visible** (`startShipPreview`/`stopShipPreview`), so they cost
   nothing during a fight; `resizeViewers` keeps both crisp on resize/rotation.
-- **Work-zone item showcase** (`#mw-item`, `mwItem`) — a **second** small viewer in the mission work zone
-  that shows the **3D model of the gear a campaign briefing grants** (Machine Gun on L2, Repair drone on L3),
-  spinning, at **2/3 scale** (`ITEM_SHOWCASE_SCALE`) — **without** displacing the ship in the right-column
-  preview. It sits in the mission **body row** (`#mw-mission-body`, flex): the description scrolls on the
-  **left**, the canvas is a **half-width, bottom-aligned block on the right**, docked against the ship column
-  (so the ship preview is immediately to its right, the text to its left/above). Side-by-side (not stacked)
-  so the canvas never steals the text's height — the earlier full-width block pushed the text off-screen on
-  phones. `showShowcaseItem(sc)` shows/hides it (toggles the canvas `.on` class + starts/stops its loop);
-  built lazily on first use, its loop is stopped on launch and when the bay view hides the mission canvas.
-  Hidden on L4 (no item) and side missions. Test hook: `window.__game.itemShowcaseTarget` (the item glb url,
+- **Work-zone item showcase** (`#mw-item`, `mwItem`) — a **second** viewer in the mission work zone that
+  shows the **3D model of the gear a campaign briefing grants** (Machine Gun on L2, Repair drone on L3),
+  spinning, at **full size** (`ITEM_SHOWCASE_SCALE = 1`) — **without** displacing the ship in the
+  right-column preview. It occupies roughly the **bottom-left quarter** of the work zone: the canvas is
+  **left-aligned, half-width** (`align-self: flex-start; width: 50%`) and sits **below the description**,
+  its height a **flex-basis % of the work-zone height** (`flex: 0 1 42%`, not `vh`, so it's stable under
+  the phone-rotation transform). The title + mission text fill the top ~3/4; the description has a
+  `min-height` so it never gets pushed off-screen (the earlier full-width block did). The ship preview is the
+  column to the right. `showShowcaseItem(sc)` shows/hides it (toggles the canvas `.on` class + starts/stops
+  its loop); built lazily on first use, its loop is stopped on launch and when the bay view hides the mission
+  canvas. Hidden on L4 (no item) and side missions. Test hook: `window.__game.itemShowcaseTarget` (the item glb url,
   or null when hidden).
 - **Community / feedback link.** A small localized link to the Telegram feedback group sits on the welcome
   screen and the game-over/victory overlay (`.community-link`). Its text and URL are i18n values
@@ -315,8 +316,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the player so the new loadout/components take effect. (Future action types: add credits, add to a
   stash, etc.)
   - **Briefing item showcase.** When a briefing **grants gear**, a **dedicated work-zone viewer** (`#mw-item`,
-    a half-width canvas docked to the right of the work zone — mission text to its left, the ship preview just
-    right of it) shows that item spinning at **2/3 scale** (Machine Gun on L2, Repair drone on L3) — the
+    a half-width canvas in the **bottom-left quarter** of the work zone — title + text fill the top 3/4, the
+    ship preview is the column to the right) shows that item spinning at **full size** (Machine Gun on L2,
+    Repair drone on L3) — the
     eye-catching item pulls the player into the text **without** replacing the ship in the right-column preview
     (the ship preview always shows the player's ship). The server attaches a
     **`showcase {kind,id}`** to the briefing response, derived from its grant actions

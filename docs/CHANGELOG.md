@@ -5,6 +5,14 @@
 
 ## 2026-06-29
 
+- **Briefing item showcase — full-size model in the bottom-left quarter.** Final placement: the granted item
+  (Machine Gun on L2, Repair drone on L3) now renders at **full size** (`ITEM_SHOWCASE_SCALE = 1`) in a
+  **left-aligned, half-width canvas occupying ~the bottom-left quarter of the work zone**, below the mission
+  text; the title + text fill the top 3/4, the ship preview stays in the column to the right. Canvas height
+  is a **flex-basis % of the work zone** (`flex: 0 1 42%`) instead of `vh`, so it's stable under the phone
+  portrait→landscape rotation; the description keeps a `min-height` so it's never pushed off-screen.
+  Client-only.
+
 - **Briefing item showcase — bigger model, side-by-side layout (phone fix).** Follow-up to the move below.
   The granted item now renders at **2/3 scale** (was 1/3 — it was too small) in a **half-width canvas docked
   to the right of the work zone**: the mission text scrolls on the left, the item sits bottom-right against
