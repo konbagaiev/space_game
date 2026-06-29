@@ -21,6 +21,16 @@ Deployed at **https://vega.tenony.com** (Hetzner VPS, Docker/Traefik, Postgres).
 levels with a boss, multi-weapon ships, anonymous + email/password accounts (SES verification ready),
 EN/RU localization, between-level briefings. Asset CDN provisioned (S3 + CloudFront).
 
+## Next up — current focus (in order)
+1. **`assets:reconcile`** — the asset GC/sync method (see *Assets pipeline* track below): prune unused
+   objects on S3 + the server disk, pull the current ones, so stored assets always match the catalog.
+
+> **DONE — Hangar rework** (was the MAIN item): the between-battles hub shipped as the **Main Window** —
+> fixed landscape layout, a **25% live hi-poly CDN ship-model preview** with IBL reflections, and the full
+> **shop + stash** loop. See Phase 1 below + `docs/SUMMARY.md`. Only **around-model slot icons** remain (a
+> later polish). The separate `docs/plans/hangar-rework.md` was never needed — it was built directly off the
+> `main-window-redesign.md` / `hangar-shop.md` / `economy-shop-v2.md` briefs.
+
 ## Guiding principles
 - **Ship for feedback early.** The build is already playable/live — don't gate feedback behind the full
   roadmap. Launch a minimal v0, then iterate on what real players tell us.
@@ -53,14 +63,17 @@ The goal of launching is *feedback*, so the missing pieces are the ones that cap
 ## Phase 1 — Progression core (the grind loop)
 The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to spend it.
 - [x] **Economy** — **DONE** (credits currency + persistent player balance, DECISIONS §11).
-- [~] **Hangar** — **basic screen shipped** (ship-pick + victory "Continue"). Still TODO: detailed
-      hi-poly model via the CDN (`model_url_high`, lazy load) + PBR/IBL scene (DECISIONS §14).
-- [ ] **Hangar shop + stash** — consolidates *storage* (stash table), *upgrades* (equip/unequip from
-      stash), and *shop* (buy/sell). Server-authoritative; sell = 75% of price; prices seeded 0 first.
-      **Spec'd → `docs/plans/hangar-shop.md`** (phased: data+server → stash UI → shop + around-model
-      slot icons). This is the "spend" side that closes the grind loop. Item ladder + pricing draft:
-      **`docs/plans/catalog-economy.md`** (v1, applied). v2 revisions — price ×2 (forgot the victory
-      bonus) + shop UI rework (separate Stash/Shop screens, two-column shop): **`docs/plans/economy-shop-v2.md`**.
+- [x] **Hangar → Main Window — DONE.** Reworked from the basic ship-pick screen into the between-battles
+      progression hub: a fixed landscape layout (top bar / left menu Missions·Loadout·Stash·Shop / work
+      zone), a **25% live hi-poly ship-model preview** via the CDN (`model_url_high`, lazy-loaded) with
+      RoomEnvironment/IBL reflections (DECISIONS §14), and briefing item showcases. See `docs/SUMMARY.md`
+      (Main Window) + `docs/plans/main-window-redesign.md`.
+- [x] **Hangar shop + stash — DONE.** The "spend" side that closes the grind loop: *storage* (stash table,
+      qty model), *upgrades* (equip/unequip from stash), and *shop* (buy/sell) — all server-authoritative +
+      transactional; sell = 75% of price; a live ship-stats panel with ▲/▼ deltas; Stash/Loadout show the
+      resale value, Shop the buy price. **Spec'd → `docs/plans/hangar-shop.md`**; item ladder + pricing:
+      **`docs/plans/catalog-economy.md`** (v1) + **`economy-shop-v2.md`** (v2: price ×2, separate
+      Stash/Shop screens, two-pane shop). **Remaining polish:** around-model slot icons (not built yet).
 - [ ] **Playtest shop balance (Kostya)** — once catalog prices + shop are live: verify the two purchase
       paths feel right, the Heavy hull (weight 50) isn't too sluggish, and grind length is good. **Needs
       the mission generator (Phase 2)** to earn credits for testing. Ref `docs/plans/catalog-economy.md`.
@@ -160,6 +173,21 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - **Ship-model pipeline** — **no binaries in git**; S3 canonical. Local script builds (gltf-transform
   simplify/optimize) + pushes; **CI pulls combat models from S3 at deploy** (baked into image, served
   same-origin), hangar high-poly on CloudFront; URLs in `catalog_seed.js`; CI drift-check. **`docs/plans/ship-model-pipeline.md`**.
+- [ ] **`assets:reconcile` — one method that makes stored assets match the catalog (GC + sync).** Today
+      `assets:check` only *verifies* referenced assets exist on S3; nothing *removes* superseded/unused
+      ones, and the deploy's `aws s3 sync` + `rsync` run **without `--delete`**, so an asset deleted from
+      S3 still **lingers on the prod server's disk** (re-baked into the image each deploy) and old hashes
+      pile up on S3. We currently clean this by hand (atomic `aws s3api delete-objects` — and the naive
+      `for f in $LIST` loop silently no-ops in zsh). Build a single command that, from the referenced set
+      already computed by `assets:check` (`model_url`/`model_url_high` + `SOUNDS` urls in `catalog_seed.js`):
+      **(1)** prunes orphaned/superseded objects on **S3** (`ships-combat/`, `ships-hangar/`, `sfx/`),
+      **(2)** mirrors the **server/local serve dirs** to the referenced set (drop files no longer
+      referenced so they stop being baked in — i.e. give the deploy a scoped `--delete` for
+      `client/assets/ships/` + `client/assets/sounds/`, which is safe because those dirs hold only assets
+      + in-git primitives, never `.env`), and **(3)** pulls any missing referenced asset from S3. Keep a
+      `--dry-run`; never touch `source/` originals; decide whether to keep *current-but-unwired* assets
+      (single-version, no ship points at them yet) vs delete them. Folds the manual cleanup + the
+      `update-ship-model` skill's delete step into the pipeline. See `docs/plans/ship-model-pipeline.md`.
 
 ---
 
