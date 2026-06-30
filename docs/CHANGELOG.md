@@ -17,6 +17,15 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 12: backend + telemetry → `src/net.js`.** Moved `fetchJson`,
+  `bankRun`, `track`, `currentLevelLabel`, and `unlockNextLevel` out of the inline script into `src/net.js`
+  (imports `G`/`CATALOG` from state, `updateHud` from hud, `buildMap` from world, `buildPlayerFor` from
+  ship-build — no import cycle). The community-link + pagehide funnel listeners stay inline (boot wiring,
+  calling the now-imported `track`/`currentLevelLabel`); `reloadPlayerWorld` also stays inline for now (it
+  calls `showMain`/`showWelcome`, still inline) and now calls the imported `fetchJson`/`buildMap`/
+  `buildPlayerFor`. This unblocks the `sim.js` slice (the loop calls `bankRun`/`track`/`unlockNextLevel`).
+  No behavior change. Unit 46/46; visual at the 10/6 flaky baseline. Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 11: `buildPlayerFor` → `src/ship-build.js`.** Moved the
   "(re)build the player ship and swap it into the scene" helper into `ship-build.js` (beside `buildPlayer`,
   which it already wraps; it needed only `scene` + `G.activeShip`/`G.currentShipName`, all already

@@ -853,11 +853,13 @@ modules (no bundler; `three` resolved by the importmap in `index.html`). See
   `buildMap`), `ship-factory.js` (`makeShip`/`applyShipModel` + `gltfLoader`), `projectiles.js`
   (bullets/explosions/exhaust/rockets/smoke FX), `ship-build.js` (catalog resolution + `buildPlayer`/
   `buildPlayerFor` + enemy spawning + fire groups), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
-  `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`).
+  `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`), `net.js`
+  (backend identity/banking/progression + funnel telemetry: `fetchJson`/`bankRun`/`track`/
+  `currentLevelLabel`/`unlockNextLevel`).
 - **Still inline in `index.html`** (to be extracted in later slices): the simulation `update()` loop +
   `levelRunner`, pause control (`setPaused`/`togglePause`) + the OOB warning + music routing
-  (`musicForState`/`refreshMusic`), net/telemetry, the Main Window / shop / welcome / account /
-  settings UI, and the bootstrap/`animate`/`window.__game` composition root.
+  (`musicForState`/`refreshMusic`), `reloadPlayerWorld` + the funnel listeners, the Main Window / shop /
+  welcome / account / settings UI, and the bootstrap/`animate`/`window.__game` composition root.
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)
