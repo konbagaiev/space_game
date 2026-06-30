@@ -892,5 +892,6 @@ first translation). See DECISIONS §10.
   occasional larger releases. See `client/visual/README.md`.
 
 ## Project structure
-- `client/` — the game (Three.js); `client/locales/` — i18n catalogs (`source.json` + `<lang>.json`);
-  `server/` — Node.js/Express backend + SQLite; `docs/` — documentation.
+- `client/` — the game (Three.js): `index.html` (markup + importmap + inline module script being
+  split out), `styles.css` (extracted CSS), `src/*.js` (ES modules); `client/locales/` — i18n catalogs
+  (`source.json` + `<lang>.json`); `server/` — Node.js/Express backend + SQLite; `docs/` — documentation.

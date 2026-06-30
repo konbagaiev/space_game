@@ -5,6 +5,12 @@
 
 ## 2026-06-30
 
+- **Refactor (client structure) — Slice 0: CSS extracted out of `index.html`.** Moved the ~560-line
+  inline `<style>` block verbatim into `client/styles.css`, linked via `<link rel="stylesheet">`. No
+  behavior change (the server already serves `clientDir` statically, so the new file is served with no
+  server change); visual suite unchanged from baseline. First step of the buildless ESM split per
+  `docs/plans/client-code-structure.md`.
+
 - **Bugfix — hangar no longer bricks when a required component is unequipped.** Unequipping a
   required slot (hull/engine/thruster) is intentional (the ship goes `launchable: false` and the
   part drops to the stash, gated by `updateTakeoffGate`), but the 3D hangar preview crashed building

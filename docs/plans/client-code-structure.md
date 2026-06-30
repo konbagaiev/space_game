@@ -6,6 +6,10 @@ cohesive, browser-loaded ES modules under `client/src/`, **without a bundler** a
 behavior change**. Do it **incrementally**, one safe slice per commit, each verified by the existing
 visual + unit suites before the next.
 
+**This is a readability/maintainability refactor, performance-neutral by design** — it is *not* a speed
+optimization. No slice should change FPS, load time, or behavior; the visual baselines are the guardrail
+(they must match byte-for-byte). Do not "optimize while you're in here" — keep each slice a pure move.
+
 This brief is self-contained: an executing agent can follow it without the planning conversation.
 
 ---
