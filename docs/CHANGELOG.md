@@ -17,6 +17,12 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 5: audio engine + SFX routing → `src/sound-routing.js`.** Moved
+  the `audio` engine singleton and the DB-driven `tracksFor`/`sfxFor` routing into `src/sound-routing.js`
+  (depends only on `audio.js` + `state.js`'s `soundMap`), imported back in. Music *state* selection
+  (`musicForState`/`refreshMusic`/`tryUnlockAudio`) stays inline since it reads live loop state. The
+  `createAudio`/`loadAudioSettings` imports moved into that module. No behavior change; visual unchanged.
+
 - **Refactor (client structure) — Slice 4: ship factory → `src/ship-factory.js`.** Moved
   `shipModelCfg`/`modelSpec`/`makeShip`/`applyShipModel` + the shared `gltfLoader` + `SHIP_MODEL_LEN`
   into `src/ship-factory.js`, imported back in (the inline model viewer reuses the exported loader). The

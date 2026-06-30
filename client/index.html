@@ -211,7 +211,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
 import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
-import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // Web Audio (synth SFX + generative music + sampled SFX)
+import { saveAudioSettings } from './src/audio.js'; // persist audio settings; the engine instance lives in sound-routing.js
+import { audio, tracksFor, sfxFor } from './src/sound-routing.js'; // audio engine + DB-driven SFX routing
 import { saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones); the active tier lives in G.gfx
 import { esc, cssColor, slotLabel, priceLabel, sellLabel } from './src/format.js'; // pure presentation helpers
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, moons, setPieces, soundMap, CATALOG, keys, touchAim } from './src/state.js'; // shared state bag + entity collections + catalog + input
@@ -219,19 +220,11 @@ import { scene, skyScene, camera, renderer, combatAmbient, sun, camOffset, isTou
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, updateMoons, buildSetPiece } from './src/world.js'; // arena + sky/planet/setpieces + buildMap
 import { shipModelCfg, modelSpec, makeShip, gltfLoader, SHIP_MODEL_LEN } from './src/ship-factory.js'; // ship primitive + .glb model loading
 
-// Audio engine: synthesized SFX + generative music (procedural), plus an optional sampled SFX layer
-// (preloadSamples). The AudioContext is created lazily on the first user gesture (autoplay) via
-// audio.unlock(); samples are fetched once the context is live. See DECISIONS §22.
-const audio = createAudio(loadAudioSettings(window.localStorage));
+// audio engine + tracksFor/sfxFor routing moved to src/sound-routing.js (imported at top).
 let samplesLoaded = false; // one-time guard so the sample preload fires once, after the context unlocks
 // SFX + music routing is DB-driven (docs/plans/sound-classes-and-mapping.md): /api/sounds gives the
 // registry (key→url) + the map ((entity,class,event)→[keys]), both filled in bootstrap(). No hardcoded routing.
 let soundUrls = {};                 // logical key → same-origin url (fed to audio.preloadSamples)
-// soundMap moved to src/state.js (imported at top)
-// All sound keys mapped to an event (weapon fire, ship explode, scene music, …).
-function tracksFor(entity, cls, event) { return (cls && soundMap.get(`${entity}|${cls}|${event}`)) || []; }
-// One sound key for an event (the first mapped), or undefined → the engine uses its synth fallback.
-function sfxFor(entity, cls, event) { return tracksFor(entity, cls, event)[0]; }
 
 // Graphics quality tier lives in G.gfx (built in state.js, read by engine.js at construction).
 const DEV = location.search.includes('dev'); // ?dev → record per-frame perf samples to the server (see devPerf)
