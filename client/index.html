@@ -225,6 +225,7 @@ import { el } from './src/dom.js'; // single fail-loud inventory of shared index
 import { updateHud, updateMarkers, updateMiniMap, updatePerf } from './src/hud.js'; // per-frame HUD draws (readouts/markers/radar/perf)
 import { fetchJson, bankRun, track, currentLevelLabel, unlockNextLevel } from './src/net.js'; // backend identity/banking/progression + funnel telemetry
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, setPaused, togglePause, autoPauseOnBlur } from './src/sim.js'; // the simulation loop + level runner + music + pause
+import { buildTunePanel } from './src/tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 
 // audio engine + tracksFor/sfxFor routing moved to src/sound-routing.js (imported at top).
 let samplesLoaded = false; // one-time guard so the sample preload fires once, after the context unlocks
@@ -1237,60 +1238,9 @@ async function openBay() {
   } catch {}
 }
 
-// ---------- Dev color/lighting tuning panel (?tune) ----------
-// Dev-only. lil-gui is dynamically imported inside the ?tune guard (see bootstrap), so players never
-// fetch it and the default build is unchanged. Sliders mutate the live light/fog/background refs;
-// "Dump" prints a labeled snapshot saying where each value goes (seed vs. hardcoded). See
-// docs/plans/color-tuning.md.
-function dumpPalette(){
-  const H = c => '0x' + c.getHexString();
-  console.log('— catalog_seed.js  MAPS home-system.descriptor —', {
-    background: H(skyScene.background),
-    sky: {
-      ambient: { color: H(G.skyAmbient.color), intensity: G.skyAmbient.intensity },
-      sun: { color: H(G.skySun.color), intensity: G.skySun.intensity, pos: G.skySun.position.toArray() },
-    },
-  });
-  console.log('— index.html (currently hardcoded) —', {
-    fog: { color: H(scene.fog.color), near: scene.fog.near, far: scene.fog.far },
-    combatAmbient: { color: H(combatAmbient.color), intensity: combatAmbient.intensity },
-    combatSun: { color: H(sun.color), intensity: sun.intensity },
-  });
-}
-
-function buildTunePanel(GUI){
-  const gui = new GUI({ title: 'Palette (?tune)' });
-  const hx = c => '#' + c.getHexString();
-
-  const bg = gui.addFolder('Space backdrop');
-  const bgC = { background: hx(skyScene.background), fog: hx(scene.fog.color) };
-  bg.addColor(bgC, 'background').onChange(v => skyScene.background.set(v));
-  bg.addColor(bgC, 'fog').onChange(v => scene.fog.color.set(v));
-  bg.add(scene.fog, 'near', 0, 600);
-  bg.add(scene.fog, 'far', 100, 1200);
-
-  const sl = gui.addFolder('Sky light (terminator)');
-  const slC = { ambient: hx(G.skyAmbient.color), sun: hx(G.skySun.color) };
-  sl.addColor(slC, 'ambient').onChange(v => G.skyAmbient.color.set(v));
-  sl.add(G.skyAmbient, 'intensity', 0, 3).name('ambient intensity');
-  sl.addColor(slC, 'sun').onChange(v => G.skySun.color.set(v));
-  sl.add(G.skySun, 'intensity', 0, 8).name('sun intensity');
-  sl.add(G.skySun.position, 'x', -300, 300);
-  sl.add(G.skySun.position, 'y', -300, 300);
-  sl.add(G.skySun.position, 'z', -300, 300);
-
-  const cl = gui.addFolder('Combat light (affects ship readability)');
-  const clC = { ambient: hx(combatAmbient.color), sun: hx(sun.color) };
-  cl.addColor(clC, 'ambient').onChange(v => combatAmbient.color.set(v));
-  cl.add(combatAmbient, 'intensity', 0, 3).name('ambient intensity');
-  cl.addColor(clC, 'sun').onChange(v => sun.color.set(v));
-  cl.add(sun, 'intensity', 0, 4).name('sun intensity');
-
-  // Ocean is a baked texture (makePlanetTexture), so it only re-tints on a full rebuild.
-  gui.add({ rebuild: () => { if (G.currentMapDescriptor) buildMap(G.currentMapDescriptor); } }, 'rebuild')
-     .name('↻ Rebuild planet (re-bake ocean)');
-  gui.add({ dump: dumpPalette }, 'dump').name('⤓ Dump palette → console');
-}
+// ---------- Dev color/lighting tuning panel moved to src/tune.js ----------
+// buildTunePanel(GUI) is imported at the top; bootstrap dynamically imports lil-gui under ?tune and
+// calls it (so players never fetch the GUI lib).
 
 // Test/inspection hook for the headless visual tests (client/visual/). Inert during normal
 // play — only attached when the page is opened with `?debug`. It exposes simulation internals

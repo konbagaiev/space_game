@@ -17,6 +17,13 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 14: `?tune` palette panel → `src/tune.js`.** Moved the dev-only
+  color/lighting tuning panel (`dumpPalette` + `buildTunePanel`) into `src/tune.js` (imports `scene`/
+  `skyScene`/`combatAmbient`/`sun` from engine, `G` from state, `buildMap` from world). `buildTunePanel(GUI)`
+  is still called only under `?tune` in bootstrap, and lil-gui is still dynamically imported there — so
+  players download the tiny module but never the GUI library. No behavior change. Unit 46/46; visual 10/6
+  baseline. Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 13: the simulation → `src/sim.js`.** The biggest slice: moved the
   fixed-step `update(dt)` loop (~310 lines), the `levelRunner` (DB phase/wave script), the cosmetic helpers
   (`forwardVec`/`updateBank` wing-bank/`warpPlayerToCenter`/`updateOobWarning`), the music routing
