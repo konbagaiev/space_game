@@ -220,7 +220,7 @@ import { scene, skyScene, camera, renderer, combatAmbient, sun, camOffset, isTou
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, updateMoons, buildSetPiece } from './src/world.js'; // arena + sky/planet/setpieces + buildMap
 import { shipModelCfg, modelSpec, makeShip, gltfLoader, SHIP_MODEL_LEN } from './src/ship-factory.js'; // ship primitive + .glb model loading
 import { spawnBullet, spawnExplosion, spawnShipExplosion, emitExhaust, spawnRocket, detonateRocket, spawnSmoke, findTargetInSector, liveParticles, bulletGeo, explosionGeo } from './src/projectiles.js'; // projectiles + combat FX (geos reused by prewarmShaders)
-import { resolveWeapon, resolveComponents, buildPlayer, spawnEnemyShip, spawnEnemy, updateGroups } from './src/ship-build.js'; // catalog resolution + player/enemy building + weapon fire groups
+import { resolveWeapon, resolveComponents, buildPlayer, buildPlayerFor, spawnEnemyShip, spawnEnemy, updateGroups } from './src/ship-build.js'; // catalog resolution + player/enemy building + weapon fire groups
 import { el } from './src/dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf } from './src/hud.js'; // per-frame HUD draws (readouts/markers/radar/perf)
 
@@ -1879,21 +1879,8 @@ const fetchJson = async (url) => {
   return r.json();
 };
 
-// (Re)build the player ship and swap it into the scene. For the player's *active* ship we use its
-// persisted loadout/components (so a DB weapon swap from a level briefing actually takes effect);
-// other (preview) ships fall back to their catalog defaults.
-// The ship currently built into the scene (G.currentShipName) and the player's active-ship record
-// (G.activeShip { ship, loadout, components, ... }) live on the shared bag — written by the welcome/
-// shop/account/net flows and read by buildPlayerFor below.
-function buildPlayerFor(ship) {
-  if (G.player) scene.remove(G.player.mesh);
-  const useActive = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === ship.name;
-  const loadout = useActive ? G.activeShip.loadout : { mounts: ship.stats.mounts };
-  const components = useActive ? G.activeShip.components : ship.components;
-  G.player = buildPlayer({ ship, loadout, components });
-  G.currentShipName = ship.name;
-  scene.add(G.player.mesh);
-}
+// buildPlayerFor (rebuild the player ship + swap it into the scene) moved to src/ship-build.js;
+// imported at the top. It reads/writes G.activeShip + G.currentShipName on the shared bag.
 // A ship's hull HP for the welcome card (resolved from its hull component).
 const shipHullHp = (ship) => CATALOG.components.get(ship.components?.hull)?.stats.durability ?? '?';
 

@@ -851,8 +851,8 @@ modules (no bundler; `three` resolved by the importmap in `index.html`). See
   index.html nodes — HUD readouts + the result `overlay`; a missing id throws on boot).
 - **Domains (browser-only, touch the scene):** `world.js` (arena + sky/planet/moons/asteroids/set-pieces +
   `buildMap`), `ship-factory.js` (`makeShip`/`applyShipModel` + `gltfLoader`), `projectiles.js`
-  (bullets/explosions/exhaust/rockets/smoke FX), `ship-build.js` (catalog resolution + `buildPlayer` +
-  enemy spawning + fire groups), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
+  (bullets/explosions/exhaust/rockets/smoke FX), `ship-build.js` (catalog resolution + `buildPlayer`/
+  `buildPlayerFor` + enemy spawning + fire groups), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
   `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`).
 - **Still inline in `index.html`** (to be extracted in later slices): the simulation `update()` loop +
   `levelRunner`, pause control (`setPaused`/`togglePause`) + the OOB warning + music routing

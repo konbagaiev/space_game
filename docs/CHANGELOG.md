@@ -17,6 +17,13 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 11: `buildPlayerFor` → `src/ship-build.js`.** Moved the
+  "(re)build the player ship and swap it into the scene" helper into `ship-build.js` (beside `buildPlayer`,
+  which it already wraps; it needed only `scene` + `G.activeShip`/`G.currentShipName`, all already
+  available there). This is a prerequisite for `net.js`: `unlockNextLevel` calls `buildPlayerFor`, so it had
+  to be a module before the net layer can move out. No behavior change. Unit suite 46/46; visual suite at
+  the 10/6 flaky baseline. Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 10: promote the back-half shared scalars onto `G`.** Keystone for
   the remaining split (mirrors slice 2's engine/world promotion): the simulation loop, the backend/net code,
   and the UI panels form one mutually-recursive blob sharing ~9 reassigned scalars, so none can move to a

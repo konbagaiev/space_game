@@ -60,6 +60,20 @@ export function buildPlayer(active) {
   return p;
 }
 
+// (Re)build the player ship from a catalog ship row and swap it into the scene. For the player's
+// *active* ship we use its persisted loadout/components (so a DB weapon swap from a level briefing
+// actually takes effect); other (preview) ships fall back to their catalog defaults. G.currentShipName
+// + G.activeShip live on the shared bag — written by the welcome/shop/account/net flows.
+export function buildPlayerFor(ship) {
+  if (G.player) scene.remove(G.player.mesh);
+  const useActive = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === ship.name;
+  const loadout = useActive ? G.activeShip.loadout : { mounts: ship.stats.mounts };
+  const components = useActive ? G.activeShip.components : ship.components;
+  G.player = buildPlayer({ ship, loadout, components });
+  G.currentShipName = ship.name;
+  scene.add(G.player.mesh);
+}
+
 // Build one enemy from a DB ship row (type 'enemy'); weapons + fire groups come from its stats.
 export function spawnEnemyShip(shipDef) {
   const s = shipDef.stats;
