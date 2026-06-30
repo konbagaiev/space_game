@@ -59,6 +59,9 @@ export const CATALOG = {
   level: null,           // the active level descriptor (phase/wave script)
 };
 
+// --- Gameplay constants ---
+export const SPAWN_GROW_TIME = 1.0; // ships grow from a dot to full size over this many seconds (warp-in)
+
 // --- Input state ---
 export const keys = {};                                          // KeyboardEvent.code -> bool
 export const touchAim = { active: false, heading: 0, thrust: 0 }; // touch stick: nose heading + thrust magnitude

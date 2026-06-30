@@ -17,6 +17,13 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 8: ship building & weapons → `src/ship-build.js`.** Moved the
+  catalog resolution (`resolveWeapon`/`resolveComponents`/`buildMounts`/`buildGroups`), `buildPlayer`,
+  enemy spawning (`spawnEnemyShip`/`spawnEnemy`) and the fire-group logic (`fireMount`/`updateGroups`)
+  into `src/ship-build.js`, imported back in. The shared `SPAWN_GROW_TIME` constant moved to `state.js`.
+  The inline `levelRunner` stays (its methods close over the loop's kills/spawn/pause state and call the
+  imported `spawnEnemyShip`). No behavior change; visual suite unchanged from baseline (combat green).
+
 - **Refactor (client structure) — Slice 7: projectiles & combat FX → `src/projectiles.js`.** Moved
   bullets, micro-explosions, the layered ship-death burst, engine exhaust trail, homing rockets and
   rocket smoke (`spawnBullet`/`spawnExplosion`/`spawnShipExplosion`/`emitExhaust`/`spawnRocket`/
