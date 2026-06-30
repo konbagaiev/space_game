@@ -1,7 +1,8 @@
 # Client code restructure — split `index.html` into ES modules
 
-**Status:** IN PROGRESS — foundation + gameplay core done (10 commits on branch
-`refactor/client-esm-split`). See **§0 Resume checkpoint** below before continuing; the rest of this
+**Status:** IN PROGRESS — foundation + gameplay core + sim/net/reset all extracted (slices 0–15 on branch
+`refactor/client-esm-split`; index.html 3736 → ~1833 lines). Only the UI cluster + composition root remain
+(one final main.js slice — see §0). See **§0 Resume checkpoint** below before continuing; the rest of this
 brief is the original plan (still the source of truth for what's left).
 
 ---
@@ -28,12 +29,33 @@ once — that's the signal, not the 6 steady flakes. Unit suite (`cd client && n
 4. Re-grep that no stale reference to a moved symbol remains in `index.html`; drop now-unused imports.
 5. Commit with a `Client refactor slice N: …` message + a CHANGELOG bullet.
 
-**Done (index.html: 3736 → ~2510 lines):** `styles.css`, `format.js` (+test), `state.js`, `engine.js`,
-`world.js`, `ship-factory.js`, `projectiles.js`, `ship-build.js`, `sound-routing.js`, `dom.js`, `hud.js`
-(the four per-frame draws), and the G-promotions: `player`/`kills`/`earned`/`balance` (slices 6/9) plus
-the back-half keystone (slice 10) `playerId`/`banked`/`gameStartTime`/`gameStartSent`/`quitSent`/
-`pendingBriefing`/`activeShip`/`currentShipName`/`activeMission`. SUMMARY "Client module layout" +
-DECISIONS §31 written.
+**Done (index.html: 3736 → ~1833 lines, slices 0–15):** `styles.css`, `format.js` (+test), `state.js`,
+`engine.js`, `world.js`, `ship-factory.js`, `projectiles.js`, `ship-build.js` (+`buildPlayerFor`),
+`sound-routing.js`, `dom.js`, `hud.js` (the four per-frame draws), `net.js` (backend/telemetry), `sim.js`
+(the `update` loop + `levelRunner` + wing-bank + warp/OOB + music + pause + `reset`), `tune.js` (the
+`?tune` panel), and the G-promotions: `player`/`kills`/`earned`/`balance` (slices 6/9), the back-half
+keystone (slice 10) `playerId`/`banked`/`gameStartTime`/`gameStartSent`/`quitSent`/`pendingBriefing`/
+`activeShip`/`currentShipName`/`activeMission`, and `gameStarted`/`paused` (slice 13). SUMMARY "Client
+module layout" + DECISIONS §31 written.
+
+**Remaining = the UI cluster + composition root (the final main.js step).** Still inline: the Main Window
+(`showMain`/`selectMenu`/missions/model-viewer/preview/showcase), the hangar shop+stash, the welcome
+screen (`showWelcome`/`renderShipCards`/`takeOff`), the account/auth block (+`reloadPlayerWorld`), the
+audio-settings modal + i18n UI glue, and the bootstrap/`animate`/`prewarmShaders`/`window.__game` root.
+**These are mutually-recursive** (e.g. `mainwindow.selectMenu`→`shop.openBay`; `welcome.renderShipCards`→
+`mainwindow.previewShip`; `account.doLogin`→`reloadPlayerWorld`→`mainwindow.showMain`/`welcome.showWelcome`;
+the i18n glue re-renders every panel; settings reset reloads the page). A module can't call a function
+still in the inline `<script>`, so **they must be extracted together** (one slice), not one-at-a-time —
+otherwise the first module that calls a still-inline sibling breaks. ESM tolerates the resulting runtime
+import cycles (all calls happen on user actions, never at module-init). Recommended: move the whole
+remaining block into modules in one carefully-verified slice — split into `mainwindow.js`/`shop.js`/
+`welcome.js`/`account.js`/`settings.js` + `main.js` (bootstrap/animate/`__game`), each importing what it
+calls from its siblings — then collapse the inline `<script type="module">` to `import './src/main.js'`
+(keep the importmap + the `RoomEnvironment` import in index.html, or move it to the model-viewer module).
+Shared helpers `deriveShipStats`/`renderShipStatsBar`/`updateTakeoffGate` are used by both shop + Main
+Window (put in `shop.js`, import into `mainwindow.js`). Visual coverage is decent for this cluster
+(`05-hangar-shop`, `07-mobile-hangar`, `10-mission-board`, `01-smoke`, `14-reset-progress`,
+`97-briefing-showcase`); pure auth register/login has no scenario, so smoke-test those manually.
 
 **⚠️ ORDERING CORRECTION discovered during slice 10 (overrides the original §4 order below):** the back
 half is one mutually-recursive blob — `sim` (`update`/`levelRunner`) calls `net` (`bankRun`/`track`/
