@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME } from './state.js';
 import { scene, camera, camOffset, isTouch } from './engine.js';
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons } from './world.js';
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
 import { repairTick } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
@@ -509,4 +509,60 @@ export function togglePause() {
 // Mobile: auto-pause when the browser/tab loses focus, so a backgrounded fight doesn't keep running.
 export function autoPauseOnBlur() {
   if (isTouch && G.gameStarted && G.player && G.player.alive && !levelRunner.won && !G.paused) setPaused(true);
+}
+
+// ---------- Restart ----------
+// Clear all transient entities/FX, recenter the (possibly drifting) arena, rebuild the map's set-pieces,
+// respawn the player at full health, and (re)start the level. Called by the UI flows (take-off, the
+// overlay Restart/Continue) — imported by them from here.
+export function reset() {
+  for (const b of bullets) { scene.remove(b.mesh); b.mesh.material.dispose(); }
+  bullets.length = 0;
+  for (const x of explosions) { scene.remove(x.mesh); x.mesh.material.dispose(); }
+  explosions.length = 0;
+  for (const p of trail) { scene.remove(p.mesh); p.mesh.material.dispose(); }
+  trail.length = 0;
+  for (const r of rockets) { scene.remove(r.obj); r.obj.children[0].material.dispose(); }
+  rockets.length = 0;
+  for (const s of smoke) { scene.remove(s.mesh); s.mesh.material.dispose(); }
+  smoke.length = 0;
+  for (const s of sparks) { scene.remove(s.mesh); s.mesh.material.dispose(); }
+  sparks.length = 0;
+  for (const w of shockwaves) { scene.remove(w.mesh); w.mesh.material.dispose(); }
+  shockwaves.length = 0;
+  for (const e of enemies) scene.remove(e.mesh);
+  enemies.length = 0;
+  // A side mission fights over its own location in the world (its set-piece); the campaign uses (0,0).
+  const cx = (G.activeMission && G.activeMission.center && G.activeMission.center.x) || 0;
+  const cz = (G.activeMission && G.activeMission.center && G.activeMission.center.z) || 0;
+  arenaCenter.set(cx, 0, cz);             // fresh run: center the (possibly drifting) combat zone
+  arenaBorder.line.position.set(cx, 0, cz);
+  // a mission may drift its zone (the freighter escort); the campaign and other missions stay static
+  G.arenaDrift = (G.activeMission && G.activeMission.drift)
+    ? new THREE.Vector3(G.activeMission.drift.x || 0, 0, G.activeMission.drift.z || 0) : null;
+  // rebuild the shared world's set-pieces fresh each run (resets the cruising freighter to its start)
+  for (const sp of setPieces) scene.remove(sp.obj);
+  setPieces.length = 0;
+  for (const spec of G.mapSetpieces) buildSetPiece(spec);
+  G.player.mesh.position.set(cx, 0.6, cz);
+  G.player.vel.set(0, 0, 0);
+  G.player.heading = 0;
+  G.player.hp = G.player.maxHp;
+  G.player.oobTime = 0;             // fresh run: clear the out-of-bounds timer
+  G.player.spawnAge = SPAWN_GROW_TIME; // and any in-progress warp-back animation (back to full size)
+  if (G.player.spawnScale) G.player.mesh.scale.copy(G.player.spawnScale);
+  G.player._repairAccum = 0; // fresh run: clear banked repair-drone time
+  for (const g of Object.values(G.player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
+  G.player.alive = true;
+  G.earned = 0; G.kills = 0; G.banked = false; // new run: reset session credits + the bank-once guard (balance persists)
+  G.gameStartTime = performance.now(); // start timing a new game (for history)
+  levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
+  setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
+  refreshMusic();   // a live fight → combat music
+  el.overlay.style.display = 'none';
+  // funnel telemetry: game_start once per session, level_start per run; tag Sentry's scope with the level
+  const level = currentLevelLabel();
+  if (!G.gameStartSent) { G.gameStartSent = true; track('game_start', { level }); }
+  track('level_start', { level });
+  if (window.Sentry) try { window.Sentry.setTag('level', level); } catch {}
 }

@@ -17,6 +17,14 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 15: `reset` → `src/sim.js` + dead-import cleanup.** Moved the
+  `reset()` restart routine (clears entities/FX, recenters the arena, rebuilds set-pieces, respawns the
+  player + (re)starts the level) into `sim.js` beside the loop it resets; the take-off + overlay
+  Restart/Continue flows import it. Trimmed imports the inline script no longer uses now that their callers
+  moved out: `combatAmbient`/`sun` (engine, → tune.js) and `updateMoons`/`buildSetPiece` (world, → sim.js).
+  This makes the remaining UI leaves extractable (they call `reset` as a module now). No behavior change.
+  Unit 46/46; visual at/above the flaky baseline (11/5 this run). Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 14: `?tune` palette panel → `src/tune.js`.** Moved the dev-only
   color/lighting tuning panel (`dumpPalette` + `buildTunePanel`) into `src/tune.js` (imports `scene`/
   `skyScene`/`combatAmbient`/`sun` from engine, `G` from state, `buildMap` from world). `buildTunePanel(GUI)`

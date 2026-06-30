@@ -857,10 +857,10 @@ modules (no bundler; `three` resolved by the importmap in `index.html`). See
   (backend identity/banking/progression + funnel telemetry: `fetchJson`/`bankRun`/`track`/
   `currentLevelLabel`/`unlockNextLevel`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
-  `autoPauseOnBlur`), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
+  `autoPauseOnBlur` + the `reset` restart), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
 - **Still inline in `index.html`** (to be extracted in later slices): `reloadPlayerWorld` + the funnel
   listeners, the Main Window / shop / welcome / account / settings UI, and the bootstrap / `animate` /
-  `prewarmShaders` / `reset` / `window.__game` composition root (which now imports the loop from `sim.js`).
+  `prewarmShaders` / `window.__game` composition root (which now imports the loop + `reset` from `sim.js`).
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)
