@@ -19,6 +19,14 @@ const _touchEarly = matchMedia('(pointer: coarse)').matches || ('ontouchstart' i
 export const G = {
   gfx: resolveTier(loadTier(window.localStorage, _touchEarly)), // current graphics quality knobs (tier switch reloads the page)
   rotated: false,                                               // portrait-phone 90° rotation currently active
+  // --- world (built/reassigned by buildMap in world.js; read by the loop + ?tune panel + reset) ---
+  sky: null,                  // THREE.Group holding the planet + moons (sky scene)
+  stars: null,                // THREE.Group starfield (follows the camera in the loop)
+  skyAmbient: null,           // sky-scene ambient light (mutated live by the ?tune panel)
+  skySun: null,               // sky-scene directional light (the terminator source)
+  currentMapDescriptor: null, // last descriptor passed to buildMap() (?tune "Rebuild" button)
+  mapSetpieces: [],           // the current map's set-piece specs (reset() rebuilds them fresh each run)
+  arenaDrift: null,           // THREE.Vector3 (units/sec on x,z) when the current map drifts, else null
 };
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---

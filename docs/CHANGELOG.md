@@ -5,6 +5,25 @@
 
 ## 2026-06-30
 
+- **Tooling — multi-agent development pipeline (`/feature-pipeline`).** New skill
+  (`.claude/skills/feature-pipeline/SKILL.md`) that runs a feature end-to-end through four clean-context
+  agents in `.claude/agents/`: **feature-planner** (clarifying questions → self-contained plan in
+  `docs/plans/<id>.md`), **plan-critic** (APPROVE/REVISE, read-only), **feature-implementer** (code +
+  tests + doc updates in an isolated **git worktree**), **code-reviewer** (PASS/CHANGES, read-only). Feature
+  ID = `YYYY-MM-DD-HHMM-slug` (also the branch/worktree/CHANGELOG tag); "deploy" = merge/push to `main` →
+  CI/CD. Ends with a retro that flags high iteration counts and asks satisfaction-per-agent, appending
+  concrete lessons to each agent's `## Learned guidance`. Spec: `docs/plans/multi-agent-pipeline.md`. Also
+  recorded **DECISIONS §30** (keep processes simple until a real problem forces more — why we use timestamp
+  IDs, not a registry).
+
+- **Refactor (client structure) — Slice 3: world building → `src/world.js`.** Moved the arena boundary
+  (`ARENA`/`OOB_*` consts, `arenaCenter`, `arenaBorder`), the starfield, planet/moons/asteroid builders,
+  the procedural mission set-pieces and `buildMap`/`updateMoons`/`buildSetPiece` into `src/world.js`
+  (~560 lines), imported back in. Promoted the per-map handles reassigned by `buildMap` to the `G` bag
+  (`G.sky/stars/skyAmbient/skySun/currentMapDescriptor/mapSetpieces/arenaDrift`); `arenaCenter`/`planetPos`
+  are mutated-in-place so they stay `const`. No behavior change; visual suite unchanged from baseline
+  (set-pieces `09`, planet/stars `01` green).
+
 - **Refactor (client structure) — Slice 2b: engine singletons → `src/engine.js` + the `G` state bag.**
   Moved the renderer/`scene`/`skyScene`/`camera`/lights (`combatAmbient`/`sun`) + PMREM env-map, the
   orientation block (`isTouch`/`gameW`/`gameH`/`toGame`/`applyOrientation`) and the camera-zoom block
