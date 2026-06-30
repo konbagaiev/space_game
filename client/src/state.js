@@ -5,8 +5,21 @@
 // or assigning its properties) is visible everywhere. So every module reaches the
 // SAME live collection here. Never reassign these bindings; mutate their contents.
 //
-// (Reassigned scalars can't live here as plain `const`/`let` — they go in a mutable
-// state bag instead, introduced as the domains that own them are split out.)
+// (Reassigned scalars can't live here as plain `const`/`let` — they go in the mutable
+// state bag G below, introduced as the domains that own them are split out.)
+import { loadTier, resolveTier } from './graphics.js';
+
+// Touch detection for the first-run quality default (the real `isTouch` lives in engine.js).
+const _touchEarly = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+
+// Mutable state bag: scalars that get reassigned AND read across module boundaries live here
+// (an exported `let` can't be reassigned from an importing module — a property on a shared
+// `const` object can). Write `G.x = …`; read `G.x`. Scalars are promoted onto G as the domains
+// that own them are split out — start with what the engine needs at construction.
+export const G = {
+  gfx: resolveTier(loadTier(window.localStorage, _touchEarly)), // current graphics quality knobs (tier switch reloads the page)
+  rotated: false,                                               // portrait-phone 90° rotation currently active
+};
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---
 export const bullets = [];

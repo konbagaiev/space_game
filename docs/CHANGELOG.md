@@ -5,6 +5,16 @@
 
 ## 2026-06-30
 
+- **Refactor (client structure) — Slice 2b: engine singletons → `src/engine.js` + the `G` state bag.**
+  Moved the renderer/`scene`/`skyScene`/`camera`/lights (`combatAmbient`/`sun`) + PMREM env-map, the
+  orientation block (`isTouch`/`gameW`/`gameH`/`toGame`/`applyOrientation`) and the camera-zoom block
+  (`setZoom`/`zoomBy`/`tickZoom`/`camOffset`) into `src/engine.js`, imported back in. Introduced the
+  mutable state bag `export const G` in `state.js` for reassigned cross-module scalars — seeded with
+  `G.gfx` (graphics tier; tier switch reloads the page, so it's effectively read-only) and `G.rotated`
+  (portrait-rotation flag, read by the reset-slider code). The inline `RoomEnvironment` import stays for
+  the not-yet-moved model viewer. No behavior change; visual suite unchanged from baseline (orientation
+  `15-mobile-landscape` + zoom/combat scenarios green).
+
 - **Refactor (client structure) — Slice 2a: shared entity collections → `src/state.js`.** Moved the
   `const` entity/data collections (`bullets`, `explosions`, `sparks`, `shockwaves`, `trail`, `rockets`,
   `smoke`, `enemies`, `moons`, `setPieces`, `soundMap`, `CATALOG`, `keys`, `touchAim`) out of the inline

@@ -998,6 +998,33 @@ machinery was factored into `buildModelViewer`/`startViewer`/`stopViewer`/`resiz
 the second is built lazily and its rAF loop is stopped on launch / when the bay view hides the mission
 canvas, so it costs nothing outside an active briefing.
 
+## 30. Keep processes simple until a real problem forces otherwise (YAGNI for workflow)
+
+**Decision.** When designing *workflow / tooling / process* (not just code), default to the **simplest
+thing that works for how we operate today**, and only add structure once we've hit a concrete problem —
+or a problem is clearly, imminently likely. We deliberately do **not** pre-build for hypothetical future
+scale.
+
+**Why.** Recorded while designing the multi-agent development pipeline (`docs/plans/multi-agent-pipeline.md`,
+the `feature-pipeline` skill + planner/critic/implementer/reviewer agents). Two concrete calls made under
+this principle:
+- **Feature IDs = timestamp prefix `YYYY-MM-DD-HHMM-slug`** (e.g. `2026-06-30-1612-laser-cannon`), used for
+  the plan filename, git branch, worktree dir, and CHANGELOG bucket. We **rejected** a sequential-number +
+  shared `REGISTRY.md` ledger: sequential numbers only collide under *parallel allocation*, which is a
+  multi-author concern, and the ledger added moving parts (allocation commits, `[skip ci]` hygiene,
+  rebase-before-write) we don't need yet. A timestamp is collision-free for a single author and needs no
+  central state.
+- **Single-author assumption is explicit.** We are not onboarding other developers now; when that changes,
+  *that* is the trigger to revisit ID allocation, locking, and review gating — not before.
+
+**How to apply.** Before adding a registry, a locking scheme, a queue, a config layer, an abstraction, or a
+multi-step process step, ask: *which real, present problem does this solve?* If the answer is "a future one
+that may not arrive," don't build it — note it as a future trigger and move on. This applies to the agents
+and the pipeline skill themselves: grow their rubrics from **actual** feedback (the retro step), not
+speculation.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

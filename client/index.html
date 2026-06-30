@@ -209,14 +209,15 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; // used by the inline model-viewer (engine.js imports its own)
 import { deriveDrive, repairTick, shipMass } from './src/components.js'; // pure derivation; ship/weapon DATA now comes from the DB
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './src/steering.js';
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
 import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // Web Audio (synth SFX + generative music + sampled SFX)
-import { loadTier, resolveTier, saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones)
+import { saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones); the active tier lives in G.gfx
 import { esc, cssColor, slotLabel, priceLabel, sellLabel } from './src/format.js'; // pure presentation helpers
-import { bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, moons, setPieces, soundMap, CATALOG, keys, touchAim } from './src/state.js'; // shared entity collections + catalog + input
+import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, moons, setPieces, soundMap, CATALOG, keys, touchAim } from './src/state.js'; // shared state bag + entity collections + catalog + input
+import { scene, skyScene, camera, renderer, combatAmbient, sun, camOffset, isTouch, gameW, gameH, toGame, applyOrientation, zoomBy, tickZoom } from './src/engine.js'; // engine singletons + orientation + zoom
 
 // Audio engine: synthesized SFX + generative music (procedural), plus an optional sampled SFX layer
 // (preloadSamples). The AudioContext is created lazily on the first user gesture (autoplay) via
@@ -232,10 +233,7 @@ function tracksFor(entity, cls, event) { return (cls && soundMap.get(`${entity}|
 // One sound key for an event (the first mapped), or undefined → the engine uses its synth fallback.
 function sfxFor(entity, cls, event) { return tracksFor(entity, cls, event)[0]; }
 
-// Graphics quality tier — read BEFORE the renderer (antialias is a constructor arg). `isTouch` is
-// defined later (used by the input layer), so detect touch locally here for the first-run default.
-const _touchEarly = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
-let gfx = resolveTier(loadTier(window.localStorage, _touchEarly)); // current quality knobs (live-mutated on change)
+// Graphics quality tier lives in G.gfx (built in state.js, read by engine.js at construction).
 const DEV = location.search.includes('dev'); // ?dev → record per-frame perf samples to the server (see devPerf)
 
 // Music follows game state: the driving combat mood during a live fight, the calmer hangar mood on
@@ -259,19 +257,12 @@ function tryUnlockAudio() {
 UNLOCK_EVENTS.forEach((ev) => addEventListener(ev, tryUnlockAudio));
 addEventListener('click', (e) => { if (e.target.closest('button')) audio.sfx.uiClick(); }, true);
 
-// ---------- Base scene ----------
-const scene = new THREE.Scene();
-scene.background = null; // background is drawn by the sky scene (first pass); combat is transparent on top
-scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so distant rocks fade into the backdrop
+// ---------- Engine moved to src/engine.js ----------
+// scene, skyScene, renderer, camera, lights (combatAmbient/sun), the orientation block
+// (isTouch/gameW/gameH/toGame/applyOrientation, rotation flag on G.rotated) and the camera-zoom
+// block (setZoom/zoomBy/tickZoom/camOffset) are imported from engine.js at the top.
 
-// ---------- Mobile landscape: render the game horizontally even when the phone is held in portrait ----------
-// The browser can't make its viewport wider than the physical screen, and screen.orientation.lock is
-// unsupported on iOS Safari — so on a touch device in portrait we rotate the whole <body> 90° (CSS class
-// `rot`) and run the game in the SWAPPED dimensions. `gameW`/`gameH` are the logical game size the renderer,
-// camera and all screen-space math use (swapped when rotated); `toGame(x,y)` maps a pointer's viewport
-// coords into game space (inverse of the CSS transform). applyOrientation() (defined below the camera)
-// flips this on resize/orientation change.
-const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+// Fullscreen capability detection stays here (used by the floating ⛶ button + body classes below).
 // iPhone Safari has no Fullscreen API (it exists only on iPad/Android), so the floating ⛶ button is a
 // no-op there — the only true full screen on iPhone is the standalone web app from "Add to Home Screen"
 // (we ship apple-mobile-web-app-capable). Detect both: no FS API → swap ⛶ for an A2HS hint; already
@@ -279,86 +270,6 @@ const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in wi
 const FS_API = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
 const STANDALONE = window.navigator.standalone === true ||
   !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-let rotated = false;
-const gameW = () => rotated ? window.innerHeight : window.innerWidth;
-const gameH = () => rotated ? window.innerWidth : window.innerHeight;
-// Inverse of CSS `transform: translateX(100vw) rotate(90deg); transform-origin: top left` → game coords.
-function toGame(clientX, clientY) {
-  return rotated ? { x: clientY, y: window.innerWidth - clientX } : { x: clientX, y: clientY };
-}
-
-const renderer = new THREE.WebGLRenderer({ antialias: gfx.antialias });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.info.autoReset = false; // count load across both render passes
-
-// Environment map for ship reflections (tier-gated — off on Performance; see graphics.js / DECISIONS §23).
-// A PMREM of THREE's RoomEnvironment gives metallic / low-roughness surfaces (the player ship's chrome &
-// painted metal, enemy hulls) real reflections — the "shine" a single directional light can't provide.
-// Applied to the combat `scene` only; the sky scene keeps its own flat backdrop look. Built once at
-// startup (the room is static), so there's no per-frame cost beyond the shader's cubemap lookup.
-if (gfx.envMap) {
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  pmrem.dispose();
-}
-document.body.appendChild(renderer.domElement);
-
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 900);
-const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // fixed camera offset from the ship
-
-// Toggle the portrait→landscape rotation and size the renderer/camera to the logical game dimensions.
-// Called at boot and on every resize/orientationchange (the only place we size the renderer).
-function applyOrientation() {
-  rotated = isTouch && window.innerHeight > window.innerWidth; // touch device held in portrait
-  document.body.classList.toggle('rot', rotated);
-  const w = gameW(), h = gameH();
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
-}
-applyOrientation(); // correct the initial portrait sizing before the first frame
-
-// --- camera zoom: scale the offset toward/away along its fixed angle (smaller = closer/zoom-in).
-//     Input sets a target; camZoom eases toward it over ~ZOOM_SMOOTH s so zoom feels smooth, not snappy. ---
-const ZOOM_MIN = 0.6, ZOOM_MAX = 2.2;   // closest / farthest multiples of CAM_OFFSET
-const ZOOM_SMOOTH = 0.2;                // seconds to (almost) reach a new zoom target
-const camOffset = CAM_OFFSET.clone();   // effective offset used by the follow code (eased toward the target)
-const clampZoom = z => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-let camZoom = 1;        // current (animated) zoom
-let camZoomTarget = 1;  // where zoom is easing toward
-function setZoom(z){
-  camZoomTarget = clampZoom(z);
-  try { localStorage.setItem('camZoom', camZoomTarget.toFixed(3)); } catch {}
-}
-function zoomBy(f){ setZoom(camZoomTarget * f); }
-// Ease camZoom -> camZoomTarget each frame (frame-rate independent) and rebuild camOffset.
-function tickZoom(dt){
-  if (camZoom === camZoomTarget) return;
-  const k = 1 - Math.exp(-dt / (ZOOM_SMOOTH / 4)); // ~ZOOM_SMOOTH s to land (~98%)
-  camZoom += (camZoomTarget - camZoom) * k;
-  if (Math.abs(camZoomTarget - camZoom) < 1e-3) camZoom = camZoomTarget; // snap when close enough
-  camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);
-}
-camZoom = camZoomTarget = clampZoom(parseFloat(localStorage.getItem('camZoom')) || 1); // restore saved zoom
-camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);                                     // apply at once on load (no ease)
-
-// === TWO INDEPENDENT LIGHTING SETUPS via two render passes ===
-// The sky (planet, moons, stars) is drawn by a separate scene with its own light,
-// combat by the main scene with its own. Each scene sees only its own sources,
-// so lighting is real and does not "leak" between groups.
-renderer.autoClear = false;
-
-// COMBAT LIGHT (main scene) - exactly as before
-const combatAmbient = new THREE.AmbientLight(0x405070, 1.2); // named so the ?tune panel can mutate it live
-scene.add(combatAmbient);
-const sun = new THREE.DirectionalLight(0xffffff, 1.68); // combat "sun" from above; +20% (was 1.4)
-sun.position.set(30, 60, 20);
-scene.add(sun);
-
-// SKY SCENE — its own light (real side source -> real terminator). Its contents (background,
-// lights, planet, moons, stars) are built from the map descriptor by buildMap() during bootstrap.
-const skyScene = new THREE.Scene();
 
 // Per-map scene objects, built by buildMap(). At module scope so the render loop can reach them.
 let sky = null, stars = null, rocks = null, planetPos = new THREE.Vector3();
@@ -902,7 +813,7 @@ function buildMap(descriptor) {
   skySun.position.set(...d.sky.sun.pos);
   skyScene.add(skySun);
 
-  stars = makeStars(Math.round(d.stars.count * gfx.starScale), d.stars.radius); // density scales with quality tier
+  stars = makeStars(Math.round(d.stars.count * G.gfx.starScale), d.stars.radius); // density scales with quality tier
   stars.renderOrder = -1; // draw stars first, before the planet and moons
   skyScene.add(stars);
 
@@ -1060,10 +971,10 @@ function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
 
 // Scale a particle count by the current graphics tier (additive overdraw is the mobile fill-rate
 // cost). Reads the live `gfx`, so a tier switch affects subsequent spawns immediately. Min 1.
-const scaledCount = (n) => Math.max(1, Math.round(n * gfx.particleScale));
+const scaledCount = (n) => Math.max(1, Math.round(n * G.gfx.particleScale));
 
 // Live count of the high-volume additive particles (continuous exhaust trail + burst sparks). The hard
-// ceiling `gfx.maxParticles` (Infinity off High/Balance) skips new emits when over budget — caps both
+// ceiling `G.gfx.maxParticles` (Infinity off High/Balance) skips new emits when over budget — caps both
 // fill-rate overdraw and per-frame JS on the weakest phones. trail+sparks dominate; the few short-lived
 // explosion/shockwave meshes aren't counted.
 const liveParticles = () => trail.length + sparks.length;
@@ -1103,13 +1014,13 @@ function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
   // Layered fireball: each layer bigger, dimmer-colored and slower than the last. The
   // second layer glows in the engine's exhaust color (the destroyed engine's signature).
   spawnExplosion(pos, 5 * s, 1.05, 0xffffff);     // white-hot flash core (always)
-  if (gfx.particleScale >= 0.7) spawnExplosion(pos, 8 * s, 1.8, exhaustColor);  // exhaust-colored glow (engine signature)
-  if (gfx.particleScale >= 0.7) spawnExplosion(pos, 11 * s, 2.55, 0xffc040);    // orange fireball
+  if (G.gfx.particleScale >= 0.7) spawnExplosion(pos, 8 * s, 1.8, exhaustColor);  // exhaust-colored glow (engine signature)
+  if (G.gfx.particleScale >= 0.7) spawnExplosion(pos, 11 * s, 2.55, 0xffc040);    // orange fireball
   spawnExplosion(pos, 14 * s, 3.75, 0xff3a18);    // red outer cloud (always) — lower tiers drop the 2 middle layers (overdraw)
 
   // Radial spark spray: warm embers + a few in the engine's exhaust color, flung outward.
   // Clamp to the live-particle budget so a death mid-fight can't blow past the ceiling on the lowest tier.
-  const N = Math.max(0, Math.min(scaledCount(22), gfx.maxParticles - liveParticles()));
+  const N = Math.max(0, Math.min(scaledCount(22), G.gfx.maxParticles - liveParticles()));
   for (let i = 0; i < N; i++) {
     const col = (i % 4 === 0) ? exhaustColor : SPARK_COLORS[i % SPARK_COLORS.length];
     const mat = new THREE.MeshBasicMaterial({
@@ -1129,7 +1040,7 @@ function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
 
   // Shockwave: a flat additive ring (tinted by the exhaust color) that expands and fades. It's one big
   // DoubleSide additive quad per death — skip it on the lowest tier to cut overdraw.
-  if (gfx.particleScale >= 0.5) {
+  if (G.gfx.particleScale >= 0.5) {
     const ringMat = new THREE.MeshBasicMaterial({
       color: exhaustColor, transparent: true, opacity: 0.9,
       blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
@@ -1164,8 +1075,8 @@ function spawnTrail(pos, fwd, shipVel, exhaust) {
 // Emit one exhaust puff from a ship's nozzle. Shared by every ship (player and enemies):
 // the nozzle sits behind the hull (scaled by the ship's size) with a little width spread.
 function emitExhaust(mesh, fwd, shipVel, exhaust) {
-  if (liveParticles() >= gfx.maxParticles) return; // hard ceiling on the lowest tier (overdraw + JS)
-  if (gfx.particleScale < 1 && Math.random() > gfx.particleScale) return; // thin the trail on lower tiers (per-frame overdraw)
+  if (liveParticles() >= G.gfx.maxParticles) return; // hard ceiling on the lowest tier (overdraw + JS)
+  if (G.gfx.particleScale < 1 && Math.random() > G.gfx.particleScale) return; // thin the trail on lower tiers (per-frame overdraw)
   const sc = mesh.scale.x || 1;                          // world scale (incl. spawn-grow + sizeScale)
   const back = (mesh.userData.tailZ ?? -1.6) * sc;       // spawn at the model's actual tail (engines)
   const pos = mesh.position.clone().addScaledVector(fwd, back);
@@ -2258,9 +2169,9 @@ const devPerf = (() => {
   const device = {
     ua: navigator.userAgent, dpr: window.devicePixelRatio,
     cores: navigator.hardwareConcurrency ?? null, mem: navigator.deviceMemory ?? null,
-    screen: `${screen.width}x${screen.height}`, gpu, gpuVendor, tier: gfx.name,
-    knobs: { pixelRatioCap: gfx.pixelRatioCap, antialias: gfx.antialias,
-             maxParticles: gfx.maxParticles === Infinity ? 'inf' : gfx.maxParticles },
+    screen: `${screen.width}x${screen.height}`, gpu, gpuVendor, tier: G.gfx.name,
+    knobs: { pixelRatioCap: G.gfx.pixelRatioCap, antialias: G.gfx.antialias,
+             maxParticles: G.gfx.maxParticles === Infinity ? 'inf' : G.gfx.maxParticles },
   };
   let bucket = [], bucketStart = performance.now(), outbox = [], lastFlush = bucketStart;
   const pct = (sorted, p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p / 100 * sorted.length))] : 0;
@@ -2588,15 +2499,15 @@ function launchMission(m) {
 // optional RoomEnvironment PMREM + a rotating group. Two instances exist — the right-column ship
 // preview (#mw-ship) and the work-zone briefing item showcase (#mw-item). Returns the viewer object.
 function buildModelViewer(canvas) {
-  const r = new THREE.WebGLRenderer({ canvas, antialias: gfx.antialias, alpha: true });
-  r.setPixelRatio(Math.min(window.devicePixelRatio, gfx.pixelRatioCap));
+  const r = new THREE.WebGLRenderer({ canvas, antialias: G.gfx.antialias, alpha: true });
+  r.setPixelRatio(Math.min(window.devicePixelRatio, G.gfx.pixelRatioCap));
   const sc = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
   cam.position.set(0, 1.4, 7);
   cam.lookAt(0, 0, 0);
   const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, 5, 4); sc.add(key);
   sc.add(new THREE.AmbientLight(0x4a5878, 1.4));
-  if (gfx.envMap) { // same RoomEnvironment reflections as the combat scene (a fresh PMREM per GL context)
+  if (G.gfx.envMap) { // same RoomEnvironment reflections as the combat scene (a fresh PMREM per GL context)
     const pm = new THREE.PMREMGenerator(r);
     sc.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
     pm.dispose();
@@ -3270,11 +3181,11 @@ function renderSettingsUI() {
 // is untouched.)
 const setQuality = document.getElementById('set-quality');
 function renderQualityUI() {
-  setQuality.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.tier === gfx.name));
+  setQuality.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.tier === G.gfx.name));
 }
 setQuality.addEventListener('click', (e) => {
   const b = e.target.closest('.seg-btn'); if (!b) return;
-  if (b.dataset.tier === gfx.name) return; // already active
+  if (b.dataset.tier === G.gfx.name) return; // already active
   saveTier(window.localStorage, b.dataset.tier);
   location.reload();
 });
@@ -3339,7 +3250,7 @@ function placeKnob(x, ease) {
 // measure clientY against the rect's top instead of clientX against its left (see toGame / applyOrientation).
 const knobXFromPointer = (clientX, clientY) => {
   const r = resetSlide.getBoundingClientRect();
-  const along = rotated ? (clientY - r.top) : (clientX - r.left);
+  const along = G.rotated ? (clientY - r.top) : (clientX - r.left);
   return along - resetKnob.offsetWidth / 2;
 };
 function snapResetSlideBack() { resetDragging = false; resetSlide.classList.remove('dragging'); placeKnob(0, true); }
