@@ -17,6 +17,17 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 10: promote the back-half shared scalars onto `G`.** Keystone for
+  the remaining split (mirrors slice 2's engine/world promotion): the simulation loop, the backend/net code,
+  and the UI panels form one mutually-recursive blob sharing ~9 reassigned scalars, so none can move to a
+  module while those scalars are inline `let`s (an ES module can't import a binding from the inline
+  `<script>`). Moved `playerId`, `banked`, `gameStartTime`, `gameStartSent`, `quitSent`, `pendingBriefing`,
+  `activeShip`, `currentShipName`, `activeMission` onto the shared `G` bag (`playerId` now initializes in
+  `state.js`); rewrote all ~97 usages to `G.x` (comment/string/template/object-shorthand/member-access
+  aware). No new modules, no behavior change — pure state relocation that unblocks the `net.js` then `sim.js`
+  slices next. Unit suite 46/46; visual suite at the documented 10/6 flaky baseline (zero page errors).
+  Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 9: HUD draws → `src/hud.js` + `src/dom.js`.** Moved the per-frame
   HUD draws (`updateHud`, `updateMarkers`, `updateMiniMap`, `updatePerf`) out of the inline script into
   `src/hud.js`, and introduced `src/dom.js` — the single fail-loud `el` inventory of shared `index.html`

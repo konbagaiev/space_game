@@ -28,10 +28,25 @@ once — that's the signal, not the 6 steady flakes. Unit suite (`cd client && n
 4. Re-grep that no stale reference to a moved symbol remains in `index.html`; drop now-unused imports.
 5. Commit with a `Client refactor slice N: …` message + a CHANGELOG bullet.
 
-**Done (index.html: 3736 → ~2530 lines):** `styles.css`, `format.js` (+test), `state.js`, `engine.js`,
+**Done (index.html: 3736 → ~2510 lines):** `styles.css`, `format.js` (+test), `state.js`, `engine.js`,
 `world.js`, `ship-factory.js`, `projectiles.js`, `ship-build.js`, `sound-routing.js`, `dom.js`, `hud.js`
-(the four per-frame draws), and the `player`/`kills`/`earned`/`balance`→`G` promotions. SUMMARY "Client
-module layout" + DECISIONS §31 written.
+(the four per-frame draws), and the G-promotions: `player`/`kills`/`earned`/`balance` (slices 6/9) plus
+the back-half keystone (slice 10) `playerId`/`banked`/`gameStartTime`/`gameStartSent`/`quitSent`/
+`pendingBriefing`/`activeShip`/`currentShipName`/`activeMission`. SUMMARY "Client module layout" +
+DECISIONS §31 written.
+
+**⚠️ ORDERING CORRECTION discovered during slice 10 (overrides the original §4 order below):** the back
+half is one mutually-recursive blob — `sim` (`update`/`levelRunner`) calls `net` (`bankRun`/`track`/
+`unlockNextLevel`), `net` calls `buildPlayerFor` (welcome) + reads `activeShip`, and the UI panels call
+`reset()` (sim) + `buildPlayerFor`. So the plan's "sim before net" is wrong: **net must be a module before
+sim can import it.** The fix that unblocks everything was promoting the 9 shared scalars to `G` (slice 10,
+done) — that removes the *state*-sharing constraint, after which functions can move in any order because
+native ESM tolerates runtime import cycles (the only hard rule is: a moved function can't call one still in
+the inline `<script>`). Recommended remaining order is now: **`ship-build.js` gets `buildPlayerFor`** (it
+already imports `buildPlayer`+`scene`; needs only `G.activeShip`/`G.currentShipName`) → **`net.js`**
+(`fetchJson`/`bankRun`/`track`/`currentLevelLabel`/`unlockNextLevel`/`reloadPlayerWorld`) → **`sim.js`**
+(`update`/`levelRunner`/`updateBank`/`forwardVec`/`warpPlayerToCenter`/`updateOobWarning` + the pause
+cluster + music routing; promote `gameStarted`/`paused` to `G` here) → the UI leaves → `main.js`.
 
 **Deviations from the original plan below (intentional, keep following them):**
 - **Lazy `G` promotion**, not the upfront 28-var rename in §2.3. A scalar is promoted to `G` only when the

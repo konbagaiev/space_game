@@ -32,6 +32,25 @@ export const G = {
   kills: 0,                   // destroyed enemies this run (drives the level runner's thresholds + HUD)
   earned: 0,                  // credits earned this run: each kill adds the ship's `reward`; doubled on level completion
   balance: 0,                 // persistent account balance (loaded from the server; banked at run end)
+  // --- backend identity + per-session funnel guards (read across net/sim/UI; reassigned by login/reset/advance) ---
+  // Anonymous player id kept in localStorage (auto-register). `let`-style reassignment (an account login
+  // adopts the account's row) is why it lives on G. Best-effort: null if storage is blocked.
+  playerId: (() => {
+    try {
+      let id = localStorage.getItem('playerId');
+      if (!id) { id = crypto.randomUUID(); localStorage.setItem('playerId', id); }
+      return id;
+    } catch { return null; }
+  })(),
+  banked: false,              // guard so a run banks its credits exactly once
+  gameStartTime: performance.now(), // run start (for the recorded game duration)
+  gameStartSent: false,       // game_start funnel event fires once per page-load session (the funnel's top)
+  quitSent: false,            // quit funnel event fires once per session when the player leaves
+  pendingBriefing: null,      // a level briefing to show before the next Restart (set on advance)
+  // --- player ship selection / loadout (read across welcome/shop/account/net/sim) ---
+  activeShip: null,           // the player's active-ship record { ship, loadout, components, ... }
+  currentShipName: null,      // name of the ship currently built into the scene
+  activeMission: null,        // the side mission being played (null = the campaign level)
 };
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---

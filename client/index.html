@@ -502,29 +502,22 @@ document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOO
 document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
 
 // ---------- Backend: anonymous player identity + game history ----------
-// Identify the player by a browser-generated id kept in localStorage (auto-register).
-// All calls are best-effort: if the backend isn't running (e.g. opened via file://),
-// they fail silently and the game still works. Served same-origin -> relative /api URLs.
-// `let` (not const): an account login can adopt the account's player id (cross-device sync).
-let playerId = (() => {
-  try {
-    let id = localStorage.getItem('playerId');
-    if (!id) { id = crypto.randomUUID(); localStorage.setItem('playerId', id); }
-    return id;
-  } catch { return null; }
-})();
+// Identify the player by a browser-generated id kept in localStorage (auto-register). All calls are
+// best-effort: if the backend isn't running (e.g. opened via file://), they fail silently and the game
+// still works. Served same-origin -> relative /api URLs. The id (`G.playerId`, initialized in state.js)
+// lives on the shared bag because an account login can adopt the account's player id (cross-device sync).
 // (Registration happens in bootstrap() via the active-ship fetch, which upserts the player.)
 // Bank the credits earned this run into the account balance and record the game. Runs once per run
 // (on victory or death); closing the browser before a run ends loses the unbanked session credits.
-let banked = false; // guard so a run banks exactly once
+// `G.banked` guards the once-per-run bank.
 function bankRun() {
-  if (banked) return;
-  banked = true;
-  const durationMs = Math.round(performance.now() - gameStartTime);
-  if (!playerId) { G.balance += G.earned; updateHud(); return; } // offline: reflect locally, best-effort
+  if (G.banked) return;
+  G.banked = true;
+  const durationMs = Math.round(performance.now() - G.gameStartTime);
+  if (!G.playerId) { G.balance += G.earned; updateHud(); return; } // offline: reflect locally, best-effort
   fetch('/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ playerId, credits: G.earned, kills: G.kills, durationMs }),
+    body: JSON.stringify({ playerId: G.playerId, credits: G.earned, kills: G.kills, durationMs }),
   }).then((r) => (r.ok ? r.json() : null))
     .then((res) => { if (res && typeof res.credits === 'number') { G.balance = res.credits; updateHud(); } })
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
@@ -532,15 +525,14 @@ function bankRun() {
 
 // ---------- Product funnel telemetry (best-effort; docs/plans/monitoring.md) ----------
 // A short label for the current level (e.g. "Level 3"); used as event context + the Sentry `level` tag.
-// The descriptor a run plays: a chosen side mission overrides the campaign level (null = campaign).
-let activeMission = null;
-const currentLevelLabel = () => activeMission ? ('mission:' + (activeMission.title || 'side'))
+// The descriptor a run plays: a chosen side mission (`G.activeMission`) overrides the campaign level (null = campaign).
+const currentLevelLabel = () => G.activeMission ? ('mission:' + (G.activeMission.title || 'side'))
   : ((CATALOG.level && (CATALOG.level.title || CATALOG.level.map)) || 'unknown');
 // Fire-and-forget a gameplay event. `quit` uses sendBeacon so it survives tab close; others use fetch
 // with keepalive. Never throws, never blocks gameplay (the endpoint is best-effort server-side too).
 function track(type, data) {
-  if (!playerId) return;
-  const payload = JSON.stringify({ playerId, type, data });
+  if (!G.playerId) return;
+  const payload = JSON.stringify({ playerId: G.playerId, type, data });
   try {
     if (type === 'quit' && navigator.sendBeacon) {
       navigator.sendBeacon('/api/events', new Blob([payload], { type: 'application/json' }));
@@ -553,40 +545,38 @@ function track(type, data) {
 document.querySelectorAll('.community-link').forEach((el) => {
   el.addEventListener('click', () => track('community_click', { lang: getLanguage() }));
 });
-let gameStartSent = false; // game_start fires once per page-load session (the funnel's top)
-// Fire `quit` once when the player leaves mid-session (drop-off signal). pagehide is more reliable than
-// beforeunload (covers tab close, navigation, and mobile backgrounding).
-let quitSent = false;
+// G.gameStartSent: game_start fires once per page-load session (the funnel's top).
+// Fire `quit` once when the player leaves mid-session (drop-off signal; G.quitSent guard). pagehide is
+// more reliable than beforeunload (covers tab close, navigation, and mobile backgrounding).
 addEventListener('pagehide', () => {
-  if (quitSent || !gameStarted) return;
-  quitSent = true;
+  if (G.quitSent || !gameStarted) return;
+  G.quitSent = true;
   track('quit', { level: currentLevelLabel() });
 });
 
 // On victory: tell the server to unlock the next level, then load that level so the next Restart
 // plays it (rebuilding the map if it changed). The advance may return a `briefing` (message + the
 // server already ran its actions, e.g. a weapon swap) and may have changed the active ship — so we
-// reload the active ship and rebuild the player, and stash the briefing to show before the next run.
-let pendingBriefing = null; // a level briefing to display before the next Restart (set on advance)
+// reload the active ship and rebuild the player, and stash the briefing (G.pendingBriefing) to show
+// before the next run.
 async function unlockNextLevel() {
-  if (!playerId) return;
+  if (!G.playerId) return;
   const clearedLevel = currentLevelLabel(); // before CATALOG.level is swapped to the next level
   try {
-    const adv = await (await fetch(`/api/players/${playerId}/advance`, { method: 'POST' })).json();
+    const adv = await (await fetch(`/api/players/${G.playerId}/advance`, { method: 'POST' })).json();
     if (adv && !adv.advanced) track('victory', { level: clearedLevel }); // no next level → final win
-    if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) pendingBriefing = adv.briefing;
-    const level = await fetchJson(`/api/players/${playerId}/level`);
+    if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) G.pendingBriefing = adv.briefing;
+    const level = await fetchJson(`/api/players/${G.playerId}/level`);
     if (level.descriptor.map !== CATALOG.level.map) {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
     }
     CATALOG.level = level.descriptor; // reset() restarts CATALOG.level → next Restart is the new level
     // a briefing action may have changed the loadout (weapon swap) — reload the active ship + rebuild
-    const refreshed = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
-    if (refreshed) { activeShip = refreshed; if (refreshed.ship) buildPlayerFor(refreshed.ship); }
+    const refreshed = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
+    if (refreshed) { G.activeShip = refreshed; if (refreshed.ship) buildPlayerFor(refreshed.ship); }
   } catch { /* progression is best-effort; on failure the same level replays */ }
 }
-let gameStartTime = performance.now();
 
 // ---------- Helpers ----------
 function forwardVec(heading) {
@@ -952,7 +942,7 @@ function update(dt) {
     overlaySub.textContent = t('ui.gameover.sub', { kills: G.kills, credits: G.earned });
     elRestart.textContent = t('ui.button.restart'); // a loss retries the level
     // once the shop is unlocked, offer returning to the hangar (shop/loadout) instead of an instant retry
-    elBackHangar.style.display = (activeShip && activeShip.shopUnlocked) ? 'inline-block' : 'none';
+    elBackHangar.style.display = (G.activeShip && G.activeShip.shopUnlocked) ? 'inline-block' : 'none';
     el.overlay.style.display = 'flex';
   }
 
@@ -1049,8 +1039,8 @@ const devPerf = (() => {
   };
 
   function flush(beacon) {
-    if (!outbox.length || !playerId) return;
-    const body = JSON.stringify({ playerId, sessionId, samples: outbox });
+    if (!outbox.length || !G.playerId) return;
+    const body = JSON.stringify({ playerId: G.playerId, sessionId, samples: outbox });
     outbox = [];
     try {
       if (beacon && navigator.sendBeacon) navigator.sendBeacon('/api/perf', new Blob([body], { type: 'application/json' }));
@@ -1156,13 +1146,13 @@ function reset() {
   for (const e of enemies) scene.remove(e.mesh);
   enemies.length = 0;
   // A side mission fights over its own location in the world (its set-piece); the campaign uses (0,0).
-  const cx = (activeMission && activeMission.center && activeMission.center.x) || 0;
-  const cz = (activeMission && activeMission.center && activeMission.center.z) || 0;
+  const cx = (G.activeMission && G.activeMission.center && G.activeMission.center.x) || 0;
+  const cz = (G.activeMission && G.activeMission.center && G.activeMission.center.z) || 0;
   arenaCenter.set(cx, 0, cz);             // fresh run: center the (possibly drifting) combat zone
   arenaBorder.line.position.set(cx, 0, cz);
   // a mission may drift its zone (the freighter escort); the campaign and other missions stay static
-  G.arenaDrift = (activeMission && activeMission.drift)
-    ? new THREE.Vector3(activeMission.drift.x || 0, 0, activeMission.drift.z || 0) : null;
+  G.arenaDrift = (G.activeMission && G.activeMission.drift)
+    ? new THREE.Vector3(G.activeMission.drift.x || 0, 0, G.activeMission.drift.z || 0) : null;
   // rebuild the shared world's set-pieces fresh each run (resets the cruising freighter to its start)
   for (const sp of setPieces) scene.remove(sp.obj);
   setPieces.length = 0;
@@ -1177,15 +1167,15 @@ function reset() {
   G.player._repairAccum = 0; // fresh run: clear banked repair-drone time
   for (const g of Object.values(G.player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   G.player.alive = true;
-  G.earned = 0; G.kills = 0; banked = false; // new run: reset session credits + the bank-once guard (balance persists)
-  gameStartTime = performance.now(); // start timing a new game (for history)
-  levelRunner.start(activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
+  G.earned = 0; G.kills = 0; G.banked = false; // new run: reset session credits + the bank-once guard (balance persists)
+  G.gameStartTime = performance.now(); // start timing a new game (for history)
+  levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
   setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
   refreshMusic();   // a live fight → combat music
   el.overlay.style.display = 'none';
   // funnel telemetry: game_start once per session, level_start per run; tag Sentry's scope with the level
   const level = currentLevelLabel();
-  if (!gameStartSent) { gameStartSent = true; track('game_start', { level }); }
+  if (!G.gameStartSent) { G.gameStartSent = true; track('game_start', { level }); }
   track('level_start', { level });
   if (window.Sentry) try { window.Sentry.setTag('level', level); } catch {}
 }
@@ -1218,16 +1208,16 @@ function showMain(briefing) {
   refreshMissions();                   // (re)load the side missions, then rebuild the list
   // ship-characteristics strip above the model — always, not only when the shop is open (the shop
   // re-renders it with ▲/▼ deltas on each change via renderBay).
-  if (activeShip && activeShip.components) {
+  if (G.activeShip && G.activeShip.components) {
     lastShipStats = null;
-    renderShipStatsBar(deriveShipStats(activeShip.components, activeShip.loadout && activeShip.loadout.mounts));
+    renderShipStatsBar(deriveShipStats(G.activeShip.components, G.activeShip.loadout && G.activeShip.loadout.mounts));
   }
   startShipPreview();                  // spin up the right-column ship model
   applyPreviewTarget();                // …showing the granted item if this is a showcase briefing, else the ship
 }
 function launchCampaign() {
-  pendingBriefing = null;
-  activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
+  G.pendingBriefing = null;
+  G.activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
   if (isTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
   mainEl.classList.remove('on');
   stopShipPreview();
@@ -1240,8 +1230,8 @@ function leaveOverlay() {
   if (levelRunner.won) {
     // After clearing level 1, prompt once for a username + optional account (DECISIONS §11), then
     // continue to the Main Window. Otherwise (or once prompted/registered) go straight there.
-    if (shouldPromptAccount()) { openAccount('prompt', { after: () => showMain(pendingBriefing) }); return; }
-    showMain(pendingBriefing); return; // victory → Main Window
+    if (shouldPromptAccount()) { openAccount('prompt', { after: () => showMain(G.pendingBriefing) }); return; }
+    showMain(G.pendingBriefing); return; // victory → Main Window
   }
   reset(); // loss → straight retry
 }
@@ -1318,7 +1308,7 @@ function renderMissionView(m) {
     rewEl.style.display = 'none';
     applyPreviewTarget();     // primary row → the campaign briefing's showcase item (if any), else the ship
   }
-  updateTakeoffGate(activeShip);
+  updateTakeoffGate(G.activeShip);
 }
 // The single Take-off button in the mission view dispatches on the current selection.
 document.getElementById('mw-go').addEventListener('click', () => {
@@ -1329,10 +1319,10 @@ document.getElementById('mw-go').addEventListener('click', () => {
 // Reload the side missions (gated to the shop being unlocked), then rebuild the list + re-render if
 // the mission view is open.
 async function refreshMissions() {
-  const unlocked = !!(playerId && activeShip && activeShip.shopUnlocked);
+  const unlocked = !!(G.playerId && G.activeShip && G.activeShip.shopUnlocked);
   if (!unlocked) { missionOffers = []; buildMissionList(); return; }
   try {
-    const data = await fetchJson(`/api/players/${playerId}/missions`);
+    const data = await fetchJson(`/api/players/${G.playerId}/missions`);
     missionOffers = data.missions || [];
   } catch { missionOffers = []; }
   buildMissionList();
@@ -1340,8 +1330,8 @@ async function refreshMissions() {
 }
 // Launch a chosen side mission (mirrors launchCampaign, but plays the mission descriptor).
 function launchMission(m) {
-  activeMission = m.descriptor;
-  pendingBriefing = null;
+  G.activeMission = m.descriptor;
+  G.pendingBriefing = null;
   if (isTouch) requestFullscreen();
   mainEl.classList.remove('on');
   stopShipPreview();
@@ -1441,15 +1431,15 @@ function setViewerModel(v, url, cfg = {}) {
 function setPreviewModel(url, cfg = {}) { setViewerModel(mwPreview, url, cfg); }
 // Default the preview to the player's active ship (the briefing showcase swaps in an item via setPreviewModel).
 function loadPreviewModel() {
-  if (!mwPreview || !activeShip || !activeShip.ship) return;
-  const ship = activeShip.ship;
+  if (!mwPreview || !G.activeShip || !G.activeShip.ship) return;
+  const ship = G.activeShip.ship;
   setPreviewModel(ship.modelUrlHigh || ship.modelUrl, shipModelCfg(ship.stats));
 }
 // Point the preview at the right thing: the item a showcase briefing grants (Machine Gun on L2, Repair
 // drone on L3 — server attaches `showcase {kind,id}` to the briefing), else the active ship. The catalog
 // already carries the item model URLs (foundation brief). Falls back to the ship if the item has no model.
 function previewShip() {
-  if (activeShip && activeShip.ship) setPreviewModel(activeShip.ship.modelUrlHigh || activeShip.ship.modelUrl, shipModelCfg(activeShip.ship.stats));
+  if (G.activeShip && G.activeShip.ship) setPreviewModel(G.activeShip.ship.modelUrlHigh || G.activeShip.ship.modelUrl, shipModelCfg(G.activeShip.ship.stats));
 }
 // The showcased item for a briefing. The server attaches `showcase {kind,id}` on the /advance path (where
 // it strips `actions`); on a fresh page-load landing the client gets the raw descriptor briefing instead
@@ -1738,15 +1728,15 @@ function shopErr(status, j) {
 // Apply a fresh server state: update globals, rebuild the 3D player to reflect the new loadout, re-render.
 function applyShopState(j) {
   shopData = j;
-  if (j.activeShip) { activeShip = j.activeShip; G.balance = j.credits; if (j.activeShip.ship) buildPlayerFor(j.activeShip.ship); }
+  if (j.activeShip) { G.activeShip = j.activeShip; G.balance = j.credits; if (j.activeShip.ship) buildPlayerFor(j.activeShip.ship); }
   updateHud();
   renderBay();
 }
 async function shopAction(path, body) {
-  if (shopBusy || !playerId) return;
+  if (shopBusy || !G.playerId) return;
   shopBusy = true; setShopNote('');
   try {
-    const r = await fetch(`/api/players/${playerId}/${path}`, {
+    const r = await fetch(`/api/players/${G.playerId}/${path}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { setShopNote(shopErr(r.status, j)); return; }
@@ -1775,15 +1765,15 @@ document.getElementById('mw-view-bay').addEventListener('click', (e) => {
 // player has unlocked the shop (cleared the final level); when unlocked we fetch fresh state so the
 // loadout/stash/balance are authoritative.
 async function openBay() {
-  const unlocked = !!(playerId && activeShip && activeShip.shopUnlocked);
+  const unlocked = !!(G.playerId && G.activeShip && G.activeShip.shopUnlocked);
   document.querySelectorAll('.mw-shop-item').forEach((b) => b.classList.toggle('mw-hidden', !unlocked));
-  if (!unlocked) { updateTakeoffGate(activeShip); return; }
+  if (!unlocked) { updateTakeoffGate(G.activeShip); return; }
   bayView = 'loadout';  // default the bay to the ship/loadout screen
   lastShipStats = null; // first render after opening shows no deltas
   try {
-    const j = await fetchJson(`/api/players/${playerId}/stash`);
+    const j = await fetchJson(`/api/players/${G.playerId}/stash`);
     shopData = j;
-    if (j.activeShip) activeShip = j.activeShip;
+    if (j.activeShip) G.activeShip = j.activeShip;
     renderBay();
   } catch {}
 }
@@ -1855,7 +1845,7 @@ if (location.search.includes('debug')) {
     warpPlayerToCenter, arenaBorder, ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME,
     setPieces, arenaCenter, // mission set-pieces + the (drifting) arena center
     setArenaDrift(x, z) { G.arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
-    get activeMission() { return activeMission; }, // the side mission being played (null = campaign)
+    get activeMission() { return G.activeMission; }, // the side mission being played (null = campaign)
     get missionOffers() { return missionOffers; },
     get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url in the right-column ship preview
     // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
@@ -1892,15 +1882,16 @@ const fetchJson = async (url) => {
 // (Re)build the player ship and swap it into the scene. For the player's *active* ship we use its
 // persisted loadout/components (so a DB weapon swap from a level briefing actually takes effect);
 // other (preview) ships fall back to their catalog defaults.
-let currentShipName = null;
-let activeShip = null; // the player's active-ship record { ship, loadout, components, ... }
+// The ship currently built into the scene (G.currentShipName) and the player's active-ship record
+// (G.activeShip { ship, loadout, components, ... }) live on the shared bag — written by the welcome/
+// shop/account/net flows and read by buildPlayerFor below.
 function buildPlayerFor(ship) {
   if (G.player) scene.remove(G.player.mesh);
-  const useActive = activeShip && activeShip.ship && activeShip.ship.name === ship.name;
-  const loadout = useActive ? activeShip.loadout : { mounts: ship.stats.mounts };
-  const components = useActive ? activeShip.components : ship.components;
+  const useActive = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === ship.name;
+  const loadout = useActive ? G.activeShip.loadout : { mounts: ship.stats.mounts };
+  const components = useActive ? G.activeShip.components : ship.components;
   G.player = buildPlayer({ ship, loadout, components });
-  currentShipName = ship.name;
+  G.currentShipName = ship.name;
   scene.add(G.player.mesh);
 }
 // A ship's hull HP for the welcome card (resolved from its hull component).
@@ -1992,7 +1983,7 @@ async function setLanguage(lang) {
   localizeSettings(); // re-localize the settings gear + audio toggles
   buildLangSwitch();
   if (lastPlayerShips.length) renderShipCards(lastPlayerShips); // re-render DB-sourced ship names
-  if (playerId) fetch(`/api/players/${playerId}/language`, {
+  if (G.playerId) fetch(`/api/players/${G.playerId}/language`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ language: getLanguage() }),
   }).catch(() => {}); // best-effort: persist the preference server-side
@@ -2136,8 +2127,8 @@ resetConfirm.addEventListener('click', (e) => { if (e.target === resetConfirm) d
 resetDoBtn.addEventListener('click', async () => {
   resetDoBtn.disabled = true;
   try {
-    if (playerId) {
-      const r = await fetch(`/api/players/${playerId}/reset`, { method: 'POST' });
+    if (G.playerId) {
+      const r = await fetch(`/api/players/${G.playerId}/reset`, { method: 'POST' });
       if (!r.ok) throw new Error('reset failed: ' + r.status);
     }
     location.reload(); // server is now at the new-player baseline; reload re-fetches level + active ship cleanly
@@ -2157,7 +2148,7 @@ localizeSettings();
 function takeOff() {
   if (!selectedShip) return;
   if (isTouch) requestFullscreen(); // hide the browser chrome on mobile (landscape especially)
-  if (selectedShip.name !== currentShipName) buildPlayerFor(selectedShip);
+  if (selectedShip.name !== G.currentShipName) buildPlayerFor(selectedShip);
   welcomeEl.style.display = 'none';
   document.body.classList.remove('menu'); // restore the in-game HUD
   gameStarted = true;
@@ -2266,9 +2257,9 @@ function shouldPromptAccount() {
 }
 
 async function saveUsername(username) {
-  if (!playerId) return;
+  if (!G.playerId) return;
   try {
-    const r = await authFetch(`/api/players/${playerId}/username`, { method: 'POST', body: JSON.stringify({ username }) });
+    const r = await authFetch(`/api/players/${G.playerId}/username`, { method: 'POST', body: JSON.stringify({ username }) });
     if (r.ok && accountPlayer) { accountPlayer.username = (await r.json()).username; renderAccountBar(); }
   } catch {}
 }
@@ -2297,7 +2288,7 @@ async function doRegister() {
   if (password.length < 8) { acc.err.textContent = t('ui.account.err_password'); return; }
   acc.primary.disabled = true;
   try {
-    const r = await authFetch('/api/auth/register', { method: 'POST', body: JSON.stringify({ playerId, username, email, password }) });
+    const r = await authFetch('/api/auth/register', { method: 'POST', body: JSON.stringify({ playerId: G.playerId, username, email, password }) });
     const j = await r.json().catch(() => ({}));
     if (r.status === 409) { acc.err.textContent = t('ui.account.err_email_taken'); return; }
     if (!r.ok) { acc.err.textContent = j.error || t('ui.account.err_generic'); return; }
@@ -2318,9 +2309,9 @@ async function doLogin() {
     if (r.status === 401) { acc.err.textContent = t('ui.account.err_credentials'); return; }
     if (!r.ok) { acc.err.textContent = j.error || t('ui.account.err_generic'); return; }
     accountPlayer = j;
-    if (j.id && j.id !== playerId) {            // adopt the account's player row (fresh-device login)
-      playerId = j.id;
-      try { localStorage.setItem('playerId', playerId); } catch {}
+    if (j.id && j.id !== G.playerId) {            // adopt the account's player row (fresh-device login)
+      G.playerId = j.id;
+      try { localStorage.setItem('playerId', G.playerId); } catch {}
       await reloadPlayerWorld();
     }
     renderAccountBar();
@@ -2333,14 +2324,14 @@ async function doLogin() {
 // the landing screen for their progress.
 async function reloadPlayerWorld() {
   try {
-    const level = await fetchJson(`/api/players/${playerId}/level`);
+    const level = await fetchJson(`/api/players/${G.playerId}/level`);
     if (level.descriptor.map !== CATALOG.level.map) {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
     }
     CATALOG.level = level.descriptor;
-    const active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
-    activeShip = active;
+    const active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
+    G.activeShip = active;
     if (active && typeof active.credits === 'number') G.balance = active.credits;
     if (active && active.ship) buildPlayerFor(active.ship);
     if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
@@ -2390,7 +2381,7 @@ async function initSentry() {
   if (!window.Sentry) return;
   try {
     window.Sentry.init({ dsn: cfg.dsn, environment: cfg.environment, release: cfg.release || undefined, tracesSampleRate: 0 });
-    if (playerId) window.Sentry.setUser({ id: playerId }); // the localStorage/account player id
+    if (G.playerId) window.Sentry.setUser({ id: G.playerId }); // the localStorage/account player id
   } catch { /* best-effort */ }
 }
 
@@ -2410,8 +2401,8 @@ async function bootstrap() {
       if (me.ok) {
         accountPlayer = await me.json();
         if (accountPlayer && accountPlayer.id) {
-          playerId = accountPlayer.id;
-          try { localStorage.setItem('playerId', playerId); } catch {}
+          G.playerId = accountPlayer.id;
+          try { localStorage.setItem('playerId', G.playerId); } catch {}
         }
       }
     } catch {}
@@ -2424,7 +2415,7 @@ async function bootstrap() {
 
     // The level comes from the player's progress (their highest unlocked level); fall back to
     // level-1 if the player isn't identified (e.g. localStorage blocked).
-    const levelUrl = playerId ? `/api/players/${playerId}/level` : '/api/levels/level-1';
+    const levelUrl = G.playerId ? `/api/players/${G.playerId}/level` : '/api/levels/level-1';
     const [weapons, components, ships, level, sounds] = await Promise.all([
       fetchJson('/api/weapons'), fetchJson('/api/components'),
       fetchJson('/api/ships'), fetchJson(levelUrl), fetchJson('/api/sounds').catch(() => ({ sounds: [], map: [] })),
@@ -2449,8 +2440,8 @@ async function bootstrap() {
 
     // the player's active ship (auto-registers) decides the default selection
     let active = null;
-    if (playerId) active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
-    activeShip = active; // drives the persisted loadout in buildPlayerFor (weapon swaps, etc.)
+    if (G.playerId) active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
+    G.activeShip = active; // drives the persisted loadout in buildPlayerFor (weapon swaps, etc.)
     if (active && typeof active.credits === 'number') G.balance = active.credits; // account balance for the HUD
     const playerShips = ships.filter((s) => s.type === 'player');
     playerShipsCache = playerShips; // remembered so a login can re-render the welcome screen

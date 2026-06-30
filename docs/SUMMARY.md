@@ -844,7 +844,9 @@ modules (no bundler; `three` resolved by the importmap in `index.html`). See
   browser-only), and `format.js` (`esc`/`cssColor`/`slotLabel`/`priceLabel`/`sellLabel`).
 - **Shared state & engine:** `state.js` (entity collections + `CATALOG` + input + the mutable `G` state
   bag for reassigned cross-module scalars: `gfx`/`rotated`/`player`/`sky`/`stars`/… + the run/account
-  scalars `kills`/`earned`/`balance` + `SPAWN_GROW_TIME`), `engine.js` (`renderer`/`scene`/`skyScene`/
+  scalars `kills`/`earned`/`balance` + the backend/funnel scalars `playerId`/`banked`/`gameStartTime`/
+  `gameStartSent`/`quitSent`/`pendingBriefing` + the selection scalars `activeShip`/`currentShipName`/
+  `activeMission` + `SPAWN_GROW_TIME`), `engine.js` (`renderer`/`scene`/`skyScene`/
   `camera`/lights + orientation + zoom), `dom.js` (the single fail-loud `el` inventory of shared
   index.html nodes — HUD readouts + the result `overlay`; a missing id throws on boot).
 - **Domains (browser-only, touch the scene):** `world.js` (arena + sky/planet/moons/asteroids/set-pieces +
