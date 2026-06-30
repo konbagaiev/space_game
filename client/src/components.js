@@ -30,7 +30,7 @@ export function deriveDrive(ship) {
   const mass = shipMass(ship);
   const massFactor = mass > 0 ? REFERENCE_MASS / mass : 1;
   ship.mass = mass;
-  ship.acceleration = ship.engine.power * massFactor;
+  ship.acceleration = (ship.engine?.power ?? 0) * massFactor; // engine may be missing in the hangar (unequipped required slot)
   ship.turnRate = (ship.thruster?.power ?? 0) * massFactor;
   return ship;
 }

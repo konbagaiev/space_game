@@ -1853,7 +1853,7 @@ function buildPlayer(active) {
     hull, engine, thruster, repair,   // `repair` is the repair-drone stats (or null); feeds mass + repairTick
     _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
     mounts: buildMounts(active.loadout.mounts), // resolved weapons; also feeds ship mass
-    hp: hull.durability, maxHp: hull.durability,
+    hp: hull ? hull.durability : 0, maxHp: hull ? hull.durability : 0, // hull may be unequipped in the hangar; the launchable gate blocks take-off
     alive: true,
     oobTime: 0,                  // seconds the ship has been continuously out of bounds (soft boundary)
     spawnAge: SPAWN_GROW_TIME,   // == full size: no warp-in animation on a fresh build (set to 0 to play it)

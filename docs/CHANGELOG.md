@@ -5,6 +5,17 @@
 
 ## 2026-06-30
 
+- **Bugfix — hangar no longer bricks when a required component is unequipped.** Unequipping a
+  required slot (hull/engine/thruster) is intentional (the ship goes `launchable: false` and the
+  part drops to the stash, gated by `updateTakeoffGate`), but the 3D hangar preview crashed building
+  it: `buildPlayer` read `hull.durability` off a null hull and `deriveDrive` read `engine.power` off a
+  null engine, so the page threw `Cannot read properties of null (reading 'durability')` and the
+  hangar never rendered — leaving the player unable to reach Loadout/Stash to put the part back.
+  Made both null-safe (`client/index.html` `buildPlayer`, `client/src/components.js` `deriveDrive`),
+  matching the already-tolerant `deriveShipStats`/`shipHullHp`/take-off-gate paths. Now the hangar
+  renders (HP shows 0, Take-off disabled with the "required slot empty" note) and the player re-equips
+  normally. Repaired the one live account this had already bricked by re-equipping its hull from stash.
+
 - **CI fix — sync server tests with the new level balance.** The balance bump above changed enemy
   `reward` values and the L1 kill threshold, but `server/src/server.test.js` still asserted the old
   numbers, so CI failed at the test stage and the `level balance` + `IDEAS.md` commits never deployed.
