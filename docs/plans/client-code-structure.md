@@ -1,5 +1,74 @@
 # Client code restructure — split `index.html` into ES modules
 
+**Status:** IN PROGRESS — foundation + gameplay core done (10 commits on branch
+`refactor/client-esm-split`). See **§0 Resume checkpoint** below before continuing; the rest of this
+brief is the original plan (still the source of truth for what's left).
+
+---
+
+## 0. Resume checkpoint (read FIRST if continuing in a fresh context)
+
+**Branch:** `refactor/client-esm-split` (NOT `main` — `main` auto-deploys via CI). `git log --oneline`
+shows one commit per slice; CHANGELOG has a matching bullet per slice with the rationale.
+
+**⚠️ The visual suite is FLAKY at baseline — this predates the refactor.** Running
+`cd client && npm run test:visual` yields **10 pass / 6 fail** even on a clean checkout. The pre-existing
+failures are NOT regressions: `06-pause`, `08-arena-boundaries`, `11-l4-enemies` (test expects boss 450HP,
+gets 550 — a real test/balance drift), `12-audio` (music_combat_2 decode), `ship-bank`, `reset-progress`,
+and intermittently `10-mission-board` (network/async timing). **The guardrail is: after each slice the
+reliably-passing set stays green and failures don't jump to ~all scenarios.** A broken ESM import throws a
+`pageerror`, and the runner asserts zero page errors per scenario, so a real break fails *every* scenario at
+once — that's the signal, not the 6 steady flakes. Unit suite (`cd client && npm test`) is reliable: 46 pass.
+
+**Per-slice verification loop used so far (keep doing this):**
+1. `node --check src/<newfile>.js` — syntax of the new module.
+2. Extract + check the inline script:
+   `awk '/<script type="module">/{f=1;next} /<\/script>/{if(f)exit} f' client/index.html > /tmp/inline.mjs && node --check /tmp/inline.mjs`
+3. `cd client && npm test` (unit) and `npm run test:visual` (compare to the 10/6 baseline above).
+4. Re-grep that no stale reference to a moved symbol remains in `index.html`; drop now-unused imports.
+5. Commit with a `Client refactor slice N: …` message + a CHANGELOG bullet.
+
+**Done (index.html: 3736 → ~2624 lines):** `styles.css`, `format.js` (+test), `state.js`, `engine.js`,
+`world.js`, `ship-factory.js`, `projectiles.js`, `ship-build.js`, `sound-routing.js`, and the
+`player`→`G.player` promotion. SUMMARY "Client module layout" + DECISIONS §31 written.
+
+**Deviations from the original plan below (intentional, keep following them):**
+- **Lazy `G` promotion**, not the upfront 28-var rename in §2.3. A scalar is promoted to `G` only when the
+  domain that owns it is split out. **Already on `G`:** `gfx`, `rotated`, `player`, `sky`, `stars`,
+  `skyAmbient`, `skySun`, `currentMapDescriptor`, `mapSetpieces`, `arenaDrift`. (`SPAWN_GROW_TIME`,
+  `arenaCenter`, `planetPos` are plain exported consts — mutated in place or never reassigned.)
+  **Still inline `let`, promote when their slice moves:** `gameStarted`, `paused`, `kills`, `earned`,
+  `balance`, `banked`, `gameStartSent`, `quitSent`, `pendingBriefing`, `gameStartTime`, `playerId`,
+  `samplesLoaded`, `soundUrls`, `mainBriefing`, `missionOffers`, `activeMission`. (UI-panel-local scalars
+  like `shopData`/`bayView`/`accountPlayer` can stay plain `let` and move *with* their single module.)
+- **`dom.js` deferred to the HUD slice** (converting `elEarned`→`el.earned` now is churn with no consumer).
+- `levelRunner` stayed inline in slice 8 (its methods close over loop state) — it moves WITH the sim slice.
+- `sound-routing.js` holds only `audio` + `tracksFor`/`sfxFor`; `musicForState`/`refreshMusic`/
+  `tryUnlockAudio` stayed inline (they read live loop state — `gameStarted`/`paused`/`levelRunner`).
+
+**Remaining (the coupled back half), recommended order:**
+1. **`hud.js` + `dom.js` together** — the sim loop calls the HUD fns, so extract HUD (and the `el`
+   inventory it needs) first so sim can import them. (`updateHud`/`updateMarkers`/`updateMiniMap`/
+   `updatePerf`/`setPaused`/`togglePause`.)
+2. **`sim.js`** — `update(dt)` (~315 lines) + `forwardVec`/`warpPlayerToCenter`/`updateOobWarning`/
+   `updateBank` **and `levelRunner`**. Promote `gameStarted`/`paused`/`kills`/`earned`/`activeMission` to
+   `G` here. Imported only by `main`. This unblocks `reset()`, which the UI flows call.
+3. **UI leaves** (each fairly self-contained once `reset`/`buildPlayer` are importable): `net.js`,
+   `settings.js`, `account.js`, `welcome.js`, `mainwindow.js`, `shop.js`, `tune.js`.
+4. **`main.js`** — bootstrap/`animate`/`prewarmShaders` + the `window.__game` assembly (still `?debug`-gated,
+   reading live `G`/arrays). Collapse the inline `<script type="module">` to `import './src/main.js'`. Keep
+   the importmap + the inline `RoomEnvironment` import → actually move that with the model viewer to
+   `mainwindow.js`.
+
+**Test contract (unchanged, never break):** `window.__game` exposes `.player`, `.enemies`,
+`.missionOffers`, `.activeMission`, `.levelRunner`, `.spawnEnemy`, `.spawnEnemyShip`, `.spawnShipExplosion`,
+`.emitExhaust`, `.reset`, `.arenaCenter`, `.arenaBorder`, `.warpPlayerToCenter`, etc. — keep its getters
+reading live `G`/arrays so values stay live.
+
+---
+
+### Original plan (below) — still the spec for the remaining slices
+
 **Status:** plan only (no code changes yet).
 **Goal:** Break the ~3500-line inline `<script type="module">` in `client/index.html` into
 cohesive, browser-loaded ES modules under `client/src/`, **without a bundler** and **without any
