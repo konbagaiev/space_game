@@ -17,6 +17,14 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 7: projectiles & combat FX → `src/projectiles.js`.** Moved
+  bullets, micro-explosions, the layered ship-death burst, engine exhaust trail, homing rockets and
+  rocket smoke (`spawnBullet`/`spawnExplosion`/`spawnShipExplosion`/`emitExhaust`/`spawnRocket`/
+  `detonateRocket`/`spawnSmoke`/`findTargetInSector`/`liveParticles` + the FX geometries) into
+  `src/projectiles.js` (imports `scene`, the state pools, `G`, and `audio`/`sfxFor`), imported back in.
+  `bulletGeo`/`explosionGeo` are exported too (reused by `prewarmShaders`). No behavior change; visual
+  suite unchanged from baseline (combat/explosion/exhaust scenarios green).
+
 - **Refactor (client structure) — Slice 6: promote `player` onto the `G` state bag.** The active player
   ship moved from the inline `let player` to `G.player` (185 reads rewritten to `G.player`; the single
   runtime assignment is `G.player = buildPlayer(...)`; the `__game` test getter reads it live). This
