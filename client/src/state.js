@@ -51,6 +51,9 @@ export const G = {
   activeShip: null,           // the player's active-ship record { ship, loadout, components, ... }
   currentShipName: null,      // name of the ship currently built into the scene
   activeMission: null,        // the side mission being played (null = the campaign level)
+  // --- run lifecycle (read across sim/UI; written by reset/take-off/pause) ---
+  gameStarted: false,         // false on the welcome screen (backdrop renders, but the level isn't running)
+  paused: false,              // client-side freeze: the sim update is skipped while true (rendering continues)
 };
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---

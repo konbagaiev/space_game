@@ -855,11 +855,12 @@ modules (no bundler; `three` resolved by the importmap in `index.html`). See
   `buildPlayerFor` + enemy spawning + fire groups), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
   `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`), `net.js`
   (backend identity/banking/progression + funnel telemetry: `fetchJson`/`bankRun`/`track`/
-  `currentLevelLabel`/`unlockNextLevel`).
-- **Still inline in `index.html`** (to be extracted in later slices): the simulation `update()` loop +
-  `levelRunner`, pause control (`setPaused`/`togglePause`) + the OOB warning + music routing
-  (`musicForState`/`refreshMusic`), `reloadPlayerWorld` + the funnel listeners, the Main Window / shop /
-  welcome / account / settings UI, and the bootstrap/`animate`/`window.__game` composition root.
+  `currentLevelLabel`/`unlockNextLevel`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
+  soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
+  `autoPauseOnBlur`).
+- **Still inline in `index.html`** (to be extracted in later slices): `reloadPlayerWorld` + the funnel
+  listeners, the Main Window / shop / welcome / account / settings UI, and the bootstrap / `animate` /
+  `prewarmShaders` / `reset` / `window.__game` composition root (which now imports the loop from `sim.js`).
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)

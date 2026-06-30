@@ -48,6 +48,19 @@ already imports `buildPlayer`+`scene`; needs only `G.activeShip`/`G.currentShipN
 (`update`/`levelRunner`/`updateBank`/`forwardVec`/`warpPlayerToCenter`/`updateOobWarning` + the pause
 cluster + music routing; promote `gameStarted`/`paused` to `G` here) → the UI leaves → `main.js`.
 
+**Slices 11–13 DONE (this carried out the correction above):** `buildPlayerFor`→`ship-build.js` (11);
+`net.js` with `fetchJson`/`bankRun`/`track`/`currentLevelLabel`/`unlockNextLevel` (12, `reloadPlayerWorld`
+stayed inline — it calls the still-inline `showMain`/`showWelcome`); `sim.js` with `update`/`levelRunner`/
+`updateBank`/`forwardVec`/`warpPlayerToCenter`/`updateOobWarning`/`refreshMusic`/`musicForState` + pause
+(13), promoting `gameStarted`/`paused` to `G` and moving the overlay/pause/oob nodes into `dom.js`.
+**Remaining:** the UI leaves still inline — `reloadPlayerWorld` + funnel listeners, the Main Window /
+shop / welcome / account / settings UI, the `?tune` panel — then `main.js` (bootstrap / `animate` /
+`prewarmShaders` / `reset` / `window.__game`). These are now mostly mechanical: the shared state is on `G`
+and the core fns (`reset` aside) are modules, so each UI module can import what it calls. `reset` is still
+inline; extract it (or fold into `main.js`) so the UI flows that call it can become modules, OR move the UI
+modules last alongside `main.js`. ESM runtime import cycles are fine — only rule: a moved fn can't call one
+still in the inline `<script>`.
+
 **Deviations from the original plan below (intentional, keep following them):**
 - **Lazy `G` promotion**, not the upfront 28-var rename in §2.3. A scalar is promoted to `G` only when the
   domain that owns it is split out. **Already on `G`:** `gfx`, `rotated`, `player`, `sky`, `stars`,

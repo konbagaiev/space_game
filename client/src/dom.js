@@ -29,6 +29,15 @@ export const el = {
   perf: byId('perf'),           // fps / ms / draw-calls overlay
   markers: byId('markers'),     // container for off-screen enemy edge arrows
   minimap: byId('minimap'),     // radar canvas
-  // result overlay (read by the HUD to hide markers/radar; written by the death/win/restart flows)
+  // result overlay (read by the HUD to hide markers/radar; written by the sim death/win + restart flows)
   overlay: byId('overlay'),
+  overlayTitle: byId('overlay-title'),   // "Victory" / "Ship destroyed"
+  overlaySub: byId('overlay-sub'),       // result subtitle (cleared line / kills+credits)
+  restart: byId('restart'),              // overlay button: "Continue" on a win, "Restart" on a loss
+  backHangar: byId('back-hangar'),       // shown on death once the shop is unlocked
+  // pause control (written by setPaused; the buttons are wired in the inline boot)
+  pauseBtn: byId('pause-btn'),           // ⏸ / ▶ toggle
+  pauseOverlay: byId('pause-overlay'),   // centered "Paused" + Play card
+  // soft-boundary "left the battlefield" warning + countdown (updateOobWarning)
+  oobWarn: byId('oob-warn'),
 };

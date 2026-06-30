@@ -1,0 +1,512 @@
+// The simulation: the per-frame fixed-step `update(dt)`, the level runner (DB phase/wave script), the
+// cosmetic helpers (forward vector, wing-bank, soft-boundary warp + OOB warning), music routing, and
+// pause control. This sits at the TOP of the dependency graph — it touches almost everything — so it
+// imports the leaves (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported
+// only by the composition root (the inline script / main). It never imports the loop's callers.
+import * as THREE from 'three';
+import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME } from './state.js';
+import { scene, camera, camOffset, isTouch } from './engine.js';
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons } from './world.js';
+import { repairTick } from './components.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './steering.js';
+import { audio, sfxFor } from './sound-routing.js';
+import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke } from './projectiles.js';
+import { spawnEnemyShip, updateGroups } from './ship-build.js';
+import { track, currentLevelLabel, bankRun, unlockNextLevel } from './net.js';
+import { t } from './i18n.js';
+import { el } from './dom.js';
+
+// ---------- Music ----------
+// Music follows game state: the driving combat mood during a live fight, the calmer hangar mood on
+// menus / overlays / while paused. refreshMusic() is cheap + idempotent (no-op when the mood is unchanged).
+function musicForState() {
+  return (G.gameStarted && G.player && G.player.alive && !levelRunner.won && !G.paused) ? 'combat' : 'hangar';
+}
+export function refreshMusic() { audio.setScene(musicForState()); }
+
+// ---------- Level runner: plays a DB level descriptor (an ordered phase/wave script) ----------
+// Each phase optionally spawns a weighted pool up to `maxConcurrent` (with an optional `total` cap),
+// and advances when its condition is met: { kills } (cumulative), { killsSincePhase }, or
+// { allCleared } (map empty AND the phase's total fully spawned). A phase with `event: 'win'` ends
+// the level with a victory overlay. The boss phase pool is the boss only, after clear-out empties
+// the arena -> the boss always appears alone.
+export const levelRunner = {
+  level: null, phaseIndex: 0, killsAtPhaseStart: 0, spawnedThisPhase: 0, won: false,
+  winPending: 0, winText: '',
+
+  start(level) {
+    this.level = level; this.phaseIndex = 0; this.won = false; this.winPending = 0;
+    this.enterPhase();
+  },
+  get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },
+
+  enterPhase() {
+    this.killsAtPhaseStart = G.kills; this.spawnedThisPhase = 0;
+    const ph = this.phase;
+    if (ph && ph.event === 'win') {
+      // defer the overlay by `delay` seconds so the boss explosion can play out first
+      this.winTextKey = ph.textKey; this.winText = ph.text; // i18n key (+ English fallback)
+      this.winPending = ph.delay ?? 0;
+      if (this.winPending <= 0) this.win();
+    }
+  },
+  win() {
+    this.won = true;
+    audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
+    G.earned *= 2; // double the credits earned for clearing the level
+    el.overlayTitle.textContent = t('ui.overlay.victory');
+    // resolve the level's victory line through i18n (key → translation → English fallback)
+    const cleared = this.winTextKey ? t(this.winTextKey) : (this.winText || t('ui.overlay.sector_cleared'));
+    el.overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: G.earned })}`;
+    el.restart.textContent = t('ui.button.continue'); // a win continues to the Hangar
+    el.backHangar.style.display = 'none'; // Continue already goes to the Hangar — no separate button on a win
+    el.overlay.style.display = 'flex';
+    track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
+    bankRun(); // bank the earned credits into the account balance
+    // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
+    // levels advance progression as before.
+    if (!this.level.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
+  },
+
+  pickShip(pool) {
+    const total = pool.reduce((s, p) => s + (p.chance || 1), 0); // `chance` = spawn frequency
+    let r = Math.random() * total;
+    for (const p of pool) { r -= (p.chance || 1); if (r < 0) return p.ship; }
+    return pool[0].ship;
+  },
+
+  update(dt) {
+    const ph = this.phase;
+    if (!ph || this.won) return;
+    // victory pending: keep the game running (so the boss explosion animates) until the delay ends
+    if (this.winPending > 0) {
+      this.winPending -= dt;
+      if (this.winPending <= 0) this.win();
+      return;
+    }
+    // spawn up to maxConcurrent (respecting an optional total cap for this phase)
+    if (ph.spawn) {
+      const cap = ph.spawn.total;
+      while (enemies.length < ph.spawn.maxConcurrent && (cap == null || this.spawnedThisPhase < cap)) {
+        const def = CATALOG.shipByName.get(this.pickShip(ph.spawn.pool));
+        if (!def) break;
+        spawnEnemyShip(def);
+        this.spawnedThisPhase++;
+      }
+    }
+    // advance to the next phase when this one's condition is met
+    if (this.shouldAdvance(ph) && this.phaseIndex < this.level.phases.length - 1) {
+      this.phaseIndex++;
+      this.enterPhase();
+    }
+  },
+  shouldAdvance(ph) {
+    const c = ph.advanceWhen;
+    if (!c) return false;
+    if (c.kills != null) return G.kills >= c.kills;
+    if (c.killsSincePhase != null) return (G.kills - this.killsAtPhaseStart) >= c.killsSincePhase;
+    if (c.allCleared) {
+      const spawnDone = !ph.spawn || (ph.spawn.total != null && this.spawnedThisPhase >= ph.spawn.total);
+      return enemies.length === 0 && spawnDone;
+    }
+    return false;
+  },
+};
+
+// ---------- Helpers ----------
+function forwardVec(heading) {
+  // nose points in +Z when heading=0 (math lives in steering.js)
+  const d = headingToDir(heading);
+  return new THREE.Vector3(d.x, 0, d.z);
+}
+
+// Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,
+// and replay the warp-in animation so the return reads as intentional (not a glitch).
+export function warpPlayerToCenter() {
+  G.player.mesh.position.set(arenaCenter.x, 0.6, arenaCenter.z); // back to the (possibly drifted) arena center
+  G.player.vel.set(0, 0, 0);
+  G.player.oobTime = 0;
+  if (!G.player.spawnScale) G.player.spawnScale = G.player.mesh.scale.clone(); // capture full size (model is loaded by now)
+  G.player.spawnAge = 0;                  // (re)start the grow-from-a-dot animation
+  G.player.mesh.scale.setScalar(0.001);
+  spawnExplosion(G.player.mesh.position.clone()); // a small flash at the arrival point
+}
+
+// "You've left the battlefield" HUD warning + countdown. Shown only after OOB_WARN_DELAY seconds
+// continuously out of bounds; hidden while in bounds, on menus, or when a result overlay is up.
+export function updateOobWarning() {
+  const show = G.player && G.gameStarted && G.player.alive && !levelRunner.won
+    && el.overlay.style.display === 'none' && G.player.oobTime >= OOB_WARN_DELAY;
+  if (!show) { el.oobWarn.style.display = 'none'; return; }
+  const remain = Math.max(0, Math.ceil(OOB_RETURN_TIME - G.player.oobTime));
+  el.oobWarn.style.display = 'block';
+  el.oobWarn.innerHTML =
+    `<div class="oob-title">${t('ui.oob.warning')}</div>` +
+    `<div class="oob-count">${t('ui.oob.countdown', { seconds: remain })}</div>`;
+}
+
+// ---------- Game loop ----------
+// Thrust/turn/speed/weapon are taken from the ship's components (engine/weapon).
+const DRAG = 1.8;        // friction (enemies)
+const IDLE_DRAG = 0.8;   // soft braking for the player when controls are released
+const BANK_MAX  = 20 * Math.PI / 180; // max wing bank, radians (~0.349) — hard cap, "20 degrees, no more"
+const BANK_TAU  = 0.15;               // smoothing time-constant (s); smaller = snappier, larger = lazier
+
+// Cosmetic wing-bank: roll the ship into its turn (capped at BANK_MAX), ease back to level when straight.
+// Reads the ACTUAL heading change this frame, so it covers keyboard, touch and AI turning uniformly.
+// Does not touch heading/physics. Call once per frame per ship, after heading is updated.
+function updateBank(ship, turnRate, dt) {
+  const bank = ship.mesh.userData.bankGroup;
+  if (!bank) return;
+  if (ship._prevHeading === undefined) ship._prevHeading = ship.heading;
+  const delta   = shortestAngleDelta(ship._prevHeading, ship.heading); // signed radians turned this frame
+  ship._prevHeading = ship.heading;
+  const maxStep = (turnRate || 0) * dt;                                 // most it could turn this frame
+  const strength = maxStep > 1e-6 ? Math.max(-1, Math.min(1, delta / maxStep)) : 0;
+  const target  = -strength * BANK_MAX;                                 // sign: roll INTO the turn (flip if wrong by eye)
+  if (ship.roll === undefined) ship.roll = 0;
+  const k = 1 - Math.exp(-dt / BANK_TAU);                               // frame-rate-independent easing
+  ship.roll += (target - ship.roll) * k;
+  bank.rotation.z = ship.roll;
+}
+
+export function update(dt) {
+  if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
+
+  // --- repair drone: passive hull regen, capped at a fraction of max HP (no-op without a drone) ---
+  if (G.player.repair) {
+    const r = repairTick(G.player.hp, G.player.maxHp, G.player.repair, dt, G.player._repairAccum);
+    G.player.hp = r.hp; G.player._repairAccum = r.accum;
+  }
+
+  const eng = G.player.engine;         // main engine (for exhaust)
+  const accel = G.player.acceleration; // derived: acceleration <- main engine power
+  const turn = G.player.turnRate;      // derived: maneuverability <- thruster power
+
+  // --- player: turn ---
+  if (keys['KeyA'] || keys['ArrowLeft'])  G.player.heading += turn * dt;
+  if (keys['KeyD'] || keys['ArrowRight']) G.player.heading -= turn * dt;
+
+  // touch: turn the nose toward the touch direction (directional steering)
+  if (touchAim.active) {
+    G.player.heading = steerToward(G.player.heading, touchAim.heading, turn * dt);
+  }
+
+  // --- player: thrust ---
+  const fwd = forwardVec(G.player.heading);
+  if (keys['KeyW'] || keys['ArrowUp'])   G.player.vel.addScaledVector(fwd, accel * dt);
+  if (keys['KeyS'] || keys['ArrowDown']) G.player.vel.addScaledVector(fwd, -accel * dt);
+  if (touchAim.active) G.player.vel.addScaledVector(fwd, accel * touchAim.thrust * dt); // touch thrust
+
+  // passive braking when no control button is pressed
+  // (hold the turn to aim while drifting - inertia is preserved)
+  const controlling = touchAim.active
+                   || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
+                   || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight'];
+  if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
+
+  // pure inertia: no friction, no speed limit - the ship
+  // keeps flying in its current direction, no matter where the nose points
+  G.player.mesh.position.addScaledVector(G.player.vel, dt);
+
+  // Drifting arena (e.g. freighter escort): slowly pan the combat zone's center; the boundary, warp-back
+  // and mini-map all compute relative to it. Static maps (G.arenaDrift null) keep the center at (0,0).
+  if (G.arenaDrift) {
+    arenaCenter.x += G.arenaDrift.x * dt;
+    arenaCenter.z += G.arenaDrift.z * dt;
+    arenaBorder.line.position.set(arenaCenter.x, 0, arenaCenter.z);
+  }
+
+  // Soft boundary (DECISIONS §2): the player can fly past ±ARENA freely (measured from the arena center).
+  // Track how long it's been continuously outside; after a grace delay we warn (HUD), and after
+  // OOB_RETURN_TIME we warp it back to the center. Re-entering resets the timer and clears the warning.
+  const p = G.player.mesh.position;
+  const dxc = p.x - arenaCenter.x, dzc = p.z - arenaCenter.z;
+  const oob = Math.abs(dxc) > ARENA || Math.abs(dzc) > ARENA;
+  if (oob) {
+    G.player.oobTime += dt;
+    if (G.player.oobTime >= OOB_RETURN_TIME) warpPlayerToCenter();
+  } else {
+    G.player.oobTime = 0;
+  }
+  // edge marker brightens as the player approaches the wall, brightest while out of bounds
+  const edge = Math.max(Math.abs(dxc), Math.abs(dzc));
+  const near = Math.min(1, Math.max(0, (edge - (ARENA - 60)) / 60));
+  arenaBorder.mat.opacity = 0.12 + near * 0.5 + (oob ? 0.25 : 0);
+
+  // warp-back animation: grow from a dot back to full size (reuses the enemy "warp in")
+  if (G.player.spawnAge < SPAWN_GROW_TIME) {
+    G.player.spawnAge = Math.min(SPAWN_GROW_TIME, G.player.spawnAge + dt);
+    const k = 1 - Math.pow(1 - G.player.spawnAge / SPAWN_GROW_TIME, 3); // ease-out cubic
+    G.player.mesh.scale.copy(G.player.spawnScale).multiplyScalar(Math.max(0.001, k));
+  }
+
+  G.player.mesh.rotation.y = G.player.heading;
+  updateBank(G.player, turn, dt); // cosmetic wing-bank; `turn` = player.turnRate, in scope above
+
+  // --- engine trail (when thrusting forward) ---
+  if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
+    emitExhaust(G.player.mesh, fwd, G.player.vel, eng.exhaust);
+  }
+
+  // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
+  updateGroups(G.player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
+
+  // --- enemy AI ---
+  for (const e of enemies) {
+    // spawn animation: grow from a dot to full size over SPAWN_GROW_TIME (ease-out)
+    if (e.spawnAge < SPAWN_GROW_TIME) {
+      e.spawnAge = Math.min(SPAWN_GROW_TIME, e.spawnAge + dt);
+      const t = e.spawnAge / SPAWN_GROW_TIME;
+      const k = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      e.mesh.scale.copy(e.spawnScale).multiplyScalar(Math.max(0.001, k));
+    }
+
+    const toPlayer = G.player.mesh.position.clone().sub(e.mesh.position);
+    const dist = toPlayer.length();
+    toPlayer.normalize();
+
+    // target angle toward the player
+    const desired = Math.atan2(toPlayer.x, toPlayer.z);
+    const diff = shortestAngleDelta(e.heading, desired); // used below for aim checks
+    e.heading = steerToward(e.heading, desired, e.turnRate * dt);
+
+    const ef = forwardVec(e.heading);
+    // keep distance ~20: close in from afar, back off if too close
+    const thrust = enemyThrustFactor(dist);
+    e.vel.addScaledVector(ef, e.acceleration * thrust * dt);
+    e.vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
+    if (e.engine.maxSpeed && e.vel.length() > e.engine.maxSpeed) e.vel.setLength(e.engine.maxSpeed);
+
+    e.mesh.position.addScaledVector(e.vel, dt); // no arena clamp: enemies chase the player out of bounds
+    e.mesh.rotation.y = e.heading;
+    updateBank(e, e.turnRate, dt); // cosmetic wing-bank for enemies
+
+    // engine trail: same exhaust behavior as the player, when thrusting forward
+    if (thrust > 0.1) emitExhaust(e.mesh, ef, e.vel, e.engine.exhaust);
+
+    // fire each group whose AI rule (range + aim tolerance) is satisfied
+    updateGroups(e, ef, false, dt, (g) => g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
+  }
+
+  // --- projectiles ---
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.traveled += b.vel.length() * dt;
+    b.mesh.position.addScaledVector(b.vel, dt);
+
+    let hit = false;
+    if (b.fromPlayer) {
+      for (const e of enemies) {
+        if (b.mesh.position.distanceTo(e.mesh.position) < e.radius) {
+          e.hp -= b.damage; hit = true; audio.sfx.hit(); break;
+        }
+      }
+    } else {
+      if (G.player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
+        G.player.hp -= b.damage; hit = true; audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
+      }
+    }
+
+    // interception: a bullet damages an opposite-side rocket; it's shot down when its hp runs out
+    if (!hit) {
+      for (let j = rockets.length - 1; j >= 0; j--) {
+        const r = rockets[j];
+        if (r.fromPlayer === b.fromPlayer) continue; // only rockets of the opposite side
+        if (b.mesh.position.distanceTo(r.obj.position) < 2.4) {
+          r.hp -= b.damage;
+          if (r.hp <= 0) { detonateRocket(r, false); rockets.splice(j, 1); } // destroyed
+          hit = true; break;                                                 // else it survives, takes another
+        }
+      }
+    }
+
+    // limited only by range/hits — bullets fly normally beyond the arena (no boundary culling)
+    if (hit || b.traveled >= b.maxRange) {
+      if (hit) spawnExplosion(b.mesh.position); // micro-flash at the impact point
+      scene.remove(b.mesh);
+      b.mesh.material.dispose();
+      bullets.splice(i, 1);
+    }
+  }
+
+  // --- rockets: homing (accelerate toward target), detonate near the enemy ---
+  for (let i = rockets.length - 1; i >= 0; i--) {
+    const r = rockets[i];
+    // target lost: for a player rocket - if the enemy died; for an enemy one - if the player died
+    if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
+    if (r.target) {
+      // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
+      const to = r.target.mesh.position.clone().sub(r.obj.position);
+      const desired = Math.atan2(to.x, to.z);
+      const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
+      const speed = r.vel.length() + r.accel * dt;
+      r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
+    }
+    r.traveled += r.vel.length() * dt;
+    r.obj.position.addScaledVector(r.vel, dt);
+    if (r.vel.lengthSq() > 0.01) r.obj.rotation.y = Math.atan2(r.vel.x, r.vel.z);
+    spawnSmoke(r.obj.position); // light smoke trail
+
+    let det = false;
+    if (r.fromPlayer) {
+      for (const e of enemies) {
+        if (e.mesh.position.distanceTo(r.obj.position) <= Math.max(r.detonateR, e.radius)) { det = true; break; }
+      }
+    } else if (G.player.alive && G.player.mesh.position.distanceTo(r.obj.position) <= r.detonateR) {
+      det = true;
+    }
+    // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)
+    if (det || r.traveled >= r.maxRange) { detonateRocket(r); rockets.splice(i, 1); }
+  }
+
+  // --- micro-explosions (short fiery flash) ---
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const x = explosions[i];
+    x.life -= dt;
+    const t = 1 - Math.max(0, x.life) / x.maxLife; // 0 → 1
+    x.mesh.scale.setScalar(0.6 + t * (x.maxScale - 0.6)); // expands quickly
+    x.mesh.material.opacity = (1 - t);                  // and fades out
+    if (x.life <= 0) {
+      scene.remove(x.mesh);
+      x.mesh.material.dispose();
+      explosions.splice(i, 1);
+    }
+  }
+
+  // --- engine trail: particles fly backward, fade out and shrink ---
+  for (let i = trail.length - 1; i >= 0; i--) {
+    const p = trail[i];
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.life -= dt;
+    const t = 1 - Math.max(0, p.life) / p.maxLife; // 0 → 1
+    p.mesh.material.opacity = (1 - t) * 0.85;
+    p.mesh.scale.setScalar(p.baseSize * (1.1 - t * 0.8));
+    if (p.life <= 0) {
+      scene.remove(p.mesh);
+      p.mesh.material.dispose();
+      trail.splice(i, 1);
+    }
+  }
+
+  // --- rocket smoke trail: puffs expand and fade away ---
+  for (let i = smoke.length - 1; i >= 0; i--) {
+    const s = smoke[i];
+    s.life -= dt;
+    const t = 1 - Math.max(0, s.life) / s.maxLife; // 0 → 1
+    s.mesh.material.opacity = (1 - t) * 0.35;
+    s.mesh.scale.setScalar(0.4 + t * 1.2); // smoke expands
+    if (s.life <= 0) {
+      scene.remove(s.mesh);
+      s.mesh.material.dispose();
+      smoke.splice(i, 1);
+    }
+  }
+
+  // --- ship-explosion sparks: colored debris flying outward, slowing, fading + shrinking ---
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.mesh.position.addScaledVector(s.vel, dt);
+    s.vel.multiplyScalar(1 - 2.5 * dt); // drag
+    s.life -= dt;
+    const t = 1 - Math.max(0, s.life) / s.maxLife; // 0 → 1
+    s.mesh.material.opacity = 1 - t;
+    s.mesh.scale.setScalar(s.size * (1 - t * 0.7));
+    if (s.life <= 0) {
+      scene.remove(s.mesh);
+      s.mesh.material.dispose();
+      sparks.splice(i, 1);
+    }
+  }
+
+  // --- ship-explosion shockwave: a flat ring expanding outward on the plane ---
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const w = shockwaves[i];
+    w.life -= dt;
+    const t = 1 - Math.max(0, w.life) / w.maxLife; // 0 → 1
+    w.mesh.scale.setScalar(1 + t * (w.maxScale - 1)); // expands fast
+    w.mesh.material.opacity = (1 - t) * 0.9;          // and fades out
+    if (w.life <= 0) {
+      scene.remove(w.mesh);
+      w.mesh.material.dispose();
+      shockwaves.splice(i, 1);
+    }
+  }
+
+  // --- enemy deaths ---
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    if (enemies[i].hp <= 0) {
+      // colorful death burst: sized to the ship, tinted by its engine's exhaust color
+      const e = enemies[i];
+      spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
+      // Per-size loudness: medium ships + bosses +50% louder; small ships 70% quieter.
+      const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(e.role);
+      audio.sfx.explosion(e.sizeScale || 1, sfxFor('ship', e.class, 'explode'), louderBoom ? 1.5 : 0.3); // ship-class map; vol by size
+
+      scene.remove(enemies[i].mesh);
+      enemies.splice(i, 1);
+      G.kills++;                  // count (drives level thresholds + HUD)
+      G.earned += e.reward || 0;  // credits (reward for this ship type)
+    }
+  }
+  // drive spawning + phase transitions from the active level
+  levelRunner.update(dt);
+
+  // --- player death ---
+  if (G.player.hp <= 0 && G.player.alive) {
+    G.player.alive = false;
+    spawnShipExplosion(G.player.mesh.position, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
+    audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
+    track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
+    bankRun(); // bank the earned credits into the account balance + record the game
+    el.overlayTitle.textContent = t('ui.overlay.ship_destroyed');
+    el.overlaySub.textContent = t('ui.gameover.sub', { kills: G.kills, credits: G.earned });
+    el.restart.textContent = t('ui.button.restart'); // a loss retries the level
+    // once the shop is unlocked, offer returning to the hangar (shop/loadout) instead of an instant retry
+    el.backHangar.style.display = (G.activeShip && G.activeShip.shopUnlocked) ? 'inline-block' : 'none';
+    el.overlay.style.display = 'flex';
+  }
+
+  // --- camera: rigidly attached to the player (no lag or "floating" - no jitter),
+  //     fixed angle - does NOT rotate with the ship's turn ---
+  camera.position.copy(G.player.mesh.position).add(camOffset);
+  camera.lookAt(G.player.mesh.position);
+
+  // stars - an infinitely distant backdrop (stuck to the camera, no parallax)
+  G.stars.position.copy(camera.position);
+  // the planet shifts slightly as the player moves - a light parallax (depth)
+  const PARALLAX = 0.6;
+  G.sky.position.copy(camera.position).addScaledVector(G.player.mesh.position, -PARALLAX);
+
+  // moons orbit the planet (they do not rotate themselves - the terminator does not "wander")
+  updateMoons(dt);
+
+  // mission set-pieces: their own slow animation (station spin, beams, exhaust, …)
+  for (const sp of setPieces) sp.update?.(dt);
+}
+
+// ---------- Pause ----------
+// G.paused freezes the fight by skipping the sim update (rendering keeps running, so the frozen frame
+// stays on screen). The button toggles between ⏸ (playing) and ▶ (paused). NOTE: this is a purely
+// client-side, single-player freeze — when multiplayer lands, pause must be reworked server-side (a
+// client can't stop a shared world). See DECISIONS §16. The buttons + focus listeners are wired in the
+// inline boot, which calls setPaused/togglePause/autoPauseOnBlur.
+export function setPaused(p) {
+  G.paused = p;
+  el.pauseBtn.textContent = p ? '▶' : '⏸';
+  const label = t(p ? 'ui.pause.resume' : 'ui.pause.pause');
+  el.pauseBtn.setAttribute('aria-label', label);
+  el.pauseBtn.title = label;
+  el.pauseOverlay.classList.toggle('on', p); // centered "Paused" + Play while paused
+  document.body.classList.toggle('paused', p); // gates the settings gear (shown on menus + while paused)
+  refreshMusic(); // duck to the calmer menu mood while paused
+}
+// Toggle only while a fight is actually running (no-op on menus / after death/victory).
+export function togglePause() {
+  if (!G.gameStarted || !G.player || !G.player.alive || levelRunner.won) return;
+  setPaused(!G.paused);
+}
+// Mobile: auto-pause when the browser/tab loses focus, so a backgrounded fight doesn't keep running.
+export function autoPauseOnBlur() {
+  if (isTouch && G.gameStarted && G.player && G.player.alive && !levelRunner.won && !G.paused) setPaused(true);
+}

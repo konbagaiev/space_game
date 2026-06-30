@@ -17,6 +17,19 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 13: the simulation → `src/sim.js`.** The biggest slice: moved the
+  fixed-step `update(dt)` loop (~310 lines), the `levelRunner` (DB phase/wave script), the cosmetic helpers
+  (`forwardVec`/`updateBank` wing-bank/`warpPlayerToCenter`/`updateOobWarning`), the music routing
+  (`musicForState`/`refreshMusic`), and pause control (`setPaused`/`togglePause`/`autoPauseOnBlur`) out of
+  the inline script into `src/sim.js`. Promoted the last two run-lifecycle scalars `gameStarted`/`paused`
+  onto `G`, and moved the result-overlay + pause + OOB nodes (`overlay-title`/`overlay-sub`/`restart`/
+  `back-hangar`/`pause-btn`/`pause-overlay`/`oob-warn`) into `dom.js`'s `el`. The inline script keeps the
+  boot wiring (the `animate` render loop calling the imported `update`/`updateOobWarning`, the pause-button
+  + focus listeners calling the imported pause fns, `reset`). `sim.js` sits at the top of the dependency
+  graph (imports state/engine/world/projectiles/ship-build/net/i18n/dom; nothing imports it back — no
+  cycle). No behavior change. Unit 46/46; visual at the 10/6 flaky baseline (incl. `04-combat`, which drives
+  the whole loop). Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 12: backend + telemetry → `src/net.js`.** Moved `fetchJson`,
   `bankRun`, `track`, `currentLevelLabel`, and `unlockNextLevel` out of the inline script into `src/net.js`
   (imports `G`/`CATALOG` from state, `updateHud` from hud, `buildMap` from world, `buildPlayerFor` from
