@@ -1025,6 +1025,34 @@ speculation.
 
 ---
 
+## 31. Client split into native ES modules — buildless, no bundler
+
+**Decision.** Break the ~3500-line inline `<script type="module">` in `client/index.html` into cohesive
+ES modules under `client/src/`, loaded **natively by the browser with no build step**. `three` keeps
+coming from the CDN **importmap** in `index.html`; each module does `import * as THREE from 'three'` and
+the browser resolves it through that same importmap. The server keeps serving `client/` as plain static
+files — no Vite, no bundler, no transpile in CI/deploy.
+
+**Why.** The project ethos is plain static hosting (the server just `express.static(clientDir)`); adding a
+bundler would put a build artifact between source and what ships, plus a build step in CI and deploy that
+doesn't exist today. Native ESM over HTTP/2 is fine for our size (the modules are small, same-origin; the
+one CDN fetch for `three` is unchanged). The cost — many small module requests — is acceptable now; if
+startup latency ever measurably regresses we can revisit Vite *then*, not speculatively (see §30).
+
+**The `G` state-bag pattern.** Native ESM shares an exported `const` array/object **by reference** (mutating
+its contents is visible everywhere) but an exported `let` scalar is a **read-only view** in importers (you
+can't reassign it from another module). So: entity collections + the catalog are exported `const` in
+`state.js`; **reassigned cross-module scalars** (`player`, `gfx`, `sky`, `stars`, `arenaDrift`, …) live as
+properties on a single mutable bag `export const G = {…}` — write `G.player = …`, read `G.player`. Scalars
+are promoted onto `G` lazily, as the domain that owns them is split out, rather than all up front. Engine
+singletons (`renderer`/`scene`/`camera`/lights) are exported `const` from `engine.js`.
+
+**Rollout.** Incremental — one safe slice per commit, the existing unit + visual suites green between each
+(the visual suite asserts on simulation state and zero page errors, so a broken import surfaces immediately).
+See `docs/plans/client-code-structure.md` for the slice sequence and the target module layout.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

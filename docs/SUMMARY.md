@@ -833,15 +833,27 @@ first translation). See DECISIONS §10.
   Migrations are **forward-only** (expand/contract), so a code rollback is safe without reversing the DB
   (see DECISIONS §9).
 
-## Testable logic (extracted from index.html)
-- Pure, Three.js-free logic lives in `client/src/`: `components.js` (catalogs + `deriveDrive` +
-  `shipMass` + `hitsToKill` + `repairTick`), `steering.js` (`headingToDir`, `shortestAngleDelta`,
-  `steerToward`, `enemyThrustFactor`, `inForwardSector`), `i18n.js` (`t`, `resolveLanguage`,
-  `normalizeLang`, `loadLanguage`), and `audio.js` (the procedural Web Audio engine + the pure settings
-  helpers `clamp01`/`loadAudioSettings`/`saveAudioSettings`/`effectiveGain` — the engine is browser-only
-  and inert under node; only the settings helpers are unit-tested). `index.html` imports and uses them.
-- Because the client now uses ES modules, it must be **served over http** (not opened as `file://`).
-- More of the simulation can be extracted incrementally (it's still tied to Three.js objects + the render loop).
+## Client module layout (`client/src/`)
+The client is being split out of the single inline `<script>` in `index.html` into buildless native ES
+modules (no bundler; `three` resolved by the importmap in `index.html`). See
+`docs/plans/client-code-structure.md` and DECISIONS for the rationale and the `G`-state-bag pattern.
+- **Pure, Three.js-free logic (unit-tested):** `components.js` (catalogs + `deriveDrive` + `shipMass` +
+  `hitsToKill` + `repairTick`), `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
+  `enemyThrustFactor`, `inForwardSector`), `i18n.js` (`t`, `resolveLanguage`, `normalizeLang`,
+  `loadLanguage`), `audio.js` (procedural Web Audio engine + the pure settings helpers, engine
+  browser-only), and `format.js` (`esc`/`cssColor`/`slotLabel`/`priceLabel`/`sellLabel`).
+- **Shared state & engine:** `state.js` (entity collections + `CATALOG` + input + the mutable `G` state
+  bag for reassigned cross-module scalars: `gfx`/`rotated`/`player`/`sky`/`stars`/… + `SPAWN_GROW_TIME`),
+  `engine.js` (`renderer`/`scene`/`skyScene`/`camera`/lights + orientation + zoom), `dom.js` *(planned —
+  cached element refs, lands with the HUD slice)*.
+- **Domains (browser-only, touch the scene):** `world.js` (arena + sky/planet/moons/asteroids/set-pieces +
+  `buildMap`), `ship-factory.js` (`makeShip`/`applyShipModel` + `gltfLoader`), `projectiles.js`
+  (bullets/explosions/exhaust/rockets/smoke FX), `ship-build.js` (catalog resolution + `buildPlayer` +
+  enemy spawning + fire groups), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`).
+- **Still inline in `index.html`** (to be extracted in later slices): the simulation `update()` loop +
+  `levelRunner`, HUD/markers/minimap/pause, net/telemetry, the Main Window / shop / welcome / account /
+  settings UI, and the bootstrap/`animate`/`window.__game` composition root.
+- Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)
 - **Client logic** — `client/src/*.test.js` (33): drive derivation (engine + mass), balance, repair-drone
