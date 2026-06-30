@@ -834,9 +834,10 @@ first translation). See DECISIONS §10.
   (see DECISIONS §9).
 
 ## Client module layout (`client/src/`)
-The client is being split out of the single inline `<script>` in `index.html` into buildless native ES
-modules (no bundler; `three` resolved by the importmap in `index.html`). See
-`docs/plans/client-code-structure.md` and DECISIONS for the rationale and the `G`-state-bag pattern.
+`index.html` is now just markup + the `three` importmap + `<script type="module">import './src/main.js'</script>`
+— **no inline game code remains**. The client is buildless native ES modules (no bundler; `three` resolved
+by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for the rationale and the
+`G`-state-bag pattern.
 - **Pure, Three.js-free logic (unit-tested):** `components.js` (catalogs + `deriveDrive` + `shipMass` +
   `hitsToKill` + `repairTick`), `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
   `enemyThrustFactor`, `inForwardSector`), `i18n.js` (`t`, `resolveLanguage`, `normalizeLang`,
@@ -858,9 +859,13 @@ modules (no bundler; `three` resolved by the importmap in `index.html`). See
   `currentLevelLabel`/`unlockNextLevel`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
   `autoPauseOnBlur` + the `reset` restart), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
-- **Still inline in `index.html`** (to be extracted in later slices): `reloadPlayerWorld` + the funnel
-  listeners, the Main Window / shop / welcome / account / settings UI, and the bootstrap / `animate` /
-  `prewarmShaders` / `window.__game` composition root (which now imports the loop + `reset` from `sim.js`).
+- **Composition root:** `main.js` — the former inline `<script>` body: `bootstrap()` (fetch the DB
+  catalog/level/active-ship, build the world + player, start), `animate`/`prewarmShaders`, the
+  `window.__game` test hook (`?debug`), and the in-page UI that has no dedicated module yet — the **Main
+  Window** (`showMain`/`selectMenu`/mission board/3D model viewers/preview/showcase), the **hangar shop +
+  stash**, the **welcome screen** (`showWelcome`/`renderShipCards`/`takeOff`), the **account/auth** block
+  (+`reloadPlayerWorld`), and the **audio-settings modal + i18n UI glue**. (A later pass can peel these into
+  `mainwindow.js`/`shop.js`/`welcome.js`/`account.js`/`settings.js` — now a mechanical module→module split.)
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)

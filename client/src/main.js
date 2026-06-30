@@ -1,0 +1,1627 @@
+// Composition root for the client (loaded by index.html via `import './src/main.js'`).
+// This is the rest of the former inline <script type="module"> — bootstrap/animate/window.__game plus
+// the Main Window / shop / welcome / account / settings UI. It imports the extracted modules (sibling
+// paths, no `src/` segment) and `three` via the index.html importmap. Slices are peeling cohesive UI
+// modules out of here next; for now it is the single composition root.
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; // used by the inline model-viewer (engine.js imports its own)
+import { deriveDrive, repairTick, shipMass } from './components.js'; // pure derivation; ship/weapon DATA now comes from the DB
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './steering.js';
+import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './i18n.js';
+import { saveAudioSettings } from './audio.js'; // persist audio settings; the engine instance lives in sound-routing.js
+import { audio, tracksFor, sfxFor } from './sound-routing.js'; // audio engine + DB-driven SFX routing
+import { saveTier } from './graphics.js'; // graphics quality tiers (perf on weak phones); the active tier lives in G.gfx
+import { esc, cssColor, slotLabel, priceLabel, sellLabel } from './format.js'; // pure presentation helpers
+import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, moons, setPieces, soundMap, CATALOG, keys, touchAim, SPAWN_GROW_TIME } from './state.js'; // shared state bag + entity collections + catalog + input
+import { scene, skyScene, camera, renderer, camOffset, isTouch, toGame, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
+import { shipModelCfg, modelSpec, makeShip, gltfLoader, SHIP_MODEL_LEN } from './ship-factory.js'; // ship primitive + .glb model loading
+import { spawnBullet, spawnExplosion, spawnShipExplosion, emitExhaust, spawnRocket, detonateRocket, spawnSmoke, findTargetInSector, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // projectiles + combat FX (geos reused by prewarmShaders)
+import { resolveWeapon, resolveComponents, buildPlayer, buildPlayerFor, spawnEnemyShip, spawnEnemy, updateGroups } from './ship-build.js'; // catalog resolution + player/enemy building + weapon fire groups
+import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
+import { updateHud, updateMarkers, updateMiniMap, updatePerf } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf)
+import { fetchJson, bankRun, track, currentLevelLabel, unlockNextLevel } from './net.js'; // backend identity/banking/progression + funnel telemetry
+import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart
+import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
+
+// audio engine + tracksFor/sfxFor routing moved to src/sound-routing.js (imported at top).
+let samplesLoaded = false; // one-time guard so the sample preload fires once, after the context unlocks
+// SFX + music routing is DB-driven (docs/plans/sound-classes-and-mapping.md): /api/sounds gives the
+// registry (key→url) + the map ((entity,class,event)→[keys]), both filled in bootstrap(). No hardcoded routing.
+let soundUrls = {};                 // logical key → same-origin url (fed to audio.preloadSamples)
+
+// Graphics quality tier lives in G.gfx (built in state.js, read by engine.js at construction).
+const DEV = location.search.includes('dev'); // ?dev → record per-frame perf samples to the server (see devPerf)
+
+// musicForState/refreshMusic moved to src/sim.js (music follows the live game state). refreshMusic is
+// imported at the top; tryUnlockAudio below calls it on the first unlocking gesture.
+// Autoplay policy: the AudioContext can only start inside a user gesture, and browsers disagree on which
+// events count (Chrome accepts pointerdown; Safari wants click/touchend/keydown and a node played in the
+// gesture). So listen broadly and KEEP retrying on every gesture until the context is actually running,
+// then detach. Each attempt also (re)starts the menu music. A capturing click handler gives every
+// <button> a soft UI tick.
+const UNLOCK_EVENTS = ['pointerdown', 'touchend', 'click', 'keydown'];
+function tryUnlockAudio() {
+  audio.unlock();
+  if (!samplesLoaded) { samplesLoaded = true; audio.preloadSamples(soundUrls); } // load samples on first gesture (decode works even while the ctx is still suspended)
+  refreshMusic();
+  if (audio.isReady()) UNLOCK_EVENTS.forEach((ev) => removeEventListener(ev, tryUnlockAudio));
+}
+UNLOCK_EVENTS.forEach((ev) => addEventListener(ev, tryUnlockAudio));
+addEventListener('click', (e) => { if (e.target.closest('button')) audio.sfx.uiClick(); }, true);
+
+// ---------- Engine moved to src/engine.js ----------
+// scene, skyScene, renderer, camera, lights (combatAmbient/sun), the orientation block
+// (isTouch/gameW/gameH/toGame/applyOrientation, rotation flag on G.rotated) and the camera-zoom
+// block (setZoom/zoomBy/tickZoom/camOffset) are imported from engine.js at the top.
+
+// Fullscreen capability detection stays here (used by the floating ⛶ button + body classes below).
+// iPhone Safari has no Fullscreen API (it exists only on iPad/Android), so the floating ⛶ button is a
+// no-op there — the only true full screen on iPhone is the standalone web app from "Add to Home Screen"
+// (we ship apple-mobile-web-app-capable). Detect both: no FS API → swap ⛶ for an A2HS hint; already
+// launched standalone → no chrome to hide, so show neither. (See requestFullscreen + body.no-fs-api/.standalone.)
+const FS_API = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+const STANDALONE = window.navigator.standalone === true ||
+  !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+
+// ---------- World moved to src/world.js ----------
+// Arena (ARENA/OOB consts, arenaCenter, arenaBorder), the starry sky, planet/moons/asteroids, the
+// mission set-pieces and buildMap()/updateMoons()/buildSetPiece() are imported from world.js. The
+// reassigned per-map handles (sky/stars/G.skyAmbient/G.skySun/G.currentMapDescriptor/G.mapSetpieces/G.arenaDrift)
+// live on the shared state bag G.
+
+// ---------- Ship factory moved to src/ship-factory.js ----------
+// shipModelCfg/modelSpec/makeShip/applyShipModel + the shared gltfLoader + SHIP_MODEL_LEN are imported
+// at the top. The inline model viewer reuses gltfLoader + SHIP_MODEL_LEN. See docs/plans/adding-a-ship-model.md.
+
+// ---------- Projectiles & combat FX moved to src/projectiles.js ----------
+// spawnBullet/spawnExplosion/spawnShipExplosion/emitExhaust/spawnRocket/detonateRocket/spawnSmoke/
+// findTargetInSector/liveParticles are imported at the top.
+
+// ---------- Ship building & weapons moved to src/ship-build.js ----------
+// resolveWeapon/resolveComponents/buildMounts/buildGroups/buildPlayer/spawnEnemyShip/spawnEnemy +
+// fireMount/updateGroups are imported at the top. CATALOG (state.js) is still filled in bootstrap().
+// ---------- Level runner moved to src/sim.js ----------
+// levelRunner (the DB phase/wave script player) is imported at the top — it lives with the sim loop that
+// drives it; reset() calls levelRunner.start(), the loop calls levelRunner.update(), __game exposes it.
+
+// ---------- Weapons (fireMount/updateGroups) moved to src/ship-build.js ----------
+
+// ---------- Input ----------
+// keys moved to src/state.js
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ---------- Touch controls (touch devices) ----------
+// "steer by touch direction" model: stick angle = desired nose direction,
+// the ship turns toward it; the magnitude of the deflection = thrust.
+// touchAim moved to src/state.js
+if (isTouch) {
+  document.body.classList.add('touch'); // gates touch-only UI (e.g. the Full screen button)
+  if (STANDALONE) document.body.classList.add('standalone');   // launched from Home Screen — no chrome to hide
+  else if (!FS_API) document.body.classList.add('no-fs-api');  // iPhone Safari: ⛶ can't work → show the A2HS hint instead
+  document.getElementById('touch').classList.add('on');
+  document.getElementById('help').style.display = 'none'; // keyboard hints not needed
+
+  const zone = document.getElementById('stick-zone');
+  const base = document.getElementById('stick-base');
+  const knob = document.getElementById('stick-knob');
+  const fire = document.getElementById('fire-btn');
+  const R = 60;          // stick radius
+  const DEAD = 0.2;      // dead zone (fraction of radius) - below it no steering/thrust
+  let stickId = null;    // id of the touch holding the stick
+  let stickCx = 0, stickCy = 0;
+
+  function showStick(x, y) {
+    base.style.left = knob.style.left = x + 'px';
+    base.style.top = knob.style.top = y + 'px';
+    base.style.display = knob.style.display = 'block';
+  }
+  function moveKnob(cx, cy, x, y) {
+    const dx = x - cx, dy = y - cy;
+    const len = Math.hypot(dx, dy);
+    const clamped = Math.min(len, R);
+    const kx = len > 0 ? dx / len * clamped : 0;
+    const ky = len > 0 ? dy / len * clamped : 0;
+    knob.style.left = (cx + kx) + 'px';
+    knob.style.top = (cy + ky) + 'px';
+    const mag = clamped / R; // 0..1
+    if (mag > DEAD) {
+      touchAim.active = true;
+      // screen->world: x->X (right), y->Z (down). heading: forwardVec(h)=(sin h,0,cos h)
+      touchAim.heading = Math.atan2(dx, dy);
+      touchAim.thrust = (mag - DEAD) / (1 - DEAD); // 0..1 beyond the dead zone
+    } else {
+      touchAim.active = false; touchAim.thrust = 0;
+    }
+  }
+  function clearStick() {
+    stickId = null;
+    touchAim.active = false; touchAim.thrust = 0;
+    base.style.display = knob.style.display = 'none';
+  }
+
+  zone.addEventListener('touchstart', e => {
+    if (stickId !== null) return;
+    const t = e.changedTouches[0];
+    const p = toGame(t.clientX, t.clientY); // map viewport coords into (possibly rotated) game space
+    stickId = t.identifier; stickCx = p.x; stickCy = p.y;
+    showStick(stickCx, stickCy);
+    moveKnob(stickCx, stickCy, p.x, p.y);
+    e.preventDefault();
+  }, { passive: false });
+  zone.addEventListener('touchmove', e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) { const p = toGame(t.clientX, t.clientY); moveKnob(stickCx, stickCy, p.x, p.y); e.preventDefault(); }
+    }
+  }, { passive: false });
+  function endStick(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === stickId) clearStick();
+    }
+  }
+  zone.addEventListener('touchend', endStick);
+  zone.addEventListener('touchcancel', endStick);
+
+  // fire button
+  fire.addEventListener('touchstart', e => { keys['Space'] = true; e.preventDefault(); }, { passive: false });
+  fire.addEventListener('touchend', e => { keys['Space'] = false; e.preventDefault(); }, { passive: false });
+  fire.addEventListener('touchcancel', () => { keys['Space'] = false; });
+
+  // rocket button
+  const rocketBtn = document.getElementById('rocket-btn');
+  rocketBtn.addEventListener('touchstart', e => { keys['_rocket'] = true; e.preventDefault(); }, { passive: false });
+  rocketBtn.addEventListener('touchend', e => { keys['_rocket'] = false; e.preventDefault(); }, { passive: false });
+  rocketBtn.addEventListener('touchcancel', () => { keys['_rocket'] = false; });
+
+  // Pinch-to-zoom: two fingers over the open canvas area. Scoped to targetTouches so it never fights
+  // the steering stick (the stick lives in its own #stick-zone element with its own listeners).
+  let pinchDist = 0;
+  const pinchD = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  renderer.domElement.addEventListener('touchstart', e => {
+    if (e.targetTouches.length === 2) pinchDist = pinchD(e.targetTouches[0], e.targetTouches[1]);
+  }, { passive: false });
+  renderer.domElement.addEventListener('touchmove', e => {
+    if (e.targetTouches.length === 2 && pinchDist > 0) {
+      const d = pinchD(e.targetTouches[0], e.targetTouches[1]);
+      if (d > 0) { zoomBy(pinchDist / d); pinchDist = d; } // fingers apart (d↑) => ratio<1 => zoom in
+      e.preventDefault();
+    }
+  }, { passive: false });
+  renderer.domElement.addEventListener('touchend', e => {
+    if (e.targetTouches.length < 2) pinchDist = 0;
+  }, { passive: false });
+} else {
+  // PC: the rocket circle is also clickable (besides the F key)
+  const rocketBtn = document.getElementById('rocket-btn');
+  rocketBtn.addEventListener('mousedown', () => { keys['_rocket'] = true; });
+  addEventListener('mouseup', () => { keys['_rocket'] = false; });
+}
+
+// ---------- Zoom controls (both platforms): mouse wheel + on-screen +/- buttons ----------
+const ZOOM_WHEEL = 1.12, ZOOM_BTN = 1.25;
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomBy(e.deltaY < 0 ? 1/ZOOM_WHEEL : ZOOM_WHEEL); // scroll up = zoom in (closer)
+}, { passive: false });
+document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOOM_BTN));
+document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
+
+// ---------- Backend + telemetry moved to src/net.js ----------
+// fetchJson, bankRun, currentLevelLabel, track, unlockNextLevel are imported at the top. The player id
+// (G.playerId) is initialized in state.js; the once-per-run / once-per-session guards (G.banked,
+// G.gameStartSent, G.quitSent) live on the shared bag. The community-link + pagehide listeners stay here
+// (boot wiring) and call the imported track/currentLevelLabel.
+// Telemetry: how many players open the community/feedback group (fire-and-forget; navigation continues).
+document.querySelectorAll('.community-link').forEach((el) => {
+  el.addEventListener('click', () => track('community_click', { lang: getLanguage() }));
+});
+// Fire `quit` once when the player leaves mid-session (drop-off signal; G.quitSent guard). pagehide is
+// more reliable than beforeunload (covers tab close, navigation, and mobile backgrounding).
+addEventListener('pagehide', () => {
+  if (G.quitSent || !G.gameStarted) return;
+  G.quitSent = true;
+  track('quit', { level: currentLevelLabel() });
+});
+
+// ---------- Sim helpers moved to src/sim.js ----------
+// forwardVec, warpPlayerToCenter (soft-boundary auto-return) and updateOobWarning (the "left the
+// battlefield" warning, reading #oob-warn via el.oobWarn) are imported at the top; animate() calls
+// updateOobWarning, __game exposes warpPlayerToCenter.
+
+// ---------- HUD moved to src/hud.js ----------
+// updateHud/updateMarkers/updateMiniMap/updatePerf are imported at the top; the cached HUD/overlay
+// nodes live in src/dom.js (`el`). The run/account scalars they read (G.kills/G.earned/G.balance) are
+// on the shared state bag. The result-overlay title/sub/buttons (el.overlayTitle/overlaySub/restart/
+// backHangar in dom.js) are written by the sim death/win flow (now in sim.js) + the inline restart
+// listeners below.
+
+// ---------- Game loop moved to src/sim.js ----------
+// The fixed-step update(dt) + the cosmetic wing-bank + DRAG/IDLE_DRAG constants are imported at the top;
+// animate() below calls update(dt) (gated on !G.paused). The render clock stays here (animate owns it).
+const clock = new THREE.Clock();
+
+
+// ---------- HUD draws moved to src/hud.js ----------
+// updatePerf (perf overlay), updateMarkers (off-screen enemy edge arrows) and updateMiniMap (radar)
+// are imported at the top; their cached nodes (#perf/#markers/#minimap) live in src/dom.js (`el`).
+
+// ---------- Pause boot wiring ----------
+// setPaused/togglePause/autoPauseOnBlur moved to src/sim.js (they read levelRunner + call refreshMusic).
+// The buttons + focus listeners are wired here, calling the imported functions.
+document.getElementById('pause-play').addEventListener('click', () => setPaused(false)); // Play = resume
+el.pauseBtn.addEventListener('click', togglePause);
+setPaused(false); // localize the initial label
+document.addEventListener('visibilitychange', () => { if (document.hidden) autoPauseOnBlur(); });
+window.addEventListener('blur', autoPauseOnBlur);
+
+// ---------- Dev perf monitor (?dev): sample frame timing + device passport, ship to /api/perf ----------
+// Gated on `?dev` (mirrors ?tune/?debug). A single fps number can't tell CPU-bound from GPU/fill-rate-bound
+// from externally-governed (thermal/vsync) — the three failure modes a weak phone hits. So each frame we
+// time the JS work (sim / DOM overlays / render submit), and once per second emit an aggregated sample
+// (fps + frame-time p50/p95/max + the JS breakdown + scene load + a device/GPU passport), batched to the
+// server every ~5s (and on tab hide via sendBeacon). Off — zero overhead — for normal players.
+// Read: if JS `total` ≪ frame `p50`, the frame isn't CPU-bound → external/GPU. See docs/plans/perf-low-end-phones.md.
+const devPerf = (() => {
+  if (!DEV) return { frame() {} };
+  const sessionId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random();
+  // Device passport — captured once. The real GPU name is the single most useful field for a weak phone.
+  let gpu = 'unknown', gpuVendor = 'unknown';
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    if (ext) { gpu = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL); gpuVendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL); }
+  } catch {}
+  const device = {
+    ua: navigator.userAgent, dpr: window.devicePixelRatio,
+    cores: navigator.hardwareConcurrency ?? null, mem: navigator.deviceMemory ?? null,
+    screen: `${screen.width}x${screen.height}`, gpu, gpuVendor, tier: G.gfx.name,
+    knobs: { pixelRatioCap: G.gfx.pixelRatioCap, antialias: G.gfx.antialias,
+             maxParticles: G.gfx.maxParticles === Infinity ? 'inf' : G.gfx.maxParticles },
+  };
+  let bucket = [], bucketStart = performance.now(), outbox = [], lastFlush = bucketStart;
+  const pct = (sorted, p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p / 100 * sorted.length))] : 0;
+  const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+  const r1 = (x) => Math.round(x * 10) / 10;
+  // JS heap usage (Chrome/Android-Chrome only; non-standard, bucketed for privacy). NOT the process RSS
+  // and NOT GPU memory (textures/buffers live in the driver) — but the only in-page memory signal, and it
+  // catches JS-side growth/leaks over a session. null where unavailable (Safari/Firefox).
+  const MB = 1048576;
+  const heapMB = () => {
+    const m = performance.memory;
+    return m ? { used: Math.round(m.usedJSHeapSize / MB), total: Math.round(m.totalJSHeapSize / MB), limit: Math.round(m.jsHeapSizeLimit / MB) } : null;
+  };
+
+  function flush(beacon) {
+    if (!outbox.length || !G.playerId) return;
+    const body = JSON.stringify({ playerId: G.playerId, sessionId, samples: outbox });
+    outbox = [];
+    try {
+      if (beacon && navigator.sendBeacon) navigator.sendBeacon('/api/perf', new Blob([body], { type: 'application/json' }));
+      else fetch('/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+    } catch {}
+  }
+  function finalizeBucket(now) {
+    const elapsed = (now - bucketStart) / 1000;
+    if (bucket.length && elapsed > 0) {
+      const frameMs = bucket.map((f) => f.frame).sort((a, b) => a - b);
+      const totals = bucket.map((f) => f.total).sort((a, b) => a - b);
+      const p50 = pct(frameMs, 50);
+      outbox.push({
+        t: Date.now(), scene: !G.gameStarted ? 'menu' : (G.paused ? 'paused' : 'combat'),
+        fps: r1(bucket.length / elapsed), frames: bucket.length,
+        frameMs: { p50: r1(p50), p95: r1(pct(frameMs, 95)), max: r1(frameMs[frameMs.length - 1]) },
+        js: { update: r1(mean(bucket.map((f) => f.update))), dom: r1(mean(bucket.map((f) => f.dom))),
+              render: r1(mean(bucket.map((f) => f.render))), total: r1(mean(totals)), totalP95: r1(pct(totals, 95)) },
+        jank: frameMs.filter((m) => m > 1.5 * p50).length,
+        load: { enemies: enemies.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
+        heap: heapMB(), // JS heap (MB) — Chrome only; null elsewhere
+        res: `${renderer.domElement.width}x${renderer.domElement.height}`, device,
+      });
+    }
+    bucket = []; bucketStart = now;
+    if (now - lastFlush >= 5000) { flush(false); lastFlush = now; }
+  }
+  const flushNow = () => { finalizeBucket(performance.now()); flush(true); lastFlush = performance.now(); };
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushNow(); });
+  window.addEventListener('pagehide', flushNow);
+  return {
+    // `sec` is the RAW (unclamped) frame interval — frameMs must reflect true frame time, not the sim's
+    // clamped dt (which saturates at 50ms and would hide every frame slower than 20fps).
+    frame(sec, t0, t1, t2, t3) {
+      bucket.push({ frame: sec * 1000, update: t1 - t0, dom: t2 - t1, render: t3 - t2, total: t3 - t0 });
+      if (performance.now() - bucketStart >= 1000) finalizeBucket(performance.now());
+    },
+  };
+})();
+
+// Pre-compile shaders so the first frames don't stall. Measured on weak phones (DECISIONS §23): the first
+// combat frame spent 0.4-2.2s compiling shaders + uploading textures (THREE compiles a material's program
+// lazily on its first render). `renderer.compile()` warms every material currently in a scene; the dynamic
+// effect programs (particles/bullets — not in the scene until they spawn) are warmed with two throwaway
+// off-screen meshes matching their program keys (additive fog-off vs opaque fog-on). Idempotent — THREE
+// caches compiled programs, so repeat calls are cheap. Best-effort; must never block startup.
+function prewarmShaders() {
+  try {
+    renderer.compile(skyScene, camera);
+    renderer.compile(scene, camera);
+    const warm = new THREE.Group();
+    const addMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }); // explosions/sparks/trail/shockwave
+    const fogMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // bullets/rockets (opaque, scene fog on)
+    warm.add(new THREE.Mesh(explosionGeo, addMat), new THREE.Mesh(bulletGeo, fogMat));
+    warm.position.y = -100000; // far off-camera (compile ignores culling, but keep it invisible if a frame slips in)
+    scene.add(warm);
+    renderer.compile(scene, camera);
+    scene.remove(warm);
+    addMat.dispose(); fogMat.dispose();
+  } catch { /* best-effort — shader warmup must never break startup */ }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const rawSec = clock.getDelta();        // true frame interval (unclamped) — for the perf metrics
+  const dt = Math.min(rawSec, 0.05);      // clamped — for the sim only (stability on a long/background frame)
+  const t0 = DEV ? performance.now() : 0;
+  tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
+  if (!G.paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
+  const t1 = DEV ? performance.now() : 0; // end of sim
+  updateHud();
+  updateMarkers();
+  updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
+  updateMiniMap();    // corner radar: arena bounds, player, enemies
+  const t2 = DEV ? performance.now() : 0; // end of DOM overlays
+  // two passes: first the sky backdrop (with its own light), then combat on top
+  renderer.info.reset();
+  renderer.clear();
+  renderer.render(skyScene, camera);
+  renderer.clearDepth();
+  renderer.render(scene, camera);
+  const t3 = DEV ? performance.now() : 0; // end of render submit (GPU exec is async — this is CPU submit cost)
+  updatePerf(rawSec); // perf metrics use the RAW interval (clamped dt would cap fps/ms on slow devices)
+  if (DEV) devPerf.frame(rawSec, t0, t1, t2, t3);
+}
+
+// ---------- Restart (reset) moved to src/sim.js ----------
+// reset() clears entities/FX, recenters the arena, rebuilds set-pieces, respawns the player + (re)starts
+// the level. Imported at the top; the take-off + overlay Restart/Continue flows call it.
+
+// ---------- Main Window (the between-battles / landing screen; was the "Hangar") ----------
+// Fixed landscape layout: a left menu (Missions / Loadout / Stash / Shop) + a center work zone + a 25%
+// ship-model preview. The Missions item lists the campaign mission (primary) and, once unlocked, the
+// side missions (secondary); picking one renders its description + Take-off into the work zone. Used on
+// page load (homepage for the current level) and after a victory. See docs/plans/main-window-redesign.md.
+const mainEl = document.getElementById('mainwin');
+let mainBriefing = null;     // the campaign briefing shown as the primary mission ({ textKey, text } or null)
+let mwView = 'missions';     // which work-zone view is active: 'missions' | 'bay'
+let mwMission = null;        // selected side-mission offer, or null = the campaign (primary) mission
+let missionOffers = [];      // side missions from /api/players/:id/missions (unlocked after the campaign)
+
+function showMain(briefing) {
+  // The campaign (primary) row always reflects the CURRENT level's briefing. An explicit briefing
+  // (the server-derived one stashed on /advance) wins; otherwise fall back to the current level's
+  // descriptor briefing so returning from a side mission (showMain(null)) doesn't blank the campaign
+  // mission to the "standby" default. briefingShowcase() reads either shape (showcase or raw actions).
+  mainBriefing = briefing || (CATALOG.level && CATALOG.level.briefing) || null;
+  el.overlay.style.display = 'none';
+  renderAccountBar();
+  document.body.classList.add('menu'); // hide the in-game HUD behind the Main Window
+  refreshMusic();                      // menu → calmer hangar music
+  mainEl.classList.add('on');
+  mwMission = null;                    // default to the primary (campaign) mission
+  buildMissionList();                  // primary row + any cached secondary rows
+  selectMenu('missions');              // open the mission view (renders the campaign briefing)
+  openBay();                           // load shop state + gate the Loadout/Stash/Shop menu items
+  refreshMissions();                   // (re)load the side missions, then rebuild the list
+  // ship-characteristics strip above the model — always, not only when the shop is open (the shop
+  // re-renders it with ▲/▼ deltas on each change via renderBay).
+  if (G.activeShip && G.activeShip.components) {
+    lastShipStats = null;
+    renderShipStatsBar(deriveShipStats(G.activeShip.components, G.activeShip.loadout && G.activeShip.loadout.mounts));
+  }
+  startShipPreview();                  // spin up the right-column ship model
+  applyPreviewTarget();                // …showing the granted item if this is a showcase briefing, else the ship
+}
+function launchCampaign() {
+  G.pendingBriefing = null;
+  G.activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
+  if (isTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
+  mainEl.classList.remove('on');
+  stopShipPreview();
+  stopViewer(mwItem);                        // stop the work-zone item showcase too
+  document.body.classList.remove('menu');    // restore the in-game HUD
+  G.gameStarted = true;                        // first launch from the landing Main Window starts the loop
+  reset();                                   // (re)start the current level
+}
+function leaveOverlay() {
+  if (levelRunner.won) {
+    // After clearing level 1, prompt once for a username + optional account (DECISIONS §11), then
+    // continue to the Main Window. Otherwise (or once prompted/registered) go straight there.
+    if (shouldPromptAccount()) { openAccount('prompt', { after: () => showMain(G.pendingBriefing) }); return; }
+    showMain(G.pendingBriefing); return; // victory → Main Window
+  }
+  reset(); // loss → straight retry
+}
+el.restart.addEventListener('click', leaveOverlay);
+// "Back to Main Window" on the death overlay (shop unlocked): banked credits already applied → go back
+// to the menu (shop/loadout), where Take off retries the mission.
+el.backHangar.addEventListener('click', () => { el.overlay.style.display = 'none'; showMain(null); });
+
+// ---- Left-menu navigation + the work-zone views ----
+// Show one work-zone view and highlight its menu item. 'missions' → the mission view (description +
+// Take-off); 'loadout'|'stash'|'shop' → the shop bay view with that screen selected.
+function selectMenu(which) {
+  document.querySelectorAll('#mw-menu .mw-item').forEach((b) => b.classList.toggle('active', b.dataset.mw === which));
+  const isMissions = which === 'missions';
+  mwView = isMissions ? 'missions' : 'bay';
+  document.getElementById('mw-view-mission').classList.toggle('active', isMissions);
+  document.getElementById('mw-view-bay').classList.toggle('active', !isMissions);
+  if (isMissions) { buildMissionList(); renderMissionView(mwMission); }
+  else { bayView = which; renderNav(); stopViewer(mwItem); } // bay view hides the mission canvas → idle the loop
+}
+document.getElementById('mw-menu').addEventListener('click', (e) => {
+  const b = e.target.closest('.mw-item');
+  if (b) selectMenu(b.dataset.mw);
+});
+// Collapse/expand the mission sublist (the caret left of "Missions").
+document.getElementById('mw-missions-toggle').addEventListener('click', () => {
+  const g = document.getElementById('mw-missions-group');
+  const collapsed = g.dataset.collapsed === '1';
+  g.dataset.collapsed = collapsed ? '0' : '1';
+  const tog = document.getElementById('mw-missions-toggle');
+  tog.textContent = collapsed ? '▾' : '▸';
+  tog.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
+});
+
+// Build the mission sublist: the campaign (primary) row, then the side missions (secondary, when
+// unlocked). Selecting a row renders it into the work zone via selectMenu('missions').
+function buildMissionList() {
+  const host = document.getElementById('mw-mission-list');
+  if (!host) return;
+  host.innerHTML = '';
+  const prim = document.createElement('button');
+  prim.className = 'mw-sub' + (mwMission == null ? ' active' : '');
+  prim.textContent = t('ui.mainwin.primary');
+  prim.addEventListener('click', () => { mwMission = null; selectMenu('missions'); });
+  host.appendChild(prim);
+  missionOffers.forEach((m, i) => {
+    const b = document.createElement('button');
+    b.className = 'mw-sub' + (mwMission === m ? ' active' : '');
+    b.textContent = t('ui.mission.slot', { n: i + 1 });
+    b.addEventListener('click', () => { mwMission = m; selectMenu('missions'); });
+    host.appendChild(b);
+  });
+}
+
+// Render the selected mission into the work zone. null → the campaign (primary) briefing + launchCampaign;
+// otherwise a side mission's flavor + est. reward + launchMission.
+function renderMissionView(m) {
+  const titleEl = document.getElementById('mw-mission-title');
+  const textEl = document.getElementById('mw-mission-text'); // text span beside the floated item canvas
+  const rewEl = document.getElementById('mw-mission-reward');
+  if (m) {
+    titleEl.textContent = t(m.titleKey);
+    textEl.textContent = t(m.descKey);
+    rewEl.textContent = t('ui.mission.est_reward', { credits: m.estReward });
+    rewEl.style.display = '';
+    previewShip();            // a side mission grants nothing → show the ship, not a campaign showcase item
+    showShowcaseItem(null);   // …and hide the work-zone item showcase
+  } else {
+    titleEl.textContent = t('ui.mainwin.primary');
+    textEl.textContent = mainBriefing
+      ? (mainBriefing.textKey ? t(mainBriefing.textKey) : (mainBriefing.text || ''))
+      : t('ui.hangar.default');
+    rewEl.textContent = '';
+    rewEl.style.display = 'none';
+    applyPreviewTarget();     // primary row → the campaign briefing's showcase item (if any), else the ship
+  }
+  updateTakeoffGate(G.activeShip);
+}
+// The single Take-off button in the mission view dispatches on the current selection.
+document.getElementById('mw-go').addEventListener('click', () => {
+  if (mwMission) launchMission(mwMission);
+  else launchCampaign();
+});
+
+// Reload the side missions (gated to the shop being unlocked), then rebuild the list + re-render if
+// the mission view is open.
+async function refreshMissions() {
+  const unlocked = !!(G.playerId && G.activeShip && G.activeShip.shopUnlocked);
+  if (!unlocked) { missionOffers = []; buildMissionList(); return; }
+  try {
+    const data = await fetchJson(`/api/players/${G.playerId}/missions`);
+    missionOffers = data.missions || [];
+  } catch { missionOffers = []; }
+  buildMissionList();
+  if (mwView === 'missions') renderMissionView(mwMission);
+}
+// Launch a chosen side mission (mirrors launchCampaign, but plays the mission descriptor).
+function launchMission(m) {
+  G.activeMission = m.descriptor;
+  G.pendingBriefing = null;
+  if (isTouch) requestFullscreen();
+  mainEl.classList.remove('on');
+  stopShipPreview();
+  stopViewer(mwItem);                  // stop the work-zone item showcase too
+  welcomeEl.style.display = 'none';
+  document.body.classList.remove('menu');
+  G.gameStarted = true;
+  reset();
+}
+
+// ---------- Main Window ship-model preview (right column) ----------
+// A small, self-contained Three.js view (its own scene/camera/renderer on #mw-ship) that shows the
+// player's active ship — the high-poly `_hangar` glb (model_url_high), falling back to the combat model.
+// Its render loop only runs while the Main Window is visible (started/stopped by showMain/launch*), so it
+// costs nothing during a fight. See docs/plans/main-window-redesign.md (§ ship preview) + DECISIONS.
+// Build a self-contained spinning-model viewer on a canvas: renderer + scene + key/ambient light +
+// optional RoomEnvironment PMREM + a rotating group. Two instances exist — the right-column ship
+// preview (#mw-ship) and the work-zone briefing item showcase (#mw-item). Returns the viewer object.
+function buildModelViewer(canvas) {
+  const r = new THREE.WebGLRenderer({ canvas, antialias: G.gfx.antialias, alpha: true });
+  r.setPixelRatio(Math.min(window.devicePixelRatio, G.gfx.pixelRatioCap));
+  const sc = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+  cam.position.set(0, 1.4, 7);
+  cam.lookAt(0, 0, 0);
+  const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, 5, 4); sc.add(key);
+  sc.add(new THREE.AmbientLight(0x4a5878, 1.4));
+  if (G.gfx.envMap) { // same RoomEnvironment reflections as the combat scene (a fresh PMREM per GL context)
+    const pm = new THREE.PMREMGenerator(r);
+    sc.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
+  }
+  const group = new THREE.Group(); sc.add(group);
+  return { renderer: r, scene: sc, camera: cam, group, raf: 0, url: null };
+}
+// Start a viewer's auto-rotate render loop (idempotent — no-op if already running).
+function startViewer(v) {
+  if (!v || v.raf) return;
+  const loop = () => {
+    v.raf = requestAnimationFrame(loop);
+    v.group.rotation.y += 0.01; // slow auto-rotate
+    v.renderer.render(v.scene, v.camera);
+  };
+  loop();
+}
+function stopViewer(v) { if (v && v.raf) { cancelAnimationFrame(v.raf); v.raf = 0; } }
+function resizeViewer(v) {
+  if (!v) return;
+  const canvas = v.renderer.domElement;
+  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+  v.renderer.setSize(w, h, false); // false: don't override the CSS-driven canvas size
+  v.camera.aspect = w / h;
+  v.camera.updateProjectionMatrix();
+}
+
+let mwPreview = null; // right-column ship viewer — built lazily on the first showMain
+function startShipPreview() {
+  const canvas = document.getElementById('mw-ship');
+  if (!canvas) return;
+  if (!mwPreview) mwPreview = buildModelViewer(canvas);
+  loadPreviewModel();
+  resizeViewer(mwPreview);
+  startViewer(mwPreview);
+}
+function stopShipPreview() { stopViewer(mwPreview); }
+// yaw/scale for an ITEM (weapon/component) preview; mirrors shipModelCfg's defaults. Tolerant of both
+// catalog shapes: components keep `stats.model`, the flattened weapon entry has `model` at the top level.
+const itemModelCfg = (item) => {
+  const m = (item && (item.model || (item.stats && item.stats.model))) || {};
+  return { yaw: m.yaw ?? 0, scale: m.scale ?? 1, scaleMul: m.scaleMul ?? 1 };
+};
+// Show an arbitrary glb in a viewer — a ship OR an item. Normalizes the longest axis to SHIP_MODEL_LEN,
+// recenters, applies the cfg yaw + scale; tint stays off (glbs bake their own colors). No-op if the same
+// url is already shown. cfg = { yaw, scale, scaleMul }.
+function setViewerModel(v, url, cfg = {}) {
+  if (!v || !url || url === v.url) return;
+  v.url = url;
+  const clear = () => { for (let i = v.group.children.length - 1; i >= 0; i--) v.group.remove(v.group.children[i]); };
+  clear();
+  gltfLoader.load(url, (gltf) => {
+    if (!v || v.url !== url) return; // target changed mid-load
+    const model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const s = (SHIP_MODEL_LEN / (Math.max(size.x, size.y, size.z) || 1)) * (cfg.scale ?? 1) * (cfg.scaleMul ?? 1);
+    model.scale.setScalar(s);
+    model.position.copy(center).multiplyScalar(-s);
+    const pivot = new THREE.Group();
+    pivot.rotation.y = cfg.yaw || 0;
+    pivot.add(model);
+    clear();
+    v.group.add(pivot);
+  }, undefined, (err) => console.warn('Preview model failed to load:', url, err));
+}
+// The right-column ship preview is the default consumer of the viewer setter.
+function setPreviewModel(url, cfg = {}) { setViewerModel(mwPreview, url, cfg); }
+// Default the preview to the player's active ship (the briefing showcase swaps in an item via setPreviewModel).
+function loadPreviewModel() {
+  if (!mwPreview || !G.activeShip || !G.activeShip.ship) return;
+  const ship = G.activeShip.ship;
+  setPreviewModel(ship.modelUrlHigh || ship.modelUrl, shipModelCfg(ship.stats));
+}
+// Point the preview at the right thing: the item a showcase briefing grants (Machine Gun on L2, Repair
+// drone on L3 — server attaches `showcase {kind,id}` to the briefing), else the active ship. The catalog
+// already carries the item model URLs (foundation brief). Falls back to the ship if the item has no model.
+function previewShip() {
+  if (G.activeShip && G.activeShip.ship) setPreviewModel(G.activeShip.ship.modelUrlHigh || G.activeShip.ship.modelUrl, shipModelCfg(G.activeShip.ship.stats));
+}
+// The showcased item for a briefing. The server attaches `showcase {kind,id}` on the /advance path (where
+// it strips `actions`); on a fresh page-load landing the client gets the raw descriptor briefing instead
+// (has `actions`, no `showcase`), so derive it from the actions as a fallback — both paths then work.
+function briefingShowcase(b) {
+  if (!b) return null;
+  if (b.showcase) return b.showcase;
+  for (const a of (b.actions || [])) {
+    if (a.type === 'replaceWeapon') return { kind: 'weapon', id: a.to };
+    if (a.type === 'installComponent') return { kind: 'component', id: a.component };
+  }
+  return null;
+}
+function applyPreviewTarget() {
+  previewShip();                                    // the right-column preview ALWAYS shows the active ship
+  showShowcaseItem(briefingShowcase(mainBriefing)); // the granted item (if any) shows in the work zone instead
+}
+
+// ---------- Work-zone briefing item showcase (#mw-item) ----------
+// A second viewer floated into the BOTTOM-RIGHT corner of the mission text (the text wraps around it),
+// showing the 3D model of the gear a campaign briefing grants — Machine Gun on L2, Repair drone on L3 — at
+// full size, WITHOUT replacing the ship in the right-column preview. Hidden when the briefing grants nothing.
+const ITEM_SHOWCASE_SCALE = 1; // full size — the model fills the bottom-right showcase canvas
+let mwItem = null; // work-zone item viewer — built lazily the first time a showcase item is shown
+// Show the granted item in the work-zone viewer, or hide it when there's none (side mission / L1 / L4).
+function showShowcaseItem(sc) {
+  const canvas = document.getElementById('mw-item');
+  const desc = document.getElementById('mw-mission-desc');
+  if (!canvas) return;
+  const item = sc ? (sc.kind === 'weapon' ? CATALOG.weapons.get(sc.id) : CATALOG.components.get(sc.id)) : null;
+  if (item && item.modelUrlHigh) {
+    if (!mwItem) mwItem = buildModelViewer(canvas);
+    const cfg = itemModelCfg(item);
+    setViewerModel(mwItem, item.modelUrlHigh, { ...cfg, scaleMul: (cfg.scaleMul ?? 1) * ITEM_SHOWCASE_SCALE });
+    if (desc) desc.classList.add('show-item'); // reveals the strut + canvas (CSS) → floats into the corner
+    resizeViewer(mwItem);
+    startViewer(mwItem);
+  } else {
+    if (desc) desc.classList.remove('show-item');
+    stopViewer(mwItem);
+  }
+}
+// Keep both preview canvases crisp as the layout reflows (the grid columns resize with window/rotation).
+function resizeViewers() { resizeViewer(mwPreview); resizeViewer(mwItem); }
+window.addEventListener('resize', resizeViewers);
+window.addEventListener('orientationchange', resizeViewers);
+
+// ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
+// The "spend" side of the economy: equipped loadout + stash + a simple shop, with a live ship-stats
+// panel (HP / acceleration / maneuverability / weight) that shows the delta vs the previous config.
+// The server stays authoritative — every action posts to an endpoint and re-renders from the response.
+let shopData = null;     // { credits, shopUnlocked, stash, activeShip } — last server state
+let bayView = 'loadout'; // which screen is open: 'loadout' | 'stash' | 'shop' (separate screens, not columns)
+let shopType = 'hull';   // selected type in the two-pane shop ('hull'|'engine'|'thruster'|'repair'|'weapon')
+let shopBusy = false;    // guard against double-submits
+let lastShipStats = null; // previous ship-stats snapshot (for the delta arrows)
+const REQUIRED_SLOTS = ['hull', 'engine', 'thruster']; // can't be empty at take-off
+
+// esc/slotLabel/priceLabel/SELL_RATE/sellLabel moved to src/format.js (imported at the top).
+
+// Normalize the three item sources (catalog component / catalog weapon / server stash row) to one
+// shape { kind, refId, name, type, price, s (stat fields), weight } the renderers + statLine share.
+const normComponent = (c) => (c ? { kind: 'component', refId: c.id, name: c.name, type: c.type, price: c.price ?? 0, s: c.stats, weight: c.weight } : null);
+const normWeapon = (w) => (w ? { kind: 'weapon', refId: w.id, name: w.name, type: w.type, price: w.price ?? 0, s: w, weight: w.weight } : null);
+const normStash = (it) => (it.kind === 'component'
+  ? { kind: it.kind, refId: it.refId, name: it.name, type: it.type, price: it.price, qty: it.qty, s: it.stats, weight: it.weight }
+  : { kind: it.kind, refId: it.refId, name: it.name, type: it.type, price: it.price, qty: it.qty, s: it.stats, weight: it.stats.weight });
+
+// A full, localized list of an item's characteristics (text only — no art), shown on hover / (i).
+function statLine(kind, type, s, weight) {
+  const parts = [];
+  const add = (label, val) => { if (val != null && val !== 0) parts.push(`${t(label)} ${val}`); };
+  if (kind === 'component') {
+    if (type === 'hull') add('ui.shop.stat.hp', s.durability);
+    else if (type === 'engine') { add('ui.shop.stat.accel', s.power); add('ui.shop.stat.maxspeed', s.maxSpeed); }
+    else if (type === 'thruster') add('ui.shop.stat.maneuver', s.power);
+    else if (type === 'repair') {
+      parts.push(`${t('ui.shop.stat.heal')} +${s.repairPerTick}/${s.intervalSec}s`);
+      if (s.maxFraction != null) parts.push(`${t('ui.shop.stat.cap')} ${Math.round(s.maxFraction * 100)}%`);
+    }
+  } else { // weapon
+    add('ui.shop.stat.dmg', s.power);
+    if (s.fireCooldown) parts.push(type === 'rocket'
+      ? `${t('ui.shop.stat.reload')} ${s.fireCooldown}s`
+      : `${t('ui.shop.stat.rof')} ${(1 / s.fireCooldown).toFixed(1)}/s`);
+    add('ui.shop.stat.speed', s.projectileSpeed);
+    add('ui.shop.stat.range', s.maxRange);
+    add('ui.shop.stat.blast', s.blastRadius);
+  }
+  if (typeof weight === 'number') add('ui.shop.stat.weight', weight);
+  return parts.join(' · ');
+}
+
+// Derive the ship's HP / acceleration / maneuverability / weight client-side from a candidate config
+// (the server stays authoritative on the saved config; this is just for the live preview panel).
+function deriveShipStats(components, mounts) {
+  const rc = resolveComponents(components);
+  const ship = {
+    hull: rc.hull, engine: rc.engine, thruster: rc.thruster, repair: rc.repair,
+    mounts: (mounts || []).map((m) => ({ weapon: CATALOG.weapons.get(m.weapon) })).filter((m) => m.weapon),
+  };
+  const weight = shipMass(ship);
+  let acceleration = 0, turnRate = 0;
+  if (rc.engine) { deriveDrive(ship); acceleration = ship.acceleration; turnRate = ship.turnRate; }
+  return { hp: rc.hull ? rc.hull.durability : 0, acceleration, turnRate, weight };
+}
+
+// Render the live stats bar with ▲/▼ deltas vs the previous config (green = better, red = worse;
+// for weight, lighter is better so the colors invert while the arrow still tracks the raw direction).
+function renderShipStatsBar(st) {
+  const host = document.getElementById('ship-stats');
+  const defs = [
+    { key: 'hp', label: t('ui.shop.stat.hp'), dp: 0 },
+    { key: 'acceleration', label: t('ui.shop.stat.accel'), dp: 1 },
+    { key: 'turnRate', label: t('ui.shop.stat.maneuver'), dp: 2 },
+    { key: 'weight', label: t('ui.shop.stat.weight'), dp: 0, lowerBetter: true },
+  ];
+  host.innerHTML = defs.map((d) => {
+    const cur = d.dp ? st[d.key].toFixed(d.dp) : Math.round(st[d.key]);
+    let delta = '';
+    if (lastShipStats) {
+      const diff = st[d.key] - lastShipStats[d.key];
+      if (Math.abs(diff) > 1e-6) {
+        const up = diff > 0;
+        const good = d.lowerBetter ? !up : up;
+        const num = d.dp ? Math.abs(diff).toFixed(d.dp) : Math.abs(Math.round(diff));
+        delta = `<span class="d ${good ? 'up' : 'down'}">${up ? '▲' : '▼'}${num}</span>`;
+      }
+    }
+    const crit = d.key === 'hp' && st.hp === 0; // no hull → HP 0, flag it red
+    return `<div class="stat"><div class="k">${esc(d.label)}</div><div class="v${crit ? ' crit' : ''}">${cur}${delta}</div></div>`;
+  }).join('');
+  lastShipStats = st;
+}
+
+// One item card. `actions` is an array of { act, label, cls } → buttons with data-* the click
+// delegator reads. Stats are hidden by default; the (i) button reveals them (mobile), and the
+// card's title shows them on hover (desktop).
+function itemCard(n, slotTag, actions, priceMode = null, extraClass = '') {
+  const stats = statLine(n.kind, n.type, n.s, n.weight);
+  // header row: name (ellipsizes) · slot tag (loadout) · (i) — own cells, no overlap. The price cell goes
+  // in the foot next to the action button(s): `priceMode` picks 'buy' (Shop → full catalog price) vs
+  // 'sell' (Stash/Loadout → resale value, what the player gets); null → no price.
+  const slotMeta = slotTag ? `<span class="meta slot-tag">${esc(slotTag)}</span>` : '';
+  const priceMeta = (priceMode && n.price != null)
+    ? `<span class="meta price">${esc(priceMode === 'sell' ? sellLabel(n.price) : priceLabel(n.price))}</span>`
+    : '';
+  const qty = n.qty > 1 ? ` ×${n.qty}` : '';
+  const data = (n.kind && n.refId != null) ? `data-kind="${n.kind}" data-ref-id="${n.refId}"` : '';
+  const acts = actions.map((a) => `<button class="${a.cls || ''}" data-act="${a.act}" ${a.slot ? `data-slot="${a.slot}"` : data}>${esc(a.label)}</button>`).join('');
+  // "owned" badge (shop only): how many of this item the player already has (equipped + in stash)
+  const owned = n.owned > 0 ? `<span class="owned-badge">${esc(t('ui.shop.owned', { n: n.owned }))}</span>` : '';
+  // Two rows, always: the item name (+ owned + info + slot tag) on top, then the price + action button(s)
+  // CENTERED on a second row — so a long item name and the price/Buy never have to share one line (they
+  // don't fit on a phone). See docs/plans/main-window-redesign.md.
+  return `<div class="bay-item ${extraClass}">
+    <div class="head">
+      <span class="name-text" title="${esc(n.name)}">${esc(n.name)}${qty}</span>
+      ${owned}
+      ${stats ? `<button class="info-btn" data-act="info" aria-label="info">i</button>` : ''}
+      ${slotMeta}
+    </div>
+    ${(priceMeta || acts) ? `<div class="foot">${priceMeta}${acts ? `<span class="actions">${acts}</span>` : ''}</div>` : ''}
+    ${stats ? `<div class="stats hidden">${esc(stats)}</div>` : ''}
+  </div>`;
+}
+
+// How many of (kind, refId) the player already owns = equipped on the active ship + qty in the stash.
+function ownedCount(kind, refId) {
+  let n = 0;
+  for (const it of (shopData && shopData.stash) || []) if (it.kind === kind && it.refId === refId) n += it.qty;
+  const active = shopData && shopData.activeShip;
+  if (active) {
+    if (kind === 'component') {
+      for (const slot of ['hull', 'engine', 'thruster', 'repair']) if (active.components && active.components[slot] === refId) n++;
+    } else {
+      for (const m of (active.loadout && active.loadout.mounts) || []) if (m.weapon === refId) n++;
+    }
+  }
+  return n;
+}
+
+// An empty loadout slot (dashed; required-empty slots are flagged in red — they block take-off).
+function emptySlotCard(slot, required) {
+  return `<div class="bay-item empty ${required ? 'required-empty' : ''}">
+    <div class="head"><span class="name-text">${esc(t('ui.shop.empty'))}</span><span class="meta slot-tag">${esc(slotLabel(slot))}</span></div>
+  </div>`;
+}
+
+function renderLoadout(active) {
+  const host = document.getElementById('loadout-list');
+  const comps = active.components || {};
+  const groups = Object.keys((active.ship && active.ship.stats && active.ship.stats.groups) || {});
+  const rows = [];
+  for (const slot of ['hull', 'engine', 'thruster', 'repair']) {
+    const required = REQUIRED_SLOTS.includes(slot);
+    const id = comps[slot];
+    if (id == null) { if (slot !== 'repair') rows.push(emptySlotCard(slot, required)); continue; } // hide an empty optional repair slot
+    const actions = [{ act: 'unequip', label: t('ui.shop.action.unequip'), slot }];
+    if (!required) actions.push({ act: 'sell-equipped', label: t('ui.shop.action.sell'), cls: 'sell', slot });
+    rows.push(itemCard(normComponent(CATALOG.components.get(id)), slotLabel(slot), actions, 'sell'));
+  }
+  for (const g of groups) {
+    const mount = (active.loadout && active.loadout.mounts || []).find((m) => m.group === g);
+    if (!mount) { rows.push(emptySlotCard(g, false)); continue; }
+    const actions = [
+      { act: 'unequip', label: t('ui.shop.action.unequip'), slot: g },
+      { act: 'sell-equipped', label: t('ui.shop.action.sell'), cls: 'sell', slot: g },
+    ];
+    rows.push(itemCard(normWeapon(CATALOG.weapons.get(mount.weapon)), slotLabel(g), actions, 'sell'));
+  }
+  host.innerHTML = rows.join('');
+}
+
+function renderStash(stash) {
+  const host = document.getElementById('stash-list');
+  if (!stash.length) { host.innerHTML = `<div class="bay-empty-note">${esc(t('ui.shop.empty_stash'))}</div>`; return; }
+  host.innerHTML = stash.map((it) => {
+    const n = normStash(it);
+    const actions = [
+      { act: 'equip', label: t('ui.shop.action.install'), cls: 'primary' },
+      { act: 'sell', label: t('ui.shop.action.sell'), cls: 'sell' },
+    ];
+    return itemCard(n, null, actions, 'sell');
+  }).join('');
+}
+
+// The shop is a two-pane screen: a type list (left) → the items of that type (right). It lists buyable
+// items only — catalog entries with price > 0 (economy-shop-v2.md). Enemy/starter parts are priced 0 and
+// stay hidden; the player ladder (priced) shows. Weapons are one of the "types".
+const SHOP_TYPES = ['hull', 'engine', 'thruster', 'repair', 'weapon'];
+function renderShopTypes() {
+  document.getElementById('shop-types').innerHTML = SHOP_TYPES.map((tp) =>
+    `<button class="${tp === shopType ? 'active' : ''}" data-act="type" data-type="${tp}">${esc(t(`ui.shop.filter.${tp}`))}</button>`).join('');
+}
+function shopCatalog() {
+  const items = [];
+  for (const c of CATALOG.components.values()) items.push(normComponent(c));
+  for (const w of CATALOG.weapons.values()) items.push(normWeapon(w));
+  return items;
+}
+function renderShop() {
+  const host = document.getElementById('shop-list');
+  const items = shopCatalog().filter((n) => (n.price ?? 0) > 0 &&
+    (shopType === 'weapon' ? n.kind === 'weapon' : n.type === shopType));
+  for (const n of items) n.owned = ownedCount(n.kind, n.refId); // tag each with how many you already have
+  host.innerHTML = items.length
+    ? items.map((n) => itemCard(n, null, [{ act: 'buy', label: t('ui.shop.action.buy'), cls: 'primary' }], 'buy')).join('')
+    : `<div class="bay-empty-note">${esc(t('ui.shop.empty_shop'))}</div>`;
+}
+
+// Show the active bay screen (Loadout / Stash / Shop). Which one is chosen comes from the left menu
+// (which sets `bayView`); this just toggles the matching `.bay-view`.
+function renderNav() {
+  for (const v of ['loadout', 'stash', 'shop']) document.getElementById('view-' + v).classList.toggle('active', v === bayView);
+}
+
+// Gate the mission Take-off button: a missing required slot (sold hull/engine/thruster) blocks launch.
+function updateTakeoffGate(active) {
+  const btn = document.getElementById('mw-go');
+  const note = document.getElementById('mw-go-note');
+  const ok = !active || active.launchable !== false;
+  btn.disabled = !ok;
+  note.textContent = ok ? '' : t('ui.shop.cant_launch');
+}
+
+function renderBay() {
+  if (!shopData || !shopData.activeShip) return;
+  const active = shopData.activeShip;
+  document.getElementById('bay-credits-val').textContent = shopData.credits;
+  renderShipStatsBar(deriveShipStats(active.components, active.loadout && active.loadout.mounts));
+  renderLoadout(active);
+  renderStash(shopData.stash || []);
+  renderShopTypes();
+  renderShop();
+  renderNav();
+  updateTakeoffGate(active);
+}
+
+const setShopNote = (msg) => { document.getElementById('mw-bay-note').textContent = msg; };
+function shopErr(status, j) {
+  if (status === 402) return t('ui.shop.err_credits');
+  if (status === 403) return t('ui.shop.err_locked');
+  return (j && j.error) || t('ui.shop.err_generic');
+}
+// Apply a fresh server state: update globals, rebuild the 3D player to reflect the new loadout, re-render.
+function applyShopState(j) {
+  shopData = j;
+  if (j.activeShip) { G.activeShip = j.activeShip; G.balance = j.credits; if (j.activeShip.ship) buildPlayerFor(j.activeShip.ship); }
+  updateHud();
+  renderBay();
+}
+async function shopAction(path, body) {
+  if (shopBusy || !G.playerId) return;
+  shopBusy = true; setShopNote('');
+  try {
+    const r = await fetch(`/api/players/${G.playerId}/${path}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setShopNote(shopErr(r.status, j)); return; }
+    applyShopState(j);
+  } catch { setShopNote(t('ui.shop.err_network')); }
+  finally { shopBusy = false; }
+}
+
+// One delegated click handler for every bay action (filter / info toggle / buy / sell / equip / unequip).
+document.getElementById('mw-view-bay').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  if (act === 'type') { shopType = el.dataset.type; renderShopTypes(); renderShop(); return; }
+  if (act === 'info') { const card = el.closest('.bay-item'); const s = card && card.querySelector('.stats'); if (s) s.classList.toggle('hidden'); return; }
+  const kind = el.dataset.kind, slot = el.dataset.slot;
+  const refId = el.dataset.refId != null ? Number(el.dataset.refId) : null;
+  if (act === 'buy') return void shopAction('buy', { kind, refId });
+  if (act === 'equip') return void shopAction('equip', { kind, refId });
+  if (act === 'sell') return void shopAction('sell', { kind, refId });
+  if (act === 'sell-equipped') return void shopAction('sell', { slot });
+  if (act === 'unequip') return void shopAction('unequip', { slot });
+});
+
+// Prepare the shop bay when the Main Window opens. The Loadout/Stash/Shop menu items only show once the
+// player has unlocked the shop (cleared the final level); when unlocked we fetch fresh state so the
+// loadout/stash/balance are authoritative.
+async function openBay() {
+  const unlocked = !!(G.playerId && G.activeShip && G.activeShip.shopUnlocked);
+  document.querySelectorAll('.mw-shop-item').forEach((b) => b.classList.toggle('mw-hidden', !unlocked));
+  if (!unlocked) { updateTakeoffGate(G.activeShip); return; }
+  bayView = 'loadout';  // default the bay to the ship/loadout screen
+  lastShipStats = null; // first render after opening shows no deltas
+  try {
+    const j = await fetchJson(`/api/players/${G.playerId}/stash`);
+    shopData = j;
+    if (j.activeShip) G.activeShip = j.activeShip;
+    renderBay();
+  } catch {}
+}
+
+// ---------- Dev color/lighting tuning panel moved to src/tune.js ----------
+// buildTunePanel(GUI) is imported at the top; bootstrap dynamically imports lil-gui under ?tune and
+// calls it (so players never fetch the GUI lib).
+
+// Test/inspection hook for the headless visual tests (client/visual/). Inert during normal
+// play — only attached when the page is opened with `?debug`. It exposes simulation internals
+// so a scenario can seed entities and assert on state (counts, colors) instead of diffing pixels.
+if (location.search.includes('debug')) {
+  window.__game = {
+    scene, enemies, bullets, rockets,
+    explosions, sparks, shockwaves, trail, smoke,
+    spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, reset, levelRunner,
+    audio, // procedural audio engine (settings + scene); SFX/music are inaudible in headless but state is assertable
+    warpPlayerToCenter, arenaBorder, ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME,
+    setPieces, arenaCenter, // mission set-pieces + the (drifting) arena center
+    setArenaDrift(x, z) { G.arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
+    get activeMission() { return G.activeMission; }, // the side mission being played (null = campaign)
+    get missionOffers() { return missionOffers; },
+    get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url in the right-column ship preview
+    // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
+    get itemShowcaseTarget() { const d = document.getElementById('mw-mission-desc'); return d && d.classList.contains('show-item') ? (mwItem && mwItem.url) : null; },
+
+    launchMission, refreshMissions, showMain, // test/tool: drive the side-mission board + the Main Window
+    get mainBriefing() { return mainBriefing; }, // the campaign (primary) briefing currently shown
+    get oobWarnVisible() { return el.oobWarn.style.display === 'block'; },
+    get player() { return G.player; },   // built asynchronously in bootstrap()
+    get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB
+    get earned() { return G.earned; },   // credits earned this run
+    get balance() { return G.balance; }, // persistent account balance
+    get kills() { return G.kills; },
+  };
+}
+
+// Re-evaluate the portrait→landscape rotation and resize the renderer/camera to the game dimensions.
+// (applyOrientation is the single place we size the renderer; see its definition near the camera.)
+addEventListener('resize', applyOrientation);
+addEventListener('orientationchange', applyOrientation);
+
+// (Graphics-tier changes reload the page so the whole preset — antialias + pixel ratio + star/particle
+// density — applies cleanly from startup; see the settings wiring + DECISIONS §23.)
+
+// ---------- Bootstrap: build the world from the DB, then start ----------
+// Fetch the ship/weapon catalog and the player's active ship from the API, build the runtime
+// catalog + the player, then start the game. Served same-origin, so the API is always available.
+// fetchJson lives in src/net.js (imported at the top).
+
+// buildPlayerFor (rebuild the player ship + swap it into the scene) moved to src/ship-build.js;
+// imported at the top. It reads/writes G.activeShip + G.currentShipName on the shared bag.
+// A ship's hull HP for the welcome card (resolved from its hull component).
+const shipHullHp = (ship) => CATALOG.components.get(ship.components?.hull)?.stats.durability ?? '?';
+
+// ---------- Welcome screen: pick a ship, then take off ----------
+const welcomeEl = document.getElementById('welcome');
+let selectedShip = null;
+
+function mountSummary(stats) { // "2× gun · 2× rocket" from the ship's mounts
+  const count = (type) => stats.mounts.filter((m) => CATALOG.weapons.get(m.weapon)?.type === type).length;
+  const parts = [];
+  if (count('bullet')) parts.push(t('ui.mount.gun', { n: count('bullet') }));
+  if (count('rocket')) parts.push(t('ui.mount.rocket', { n: count('rocket') }));
+  return parts.join(' · ') || t('ui.mount.unarmed');
+}
+let lastPlayerShips = []; // remembered so a language switch can re-render the (DB-sourced) cards
+function renderShipCards(playerShips) {
+  const wrap = document.getElementById('ship-choices');
+  wrap.innerHTML = '';
+  if (!selectedShip || !playerShips.includes(selectedShip)) selectedShip = playerShips[0] || null;
+  playerShips.forEach((s) => {
+    const card = document.createElement('div');
+    card.className = 'ship-card' + (s === selectedShip ? ' selected' : '');
+    card.innerHTML =
+      `<div class="ship-name"><span class="ship-dot" style="background:${cssColor(s.stats.color)}"></span>${shipName(s)}</div>` +
+      `<div class="ship-stat">${t('ui.card.hull', { hp: shipHullHp(s) })}</div>` +
+      `<div class="ship-stat">${t('ui.card.weapons', { summary: mountSummary(s.stats) })}</div>`;
+    card.addEventListener('click', () => {
+      selectedShip = s;
+      [...wrap.children].forEach((c, i) => c.classList.toggle('selected', playerShips[i] === s));
+    });
+    wrap.appendChild(card);
+  });
+}
+function showWelcome(playerShips) {
+  lastPlayerShips = playerShips;
+  renderShipCards(playerShips);
+  buildLangSwitch();
+  renderAccountBar();
+  document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
+  refreshMusic(); // menu → calmer hangar music
+  welcomeEl.style.display = 'flex';
+}
+
+// ---------- Localization (i18n) UI glue ----------
+// Resolve a ship's display name through i18n (key → translation → English fallback).
+function shipName(s) { return s.stats.nameKey ? t(s.stats.nameKey) : s.name; }
+// Apply every [data-i18n] element's text (or innerHTML for [data-i18n-html]) for the active language.
+// Also resolves [data-i18n-href] → href, so links (e.g. the locale-specific community group) follow
+// the active language like the rest of the i18n flow.
+function applyTranslations(root = document) {
+  root.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    if (el.hasAttribute('data-i18n-html')) el.innerHTML = t(key);
+    else el.textContent = t(key);
+  });
+  root.querySelectorAll('[data-i18n-href]').forEach((el) => {
+    el.setAttribute('href', t(el.getAttribute('data-i18n-href')));
+  });
+  // Floating fullscreen button: icon-only in markup, so the words live in aria-label/title (not text).
+  const fsBtn = document.getElementById('fullscreen-btn');
+  if (fsBtn) {
+    const fsLabel = t('ui.fullscreen').replace(/^⛶\s*/, ''); // strip any leading glyph; words only
+    fsBtn.setAttribute('aria-label', fsLabel);
+    fsBtn.setAttribute('title', fsLabel);
+  }
+  document.documentElement.lang = getLanguage();
+}
+// EN/RU toggle on the welcome screen.
+function buildLangSwitch() {
+  const host = document.getElementById('lang-switch');
+  if (!host) return;
+  host.innerHTML = '';
+  SUPPORTED.forEach((lang) => {
+    const b = document.createElement('button');
+    b.textContent = lang.toUpperCase();
+    if (getLanguage() === lang) b.className = 'active';
+    b.addEventListener('click', () => { if (getLanguage() !== lang) setLanguage(lang); });
+    host.appendChild(b);
+  });
+}
+// Switch language at runtime: load the bundle, re-render static + dynamic strings, persist both ways.
+async function setLanguage(lang) {
+  await loadLanguage(lang, fetchJson);
+  try { localStorage.setItem('lang', getLanguage()); } catch {}
+  applyTranslations();
+  setPaused(G.paused); // re-localize the pause button's aria-label/tooltip (JS-set, not data-i18n)
+  localizeSettings(); // re-localize the settings gear + audio toggles
+  buildLangSwitch();
+  if (lastPlayerShips.length) renderShipCards(lastPlayerShips); // re-render DB-sourced ship names
+  if (G.playerId) fetch(`/api/players/${G.playerId}/language`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language: getLanguage() }),
+  }).catch(() => {}); // best-effort: persist the preference server-side
+}
+// Go fullscreen so the mobile browser chrome (address bar) doesn't eat the screen — must run inside
+// the click gesture. Works on Android/iPad; silently ignored where unsupported (e.g. iPhone Safari).
+// (Landscape is enforced by the CSS body rotation, not orientation.lock, so nothing extra to do here.)
+function requestFullscreen() {
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req || document.fullscreenElement) return;
+  try { const r = req.call(el); if (r && r.catch) r.catch(() => {}); } catch {}
+}
+// Single floating "Full screen" button (touch, bottom-right, menus only): re-enter fullscreen on
+// demand, e.g. after minimizing the app brought the browser chrome (URL bar, tabs) back. Tap gesture.
+document.getElementById('fullscreen-btn').addEventListener('click', requestFullscreen);
+// Hide the floating button once we're actually fullscreen (toggles body.fs; CSS hides it).
+function syncFsClass() {
+  document.body.classList.toggle('fs', !!document.fullscreenElement);
+}
+document.addEventListener('fullscreenchange', syncFsClass);
+document.addEventListener('webkitfullscreenchange', syncFsClass);
+syncFsClass(); // initial state
+
+// ---------- Audio settings modal (the gear on menus / pause) ----------
+const settingsBtn = document.getElementById('settings-btn');
+const settingsOverlay = document.getElementById('settings-overlay');
+const setMaster = document.getElementById('set-master');
+const setMusic = document.getElementById('set-music');
+const setSfx = document.getElementById('set-sfx');
+const setMusicOn = document.getElementById('set-music-on');
+const setSfxOn = document.getElementById('set-sfx-on');
+function renderSettingsUI() {
+  const s = audio.getSettings();
+  setMaster.value = Math.round(s.master * 100);
+  setMusic.value = Math.round(s.music * 100);
+  setSfx.value = Math.round(s.sfx * 100);
+  setMusicOn.textContent = t(s.musicOn ? 'ui.settings.on' : 'ui.settings.off');
+  setMusicOn.classList.toggle('off', !s.musicOn);
+  setSfxOn.textContent = t(s.sfxOn ? 'ui.settings.on' : 'ui.settings.off');
+  setSfxOn.classList.toggle('off', !s.sfxOn);
+  renderQualityUI();
+}
+// Graphics quality: highlight the active tier; picking one persists it and RELOADS so the whole preset
+// applies cleanly. Antialias is a WebGLRenderer constructor arg (can't change live), and pixel ratio /
+// star+particle density all read the tier at startup — so a reload is the simplest way to guarantee the
+// full effect with no half-applied state. (The page reloads to the welcome/hangar; server-side progress
+// is untouched.)
+const setQuality = document.getElementById('set-quality');
+function renderQualityUI() {
+  setQuality.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('on', b.dataset.tier === G.gfx.name));
+}
+setQuality.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn'); if (!b) return;
+  if (b.dataset.tier === G.gfx.name) return; // already active
+  saveTier(window.localStorage, b.dataset.tier);
+  location.reload();
+});
+function applyAudioChange(patch) {
+  audio.setSettings(patch);
+  saveAudioSettings(window.localStorage, audio.getSettings()); // persist every change
+}
+// Opening settings doubles as pause: during a live fight the gear freezes the battle (like the pause
+// button) and opens the menu in one click — no separate pause first. Closing resumes only if the gear is
+// what paused it (a manual pause stays paused).
+let settingsPausedByGear = false;
+function openSettings() {
+  audio.unlock(); refreshMusic(); renderSettingsUI();
+  if (G.gameStarted && G.player && G.player.alive && !levelRunner.won && !G.paused) {
+    settingsPausedByGear = true; setPaused(true);
+  }
+  settingsOverlay.classList.add('on');
+}
+function closeSettings() {
+  settingsOverlay.classList.remove('on');
+  dismissResetConfirm(); // also drop the reset confirm + re-arm the slide if either was left open
+  if (settingsPausedByGear) { settingsPausedByGear = false; setPaused(false); }
+}
+settingsBtn.addEventListener('click', openSettings);
+document.getElementById('settings-close').addEventListener('click', closeSettings);
+settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); }); // backdrop click closes
+setMaster.addEventListener('input', () => applyAudioChange({ master: setMaster.value / 100 }));
+setMusic.addEventListener('input', () => applyAudioChange({ music: setMusic.value / 100 }));
+setSfx.addEventListener('input', () => applyAudioChange({ sfx: setSfx.value / 100 }));
+setSfx.addEventListener('change', () => audio.sfx.hit()); // preview the SFX level when the slider is released
+setMusicOn.addEventListener('click', () => { applyAudioChange({ musicOn: !audio.getSettings().musicOn }); renderSettingsUI(); });
+setSfxOn.addEventListener('click', () => { applyAudioChange({ sfxOn: !audio.getSettings().sfxOn }); renderSettingsUI(); });
+
+// ---- Reset my progress: a slide-to-confirm control, then a confirm/cancel step ----
+// The slide must be dragged (almost) fully left→right to "arm"; releasing short snaps back. Arming opens
+// the confirm dialog; Confirm POSTs /reset (server wipes progress to the new-player baseline, keeps the
+// account) and reloads for a clean re-fetch; Cancel snaps the slide back. Destructive, so two gestures.
+const resetSlide = document.getElementById('reset-slide');
+const resetKnob = resetSlide.querySelector('.slide-knob');
+const resetFill = resetSlide.querySelector('.slide-fill');
+const resetConfirm = document.getElementById('reset-confirm');
+const resetDoBtn = document.getElementById('reset-do');
+const ARM_FRACTION = 0.96; // knob must reach ~the far right to arm (deliberate gesture)
+let resetDragging = false;
+const knobMargin = 2;
+const knobTravel = () => Math.max(0, resetSlide.clientWidth - resetKnob.offsetWidth - knobMargin * 2);
+// Position the knob `x` px into its travel; returns the 0..1 fraction. `ease` animates the move (snap-back).
+function placeKnob(x, ease) {
+  const max = knobTravel();
+  const px = Math.max(0, Math.min(max, x));
+  const trans = ease ? 'left .18s ease, background .18s' : 'none';
+  resetKnob.style.transition = trans;
+  resetFill.style.transition = ease ? 'width .18s ease' : 'none';
+  resetKnob.style.left = (knobMargin + px) + 'px';
+  resetFill.style.width = (resetKnob.offsetWidth + px) + 'px';
+  const frac = max > 0 ? px / max : 0;
+  resetSlide.classList.toggle('armed', frac >= ARM_FRACTION);
+  return frac;
+}
+// Distance of the pointer along the slide's travel axis, in the slide's local px. When the body is
+// rotated 90° (portrait phone) the visually-horizontal slide runs along the viewport's Y axis, so we
+// measure clientY against the rect's top instead of clientX against its left (see toGame / applyOrientation).
+const knobXFromPointer = (clientX, clientY) => {
+  const r = resetSlide.getBoundingClientRect();
+  const along = G.rotated ? (clientY - r.top) : (clientX - r.left);
+  return along - resetKnob.offsetWidth / 2;
+};
+function snapResetSlideBack() { resetDragging = false; resetSlide.classList.remove('dragging'); placeKnob(0, true); }
+function dismissResetConfirm() { resetConfirm.classList.remove('on'); resetDoBtn.disabled = false; snapResetSlideBack(); }
+
+resetKnob.addEventListener('pointerdown', (e) => {
+  resetDragging = true; resetSlide.classList.add('dragging');
+  resetKnob.setPointerCapture(e.pointerId); e.preventDefault();
+});
+resetKnob.addEventListener('pointermove', (e) => { if (resetDragging) placeKnob(knobXFromPointer(e.clientX, e.clientY), false); });
+resetKnob.addEventListener('pointerup', (e) => {
+  if (!resetDragging) return;
+  resetDragging = false; resetSlide.classList.remove('dragging');
+  const frac = placeKnob(knobXFromPointer(e.clientX, e.clientY), true);
+  if (frac >= ARM_FRACTION) resetConfirm.classList.add('on'); // armed → ask to confirm
+  else snapResetSlideBack();
+});
+
+document.getElementById('reset-cancel').addEventListener('click', dismissResetConfirm);
+resetConfirm.addEventListener('click', (e) => { if (e.target === resetConfirm) dismissResetConfirm(); }); // backdrop
+resetDoBtn.addEventListener('click', async () => {
+  resetDoBtn.disabled = true;
+  try {
+    if (G.playerId) {
+      const r = await fetch(`/api/players/${G.playerId}/reset`, { method: 'POST' });
+      if (!r.ok) throw new Error('reset failed: ' + r.status);
+    }
+    location.reload(); // server is now at the new-player baseline; reload re-fetches level + active ship cleanly
+  } catch (err) {
+    console.warn('progress reset failed', err);
+    dismissResetConfirm();
+  }
+});
+
+// Localize the gear label + the On/Off toggles (JS-set, not data-i18n) — now and on language switch.
+function localizeSettings() {
+  const lbl = t('ui.settings.open');
+  settingsBtn.title = lbl; settingsBtn.setAttribute('aria-label', lbl);
+  renderSettingsUI();
+}
+localizeSettings();
+function takeOff() {
+  if (!selectedShip) return;
+  if (isTouch) requestFullscreen(); // hide the browser chrome on mobile (landscape especially)
+  if (selectedShip.name !== G.currentShipName) buildPlayerFor(selectedShip);
+  welcomeEl.style.display = 'none';
+  document.body.classList.remove('menu'); // restore the in-game HUD
+  G.gameStarted = true;
+  reset(); // position the player + start the level
+}
+document.getElementById('takeoff').addEventListener('click', takeOff);
+
+// ---------- Account / authentication (DECISIONS §11) ----------
+// Anonymous-first: the player always has a localStorage UUID. An optional email/password account
+// upgrades that same player row in place (progress preserved); logging in on a fresh device adopts
+// the account's player id. The session rides on an httpOnly cookie, so all calls send credentials.
+let accountPlayer = null;       // the signed-in account (/me, register, or login result) or null
+let playerShipsCache = [];      // the player-type ships (for re-rendering the welcome screen on login)
+let accountMode = 'login';      // 'prompt' | 'register' | 'login'
+let afterAccount = null;        // run when the dialog closes (e.g. continue to the Hangar)
+const accountEl = document.getElementById('account');
+const acc = {
+  title: document.getElementById('account-title'),
+  msg: document.getElementById('account-msg'),
+  username: document.getElementById('account-username'),
+  creds: document.getElementById('account-creds'),
+  email: document.getElementById('account-email'),
+  password: document.getElementById('account-password'),
+  primary: document.getElementById('account-primary'),
+  secondary: document.getElementById('account-secondary'),
+  err: document.getElementById('account-err'),
+};
+
+// All auth requests are same-origin; include credentials so the session cookie always rides along.
+const authFetch = (path, opts = {}) =>
+  fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, ...opts });
+
+// Render the menu-screen status bar: signed-in identity + verify nudge, or a "log in / sign up" CTA.
+function renderAccountBar() {
+  const bar = document.getElementById('account-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  const add = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; bar.appendChild(e); return e; };
+  if (accountPlayer && accountPlayer.email) {
+    add('div', null, t('ui.account.signed_in_as', { who: accountPlayer.username || accountPlayer.email }));
+    if (accountVerifiedJustNow) add('span', 'verified-ok', t('ui.account.verified'));
+    if (!accountPlayer.emailVerified) {
+      add('span', 'verify-nudge', t('ui.account.verify_nudge'));
+      const resend = add('button', null, t('ui.account.resend'));
+      resend.addEventListener('click', () => resendVerification(resend));
+    }
+    add('button', null, t('ui.account.log_out')).addEventListener('click', logout);
+  } else {
+    add('div', null, t('ui.account.anon'));
+    add('button', null, t('ui.account.sign_in')).addEventListener('click', () => openAccount('login'));
+  }
+}
+
+// Configure the dialog for a mode (which fields show + the button labels/placeholders).
+function setAccountMode(mode) {
+  accountMode = mode;
+  acc.err.textContent = '';
+  acc.username.style.display = (mode === 'prompt' || mode === 'register') ? 'block' : 'none';
+  acc.creds.style.display = (mode === 'register' || mode === 'login') ? 'block' : 'none';
+  acc.username.placeholder = t('ui.account.username_ph');
+  acc.email.placeholder = t('ui.account.email_ph');
+  acc.password.placeholder = t('ui.account.password_ph');
+  if (mode === 'prompt') {
+    acc.title.textContent = t('ui.account.prompt_title');
+    acc.msg.textContent = t('ui.account.prompt_msg');
+    acc.primary.textContent = t('ui.account.continue_anon');
+    acc.secondary.textContent = t('ui.account.create');
+    acc.password.autocomplete = 'new-password';
+  } else if (mode === 'register') {
+    acc.title.textContent = t('ui.account.create_title');
+    acc.msg.textContent = t('ui.account.create_msg');
+    acc.primary.textContent = t('ui.account.create');
+    acc.secondary.textContent = t('ui.account.have_account');
+    acc.password.autocomplete = 'new-password';
+  } else { // login
+    acc.title.textContent = t('ui.account.login_title');
+    acc.msg.textContent = t('ui.account.login_msg');
+    acc.primary.textContent = t('ui.account.log_in');
+    acc.secondary.textContent = t('ui.account.need_account');
+    acc.password.autocomplete = 'current-password';
+  }
+}
+
+function openAccount(mode, opts = {}) {
+  afterAccount = opts.after || null;
+  if (opts.username != null) acc.username.value = opts.username;
+  if (mode !== 'register') { acc.email.value = ''; acc.password.value = ''; }
+  setAccountMode(mode);
+  accountEl.style.display = 'flex';
+  setTimeout(() => (mode === 'login' ? acc.email : acc.username).focus(), 0);
+}
+function closeAccount() {
+  accountEl.style.display = 'none';
+  const after = afterAccount; afterAccount = null;
+  if (after) after();
+}
+
+// True only the first time the player clears level 1 while still anonymous (prompt once, then never).
+function shouldPromptAccount() {
+  if (accountPlayer) return false;                              // already has an account
+  if (levelRunner.winTextKey !== 'level.1.victory') return false; // only after level 1
+  let prompted = false; try { prompted = localStorage.getItem('accountPrompted') === '1'; } catch {}
+  if (prompted) return false;
+  try { localStorage.setItem('accountPrompted', '1'); } catch {}
+  return true;
+}
+
+async function saveUsername(username) {
+  if (!G.playerId) return;
+  try {
+    const r = await authFetch(`/api/players/${G.playerId}/username`, { method: 'POST', body: JSON.stringify({ username }) });
+    if (r.ok && accountPlayer) { accountPlayer.username = (await r.json()).username; renderAccountBar(); }
+  } catch {}
+}
+
+async function accountPrimary() {
+  acc.err.textContent = '';
+  if (accountMode === 'prompt') {
+    const username = acc.username.value.trim();
+    if (username) await saveUsername(username); // keep playing anonymously, but save the name
+    closeAccount();
+    return;
+  }
+  if (accountMode === 'register') return doRegister();
+  return doLogin();
+}
+function accountSecondary() {
+  if (accountMode === 'prompt') return setAccountMode('register'); // reveal email/password (keep username)
+  if (accountMode === 'register') return setAccountMode('login');
+  return setAccountMode('register'); // login → register
+}
+
+async function doRegister() {
+  const username = acc.username.value.trim();
+  const email = acc.email.value.trim();
+  const password = acc.password.value;
+  if (password.length < 8) { acc.err.textContent = t('ui.account.err_password'); return; }
+  acc.primary.disabled = true;
+  try {
+    const r = await authFetch('/api/auth/register', { method: 'POST', body: JSON.stringify({ playerId: G.playerId, username, email, password }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 409) { acc.err.textContent = t('ui.account.err_email_taken'); return; }
+    if (!r.ok) { acc.err.textContent = j.error || t('ui.account.err_generic'); return; }
+    accountPlayer = j; // upgraded the current player row in place — same playerId, progress preserved
+    renderAccountBar();
+    closeAccount();
+  } catch { acc.err.textContent = t('ui.account.err_network'); }
+  finally { acc.primary.disabled = false; }
+}
+
+async function doLogin() {
+  const email = acc.email.value.trim();
+  const password = acc.password.value;
+  acc.primary.disabled = true;
+  try {
+    const r = await authFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401) { acc.err.textContent = t('ui.account.err_credentials'); return; }
+    if (!r.ok) { acc.err.textContent = j.error || t('ui.account.err_generic'); return; }
+    accountPlayer = j;
+    if (j.id && j.id !== G.playerId) {            // adopt the account's player row (fresh-device login)
+      G.playerId = j.id;
+      try { localStorage.setItem('playerId', G.playerId); } catch {}
+      await reloadPlayerWorld();
+    }
+    renderAccountBar();
+    closeAccount();
+  } catch { acc.err.textContent = t('ui.account.err_network'); }
+  finally { acc.primary.disabled = false; }
+}
+
+// After adopting a different player (login), reload that player's level + active ship and re-render
+// the landing screen for their progress.
+async function reloadPlayerWorld() {
+  try {
+    const level = await fetchJson(`/api/players/${G.playerId}/level`);
+    if (level.descriptor.map !== CATALOG.level.map) {
+      const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
+      buildMap(map.descriptor);
+    }
+    CATALOG.level = level.descriptor;
+    const active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
+    G.activeShip = active;
+    if (active && typeof active.credits === 'number') G.balance = active.credits;
+    if (active && active.ship) buildPlayerFor(active.ship);
+    if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
+    else showWelcome(playerShipsCache);
+  } catch {}
+}
+
+async function logout() {
+  try { await authFetch('/api/auth/logout', { method: 'POST' }); } catch {}
+  accountPlayer = null;
+  accountVerifiedJustNow = false;
+  // Keep the local anonymous id (don't clear localStorage.playerId): play continues on this device
+  // under the same row; a later login restores the session.
+  renderAccountBar();
+}
+
+async function resendVerification(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await authFetch('/api/auth/resend-verification', { method: 'POST' });
+    if (btn) btn.textContent = r.ok ? t('ui.account.resent') : t('ui.account.resend');
+  } catch {} finally { if (btn) setTimeout(() => { btn.disabled = false; }, 2000); }
+}
+
+let accountVerifiedJustNow = false; // set when returning from the email verify link (?verified=1)
+acc.primary.addEventListener('click', accountPrimary);
+acc.secondary.addEventListener('click', accountSecondary);
+document.getElementById('account-close').addEventListener('click', closeAccount);
+for (const el of [acc.username, acc.email, acc.password]) {
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); accountPrimary(); } });
+}
+
+// Browser error monitoring (Sentry), errors-only. Enabled only when the server returns a public DSN
+// from /api/config — loaded from the CDN on demand (no build step; nothing shipped when disabled).
+// Best-effort: any failure here must never break the game. See docs/plans/monitoring.md.
+async function initSentry() {
+  let cfg = null;
+  try { cfg = (await (await fetch('/api/config')).json()).sentry; } catch { return; }
+  if (!cfg || !cfg.dsn || window.Sentry) return;
+  await new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = 'https://browser.sentry-cdn.com/10.59.0/bundle.min.js';
+    s.crossOrigin = 'anonymous';
+    s.onload = resolve; s.onerror = resolve; // resolve either way — never block boot
+    document.head.appendChild(s);
+  });
+  if (!window.Sentry) return;
+  try {
+    window.Sentry.init({ dsn: cfg.dsn, environment: cfg.environment, release: cfg.release || undefined, tracesSampleRate: 0 });
+    if (G.playerId) window.Sentry.setUser({ id: G.playerId }); // the localStorage/account player id
+  } catch { /* best-effort */ }
+}
+
+async function bootstrap() {
+  initSentry(); // fire-and-forget: don't delay the game waiting on the monitoring SDK
+  try {
+    // Pick the language and load the message catalogs before the first render. Initial guess from
+    // the explicit local choice → browser language → en; the server preference is adopted below.
+    let explicitLang = null; try { explicitLang = localStorage.getItem('lang'); } catch {}
+    let browserLang = ''; try { browserLang = navigator.language || (navigator.languages || [])[0] || ''; } catch {}
+    await loadLanguage(resolveLanguage({ explicit: explicitLang, browser: browserLang }), fetchJson);
+
+    // Prefer an authenticated session (httpOnly cookie) over the local anonymous UUID, so a logged-in
+    // account is restored on boot — even after a localStorage clear — and adopts its own player row.
+    try {
+      const me = await fetch('/api/auth/me', { credentials: 'include' });
+      if (me.ok) {
+        accountPlayer = await me.json();
+        if (accountPlayer && accountPlayer.id) {
+          G.playerId = accountPlayer.id;
+          try { localStorage.setItem('playerId', G.playerId); } catch {}
+        }
+      }
+    } catch {}
+    // Returning from the email verification link (/api/auth/verify redirects here with ?verified=1).
+    try {
+      const params = new URLSearchParams(location.search);
+      if (params.get('verified') === '1') accountVerifiedJustNow = true;
+      if (params.has('verified')) { params.delete('verified'); history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '')); }
+    } catch {}
+
+    // The level comes from the player's progress (their highest unlocked level); fall back to
+    // level-1 if the player isn't identified (e.g. localStorage blocked).
+    const levelUrl = G.playerId ? `/api/players/${G.playerId}/level` : '/api/levels/level-1';
+    const [weapons, components, ships, level, sounds] = await Promise.all([
+      fetchJson('/api/weapons'), fetchJson('/api/components'),
+      fetchJson('/api/ships'), fetchJson(levelUrl), fetchJson('/api/sounds').catch(() => ({ sounds: [], map: [] })),
+    ]);
+    // Sound catalog → preload registry + the routing map (sfxFor/tracksFor). A failed fetch ⇒ all-synth/silent.
+    soundUrls = Object.fromEntries((sounds.sounds || []).map((s) => [s.key, s.url]));
+    audio.setSampleGains(Object.fromEntries((sounds.sounds || []).map((s) => [s.key, s.gain ?? 1]))); // per-sound playback gain (DB sounds.gain)
+    for (const m of (sounds.map || [])) { const k = `${m.entity}|${m.class}|${m.event}`; (soundMap.get(k) || soundMap.set(k, []).get(k)).push(m.sound); }
+    audio.setMusicTracks({ hangar: tracksFor('scene', 'hangar', 'music'), combat: tracksFor('scene', 'combat', 'music') }); // looping bg music per scene
+    if (samplesLoaded) audio.preloadSamples(soundUrls); // a gesture already unlocked the ctx before bootstrap finished
+    // Weapons are flattened (stats spread to top level); keep the model URLs too (the `...w.stats` spread
+    // also lifts `stats.model` to a top-level `model` key — read by itemModelCfg). Components are stored
+    // whole, so their `modelUrlHigh` + nested `stats.model` flow through as-is.
+    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, modelUrl: w.modelUrl, modelUrlHigh: w.modelUrlHigh, ...w.stats });
+    for (const c of components) CATALOG.components.set(c.id, c);
+    CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
+    for (const s of ships) CATALOG.shipByName.set(s.name, s);
+    CATALOG.level = level.descriptor;
+
+    const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map
+    buildMap(map.descriptor); // build the scene backdrop: planet, moons, stars, asteroids, sky light
+
+    // the player's active ship (auto-registers) decides the default selection
+    let active = null;
+    if (G.playerId) active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
+    G.activeShip = active; // drives the persisted loadout in buildPlayerFor (weapon swaps, etc.)
+    if (active && typeof active.credits === 'number') G.balance = active.credits; // account balance for the HUD
+    const playerShips = ships.filter((s) => s.type === 'player');
+    playerShipsCache = playerShips; // remembered so a login can re-render the welcome screen
+    buildPlayerFor((active && active.ship) || playerShips[0]); // idle ship behind the welcome screen
+
+    // Adopt the player's server-stored language if they made no explicit local choice — but only a
+    // real, non-default preference (the column defaults to 'en', which must not override browser
+    // detection for a brand-new player). This is what restores a chosen language after a localStorage clear.
+    if (!explicitLang && active && SUPPORTED.includes(active.language)
+        && active.language !== DEFAULT_LANG && active.language !== getLanguage()) {
+      await loadLanguage(active.language, fetchJson);
+    }
+
+    // position the camera once (update() doesn't run until take-off), then show the landing screen
+    camera.position.copy(G.player.mesh.position).add(camOffset);
+    camera.lookAt(G.player.mesh.position);
+    applyTranslations(); // localize all static [data-i18n] chrome for the active language
+    // Homepage reflects the current level: if it has a briefing (level 2+), land on the Hangar showing
+    // it; otherwise (level 1 / new player) show the welcome screen with the ship picker + intro.
+    if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
+    else showWelcome(playerShips);
+    animate(); // render loop (idle until Take off)
+    // Warm shaders a couple frames in — OFF the critical path (a synchronous compile here would block
+    // first paint / startup readiness). The menu renders meanwhile, and the player ship + sky already
+    // compile behind the welcome screen; this just makes the combat-effect programs explicit before the
+    // first take-off. The user spends seconds on the menu, so a deferred compile is invisible.
+    // Skipped under the `?debug` inspection hook: `renderer.compile` is very slow on the headless visual
+    // suite's software GL (swiftshader) and would flake its startup-sensitive scenarios. Prewarm is
+    // perf-only and behaviorally inert (it compiles shaders that would compile lazily anyway), so there's
+    // nothing for the suite to test, and headless can't measure the benefit. Real users always get it.
+    if (!location.search.includes('debug')) requestAnimationFrame(() => requestAnimationFrame(prewarmShaders));
+
+    // Dev-only palette tuning panel; lil-gui is fetched only here so players never download it.
+    if (location.search.includes('tune')) {
+      const { default: GUI } = await import('three/addons/libs/lil-gui.module.min.js');
+      buildTunePanel(GUI);
+    }
+  } catch (err) {
+    console.error('Failed to load the game from the API:', err);
+  }
+}
+bootstrap();

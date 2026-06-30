@@ -17,6 +17,19 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 16 (final): inline script → `src/main.js`; `index.html` is now
+  buildless host-only.** Moved the entire remaining inline `<script type="module">` body (~1620 lines:
+  `bootstrap`/`animate`/`prewarmShaders`/`window.__game` + the Main Window / hangar shop / welcome / account
+  / audio-settings + i18n UI) into `src/main.js`, fixed its 18 sibling-import paths (`./src/x.js` → `./x.js`),
+  and collapsed the inline script to a single `import './src/main.js';`. **`index.html` went 3736 → 212
+  lines** — pure markup + the `three` importmap + the one module import; no game code remains inline. Pure
+  relocation (the inline block was already `type="module"`, so the moved closure keeps identical scope/
+  references) — no behavior change. Unit 46/46; visual 10/6 flaky baseline (incl. all UI scenarios:
+  hangar-shop, mobile-hangar, mission-board, welcome/smoke, briefing-showcase). Auth register/login have no
+  visual scenario but are byte-identical relocated code. A follow-up can peel `main.js` into cohesive
+  `mainwindow.js`/`shop.js`/`welcome.js`/`account.js`/`settings.js` modules (now a mechanical
+  module→module split). Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 15: `reset` → `src/sim.js` + dead-import cleanup.** Moved the
   `reset()` restart routine (clears entities/FX, recenters the arena, rebuilds set-pieces, respawns the
   player + (re)starts the level) into `sim.js` beside the loop it resets; the take-off + overlay

@@ -1,9 +1,11 @@
 # Client code restructure — split `index.html` into ES modules
 
-**Status:** IN PROGRESS — foundation + gameplay core + sim/net/reset all extracted (slices 0–15 on branch
-`refactor/client-esm-split`; index.html 3736 → ~1833 lines). Only the UI cluster + composition root remain
-(one final main.js slice — see §0). See **§0 Resume checkpoint** below before continuing; the rest of this
-brief is the original plan (still the source of truth for what's left).
+**Status:** CORE COMPLETE — the inline `<script>` is fully extracted (slices 0–16 on branch
+`refactor/client-esm-split`; **index.html 3736 → 212 lines** = markup + importmap + `import './src/main.js'`).
+All game code is buildless ES modules. **Optional follow-up:** peel the UI panels out of `main.js` into
+cohesive `mainwindow.js`/`shop.js`/`welcome.js`/`account.js`/`settings.js` (now a mechanical module→module
+split — see §0). See **§0 Resume checkpoint** for the current module map; the rest of this brief is the
+original plan (kept for reference).
 
 ---
 
@@ -38,7 +40,17 @@ keystone (slice 10) `playerId`/`banked`/`gameStartTime`/`gameStartSent`/`quitSen
 `activeShip`/`currentShipName`/`activeMission`, and `gameStarted`/`paused` (slice 13). SUMMARY "Client
 module layout" + DECISIONS §31 written.
 
-**Remaining = the UI cluster + composition root (the final main.js step).** Still inline: the Main Window
+**UPDATE — slice 16 done: the inline script is fully extracted.** The whole remaining body moved verbatim
+into `src/main.js` (paths `./src/x.js`→`./x.js`); `index.html`'s module script is now just
+`import './src/main.js';` (212 lines total). Verified: unit 46/46, visual 10/6 baseline, zero page errors.
+The mutual-recursion problem below was sidestepped by moving the cluster as ONE file (no module→inline
+calls possible when everything is in the same module). **Optional remaining polish:** split `main.js`
+(~1620 lines) into `mainwindow.js`/`shop.js`/`welcome.js`/`account.js`/`settings.js` — now mechanical
+module→module extraction (ESM runtime cycles are fine), each importing siblings; shared helpers
+`deriveShipStats`/`renderShipStatsBar`/`updateTakeoffGate` → `shop.js`. Smoke-test register/login manually
+(no visual scenario). The historical analysis below is kept for reference.
+
+**Remaining (historical) = the UI cluster + composition root (the final main.js step).** Still inline: the Main Window
 (`showMain`/`selectMenu`/missions/model-viewer/preview/showcase), the hangar shop+stash, the welcome
 screen (`showWelcome`/`renderShipCards`/`takeOff`), the account/auth block (+`reloadPlayerWorld`), the
 audio-settings modal + i18n UI glue, and the bootstrap/`animate`/`prewarmShaders`/`window.__game` root.
