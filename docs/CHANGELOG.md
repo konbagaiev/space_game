@@ -13,7 +13,8 @@
   hangar never rendered — leaving the player unable to reach Loadout/Stash to put the part back.
   Made both null-safe (`client/index.html` `buildPlayer`, `client/src/components.js` `deriveDrive`),
   matching the already-tolerant `deriveShipStats`/`shipHullHp`/take-off-gate paths. Now the hangar
-  renders (HP shows 0, Take-off disabled with the "required slot empty" note) and the player re-equips
+  renders (HP shows **0 in red** via the `.v.crit` stats-bar class, Take-off disabled with the
+  "required slot empty" note) and the player re-equips
   normally. Repaired the one live account this had already bricked by re-equipping its hull from stash.
 
 - **CI fix — sync server tests with the new level balance.** The balance bump above changed enemy

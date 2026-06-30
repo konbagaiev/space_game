@@ -130,7 +130,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   stash) — the active ship then reports `launchable: false` + `missingRequired`, the **Take-off button
   is disabled** (`updateTakeoffGate`, "required slot empty" note), and the hangar preview build is
   null-safe (`buildPlayer` HP→0 on a null hull, `deriveDrive` accel→0 on a null engine) so the player
-  can still reach Loadout/Stash to re-equip rather than crashing on a null component.
+  can still reach Loadout/Stash to re-equip rather than crashing on a null component. The stats bar
+  paints **HP 0 red** (`#ship-stats .v.crit`) so the empty slot reads as a problem, not a real stat.
 - **Visual model:** the **visual-model rendering lives in `client/index.html`** — `makeShip` builds a
   ship's **root group** (owns world position, the `1.8` scale, and per-frame `rotation.y` = heading) plus
   an **inner "bank" group** (`g.userData.bankGroup`) that holds the primitives / `.glb` and rolls about the

@@ -221,6 +221,7 @@
   #ship-stats .stat { display: flex; align-items: baseline; gap: 2px; background: none; border: 0; padding: 0; min-width: 0; }
   #ship-stats .stat .k { font-size: 8px; letter-spacing: .5px; text-transform: uppercase; opacity: .6; }
   #ship-stats .stat .v { font-size: 10px; font-weight: 700; }
+  #ship-stats .stat .v.crit { color: #ff5b5b; } /* e.g. HP 0 — a required slot is empty */
   #ship-stats .stat .d { font-size: 6px; margin-left: 2px; }
   #ship-stats .stat .d.up { color: #6ee29a; } #ship-stats .stat .d.down { color: #ff8a7a; }
   /* Loadout / Stash / Shop are separate screens, switched by the left menu (not a nav strip). The
@@ -3378,7 +3379,8 @@ function renderShipStatsBar(st) {
         delta = `<span class="d ${good ? 'up' : 'down'}">${up ? '▲' : '▼'}${num}</span>`;
       }
     }
-    return `<div class="stat"><div class="k">${esc(d.label)}</div><div class="v">${cur}${delta}</div></div>`;
+    const crit = d.key === 'hp' && st.hp === 0; // no hull → HP 0, flag it red
+    return `<div class="stat"><div class="k">${esc(d.label)}</div><div class="v${crit ? ' crit' : ''}">${cur}${delta}</div></div>`;
   }).join('');
   lastShipStats = st;
 }
