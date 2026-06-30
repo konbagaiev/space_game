@@ -19,6 +19,7 @@ const _touchEarly = matchMedia('(pointer: coarse)').matches || ('ontouchstart' i
 export const G = {
   gfx: resolveTier(loadTier(window.localStorage, _touchEarly)), // current graphics quality knobs (tier switch reloads the page)
   rotated: false,                                               // portrait-phone 90° rotation currently active
+  player: null,                                                 // the active player ship (built by buildPlayer in bootstrap/takeoff)
   // --- world (built/reassigned by buildMap in world.js; read by the loop + ?tune panel + reset) ---
   sky: null,                  // THREE.Group holding the planet + moons (sky scene)
   stars: null,                // THREE.Group starfield (follows the camera in the loop)

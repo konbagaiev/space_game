@@ -232,7 +232,7 @@ const DEV = location.search.includes('dev'); // ?dev → record per-frame perf s
 // Music follows game state: the driving combat mood during a live fight, the calmer hangar mood on
 // menus / overlays / while paused. refreshMusic() is cheap + idempotent (no-op when the mood is unchanged).
 function musicForState() {
-  return (gameStarted && player && player.alive && !levelRunner.won && !paused) ? 'combat' : 'hangar';
+  return (gameStarted && G.player && G.player.alive && !levelRunner.won && !paused) ? 'combat' : 'hangar';
 }
 function refreshMusic() { audio.setScene(musicForState()); }
 // Autoplay policy: the AudioContext can only start inside a user gesture, and browsers disagree on which
@@ -451,8 +451,8 @@ function detonateRocket(r, dealDamage = true) {
       for (const e of enemies) {
         if (e.mesh.position.distanceTo(r.obj.position) <= r.blastR) e.hp -= r.damage;
       }
-    } else if (player.alive && player.mesh.position.distanceTo(r.obj.position) <= r.blastR) {
-      player.hp -= r.damage;
+    } else if (G.player.alive && G.player.mesh.position.distanceTo(r.obj.position) <= r.blastR) {
+      G.player.hp -= r.damage;
     }
   }
   spawnExplosion(r.obj.position, r.blastVis);
@@ -487,7 +487,7 @@ function resolveComponents(refs) {
 }
 
 // ---------- Player (built from the player's active ship in bootstrap) ----------
-let player = null;
+// the active player ship lives on G.player (state.js)
 
 // Resolve a ship's mounts (weapon ids -> weapon objects).
 function buildMounts(mountDefs) {
@@ -563,9 +563,9 @@ function spawnEnemyShip(shipDef) {
   const ang = Math.random() * Math.PI * 2;
   const d = 70 + Math.random() * 60; // 70..130 from the player
   e.mesh.position.set(
-    player.mesh.position.x + Math.cos(ang) * d,
+    G.player.mesh.position.x + Math.cos(ang) * d,
     0.6,
-    player.mesh.position.z + Math.sin(ang) * d
+    G.player.mesh.position.z + Math.sin(ang) * d
   );
   scene.add(e.mesh);
   enemies.push(e);
@@ -679,7 +679,7 @@ function fireMount(ship, mount, fwd, isPlayer) {
     .addScaledVector(rightVec(fwd), mount.offset * (ship.sizeScale || 1));
   const w = mount.weapon;
   if (w.type === 'rocket') {
-    const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : player;
+    const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : G.player;
     const accel = isPlayer ? ship.acceleration : (w.accel ?? ship.acceleration);
     spawnRocket(muzzle, fwd, w, accel, isPlayer, target);
     if (isPlayer) audio.sfx.rocket(sfxFor('weapon', w.class, 'fire')); // player rockets sampled; enemy fire is silent (rocket detonations still play)
@@ -928,23 +928,23 @@ function forwardVec(heading) {
 // Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,
 // and replay the warp-in animation so the return reads as intentional (not a glitch).
 function warpPlayerToCenter() {
-  player.mesh.position.set(arenaCenter.x, 0.6, arenaCenter.z); // back to the (possibly drifted) arena center
-  player.vel.set(0, 0, 0);
-  player.oobTime = 0;
-  if (!player.spawnScale) player.spawnScale = player.mesh.scale.clone(); // capture full size (model is loaded by now)
-  player.spawnAge = 0;                  // (re)start the grow-from-a-dot animation
-  player.mesh.scale.setScalar(0.001);
-  spawnExplosion(player.mesh.position.clone()); // a small flash at the arrival point
+  G.player.mesh.position.set(arenaCenter.x, 0.6, arenaCenter.z); // back to the (possibly drifted) arena center
+  G.player.vel.set(0, 0, 0);
+  G.player.oobTime = 0;
+  if (!G.player.spawnScale) G.player.spawnScale = G.player.mesh.scale.clone(); // capture full size (model is loaded by now)
+  G.player.spawnAge = 0;                  // (re)start the grow-from-a-dot animation
+  G.player.mesh.scale.setScalar(0.001);
+  spawnExplosion(G.player.mesh.position.clone()); // a small flash at the arrival point
 }
 
 // "You've left the battlefield" HUD warning + countdown. Shown only after OOB_WARN_DELAY seconds
 // continuously out of bounds; hidden while in bounds, on menus, or when a result overlay is up.
 const oobWarnEl = document.getElementById('oob-warn');
 function updateOobWarning() {
-  const show = player && gameStarted && player.alive && !levelRunner.won
-    && overlay.style.display === 'none' && player.oobTime >= OOB_WARN_DELAY;
+  const show = G.player && gameStarted && G.player.alive && !levelRunner.won
+    && overlay.style.display === 'none' && G.player.oobTime >= OOB_WARN_DELAY;
   if (!show) { oobWarnEl.style.display = 'none'; return; }
-  const remain = Math.max(0, Math.ceil(OOB_RETURN_TIME - player.oobTime));
+  const remain = Math.max(0, Math.ceil(OOB_RETURN_TIME - G.player.oobTime));
   oobWarnEl.style.display = 'block';
   oobWarnEl.innerHTML =
     `<div class="oob-title">${t('ui.oob.warning')}</div>` +
@@ -975,12 +975,12 @@ function updateHud() {
   elCredits.textContent = balance;
   elKills.textContent = kills;
   elEnemies.textContent = enemies.length;
-  const hpPct = Math.max(0, player.hp / player.maxHp * 100);
+  const hpPct = Math.max(0, G.player.hp / G.player.maxHp * 100);
   elHp.style.width = hpPct + '%';
   elHpPct.textContent = hpPct.toFixed(1) + '%'; // remaining health, one decimal
 
   // rocket reload: the 🚀 circle fills up (radial) as the rocket group reloads
-  const rg = player.groups.rocket;
+  const rg = G.player.groups.rocket;
   const cd = rg ? rg.reload : 1;
   const left = rg ? Math.max(0, rg.cooldown) : 0;
   const ready = left <= 0;
@@ -1019,43 +1019,43 @@ function updateBank(ship, turnRate, dt) {
 const clock = new THREE.Clock();
 
 function update(dt) {
-  if (!gameStarted || !player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
+  if (!gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
 
   // --- repair drone: passive hull regen, capped at a fraction of max HP (no-op without a drone) ---
-  if (player.repair) {
-    const r = repairTick(player.hp, player.maxHp, player.repair, dt, player._repairAccum);
-    player.hp = r.hp; player._repairAccum = r.accum;
+  if (G.player.repair) {
+    const r = repairTick(G.player.hp, G.player.maxHp, G.player.repair, dt, G.player._repairAccum);
+    G.player.hp = r.hp; G.player._repairAccum = r.accum;
   }
 
-  const eng = player.engine;         // main engine (for exhaust)
-  const accel = player.acceleration; // derived: acceleration <- main engine power
-  const turn = player.turnRate;      // derived: maneuverability <- thruster power
+  const eng = G.player.engine;         // main engine (for exhaust)
+  const accel = G.player.acceleration; // derived: acceleration <- main engine power
+  const turn = G.player.turnRate;      // derived: maneuverability <- thruster power
 
   // --- player: turn ---
-  if (keys['KeyA'] || keys['ArrowLeft'])  player.heading += turn * dt;
-  if (keys['KeyD'] || keys['ArrowRight']) player.heading -= turn * dt;
+  if (keys['KeyA'] || keys['ArrowLeft'])  G.player.heading += turn * dt;
+  if (keys['KeyD'] || keys['ArrowRight']) G.player.heading -= turn * dt;
 
   // touch: turn the nose toward the touch direction (directional steering)
   if (touchAim.active) {
-    player.heading = steerToward(player.heading, touchAim.heading, turn * dt);
+    G.player.heading = steerToward(G.player.heading, touchAim.heading, turn * dt);
   }
 
   // --- player: thrust ---
-  const fwd = forwardVec(player.heading);
-  if (keys['KeyW'] || keys['ArrowUp'])   player.vel.addScaledVector(fwd, accel * dt);
-  if (keys['KeyS'] || keys['ArrowDown']) player.vel.addScaledVector(fwd, -accel * dt);
-  if (touchAim.active) player.vel.addScaledVector(fwd, accel * touchAim.thrust * dt); // touch thrust
+  const fwd = forwardVec(G.player.heading);
+  if (keys['KeyW'] || keys['ArrowUp'])   G.player.vel.addScaledVector(fwd, accel * dt);
+  if (keys['KeyS'] || keys['ArrowDown']) G.player.vel.addScaledVector(fwd, -accel * dt);
+  if (touchAim.active) G.player.vel.addScaledVector(fwd, accel * touchAim.thrust * dt); // touch thrust
 
   // passive braking when no control button is pressed
   // (hold the turn to aim while drifting - inertia is preserved)
   const controlling = touchAim.active
                    || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
                    || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight'];
-  if (!controlling) player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
+  if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
 
   // pure inertia: no friction, no speed limit - the ship
   // keeps flying in its current direction, no matter where the nose points
-  player.mesh.position.addScaledVector(player.vel, dt);
+  G.player.mesh.position.addScaledVector(G.player.vel, dt);
 
   // Drifting arena (e.g. freighter escort): slowly pan the combat zone's center; the boundary, warp-back
   // and mini-map all compute relative to it. Static maps (G.arenaDrift null) keep the center at (0,0).
@@ -1068,14 +1068,14 @@ function update(dt) {
   // Soft boundary (DECISIONS §2): the player can fly past ±ARENA freely (measured from the arena center).
   // Track how long it's been continuously outside; after a grace delay we warn (HUD), and after
   // OOB_RETURN_TIME we warp it back to the center. Re-entering resets the timer and clears the warning.
-  const p = player.mesh.position;
+  const p = G.player.mesh.position;
   const dxc = p.x - arenaCenter.x, dzc = p.z - arenaCenter.z;
   const oob = Math.abs(dxc) > ARENA || Math.abs(dzc) > ARENA;
   if (oob) {
-    player.oobTime += dt;
-    if (player.oobTime >= OOB_RETURN_TIME) warpPlayerToCenter();
+    G.player.oobTime += dt;
+    if (G.player.oobTime >= OOB_RETURN_TIME) warpPlayerToCenter();
   } else {
-    player.oobTime = 0;
+    G.player.oobTime = 0;
   }
   // edge marker brightens as the player approaches the wall, brightest while out of bounds
   const edge = Math.max(Math.abs(dxc), Math.abs(dzc));
@@ -1083,22 +1083,22 @@ function update(dt) {
   arenaBorder.mat.opacity = 0.12 + near * 0.5 + (oob ? 0.25 : 0);
 
   // warp-back animation: grow from a dot back to full size (reuses the enemy "warp in")
-  if (player.spawnAge < SPAWN_GROW_TIME) {
-    player.spawnAge = Math.min(SPAWN_GROW_TIME, player.spawnAge + dt);
-    const k = 1 - Math.pow(1 - player.spawnAge / SPAWN_GROW_TIME, 3); // ease-out cubic
-    player.mesh.scale.copy(player.spawnScale).multiplyScalar(Math.max(0.001, k));
+  if (G.player.spawnAge < SPAWN_GROW_TIME) {
+    G.player.spawnAge = Math.min(SPAWN_GROW_TIME, G.player.spawnAge + dt);
+    const k = 1 - Math.pow(1 - G.player.spawnAge / SPAWN_GROW_TIME, 3); // ease-out cubic
+    G.player.mesh.scale.copy(G.player.spawnScale).multiplyScalar(Math.max(0.001, k));
   }
 
-  player.mesh.rotation.y = player.heading;
-  updateBank(player, turn, dt); // cosmetic wing-bank; `turn` = player.turnRate, in scope above
+  G.player.mesh.rotation.y = G.player.heading;
+  updateBank(G.player, turn, dt); // cosmetic wing-bank; `turn` = player.turnRate, in scope above
 
   // --- engine trail (when thrusting forward) ---
   if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
-    emitExhaust(player.mesh, fwd, player.vel, eng.exhaust);
+    emitExhaust(G.player.mesh, fwd, G.player.vel, eng.exhaust);
   }
 
   // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
-  updateGroups(player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
+  updateGroups(G.player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
 
   // --- enemy AI ---
   for (const e of enemies) {
@@ -1110,7 +1110,7 @@ function update(dt) {
       e.mesh.scale.copy(e.spawnScale).multiplyScalar(Math.max(0.001, k));
     }
 
-    const toPlayer = player.mesh.position.clone().sub(e.mesh.position);
+    const toPlayer = G.player.mesh.position.clone().sub(e.mesh.position);
     const dist = toPlayer.length();
     toPlayer.normalize();
 
@@ -1151,8 +1151,8 @@ function update(dt) {
         }
       }
     } else {
-      if (player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
-        player.hp -= b.damage; hit = true; audio.sfx.hit(sfxFor('ship', player.class, 'hit')); // sampled impact when OUR ship is struck
+      if (G.player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
+        G.player.hp -= b.damage; hit = true; audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
       }
     }
 
@@ -1182,7 +1182,7 @@ function update(dt) {
   for (let i = rockets.length - 1; i >= 0; i--) {
     const r = rockets[i];
     // target lost: for a player rocket - if the enemy died; for an enemy one - if the player died
-    if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !player.alive)) r.target = null;
+    if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
     if (r.target) {
       // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
       const to = r.target.mesh.position.clone().sub(r.obj.position);
@@ -1201,7 +1201,7 @@ function update(dt) {
       for (const e of enemies) {
         if (e.mesh.position.distanceTo(r.obj.position) <= Math.max(r.detonateR, e.radius)) { det = true; break; }
       }
-    } else if (player.alive && player.mesh.position.distanceTo(r.obj.position) <= r.detonateR) {
+    } else if (G.player.alive && G.player.mesh.position.distanceTo(r.obj.position) <= r.detonateR) {
       det = true;
     }
     // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)
@@ -1301,10 +1301,10 @@ function update(dt) {
   levelRunner.update(dt);
 
   // --- player death ---
-  if (player.hp <= 0 && player.alive) {
-    player.alive = false;
-    spawnShipExplosion(player.mesh.position, player.engine.exhaust.color, 1); // tinted by engine exhaust
-    audio.sfx.explosion(1.5, sfxFor('ship', player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
+  if (G.player.hp <= 0 && G.player.alive) {
+    G.player.alive = false;
+    spawnShipExplosion(G.player.mesh.position, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
+    audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
     track('player_death', { level: currentLevelLabel(), kills }); // funnel: where players die
     bankRun(); // bank the earned credits into the account balance + record the game
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');
@@ -1317,14 +1317,14 @@ function update(dt) {
 
   // --- camera: rigidly attached to the player (no lag or "floating" - no jitter),
   //     fixed angle - does NOT rotate with the ship's turn ---
-  camera.position.copy(player.mesh.position).add(camOffset);
-  camera.lookAt(player.mesh.position);
+  camera.position.copy(G.player.mesh.position).add(camOffset);
+  camera.lookAt(G.player.mesh.position);
 
   // stars - an infinitely distant backdrop (stuck to the camera, no parallax)
   G.stars.position.copy(camera.position);
   // the planet shifts slightly as the player moves - a light parallax (depth)
   const PARALLAX = 0.6;
-  G.sky.position.copy(camera.position).addScaledVector(player.mesh.position, -PARALLAX);
+  G.sky.position.copy(camera.position).addScaledVector(G.player.mesh.position, -PARALLAX);
 
   // moons orbit the planet (they do not rotate themselves - the terminator does not "wander")
   updateMoons(dt);
@@ -1371,7 +1371,7 @@ function getMarker(i) {
 }
 function updateMarkers() {
   // hide everything while there's no player or an overlay (game over / victory) is up
-  if (!player || overlay.style.display !== 'none') { for (const m of markerPool) m.style.display = 'none'; return; }
+  if (!G.player || overlay.style.display !== 'none') { for (const m of markerPool) m.style.display = 'none'; return; }
   const w = gameW(), h = gameH(), margin = 0.92; // game (rotated) screen size, not the raw viewport
   let used = 0;
   for (const e of enemies) {
@@ -1400,7 +1400,7 @@ const miniEl = document.getElementById('minimap');
 const miniCtx = miniEl.getContext('2d');
 const MINI_VIEW = ARENA * 1.18; // world half-extent the radar shows (a touch beyond the arena)
 function updateMiniMap() {
-  if (!player || overlay.style.display !== 'none') { miniEl.style.visibility = 'hidden'; return; }
+  if (!G.player || overlay.style.display !== 'none') { miniEl.style.visibility = 'hidden'; return; }
   miniEl.style.visibility = 'visible';
   const S = miniEl.width, c = S / 2, scale = (c - 6) / MINI_VIEW;
   // map world → radar relative to the arena center (so the boundary square stays centered when it drifts)
@@ -1425,10 +1425,10 @@ function updateMiniMap() {
 
   // player as a heading triangle (red while out of bounds), clamped to the radar edge so it stays
   // visible even when the ship flies far outside the boundary
-  const px = Math.max(6, Math.min(S - 6, toX(player.mesh.position.x)));
-  const py = Math.max(6, Math.min(S - 6, toY(player.mesh.position.z)));
-  const fx = Math.sin(player.heading), fz = Math.cos(player.heading); // forward dir (headingToDir)
-  miniCtx.fillStyle = player.oobTime > 0 ? '#ff7a5a' : '#9fe8ff';
+  const px = Math.max(6, Math.min(S - 6, toX(G.player.mesh.position.x)));
+  const py = Math.max(6, Math.min(S - 6, toY(G.player.mesh.position.z)));
+  const fx = Math.sin(G.player.heading), fz = Math.cos(G.player.heading); // forward dir (headingToDir)
+  miniCtx.fillStyle = G.player.oobTime > 0 ? '#ff7a5a' : '#9fe8ff';
   miniCtx.beginPath();
   miniCtx.moveTo(px + fx * 6, py + fz * 6);                       // nose
   miniCtx.lineTo(px - fx * 4 - fz * 4, py - fz * 4 + fx * 4);     // back-left
@@ -1458,14 +1458,14 @@ function setPaused(p) {
 document.getElementById('pause-play').addEventListener('click', () => setPaused(false)); // Play = resume
 // Toggle only while a fight is actually running (no-op on menus / after death/victory).
 function togglePause() {
-  if (!gameStarted || !player || !player.alive || levelRunner.won) return;
+  if (!gameStarted || !G.player || !G.player.alive || levelRunner.won) return;
   setPaused(!paused);
 }
 pauseBtn.addEventListener('click', togglePause);
 setPaused(false); // localize the initial label
 // Mobile: auto-pause when the browser/tab loses focus, so a backgrounded fight doesn't keep running.
 function autoPauseOnBlur() {
-  if (isTouch && gameStarted && player && player.alive && !levelRunner.won && !paused) setPaused(true);
+  if (isTouch && gameStarted && G.player && G.player.alive && !levelRunner.won && !paused) setPaused(true);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) autoPauseOnBlur(); });
 window.addEventListener('blur', autoPauseOnBlur);
@@ -1626,16 +1626,16 @@ function reset() {
   for (const sp of setPieces) scene.remove(sp.obj);
   setPieces.length = 0;
   for (const spec of G.mapSetpieces) buildSetPiece(spec);
-  player.mesh.position.set(cx, 0.6, cz);
-  player.vel.set(0, 0, 0);
-  player.heading = 0;
-  player.hp = player.maxHp;
-  player.oobTime = 0;             // fresh run: clear the out-of-bounds timer
-  player.spawnAge = SPAWN_GROW_TIME; // and any in-progress warp-back animation (back to full size)
-  if (player.spawnScale) player.mesh.scale.copy(player.spawnScale);
-  player._repairAccum = 0; // fresh run: clear banked repair-drone time
-  for (const g of Object.values(player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
-  player.alive = true;
+  G.player.mesh.position.set(cx, 0.6, cz);
+  G.player.vel.set(0, 0, 0);
+  G.player.heading = 0;
+  G.player.hp = G.player.maxHp;
+  G.player.oobTime = 0;             // fresh run: clear the out-of-bounds timer
+  G.player.spawnAge = SPAWN_GROW_TIME; // and any in-progress warp-back animation (back to full size)
+  if (G.player.spawnScale) G.player.mesh.scale.copy(G.player.spawnScale);
+  G.player._repairAccum = 0; // fresh run: clear banked repair-drone time
+  for (const g of Object.values(G.player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
+  G.player.alive = true;
   earned = 0; kills = 0; banked = false; // new run: reset session credits + the bank-once guard (balance persists)
   gameStartTime = performance.now(); // start timing a new game (for history)
   levelRunner.start(activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
@@ -2323,7 +2323,7 @@ if (location.search.includes('debug')) {
     launchMission, refreshMissions, showMain, // test/tool: drive the side-mission board + the Main Window
     get mainBriefing() { return mainBriefing; }, // the campaign (primary) briefing currently shown
     get oobWarnVisible() { return oobWarnEl.style.display === 'block'; },
-    get player() { return player; },   // built asynchronously in bootstrap()
+    get player() { return G.player; },   // built asynchronously in bootstrap()
     get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB
     get earned() { return earned; },   // credits earned this run
     get balance() { return balance; }, // persistent account balance
@@ -2354,13 +2354,13 @@ const fetchJson = async (url) => {
 let currentShipName = null;
 let activeShip = null; // the player's active-ship record { ship, loadout, components, ... }
 function buildPlayerFor(ship) {
-  if (player) scene.remove(player.mesh);
+  if (G.player) scene.remove(G.player.mesh);
   const useActive = activeShip && activeShip.ship && activeShip.ship.name === ship.name;
   const loadout = useActive ? activeShip.loadout : { mounts: ship.stats.mounts };
   const components = useActive ? activeShip.components : ship.components;
-  player = buildPlayer({ ship, loadout, components });
+  G.player = buildPlayer({ ship, loadout, components });
   currentShipName = ship.name;
-  scene.add(player.mesh);
+  scene.add(G.player.mesh);
 }
 // A ship's hull HP for the welcome card (resolved from its hull component).
 const shipHullHp = (ship) => CATALOG.components.get(ship.components?.hull)?.stats.durability ?? '?';
@@ -2520,7 +2520,7 @@ function applyAudioChange(patch) {
 let settingsPausedByGear = false;
 function openSettings() {
   audio.unlock(); refreshMusic(); renderSettingsUI();
-  if (gameStarted && player && player.alive && !levelRunner.won && !paused) {
+  if (gameStarted && G.player && G.player.alive && !levelRunner.won && !paused) {
     settingsPausedByGear = true; setPaused(true);
   }
   settingsOverlay.classList.add('on');
@@ -2924,8 +2924,8 @@ async function bootstrap() {
     }
 
     // position the camera once (update() doesn't run until take-off), then show the landing screen
-    camera.position.copy(player.mesh.position).add(camOffset);
-    camera.lookAt(player.mesh.position);
+    camera.position.copy(G.player.mesh.position).add(camOffset);
+    camera.lookAt(G.player.mesh.position);
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
     // Homepage reflects the current level: if it has a briefing (level 2+), land on the Hangar showing
     // it; otherwise (level 1 / new player) show the welcome screen with the ship picker + intro.

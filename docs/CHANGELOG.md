@@ -17,6 +17,12 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 6: promote `player` onto the `G` state bag.** The active player
+  ship moved from the inline `let player` to `G.player` (185 reads rewritten to `G.player`; the single
+  runtime assignment is `G.player = buildPlayer(...)`; the `__game` test getter reads it live). This
+  unblocks the gameplay-core modules (projectiles/ship-build/sim/hud) that all touch the player. Pure
+  rename, no behavior change; visual suite unchanged from baseline.
+
 - **Refactor (client structure) — Slice 5: audio engine + SFX routing → `src/sound-routing.js`.** Moved
   the `audio` engine singleton and the DB-driven `tracksFor`/`sfxFor` routing into `src/sound-routing.js`
   (depends only on `audio.js` + `state.js`'s `soundMap`), imported back in. Music *state* selection
