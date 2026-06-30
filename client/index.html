@@ -216,6 +216,7 @@ import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG 
 import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // Web Audio (synth SFX + generative music + sampled SFX)
 import { loadTier, resolveTier, saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones)
 import { esc, cssColor, slotLabel, priceLabel, sellLabel } from './src/format.js'; // pure presentation helpers
+import { bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, moons, setPieces, soundMap, CATALOG, keys, touchAim } from './src/state.js'; // shared entity collections + catalog + input
 
 // Audio engine: synthesized SFX + generative music (procedural), plus an optional sampled SFX layer
 // (preloadSamples). The AudioContext is created lazily on the first user gesture (autoplay) via
@@ -225,7 +226,7 @@ let samplesLoaded = false; // one-time guard so the sample preload fires once, a
 // SFX + music routing is DB-driven (docs/plans/sound-classes-and-mapping.md): /api/sounds gives the
 // registry (key→url) + the map ((entity,class,event)→[keys]), both filled in bootstrap(). No hardcoded routing.
 let soundUrls = {};                 // logical key → same-origin url (fed to audio.preloadSamples)
-const soundMap = new Map();         // 'entity|class|event' → [sound keys] (several = e.g. random music tracks)
+// soundMap moved to src/state.js (imported at top)
 // All sound keys mapped to an event (weapon fire, ship explode, scene music, …).
 function tracksFor(entity, cls, event) { return (cls && soundMap.get(`${entity}|${cls}|${event}`)) || []; }
 // One sound key for an event (the first mapped), or undefined → the engine uses its synth fallback.
@@ -364,12 +365,12 @@ let sky = null, stars = null, rocks = null, planetPos = new THREE.Vector3();
 // Sky lights are reassigned by buildMap(); held at module scope so the ?tune dev panel can mutate them.
 let skyAmbient = null, skySun = null;
 let currentMapDescriptor = null; // last descriptor passed to buildMap() (for the ?tune "Rebuild planet" button)
-const moons = [];
+// moons moved to src/state.js
 // Mission set-pieces (procedural decor in the COMBAT scene, just below the plane): { obj, update }.
 // Decor only — NOT registered in the gameplay arrays, so bullets/AI ignore them. They live in the shared
 // map at fixed world positions (built from the map descriptor); rebuilt each run so the freighter (which
 // cruises) resets. See docs/plans/mission-maps.md.
-const setPieces = [];
+// setPieces moved to src/state.js
 let mapSetpieces = []; // the current map's set-piece specs (so reset() can rebuild them fresh each run)
 
 // ---------- Arena ----------
@@ -1042,7 +1043,7 @@ function makeShip(color, model = null) {
 }
 
 // ---------- Projectiles ----------
-const bullets = [];
+// bullets moved to src/state.js
 const bulletGeo = new THREE.SphereGeometry(0.28, 8, 8);
 
 function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
@@ -1068,7 +1069,7 @@ const scaledCount = (n) => Math.max(1, Math.round(n * gfx.particleScale));
 const liveParticles = () => trail.length + sparks.length;
 
 // ---------- Micro-explosions at the impact point ----------
-const explosions = [];
+// explosions moved to src/state.js
 const EXPLOSION_LIFE = 0.16; // very short flash, sec
 const explosionGeo = new THREE.SphereGeometry(1, 10, 10);
 
@@ -1090,11 +1091,11 @@ function spawnExplosion(pos, maxScale = 3, life = EXPLOSION_LIFE, color = 0xffb0
 // Much louder than the hit-flash: stacked fireballs (white-hot core -> exhaust-colored glow ->
 // orange -> red cloud), a radial spray of sparks, and a flat shockwave ring on the arena plane.
 // Scaled by the ship's size (sizeScale) and tinted by its engine's exhaust color.
-const sparks = [];
+// sparks moved to src/state.js
 const sparkGeo = new THREE.SphereGeometry(1, 6, 6);
 // warm ember palette; a few sparks take the engine's exhaust color for variety
 const SPARK_COLORS = [0xffffff, 0xfff0a0, 0xffd040, 0xff8030, 0xff3020];
-const shockwaves = [];
+// shockwaves moved to src/state.js
 const shockGeo = new THREE.RingGeometry(0.78, 1, 28); // unit ring, scaled up as it expands
 
 function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
@@ -1142,7 +1143,7 @@ function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
 }
 
 // ---------- Engine trail (exhaust is part of the engine) ----------
-const trail = [];
+// trail moved to src/state.js
 const trailGeo = new THREE.SphereGeometry(1, 6, 6); // unit sphere, scale set by the exhaust
 
 function spawnTrail(pos, fwd, shipVel, exhaust) {
@@ -1174,7 +1175,7 @@ function emitExhaust(mesh, fwd, shipVel, exhaust) {
 }
 
 // ---------- Rockets (homing) ----------
-const rockets = [];
+// rockets moved to src/state.js
 const rocketGeo = new THREE.ConeGeometry(0.6, 2.4, 8); // nose in +Z (like the ship)
 
 // Find the nearest enemy in the front sector [fwd +/- halfAngle].
@@ -1229,7 +1230,7 @@ function detonateRocket(r, dealDamage = true) {
 }
 
 // Light rocket smoke trail: soft gray puffs (no glow, expand and fade away).
-const smoke = [];
+// smoke moved to src/state.js
 const smokeGeo = new THREE.SphereGeometry(1, 6, 6);
 function spawnSmoke(pos) {
   const mat = new THREE.MeshBasicMaterial({
@@ -1244,13 +1245,7 @@ function spawnSmoke(pos) {
 
 // Runtime catalog, populated from the DB in bootstrap() (bottom of the script). Pure derivation
 // (deriveDrive / mass) still comes from components.js; the DATA (ships, weapons) comes from the API.
-const CATALOG = {
-  weapons: new Map(),    // id -> { id, name, type, ...stats }
-  components: new Map(), // id -> { id, name, type, weight, ...stats }  (hulls + engines)
-  enemyShips: [],        // DB ship rows with type 'enemy' (used by spawnEnemy(role) / tests)
-  shipByName: new Map(), // name -> ship row (any type; the level's spawn pools reference these)
-  level: null,           // the active level descriptor (phase/wave script)
-};
+// CATALOG moved to src/state.js (imported at top)
 const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
 // Resolve a ship's component refs ({ hull, engine, thruster, repair }) to objects (stats + weight).
 function resolveComponents(refs) {
@@ -1306,7 +1301,7 @@ function buildPlayer(active) {
 }
 
 // ---------- Enemies ----------
-const enemies = [];
+// enemies moved to src/state.js
 
 // Build one enemy from a DB ship row (type 'enemy'); weapons + fire groups come from its stats.
 function spawnEnemyShip(shipDef) {
@@ -1482,7 +1477,7 @@ function updateGroups(ship, fwd, isPlayer, dt, wantsFire) {
 }
 
 // ---------- Input ----------
-const keys = {};
+// keys moved to src/state.js
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
@@ -1492,7 +1487,7 @@ addEventListener('keyup', e => { keys[e.code] = false; });
 // ---------- Touch controls (touch devices) ----------
 // "steer by touch direction" model: stick angle = desired nose direction,
 // the ship turns toward it; the magnitude of the deflection = thrust.
-const touchAim = { active: false, heading: 0, thrust: 0 };
+// touchAim moved to src/state.js
 if (isTouch) {
   document.body.classList.add('touch'); // gates touch-only UI (e.g. the Full screen button)
   if (STANDALONE) document.body.classList.add('standalone');   // launched from Home Screen — no chrome to hide

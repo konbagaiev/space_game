@@ -5,6 +5,13 @@
 
 ## 2026-06-30
 
+- **Refactor (client structure) — Slice 2a: shared entity collections → `src/state.js`.** Moved the
+  `const` entity/data collections (`bullets`, `explosions`, `sparks`, `shockwaves`, `trail`, `rockets`,
+  `smoke`, `enemies`, `moons`, `setPieces`, `soundMap`, `CATALOG`, `keys`, `touchAim`) out of the inline
+  script into `src/state.js`, imported back in. These are `const` shared by reference, so mutating their
+  contents works across modules with zero renames. `levelRunner` stayed inline (its methods close over
+  inline scope; it moves with the sim slice). No behavior change; visual suite unchanged from baseline.
+
 - **Refactor (client structure) — Slice 1: pure presentation helpers → `src/format.js`.** Extracted the
   stateless helpers `esc`, `cssColor`, `slotLabel`, `priceLabel`, `sellLabel` (+ `SELL_RATE`) out of the
   inline `index.html` script into a new `src/format.js` ES module, imported back in. Added
