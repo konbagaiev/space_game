@@ -215,6 +215,7 @@ import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from
 import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './src/i18n.js';
 import { createAudio, loadAudioSettings, saveAudioSettings } from './src/audio.js'; // Web Audio (synth SFX + generative music + sampled SFX)
 import { loadTier, resolveTier, saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones)
+import { esc, cssColor, slotLabel, priceLabel, sellLabel } from './src/format.js'; // pure presentation helpers
 
 // Audio engine: synthesized SFX + generative music (procedural), plus an optional sampled SFX layer
 // (preloadSamples). The AudioContext is created lazily on the first user gesture (autoplay) via
@@ -2132,7 +2133,6 @@ function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim's clam
 const markersEl = document.getElementById('markers');
 const markerPool = [];
 const _ndc = new THREE.Vector3();
-const cssColor = (hex) => '#' + (hex >>> 0).toString(16).padStart(6, '0').slice(-6);
 function getMarker(i) {
   while (markerPool.length <= i) {
     const d = document.createElement('div');
@@ -2740,13 +2740,7 @@ let shopBusy = false;    // guard against double-submits
 let lastShipStats = null; // previous ship-stats snapshot (for the delta arrows)
 const REQUIRED_SLOTS = ['hull', 'engine', 'thruster']; // can't be empty at take-off
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const slotLabel = (slot) => t(`ui.shop.slot.${slot}`) || slot;
-const priceLabel = (p) => (p > 0 ? `${p} ◈` : t('ui.shop.free'));
-// Resale value shown in Stash + Loadout — the amount the player actually gets for selling. Mirrors the
-// server's sellPrice (db.js / db_postgres.js): floor(price * 0.75). Keep in sync if the server rate changes.
-const SELL_RATE = 0.75;
-const sellLabel = (p) => (p > 0 ? `${Math.floor(p * SELL_RATE)} ◈` : t('ui.shop.free'));
+// esc/slotLabel/priceLabel/SELL_RATE/sellLabel moved to src/format.js (imported at the top).
 
 // Normalize the three item sources (catalog component / catalog weapon / server stash row) to one
 // shape { kind, refId, name, type, price, s (stat fields), weight } the renderers + statLine share.

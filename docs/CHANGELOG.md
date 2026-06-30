@@ -5,6 +5,12 @@
 
 ## 2026-06-30
 
+- **Refactor (client structure) — Slice 1: pure presentation helpers → `src/format.js`.** Extracted the
+  stateless helpers `esc`, `cssColor`, `slotLabel`, `priceLabel`, `sellLabel` (+ `SELL_RATE`) out of the
+  inline `index.html` script into a new `src/format.js` ES module, imported back in. Added
+  `src/format.test.js` (5 cases; unit suite 41 → 46). Proves cross-module browser imports for the split;
+  no behavior change. CATALOG-dependent helpers (`mountSummary`/`shipHullHp`) deferred to a later slice.
+
 - **Refactor (client structure) — Slice 0: CSS extracted out of `index.html`.** Moved the ~560-line
   inline `<style>` block verbatim into `client/styles.css`, linked via `<link rel="stylesheet">`. No
   behavior change (the server already serves `clientDir` statically, so the new file is served with no
