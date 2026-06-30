@@ -5,6 +5,10 @@
 
 ## 2026-06-30
 
+- **Docs — added `docs/IDEAS.md`, a directional idea parking lot.** A loose, no-commitment notebook for
+  capturing where the game could go (PvP / co-op PvE / story grind; arcade vs. sim; session shapes) before
+  any of it earns a roadmap slot or a plan. Linked from `ROADMAP.md`'s doc-map header.
+
 - **Level balance — higher rewards, shorter early waves.** Bumped every enemy `reward` ~+25%
   (`catalog_seed.js`): fighter 20→25, rocketeer 50, pirate gunner 50, medium 100→125, first boss
   200→250, advanced medium pirate 150→200, Second Boss 400→500, advanced rocket pirate 60→75. Lowered

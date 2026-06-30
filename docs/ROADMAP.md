@@ -1,8 +1,10 @@
 # Vega Sentinels — Roadmap
 
-> The end-to-end scope and the order we build it. A living doc: capture ideas here so they're not lost.
+> The **committed** plan: what we've decided to build next and in what order. Uncommitted "what if"
+> directions live in `IDEAS.md` and only enter here once deliberately chosen.
 > Per-feature build plans live in `docs/plans/*.md`; rationale in `DECISIONS.md`; current state in
-> `SUMMARY.md`; history in `CHANGELOG.md`. English only (project rule).
+> `SUMMARY.md`; history in `CHANGELOG.md`; raw, uncommitted directional ideas in `IDEAS.md`.
+> English only (project rule).
 
 ## Vision
 A space combat game in the lineage of Space Rangers / Elite / EVE: pilot a nimble ship, grind
