@@ -5,6 +5,21 @@
 
 ## 2026-06-30
 
+- **Level balance — higher rewards, shorter early waves.** Bumped every enemy `reward` ~+25%
+  (`catalog_seed.js`): fighter 20→25, rocketeer 50, pirate gunner 50, medium 100→125, first boss
+  200→250, advanced medium pirate 150→200, Second Boss 400→500, advanced rocket pirate 60→75. Lowered
+  the campaign wave kill thresholds so early levels move faster: L1 6/12 (was 7/15), L2 second wave 12
+  (was 15), L3 8/16 (was 10/20). Net effect: runs pay out more and the opening levels are quicker.
+
+- **iPhone Safari full-screen fallback — "Add to Home Screen" hint.** iPhone Safari has no Fullscreen
+  API (it exists only on iPad/Android), so the floating `⛶` button was a silent no-op there and testers
+  had no way to hide the URL bar/tabs. Now we detect the case (`FS_API` = any `requestFullscreen`?,
+  `STANDALONE` = `navigator.standalone`/`display-mode: standalone`) and, on a touch device with no FS API,
+  set `body.no-fs-api`: hide the dead `⛶` button and show a non-interactive hint pill instead
+  (`#a2hs-hint`, bottom-right, touch menus only) reading **"Full screen: Share → Add to Home Screen"** —
+  the standalone PWA being the only true full screen on iPhone. Once already launched standalone
+  (`body.standalone`) both vanish (no chrome to hide). New i18n key `ui.a2hs.hint` (EN + RU).
+
 - **Second combat music track — "Energetic Synthwave" (Pixabay).** Added `music_combat_2`
   (ed-musicproductions, **Pixabay Content License** — commercial-OK, no attribution required) as a second
   track in the combat scene's rotation alongside the existing `music_combat_1`. Because the combat scene

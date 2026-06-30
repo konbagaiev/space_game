@@ -218,7 +218,7 @@ export const SHIPS = [
   {
     name: 'Basic pirate ship', type: 'enemy', modelUrl: 'assets/ships/enemy_1_combat.fc9c3347.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_hangar.3e0b9dc3.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
-      role: 'fighter', class: 'fighter', color: MARKER.small, reward: 20,
+      role: 'fighter', class: 'fighter', color: MARKER.small, reward: 25,
       // the enemy_1 .glb was exported nose-toward -Z; yaw Math.PI rotates it 180° so it faces +Z like all ships
       model: { yaw: Math.PI, scale: 1 },
       groups: { gun: GUN },
@@ -228,7 +228,7 @@ export const SHIPS = [
   {
     name: 'basic rocket pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_2_combat.e6fbbe91.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // same hull + engine + thrusters as the fighter
-      role: 'rocketeer', class: 'fighter', color: MARKER.small, reward: 40,
+      role: 'rocketeer', class: 'fighter', color: MARKER.small, reward: 50,
       // enemy_2 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
       model: { yaw: Math.PI, scale: 1 },
       groups: { gun: GUN, rocket: ROCKET },
@@ -243,7 +243,7 @@ export const SHIPS = [
     // (top speed +50%) + Scout thrusters, one long-range Pirate machine gun. Uses the orange enemy_1 model.
     name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/enemy_1_orange_combat.9c1e749a.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_orange_hangar.21a53c39.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
-      role: 'pirate_gunner', class: 'fighter', color: MARKER.small, reward: 40,
+      role: 'pirate_gunner', class: 'fighter', color: MARKER.small, reward: 50,
       model: { yaw: Math.PI, scale: 1 }, // orange enemy_1 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG },
       mounts: [{ weapon: 9, group: 'gun', offset: 0, delay: 0 }]
@@ -252,7 +252,7 @@ export const SHIPS = [
   {
     name: 'pirate mini boss', type: 'enemy', modelUrl: 'assets/ships/enemy_3_combat.431cdbbf.glb',
     components: { hull: 3, engine: 6, thruster: 10 }, stats: { // medium hull + scout engine + weak (Medium) thrusters
-      role: 'medium', class: 'capital', color: MARKER.medium, reward: 100,
+      role: 'medium', class: 'capital', color: MARKER.medium, reward: 125,
       // enemy_3 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
       model: { yaw: Math.PI, scale: 2 },
       groups: { rocket: ROCKET },
@@ -268,7 +268,7 @@ export const SHIPS = [
   {
     name: 'first pirate boss', type: 'enemy', modelUrl: 'assets/ships/enemy_4_combat.e6d652e9.glb',
     components: { hull: 4, engine: 7, thruster: 11 }, stats: {
-      role: 'boss', class: 'capital', color: MARKER.boss, reward: 200,
+      role: 'boss', class: 'capital', color: MARKER.boss, reward: 250,
       // enemy_4 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
       model: { yaw: Math.PI, scale: 3 },
       // Boss buff (docs/plans/mission-enemies-difficulty.md): two Pirate machine guns (id 9) replace the
@@ -288,7 +288,7 @@ export const SHIPS = [
     // one long-range Pirate MG + two rocket launchers.
     name: 'advanced medium pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_3_orange_combat.f848a735.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_3_orange_hangar.f14238c7.glb',
     components: { hull: 24, engine: 6, thruster: 25 }, stats: {
-      role: 'advanced_medium_pirate', class: 'capital', color: MARKER.medium, reward: 150,
+      role: 'advanced_medium_pirate', class: 'capital', color: MARKER.medium, reward: 200,
       model: { yaw: Math.PI, scale: 2 }, // orange enemy_3 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
@@ -304,7 +304,7 @@ export const SHIPS = [
     // spawnEnemy('boss') still resolves to the first boss).
     name: 'second pirate boss', type: 'enemy', modelUrl: 'assets/ships/enemy_4_orange_combat.39a83261.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_4_orange_hangar.b66f341f.glb',
     components: { hull: 28, engine: 26, thruster: 27 }, stats: {
-      role: 'boss2', class: 'capital', color: MARKER.boss, reward: 400,
+      role: 'boss2', class: 'capital', color: MARKER.boss, reward: 500,
       model: { yaw: Math.PI, scale: 3 }, // orange enemy_4 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
@@ -322,7 +322,7 @@ export const SHIPS = [
     // level (kept for future use, e.g. a harder rocketeer wave); stats are a sensible default, tune as needed.
     name: 'advanced rocket pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_2_orange_combat.01d7a8d4.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_2_orange_hangar.cb830103.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
-      role: 'advanced_rocket_pirate', class: 'fighter', color: MARKER.small, reward: 60,
+      role: 'advanced_rocket_pirate', class: 'fighter', color: MARKER.small, reward: 75,
       model: { yaw: Math.PI, scale: 1 }, // orange enemy_2 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
@@ -350,7 +350,7 @@ export const LEVELS = [
         {
           name: 'wave-1', // only plain fighters, 3 at a time
           spawn: { maxConcurrent: 3, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
-          advanceWhen: { kills: 7 }
+          advanceWhen: { kills: 6 }
         },
         {
           name: 'wave-2', // rocketeers join at 25%
@@ -359,7 +359,7 @@ export const LEVELS = [
               { ship: 'Basic pirate ship', chance: 75 },
               { ship: 'basic rocket pirate', chance: 25 }]
           },
-          advanceWhen: { kills: 15 }
+          advanceWhen: { kills: 12 }
         },
         {
           name: 'finale', // spawning stops; one last rocketeer, then clear the field
@@ -394,7 +394,7 @@ export const LEVELS = [
               { ship: 'Basic pirate ship', chance: 75 },
               { ship: 'basic rocket pirate', chance: 25 }]
           },
-          advanceWhen: { kills: 15 }
+          advanceWhen: { kills: 12 }
         },
         { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
         {
@@ -424,7 +424,7 @@ export const LEVELS = [
               { ship: 'Basic pirate ship', chance: 75 },
               { ship: 'basic rocket pirate', chance: 25 }]
           },
-          advanceWhen: { kills: 10 }
+          advanceWhen: { kills: 8 }
         },
         {
           name: 'wave-2',
@@ -434,7 +434,7 @@ export const LEVELS = [
               { ship: 'basic rocket pirate', chance: 20 },
               { ship: 'pirate mini boss', chance: 15 }]
           },
-          advanceWhen: { kills: 20 }
+          advanceWhen: { kills: 16 }
         },
         { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
         {

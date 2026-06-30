@@ -191,6 +191,23 @@
   body.touch.menu #fullscreen-btn { display: flex; }   /* show on touch menus … */
   body.fs #fullscreen-btn { display: none !important; } /* … but hide once fullscreen */
   #fullscreen-btn:active { background: rgba(60,85,150,.7); }
+  /* iPhone Safari (no Fullscreen API): the ⛶ button can't work, so hide it and show an "Add to Home
+     Screen" hint instead — that standalone PWA is the only true full screen on iPhone. Both are gated to
+     touch menus and vanish once already launched standalone (body.standalone). Non-interactive pill. */
+  body.no-fs-api #fullscreen-btn { display: none !important; }
+  #a2hs-hint {
+    position: fixed; right: 14px; bottom: 14px; z-index: 60;
+    max-width: 230px; padding: 9px 12px; border-radius: 12px;
+    display: none; align-items: center; gap: 7px;
+    font-size: 12px; line-height: 1.3; text-align: left; color: #eaf2ff;
+    background: rgba(40,60,110,.55);
+    border: 1px solid rgba(170,200,255,.55);
+    box-shadow: 0 2px 10px rgba(0,0,0,.35);
+    pointer-events: none;                                /* never intercepts menu taps */
+  }
+  #a2hs-hint .a2hs-glyph { font-size: 18px; line-height: 1; flex: none; }
+  body.touch.menu.no-fs-api #a2hs-hint { display: flex; }
+  body.standalone #a2hs-hint { display: none !important; }
   /* Shop bay (docs/plans/hangar-shop.md). Now the "bay" work-zone view in the Main Window — shown when a
      Loadout/Stash/Shop menu item is picked (the items are gated to the shop being unlocked). */
   /* zoom 0.67 = everything in the bay (Loadout/Stash/Shop) — fonts, buttons, paddings — ~1.5× smaller. */
@@ -736,6 +753,9 @@
 </div>
 <!-- Floating fullscreen toggle: touch-only, bottom-right, shown on menus, hidden once fullscreen (CSS + JS). -->
 <button id="fullscreen-btn" class="touch-only" aria-label="Full screen" title="Full screen">⛶</button>
+<!-- iPhone Safari fallback (no Fullscreen API): replaces the ⛶ button with an Add-to-Home-Screen hint
+     (the only true full screen on iPhone). Shown only on touch menus of devices with body.no-fs-api. -->
+<div id="a2hs-hint"><span class="a2hs-glyph" aria-hidden="true">⤴</span><span data-i18n="ui.a2hs.hint">Full screen: Share → Add to Home Screen</span></div>
 
 <script type="importmap">
 {
@@ -811,6 +831,13 @@ scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so di
 // coords into game space (inverse of the CSS transform). applyOrientation() (defined below the camera)
 // flips this on resize/orientation change.
 const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+// iPhone Safari has no Fullscreen API (it exists only on iPad/Android), so the floating ⛶ button is a
+// no-op there — the only true full screen on iPhone is the standalone web app from "Add to Home Screen"
+// (we ship apple-mobile-web-app-capable). Detect both: no FS API → swap ⛶ for an A2HS hint; already
+// launched standalone → no chrome to hide, so show neither. (See requestFullscreen + body.no-fs-api/.standalone.)
+const FS_API = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+const STANDALONE = window.navigator.standalone === true ||
+  !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
 let rotated = false;
 const gameW = () => rotated ? window.innerHeight : window.innerWidth;
 const gameH = () => rotated ? window.innerWidth : window.innerHeight;
@@ -2028,6 +2055,8 @@ addEventListener('keyup', e => { keys[e.code] = false; });
 const touchAim = { active: false, heading: 0, thrust: 0 };
 if (isTouch) {
   document.body.classList.add('touch'); // gates touch-only UI (e.g. the Full screen button)
+  if (STANDALONE) document.body.classList.add('standalone');   // launched from Home Screen — no chrome to hide
+  else if (!FS_API) document.body.classList.add('no-fs-api');  // iPhone Safari: ⛶ can't work → show the A2HS hint instead
   document.getElementById('touch').classList.add('on');
   document.getElementById('help').style.display = 'none'; // keyboard hints not needed
 

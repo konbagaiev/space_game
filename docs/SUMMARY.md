@@ -47,6 +47,13 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   bottom-right rocket button during a fight, and it **hides once fullscreen** (a `fullscreenchange` listener
   toggles `body.fs`). The translated words live on its `aria-label`/`title` (key `ui.fullscreen`, re-applied
   by `applyTranslations` on language change); `requestFullscreen` no-ops if already fullscreen or unsupported.
+  **iPhone Safari has no Fullscreen API** (it exists only on iPad/Android), so there the `⛶` button can't
+  work — the only true full screen is the **standalone web app from "Add to Home Screen"** (we ship
+  `apple-mobile-web-app-capable`). Two detection consts set body classes: `FS_API` (any
+  `requestFullscreen`/`webkitRequestFullscreen`?) and `STANDALONE` (`navigator.standalone` /
+  `display-mode: standalone`). On a touch device with no FS API → `body.no-fs-api` hides the `⛶` button and
+  shows a non-interactive **A2HS hint pill** instead (`#a2hs-hint`, bottom-right, gated to `body.touch.menu.no-fs-api`,
+  text key `ui.a2hs.hint`); once already launched standalone → `body.standalone` hides both (no chrome to hide).
 
 ## Tools
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
@@ -201,18 +208,18 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   ship`, `enemy_1`, gun, 30 hp light hull), `rocketeer` (`basic rocket pirate`, `enemy_2`, gun + rocket, same
   30 hp light hull), `medium` (`pirate mini boss`, `enemy_3`, two rocket launchers, 150 hp medium hull →
   sluggish, 2× model), `pirate_gunner` (a fast skirmisher for the side missions — **orange `enemy_1`** —
-  Pirate hull 36 hp + Pirate engine top-speed +50% + one **long-range** Pirate machine gun; reward 40),
+  Pirate hull 36 hp + Pirate engine top-speed +50% + one **long-range** Pirate machine gun; reward 50),
   `advanced_medium_pirate` (the L4 heavy — **orange `enemy_3`** — **300 hp**, turns ~+30% vs the medium,
-  1 Pirate MG + 2 rockets; reward 150), the `boss` (`first pirate boss` — `enemy_4` + own hull/engine,
+  1 Pirate MG + 2 rockets; reward 200), the `boss` (`first pirate boss` — `enemy_4` + own hull/engine,
   **310 hp** (boss buff: 210 +100), 3× model, max speed 10.4 (+30%), **two Pirate machine guns** + two rocket
   launchers), and `boss2` (the **Second Boss**, `second pirate boss`, L4 finale — **orange `enemy_4`** —
   **550 hp** (boss buff: 450 +100), max speed 14.3 (+30%), ~+30% accel/turn vs the first boss, **two
-  Advanced pirate cannons + three rockets**; reward 400). One more ship is seeded but **not wired into any
+  Advanced pirate cannons + three rockets**; reward 500). One more ship is seeded but **not wired into any
   level** yet: `advanced_rocket_pirate` (`advanced rocket pirate`, **orange `enemy_2`** — Pirate
-  hull/engine, Pirate MG + a rocket; reward 60), kept for a future harder rocketeer wave. Which
+  hull/engine, Pirate MG + a rocket; reward 75), kept for a future harder rocketeer wave. Which
   enemies spawn is decided by the **level/mission** (see Gameplay), not the ship; ship `radius` scales with
-  model size. Each enemy carries a **`reward`** (`stats.reward`, fighter 20 / rocketeer 40 / pirate gunner 40 /
-  medium 100 / advanced medium pirate 150 / first boss 200 / Second Boss 400) in **credits**, earned on
+  model size. Each enemy carries a **`reward`** (`stats.reward`, fighter 25 / rocketeer 50 / pirate gunner 50 /
+  medium 125 / advanced medium pirate 200 / first boss 250 / Second Boss 500) in **credits**, earned on
   destruction. (`stats.color` is metadata for the radar markers/mini-map + explosion tint + the loading
   placeholder — not a model tint; set from the `MARKER` size-tier palette, see HUD above.)
 - **Balance reference:** player — 100 hp hull, gun 10 damage; basic enemy — 30 hp light hull, gun 4 damage
@@ -339,11 +346,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     `docs/plans/briefing-item-showcase.md` + DECISIONS §29.
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
   `levelRunner`. Four campaign levels are seeded (played in order via the player's progress):
-  - **`level-1` (beginner):** fighters only (3 at a time) → after **7 kills** rocketeers join at 25%
-    → at **15 kills** spawning stops, one last rocketeer appears, clear the field → **Victory!** No boss.
-  - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 15 kills →
+  - **`level-1` (beginner):** fighters only (3 at a time) → after **6 kills** rocketeers join at 25%
+    → at **12 kills** spawning stops, one last rocketeer appears, clear the field → **Victory!** No boss.
+  - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 12 kills →
     spawning stops → a single **medium** appears alone as the boss → clear → Victory.
-  - **`level-3` (full fight):** waves of all three enemy types → after 20 kills spawning stops → the
+  - **`level-3` (full fight):** waves of all three enemy types → after 16 kills spawning stops → the
     **Sector boss** spawns alone → on its death the game runs ~5 s (watch it explode) → Victory.
   - **`level-4` ("Find the pirate base"):** clearly harder — **pirate gunners + rocketeers + advanced
     medium pirates** (40/40/20 → 35/35/30, maxConcurrent 5) to 8 then 16 kills → clear-out → the
@@ -358,7 +365,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - Player health is 100; HUD shows the remaining health as a percentage with one decimal
   (e.g. "87.5%") below the bar.
 - **Economy (credits)** — the currency is **credits**. Every enemy carries a `reward` (`stats.reward`:
-  fighter 20, rocketeer 40, medium 100, first boss 200); destroying one adds it to the run's **Earned**
+  fighter 25, rocketeer 50, medium 125, first boss 250); destroying one adds it to the run's **Earned**
   total. Completing a level **doubles** Earned (`win` applies `earned ×= 2`). The separate **kill count**
   drives level thresholds. At the **end of each run — death OR victory — Earned is banked** into the
   player's persistent **Credits** balance (server-authoritative; closing the browser mid-run loses the

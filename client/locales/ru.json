@@ -74,6 +74,7 @@
   "ui.pause.paused": "Пауза",
   "ui.pause.play": "▶ Продолжить",
   "ui.fullscreen": "Во весь экран",
+  "ui.a2hs.hint": "Во весь экран: Поделиться → На экран «Домой»",
   "ui.credits.doubled": "Заработано ×2 = {credits}",
   "ui.gameover.sub": "Уничтожено: {kills} — Заработано: {credits}",
   "ui.gameover.back_to_hangar": "В ангар",
