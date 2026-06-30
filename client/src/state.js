@@ -28,6 +28,10 @@ export const G = {
   currentMapDescriptor: null, // last descriptor passed to buildMap() (?tune "Rebuild" button)
   mapSetpieces: [],           // the current map's set-piece specs (reset() rebuilds them fresh each run)
   arenaDrift: null,           // THREE.Vector3 (units/sec on x,z) when the current map drifts, else null
+  // --- run/account scalars (read by the HUD; written by the loop, level runner, bank + account flows) ---
+  kills: 0,                   // destroyed enemies this run (drives the level runner's thresholds + HUD)
+  earned: 0,                  // credits earned this run: each kill adds the ship's `reward`; doubled on level completion
+  balance: 0,                 // persistent account balance (loaded from the server; banked at run end)
 };
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---

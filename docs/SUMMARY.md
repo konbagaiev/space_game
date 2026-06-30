@@ -843,15 +843,18 @@ modules (no bundler; `three` resolved by the importmap in `index.html`). See
   `loadLanguage`), `audio.js` (procedural Web Audio engine + the pure settings helpers, engine
   browser-only), and `format.js` (`esc`/`cssColor`/`slotLabel`/`priceLabel`/`sellLabel`).
 - **Shared state & engine:** `state.js` (entity collections + `CATALOG` + input + the mutable `G` state
-  bag for reassigned cross-module scalars: `gfx`/`rotated`/`player`/`sky`/`stars`/… + `SPAWN_GROW_TIME`),
-  `engine.js` (`renderer`/`scene`/`skyScene`/`camera`/lights + orientation + zoom), `dom.js` *(planned —
-  cached element refs, lands with the HUD slice)*.
+  bag for reassigned cross-module scalars: `gfx`/`rotated`/`player`/`sky`/`stars`/… + the run/account
+  scalars `kills`/`earned`/`balance` + `SPAWN_GROW_TIME`), `engine.js` (`renderer`/`scene`/`skyScene`/
+  `camera`/lights + orientation + zoom), `dom.js` (the single fail-loud `el` inventory of shared
+  index.html nodes — HUD readouts + the result `overlay`; a missing id throws on boot).
 - **Domains (browser-only, touch the scene):** `world.js` (arena + sky/planet/moons/asteroids/set-pieces +
   `buildMap`), `ship-factory.js` (`makeShip`/`applyShipModel` + `gltfLoader`), `projectiles.js`
   (bullets/explosions/exhaust/rockets/smoke FX), `ship-build.js` (catalog resolution + `buildPlayer` +
-  enemy spawning + fire groups), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`).
+  enemy spawning + fire groups), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
+  `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`).
 - **Still inline in `index.html`** (to be extracted in later slices): the simulation `update()` loop +
-  `levelRunner`, HUD/markers/minimap/pause, net/telemetry, the Main Window / shop / welcome / account /
+  `levelRunner`, pause control (`setPaused`/`togglePause`) + the OOB warning + music routing
+  (`musicForState`/`refreshMusic`), net/telemetry, the Main Window / shop / welcome / account /
   settings UI, and the bootstrap/`animate`/`window.__game` composition root.
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 

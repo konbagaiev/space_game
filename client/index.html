@@ -216,11 +216,13 @@ import { audio, tracksFor, sfxFor } from './src/sound-routing.js'; // audio engi
 import { saveTier } from './src/graphics.js'; // graphics quality tiers (perf on weak phones); the active tier lives in G.gfx
 import { esc, cssColor, slotLabel, priceLabel, sellLabel } from './src/format.js'; // pure presentation helpers
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, moons, setPieces, soundMap, CATALOG, keys, touchAim, SPAWN_GROW_TIME } from './src/state.js'; // shared state bag + entity collections + catalog + input
-import { scene, skyScene, camera, renderer, combatAmbient, sun, camOffset, isTouch, gameW, gameH, toGame, applyOrientation, zoomBy, tickZoom } from './src/engine.js'; // engine singletons + orientation + zoom
+import { scene, skyScene, camera, renderer, combatAmbient, sun, camOffset, isTouch, toGame, applyOrientation, zoomBy, tickZoom } from './src/engine.js'; // engine singletons + orientation + zoom
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, updateMoons, buildSetPiece } from './src/world.js'; // arena + sky/planet/setpieces + buildMap
 import { shipModelCfg, modelSpec, makeShip, gltfLoader, SHIP_MODEL_LEN } from './src/ship-factory.js'; // ship primitive + .glb model loading
 import { spawnBullet, spawnExplosion, spawnShipExplosion, emitExhaust, spawnRocket, detonateRocket, spawnSmoke, findTargetInSector, liveParticles, bulletGeo, explosionGeo } from './src/projectiles.js'; // projectiles + combat FX (geos reused by prewarmShaders)
 import { resolveWeapon, resolveComponents, buildPlayer, spawnEnemyShip, spawnEnemy, updateGroups } from './src/ship-build.js'; // catalog resolution + player/enemy building + weapon fire groups
+import { el } from './src/dom.js'; // single fail-loud inventory of shared index.html nodes
+import { updateHud, updateMarkers, updateMiniMap, updatePerf } from './src/hud.js'; // per-frame HUD draws (readouts/markers/radar/perf)
 
 // audio engine + tracksFor/sfxFor routing moved to src/sound-routing.js (imported at top).
 let samplesLoaded = false; // one-time guard so the sample preload fires once, after the context unlocks
@@ -302,7 +304,7 @@ const levelRunner = {
   get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },
 
   enterPhase() {
-    this.killsAtPhaseStart = kills; this.spawnedThisPhase = 0;
+    this.killsAtPhaseStart = G.kills; this.spawnedThisPhase = 0;
     const ph = this.phase;
     if (ph && ph.event === 'win') {
       // defer the overlay by `delay` seconds so the boss explosion can play out first
@@ -314,14 +316,14 @@ const levelRunner = {
   win() {
     this.won = true;
     audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
-    earned *= 2; // double the credits earned for clearing the level
+    G.earned *= 2; // double the credits earned for clearing the level
     overlayTitle.textContent = t('ui.overlay.victory');
     // resolve the level's victory line through i18n (key → translation → English fallback)
     const cleared = this.winTextKey ? t(this.winTextKey) : (this.winText || t('ui.overlay.sector_cleared'));
-    overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: earned })}`;
+    overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: G.earned })}`;
     elRestart.textContent = t('ui.button.continue'); // a win continues to the Hangar
     elBackHangar.style.display = 'none'; // Continue already goes to the Hangar — no separate button on a win
-    overlay.style.display = 'flex';
+    el.overlay.style.display = 'flex';
     track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
     bankRun(); // bank the earned credits into the account balance
     // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
@@ -364,8 +366,8 @@ const levelRunner = {
   shouldAdvance(ph) {
     const c = ph.advanceWhen;
     if (!c) return false;
-    if (c.kills != null) return kills >= c.kills;
-    if (c.killsSincePhase != null) return (kills - this.killsAtPhaseStart) >= c.killsSincePhase;
+    if (c.kills != null) return G.kills >= c.kills;
+    if (c.killsSincePhase != null) return (G.kills - this.killsAtPhaseStart) >= c.killsSincePhase;
     if (c.allCleared) {
       const spawnDone = !ph.spawn || (ph.spawn.total != null && this.spawnedThisPhase >= ph.spawn.total);
       return enemies.length === 0 && spawnDone;
@@ -519,12 +521,12 @@ function bankRun() {
   if (banked) return;
   banked = true;
   const durationMs = Math.round(performance.now() - gameStartTime);
-  if (!playerId) { balance += earned; updateHud(); return; } // offline: reflect locally, best-effort
+  if (!playerId) { G.balance += G.earned; updateHud(); return; } // offline: reflect locally, best-effort
   fetch('/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ playerId, credits: earned, kills, durationMs }),
+    body: JSON.stringify({ playerId, credits: G.earned, kills: G.kills, durationMs }),
   }).then((r) => (r.ok ? r.json() : null))
-    .then((res) => { if (res && typeof res.credits === 'number') { balance = res.credits; updateHud(); } })
+    .then((res) => { if (res && typeof res.credits === 'number') { G.balance = res.credits; updateHud(); } })
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
@@ -610,7 +612,7 @@ function warpPlayerToCenter() {
 const oobWarnEl = document.getElementById('oob-warn');
 function updateOobWarning() {
   const show = G.player && gameStarted && G.player.alive && !levelRunner.won
-    && overlay.style.display === 'none' && G.player.oobTime >= OOB_WARN_DELAY;
+    && el.overlay.style.display === 'none' && G.player.oobTime >= OOB_WARN_DELAY;
   if (!show) { oobWarnEl.style.display = 'none'; return; }
   const remain = Math.max(0, Math.ceil(OOB_RETURN_TIME - G.player.oobTime));
   oobWarnEl.style.display = 'block';
@@ -619,44 +621,16 @@ function updateOobWarning() {
     `<div class="oob-count">${t('ui.oob.countdown', { seconds: remain })}</div>`;
 }
 
-// ---------- HUD ----------
-const elEarned = document.getElementById('earned');
-const elCredits = document.getElementById('credits');
-const elKills = document.getElementById('kills');
-const elEnemies = document.getElementById('enemies');
-const elHp = document.getElementById('hpfill');
-const elHpPct = document.getElementById('hppct');
-const overlay = document.getElementById('overlay');
+// ---------- HUD moved to src/hud.js ----------
+// updateHud/updateMarkers/updateMiniMap/updatePerf are imported at the top; the cached HUD/overlay
+// nodes live in src/dom.js (`el`). The run/account scalars they read (G.kills/G.earned/G.balance) are
+// on the shared state bag. The result-overlay title/sub/buttons + the pause + OOB-warning code stay
+// inline here — they belong with the sim/level-runner cluster that hasn't been split out yet.
 const overlayTitle = document.getElementById('overlay-title');
 const overlaySub = document.getElementById('overlay-sub');
 const elRestart = document.getElementById('restart'); // overlay button: "Continue" on a win, "Restart" on a loss
 const elBackHangar = document.getElementById('back-hangar'); // shown on death once the shop is unlocked
-const elRocketBtn = document.getElementById('rocket-btn');
-const elRocketFill = document.getElementById('rocket-fill');
-let kills = 0;   // count of destroyed enemies (drives the level runner's thresholds + "Destroyed")
-let earned = 0;  // credits earned this run: each kill adds the ship's `reward`; doubled on level completion
-let balance = 0; // persistent credit account balance (loaded from the server; banked at run end)
 let gameStarted = false; // false on the welcome screen (backdrop renders, but the level isn't running)
-
-function updateHud() {
-  elEarned.textContent = earned;
-  elCredits.textContent = balance;
-  elKills.textContent = kills;
-  elEnemies.textContent = enemies.length;
-  const hpPct = Math.max(0, G.player.hp / G.player.maxHp * 100);
-  elHp.style.width = hpPct + '%';
-  elHpPct.textContent = hpPct.toFixed(1) + '%'; // remaining health, one decimal
-
-  // rocket reload: the 🚀 circle fills up (radial) as the rocket group reloads
-  const rg = G.player.groups.rocket;
-  const cd = rg ? rg.reload : 1;
-  const left = rg ? Math.max(0, rg.cooldown) : 0;
-  const ready = left <= 0;
-  const deg = Math.round((cd > 0 ? 1 - left / cd : 1) * 360);
-  const col = ready ? '#77ee77' : '#ffaa55';
-  elRocketFill.style.background = `conic-gradient(${col} ${deg}deg, rgba(120,90,60,.22) ${deg}deg)`;
-  elRocketBtn.classList.toggle('ready', ready);
-}
 
 // ---------- Game loop ----------
 // Thrust/turn/speed/weapon are now taken from the ship's components (engine/weapon).
@@ -960,8 +934,8 @@ function update(dt) {
 
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
-      kills++;                  // count (drives level thresholds + HUD)
-      earned += e.reward || 0;  // credits (reward for this ship type)
+      G.kills++;                  // count (drives level thresholds + HUD)
+      G.earned += e.reward || 0;  // credits (reward for this ship type)
     }
   }
   // drive spawning + phase transitions from the active level
@@ -972,14 +946,14 @@ function update(dt) {
     G.player.alive = false;
     spawnShipExplosion(G.player.mesh.position, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
     audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
-    track('player_death', { level: currentLevelLabel(), kills }); // funnel: where players die
+    track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
     bankRun(); // bank the earned credits into the account balance + record the game
     overlayTitle.textContent = t('ui.overlay.ship_destroyed');
-    overlaySub.textContent = t('ui.gameover.sub', { kills, credits: earned });
+    overlaySub.textContent = t('ui.gameover.sub', { kills: G.kills, credits: G.earned });
     elRestart.textContent = t('ui.button.restart'); // a loss retries the level
     // once the shop is unlocked, offer returning to the hangar (shop/loadout) instead of an instant retry
     elBackHangar.style.display = (activeShip && activeShip.shopUnlocked) ? 'inline-block' : 'none';
-    overlay.style.display = 'flex';
+    el.overlay.style.display = 'flex';
   }
 
   // --- camera: rigidly attached to the player (no lag or "floating" - no jitter),
@@ -1000,109 +974,9 @@ function update(dt) {
   for (const sp of setPieces) sp.update?.(dt);
 }
 
-// ---------- Perf overlay (load) ----------
-const elPerf = document.getElementById('perf');
-let perfAccum = 0, perfFrames = 0, perfFps = 0;
-function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim's clamped dt — see animate)
-  perfAccum += sec; perfFrames++;
-  if (perfAccum >= 0.4) { // update ~2.5 times per sec
-    perfFps = Math.round(perfFrames / perfAccum);
-    const r = renderer.info.render;
-    const tris = r.triangles >= 1e6
-      ? (r.triangles / 1e6).toFixed(2) + 'M'
-      : Math.round(r.triangles / 1e3) + 'k';
-    const ms = (perfAccum / perfFrames * 1000).toFixed(1);
-    // Append the real backbuffer size (CSS size × pixelRatio × renderScale) — the actual pixels the GPU
-    // fills. Lets a tester confirm whether a tier/renderScale change moved the pixel count at all (a weak
-    // phone often reports devicePixelRatio ~1, so the pixelRatioCap is a no-op and only renderScale bites).
-    const res = `${renderer.domElement.width}×${renderer.domElement.height}`;
-    // In ?dev, append live JS-heap usage (Chrome only) so the tester can eyeball current RAM.
-    const devSuffix = DEV ? (performance.memory ? ` · ${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '') + ' ●dev' : '';
-    elPerf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + devSuffix;
-    perfAccum = 0; perfFrames = 0;
-  }
-}
-
-// ---------- Off-screen enemy markers: edge arrows pointing toward enemies that are off-screen ----------
-const markersEl = document.getElementById('markers');
-const markerPool = [];
-const _ndc = new THREE.Vector3();
-function getMarker(i) {
-  while (markerPool.length <= i) {
-    const d = document.createElement('div');
-    d.className = 'marker';
-    markersEl.appendChild(d);
-    markerPool.push(d);
-  }
-  return markerPool[i];
-}
-function updateMarkers() {
-  // hide everything while there's no player or an overlay (game over / victory) is up
-  if (!G.player || overlay.style.display !== 'none') { for (const m of markerPool) m.style.display = 'none'; return; }
-  const w = gameW(), h = gameH(), margin = 0.92; // game (rotated) screen size, not the raw viewport
-  let used = 0;
-  for (const e of enemies) {
-    _ndc.copy(e.mesh.position).project(camera);
-    const behind = _ndc.z > 1;            // point is behind the camera -> NDC is mirrored
-    let x = _ndc.x, y = _ndc.y;
-    if (behind) { x = -x; y = -y; }
-    if (!behind && x >= -1 && x <= 1 && y >= -1 && y <= 1) continue; // on screen -> no marker
-    const k = margin / Math.max(Math.abs(x), Math.abs(y), 1e-4);     // clamp dir to the edge box
-    const cx = x * k, cy = y * k;
-    const m = getMarker(used++);
-    m.style.display = 'block';
-    m.style.left = ((cx * 0.5 + 0.5) * w) + 'px';
-    m.style.top = ((-cy * 0.5 + 0.5) * h) + 'px';
-    m.style.borderLeftColor = cssColor(e.color ?? 0xffffff);          // tint by enemy type
-    m.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(-cy, cx) * 180 / Math.PI}deg)`;
-  }
-  for (let i = used; i < markerPool.length; i++) markerPool[i].style.display = 'none';
-}
-
-// ---------- Mini-map / radar: arena bounds, the player (with heading), and type-colored enemy dots ----------
-// Complements the edge arrows (arrows = immediate threat direction; the radar = spatial overview, useful
-// now that the player can wander out of bounds). The shown range slightly exceeds the arena so an
-// out-of-bounds player still reads near the edge.
-const miniEl = document.getElementById('minimap');
-const miniCtx = miniEl.getContext('2d');
-const MINI_VIEW = ARENA * 1.18; // world half-extent the radar shows (a touch beyond the arena)
-function updateMiniMap() {
-  if (!G.player || overlay.style.display !== 'none') { miniEl.style.visibility = 'hidden'; return; }
-  miniEl.style.visibility = 'visible';
-  const S = miniEl.width, c = S / 2, scale = (c - 6) / MINI_VIEW;
-  // map world → radar relative to the arena center (so the boundary square stays centered when it drifts)
-  const toX = (x) => c + (x - arenaCenter.x) * scale, toY = (z) => c + (z - arenaCenter.z) * scale;
-  miniCtx.clearRect(0, 0, S, S);
-
-  // arena boundary square
-  const a = ARENA * scale;
-  miniCtx.strokeStyle = 'rgba(73,224,255,.65)';
-  miniCtx.lineWidth = 1;
-  miniCtx.strokeRect(c - a, c - a, a * 2, a * 2);
-
-  // enemies as dots, tinted by type color (same palette as the edge arrows)
-  for (const e of enemies) {
-    const ex = toX(e.mesh.position.x), ey = toY(e.mesh.position.z);
-    if (ex < 1 || ex > S - 1 || ey < 1 || ey > S - 1) continue; // off the radar
-    miniCtx.fillStyle = cssColor(e.color ?? 0xffffff);
-    miniCtx.beginPath();
-    miniCtx.arc(ex, ey, 2.4, 0, Math.PI * 2);
-    miniCtx.fill();
-  }
-
-  // player as a heading triangle (red while out of bounds), clamped to the radar edge so it stays
-  // visible even when the ship flies far outside the boundary
-  const px = Math.max(6, Math.min(S - 6, toX(G.player.mesh.position.x)));
-  const py = Math.max(6, Math.min(S - 6, toY(G.player.mesh.position.z)));
-  const fx = Math.sin(G.player.heading), fz = Math.cos(G.player.heading); // forward dir (headingToDir)
-  miniCtx.fillStyle = G.player.oobTime > 0 ? '#ff7a5a' : '#9fe8ff';
-  miniCtx.beginPath();
-  miniCtx.moveTo(px + fx * 6, py + fz * 6);                       // nose
-  miniCtx.lineTo(px - fx * 4 - fz * 4, py - fz * 4 + fx * 4);     // back-left
-  miniCtx.lineTo(px - fx * 4 + fz * 4, py - fz * 4 - fx * 4);     // back-right
-  miniCtx.closePath();
-  miniCtx.fill();
-}
+// ---------- HUD draws moved to src/hud.js ----------
+// updatePerf (perf overlay), updateMarkers (off-screen enemy edge arrows) and updateMiniMap (radar)
+// are imported at the top; their cached nodes (#perf/#markers/#minimap) live in src/dom.js (`el`).
 
 // ---------- Pause ----------
 // `paused` freezes the fight by skipping the sim update (rendering keeps running, so the frozen frame
@@ -1303,12 +1177,12 @@ function reset() {
   G.player._repairAccum = 0; // fresh run: clear banked repair-drone time
   for (const g of Object.values(G.player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   G.player.alive = true;
-  earned = 0; kills = 0; banked = false; // new run: reset session credits + the bank-once guard (balance persists)
+  G.earned = 0; G.kills = 0; banked = false; // new run: reset session credits + the bank-once guard (balance persists)
   gameStartTime = performance.now(); // start timing a new game (for history)
   levelRunner.start(activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
   setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
   refreshMusic();   // a live fight → combat music
-  overlay.style.display = 'none';
+  el.overlay.style.display = 'none';
   // funnel telemetry: game_start once per session, level_start per run; tag Sentry's scope with the level
   const level = currentLevelLabel();
   if (!gameStartSent) { gameStartSent = true; track('game_start', { level }); }
@@ -1332,7 +1206,7 @@ function showMain(briefing) {
   // descriptor briefing so returning from a side mission (showMain(null)) doesn't blank the campaign
   // mission to the "standby" default. briefingShowcase() reads either shape (showcase or raw actions).
   mainBriefing = briefing || (CATALOG.level && CATALOG.level.briefing) || null;
-  overlay.style.display = 'none';
+  el.overlay.style.display = 'none';
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the Main Window
   refreshMusic();                      // menu → calmer hangar music
@@ -1374,7 +1248,7 @@ function leaveOverlay() {
 elRestart.addEventListener('click', leaveOverlay);
 // "Back to Main Window" on the death overlay (shop unlocked): banked credits already applied → go back
 // to the menu (shop/loadout), where Take off retries the mission.
-elBackHangar.addEventListener('click', () => { overlay.style.display = 'none'; showMain(null); });
+elBackHangar.addEventListener('click', () => { el.overlay.style.display = 'none'; showMain(null); });
 
 // ---- Left-menu navigation + the work-zone views ----
 // Show one work-zone view and highlight its menu item. 'missions' → the mission view (description +
@@ -1864,7 +1738,7 @@ function shopErr(status, j) {
 // Apply a fresh server state: update globals, rebuild the 3D player to reflect the new loadout, re-render.
 function applyShopState(j) {
   shopData = j;
-  if (j.activeShip) { activeShip = j.activeShip; balance = j.credits; if (j.activeShip.ship) buildPlayerFor(j.activeShip.ship); }
+  if (j.activeShip) { activeShip = j.activeShip; G.balance = j.credits; if (j.activeShip.ship) buildPlayerFor(j.activeShip.ship); }
   updateHud();
   renderBay();
 }
@@ -1992,9 +1866,9 @@ if (location.search.includes('debug')) {
     get oobWarnVisible() { return oobWarnEl.style.display === 'block'; },
     get player() { return G.player; },   // built asynchronously in bootstrap()
     get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB
-    get earned() { return earned; },   // credits earned this run
-    get balance() { return balance; }, // persistent account balance
-    get kills() { return kills; },
+    get earned() { return G.earned; },   // credits earned this run
+    get balance() { return G.balance; }, // persistent account balance
+    get kills() { return G.kills; },
   };
 }
 
@@ -2467,7 +2341,7 @@ async function reloadPlayerWorld() {
     CATALOG.level = level.descriptor;
     const active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
     activeShip = active;
-    if (active && typeof active.credits === 'number') balance = active.credits;
+    if (active && typeof active.credits === 'number') G.balance = active.credits;
     if (active && active.ship) buildPlayerFor(active.ship);
     if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
     else showWelcome(playerShipsCache);
@@ -2577,7 +2451,7 @@ async function bootstrap() {
     let active = null;
     if (playerId) active = await fetchJson(`/api/players/${playerId}/active-ship`).catch(() => null);
     activeShip = active; // drives the persisted loadout in buildPlayerFor (weapon swaps, etc.)
-    if (active && typeof active.credits === 'number') balance = active.credits; // account balance for the HUD
+    if (active && typeof active.credits === 'number') G.balance = active.credits; // account balance for the HUD
     const playerShips = ships.filter((s) => s.type === 'player');
     playerShipsCache = playerShips; // remembered so a login can re-render the welcome screen
     buildPlayerFor((active && active.ship) || playerShips[0]); // idle ship behind the welcome screen

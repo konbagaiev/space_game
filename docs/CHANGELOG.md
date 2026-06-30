@@ -17,6 +17,15 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 9: HUD draws → `src/hud.js` + `src/dom.js`.** Moved the per-frame
+  HUD draws (`updateHud`, `updateMarkers`, `updateMiniMap`, `updatePerf`) out of the inline script into
+  `src/hud.js`, and introduced `src/dom.js` — the single fail-loud `el` inventory of shared `index.html`
+  nodes (HUD readouts + the result `overlay`; a missing id throws on boot instead of failing silently).
+  Promoted the run/account scalars `kills`/`earned`/`balance` onto the `G` state bag (the HUD reads them
+  cross-module now). Pause control + the OOB warning + music routing stayed inline — they're coupled to
+  `levelRunner`, which moves with the sim slice. No behavior change; unit suite 46/46, visual suite at the
+  documented 10/6 flaky baseline (zero page errors). Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 8: ship building & weapons → `src/ship-build.js`.** Moved the
   catalog resolution (`resolveWeapon`/`resolveComponents`/`buildMounts`/`buildGroups`), `buildPlayer`,
   enemy spawning (`spawnEnemyShip`/`spawnEnemy`) and the fire-group logic (`fireMount`/`updateGroups`)

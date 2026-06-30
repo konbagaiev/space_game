@@ -28,31 +28,42 @@ once — that's the signal, not the 6 steady flakes. Unit suite (`cd client && n
 4. Re-grep that no stale reference to a moved symbol remains in `index.html`; drop now-unused imports.
 5. Commit with a `Client refactor slice N: …` message + a CHANGELOG bullet.
 
-**Done (index.html: 3736 → ~2624 lines):** `styles.css`, `format.js` (+test), `state.js`, `engine.js`,
-`world.js`, `ship-factory.js`, `projectiles.js`, `ship-build.js`, `sound-routing.js`, and the
-`player`→`G.player` promotion. SUMMARY "Client module layout" + DECISIONS §31 written.
+**Done (index.html: 3736 → ~2530 lines):** `styles.css`, `format.js` (+test), `state.js`, `engine.js`,
+`world.js`, `ship-factory.js`, `projectiles.js`, `ship-build.js`, `sound-routing.js`, `dom.js`, `hud.js`
+(the four per-frame draws), and the `player`/`kills`/`earned`/`balance`→`G` promotions. SUMMARY "Client
+module layout" + DECISIONS §31 written.
 
 **Deviations from the original plan below (intentional, keep following them):**
 - **Lazy `G` promotion**, not the upfront 28-var rename in §2.3. A scalar is promoted to `G` only when the
   domain that owns it is split out. **Already on `G`:** `gfx`, `rotated`, `player`, `sky`, `stars`,
   `skyAmbient`, `skySun`, `currentMapDescriptor`, `mapSetpieces`, `arenaDrift`. (`SPAWN_GROW_TIME`,
   `arenaCenter`, `planetPos` are plain exported consts — mutated in place or never reassigned.)
-  **Still inline `let`, promote when their slice moves:** `gameStarted`, `paused`, `kills`, `earned`,
-  `balance`, `banked`, `gameStartSent`, `quitSent`, `pendingBriefing`, `gameStartTime`, `playerId`,
+  `kills`, `earned`, `balance` (promoted with the HUD slice — `updateHud` reads them cross-module).
+  **Still inline `let`, promote when their slice moves:** `gameStarted`, `paused`, `banked`,
+  `gameStartSent`, `quitSent`, `pendingBriefing`, `gameStartTime`, `playerId`,
   `samplesLoaded`, `soundUrls`, `mainBriefing`, `missionOffers`, `activeMission`. (UI-panel-local scalars
   like `shopData`/`bayView`/`accountPlayer` can stay plain `let` and move *with* their single module.)
-- **`dom.js` deferred to the HUD slice** (converting `elEarned`→`el.earned` now is churn with no consumer).
+- **`dom.js` landed with the HUD slice** (slice 9). It holds only the nodes the HUD draws + inline overlay
+  flow share: the HUD readouts (`earned`/`credits`/`kills`/`enemies`/`hpFill`/`hpPct`/`rocketBtn`/
+  `rocketFill`/`perf`/`markers`/`minimap`) and the result `overlay`. `overlayTitle`/`overlaySub`/`restart`/
+  `back-hangar` stayed inline `const`s (written by the death/win/restart flow that moves with sim).
+- **HUD slice = the four pure draws only** (`updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`).
+  `setPaused`/`togglePause`/`autoPauseOnBlur` + `updateOobWarning` stayed inline — they call `refreshMusic`
+  and read `levelRunner`, which are inline until the sim slice. Moving them now would force a module→inline
+  import (impossible). They move WITH sim.
 - `levelRunner` stayed inline in slice 8 (its methods close over loop state) — it moves WITH the sim slice.
 - `sound-routing.js` holds only `audio` + `tracksFor`/`sfxFor`; `musicForState`/`refreshMusic`/
   `tryUnlockAudio` stayed inline (they read live loop state — `gameStarted`/`paused`/`levelRunner`).
 
 **Remaining (the coupled back half), recommended order:**
-1. **`hud.js` + `dom.js` together** — the sim loop calls the HUD fns, so extract HUD (and the `el`
-   inventory it needs) first so sim can import them. (`updateHud`/`updateMarkers`/`updateMiniMap`/
-   `updatePerf`/`setPaused`/`togglePause`.)
-2. **`sim.js`** — `update(dt)` (~315 lines) + `forwardVec`/`warpPlayerToCenter`/`updateOobWarning`/
-   `updateBank` **and `levelRunner`**. Promote `gameStarted`/`paused`/`kills`/`earned`/`activeMission` to
-   `G` here. Imported only by `main`. This unblocks `reset()`, which the UI flows call.
+1. ✅ **DONE — `hud.js` + `dom.js`** (slice 9). Only the four pure draws moved; pause/OOB/music stayed
+   inline (see deviations above).
+2. **`sim.js`** — `update(dt)` (~315 lines) + `forwardVec`/`warpPlayerToCenter`/`updateBank` **and
+   `levelRunner`**, **plus the pause cluster** (`setPaused`/`togglePause`/`autoPauseOnBlur`/`updateOobWarning`)
+   and the music routing (`musicForState`/`refreshMusic`/`tryUnlockAudio`) that couple to it. Promote
+   `gameStarted`/`paused`/`activeMission` to `G` here (`kills`/`earned`/`balance` already on `G`). Move the
+   remaining overlay nodes (`overlayTitle`/`overlaySub`/`restart`/`back-hangar`) into `dom.js`'s `el` as the
+   death/win flow moves. Imported only by `main`. This unblocks `reset()`, which the UI flows call.
 3. **UI leaves** (each fairly self-contained once `reset`/`buildPlayer` are importable): `net.js`,
    `settings.js`, `account.js`, `welcome.js`, `mainwindow.js`, `shop.js`, `tune.js`.
 4. **`main.js`** — bootstrap/`animate`/`prewarmShaders` + the `window.__game` assembly (still `?debug`-gated,
