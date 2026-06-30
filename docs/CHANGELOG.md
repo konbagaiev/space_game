@@ -5,6 +5,12 @@
 
 ## 2026-06-30
 
+- **CI fix — sync server tests with the new level balance.** The balance bump above changed enemy
+  `reward` values and the L1 kill threshold, but `server/src/server.test.js` still asserted the old
+  numbers, so CI failed at the test stage and the `level balance` + `IDEAS.md` commits never deployed.
+  Updated the catalog/level assertions (fighter reward 25, rocketeer 50, medium 125, first boss 250,
+  advanced medium pirate 200, L1 kills 6) — suite is green again and the balance can ship.
+
 - **Docs — added `docs/IDEAS.md`, a directional idea parking lot.** A loose, no-commitment notebook for
   capturing where the game could go (PvP / co-op PvE / story grind; arcade vs. sim; session shapes) before
   any of it earns a roadmap slot or a plan. Linked from `ROADMAP.md`'s doc-map header.

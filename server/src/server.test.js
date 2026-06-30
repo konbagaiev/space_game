@@ -336,10 +336,10 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.deepEqual(boss.components, { hull: 4, engine: 7, thruster: 11 }); // its own hull + engine + thrusters
   assert.equal(boss.stats.mounts.length, 4); // two guns + two rockets
   // score rewards per enemy type
-  assert.equal(fighter.stats.reward, 20);
-  assert.equal(rocketeer.stats.reward, 40);
-  assert.equal(mini.stats.reward, 100);
-  assert.equal(boss.stats.reward, 200);
+  assert.equal(fighter.stats.reward, 25);
+  assert.equal(rocketeer.stats.reward, 50);
+  assert.equal(mini.stats.reward, 125);
+  assert.equal(boss.stats.reward, 250);
 });
 
 test('catalog: components (hulls + engines + thrusters + repair drone) are seeded', async () => {
@@ -370,7 +370,7 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
 test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector boss) are served', async () => {
   const l1 = await getJson('/api/levels/level-1');
   assert.equal(l1.descriptor.map, 'home-system');
-  assert.equal(l1.descriptor.phases[0].advanceWhen.kills, 7);              // gentle ramp
+  assert.equal(l1.descriptor.phases[0].advanceWhen.kills, 6);              // gentle ramp
   assert.equal(l1.descriptor.phases[0].spawn.pool[0].ship, 'Basic pirate ship'); // fighters only
   assert.equal(l1.descriptor.phases.at(-1).event, 'win');
   assert.ok(!JSON.stringify(l1.descriptor).includes('first pirate boss'), 'level-1 has no boss');
@@ -643,7 +643,7 @@ test('catalog: level-4 enemies — advanced medium pirate (300 HP) + Second Boss
   const amp = ships.find((s) => s.stats.role === 'advanced_medium_pirate');
   assert.ok(amp, 'advanced medium pirate seeded');
   assert.equal(amp.components.hull, 24);
-  assert.equal(amp.stats.reward, 150);
+  assert.equal(amp.stats.reward, 200);
   assert.deepEqual(amp.stats.mounts.map((m) => m.weapon).sort((a, b) => a - b), [4, 4, 9]); // 1 MG + 2 rockets
   const sb = ships.find((s) => s.stats.role === 'boss2');
   assert.ok(sb, 'second boss seeded');
