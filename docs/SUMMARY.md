@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-29 (component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick; the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-06-30 (briefing-showcase strut height now subtracts the gun's 8px margin so the Main Window briefing no longer grows a phantom scrollbar; component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick; the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -324,7 +324,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   stash, etc.)
   - **Briefing item showcase.** When a briefing **grants gear**, a **dedicated work-zone viewer** (`#mw-item`,
     a canvas floated into the **bottom-right corner of the mission text** with the text wrapping around it —
-    the ship preview is the column to the right) shows that item spinning at **full size** (Machine Gun on L2,
+    the ship preview is the column to the right; the bottom-float strut height is `calc(100% − var(--gun-h) − 8px)`,
+    subtracting the gun's 8px vertical margin so the floated stack is exactly 100% tall and the description
+    doesn't grow a phantom scrollbar) shows that item spinning at **full size** (Machine Gun on L2,
     Repair drone on L3) — the
     eye-catching item pulls the player into the text **without** replacing the ship in the right-column preview
     (the ship preview always shows the player's ship). The server attaches a
@@ -536,7 +538,8 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   pulled same-origin into `client/assets/sounds/` — see the asset pipeline.
 - **Music** is **sampled, looping background tracks** (no more generative synth). Routed through the same
   DB map under **`entity: 'scene'`** — `(scene, 'hangar', 'music')` / `(scene, 'combat', 'music')` → track
-  key(s). The client passes the per-scene lists to `audio.setMusicTracks(...)`; `audio.setScene()` (via
+  key(s). **Hangar** has one track (`music_hangar_1`); **combat** rotates two (`music_combat_1` CC0 +
+  `music_combat_2` "Energetic Synthwave", Pixabay Content License). The client passes the per-scene lists to `audio.setMusicTracks(...)`; `audio.setScene()` (via
   `refreshMusic()`, called at every state change) **crossfades** (~0.8 s) to a **random track** of the new
   scene — **combat** during a live fight, **hangar** on menus/overlays/while paused. A scene with one track
   loops it seamlessly; **multiple tracks per scene rotate at random** (no immediate repeat) — add more rows

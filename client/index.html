@@ -128,7 +128,9 @@
      corner — the text then wraps full-width above it and down its left side. (Floats can't anchor to the
      bottom on their own; strut height = container − gun height is the classic CSS bottom-float trick.)
      Both stay display:none until a showcase briefing adds `.show-item` to the description. */
-  #mw-item-strut { display: none; float: right; width: 0; height: calc(100% - var(--gun-h)); }
+  /* strut height also subtracts the gun's 8px of vertical margin (2px top + 6px bottom) so the floated
+     strut+gun stack totals exactly 100% — otherwise it overflows 8px and the description always scrolls. */
+  #mw-item-strut { display: none; float: right; width: 0; height: calc(100% - var(--gun-h) - 8px); }
   #mw-item { display: none; float: right; clear: right; width: 46%; height: var(--gun-h); margin: 2px 0 6px 14px; }
   #mw-mission-desc.show-item #mw-item-strut, #mw-mission-desc.show-item #mw-item { display: block; }
   #mw-go { align-self: center; }

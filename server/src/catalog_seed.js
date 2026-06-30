@@ -152,6 +152,7 @@ export const SOUNDS = [
   // Background music (looping, stereo). Scenes pick a random track via sound_map (entity 'scene').
   { key: 'music_hangar_1', url: 'assets/sounds/music_hangar_1.5c9e57e1.mp3' },
   { key: 'music_combat_1', url: 'assets/sounds/music_combat_1.33e682a2.mp3' },
+  { key: 'music_combat_2', url: 'assets/sounds/music_combat_2.d9aa57d1.mp3' }, // "Energetic Synthwave" (Pixabay)
 ];
 
 // --- sound_map: routing. (entity, class, event) -> sound key. `entity` is 'ship' | 'weapon'; `class` is
@@ -172,6 +173,7 @@ export const SOUND_MAP = [
   // Background music per scene (add more rows with the same (scene,class,'music') for random rotation).
   { entity: 'scene',  class: 'hangar',  event: 'music',   sound: 'music_hangar_1' },
   { entity: 'scene',  class: 'combat',  event: 'music',   sound: 'music_combat_1' },
+  { entity: 'scene',  class: 'combat',  event: 'music',   sound: 'music_combat_2' },
 ];
 
 // fire-group presets (a group can carry a player key and/or an enemy AI rule; ships use what fits)

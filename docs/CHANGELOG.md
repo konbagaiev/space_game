@@ -3,6 +3,28 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-06-30
+
+- **Second combat music track — "Energetic Synthwave" (Pixabay).** Added `music_combat_2`
+  (ed-musicproductions, **Pixabay Content License** — commercial-OK, no attribution required) as a second
+  track in the combat scene's rotation alongside the existing `music_combat_1`. Because the combat scene
+  now has more than one track, the engine plays a **full track end-to-end then chains a fresh random one**
+  (`src.loop` only when a scene has a single track), so battles alternate between the two. The source mp3
+  (256 kbps, +0.7 dBTP clipping) was loudness-normalized to **−15 LUFS / −1 dBTP** to match
+  `music_combat_1` (→ 101 s, ~199 kbps, 2.5 MB). Pipeline: source + license cert → `assets-src/sounds/`,
+  hashed mp3 → `assets-dist/sounds/` + `client/assets/sounds/`, pushed to S3 (`sfx/` + `source/`), wired
+  into `SOUNDS` + a second `(scene, combat, music)` row in `SOUND_MAP` (`server/src/catalog_seed.js`).
+  `CREDITS.md` gained a row + a Pixabay-license note (and its Audio section was corrected — background
+  music is sampled/rotated, not generative).
+
+- **Fix: Main Window no longer shows a phantom scrollbar on the briefing.** The briefing item showcase
+  (the strut+float trick that pins the gun to the bottom-right of the mission text) overflowed
+  `#mw-mission-desc` by 8px: the 0-width strut reserved `100% − var(--gun-h)` while the floated gun added
+  its own `var(--gun-h)` **plus** 8px of vertical margin (`2px` top + `6px` bottom), so the stack totalled
+  `100% + 8px` and the description always scrolled even when the text fit. The strut height now subtracts
+  that 8px (`calc(100% − var(--gun-h) − 8px)`), so the floated stack is exactly 100% tall and the scrollbar
+  is gone. `client/index.html`.
+
 ## 2026-06-29
 
 - **Fix: side mission no longer blanks the campaign briefing.** When the shop is unlocked but the current

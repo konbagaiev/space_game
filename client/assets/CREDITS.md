@@ -1,9 +1,11 @@
 # Asset credits & licenses
 
 Every third-party asset in this folder must be listed here with its source and license. Only use
-licenses that allow **commercial** use: **CC0** (no attribution needed) or **CC-BY** (attribution
-required — keep the author + link below). Avoid `*-NC` (non-commercial) and `*-SA` unless you accept
-share-alike. When you download an asset, save the source URL and license here (a screenshot of the
+licenses that allow **commercial** use: **CC0** (no attribution needed), **CC-BY** (attribution
+required — keep the author + link below), or the **Pixabay Content License** (commercial use OK, no
+attribution required; the only relevant restriction is you may not resell/redistribute the asset on a
+*standalone* basis — embedding it in the game is fine). Avoid `*-NC` (non-commercial) and `*-SA` unless
+you accept share-alike. When you download an asset, save the source URL and license here (a screenshot of the
 asset page is also handy, in case the author later changes the terms).
 
 | Asset (file) | Author | Source URL | License | Date added |
@@ -16,6 +18,7 @@ asset page is also handy, in case the author later changes the terms).
 | sounds/blast.\<hash\>.mp3 (rocket + small ship explosion, from blast.flac) | Freesound (CC0 filter) | _id not retained (renamed blast.flac)_ | CC0 1.0 | 2026-06-24 |
 | sounds/music_hangar_1.\<hash\>.mp3 (hangar background loop) | Freesound (CC0 filter) | _id not retained (renamed menu-background-sound-1.wav)_ | CC0 1.0 | 2026-06-24 |
 | sounds/music_combat_1.\<hash\>.mp3 (combat background loop) | Freesound (CC0 filter) | _id not retained (renamed game-background-dragons-breath.wav)_ | CC0 1.0 | 2026-06-24 |
+| sounds/music_combat_2.\<hash\>.mp3 (combat background track — "Energetic Synthwave") | ed-musicproductions | https://pixabay.com/music/synthwave-energetic-synthwave-412360/ | Pixabay Content License | 2026-06-30 |
 | ships/enemy_1–4 + enemy_1–4_orange (combat + hangar `.glb`, derived from `_source/lowpoly_spaceships.glb`; the `_orange` set is the same models recolored red → #f4741f) — basic enemy, rocketeer, medium, first boss (+ orange variants) | Pedram Ashoori | https://skfb.ly/6pxFX | CC-BY 4.0 | 2026-06-24 |
 | ships/player_combat + player_hangar `.glb` (player ship, textures downscaled) | Raven | https://skfb.ly/otR6F | CC-BY 4.0 | 2026-06-24 |
 | ships/repair_drone_hangar.\<hash\>.glb (Repair drone item icon — menu only) | Ivan Potupin | https://skfb.ly/pGPyp | CC-BY 4.0 | 2026-06-29 |
@@ -75,8 +78,15 @@ asset-credits rule in `CLAUDE.md`).
 
 ## Audio
 
-**Most game audio is procedurally synthesized in code** (native Web Audio API, `client/src/audio.js`) —
-the generative background music and most SFX have no third-party assets. A **sampled SFX layer** (DECISIONS
-§22) adds curated recordings where they help; each sampled sound is a third-party asset and **must** be
-listed in the table above with its source + license before use. Sample bytes are content-hashed and live on
-S3 (`sfx/`), pulled into `client/assets/sounds/` (gitignored) — see `docs/plans/audio-sample-pipeline.md`.
+**Most SFX are procedurally synthesized in code** (native Web Audio API, `client/src/audio.js`) and have
+no third-party assets. On top of that sit two sampled layers, each a third-party asset that **must** be
+listed in the table above with its source + license before use:
+- a **sampled SFX layer** (DECISIONS §22) — curated recordings (gun fire, hits, explosions) where they
+  beat the synth;
+- **sampled background-music tracks** per scene (the older generative synth music was removed) — picked
+  at random and rotated per battle. Combat currently rotates `music_combat_1` (CC0) and `music_combat_2`
+  ("Energetic Synthwave" by ed-musicproductions, **Pixabay Content License** — commercial use OK, no
+  attribution required; embedding it as combat music is allowed, only standalone resale is not).
+
+Sample bytes are content-hashed and live on S3 (`sfx/`), pulled into `client/assets/sounds/` (gitignored)
+— see `docs/plans/audio-sample-pipeline.md`.
