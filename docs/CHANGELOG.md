@@ -14,7 +14,15 @@
   CI/CD. Ends with a retro that flags high iteration counts and asks satisfaction-per-agent, appending
   concrete lessons to each agent's `## Learned guidance`. Spec: `docs/plans/multi-agent-pipeline.md`. Also
   recorded **DECISIONS §30** (keep processes simple until a real problem forces more — why we use timestamp
-  IDs, not a registry).
+  IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
+  discussion/research), offer to run it through `/feature-pipeline` first.
+
+- **Refactor (client structure) — Slice 4: ship factory → `src/ship-factory.js`.** Moved
+  `shipModelCfg`/`modelSpec`/`makeShip`/`applyShipModel` + the shared `gltfLoader` + `SHIP_MODEL_LEN`
+  into `src/ship-factory.js`, imported back in (the inline model viewer reuses the exported loader). The
+  inline `GLTFLoader`/`MeshoptDecoder` imports moved into that module. Repointed `adding-a-ship-model.md`,
+  `ship-model-config.md` and the SUMMARY "Visual model" note at the new file. No behavior change; visual
+  suite unchanged from baseline.
 
 - **Refactor (client structure) — Slice 3: world building → `src/world.js`.** Moved the arena boundary
   (`ARENA`/`OOB_*` consts, `arenaCenter`, `arenaBorder`), the starfield, planet/moons/asteroid builders,

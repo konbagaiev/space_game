@@ -24,7 +24,7 @@ stats: {
 ```
 
 A ship with no special needs can carry just `model: { scale: 1 }` (or omit `model` entirely — the
-client falls back to defaults). The client reads it through `shipModelCfg(s)` in `client/index.html`,
+client falls back to defaults). The client reads it through `shipModelCfg(s)` in `client/src/ship-factory.js`,
 which also falls back to the **old loose keys** (`stats.modelYaw` / `stats.sizeScale`) so a stale
 `player_ships` row or cache can't break — don't author the loose keys for new ships.
 

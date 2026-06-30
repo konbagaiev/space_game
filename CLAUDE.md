@@ -24,6 +24,16 @@ this rule for anything we author or version.
 - `docs/` — `ROADMAP.md` (end-to-end scope & phases), `SUMMARY.md` (current state), `CHANGELOG.md`
   (change log), `DECISIONS.md` (rationale), `plans/*.md` (per-feature build briefs).
 
+## Code changes: offer the `/feature-pipeline` skill first
+
+When the maintainer asks to **do something with the code** — implement a feature, fix a bug, refactor,
+any change that ends in edited code — **offer to run the `/feature-pipeline` skill** before diving in
+yourself. It builds the change end-to-end through the planner → critic → implementer → reviewer agents in
+an isolated git worktree (see `docs/plans/multi-agent-pipeline.md`). Offer it, don't force it: a quick
+"want me to run this through `/feature-pipeline`, or just do it directly?" — the maintainer may prefer a
+direct edit for something tiny. This does **not** apply when the request is only to **discuss, explain,
+research, or investigate** code (no edit expected) — answer those directly.
+
 ## Assets & credits (ALWAYS ask about credits on model changes)
 
 Third-party assets (3D models, sounds) are tracked in **`client/assets/CREDITS.md`** with source +

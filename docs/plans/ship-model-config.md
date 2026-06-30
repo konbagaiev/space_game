@@ -70,7 +70,7 @@ Then update:
 - **`fireMount`** lateral offset (`~:1829` `mount.offset * (ship.sizeScale || 1)`) — unchanged (still reads
   `ship.sizeScale`, which now comes from `mc.scale`).
 
-## Step 3 — wire muzzle/exhaust overrides (`applyShipModel`, `client/index.html ~:1360`)
+## Step 3 — wire muzzle/exhaust overrides (`applyShipModel`, `client/src/ship-factory.js`)
 `applyShipModel(group, spec, color)` already computes `group.userData.noseZ/tailZ` from the local bounds.
 Honor the overrides from the spec:
 ```js
