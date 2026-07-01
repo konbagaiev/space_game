@@ -10,7 +10,7 @@ import { fetchJson } from './net.js';
 import { API_BASE } from './api-base.js';
 import { setPaused, refreshMusic, reset } from './sim.js';
 import { buildPlayerFor } from './ship-build.js';
-import { isTouch } from './engine.js';
+import { Device } from './device.js';
 import { renderAccountBar } from './account.js';
 import { localizeSettings } from './settings.js';
 
@@ -130,7 +130,7 @@ syncFsClass(); // initial state
 // ---------- Take off ----------
 function takeOff() {
   if (!selectedShip) return;
-  if (isTouch) requestFullscreen(); // hide the browser chrome on mobile (landscape especially)
+  if (Device.hasTouch) requestFullscreen(); // hide the browser chrome on mobile (landscape especially)
   if (selectedShip.name !== G.currentShipName) buildPlayerFor(selectedShip);
   welcomeEl.style.display = 'none';
   document.body.classList.remove('menu'); // restore the in-game HUD

@@ -232,6 +232,40 @@
     .shop-types { flex-direction: row; flex-wrap: wrap; }
     #mw-mission-desc { font-size: 14px; }
   }
+  /* ---- Desktop (mouse / large-screen) Main Window polish (device-profiles iteration 1) ----
+     Scoped to the desktop + desktop-lg FORM classes only; phone/tablet + the mobile @media override are
+     untouched. See docs/plans/2026-07-01-1933-device-profiles-desktop-polish.md. */
+
+  /* B1 — larger briefing title + body text on desktop */
+  body.dev-desktop #mw-mission-title, body.dev-desktop-lg #mw-mission-title { font-size: 32px; }
+  body.dev-desktop #mw-mission-desc,  body.dev-desktop-lg #mw-mission-desc  { font-size: 26px; }
+
+  /* B2 — Loadout/Stash/Shop buttons: don't stretch to fill the column; fixed height slightly > Missions row.
+     Cause: the shared .mw-item base has `flex: 1 1 auto`, which grows in the #mw-menu column flex. */
+  body.dev-desktop .mw-shop-item, body.dev-desktop-lg .mw-shop-item { flex: 0 0 auto; height: 56px; }
+
+  /* B3 — granted-item icon centered directly BELOW the mission text (drop the bottom-right float + strut).
+     #mw-mission-desc becomes a flex column; the text keeps order 1, the item canvas takes order 2 and
+     centers; the strut is hidden. (Take-off, a sibling AFTER #mw-mission-desc, then sits under the item.)
+     B5 also folds `flex: 0 1 auto` into this rule so Take-off follows the content instead of pinning down. */
+  body.dev-desktop #mw-mission-desc, body.dev-desktop-lg #mw-mission-desc {
+    display: flex; flex-direction: column; flex: 0 1 auto;
+  }
+  body.dev-desktop #mw-mission-text, body.dev-desktop-lg #mw-mission-text { order: 1; }
+  body.dev-desktop #mw-mission-desc.show-item #mw-item,
+  body.dev-desktop-lg #mw-mission-desc.show-item #mw-item {
+    order: 2; float: none; clear: none; align-self: center;
+    width: 55%; height: var(--gun-h); margin: 12px 0 6px;
+  }
+  body.dev-desktop #mw-mission-desc.show-item #mw-item-strut,
+  body.dev-desktop-lg #mw-mission-desc.show-item #mw-item-strut { display: none; }
+
+  /* B4 — ship characteristics (#ship-stats: P/Accel/Turn/Weight) fonts ×2 on desktop. Verified under
+     Playwright at 1440×900 that the four k/v pairs still fit on ONE line (no overflow), so the borderless
+     2×2 grid fallback stays unused. */
+  body.dev-desktop #ship-stats .stat .k, body.dev-desktop-lg #ship-stats .stat .k { font-size: 16px; }
+  body.dev-desktop #ship-stats .stat .v, body.dev-desktop-lg #ship-stats .stat .v { font-size: 20px; }
+  body.dev-desktop #ship-stats .stat .d, body.dev-desktop-lg #ship-stats .stat .d { font-size: 12px; }
   /* one item card (loadout slot / stash item / shop item): text-in-rectangle, no art */
   .bay-item {
     background: rgba(26,36,60,.7); border: 1px solid rgba(120,150,210,.22);

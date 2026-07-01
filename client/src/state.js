@@ -8,16 +8,14 @@
 // (Reassigned scalars can't live here as plain `const`/`let` — they go in the mutable
 // state bag G below, introduced as the domains that own them are split out.)
 import { loadTier, resolveTier } from './graphics.js';
-
-// Touch detection for the first-run quality default (the real `isTouch` lives in engine.js).
-const _touchEarly = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+import { Device } from './device.js';
 
 // Mutable state bag: scalars that get reassigned AND read across module boundaries live here
 // (an exported `let` can't be reassigned from an importing module — a property on a shared
 // `const` object can). Write `G.x = …`; read `G.x`. Scalars are promoted onto G as the domains
 // that own them are split out — start with what the engine needs at construction.
 export const G = {
-  gfx: resolveTier(loadTier(window.localStorage, _touchEarly)), // current graphics quality knobs (tier switch reloads the page)
+  gfx: resolveTier(loadTier(window.localStorage, Device.hasTouch)), // current graphics quality knobs (tier switch reloads the page)
   rotated: false,                                               // portrait-phone 90° rotation currently active
   player: null,                                                 // the active player ship (built by buildPlayer in bootstrap/takeoff)
   // --- world (built/reassigned by buildMap in world.js; read by the loop + ?tune panel + reset) ---

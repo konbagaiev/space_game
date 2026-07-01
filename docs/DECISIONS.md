@@ -1113,6 +1113,36 @@ via the bearer token.
 
 ---
 
+## 34. Client device support — two independent axes (`input` / `form`), phased over two iterations
+
+**Decision.** Replace the single `isTouch` boolean with a two-axis device model in one module
+(`client/src/device.js`): **`input` = `touch | mouse`** (capability, ~constant per session — drives
+interaction-bound behavior: touch controls, auto-pause on blur, fullscreen-on-tap, hover-vs-tap reveal)
+and **`form` = `phone | tablet | desktop | desktop-lg`** (derived from the viewport's longest edge,
+recomputed on resize — drives layout/CSS + forced rotation). Each axis has a single source of truth and
+projects onto mutually-exclusive body classes (`input-touch|input-mouse`, `dev-phone|dev-tablet|
+dev-desktop|dev-desktop-lg`); `body.touch` is kept as a compatibility alias so existing touch CSS isn't
+rewritten. Breakpoints (longest edge): `phone < 900 ≤ tablet < 1280 ≤ desktop < 1920 ≤ desktop-lg`.
+
+**Why two axes.** `isTouch` conflated capability with size. New profiles (tablet, foldable, big monitor)
+are almost entirely a *form* concern, not an *input* one. Separating them means a resize recomputes only
+`form` (it never re-inits touch controls), and adding a profile = one `classify()` rule + its CSS.
+
+**Why two iterations.** Iteration 1 (this change) builds the architecture + a set of desktop-browser CSS
+fixes to the Main Window ONLY. It deliberately does **NOT** implement full resize-driven adaptation of
+every screen — that is iteration 2. The structure is built so iteration 2 drops in cleanly: `form`
+already recomputes on resize/orientationchange (via `applyDevice()` inside `applyOrientation`), and
+layout keys off `body.dev-*`, never raw `isTouch`. Guard rail: right structure now, full adaptation
+deferred — not over-built, not under-built.
+
+**No `isTouch` re-export from `engine.js`.** The plan allowed one "for back-compat", but every consumer
+(`state.js`, `sim.js`, `mainwindow.js`, `welcome.js`, `main.js`, `engine.js` itself) migrated to
+`Device.hasTouch`, so a re-export would be dead code (§30). `canHover` (`matchMedia('(hover: hover)')`) is
+exposed on `Device` for iteration 2 but **not** wired to anything yet — the shop `(i)`/hover reveal stays
+on the `body.touch` alias for now.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·
