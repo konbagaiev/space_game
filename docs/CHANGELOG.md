@@ -16,6 +16,12 @@
   same-origin `vega.tenony.com` deploy is unchanged (relative URLs, cookie auth). Guest play works
   cross-origin via the localStorage `playerId`. No `db.js`/`db_postgres.js` change (parity holds by
   construction); manual script, not wired into CI; `dist/` stays gitignored.
+- **`/build-itch` skill.** Added a `build-itch` skill (`.claude/skills/build-itch/SKILL.md`) that packages
+  the uploadable web build end-to-end: `assets:pull` (S3 models/SFX) → `npm run build:itch` → verify the
+  archive (index.html at root, prod `API_BASE` baked, itch limits) → probe the live `/api` CORS preflight
+  to report whether the prod deploy is ready → print the itch.io upload checklist. Clarifies that building
+  the zip and deploying the server are independent (build/upload anytime; wait for a green deploy before
+  publishing/play-testing).
 
 - **Password recovery `[2026-07-01-1717-password-reset]`.** Added a self-service "Forgot password?" flow
   modeled on the email-verification flow. From the login form the player requests a reset by email;
