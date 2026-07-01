@@ -860,7 +860,9 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
   `autoPauseOnBlur` + the `reset` restart), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
 - **UI leaves:** `shop.js` (the hangar shop + stash + live ship-stats bar; a self-contained leaf the Main
-  Window calls into via `openBay`/`showBayView`/`updateTakeoffGate`/`renderShipStatsBar`/`deriveShipStats`).
+  Window calls into via `openBay`/`showBayView`/`updateTakeoffGate`/`renderShipStatsBar`/`deriveShipStats`),
+  `settings.js` (the audio-settings gear modal + graphics-quality picker + slide-to-confirm progress reset;
+  a leaf whose only outward export is `localizeSettings`).
 - **Composition root:** `main.js` — the former inline `<script>` body: `bootstrap()` (fetch the DB
   catalog/level/active-ship, build the world + player, start), `animate`/`prewarmShaders`, the
   `window.__game` test hook (`?debug`), and the in-page UI not yet peeled into its own module — the **Main

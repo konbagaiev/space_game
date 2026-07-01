@@ -17,6 +17,14 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 18: audio-settings modal → `src/settings.js`.** Peeled the second
+  self-contained leaf (~137 lines) out of `main.js`: the gear modal (master/music/sfx volumes + on/off
+  toggles), the graphics-quality tier picker (persists + reloads), and the slide-to-confirm "reset my
+  progress" control. It calls only sim (pause/music) + the audio engine + persistence, never back into the
+  UI; the only outward tie is `localizeSettings` (imported by the language switch). No behavior change.
+  Unit 46/46; visual at the flaky baseline (zero page errors → the modal's ~20 DOM handlers all wired).
+  Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 17: hangar shop → `src/shop.js`.** First of the optional
   `main.js` UI split. Peeled the self-contained shop/stash leaf (~285 lines) out of `main.js`:
   loadout/stash/two-pane shop rendering, the delegated bay click handler, buy/sell/equip actions
