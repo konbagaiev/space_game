@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { G } from './state.js';
+import { Device, applyDevice } from './device.js';
 
 // ---------- Base scene ----------
 export const scene = new THREE.Scene();
@@ -22,7 +23,6 @@ scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so di
 // camera and all screen-space math use (swapped when rotated); `toGame(x,y)` maps a pointer's viewport
 // coords into game space (inverse of the CSS transform). applyOrientation() (defined below the camera)
 // flips this on resize/orientation change. The rotation flag lives on G (read by the reset-slider code too).
-export const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
 export const gameW = () => G.rotated ? window.innerHeight : window.innerWidth;
 export const gameH = () => G.rotated ? window.innerWidth : window.innerHeight;
 // Inverse of CSS `transform: translateX(100vw) rotate(90deg); transform-origin: top left` → game coords.
@@ -53,7 +53,8 @@ export const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // fixed camera offset 
 // Toggle the portrait→landscape rotation and size the renderer/camera to the logical game dimensions.
 // Called at boot and on every resize/orientationchange (the only place we size the renderer).
 export function applyOrientation() {
-  G.rotated = isTouch && window.innerHeight > window.innerWidth; // touch device held in portrait
+  applyDevice();                                                  // recompute form axis + body classes
+  G.rotated = Device.hasTouch && window.innerHeight > window.innerWidth; // touch device held in portrait
   document.body.classList.toggle('rot', G.rotated);
   const w = gameW(), h = gameH();
   camera.aspect = w / h;

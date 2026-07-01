@@ -5,7 +5,8 @@
 // only by the composition root (the inline script / main). It never imports the loop's callers.
 import * as THREE from 'three';
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME } from './state.js';
-import { scene, camera, camOffset, isTouch } from './engine.js';
+import { scene, camera, camOffset } from './engine.js';
+import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
 import { repairTick } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './steering.js';
@@ -508,7 +509,7 @@ export function togglePause() {
 }
 // Mobile: auto-pause when the browser/tab loses focus, so a backgrounded fight doesn't keep running.
 export function autoPauseOnBlur() {
-  if (isTouch && G.gameStarted && G.player && G.player.alive && !levelRunner.won && !G.paused) setPaused(true);
+  if (Device.hasTouch && G.gameStarted && G.player && G.player.alive && !levelRunner.won && !G.paused) setPaused(true);
 }
 
 // ---------- Restart ----------

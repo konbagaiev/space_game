@@ -3,7 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-01 (itch.io HTML5 export — `npm run build:itch` assembles a static ZIP that runs on itch.io and talks to the live backend; client `/api` calls go through a baked `API_BASE` [`client/src/api-base.js`: empty same-origin, prod origin on the itch build]; server gained `/api` CORS [reflect Origin, no credentials] + dual-path bearer-token auth [login/register/reset return the token in the body, `Authorization: Bearer` accepted alongside the cookie]; self-service password reset — forgot-password → emailed `/?reset=TOKEN` link → new-password modal; enumeration-safe endpoint [always 200], 1 h token TTL, all sessions invalidated + email auto-verified on reset, auto-login after; migration 017 + Postgres parity; EN+RU strings; hangar no longer crashes when a required slot [hull/engine/thruster] is unequipped — `buildPlayer`/`deriveDrive` are null-safe and the Take-off gate blocks launch; briefing-showcase strut height now subtracts the gun's 8px margin so the Main Window briefing no longer grows a phantom scrollbar; component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick; the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-07-01 (device-support architecture [iteration 1] + desktop Main Window polish — a two-axis
+device model in `client/src/device.js` replaces the old `isTouch` boolean: an **input** axis [`touch`/`mouse`,
+~constant per session] and a **form** axis [`phone`/`tablet`/`desktop`/`desktop-lg`, recomputed on resize from
+the viewport's longest edge], projected onto `input-touch|input-mouse` + `dev-phone|dev-tablet|dev-desktop|
+dev-desktop-lg` body classes [`body.touch` kept as a compat alias]; the desktop [`dev-desktop(-lg)`] Main Window
+now reads bigger/cleaner [32px title, 26px text, ×2 ship-stats on one line, granted item centered below the text,
+fixed-height Loadout/Stash/Shop, Take-off following the content]; mobile/touch unchanged; itch.io HTML5 export — `npm run build:itch` assembles a static ZIP that runs on itch.io and talks to the live backend; client `/api` calls go through a baked `API_BASE` [`client/src/api-base.js`: empty same-origin, prod origin on the itch build]; server gained `/api` CORS [reflect Origin, no credentials] + dual-path bearer-token auth [login/register/reset return the token in the body, `Authorization: Bearer` accepted alongside the cookie]; self-service password reset — forgot-password → emailed `/?reset=TOKEN` link → new-password modal; enumeration-safe endpoint [always 200], 1 h token TTL, all sessions invalidated + email auto-verified on reset, auto-login after; migration 017 + Postgres parity; EN+RU strings; hangar no longer crashes when a required slot [hull/engine/thruster] is unequipped — `buildPlayer`/`deriveDrive` are null-safe and the Take-off gate blocks launch; briefing-showcase strut height now subtracts the gun's 8px margin so the Main Window briefing no longer grows a phantom scrollbar; component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick; the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -32,7 +38,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   past the physical screen and `screen.orientation.lock` is unsupported on iOS Safari, so a CSS rotation is
   the only cross-browser way to render horizontally on a portrait screen. `applyOrientation()` (called at
   boot + on every `resize`/`orientationchange`) toggles the class and is the **single place** the
-  renderer/camera are sized — to `gameW()/gameH()` (innerHeight/innerWidth swapped when rotated). Because a
+  renderer/camera are sized — to `gameW()/gameH()` (innerHeight/innerWidth swapped when rotated). It now also
+  calls `applyDevice()` (from `client/src/device.js`) **first**, so the reactive **form** axis
+  (`dev-phone|dev-tablet|dev-desktop|dev-desktop-lg`) recomputes on every resize/orientationchange (this
+  iteration only re-sets the body classes on a form change; full resize-driven layout adaptation of every
+  screen is a deferred iteration 2 — see DECISIONS §34). Because a
   `transform` makes `position:fixed` children relative to `<body>`, the whole HUD/menus/buttons rotate with
   it for free. `toGame(clientX,clientY)` maps pointer/touch coords into the rotated game space (used by the
   steering stick and the reset-progress slider); pinch distance is rotation-invariant so it needs no mapping.
@@ -49,9 +59,13 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   by `applyTranslations` on language change); `requestFullscreen` no-ops if already fullscreen or unsupported.
   **iPhone Safari has no Fullscreen API** (it exists only on iPad/Android), so there the `⛶` button can't
   work — the only true full screen is the **standalone web app from "Add to Home Screen"** (we ship
-  `apple-mobile-web-app-capable`). Two detection consts set body classes: `FS_API` (any
-  `requestFullscreen`/`webkitRequestFullscreen`?) and `STANDALONE` (`navigator.standalone` /
-  `display-mode: standalone`). On a touch device with no FS API → `body.no-fs-api` hides the `⛶` button and
+  `apple-mobile-web-app-capable`). **Device detection lives in `client/src/device.js`** (the single source of
+  truth): the **touch** capability (`Device.hasTouch`, via `pointer: coarse` / `ontouchstart` / `maxTouchPoints`)
+  plus `FS_API` (any `requestFullscreen`/`webkitRequestFullscreen`?) and `STANDALONE` (`navigator.standalone` /
+  `display-mode: standalone`). Its `applyDevice()` **owns the body classes** — it projects the two axes onto
+  `input-touch`/`input-mouse` + `dev-phone|dev-tablet|dev-desktop|dev-desktop-lg`, keeps **`body.touch`** as a
+  compatibility alias (set with `input-touch`, so the existing touch CSS/rotation/fullscreen rules are unchanged),
+  and sets the touch-only `standalone` / `no-fs-api` gates. On a touch device with no FS API → `body.no-fs-api` hides the `⛶` button and
   shows a non-interactive **A2HS hint pill** instead (`#a2hs-hint`, bottom-right, gated to `body.touch.menu.no-fs-api`,
   text key `ui.a2hs.hint`); once already launched standalone → `body.standalone` hides both (no chrome to hide).
 
@@ -280,6 +294,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   work-zone view; `buildMissionList()` + `renderMissionView(m)` drive the mission list/description;
   `launchCampaign()` (was `launchFromHangar`) and `launchMission(m)` launch + stop the preview; `openBay()`
   (was `openHangarShop`) gates + loads the bay.
+  - **Desktop (PC) form polish** (`docs/plans/2026-07-01-1933-device-profiles-desktop-polish.md`,
+    device-profiles iteration 1) — additive CSS scoped to `body.dev-desktop` / `body.dev-desktop-lg` only
+    (phone/tablet + the `@media (max-width:760px)` mobile override are untouched): the briefing **title is 32px**
+    and the **body text 26px**; the **Loadout/Stash/Shop** buttons are **fixed-height** (56px, `flex: 0 0 auto`
+    — no longer stretched to fill the menu column); the **granted-item 3D icon centers directly below the mission
+    text** (the bottom-right float + strut are dropped — `#mw-mission-desc` becomes a flex column, the item takes
+    `order: 2`, `align-self: center`, 55% width) so **Take-off then sits under the item**; the **ship-stats strip
+    uses ×2 fonts** (k 16 / v 20 / d 12px) and **fits on one line** (measured at 1440×900, scrollWidth == clientWidth
+    → the borderless 2×2 grid fallback stays unused); and **Take-off follows the content** (`#mw-mission-desc`
+    `flex: 0 1 auto`, still scrolling when the text is genuinely long). Mobile/touch layout is unchanged.
 - **Model preview** (`#mw-ship`, right ~25%) — a **small self-contained Three.js view** (own
   `WebGLRenderer` + scene + camera + a directional light + the same RoomEnvironment PMREM reflections as the
   combat scene) that **slowly auto-rotates** a glb. The viewer machinery is factored into reusable helpers

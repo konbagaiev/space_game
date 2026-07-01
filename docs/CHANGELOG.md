@@ -5,6 +5,28 @@
 
 ## 2026-07-01
 
+- **Device-support architecture (iteration 1) + desktop Main Window polish
+  `[2026-07-01-1933-device-profiles-desktop-polish]`.** Replaced the single `isTouch` boolean with a
+  two-axis device model in one new module `client/src/device.js`: an **input** axis (`touch`/`mouse`,
+  ~constant per session — drives touch controls, auto-pause on blur, fullscreen-on-tap) and a **form** axis
+  (`phone`/`tablet`/`desktop`/`desktop-lg`, recomputed on resize from the viewport's longest edge — drives
+  layout/CSS + forced rotation). Each axis has a single source of truth and projects onto mutually-exclusive
+  body classes (`input-touch`/`input-mouse`, `dev-phone|dev-tablet|dev-desktop|dev-desktop-lg`); **`body.touch`**
+  is kept as a compatibility alias so existing touch CSS/rotation/fullscreen rules aren't rewritten. `FS_API` /
+  `STANDALONE` moved from `main.js` onto `Device`, and `applyDevice()` (called at load + first thing inside
+  `engine.applyOrientation()` on resize) owns all those body classes; every `isTouch` consumer migrated to
+  `Device.hasTouch`. Breakpoints (longest edge): `phone < 900 ≤ tablet < 1280 ≤ desktop < 1920 ≤ desktop-lg`.
+  **Desktop Main Window polish** (additive CSS scoped to `body.dev-desktop`/`.dev-desktop-lg` only — mobile/touch
+  and the `@media (max-width:760px)` override untouched): briefing title 32px / body text 26px; Loadout/Stash/Shop
+  fixed-height (56px, no longer stretched); the granted-item 3D icon centers **below** the mission text (float +
+  strut dropped) with Take-off under the item; ship-stats fonts ×2 — **verified they fit on one line** at
+  1440×900 (scrollWidth == clientWidth), so the 2×2 borderless-grid fallback stays unused; Take-off follows the
+  content instead of pinning to the bottom. **User-visible effect:** the PC/desktop between-battles screen reads
+  cleanly (sized for a monitor, item + Take-off flowing under the text); mobile/touch is unchanged.
+  **Iteration split:** this builds the architecture + the listed desktop fixes ONLY — full resize-driven
+  adaptation of every screen is deferred to iteration 2 (the `form` axis already recomputes on resize; layout
+  keys off `body.dev-*`, never raw `isTouch`). New unit test `client/src/device.test.js` (classifyForm
+  boundaries); no server/DB changes. See DECISIONS §34.
 - **itch.io HTML5 export ("Online" build) `[2026-07-01-1824-itch-html5-export]`.** New
   `npm run build:itch` (`scripts/build-itch.mjs`) assembles a static ZIP (index.html at root) that runs on
   itch.io and talks to the live backend at `https://vega.tenony.com`. Client API calls now go through a

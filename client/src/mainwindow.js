@@ -15,7 +15,7 @@ import { t } from './i18n.js';
 import { fetchJson } from './net.js';
 import { reset, levelRunner, refreshMusic } from './sim.js';
 import { shipModelCfg, gltfLoader, SHIP_MODEL_LEN } from './ship-factory.js';
-import { isTouch } from './engine.js';
+import { Device } from './device.js';
 import { openBay, showBayView, updateTakeoffGate, renderShipStatsBar, deriveShipStats, resetShipStatsDelta } from './shop.js';
 import { renderAccountBar, openAccount, shouldPromptAccount } from './account.js';
 import { requestFullscreen } from './welcome.js';
@@ -54,7 +54,7 @@ export function showMain(briefing) {
 function launchCampaign() {
   G.pendingBriefing = null;
   G.activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
-  if (isTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
+  if (Device.hasTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
   mainEl.classList.remove('on');
   stopShipPreview();
   stopViewer(mwItem);                        // stop the work-zone item showcase too
@@ -168,7 +168,7 @@ export async function refreshMissions() {
 export function launchMission(m) {
   G.activeMission = m.descriptor;
   G.pendingBriefing = null;
-  if (isTouch) requestFullscreen();
+  if (Device.hasTouch) requestFullscreen();
   mainEl.classList.remove('on');
   stopShipPreview();
   stopViewer(mwItem);                  // stop the work-zone item showcase too

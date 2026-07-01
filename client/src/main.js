@@ -7,7 +7,8 @@ import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './i18n.js'; // language load/resolve for bootstrap
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
-import { scene, skyScene, camera, renderer, camOffset, isTouch, toGame, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
+import { scene, skyScene, camera, renderer, camOffset, toGame, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
+import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
@@ -49,17 +50,14 @@ addEventListener('click', (e) => { if (e.target.closest('button')) audio.sfx.uiC
 
 // ---------- Engine moved to src/engine.js ----------
 // scene, skyScene, renderer, camera, lights (combatAmbient/sun), the orientation block
-// (isTouch/gameW/gameH/toGame/applyOrientation, rotation flag on G.rotated) and the camera-zoom
+// (gameW/gameH/toGame/applyOrientation, rotation flag on G.rotated) and the camera-zoom
 // block (setZoom/zoomBy/tickZoom/camOffset) are imported from engine.js at the top.
 
-// Fullscreen capability detection stays here (used by the floating ⛶ button + body classes below).
-// iPhone Safari has no Fullscreen API (it exists only on iPad/Android), so the floating ⛶ button is a
-// no-op there — the only true full screen on iPhone is the standalone web app from "Add to Home Screen"
-// (we ship apple-mobile-web-app-capable). Detect both: no FS API → swap ⛶ for an A2HS hint; already
-// launched standalone → no chrome to hide, so show neither. (See requestFullscreen + body.no-fs-api/.standalone.)
-const FS_API = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
-const STANDALONE = window.navigator.standalone === true ||
-  !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+// ---------- Device capabilities moved to src/device.js ----------
+// The touch/mouse (input) + phone/tablet/desktop/desktop-lg (form) axes plus the fullscreen/standalone
+// flags (FS_API/STANDALONE) live on `Device` (imported at top). device.js owns the body classes
+// (input-touch/input-mouse, dev-*, the body.touch alias, standalone/no-fs-api) via applyDevice(), which
+// engine.applyOrientation() re-runs on resize. The floating ⛶ button + A2HS hint key off those classes.
 
 // ---------- World moved to src/world.js ----------
 // Arena (ARENA/OOB consts, arenaCenter, arenaBorder), the starry sky, planet/moons/asteroids, the
@@ -96,10 +94,8 @@ addEventListener('keyup', e => { keys[e.code] = false; });
 // "steer by touch direction" model: stick angle = desired nose direction,
 // the ship turns toward it; the magnitude of the deflection = thrust.
 // touchAim moved to src/state.js
-if (isTouch) {
-  document.body.classList.add('touch'); // gates touch-only UI (e.g. the Full screen button)
-  if (STANDALONE) document.body.classList.add('standalone');   // launched from Home Screen — no chrome to hide
-  else if (!FS_API) document.body.classList.add('no-fs-api');  // iPhone Safari: ⛶ can't work → show the A2HS hint instead
+if (Device.hasTouch) {
+  // body.touch / .standalone / .no-fs-api are set by device.js (applyDevice); here we only wire the DOM.
   document.getElementById('touch').classList.add('on');
   document.getElementById('help').style.display = 'none'; // keyboard hints not needed
 
