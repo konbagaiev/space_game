@@ -105,6 +105,7 @@
   "ui.account.close": { "source": "Close", "context": "Button that dismisses the account dialog. Short." },
   "ui.account.signed_in_as": { "source": "Signed in as {who}", "context": "Account status line on menu screens. {who} is the username or email." },
   "ui.account.anon": { "source": "Playing as a guest", "context": "Account status line shown when the player has no account yet." },
+  "ui.account.guest_named": { "source": "Playing as {who}", "context": "Account status line shown in the menu account bar when a guest has set a callsign at the level-1 prompt but has no account. {who} is the guest's chosen callsign. Mirrors ui.account.signed_in_as." },
   "ui.account.sign_in": { "source": "Log in / Sign up", "context": "Button on the account status bar that opens the login/register dialog. Short." },
   "ui.account.log_out": { "source": "Log out", "context": "Button that ends the session. Short." },
   "ui.account.verify_nudge": { "source": "Verify your email to sync across devices.", "context": "Reminder shown until the account's email is verified." },

@@ -105,6 +105,7 @@
   "ui.account.close": "Закрыть",
   "ui.account.signed_in_as": "Вы вошли как {who}",
   "ui.account.anon": "Игра в режиме гостя",
+  "ui.account.guest_named": "Играю как {who}",
   "ui.account.sign_in": "Вход / регистрация",
   "ui.account.log_out": "Выйти",
   "ui.account.verify_nudge": "Подтвердите почту, чтобы синхронизировать прогресс между устройствами.",

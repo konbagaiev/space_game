@@ -5,6 +5,10 @@
 
 ## 2026-07-01
 
+- **Guest callsign now shown `[2026-07-01-2006-guest-callsign-display]`.** A guest who names themselves
+  at the level-1 prompt sees "Playing as <name>" in the account bar (was always "Playing as a guest"); the
+  callsign persists across reloads via `localStorage['guestName']` and pre-fills the register form so a
+  later sign-up keeps it. Client-only — no server/DB change. New i18n key `ui.account.guest_named`.
 - **itch.io HTML5 export ("Online" build) `[2026-07-01-1824-itch-html5-export]`.** New
   `npm run build:itch` (`scripts/build-itch.mjs`) assembles a static ZIP (index.html at root) that runs on
   itch.io and talks to the live backend at `https://vega.tenony.com`. Client API calls now go through a

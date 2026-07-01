@@ -41,6 +41,16 @@ const AUTH_TOKEN_KEY = 'authToken'; // bearer session token for cross-origin (it
 const getAuthToken = () => { try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; } };
 const setAuthToken = (tok) => { try { tok ? localStorage.setItem(AUTH_TOKEN_KEY, tok) : localStorage.removeItem(AUTH_TOKEN_KEY); } catch {} };
 
+// Guest callsign: a guest who names themselves at the level-1 prompt has no account row we track
+// client-side (accountPlayer stays null), so mirror the name here + in localStorage. Lets the account
+// bar show "Playing as <name>" and survives a reload (the guest identity itself lives in localStorage).
+const GUEST_NAME_KEY = 'guestName';
+let guestName = (() => { try { return localStorage.getItem(GUEST_NAME_KEY) || null; } catch { return null; } })();
+const setGuestName = (name) => {
+  guestName = name || null;
+  try { name ? localStorage.setItem(GUEST_NAME_KEY, name) : localStorage.removeItem(GUEST_NAME_KEY); } catch {}
+};
+
 // Auth requests: prefix API_BASE (empty same-origin, prod origin on the itch build). Send the bearer
 // token from localStorage when we have one (the cross-origin itch path — third-party cookies are
 // unreliable) AND keep credentials:'include' so the same-origin cookie still rides along.
@@ -68,7 +78,7 @@ export function renderAccountBar() {
     }
     add('button', null, t('ui.account.log_out')).addEventListener('click', logout);
   } else {
-    add('div', null, t('ui.account.anon'));
+    add('div', null, guestName ? t('ui.account.guest_named', { who: guestName }) : t('ui.account.anon'));
     add('button', null, t('ui.account.sign_in')).addEventListener('click', () => openAccount('login'));
   }
 }
@@ -122,6 +132,7 @@ function setAccountMode(mode) {
 export function openAccount(mode, opts = {}) {
   afterAccount = opts.after || null;
   if (opts.username != null) acc.username.value = opts.username;
+  else if (!acc.username.value && guestName) acc.username.value = guestName; // keep the guest callsign on a later register
   if (mode !== 'register') { acc.email.value = ''; acc.password.value = ''; }
   setAccountMode(mode);
   accountEl.style.display = 'flex';
@@ -147,7 +158,12 @@ async function saveUsername(username) {
   if (!G.playerId) return;
   try {
     const r = await authFetch(`/api/players/${G.playerId}/username`, { method: 'POST', body: JSON.stringify({ username }) });
-    if (r.ok && accountPlayer) { accountPlayer.username = (await r.json()).username; renderAccountBar(); }
+    if (r.ok) {
+      const saved = (await r.json()).username; // server-normalized (cleanUsername) name
+      if (accountPlayer) accountPlayer.username = saved;
+      else setGuestName(saved);                // guest: remember the callsign locally + persist it
+      renderAccountBar();
+    }
   } catch {}
 }
 
