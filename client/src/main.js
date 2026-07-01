@@ -14,6 +14,7 @@ import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; //
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf)
 import { fetchJson, track, currentLevelLabel } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners)
+import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem } from './mainwindow.js'; // between-battles Main Window + model viewers
@@ -296,8 +297,8 @@ const devPerf = (() => {
     const body = JSON.stringify({ playerId: G.playerId, sessionId, samples: outbox });
     outbox = [];
     try {
-      if (beacon && navigator.sendBeacon) navigator.sendBeacon('/api/perf', new Blob([body], { type: 'application/json' }));
-      else fetch('/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+      if (beacon && navigator.sendBeacon) navigator.sendBeacon(API_BASE + '/api/perf', new Blob([body], { type: 'application/json' }));
+      else fetch(API_BASE + '/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
     } catch {}
   }
   function finalizeBucket(now) {

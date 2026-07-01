@@ -73,8 +73,12 @@ export function clearSessionCookie(res) {
   res.append('Set-Cookie', attrs.join('; '));
 }
 
-// Read the raw session token from a request's Cookie header (or null).
+// Read the raw session token from a request: an Authorization: Bearer header (the cross-origin itch
+// path) OR the session cookie (the same-origin site). Header first so an explicit bearer wins.
 export function sessionTokenFromReq(req) {
+  const auth = req.headers['authorization'] || '';
+  const m = /^Bearer\s+(.+)$/i.exec(auth);
+  if (m) return m[1].trim();
   return parseCookies(req.headers.cookie)[COOKIE_NAME] || null;
 }
 

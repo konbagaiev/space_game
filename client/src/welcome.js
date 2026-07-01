@@ -7,6 +7,7 @@ import { G, CATALOG } from './state.js';
 import { cssColor } from './format.js';
 import { t, loadLanguage, getLanguage, SUPPORTED } from './i18n.js';
 import { fetchJson } from './net.js';
+import { API_BASE } from './api-base.js';
 import { setPaused, refreshMusic, reset } from './sim.js';
 import { buildPlayerFor } from './ship-build.js';
 import { isTouch } from './engine.js';
@@ -101,7 +102,7 @@ async function setLanguage(lang) {
   localizeSettings(); // re-localize the settings gear + audio toggles
   buildLangSwitch();
   if (lastPlayerShips.length) renderShipCards(lastPlayerShips); // re-render DB-sourced ship names
-  if (G.playerId) fetch(`/api/players/${G.playerId}/language`, {
+  if (G.playerId) fetch(API_BASE + `/api/players/${G.playerId}/language`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ language: getLanguage() }),
   }).catch(() => {}); // best-effort: persist the preference server-side

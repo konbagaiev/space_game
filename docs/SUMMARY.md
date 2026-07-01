@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-01 (self-service password reset — forgot-password → emailed `/?reset=TOKEN` link → new-password modal; enumeration-safe endpoint [always 200], 1 h token TTL, all sessions invalidated + email auto-verified on reset, auto-login after; migration 017 + Postgres parity; EN+RU strings; hangar no longer crashes when a required slot [hull/engine/thruster] is unequipped — `buildPlayer`/`deriveDrive` are null-safe and the Take-off gate blocks launch; briefing-showcase strut height now subtracts the gun's 8px margin so the Main Window briefing no longer grows a phantom scrollbar; component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick; the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-07-01 (itch.io HTML5 export — `npm run build:itch` assembles a static ZIP that runs on itch.io and talks to the live backend; client `/api` calls go through a baked `API_BASE` [`client/src/api-base.js`: empty same-origin, prod origin on the itch build]; server gained `/api` CORS [reflect Origin, no credentials] + dual-path bearer-token auth [login/register/reset return the token in the body, `Authorization: Bearer` accepted alongside the cookie]; self-service password reset — forgot-password → emailed `/?reset=TOKEN` link → new-password modal; enumeration-safe endpoint [always 200], 1 h token TTL, all sessions invalidated + email auto-verified on reset, auto-login after; migration 017 + Postgres parity; EN+RU strings; hangar no longer crashes when a required slot [hull/engine/thruster] is unequipped — `buildPlayer`/`deriveDrive` are null-safe and the Take-off gate blocks launch; briefing-showcase strut height now subtracts the gun's 8px margin so the Main Window briefing no longer grows a phantom scrollbar; component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick; the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -748,6 +748,10 @@ first translation). See DECISIONS §10.
   Path=/** cookie (Secure in prod; off when `NODE_ENV==='test'` for local http). The DB stores only
   the token's **SHA-256 hash** in a `sessions` table (`token_hash` PK, `player_id`, `created_at`,
   `expires_at`, `user_agent`; 30-day TTL). No `cookie-parser` — a tiny header parser in `auth.js`.
+  **Dual-path (for the itch.io build):** the login/register/reset JSON body **also** returns the raw
+  token, and `sessionTokenFromReq` accepts an `Authorization: Bearer <token>` header (checked first)
+  **or** the cookie. The same-origin site uses the cookie unchanged; the cross-origin itch build uses the
+  bearer token (see "itch.io HTML5 export").
 - **Schema (migration 009 / Postgres bootstrap):** `players` gains `username`, `email`,
   `password_hash`, `password_salt`, `email_verified`, `email_verify_token_hash`,
   `email_verify_sent_at`; plus `password_reset_token_hash` + `password_reset_sent_at` (**migration 017** /
@@ -810,6 +814,34 @@ first translation). See DECISIONS §10.
 - The client now **requires the API to start** (it fetches the ship/weapon catalog + active ship in
   `bootstrap()`). Since the game is always served same-origin by this server, the API is available.
   Game-history posting (`reportGame`) stays best-effort.
+
+### itch.io HTML5 export ("Online" build)
+- **What it is:** a static ZIP (index.html at its root) that runs inside itch.io's iframe and talks to the
+  **live production backend** at `https://vega.tenony.com`. Players open the game on its itch.io page, play
+  as a guest immediately, **and** can log into their real account — progress syncs against the same prod DB.
+- **API base:** every client `/api` call is prefixed with `API_BASE` from **`client/src/api-base.js`**.
+  It exports `''` (empty = same-origin relative — the normal `vega.tenony.com` deploy where client + API
+  share one origin); the itch build **overwrites only the staged copy** of that file with
+  `https://vega.tenony.com`. The shared `fetchJson` helper (`net.js`) prefixes **only `/api` URLs**
+  (`url.startsWith('/api') ? API_BASE + url : url`) so bundled same-origin assets (i18n locale loads,
+  `audio.js` sound assets) stay relative. No runtime hostname sniffing — the value is baked at build time.
+- **Auth is dual-path:** same-origin uses the httpOnly `session` cookie (unchanged); cross-origin (itch)
+  uses a **bearer token** returned in the login/register/reset JSON body, stored in
+  `localStorage['authToken']`, sent as `Authorization: Bearer` by `authFetch` (`account.js`). The server
+  accepts either (`sessionTokenFromReq` reads the header first, then the cookie). Guest play works
+  cross-origin with no auth (gameplay/economy endpoints key off the localStorage `playerId`, not a cookie).
+- **CORS:** `server/src/server.js` mounts a middleware **scoped to `/api`** that reflects the request
+  `Origin`, sets `Vary: Origin`, allows `GET, POST, OPTIONS` + the `Content-Type`+`Authorization` headers,
+  and answers `OPTIONS` preflight with `204`. It does **not** set `Access-Control-Allow-Credentials` (bearer
+  auth ⇒ no cookies cross-origin ⇒ no CSRF), so reflecting an arbitrary origin is safe. Same-origin requests
+  carry no `Origin` header and are unaffected; static client serving is untouched (CORS is `/api`-only).
+- **How to build it:** `npm run build:itch` (root, `scripts/build-itch.mjs`, no new deps — system `zip`).
+  It stages `index.html` + `styles.css` + `favicon.svg` + `src/` + `locales/` + `assets/` from `client/`
+  (index.html at the ZIP root), excludes `*.test.js`/`node_modules`/`.DS_Store`, bakes the prod `API_BASE`
+  into the staged `src/api-base.js`, and zips → **`dist/vega-sentinels-itch.zip`** (gitignored). It asserts
+  ≤1000 files / ≤500 MB and prints the file count + sizes. **Manual, not wired into CI.** Upload: itch.io
+  project → Kind = HTML → upload the ZIP → tick "This file will be played in the browser" → set the embed
+  viewport → save. itch limits: ≤1000 files, ≤500 MB extracted, ≤200 MB/file.
 
 ## Deployment & CI/CD
 - **Live: https://vega.tenony.com** — the canonical production host and has been for a long time; the

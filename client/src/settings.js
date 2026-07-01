@@ -3,6 +3,7 @@
 // A leaf module: it calls sim (pause/music) + the audio engine + persistence, never back into the UI.
 // Only localizeSettings is called from outside (by the i18n language switch).
 import { G } from './state.js';
+import { API_BASE } from './api-base.js';
 import { audio } from './sound-routing.js';
 import { saveAudioSettings } from './audio.js';
 import { saveTier } from './graphics.js';
@@ -128,7 +129,7 @@ resetDoBtn.addEventListener('click', async () => {
   resetDoBtn.disabled = true;
   try {
     if (G.playerId) {
-      const r = await fetch(`/api/players/${G.playerId}/reset`, { method: 'POST' });
+      const r = await fetch(API_BASE + `/api/players/${G.playerId}/reset`, { method: 'POST' });
       if (!r.ok) throw new Error('reset failed: ' + r.status);
     }
     location.reload(); // server is now at the new-player baseline; reload re-fetches level + active ship cleanly

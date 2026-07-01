@@ -1076,6 +1076,43 @@ to a constant-time response) isn't worth the added complexity per §30. Revisit 
 
 ---
 
+## 33. itch.io "Online" export — a static client pointed at the prod API, bearer auth, reflect-any CORS
+
+We ship an **itch.io HTML5 export** as an *online* build: a static ZIP served from itch's CDN that calls
+the **existing production backend** at `https://vega.tenony.com`. Several sub-choices:
+
+**Online build, not an offline bundle.** itch serves only static files, so a fully offline build would need
+the whole server + DB bundled client-side (a second codebase) and would carry no shared progression. Pointing
+the static client at the existing prod API reuses one backend and one player database — guest and account
+progress sync with the web deploy. The cost is a hard runtime dependency on `vega.tenony.com` being up, which
+is already true for the web deploy, so it's acceptable.
+
+**Bearer tokens over `SameSite=None` cookies for cross-origin iframe auth.** A third-party cookie inside an
+iframe is blocked/unreliable across modern browsers regardless of `SameSite=None; Secure`, and flipping the
+primary same-origin deploy to `SameSite=None` would weaken its CSRF posture for no gain. Instead, login/
+register/reset **also** return the raw session token in the JSON body; the client stores it in
+`localStorage['authToken']` and sends it as `Authorization: Bearer`, which `sessionTokenFromReq` accepts
+(header first, then the cookie). This works cross-origin deterministically. Trade-off: a `localStorage` token
+is XSS-exposed like any SPA token — accepted (game progress only, no sensitive data). The change is
+**additive**: the cookie path is untouched for the same-origin site, and no `db.js`/`db_postgres.js` change
+was needed (the token, its SHA-256 hashing, and the session table already exist), so SQLite/Postgres parity
+holds by construction.
+
+**Reflect-any CORS is safe here because credentials are off.** The `/api` CORS middleware reflects the
+request `Origin` and deliberately does **not** set `Access-Control-Allow-Credentials`. With bearer (not
+cookie) auth cross-origin and no credentials allowed, reflecting an arbitrary `Origin` can't be leveraged
+for a credentialed cross-site request, so an allowlist of itch's *rotating* CDN subdomains
+(`*.itch.zone`/`*.hwcdn.net`) would add maintenance for no security benefit.
+
+**API base is baked at build time, not detected at runtime.** `client/src/api-base.js` exports `API_BASE`
+(empty = same-origin); `scripts/build-itch.mjs` overwrites only the *staged* copy with the prod origin. No
+hostname sniffing (itch's rotating subdomains + empty `file://` hostname make runtime detection fragile), no
+query-param/config toggle. The build uses the system `zip` binary (no new dependency) and is manual, not
+wired into CI (§30). Guest play always works on itch via the localStorage `playerId`; account login now works
+via the bearer token.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·
