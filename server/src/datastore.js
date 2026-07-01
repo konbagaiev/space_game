@@ -42,3 +42,6 @@ export const verifyEmailToken = (...a) => impl.verifyEmailToken(...a);
 export const createSession = (...a) => impl.createSession(...a);
 export const getSessionPlayer = (...a) => impl.getSessionPlayer(...a);
 export const deleteSession = (...a) => impl.deleteSession(...a);
+export const setResetToken = (...a) => impl.setResetToken(...a);
+export const consumeResetToken = (...a) => impl.consumeResetToken(...a);
+export const deleteSessionsForPlayer = (...a) => impl.deleteSessionsForPlayer(...a);

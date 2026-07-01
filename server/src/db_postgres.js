@@ -1,7 +1,7 @@
 // PostgreSQL data layer (used in production when DATABASE_URL is set).
 // Same API as the SQLite layer (db.js), but async. Connects to the shared Postgres.
 import pg from 'pg';
-import { SESSION_TTL_MS, VERIFY_TTL_MS } from './auth.js';
+import { SESSION_TTL_MS, VERIFY_TTL_MS, RESET_TTL_MS, RESEND_THROTTLE_MS } from './auth.js';
 
 export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -106,6 +106,8 @@ export async function migrate() {
     ALTER TABLE players ADD COLUMN IF NOT EXISTS email_verified INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE players ADD COLUMN IF NOT EXISTS email_verify_token_hash TEXT;
     ALTER TABLE players ADD COLUMN IF NOT EXISTS email_verify_sent_at BIGINT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS password_reset_token_hash TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS password_reset_sent_at BIGINT;
     CREATE UNIQUE INDEX IF NOT EXISTS uniq_players_email ON players(email) WHERE email IS NOT NULL;
 
     -- server-side sessions: the cookie holds the raw token, the DB stores only its SHA-256 hash
@@ -706,6 +708,37 @@ export async function verifyEmailToken(tokenHash) {
   if (!rows[0]) return null;
   await pool.query('UPDATE players SET email_verified = 1, email_verify_token_hash = NULL WHERE id = $1', [rows[0].id]);
   return rows[0].id;
+}
+
+// Begin a password reset for `email` (mirrors db.js setResetToken). Enumeration-safe caller.
+export async function setResetToken(email, tokenHash, sentAt) {
+  const { rows } = await pool.query(
+    'SELECT id, email, password_hash, password_reset_sent_at FROM players WHERE email = $1', [email]);
+  const r = rows[0];
+  if (!r || !r.password_hash) return null;
+  const prevSent = r.password_reset_sent_at != null ? Number(r.password_reset_sent_at) : 0;
+  if (prevSent && sentAt - prevSent < RESEND_THROTTLE_MS) return null;
+  await pool.query('UPDATE players SET password_reset_token_hash = $1, password_reset_sent_at = $2 WHERE id = $3',
+    [tokenHash, sentAt, r.id]);
+  return { id: r.id, email: r.email };
+}
+
+// Consume a reset token (mirrors db.js consumeResetToken): rotate password, verify email, clear tokens.
+export async function consumeResetToken(tokenHash, passwordHash, passwordSalt) {
+  const minSentAt = Date.now() - RESET_TTL_MS;
+  const { rows } = await pool.query(
+    'SELECT id FROM players WHERE password_reset_token_hash = $1 AND password_reset_sent_at >= $2',
+    [tokenHash, minSentAt]);
+  if (!rows[0]) return null;
+  await pool.query(`UPDATE players SET password_hash = $1, password_salt = $2, email_verified = 1,
+      email_verify_token_hash = NULL, password_reset_token_hash = NULL, password_reset_sent_at = NULL
+      WHERE id = $3`, [passwordHash, passwordSalt, rows[0].id]);
+  return rows[0].id;
+}
+
+// Invalidate all of a player's sessions (used on password reset). No-op if the player has none.
+export async function deleteSessionsForPlayer(playerId) {
+  await pool.query('DELETE FROM sessions WHERE player_id = $1', [playerId]);
 }
 
 export async function createSession(playerId, tokenHash, userAgent) {

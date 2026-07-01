@@ -11,6 +11,8 @@ process.env.NODE_ENV = 'test'; // non-Secure cookies so local-http tests can rea
 
 const { createApp } = await import('./server.js');
 const { outbox } = await import('./ses.js');
+const { setResetToken, consumeResetToken } = await import('./datastore.js');
+const { hashToken } = await import('./auth.js');
 const app = await createApp();
 // The same suite runs against either backend (the backend is chosen by DATABASE_URL in datastore.js).
 // SQLite uses a throwaway temp file (fresh every run); Postgres is a persistent server, so wipe the
@@ -524,6 +526,76 @@ test('verify: the email link flips email_verified', async () => {
   // a bad token redirects with verified=0
   const bad = await fetch(base + '/api/auth/verify?token=nope', { redirect: 'manual' });
   assert.match(bad.headers.get('location'), /verified=0/);
+});
+
+// Pull the raw reset token out of the last /?reset=… link recorded in the outbox.
+function lastResetToken() {
+  return new URL(outbox.at(-1).resetUrl).searchParams.get('reset');
+}
+
+test('password reset: happy path rotates the password, auto-logs-in, and verifies the email', async () => {
+  await post('/api/auth/register', { playerId: 'pr-1', email: 'pr1@example.com', password: 'password123' });
+  const forgot = await post('/api/auth/forgot-password', { email: 'pr1@example.com' });
+  assert.equal(forgot.status, 200);
+  assert.deepEqual(await forgot.json(), { ok: true });
+  assert.match(outbox.at(-1).resetUrl, /\/\?reset=/);
+
+  const token = lastResetToken();
+  const reset = await post('/api/auth/reset-password', { token, password: 'newpassword1' });
+  assert.equal(reset.status, 200);
+  assert.ok(sessionCookie(reset));                 // logged in on this device
+  const body = await reset.json();
+  assert.equal(body.id, 'pr-1');                   // adopts the account's player row
+  assert.equal(body.emailVerified, true);          // clicking the link proved ownership
+
+  // the new password works, the old one no longer does
+  assert.equal((await post('/api/auth/login', { email: 'pr1@example.com', password: 'newpassword1' })).status, 200);
+  assert.equal((await post('/api/auth/login', { email: 'pr1@example.com', password: 'password123' })).status, 401);
+});
+
+test('password reset: invalidates all of the player\'s prior sessions', async () => {
+  const reg = await post('/api/auth/register', { playerId: 'pr-sess', email: 'prsess@example.com', password: 'password123' });
+  const oldToken = sessionCookie(reg);
+  assert.equal((await fetch(base + '/api/auth/me', { headers: authHeader(oldToken) })).status, 200);
+
+  await post('/api/auth/forgot-password', { email: 'prsess@example.com' });
+  const reset = await post('/api/auth/reset-password', { token: lastResetToken(), password: 'newpassword1' });
+  const newToken = sessionCookie(reset);
+
+  assert.equal((await fetch(base + '/api/auth/me', { headers: authHeader(oldToken) })).status, 401); // old session dropped
+  assert.equal((await fetch(base + '/api/auth/me', { headers: authHeader(newToken) })).status, 200); // fresh session works
+});
+
+test('password reset: forgot-password is enumeration-safe (200, no email sent for unknown account)', async () => {
+  const before = outbox.length;
+  const r = await post('/api/auth/forgot-password', { email: 'nobody-here@example.com' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true });
+  assert.equal(outbox.length, before); // nothing emailed for a non-existent account
+});
+
+test('password reset: invalid token -> 400, and a consumed token cannot be replayed', async () => {
+  assert.equal((await post('/api/auth/reset-password', { token: 'nope', password: 'whatever12' })).status, 400);
+
+  await post('/api/auth/register', { playerId: 'pr-replay', email: 'prreplay@example.com', password: 'password123' });
+  await post('/api/auth/forgot-password', { email: 'prreplay@example.com' });
+  const token = lastResetToken();
+  assert.equal((await post('/api/auth/reset-password', { token, password: 'newpassword1' })).status, 200);
+  assert.equal((await post('/api/auth/reset-password', { token, password: 'newpassword2' })).status, 400); // single-use
+});
+
+test('password reset: weak new password -> 400', async () => {
+  await post('/api/auth/register', { playerId: 'pr-weak', email: 'prweak@example.com', password: 'password123' });
+  await post('/api/auth/forgot-password', { email: 'prweak@example.com' });
+  const token = lastResetToken();
+  assert.equal((await post('/api/auth/reset-password', { token, password: 'short' })).status, 400);
+});
+
+test('password reset: an expired token is rejected at the datastore level (1 h TTL)', async () => {
+  await post('/api/auth/register', { playerId: 'pr-exp', email: 'prexp@example.com', password: 'password123' });
+  const target = await setResetToken('prexp@example.com', hashToken('rawtok'), Date.now() - 2 * 60 * 60 * 1000);
+  assert.ok(target); // stored (sent_at 2 h ago)
+  assert.equal(await consumeResetToken(hashToken('rawtok'), 'h', 's'), null); // older than the 1 h TTL
 });
 
 test('cross-device: a second client can log in and adopt the same progress', async () => {
