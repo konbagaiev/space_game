@@ -95,3 +95,37 @@ export async function sendVerificationEmail(toEmail, verifyUrl) {
 export function verificationUrl(token) {
   return `${APP_BASE_URL().replace(/\/$/, '')}/api/auth/verify?token=${encodeURIComponent(token)}`;
 }
+
+// Send the password-reset message to `toEmail` with a link to `resetUrl`. Same no-creds behavior as
+// verification: on missing AWS creds (local dev / tests) it logs the link and records it to `outbox`.
+export async function sendPasswordResetEmail(toEmail, resetUrl) {
+  const accessKey = env('AWS_ACCESS_KEY_ID');
+  const secretKey = env('AWS_SECRET_ACCESS_KEY');
+  const subject = 'Reset your Vega Sentinels password';
+  const textBody =
+    `A password reset was requested for your Vega Sentinels account.\n\n` +
+    `Set a new password (this link expires in 1 hour):\n${resetUrl}\n\n` +
+    `If you didn't request this, you can safely ignore this message — your password won't change.`;
+
+  if (!accessKey || !secretKey) {
+    console.log(`[ses] no AWS credentials — password reset link for ${toEmail}: ${resetUrl}`);
+    outbox.push({ to: toEmail, subject, resetUrl });
+    return { delivered: false, resetUrl };
+  }
+
+  await sesRequest({
+    Action: 'SendEmail',
+    Source: SES_FROM(),
+    'Destination.ToAddresses.member.1': toEmail,
+    'Message.Subject.Data': subject,
+    'Message.Subject.Charset': 'UTF-8',
+    'Message.Body.Text.Data': textBody,
+    'Message.Body.Text.Charset': 'UTF-8',
+  }, { accessKey, secretKey, region: SES_REGION() });
+  return { delivered: true, resetUrl };
+}
+
+// Build the app URL the reset email links to (a CLIENT route `/?reset=…`, not an API route).
+export function passwordResetUrl(token) {
+  return `${APP_BASE_URL().replace(/\/$/, '')}/?reset=${encodeURIComponent(token)}`;
+}

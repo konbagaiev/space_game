@@ -7,7 +7,8 @@ const SCRYPT_KEYLEN = 64;
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 };
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 export const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;       // email-verify token lifetime: 24 h
-export const RESEND_THROTTLE_MS = 60 * 1000;            // min gap between verification resends
+export const RESET_TTL_MS = 60 * 60 * 1000;             // password-reset token lifetime: 1 h
+export const RESEND_THROTTLE_MS = 60 * 1000;            // min gap between verification/reset resends
 const COOKIE_NAME = 'session';
 
 // Hash a plaintext password: returns { hash, salt } as hex strings (salt is per-user random).

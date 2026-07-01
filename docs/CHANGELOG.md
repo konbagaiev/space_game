@@ -3,6 +3,23 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-01
+
+- **Password recovery `[2026-07-01-1717-password-reset]`.** Added a self-service "Forgot password?" flow
+  modeled on the email-verification flow. From the login form the player requests a reset by email;
+  `POST /api/auth/forgot-password` is **enumeration-safe** (always `200 { ok:true }`, identical
+  confirmation whether or not the email exists) and, for a real account, emails a `/?reset=TOKEN` client
+  link (1 h token TTL, throttled per account by `password_reset_sent_at` reusing the 60 s resend gap).
+  Opening the link puts the `#account` modal in a new **reset** mode; `POST /api/auth/reset-password`
+  rotates the password, **marks the email verified** (clicking the link proves ownership), **invalidates
+  all of the player's existing sessions**, then logs them in on this device (auto-login, client adopts the
+  returned player row like login). Reuses existing infra: SES no-op `outbox` (`sendPasswordResetEmail`),
+  the token-hash + `sent_at` + TTL pattern, `crypto.scrypt`, the per-IP rate limiter. New SQLite
+  **migration 017** adds `password_reset_token_hash` + `password_reset_sent_at`, mirrored in the Postgres
+  bootstrap (backend parity kept in `db.js` + `db_postgres.js`). EN + RU i18n strings added; new server
+  auth tests (SQLite) cover happy-path/rotation, session invalidation, enumeration-safety, invalid/
+  consumed/expired token, and weak password. See DECISIONS §32.
+
 ## 2026-06-30
 
 - **Tooling — multi-agent development pipeline (`/feature-pipeline`).** New skill

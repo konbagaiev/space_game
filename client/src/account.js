@@ -17,7 +17,7 @@ import { showWelcome } from './welcome.js';
 
 let accountPlayer = null;       // the signed-in account (/me, register, or login result) or null
 let playerShipsCache = [];      // the player-type ships (for re-rendering the welcome screen on login)
-let accountMode = 'login';      // 'prompt' | 'register' | 'login'
+let accountMode = 'login';      // 'prompt' | 'register' | 'login' | 'forgot' | 'reset'
 let afterAccount = null;        // run when the dialog closes (e.g. continue to the Hangar)
 const accountEl = document.getElementById('account');
 const acc = {
@@ -29,6 +29,7 @@ const acc = {
   password: document.getElementById('account-password'),
   primary: document.getElementById('account-primary'),
   secondary: document.getElementById('account-secondary'),
+  forgot: document.getElementById('account-forgot'),
   err: document.getElementById('account-err'),
 };
 // bootstrap remembers the player-type ships here so a later login can re-render the welcome screen.
@@ -63,8 +64,15 @@ export function renderAccountBar() {
 function setAccountMode(mode) {
   accountMode = mode;
   acc.err.textContent = '';
+  acc.primary.style.display = '';   // normalize: doForgot hides it on success (see doForgot); reset every switch
   acc.username.style.display = (mode === 'prompt' || mode === 'register') ? 'block' : 'none';
-  acc.creds.style.display = (mode === 'register' || mode === 'login') ? 'block' : 'none';
+  // #account-creds wraps BOTH email + password. Keep it shown for every credential mode (login/register/
+  // forgot/reset) and toggle the individual inputs inside it — forgot needs the email, reset needs the password.
+  acc.creds.style.display = (mode === 'register' || mode === 'login' || mode === 'forgot' || mode === 'reset') ? 'block' : 'none';
+  acc.email.style.display = (mode === 'reset') ? 'none' : 'block';       // reset: no email field
+  acc.password.style.display = (mode === 'forgot') ? 'none' : 'block';   // forgot: no password field
+  acc.secondary.style.display = (mode === 'forgot' || mode === 'reset') ? 'none' : '';
+  acc.forgot.style.display = (mode === 'login') ? '' : 'none';
   acc.username.placeholder = t('ui.account.username_ph');
   acc.email.placeholder = t('ui.account.email_ph');
   acc.password.placeholder = t('ui.account.password_ph');
@@ -79,6 +87,15 @@ function setAccountMode(mode) {
     acc.msg.textContent = t('ui.account.create_msg');
     acc.primary.textContent = t('ui.account.create');
     acc.secondary.textContent = t('ui.account.have_account');
+    acc.password.autocomplete = 'new-password';
+  } else if (mode === 'forgot') {
+    acc.title.textContent = t('ui.account.forgot_title');
+    acc.msg.textContent = t('ui.account.forgot_msg');
+    acc.primary.textContent = t('ui.account.forgot_send');
+  } else if (mode === 'reset') {
+    acc.title.textContent = t('ui.account.reset_title');
+    acc.msg.textContent = t('ui.account.reset_msg');
+    acc.primary.textContent = t('ui.account.reset_submit');
     acc.password.autocomplete = 'new-password';
   } else { // login
     acc.title.textContent = t('ui.account.login_title');
@@ -95,7 +112,7 @@ export function openAccount(mode, opts = {}) {
   if (mode !== 'register') { acc.email.value = ''; acc.password.value = ''; }
   setAccountMode(mode);
   accountEl.style.display = 'flex';
-  setTimeout(() => (mode === 'login' ? acc.email : acc.username).focus(), 0);
+  setTimeout(() => (mode === 'login' ? acc.email : mode === 'reset' ? acc.password : acc.username).focus(), 0);
 }
 function closeAccount() {
   accountEl.style.display = 'none';
@@ -129,6 +146,8 @@ async function accountPrimary() {
     closeAccount();
     return;
   }
+  if (accountMode === 'forgot') return doForgot();
+  if (accountMode === 'reset') return doReset();
   if (accountMode === 'register') return doRegister();
   return doLogin();
 }
@@ -177,6 +196,45 @@ async function doLogin() {
   finally { acc.primary.disabled = false; }
 }
 
+// Request a password-reset email. Enumeration-safe: shows the same confirmation whether or not the
+// email has an account. On success, hide the email input + send button and show the confirmation.
+async function doForgot() {
+  const email = acc.email.value.trim();
+  acc.primary.disabled = true;
+  try {
+    await authFetch('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+    acc.err.textContent = '';
+    acc.msg.textContent = t('ui.account.forgot_sent');
+    acc.email.style.display = 'none';
+    acc.primary.style.display = 'none';   // hide the send button on the confirmation screen; setAccountMode
+                                          // restores it (leading acc.primary.style.display='') on the next
+                                          // mode switch, so a later openAccount('login') isn't broken.
+  } catch { acc.err.textContent = t('ui.account.err_network'); }
+  finally { acc.primary.disabled = false; }
+}
+
+// Submit a new password with the raw token from the /?reset=… link; on success the server rotates the
+// password, drops other sessions, and logs us in on this device. Adopt the returned player row like login.
+async function doReset() {
+  const password = acc.password.value;
+  if (password.length < 8) { acc.err.textContent = t('ui.account.err_password'); return; }
+  acc.primary.disabled = true;
+  try {
+    const r = await authFetch('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token: resetToken, password }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { acc.err.textContent = t('ui.account.err_reset_invalid'); return; }
+    accountPlayer = j;
+    if (j.id && j.id !== G.playerId) {          // adopt the account's player row (fresh-device reset)
+      G.playerId = j.id;
+      try { localStorage.setItem('playerId', G.playerId); } catch {}
+      await reloadPlayerWorld();
+    }
+    renderAccountBar();
+    closeAccount();
+  } catch { acc.err.textContent = t('ui.account.err_network'); }
+  finally { acc.primary.disabled = false; acc.primary.style.display = ''; }
+}
+
 // After adopting a different player (login), reload that player's level + active ship and re-render
 // the landing screen for their progress.
 async function reloadPlayerWorld() {
@@ -214,8 +272,10 @@ async function resendVerification(btn) {
 }
 
 let accountVerifiedJustNow = false; // set when returning from the email verify link (?verified=1)
+let resetToken = null; // raw token from the /?reset=… link, held for the reset submit
 acc.primary.addEventListener('click', accountPrimary);
 acc.secondary.addEventListener('click', accountSecondary);
+acc.forgot.addEventListener('click', () => setAccountMode('forgot'));
 document.getElementById('account-close').addEventListener('click', closeAccount);
 for (const el of [acc.username, acc.email, acc.password]) {
   el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); accountPrimary(); } });
@@ -238,7 +298,12 @@ export async function restoreSession() {
   try {
     const params = new URLSearchParams(location.search);
     if (params.get('verified') === '1') accountVerifiedJustNow = true;
-    if (params.has('verified')) { params.delete('verified'); history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '')); }
+    const rt = params.get('reset');
+    if (rt) { resetToken = rt; openAccount('reset'); }
+    if (params.has('verified') || params.has('reset')) {
+      params.delete('verified'); params.delete('reset');
+      history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : ''));
+    }
   } catch {}
 }
 

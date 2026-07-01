@@ -7,10 +7,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend, resetPlayer,
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
+  setResetToken, consumeResetToken, deleteSessionsForPlayer,
   getStash, buyItem, sellItem, equipItem, unequipItem } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { generateMissions } from './missions.js';
-import { sendVerificationEmail, verificationUrl } from './ses.js';
+import { sendVerificationEmail, verificationUrl, sendPasswordResetEmail, passwordResetUrl } from './ses.js';
 
 const SUPPORTED_LANGUAGES = ['en', 'ru']; // mirror of client SUPPORTED (DECISIONS §10)
 // Allowlisted product-funnel event types (docs/plans/monitoring.md). Anything else is dropped.
@@ -299,6 +300,33 @@ export async function createApp() {
     await setVerifyToken(req.player.id, hashToken(verifyToken), Date.now());
     await sendVerificationEmail(req.player.email, verificationUrl(verifyToken));
     res.json({ ok: true });
+  }));
+
+  // Begin password recovery. Enumeration-safe: ALWAYS 200. If the email maps to a real account (and a
+  // send isn't throttled by password_reset_sent_at), store a hashed reset token and email a /?reset=… link.
+  app.post('/api/auth/forgot-password', authLimiter, wrap(async (req, res) => {
+    const email = normEmail(String((req.body || {}).email || ''));
+    if (validEmail(email)) {
+      const resetToken = newSessionToken();
+      const target = await setResetToken(email, hashToken(resetToken), Date.now());
+      if (target) await sendPasswordResetEmail(target.email, passwordResetUrl(resetToken));
+    }
+    res.json({ ok: true }); // never reveal whether the email exists
+  }));
+
+  // Complete password recovery: validate the token, rotate the password, mark the email verified, drop the
+  // player's other sessions, and log them in on this device (fresh session cookie). Adopts like login.
+  app.post('/api/auth/reset-password', authLimiter, wrap(async (req, res) => {
+    const token = (req.body || {}).token;
+    const password = (req.body || {}).password;
+    if (!token || typeof token !== 'string') return res.status(400).json({ error: 'token required' });
+    if (!validPassword(password)) return res.status(400).json({ error: 'password must be at least 8 characters' });
+    const { hash, salt } = hashPassword(password);
+    const playerId = await consumeResetToken(hashToken(token), hash, salt);
+    if (!playerId) return res.status(400).json({ error: 'invalid or expired reset link' });
+    await deleteSessionsForPlayer(playerId); // invalidate every existing session for this account
+    await startSession(res, playerId, req);  // …then open one fresh session for this device
+    res.json(await getPlayerPublic(playerId));
   }));
 
   // Public client config (no secrets — the browser Sentry DSN is public by design). Lets the client

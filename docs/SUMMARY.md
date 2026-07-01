@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-06-30 (hangar no longer crashes when a required slot [hull/engine/thruster] is unequipped — `buildPlayer`/`deriveDrive` are null-safe and the Take-off gate blocks launch; briefing-showcase strut height now subtracts the gun's 8px margin so the Main Window briefing no longer grows a phantom scrollbar; component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick; the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
+**Updated:** 2026-07-01 (self-service password reset — forgot-password → emailed `/?reset=TOKEN` link → new-password modal; enumeration-safe endpoint [always 200], 1 h token TTL, all sessions invalidated + email auto-verified on reset, auto-login after; migration 017 + Postgres parity; EN+RU strings; hangar no longer crashes when a required slot [hull/engine/thruster] is unequipped — `buildPlayer`/`deriveDrive` are null-safe and the Take-off gate blocks launch; briefing-showcase strut height now subtracts the gun's 8px margin so the Main Window briefing no longer grows a phantom scrollbar; component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick; the ship preview is the column to the right) — without replacing the ship preview — via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% live ship-model preview; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU
 draw-call submit + thermal governor, NOT fill rate** — so the sub-native `renderScale` knob was **removed**
 (blurred for no gain), a shader **pre-warm** kills the 0.4-2.2s first-frame freeze, and a `maxParticles` 300
 ceiling caps the weakest tier; a **`?dev` perf monitor** samples per-frame JS-cost breakdown + device/GPU
@@ -680,7 +680,8 @@ first translation). See DECISIONS §10.
   (hangar shop; 403 until the shop is unlocked), `GET /api/players/:id/missions` (side-mission board; 403 until unlocked),
   `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
   `GET /api/levels/:name`, the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
-  `POST /api/auth/resend-verification`, `GET /api/auth/me`, `GET /api/auth/verify`), plus
+  `POST /api/auth/resend-verification`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`,
+  `GET /api/auth/me`, `GET /api/auth/verify`), plus
   `GET /api/config` (public client config), `POST /api/events` (funnel telemetry) and
   `POST /api/perf` (client perf samples from the `?dev` monitor — write-only diagnostic telemetry).
 - **Health / uptime** — `GET /api/health` is the monitoring endpoint (UptimeRobot, the Docker
@@ -749,7 +750,8 @@ first translation). See DECISIONS §10.
   `expires_at`, `user_agent`; 30-day TTL). No `cookie-parser` — a tiny header parser in `auth.js`.
 - **Schema (migration 009 / Postgres bootstrap):** `players` gains `username`, `email`,
   `password_hash`, `password_salt`, `email_verified`, `email_verify_token_hash`,
-  `email_verify_sent_at`; email uniqueness via a **partial unique index** (`WHERE email IS NOT NULL`,
+  `email_verify_sent_at`; plus `password_reset_token_hash` + `password_reset_sent_at` (**migration 017** /
+  Postgres bootstrap). Email uniqueness via a **partial unique index** (`WHERE email IS NOT NULL`,
   since SQLite can't add a UNIQUE column). New `sessions` table (real FK on `player_id` in Postgres;
   logical FK in SQLite).
 - **Email:** Amazon SES (`us-east-1`), outbound only, from `noreply@vega.tenony.com`, sent via
@@ -766,7 +768,17 @@ first translation). See DECISIONS §10.
   `/api/auth/verify?token=…` link; the route hashes + matches an unexpired token (24 h TTL), flips
   `email_verified`, clears the token, and **redirects** to `/?verified=1` (the client shows a
   confirmation). Resend is throttled per account by `email_verify_sent_at`.
-- **Rate limiting:** in-memory per-IP fixed-window limiter on register/login/resend (10/min); disabled
+- **Password reset flow:** `POST /api/auth/forgot-password` is **enumeration-safe** — it always returns
+  `200 { ok:true }` and only emails when the email maps to a real account with a password (and isn't
+  throttled by `password_reset_sent_at`, reusing the 60 s resend gap). It stores a hashed, single-use
+  reset token and emails a **`/?reset=TOKEN`** client link (a client route like `/?verified=1`, **not** an
+  API/static page; 1 h TTL). Opening it puts the `#account` modal in `reset` mode; `POST
+  /api/auth/reset-password` validates the token, **rotates the password**, **marks the email verified**
+  (clicking the link proves ownership) and clears both reset + verify tokens, **drops ALL of the player's
+  sessions** (`deleteSessionsForPlayer`), then opens one fresh session for this device and returns the
+  player row (client adopts it like login). Invalid/expired/consumed token or a <8-char password → 400.
+- **Rate limiting:** in-memory per-IP fixed-window limiter on register/login/resend/forgot-password/
+  reset-password (10/min); disabled
   under the test suite. Input validation: email shape, password ≥ 8 chars → 400; bad creds → 401;
   duplicate email → 409.
 - **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);

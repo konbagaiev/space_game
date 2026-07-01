@@ -1053,6 +1053,29 @@ See `docs/plans/client-code-structure.md` for the slice sequence and the target 
 
 ---
 
+## 32. Password reset is enumeration-safe (always 200), auto-verifies + purges sessions
+
+`POST /api/auth/forgot-password` **always** returns `200 { ok:true }` and the client shows an identical
+"if that email has an account, a reset link is on its way" confirmation **whether or not the email exists**.
+This means the endpoint can't be used to probe which emails have accounts (a login/register endpoint that
+distinguished "no such account" would leak that). The accepted cost: a user who mistypes their email gets
+no "no such account" feedback — they just never receive the mail. Standard practice, and consistent with
+DECISIONS §30 (keep it simple).
+
+The emailed `/?reset=TOKEN` link, when consumed, **marks the email verified** — clicking it already proves
+the player controls that inbox, so requiring a separate verification afterward would be redundant. Reset
+also **invalidates every existing session** for the account (`deleteSessionsForPlayer`) before opening a
+fresh one for this device: if the reset was prompted by a compromised/leaked session, that session is
+killed as a side effect.
+
+**Residual timing side channel (accepted).** A request for an *existing* email awaits the SES round-trip
+(and the scrypt-free token store) before responding 200, while a *non-existent* email returns almost
+immediately — so response latency can still leak account existence to a determined observer. We accept
+this: it mirrors the existing verification/resend flow, and closing it (async-queueing the send, or padding
+to a constant-time response) isn't worth the added complexity per §30. Revisit if abuse appears.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

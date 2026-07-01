@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
-import { SESSION_TTL_MS, VERIFY_TTL_MS } from './auth.js';
+import { SESSION_TTL_MS, VERIFY_TTL_MS, RESET_TTL_MS, RESEND_THROTTLE_MS } from './auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DB path is configurable via DB_PATH (tests use a temp file); defaults to data/game.db.
@@ -558,6 +558,35 @@ export function verifyEmailToken(tokenHash) {
   if (!r) return null;
   db.prepare('UPDATE players SET email_verified = 1, email_verify_token_hash = NULL WHERE id = ?').run(r.id);
   return r.id;
+}
+
+// Begin a password reset for `email`: if it maps to a real account (has a password) and isn't throttled,
+// store the reset token hash + sent_at and return { id, email }; otherwise return null (route stays 200).
+export function setResetToken(email, tokenHash, sentAt) {
+  const r = db.prepare('SELECT id, email, password_hash, password_reset_sent_at FROM players WHERE email = ?').get(email);
+  if (!r || !r.password_hash) return null;                 // no such account (enumeration-safe caller)
+  if (r.password_reset_sent_at && sentAt - r.password_reset_sent_at < RESEND_THROTTLE_MS) return null; // throttled
+  db.prepare('UPDATE players SET password_reset_token_hash = ?, password_reset_sent_at = ? WHERE id = ?')
+    .run(tokenHash, sentAt, r.id);
+  return { id: r.id, email: r.email };
+}
+
+// Consume a reset token: if it matches an unexpired token, set the new password, mark the email verified
+// (the link proves ownership), and clear both reset + verify tokens. Returns the player id, or null.
+export function consumeResetToken(tokenHash, passwordHash, passwordSalt) {
+  const minSentAt = Date.now() - RESET_TTL_MS;
+  const r = db.prepare('SELECT id FROM players WHERE password_reset_token_hash = ? AND password_reset_sent_at >= ?')
+    .get(tokenHash, minSentAt);
+  if (!r) return null;
+  db.prepare(`UPDATE players SET password_hash = ?, password_salt = ?, email_verified = 1,
+      email_verify_token_hash = NULL, password_reset_token_hash = NULL, password_reset_sent_at = NULL
+      WHERE id = ?`).run(passwordHash, passwordSalt, r.id);
+  return r.id;
+}
+
+// Invalidate all of a player's sessions (used on password reset). No-op if the player has none.
+export function deleteSessionsForPlayer(playerId) {
+  db.prepare('DELETE FROM sessions WHERE player_id = ?').run(playerId);
 }
 
 export function createSession(playerId, tokenHash, userAgent) {
