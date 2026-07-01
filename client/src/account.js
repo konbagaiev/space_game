@@ -1,13 +1,15 @@
 // Account / authentication (DECISIONS §11). Anonymous-first: the player always has a localStorage UUID
 // (G.playerId). An optional email/password account upgrades that same player row in place (progress
-// preserved); logging in on a fresh device adopts the account's player id. The session rides on an
-// httpOnly cookie, so all calls send credentials.
+// preserved); logging in on a fresh device adopts the account's player id. Auth is dual-path: the
+// same-origin deploy rides an httpOnly session cookie (calls send credentials), while the cross-origin
+// itch.io build uses a bearer token in localStorage['authToken'] (third-party cookies are unreliable). See DECISIONS.
 //
 // Part of the between-battles UI cycle: it calls showMain (mainwindow) + showWelcome (welcome) after a
 // login adopts a new player; those import renderAccountBar/openAccount/shouldPromptAccount back. ESM
 // resolves the cycle at runtime (all edges are on user actions, never at module init).
 import { G, CATALOG } from './state.js';
 import { fetchJson } from './net.js';
+import { API_BASE } from './api-base.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
 import { levelRunner } from './sim.js';
@@ -35,9 +37,20 @@ const acc = {
 // bootstrap remembers the player-type ships here so a later login can re-render the welcome screen.
 export function setPlayerShipsCache(ships) { playerShipsCache = ships; }
 
-// All auth requests are same-origin; include credentials so the session cookie always rides along.
-const authFetch = (path, opts = {}) =>
-  fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) }, ...opts });
+const AUTH_TOKEN_KEY = 'authToken'; // bearer session token for cross-origin (itch) auth; see DECISIONS
+const getAuthToken = () => { try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; } };
+const setAuthToken = (tok) => { try { tok ? localStorage.setItem(AUTH_TOKEN_KEY, tok) : localStorage.removeItem(AUTH_TOKEN_KEY); } catch {} };
+
+// Auth requests: prefix API_BASE (empty same-origin, prod origin on the itch build). Send the bearer
+// token from localStorage when we have one (the cross-origin itch path — third-party cookies are
+// unreliable) AND keep credentials:'include' so the same-origin cookie still rides along.
+const authFetch = (path, opts = {}) => {
+  const token = getAuthToken();
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const { headers: _drop, ...rest } = opts; // headers already merged above; don't let ...opts clobber them
+  return fetch(API_BASE + path, { credentials: 'include', headers, ...rest });
+};
 
 // Render the menu-screen status bar: signed-in identity + verify nudge, or a "log in / sign up" CTA.
 export function renderAccountBar() {
@@ -169,6 +182,7 @@ async function doRegister() {
     if (r.status === 409) { acc.err.textContent = t('ui.account.err_email_taken'); return; }
     if (!r.ok) { acc.err.textContent = j.error || t('ui.account.err_generic'); return; }
     accountPlayer = j; // upgraded the current player row in place — same playerId, progress preserved
+    if (j.token) setAuthToken(j.token);
     renderAccountBar();
     closeAccount();
   } catch { acc.err.textContent = t('ui.account.err_network'); }
@@ -185,6 +199,7 @@ async function doLogin() {
     if (r.status === 401) { acc.err.textContent = t('ui.account.err_credentials'); return; }
     if (!r.ok) { acc.err.textContent = j.error || t('ui.account.err_generic'); return; }
     accountPlayer = j;
+    if (j.token) setAuthToken(j.token);
     if (j.id && j.id !== G.playerId) {            // adopt the account's player row (fresh-device login)
       G.playerId = j.id;
       try { localStorage.setItem('playerId', G.playerId); } catch {}
@@ -224,6 +239,7 @@ async function doReset() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { acc.err.textContent = t('ui.account.err_reset_invalid'); return; }
     accountPlayer = j;
+    if (j.token) setAuthToken(j.token);
     if (j.id && j.id !== G.playerId) {          // adopt the account's player row (fresh-device reset)
       G.playerId = j.id;
       try { localStorage.setItem('playerId', G.playerId); } catch {}
@@ -256,6 +272,7 @@ async function reloadPlayerWorld() {
 
 async function logout() {
   try { await authFetch('/api/auth/logout', { method: 'POST' }); } catch {}
+  setAuthToken(null);
   accountPlayer = null;
   accountVerifiedJustNow = false;
   // Keep the local anonymous id (don't clear localStorage.playerId): play continues on this device
@@ -286,7 +303,7 @@ for (const el of [acc.username, acc.email, acc.password]) {
 // clears the ?verified=1 flag left by the email verification redirect. Called from bootstrap().
 export async function restoreSession() {
   try {
-    const me = await fetch('/api/auth/me', { credentials: 'include' });
+    const me = await authFetch('/api/auth/me');
     if (me.ok) {
       accountPlayer = await me.json();
       if (accountPlayer && accountPlayer.id) {
@@ -312,7 +329,7 @@ export async function restoreSession() {
 // Best-effort: any failure here must never break the game. See docs/plans/monitoring.md.
 export async function initSentry() {
   let cfg = null;
-  try { cfg = (await (await fetch('/api/config')).json()).sentry; } catch { return; }
+  try { cfg = (await (await fetch(API_BASE + '/api/config')).json()).sentry; } catch { return; }
   if (!cfg || !cfg.dsn || window.Sentry) return;
   await new Promise((resolve) => {
     const s = document.createElement('script');

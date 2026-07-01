@@ -1,17 +1,22 @@
 // Backend glue: anonymous player identity (G.playerId, set in state.js), credit banking, level
 // progression, and fire-and-forget product-funnel telemetry. All calls are best-effort — if the backend
-// isn't running (e.g. opened via file://) they fail silently and the game still works. Served
-// same-origin, so the API is always reachable via relative /api URLs.
+// isn't running (e.g. opened via file://) they fail silently and the game still works. Every /api URL is
+// prefixed with API_BASE (empty on the same-origin deploy, the prod origin on the itch.io build).
 //
 // Sits HIGH in the dependency graph (the sim loop + UI flows call these); imports the leaves it needs.
 import { G, CATALOG } from './state.js';
+import { API_BASE } from './api-base.js';
 import { updateHud } from './hud.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
 
 // Small JSON fetch helper: throws on a non-2xx so callers can .catch() a bad response.
 export const fetchJson = async (url) => {
-  const r = await fetch(url);
+  // Prefix API_BASE for /api calls only. `fetchJson` is ALSO used for bundled same-origin assets
+  // (client/src/i18n.js loadLanguage fetches 'locales/source.json' + `locales/${lang}.json`), which
+  // MUST stay relative — on the itch build they load same-origin from the ZIP, and /locales gets no
+  // CORS header (CORS is scoped to /api). Prefixing those would produce a malformed cross-origin URL.
+  const r = await fetch(url.startsWith('/api') ? API_BASE + url : url);
   if (!r.ok) throw new Error(`${url} -> ${r.status}`);
   return r.json();
 };
@@ -24,7 +29,7 @@ export function bankRun() {
   G.banked = true;
   const durationMs = Math.round(performance.now() - G.gameStartTime);
   if (!G.playerId) { G.balance += G.earned; updateHud(); return; } // offline: reflect locally, best-effort
-  fetch('/api/games', {
+  fetch(API_BASE + '/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ playerId: G.playerId, credits: G.earned, kills: G.kills, durationMs }),
   }).then((r) => (r.ok ? r.json() : null))
@@ -44,9 +49,9 @@ export function track(type, data) {
   const payload = JSON.stringify({ playerId: G.playerId, type, data });
   try {
     if (type === 'quit' && navigator.sendBeacon) {
-      navigator.sendBeacon('/api/events', new Blob([payload], { type: 'application/json' }));
+      navigator.sendBeacon(API_BASE + '/api/events', new Blob([payload], { type: 'application/json' }));
     } else {
-      fetch('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+      fetch(API_BASE + '/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
     }
   } catch { /* telemetry must never break the game */ }
 }
@@ -59,7 +64,7 @@ export async function unlockNextLevel() {
   if (!G.playerId) return;
   const clearedLevel = currentLevelLabel(); // before CATALOG.level is swapped to the next level
   try {
-    const adv = await (await fetch(`/api/players/${G.playerId}/advance`, { method: 'POST' })).json();
+    const adv = await (await fetch(API_BASE + `/api/players/${G.playerId}/advance`, { method: 'POST' })).json();
     if (adv && !adv.advanced) track('victory', { level: clearedLevel }); // no next level → final win
     if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) G.pendingBriefing = adv.briefing;
     const level = await fetchJson(`/api/players/${G.playerId}/level`);

@@ -9,6 +9,7 @@ import { shipMass, deriveDrive } from './components.js';
 import { resolveComponents, buildPlayerFor } from './ship-build.js';
 import { updateHud } from './hud.js';
 import { fetchJson } from './net.js';
+import { API_BASE } from './api-base.js';
 import { t } from './i18n.js';
 
 let shopData = null;     // { credits, shopUnlocked, stash, activeShip } — last server state
@@ -258,7 +259,7 @@ async function shopAction(path, body) {
   if (shopBusy || !G.playerId) return;
   shopBusy = true; setShopNote('');
   try {
-    const r = await fetch(`/api/players/${G.playerId}/${path}`, {
+    const r = await fetch(API_BASE + `/api/players/${G.playerId}/${path}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { setShopNote(shopErr(r.status, j)); return; }

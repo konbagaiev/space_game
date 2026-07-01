@@ -5,6 +5,18 @@
 
 ## 2026-07-01
 
+- **itch.io HTML5 export ("Online" build) `[2026-07-01-1824-itch-html5-export]`.** New
+  `npm run build:itch` (`scripts/build-itch.mjs`) assembles a static ZIP (index.html at root) that runs on
+  itch.io and talks to the live backend at `https://vega.tenony.com`. Client API calls now go through a
+  baked `API_BASE` (`client/src/api-base.js`; empty = same-origin, prod origin on the itch build — the
+  build overwrites only the staged copy). Server gained CORS on `/api` (reflects Origin, no credentials)
+  and **bearer-token auth** — login/register/reset return the session token in the body and the server
+  accepts `Authorization: Bearer` alongside the existing cookie (`sessionTokenFromReq` reads the header
+  first), so account login works inside the itch iframe (third-party cookies are unreliable). The
+  same-origin `vega.tenony.com` deploy is unchanged (relative URLs, cookie auth). Guest play works
+  cross-origin via the localStorage `playerId`. No `db.js`/`db_postgres.js` change (parity holds by
+  construction); manual script, not wired into CI; `dist/` stays gitignored.
+
 - **Password recovery `[2026-07-01-1717-password-reset]`.** Added a self-service "Forgot password?" flow
   modeled on the email-verification flow. From the login form the player requests a reset by email;
   `POST /api/auth/forgot-password` is **enumeration-safe** (always `200 { ok:true }`, identical

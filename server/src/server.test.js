@@ -509,6 +509,46 @@ test('me: authed returns the player; no cookie -> 401; after logout -> 401', asy
   assert.equal((await fetch(base + '/api/auth/me', { headers: authHeader(token) })).status, 401); // session gone
 });
 
+// --- Cross-origin (itch.io) bearer-token auth + CORS (docs/plans/2026-07-01-1824-itch-html5-export.md) ---
+
+test('auth: register returns a bearer token that /api/auth/me accepts (cross-origin path)', async () => {
+  const j = await (await post('/api/auth/register',
+    { playerId: 'bearer-1', email: 'bearer1@example.com', password: 'password123' })).json();
+  assert.ok(j.token, 'register response carries a session token');
+  const me = await fetch(base + '/api/auth/me', { headers: { Authorization: `Bearer ${j.token}` } });
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).id, 'bearer-1');
+});
+
+test('auth: login returns a bearer token; a bogus bearer is rejected', async () => {
+  await post('/api/auth/register', { playerId: 'bearer-2', email: 'bearer2@example.com', password: 'password123' });
+  const j = await (await post('/api/auth/login', { email: 'bearer2@example.com', password: 'password123' })).json();
+  assert.ok(j.token);
+  assert.equal((await fetch(base + '/api/auth/me', { headers: { Authorization: `Bearer ${j.token}` } })).status, 200);
+  assert.equal((await fetch(base + '/api/auth/me', { headers: { Authorization: 'Bearer nope' } })).status, 401);
+});
+
+test('auth: logout via Authorization header drops the session', async () => {
+  const j = await (await post('/api/auth/register', { playerId: 'bearer-3', email: 'bearer3@example.com', password: 'password123' })).json();
+  const h = { Authorization: `Bearer ${j.token}` };
+  assert.equal((await fetch(base + '/api/auth/me', { headers: h })).status, 200);
+  await post('/api/auth/logout', {}, h);
+  assert.equal((await fetch(base + '/api/auth/me', { headers: h })).status, 401);
+});
+
+test('cors: /api reflects the Origin, allows Authorization, and never allows credentials', async () => {
+  const pre = await fetch(base + '/api/ships', {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://itch.zone', 'Access-Control-Request-Headers': 'authorization' },
+  });
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers.get('access-control-allow-origin'), 'https://itch.zone');
+  assert.match(pre.headers.get('access-control-allow-headers') || '', /authorization/i);
+  assert.equal(pre.headers.get('access-control-allow-credentials'), null); // credentials OFF by design
+  const get = await fetch(base + '/api/ships', { headers: { Origin: 'https://itch.zone' } });
+  assert.equal(get.headers.get('access-control-allow-origin'), 'https://itch.zone');
+});
+
 test('verify: the email link flips email_verified', async () => {
   const reg = await post('/api/auth/register', { playerId: 'verify-1', email: 'verify@example.com', password: 'password123' });
   const token = sessionCookie(reg);

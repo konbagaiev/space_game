@@ -52,6 +52,23 @@ export async function createApp() {
   const app = express();
   app.use(express.json());
 
+  // CORS for the cross-origin itch.io build (docs/plans/2026-07-01-1824-itch-html5-export.md). We reflect
+  // the request Origin and do NOT allow credentials — the itch client authenticates with a bearer token,
+  // never a cookie, so no credentials cross the boundary and CSRF stays off the table. Scoped to /api so
+  // the same-origin static client serving is unaffected. Same-origin requests carry no Origin header and
+  // are unchanged.
+  app.use('/api', (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+    if (req.method === 'OPTIONS') return res.status(204).end(); // preflight
+    next();
+  });
+
   // helper: run an async handler and forward errors to the error middleware
   const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -220,7 +237,8 @@ export async function createApp() {
   const startSession = async (res, playerId, req) => {
     const token = newSessionToken();
     await createSession(playerId, hashToken(token), req.headers['user-agent']);
-    setSessionCookie(res, token);
+    setSessionCookie(res, token); // keep the cookie for the same-origin site (backward-compat)
+    return token;                 // also hand it back so the JSON body can carry it (cross-origin bearer)
   };
 
   // Set the display name on a (still anonymous) player — the level-1 "name yourself" step.
@@ -255,8 +273,8 @@ export async function createApp() {
       throw e;
     }
     await sendVerificationEmail(email, verificationUrl(verifyToken));
-    await startSession(res, playerId, req);
-    res.json(player);
+    const token = await startSession(res, playerId, req);
+    res.json({ ...player, token });
   }));
 
   // Log in by email + password; opens a session. The client adopts the returned player id.
@@ -268,8 +286,8 @@ export async function createApp() {
     if (!row || !verifyPassword(password, row.password_hash, row.password_salt)) {
       return res.status(401).json({ error: 'invalid email or password' });
     }
-    await startSession(res, row.id, req);
-    res.json(await getPlayerPublic(row.id));
+    const token = await startSession(res, row.id, req);
+    res.json({ ...(await getPlayerPublic(row.id)), token });
   }));
 
   // Log out: drop the server-side session and clear the cookie.
@@ -325,8 +343,8 @@ export async function createApp() {
     const playerId = await consumeResetToken(hashToken(token), hash, salt);
     if (!playerId) return res.status(400).json({ error: 'invalid or expired reset link' });
     await deleteSessionsForPlayer(playerId); // invalidate every existing session for this account
-    await startSession(res, playerId, req);  // …then open one fresh session for this device
-    res.json(await getPlayerPublic(playerId));
+    const sessionToken = await startSession(res, playerId, req);  // …then open one fresh session for this device
+    res.json({ ...(await getPlayerPublic(playerId)), token: sessionToken });
   }));
 
   // Public client config (no secrets — the browser Sentry DSN is public by design). Lets the client
