@@ -734,6 +734,15 @@ first translation). See DECISIONS §10.
   before. **After clearing level 1** the client prompts (once) for a **username** (display name) and
   offers to **create an account**. Decline → keep playing as a guest (the username is still saved).
   Accept → email + password **upgrade the same `players` row in place** (progress preserved).
+- **Account bar (menu screens).** A signed-in account shows "Signed in as …" (`ui.account.signed_in_as`);
+  a guest who set a callsign at the level-1 prompt shows **"Playing as <name>"** (`ui.account.guest_named`),
+  otherwise "Playing as a guest" (`ui.account.anon`); the *Log in / Sign up* CTA is present for any guest.
+  The guest callsign persists client-side in **`localStorage['guestName']`** (mirrored by `setGuestName`
+  in `client/src/account.js`, loaded at import so the first paint reflects it) — a guest is already a
+  localStorage identity, so no server/DB row is needed. Opening the account dialog with an empty username
+  field pre-fills it from the stored callsign, so a later guest→register keeps the name instead of wiping
+  it. `guestName` is not cleared on register/login (the signed-in `accountPlayer` takes precedence in the
+  bar); a same-device logout then falls back to "Playing as <that callsign>".
 - **Identity:** `players.id` UUID stays the game identity; credentials attach to that row. **Login is
   by email** (case-insensitive, stored lower-cased); the username is a non-unique display name.
   Fresh-device login **adopts the account's player row** (the client swaps `localStorage.playerId`
