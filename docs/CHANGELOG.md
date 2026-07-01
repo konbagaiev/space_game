@@ -5,6 +5,12 @@
 
 ## 2026-07-01
 
+- **`/publish-itch` skill.** Added a `publish-itch` skill (`.claude/skills/publish-itch/SKILL.md`) that
+  ships an update to itch.io via **butler** (itch's official upload CLI): `assets:pull` → `npm run
+  build:itch` → `butler push dist/itch-staging USER/GAME:html5` (incremental — only changed files upload).
+  Recommends butler over any web-form automation; documents the one-time `brew install butler` +
+  `butler login`, the `html5` channel + "play in browser" first-push step, and the `ITCH_TARGET`/`.itch-target`
+  resolution. Complements the build-itch skill.
 - **Guest callsign now shown `[2026-07-01-2006-guest-callsign-display]`.** A guest who names themselves
   at the level-1 prompt sees "Playing as <name>" in the account bar (was always "Playing as a guest"); the
   callsign persists across reloads via `localStorage['guestName']` and pre-fills the register form so a
