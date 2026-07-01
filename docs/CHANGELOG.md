@@ -17,6 +17,16 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 20: prune dead imports from `main.js`.** After the UI split,
+  `main.js` still imported ~40 symbols only its now-moved code used. Removed the fully-dead import lines
+  (three/addons `RoomEnvironment`, `components`, `steering`, `audio` settings helper, `graphics` `saveTier`,
+  `format`, `ship-factory`, `shop`, `settings`) and trimmed the partially-used ones (`i18n` `t`,
+  `sound-routing` `sfxFor`, `state` `moons`/`SPAWN_GROW_TIME`, `projectiles`/`ship-build`/`net` down to the
+  handful `__game`/`bootstrap`/the funnel listeners actually use). Verified with a comment-aware unused-import
+  scan across all modules (only `main.js` had dead imports; the `shop`/`welcome` "hits" were false positives
+  — template-literal `${}` usage). No behavior change. Unit 46/46; visual 10/6 baseline, zero page errors.
+  Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 19: the between-battles UI → `mainwindow.js` + `welcome.js` +
   `account.js`; `main.js` is now a lean composition root.** Co-extracted the last, mutually-recursive UI
   cluster (one strongly-connected cycle: mainwindow↔account↔welcome) in a single commit — the only way,

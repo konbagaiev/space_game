@@ -4,27 +4,18 @@
 // paths, no `src/` segment) and `three` via the index.html importmap. Slices are peeling cohesive UI
 // modules out of here next; for now it is the single composition root.
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; // used by the inline model-viewer (engine.js imports its own)
-import { deriveDrive, repairTick, shipMass } from './components.js'; // pure derivation; ship/weapon DATA now comes from the DB
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './steering.js';
-import { t, loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './i18n.js';
-import { saveAudioSettings } from './audio.js'; // persist audio settings; the engine instance lives in sound-routing.js
-import { audio, tracksFor, sfxFor } from './sound-routing.js'; // audio engine + DB-driven SFX routing
-import { saveTier } from './graphics.js'; // graphics quality tiers (perf on weak phones); the active tier lives in G.gfx
-import { esc, cssColor, slotLabel, priceLabel, sellLabel } from './format.js'; // pure presentation helpers
-import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, moons, setPieces, soundMap, CATALOG, keys, touchAim, SPAWN_GROW_TIME } from './state.js'; // shared state bag + entity collections + catalog + input
+import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './i18n.js'; // language load/resolve for bootstrap
+import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
+import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
 import { scene, skyScene, camera, renderer, camOffset, isTouch, toGame, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
-import { shipModelCfg, modelSpec, makeShip, gltfLoader, SHIP_MODEL_LEN } from './ship-factory.js'; // ship primitive + .glb model loading
-import { spawnBullet, spawnExplosion, spawnShipExplosion, emitExhaust, spawnRocket, detonateRocket, spawnSmoke, findTargetInSector, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // projectiles + combat FX (geos reused by prewarmShaders)
-import { resolveWeapon, resolveComponents, buildPlayer, buildPlayerFor, spawnEnemyShip, spawnEnemy, updateGroups } from './ship-build.js'; // catalog resolution + player/enemy building + weapon fire groups
+import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
+import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf)
-import { fetchJson, bankRun, track, currentLevelLabel, unlockNextLevel } from './net.js'; // backend identity/banking/progression + funnel telemetry
+import { fetchJson, track, currentLevelLabel } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
-import { openBay, showBayView, updateTakeoffGate, renderShipStatsBar, deriveShipStats, resetShipStatsDelta } from './shop.js'; // hangar shop + stash (self-contained leaf)
-import { localizeSettings } from './settings.js'; // audio-settings modal + quality + progress reset (self-contained leaf)
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem } from './mainwindow.js'; // between-battles Main Window + model viewers
 import { showWelcome, applyTranslations } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache } from './account.js'; // auth block (bootstrap session restore + Sentry)
