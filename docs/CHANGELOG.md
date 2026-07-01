@@ -17,6 +17,15 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 17: hangar shop → `src/shop.js`.** First of the optional
+  `main.js` UI split. Peeled the self-contained shop/stash leaf (~285 lines) out of `main.js`:
+  loadout/stash/two-pane shop rendering, the delegated bay click handler, buy/sell/equip actions
+  (server-authoritative), the live ship-stats delta bar, and `openBay`. It calls nothing back into the UI;
+  the Main Window calls in via `openBay`/`showBayView`/`updateTakeoffGate`/`renderShipStatsBar`/
+  `deriveShipStats`/`resetShipStatsDelta`. The two spots where the Main Window poked shop's private state
+  (`bayView`, `lastShipStats`) now go through `showBayView()`/`resetShipStatsDelta()` setters. No behavior
+  change. Unit 46/46; visual 10/6 baseline (`05-hangar-shop` passes). Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 16 (final): inline script → `src/main.js`; `index.html` is now
   buildless host-only.** Moved the entire remaining inline `<script type="module">` body (~1620 lines:
   `bootstrap`/`animate`/`prewarmShaders`/`window.__game` + the Main Window / hangar shop / welcome / account

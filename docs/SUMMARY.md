@@ -859,13 +859,15 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   `currentLevelLabel`/`unlockNextLevel`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
   `autoPauseOnBlur` + the `reset` restart), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
+- **UI leaves:** `shop.js` (the hangar shop + stash + live ship-stats bar; a self-contained leaf the Main
+  Window calls into via `openBay`/`showBayView`/`updateTakeoffGate`/`renderShipStatsBar`/`deriveShipStats`).
 - **Composition root:** `main.js` — the former inline `<script>` body: `bootstrap()` (fetch the DB
   catalog/level/active-ship, build the world + player, start), `animate`/`prewarmShaders`, the
-  `window.__game` test hook (`?debug`), and the in-page UI that has no dedicated module yet — the **Main
-  Window** (`showMain`/`selectMenu`/mission board/3D model viewers/preview/showcase), the **hangar shop +
-  stash**, the **welcome screen** (`showWelcome`/`renderShipCards`/`takeOff`), the **account/auth** block
-  (+`reloadPlayerWorld`), and the **audio-settings modal + i18n UI glue**. (A later pass can peel these into
-  `mainwindow.js`/`shop.js`/`welcome.js`/`account.js`/`settings.js` — now a mechanical module→module split.)
+  `window.__game` test hook (`?debug`), and the in-page UI not yet peeled into its own module — the **Main
+  Window** (`showMain`/`selectMenu`/mission board/3D model viewers/preview/showcase), the **welcome screen**
+  (`showWelcome`/`renderShipCards`/`takeOff`), the **account/auth** block (+`reloadPlayerWorld`), and the
+  **audio-settings modal + i18n UI glue**. (These remaining panels can peel into `mainwindow.js`/
+  `welcome.js`/`account.js`/`settings.js` next — mechanical module→module splits.)
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)
