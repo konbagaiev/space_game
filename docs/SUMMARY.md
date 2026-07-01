@@ -859,17 +859,18 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   `currentLevelLabel`/`unlockNextLevel`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
   `autoPauseOnBlur` + the `reset` restart), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
-- **UI leaves:** `shop.js` (the hangar shop + stash + live ship-stats bar; a self-contained leaf the Main
-  Window calls into via `openBay`/`showBayView`/`updateTakeoffGate`/`renderShipStatsBar`/`deriveShipStats`),
-  `settings.js` (the audio-settings gear modal + graphics-quality picker + slide-to-confirm progress reset;
-  a leaf whose only outward export is `localizeSettings`).
-- **Composition root:** `main.js` — the former inline `<script>` body: `bootstrap()` (fetch the DB
-  catalog/level/active-ship, build the world + player, start), `animate`/`prewarmShaders`, the
-  `window.__game` test hook (`?debug`), and the in-page UI not yet peeled into its own module — the **Main
-  Window** (`showMain`/`selectMenu`/mission board/3D model viewers/preview/showcase), the **welcome screen**
-  (`showWelcome`/`renderShipCards`/`takeOff`), the **account/auth** block (+`reloadPlayerWorld`), and the
-  **audio-settings modal + i18n UI glue**. (These remaining panels can peel into `mainwindow.js`/
-  `welcome.js`/`account.js`/`settings.js` next — mechanical module→module splits.)
+- **Between-battles UI:** `shop.js` (hangar shop + stash + live ship-stats bar; a leaf the Main Window
+  calls into), `settings.js` (audio-settings gear modal + graphics-quality picker + slide-to-confirm
+  progress reset; a leaf whose only outward export is `localizeSettings`), `mainwindow.js` (the Main Window
+  — `showMain`/`selectMenu`/mission board/`launchCampaign`/`launchMission`/`refreshMissions` + the ship-
+  preview and briefing-item model viewers), `welcome.js` (ship-picker/`takeOff` + the i18n UI glue
+  `applyTranslations`/EN-RU switch + the fullscreen helper), `account.js` (auth block + `initSentry` +
+  `restoreSession`/`reloadPlayerWorld`). These four (`mainwindow`/`account`/`welcome` + `settings`/`shop`)
+  form the coupled landing-screen cluster — `mainwindow`↔`account`↔`welcome` is a runtime import cycle that
+  ESM resolves (edges fire on user actions, not module init).
+- **Composition root:** `main.js` (~540 lines) — imports + input/touch/zoom wiring + the `?dev` `devPerf`
+  monitor + `animate`/`prewarmShaders` + the `?debug` `window.__game` test hook + `bootstrap()` (fetch the
+  DB catalog/level/active-ship, build the world + player, restore the session, show the landing screen).
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)

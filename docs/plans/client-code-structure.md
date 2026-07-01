@@ -1,11 +1,14 @@
 # Client code restructure — split `index.html` into ES modules
 
-**Status:** CORE COMPLETE — the inline `<script>` is fully extracted (slices 0–16 on branch
-`refactor/client-esm-split`; **index.html 3736 → 212 lines** = markup + importmap + `import './src/main.js'`).
-All game code is buildless ES modules. **Optional follow-up:** peel the UI panels out of `main.js` into
-cohesive `mainwindow.js`/`shop.js`/`welcome.js`/`account.js`/`settings.js` (now a mechanical module→module
-split — see §0). See **§0 Resume checkpoint** for the current module map; the rest of this brief is the
-original plan (kept for reference).
+**Status:** ✅ COMPLETE (slices 0–19 on branch `refactor/client-esm-split`). The inline `<script>` is fully
+extracted (**index.html 3736 → 212 lines** = markup + importmap + `import './src/main.js'`) AND `main.js`
+has been split into cohesive modules — the former 3736-line inline script is now **24 buildless ES
+modules**. The between-battles UI is `shop.js` / `settings.js` (leaves) + `mainwindow.js` / `welcome.js` /
+`account.js` (a runtime import cycle ESM resolves); `main.js` (~540 lines) is a lean composition root
+(imports + input/touch/zoom + `devPerf` + `animate` + `window.__game` + `bootstrap`). Verified each slice
+against unit (46/46) + the visual suite (10/6 flaky baseline, zero page errors). **Remaining nice-to-haves
+(optional):** trim now-unused imports left in `main.js`; a manual register/login smoke-test (no visual
+scenario). The rest of this brief is the original plan, kept for reference.
 
 ---
 
