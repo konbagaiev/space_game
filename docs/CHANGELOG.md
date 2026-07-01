@@ -17,6 +17,24 @@
   IDs, not a registry). Added a `CLAUDE.md` rule: when the maintainer asks for a **code change** (not just
   discussion/research), offer to run it through `/feature-pipeline` first.
 
+- **Refactor (client structure) — Slice 19: the between-battles UI → `mainwindow.js` + `welcome.js` +
+  `account.js`; `main.js` is now a lean composition root.** Co-extracted the last, mutually-recursive UI
+  cluster (one strongly-connected cycle: mainwindow↔account↔welcome) in a single commit — the only way,
+  since a module can't call a function still in `main.js` and ESM tolerates the resulting runtime import
+  cycles (all edges fire on user actions, never at module init). `mainwindow.js` = the Main Window
+  (`showMain`/`selectMenu`/mission board/`launchCampaign`/`launchMission`/`refreshMissions`) + the two
+  spinning-model viewers (ship preview + briefing-item showcase); `welcome.js` = the ship-picker/take-off +
+  the i18n UI glue (`applyTranslations`/EN-RU switch) + the fullscreen helper; `account.js` = the auth
+  block + `initSentry` + a new `restoreSession()` (the `/me` + `?verified` logic bootstrap used to inline)
+  and a `setPlayerShipsCache()` setter. `main.js` (1208 → **543 lines**) is now just imports + input/touch/
+  zoom wiring + `devPerf` + `animate` + the `?debug` `window.__game` hook + `bootstrap`. Shared read-only
+  state the hook needs (`missionOffers`/`mainBriefing`/`mwPreview`/`mwItem`) is exported as live `let`
+  bindings from `mainwindow.js`. No behavior change. Unit 46/46; visual 11/5 (better than baseline this run),
+  **zero page errors** (the whole cyclic graph initializes cleanly and every UI scenario passes:
+  hangar-shop, mobile-hangar, mission-board, briefing-showcase, welcome/smoke). This completes the client
+  ESM split — `index.html` is 212 host-only lines and the former 3736-line inline script is now 24 cohesive
+  modules. Branch `refactor/client-esm-split`.
+
 - **Refactor (client structure) — Slice 18: audio-settings modal → `src/settings.js`.** Peeled the second
   self-contained leaf (~137 lines) out of `main.js`: the gear modal (master/music/sfx volumes + on/off
   toggles), the graphics-quality tier picker (persists + reloads), and the slide-to-confirm "reset my
