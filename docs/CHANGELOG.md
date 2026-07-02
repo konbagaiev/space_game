@@ -5,6 +5,19 @@
 
 ## 2026-07-02
 
+- **itch.io player tagging.** The itch.io build now bakes `BUILD_SOURCE='itch'` into
+  `client/src/api-base.js` (default `'web'`), and `referrerPayload` adds `"source":"itch"` to the
+  write-once `players.referrer` JSON for non-web builds — so itch.io players show up as
+  `{"source":"itch"}` in `/admin` even though `document.referrer` is blank inside itch's sandboxed CDN
+  iframe. Organic web players stay untagged. Takes effect once a fresh itch build is published.
+- **Launch/distribution playbook (docs).** Added `docs/plans/launch-distribution.md` — the go-to-market
+  brief for *where and how to post the itch.io prototype for feedback*: waves (RU Telegram chats +
+  DTF first, then EN Reddit r/playmygame & Discord & itch community, Yandex Games later), per-platform
+  etiquette/rules (incl. why r/indiegames is announce-only, not feedback), an itch-page readiness
+  checklist, and options for automating update-posting/feedback digests. Distilled from an earlier
+  chat session so it's no longer only in conversation. ROADMAP Phase 0 "Announce / share the link"
+  now points at it. No code change.
+
 - **Admin panel + referrer capture `[2026-07-02-1352-admin-panel-player-stats]`.** New private
   server-rendered **`GET /admin`** dashboard (`server/src/admin.js`) that lists every registered player
   (id, username, email, verified, created/last-seen, progress, credits, games) plus per-player aggregates

@@ -60,7 +60,9 @@ The goal of launching is *feedback*, so the missing pieces are the ones that cap
       (fire/hit/rocket/explosion/UI/jingles) + **generative** background music that follows state (combat
       vs hangar mood) + an **audio settings menu** (⚙ gear → Master/Music/SFX volumes + on/off toggles,
       persisted). See DECISIONS §22 + the Audio track below.
-- [ ] Announce / share the link.
+- [ ] Announce / share the link. **Distribution playbook (where/how/what order to post for feedback)
+      spec'd → `docs/plans/launch-distribution.md`** (RU communities first, then EN Reddit/Discord,
+      Yandex Games later).
 
 ## Phase 1 — Progression core (the grind loop)
 The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to spend it.

@@ -5,7 +5,7 @@
 //
 // Sits HIGH in the dependency graph (the sim loop + UI flows call these); imports the leaves it needs.
 import { G, CATALOG } from './state.js';
-import { API_BASE } from './api-base.js';
+import { API_BASE, BUILD_SOURCE } from './api-base.js';
 import { updateHud } from './hud.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
@@ -47,6 +47,9 @@ export function referrerPayload() {
     for (const [k, key] of [['ref', 'ref'], ['utm_source', 'utm_source'], ['utm_medium', 'utm_medium'], ['utm_campaign', 'utm_campaign']]) {
       const v = p.get(k); if (v) out[key] = v;
     }
+    // Tag non-web builds (e.g. the itch.io export) so we can tell where a player came from even when
+    // document.referrer is blank (itch runs in a sandboxed CDN iframe). Organic web stays untagged.
+    if (BUILD_SOURCE && BUILD_SOURCE !== 'web') out.source = BUILD_SOURCE;
     return Object.keys(out).length ? JSON.stringify(out) : null;
   } catch { return null; }
 }
