@@ -19,7 +19,7 @@ const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the p
 export function updateHud() {
   el.earned.textContent = G.earned;
   el.credits.textContent = G.balance;
-  el.kills.textContent = G.kills;
+  el.kills.textContent = G.enemyTotal > 0 ? `${G.kills}/${G.enemyTotal}` : G.kills;
   el.enemies.textContent = enemies.length;
   const hpPct = Math.max(0, G.player.hp / G.player.maxHp * 100);
   el.hpFill.style.width = hpPct + '%';

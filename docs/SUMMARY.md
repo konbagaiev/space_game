@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-02 (**admin panel + referrer capture** — a private server-rendered `GET /admin`
+**Updated:** 2026-07-02 (**HUD Destroyed counter now killed/total** — the on-screen kill counter shows
+`killed/total`; total is precomputed on the server from each descriptor's phase script
+(`enemyTotalFromPhases` → `descriptor.enemyTotal`). Previously: **admin panel + referrer capture** — a private server-rendered `GET /admin`
 dashboard [`server/src/admin.js`] lists every registered player + per-player game aggregates behind HTTP
 Basic Auth [`ADMIN_USER`/`ADMIN_PASSWORD`, 404 when unset]; a new write-once `players.referrer` column
 [migration 018 / PG bootstrap] captures `document.referrer`+`?ref=`/UTM at boot; see the Admin dashboard
@@ -387,7 +389,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     (L4 `unlockShop`) or a side mission → the work-zone viewer hides. See
     `docs/plans/briefing-item-showcase.md` + DECISIONS §29.
 - **Level flow** — driven by a DB **level descriptor** (a phase/wave script) played by the client's
-  `levelRunner`. Four campaign levels are seeded (played in order via the player's progress):
+  `levelRunner`. Each descriptor also carries a server-computed **`enemyTotal`** — the exact number of
+  enemies destroyed to complete it — derived from the phase script by `enemyTotalFromPhases`
+  (`server/src/enemy_total.js`), stamped in `catalog_seed.js` (campaign) and `missions.js` (side missions);
+  it drives the HUD killed/total counter. Four campaign levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **6 kills** rocketeers join at 25%
     → at **12 kills** spawning stops, one last rocketeer appears, clear the field → **Victory!** No boss.
   - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 12 kills →
@@ -412,7 +417,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   drives level thresholds. At the **end of each run — death OR victory — Earned is banked** into the
   player's persistent **Credits** balance (server-authoritative; closing the browser mid-run loses the
   unbanked amount). New players start at **1000 credits**. HUD (top-right) shows two counters — **Credits**
-  (the persistent balance) and **Earned** (this run) — plus **Destroyed** (kills) and **Enemies** (alive).
+  (the persistent balance) and **Earned** (this run) — plus **Destroyed** and **Enemies** (alive).
+  **Destroyed** reads **killed / total** (e.g. `8/16`): *total* is the number of enemies destroyed to clear
+  the whole level/mission, precomputed on the server from the descriptor's phase script and embedded as
+  `descriptor.enemyTotal` (the client reads it in `levelRunner.start`; falls back to the bare kill count when
+  the total is unknown, e.g. a level row not yet reseeded). **Enemies** (alive) is unchanged.
   Banking posts `{ credits, kills, durationMs }` to `POST /api/games`, which returns the new balance.
 - **Shop & stash (the "spend" side)** — once the player **clears the final level**, the Main Window's left
   menu gains three items — **Loadout** (what's equipped), **Stash** (owned-but-not-equipped inventory, a qty

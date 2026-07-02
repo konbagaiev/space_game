@@ -1,3 +1,5 @@
+import { enemyTotalFromPhases } from './enemy_total.js';
+
 // Seed data for the ships/weapons catalog — a snapshot of the game's ship/weapon design.
 // Both backends seed from this via an idempotent upsert on startup (see db.js / db_postgres.js),
 // so editing this file updates the catalog on the next start.
@@ -490,6 +492,9 @@ export const LEVELS = [
     }
   },
 ];
+
+// Precompute the total enemy count per level from its phase script (drives the HUD killed/total).
+for (const l of LEVELS) l.descriptor.enemyTotal = enemyTotalFromPhases(l.descriptor.phases);
 
 // --- maps: a JSON descriptor the client renders generically (buildMap). `generator` picks the code
 // generator; `params` are its inputs. The current scene (blue ocean planet + two cratered moons +

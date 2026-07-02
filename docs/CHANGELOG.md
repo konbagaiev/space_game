@@ -5,6 +5,15 @@
 
 ## 2026-07-02
 
+- **HUD Destroyed counter now killed/total.** The on-screen kill counter shows `killed/total` (e.g.
+  `8/16`) instead of a bare count. *Total* is precomputed on the server from each descriptor's phase
+  script via the new `enemyTotalFromPhases` (`server/src/enemy_total.js`) and stamped as
+  `descriptor.enemyTotal` for campaign levels (`catalog_seed.js`) and side missions (`missions.js`); the
+  client reads it in `levelRunner.start` and renders `${G.kills}/${G.enemyTotal}` in the HUD, falling back
+  to the bare count when the total is unknown. Verified totals: L1 16, L2 17, L3 21, L4 22, side missions
+  20. The **Enemies** (alive) counter is unchanged. Campaign levels need a server restart/deploy to reseed
+  `levels.descriptor` with the field (production reseeds on deploy); side missions are generated live.
+
 - **itch.io player tagging.** The itch.io build now bakes `BUILD_SOURCE='itch'` into
   `client/src/api-base.js` (default `'web'`), and `referrerPayload` adds `"source":"itch"` to the
   write-once `players.referrer` JSON for non-web builds — so itch.io players show up as
