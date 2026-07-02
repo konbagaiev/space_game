@@ -15,17 +15,26 @@ NOT the `.zip` — pushing a zip uploads it as a downloadable, not a playable em
 
 ## The target string
 
-butler pushes to `USER/GAME:CHANNEL`, e.g. `konbagaiev/vega-sentinels:html5`.
-- `USER` = itch username, `GAME` = the game's URL slug (from `USER.itch.io/GAME`), `CHANNEL` = a name you
-  choose (use **`html5`** for the browser build).
+butler pushes to `USER/GAME:CHANNEL`. **This game's target is `bagaiev/vega-sentinels:html5`**
+(from `https://bagaiev.itch.io/vega-sentinels`; `html5` is the browser channel).
 - Resolve the target in this order: the skill **argument** if given → else the `ITCH_TARGET` env var →
-  else a `.itch-target` file at repo root (single line, gitignored). If none is set, ask the maintainer
-  for `USER/GAME` once and offer to write it to `.itch-target`.
+  else the default above. `USER` = itch username, `GAME` = the URL slug (from `USER.itch.io/GAME`),
+  `CHANNEL` = a name you choose (`html5` for the browser build).
 
 ## Prerequisites (first run only)
 
-1. **butler installed?** `which butler`. If missing on macOS: `brew install butler` (Homebrew is at
-   `/opt/homebrew/bin/brew`). Verify `butler version`.
+1. **butler installed?** `which butler` (verify with `butler -V`). **Do NOT `brew install butler`** — the
+   Homebrew `butler` cask is a different app (Butler.app, a launcher), not itch's CLI. Install itch's butler
+   from its official broth channel (single static Go binary):
+   ```
+   curl -L -o /tmp/butler.zip https://broth.itch.ovh/butler/darwin-amd64/LATEST/archive/default
+   unzip -o /tmp/butler.zip -d /tmp/butler-dl && chmod +x /tmp/butler-dl/butler
+   mv /tmp/butler-dl/butler /opt/homebrew/bin/butler        # a dir already on PATH
+   butler -V
+   ```
+   On Apple Silicon the `darwin-amd64` binary runs via Rosetta; if `butler -V` reports "bad CPU type",
+   run `softwareupdate --install-rosetta --agree-to-license` once. (Official download page:
+   https://itchio.itch.io/butler.)
 2. **Authenticated?** Check `~/.config/itch/butler_creds`. If absent, butler login is **interactive**
    (opens a browser) — the agent can't do it. Tell the maintainer to run it themselves in the session:
    type `! butler login` at the prompt. (CI/non-interactive alternative: set `BUTLER_API_KEY` from
