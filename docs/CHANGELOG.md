@@ -3,6 +3,15 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-03
+
+- **Kill credit popups.** [2026-07-03-0042-kill-credit-popup] Destroying an enemy now shows a short gold
+  `+xx` popup floating up from the kill site (the credits earned), fading over ~1 s. It's a pooled DOM
+  overlay in the `#markers` container, projected world→screen each frame like the enemy edge markers
+  (`updateCreditPopups` in `hud.js`, `creditPopups` FX array spawned in `sim.js` on enemy death). Cosmetic
+  only — no gameplay/economy/server change; skipped for reward-0 kills, hidden while a game-over/victory
+  overlay is up, frozen in place during pause, and cleared on restart.
+
 ## 2026-07-02
 
 - **Freighter set-piece is now a real `.glb` model.** [2026-07-02-1937-freighter-glb-model] Replaced the
