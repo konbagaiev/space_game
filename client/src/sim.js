@@ -4,7 +4,7 @@
 // imports the leaves (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported
 // only by the composition root (the inline script / main). It never imports the loop's callers.
 import * as THREE from 'three';
-import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
@@ -435,6 +435,12 @@ export function update(dt) {
     }
   }
 
+  // --- credit popups: "+xx" gold text that floats up and fades over ~1s (drawn by hud.js) ---
+  for (let i = creditPopups.length - 1; i >= 0; i--) {
+    creditPopups[i].life -= dt;
+    if (creditPopups[i].life <= 0) creditPopups.splice(i, 1);
+  }
+
   // --- enemy deaths ---
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].hp <= 0) {
@@ -448,7 +454,11 @@ export function update(dt) {
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
       G.kills++;                  // count (drives level thresholds + HUD)
-      G.earned += e.reward || 0;  // credits (reward for this ship type)
+      const reward = e.reward || 0;
+      G.earned += reward;         // credits (reward for this ship type)
+      if (reward > 0) {           // floating "+xx" gold popup at the kill site (cosmetic feedback)
+        creditPopups.push({ pos: e.mesh.position.clone(), amount: reward, life: 1.0, maxLife: 1.0 });
+      }
     }
   }
   // drive spawning + phase transitions from the active level
@@ -532,6 +542,7 @@ export function reset() {
   sparks.length = 0;
   for (const w of shockwaves) { scene.remove(w.mesh); w.mesh.material.dispose(); }
   shockwaves.length = 0;
+  creditPopups.length = 0; // DOM-only, no scene meshes to dispose
   for (const e of enemies) scene.remove(e.mesh);
   enemies.length = 0;
   // A side mission fights over its own location in the world (its set-piece); the campaign uses (0,0).

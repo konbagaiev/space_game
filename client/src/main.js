@@ -13,7 +13,7 @@ import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, build
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
-import { updateHud, updateMarkers, updateMiniMap, updatePerf } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf)
+import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups)
 import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart
@@ -364,6 +364,7 @@ function animate() {
   const t1 = DEV ? performance.now() : 0; // end of sim
   updateHud();
   updateMarkers();
+  updateCreditPopups(); // floating "+xx" gold credit popups at kill sites
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
   updateMiniMap();    // corner radar: arena bounds, player, enemies
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays

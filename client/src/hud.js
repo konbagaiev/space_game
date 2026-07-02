@@ -5,7 +5,7 @@
 // (setPaused/togglePause) and the OOB warning stay inline with the sim cluster — they touch the level
 // runner + music routing, which haven't been split out yet.
 import * as THREE from 'three';
-import { G, enemies } from './state.js';
+import { G, enemies, creditPopups } from './state.js';
 import { camera, renderer, gameW, gameH } from './engine.js';
 import { ARENA, arenaCenter } from './world.js';
 import { cssColor } from './format.js';
@@ -91,6 +91,39 @@ export function updateMarkers() {
     m.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(-cy, cx) * 180 / Math.PI}deg)`;
   }
   for (let i = used; i < markerPool.length; i++) markerPool[i].style.display = 'none';
+}
+
+// ---------- Credit popups: "+xx" gold text floating up from each kill, fading over ~1s ----------
+const popupPool = [];
+const _pp = new THREE.Vector3();
+function getPopup(i) {
+  while (popupPool.length <= i) {
+    const d = document.createElement('div');
+    d.className = 'credit-popup';
+    el.markers.appendChild(d); // reuse the fixed, full-screen, non-interactive markers container
+    popupPool.push(d);
+  }
+  return popupPool[i];
+}
+export function updateCreditPopups() {
+  // hide everything while there's no player or an overlay (game over / victory) is up
+  if (!G.player || el.overlay.style.display !== 'none') { for (const p of popupPool) p.style.display = 'none'; return; }
+  const w = gameW(), h = gameH();
+  let used = 0;
+  for (const cp of creditPopups) {
+    _pp.copy(cp.pos).project(camera);
+    if (_pp.z > 1) continue;                    // behind the camera -> skip
+    const t = 1 - Math.max(0, cp.life) / cp.maxLife; // 0 -> 1 over its life
+    const x = (_pp.x * 0.5 + 0.5) * w;
+    const y = (-_pp.y * 0.5 + 0.5) * h - t * 40; // drift up ~40px in screen space
+    const p = getPopup(used++);
+    p.style.display = 'block';
+    p.style.left = x + 'px';
+    p.style.top = y + 'px';
+    p.style.opacity = String(1 - t);            // fade 1 -> 0
+    p.textContent = '+' + cp.amount;
+  }
+  for (let i = used; i < popupPool.length; i++) popupPool[i].style.display = 'none';
 }
 
 // ---------- Mini-map / radar: arena bounds, the player (with heading), and type-colored enemy dots ----------
