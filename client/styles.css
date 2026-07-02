@@ -515,12 +515,16 @@
   #reset-confirm .ghost { background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.35); }
   #reset-confirm .danger-btn { background: linear-gradient(90deg,#e53935,#b71c1c); color: #fff; border: 0; }
   #reset-confirm .danger-btn:disabled { opacity: .6; cursor: default; }
+  /* Perf/diagnostics overlay: dev-only, gated by the sticky ?dev flag (body.devmode, see client/src/dev.js).
+     Hidden for normal players. body.devmode:not(.menu) beats the menu-hide so it never shows on menus. */
   #perf {
+    display: none;
     position: fixed; top: 34px; left: 50%; transform: translateX(-50%);
     font-family: ui-monospace, Menlo, monospace; font-size: 12px;
     color: #9fe8b0; background: rgba(0,0,0,.45); padding: 4px 10px; border-radius: 6px;
     pointer-events: none; white-space: nowrap; letter-spacing: .3px;
   }
+  body.devmode:not(.menu) #perf { display: block; }
   /* Touch controls (touch devices only) */
   #touch { position: fixed; inset: 0; display: none; pointer-events: none; touch-action: none; z-index: 5; }
   #touch.on { display: block; }

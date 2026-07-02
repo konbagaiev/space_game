@@ -1143,6 +1143,30 @@ on the `body.touch` alias for now.
 
 ---
 
+## 35. Perf overlay is dev-only, reusing a sticky `?dev` flag (not a new one)
+
+**Decision.** The top-center FPS/service string (`#perf`) is a **diagnostic tool**, not player-facing game
+info, so it's **hidden by default** (`#perf { display: none }`) and revealed only for developers via
+`body.devmode:not(.menu) #perf`. Rather than invent a new flag, it **reuses the existing `?dev` flag**
+(which already gates the `devPerf` perf telemetry) — one shared source of truth, `client/src/dev.js` /
+`isDev()`, drives the overlay visibility, the `●dev`/JS-heap suffix, and the telemetry. The flag is made
+**sticky in localStorage** (`devMode`): a truthy `?dev`/`?dev=true`/`?dev=1` turns it on and remembers it;
+an explicit `?dev=false`/`?dev=0` turns it off and clears it; no `dev` param → the stored flag decides.
+
+**Why.** Players never asked for a load meter; showing it clutters the HUD and confuses. Reusing `?dev`
+avoids a second flag to reason about (cf. §21, the `?tune` dev-tool convention) and keeps things simple
+(§30 — no new endpoint, no in-game toggle). Sticky-with-off-switch means a developer types `/?dev` once
+instead of re-appending it every load, while `?dev=false` gives a clean, explicit way out. The
+tri-state parse also **drops the old loose `location.search.includes('dev')`** substring match (which
+matched `?developer` and any `…dev…` param). `?tune`/`?debug` stay independent — `?dev` doesn't umbrella
+them.
+
+**Class name.** The reveal class is `body.devmode`, deliberately **not** `body.dev`: the device-profile
+classes already use a `dev-` prefix for *device form* (`body.dev-desktop`/`body.dev-phone`, §34), so a bare
+`body.dev` would conceptually overload that prefix. `devmode` keeps the diagnostics gate unambiguous.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·
