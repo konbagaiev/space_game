@@ -456,8 +456,8 @@ export function update(dt) {
       G.kills++;                  // count (drives level thresholds + HUD)
       const reward = e.reward || 0;
       G.earned += reward;         // credits (reward for this ship type)
-      if (reward > 0) {           // floating "+xx" gold popup at the kill site (cosmetic feedback)
-        creditPopups.push({ pos: e.mesh.position.clone(), amount: reward, life: 1.0, maxLife: 1.0 });
+      if (reward > 0) {           // floating "+xx" green popup at the kill site (cosmetic feedback)
+        creditPopups.push({ pos: e.mesh.position.clone(), amount: reward, life: 2.0, maxLife: 2.0 });
       }
     }
   }

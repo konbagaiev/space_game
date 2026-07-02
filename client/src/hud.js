@@ -93,7 +93,7 @@ export function updateMarkers() {
   for (let i = used; i < markerPool.length; i++) markerPool[i].style.display = 'none';
 }
 
-// ---------- Credit popups: "+xx" gold text floating up from each kill, fading over ~1s ----------
+// ---------- Credit popups: "+xx" green text floating up from each kill, holding then fading over ~2s ----------
 const popupPool = [];
 const _pp = new THREE.Vector3();
 function getPopup(i) {
@@ -120,7 +120,7 @@ export function updateCreditPopups() {
     p.style.display = 'block';
     p.style.left = x + 'px';
     p.style.top = y + 'px';
-    p.style.opacity = String(1 - t);            // fade 1 -> 0
+    p.style.opacity = String(Math.min(1, Math.max(0, cp.life))); // hold full, then fade over the last ~1s
     p.textContent = '+' + cp.amount;
   }
   for (let i = used; i < popupPool.length; i++) popupPool[i].style.display = 'none';

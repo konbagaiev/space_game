@@ -3,8 +3,8 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-03 (**Kill credit popups** — destroying an enemy floats a gold `+xx` popup up from
-the kill site showing credits earned, fading over ~1 s; pooled DOM overlay projected each frame like the
+**Updated:** 2026-07-03 (**Kill credit popups** — destroying an enemy floats a green `+xx` popup up from
+the kill site showing credits earned, holding then fading over ~2 s; pooled DOM overlay projected each frame like the
 enemy edge markers, skipped for reward-0 kills. Previously: **Freighter set-piece is now a real `.glb` model** — the "save the transport"
 cargo freighter dropped its procedural box hull (spine/bridge/cargo/engine/nozzles) for the CC-BY
 "Freighter - Spaceship" combat glb (`freighter_combat`, first `.glb`-backed set-piece; standalone loader in
@@ -120,10 +120,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Off-screen enemy markers** — for each enemy that's off-screen, an arrow on the screen edge points
   toward it, tinted by the enemy's marker color (`updateMarkers`, a pooled DOM overlay). Hidden while an
   overlay (game over / victory) is up.
-- **Kill credit popups** — a gold `+xx` popup floats up from each destroyed enemy's position showing the
-  credits earned, fading over ~1 s (`updateCreditPopups`, a pooled DOM overlay in the `#markers`
-  container; `creditPopups` FX array spawned in `sim.js` on enemy death, skipped when reward ≤ 0). Hidden
-  while an overlay is up and cleared on restart.
+- **Kill credit popups** — a green `+xx` popup floats up from each destroyed enemy's position showing the
+  credits earned, holding then fading over ~2 s (`updateCreditPopups`, a pooled DOM overlay in the `#markers`
+  container; `creditPopups` FX array spawned in `sim.js` on enemy death with `maxLife` 2.0, skipped when
+  reward ≤ 0; opacity holds full then fades over the last ~1 s). Green (not the credits gold) so it stays
+  legible against the warm ship-explosion burst it spawns on. Hidden while an overlay is up and cleared on restart.
 - **Marker colors by size tier** — the edge arrows, the mini-map dots and the hangar ship-dot all read a
   ship's `stats.color`, sourced from the `MARKER` palette in `catalog_seed.js` (NOT ad-hoc per ship; it
   does not tint the 3D model). Convention: **small → orange `#f4741f`** (enemy_1 fighters/gunners +

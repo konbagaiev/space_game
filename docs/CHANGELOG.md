@@ -5,6 +5,10 @@
 
 ## 2026-07-03
 
+- **Kill credit popup: green + longer.** Recolored the `+xx` kill popup from gold to green (`#77ee77`) so
+  it stays legible against the warm/gold ship-explosion burst it spawns on top of, and extended its life
+  from ~1 s to ~2 s (`maxLife` 2.0), holding at full opacity then fading over the last ~1 s instead of
+  fading the whole time. Cosmetic tweak only.
 - **Kill credit popups.** [2026-07-03-0042-kill-credit-popup] Destroying an enemy now shows a short gold
   `+xx` popup floating up from the kill site (the credits earned), fading over ~1 s. It's a pooled DOM
   overlay in the `#markers` container, projected world→screen each frame like the enemy edge markers
