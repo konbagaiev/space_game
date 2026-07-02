@@ -6,6 +6,8 @@
 // one banks its per-kill ×2 credits like a level (server-sealed rewards are a later integrity item) and
 // does NOT advance the story counter (`current_progress`) — pure repeatable grind content.
 
+import { enemyTotalFromPhases } from './enemy_total.js';
+
 // Enemy ship names (must match SHIPS in catalog_seed.js).
 const GUNNER = 'pirate gunner', ROCKETEER = 'basic rocket pirate', HEAVY = 'pirate mini boss', BOSS = 'first pirate boss';
 
@@ -49,6 +51,8 @@ const FLAVORS = [
 // WHERE you fight — its `center` spawns the player + arena over the matching structure; the others are at
 // a distance. The mission centers match the set-piece positions in catalog_seed.js's `home-system`.
 export function generateMissions() {
+  const phases = sideMissionPhases();
+  const enemyTotal = enemyTotalFromPhases(phases);
   return FLAVORS.map((f) => ({
     id: `side-${f.type}`,
     type: f.type,
@@ -58,7 +62,8 @@ export function generateMissions() {
     descriptor: {
       title: f.type, map: 'home-system', sideMission: true,
       center: f.center, drift: f.drift || null,
-      phases: sideMissionPhases(),
+      phases,
+      enemyTotal,
     },
   }));
 }

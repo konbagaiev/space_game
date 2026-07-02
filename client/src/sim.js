@@ -37,6 +37,7 @@ export const levelRunner = {
 
   start(level) {
     this.level = level; this.phaseIndex = 0; this.won = false; this.winPending = 0;
+    G.enemyTotal = (level && level.enemyTotal) || 0; // total enemies for the HUD killed/total (0 if not seeded)
     this.enterPhase();
   },
   get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },

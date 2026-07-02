@@ -28,6 +28,7 @@ export const G = {
   arenaDrift: null,           // THREE.Vector3 (units/sec on x,z) when the current map drifts, else null
   // --- run/account scalars (read by the HUD; written by the loop, level runner, bank + account flows) ---
   kills: 0,                   // destroyed enemies this run (drives the level runner's thresholds + HUD)
+  enemyTotal: 0,              // total enemies this level/mission (from descriptor.enemyTotal; 0 = unknown -> HUD hides the /total)
   earned: 0,                  // credits earned this run: each kill adds the ship's `reward`; doubled on level completion
   balance: 0,                 // persistent account balance (loaded from the server; banked at run end)
   // --- backend identity + per-session funnel guards (read across net/sim/UI; reassigned by login/reset/advance) ---
