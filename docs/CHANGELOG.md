@@ -5,6 +5,19 @@
 
 ## 2026-07-02
 
+- **Admin panel + referrer capture `[2026-07-02-1352-admin-panel-player-stats]`.** New private
+  server-rendered **`GET /admin`** dashboard (`server/src/admin.js`) that lists every registered player
+  (id, username, email, verified, created/last-seen, progress, credits, games) plus per-player aggregates
+  from the `games` table (total time played, total kills, total earned) in one sortable HTML table
+  (client-side click-to-sort per column; capped at 1000 rows). Protected by **HTTP Basic Auth**
+  (`ADMIN_USER`/`ADMIN_PASSWORD` from the server `.env`, compared with `crypto.timingSafeEqual`); the route
+  **404s when either env var is unset**, so it's never open on prod. Backed by a new `getAdminPlayers`
+  datastore fn (both backends; Postgres coerces the BIGINT `SUM`s + `email_verified` INTEGER). Also added a
+  new write-once **`players.referrer`** column (**migration 018** / Postgres bootstrap): the client sends a
+  compact JSON of `document.referrer` + `?ref=`/UTM params once at boot (`net.js` `referrerPayload`/
+  `registerBoot`, called in `bootstrap()`); the server persists it **only on player-row creation**
+  (`registerPlayer(id, referrer)`, truncated to 512 chars), so it reflects where a player first came from
+  and is never overwritten. No new runtime deps.
 - **Perf/FPS overlay is now dev-only `[2026-07-02-0149-dev-diagnostics-flag]`.** The top-center perf/service
   string (FPS, frame-ms, draw calls, triangles, backbuffer resolution) was shown to every player during a
   fight; it's a diagnostic tool, so it's now **hidden for normal players** and shown only under the existing

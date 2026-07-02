@@ -8,6 +8,8 @@ import fs from 'node:fs';
 const dbPath = path.join(os.tmpdir(), `spacegame-test-${process.pid}-${Date.now()}.db`);
 process.env.DB_PATH = dbPath;
 process.env.NODE_ENV = 'test'; // non-Secure cookies so local-http tests can read/replay them
+process.env.ADMIN_USER = 'admin';       // enable the /admin dashboard for the suite (Basic Auth)
+process.env.ADMIN_PASSWORD = 'secret';
 
 const { createApp } = await import('./server.js');
 const { outbox } = await import('./ses.js');
@@ -36,6 +38,8 @@ after(() => {
 const post = (p, body, headers = {}) =>
   fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
 const getJson = async (p) => (await fetch(base + p)).json();
+const get = (p, headers = {}) => fetch(base + p, { headers });
+const adminAuth = { Authorization: 'Basic ' + Buffer.from('admin:secret').toString('base64') };
 
 // Pull the raw `session` cookie value out of a response's Set-Cookie header(s).
 function sessionCookie(res) {
@@ -890,4 +894,53 @@ test('catalog: the player shop ladder is seeded with prices (components + weapon
   assert.equal(weapons.find((w) => w.id === 8).price, 2600);
   assert.equal(weapons.find((w) => w.id === 1).price, 800);          // Basic kinetic now priced
   assert.equal(weapons.find((w) => w.id === 5).price, 1500);        // Machine Gun — strong, so not cheap
+});
+
+// ---------- Admin panel + referrer capture (docs/plans/2026-07-02-1352-admin-panel-player-stats.md) ----------
+
+test('referrer: written write-once on the first register, never overwritten', async () => {
+  await post('/api/players/register', { playerId: 'ref1', referrer: '{"ref":"twitter"}' });
+  await post('/api/players/register', { playerId: 'ref1', referrer: '{"ref":"facebook"}' }); // must NOT overwrite
+  const html = await (await get('/admin', adminAuth)).text();
+  assert.ok(html.includes('twitter'), 'keeps the first referrer');
+  assert.ok(!html.includes('facebook'), 'never overwrites with a later referrer');
+});
+
+test('referrer: auto-register (active-ship) creates the player with no referrer', async () => {
+  await getJson('/api/players/notaref/active-ship'); // auto-registers, no referrer
+  const html = await (await get('/admin', adminAuth)).text();
+  // the row exists (id shown, truncated to 8 chars) but carries no referrer text
+  assert.ok(html.includes('notaref'), 'the auto-registered player shows up');
+});
+
+test('admin: aggregates sum kills/time/earned across a player\'s games', async () => {
+  await post('/api/players/register', { playerId: 'p_stats' });
+  await post('/api/games', { playerId: 'p_stats', credits: 100, kills: 3, durationMs: 60000 });
+  await post('/api/games', { playerId: 'p_stats', credits: 50, kills: 2, durationMs: 120000 });
+  const html = await (await get('/admin', adminAuth)).text();
+  const row = html.split('<tr>').find((r) => r.includes('p_stats'));
+  assert.ok(row, 'the player row is rendered');
+  assert.ok(row.includes('data-sort="5"'), 'total kills summed to 5');       // 3 + 2
+  assert.ok(row.includes('data-sort="150"'), 'total earned summed to 150');   // 100 + 50
+  assert.ok(row.includes('data-sort="180000"'), 'total time played summed to 180000ms');
+  assert.ok(row.includes('0h 3m'), 'total time formatted (180000ms = 3 min)');
+  assert.ok(row.includes('data-sort="2"'), 'games_played counter = 2');
+});
+
+test('admin: requires auth (401 + WWW-Authenticate when no credentials)', async () => {
+  const r = await get('/admin');
+  assert.equal(r.status, 401);
+  assert.match(r.headers.get('www-authenticate') || '', /Basic/);
+});
+
+test('admin: rejects bad credentials (401)', async () => {
+  const r = await get('/admin', { Authorization: 'Basic ' + Buffer.from('admin:wrong').toString('base64') });
+  assert.equal(r.status, 401);
+});
+
+test('admin: accepts good credentials (200 + table)', async () => {
+  const r = await get('/admin', adminAuth);
+  assert.equal(r.status, 200);
+  const html = await r.text();
+  assert.ok(html.includes('<table'), 'renders the players table');
 });

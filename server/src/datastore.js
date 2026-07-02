@@ -18,6 +18,7 @@ export const recordPerfSample = (...a) => impl.recordPerfSample(...a);
 export const getPerfSamples = (...a) => impl.getPerfSamples(...a);
 export const getPlayerGames = (...a) => impl.getPlayerGames(...a);
 export const stats = (...a) => impl.stats(...a);
+export const getAdminPlayers = (...a) => impl.getAdminPlayers(...a); // admin dashboard (server/src/admin.js)
 export const getShips = (...a) => impl.getShips(...a);
 export const getWeapons = (...a) => impl.getWeapons(...a);
 export const getComponents = (...a) => impl.getComponents(...a);

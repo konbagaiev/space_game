@@ -3,9 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-02 (perf/FPS overlay is now dev-only — hidden by default, shown only under the sticky
-`?dev` flag via the new `client/src/dev.js`/`isDev()`; see the Perf overlay bullet below). Prior:
-device-support architecture [iteration 1] + desktop Main Window polish — a two-axis
+**Updated:** 2026-07-02 (**admin panel + referrer capture** — a private server-rendered `GET /admin`
+dashboard [`server/src/admin.js`] lists every registered player + per-player game aggregates behind HTTP
+Basic Auth [`ADMIN_USER`/`ADMIN_PASSWORD`, 404 when unset]; a new write-once `players.referrer` column
+[migration 018 / PG bootstrap] captures `document.referrer`+`?ref=`/UTM at boot; see the Admin dashboard
++ Referrer capture bullets in Backend). Prior: perf/FPS overlay is now dev-only — hidden by default, shown
+only under the sticky `?dev` flag via the new `client/src/dev.js`/`isDev()`; see the Perf overlay bullet below.
+Prior: device-support architecture [iteration 1] + desktop Main Window polish — a two-axis
 device model in `client/src/device.js` replaces the old `isTouch` boolean: an **input** axis [`touch`/`mouse`,
 ~constant per session] and a **form** axis [`phone`/`tablet`/`desktop`/`desktop-lg`, recomputed on resize from
 the viewport's longest edge], projected onto `input-touch|input-mouse` + `dev-phone|dev-tablet|dev-desktop|
@@ -659,7 +663,16 @@ first translation). See DECISIONS §10.
   otherwise **SQLite** via built-in `node:sqlite` (local dev / tests). Same async API either way
   (`db.js` = SQLite, `db_postgres.js` = Postgres via `pg`).
 - **Auto-registration by browser:** the client makes a UUID on first visit (kept in `localStorage`)
-  and posts it on load; the server creates the player if new. Anonymous, minimal friction.
+  and posts it on load; the server creates the player if new. Anonymous, minimal friction. The client
+  now calls **`POST /api/players/register`** once early in `bootstrap()` (previously it relied only on
+  the auto-register side-effect of active-ship/level) to carry a **referrer** on first-row creation.
+- **Referrer capture (`players.referrer`, migration 018 / Postgres bootstrap):** a nullable `TEXT`
+  column written **write-once at row creation** (`registerPlayer(id, referrer)` sets it only on the
+  INSERT path — never on the `last_seen` UPDATE — so it reflects where a player *first* came from and is
+  never overwritten by later visits). The client builds a compact JSON string of `document.referrer` +
+  `?ref=`/UTM params (empty keys omitted, `client/src/net.js` `referrerPayload`/`registerBoot`); the
+  server truncates it to **512 chars** and stores it verbatim. Existing prod players keep `NULL` (no
+  backfill). All other auto-register call sites pass no referrer. Shown raw in the `/admin` panel.
 - **Player progress:** `players.current_progress` stores the player's currently-available level — an
   integer **foreign key into `levels(id)`** (a real, enforced FK in Postgres; a plain integer in SQLite,
   whose `ALTER TABLE` can't add a FK column with a non-null default, and which doesn't enforce FKs
@@ -716,6 +729,16 @@ first translation). See DECISIONS §10.
   `GET /api/auth/me`, `GET /api/auth/verify`), plus
   `GET /api/config` (public client config), `POST /api/events` (funnel telemetry) and
   `POST /api/perf` (client perf samples from the `?dev` monitor — write-only diagnostic telemetry).
+- **Admin dashboard (`GET /admin`, `server/src/admin.js`):** a private, **server-rendered** HTML page
+  listing every player (id short, username, email, email_verified, created_at, last_seen,
+  current_progress, credits, games_played, referrer) plus per-player aggregates from `games` (total time
+  played, total kills, total earned), one aggregated query `players LEFT JOIN games GROUP BY player`
+  ordered `last_seen DESC`, hard-capped at **1000 rows** — via the `getAdminPlayers` datastore fn (both
+  backends; Postgres coerces the BIGINT `SUM`s with `Number()` and `email_verified` with `!!Number()`).
+  Client-side click-to-sort per column (inline JS); no pagination/search/export. Protected by **HTTP
+  Basic Auth** (`ADMIN_USER` / `ADMIN_PASSWORD` from the server `.env`, compared with
+  `crypto.timingSafeEqual`); **404 (disabled) when either env var is unset**, so it's never wide open on
+  prod. Mounted outside `/api`, so the `/api`-scoped CORS never touches it (same-origin only).
 - **Health / uptime** — `GET /api/health` is the monitoring endpoint (UptimeRobot, the Docker
   healthcheck, the CI smoke check all use it). It touches the DB (via `stats`), so it reflects DB
   outages, not just process liveness: **200** `{ ok:true, status:"ok", backend, uptimeSec, players,

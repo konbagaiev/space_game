@@ -8,9 +8,10 @@ import path from 'node:path';
 import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend, resetPlayer,
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
   setResetToken, consumeResetToken, deleteSessionsForPlayer,
-  getStash, buyItem, sellItem, equipItem, unequipItem } from './datastore.js';
+  getStash, buyItem, sellItem, equipItem, unequipItem, getAdminPlayers } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { generateMissions } from './missions.js';
+import { mountAdmin } from './admin.js';
 import { sendVerificationEmail, verificationUrl, sendPasswordResetEmail, passwordResetUrl } from './ses.js';
 
 const SUPPORTED_LANGUAGES = ['en', 'ru']; // mirror of client SUPPORTED (DECISIONS §10)
@@ -74,11 +75,11 @@ export async function createApp() {
 
   // Auto-register a player by their browser-generated id (create if new).
   app.post('/api/players/register', wrap(async (req, res) => {
-    const { playerId } = req.body || {};
+    const { playerId, referrer } = req.body || {};
     if (!playerId || typeof playerId !== 'string') {
       return res.status(400).json({ error: 'playerId (string) required' });
     }
-    res.json(await registerPlayer(playerId));
+    res.json(await registerPlayer(playerId, typeof referrer === 'string' ? referrer : null));
   }));
 
   // Record one finished game and bank the credits earned into the player's balance.
@@ -390,6 +391,11 @@ export async function createApp() {
     }
     res.status(accepted ? 204 : 400).end();
   }));
+
+  // Admin dashboard (docs/plans/2026-07-02-1352-admin-panel-player-stats.md): server-rendered players +
+  // per-player game aggregates, HTTP Basic Auth (ADMIN_USER/ADMIN_PASSWORD; 404 when unset). Mounted
+  // outside /api, so the /api-scoped CORS never touches it — /admin stays same-origin only.
+  mountAdmin(app, getAdminPlayers);
 
   // Serve the game client (index.html etc.) from the same origin as the API.
   app.use(express.static(clientDir));

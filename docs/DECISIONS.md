@@ -1167,6 +1167,29 @@ classes already use a `dev-` prefix for *device form* (`body.dev-desktop`/`body.
 
 ---
 
+## 36. Admin panel — env-gated HTTP Basic Auth (404 when unset); referrer as one opaque JSON column
+
+**Decision.** The `/admin` dashboard (server-rendered players + per-player game aggregates) is protected by
+**HTTP Basic Auth** with credentials from the server `.env` (`ADMIN_USER` / `ADMIN_PASSWORD`, compared with
+`crypto.timingSafeEqual`) — **no admin user table, no bespoke login page, no session**. When either env var
+is unset the route returns **404** (admin disabled — indistinguishable from "no such route"), so it is never
+wide open on prod even if someone forgets to configure it. The referrer captured per player is stored as
+**one opaque nullable `TEXT` column** (`players.referrer`, a compact JSON string of `document.referrer` +
+`?ref=`/UTM), **written once on row creation** and never overwritten, **not** parsed into per-param columns.
+
+**Why.** For a single maintainer eyeballing "who registered and how they play" (§30 — keep it simple), Basic
+Auth over TLS is the least machinery that is safe: the browser handles the credential prompt, there's no
+new auth surface to maintain, and the 404-when-unset default fails closed. A dedicated admin account
+model / RBAC would be gold-plating for one operator. The referrer is for **eyeballing, not querying** —
+funnels/UTM analytics are out of scope — so a single verbatim JSON blob (truncated to 512 chars, rendered
+raw in the panel) avoids schema churn and per-param columns that nothing yet reads. **Write-once at INSERT**
+(never on the `last_seen` UPDATE) gives "first-referrer-only" for free and means the many later auto-register
+calls (active-ship/level/games) can keep passing no referrer. Basic Auth is also written to guard any future
+`/api/admin/*` JSON endpoints, though none are added now. `/admin` is mounted **outside `/api`**, so the
+`/api`-scoped CORS never applies — it stays same-origin only.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·
