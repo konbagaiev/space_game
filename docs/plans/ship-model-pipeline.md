@@ -64,6 +64,10 @@ the seed carrying the URLs); CDN binaries are already on S3.
    confirm whether **`client/assets/CREDITS.md`** changes before finishing: a new source → add its row; the
    **last** use of an asset removed → offer to drop the stale row; a **CC-BY** asset's attribution must stay
    while it's in use. Don't decide silently — this is the asset-credits rule in `CLAUDE.md`.
+7. **Re-publish the itch build (mandatory once the change is on prod).** The itch export **bundles the
+   combat glbs** but reads the **catalog live from prod**, so a new model hash 404s the old bundled glb and
+   the changed ships fall back to **generic primitive cones** on itch. Run `/publish-itch` after the deploy.
+   See **DECISIONS §37**.
 
 Because content-hashed URLs live in git and the bytes live on S3, they **can't drift** — a URL only
 resolves if that exact build was pushed.

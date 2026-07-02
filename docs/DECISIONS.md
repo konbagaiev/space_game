@@ -1190,6 +1190,35 @@ calls (active-ship/level/games) can keep passing no referrer. Basic Auth is also
 
 ---
 
+## 37. A prod model/asset hash change also needs a `publish-itch` (itch bundles glbs, reads catalog live)
+
+**Context.** The itch.io export (§33) is an *online* build: its ZIP **bundles the combat `.glb` files**
+(served same-origin from itch's CDN) but fetches the **ship catalog LIVE** from `vega.tenony.com`
+(`API_BASE` baked by `scripts/build-itch.mjs`). Those two facts are independently sensible but **coupled**:
+the bundled glbs are a point-in-time snapshot, the catalog is always current.
+
+**Consequence (the bug this documents).** When a model changes on prod via the ship-model pipeline (§14),
+its **content hash changes**, so the live catalog immediately serves the *new* hash. The already-published
+itch ZIP still contains the *old* glb, so the itch client requests the new hash from itch's CDN → **404 →
+generic primitive cone** for exactly the changed ships (other ships are unaffected). This bit us on the
+basic-pirate metallic-hull change (2026-07-02): the fighter + pirate gunner showed cones on itch until
+re-published.
+
+**Decision.** Any model/asset change that reaches prod is **not done until the itch build is re-published**
+too — run `/publish-itch` (`assets:pull` → `build:itch` → `butler push dist/itch-staging
+bagaiev/vega-sentinels:html5`) after the prod deploy. This is now step 11 + a checklist item in the
+`update-ship-model` skill and a lesson in the feature-planner's guidance, so it can't be forgotten.
+
+**Alternatives rejected.** (a) *Rewrite `modelUrl` to absolute prod/CDN URLs in the itch build* so itch
+always pulls the exact glb the live catalog names — would make itch immune to this drift, but adds a
+build-time URL rewrite + a hard runtime dependency on the prod origin (or CDN) for *every* combat model
+(today they're same-origin/offline-cacheable on itch), and re-introduces CORS for model fetches. Deferred
+as over-engineering (§30) until model changes are frequent enough to justify it. (b) *Bundle the catalog
+into the itch ZIP too* — kills shared progression / live balance updates, the whole point of the online
+build (§33). So the accepted cost is a manual re-publish step, enforced by the skill + planner guidance.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

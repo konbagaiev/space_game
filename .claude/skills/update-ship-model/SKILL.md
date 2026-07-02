@@ -109,6 +109,18 @@ while in use). Don't decide silently.
   the image), blue-green deploys, and the fresh container reseeds the catalog automatically. Watch it:
   `gh run watch <id> --exit-status`. Verify with `curl` against `vega.tenony.com` after.
 
+### 11. Re-publish the itch.io build — ALWAYS after a model change reaches prod
+The itch export **bundles the combat `.glb` files** into its ZIP (served same-origin from itch.io) but
+fetches the **ship catalog LIVE** from `vega.tenony.com` (`API_BASE` baked by `scripts/build-itch.mjs`).
+So the moment the prod catalog serves a **new model hash**, the already-published itch ZIP still has the
+**old** glb → the client 404s the new hash and falls back to the **generic primitive cone** for exactly
+the changed ships (the "generic primitive" bug, itch edition). Whenever a model change lands on prod, also
+run **`/publish-itch`** (`assets:pull` → `build:itch` → `butler push dist/itch-staging
+bagaiev/vega-sentinels:html5`) so the ZIP re-bundles the new glbs. Verify with
+`butler status bagaiev/vega-sentinels:html5`. (Pure model/client change → only publish-itch; the server
+was already redeployed in step 10.) See DECISIONS §37.
+
 ## Checklist
 S3 pushed ✅ · old S3 objects deleted (if replacement) ✅ · catalog wired ✅ · local files refreshed ✅ ·
-`assets:check` OK ✅ · **local server restarted** ✅ · CREDITS confirmed ✅ · docs + commit + deploy ✅
+`assets:check` OK ✅ · **local server restarted** ✅ · CREDITS confirmed ✅ · docs + commit + deploy ✅ ·
+**itch re-published (`/publish-itch`)** ✅

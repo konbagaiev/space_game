@@ -5,6 +5,13 @@
 
 ## 2026-07-02
 
+- **Institutionalized the "prod model change → re-publish itch" rule.** After the metallic-hull change
+  broke the two changed ships to generic cones on itch (itch bundles glbs but reads the catalog live from
+  prod), baked the guard into four places so it can't be forgotten: **DECISIONS §37** (the coupling +
+  rejected alternatives), **`update-ship-model` skill** (new step 11 + checklist item), the
+  **feature-planner** agent's Learned guidance (any model-change plan must include a `publish-itch` step),
+  and the **ship-model-pipeline** brief (step 7).
+
 - **Basic pirate hull now reflects the env-map (metallic).** The grey `black_mat_for_body_0` material —
   the whole hull/wings of the basic pirate — was flat matte (metalness 0.16, roughness 0) and read as dull
   light-grey plastic while the red/dark parts caught reflections. Bumped it to **metalness 0.8 / roughness

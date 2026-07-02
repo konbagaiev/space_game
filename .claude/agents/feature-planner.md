@@ -61,3 +61,10 @@ Your final message: a point-by-point list of how each issue was resolved.
 ## Learned guidance
 
 <!-- The orchestrator appends dated lessons here from retro feedback. Read and apply them. -->
+
+- **2026-07-02 — Model/asset changes must include a `publish-itch` step.** Any plan that adds, replaces,
+  re-tints, or re-materials a ship/enemy/item **model** (or any asset with a content-hashed URL in
+  `catalog_seed.js`) must list a final step to **re-publish the itch.io build** (`/publish-itch`) after the
+  prod deploy — the itch ZIP bundles the combat glbs but reads the catalog live from prod, so a new model
+  hash 404s the old bundled glb and the changed ships fall back to generic primitive cones on itch. See
+  DECISIONS §37 + the `update-ship-model` skill (step 11).
