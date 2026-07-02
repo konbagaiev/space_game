@@ -3,6 +3,19 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-02
+
+- **Perf/FPS overlay is now dev-only `[2026-07-02-0149-dev-diagnostics-flag]`.** The top-center perf/service
+  string (FPS, frame-ms, draw calls, triangles, backbuffer resolution) was shown to every player during a
+  fight; it's a diagnostic tool, so it's now **hidden for normal players** and shown only under the existing
+  `?dev` flag. The flag is now **sticky** via `localStorage['devMode']`: truthy `?dev`/`?dev=true`/`?dev=1`
+  turns it on and remembers it across loads; `?dev=false`/`?dev=0` clears it; no `dev` param → the stored
+  flag decides. New shared `client/src/dev.js` / `isDev()` (self-applies a `body.devmode` class; `#perf` is
+  `display:none` until `body.devmode:not(.menu)` reveals it) replaces two loose
+  `location.search.includes('dev')` substring checks in `hud.js`/`main.js` (which also matched `?developer`
+  etc.); the `?dev` perf telemetry (`devPerf`) rides the same helper. Gameplay HUD, mini-map, edge markers
+  and rocket cooldown are unchanged for everyone. `?tune`/`?debug` stay independent.
+
 ## 2026-07-01
 
 - **`/publish-itch` skill.** Added a `publish-itch` skill (`.claude/skills/publish-itch/SKILL.md`) that

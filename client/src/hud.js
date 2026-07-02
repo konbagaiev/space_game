@@ -11,8 +11,9 @@ import { ARENA, arenaCenter } from './world.js';
 import { cssColor } from './format.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
+import { isDev } from './dev.js';
 
-const DEV = location.search.includes('dev'); // ?dev → append live JS-heap usage to the perf overlay
+const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the perf overlay (see dev.js)
 
 // ---------- HUD ----------
 export function updateHud() {

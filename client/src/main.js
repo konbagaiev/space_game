@@ -18,6 +18,7 @@ import { fetchJson, track, currentLevelLabel } from './net.js'; // JSON fetch (b
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
+import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem } from './mainwindow.js'; // between-battles Main Window + model viewers
 import { showWelcome, applyTranslations } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache } from './account.js'; // auth block (bootstrap session restore + Sentry)
@@ -29,7 +30,7 @@ let samplesLoaded = false; // one-time guard so the sample preload fires once, a
 let soundUrls = {};                 // logical key → same-origin url (fed to audio.preloadSamples)
 
 // Graphics quality tier lives in G.gfx (built in state.js, read by engine.js at construction).
-const DEV = location.search.includes('dev'); // ?dev → record per-frame perf samples to the server (see devPerf)
+const DEV = isDev(); // ?dev → record per-frame perf samples to the server (see devPerf / dev.js)
 
 // musicForState/refreshMusic moved to src/sim.js (music follows the live game state). refreshMusic is
 // imported at the top; tryUnlockAudio below calls it on the first unlocking gesture.

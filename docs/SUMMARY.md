@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-01 (device-support architecture [iteration 1] + desktop Main Window polish — a two-axis
+**Updated:** 2026-07-02 (perf/FPS overlay is now dev-only — hidden by default, shown only under the sticky
+`?dev` flag via the new `client/src/dev.js`/`isDev()`; see the Perf overlay bullet below). Prior:
+device-support architecture [iteration 1] + desktop Main Window polish — a two-axis
 device model in `client/src/device.js` replaces the old `isTouch` boolean: an **input** axis [`touch`/`mouse`,
 ~constant per session] and a **form** axis [`phone`/`tablet`/`desktop`/`desktop-lg`, recomputed on resize from
 the viewport's longest edge], projected onto `input-touch|input-mouse` + `dev-phone|dev-tablet|dev-desktop|
@@ -87,7 +89,13 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   (`clock.getDelta()` before the sim's `0.05`s clamp), so they stay accurate below 20 fps instead of
   saturating at the clamp. A proxy for hardware load; the resolution lets a tester confirm whether a
   tier/`renderScale` change actually moved the pixel count (a weak phone often reports `devicePixelRatio`
-  ~1, making the pixel-ratio cap a no-op).
+  ~1, making the pixel-ratio cap a no-op). **Dev-only:** the overlay is a diagnostic tool, hidden by
+  default (`#perf { display: none }`) and shown only under the **sticky `?dev` flag** — CSS reveals it via
+  `body.devmode:not(.menu) #perf`. `client/src/dev.js` / `isDev()` is the single source of truth for `?dev`
+  (it also gates the `devPerf` perf telemetry in `main.js` and the `●dev`/JS-heap suffix in `hud.js`).
+  Truthy for `?dev`/`?dev=true`/`?dev=1` (turns it on and remembers it in `localStorage['devMode']`),
+  explicit-off for `?dev=false`/`?dev=0` (clears the stored flag); with no `dev` param the stored flag
+  decides, so a dev visits `/?dev` once and keeps the overlay across loads. Normal players never see it.
 - **Rocket cooldown indicator** — the 🚀 circle (bottom-right) fills radially as it reloads
   (orange while reloading, green when ready). Shown on both PC and mobile; on PC it's also
   clickable to fire (besides the `F` key), on mobile it's the rocket button.
