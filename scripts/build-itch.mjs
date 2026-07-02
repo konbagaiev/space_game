@@ -35,12 +35,14 @@ const dirs = ['src', 'locales', 'assets'];
 for (const f of files) fs.cpSync(path.join(clientDir, f), path.join(staging, f));
 for (const d of dirs) fs.cpSync(path.join(clientDir, d), path.join(staging, d), { recursive: true, filter });
 
-// Bake the production API base into the STAGED api-base.js only (source tree stays same-origin '').
+// Bake the production API base + build source into the STAGED api-base.js only (source tree stays
+// same-origin '' / 'web'). BUILD_SOURCE='itch' lets registerBoot() tag itch players (see net.js).
 const PROD =
   "// Baked by scripts/build-itch.mjs for the itch.io export — the client runs on itch's CDN and calls\n" +
   "// the API cross-origin at the production origin. The source tree keeps API_BASE=''. See\n" +
   "// docs/plans/2026-07-01-1824-itch-html5-export.md.\n" +
-  "export const API_BASE = 'https://vega.tenony.com';\n";
+  "export const API_BASE = 'https://vega.tenony.com';\n" +
+  "export const BUILD_SOURCE = 'itch';\n";
 fs.writeFileSync(path.join(staging, 'src', 'api-base.js'), PROD);
 
 // Count files + total bytes (guard against itch limits) by walking the staging tree.

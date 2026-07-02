@@ -673,6 +673,11 @@ first translation). See DECISIONS §10.
   `?ref=`/UTM params (empty keys omitted, `client/src/net.js` `referrerPayload`/`registerBoot`); the
   server truncates it to **512 chars** and stores it verbatim. Existing prod players keep `NULL` (no
   backfill). All other auto-register call sites pass no referrer. Shown raw in the `/admin` panel.
+  **Build source tag:** `referrerPayload` also adds `"source": BUILD_SOURCE` when the build is **not**
+  `web` (`client/src/api-base.js` `BUILD_SOURCE`, baked to `'itch'` by `scripts/build-itch.mjs`), so
+  **itch.io players are tagged** (`{"source":"itch"}`) even though `document.referrer` is blank inside
+  itch's sandboxed CDN iframe. Organic web players stay untagged (`BUILD_SOURCE==='web'`). Requires a
+  fresh itch build to be published for the tag to take effect on itch.
 - **Player progress:** `players.current_progress` stores the player's currently-available level — an
   integer **foreign key into `levels(id)`** (a real, enforced FK in Postgres; a plain integer in SQLite,
   whose `ALTER TABLE` can't add a FK column with a non-null default, and which doesn't enforce FKs
@@ -886,7 +891,8 @@ first translation). See DECISIONS §10.
 - **API base:** every client `/api` call is prefixed with `API_BASE` from **`client/src/api-base.js`**.
   It exports `''` (empty = same-origin relative — the normal `vega.tenony.com` deploy where client + API
   share one origin); the itch build **overwrites only the staged copy** of that file with
-  `https://vega.tenony.com`. The shared `fetchJson` helper (`net.js`) prefixes **only `/api` URLs**
+  `https://vega.tenony.com` **and `BUILD_SOURCE='itch'`** (same file exports `BUILD_SOURCE`, default
+  `'web'`, so referrer capture can tag itch players — see Referrer capture). The shared `fetchJson` helper (`net.js`) prefixes **only `/api` URLs**
   (`url.startsWith('/api') ? API_BASE + url : url`) so bundled same-origin assets (i18n locale loads,
   `audio.js` sound assets) stay relative. No runtime hostname sniffing — the value is baked at build time.
 - **Auth is dual-path:** same-origin uses the httpOnly `session` cookie (unchanged); cross-origin (itch)

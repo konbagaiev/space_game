@@ -5,3 +5,8 @@
 // Do NOT sniff the hostname at runtime (itch uses rotating *.itch.zone / *.hwcdn.net subdomains);
 // the value is baked at build time. See docs/plans/2026-07-01-1824-itch-html5-export.md.
 export const API_BASE = '';
+
+// Which build this is. 'web' = the normal same-origin deploy; the itch.io build
+// (scripts/build-itch.mjs) OVERWRITES this to 'itch' so registerBoot() can tag itch players
+// (document.referrer is unreliable inside itch's sandboxed CDN iframe). See referrerPayload() in net.js.
+export const BUILD_SOURCE = 'web';
