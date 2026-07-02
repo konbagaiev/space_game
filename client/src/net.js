@@ -37,6 +37,32 @@ export function bankRun() {
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
+// Build a compact referrer string (document.referrer + ?ref=/UTM params), omitting empty keys. Sent once
+// at boot so the server can store it write-once on player-row creation (admin panel; DECISIONS: referrer).
+export function referrerPayload() {
+  try {
+    const p = new URLSearchParams(location.search);
+    const out = {};
+    if (document.referrer) out.referrer = document.referrer;
+    for (const [k, key] of [['ref', 'ref'], ['utm_source', 'utm_source'], ['utm_medium', 'utm_medium'], ['utm_campaign', 'utm_campaign']]) {
+      const v = p.get(k); if (v) out[key] = v;
+    }
+    return Object.keys(out).length ? JSON.stringify(out) : null;
+  } catch { return null; }
+}
+
+// Register the current player early in boot, sending the referrer. The server writes referrer only when
+// it creates the row (write-once); this is a no-op enrichment for a returning player. Best-effort.
+export async function registerBoot() {
+  if (!G.playerId) return;
+  try {
+    await fetch(API_BASE + '/api/players/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: G.playerId, referrer: referrerPayload() }),
+    });
+  } catch { /* best-effort: offline / file:// still plays */ }
+}
+
 // A short label for the current level (e.g. "Level 3"); used as event context + the Sentry `level` tag.
 // A chosen side mission (G.activeMission) overrides the campaign level (null = campaign).
 export const currentLevelLabel = () => G.activeMission ? ('mission:' + (G.activeMission.title || 'side'))

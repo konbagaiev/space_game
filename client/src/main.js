@@ -14,7 +14,7 @@ import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf)
-import { fetchJson, track, currentLevelLabel } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners)
+import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -458,6 +458,10 @@ async function bootstrap() {
 
     // Restore an authenticated session (httpOnly cookie) over the anon UUID + clear the ?verified=1 flag.
     await restoreSession();
+
+    // Ensure the player row exists (write-once referrer capture) before the level/active-ship fetches,
+    // which also auto-register but carry no referrer.
+    await registerBoot();
 
     // The level comes from the player's progress (their highest unlocked level); fall back to
     // level-1 if the player isn't identified (e.g. localStorage blocked).

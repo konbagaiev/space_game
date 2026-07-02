@@ -15,10 +15,12 @@ export async function migrate() {
       last_seen    BIGINT  NOT NULL,
       games_played INTEGER NOT NULL DEFAULT 0,
       language     TEXT    NOT NULL DEFAULT 'en',  -- UI/content language preference (resolution is client-side)
-      credits      INTEGER NOT NULL DEFAULT 1000   -- persistent credit balance (new players start at 1000)
+      credits      INTEGER NOT NULL DEFAULT 1000,  -- persistent credit balance (new players start at 1000)
+      referrer     TEXT                            -- where the player first came from (write-once at row creation)
     );
     ALTER TABLE players ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en';
     ALTER TABLE players ADD COLUMN IF NOT EXISTS credits INTEGER NOT NULL DEFAULT 1000;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS referrer TEXT;   -- where the player first came from (write-once)
     CREATE TABLE IF NOT EXISTS games (
       id          BIGSERIAL PRIMARY KEY,
       player_id   TEXT    NOT NULL REFERENCES players(id),
@@ -250,15 +252,16 @@ async function ensureDefaultShip(playerId, db = pool) {
     [playerId, ship.rows[0].id, '{}', Date.now()]);
 }
 
-export async function registerPlayer(id) {
+export async function registerPlayer(id, referrer = null) {
   const now = Date.now();
   const { rows } = await pool.query('SELECT created_at, games_played, current_progress, language, credits, shop_unlocked FROM players WHERE id = $1', [id]);
   if (rows[0]) {
-    await pool.query('UPDATE players SET last_seen = $1 WHERE id = $2', [now, id]);
+    await pool.query('UPDATE players SET last_seen = $1 WHERE id = $2', [now, id]);   // referrer untouched (write-once)
     await ensureDefaultShip(id);
     return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, language: rows[0].language, credits: rows[0].credits, shopUnlocked: !!rows[0].shop_unlocked, createdAt: Number(rows[0].created_at) };
   }
-  await pool.query('INSERT INTO players (id, created_at, last_seen) VALUES ($1, $2, $3)', [id, now, now]);
+  const ref = referrer ? String(referrer).slice(0, 512) : null;
+  await pool.query('INSERT INTO players (id, created_at, last_seen, referrer) VALUES ($1, $2, $3, $4)', [id, now, now, ref]);
   await ensureDefaultShip(id);
   return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
@@ -449,6 +452,29 @@ export async function stats() {
   const p = await pool.query('SELECT COUNT(*)::int AS n FROM players');
   const g = await pool.query('SELECT COUNT(*)::int AS n FROM games');
   return { players: p.rows[0].n, games: g.rows[0].n };
+}
+
+// All players joined to their aggregated game history (admin panel). Mirrors db.js. Postgres returns
+// BIGINT/SUM as strings and email_verified as an INTEGER → coerce every numeric with Number(...) and
+// email_verified with !!Number(...).
+export async function getAdminPlayers(limit = 1000) {
+  const { rows } = await pool.query(`
+    SELECT p.id, p.username, p.email, p.email_verified, p.created_at, p.last_seen,
+           p.current_progress, p.credits, p.games_played, p.referrer,
+           COALESCE(SUM(g.duration_ms), 0) AS total_time_ms,
+           COALESCE(SUM(g.kills), 0)       AS total_kills,
+           COALESCE(SUM(g.credits), 0)     AS total_earned
+    FROM players p LEFT JOIN games g ON g.player_id = p.id
+    GROUP BY p.id
+    ORDER BY p.last_seen DESC
+    LIMIT $1`, [limit]);
+  return rows.map((r) => ({
+    id: r.id, username: r.username ?? null, email: r.email ?? null,
+    emailVerified: !!Number(r.email_verified), createdAt: Number(r.created_at), lastSeen: Number(r.last_seen),
+    currentProgress: Number(r.current_progress), credits: Number(r.credits), gamesPlayed: Number(r.games_played),
+    referrer: r.referrer ?? null,
+    totalTimeMs: Number(r.total_time_ms), totalKills: Number(r.total_kills), totalEarned: Number(r.total_earned),
+  }));
 }
 
 // Catalog: ships, weapons, components. JSONB columns come back already parsed.
