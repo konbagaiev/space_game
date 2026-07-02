@@ -3,9 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-02 (**HUD Destroyed counter now killed/total** — the on-screen kill counter shows
+**Updated:** 2026-07-02 (**Basic pirate hull now metallic** — the grey `black_mat_for_body_0` material
+(hull/wings of `enemy_1` + its orange gunner variant) went from flat matte to metalness 0.8 / roughness
+0.22 in the source glbs so it reflects the RoomEnvironment env-map like the metallic parts; combat+hangar
+glbs rebuilt + rehashed in `catalog_seed.js`, `enemy_2/3/4` and CREDITS untouched. Previously: **HUD
+Destroyed counter now killed/total** — the on-screen kill counter shows
 `killed/total`; total is precomputed on the server from each descriptor's phase script
-(`enemyTotalFromPhases` → `descriptor.enemyTotal`). Previously: **admin panel + referrer capture** — a private server-rendered `GET /admin`
+(`enemyTotalFromPhases` → `descriptor.enemyTotal`). Also: **admin panel + referrer capture** — a private server-rendered `GET /admin`
 dashboard [`server/src/admin.js`] lists every registered player + per-player game aggregates behind HTTP
 Basic Auth [`ADMIN_USER`/`ADMIN_PASSWORD`, 404 when unset]; a new write-once `players.referrer` column
 [migration 018 / PG bootstrap] captures `document.referrer`+`?ref=`/UTM at boot; see the Admin dashboard

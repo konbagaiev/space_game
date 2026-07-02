@@ -218,7 +218,7 @@ export const SHIPS = [
     }
   },
   {
-    name: 'Basic pirate ship', type: 'enemy', modelUrl: 'assets/ships/enemy_1_combat.fc9c3347.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_hangar.3e0b9dc3.glb',
+    name: 'Basic pirate ship', type: 'enemy', modelUrl: 'assets/ships/enemy_1_combat.527b5a89.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_hangar.aa6fed25.glb',
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
       role: 'fighter', class: 'fighter', color: MARKER.small, reward: 25,
       // the enemy_1 .glb was exported nose-toward -Z; yaw Math.PI rotates it 180° so it faces +Z like all ships
@@ -243,7 +243,7 @@ export const SHIPS = [
   {
     // Pirate gunner (side missions): a tougher, faster skirmisher — Pirate hull (36 HP) + Pirate engine
     // (top speed +50%) + Scout thrusters, one long-range Pirate machine gun. Uses the orange enemy_1 model.
-    name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/enemy_1_orange_combat.9c1e749a.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_orange_hangar.21a53c39.glb',
+    name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/enemy_1_orange_combat.f3b006ba.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_orange_hangar.5e6e1cc4.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
       role: 'pirate_gunner', class: 'fighter', color: MARKER.small, reward: 50,
       model: { yaw: Math.PI, scale: 1 }, // orange enemy_1 (faces -Z, yaw PI to face +Z)

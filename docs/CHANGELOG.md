@@ -5,6 +5,16 @@
 
 ## 2026-07-02
 
+- **Basic pirate hull now reflects the env-map (metallic).** The grey `black_mat_for_body_0` material —
+  the whole hull/wings of the basic pirate — was flat matte (metalness 0.16, roughness 0) and read as dull
+  light-grey plastic while the red/dark parts caught reflections. Bumped it to **metalness 0.8 / roughness
+  0.22** in the source glbs (`assets-src/enemy_1.glb` + `enemy_1_orange.glb`), so the hull now picks up the
+  RoomEnvironment reflections like the metallic parts (reads as darker gunmetal, red accents pop more).
+  Rebuilt combat+hangar glbs, pushed to S3, superseded objects deleted, wired the new content-hashed URLs
+  into `catalog_seed.js` (`Basic pirate ship` → `enemy_1_combat.527b5a89` / `enemy_1_hangar.aa6fed25`;
+  `pirate gunner` → `enemy_1_orange_combat.f3b006ba` / `enemy_1_orange_hangar.5e6e1cc4`). Red materials and
+  `enemy_2/3/4` untouched; same asset/license so `CREDITS.md` unchanged.
+
 - **HUD Destroyed counter now killed/total.** The on-screen kill counter shows `killed/total` (e.g.
   `8/16`) instead of a bare count. *Total* is precomputed on the server from each descriptor's phase
   script via the new `enemyTotalFromPhases` (`server/src/enemy_total.js`) and stamped as
