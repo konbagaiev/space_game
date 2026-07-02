@@ -526,7 +526,17 @@ export const MAPS = [
       setpieces: [
         { type: 'asteroid-field', pos: [-550, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66 },
         { type: 'research-station', pos: [400, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
-        { type: 'freighter', pos: [-100, -48, -450], scale: 0.33, hue: 0x8a8f9c, cargoHue: 0xb0763a, speed: 2 },
+        // Freighter set-piece: the first .glb-backed set-piece. modelUrl = combat glb (served same-origin,
+        // baked in by assets:pull at deploy). `yaw` orients the nose to +Z like a ship model (0 = this
+        // model already faces +Z; its bridge/engines are aft at -Z). `exhaust` is an OPTIONAL, server-
+        // delivered effect config (palette + particle params) — omit to use the built-in fiery defaults;
+        // this is the light extension point for future server-driven model effects (DECISIONS §38).
+        {
+          type: 'freighter', pos: [-100, -48, -450], scale: 0.33, speed: 2,
+          modelUrl: 'assets/ships/freighter_combat.ffdacc37.glb',
+          yaw: 0, // nose already faces +Z (bridge-aft freighter); flip to Math.PI for a -Z export
+          // exhaust: { palette: { hot: 0xfff1c0, mid: 0xff7a2a, end: 0x7a1208 }, count: 90, len: 48, size: 5, speed: 1.4 },
+        },
       ],
     }
   },

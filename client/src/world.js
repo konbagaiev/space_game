@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { scene, skyScene } from './engine.js';
 import { G, moons, setPieces } from './state.js';
+import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -453,41 +454,72 @@ function makeAsteroidField(spec) {
   } };
 }
 
-// Cargo freighter (for "save the transport"): a spine with cargo containers, a bridge, an engine block
-// with nozzles, and a fiery exhaust particle stream. Faces +z (bridge front, engines aft). When
-// `spec.sync`, it follows the drifting arena center so it stays "below the battlefield" as the zone pans.
+// Cargo freighter (for "save the transport"): the first .glb-backed set-piece — it loads a real cargo-ship
+// model (auto center/scale/`yaw`-oriented like a ship model) and keeps a fiery exhaust particle stream
+// (hot→orange→red) streaming aft from behind the model's real engines. Nose faces +z (travel direction).
+// When `spec.sync`, it follows the drifting arena center so it stays "below the battlefield" as the zone pans.
+const FREIGHTER_MODEL_LEN = 130; // normalize the glb's longest axis to the old procedural spine length,
+                                 // so the existing set-piece pos + scale:0.33 stay visually equivalent
 function makeFreighter(spec) {
   const g = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color: spec.hue ?? 0x8a8f9c, metalness: 0.7, roughness: 0.5, flatShading: true, fog: false });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x474c57, metalness: 0.6, roughness: 0.6, flatShading: true, fog: false });
-  const cargo = new THREE.MeshStandardMaterial({ color: spec.cargoHue ?? 0xb0763a, metalness: 0.3, roughness: 0.8, flatShading: true, fog: false });
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(16, 14, 130), body)); // spine
-  const bridge = new THREE.Mesh(new THREE.BoxGeometry(20, 16, 22), body); bridge.position.set(0, 6, 70); g.add(bridge);
-  const win = new THREE.Mesh(new THREE.BoxGeometry(14, 4, 2), new THREE.MeshBasicMaterial({ color: 0x9fe0ff, fog: false })); win.position.set(0, 10, 81); g.add(win);
-  for (let i = 0; i < 4; i++) { const c = new THREE.Mesh(new THREE.BoxGeometry(28, 18, 22), cargo); c.position.set(0, 3, 30 - i * 28); g.add(c); }
-  const eng = new THREE.Mesh(new THREE.BoxGeometry(26, 20, 18), dark); eng.position.set(0, 0, -72); g.add(eng);
-  const nozzles = [];
-  for (const dx of [-7, 7]) for (const dy of [-5, 5]) {
-    const nz = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 5, 8, 10), dark); nz.rotation.x = Math.PI / 2; nz.position.set(dx, dy, -82); g.add(nz);
-    nozzles.push(new THREE.Vector3(dx, dy, -86));
-  }
-  // fiery exhaust: additive points streaming aft from the nozzles, colored hot→orange→red along their life
-  const N = spec.exhaustCount ?? 90, len = spec.exhaustLen ?? 48;
+
+  // --- Exhaust effect config: OPTIONAL, delivered from the server via the set-piece spec (map descriptor).
+  //     Falls back to the built-in fiery look. Extension point for future server-driven model effects. ---
+  const ex = spec.exhaust || {};
+  const pal = ex.palette || {};
+  const N    = ex.count ?? 90;
+  const len  = ex.len   ?? 48;
+  const size = ex.size  ?? 5;
+  const espd = ex.speed ?? 1.4;
+  const cHot = new THREE.Color(pal.hot ?? 0xfff1c0);
+  const cMid = new THREE.Color(pal.mid ?? 0xff7a2a);
+  const cEnd = new THREE.Color(pal.end ?? 0x7a1208);
+  const tmp  = new THREE.Color();
+
+  // Emitter origin + lateral spread are MUTABLE: the exhaust is built now, but the model (whose real rear
+  // bounds define where fire should stream from) loads async. The loader overwrites these; the update loop
+  // reads them each frame. Sensible pre-load default so a trail shows immediately.
+  const emit = new THREE.Vector3(0, 0, -60); // group-local (pre-scale) units
+  let spread = 3;                            // lateral jitter half-extent, group-local
+
+  // fiery exhaust: additive points streaming aft from a single rear-center emitter, colored hot→orange→red
   const epos = new Float32Array(N * 3), ecol = new Float32Array(N * 3), et = new Float32Array(N);
-  const enz = new Int8Array(N), eoff = new Float32Array(N * 2);
-  for (let i = 0; i < N; i++) { et[i] = Math.random(); enz[i] = Math.floor(Math.random() * nozzles.length); eoff[i * 2] = Math.random() - 0.5; eoff[i * 2 + 1] = Math.random() - 0.5; }
+  const eoff = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) { et[i] = Math.random(); eoff[i * 2] = Math.random() - 0.5; eoff[i * 2 + 1] = Math.random() - 0.5; }
   const egeo = new THREE.BufferGeometry();
   egeo.setAttribute('position', new THREE.BufferAttribute(epos, 3));
   egeo.setAttribute('color', new THREE.BufferAttribute(ecol, 3));
-  const emat = new THREE.PointsMaterial({ size: 5, vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  const emat = new THREE.PointsMaterial({ size, vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
   g.add(new THREE.Points(egeo, emat));
-  const cHot = new THREE.Color(0xfff1c0), cMid = new THREE.Color(0xff7a2a), cEnd = new THREE.Color(0x7a1208), tmp = new THREE.Color();
+
+  // load the .glb (exhaust-only during load and on error — no procedural fallback), then re-derive the
+  // emitter from the model's real group-local rear bounds so fire streams from behind the actual engines
+  if (spec.modelUrl) gltfLoader.load(spec.modelUrl, (gltf) => {
+    const model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const size3 = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const s = FREIGHTER_MODEL_LEN / (Math.max(size3.x, size3.y, size3.z) || 1);
+    model.scale.setScalar(s);
+    model.position.copy(center).multiplyScalar(-s); // recenter at group origin
+    const pivot = new THREE.Group();
+    pivot.rotation.y = spec.yaw ?? 0;               // orient nose to +Z (data-fixed, like ship models)
+    pivot.add(model);
+    pivot.updateMatrixWorld(true);                  // measure while unparented → local == world
+    const lbox = new THREE.Box3().setFromObject(pivot); // group-local bounds after scale+yaw
+    // single rear-center emitter: model's tail (-Z), vertical center, spread scaled to the rear width
+    emit.set(0, (lbox.min.y + lbox.max.y) / 2, lbox.min.z);
+    spread = (lbox.max.x - lbox.min.x) * 0.2;
+    g.add(pivot);
+  }, undefined, (err) => console.warn('Freighter model failed to load, keeping exhaust only:', spec.modelUrl, err));
 
   return { obj: g, update: (dt) => {
     for (let i = 0; i < N; i++) {
-      et[i] += dt * 1.4; if (et[i] > 1) et[i] -= 1;
-      const t = et[i], n = nozzles[enz[i]], sp = 1 + t * 4;
-      epos[i * 3] = n.x + eoff[i * 2] * sp; epos[i * 3 + 1] = n.y + eoff[i * 2 + 1] * sp; epos[i * 3 + 2] = n.z - t * len;
+      et[i] += dt * espd; if (et[i] > 1) et[i] -= 1;
+      const t = et[i], sp = 1 + t * 4;
+      epos[i * 3]     = emit.x + eoff[i * 2] * spread * sp;
+      epos[i * 3 + 1] = emit.y + eoff[i * 2 + 1] * spread * sp;
+      epos[i * 3 + 2] = emit.z - t * len;
       if (t < 0.5) tmp.copy(cHot).lerp(cMid, t / 0.5); else tmp.copy(cMid).lerp(cEnd, (t - 0.5) / 0.5);
       ecol[i * 3] = tmp.r; ecol[i * 3 + 1] = tmp.g; ecol[i * 3 + 2] = tmp.b;
     }
