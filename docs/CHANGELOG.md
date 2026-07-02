@@ -5,6 +5,23 @@
 
 ## 2026-07-02
 
+- **Freighter set-piece is now a real `.glb` model.** [2026-07-02-1937-freighter-glb-model] Replaced the
+  procedural box freighter (spine + bridge + window + cargo containers + engine block + 4 nozzles) with the
+  CC-BY **"Freighter - Spaceship"** combat glb (`freighter_combat.ffdacc37.glb`, by Felipe Augusto Vera) —
+  the project's **first `.glb`-backed set-piece**. A standalone loader in `makeFreighter` (`world.js`)
+  reuses the shared `gltfLoader` from `ship-factory.js` (meshopt-wired) and auto center/scales/`yaw`-orients
+  it like a ship model (`yaw: 0` — the model already faces +Z, bridge/engines aft). Kept the **fiery
+  exhaust**, now a **single rear-center emitter** re-derived from the loaded model's real group-local rear
+  bounds (built synchronously so a trail shows immediately; no procedural-box fallback — on load error the
+  exhaust keeps running). Made the exhaust palette + particle params an **optional server-delivered
+  `exhaust:` effect config** on the set-piece spec (`catalog_seed.js`), delivered via the map descriptor,
+  with the current fiery look as defaults (the light seed for future server-driven model effects). User
+  effect: a recognizable 3D cargo ship (not grey boxes) drifting below the battlefield with a live flame
+  trail. **Field rename:** the freighter spec's old `exhaustCount`/`exhaustLen` fields (never set in the
+  seed) are replaced by the nested `exhaust: { count, len, size, speed, palette }` shape — no data cleanup
+  needed. Added the CC-BY row + verbatim attribution to `client/assets/CREDITS.md` (mandatory while in
+  use). **Prod model/hash change → run `/publish-itch` once this lands on prod** (DECISIONS §37) so the
+  itch bundle doesn't 404 the new freighter glb. See DECISIONS §38.
 - **Institutionalized the "prod model change → re-publish itch" rule.** After the metallic-hull change
   broke the two changed ships to generic cones on itch (itch bundles glbs but reads the catalog live from
   prod), baked the guard into four places so it can't be forgotten: **DECISIONS §37** (the coupling +

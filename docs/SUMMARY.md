@@ -3,7 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-02 (**Basic pirate hull now metallic** — the grey `black_mat_for_body_0` material
+**Updated:** 2026-07-02 (**Freighter set-piece is now a real `.glb` model** — the "save the transport"
+cargo freighter dropped its procedural box hull (spine/bridge/cargo/engine/nozzles) for the CC-BY
+"Freighter - Spaceship" combat glb (`freighter_combat`, first `.glb`-backed set-piece; standalone loader in
+`world.js` reusing `ship-factory.js`'s `gltfLoader`, auto center/scale/`yaw`-oriented). The fiery exhaust
+stays but is now a single rear-center emitter re-derived from the model's real bounds, and its palette +
+particle params became an optional server-delivered `exhaust:` config on the set-piece spec (defaults built
+in). Previously: **Basic pirate hull now metallic** — the grey `black_mat_for_body_0` material
 (hull/wings of `enemy_1` + its orange gunner variant) went from flat matte to metalness 0.8 / roughness
 0.22 in the source glbs so it reflects the RoomEnvironment env-map like the metallic parts; combat+hangar
 glbs rebuilt + rehashed in `catalog_seed.js`, `enemy_2/3/4` and CREDITS untouched. Previously: **HUD
@@ -516,7 +522,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   dynamically imported only inside the `?tune` guard, so the default build doesn't fetch it and is
   unchanged. Mirrors the `?debug` dev-hook convention. See `docs/plans/color-tuning.md` and DECISIONS §21.
 - **Mission set-pieces (procedural decor).** The descriptor can carry a **`setpieces`** array — large
-  structures generated **in code** (no `.glb`) and added to the **combat `scene`** (so they're lit from
+  structures generated **in code** (no `.glb`) — **except the `freighter`, which loads a real `.glb`
+  model** — and added to the **combat `scene`** (so they're lit from
   above by the combat sun, like the ships), sitting **just below the combat plane** (so you fly over them
   with strong parallax, like the background asteroids; `fog: false` keeps them readable). **Decor only —
   NOT registered in the gameplay arrays**, so bullets pass through and the AI ignores them (collidable
@@ -534,9 +541,20 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     mining rigs**, each a host rock + a **tilted station** + a **mining beam** (a particle stream flowing
     from the host up to the collector). The rigs are tilted off vertical so the beam reads from the
     top-down camera. Rocks tumble slowly. Tunable: `count`, `spread`, `hostSize`, `beamLen`, `beamTilt`.
-  - **`freighter`** — a cargo ship (spine + containers + bridge + engine block/nozzles) with a **fiery
-    exhaust** particle stream (hot→orange→red); **cruises slowly forward** (`speed` units/sec — a transport
-    in transit). (A separate `sync` + zone-drift escort mechanic exists but no mission turns it on.)
+  - **`freighter`** — the **first `.glb`-backed set-piece** (all others are procedural). It loads the
+    `freighter_combat` combat glb (CC-BY "Freighter - Spaceship"), auto center/scaled (longest axis →
+    `FREIGHTER_MODEL_LEN` 130, then `spec.scale`) and **`yaw`-oriented like a ship model** (nose faces +Z;
+    `spec.yaw` 0 here — the model already faces +Z with its bridge/engines aft). A standalone loader in
+    `makeFreighter` (`world.js`) reuses the shared `gltfLoader` from `ship-factory.js` (meshopt-wired); the
+    exhaust is built **synchronously** (a trail shows immediately) and the model is added when it resolves —
+    **no procedural box fallback** (on load error → `console.warn`, exhaust keeps running). It keeps a
+    **fiery exhaust** particle stream (hot→orange→red), now a **single rear-center emitter** re-derived from
+    the loaded model's real group-local rear bounds (`-Z` tail, vertical center, spread scaled to the rear
+    width). The exhaust palette + particle params (`palette` hot/mid/end, `count`, `len`, `size`, `speed`)
+    are an **optional, server-delivered `exhaust:` effect config** on the set-piece spec (defaults built in
+    → look unchanged when omitted) — the light extension point for future server-driven model effects
+    (DECISIONS §38). **Cruises slowly forward** (`speed` units/sec — a transport in transit). (A separate
+    `sync` + zone-drift escort mechanic exists but no mission turns it on.)
   See `docs/plans/mission-maps.md`. (Collidable cover is later scope.)
 - **Wing-bank on turn:** every ship (player + enemies) **rolls its wings into a turn**, a smooth tilt
   capped at **20°** (`BANK_MAX`) that eases back to level when straight. `updateBank` derives the roll from

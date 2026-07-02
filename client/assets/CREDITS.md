@@ -23,6 +23,7 @@ asset page is also handy, in case the author later changes the terms).
 | ships/player_combat + player_hangar `.glb` (player ship, textures downscaled) | Raven | https://skfb.ly/otR6F | CC-BY 4.0 | 2026-06-24 |
 | ships/repair_drone_hangar.\<hash\>.glb (Repair drone item icon — menu only) | Ivan Potupin | https://skfb.ly/pGPyp | CC-BY 4.0 | 2026-06-29 |
 | ships/machine_gun_hangar.\<hash\>.glb (Machine Gun item icon — menu only) | suvee10 | https://skfb.ly/oHLZB | CC-BY 4.0 | 2026-06-29 |
+| ships/freighter_combat.\<hash\>.glb (Freighter set-piece — cargo transport decor) | Felipe Augusto Vera | https://skfb.ly/oPRwV | CC-BY 4.0 | 2026-07-02 |
 
 <!--
 Example row:
@@ -67,6 +68,16 @@ the `ships-hangar/` S3 prefix (reused for all high-poly menu glbs; see
 >
 > "machine gun" (https://skfb.ly/oHLZB) by suvee10 is licensed under Creative Commons Attribution
 > (http://creativecommons.org/licenses/by/4.0/).
+
+The **freighter** set-piece (`freighter_combat`) is **"Freighter - Spaceship"** by **Felipe Augusto
+Vera** (Sketchfab, **CC-BY 4.0** — attribution required, so this entry must stay while in use). It is the
+first `.glb`-backed mission set-piece (the "save the transport" cargo ship that cruises below the
+battlefield); `assets:build` decimates/meshopt-compresses it into `freighter_combat`.
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "Freighter - Spaceship" (https://skfb.ly/oPRwV) by Felipe Augusto Vera is licensed under Creative
+> Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 The older primitive fallbacks (`player.glb`, `fighter.glb`, `rocketeer.glb`,
 `heavy.glb`, `boss.glb`, `Spaceship*.glb`) are placeholder geometry, not from either pack.

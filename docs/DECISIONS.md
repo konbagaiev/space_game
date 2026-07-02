@@ -1217,6 +1217,39 @@ as over-engineering (§30) until model changes are frequent enough to justify it
 into the itch ZIP too* — kills shared progression / live balance updates, the whole point of the online
 build (§33). So the accepted cost is a manual re-publish step, enforced by the skill + planner guidance.
 
+## 38. First `.glb` set-piece — standalone loader in `world.js`; the exhaust made server-configurable
+
+**Context.** The "save the transport" freighter was the project's only fully procedural mission set-piece
+(a stack of `BoxGeometry`: spine + bridge + window + 4 cargo containers + engine block + 4 nozzles). We
+replaced its hull with a real sourced `.glb` (CC-BY "Freighter - Spaceship"), keeping the animated fiery
+particle exhaust.
+
+**Decisions.**
+1. **The freighter is the first `.glb`-backed set-piece.** Every other set-piece stays procedural; this is
+   the one that gains a model. It loads `freighter_combat` (auto center/scale/`yaw`-oriented like a ship
+   model), with the exhaust built synchronously so a trail shows during the async load — and **no
+   procedural-box fallback** (on load error the exhaust just keeps running).
+2. **Standalone loader in `world.js`, not shared with `applyShipModel`.** `makeFreighter` reuses only the
+   exported shared `gltfLoader` instance (so meshopt-compressed combat glbs decode) plus the same
+   `Box3` center/scale/`yaw` normalization pattern — but writes its own small load path. `applyShipModel`
+   is coupled to combat-ship semantics the freighter doesn't share (`bankGroup`, tint, `SHIP_MODEL_LEN`
+   normalization, `noseZ`/`tailZ` userData for muzzle/exhaust spawn), so generalizing it would add coupling
+   for one caller. Kept simple (§30).
+3. **The fiery exhaust became a spec/server-configurable effect.** Its palette (`hot`/`mid`/`end`) and
+   particle params (`count`, `len`, `size`, `speed`) are read from an **optional `exhaust: {…}` object on
+   the set-piece spec** in `catalog_seed.js`, delivered to the client via the existing map descriptor
+   (server → `/api/maps/:name` → `buildMap` → `makeFreighter`), falling back to the current hardcoded fiery
+   look. This is the deliberate, **light** seed for future server-driven model effects — **no** effect
+   registry, multiple effect types, or generic abstraction was built (§30). Because the exhaust is built
+   synchronously but the model loads async, the emitter origin (`emit` `Vector3` + `spread` scalar) is
+   **mutable**: the loader overwrites it from the model's real group-local rear bounds once resolved, and
+   the update loop reads it each frame — so fire streams from behind the actual engines.
+
+**Alternatives rejected.** (a) *Generalize `applyShipModel`* to serve both ships and set-pieces — rejected
+as coupling for a single extra caller (see decision 2). (b) *Build an effect framework now* (effect
+registry / multiple effect types / per-particle turbulence) — rejected as speculative gold-plating (§30);
+made only the one existing exhaust spec-configurable with safe defaults.
+
 ---
 
 ## Future ideas
