@@ -13,7 +13,11 @@
   Rebuilt combat+hangar glbs, pushed to S3, superseded objects deleted, wired the new content-hashed URLs
   into `catalog_seed.js` (`Basic pirate ship` → `enemy_1_combat.527b5a89` / `enemy_1_hangar.aa6fed25`;
   `pirate gunner` → `enemy_1_orange_combat.f3b006ba` / `enemy_1_orange_hangar.5e6e1cc4`). Red materials and
-  `enemy_2/3/4` untouched; same asset/license so `CREDITS.md` unchanged.
+  `enemy_2/3/4` untouched; same asset/license so `CREDITS.md` unchanged. **Also re-published the itch.io
+  build** (`/publish-itch` → butler build #1766900): the itch ZIP bundles the combat glbs but reads the
+  catalog live from prod, so the model-hash change made those two ships fall back to generic primitive
+  cones on itch until the ZIP re-bundled the new glbs. (Rule: any prod model change now needs a
+  publish-itch too.)
 
 - **HUD Destroyed counter now killed/total.** The on-screen kill counter shows `killed/total` (e.g.
   `8/16`) instead of a bare count. *Total* is precomputed on the server from each descriptor's phase
