@@ -545,13 +545,13 @@ export const MAPS = [
           yaw: 0, // nose already faces +Z (bridge-aft freighter); flip to Math.PI for a -Z export
           // exhaust: { palette: { hot: 0xfff1c0, mid: 0xff7a2a, end: 0x7a1208 }, count: 90, len: 48, size: 5, speed: 1.4 },
         },
-        // Base station set-piece at the world origin (0,0) = campaign/level-1 start. A below-plane, NON-collidable
+        // Base station set-piece near the arena center, offset to (-20,-20) (screen top-left). A below-plane, NON-collidable
         // .glb decor (like the freighter) but raised closer to the combat plane so it reads clearly. It is the
         // return-to-base target: after the last kill the client lifts OOB, shows a homing arrow + hint, and makes
         // this station clickable (autopilot flies here → victory). pos.y = -42 with client BASE_STATION_LEN 100
         // keeps its TOP ~y=-2.9, just under the plane (ships fly over it — no collision handling). See DECISIONS §39.
         {
-          type: 'base-station', pos: [0, -42, 0], scale: 1.0, spin: 0.03,
+          type: 'base-station', pos: [-20, -42, -20], scale: 1.0, spin: 0.03, // offset up-left of the arena center (screen top-left = -z/-x)
           modelUrl: 'assets/ships/base_station_combat.529dee5e.glb',
           yaw: 0, // a station has no "nose"; 0 reads fine top-down
         },

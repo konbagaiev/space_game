@@ -5,6 +5,12 @@
 
 ## 2026-07-03
 
+- **Base station moved off the arena center.** Repositioned the return-to-base station from the world origin
+  `(0,-42,0)` to `(-20,-42,-20)` — 20 units toward screen-top (−z) and 20 toward screen-left (−x) — for
+  composition (`server/src/catalog_seed.js` MAPS set-piece `pos`). Safe with no logic change: the dock/win
+  measures distance to `G.baseStation.obj.position` (live), not a hard-coded `(0,0)`, and the homing arrow
+  already tracks the object. `pos.y` unchanged so the §17 below-plane guarantee holds. Server catalog change →
+  reaches the client (and itch, which reads the catalog live) on deploy; no new asset.
 - **Silver loot chests + base-Grab backfill + enemy-weapon balance.** Follow-ups after the interactive-chest
   ship: (1) **Chests are now brushed silver** instead of near-chrome — the pure mirror went black against dark
   space, so the drop material got a light silver albedo (`0xd2d6de`), lower metalness (0.55), and a faint

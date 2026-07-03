@@ -531,7 +531,7 @@ function makeFreighter(spec) {
   } };
 }
 
-// Base station (return-to-base target): a below-plane, NON-collidable .glb set-piece at the world origin,
+// Base station (return-to-base target): a below-plane, NON-collidable .glb set-piece offset up-left of the arena center,
 // mirroring the freighter's async center/scale/`yaw` normalization but with no exhaust. It is raised closer
 // to the combat plane than the freighter so it reads clearly from the top-down camera; after the last kill
 // the client makes it clickable → autopilot flies the player home → victory. See DECISIONS §39.

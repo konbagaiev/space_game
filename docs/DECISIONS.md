@@ -1303,6 +1303,12 @@ and made **all** missions end by flying home to it.
 A translucent **blue** homing arrow (anchored to the ship, re-pointed at the station each frame) + a centered
 **"Sector cleared — return to base"** HUD hint (i18n `ui.return.hint`) show from the last kill until victory.
 
+**Amendment (2026-07-03):** the station was moved off the world origin to **`(-20, -42, -20)`** (screen top-left
+of the arena center) for composition. This is safe because the dock/win never hard-codes `(0,0)` — `checkArrival`
+measures the horizontal distance from the player to `G.baseStation.obj.position` (the station's live position),
+and the homing arrow already points at that object. So references to "`(0,0)`" above should read as "the station's
+position". `pos.y` is unchanged (−42), so the §17 vertical-extent guarantee still holds.
+
 ---
 
 ## 40. Grab (tractor) component + enemy equipment drops — units, no hulls, victory-only, client-trusted

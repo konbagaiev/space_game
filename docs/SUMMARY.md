@@ -64,8 +64,8 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `A`/`D` or `←`/`→` — turn the nose
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
-- **Autopilot (station or loot chest)** — after the last enemy is destroyed the **base station** at `(0,0)`
-  becomes clickable; **clicking/tapping it** (a canvas raycast, ignored on HUD buttons) engages autopilot,
+- **Autopilot (station or loot chest)** — after the last enemy is destroyed the **base station** (at
+  `(-20,-42,-20)`, up-left of the arena center) becomes clickable; **clicking/tapping it** (a canvas raycast, ignored on HUD buttons) engages autopilot,
   which flies the ship home: **brake to a stop → rotate the nose to face the target → accelerate at max →
   kinematic symmetric-decel brake** so it coasts to a stop right next to it. The **same autopilot also flies
   to a clicked loot chest** (combat and return-to-base — see Grab & loot drops); on overlap a chest wins over
@@ -73,7 +73,7 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   **"dock/landing" glyph** (`client/assets/ui/dock-cursor.png`, a raster PNG since Safari has no SVG cursors;
   `pointer` fallback), and hovering a chest shows the OS **grab hand** (`canvas.grab-cursor`, wins over the
   dock cursor) — throttled canvas raycasts toggle the classes, gated to mouse input (`!Device.hasTouch`).
-  Only a **station**-targeted autopilot reaching `BASE_ARRIVE_RADIUS` ≈ 45u of `(0,0)` completes the mission. **Any control input** — move (`W/S/A/D`, arrows,
+  Only a **station**-targeted autopilot reaching `BASE_ARRIVE_RADIUS` ≈ 45u of the station's position completes the mission. **Any control input** — move (`W/S/A/D`, arrows,
   touch stick), fire (`Space`/FIRE), or rocket (`F`/🚀) — instantly cancels autopilot and returns control; a
   cancelled dock does not win (re-tap the station to resume). See the Level flow / Victory section.
 - **Zoom** — **PC:** mouse **wheel** (scroll up = closer) + on-screen **＋/−** buttons (right edge,
