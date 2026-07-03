@@ -20,14 +20,14 @@ import { enemyTotalFromPhases } from './enemy_total.js';
 // is inert until real prices are set; sell price is floor(price * 0.75), computed server-side.
 export const COMPONENTS = [
   { id: 1, name: 'Basic hull', type: 'hull', weight: 20, price: 300, stats: { durability: 100, volume: 100 } }, // starter gear: cheap, buyable
-  { id: 2, name: 'Light hull', type: 'hull', weight: 8, stats: { durability: 30, volume: 40 } },
+  { id: 2, name: 'Light hull', type: 'hull', weight: 8, price: 150, stats: { durability: 30, volume: 40, buyable: false } }, // enemy gear: resale-only (hidden from the shop)
   { id: 3, name: 'Medium hull', type: 'hull', weight: 60, stats: { durability: 150, volume: 200 } },
   { id: 4, name: 'Boss hull', type: 'hull', weight: 100, stats: { durability: 310, volume: 400 } }, // boss buff: 210 → 310 (+100 HP)
   { id: 5, name: 'Basic engine', type: 'engine', weight: 10, price: 500, stats: { power: 10, maxSpeed: 0, exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 } } }, // starter gear: cheap
-  { id: 6, name: 'Scout engine', type: 'engine', weight: 6, stats: { power: 12.6, maxSpeed: 10.5, exhaust: { color: 0xff8a5a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 } } },
+  { id: 6, name: 'Scout engine', type: 'engine', weight: 6, price: 250, stats: { power: 12.6, maxSpeed: 10.5, exhaust: { color: 0xff8a5a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 }, buyable: false } }, // enemy gear: resale-only
   { id: 7, name: 'Boss engine', type: 'engine', weight: 50, stats: { power: 19, maxSpeed: 10.4, exhaust: { color: 0xff5a3a, speed: 10, life: 0.6, size: 0.9, spread: 0.45 } } }, // boss buff: maxSpeed 8 → 10.4 (+30%)
   { id: 8, name: 'Basic thrusters', type: 'thruster', weight: 4, price: 400, stats: { power: 2.0 } }, // starter gear: cheap
-  { id: 9, name: 'Scout thrusters', type: 'thruster', weight: 3, stats: { power: 1.6 } },
+  { id: 9, name: 'Scout thrusters', type: 'thruster', weight: 3, price: 200, stats: { power: 1.6, buyable: false } }, // enemy gear: resale-only
   { id: 10, name: 'Medium thrusters', type: 'thruster', weight: 8, stats: { power: 0.63 } }, // sluggish (turn ~0.35)
   { id: 11, name: 'Boss thrusters', type: 'thruster', weight: 20, stats: { power: 1.66 } }, // turn ~0.42 = 1.2× medium
   // repair drone (4th component type): passively heals the hull mid-combat, up to a fraction of max HP.
@@ -53,18 +53,26 @@ export const COMPONENTS = [
   // --- Pirate gunner parts (side missions, docs/plans/mission-enemies-difficulty.md). +20% HP and
   // +50% top speed over the base enemy (fighter: Light hull 30 HP + Scout engine maxSpeed 10.5).
   // Enemy gear → price 0 (hidden from the shop). ids continue past the max (21).
-  { id: 22, name: 'Pirate hull', type: 'hull', weight: 10, stats: { durability: 36, volume: 45 } },          // 30 × 1.2
-  { id: 23, name: 'Pirate engine', type: 'engine', weight: 6, stats: { power: 12.6, maxSpeed: 15.75, exhaust: { color: 0xff6a4a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 } } }, // maxSpeed 10.5 × 1.5; same accel as Scout
+  { id: 22, name: 'Pirate hull', type: 'hull', weight: 10, price: 200, stats: { durability: 36, volume: 45, buyable: false } },          // 30 × 1.2; enemy gear: resale-only
+  { id: 23, name: 'Pirate engine', type: 'engine', weight: 6, price: 400, stats: { power: 12.6, maxSpeed: 15.75, exhaust: { color: 0xff6a4a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 }, buyable: false } }, // maxSpeed 10.5 × 1.5; same accel as Scout; enemy gear: resale-only
 
   // --- Level-4 enemies (docs/plans/level-4-difficulty.md). Tunable; net turn/accel are mass-scaled, so
   // component power is bumped above the headline +30% to land roughly +30% NET after the heavier hulls.
   // Advanced medium pirate (heavy bruiser, 300 HP, turns ~+30% vs the mini-boss):
-  { id: 24, name: 'Pirate heavy hull', type: 'hull', weight: 100, stats: { durability: 300, volume: 250 } }, // 2× mini-boss (150)
-  { id: 25, name: 'Pirate medium thruster', type: 'thruster', weight: 8, stats: { power: 1.25 } },          // ~+30% net turn vs Medium (0.63) once mass-scaled
+  { id: 24, name: 'Pirate heavy hull', type: 'hull', weight: 100, price: 1200, stats: { durability: 300, volume: 250, buyable: false } }, // 2× mini-boss (150); enemy gear: resale-only
+  { id: 25, name: 'Pirate medium thruster', type: 'thruster', weight: 8, price: 350, stats: { power: 1.25, buyable: false } },          // ~+30% net turn vs Medium (0.63) once mass-scaled; enemy gear: resale-only
   // Second Boss (550 HP, speed/accel/turn ~+30% vs the first boss):
-  { id: 26, name: 'Second-boss engine', type: 'engine', weight: 50, stats: { power: 30, maxSpeed: 14.3, exhaust: { color: 0xff3a2a, speed: 11, life: 0.6, size: 0.95, spread: 0.45 } } }, // boss buff: maxSpeed 11 → 14.3 (+30%)
-  { id: 27, name: 'Second-boss thruster', type: 'thruster', weight: 20, stats: { power: 2.7 } },            // boss 1.66 bumped for ~+30% net turn
-  { id: 28, name: 'Second-boss hull', type: 'hull', weight: 140, stats: { durability: 550, volume: 600 } }, // boss buff: 450 → 550 (+100 HP)
+  { id: 26, name: 'Second-boss engine', type: 'engine', weight: 50, price: 1500, stats: { power: 30, maxSpeed: 14.3, exhaust: { color: 0xff3a2a, speed: 11, life: 0.6, size: 0.95, spread: 0.45 }, buyable: false } }, // boss buff: maxSpeed 11 → 14.3 (+30%); enemy gear: resale-only
+  { id: 27, name: 'Second-boss thruster', type: 'thruster', weight: 20, price: 900, stats: { power: 2.7, buyable: false } },            // boss 1.66 bumped for ~+30% net turn; enemy gear: resale-only
+  { id: 28, name: 'Second-boss hull', type: 'hull', weight: 140, price: 2000, stats: { durability: 550, volume: 600, buyable: false } }, // boss buff: 450 → 550 (+100 HP); enemy gear: resale-only
+
+  // --- Grab (tractor beam) — a new optional component type (single slot like `repair`; no stacking).
+  // On kill, enemies sometimes drop a piece of their gear as a metal-box in the arena; a drop within the
+  // grab's RANGE is pulled toward the ship, and collected drops deposit into the stash on mission victory.
+  //   RANGE (world units) = strength;  PULL SPEED (u/s) = (strength / 2) * (10 / pulledItemWeight).
+  // The player owns the base Grab from the start; the Advanced grab is buyable (see docs/plans/2026-07-03-1412-grab-tractor-drops.md).
+  { id: 29, name: 'Grab', type: 'grab', weight: 2, price: 500, stats: { strength: 10 } },
+  { id: 30, name: 'Advanced grab', type: 'grab', weight: 3, price: 2000, stats: { strength: 20 } },
 ];
 
 // --- weapons: type 'bullet' | 'rocket'; stats hold the (now fully DB-driven) characteristics ---
@@ -81,8 +89,8 @@ export const WEAPONS = [
     }
   },
   {
-    id: 2, name: 'Kinetic (enemy)', type: 'bullet', stats: {
-      power: 4, projectileSpeed: 40, maxRange: 88, fireCooldown: 1.1, weight: 4, projectileColor: 0xff6b6b
+    id: 2, name: 'Kinetic (enemy)', type: 'bullet', price: 120, stats: { // enemy gear: resale-only (hidden from the shop)
+      power: 4, projectileSpeed: 40, maxRange: 88, fireCooldown: 1.1, weight: 4, projectileColor: 0xff6b6b, buyable: false
     }
   },
   {
@@ -93,10 +101,10 @@ export const WEAPONS = [
     }
   },
   {
-    id: 4, name: 'Rocket (enemy)', type: 'rocket', stats: {
+    id: 4, name: 'Rocket (enemy)', type: 'rocket', price: 200, stats: { // enemy gear: resale-only (hidden from the shop)
       power: 25, accel: 9, turnRate: 1.0, launchSpeed: 12, maxRange: 120, health: 20,
       detonateRadius: 3.2, blastRadius: 5, blastVisual: 4.5,
-      fireCooldown: 4, weight: 6, projectileColor: 0xffcc66, class: 'rocket' // class only drives detonation (→ blast); enemy fire stays synth (isPlayer gate)
+      fireCooldown: 4, weight: 6, projectileColor: 0xffcc66, class: 'rocket', buyable: false // class only drives detonation (→ blast); enemy fire stays synth (isPlayer gate)
     }
   },
   {
@@ -128,14 +136,14 @@ export const WEAPONS = [
   // Enemy weapon for the pirate gunner (side missions) + the upgraded boss: a long-range, rapid-fire
   // kinetic mirroring the player's Machine Gun's reach. Low per-hit damage, high RoF. Price 0 (enemy gear).
   {
-    id: 9, name: 'Pirate machine gun', type: 'bullet', stats: {
-      power: 3, projectileSpeed: 50, maxRange: 90, fireCooldown: 0.18, weight: 6, projectileColor: 0xff5a4a
+    id: 9, name: 'Pirate machine gun', type: 'bullet', price: 300, stats: { // enemy gear: resale-only (hidden from the shop)
+      power: 3, projectileSpeed: 50, maxRange: 90, fireCooldown: 0.18, weight: 6, projectileColor: 0xff5a4a, buyable: false
     }
   },
   // Second Boss main gun (level-4): a hard-hitting, slow, long-range cannon (one shot/sec). Enemy gear.
   {
-    id: 10, name: 'Advanced pirate cannon', type: 'bullet', stats: {
-      power: 10, projectileSpeed: 60, maxRange: 110, fireCooldown: 1.0, weight: 10, projectileColor: 0xff4a3a
+    id: 10, name: 'Advanced pirate cannon', type: 'bullet', price: 600, stats: { // enemy gear: resale-only (hidden from the shop)
+      power: 10, projectileSpeed: 60, maxRange: 110, fireCooldown: 1.0, weight: 10, projectileColor: 0xff4a3a, buyable: false
     }
   },
 ];
@@ -206,7 +214,7 @@ export const SHIPS = [
     name: 'Basic player ship', type: 'player',
     modelUrl: 'assets/ships/player_combat.f7171045.glb',
     modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb',
-    components: { hull: 1, engine: 5, thruster: 8 }, stats: {
+    components: { hull: 1, engine: 5, thruster: 8, grab: 29 }, stats: { // player starts with the base Grab (id 29)
       role: 'player', class: 'player', color: 0x4d8bff, nameKey: 'ship.player_basic.name',
       // "Air & Space Vessel" by Raven (CC-BY); yaw 0 (nose already leads travel), set via visual check
       model: { yaw: 0, scale: 1.1 },

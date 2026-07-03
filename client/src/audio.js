@@ -235,6 +235,16 @@ export function createAudio(initialSettings) {
       const e2 = env(sfxGain, 0.3 * size * vol, 0.005, dur * 0.7, t);
       o.connect(e2.g); o.start(t); voice(o, e2.end);
     },
+    // Loot collected by the grab: a short, bright two-tone blip (reuses the synth path — no sampled asset).
+    pickup() {
+      if (!sfxPlayable()) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator(); o.type = 'triangle';
+      o.frequency.setValueAtTime(660, t);
+      o.frequency.exponentialRampToValueAtTime(1180, t + 0.08);
+      const e = env(sfxGain, 0.12, 0.003, 0.09, t);
+      o.connect(e.g); o.start(t); voice(o, e.end);
+    },
     // UI button feedback.
     uiClick() {
       if (!sfxPlayable()) return;

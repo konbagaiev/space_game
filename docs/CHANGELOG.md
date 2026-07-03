@@ -5,6 +5,24 @@
 
 ## 2026-07-03
 
+- **Grab component + enemy equipment drops.** [2026-07-03-1412-grab-tractor-drops] Added a new optional
+  ship component type — the **Grab** (tractor beam) — and a light loot loop on top of the kill→credits
+  economy. On each enemy kill there's a **20 % chance** to drop **one** piece of the enemy's gear (a
+  non-hull component or a mounted weapon — **hulls never drop**, to protect progression) as a slowly-
+  rotating **metal-box** in the arena. A drop within the Grab's **range = strength** (world units) is
+  pulled toward the ship at **speed = (strength/2)·(10/itemWeight)** (a thin blue line shows the active
+  pull; the grab arms after 0.3 s in range and pulls the nearest one at a time). Collected drops deposit
+  into the **Stash on mission victory only** (lost on death / restart). Two Grab items: the **base Grab**
+  (id 29, range 10, weight 2, price 500) the player **owns from the start**, and the buyable **Advanced
+  grab** (id 30, range 20, weight 3, price 2000) under a new **"Grab"** shop tab. `REFERENCE_MASS` bumped
+  **48 → 50** so auto-equipping the base grab is **mass-neutral** (player accel 10 / turn 2.0 unchanged).
+  **Pirate parts are now priced** (engines/thrusters/weapons + hulls) with `stats.buyable:false` — resale
+  value only, still hidden from the shop. Server: a client-authoritative `POST /api/players/:id/loot`
+  endpoint (`depositLoot`, kept in SQLite/Postgres parity) dumps the run's haul into the stash; `grab` is
+  an optional, sellable component slot. Shipped the reused **metal-box** model through the asset pipeline
+  (**703 KB → ~6 KB** combat glb; two 1024² PNG textures downscaled to 128px WebP + meshopt) + a CREDITS
+  row ("Metal box" by District24, CC-BY 4.0). Added a `?dev` **drop-count** perf readout and a
+  `?debug` `__game.spawnTestDrop()` stress hook.
 - **Kill credit popup: green + longer.** Recolored the `+xx` kill popup from gold to green (`#77ee77`) so
   it stays legible against the warm/gold ship-explosion burst it spawns on top of, and extended its life
   from ~1 s to ~2 s (`maxLife` 2.0), holding at full opacity then fading over the last ~1 s instead of

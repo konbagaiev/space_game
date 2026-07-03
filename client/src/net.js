@@ -37,6 +37,16 @@ export function bankRun() {
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
+// Dump a mission's collected loot into the stash (victory only — see DECISIONS). Best-effort, like
+// bankRun: the Main Window re-fetches the stash when opened, so a dropped request just isn't banked.
+export function depositLoot(items) {
+  if (!G.playerId || !items || !items.length) return;
+  fetch(API_BASE + `/api/players/${G.playerId}/loot`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  }).catch(() => {});
+}
+
 // Build a compact referrer string (document.referrer + ?ref=/UTM params), omitting empty keys. Sent once
 // at boot so the server can store it write-once on player-row creation (admin panel; DECISIONS: referrer).
 export function referrerPayload() {

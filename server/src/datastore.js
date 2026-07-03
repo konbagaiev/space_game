@@ -32,6 +32,7 @@ export const buyItem = (...a) => impl.buyItem(...a);
 export const sellItem = (...a) => impl.sellItem(...a);
 export const equipItem = (...a) => impl.equipItem(...a);
 export const unequipItem = (...a) => impl.unequipItem(...a);
+export const depositLoot = (...a) => impl.depositLoot(...a); // victory loot deposit (grab-tractor-drops)
 // Authentication (DECISIONS §11)
 export const getPlayerPublic = (...a) => impl.getPlayerPublic(...a);
 export const setUsername = (...a) => impl.setUsername(...a);

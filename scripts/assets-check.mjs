@@ -12,6 +12,7 @@
 import { execFileSync } from 'node:child_process';
 import { BUCKET, awsArgs, PREFIX, CDN } from './assets-config.mjs';
 import { SHIPS, SOUNDS, COMPONENTS, WEAPONS } from '../server/src/catalog_seed.js';
+import { DROP_MODEL_URL } from '../client/src/drops-config.js'; // shared loot-drop model (single source of truth)
 
 const HASHED_GLB = /\.[0-9a-f]{8}\.glb$/; // content-hashed → a pipeline (S3) model, not an in-git primitive
 const HASHED_MP3 = /\.[0-9a-f]{8}\.mp3$/; // content-hashed SFX → must be on S3
@@ -56,6 +57,8 @@ for (const s of SOUNDS) {
   const key = soundKey(s.url);
   if (key) targets.push({ name: `sfx:${s.key}`, field: 'url', url: s.url, key });
 }
+// Shared equipment-drop model (client renders it from DROP_MODEL_URL; there is no modelUrl-on-component copy).
+{ const key = modelKey(DROP_MODEL_URL); if (key) targets.push({ name: 'drop:metal_box', field: 'DROP_MODEL_URL', url: DROP_MODEL_URL, key }); }
 
 if (!targets.length) {
   console.log('assets:check — no pipeline-managed assets referenced (all in-git primitives). OK.');

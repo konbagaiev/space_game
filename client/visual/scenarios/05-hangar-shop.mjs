@@ -37,7 +37,7 @@ export default async function ({ page, assert, shot }) {
   assert.ok(base.loadout >= 4, 'the loadout shows the equipped slots');
   assert.ok(base.stash >= 1, 'the stash holds the backfilled basic gun');
   assert.equal(base.stats, 4, 'four live ship-stats are shown (HP / accel / turn / weight)');
-  assert.equal(base.types, 5, 'shop type list: Hull / Engine / Thrusters / Repair / Weapon');
+  assert.equal(base.types, 6, 'shop type list: Hull / Engine / Thrusters / Repair / Weapon / Grab');
   await shot('loadout');
 
   // Shop screen → Weapon type → the buyable weapon ladder shows on the right pane

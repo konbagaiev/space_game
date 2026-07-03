@@ -321,7 +321,7 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player_combat.f7171045.glb'); // real "Air & Space Vessel" model (textured)
   assert.equal(player.modelUrlHigh, 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb');
-  assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8 }); // assembled from components
+  assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8, grab: 29 }); // assembled from components (base grab included)
   assert.deepEqual(player.stats.model, { yaw: 0, scale: 1.1 }); // model-presentation block (yaw/scale)
   assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
@@ -352,7 +352,8 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   const comps = await getJson('/api/components');
   // 4 hulls + 3 engines + 4 thrusters + 1 repair drone (enemy/starter) + 6 player-shop ladder rows
   // (Heavy hull 13, Solid-fuel 15, Ion 16, Repair II 19, Nanobot 20, Advanced thrusters 21)
-  assert.equal(comps.length, 25);
+  // + 2 Grab components (base 29, advanced 30) = 27
+  assert.equal(comps.length, 27);
   const drone = comps.find((c) => c.name === 'Repair drone');
   assert.equal(drone.id, 12);
   assert.equal(drone.type, 'repair');
@@ -662,7 +663,7 @@ test('active ship: a new player gets a default active ship (empty loadout -> shi
   assert.equal(active.loadout.mounts.length, 2);
   assert.equal(active.loadout.mounts.find((m) => m.group === 'gun').weapon, 1);    // Basic kinetic
   assert.equal(active.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3); // Rocket (homing)
-  assert.deepEqual(active.components, { hull: 1, engine: 5, thruster: 8 });
+  assert.deepEqual(active.components, { hull: 1, engine: 5, thruster: 8, grab: 29 }); // starter loadout incl. the base grab
 });
 
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
@@ -793,17 +794,80 @@ test('shop: equip from stash swaps the displaced item back into the stash', asyn
   assert.ok(r.stash.some((it) => it.kind === 'weapon' && it.refId === 5), 'Machine Gun is now in the stash');
 });
 
-test('shop: buy adds to the stash; sell removes it; credits move by price (0 for now)', async () => {
+test('shop: buy adds to the stash; sell removes it; credits move by the item price', async () => {
   await clearCampaign('shop-trade');
   const start = (await getJson('/api/players/shop-trade/stash')).credits;
-  // buy a Light hull (component 2) — free at price 0
+  // buy a Light hull (component 2) — now priced 150 (enemy gear priced for resale; buyable:false only
+  // hides it from the CLIENT shop list, the server still allows a direct buy)
   const bought = await (await post('/api/players/shop-trade/buy', { kind: 'component', refId: 2 })).json();
-  assert.equal(bought.credits, start); // price 0 → no change
+  assert.equal(bought.credits, start - 150); // price 150 deducted
   assert.ok(bought.stash.some((it) => it.kind === 'component' && it.refId === 2));
-  // sell it back — credit floor(0 * 0.75) = 0
+  // sell it back — credit floor(150 * 0.75) = 112
   const sold = await (await post('/api/players/shop-trade/sell', { kind: 'component', refId: 2 })).json();
-  assert.equal(sold.credits, start);
+  assert.equal(sold.credits, start - 150 + 112);
   assert.ok(!sold.stash.some((it) => it.kind === 'component' && it.refId === 2), 'sold item left the stash');
+});
+
+// ---------- Grab (tractor) component + victory loot deposit (grab-tractor-drops) ----------
+test('catalog: Grab components (29/30) seeded; enemy parts priced with buyable:false', async () => {
+  const comps = await getJson('/api/components');
+  const grab = comps.find((c) => c.id === 29);
+  assert.ok(grab && grab.name === 'Grab' && grab.type === 'grab', 'base Grab seeded as component 29');
+  assert.equal(grab.stats.strength, 10);
+  assert.equal(grab.price, 500);
+  const adv = comps.find((c) => c.id === 30);
+  assert.ok(adv && adv.type === 'grab' && adv.stats.strength === 20 && adv.price === 2000, 'Advanced grab seeded');
+  // enemy parts now carry a resale price + a buyable:false flag (hidden from the shop, sellable when looted)
+  const scoutEngine = comps.find((c) => c.id === 6);
+  assert.equal(scoutEngine.price, 250);
+  assert.equal(scoutEngine.stats.buyable, false);
+  const weapons = await getJson('/api/weapons');
+  const pirateMg = weapons.find((w) => w.id === 9);
+  assert.equal(pirateMg.price, 300);
+  assert.equal(pirateMg.stats.buyable, false);
+  // the player ship starts with the base grab equipped
+  const ships = await getJson('/api/ships');
+  assert.equal(ships.find((s) => s.type === 'player').components.grab, 29);
+});
+
+test('loot: POST /loot deposits collected drops into the stash (victory-only deposit path)', async () => {
+  await getJson('/api/players/loot-1/active-ship'); // register (no shop unlock needed — loot isn't gated)
+  const r = await post('/api/players/loot-1/loot', { items: [
+    { kind: 'component', refId: 6 }, { kind: 'weapon', refId: 9 }, { kind: 'component', refId: 6 },
+  ] });
+  assert.equal(r.status, 200);
+  const stash = (await getJson('/api/players/loot-1/stash')).stash;
+  const eng = stash.find((it) => it.kind === 'component' && it.refId === 6);
+  const gun = stash.find((it) => it.kind === 'weapon' && it.refId === 9);
+  assert.ok(eng && eng.qty === 2, 'the two Scout engines stacked to qty 2');
+  assert.ok(gun && gun.qty === 1, 'the Pirate MG is in the stash');
+});
+
+test('loot: an empty / absent item list is a no-op 200', async () => {
+  await getJson('/api/players/loot-empty/active-ship');
+  assert.equal((await post('/api/players/loot-empty/loot', { items: [] })).status, 200);
+  assert.equal((await post('/api/players/loot-empty/loot', {})).status, 200);
+  assert.deepEqual((await getJson('/api/players/loot-empty/stash')).stash, []);
+});
+
+test('grab: a looted grab equips into its optional slot and round-trips through the stash', async () => {
+  await clearCampaign('grab-1'); // unlock the shop so equip/unequip mutations are allowed
+  // put an Advanced grab (30) in the stash, then equip it (optional 'grab' slot; not required)
+  await post('/api/players/grab-1/loot', { items: [{ kind: 'component', refId: 30 }] });
+  const equipped = await (await post('/api/players/grab-1/equip', { kind: 'component', refId: 30 })).json();
+  assert.equal(equipped.activeShip.components.grab, 30, 'advanced grab equipped');
+  // the displaced base grab (29) returned to the stash
+  assert.ok(equipped.stash.some((it) => it.kind === 'component' && it.refId === 29), 'base grab returned to stash');
+  // sell the equipped grab directly (optional slot → sellable while equipped)
+  const sold = await (await post('/api/players/grab-1/sell', { slot: 'grab' })).json();
+  assert.equal(sold.activeShip.components.grab, undefined, 'grab slot emptied after selling');
+  // flying with no grab is allowed (grab is NOT a required slot)
+  assert.equal(sold.activeShip.launchable, true);
+  // re-equip the base grab from the stash, then unequip it back
+  await post('/api/players/grab-1/equip', { kind: 'component', refId: 29 });
+  const unequipped = await (await post('/api/players/grab-1/unequip', { slot: 'grab' })).json();
+  assert.equal(unequipped.activeShip.components.grab, undefined, 'grab unequipped back to the stash');
+  assert.ok(unequipped.stash.some((it) => it.kind === 'component' && it.refId === 29), 'base grab in the stash');
 });
 
 test('shop: selling a stash item you do not own -> 409', async () => {

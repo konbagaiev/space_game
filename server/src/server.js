@@ -8,7 +8,7 @@ import path from 'node:path';
 import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend, resetPlayer,
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
   setResetToken, consumeResetToken, deleteSessionsForPlayer,
-  getStash, buyItem, sellItem, equipItem, unequipItem, getAdminPlayers } from './datastore.js';
+  getStash, buyItem, sellItem, equipItem, unequipItem, depositLoot, getAdminPlayers } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { generateMissions } from './missions.js';
 import { mountAdmin } from './admin.js';
@@ -172,6 +172,14 @@ export async function createApp() {
 
   // The player's stash + active ship + balance (and whether the shop is unlocked yet).
   app.get('/api/players/:id/stash', wrap(async (req, res) => res.json(await shopState(req.params.id))));
+
+  // Dump a mission's collected loot into the stash (client-authoritative, victory only — see DECISIONS).
+  // Not gated on the shop unlock: loot is earned in combat and just accumulates in the stash. Body:
+  // { items: [{ kind: 'component'|'weapon', refId }] }; malformed entries are skipped, [] is a no-op.
+  app.post('/api/players/:id/loot', wrap(async (req, res) => {
+    const r = await depositLoot(req.params.id, (req.body && req.body.items) || []);
+    res.status(r.ok ? 200 : (r.status || 400)).json(r);
+  }));
 
   // ---------- Side missions (docs/plans/mission-generator.md) ----------
   // The 3-choice side-mission board, unlocked after the campaign (same gate as the shop). Returns the

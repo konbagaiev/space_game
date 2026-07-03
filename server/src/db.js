@@ -160,6 +160,19 @@ function depositStash(playerId, kind, refId, qty = 1) {
     ON CONFLICT(player_id, kind, ref_id) DO UPDATE SET qty = qty + excluded.qty`).run(playerId, kind, refId, qty);
 }
 
+// Deposit a mission's collected loot into the stash (one row per item). Client-authoritative, called on
+// mission VICTORY only (see DECISIONS). Skips malformed entries; an empty list is a no-op { ok: true }.
+// `tx` (defined below) is referenced at call time, so its textual position doesn't matter.
+export function depositLoot(playerId, items) {
+  registerPlayer(playerId);
+  return tx(() => {
+    for (const it of (items || [])) {
+      if (it && (it.kind === 'component' || it.kind === 'weapon') && it.refId != null) depositStash(playerId, it.kind, it.refId, 1);
+    }
+    return { ok: true };
+  });
+}
+
 // Install a component into a slot on the player's active ship (materializes the effective components
 // into the override with `slot` set to `componentId`). Idempotent: re-running sets the same slot.
 function installActiveShipComponent(playerId, slot, componentId) {
@@ -349,7 +362,7 @@ export function getLevel(name) {
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // All mutations here are server-authoritative + transactional (no double-spend / item dupe).
 const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']); // a ship can't take off without these
-const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair']);
+const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair', 'grab']);
 const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket' }; // which fire-group a weapon type slots into
 const sellPrice = (price) => Math.floor((price | 0) * 0.75); // resale value (server-computed)
 

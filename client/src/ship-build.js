@@ -10,11 +10,12 @@ import { spawnBullet, spawnRocket, findTargetInSector } from './projectiles.js';
 import { audio, sfxFor } from './sound-routing.js';
 
 export const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
-// Resolve a ship's component refs ({ hull, engine, thruster, repair }) to objects (stats + weight).
+// Resolve a ship's component refs ({ hull, engine, thruster, repair, grab }) to objects (id + stats + weight).
+// `id` is carried through so the loot-drop picker can name the exact looted item (reads hull.id/engine.id/…).
 export function resolveComponents(refs) {
   const r = refs || {};
-  const get = (id) => { const c = CATALOG.components.get(id); return c ? { name: c.name, weight: c.weight, ...c.stats } : null; };
-  return { hull: get(r.hull), engine: get(r.engine), thruster: get(r.thruster), repair: get(r.repair) };
+  const get = (id) => { const c = CATALOG.components.get(id); return c ? { id: c.id, name: c.name, weight: c.weight, ...c.stats } : null; };
+  return { hull: get(r.hull), engine: get(r.engine), thruster: get(r.thruster), repair: get(r.repair), grab: get(r.grab) };
 }
 
 // Resolve a ship's mounts (weapon ids -> weapon objects).
@@ -38,14 +39,14 @@ function buildGroups(groupDefs, mounts) {
 export function buildPlayer(active) {
   const s = active.ship.stats;
   const mc = shipModelCfg(s); // per-ship model presentation (yaw/scale + optional overrides)
-  const { hull, engine, thruster, repair } = resolveComponents(active.components); // hull + engine + thrusters + repair drone
+  const { hull, engine, thruster, repair, grab } = resolveComponents(active.components); // hull + engine + thrusters + repair drone + grab
   const p = {
     mesh: makeShip(s.color, modelSpec(active.ship.modelUrl, mc)),
     vel: new THREE.Vector3(),
     heading: 0,                       // rotation angle around Y
     sizeScale: mc.scale,
     class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
-    hull, engine, thruster, repair,   // `repair` is the repair-drone stats (or null); feeds mass + repairTick
+    hull, engine, thruster, repair, grab, // `repair` = repair-drone stats (or null); `grab` = tractor stats (or null) — feeds mass + the grab pull sim
     _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
     mounts: buildMounts(active.loadout.mounts), // resolved weapons; also feeds ship mass
     hp: hull ? hull.durability : 0, maxHp: hull ? hull.durability : 0, // hull may be unequipped in the hangar; the launchable gate blocks take-off

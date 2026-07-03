@@ -12,6 +12,7 @@ import { Device } from './device.js'; // device capabilities (input/form axes + 
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
+import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups)
 import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
@@ -311,7 +312,7 @@ const devPerf = (() => {
         js: { update: r1(mean(bucket.map((f) => f.update))), dom: r1(mean(bucket.map((f) => f.dom))),
               render: r1(mean(bucket.map((f) => f.render))), total: r1(mean(totals)), totalP95: r1(pct(totals, 95)) },
         jank: frameMs.filter((m) => m > 1.5 * p50).length,
-        load: { enemies: enemies.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
+        load: { enemies: enemies.length, drops: drops.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
         heap: heapMB(), // JS heap (MB) — Chrome only; null elsewhere
         res: `${renderer.domElement.width}x${renderer.domElement.height}`, device,
       });
@@ -404,6 +405,18 @@ if (location.search.includes('debug')) {
     scene, enemies, bullets, rockets,
     explosions, sparks, shockwaves, trail, smoke,
     spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, reset, levelRunner,
+    drops, // the live loot-drop array (count/positions assertable in headless)
+    // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
+    // with `?dev` — start a fight, run `for (let i=0;i<40;i++) __game.spawnTestDrop()`, watch the perf FPS.
+    spawnTestDrop() {
+      const p = G.player; if (!p) return null;
+      const items = [{ kind: 'component', refId: 6 }, { kind: 'component', refId: 9 }, { kind: 'weapon', refId: 9 }, { kind: 'weapon', refId: 4 }];
+      const item = items[(Math.random() * items.length) | 0];
+      const pos = p.mesh.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 30, 0, (Math.random() - 0.5) * 30));
+      spawnDrop(pos, item);
+      return item;
+    },
+    pickLoot, // expose for tests (loot-pool selection off an enemy)
     audio, // procedural audio engine (settings + scene); SFX/music are inaudible in headless but state is assertable
     warpPlayerToCenter, arenaBorder, ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME,
     setPieces, arenaCenter, // mission set-pieces + the (drifting) arena center
