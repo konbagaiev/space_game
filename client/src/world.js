@@ -531,6 +531,36 @@ function makeFreighter(spec) {
   } };
 }
 
+// Base station (return-to-base target): a below-plane, NON-collidable .glb set-piece at the world origin,
+// mirroring the freighter's async center/scale/`yaw` normalization but with no exhaust. It is raised closer
+// to the combat plane than the freighter so it reads clearly from the top-down camera; after the last kill
+// the client makes it clickable → autopilot flies the player home → victory. See DECISIONS §39.
+//
+// VERTICAL-EXTENT NOTE (§17): the source model is tall (y ≈ 0.78 of its longest axis). BASE_STATION_LEN 100
+// normalizes the longest axis, so halfHeight ≈ 39; with the seed's pos.y = -42 the station's TOP sits at
+// ~y = -2.9 — safely below the combat plane (ships fly at y ≈ 0.6), so it never pokes through or occludes
+// ships. If BASE_STATION_LEN or the seed's y is changed, re-check that pos.y + halfHeight stays below ~0.6.
+const BASE_STATION_LEN = 100;
+
+function makeBaseStation(spec) {
+  const g = new THREE.Group();
+  if (spec.modelUrl) gltfLoader.load(spec.modelUrl, (gltf) => {
+    const model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const size3 = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const s = BASE_STATION_LEN / (Math.max(size3.x, size3.y, size3.z) || 1);
+    model.scale.setScalar(s);
+    model.position.copy(center).multiplyScalar(-s); // recenter at group origin
+    const pivot = new THREE.Group();
+    pivot.rotation.y = spec.yaw ?? 0;
+    pivot.add(model);
+    g.add(pivot);
+  }, undefined, (err) => console.warn('Base station model failed to load:', spec.modelUrl, err));
+  const spin = spec.spin ?? 0;
+  return { obj: g, update: (dt) => { if (spin) g.rotation.y += spin * dt; } };
+}
+
 // Dispatch a set-piece spec to its procedural builder, position it, and add it to the combat scene.
 export function buildSetPiece(spec) {
   let entry = null;
@@ -538,12 +568,15 @@ export function buildSetPiece(spec) {
     case 'research-station': entry = makeResearchStation(spec); break;
     case 'asteroid-field':   entry = makeAsteroidField(spec); break;
     case 'freighter':        entry = makeFreighter(spec); break;
+    case 'base-station':     entry = makeBaseStation(spec); break;
     default: return; // unknown type → skip (forward-compatible with new set-pieces)
   }
   if (spec.scale && spec.scale !== 1) entry.obj.scale.setScalar(spec.scale);
   entry.obj.position.set(...spec.pos);
   scene.add(entry.obj);
   setPieces.push(entry);
+  // Stash the base station on G so the sim/HUD/click code can find it (the return-to-base target).
+  if (spec.type === 'base-station') G.baseStation = { obj: entry.obj, active: false };
 }
 
 // ---------- Build the scene from a map descriptor (see server catalog_seed.js MAPS) ----------
@@ -559,6 +592,7 @@ export function buildMap(descriptor) {
   setPieces.length = 0;
   // arena drift: maps with a `drift` (units/sec on x,z) slowly pan the combat zone; default = static
   G.arenaDrift = d.drift ? new THREE.Vector3(d.drift.x || 0, 0, d.drift.z || 0) : null;
+  G.baseStation = null; // rebuilt by buildSetPiece below when the map has a base-station set-piece
   arenaCenter.set(0, 0, 0);
   arenaBorder.line.position.set(0, 0, 0);
   skyScene.background = new THREE.Color(d.background);

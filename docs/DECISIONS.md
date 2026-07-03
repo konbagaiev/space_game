@@ -42,6 +42,12 @@ Specifics:
 Knobs: `ACCEL` (acceleration), `TURN` (turning), `IDLE_DRAG` (braking), `ARENA` (size),
 `OOB_WARN_DELAY` (warning grace, 2 s), `OOB_RETURN_TIME` (auto-return, 30 s).
 
+**Amendment (§39, 2026-07-03):** two clauses above are now qualified by the return-to-base flow. Enemies
+spawn around **`arenaCenter`** (the mission zone center), **not** "around the player" — early in a fight
+the player is at center so it reads the same, but after they wander the waves still originate at the zone.
+And the **30 s OOB auto-warp is suspended while returning to base** (after the last kill), so a side mission
+fought far from `(0,0)` can fly the whole way home without being yanked back. See §39.
+
 ---
 
 ## 3. Camera
@@ -1249,6 +1255,53 @@ particle exhaust.
 as coupling for a single extra caller (see decision 2). (b) *Build an effect framework now* (effect
 registry / multiple effect types / per-particle turbulence) — rejected as speculative gold-plating (§30);
 made only the one existing exhaust spec-configurable with safe defaults.
+
+---
+
+## 39. Autopilot + return-to-base mission end
+
+**Context.** Every mission (campaign L1–4 + the three repeatable side missions) used to win the instant the
+last enemy died — which for side missions ended awkwardly far out at the mission zone, and gave the shared
+world's base station nothing to *do*. We added a **base station** `.glb` set-piece at the world origin `(0,0)`
+and made **all** missions end by flying home to it.
+
+**Decisions.**
+1. **One `levelRunner` intercept covers everything.** Both campaign levels and side missions play through the
+   same `levelRunner` (`sim.js`). The `win` phase's `this.win()` is replaced by `this.beginReturn()`, so *every*
+   `event: 'win'` phase becomes return-to-base with **no per-level or per-descriptor edits**. The phase's existing
+   `delay` (watch the boss explode) still runs first; the return prompt appears after it. Rejected: per-mission
+   descriptor fields — needless duplication.
+2. **The station is below-plane, NON-collidable decor** (maintainer's explicit call), like the freighter (§17):
+   no hit-tests, no gameplay array, ships fly *over* it. It is raised closer to the plane than the freighter
+   (center `y = -42` vs the freighter's `-48`) so it reads clearly top-down. The source model is tall
+   (y ≈ 0.78 of its longest axis), so with `BASE_STATION_LEN = 100` the normalized half-height is ~39; at
+   `y = -42` the station's **top sits at ~y = -2.9**, safely below the ships' `y ≈ 0.6` (§17 — set-piece tops
+   stay below the ships so they never occlude). NB: the plan's strawman defaults (`LEN 160`, `y = -30`) would
+   have breached the plane at `y ≈ +32`; the implementer lowered them per the §17 check. "Reached" = **horizontal
+   (xz) distance to `(0,0)` ≤ `BASE_ARRIVE_RADIUS` (45u)**, just inside the station's ~50u footprint half-width.
+3. **The dock is a mandatory explicit station click.** Proximity **alone never wins**. Victory requires
+   `G.autopilot.active` (set **only** by the station click via `engageAutopilot()`) **and** the ship within
+   `BASE_ARRIVE_RADIUS`. `checkArrival()`'s `!G.autopilot.active` guard is load-bearing: it means a manual or
+   *cancelled* approach never completes the mission — the player re-taps the station to resume the dock. Standing
+   next to the station without clicking never finishes; clicking while already inside the radius completes on the
+   next frame. This also makes any spawn-on-station insta-win impossible. Rejected: a proximity auto-win (would
+   fire on a manual fly-by / spawn overlap).
+4. **Autopilot uses a kinematic symmetric-decel brake.** The passive release-brake (`IDLE_DRAG`) is *exponential*
+   decay (`vel *= 1 − 0.8·dt`) — it asymptotes and never fully stops — so a literal "brake at the midpoint" can't
+   stop cleanly at the station. Instead autopilot: (1) brakes to a full stop, (2) rotates the nose to face the
+   station, (3) accelerates at max, then (4) begins a **constant-rate brake (decel == thrust `accel`)** once the
+   remaining distance ≤ the stopping distance `v²/(2·accel)`, so velocity reaches ~0 right at the station.
+   Rejected: the literal brake-at-midpoint (can't stop under exponential drag).
+5. **Any control input cancels autopilot** (literal reading): movement (`W/S/A/D`, arrows, touch stick), fire
+   (`Space`/FIRE), and rocket (`F`/🚀) — the same frame, control returns to the player. The station tap is a
+   canvas raycast, ignored on HUD buttons (separate DOM elements over the canvas).
+6. **Enemies spawn around `arenaCenter`, not the hero** (`ship-build.js`, same 70–130u ring) so waves originate
+   at the mission zone even after the player wanders. See the §2 amendment.
+7. **The OOB warp-back is lifted after the last kill** (`&& !G.returnToBase`) — required so a side mission fought
+   far from `(0,0)` can fly the full distance home instead of being warped back mid-return.
+
+A translucent **blue** homing arrow (anchored to the ship, re-pointed at the station each frame) + a centered
+**"Sector cleared — return to base"** HUD hint (i18n `ui.return.hint`) show from the last kill until victory.
 
 ---
 

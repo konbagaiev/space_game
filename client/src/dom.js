@@ -40,4 +40,6 @@ export const el = {
   pauseOverlay: byId('pause-overlay'),   // centered "Paused" + Play card
   // soft-boundary "left the battlefield" warning + countdown (updateOobWarning)
   oobWarn: byId('oob-warn'),
+  // "Sector cleared — return to base" hint shown during return-to-base (updateReturnHint)
+  returnHint: byId('return-hint'),
 };

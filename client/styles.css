@@ -332,7 +332,7 @@
   .community-link:hover { opacity: 1; color: #cfe7ff; }
   #overlay .community-link { margin-top: 18px; }
   /* hide the in-game HUD while the welcome screen is up */
-  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers, body.menu #oob-warn, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay, body.menu #zoom { display: none; }
+  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers, body.menu #oob-warn, body.menu #return-hint, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay, body.menu #zoom { display: none; }
   /* Account dialog (login / register / post-level-1 name prompt) */
   #account {
     position: fixed; inset: 0; z-index: 14; display: none;
@@ -598,6 +598,13 @@
     color: #ff8a6a; font-weight: 700; font-size: 17px; letter-spacing: .5px;
   }
   #oob-warn .oob-count { color: #ffd27a; font-size: 14px; margin-top: 3px; }
+  /* "Sector cleared — return to base" hint (return-to-base). Centered near the top, non-interactive. */
+  #return-hint {
+    position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 5;
+    display: none; text-align: center; pointer-events: none; max-width: 90vw;
+    font-family: system-ui, sans-serif; text-shadow: 0 0 8px rgba(0,0,0,.9);
+    color: #7ec8ff; font-weight: 700; font-size: 17px; letter-spacing: .5px;
+  }
   /* Corner radar: arena bounds + player + type-colored enemy dots. Non-interactive (touches pass through). */
   #minimap {
     position: fixed; left: 14px; top: 50%; transform: translateY(-50%); z-index: 4;
