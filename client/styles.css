@@ -590,6 +590,14 @@
     letter-spacing: .3px; text-shadow: 0 0 4px rgba(0,0,0,.9); white-space: nowrap;
     pointer-events: none; display: none;
   }
+  /* Enemy health bar: a small translucent red bar above a damaged enemy (in #markers, shown once hp < max) */
+  .enemy-hp {
+    position: absolute; transform: translate(-50%, -50%); will-change: transform;
+    width: 40px; height: 5px; border-radius: 3px; overflow: hidden;
+    background: rgba(120, 20, 20, .28); box-shadow: 0 0 3px rgba(0, 0, 0, .6);
+    pointer-events: none; display: none;
+  }
+  .enemy-hp > i { display: block; height: 100%; width: 100%; background: rgba(229, 57, 53, .72); }
   /* "Left the battlefield" warning + countdown (soft boundary). Centered near the top, non-interactive. */
   #oob-warn {
     position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 5;

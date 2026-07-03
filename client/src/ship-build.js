@@ -89,6 +89,7 @@ export function spawnEnemyShip(shipDef) {
     hull, engine, thruster,
     mounts: buildMounts(s.mounts),
     hp: hull.durability,
+    maxHp: hull.durability, // for the over-enemy health bar (shown once hp dips below max)
     radius: 2.6 * mc.scale,  // hit radius scales with model size
     alive: true,
   };

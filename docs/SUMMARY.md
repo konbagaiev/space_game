@@ -3,7 +3,8 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-03 (**Interactive chests** — loot drops are now clickable: clicking a chest engages
+**Updated:** 2026-07-03 (**Enemy health bars** — a translucent-red bar floats above each enemy, shown only
+once its HP drops below max. Previously: **Interactive chests** — loot drops are now clickable: clicking a chest engages
 autopilot toward it (in combat or return-to-base), a `grab` hand cursor shows on hover (mouse), chests are
 brushed silver so they read against dark space, and off-screen chests get their own green edge arrows. Autopilot
 gained a typed target (station|drop); the mission-win dock fires only when the target is the station. Every
@@ -153,6 +154,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Off-screen enemy markers** — for each enemy that's off-screen, an arrow on the screen edge points
   toward it, tinted by the enemy's marker color (`updateMarkers`, a pooled DOM overlay). Hidden while an
   overlay (game over / victory) is up.
+- **Enemy health bars** — a small translucent-red bar floats just above each enemy, shown **only while its
+  HP is below max** (undamaged enemies show nothing). `updateEnemyHealthBars` (a pooled DOM overlay in
+  `#markers`) projects the enemy's world position + `radius` each frame and sets the fill width to
+  `hp / maxHp`; enemies carry a `maxHp` from spawn (`ship-build.js`). CSS: `.enemy-hp` + its `> i` fill in
+  `styles.css`. Hidden while an overlay (game over / victory) is up.
 - **Kill credit popups** — a green `+xx` popup floats up from each destroyed enemy's position showing the
   credits earned, holding then fading over ~2 s (`updateCreditPopups`, a pooled DOM overlay in the `#markers`
   container; `creditPopups` FX array spawned in `sim.js` on enemy death with `maxLife` 2.0, skipped when

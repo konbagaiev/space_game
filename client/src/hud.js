@@ -167,6 +167,39 @@ export function updateCreditPopups() {
   for (let i = used; i < popupPool.length; i++) popupPool[i].style.display = 'none';
 }
 
+// ---------- Enemy health bars: a translucent red bar above each damaged enemy (hidden at full health) ----------
+const hpBarPool = [];
+const _hb = new THREE.Vector3();
+function getHpBar(i) {
+  while (hpBarPool.length <= i) {
+    const d = document.createElement('div');
+    d.className = 'enemy-hp';
+    d.appendChild(document.createElement('i')); // the fill (width = current health fraction)
+    el.markers.appendChild(d); // reuse the fixed, full-screen, non-interactive markers container
+    hpBarPool.push(d);
+  }
+  return hpBarPool[i];
+}
+export function updateEnemyHealthBars() {
+  // hide everything while there's no player or an overlay (game over / victory) is up
+  if (!G.player || el.overlay.style.display !== 'none') { for (const b of hpBarPool) b.style.display = 'none'; return; }
+  const w = gameW(), h = gameH();
+  let used = 0;
+  for (const e of enemies) {
+    if (e.hp >= e.maxHp) continue;                 // full health -> no bar
+    _hb.copy(e.mesh.position); _hb.y += e.radius + 2; // anchor just above the ship (depth-correct)
+    _hb.project(camera);
+    if (_hb.z > 1) continue;                        // behind the camera -> skip
+    const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));
+    const b = getHpBar(used++);
+    b.style.display = 'block';
+    b.style.left = ((_hb.x * 0.5 + 0.5) * w) + 'px';
+    b.style.top = ((-_hb.y * 0.5 + 0.5) * h) + 'px';
+    b.firstChild.style.width = (frac * 100) + '%';
+  }
+  for (let i = used; i < hpBarPool.length; i++) hpBarPool[i].style.display = 'none';
+}
+
 // ---------- Mini-map / radar: arena bounds, the player (with heading), and type-colored enemy dots ----------
 // Complements the edge arrows (arrows = immediate threat direction; the radar = spatial overview, useful
 // now that the player can wander out of bounds). The shown range slightly exceeds the arena so an

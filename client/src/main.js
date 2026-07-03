@@ -14,7 +14,7 @@ import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
-import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows)
+import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars)
 import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base
@@ -421,6 +421,7 @@ function animate() {
   updateMarkers();
   updateDropMarkers(); // green edge arrows toward off-screen loot drops (nearest 6)
   updateCreditPopups(); // floating "+xx" gold credit popups at kill sites
+  updateEnemyHealthBars(); // translucent red health bars above damaged enemies
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
   updateReturnArrow();  // world-space blue homing arrow toward the base station (return-to-base)
   updateReturnHint();   // centered "return to base" HUD hint

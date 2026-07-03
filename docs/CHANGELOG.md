@@ -5,6 +5,13 @@
 
 ## 2026-07-03
 
+- **Enemy health bars.** Each enemy now shows a small translucent-red health bar floating just above it —
+  but **only once it drops below full HP** (an undamaged enemy shows nothing, so the arena stays clean until
+  the fight starts). The bar is a pooled DOM overlay in `#markers`, projected from the enemy's world position
+  each frame (`updateEnemyHealthBars` in `client/src/hud.js`, wired into the frame loop in `client/src/main.js`),
+  with its fill width tracking `hp / maxHp`. Enemies gained a `maxHp` reference at spawn
+  (`client/src/ship-build.js`); styling in `client/styles.css` (`.enemy-hp` + fill). New visual scenario
+  `client/visual/scenarios/16-enemy-health-bar.mjs` (no bar at full HP → 40% bar after damage).
 - **Base station moved off the arena center.** Repositioned the return-to-base station from the world origin
   `(0,-42,0)` to `(-20,-42,-20)` — 20 units toward screen-top (−z) and 20 toward screen-left (−x) — for
   composition (`server/src/catalog_seed.js` MAPS set-piece `pos`). Safe with no logic change: the dock/win
