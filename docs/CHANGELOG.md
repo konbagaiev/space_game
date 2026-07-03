@@ -5,6 +5,16 @@
 
 ## 2026-07-03
 
+- **Silver loot chests + base-Grab backfill + enemy-weapon balance.** Follow-ups after the interactive-chest
+  ship: (1) **Chests are now brushed silver** instead of near-chrome — the pure mirror went black against dark
+  space, so the drop material got a light silver albedo (`0xd2d6de`), lower metalness (0.55), and a faint
+  emissive floor so a crate is never fully black even where the scene is unlit (`client/src/drops.js`). (2)
+  **Every existing player is granted the base Grab (component 29).** New players already get it from the ship
+  default; players created before the Grab feature whose ship has an explicit `components` override predating
+  Grab are backfilled — SQLite migration `019_backfill_grab.js` + an idempotent `UPDATE` in the Postgres
+  `migrate()` (both skip rows that already have a grab; NULL-components players inherit the default). (3)
+  **Enemy weapons renamed** `Kinetic (enemy)`→`Kinetic pirate`, `Rocket (enemy)`→`Rocket pirate`, and rocket
+  **volley stagger widened** (mini-boss/rocketeer/advanced 0.2→0.3 s; second-boss 0.15/0.3→0.3/0.6 s).
 - **Chests are interactive.** [2026-07-03-1703-chest-click-and-markers] Loot drops are now discoverable and
   one-click reachable. **Click/tap a chest → autopilot flies the ship over to it** (works in **combat AND
   return-to-base**; the passive Grab then collects it, after which the autopilot stops — no auto-chaining).

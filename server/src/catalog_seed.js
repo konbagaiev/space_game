@@ -89,7 +89,7 @@ export const WEAPONS = [
     }
   },
   {
-    id: 2, name: 'Kinetic (enemy)', type: 'bullet', price: 120, stats: { // enemy gear: resale-only (hidden from the shop)
+    id: 2, name: 'Kinetic pirate', type: 'bullet', price: 120, stats: { // enemy gear: resale-only (hidden from the shop)
       power: 4, projectileSpeed: 40, maxRange: 88, fireCooldown: 1.1, weight: 4, projectileColor: 0xff6b6b, buyable: false
     }
   },
@@ -101,7 +101,7 @@ export const WEAPONS = [
     }
   },
   {
-    id: 4, name: 'Rocket (enemy)', type: 'rocket', price: 200, stats: { // enemy gear: resale-only (hidden from the shop)
+    id: 4, name: 'Rocket pirate', type: 'rocket', price: 200, stats: { // enemy gear: resale-only (hidden from the shop)
       power: 25, accel: 9, turnRate: 1.0, launchSpeed: 12, maxRange: 120, health: 20,
       detonateRadius: 3.2, blastRadius: 5, blastVisual: 4.5,
       fireCooldown: 4, weight: 6, projectileColor: 0xffcc66, class: 'rocket', buyable: false // class only drives detonation (→ blast); enemy fire stays synth (isPlayer gate)
@@ -266,10 +266,10 @@ export const SHIPS = [
       // enemy_3 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
       model: { yaw: Math.PI, scale: 2 },
       groups: { rocket: ROCKET },
-      // two rocket launchers side by side, fired one after the other (0.2s stagger)
+      // two rocket launchers side by side, fired one after the other (0.3s stagger)
       mounts: [
         { weapon: 4, group: 'rocket', offset: -0.8, delay: 0 },
-        { weapon: 4, group: 'rocket', offset: 0.8, delay: 0.2 },
+        { weapon: 4, group: 'rocket', offset: 0.8, delay: 0.3 },
       ]
     }
   },
@@ -288,7 +288,7 @@ export const SHIPS = [
         { weapon: 9, group: 'gun', offset: -0.6, delay: 0 },
         { weapon: 9, group: 'gun', offset: 0.6, delay: 0 },
         { weapon: 4, group: 'rocket', offset: -0.9, delay: 0 },
-        { weapon: 4, group: 'rocket', offset: 0.9, delay: 0.2 },
+        { weapon: 4, group: 'rocket', offset: 0.9, delay: 0.3 },
       ]
     }
   },
@@ -304,7 +304,7 @@ export const SHIPS = [
       mounts: [
         { weapon: 9, group: 'gun', offset: 0, delay: 0 },
         { weapon: 4, group: 'rocket', offset: -0.8, delay: 0 },
-        { weapon: 4, group: 'rocket', offset: 0.8, delay: 0.2 },
+        { weapon: 4, group: 'rocket', offset: 0.8, delay: 0.3 },
       ]
     }
   },
@@ -321,8 +321,8 @@ export const SHIPS = [
         { weapon: 10, group: 'gun', offset: -0.6, delay: 0 },
         { weapon: 10, group: 'gun', offset: 0.6, delay: 0 },
         { weapon: 4, group: 'rocket', offset: -0.9, delay: 0 },
-        { weapon: 4, group: 'rocket', offset: 0, delay: 0.15 },
-        { weapon: 4, group: 'rocket', offset: 0.9, delay: 0.3 },
+        { weapon: 4, group: 'rocket', offset: 0, delay: 0.3 },
+        { weapon: 4, group: 'rocket', offset: 0.9, delay: 0.6 },
       ]
     }
   },

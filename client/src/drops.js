@@ -33,15 +33,20 @@ function normalize(obj) {
   obj.position.sub(center);                 // recenter around the origin
   const longest = Math.max(size.x, size.y, size.z) || 1;
   obj.scale.multiplyScalar(2.5 / longest);
-  // Glint: make the crate near-chrome so it catches scene.environment (RoomEnvironment env-map, engine.js)
-  // + the combat sun and reads as a shiny loot box. Static one-time material tweak on the shared template
-  // (every drop clones it) — no per-frame cost, no sparkle animation.
+  // Silver crate: a bright brushed-silver so it reads against dark space (a pure chrome mirror went black
+  // when the environment behind it was dark). We give it a light silver albedo (not a full mirror), a soft
+  // metallic glint off scene.environment (RoomEnvironment env-map, engine.js) + the combat sun, and a faint
+  // emissive floor so the crate is never fully black even where the scene is unlit. Static one-time tweak on
+  // the shared template (every drop clones it) — no per-frame cost, no sparkle animation.
   obj.traverse((o) => {
     if (o.isMesh && o.material) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
-        if ('metalness' in m) m.metalness = 1.0;   // catch the env-map + sun
-        if ('roughness' in m) m.roughness = 0.25;  // low roughness → a crisp specular glint
+        if (m.map) m.map = null;                     // drop the dark placeholder texture so the silver shows cleanly
+        if (m.color) m.color.setHex(0xd2d6de);       // bright silver base — reads light, not black
+        if ('metalness' in m) m.metalness = 0.55;    // metallic sheen, but low enough to keep a visible silver albedo
+        if ('roughness' in m) m.roughness = 0.4;     // brushed silver — soft glint, not a dark mirror
+        if (m.emissive) { m.emissive.setHex(0x3a3e46); m.emissiveIntensity = 0.55; } // self-lit floor → never fully black
         m.needsUpdate = true;
       }
     }
@@ -54,7 +59,7 @@ function normalize(obj) {
 // A small metallic box used until the glb loads (or if it fails to load) — env-map lit like the ships.
 function fallbackBox() {
   const geo = new THREE.BoxGeometry(2, 2, 2);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, metalness: 1.0, roughness: 0.25 }); // near-chrome glint (matches the glb tweak)
+  const mat = new THREE.MeshStandardMaterial({ color: 0xd2d6de, metalness: 0.55, roughness: 0.4, emissive: 0x3a3e46, emissiveIntensity: 0.55 }); // bright silver, visible against dark space (matches the glb tweak)
   return new THREE.Mesh(geo, mat);
 }
 

@@ -336,7 +336,7 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(mini.stats.role, 'medium');
   assert.deepEqual(mini.components, { hull: 3, engine: 6, thruster: 10 }); // medium hull + scout engine + weak thrusters
   assert.equal(mini.stats.mounts.length, 2);                 // two staggered rocket launchers
-  assert.deepEqual(mini.stats.mounts.map((m) => m.delay).sort(), [0, 0.2]);
+  assert.deepEqual(mini.stats.mounts.map((m) => m.delay).sort(), [0, 0.3]);
   const boss = ships.find((s) => s.name === 'first pirate boss');
   assert.equal(boss.stats.role, 'boss');
   assert.deepEqual(boss.components, { hull: 4, engine: 7, thruster: 11 }); // its own hull + engine + thrusters

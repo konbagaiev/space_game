@@ -238,6 +238,13 @@ export async function migrate() {
       'INSERT INTO sound_map (entity, class, event, sound_key) VALUES ($1, $2, $3, $4)',
       [m.entity, m.class, m.event, m.sound]);
   }
+  // Backfill the base Grab (component 29) onto existing players (DECISIONS §40; mirrors SQLite migration 019).
+  // Players created before the Grab feature whose ship has an explicit `components` override predating Grab
+  // have no 'grab' slot → grant them 29. NULL-components players inherit the reseeded ship default (grab:29),
+  // so they need no change. Idempotent: the `NOT (components ? 'grab')` guard skips rows already carrying it.
+  await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{grab}', '29'::jsonb)
+    WHERE components IS NOT NULL AND NOT (components ? 'grab')`);
+
   console.log('[migrate] postgres schema ready');
 }
 

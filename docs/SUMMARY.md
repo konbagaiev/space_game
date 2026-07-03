@@ -4,9 +4,10 @@
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
 **Updated:** 2026-07-03 (**Interactive chests** — loot drops are now clickable: clicking a chest engages
-autopilot toward it (in combat or return-to-base), a `grab` hand cursor shows on hover (mouse), chests glint
-off the scene lights, and off-screen chests get their own green edge arrows. Autopilot gained a typed target
-(station|drop); the mission-win dock fires only when the target is the station. Also 2026-07-03:
+autopilot toward it (in combat or return-to-base), a `grab` hand cursor shows on hover (mouse), chests are
+brushed silver so they read against dark space, and off-screen chests get their own green edge arrows. Autopilot
+gained a typed target (station|drop); the mission-win dock fires only when the target is the station. Every
+existing player was granted the base Grab (migration `019_backfill_grab` + Postgres parity). Also 2026-07-03:
 **Grab component + enemy equipment drops** — a new optional tractor-beam component:
 enemies have a 20% chance on death to drop a piece of their gear as a metal-box the Grab pulls in (range =
 strength, speed = (strength/2)·(10/weight)); collected drops deposit into the stash on victory only; hulls
@@ -364,8 +365,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **combat and return-to-base**; a chest under the pointer wins over the station on overlap); a `cursor: grab`
   **hand** shows on chest hover (mouse only, `canvas.grab-cursor`, wins over the dock cursor). The targeted
   drop being collected/removed (or a reset) **cancels the autopilot** — it never auto-chains to another chest.
-  Drops **glint** — their glb (and the fallback box) material is set near-chrome (`metalness 1.0`,
-  `roughness 0.25`, a one-time tweak in `normalize()`) so it catches the env-map + sun. **Off-screen drops
+  Drops read as **brushed silver** — their glb (and the fallback box) material is overridden to a light silver
+  albedo (`0xd2d6de`, `metalness 0.55`, `roughness 0.4`) with a faint **emissive floor** (`0x3a3e46`) so a
+  crate is visible against dark space and never fully black (a one-time tweak in `normalize()`; a pure chrome
+  mirror had gone black where the backdrop was dark). **Off-screen drops
   show green `0x59e0a0` edge arrows** (`updateDropMarkers` in `hud.js`, its own pool + `.drop-marker` CSS,
   the **nearest 6**), distinct from the enemy edge markers.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate. The fixed offset
