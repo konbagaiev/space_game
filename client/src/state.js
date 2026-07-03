@@ -55,7 +55,9 @@ export const G = {
   paused: false,              // client-side freeze: the sim update is skipped while true (rendering continues)
   // --- return-to-base / autopilot (set after the last kill; read across sim/HUD/input) ---
   returnToBase: false,                             // true after the last kill: OOB lifted, arrow + hint on, station clickable
-  autopilot: { active: false, phase: 'brake0' },   // click-to-fly to the base station (active == the mandatory "dock" gate)
+  // click-to-fly autopilot. target = the base station (return-to-base dock) OR a loot drop (fly to grab it).
+  // active + target.kind==='station' is the mandatory "dock" gate (only the station target can win the mission).
+  autopilot: { active: false, phase: 'brake0', target: null },
   baseStation: null,                               // { obj, active } — set by buildSetPiece; .active = clickable this run
 };
 
