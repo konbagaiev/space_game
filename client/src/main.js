@@ -216,6 +216,26 @@ renderer.domElement.addEventListener('click', (e) => {
   if (stationRay.intersectObject(G.baseStation.obj, true).length) engageAutopilot();
 });
 
+// Dock cursor: while the station is clickable, hovering it swaps the cursor to a first-party "landing/dock"
+// glyph (a "you can dock here" affordance). Mouse only — a cursor is meaningless on touch — and gated on the
+// same clickable phase as the click handler. Reuses the station raycast, throttled + only re-run on move.
+let dockCursorOn = false;
+const setDockCursor = (on) => { if (on !== dockCursorOn) { dockCursorOn = on; renderer.domElement.classList.toggle('dock-cursor', on); } };
+const stationClickable = () => !!(G.returnToBase && G.baseStation && G.baseStation.active && G.player && G.player.alive && !levelRunner.won);
+if (!Device.hasTouch) {
+  let lastHoverRay = 0;
+  renderer.domElement.addEventListener('pointermove', (e) => {
+    if (!stationClickable()) { setDockCursor(false); return; }
+    const now = performance.now();
+    if (now - lastHoverRay < 50) return; // cheap throttle: at most ~20 raycasts/sec
+    lastHoverRay = now;
+    const p = toGame(e.clientX, e.clientY);
+    const ndc = new THREE.Vector2((p.x / gameW()) * 2 - 1, -(p.y / gameH()) * 2 + 1);
+    stationRay.setFromCamera(ndc, camera);
+    setDockCursor(stationRay.intersectObject(G.baseStation.obj, true).length > 0);
+  });
+}
+
 // ---------- Backend + telemetry moved to src/net.js ----------
 // fetchJson, bankRun, currentLevelLabel, track, unlockNextLevel are imported at the top. The player id
 // (G.playerId) is initialized in state.js; the once-per-run / once-per-session guards (G.banked,
@@ -380,6 +400,7 @@ function animate() {
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
   updateReturnArrow();  // world-space blue homing arrow toward the base station (return-to-base)
   updateReturnHint();   // centered "return to base" HUD hint
+  if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays
   // two passes: first the sky backdrop (with its own light), then combat on top

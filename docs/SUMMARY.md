@@ -57,7 +57,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Autopilot (return-to-base)** — after the last enemy is destroyed the **base station** at `(0,0)` becomes
   clickable; **clicking/tapping it** (a canvas raycast, ignored on HUD buttons) engages autopilot, which flies
   the ship home: **brake to a stop → rotate the nose to face the station → accelerate at max → kinematic
-  symmetric-decel brake** so it coasts to a stop right next to it. Reaching the station (within
+  symmetric-decel brake** so it coasts to a stop right next to it. On **desktop/mouse**, hovering the clickable
+  station swaps the cursor to a first-party **"dock/landing" glyph** (`client/assets/ui/dock-cursor.png`, a
+  raster PNG since Safari has no SVG cursors; `pointer` fallback) as a "you can dock here" affordance — a
+  throttled canvas raycast toggles the `dock-cursor` class on the WebGL canvas, gated to mouse input
+  (`!Device.hasTouch`) and the same clickable phase as the click. Reaching the station (within
   `BASE_ARRIVE_RADIUS` ≈ 45u of `(0,0)`) completes the mission. **Any control input** — move (`W/S/A/D`, arrows,
   touch stick), fire (`Space`/FIRE), or rocket (`F`/🚀) — instantly cancels autopilot and returns control; a
   cancelled dock does not win (re-tap the station to resume). See the Level flow / Victory section.

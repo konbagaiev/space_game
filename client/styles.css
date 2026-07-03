@@ -605,6 +605,10 @@
     font-family: system-ui, sans-serif; text-shadow: 0 0 8px rgba(0,0,0,.9);
     color: #7ec8ff; font-weight: 700; font-size: 17px; letter-spacing: .5px;
   }
+  /* "Dock here" cursor: hovering the clickable base station shows a first-party landing/dock glyph
+     (return-to-base, mouse only; the class is toggled on the WebGL canvas by main.js). A raster PNG is
+     used deliberately — Safari does not support SVG data-URI cursors — with `pointer` as the fallback. */
+  canvas.dock-cursor { cursor: url(assets/ui/dock-cursor.png) 16 16, pointer; }
   /* Corner radar: arena bounds + player + type-colored enemy dots. Non-interactive (touches pass through). */
   #minimap {
     position: fixed; left: 14px; top: 50%; transform: translateY(-50%); z-index: 4;
