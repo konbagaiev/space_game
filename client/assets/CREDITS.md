@@ -25,6 +25,7 @@ asset page is also handy, in case the author later changes the terms).
 | ships/machine_gun_hangar.\<hash\>.glb (Machine Gun item icon — menu only) | suvee10 | https://skfb.ly/oHLZB | CC-BY 4.0 | 2026-06-29 |
 | ships/freighter_combat.\<hash\>.glb (Freighter set-piece — cargo transport decor) | Felipe Augusto Vera | https://skfb.ly/oPRwV | CC-BY 4.0 | 2026-07-02 |
 | ships/metal_box_combat.\<hash\>.glb (shared equipment-drop model — the loot "crate") | District24 | https://skfb.ly/JwFQ | CC-BY 4.0 | 2026-07-03 |
+| ships/base_station_combat.\<hash\>.glb (Base station set-piece — return-to-base target) | MisterH | https://skfb.ly/ozESS | CC-BY 4.0 | 2026-07-03 |
 
 <!--
 Example row:
@@ -90,6 +91,16 @@ preset override) downscales the textures to 128px WebP + meshopt-compresses the 
 
 > "Metal box" (https://skfb.ly/JwFQ) by District24 is licensed under Creative Commons Attribution
 > (http://creativecommons.org/licenses/by/4.0/).
+
+The **base station** set-piece (`base_station_combat`) is **"Low Poly space station."** by **MisterH**
+(Sketchfab, **CC-BY 4.0** — attribution required, so this entry must stay while in use). It sits at the
+world origin `(0,0)` below the combat plane as the return-to-base target; `assets:build` decimates/meshopt-
+compresses it into `base_station_combat`.
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "Low Poly space station." (https://skfb.ly/ozESS) by MisterH is licensed under Creative Commons
+> Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 The older primitive fallbacks (`player.glb`, `fighter.glb`, `rocketeer.glb`,
 `heavy.glb`, `boss.glb`, `Spaceship*.glb`) are placeholder geometry, not from either pack.

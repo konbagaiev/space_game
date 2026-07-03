@@ -34,10 +34,14 @@ export function refreshMusic() { audio.setScene(musicForState()); }
 // the arena -> the boss always appears alone.
 export const levelRunner = {
   level: null, phaseIndex: 0, killsAtPhaseStart: 0, spawnedThisPhase: 0, won: false,
-  winPending: 0, winText: '',
+  winPending: 0, winText: '', returningToBase: false,
 
   start(level) {
     this.level = level; this.phaseIndex = 0; this.won = false; this.winPending = 0;
+    // reset the return-to-base gate + shared flags so a Restart starts clean
+    this.returningToBase = false;
+    G.returnToBase = false; G.autopilot.active = false;
+    if (G.baseStation) G.baseStation.active = false;
     G.enemyTotal = (level && level.enemyTotal) || 0; // total enemies for the HUD killed/total (0 if not seeded)
     this.enterPhase();
   },
@@ -50,11 +54,31 @@ export const levelRunner = {
       // defer the overlay by `delay` seconds so the boss explosion can play out first
       this.winTextKey = ph.textKey; this.winText = ph.text; // i18n key (+ English fallback)
       this.winPending = ph.delay ?? 0;
-      if (this.winPending <= 0) this.win();
+      if (this.winPending <= 0) this.beginReturn();
     }
+  },
+  // Return-to-base gate (replaces the immediate win): the last kill lifts OOB, shows the homing arrow +
+  // hint, and makes the station clickable. Victory fires only once the player docks (see checkArrival).
+  beginReturn() {
+    this.returningToBase = true;
+    G.returnToBase = true;                          // lifts OOB warp, shows arrow + hint (read by sim + HUD)
+    if (G.baseStation) G.baseStation.active = true; // station becomes clickable
+  },
+  checkArrival() {
+    // The dock is a MANDATORY explicit click: victory requires autopilot to be ENGAGED (only the station click
+    // sets it) AND the ship within the radius. Proximity alone never wins; any control input cancels the dock
+    // (clears G.autopilot.active) so a cancelled approach doesn't complete — the player re-taps to resume.
+    if (!G.autopilot.active || !G.baseStation || !G.player || !G.player.alive) return;
+    const s = G.baseStation.obj.position;
+    const dx = G.player.mesh.position.x - s.x, dz = G.player.mesh.position.z - s.z;
+    if (Math.hypot(dx, dz) <= BASE_ARRIVE_RADIUS) this.win();
   },
   win() {
     this.won = true;
+    // tear down the return-to-base state so the overlay/arrow/hint clear
+    this.returningToBase = false;
+    G.returnToBase = false; G.autopilot.active = false;
+    if (G.baseStation) G.baseStation.active = false;
     audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
     G.earned *= 2; // double the credits earned for clearing the level
     el.overlayTitle.textContent = t('ui.overlay.victory');
@@ -82,12 +106,15 @@ export const levelRunner = {
   update(dt) {
     const ph = this.phase;
     if (!ph || this.won) return;
-    // victory pending: keep the game running (so the boss explosion animates) until the delay ends
+    // victory pending: keep the game running (so the boss explosion animates) until the delay ends,
+    // then open the return-to-base gate (arrow + hint + clickable station) instead of winning outright
     if (this.winPending > 0) {
       this.winPending -= dt;
-      if (this.winPending <= 0) this.win();
+      if (this.winPending <= 0) this.beginReturn();
       return;
     }
+    // returning to base: no more spawning; just wait for the player to fly home and dock
+    if (this.returningToBase) { this.checkArrival(); return; }
     // spawn up to maxConcurrent (respecting an optional total cap for this phase)
     if (ph.spawn) {
       const cap = ph.spawn.total;
@@ -124,6 +151,86 @@ function forwardVec(heading) {
   return new THREE.Vector3(d.x, 0, d.z);
 }
 
+// ---------- Autopilot (return-to-base click-to-fly) ----------
+// Kinematic symmetric-decel brake: bleed the velocity toward 0 at a constant rate equal to the ship's
+// thrust `accel` (Decision 2 — the passive IDLE_DRAG is exponential and can't stop cleanly).
+function brakeStep(accel, dt) {
+  const v = G.player.vel, sp = v.length();
+  if (sp <= 1e-4) { v.set(0, 0, 0); return; }
+  const dec = Math.min(sp, accel * dt); // symmetric decel == thrust accel
+  v.addScaledVector(v.clone().normalize(), -dec);
+}
+
+// Click-to-fly: brake to a stop → rotate to face the station → accelerate at max → kinematic brake so the
+// ship coasts to ~0 right at the station. `heading` convention matches forwardVec/touchAim: desired = atan2(dx, dz).
+// Arrival isn't handled here — levelRunner.checkArrival() fires the win ONLY while autopilot is engaged, so a
+// manual/cancelled approach never completes the mission; autopilot just stalls at the station until arrival.
+function autopilotControl(dt, accel, turn) {
+  const st = G.baseStation && G.baseStation.obj.position;
+  if (!st) { G.autopilot.active = false; return; }
+  const pos = G.player.mesh.position;
+  const dx = st.x - pos.x, dz = st.z - pos.z;
+  const dist = Math.hypot(dx, dz);
+  const desired = Math.atan2(dx, dz);
+  const ap = G.autopilot;
+
+  if (ap.phase === 'brake0') {                    // 1) full stop first
+    brakeStep(accel, dt);
+    if (G.player.vel.length() < 0.5) ap.phase = 'rotate';
+  } else if (ap.phase === 'rotate') {             // 2) rotate the nose to face the station
+    G.player.heading = steerToward(G.player.heading, desired, turn * dt);
+    brakeStep(accel, dt);                         // bleed any residual drift while turning
+    if (Math.abs(shortestAngleDelta(G.player.heading, desired)) < 0.05) ap.phase = 'cruise';
+  } else {                                        // 3/4) accelerate, then kinematic brake
+    G.player.heading = steerToward(G.player.heading, desired, turn * dt);
+    const speed = G.player.vel.length();
+    const stopDist = (speed * speed) / (2 * accel);
+    if (dist > stopDist + 0.5) {
+      const fwd = forwardVec(G.player.heading);
+      G.player.vel.addScaledVector(fwd, accel * dt);
+      emitExhaust(G.player.mesh, fwd, G.player.vel, G.player.engine.exhaust);
+    } else {
+      brakeStep(accel, dt);
+    }
+  }
+}
+
+// Engage autopilot (called by the station click handler in main.js). Only valid while returning to base.
+export function engageAutopilot() {
+  if (!G.returnToBase || !G.player || !G.player.alive || levelRunner.won) return;
+  G.autopilot.active = true; G.autopilot.phase = 'brake0';
+}
+
+// ---------- Homing arrow + HUD hint (world-space arrow + DOM hint) ----------
+let returnArrow = null;
+function ensureReturnArrow() {
+  if (returnArrow) return returnArrow;
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0x4aa3ff, transparent: true, opacity: 0.4, fog: false, depthWrite: false });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 7, 8), mat);
+  shaft.rotation.x = Math.PI / 2; shaft.position.z = 3.5;   // cylinder axis Y → lay along +Z
+  const head = new THREE.Mesh(new THREE.ConeGeometry(1.1, 3, 10), mat);
+  head.rotation.x = Math.PI / 2; head.position.z = 8.5;
+  g.add(shaft, head); g.visible = false; scene.add(g);
+  return (returnArrow = g);
+}
+export function updateReturnArrow() {
+  const on = G.returnToBase && G.player && G.player.alive && !levelRunner.won && G.baseStation;
+  if (!on) { if (returnArrow) returnArrow.visible = false; return; }
+  const a = ensureReturnArrow();
+  const st = G.baseStation.obj.position, pos = G.player.mesh.position;
+  a.position.set(pos.x, 2.5, pos.z);                        // anchored to the ship, just above the plane
+  a.rotation.y = Math.atan2(st.x - pos.x, st.z - pos.z);    // point at the station (heading convention)
+  a.visible = true;
+}
+export function updateReturnHint() {
+  const show = G.returnToBase && G.player && G.player.alive && !levelRunner.won
+    && el.overlay.style.display === 'none';
+  if (!show) { el.returnHint.style.display = 'none'; return; }
+  el.returnHint.style.display = 'block';
+  el.returnHint.textContent = t('ui.return.hint');
+}
+
 // Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,
 // and replay the warp-in animation so the return reads as intentional (not a glitch).
 export function warpPlayerToCenter() {
@@ -139,7 +246,7 @@ export function warpPlayerToCenter() {
 // "You've left the battlefield" HUD warning + countdown. Shown only after OOB_WARN_DELAY seconds
 // continuously out of bounds; hidden while in bounds, on menus, or when a result overlay is up.
 export function updateOobWarning() {
-  const show = G.player && G.gameStarted && G.player.alive && !levelRunner.won
+  const show = G.player && G.gameStarted && G.player.alive && !levelRunner.won && !G.returnToBase
     && el.overlay.style.display === 'none' && G.player.oobTime >= OOB_WARN_DELAY;
   if (!show) { el.oobWarn.style.display = 'none'; return; }
   const remain = Math.max(0, Math.ceil(OOB_RETURN_TIME - G.player.oobTime));
@@ -153,6 +260,7 @@ export function updateOobWarning() {
 // Thrust/turn/speed/weapon are taken from the ship's components (engine/weapon).
 const DRAG = 1.8;        // friction (enemies)
 const IDLE_DRAG = 0.8;   // soft braking for the player when controls are released
+const BASE_ARRIVE_RADIUS = 45; // horizontal distance to the station (0,0) that ends autopilot + fires victory
 const BANK_MAX  = 20 * Math.PI / 180; // max wing bank, radians (~0.349) — hard cap, "20 degrees, no more"
 const BANK_TAU  = 0.15;               // smoothing time-constant (s); smaller = snappier, larger = lazier
 
@@ -187,27 +295,40 @@ export function update(dt) {
   const accel = G.player.acceleration; // derived: acceleration <- main engine power
   const turn = G.player.turnRate;      // derived: maneuverability <- thruster power
 
-  // --- player: turn ---
-  if (keys['KeyA'] || keys['ArrowLeft'])  G.player.heading += turn * dt;
-  if (keys['KeyD'] || keys['ArrowRight']) G.player.heading -= turn * dt;
+  // Autopilot (return-to-base): ANY control input cancels it and hands control back immediately (DECISIONS §39).
+  const manual = touchAim.active
+    || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
+    || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight']
+    || keys['Space'] || keys['KeyF'] || keys['_rocket']; // KeyF = keyboard rocket, _rocket = touch/mouse 🚀 button
+  if (G.autopilot.active && manual) G.autopilot.active = false;
 
-  // touch: turn the nose toward the touch direction (directional steering)
-  if (touchAim.active) {
-    G.player.heading = steerToward(G.player.heading, touchAim.heading, turn * dt);
+  let fwd;
+  if (G.autopilot.active) {
+    autopilotControl(dt, accel, turn); // sets heading + vel toward the station (brake/rotate/accelerate)
+    fwd = forwardVec(G.player.heading);
+  } else {
+    // --- player: turn ---
+    if (keys['KeyA'] || keys['ArrowLeft'])  G.player.heading += turn * dt;
+    if (keys['KeyD'] || keys['ArrowRight']) G.player.heading -= turn * dt;
+
+    // touch: turn the nose toward the touch direction (directional steering)
+    if (touchAim.active) {
+      G.player.heading = steerToward(G.player.heading, touchAim.heading, turn * dt);
+    }
+
+    // --- player: thrust ---
+    fwd = forwardVec(G.player.heading);
+    if (keys['KeyW'] || keys['ArrowUp'])   G.player.vel.addScaledVector(fwd, accel * dt);
+    if (keys['KeyS'] || keys['ArrowDown']) G.player.vel.addScaledVector(fwd, -accel * dt);
+    if (touchAim.active) G.player.vel.addScaledVector(fwd, accel * touchAim.thrust * dt); // touch thrust
+
+    // passive braking when no control button is pressed
+    // (hold the turn to aim while drifting - inertia is preserved)
+    const controlling = touchAim.active
+                     || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
+                     || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight'];
+    if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
   }
-
-  // --- player: thrust ---
-  const fwd = forwardVec(G.player.heading);
-  if (keys['KeyW'] || keys['ArrowUp'])   G.player.vel.addScaledVector(fwd, accel * dt);
-  if (keys['KeyS'] || keys['ArrowDown']) G.player.vel.addScaledVector(fwd, -accel * dt);
-  if (touchAim.active) G.player.vel.addScaledVector(fwd, accel * touchAim.thrust * dt); // touch thrust
-
-  // passive braking when no control button is pressed
-  // (hold the turn to aim while drifting - inertia is preserved)
-  const controlling = touchAim.active
-                   || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
-                   || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight'];
-  if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
 
   // pure inertia: no friction, no speed limit - the ship
   // keeps flying in its current direction, no matter where the nose points
@@ -229,7 +350,8 @@ export function update(dt) {
   const oob = Math.abs(dxc) > ARENA || Math.abs(dzc) > ARENA;
   if (oob) {
     G.player.oobTime += dt;
-    if (G.player.oobTime >= OOB_RETURN_TIME) warpPlayerToCenter();
+    // OOB warp-back is LIFTED during return-to-base (§39) so side missions fought far from (0,0) can fly home
+    if (G.player.oobTime >= OOB_RETURN_TIME && !G.returnToBase) warpPlayerToCenter();
   } else {
     G.player.oobTime = 0;
   }

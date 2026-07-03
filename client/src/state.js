@@ -53,6 +53,10 @@ export const G = {
   // --- run lifecycle (read across sim/UI; written by reset/take-off/pause) ---
   gameStarted: false,         // false on the welcome screen (backdrop renders, but the level isn't running)
   paused: false,              // client-side freeze: the sim update is skipped while true (rendering continues)
+  // --- return-to-base / autopilot (set after the last kill; read across sim/HUD/input) ---
+  returnToBase: false,                             // true after the last kill: OOB lifted, arrow + hint on, station clickable
+  autopilot: { active: false, phase: 'brake0' },   // click-to-fly to the base station (active == the mandatory "dock" gate)
+  baseStation: null,                               // { obj, active } — set by buildSetPiece; .active = clickable this run
 };
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---

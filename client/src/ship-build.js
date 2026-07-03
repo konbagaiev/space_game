@@ -3,6 +3,7 @@
 // catalog (state.CATALOG) + the pure derivation (components.js) + the ship factory + projectiles.
 import * as THREE from 'three';
 import { scene } from './engine.js';
+import { arenaCenter } from './world.js';
 import { G, CATALOG, enemies, SPAWN_GROW_TIME } from './state.js';
 import { deriveDrive } from './components.js';
 import { shipModelCfg, modelSpec, makeShip } from './ship-factory.js';
@@ -98,14 +99,14 @@ export function spawnEnemyShip(shipDef) {
   e.spawnAge = 0;
   e.mesh.scale.setScalar(0.001); // start as a dot
   deriveDrive(e);
-  // spawn in a ring around the player (just off-screen) — no arena clamp, so enemies appear and
-  // fight normally even when the player has flown out of bounds
+  // spawn in a ring around the MISSION ZONE center (arenaCenter), not the hero — waves originate at the
+  // arena/set-piece even after the player wanders. No arena clamp (enemies fight fine out of bounds).
   const ang = Math.random() * Math.PI * 2;
-  const d = 70 + Math.random() * 60; // 70..130 from the player
+  const d = 70 + Math.random() * 60; // 70..130 from the zone center
   e.mesh.position.set(
-    G.player.mesh.position.x + Math.cos(ang) * d,
+    arenaCenter.x + Math.cos(ang) * d,
     0.6,
-    G.player.mesh.position.z + Math.sin(ang) * d
+    arenaCenter.z + Math.sin(ang) * d
   );
   scene.add(e.mesh);
   enemies.push(e);
