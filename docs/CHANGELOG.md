@@ -5,6 +5,27 @@
 
 ## 2026-07-03
 
+- **Autopilot + return-to-base mission end.** [2026-07-03-1445-autopilot-return-to-base] Added a **base-station
+  `.glb` set-piece** at the world origin `(0,0)` (CC-BY 4.0 "Low Poly space station." by MisterH — a below-plane,
+  non-collidable decor like the freighter, but raised nearer the plane, top tuned to ~y=-2.9 so it never occludes
+  ships per DECISIONS §17). **Every mission** — campaign L1–4 **and** the three side missions — now ends by flying
+  **back to the station** instead of on the last kill: a single `levelRunner` intercept replaces `win()` with a
+  return-to-base gate, so after the last enemy dies the OOB warp-back is **lifted**, a translucent **blue homing
+  arrow** (anchored to the ship, pointing home) + a centered **"Sector cleared — return to base"** HUD hint
+  (i18n `ui.return.hint`, EN+RU) appear, and the station becomes **clickable**. Clicking/tapping the station is a
+  **mandatory dock**: it engages **autopilot** (brake → rotate to face → accelerate → kinematic symmetric-decel
+  brake to a stop next to it), and the existing victory fires on arrival (`BASE_ARRIVE_RADIUS` 45u from `(0,0)`) —
+  **proximity alone never wins**, and **any** control input (move/fire/rocket) cancels the dock (re-tap to resume).
+  Enemies now spawn in a ring around the **mission-zone center (`arenaCenter`)**, not the hero. New
+  `base_station_combat.529dee5e.glb` on S3; CREDITS.md row added; a prod **`/publish-itch`** is needed once this
+  ships (model/hash change — DECISIONS §37). See DECISIONS §39 (+ the §2 amendment).
+- **Dock cursor on the clickable station (desktop).** [2026-07-03-1445-autopilot-return-to-base] While the base
+  station is clickable (return-to-base phase), hovering it on **mouse** now swaps the cursor to a first-party
+  **"landing/dock" glyph** (`client/assets/ui/dock-cursor.png` — a plane descending onto a pad; a raster PNG,
+  not SVG, since Safari has no SVG data-URI cursors; `pointer` fallback) as a "you can dock here" affordance. A
+  throttled `pointermove` raycast (reusing the station click raycast) toggles a `dock-cursor` class on the WebGL
+  canvas; gated to `!Device.hasTouch` and the same clickable gate as the click, and cleared when the phase ends.
+  First-party art → no CREDITS.md change.
 - **Kill credit popup: green + longer.** Recolored the `+xx` kill popup from gold to green (`#77ee77`) so
   it stays legible against the warm/gold ship-explosion burst it spawns on top of, and extended its life
   from ~1 s to ~2 s (`maxLife` 2.0), holding at full opacity then fading over the last ~1 s instead of

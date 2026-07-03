@@ -3,7 +3,16 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-03 (**Kill credit popups** — destroying an enemy floats a green `+xx` popup up from
+**Updated:** 2026-07-03 (**Autopilot + return-to-base mission end** — a **base station** `.glb` set-piece now
+sits at the world origin `(0,0)`, and **every** mission (campaign L1–4 + the three side missions) ends by flying
+**back to it** instead of on the last kill. After the last enemy dies the out-of-bounds warp-back is lifted, a
+translucent **blue homing arrow** anchored to the ship points home, and a centered **"Sector cleared — return to
+base"** hint shows; the station becomes **clickable** and tapping it is a **mandatory dock** that engages
+**autopilot** (brake → rotate to face → accelerate → kinematic brake to a stop next to it) — the existing victory
+fires on arrival within `BASE_ARRIVE_RADIUS` (45u). Proximity alone never wins; any control input cancels the dock
+(re-tap to resume). Enemies now spawn in a ring around the **mission-zone center (`arenaCenter`)**, not the hero.
+The station is a below-plane, non-collidable decor (like the freighter) raised nearer the plane, its top tuned
+below the ships so it never occludes them. Previously: **Kill credit popups** — destroying an enemy floats a green `+xx` popup up from
 the kill site showing credits earned, holding then fading over ~2 s; pooled DOM overlay projected each frame like the
 enemy edge markers, skipped for reward-0 kills. Previously: **Freighter set-piece is now a real `.glb` model** — the "save the transport"
 cargo freighter dropped its procedural box hull (spine/bridge/cargo/engine/nozzles) for the CC-BY
@@ -45,6 +54,17 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `A`/`D` or `←`/`→` — turn the nose
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
+- **Autopilot (return-to-base)** — after the last enemy is destroyed the **base station** at `(0,0)` becomes
+  clickable; **clicking/tapping it** (a canvas raycast, ignored on HUD buttons) engages autopilot, which flies
+  the ship home: **brake to a stop → rotate the nose to face the station → accelerate at max → kinematic
+  symmetric-decel brake** so it coasts to a stop right next to it. On **desktop/mouse**, hovering the clickable
+  station swaps the cursor to a first-party **"dock/landing" glyph** (`client/assets/ui/dock-cursor.png`, a
+  raster PNG since Safari has no SVG cursors; `pointer` fallback) as a "you can dock here" affordance — a
+  throttled canvas raycast toggles the `dock-cursor` class on the WebGL canvas, gated to mouse input
+  (`!Device.hasTouch`) and the same clickable phase as the click. Reaching the station (within
+  `BASE_ARRIVE_RADIUS` ≈ 45u of `(0,0)`) completes the mission. **Any control input** — move (`W/S/A/D`, arrows,
+  touch stick), fire (`Space`/FIRE), or rocket (`F`/🚀) — instantly cancels autopilot and returns control; a
+  cancelled dock does not win (re-tap the station to resume). See the Level flow / Victory section.
 - **Zoom** — **PC:** mouse **wheel** (scroll up = closer) + on-screen **＋/−** buttons (right edge,
   vertically centered). **Mobile:** the **＋/−** buttons + two-finger **pinch**. Zoom scales the fixed
   camera offset along its angle within `0.6–2.2×`, **eases smoothly** toward the target (~0.2 s, frame-rate
@@ -284,10 +304,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   battlefield ends. After **2 s continuously out of bounds** (`OOB_WARN_DELAY`) a centered HUD **warning +
   countdown** appears ("You've left the battlefield — return to the combat zone" / "Returning in {seconds}s",
   i18n keyed); re-entering clears it. After **30 s** out (`OOB_RETURN_TIME`) the ship is **warped back to
-  center** (velocity zeroed, replaying the enemy warp-in grow animation). **Nothing is hard-clamped to the
-  arena** — enemies chase the player out, spawn around it (no edge clamp), and bullets/rockets fly normally
-  beyond ±360 (limited only by range/hits); combat works fully out of bounds. ±360 only drives the boundary
-  UI (edge marker + warning/warp-back). See DECISIONS §2.
+  center** (velocity zeroed, replaying the enemy warp-in grow animation). The **30 s warp-back is suspended
+  during return-to-base** (`&& !G.returnToBase`) so, after the last kill, a side mission fought far from `(0,0)`
+  can fly the full way home. **Nothing is hard-clamped to the arena** — enemies chase the player out and fight
+  freely (no edge clamp), and bullets/rockets fly normally beyond ±360 (limited only by range/hits); combat works
+  fully out of bounds. ±360 only drives the boundary UI (edge marker + warning/warp-back). Enemies **spawn in a
+  ring around the mission-zone center (`arenaCenter`)**, not the hero (70–130u; `ship-build.js`), so waves still
+  originate at the zone/set-piece after the player wanders. See DECISIONS §2 (+ the §39 amendment).
 - **Off-center / drifting arena.** The boundary, warp-back and mini-map all compute relative to a
   **combat-zone center** (`arenaCenter`). A side mission sets it to the mission's `center` (so its fight
   happens at that location); the campaign uses `(0,0)`. A `drift` `{x,z}` (units/sec) can also *pan* the
@@ -368,6 +391,21 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Backend). On load the client fetches **that** level (`GET /api/players/:id/level`, not a hard-coded
   one); clearing a level **unlocks the next** (the `win` handler POSTs `/advance`, then loads the new
   level so the next **Restart** plays it). A new player starts on `level-1`; the last level stays put.
+- **Return-to-base mission end (all missions).** Killing the last enemy **no longer wins immediately**. A single
+  `levelRunner` intercept (`sim.js`) replaces the `win` phase's `this.win()` with `beginReturn()`, so **every**
+  mission — campaign L1–4 **and** the three side missions — ends the same way, with no per-descriptor edits (the
+  `win` phase's `delay` still runs first, so the boss explosion plays out). On `beginReturn`: `G.returnToBase`
+  goes true — the **OOB warp-back is lifted** (`&& !G.returnToBase`, so a side mission fought far from `(0,0)`
+  can fly home), a translucent **blue homing arrow** (`updateReturnArrow`, anchored to the ship, re-pointed at
+  the station each frame) and a centered **"Sector cleared — return to base"** HUD hint (`updateReturnHint`,
+  i18n `ui.return.hint`) appear, and the **base station becomes clickable** (`G.baseStation.active`). Clicking/
+  tapping the station is a **mandatory dock**: it calls `engageAutopilot()` (sets `G.autopilot.active` + phase
+  `brake0`), and `checkArrival()` fires the existing `win()` once the ship is within `BASE_ARRIVE_RADIUS` (45u,
+  horizontal xz) of `(0,0)` **while autopilot is engaged**. The `!G.autopilot.active` guard is load-bearing —
+  **proximity alone never wins**, and any control input cancels the dock (clears `G.autopilot.active`) so a
+  cancelled/manual approach doesn't complete (re-tap to resume). Clicking while already inside the radius wins on
+  the next frame. `win()` tears the return state back down (arrow/hint/clickable off) and reuses the existing
+  victory handling (overlay, `bankRun`, `×2`, `unlockNextLevel` for campaign only).
 - **Victory → Main Window → next level.** On a win the result overlay shows a **Continue** button (a loss
   shows **Restart**/retry); Continue opens the **Main Window** (see above) — the between-battles screen (also
   the landing/homepage). The campaign briefing shows as the **primary mission** in the work zone with a
@@ -423,7 +461,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     planned L5 ("Storm the pirate base"). Currently the final level. (Balance: `docs/plans/level-4-difficulty.md`.)
   The AI keeps its distance and fires its weapon groups by range/aim. Spawn composition (ships +
   `chance` weights + max concurrent) is per-phase in the level; a `win` phase's `delay` defers the
-  overlay so the last/boss explosion plays out.
+  outcome so the last/boss explosion plays out — but the `win` phase no longer wins outright: it now opens the
+  **return-to-base** gate (fly home to the station to complete the mission — see Level flow / Victory).
 - **Rockets can be shot down by the machine gun:** a bullet subtracts its damage from an opposite-side
   rocket's HP (shot down at 0) — you can deflect enemy rockets, and an enemy can shoot down yours.
 - Player health is 100; HUD shows the remaining health as a percentage with one decimal
@@ -478,9 +517,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the existing `levelRunner`; clearing it **banks per-kill ×2 credits like a level but does NOT advance the
   story counter** (repeatable grind to fund the shop). **Each mission fights at its own location in the
   world** (`descriptor.center` — mining at `(-550, 0)`, research at `(400, 0)`, freighter at `(-100, -450)`),
-  away from the campaign center `(0,0)`. The map is **one shared world** — all three set-pieces exist at
-  fixed positions on every level/mission; the mission only moves the combat there (you spawn over the
-  matching structure, the others are in the distance). They sit **just below the combat plane** (strong
+  away from the campaign center `(0,0)`. The map is **one shared world** — all set-pieces (the three mission
+  structures + the base station at `(0,0)`) exist at fixed positions on every level/mission; the mission only
+  moves the combat there (you spawn over the matching structure, the others — and the base station you return
+  to — are in the distance). They sit **just below the combat plane** (strong
   parallax like the background asteroids). Server-owned (`GET /api/players/:id/missions`,
   gated); rewards bank via the existing `/api/games` (server-sealed per-mission rewards = later integrity
   item). The list refreshes whenever the Main Window is shown (`refreshMissions`).
@@ -539,7 +579,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   set-pieces live in ONE shared world** (the `home-system` map holds them at fixed, far-apart positions),
   so they exist on every level/mission; a side mission only changes **where you fight** (its `center`
   spawns you over the matching structure, the others sit at a distance). They're rebuilt each run (so the
-  cruising freighter resets). Three builders exist:
+  cruising freighter resets). Four builders exist:
   - **`research-station`** — a hub + a ring on spokes, two solar-panel wings, docking modules and
     emissive windows; slowly rotates around its own axis. A `tilt` param tips it off-vertical so the ring
     reads as a 3D wheel from the top-down camera (the research mission uses a light tilt).
@@ -562,6 +602,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     → look unchanged when omitted) — the light extension point for future server-driven model effects
     (DECISIONS §38). **Cruises slowly forward** (`speed` units/sec — a transport in transit). (A separate
     `sync` + zone-drift escort mechanic exists but no mission turns it on.)
+  - **`base-station`** — the **return-to-base target** at the world origin `(0,0)` (the campaign/level-1
+    start). A `.glb`-backed set-piece (`base_station_combat`, CC-BY 4.0 "Low Poly space station." by MisterH)
+    loaded by `makeBaseStation` (`world.js`, mirroring the freighter's async center/scale/`yaw` normalization
+    but with **no exhaust**), auto-scaled (longest axis → `BASE_STATION_LEN` 100) with an optional slow idle
+    `spin` (0.03 rad/s). It sits at `pos.y = -42` — raised **closer to the plane than the freighter** (`-48`)
+    so it reads clearly top-down, but the source model is tall (y ≈ 0.78 of its longest axis) so its **top lands
+    at ~y = -2.9**, safely below the ships (`y ≈ 0.6`) so it never occludes them (DECISIONS §17). NON-collidable
+    like the others. `buildSetPiece` stashes it on `G.baseStation = { obj, active }` so the sim/HUD/click code
+    can find it; it's the clickable autopilot target for the return-to-base flow (see Level flow / Victory).
   See `docs/plans/mission-maps.md`. (Collidable cover is later scope.)
 - **Wing-bank on turn:** every ship (player + enemies) **rolls its wings into a turn**, a smooth tilt
   capped at **20°** (`BANK_MAX`) that eases back to level when straight. `updateBank` derives the roll from

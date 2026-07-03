@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './i18n.js'; // language load/resolve for bootstrap
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
-import { scene, skyScene, camera, renderer, camOffset, toGame, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
+import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
@@ -16,7 +16,7 @@ import { el } from './dom.js'; // single fail-loud inventory of shared index.htm
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups)
 import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart
+import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, updateReturnArrow, updateReturnHint, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem } from './mainwindow.js'; // between-battles Main Window + model viewers
@@ -204,6 +204,38 @@ renderer.domElement.addEventListener('wheel', e => {
 document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOOM_BTN));
 document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
 
+// ---------- Return-to-base: tap/click the base station to fly there on autopilot ----------
+// Only active while the station is clickable (after the last kill). HUD buttons are separate DOM elements
+// over the canvas, so they don't reach this canvas listener; a canvas raycast finds the station model.
+const stationRay = new THREE.Raycaster();
+renderer.domElement.addEventListener('click', (e) => {
+  if (!G.returnToBase || !G.baseStation || !G.baseStation.active) return;
+  const p = toGame(e.clientX, e.clientY);                 // map into (possibly rotated) game space
+  const ndc = new THREE.Vector2((p.x / gameW()) * 2 - 1, -(p.y / gameH()) * 2 + 1);
+  stationRay.setFromCamera(ndc, camera);
+  if (stationRay.intersectObject(G.baseStation.obj, true).length) engageAutopilot();
+});
+
+// Dock cursor: while the station is clickable, hovering it swaps the cursor to a first-party "landing/dock"
+// glyph (a "you can dock here" affordance). Mouse only — a cursor is meaningless on touch — and gated on the
+// same clickable phase as the click handler. Reuses the station raycast, throttled + only re-run on move.
+let dockCursorOn = false;
+const setDockCursor = (on) => { if (on !== dockCursorOn) { dockCursorOn = on; renderer.domElement.classList.toggle('dock-cursor', on); } };
+const stationClickable = () => !!(G.returnToBase && G.baseStation && G.baseStation.active && G.player && G.player.alive && !levelRunner.won);
+if (!Device.hasTouch) {
+  let lastHoverRay = 0;
+  renderer.domElement.addEventListener('pointermove', (e) => {
+    if (!stationClickable()) { setDockCursor(false); return; }
+    const now = performance.now();
+    if (now - lastHoverRay < 50) return; // cheap throttle: at most ~20 raycasts/sec
+    lastHoverRay = now;
+    const p = toGame(e.clientX, e.clientY);
+    const ndc = new THREE.Vector2((p.x / gameW()) * 2 - 1, -(p.y / gameH()) * 2 + 1);
+    stationRay.setFromCamera(ndc, camera);
+    setDockCursor(stationRay.intersectObject(G.baseStation.obj, true).length > 0);
+  });
+}
+
 // ---------- Backend + telemetry moved to src/net.js ----------
 // fetchJson, bankRun, currentLevelLabel, track, unlockNextLevel are imported at the top. The player id
 // (G.playerId) is initialized in state.js; the once-per-run / once-per-session guards (G.banked,
@@ -366,6 +398,9 @@ function animate() {
   updateMarkers();
   updateCreditPopups(); // floating "+xx" gold credit popups at kill sites
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
+  updateReturnArrow();  // world-space blue homing arrow toward the base station (return-to-base)
+  updateReturnHint();   // centered "return to base" HUD hint
+  if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays
   // two passes: first the sky backdrop (with its own light), then combat on top
