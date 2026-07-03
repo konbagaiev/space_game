@@ -18,12 +18,21 @@ const THR = {
   scout: { weight: 3, power: 1.6 },
 };
 const W = { gun: { weight: 6 }, rocket: { weight: 8 } };
+const GRAB = { base: { weight: 2, strength: 10 }, adv: { weight: 3, strength: 20 } }; // mirrors the DB seed (ids 29/30)
 const mount = (weapon) => ({ weapon });
-const playerShip = () => ({ hull: HULL.basic, engine: ENGINE.basic, thruster: THR.basic, mounts: [mount(W.gun), mount(W.rocket)] });
+// The starter loadout now includes the base Grab (weight 2), so its mass = REFERENCE_MASS (50) → accel/turn 1:1.
+const playerShip = () => ({ hull: HULL.basic, engine: ENGINE.basic, thruster: THR.basic, grab: GRAB.base, mounts: [mount(W.gun), mount(W.rocket)] });
 
-test('shipMass = hull + engine + thruster + every mounted weapon weight', () => {
-  assert.equal(shipMass(playerShip()), 20 + 10 + 4 + 6 + 8);
-  assert.equal(shipMass(playerShip()), REFERENCE_MASS); // 48
+test('shipMass = hull + engine + thruster + grab + every mounted weapon weight', () => {
+  assert.equal(shipMass(playerShip()), 20 + 10 + 4 + 2 + 6 + 8);
+  assert.equal(shipMass(playerShip()), REFERENCE_MASS); // 50 (starter loadout incl. the base grab)
+});
+
+test('shipMass: the grab slot adds its weight (mass-neutral baseline: bare loadout 48 + grab 2 = 50)', () => {
+  const bare = { hull: HULL.basic, engine: ENGINE.basic, thruster: THR.basic, mounts: [mount(W.gun), mount(W.rocket)] };
+  assert.equal(shipMass(bare), 48);
+  assert.equal(shipMass({ ...bare, grab: GRAB.base }), 50); // base grab (+2)
+  assert.equal(shipMass({ ...bare, grab: GRAB.adv }), 51);  // advanced grab (+3)
 });
 
 test('shipMass with no mounts = hull + engine + thruster only', () => {

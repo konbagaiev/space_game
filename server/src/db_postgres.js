@@ -513,7 +513,7 @@ export async function getLevel(name) {
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
 const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']);
-const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair']);
+const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair', 'grab']);
 const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket' };
 const sellPrice = (price) => Math.floor((price | 0) * 0.75);
 
@@ -676,6 +676,21 @@ export async function unequipItem(playerId, slot) {
     await depositStash(playerId, 'weapon', refId, 1, client);
     return { ok: true };
   });
+}
+
+// Deposit a mission's collected loot into the stash (one row per item). Client-authoritative, called on
+// mission VICTORY only (see DECISIONS). Skips malformed entries; an empty list is a no-op { ok: true }.
+// Mirrors db.js's depositLoot, but uses the Postgres tx API (withTx + a `client` passed to depositStash).
+export async function depositLoot(playerId, items) {
+  await registerPlayer(playerId);
+  await withTx(async (client) => {
+    for (const it of (items || [])) {
+      if (it && (it.kind === 'component' || it.kind === 'weapon') && it.refId != null) {
+        await depositStash(playerId, it.kind, it.refId, 1, client); // pass `client` → runs inside the tx
+      }
+    }
+  });
+  return { ok: true };
 }
 
 // ---------- Authentication (DECISIONS §11) ----------

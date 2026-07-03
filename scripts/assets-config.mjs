@@ -47,6 +47,12 @@ export const PRESET_OVERRIDES = {
     combat: { textureSize: 128, textureCompress: 'webp' }, // keep paint/decals but tiny; geometry meshopt (the default)
     hangar: { textureSize: 512 },                          // showcase detail, ~1.7 MB on CDN
   },
+  // Shared equipment-drop model (metal box). The source (703 KB) is texture-dominated, and a drop is tiny on
+  // a top-down screen → shrink textures hard (128px → WebP) for a KB-scale combat build. See
+  // docs/plans/2026-07-03-1412-grab-tractor-drops.md.
+  metal_box: {
+    combat: { textureSize: 128, textureCompress: 'webp' },
+  },
 };
 // Merge the base preset for `kind` with any override for this source base name.
 export const presetFor = (base, kind) => ({ ...PRESET[kind], ...(PRESET_OVERRIDES[base]?.[kind]) });

@@ -1305,6 +1305,55 @@ A translucent **blue** homing arrow (anchored to the ship, re-pointed at the sta
 
 ---
 
+## 40. Grab (tractor) component + enemy equipment drops — units, no hulls, victory-only, client-trusted
+
+**Context.** Added a light loot loop on top of the kill→credits economy: enemies sometimes drop a piece of
+their gear as a metal-box, a new **Grab** component pulls in-range drops to the ship, and collected drops
+deposit into the Stash. A handful of design calls were resolved up front (see the plan
+`docs/plans/2026-07-03-1412-grab-tractor-drops.md`).
+
+**Decisions.**
+1. **World units, not a "cell" abstraction.** Grab **range = `strength`** (units) and **pull speed =
+   `(strength/2)·(10/itemWeight)`** (u/s). Concrete formulas over an invented grid: light parts pull fast
+   (weight 2 → 25 u/s at strength 10), heavy parts slow, and a zero/missing weight falls back to 10 so the
+   sim never divides by zero (defensive — the audit found no weightless item).
+2. **The base grab's short range (10) is intentional; the Advanced grab (20) is the real tractor.** The base
+   is a "vacuum assist" that snaps loot in over the last few units (enemies die ~14–25 units away, so you
+   still fly most of the way onto it); the upgrade is the incentive. Not a bug — do not "fix" it.
+3. **`REFERENCE_MASS` bumped 48 → 50 to absorb the base grab's weight.** The player now auto-owns the base
+   grab (weight 2). Leaving `REFERENCE_MASS` at 48 would knock ~4% off the documented baseline accel 10 /
+   turn 2.0; setting it to the new starter-loadout sum (50) keeps `massFactor = 1` at the baseline. A
+   **deliberate neutralization, not a silent nerf** — the player's feel is unchanged.
+4. **Hulls are NEVER droppable.** `pickLoot` draws only from the enemy's engine/thruster components + mounted
+   weapons — never `e.hull`. A looted 550-HP boss hull would be equippable-from-stash and wreck progression.
+   Engines/thrusters/weapons stay both droppable **and** equippable (accepted under infinite inventory +
+   §30 — no further equip gate).
+5. **Drops deposit on VICTORY only.** Collected loot banks into the Stash only when the mission is won
+   (`levelRunner.win` → `depositLoot`); on death or restart the haul (and any un-grabbed drops) is lost.
+   Parallels how credits bank at run end, but stricter (credits bank on death too). No despawn timer, no
+   mid-mission persistence — nothing about a run persists until it's won.
+6. **Pirate parts priced with `stats.buyable:false`.** Enemy components/weapons gained a resale `price` so
+   looted gear sells for `floor(price·0.75)`, but a `buyable:false` flag keeps them **out of the shop** (the
+   client filter hides them). A boss hull must never be buyable; this gives resale value without opening
+   enemy gear for purchase. (The server `buyItem` doesn't enforce `buyable` — it's a client-shop concern —
+   which is fine since no UI path offers those items.)
+7. **Client-authoritative loot (roll + deposit).** The 20% roll and the pull run client-side; the victory
+   deposit is a trusted client call (`POST /api/players/:id/loot`). A modified client could forge loot —
+   the same posture as unsealed rewards (§18). Server-side sealing is deferred; the limitation is noted, not
+   fixed. The endpoint is **not** shop-gated (loot is earned in combat, independent of the shop unlock).
+8. **One shared metal-box model, single URL source of truth.** Every drop reuses one `DROP_MODEL_URL` (in the
+   import-free `drops-config.js`, so `assets:check` validates it and node tests import the pure
+   `pullSpeed`/`pickLoot` without pulling in THREE). No per-component drop models, no contested-loot/
+   multiplayer authority, no inventory cap, no dedicated pickup SFX asset (a tiny synth blip) — all §30.
+
+**Alternatives rejected.** (a) *A "cell" grid for range/speed* — rejected for concrete world-unit formulas
+(decision 1). (b) *Make hulls droppable with an equip gate* — rejected; excluding hulls from the pool is
+simpler and closes the exploit outright (decision 4). (c) *Server-side roll/sealing now* — deferred as an
+integrity item, consistent with §18 (decision 7). (d) *Deposit loot on death too* — rejected to keep a real
+stake on surviving the mission (decision 5).
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

@@ -24,6 +24,7 @@ asset page is also handy, in case the author later changes the terms).
 | ships/repair_drone_hangar.\<hash\>.glb (Repair drone item icon — menu only) | Ivan Potupin | https://skfb.ly/pGPyp | CC-BY 4.0 | 2026-06-29 |
 | ships/machine_gun_hangar.\<hash\>.glb (Machine Gun item icon — menu only) | suvee10 | https://skfb.ly/oHLZB | CC-BY 4.0 | 2026-06-29 |
 | ships/freighter_combat.\<hash\>.glb (Freighter set-piece — cargo transport decor) | Felipe Augusto Vera | https://skfb.ly/oPRwV | CC-BY 4.0 | 2026-07-02 |
+| ships/metal_box_combat.\<hash\>.glb (shared equipment-drop model — the loot "crate") | District24 | https://skfb.ly/JwFQ | CC-BY 4.0 | 2026-07-03 |
 | ships/base_station_combat.\<hash\>.glb (Base station set-piece — return-to-base target) | MisterH | https://skfb.ly/ozESS | CC-BY 4.0 | 2026-07-03 |
 
 <!--
@@ -79,6 +80,17 @@ battlefield); `assets:build` decimates/meshopt-compresses it into `freighter_com
 
 > "Freighter - Spaceship" (https://skfb.ly/oPRwV) by Felipe Augusto Vera is licensed under Creative
 > Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+The **equipment-drop** model (`metal_box_combat`) is **"Metal box"** by **District24** (Sketchfab,
+**CC-BY 4.0** — attribution required, so this entry must stay while in use). It is the single shared model
+rendered for every loot drop (the slowly-rotating crate a killed enemy leaves behind, pulled in by the
+Grab). The 703 KB source is texture-dominated (two 1024² PNGs); `assets:build` (with the `metal_box`
+preset override) downscales the textures to 128px WebP + meshopt-compresses the geometry → a ~6 KB combat glb.
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "Metal box" (https://skfb.ly/JwFQ) by District24 is licensed under Creative Commons Attribution
+> (http://creativecommons.org/licenses/by/4.0/).
 
 The **base station** set-piece (`base_station_combat`) is **"Low Poly space station."** by **MisterH**
 (Sketchfab, **CC-BY 4.0** — attribution required, so this entry must stay while in use). It sits at the

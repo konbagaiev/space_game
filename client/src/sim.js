@@ -13,7 +13,8 @@ import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
-import { track, currentLevelLabel, bankRun, unlockNextLevel } from './net.js';
+import { updateDrops, spawnDrop, pickLoot, clearDrops, takeLoot, DROP_CHANCE } from './drops.js';
+import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 
@@ -89,6 +90,7 @@ export const levelRunner = {
     el.overlay.style.display = 'flex';
     track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
     bankRun(); // bank the earned credits into the account balance
+    const loot = takeLoot(); if (loot.length) depositLoot(loot); // victory only: dump the run's collected drops into the stash
     // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
     // levels advance progression as before.
     if (!this.level.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
@@ -581,8 +583,13 @@ export function update(dt) {
       if (reward > 0) {           // floating "+xx" green popup at the kill site (cosmetic feedback)
         creditPopups.push({ pos: e.mesh.position.clone(), amount: reward, life: 2.0, maxLife: 2.0 });
       }
+      // loot: one roll per kill — on success drop ONE of the enemy's non-hull parts / mounted weapons as a
+      // metal-box the grab can pull in (deposited to the stash only on victory; hulls never drop).
+      if (Math.random() < DROP_CHANCE) { const loot = pickLoot(e); if (loot) spawnDrop(e.mesh.position, loot); }
     }
   }
+  // pull in-range drops toward the ship (blue line while active); inside update(dt) → frozen on pause
+  updateDrops(dt);
   // drive spawning + phase transitions from the active level
   levelRunner.update(dt);
 
@@ -665,6 +672,7 @@ export function reset() {
   for (const w of shockwaves) { scene.remove(w.mesh); w.mesh.material.dispose(); }
   shockwaves.length = 0;
   creditPopups.length = 0; // DOM-only, no scene meshes to dispose
+  clearDrops(); // remove drop meshes + the pull line; DISCARD any uncollected/un-deposited loot on a fresh run
   for (const e of enemies) scene.remove(e.mesh);
   enemies.length = 0;
   // A side mission fights over its own location in the world (its set-piece); the campaign uses (0,0).

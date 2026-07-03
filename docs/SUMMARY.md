@@ -3,7 +3,12 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-03 (**Autopilot + return-to-base mission end** — a **base station** `.glb` set-piece now
+**Updated:** 2026-07-03 (**Grab component + enemy equipment drops** — a new optional tractor-beam component:
+enemies have a 20% chance on death to drop a piece of their gear as a metal-box the Grab pulls in (range =
+strength, speed = (strength/2)·(10/weight)); collected drops deposit into the stash on victory only; hulls
+never drop; pirate parts now priced for resale but hidden from the shop (`buyable:false`); `REFERENCE_MASS`
+48→50 so the base grab is mass-neutral; metal-box model shipped through the asset pipeline (703 KB→~6 KB).
+Also 2026-07-03: **Autopilot + return-to-base mission end** — a **base station** `.glb` set-piece now
 sits at the world origin `(0,0)`, and **every** mission (campaign L1–4 + the three side missions) ends by flying
 **back to it** instead of on the last kill. After the last enemy dies the out-of-bounds warp-back is lifted, a
 translucent **blue homing arrow** anchored to the ship points home, and a centered **"Sector cleared — return to
@@ -14,7 +19,7 @@ fires on arrival within `BASE_ARRIVE_RADIUS` (45u). Proximity alone never wins; 
 The station is a below-plane, non-collidable decor (like the freighter) raised nearer the plane, its top tuned
 below the ships so it never occludes them. Previously: **Kill credit popups** — destroying an enemy floats a green `+xx` popup up from
 the kill site showing credits earned, holding then fading over ~2 s; pooled DOM overlay projected each frame like the
-enemy edge markers, skipped for reward-0 kills. Previously: **Freighter set-piece is now a real `.glb` model** — the "save the transport"
+enemy edge markers, skipped for reward-0 kills. **Freighter set-piece is now a real `.glb` model** — the "save the transport"
 cargo freighter dropped its procedural box hull (spine/bridge/cargo/engine/nozzles) for the CC-BY
 "Freighter - Spaceship" combat glb (`freighter_combat`, first `.glb`-backed set-piece; standalone loader in
 `world.js` reusing `ship-factory.js`'s `gltfLoader`, auto center/scale/`yaw`-oriented). The fiery exhaust
@@ -122,6 +127,8 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   freeze — it must be reworked server-side when multiplayer lands (a client can't freeze a shared world);
   see DECISIONS §16.**
 - **Perf overlay** at the top center: FPS, frame time (ms), draw calls, triangles
+  (the `?dev` per-second perf sample posted to `/api/perf` also carries `load.drops` = the live loot-drop
+  count, next to `enemies`/`particles`, so drop cost shows up on a real device)
   (across both render passes), and the **real backbuffer resolution** (`w×h` = CSS size × pixelRatio —
   the actual pixels the GPU fills). FPS/frame-ms use the **raw rAF interval**
   (`clock.getDelta()` before the sim's `0.05`s clamp), so they stay accurate below 20 fps instead of
@@ -167,14 +174,24 @@ model presentation — see the Visual model section). A `mount` = a
 weapon id, its `group`, a lateral `offset` (side-by-side fire), a `delay` (staggered volley); a ship
 can mount several of the same weapon (the mini-boss has two rocket launchers). The player's active ship
 + its loadout/components overrides come from `player_ships` (see Backend).
-- **Components** (DB `components`, `type` `hull`/`engine`/`thruster`/`repair`; `weight` column + `stats`
+- **Components** (DB `components`, `type` `hull`/`engine`/`thruster`/`repair`/`grab`; `weight` column + `stats`
   JSON): a **hull** has `{ durability (= maxHp), volume }`; an **engine** has `{ power → acceleration,
   maxSpeed, exhaust }`; a **thruster** has `{ power → maneuverability (turn rate) }`; a **repair drone**
-  (4th type) has `{ repairPerTick, intervalSec, maxFraction }` → passive hull regen. Seeded: hulls
-  Basic(100hp)/Light(30hp)/Medium(150hp)/Boss(210hp); engines + thrusters Basic/Scout/Medium/Boss; one
-  **Repair drone** (id 12: heal 1 HP / 1 s, capped at 80% of max HP). The fighter, rocketeer and the
+  (4th type) has `{ repairPerTick, intervalSec, maxFraction }` → passive hull regen; a **grab** (5th type,
+  the tractor beam) has `{ strength }` → its loot pull range/speed (see **Grab & loot drops** under
+  Gameplay). Seeded: hulls
+  Basic(100hp)/Light(30hp)/Medium(150hp)/Boss(310hp); engines + thrusters Basic/Scout/Medium/Boss; one
+  **Repair drone** (id 12: heal 1 HP / 1 s, capped at 80% of max HP); two **Grab** items — the **base Grab**
+  (id 29: strength 10 / weight 2 / 500, which the player **owns from the start** — it's in the default
+  player ship's `components.grab`) and the buyable **Advanced grab** (id 30: strength 20 / weight 3 / 2000).
+  The fighter, rocketeer and the
   medium (ex-mini-boss) share the **same Scout engine**; fighter + rocketeer also share the Scout
   thrusters, while the medium has weak (Medium) thrusters → it's sluggish.
+  - **Pirate/enemy parts are priced but not buyable.** Every enemy component/weapon carries a resale `price`
+    (e.g. Scout engine 250, Pirate MG 300, Second-boss hull 2000) **plus** `stats.buyable: false`, which the
+    client shop filter uses to **hide** them (`n.s.buyable !== false`). So looted enemy gear has real resale
+    value (`sell = floor(price·0.75)`) without ever appearing in the shop. Player/starter/ladder items have no
+    `buyable` key → shown.
   - **Player shop ladder** (priced; `docs/plans/economy-shop-v2.md`) adds buyable upgrades beyond the
     enemy/starter parts: **Heavy hull** (id 13: 200 hp / weight 50 / **6000** — the upgrade "ship": 2× HP for
     accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 14 / **1400**) + **Ion engine** (id 16: power
@@ -186,11 +203,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   client ticks `repairTick` (pure, in `components.js`) each frame, slowly healing the hull up to the
   80% cap — never higher, never reducing hp; banked time is cleared once topped up. Its `weight` (4)
   counts toward mass like any component.
-- **Mass** = hull + engine + thruster + repair-drone weight + every mounted weapon's `weight` (`shipMass`).
+- **Mass** = hull + engine + thruster + repair-drone + grab weight + every mounted weapon's `weight` (`shipMass`).
   Acceleration and turn rate are **derived AND scaled by mass** (`deriveDrive`): `massFactor =
   REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`, `turnRate = thruster.power ×
-  massFactor`. `REFERENCE_MASS` = 48 (the player's loadout: hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8)
-  keeps the player at accel 10 / turn 2.0; heavier ships are slower & less agile. A **required slot
+  massFactor`. `REFERENCE_MASS` = 50 (the player's starter loadout: hull 20 + engine 10 + thrusters 4 + gun 6
+  + rocket 8 + **grab 2**) keeps the player at accel 10 / turn 2.0; heavier ships are slower & less agile.
+  (`REFERENCE_MASS` was bumped 48 → 50 when the base grab was auto-equipped, so its 2 weight is mass-neutral
+  at the baseline — a deliberate neutralization, not a nerf.) A **required slot
   (hull/engine/thruster) may legitimately be empty** in the hangar (you can unequip it back into the
   stash) — the active ship then reports `launchable: false` + `missingRequired`, the **Take-off button
   is disabled** (`updateTakeoffGate`, "required slot empty" note), and the hangar preview build is
@@ -317,6 +336,25 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   center over time (edge marker + warp-back + mini-map follow; a `sync` set-piece rides it) — the mechanic
   is built and tested, but **no mission turns drift on today** (set-pieces are static). Wired for a future
   escort mission.
+- **Grab & loot drops** (`client/src/drops.js` + `drops-config.js`; docs/plans/2026-07-03-1412-grab-tractor-drops.md).
+  On each enemy kill there's a **20 %** chance (`DROP_CHANCE`) to drop **one** item — chosen uniformly from
+  the enemy's **non-hull** components (engine, thruster) **+** its mounted weapons (the real catalog id +
+  kind; `pickLoot`). **Hulls NEVER drop** (progression guard — a looted 550-HP boss hull would be
+  equippable and break balance). A drop is a slowly-rotating **metal-box** glb (one turn / 5 s), rendered
+  from the single `DROP_MODEL_URL` (a fallback metallic box shows until the model loads). The **Grab**
+  component (if equipped) pulls drops in: **range = strength** world units; a drop must sit in range for
+  **0.3 s** (`ARM_DELAY`) to arm, then the **nearest** armed drop is pulled toward the ship's live position
+  at **speed = (strength/2)·(10/itemWeight)** u/s (`pullSpeed` — light parts pull fast, heavy parts slow;
+  a zero/missing weight falls back to 10). A single **thin blue line** (pooled `THREE.Line`, `0x4db6ff`) is
+  drawn only **while actively pulling**; at most one drop is pulled at a time. Within 3 units the drop is
+  **collected** (`pendingLoot`). The base grab's short range (10) is a deliberate "vacuum assist"; the
+  Advanced grab (20) is the real tractor + the upgrade incentive. A **`MAX_DROPS = 40`** cap bounds the
+  arena. Collected loot is deposited into the **Stash only on mission VICTORY** (`levelRunner.win` →
+  `depositLoot` → `POST /api/players/:id/loot`); on **death** or **restart** the haul (and any un-grabbed
+  drops) is **lost** — nothing about a run persists until it's won, consistent with credit banking. The
+  roll + pull are **client-authoritative** (server just banks the haul; forgeable like unsealed rewards,
+  DECISIONS §18). `updateDrops(dt)` runs inside the sim `update(dt)`, so drops **freeze on pause**;
+  `clearDrops()` (in `reset()`) removes the meshes/line and discards uncollected loot.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate. The fixed offset
   (`CAM_OFFSET`) is scaled by the player's zoom (`0.6–2.2×`) along its angle — zoom never changes the
   angle, FOV, or camera type.
@@ -483,9 +521,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   menu gains three items — **Loadout** (what's equipped), **Stash** (owned-but-not-equipped inventory, a qty
   model), and **Shop** — each opening that screen as the **bay view in the work zone** (`#mw-view-bay`;
   switched from the left menu, not an in-bay nav strip). **Shop** is a **two-pane** screen (a type list
-  **Hull / Engine / Thrusters / Repair / Weapon** → the items of the selected type on the right). The Shop lists only **buyable** items (`price > 0`); **enemy parts stay priced 0 (hidden)**, while
+  **Hull / Engine / Thrusters / Repair / Weapon / Grab** → the items of the selected type on the right). The Shop lists only **buyable** items (`price > 0` **and** `stats.buyable !== false`); **enemy parts are priced (resale value) but flagged `buyable:false` → hidden**, while
   the player's **starter gear is cheap-but-buyable** (Basic hull 300 / engine 500 / thrusters 400 / repair
-  drone 500 / homing rocket 600) so each type's ladder starts low. Each item's **full characteristics show
+  drone 500 / homing rocket 600) so each type's ladder starts low. The **Grab** tab sells the **Advanced grab**
+  (2000); the base grab the player already owns. Each item's **full characteristics show
   on hover (desktop) or the (i) tap (mobile)** — for weapons: damage, RoF/reload, projectile speed, range,
   blast, weight. A shop item the player **already owns shows an "Owned ×N" badge** (N = total equipped on
   the active ship **+** in the stash). **Price shown per screen:** the **Shop** shows the **full buy price**;
@@ -500,13 +539,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   maneuverability / weight** with a **▲/▼ delta vs the previous config** on every change (derived client-side;
   the server stays authoritative on the saved config). **Required slots** (hull/engine/thruster) can't be
   sold while equipped and **block take-off when empty** (the button greys out); **optional** equipped items
-  (weapons, repair drone) sell directly from the bay. On unlock the **basic gun (id 1)** swapped out after
+  (weapons, repair drone, grab) sell directly from the bay. **Looted enemy gear** deposited via `depositLoot`
+  (the victory loot deposit) is equippable-from-stash like any part (engines/thrusters/weapons/grab) — hulls
+  can't drop, so a looted-hull exploit never arises. On unlock the **basic gun (id 1)** swapped out after
   level 2 is **backfilled into the stash**. **Prices:** the player ladder has draft prices (strawman, see
   `docs/plans/economy-shop-v2.md`) anchored to the **corrected ~5800-credit first-shop budget** (the budget
   includes the ×2 victory bonus per level; a flawless run banks ~4280, retries push it toward ~5800 — so the
   Heavy hull at 6000 is the aspirational big buy); sell = `floor(price*0.75)`, server-computed. The shop
-  lists only `price > 0` items, so the curated ladder shows and enemy/starter parts
-  don't. Around-model slot icons are a later polish (not built yet).
+  lists only `price > 0` **and** `buyable !== false` items, so the curated ladder shows and enemy parts (now
+  priced for resale but `buyable:false`) don't. Around-model slot icons are a later polish (not built yet).
 - **Side missions — in the Main Window's Missions list** (`docs/plans/mission-generator.md` +
   `main-window-redesign.md`). Unlocked **after clearing the campaign** (same gate as the shop). They render
   as the **secondary rows** under the **Missions** menu item (below the primary campaign row); selecting one
@@ -798,7 +839,10 @@ first translation). See DECISIONS §10.
   `buyItem` (price ≤ balance → deduct → qty++), `sellItem` (stash item, or an *optional* equipped item via a
   `slot` → credit `floor(price*0.75)`), `equipItem` (stash → active ship; component slots by `type`, weapons
   by fire-group; the displaced item returns to the stash), `unequipItem` (slot → stash; required slots allowed
-  but then take-off is blocked). `getActivePlayerShip` now also returns **`shopUnlocked`**, **`launchable`**,
+  but then take-off is blocked), and **`depositLoot`** (bulk-adds a mission's collected loot items into the
+  stash inside one transaction — the victory loot deposit; **not** shop-gated). Component slots =
+  `{hull, engine, thruster, repair, grab}` (`grab` is optional + sellable-while-equipped, like `repair`).
+  `getActivePlayerShip` now also returns **`shopUnlocked`**, **`launchable`**,
   and **`missingRequired`** (empty required slots).
 - **Maps & levels:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`;
   background, sky light, planet, moons, stars, asteroids, and an optional **`setpieces`** array of
@@ -815,7 +859,8 @@ first translation). See DECISIONS §10.
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
   `POST /api/players/:id/reset` (player-initiated progress reset → new-player baseline; 404 if unknown),
   `GET /api/players/:id/stash`, `POST /api/players/:id/buy`, `.../sell`, `.../equip`, `.../unequip`
-  (hangar shop; 403 until the shop is unlocked), `GET /api/players/:id/missions` (side-mission board; 403 until unlocked),
+  (hangar shop; 403 until the shop is unlocked), `POST /api/players/:id/loot` (victory loot deposit → stash;
+  **not** shop-gated), `GET /api/players/:id/missions` (side-mission board; 403 until unlocked),
   `POST /api/players/:id/language`, `POST /api/players/:id/username`, `GET /api/maps/:name`,
   `GET /api/levels/:name`, the auth routes (`POST /api/auth/register`, `/login`, `/logout`,
   `POST /api/auth/resend-verification`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`,
@@ -1041,7 +1086,9 @@ first translation). See DECISIONS §10.
 by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for the rationale and the
 `G`-state-bag pattern.
 - **Pure, Three.js-free logic (unit-tested):** `components.js` (catalogs + `deriveDrive` + `shipMass` +
-  `hitsToKill` + `repairTick`), `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
+  `hitsToKill` + `repairTick`), `drops-config.js` (the loot-drop constants incl. the single `DROP_MODEL_URL`,
+  plus the pure `pullSpeed`/`pickLoot` — import-free so `scripts/assets-check.mjs` + node tests can use it),
+  `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
   `enemyThrustFactor`, `inForwardSector`), `i18n.js` (`t`, `resolveLanguage`, `normalizeLang`,
   `loadLanguage`), `audio.js` (procedural Web Audio engine + the pure settings helpers, engine
   browser-only), and `format.js` (`esc`/`cssColor`/`slotLabel`/`priceLabel`/`sellLabel`).
@@ -1055,10 +1102,12 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
 - **Domains (browser-only, touch the scene):** `world.js` (arena + sky/planet/moons/asteroids/set-pieces +
   `buildMap`), `ship-factory.js` (`makeShip`/`applyShipModel` + `gltfLoader`), `projectiles.js`
   (bullets/explosions/exhaust/rockets/smoke FX), `ship-build.js` (catalog resolution + `buildPlayer`/
-  `buildPlayerFor` + enemy spawning + fire groups), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
+  `buildPlayerFor` + enemy spawning + fire groups), `drops.js` (loot drops + the Grab tractor sim: the
+  `drops[]`/`pendingLoot` arrays, `spawnDrop`/`updateDrops`/`collect` + the pooled blue pull line + the
+  victory `takeLoot`/`clearDrops`), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
   `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`), `net.js`
   (backend identity/banking/progression + funnel telemetry: `fetchJson`/`bankRun`/`track`/
-  `currentLevelLabel`/`unlockNextLevel`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
+  `currentLevelLabel`/`unlockNextLevel`/`depositLoot`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
   `autoPauseOnBlur` + the `reset` restart), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
 - **Between-battles UI:** `shop.js` (hangar shop + stash + live ship-stats bar; a leaf the Main Window
@@ -1076,8 +1125,11 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)
-- **Client logic** — `client/src/*.test.js` (33): drive derivation (engine + mass), balance, repair-drone
-  regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), steering math,
+- **Client logic** — `client/src/*.test.js`: drive derivation (engine + mass, incl. the grab slot + the
+  mass-neutral 48+2=50 baseline), balance, repair-drone
+  regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), **loot drops**
+  (`drops.test.js`: `pullSpeed` anchor cases + weight fallback, range = strength, `pickLoot` only draws
+  engine/thruster/weapon ids — **never the hull**), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping), and
   **audio settings** (`clamp01`, `loadAudioSettings`/`saveAudioSettings` round-trip + defaults + garbage
   handling, `effectiveGain` master×channel×toggle). Run: `cd client && npm test`.
@@ -1089,6 +1141,10 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   **hangar shop/stash** (lock until the final level is cleared, unlock + basic-gun backfill, buy/sell/equip/
   unequip, optional-vs-required equipped sell, take-off launch gating, no double-spend, net-zero same-id equip,
   real-price buy/sell/overspend-402, the priced player-shop ladder is seeded) +
+  **Grab + loot drops** (Grab components 29/30 seeded, enemy parts priced with `buyable:false`, player starts
+  with the base grab; `POST /loot` deposits collected drops into the stash + empty/absent = no-op 200; a
+  looted grab equips into its optional slot and round-trips through the stash — **run on both backends via
+  `npm run test:pg`**, which exercises the `withTx`/`client` deposit path SQLite-only runs miss) +
   **side missions** (`/missions` 403 until unlocked → 3 same-difficulty offers with the 2-boss composition;
   pirate gunner + Pirate machine gun id 9 seeded; boss guns swapped to the MG) +
   **auth** (username, register happy/duplicate-409/weak-400, login happy/wrong-401, `/me` authed vs 401,

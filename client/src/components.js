@@ -5,15 +5,16 @@
 // component/weapon DATA itself lives in the database (see server/src/catalog_seed.js).
 // ==================================================================
 
-// Reference mass at which a ship's engine/thruster stats apply 1:1. = the player's loadout
-// (hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8 = 48). Lighter ships get a boost
-// (massFactor > 1), heavier ones a penalty (< 1).
-export const REFERENCE_MASS = 48;
+// Reference mass at which a ship's engine/thruster stats apply 1:1. = the player's starter loadout
+// (hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8 + grab 2 = 50). Lighter ships get a boost
+// (massFactor > 1), heavier ones a penalty (< 1). Bumped 48 → 50 when the base Grab (weight 2) was
+// auto-equipped, so the player's baseline accel 10 / turn 2.0 is unchanged (mass-neutral, by design).
+export const REFERENCE_MASS = 50;
 
-// Total ship mass = hull + engine + thruster + repair-drone weight + the weight of every mounted weapon.
+// Total ship mass = hull + engine + thruster + repair-drone + grab weight + the weight of every mounted weapon.
 export function shipMass(ship) {
   let mass = 0;
-  for (const slot of ['hull', 'engine', 'thruster', 'repair']) {
+  for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab']) {
     if (ship[slot] && typeof ship[slot].weight === 'number') mass += ship[slot].weight;
   }
   if (Array.isArray(ship.mounts)) {
