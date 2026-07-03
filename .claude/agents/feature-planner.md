@@ -68,3 +68,10 @@ Your final message: a point-by-point list of how each issue was resolved.
   prod deploy — the itch ZIP bundles the combat glbs but reads the catalog live from prod, so a new model
   hash 404s the old bundled glb and the changed ships fall back to generic primitive cones on itch. See
   DECISIONS §37 + the `update-ship-model` skill (step 11).
+- **2026-07-03 — After editing a load-bearing rule, re-scan the WHOLE plan for now-stale prose.** When a
+  revision changes a core behavior (e.g. win condition: proximity → mandatory dock-click), grep the entire
+  plan for every place that behavior is described — pseudocode, rationale, decisions, checklist, doc-update
+  lines — and reconcile them all in the same pass. On the autopilot feature the win-rule was rewritten but
+  a later section still said "arrives by autopilot **or manual flight**", directly contradicting the new
+  `!G.autopilot.active` guard; the critic had to catch it. A leftover contradictory sentence can lead the
+  implementer to "fix" (revert) the real change. One consistency grep per revision prevents this.
