@@ -35,10 +35,14 @@ butler pushes to `USER/GAME:CHANNEL`. **This game's target is `bagaiev/vega-sent
    On Apple Silicon the `darwin-amd64` binary runs via Rosetta; if `butler -V` reports "bad CPU type",
    run `softwareupdate --install-rosetta --agree-to-license` once. (Official download page:
    https://itchio.itch.io/butler.)
-2. **Authenticated?** Check `~/.config/itch/butler_creds`. If absent, butler login is **interactive**
-   (opens a browser) — the agent can't do it. Tell the maintainer to run it themselves in the session:
-   type `! butler login` at the prompt. (CI/non-interactive alternative: set `BUTLER_API_KEY` from
-   itch.io → Settings → API keys.)
+2. **Authenticated?** Verify by actually calling the API — `butler status bagaiev/vega-sentinels:html5`.
+   If it prints the channel/build table, you're authed → go straight to the push. **Do NOT gate on a creds
+   file path** — the location is platform-specific (macOS: `~/Library/Application Support/itch/butler_creds`;
+   Linux: `~/.config/itch/butler_creds`), so a missing file at one path is a false negative and has twice
+   led to wrongly asking the maintainer to re-log-in. Only if `butler status` reports an **auth error** is
+   login needed: butler login is **interactive** (opens a browser) — the agent can't do it, so tell the
+   maintainer to run it themselves in the session (type `! butler login` at the prompt). (CI/non-interactive
+   alternative: set `BUTLER_API_KEY` from itch.io → Settings → API keys.)
 
 ## Steps
 
