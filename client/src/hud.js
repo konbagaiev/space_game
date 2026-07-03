@@ -6,6 +6,7 @@
 // runner + music routing, which haven't been split out yet.
 import * as THREE from 'three';
 import { G, enemies, creditPopups } from './state.js';
+import { drops } from './drops.js'; // off-screen loot markers (no circular dep — drops.js does not import hud.js)
 import { camera, renderer, gameW, gameH } from './engine.js';
 import { ARENA, arenaCenter } from './world.js';
 import { cssColor } from './format.js';
@@ -91,6 +92,46 @@ export function updateMarkers() {
     m.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(-cy, cx) * 180 / Math.PI}deg)`;
   }
   for (let i = used; i < markerPool.length; i++) markerPool[i].style.display = 'none';
+}
+
+// ---------- Off-screen loot markers: green edge arrows toward off-screen drops (nearest N) ----------
+const dropMarkerPool = [];
+const DROP_MARKER_MAX = 6;                 // cap: only the nearest few, so the edges don't clutter
+function getDropMarker(i) {
+  while (dropMarkerPool.length <= i) {
+    const d = document.createElement('div');
+    d.className = 'marker drop-marker';    // reuse the .marker arrow shape; .drop-marker sets the green
+    el.markers.appendChild(d);
+    dropMarkerPool.push(d);
+  }
+  return dropMarkerPool[i];
+}
+export function updateDropMarkers() {
+  if (!G.player || el.overlay.style.display !== 'none') { for (const m of dropMarkerPool) m.style.display = 'none'; return; }
+  const w = gameW(), h = gameH(), margin = 0.92;
+  // collect off-screen drops with their edge position + squared distance, keep the nearest DROP_MARKER_MAX
+  const ppos = G.player.mesh.position, offs = [];
+  for (const d of drops) {
+    _ndc.copy(d.obj.position).project(camera);
+    const behind = _ndc.z > 1;
+    let x = _ndc.x, y = _ndc.y;
+    if (behind) { x = -x; y = -y; }
+    if (!behind && x >= -1 && x <= 1 && y >= -1 && y <= 1) continue; // on screen → no marker
+    const k = margin / Math.max(Math.abs(x), Math.abs(y), 1e-4);
+    const dx = d.obj.position.x - ppos.x, dz = d.obj.position.z - ppos.z;
+    offs.push({ cx: x * k, cy: y * k, d2: dx * dx + dz * dz });
+  }
+  offs.sort((a, b) => a.d2 - b.d2);
+  const n = Math.min(offs.length, DROP_MARKER_MAX);
+  for (let i = 0; i < n; i++) {
+    const { cx, cy } = offs[i];
+    const m = getDropMarker(i);
+    m.style.display = 'block';
+    m.style.left = ((cx * 0.5 + 0.5) * w) + 'px';
+    m.style.top = ((-cy * 0.5 + 0.5) * h) + 'px';
+    m.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(-cy, cx) * 180 / Math.PI}deg)`;
+  }
+  for (let i = n; i < dropMarkerPool.length; i++) dropMarkerPool[i].style.display = 'none';
 }
 
 // ---------- Credit popups: "+xx" green text floating up from each kill, holding then fading over ~2s ----------

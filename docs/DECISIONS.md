@@ -1354,6 +1354,38 @@ stake on surviving the mission (decision 5).
 
 ---
 
+## 41. Autopilot generalized to a typed target (station or loot drop); win gated to the station
+
+**Context.** Extends §39/§40. To make loot chests one-click reachable (click a chest → the ship flies over
+and the passive Grab collects it), we needed a "fly-to-a-point" behavior — which the return-to-base autopilot
+(§39) already is. Rather than build a second parallel fly-to system, we **generalized `G.autopilot` to carry
+a typed `target`**: `{ kind:'station' }` (the return-to-base dock) or `{ kind:'drop', drop }` (a specific
+loot drop). `autopilotControl` resolves the target's world position each frame and cancels cleanly if a drop
+target vanishes (collected by the Grab, or cleared on reset — the `drops.includes(tgt.drop)` liveness check).
+
+**Decisions.**
+1. **The win is gated to the station target, not just "autopilot active".** With a chest-aimed autopilot able
+   to run during return-to-base (a chest can overlap the station's arrive radius), `checkArrival`'s old
+   `G.autopilot.active` guard was no longer sufficient — a chest fly-in could trip the dock. The dock/win now
+   goes through a pure predicate **`canDock(autopilot, dist)` = active AND `target.kind==='station'` AND
+   `dist ≤ BASE_ARRIVE_RADIUS`**. A chest-aimed autopilot is **structurally incapable** of winning the mission,
+   at any distance. Rejected: a second, separate "grab autopilot" variable — more state to keep in sync, same
+   brake/rotate/cruise code duplicated.
+2. **Pure, unit-tested predicate module.** `BASE_ARRIVE_RADIUS` + `canDock` moved out of `sim.js` (not
+   node-loadable — it imports THREE/engine) into an import-free **`client/src/autopilot-config.js`** (mirrors
+   `drops-config.js`), covered by `autopilot-config.test.js` — the "a drop never docks" invariant is the one
+   correctness-critical piece and now has a test, without needing a headless sim harness.
+3. **A collected/removed drop cancels the autopilot** (ship coasts to a stop, control returns) — no
+   auto-chaining to another chest, no hand-off to the station (§30: the simplest thing that reads well).
+   `target` is cleared everywhere `active` is reset (`start`, `win`, the manual-cancel, the internal cancels,
+   and defensively in `reset()`), so no dangling drop reference survives a run.
+4. **Discoverability is client-only cosmetics:** a `cursor: grab` hand on chest hover (mouse only, mirrors the
+   §39 dock cursor; chest wins over station on overlap), a near-chrome **glint** material tweak on the drop
+   glb + fallback box, and **green off-screen edge arrows** (own pool, nearest 6) reusing the enemy-marker
+   projection math. No new asset (glint is a runtime material change), so no `CREDITS.md`/publish-itch.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

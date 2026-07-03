@@ -5,6 +5,17 @@
 
 ## 2026-07-03
 
+- **Chests are interactive.** [2026-07-03-1703-chest-click-and-markers] Loot drops are now discoverable and
+  one-click reachable. **Click/tap a chest → autopilot flies the ship over to it** (works in **combat AND
+  return-to-base**; the passive Grab then collects it, after which the autopilot stops — no auto-chaining).
+  On desktop, hovering a chest shows a **`cursor: grab` hand** (wins over the station dock cursor on overlap);
+  a chest click also wins over the station click. Drops now **glint** — their material is set near-chrome
+  (`metalness 1.0`, `roughness 0.25`) so they catch the env-map + sun. **Off-screen chests show green
+  `0x59e0a0` edge arrows** (nearest 6), a distinct pool from the enemy markers. Under the hood the autopilot
+  was generalized to a typed **`target`** (station **or** a specific drop); the dock/win now fires **only when
+  the target is the station** — extracted into a pure, unit-tested `client/src/autopilot-config.js`
+  (`canDock` + `BASE_ARRIVE_RADIUS`) so a chest-aimed autopilot can never win the mission. Client-only; no
+  new asset.
 - **Grab component + enemy equipment drops.** [2026-07-03-1412-grab-tractor-drops] Added a new optional
   ship component type — the **Grab** (tractor beam) — and a light loot loop on top of the kill→credits
   economy. On each enemy kill there's a **20 % chance** to drop **one** piece of the enemy's gear (a

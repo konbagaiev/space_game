@@ -3,7 +3,11 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-03 (**Grab component + enemy equipment drops** — a new optional tractor-beam component:
+**Updated:** 2026-07-03 (**Interactive chests** — loot drops are now clickable: clicking a chest engages
+autopilot toward it (in combat or return-to-base), a `grab` hand cursor shows on hover (mouse), chests glint
+off the scene lights, and off-screen chests get their own green edge arrows. Autopilot gained a typed target
+(station|drop); the mission-win dock fires only when the target is the station. Also 2026-07-03:
+**Grab component + enemy equipment drops** — a new optional tractor-beam component:
 enemies have a 20% chance on death to drop a piece of their gear as a metal-box the Grab pulls in (range =
 strength, speed = (strength/2)·(10/weight)); collected drops deposit into the stash on victory only; hulls
 never drop; pirate parts now priced for resale but hidden from the shop (`buyable:false`); `REFERENCE_MASS`
@@ -59,15 +63,16 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `A`/`D` or `←`/`→` — turn the nose
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
-- **Autopilot (return-to-base)** — after the last enemy is destroyed the **base station** at `(0,0)` becomes
-  clickable; **clicking/tapping it** (a canvas raycast, ignored on HUD buttons) engages autopilot, which flies
-  the ship home: **brake to a stop → rotate the nose to face the station → accelerate at max → kinematic
-  symmetric-decel brake** so it coasts to a stop right next to it. On **desktop/mouse**, hovering the clickable
-  station swaps the cursor to a first-party **"dock/landing" glyph** (`client/assets/ui/dock-cursor.png`, a
-  raster PNG since Safari has no SVG cursors; `pointer` fallback) as a "you can dock here" affordance — a
-  throttled canvas raycast toggles the `dock-cursor` class on the WebGL canvas, gated to mouse input
-  (`!Device.hasTouch`) and the same clickable phase as the click. Reaching the station (within
-  `BASE_ARRIVE_RADIUS` ≈ 45u of `(0,0)`) completes the mission. **Any control input** — move (`W/S/A/D`, arrows,
+- **Autopilot (station or loot chest)** — after the last enemy is destroyed the **base station** at `(0,0)`
+  becomes clickable; **clicking/tapping it** (a canvas raycast, ignored on HUD buttons) engages autopilot,
+  which flies the ship home: **brake to a stop → rotate the nose to face the target → accelerate at max →
+  kinematic symmetric-decel brake** so it coasts to a stop right next to it. The **same autopilot also flies
+  to a clicked loot chest** (combat and return-to-base — see Grab & loot drops); on overlap a chest wins over
+  the station. On **desktop/mouse**, hovering the clickable station swaps the cursor to a first-party
+  **"dock/landing" glyph** (`client/assets/ui/dock-cursor.png`, a raster PNG since Safari has no SVG cursors;
+  `pointer` fallback), and hovering a chest shows the OS **grab hand** (`canvas.grab-cursor`, wins over the
+  dock cursor) — throttled canvas raycasts toggle the classes, gated to mouse input (`!Device.hasTouch`).
+  Only a **station**-targeted autopilot reaching `BASE_ARRIVE_RADIUS` ≈ 45u of `(0,0)` completes the mission. **Any control input** — move (`W/S/A/D`, arrows,
   touch stick), fire (`Space`/FIRE), or rocket (`F`/🚀) — instantly cancels autopilot and returns control; a
   cancelled dock does not win (re-tap the station to resume). See the Level flow / Victory section.
 - **Zoom** — **PC:** mouse **wheel** (scroll up = closer) + on-screen **＋/−** buttons (right edge,
@@ -355,6 +360,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   roll + pull are **client-authoritative** (server just banks the haul; forgeable like unsealed rewards,
   DECISIONS §18). `updateDrops(dt)` runs inside the sim `update(dt)`, so drops **freeze on pause**;
   `clearDrops()` (in `reset()`) removes the meshes/line and discards uncollected loot.
+  A drop is also **clickable/tappable → engages autopilot to fly to it** (`engageDropAutopilot`, works in
+  **combat and return-to-base**; a chest under the pointer wins over the station on overlap); a `cursor: grab`
+  **hand** shows on chest hover (mouse only, `canvas.grab-cursor`, wins over the dock cursor). The targeted
+  drop being collected/removed (or a reset) **cancels the autopilot** — it never auto-chains to another chest.
+  Drops **glint** — their glb (and the fallback box) material is set near-chrome (`metalness 1.0`,
+  `roughness 0.25`, a one-time tweak in `normalize()`) so it catches the env-map + sun. **Off-screen drops
+  show green `0x59e0a0` edge arrows** (`updateDropMarkers` in `hud.js`, its own pool + `.drop-marker` CSS,
+  the **nearest 6**), distinct from the enemy edge markers.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate. The fixed offset
   (`CAM_OFFSET`) is scaled by the player's zoom (`0.6–2.2×`) along its angle — zoom never changes the
   angle, FOV, or camera type.
@@ -438,11 +451,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the station each frame) and a centered **"Sector cleared — return to base"** HUD hint (`updateReturnHint`,
   i18n `ui.return.hint`) appear, and the **base station becomes clickable** (`G.baseStation.active`). Clicking/
   tapping the station is a **mandatory dock**: it calls `engageAutopilot()` (sets `G.autopilot.active` + phase
-  `brake0`), and `checkArrival()` fires the existing `win()` once the ship is within `BASE_ARRIVE_RADIUS` (45u,
-  horizontal xz) of `(0,0)` **while autopilot is engaged**. The `!G.autopilot.active` guard is load-bearing —
-  **proximity alone never wins**, and any control input cancels the dock (clears `G.autopilot.active`) so a
-  cancelled/manual approach doesn't complete (re-tap to resume). Clicking while already inside the radius wins on
-  the next frame. `win()` tears the return state back down (arrow/hint/clickable off) and reuses the existing
+  `brake0` + `target = { kind:'station' }`), and `checkArrival()` fires the existing `win()` once the ship is
+  within `BASE_ARRIVE_RADIUS` (45u, horizontal xz) of `(0,0)`. `G.autopilot` now carries a typed **`target`**
+  (the station **or** a loot drop — the same autopilot flies to loot chests, see Grab & loot drops); the
+  dock/win predicate `canDock(autopilot, dist)` (pure, in `client/src/autopilot-config.js` with
+  `BASE_ARRIVE_RADIUS`, unit-tested) fires **only when the target is the station** — a chest-aimed autopilot is
+  structurally incapable of winning. **Proximity alone never wins**, and any control input cancels the dock
+  (clears `active` + `target`) so a cancelled/manual approach doesn't complete (re-tap to resume). Clicking
+  while already inside the radius wins on the next frame. `win()` tears the return state back down (arrow/hint/clickable off) and reuses the existing
   victory handling (overlay, `bankRun`, `×2`, `unlockNextLevel` for campaign only).
 - **Victory → Main Window → next level.** On a win the result overlay shows a **Continue** button (a loss
   shows **Restart**/retry); Continue opens the **Main Window** (see above) — the between-battles screen (also

@@ -14,10 +14,10 @@ import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
-import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups)
+import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows)
 import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, updateReturnArrow, updateReturnHint, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base
+import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem } from './mainwindow.js'; // between-battles Main Window + model viewers
@@ -205,34 +205,56 @@ renderer.domElement.addEventListener('wheel', e => {
 document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOOM_BTN));
 document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
 
-// ---------- Return-to-base: tap/click the base station to fly there on autopilot ----------
-// Only active while the station is clickable (after the last kill). HUD buttons are separate DOM elements
-// over the canvas, so they don't reach this canvas listener; a canvas raycast finds the station model.
+// ---------- Click-to-fly: tap/click a loot chest OR (return-to-base) the base station ----------
+// HUD buttons are separate DOM elements over the canvas, so they don't reach this canvas listener; a
+// canvas raycast finds the world model. A chest hover/click always wins over the station on overlap.
 const stationRay = new THREE.Raycaster();
+const dropRay = new THREE.Raycaster();
+// Map a canvas event → the game-space NDC used by every raycast here (accounts for the rotated view).
+function eventNdc(e) {
+  const p = toGame(e.clientX, e.clientY);
+  return new THREE.Vector2((p.x / gameW()) * 2 - 1, -(p.y / gameH()) * 2 + 1);
+}
+// Nearest live drop under the pointer (null if none). Shared by the click handler AND the hover cursor.
+function dropUnderPointer(e) {
+  if (!drops.length) return null;
+  dropRay.setFromCamera(eventNdc(e), camera);
+  let best = null, bestD = Infinity;
+  for (const d of drops) {
+    const hit = dropRay.intersectObject(d.obj, true);
+    if (hit.length && hit[0].distance < bestD) { bestD = hit[0].distance; best = d; }
+  }
+  return best;
+}
 renderer.domElement.addEventListener('click', (e) => {
+  // 1) a chest under the pointer wins (works in combat AND return-to-base)
+  const drop = dropUnderPointer(e);
+  if (drop) { engageDropAutopilot(drop); return; }
+  // 2) otherwise the clickable station (return-to-base only)
   if (!G.returnToBase || !G.baseStation || !G.baseStation.active) return;
-  const p = toGame(e.clientX, e.clientY);                 // map into (possibly rotated) game space
-  const ndc = new THREE.Vector2((p.x / gameW()) * 2 - 1, -(p.y / gameH()) * 2 + 1);
-  stationRay.setFromCamera(ndc, camera);
+  stationRay.setFromCamera(eventNdc(e), camera);
   if (stationRay.intersectObject(G.baseStation.obj, true).length) engageAutopilot();
 });
 
-// Dock cursor: while the station is clickable, hovering it swaps the cursor to a first-party "landing/dock"
-// glyph (a "you can dock here" affordance). Mouse only — a cursor is meaningless on touch — and gated on the
-// same clickable phase as the click handler. Reuses the station raycast, throttled + only re-run on move.
+// Hover cursors (mouse only — meaningless on touch). Hovering a clickable station shows a first-party
+// "dock here" glyph; hovering a loot chest shows the OS grab hand. A chest hover wins over the dock hover
+// on overlap. Reuses the drop + station raycasts, throttled + only re-run on move.
 let dockCursorOn = false;
+let grabCursorOn = false;
 const setDockCursor = (on) => { if (on !== dockCursorOn) { dockCursorOn = on; renderer.domElement.classList.toggle('dock-cursor', on); } };
+const setGrabCursor = (on) => { if (on !== grabCursorOn) { grabCursorOn = on; renderer.domElement.classList.toggle('grab-cursor', on); } };
 const stationClickable = () => !!(G.returnToBase && G.baseStation && G.baseStation.active && G.player && G.player.alive && !levelRunner.won);
 if (!Device.hasTouch) {
   let lastHoverRay = 0;
   renderer.domElement.addEventListener('pointermove', (e) => {
-    if (!stationClickable()) { setDockCursor(false); return; }
     const now = performance.now();
     if (now - lastHoverRay < 50) return; // cheap throttle: at most ~20 raycasts/sec
     lastHoverRay = now;
-    const p = toGame(e.clientX, e.clientY);
-    const ndc = new THREE.Vector2((p.x / gameW()) * 2 - 1, -(p.y / gameH()) * 2 + 1);
-    stationRay.setFromCamera(ndc, camera);
+    const drop = dropUnderPointer(e);
+    if (drop) { setGrabCursor(true); setDockCursor(false); return; } // chest hover wins over station dock
+    setGrabCursor(false);
+    if (!stationClickable()) { setDockCursor(false); return; }
+    stationRay.setFromCamera(eventNdc(e), camera);
     setDockCursor(stationRay.intersectObject(G.baseStation.obj, true).length > 0);
   });
 }
@@ -397,11 +419,13 @@ function animate() {
   const t1 = DEV ? performance.now() : 0; // end of sim
   updateHud();
   updateMarkers();
+  updateDropMarkers(); // green edge arrows toward off-screen loot drops (nearest 6)
   updateCreditPopups(); // floating "+xx" gold credit popups at kill sites
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
   updateReturnArrow();  // world-space blue homing arrow toward the base station (return-to-base)
   updateReturnHint();   // centered "return to base" HUD hint
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
+  if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays
   // two passes: first the sky backdrop (with its own light), then combat on top

@@ -13,7 +13,8 @@ import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
-import { updateDrops, spawnDrop, pickLoot, clearDrops, takeLoot, DROP_CHANCE } from './drops.js';
+import { updateDrops, spawnDrop, pickLoot, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
+import { canDock } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
@@ -40,7 +41,7 @@ export const levelRunner = {
     this.level = level; this.phaseIndex = 0; this.won = false; this.winPending = 0;
     // reset the return-to-base gate + shared flags so a Restart starts clean
     this.returningToBase = false;
-    G.returnToBase = false; G.autopilot.active = false;
+    G.returnToBase = false; G.autopilot.active = false; G.autopilot.target = null;
     if (G.baseStation) G.baseStation.active = false;
     G.enemyTotal = (level && level.enemyTotal) || 0; // total enemies for the HUD killed/total (0 if not seeded)
     this.enterPhase();
@@ -65,19 +66,20 @@ export const levelRunner = {
     if (G.baseStation) G.baseStation.active = true; // station becomes clickable
   },
   checkArrival() {
-    // The dock is a MANDATORY explicit click: victory requires autopilot to be ENGAGED (only the station click
-    // sets it) AND the ship within the radius. Proximity alone never wins; any control input cancels the dock
-    // (clears G.autopilot.active) so a cancelled approach doesn't complete — the player re-taps to resume.
-    if (!G.autopilot.active || !G.baseStation || !G.player || !G.player.alive) return;
+    // Victory requires an ENGAGED autopilot whose target is the STATION (a chest-aimed autopilot must never
+    // win). canDock() encodes that + the arrive-radius; proximity alone never wins; any control input
+    // cancels the dock (clears G.autopilot.active) so a cancelled approach doesn't complete — the player
+    // re-taps to resume.
+    if (!G.baseStation || !G.player || !G.player.alive) return;
     const s = G.baseStation.obj.position;
     const dx = G.player.mesh.position.x - s.x, dz = G.player.mesh.position.z - s.z;
-    if (Math.hypot(dx, dz) <= BASE_ARRIVE_RADIUS) this.win();
+    if (canDock(G.autopilot, Math.hypot(dx, dz))) this.win();
   },
   win() {
     this.won = true;
     // tear down the return-to-base state so the overlay/arrow/hint clear
     this.returningToBase = false;
-    G.returnToBase = false; G.autopilot.active = false;
+    G.returnToBase = false; G.autopilot.active = false; G.autopilot.target = null;
     if (G.baseStation) G.baseStation.active = false;
     audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
     G.earned *= 2; // double the credits earned for clearing the level
@@ -165,11 +167,21 @@ function brakeStep(accel, dt) {
 // ship coasts to ~0 right at the station. `heading` convention matches forwardVec/touchAim: desired = atan2(dx, dz).
 // Arrival isn't handled here — levelRunner.checkArrival() fires the win ONLY while autopilot is engaged, so a
 // manual/cancelled approach never completes the mission; autopilot just stalls at the station until arrival.
+// Resolve the autopilot's current world-space goal. Returns null if the target vanished (drop collected
+// by the passive Grab, drops cleared on reset) → the caller cancels the autopilot.
+function autopilotTargetPos() {
+  const tgt = G.autopilot.target;
+  if (!tgt) return null;
+  if (tgt.kind === 'station') return G.baseStation ? G.baseStation.obj.position : null;
+  // kind === 'drop': valid only while the drop object is still in the live drops[] array
+  return (tgt.drop && drops.includes(tgt.drop)) ? tgt.drop.obj.position : null;
+}
+
 function autopilotControl(dt, accel, turn) {
-  const st = G.baseStation && G.baseStation.obj.position;
-  if (!st) { G.autopilot.active = false; return; }
+  const goal = autopilotTargetPos();
+  if (!goal) { G.autopilot.active = false; G.autopilot.target = null; return; }
   const pos = G.player.mesh.position;
-  const dx = st.x - pos.x, dz = st.z - pos.z;
+  const dx = goal.x - pos.x, dz = goal.z - pos.z;
   const dist = Math.hypot(dx, dz);
   const desired = Math.atan2(dx, dz);
   const ap = G.autopilot;
@@ -195,10 +207,18 @@ function autopilotControl(dt, accel, turn) {
   }
 }
 
-// Engage autopilot (called by the station click handler in main.js). Only valid while returning to base.
+// Fly to the base station to dock (return-to-base only; this is the target that can WIN the mission).
 export function engageAutopilot() {
   if (!G.returnToBase || !G.player || !G.player.alive || levelRunner.won) return;
-  G.autopilot.active = true; G.autopilot.phase = 'brake0';
+  engage({ kind: 'station' });
+}
+// Fly to a loot drop to grab it. Valid whenever a live drop is clicked — combat AND return-to-base.
+export function engageDropAutopilot(drop) {
+  if (!G.player || !G.player.alive || levelRunner.won || !drops.includes(drop)) return;
+  engage({ kind: 'drop', drop });
+}
+function engage(target) {
+  G.autopilot.active = true; G.autopilot.phase = 'brake0'; G.autopilot.target = target;
 }
 
 // ---------- Homing arrow + HUD hint (world-space arrow + DOM hint) ----------
@@ -260,7 +280,6 @@ export function updateOobWarning() {
 // Thrust/turn/speed/weapon are taken from the ship's components (engine/weapon).
 const DRAG = 1.8;        // friction (enemies)
 const IDLE_DRAG = 0.8;   // soft braking for the player when controls are released
-const BASE_ARRIVE_RADIUS = 45; // horizontal distance to the station (0,0) that ends autopilot + fires victory
 const BANK_MAX  = 20 * Math.PI / 180; // max wing bank, radians (~0.349) — hard cap, "20 degrees, no more"
 const BANK_TAU  = 0.15;               // smoothing time-constant (s); smaller = snappier, larger = lazier
 
@@ -300,7 +319,7 @@ export function update(dt) {
     || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
     || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight']
     || keys['Space'] || keys['KeyF'] || keys['_rocket']; // KeyF = keyboard rocket, _rocket = touch/mouse 🚀 button
-  if (G.autopilot.active && manual) G.autopilot.active = false;
+  if (G.autopilot.active && manual) { G.autopilot.active = false; G.autopilot.target = null; }
 
   let fwd;
   if (G.autopilot.active) {
@@ -673,6 +692,8 @@ export function reset() {
   shockwaves.length = 0;
   creditPopups.length = 0; // DOM-only, no scene meshes to dispose
   clearDrops(); // remove drop meshes + the pull line; DISCARD any uncollected/un-deposited loot on a fresh run
+  G.autopilot.active = false; G.autopilot.target = null; // defensive: no dangling drop-target autopilot into the new run
+
   for (const e of enemies) scene.remove(e.mesh);
   enemies.length = 0;
   // A side mission fights over its own location in the world (its set-piece); the campaign uses (0,0).

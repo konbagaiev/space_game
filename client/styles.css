@@ -581,6 +581,8 @@
     border-left: 15px solid #fff; /* points +x by default; color set per enemy; rotated to aim */
     filter: drop-shadow(0 0 3px rgba(0,0,0,.85)); display: none;
   }
+  /* Off-screen loot-drop arrows: same arrow shape as .marker, a fixed green so chests read as loot, not enemies */
+  .drop-marker { border-left-color: #59e0a0; }
   /* Kill credit popup: gold "+xx" text floating up from a destroyed enemy, fading over ~1s (in #markers) */
   .credit-popup {
     position: absolute; transform: translate(-50%, -50%); will-change: transform, opacity;
@@ -609,6 +611,9 @@
      (return-to-base, mouse only; the class is toggled on the WebGL canvas by main.js). A raster PNG is
      used deliberately — Safari does not support SVG data-URI cursors — with `pointer` as the fallback. */
   canvas.dock-cursor { cursor: url(assets/ui/dock-cursor.png) 16 16, pointer; }
+  /* "Grab this chest" cursor: hovering a clickable loot drop shows the OS grab hand (mouse only; the
+     class is toggled on the WebGL canvas by main.js). Built-in cursor — no asset needed. */
+  canvas.grab-cursor { cursor: grab; }
   /* Corner radar: arena bounds + player + type-colored enemy dots. Non-interactive (touches pass through). */
   #minimap {
     position: fixed; left: 14px; top: 50%; transform: translateY(-50%); z-index: 4;
