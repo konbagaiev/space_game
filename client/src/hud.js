@@ -187,7 +187,7 @@ export function updateEnemyHealthBars() {
   let used = 0;
   for (const e of enemies) {
     if (e.hp >= e.maxHp) continue;                 // full health -> no bar
-    _hb.copy(e.mesh.position); _hb.y += e.radius + 2; // anchor just above the ship (depth-correct)
+    _hb.copy(e.mesh.position); _hb.y += e.radius * 1.15 + 1.5; // anchor above the hull; bar's bottom edge pins here (depth-correct, scales with model size)
     _hb.project(camera);
     if (_hb.z > 1) continue;                        // behind the camera -> skip
     const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));

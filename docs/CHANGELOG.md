@@ -5,6 +5,10 @@
 
 ## 2026-07-04
 
+- **[2026-07-04-1223-enemy-hp-bar-above-model] Enemy HP bar clears the model.** The over-enemy health bar
+  now pins its bottom edge above the ship (CSS `translate(-50%, calc(-100% - 4px))` + a size-proportional
+  world anchor `e.radius * 1.15 + 1.5`) instead of centering on the anchor, so it no longer merges with /
+  dips into the hull (`hud.js` `updateEnemyHealthBars`, `styles.css` `.enemy-hp`).
 - **[2026-07-04-1148-weapon-hit-fx] Weapon hit/explosion FX pass.** Bullet hit-flash is now keyed off the
   weapon `class` (kinetic → tiny spark `maxScale 0.8`, cannon → small flash `maxScale 2`) instead of every
   bullet using the same `maxScale 3` micro-flash; `class` is threaded onto the bullet in `spawnBullet` and
