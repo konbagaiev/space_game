@@ -75,3 +75,10 @@ Your final message: a point-by-point list of how each issue was resolved.
   a later section still said "arrives by autopilot **or manual flight**", directly contradicting the new
   `!G.autopilot.active` guard; the critic had to catch it. A leftover contradictory sentence can lead the
   implementer to "fix" (revert) the real change. One consistency grep per revision prevents this.
+- **2026-07-04 — For a screen-positioned overlay over a 3D object, plan in SCREEN space and check the CAMERA
+  geometry, not world "up".** An "always above the model" HP-bar plan raised the anchor along **world +Y** —
+  but the camera is near-top-down (`CAM_OFFSET 0,110,26` in `engine.js`), so world-up points almost *at* the
+  camera and the bar barely moved up the screen (it read as "closer to me", still overlapping). The correct
+  anchor offsets along the **camera's screen-up axis** (its local +Y in world). Whenever a plan places a DOM
+  overlay "above/below/beside" a world object, read the camera setup first and specify the offset in the
+  camera's screen basis (or in screen pixels) — never assume world +Y maps to screen-up.

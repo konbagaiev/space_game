@@ -57,3 +57,11 @@ perfection beyond that is not the bar.
 ## Learned guidance
 
 <!-- The orchestrator appends dated lessons here from retro feedback. Read and apply them. -->
+
+- **2026-07-04 — For an "above/below a 3D object" screen overlay, verify the plan reasoned about camera
+  ANGLE, not just distance.** An HP-bar plan that anchored along **world +Y** was approved as "robust to
+  camera distance" — but the camera is near-top-down (`CAM_OFFSET 0,110,26`), so world-up ≈ toward the
+  camera and the bar didn't move up the screen; it shipped, failed the live test, and needed a re-do to
+  offset along the camera's screen-up axis. When a plan positions a DOM overlay relative to a world object,
+  block it unless it either works in screen space or explicitly accounts for the camera's orientation —
+  "scales with distance" is not the same as "points up on screen".
