@@ -207,3 +207,9 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - Leaderboards.
 - More ship classes / visual variety.
 - Weapon icons / 3D models (for the hangar shop stash + around-model slot icons).
+- **Ship-explosion overhaul (visual).** The current death burst (`spawnShipExplosion` in
+  `client/src/projectiles.js`) reads as a big single-color blob — fine as a first pass, but not the
+  "gorgeous explosion" we want. Wanted: fire that actually *burns* (more natural, layered flame — not one
+  flat sphere) and/or *tears the ship into debris chunks* that fly apart, ideally tinted the ship's own
+  color (`stats.color`). Debris shards after the blast is the headline ask. Likely needs real particle/
+  fragment work (and possibly an animated-fire approach) rather than stacked additive spheres.

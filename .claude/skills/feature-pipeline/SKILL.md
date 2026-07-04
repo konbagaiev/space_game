@@ -71,40 +71,66 @@ and reviews the diff.
   tests → continue the **same** reviewer (`SendMessage`) to re-check. Increment `reviewRounds`.
 - If `reviewRounds` reaches **3** without PASS → escalate to the maintainer with the open findings.
 
-## Stage 7 — Commit + retro
+## Stage 7 — Commit + retro (metrics only — do NOT collect agent feedback yet)
 
 - Ensure the work is committed on the branch: `git -C <worktree> add -A && git -C <worktree> commit` with
   a message summarizing the feature and ending with the Co-Authored-By trailer (see CLAUDE.md/Bash rules).
 - Present a **retro** to the maintainer:
-  - What was built + final test status.
+  - What was built + final (automated) test status.
   - **Metrics with flags:**
     - Planner — flag if `scopeGrewInDiscovery` or `plannerRevisions > 1` → "planner likely missed context;
-      consider improving its discovery."
+      consider improving its discovery." (Note: `scopeGrewInDiscovery` caused by the *maintainer adding
+      scope* during discovery is not a planner miss — say so rather than blaming the planner.)
     - Critic — flag if `criticRounds > 2`.
     - Reviewer — flag if `reviewRounds > 1`.
   - If any flag fired, name it explicitly to the maintainer (this is the whole point of the retro).
-- Ask, via `AskUserQuestion`:
-  1. **Deploy this feature?** (yes / no / not yet)
-  2. **Satisfaction per agent** (planner / critic / implementer / reviewer) — and for any flagged or
-     unhappy agent, ask for the **specific** gripe.
+- Ask, via `AskUserQuestion`, the **deploy question ONLY**: **Deploy this feature?** (yes / not yet / abandon).
+  **Do NOT ask for per-agent satisfaction here** — agent feedback is collected in Stage 9, *after* the live
+  test, because the automated suites don't prove the feature actually works for a human on a real device.
 
-## Stage 8 — Self-improve
-
-For each agent the maintainer was unhappy with (or that got flagged), append a **dated** bullet to that
-agent file's `## Learned guidance` section (`.claude/agents/<agent>.md`) capturing the concrete lesson
-(e.g. "2026-06-30: missed that catalog only reseeds on server restart — always check SUMMARY's data-model
-section"). Also write a short memory `feedback` note. Keep lessons concrete and few — grow rubrics from
-real misses, not speculation (DECISIONS §30).
-
-## Stage 9 — Deploy or park
+## Stage 8 — Deploy or park
 
 - **Deploy = yes:** from the repo root —
   `git checkout main && git pull --rebase && git merge --no-ff feature/<id> && git push`. The GitHub
   Actions `ci-cd.yml` runs the tests and zero-downtime-deploys to vega.tenony.com — tell the maintainer to
   watch the Actions run. Then clean up: `git worktree remove ../ag-wt/<id>` and `git branch -d feature/<id>`.
+  - **Guard the working tree:** if `git status` in the main checkout shows **unrelated uncommitted work**
+    (a parallel effort — this is a single-author repo with multiple terminals), do NOT commit or discard it.
+    Surface it to the maintainer, then `git stash push -u` around the merge/push and `git stash pop`
+    afterward (fully reversible; your feature files won't overlap). Confirm the stash restored cleanly.
 - **Not yet:** leave the worktree and branch in place; tell the maintainer the worktree path so they can
-  resume or deploy later.
-- **Abandon** (if asked): `git worktree remove --force ../ag-wt/<id>` and `git branch -D feature/<id>`.
+  resume or deploy later. Live-test from the worktree build instead (Stage 9).
+- **Abandon** (if asked): `git worktree remove --force ../ag-wt/<id>` and `git branch -D feature/<id>` — then
+  skip Stages 9–10.
+
+## Stage 9 — Live test (the result must be exercised for real BEFORE agent feedback)
+
+Automated tests passing is **not** proof the feature works — a human (or an agent driving the real app)
+must exercise the deployed/built result. Do this before collecting any agent feedback.
+
+- Write a **concrete live-test checklist** derived from the feature's acceptance criteria (the plan's
+  goal + any maintainer-reported bug). Each item = a specific action → expected observable result
+  (e.g. "on a phone, during return-to-base, tap the station → ship autopilots home and docks").
+- Pick the test channel with the maintainer (default per the change's nature):
+  - **Maintainer-manual** — give them the URL (prod `https://vega.tenony.com` after deploy, or a
+    tunnel/local URL if parked) + the checklist; they report pass/fail per item. Best for touch/feel/device.
+  - **Agent-driven** — drive the running app via Claude-in-Chrome (touch emulation) or a local+tunnel build.
+    Good for deterministic UI flows; note it's not a real device.
+- **Wait for the live-test result.** If an item **fails live**, that's a real miss the automated suite
+  didn't catch → loop back to Stage 5 (implementer fix) or escalate, and record it as concrete Stage-10
+  feedback for the responsible agent. Only proceed to Stage 10 once the live test is settled (pass, or the
+  maintainer accepts the remaining gaps).
+
+## Stage 10 — Feedback + self-improve (informed by the live test)
+
+- Now ask, via `AskUserQuestion`: **Satisfaction per agent** (planner / critic / implementer / reviewer) —
+  and for any flagged, live-test-failing, or unhappy agent, ask for the **specific** gripe.
+- For each agent the maintainer was unhappy with (or that got flagged, or whose work failed the live test),
+  append a **dated** bullet to that agent file's `## Learned guidance` section (`.claude/agents/<agent>.md`)
+  capturing the concrete lesson (e.g. "2026-06-30: missed that catalog only reseeds on server restart —
+  always check SUMMARY's data-model section"; or a live-test miss the automated tests couldn't catch).
+  Also write a short memory `feedback` note. Keep lessons concrete and few — grow rubrics from real misses,
+  not speculation (DECISIONS §30).
 
 ---
 

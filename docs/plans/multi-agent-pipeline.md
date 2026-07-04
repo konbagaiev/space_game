@@ -62,8 +62,16 @@ zero-downtime-deploys to vega.tenony.com.
 intake → worktree → planner(questions) → ASK MAINTAINER → planner(plan)
        → [critic ⇄ planner]×≤5 (target ≤2) → APPROVE
        → implementer → [reviewer ⇄ implementer]×≤3 → PASS
-       → retro (metrics + satisfaction) → deploy? → self-improve
+       → retro (metrics) → deploy? → DEPLOY/park → LIVE TEST → satisfaction + self-improve
 ```
+
+**Agent feedback comes *after* a live test, not before.** Passing automated suites does not prove the
+feature works for a human on a real device (esp. touch/feel/visual changes). So the retro asks only the
+**deploy** question; the feature is then deployed (or built for a parked worktree) and **exercised live**
+— maintainer-manual on a device, or agent-driven via Claude-in-Chrome / a local+tunnel build — against a
+concrete checklist derived from the acceptance criteria. A live-test failure the automated tests missed is
+itself the most valuable self-improve signal. Only after the live test is settled does the orchestrator
+collect per-agent satisfaction and append learned guidance.
 
 - **Critic loop:** max 5 rounds; aim for ≤2. At 5 without APPROVE → **stop and escalate** to the
   maintainer with the outstanding blockers.
@@ -82,9 +90,11 @@ The orchestrator counts, and at the end flags when a count suggests an agent nee
 | Critic | **>2** critic rounds | critic's bar unclear or planner under-specifies repeatedly |
 | Reviewer | **>1** review round | implementer missed rubric items, or reviewer's rubric is vague |
 
-After PASS the orchestrator: shows what was built + test status + these metrics, asks **deploy y/n**, and
-asks **satisfaction per agent**. Any dissatisfaction or flag → capture the concrete gripe and append a
-dated note to that agent's `## Learned guidance` section (and a memory `feedback` note). The agents'
+After PASS the orchestrator: shows what was built + test status + these metrics, asks **deploy y/n**,
+deploys (or parks), runs a **live test** of the result, and *then* asks **satisfaction per agent** —
+informed by how the feature actually behaved live. Any dissatisfaction, flag, or live-test failure →
+capture the concrete gripe and append a dated note to that agent's `## Learned guidance` section (and a
+memory `feedback` note). The agents'
 rubrics thus grow from *real* feedback, not speculation (DECISIONS §30).
 
 ## Initial code-review rubric (grows over time)
