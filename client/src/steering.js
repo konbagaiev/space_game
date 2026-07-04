@@ -37,3 +37,17 @@ export function inForwardSector(fwd, toTarget, halfAngle) {
   const dot = (fwd.x * toTarget.x + fwd.z * toTarget.z) / len;
   return dot >= Math.cos(halfAngle);
 }
+
+// Corkscrew offset for a spiral-rocket warhead around its leader's flight axis.
+// axis = leader forward direction (UNIT {x,y,z}); phase = leader.spiralPhase + the warhead's 120° offset.
+// Returns a plain {x,y,z} offset of length `radius` in the plane perpendicular to axis. No Three.js.
+export function spiralOffset(axis, phase, radius) {
+  // Pick a reference not parallel to axis, then build an orthonormal basis (u, w) spanning axis's plane.
+  const up = Math.abs(axis.y) < 0.99 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+  const cross = (a, b) => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+  const norm = (v) => { const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x / l, y: v.y / l, z: v.z / l }; };
+  const u = norm(cross(axis, up));
+  const w = norm(cross(axis, u));
+  const c = Math.cos(phase) * radius, s = Math.sin(phase) * radius;
+  return { x: u.x * c + w.x * s, y: u.y * c + w.y * s, z: u.z * c + w.z * s };
+}

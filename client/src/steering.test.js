@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, inForwardSector } from './steering.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, inForwardSector, spiralOffset } from './steering.js';
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -37,4 +37,43 @@ test('inForwardSector: ahead in cone = true, behind / outside = false', () => {
   assert.equal(inForwardSector(fwd, { x: 1, z: 1 }, Math.PI / 3), true);  // 45deg, cone 60deg
   assert.equal(inForwardSector(fwd, { x: 1, z: 0 }, Math.PI / 3), false); // 90deg, outside 60deg
   assert.equal(inForwardSector(fwd, { x: 0, z: -5 }, Math.PI / 3), false); // behind
+});
+
+const len3 = (v) => Math.hypot(v.x, v.y, v.z);
+const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+
+test('spiralOffset: length ≈ radius and perpendicular to the axis for several axes/phases', () => {
+  const R = 1.4;
+  const axes = [{ x: 0, y: 0, z: 1 }, { x: 1, y: 0, z: 0 }];
+  // a normalized diagonal
+  const dl = Math.hypot(1, 1, 1);
+  axes.push({ x: 1 / dl, y: 1 / dl, z: 1 / dl });
+  for (const axis of axes) {
+    for (const phase of [0, 0.7, Math.PI, 2.5, 5.9]) {
+      const o = spiralOffset(axis, phase, R);
+      assert.ok(close(len3(o), R, 1e-9), `length ≈ radius (axis ${JSON.stringify(axis)}, phase ${phase})`);
+      assert.ok(close(dot3(axis, o), 0, 1e-9), `offset ⟂ axis (axis ${JSON.stringify(axis)}, phase ${phase})`);
+    }
+  }
+});
+
+test('spiralOffset: three phases 120° apart sum to ≈ zero (balanced around the axis)', () => {
+  const axis = { x: 0, y: 0, z: 1 };
+  const R = 1.4;
+  const a = spiralOffset(axis, 0, R);
+  const b = spiralOffset(axis, 2 * Math.PI / 3, R);
+  const c = spiralOffset(axis, 4 * Math.PI / 3, R);
+  assert.ok(close(a.x + b.x + c.x, 0, 1e-9));
+  assert.ok(close(a.y + b.y + c.y, 0, 1e-9));
+  assert.ok(close(a.z + b.z + c.z, 0, 1e-9));
+});
+
+test('spiralOffset: world-up axis (0,1,0) still yields a valid basis (fallback branch)', () => {
+  const axis = { x: 0, y: 1, z: 0 };
+  const R = 1.4;
+  for (const phase of [0, 1.2, 3.4]) {
+    const o = spiralOffset(axis, phase, R);
+    assert.ok(close(len3(o), R, 1e-9), 'length ≈ radius on the world-up fallback');
+    assert.ok(close(dot3(axis, o), 0, 1e-9), 'offset ⟂ axis on the world-up fallback');
+  }
 });

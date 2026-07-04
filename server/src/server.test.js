@@ -412,7 +412,8 @@ test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector bo
 test('catalog: weapons are seeded with type bullet/rocket', async () => {
   const weapons = await getJson('/api/weapons');
   // 5 base (ids 1–5) + 3 player-shop ladder weapons (Heavy cannon 6, Heavy Machine Gun 7, Heavy rocket 8)
-  assert.equal(weapons.length, 10);
+  // + 2 enemy weapons (ids 9–10) + Triple spiral rocket (11)
+  assert.equal(weapons.length, 11);
   const types = new Set(weapons.map((w) => w.type));
   assert.deepEqual([...types].sort(), ['bullet', 'rocket']);
   const basic = weapons.find((w) => w.name === 'Basic kinetic');
