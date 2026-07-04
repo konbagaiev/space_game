@@ -16,7 +16,7 @@ Full rationale and rules: `docs/plans/multi-agent-pipeline.md`. Follow `CLAUDE.m
 (**keep it simple — don't over-engineer**). Consider using `TaskCreate` to track the stages below.
 
 Track these counters across the run for the retro: `plannerRevisions`, `scopeGrewInDiscovery` (bool),
-`criticRounds`, `reviewRounds`.
+`criticRounds`, `reviewRounds`, `perfGate` (`FLAT`/`REGRESSION(…)`/`inactive`, from Stage 6.5).
 
 ---
 
@@ -71,6 +71,24 @@ and reviews the diff.
   tests → continue the **same** reviewer (`SendMessage`) to re-check. Increment `reviewRounds`.
 - If `reviewRounds` reaches **3** without PASS → escalate to the maintainer with the open findings.
 
+## Stage 6.5 — Perf A/B gate (after PASS, before commit)
+
+Catch a >2% per-frame **CPU** regression before it lands (DECISIONS §43, `docs/plans/multi-agent-pipeline.md`).
+Do this yourself (no agent) after the reviewer PASSes:
+- Compute the merge-base: `base=$(git -C <worktree> merge-base HEAD main)`.
+- Materialize build **A** from the merge-base into a temp dir (e.g. `git -C <worktree> archive "$base" | tar -x
+  -C <tmpA>`), and run from the worktree:
+  `cd <worktree>/client && BENCH_A_DIR=<tmpA>/client BENCH_B_DIR=<worktree>/client node bench/run.mjs`.
+- Read the verdict and record `perfGate` for the retro:
+  - **`gate inactive`** (merge-base predates the bench harness → build A has no `window.__bench`) → note it,
+    `perfGate = inactive`, continue. Expected until the first feature merges after the harness itself.
+  - **All traces `FLAT`/`IMPROVED`** → `perfGate = FLAT`, continue.
+  - **Any `REGRESSION`** → set `perfGate = REGRESSION(bucket, Δ%)` and **STOP: surface the per-bucket table to
+    the maintainer as a blocking question** (same posture as a reviewer CHANGES): accept the intended cost /
+    send back to the implementer (fix mode) / abandon. Only continue on the maintainer's call.
+- It is **CPU-only** — a green gate is not "no weak-phone regression"; the GPU half stays with real-device
+  `?dev`. Say so if the maintainer treats FLAT as a full all-clear.
+
 ## Stage 7 — Commit + retro
 
 - Ensure the work is committed on the branch: `git -C <worktree> add -A && git -C <worktree> commit` with
@@ -82,6 +100,8 @@ and reviews the diff.
       consider improving its discovery."
     - Critic — flag if `criticRounds > 2`.
     - Reviewer — flag if `reviewRounds > 1`.
+    - Perf gate — report `perfGate` = `FLAT` / `REGRESSION(bucket, Δ%)` / `inactive`; a REGRESSION the
+      maintainer accepted may signal a perf-blind implementer or plan.
   - If any flag fired, name it explicitly to the maintainer (this is the whole point of the retro).
 - Ask, via `AskUserQuestion`:
   1. **Deploy this feature?** (yes / no / not yet)

@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
+**Updated:** 2026-07-04 (**Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool
+(`?bench=record`/`replay` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the
+merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See
+the perf-samples subsection. Previously: **Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
 single-finger gesture within `TAP_SLOP = 10px` is an object tap (shared `engageObjectAt` raycast — chests +
 the return-to-base station are tappable *anywhere*), beyond 10px is the steering stick; a 2nd finger = pinch
 (counts `targetTouches`, so holding FIRE while steering still steers); the rocket + zoom buttons layer above
@@ -959,7 +962,7 @@ first translation). See DECISIONS §10.
     `id`, `player_id` (logical FK), `session_id` (random per page load), `sample` (JSON/JSONB),
     `created_at`; indexed on `(session_id)`, `(created_at)`, `(player_id)`. Diagnostic telemetry for weak
     phones: opening the game with **`?dev`** (mirrors `?tune`/`?debug`) turns on a per-frame profiler
-    (`devPerf` in `index.html`) that times the JS work each frame — **`update` (sim) / `dom` (HUD, markers,
+    (`devPerf` in `client/src/main.js`) that times the JS work each frame — **`update` (sim) / `dom` (HUD, markers,
     minimap, OOB) / `render` (the two-pass submit)** — and once per second emits an aggregated **sample**:
     `fps`, `frameMs` (p50/p95/max), the `js` breakdown (means + `totalP95`), a `jank` count (frames >
     1.5× p50), scene `load` (enemies/particles/draws/tris), **`heap`** (JS-heap MB — `used`/`total`/`limit`
@@ -972,6 +975,31 @@ first translation). See DECISIONS §10.
     with plain SQL over `perf_samples` (the key tell: if `js.total` ≪ `frameMs.p50` the frame isn't
     CPU-bound → external/GPU-governed). Not wiped by a player reset. See DECISIONS §23 +
     `docs/plans/perf-low-end-phones.md`.
+  - **Deterministic replay benchmark + perf-regression gate (`?bench`, `client/bench/`).** A standalone
+    A/B tool that catches when a code change makes the **per-frame CPU cost** worse by **>2%** before it lands
+    — the CPU/JS half of the `?dev` buckets, measured deterministically on desktop/CI. `client/src/bench.js`
+    holds the sticky `?bench` flag (`benchMode`/`isBench`, mirrors `?dev`) + a seeded PRNG
+    (`installSeededRandom`/`mulberry32`) + `BENCH_DT` (fixed 1/60 step). Two modes: **`?bench=record`** — a
+    human plays and `window.__bench.stop()` downloads a JSON **trace** of the per-tick resolved input
+    (`{ k:[KeyboardEvent.code], t:[heading,thrust]|null }`) + a `setup` (`shipId`, initial `spawns`,
+    `maintainEnemies` load-pin); **`?bench=replay`** — `window.__bench.replay(trace,{mode})` re-seeds the RNG,
+    `reset()`s to a clean fight, **sets `G.gameStarted=true`** (the launch flows never run headless, so
+    without it every `update()` early-returns), and drives the trace through the exact per-frame work
+    `animate()` does, timed into the same `update`/`dom`/`render` buckets (`mode:'full'`) or `update`-only
+    (`mode:'sim'`). Traces live in `client/bench/traces/` (canonical: `combat-heavy.json`, produced by
+    `node bench/gen-trace.mjs`, load-pinned to 6 enemies). The runner **`node client/bench/run.mjs`** (`npm run
+    bench`; NOT part of `npm test`) starts an isolated server + one headless Chromium, serves build **A**
+    (`BENCH_A_DIR`, the merge-base) and build **B** (`BENCH_B_DIR`, the worktree; default `A===B` =
+    self-compare noise floor), replays every trace interleaved `A,B,…` (default 15 reps, 4× CDP CPU throttle),
+    and via `client/bench/stats.mjs` (pure, unit-tested) reports a per-bucket table, flagging **REGRESSION**
+    when the CI lower bound of `(B/A−1)` exceeds +2%. Each rep is aggregated by the **mean** of its per-tick
+    samples (beats Chromium's 100µs timer quantization) with the **median across reps**; the CI is a **paired**
+    bootstrap (`A[i]`/`B[i]` run back-to-back, order flipped each round, so common-mode noise cancels). The gate
+    fires on `full.js.total` **or** `sim.js.update` (plus structural `load.draws/tris/particles` growth as a
+    GPU-cost proxy). On software GL the full-mode `render` bucket rasterizes on the CPU and is noisy, so the
+    tight 2%-sensitive signal is **`sim`-mode `js.update`**. If either build lacks `window.__bench` it prints
+    `gate inactive` and exits 0. **CPU-only** — the GPU/fill-rate half stays with real-device `?dev`. Documented (not CI-wired) as the pipeline PERF A/B stage in
+    `docs/plans/multi-agent-pipeline.md`. See DECISIONS §43 + `client/bench/README.md`.
 
 ### Accounts / authentication (DECISIONS §11)
 - **Anonymous-first, optional account.** Players keep the localStorage UUID and auto-register as
@@ -1170,9 +1198,10 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   `restoreSession`/`reloadPlayerWorld`). These four (`mainwindow`/`account`/`welcome` + `settings`/`shop`)
   form the coupled landing-screen cluster — `mainwindow`↔`account`↔`welcome` is a runtime import cycle that
   ESM resolves (edges fire on user actions, not module init).
-- **Composition root:** `main.js` (~540 lines) — imports + input/touch/zoom wiring + the `?dev` `devPerf`
-  monitor + `animate`/`prewarmShaders` + the `?debug` `window.__game` test hook + `bootstrap()` (fetch the
-  DB catalog/level/active-ship, build the world + player, restore the session, show the landing screen).
+- **Composition root:** `main.js` (~630 lines) — imports + input/touch/zoom wiring + the `?dev` `devPerf`
+  monitor + `animate`/`prewarmShaders` + the `?debug` `window.__game` test hook + the `?bench`
+  `window.__bench` record/replay perf hook (`bench.js`) + `bootstrap()` (fetch the DB catalog/level/active-
+  ship, build the world + player, restore the session, show the landing screen).
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)
@@ -1183,7 +1212,11 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   engine/thruster/weapon ids — **never the hull**), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping), and
   **audio settings** (`clamp01`, `loadAudioSettings`/`saveAudioSettings` round-trip + defaults + garbage
-  handling, `effectiveGain` master×channel×toggle). Run: `cd client && npm test`.
+  handling, `effectiveGain` master×channel×toggle). Run: `cd client && npm test`. **Bench gate** —
+  `client/src/bench.test.js` (`evalBench` sticky tri-state + `mulberry32` determinism) +
+  `client/bench/stats.test.js` (median + bootstrap-CI verdicts: the 2% boundary is strict/FLAT, +2.5%→
+  REGRESSION, −11%→IMPROVED, a `load.draws` bump flags) run under the same `node --test`; the browser A/B
+  runner `node bench/run.mjs` is a separate manual command (forks Chromium + a server), **not** in `npm test`.
 - **Backend API** — `server/src/server.test.js` (52): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
   player progress (current level + advance) + **progress reset** (per-player → new-player baseline, unknown→404) +

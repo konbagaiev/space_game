@@ -62,8 +62,26 @@ zero-downtime-deploys to vega.tenony.com.
 intake → worktree → planner(questions) → ASK MAINTAINER → planner(plan)
        → [critic ⇄ planner]×≤5 (target ≤2) → APPROVE
        → implementer → [reviewer ⇄ implementer]×≤3 → PASS
+       → PERF A/B GATE (node client/bench/run.mjs; A=merge-base, B=worktree)
        → retro (metrics + satisfaction) → deploy? → self-improve
 ```
+
+**PERF A/B GATE (after reviewer PASS, before retro).** Catches a >2% per-frame **CPU** regression before it
+lands (DECISIONS §43). The orchestrator: computes the **merge-base** of the worktree branch vs `main`;
+materializes build **A** from that merge-base (`git worktree add` at the merge-base commit, or `git archive`
+to a temp dir) and sets `BENCH_A_DIR` = that build's `client/` and `BENCH_B_DIR` = the worktree `client/`;
+runs `node client/bench/run.mjs` from the worktree. Then:
+- **Any trace verdict `REGRESSION`** → surface the per-bucket table to the maintainer as a **blocking
+  question** (same posture as the reviewer returning CHANGES / the deploy y/n): the maintainer decides —
+  **accept** (an intended cost), **send back to the implementer**, or **abandon**.
+- **All `FLAT`/`IMPROVED`** → note it and continue.
+- Runner prints **`gate inactive`** (the merge-base predates the bench harness, so build A has no
+  `window.__bench`) → note it and continue. This is the expected result until the first feature merges
+  *after* the harness itself.
+
+It is **CPU-only** (the `js.*` buckets); a green gate is not "no weak-phone regression" — the GPU/fill-rate
+half stays with real-device `?dev` (§23). It is a **documented stage the orchestrator runs**, not a GitHub
+Actions job.
 
 - **Critic loop:** max 5 rounds; aim for ≤2. At 5 without APPROVE → **stop and escalate** to the
   maintainer with the outstanding blockers.
@@ -81,6 +99,7 @@ The orchestrator counts, and at the end flags when a count suggests an agent nee
 | Planner | maintainer added **major new scope** during discovery, or plan revised **>1×** | planner missed context — improve discovery / doc reading |
 | Critic | **>2** critic rounds | critic's bar unclear or planner under-specifies repeatedly |
 | Reviewer | **>1** review round | implementer missed rubric items, or reviewer's rubric is vague |
+| Perf gate | `FLAT` / `REGRESSION(bucket, Δ%)` / `inactive` | a REGRESSION the maintainer accepted may signal a perf-blind implementer or plan |
 
 After PASS the orchestrator: shows what was built + test status + these metrics, asks **deploy y/n**, and
 asks **satisfaction per agent**. Any dissatisfaction or flag → capture the concrete gripe and append a
