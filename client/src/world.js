@@ -151,7 +151,7 @@ const NEBULA_FRAG = `
   precision highp float;
   varying vec3 vDir;
   uniform vec3 uBase, uColA, uColB, uColC;
-  uniform float uThLow, uThHigh, uGlow, uStarD, uStarB, uSat, uSeed;
+  uniform float uThLow, uThHigh, uGlow, uStarD, uStarB, uSat, uSeed, uScale;
 
   float hash(vec3 p) {
     p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3) + uSeed);
@@ -185,8 +185,8 @@ const NEBULA_FRAG = `
   }
   void main() {
     vec3 dir = normalize(vDir);
-    float d = smoothstep(uThLow, uThHigh, fbm(dir * 2.2));
-    float t = fbm(dir * 2.2 * 0.55 + 11.0);
+    float d = smoothstep(uThLow, uThHigh, fbm(dir * uScale));
+    float t = fbm(dir * uScale * 0.55 + 11.0);
     vec3 neb = mix(uColA, uColB, clamp(t, 0.0, 1.0)) * d + uColC * pow(d, 2.5) * uGlow;
     vec3 star = vec3(starField(dir, uStarD) * uStarB);
     vec3 col = uBase + neb + star;
@@ -204,6 +204,7 @@ const NEBULA_ICEBLUE = {
   colC:  [0.10, 0.20, 0.40],
   thLow: 0.55, thHigh: 0.90, glow: 0.30,
   starD: 75, starB: 1.10, sat: 0.90, seed: 0,
+  scale: 2.2, // noise frequency: higher = smaller/finer nebula clumps
 };
 
 // Bake the nebula into a cubemap and return the WebGLCubeRenderTarget (caller reads .texture and owns
@@ -219,6 +220,7 @@ function makeNebulaSky(prm, bake) {
     uGlow:  { value: prm.glow },  uStarD:  { value: prm.starD },
     uStarB: { value: prm.starB }, uSat:    { value: prm.sat },
     uSeed:  { value: prm.seed || 0 },
+    uScale: { value: prm.scale || 2.2 },
   };
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,

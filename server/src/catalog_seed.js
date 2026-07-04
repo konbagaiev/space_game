@@ -527,6 +527,7 @@ export const MAPS = [
           colC:  [0.10, 0.20, 0.40],
           thLow: 0.55, thHigh: 0.90, glow: 0.30,
           starD: 75, starB: 1.10, sat: 0.90, seed: 0,
+          scale: 3.6, // noise frequency: higher = smaller/finer nebula clumps (2.2 = original baseline)
         },
       },
       stars: { count: 2500, radius: 400 },
