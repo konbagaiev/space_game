@@ -5,7 +5,8 @@
 
 **Updated:** 2026-07-04 (**Weapon hit/explosion FX pass** — bullet hit-flash is now keyed off the weapon
 `class` (`HIT_FLASH_SCALE`: kinetic tiny spark / cannon small flash) instead of one size, and rocket
-detonation uses a new small/fast layered `spawnRocketBurst` sized off `blastVisual`; ship-death burst
+detonation uses a new small/fast layered `spawnRocketBurst` whose size/speed/tint are data-driven from
+the rocket weapon stats (`blastVisual`/`blastTimeScale` 0.8 = 20% quicker/`blastTint`); ship-death burst
 unchanged.)
 (**Procedural nebula skybox** — `skyScene.background` is now a baked procedural
 nebula + star-field cubemap (`makeNebulaSky`), tier-gated and skipped under `?debug`; see Visuals + DECISIONS §43.)
@@ -330,7 +331,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   ship/weapon class). See DECISIONS §14 + §22.
 - **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
   `maxRange`, `fireCooldown`; rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
-  `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
+  `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE), plus
+  **detonation-FX stats** `blastVisual` (burst size), `blastTimeScale` (burst speed — `0.8` = 20% quicker),
+  `blastTint` (burst color) read by `spawnRocketBurst`. The
   player's homing rocket seeks the nearest enemy in a forward cone and trails smoke; a bullet subtracts
   its `power` from an opposite-side rocket's HP, shooting it down at 0 (enemy rocket 20 HP = two player
   gun hits). Seeded bullets: **Basic kinetic** (id 1, power 10 / cooldown 0.18; **price 800** — granted
@@ -763,10 +766,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   enemy and player death. An enemy death also spawns a floating `+xx` credit popup at the kill site (see
   the HUD "Kill credit popups").
 - **Rocket detonation** (`spawnRocketBurst`): a rocket blast uses the same layered structure (fireball
-  layers + a few sparks + a shockwave ring) but **shrunk and fast** (~0.4–0.9 s), sized off the rocket's
-  `blastVisual`, so it reads as a proper explosion rather than one glowing sphere. Reuses the same
-  particle pools + `G.gfx` tier gating as the ship burst — distinct from the (unchanged) ship-death
-  `spawnShipExplosion`.
+  layers + a few sparks + a shockwave ring) but **shrunk and fast**, so it reads as a proper explosion
+  rather than one glowing sphere. Its **size, speed and tint are data-driven** from the rocket's weapon
+  stats — `blastVisual` (size), `blastTimeScale` (lifetime multiplier; `0.8` = 20% quicker) and
+  `blastTint` (color). Reuses the same particle pools + `G.gfx` tier gating as the ship burst — distinct
+  from the (unchanged) ship-death `spawnShipExplosion`.
 
 ## Audio (synth + sampled — `client/src/audio.js`)
 **Native Web Audio API, no library.** SFX are **synthesized** by default (oscillators + filtered white

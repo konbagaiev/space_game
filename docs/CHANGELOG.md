@@ -12,6 +12,10 @@
   now uses a new small/fast layered `spawnRocketBurst` (fireball layers + a few sparks + shockwave ring,
   ~0.4–0.9 s), sized off `blastVisual`, replacing the single-sphere blast — same particle-budget/tier gating
   as the ship burst; ship-death explosion unchanged.
+  - **Follow-up (live-test tuning):** the rocket-detonation FX are now **fully data-driven from the weapon
+    stats** — `spawnRocketBurst` reads `blastVisual` (size), new `blastTimeScale` (lifetime multiplier) and
+    new `blastTint` (color) off the rocket, threaded via `spawnRocket`. All rocket weapons (id 3/4/8) set
+    `blastTimeScale: 0.8`, making the burst **20% quicker** (rounded); tint unchanged (`0xffb050`).
 - **Nebula clump size is now tunable (`sky.nebula.scale`).** Added a `scale` knob (noise frequency) to the
   procedural nebula: higher = smaller/finer clumps. Replaces the previously hardcoded `2.2` in the shader
   with a `uScale` uniform, threaded from the descriptor (fallback `2.2`). `home-system` ships **`scale: 3.6`**
@@ -31,6 +35,12 @@
   1024/6-octave, Balance 512/4-octave, **Performance keeps the flat color**), skipped under `?debug` (visual
   suite unchanged). Parallax `makeStars` thinned to 0.4× when the nebula is baked. Fully procedural — no
   third-party asset, no `CREDITS.md` change.
+- **feature-pipeline: live-test before agent feedback.** Reordered the `/feature-pipeline` stages so the
+  result is **exercised live** (running app / real device) *after* deploy/build and *before* per-agent
+  feedback is collected — passing the automated suites doesn't prove a feature works for a human, especially
+  touch/feel/visual changes. Stage 7 now asks the deploy question only; new Stage 9 is a live test against a
+  concrete acceptance checklist; Stage 10 collects satisfaction + self-improve, informed by the live result.
+  Also documented stashing unrelated uncommitted main-checkout work around the deploy merge. (`.claude/skills/feature-pipeline/SKILL.md`, `docs/plans/multi-agent-pipeline.md`.)
 - **[2026-07-04-0121-touch-tap-vs-drag] Touch tap-vs-drag.** On touch, on-screen objects — **loot chests**
   and (during return-to-base) the **base station** — are now tappable **anywhere** on screen. The old
   `#stick-zone` (`left:0; width:58%`) claimed the whole left region for steering and **swallowed taps** there,

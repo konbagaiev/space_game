@@ -96,14 +96,16 @@ export const WEAPONS = [
   {
     id: 3, name: 'Rocket (homing)', type: 'rocket', price: 600, stats: { // player starter rocket: cheap to rebuy
       power: 60, accel: 10, turnRate: 1.0, launchSpeed: 12, maxRange: 150, health: 10,
-      seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 3.2, blastRadius: 5, blastVisual: 4.5,
+      seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 3.2, blastRadius: 5,
+      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, // detonation FX: size / speed (<1 = quicker) / tint
       fireCooldown: 5, weight: 8, projectileColor: 0xffaa44, class: 'rocket'
     }
   },
   {
     id: 4, name: 'Rocket pirate', type: 'rocket', price: 200, stats: { // enemy gear: resale-only (hidden from the shop)
       power: 25, accel: 9, turnRate: 1.0, launchSpeed: 12, maxRange: 120, health: 20,
-      detonateRadius: 3.2, blastRadius: 5, blastVisual: 4.5,
+      detonateRadius: 3.2, blastRadius: 5,
+      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, // detonation FX: size / speed (<1 = quicker) / tint
       fireCooldown: 4, weight: 6, projectileColor: 0xffcc66, class: 'rocket', buyable: false // class only drives detonation (→ blast); enemy fire stays synth (isPlayer gate)
     }
   },
@@ -129,7 +131,8 @@ export const WEAPONS = [
   {
     id: 8, name: 'Heavy rocket', type: 'rocket', price: 2600, stats: { // homing: high damage, slow reload, big blast
       power: 90, accel: 9, turnRate: 0.8, launchSpeed: 12, maxRange: 180, health: 20,
-      seekHalfAngle: 50 * Math.PI / 180, detonateRadius: 3.5, blastRadius: 7, blastVisual: 6,
+      seekHalfAngle: 50 * Math.PI / 180, detonateRadius: 3.5, blastRadius: 7,
+      blastVisual: 6, blastTimeScale: 0.8, blastTint: 0xffb050, // detonation FX: size / speed (<1 = quicker) / tint
       fireCooldown: 7, weight: 12, projectileColor: 0xff7a3c, class: 'rocket'
     }
   },

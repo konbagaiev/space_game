@@ -114,14 +114,16 @@ export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) 
 // ---------- Rocket detonation: a small, fast layered burst ----------
 // Same structure as spawnShipExplosion (fireball layers + a few sparks + a shockwave ring) but
 // shrunk and quick, so a rocket blast reads as a proper explosion rather than one glowing sphere.
-// Sized off the rocket's blastVisual (R); tint is a warm rocket orange. Reuses the same particle
-// pools + tier gating as the ship burst (no sim.js changes needed).
-export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050) {
+// Size (R), tint and speed all come from the rocket's weapon stats (blastVisual / blastTint /
+// blastTimeScale) — see catalog_seed.js. timeScale scales every lifetime (<1 = quicker burst).
+// Reuses the same particle pools + tier gating as the ship burst (no sim.js changes needed).
+export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050, timeScale = 1) {
   const R = blastVis;
+  const T = timeScale; // multiplies every burst lifetime; keeps the tuned relative timing, just faster/slower
   // Layered fireball: white-hot core -> tinted glow -> orange outer cloud, each bigger, slower, dimmer.
-  spawnExplosion(pos, R * 0.5, 0.40, 0xffffff);                                    // white-hot core (always)
-  if (G.gfx.particleScale >= 0.7) spawnExplosion(pos, R * 0.8, 0.65, tint);        // tinted glow
-  spawnExplosion(pos, R * 1.15, 0.90, 0xff5a20);                                   // orange outer cloud (always)
+  spawnExplosion(pos, R * 0.5, 0.40 * T, 0xffffff);                                // white-hot core (always)
+  if (G.gfx.particleScale >= 0.7) spawnExplosion(pos, R * 0.8, 0.65 * T, tint);    // tinted glow
+  spawnExplosion(pos, R * 1.15, 0.90 * T, 0xff5a20);                               // orange outer cloud (always)
 
   // A few warm sparks flung outward, clamped to the live-particle budget (like the ship burst).
   const N = Math.max(0, Math.min(scaledCount(8), G.gfx.maxParticles - liveParticles()));
@@ -140,7 +142,7 @@ export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050) {
     const a = (i / N) * Math.PI * 2 + Math.random() * 0.5;
     const sp = (8 + Math.random() * 14) * s;
     const vel = new THREE.Vector3(Math.cos(a) * sp, (Math.random() - 0.5) * 4 * s, Math.sin(a) * sp);
-    sparks.push({ mesh: m, vel, life: 0.5 + Math.random() * 0.6, maxLife: 1.1, size });
+    sparks.push({ mesh: m, vel, life: (0.5 + Math.random() * 0.6) * T, maxLife: 1.1 * T, size });
   }
 
   // Flat shockwave ring (tier-gated like the ship burst) — small + short-lived.
@@ -153,7 +155,7 @@ export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050) {
     ring.position.copy(pos); ring.position.y = 0.6;
     ring.rotation.x = -Math.PI / 2;
     scene.add(ring);
-    shockwaves.push({ mesh: ring, life: 0.85, maxLife: 0.85, maxScale: R * 2.2 });
+    shockwaves.push({ mesh: ring, life: 0.85 * T, maxLife: 0.85 * T, maxScale: R * 2.2 });
   }
 }
 
@@ -221,6 +223,7 @@ export function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
     target, fromPlayer,
     damage: weapon.power, detonateR: weapon.detonateRadius,
     blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
+    blastTime: weapon.blastTimeScale, blastTint: weapon.blastTint, // detonation-FX speed + tint (data-driven; undefined → spawnRocketBurst defaults)
     sfxExplode: sfxFor('weapon', weapon.class, 'explode'), // detonation sound (DB map); resolved once at spawn
     hp: weapon.health ?? 1,                              // HP: reduced by bullet damage, shot down at 0
     traveled: 0, maxRange: weapon.maxRange ?? 120,       // self-destructs at max flight range
@@ -238,7 +241,7 @@ export function detonateRocket(r, dealDamage = true) {
       G.player.hp -= r.damage;
     }
   }
-  spawnRocketBurst(r.obj.position, r.blastVis); // small, fast layered burst (see spawnRocketBurst)
+  spawnRocketBurst(r.obj.position, r.blastVis, r.blastTint, r.blastTime); // small, fast layered burst (params from the rocket's weapon stats)
   audio.sfx.explosion(0.7, r.sfxExplode, 0.3); // rocket blast — 70% quieter (sampled via the weapon-class map)
   scene.remove(r.obj);
   r.obj.children[0].material.dispose();
