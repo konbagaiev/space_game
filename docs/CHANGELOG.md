@@ -10,6 +10,13 @@
   with a `uScale` uniform, threaded from the descriptor (fallback `2.2`). `home-system` ships **`scale: 3.6`**
   so the dense lobes read as finer wisps with more black space between them (calmer behind combat) rather
   than one large smooth cloud.
+- **[2026-07-04-1008-fullscreen-btn-on-pause] Full-screen button available mid-battle on mobile.** The
+  floating `⛶` button now shows during active combat and pause (not just menus) — placed left of the rocket
+  and raised above the phone's bottom chrome — so after backgrounding/restoring the browser (which drops
+  fullscreen) the player can re-enter without leaving the fight. Fixed a stale-`body.fs` bug where the button
+  stayed hidden after restore because `fullscreenchange` isn't delivered to a backgrounded tab: `body.fs` now
+  re-syncs on `visibilitychange`/`pageshow`/`focus`. On iPhone (no Fullscreen API) the Add-to-Home-Screen hint
+  pill now also shows in-game. See DECISIONS §44.
 - **[2026-07-04-0933-procedural-nebula-sky] Procedural nebula skybox (baked cubemap).** Replaced the flat
   slate-blue `skyScene.background` with a procedurally generated ice-blue nebula + star field (GLSL fbm),
   baked **once** into a `WebGLCubeRenderTarget` at `buildMap` time → per-frame cost unchanged (flat

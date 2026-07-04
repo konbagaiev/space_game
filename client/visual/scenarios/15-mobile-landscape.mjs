@@ -29,4 +29,47 @@ export default async function ({ page, assert, shot }) {
   assert.ok(geo.layoutLandscape, 'rotated body lays out in landscape (wider than tall)');
   assert.ok(geo.coversViewport, 'rotated body still covers the whole portrait viewport');
   await shot('portrait-rotated-geometry');
+
+  // --- Full-screen button: available in-game (not just menus), hidden when fullscreen, and body.fs
+  //     re-syncs on foreground (DECISIONS §44 / this plan). ---
+  const fsBtn = await page.evaluate(() => {
+    const body = document.body;
+    const btn = document.getElementById('fullscreen-btn');
+    const rocket = document.getElementById('rocket-btn');
+    const disp = () => getComputedStyle(btn).display;
+    // simulate an in-game touch device: touch on, not a menu, not fullscreen, FS API present
+    body.classList.add('touch');
+    body.classList.remove('menu', 'fs', 'no-fs-api', 'standalone');
+    const shownInGame = disp() !== 'none';
+    const bRect = btn.getBoundingClientRect();
+    const rRect = rocket.getBoundingClientRect();
+    // ⛶ sits to the LEFT of the rocket with a gap (no overlap)
+    const leftOfRocketWithGap = bRect.right < rRect.left;
+    // on a menu it still shows (bottom-right)
+    body.classList.add('menu');
+    const shownOnMenu = disp() !== 'none';
+    body.classList.remove('menu');
+    // hidden once fullscreen
+    body.classList.add('fs');
+    const hiddenWhenFs = disp() === 'none';
+    // stale-fs fix: with body.fs set but no real fullscreenElement, a foreground visibilitychange must
+    // clear body.fs (syncFsClass toggles off since document.fullscreenElement is null in this context)
+    document.dispatchEvent(new Event('visibilitychange'));
+    const fsClearedOnForeground = !body.classList.contains('fs');
+    // no-fs-api (iPhone): ⛶ hidden, a2hs pill shown in-game
+    body.classList.remove('fs');
+    body.classList.add('no-fs-api');
+    const hiddenNoFsApi = disp() === 'none';
+    const a2hsShownInGame = getComputedStyle(document.getElementById('a2hs-hint')).display !== 'none';
+    // cleanup
+    body.classList.remove('touch', 'no-fs-api');
+    return { shownInGame, leftOfRocketWithGap, shownOnMenu, hiddenWhenFs, fsClearedOnForeground, hiddenNoFsApi, a2hsShownInGame };
+  });
+  assert.ok(fsBtn.shownInGame, 'fullscreen button shows in-game on touch (not just menus)');
+  assert.ok(fsBtn.leftOfRocketWithGap, 'in-game fullscreen button sits left of the rocket, no overlap');
+  assert.ok(fsBtn.shownOnMenu, 'fullscreen button still shows on touch menus');
+  assert.ok(fsBtn.hiddenWhenFs, 'fullscreen button hides once fullscreen (body.fs)');
+  assert.ok(fsBtn.fsClearedOnForeground, 'body.fs is re-synced (cleared) when the page returns to foreground');
+  assert.ok(fsBtn.hiddenNoFsApi, 'no-fs-api hides the ⛶ button');
+  assert.ok(fsBtn.a2hsShownInGame, 'no-fs-api shows the Add-to-Home-Screen pill in-game');
 }
