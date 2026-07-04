@@ -3,7 +3,12 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Enemy HP bar floats above the model on screen** — the over-enemy health bar is
+**Updated:** 2026-07-04 (**Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
+(id 11): an invisible homing leader defines the path while three visible cyan warheads spiral around it,
+each a real rocket (own power 40 / HP 10, independent detonation + shoot-down; 3× on a full hit). The
+standard rocket smoke trail changed from an expanding sphere cone to a thin, fixed-size fading haze line
+(now particle-budget-capped); the spiral volley reads as three intertwined smoke helices.)
+(**Enemy HP bar floats above the model on screen** — the over-enemy health bar is
 now anchored along the camera's screen-up axis (not world +Y, which points nearly *at* the near-top-down
 camera), so it sits clearly above the ship sprite on the 2D screen instead of merging with it.)
 (**Weapon hit/explosion FX pass** — bullet hit-flash is now keyed off the weapon
@@ -343,7 +348,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE), plus
   **detonation-FX stats** `blastVisual` (burst size), `blastTimeScale` (burst speed — `0.8` = 20% quicker),
   `blastTint` (burst color) read by `spawnRocketBurst`. The
-  player's homing rocket seeks the nearest enemy in a forward cone and trails smoke; a bullet subtracts
+  player's homing rocket seeks the nearest enemy in a forward cone and trails a thin fading haze line
+  (see FX below); a bullet subtracts
   its `power` from an opposite-side rocket's HP, shooting it down at 0 (enemy rocket 20 HP = two player
   gun hits). Seeded bullets: **Basic kinetic** (id 1, power 10 / cooldown 0.18; **price 800** — granted
   into the stash on shop unlock, sells ~600 toward the Heavy hull), **Kinetic (enemy)** (id 2, power 4),
@@ -352,7 +358,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **priced 600**), **Rocket (enemy)** (id 4, power 25). **Player shop ladder** (priced;
   `docs/plans/economy-shop-v2.md`): **Heavy cannon** (id 6: power 25, slow fire / long range / **2000**),
   **Heavy Machine Gun** (id 7: power 12, high RoF / **6000**), **Heavy rocket** (id 8: homing, power 90, slow
-  reload, big blast / **2600**). Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
+  reload, big blast / **2600**), and **Triple spiral rocket** (id 11: **4000**, top of the rocket ladder —
+  `stats.spiral:true`). The triple spiral fires an **invisible leading homing rocket** (steers via
+  `findTargetInSector`, deals no damage, not shootable) that defines the flight path; **three visible
+  cyan warheads** (power 40 / health 10 each; flight = Heavy-rocket-class ×1.2: launchSpeed 14, accel 12)
+  spiral around its axis (radius 1.4u, 6 rad/s, 120° apart). Each warhead is a real rocket — it detonates
+  on its own proximity and can be individually shot down (all three connecting = 3× = 120 damage);
+  fireCooldown 7. Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
   low damage 3; pirate gunner + buffed boss) and **Advanced pirate cannon** (id 10 — power 10, slow 1 shot/sec,
   long range 110; the Second Boss's main gun).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`). **Appearance = the ship's `.glb` model; we
@@ -780,6 +792,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   stats — `blastVisual` (size), `blastTimeScale` (lifetime multiplier; `0.8` = 20% quicker) and
   `blastTint` (color). Reuses the same particle pools + `G.gfx` tier gating as the ship burst — distinct
   from the (unchanged) ship-death `spawnShipExplosion`.
+- **Rocket smoke trail** (`spawnSmoke`): every rocket (player + enemy) leaves a **thin, dissipating haze
+  line** — small **fixed-size** gray puffs that only fade out (no expansion), emitted densely along the
+  flight path so it reads as a vapor line, not a widening cone. `spawnSmoke` honors the particle ceiling
+  (`liveParticles()` + `particleScale`), so smoke thins/skips on weak tiers. The **Triple spiral rocket**'s
+  three visible warheads each emit their own trail, so its volley reads as **three intertwined smoke
+  helices** corkscrewing around the (invisible) flight axis.
 
 ## Audio (synth + sampled — `client/src/audio.js`)
 **Native Web Audio API, no library.** SFX are **synthesized** by default (oscillators + filtered white
@@ -855,8 +873,9 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   only blurred the image for no fps gain). Per tier: **pixel-ratio cap** (2 / 1.5 / 1), **antialias** (on /
   off / off), **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales spark count,
   drops the 2 middle fireball layers + the shockwave, and thins the exhaust), and **maxParticles** (∞ / ∞ /
-  **300** — a hard ceiling on live additive particles, exhaust trail + sparks; new emits skip over budget,
-  capping per-frame JS / draw-call submit). maxParticles is **off (∞) on High & Balance**. Persisted in
+  **300** — a hard ceiling on live additive particles, exhaust trail + sparks + **rocket smoke**
+  (`liveParticles()` now counts smoke, and `spawnSmoke` honors the ceiling + `particleScale`); new emits
+  skip over budget, capping per-frame JS / draw-call submit). maxParticles is **off (∞) on High & Balance**. Persisted in
   `localStorage` (key `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. **Picking a tier
   reloads the page** so the whole preset (antialias — a `WebGLRenderer` constructor arg — + pixel ratio +
   star/particle density) applies cleanly from startup, no half-applied state (server-side progress is
@@ -1276,7 +1295,10 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   persist to `localStorage`; the gear hides during a live fight), **ship-bank** (the player rolls into a turn,
   capped ≤20°, eases back to level on release, opposite turns bank opposite ways, enemies have a bank group),
   and **reset-progress** (the settings modal fits the viewport with no internal scroll; the slide-to-confirm
-  arms only on a near-full drag and opens the confirm dialog; Cancel snaps it back; Confirm POSTs `/reset`).
+  arms only on a near-full drag and opens the confirm dialog; Cancel snaps it back; Confirm POSTs `/reset`),
+  and **triple-spiral-rocket** (firing the id-11 spiral weapon spawns exactly 1 invisible leader + 3 visible
+  warheads into the `rockets` pool, and the whole volley drains to 0 after homing + detonation — the leader
+  self-removes once its last child is gone, no leaked entries).
   Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for

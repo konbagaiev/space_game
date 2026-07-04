@@ -29,9 +29,9 @@ const scaledCount = (n) => Math.max(1, Math.round(n * G.gfx.particleScale));
 
 // Live count of the high-volume additive particles (continuous exhaust trail + burst sparks). The hard
 // ceiling `G.gfx.maxParticles` (Infinity off High/Balance) skips new emits when over budget — caps both
-// fill-rate overdraw and per-frame JS on the weakest phones. trail+sparks dominate; the few short-lived
-// explosion/shockwave meshes aren't counted.
-export const liveParticles = () => trail.length + sparks.length;
+// fill-rate overdraw and per-frame JS on the weakest phones. trail+sparks+smoke dominate; the few
+// short-lived explosion/shockwave meshes aren't counted.
+export const liveParticles = () => trail.length + sparks.length + smoke.length;
 
 // ---------- Micro-explosions at the impact point ----------
 // explosions moved to src/state.js
@@ -194,6 +194,9 @@ export function emitExhaust(mesh, fwd, shipVel, exhaust) {
 // ---------- Rockets (homing) ----------
 // rockets moved to src/state.js
 const rocketGeo = new THREE.ConeGeometry(0.6, 2.4, 8); // nose in +Z (like the ship)
+// Spiral-rocket warhead: slimmer + sharper than the standard rocket, brighter emissive tint so the
+// three visible rockets read as a distinct weapon. Built procedurally (no .glb).
+const spiralRocketGeo = new THREE.ConeGeometry(0.34, 2.0, 6);
 
 // Find the nearest enemy in the front sector [fwd +/- halfAngle].
 export function findTargetInSector(pos, fwd, halfAngle) {
@@ -209,6 +212,7 @@ export function findTargetInSector(pos, fwd, halfAngle) {
 }
 
 export function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
+  if (weapon.spiral) return spawnSpiralRocket(from, fwd, weapon, accel, fromPlayer, target);
   const mat = new THREE.MeshBasicMaterial({ color: weapon.projectileColor });
   const m = new THREE.Mesh(rocketGeo, mat);
   m.rotation.x = Math.PI / 2; // cone points along +Z
@@ -230,7 +234,47 @@ export function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
   });
 }
 
+// Triple spiral rocket: an invisible leader (homing, no damage, not shootable) + 3 visible rockets that
+// orbit its flight axis in a corkscrew. Each visible rocket deals damage, has HP, detonates on its own
+// proximity, and can be shot down. All entries share the `rockets` pool.
+function spawnSpiralRocket(from, fwd, weapon, accel, fromPlayer, target) {
+  // Leader: invisible frame. Reuses the rocket steering fields; `lead:true` marks it non-damaging /
+  // non-shootable; `children` counts live orbiters so the leader expires when the last one is gone.
+  const leadObj = new THREE.Group();
+  leadObj.position.copy(from);
+  scene.add(leadObj); // no mesh child → invisible; still moved/steered by sim.js
+  const leadVel = fwd.clone().multiplyScalar(weapon.launchSpeed);
+  const leader = {
+    obj: leadObj, vel: leadVel, accel, turnRate: weapon.turnRate,
+    target, fromPlayer, lead: true, children: 3, spiralPhase: 0,
+    traveled: 0, maxRange: weapon.maxRange ?? 150,
+  };
+  rockets.push(leader);
+  // Three visible rockets, 120° apart, each a real rocket that rides the leader.
+  const sfxExplode = sfxFor('weapon', weapon.class, 'explode');
+  for (let i = 0; i < 3; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: weapon.projectileColor });
+    const m = new THREE.Mesh(spiralRocketGeo, mat);
+    m.rotation.x = Math.PI / 2; // cone points +Z
+    const holder = new THREE.Group();
+    holder.add(m);
+    holder.position.copy(from);
+    scene.add(holder);
+    rockets.push({
+      obj: holder, vel: leadVel.clone(), fromPlayer,
+      spiralOf: leader, spiralPhaseOffset: i * (Math.PI * 2 / 3),
+      damage: weapon.power, detonateR: weapon.detonateRadius,
+      blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
+      blastTime: weapon.blastTimeScale, blastTint: weapon.blastTint,
+      sfxExplode, hp: weapon.health ?? 1,
+      traveled: 0, maxRange: weapon.maxRange ?? 150,
+    });
+  }
+}
+
 // dealDamage=false - the rocket was shot down by gunfire (explosion without damage)
+// INVARIANT: only ever called on VISIBLE rockets (normal rockets + spiral warheads). The spiral leader
+// (r.lead) carries no mesh child / blast fields and self-removes in sim.js — it is never passed here.
 export function detonateRocket(r, dealDamage = true) {
   if (dealDamage) {
     if (r.fromPlayer) {
@@ -247,16 +291,20 @@ export function detonateRocket(r, dealDamage = true) {
   r.obj.children[0].material.dispose();
 }
 
-// Light rocket smoke trail: soft gray puffs (no glow, expand and fade away).
+// Rocket smoke trail: a thin, dissipating haze LINE — small fixed-size gray puffs that only fade out
+// (no expansion), emitted densely along the flight path so the trail reads as a vapor line, not a cone.
 // smoke moved to src/state.js
 const smokeGeo = new THREE.SphereGeometry(1, 6, 6);
 export function spawnSmoke(pos) {
+  if (liveParticles() >= G.gfx.maxParticles) return;                 // respect the hard ceiling (weak phones)
+  if (G.gfx.particleScale < 1 && Math.random() > G.gfx.particleScale) return; // thin on lower tiers
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x9aa6b4, transparent: true, opacity: 0.35, depthWrite: false, fog: false,
+    color: 0x9aa6b4, transparent: true, opacity: 0.4, depthWrite: false, fog: false,
   });
   const m = new THREE.Mesh(smokeGeo, mat);
   m.position.copy(pos);
-  m.scale.setScalar(0.4);
+  const size = 0.32 + Math.random() * 0.12; // small, fixed — no growth
+  m.scale.setScalar(size);
   scene.add(m);
-  smoke.push({ mesh: m, life: 0.6, maxLife: 0.6 });
+  smoke.push({ mesh: m, life: 0.5, maxLife: 0.5, baseSize: size });
 }

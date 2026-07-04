@@ -1499,6 +1499,29 @@ belt-and-suspenders — in `welcome.js`, independent of the existing `fullscreen
 restore (browsers block it without a user gesture); the fix is to make the button reappear so the player
 taps it.
 
+## 45. Triple spiral rocket = 1 invisible homing leader + 3 real child rockets (not a single leader-detonation)
+
+The triple spiral rocket (weapon id 11) is modeled as **four `rockets`-pool entries per fire**: an
+**invisible leader** that carries all the homing (steer + accelerate toward the target, no damage, not
+shootable) and **three visible warheads** that ride it, each a full rocket with its own `power`, `health`,
+proximity `detonateRadius`, and blast.
+
+- **Alternative considered:** one homing rocket that, on detonation, deals 3× damage (or spawns three
+  cosmetic sub-rockets). Rejected — the headline feature is that **each warhead is real**: it deals its own
+  damage, can be **individually shot down** by gunfire, and connects independently (1–3 hits land depending
+  on how many survive). A single-detonation model can't express "shoot one down, the other two still hit."
+- **Why the split (leader vs. warheads):** it keeps the **homing logic in exactly one place** (the leader
+  reuses the existing rocket steering block verbatim) while the three warheads reuse the **existing
+  rocket-vs-bullet interception and `detonateRocket` code paths untouched** — they already have `hp`,
+  `obj.position`, `fromPlayer`, and blast fields, so no new pool, no per-warhead guidance, no bespoke
+  collision code (§30 simplicity). The warheads' positions are derived each frame from the leader
+  (`spiralOffset` corkscrew), so they don't steer themselves.
+- **Lifecycle bookkeeping:** the leader counts live `children`; every warhead-removal path (proximity
+  detonation, bullet shoot-down, out-of-range) funnels through one `removeRocket` helper that decrements it,
+  and the leader self-removes when the count hits 0 or it reaches `maxRange`. The leader is never passed to
+  `detonateRocket` (no mesh child / blast fields) — it's skipped in the interception + detonation loops and
+  cleaned up in its own branch.
+
 ---
 
 ## Future ideas

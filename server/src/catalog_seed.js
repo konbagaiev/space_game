@@ -149,6 +149,19 @@ export const WEAPONS = [
       power: 10, projectileSpeed: 60, maxRange: 110, fireCooldown: 1.0, weight: 10, projectileColor: 0xff4a3a, class: 'cannon', buyable: false
     }
   },
+  // Player shop ladder — top of the rocket ladder (above Heavy rocket 2600). A triple-warhead homing
+  // rocket: an INVISIBLE leading rocket homes (findTargetInSector) and defines the path; three VISIBLE
+  // rockets spiral around its flight axis, each a real rocket (own power + HP, own proximity detonation,
+  // individually shootable-down). `spiral:true` triggers the leader+3-orbiter spawn in projectiles.js.
+  {
+    id: 11, name: 'Triple spiral rocket', type: 'rocket', price: 4000, stats: {
+      power: 40, accel: 12, turnRate: 1.0, launchSpeed: 14, maxRange: 150, health: 10, // per visible rocket
+      seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 3.2, blastRadius: 5,
+      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050,
+      fireCooldown: 7, weight: 13, projectileColor: 0x66ddff, class: 'rocket',
+      spiral: true // spawn as an invisible leader + 3 visible spiraling rockets (see spawnRocket)
+    }
+  },
 ];
 
 // --- sounds: the SFX asset registry (key -> same-origin content-hashed url, optional playback gain).

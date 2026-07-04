@@ -5,6 +5,23 @@
 
 ## 2026-07-04
 
+- **[2026-07-04-1740-triple-spiral-rocket] Triple spiral rocket + fading-line rocket trail.** New
+  4000-credit shop rocket (weapon id 11, `stats.spiral:true`, top of the rocket ladder): firing it spawns
+  an **invisible leading homing rocket** (steers via `findTargetInSector`, deals no damage, not shootable)
+  that defines the flight path, plus **three visible cyan warheads** that spiral around its axis (radius
+  1.4u, 6 rad/s, 120° apart). Each warhead is a **real** rocket — its own power 40 / health 10, independent
+  proximity detonation, and individually shot down by gunfire (all three connecting = 3× = 120 damage); the
+  leader self-removes once its last warhead is gone or it hits maxRange. Separately, the **standard** rocket
+  smoke trail (all rockets, player + enemy) changed from an expanding sphere cone into a **thin dissipating
+  haze line** — small fixed-size puffs that only fade — and `spawnSmoke` now honors the particle ceiling
+  (`liveParticles()` counts smoke), so dense trails stay within budget on weak tiers (a burst mid-heavy-smoke
+  loses a few sparks on capped low tiers — intentional). New pure `spiralOffset` helper in `steering.js`
+  (unit-tested); new visual scenario `17-triple-spiral-rocket` asserts the 1-leader-+-3-warhead spawn and
+  that the whole volley drains with no leaked entries. Files: `server/src/catalog_seed.js` (row 11),
+  `client/src/projectiles.js` (spiral spawn + slim warhead geo + fading `spawnSmoke`), `client/src/sim.js`
+  (leader/warhead/normal rocket cases + fixed-size smoke fade + reset guard), `client/src/steering.js`,
+  `client/src/main.js` (`spawnRocket` on the `?debug` hook). No new .glb / CREDITS.md change (procedural
+  warhead). Server weapon-count assertion 10 → 11.
 - **[2026-07-04-1223-enemy-hp-bar-above-model] Enemy HP bar clears the model.** The over-enemy health bar
   now pins its bottom edge above the ship (CSS `translate(-50%, calc(-100% - 4px))` + a size-proportional
   world anchor `e.radius * 1.15 + 1.5`) instead of centering on the anchor, so it no longer merges with /

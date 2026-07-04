@@ -9,7 +9,7 @@ import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
 import { repairTick } from './components.js';
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './steering.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
@@ -18,6 +18,10 @@ import { canDock } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
+
+// Triple spiral rocket: warhead corkscrew around the leader's flight axis.
+const SPIRAL_RADIUS = 1.4;  // orbit radius around the leader axis (world units)
+const SPIRAL_ANGULAR = 6;   // rad/s — how fast the warheads corkscrew
 
 // ---------- Music ----------
 // Music follows game state: the driving combat mood during a live fight, the calmer hangar mood on
@@ -457,10 +461,11 @@ export function update(dt) {
     if (!hit) {
       for (let j = rockets.length - 1; j >= 0; j--) {
         const r = rockets[j];
+        if (r.lead) continue;                        // the invisible spiral leader has no hp — not shootable
         if (r.fromPlayer === b.fromPlayer) continue; // only rockets of the opposite side
         if (b.mesh.position.distanceTo(r.obj.position) < 2.4) {
           r.hp -= b.damage;
-          if (r.hp <= 0) { detonateRocket(r, false); rockets.splice(j, 1); } // destroyed
+          if (r.hp <= 0) { detonateRocket(r, false); if (r.spiralOf) r.spiralOf.children--; rockets.splice(j, 1); } // destroyed (a spiral warhead frees its leader slot)
           hit = true; break;                                                 // else it survives, takes another
         }
       }
@@ -476,22 +481,62 @@ export function update(dt) {
   }
 
   // --- rockets: homing (accelerate toward target), detonate near the enemy ---
+  // Spiral-rocket volley = 1 invisible leader (r.lead: homes, no damage, no smoke) + 3 visible warheads
+  // (r.spiralOf: ride the leader in a corkscrew, each a real rocket). A warhead freeing its slot decrements
+  // the leader's `children`; the leader self-removes when the last is gone (or it hits maxRange).
+  const removeRocket = (idx, r) => { if (r.spiralOf) r.spiralOf.children--; rockets.splice(idx, 1); };
   for (let i = rockets.length - 1; i >= 0; i--) {
     const r = rockets[i];
-    // target lost: for a player rocket - if the enemy died; for an enemy one - if the player died
-    if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
-    if (r.target) {
-      // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
-      const to = r.target.mesh.position.clone().sub(r.obj.position);
-      const desired = Math.atan2(to.x, to.z);
-      const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
-      const speed = r.vel.length() + r.accel * dt;
-      r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
+
+    if (r.lead) {
+      // Invisible leader: home + move exactly like a normal rocket, but no smoke, no detonation.
+      if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
+      if (r.target) {
+        const to = r.target.mesh.position.clone().sub(r.obj.position);
+        const desired = Math.atan2(to.x, to.z);
+        const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
+        const speed = r.vel.length() + r.accel * dt;
+        r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
+      }
+      r.traveled += r.vel.length() * dt;
+      r.obj.position.addScaledVector(r.vel, dt);
+      r.spiralPhase += SPIRAL_ANGULAR * dt;
+      // Expire when out of range OR all children gone (children decremented on each warhead removal).
+      if (r.traveled >= r.maxRange || r.children <= 0) { scene.remove(r.obj); rockets.splice(i, 1); }
+      continue;
     }
-    r.traveled += r.vel.length() * dt;
-    r.obj.position.addScaledVector(r.vel, dt);
-    if (r.vel.lengthSq() > 0.01) r.obj.rotation.y = Math.atan2(r.vel.x, r.vel.z);
-    spawnSmoke(r.obj.position); // light smoke trail
+
+    if (r.spiralOf) {
+      // Visible warhead: position = leader.pos + corkscrew offset; velocity tracked for orientation + smoke.
+      const L = r.spiralOf;
+      const axisV = L.vel.lengthSq() > 1e-4 ? L.vel.clone().normalize() : new THREE.Vector3(0, 0, 1);
+      const o = spiralOffset({ x: axisV.x, y: axisV.y, z: axisV.z }, L.spiralPhase + r.spiralPhaseOffset, SPIRAL_RADIUS);
+      const off = new THREE.Vector3(o.x, o.y, o.z);
+      const prev = r.obj.position.clone();
+      r.obj.position.copy(L.obj.position).add(off);
+      const moved = r.obj.position.clone().sub(prev);
+      r.vel.copy(moved).multiplyScalar(1 / Math.max(dt, 1e-4)); // for orientation + smoke direction
+      r.traveled = L.traveled; // share the leader's range accounting
+      if (r.vel.lengthSq() > 0.01) r.obj.rotation.y = Math.atan2(r.vel.x, r.vel.z);
+      spawnSmoke(r.obj.position); // corkscrew trail: three offset helices (same fading-line puffs)
+      // detonation/shoot-down handled by the shared block below (uses removeRocket → child-count decrement)
+    } else {
+      // Normal rocket: existing homing + move.
+      // target lost: for a player rocket - if the enemy died; for an enemy one - if the player died
+      if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
+      if (r.target) {
+        // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
+        const to = r.target.mesh.position.clone().sub(r.obj.position);
+        const desired = Math.atan2(to.x, to.z);
+        const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
+        const speed = r.vel.length() + r.accel * dt;
+        r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
+      }
+      r.traveled += r.vel.length() * dt;
+      r.obj.position.addScaledVector(r.vel, dt);
+      if (r.vel.lengthSq() > 0.01) r.obj.rotation.y = Math.atan2(r.vel.x, r.vel.z);
+      spawnSmoke(r.obj.position); // light smoke trail
+    }
 
     let det = false;
     if (r.fromPlayer) {
@@ -502,7 +547,7 @@ export function update(dt) {
       det = true;
     }
     // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)
-    if (det || r.traveled >= r.maxRange) { detonateRocket(r); rockets.splice(i, 1); }
+    if (det || r.traveled >= r.maxRange) { detonateRocket(r); removeRocket(i, r); }
   }
 
   // --- micro-explosions (short fiery flash) ---
@@ -534,13 +579,13 @@ export function update(dt) {
     }
   }
 
-  // --- rocket smoke trail: puffs expand and fade away ---
+  // --- rocket smoke trail: fixed-size puffs that only fade (a thin dissipating line, not a cone) ---
   for (let i = smoke.length - 1; i >= 0; i--) {
     const s = smoke[i];
     s.life -= dt;
     const t = 1 - Math.max(0, s.life) / s.maxLife; // 0 → 1
-    s.mesh.material.opacity = (1 - t) * 0.35;
-    s.mesh.scale.setScalar(0.4 + t * 1.2); // smoke expands
+    s.mesh.material.opacity = (1 - t) * 0.4;        // fade out only
+    // no scale change — fixed-size puffs form a thin dissipating line (baseSize set once at spawn)
     if (s.life <= 0) {
       scene.remove(s.mesh);
       s.mesh.material.dispose();
@@ -682,7 +727,11 @@ export function reset() {
   explosions.length = 0;
   for (const p of trail) { scene.remove(p.mesh); p.mesh.material.dispose(); }
   trail.length = 0;
-  for (const r of rockets) { scene.remove(r.obj); r.obj.children[0].material.dispose(); }
+  for (const r of rockets) {
+    scene.remove(r.obj);
+    const mesh = r.obj.children[0]; // the spiral leader is an empty Group (invisible) → no mesh child
+    if (mesh?.material) mesh.material.dispose();
+  }
   rockets.length = 0;
   for (const s of smoke) { scene.remove(s.mesh); s.mesh.material.dispose(); }
   smoke.length = 0;
