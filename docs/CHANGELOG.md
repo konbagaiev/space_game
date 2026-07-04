@@ -3,6 +3,31 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-04
+
+- **[2026-07-04-0121-touch-tap-vs-drag] Touch tap-vs-drag.** On touch, on-screen objects — **loot chests**
+  and (during return-to-base) the **base station** — are now tappable **anywhere** on screen. The old
+  `#stick-zone` (`left:0; width:58%`) claimed the whole left region for steering and **swallowed taps** there,
+  so chests/the station were untappable across most of the screen. Now `#stick-zone` covers the full play area
+  (`inset:0`) and a single-finger gesture is disambiguated by **movement slop**: within **`TAP_SLOP = 10px`**
+  (measured in the rotated game space) it's an **object tap** that runs the **same raycast as the desktop click**
+  (factored into a shared `engageObjectAt` — nearest live chest wins over the station), beyond 10px it becomes
+  the floating **steering stick**. Steering + object taps both work anywhere; the stick still shows on
+  touchstart but a tap never engages steering. A **2nd finger on the play area = pinch** (moved off
+  `renderer.domElement` onto `#stick-zone`), still counting **`e.targetTouches`** so a finger held on **FIRE**/🚀
+  isn't counted — **holding FIRE while steering is unaffected**. The **rocket + zoom buttons** are layered
+  **above** the now full-screen stick zone (`#rocket-btn`/`#zoom` → `z-index:6`). New pure module
+  `client/src/tap-gesture.js` (`exceedsSlop`, `TAP_SLOP`) + its `node --test` unit test.
+- **[2026-07-04-0121-touch-tap-vs-drag] Fixed: zoom `+`/`−` unusable during flight on touch.** Reproduced on a
+  touch harness (Playwright + CDP multitouch): during flight the player steers with one finger, and tapping
+  `+`/`−` with a second thumb **did nothing**. **Root cause:** the buttons fired on a synthesized **`click`**,
+  and the browser **only synthesizes a click for a single-touch tap** — it suppresses it while a second touch
+  point (the steering finger) is active. **Fix:** the zoom buttons now fire on **`touchstart`** (mirroring
+  FIRE/🚀, which always worked during flight); the `click` path is kept **mouse-only** so a lone touch tap
+  doesn't double-zoom. Verified empirically that the zoom visibly changes when tapped mid-flight on touch. The
+  `z-index:6` keep is a necessary companion (so the full-screen zone doesn't cover the buttons) but was **not**
+  the actual cause. See DECISIONS §42 + the §20 amendment.
+
 ## 2026-07-03
 
 - **Enemy health bars.** Each enemy now shows a small translucent-red health bar floating just above it —

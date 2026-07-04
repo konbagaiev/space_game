@@ -528,7 +528,9 @@
   /* Touch controls (touch devices only) */
   #touch { position: fixed; inset: 0; display: none; pointer-events: none; touch-action: none; z-index: 5; }
   #touch.on { display: block; }
-  #stick-zone { position: absolute; left: 0; top: 0; width: 58%; height: 100%; pointer-events: auto; }
+  /* Full play area: tap-vs-drag lives here (a <10px tap = object pick, a drag = steering). Fire/rocket/zoom
+     are layered above it (later #touch children in the same z-5 context, or z-6). See DECISIONS §42. */
+  #stick-zone { position: absolute; inset: 0; pointer-events: auto; }
   #overlay { z-index: 10; } /* "Game over"/"Restart" screen - above touch controls */
   #stick-base {
     position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px;
@@ -555,6 +557,7 @@
     border-radius: 50%; pointer-events: auto; user-select: none; overflow: hidden;
     border: 2px solid rgba(255,180,120,.55); background: rgba(20,16,12,.5);
     display: flex; align-items: center; justify-content: center;
+    z-index: 6; /* above the now full-screen #stick-zone (z-5) so it stays tappable during flight */
   }
   #rocket-fill { position: absolute; inset: 0; border-radius: 50%; }
   #rocket-btn .rb-icon { position: relative; z-index: 1; font-size: 34px; text-shadow: 0 0 5px #000; }
