@@ -19,6 +19,8 @@ stats: {
     scaleMul: 1,     // optional extra normalization multiplier  (default 1)
     muzzle: null,    // optional projectile spawn point, group-local +Z (null → auto from glb bounds)
     exhaust: null,   // optional exhaust spawn point,   group-local −Z (null → auto from glb bounds)
+    // hitSpheres / broadR — AUTO-GENERATED, do not hand-author (see below); primitives omit them
+    hitSpheres: [{ x: 0, y: 0, z: 1, r: 0.8 }, /* … */], broadR: 2.3,
   },
 }
 ```
@@ -44,6 +46,14 @@ primitive ship's footprint. `scale` then multiplies that (it also scales the hit
 mount offset). `scaleMul` is a rarely-needed extra multiplier applied inside the normalization itself
 (use it only if a model's bounding box is dominated by something that shouldn't count toward "length").
 
+### `hitSpheres` / `broadR` — the collision hitbox (auto-generated)
+The ship's collision shape is **~5-10 spheres auto-fit to the hull** (group-local noseZ frame, like
+`noseZ`/`tailZ`), plus `broadR`, its enclosing broad-phase radius. **Don't hand-author these** —
+`npm run assets:hitspheres` fits them from the combat glb (replicating the same `yaw`/`scaleMul`/scale
+normalization) and writes them into the `model:{}` block. **Re-run it whenever the model, `yaw`, or
+`scaleMul` changes.** A primitive/un-modeled ship omits them and falls back to a single `2.6 × scale`
+sphere. Eyeball the fit in-game with the dev-only **`?hitspheres`** wireframe overlay.
+
 ### `muzzle` / `exhaust` — spawn-point escape hatch
 Projectiles spawn at the model's **nose** and exhaust at its **tail**, auto-derived from the glb's
 local bounding-box extremes (`group.userData.noseZ` = `+Z` tip, `tailZ` = `−Z` tip). When a long
@@ -62,9 +72,12 @@ so these values are independent of `scale`.
    CloudFront — optional).
 3. **Fill `stats.model`** — `yaw` (from the glTF-viewer check), `scale` (relative size). Leave
    `muzzle`/`exhaust` out unless step 5 shows the auto spawn is off.
+3b. **Generate the hitbox** — `npm run assets:pull` (if needed) then `npm run assets:hitspheres` to fit
+   `hitSpheres`/`broadR` into the seed. Re-run after any later `yaw`/`scaleMul`/model change.
 4. **Credits** — a CC-BY model **must** get a row in `client/assets/CREDITS.md` (the `CLAUDE.md`
    asset-credits rule: always confirm CREDITS changes with the maintainer on a model add/replace/remove).
 5. **Verify** — `npm run assets:push` (or run the game locally), then eyeball in-game or via the visual
    harness (`node visual/run.mjs` from `client/`): confirm the ship is sized right, flies **nose-first**
    (not engine-first), and that **bullets leave the nose** and **exhaust trails the engines**. If a
-   spawn looks off, set `model.muzzle` / `model.exhaust` and re-check.
+   spawn looks off, set `model.muzzle` / `model.exhaust` and re-check. Open with **`?hitspheres`** to
+   confirm the auto-fit collision spheres wrap the hull.

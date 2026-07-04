@@ -46,6 +46,7 @@ export function buildPlayer(active) {
     vel: new THREE.Vector3(),
     heading: 0,                       // rotation angle around Y
     sizeScale: mc.scale,
+    hitSpheres: mc.hitSpheres, broadR: mc.broadR, // multi-sphere hitbox (null on primitives → single-sphere fallback)
     class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
     hull, engine, thruster, repair, grab, // `repair` = repair-drone stats (or null); `grab` = tractor stats (or null) — feeds mass + the grab pull sim
     _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
@@ -90,7 +91,8 @@ export function spawnEnemyShip(shipDef) {
     mounts: buildMounts(s.mounts),
     hp: hull.durability,
     maxHp: hull.durability, // for the over-enemy health bar (shown once hp dips below max)
-    radius: 2.6 * mc.scale,  // hit radius scales with model size
+    radius: 2.6 * mc.scale,  // health-bar/marker anchor only (collision now uses hitSpheres/broadR)
+    hitSpheres: mc.hitSpheres, broadR: mc.broadR, // multi-sphere hitbox (null on primitives → single-sphere fallback)
     alive: true,
   };
   e.groups = buildGroups(s.groups, e.mounts);

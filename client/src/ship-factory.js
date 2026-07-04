@@ -19,6 +19,8 @@ export const shipModelCfg = (s) => {
     scaleMul: m.scaleMul ?? 1,
     muzzle: m.muzzle ?? null,   // group-local +Z override for the projectile spawn (null → auto from glb bounds)
     exhaust: m.exhaust ?? null, // group-local −Z override for the exhaust spawn (null → auto from glb bounds)
+    hitSpheres: m.hitSpheres ?? null, // auto-fit multi-sphere hitbox (group-local noseZ frame); null → primitive single-sphere fallback
+    broadR: m.broadR ?? null,   // enclosing broad-phase radius (group-local); null → legacy 2.6×sizeScale
   };
 };
 

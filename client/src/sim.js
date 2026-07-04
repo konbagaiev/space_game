@@ -13,6 +13,7 @@ import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
+import { pointHitsShip } from './collision.js';
 import { updateDrops, spawnDrop, pickLoot, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
@@ -443,12 +444,12 @@ export function update(dt) {
     let hit = false;
     if (b.fromPlayer) {
       for (const e of enemies) {
-        if (b.mesh.position.distanceTo(e.mesh.position) < e.radius) {
+        if (pointHitsShip(e, b.mesh.position)) {
           e.hp -= b.damage; hit = true; audio.sfx.hit(); break;
         }
       }
     } else {
-      if (G.player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
+      if (pointHitsShip(G.player, b.mesh.position)) {
         G.player.hp -= b.damage; hit = true; audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
       }
     }
@@ -496,9 +497,9 @@ export function update(dt) {
     let det = false;
     if (r.fromPlayer) {
       for (const e of enemies) {
-        if (e.mesh.position.distanceTo(r.obj.position) <= Math.max(r.detonateR, e.radius)) { det = true; break; }
+        if (pointHitsShip(e, r.obj.position, r.detonateR)) { det = true; break; }
       }
-    } else if (G.player.alive && G.player.mesh.position.distanceTo(r.obj.position) <= r.detonateR) {
+    } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.detonateR)) {
       det = true;
     }
     // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)

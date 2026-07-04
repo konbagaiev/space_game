@@ -220,7 +220,7 @@ export const SHIPS = [
     components: { hull: 1, engine: 5, thruster: 8, grab: 29 }, stats: { // player starts with the base Grab (id 29)
       role: 'player', class: 'player', color: 0x4d8bff, nameKey: 'ship.player_basic.name',
       // "Air & Space Vessel" by Raven (CC-BY); yaw 0 (nose already leads travel), set via visual check
-      model: { yaw: 0, scale: 1.1 },
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:0,y:0.024,z:-0.92,r:1.884},{x:0,y:-0.135,z:-0.552,r:1.872},{x:0,y:-0.137,z:-0.184,r:0.936},{x:0,y:-0.13,z:0.184,r:0.578},{x:0,y:-0.184,z:0.552,r:0.47},{x:1.02,y:-0.135,z:-0.552,r:0.242},{x:-1.02,y:-0.135,z:-0.552,r:0.242}], broadR: 2.804 /* hitspheres:auto:end */, yaw: 0, scale: 1.1 },
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 1, group: 'gun', offset: 0, delay: 0 },
@@ -233,7 +233,7 @@ export const SHIPS = [
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // light hull (30 hp) + scout engine/thrusters
       role: 'fighter', class: 'fighter', color: MARKER.small, reward: 25,
       // the enemy_1 .glb was exported nose-toward -Z; yaw Math.PI rotates it 180° so it faces +Z like all ships
-      model: { yaw: Math.PI, scale: 1 },
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:-0.013,y:0.032,z:-1.417,r:1.198},{x:0.008,y:0.032,z:-0.85,r:1.234},{x:0,y:-0.194,z:-0.283,r:1.312},{x:0.008,y:-0.233,z:0.283,r:0.417},{x:0.008,y:-0.172,z:0.85,r:0.369},{x:0.008,y:-0.183,z:1.417,r:0.28},{x:0.716,y:-0.194,z:-0.283,r:0.323},{x:-0.716,y:-0.194,z:-0.283,r:0.323}], broadR: 2.615 /* hitspheres:auto:end */, yaw: Math.PI, scale: 1 },
       groups: { gun: GUN },
       mounts: [{ weapon: 2, group: 'gun', offset: 0, delay: 0 }]
     }
@@ -243,7 +243,7 @@ export const SHIPS = [
     components: { hull: 2, engine: 6, thruster: 9 }, stats: { // same hull + engine + thrusters as the fighter
       role: 'rocketeer', class: 'fighter', color: MARKER.small, reward: 50,
       // enemy_2 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
-      model: { yaw: Math.PI, scale: 1 },
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:0.005,y:0.1,z:-1.417,r:1.072},{x:0,y:-0.024,z:-0.85,r:1.842},{x:0,y:-0.102,z:-0.283,r:1.784},{x:0,y:-0.122,z:0.283,r:1.699},{x:0.002,y:-0.106,z:0.85,r:0.544},{x:0.002,y:-0.2,z:1.417,r:0.225},{x:0.99,y:-0.024,z:-0.85,r:0.498},{x:-0.99,y:-0.024,z:-0.85,r:0.498}], broadR: 2.692 /* hitspheres:auto:end */, yaw: Math.PI, scale: 1 },
       groups: { gun: GUN, rocket: ROCKET },
       mounts: [
         { weapon: 2, group: 'gun', offset: 0, delay: 0 },
@@ -257,7 +257,7 @@ export const SHIPS = [
     name: 'pirate gunner', type: 'enemy', modelUrl: 'assets/ships/enemy_1_orange_combat.f3b006ba.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_1_orange_hangar.5e6e1cc4.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
       role: 'pirate_gunner', class: 'fighter', color: MARKER.small, reward: 50,
-      model: { yaw: Math.PI, scale: 1 }, // orange enemy_1 (faces -Z, yaw PI to face +Z)
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:-0.013,y:0.032,z:-1.417,r:1.198},{x:0.008,y:0.032,z:-0.85,r:1.234},{x:0,y:-0.194,z:-0.283,r:1.312},{x:0.008,y:-0.233,z:0.283,r:0.417},{x:0.008,y:-0.172,z:0.85,r:0.369},{x:0.008,y:-0.183,z:1.417,r:0.28},{x:0.716,y:-0.194,z:-0.283,r:0.323},{x:-0.716,y:-0.194,z:-0.283,r:0.323}], broadR: 2.615 /* hitspheres:auto:end */, yaw: Math.PI, scale: 1 }, // orange enemy_1 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG },
       mounts: [{ weapon: 9, group: 'gun', offset: 0, delay: 0 }]
     }
@@ -267,7 +267,7 @@ export const SHIPS = [
     components: { hull: 3, engine: 6, thruster: 10 }, stats: { // medium hull + scout engine + weak (Medium) thrusters
       role: 'medium', class: 'capital', color: MARKER.medium, reward: 125,
       // enemy_3 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
-      model: { yaw: Math.PI, scale: 2 },
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:-0.006,y:-0.127,z:-1.417,r:0.828},{x:0,y:0,z:-0.85,r:0.99},{x:0,y:-0.065,z:-0.283,r:0.969},{x:-0.006,y:-0.142,z:0.283,r:0.555},{x:-0.007,y:-0.182,z:0.85,r:0.499},{x:-0.005,y:-0.242,z:1.417,r:0.287},{x:0.512,y:0,z:-0.85,r:0.454},{x:-0.512,y:0,z:-0.85,r:0.454}], broadR: 2.251 /* hitspheres:auto:end */, yaw: Math.PI, scale: 2 },
       groups: { rocket: ROCKET },
       // two rocket launchers side by side, fired one after the other (0.3s stagger)
       mounts: [
@@ -283,7 +283,7 @@ export const SHIPS = [
     components: { hull: 4, engine: 7, thruster: 11 }, stats: {
       role: 'boss', class: 'capital', color: MARKER.boss, reward: 250,
       // enemy_4 export faces -Z (same pack as enemy_1); yaw Math.PI rotates 180° to face +Z
-      model: { yaw: Math.PI, scale: 3 },
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:-0.001,y:0.245,z:-1.417,r:0.777},{x:-0.001,y:-0.058,z:-0.85,r:1.108},{x:0,y:0.159,z:-0.283,r:1.295},{x:-0.001,y:0.063,z:0.283,r:1.253},{x:0,y:0.165,z:0.85,r:0.633},{x:-0.018,y:0.101,z:1.417,r:0.407},{x:0.707,y:0.159,z:-0.283,r:0.62},{x:-0.707,y:0.159,z:-0.283,r:0.62}], broadR: 2.215 /* hitspheres:auto:end */, yaw: Math.PI, scale: 3 },
       // Boss buff (docs/plans/mission-enemies-difficulty.md): two Pirate machine guns (id 9) replace the
       // old basic-kinetic guns; rockets unchanged. Also buffs the level-3 boss (same ship) — intended.
       groups: { gun: GUN, rocket: ROCKET },
@@ -302,7 +302,7 @@ export const SHIPS = [
     name: 'advanced medium pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_3_orange_combat.f848a735.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_3_orange_hangar.f14238c7.glb',
     components: { hull: 24, engine: 6, thruster: 25 }, stats: {
       role: 'advanced_medium_pirate', class: 'capital', color: MARKER.medium, reward: 200,
-      model: { yaw: Math.PI, scale: 2 }, // orange enemy_3 (faces -Z, yaw PI to face +Z)
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:-0.006,y:-0.127,z:-1.417,r:0.828},{x:0,y:0,z:-0.85,r:0.99},{x:0,y:-0.065,z:-0.283,r:0.969},{x:-0.006,y:-0.142,z:0.283,r:0.555},{x:-0.007,y:-0.182,z:0.85,r:0.499},{x:-0.005,y:-0.242,z:1.417,r:0.287},{x:0.512,y:0,z:-0.85,r:0.454},{x:-0.512,y:0,z:-0.85,r:0.454}], broadR: 2.251 /* hitspheres:auto:end */, yaw: Math.PI, scale: 2 }, // orange enemy_3 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
         { weapon: 9, group: 'gun', offset: 0, delay: 0 },
@@ -318,7 +318,7 @@ export const SHIPS = [
     name: 'second pirate boss', type: 'enemy', modelUrl: 'assets/ships/enemy_4_orange_combat.39a83261.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_4_orange_hangar.b66f341f.glb',
     components: { hull: 28, engine: 26, thruster: 27 }, stats: {
       role: 'boss2', class: 'capital', color: MARKER.boss, reward: 500,
-      model: { yaw: Math.PI, scale: 3 }, // orange enemy_4 (faces -Z, yaw PI to face +Z)
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:-0.001,y:0.245,z:-1.417,r:0.777},{x:-0.001,y:-0.058,z:-0.85,r:1.108},{x:0,y:0.159,z:-0.283,r:1.295},{x:-0.001,y:0.063,z:0.283,r:1.253},{x:0,y:0.165,z:0.85,r:0.633},{x:-0.018,y:0.101,z:1.417,r:0.407},{x:0.707,y:0.159,z:-0.283,r:0.62},{x:-0.707,y:0.159,z:-0.283,r:0.62}], broadR: 2.215 /* hitspheres:auto:end */, yaw: Math.PI, scale: 3 }, // orange enemy_4 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
         { weapon: 10, group: 'gun', offset: -0.6, delay: 0 },
@@ -336,7 +336,7 @@ export const SHIPS = [
     name: 'advanced rocket pirate', type: 'enemy', modelUrl: 'assets/ships/enemy_2_orange_combat.01d7a8d4.glb', modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/enemy_2_orange_hangar.cb830103.glb',
     components: { hull: 22, engine: 23, thruster: 9 }, stats: {
       role: 'advanced_rocket_pirate', class: 'fighter', color: MARKER.small, reward: 75,
-      model: { yaw: Math.PI, scale: 1 }, // orange enemy_2 (faces -Z, yaw PI to face +Z)
+      model: { /* hitspheres:auto:start */ hitSpheres: [{x:0.005,y:0.1,z:-1.417,r:1.072},{x:0,y:-0.024,z:-0.85,r:1.842},{x:0,y:-0.102,z:-0.283,r:1.784},{x:0,y:-0.122,z:0.283,r:1.699},{x:0.002,y:-0.106,z:0.85,r:0.544},{x:0.002,y:-0.2,z:1.417,r:0.225},{x:0.99,y:-0.024,z:-0.85,r:0.498},{x:-0.99,y:-0.024,z:-0.85,r:0.498}], broadR: 2.692 /* hitspheres:auto:end */, yaw: Math.PI, scale: 1 }, // orange enemy_2 (faces -Z, yaw PI to face +Z)
       groups: { gun: GUN_LONG, rocket: ROCKET },
       mounts: [
         { weapon: 9, group: 'gun', offset: 0, delay: 0 },

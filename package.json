@@ -8,6 +8,7 @@
     "assets:push": "node scripts/assets-push.mjs",
     "assets:pull": "node scripts/assets-pull.mjs",
     "assets:check": "node scripts/assets-check.mjs",
+    "assets:hitspheres": "node scripts/assets-hitspheres.mjs",
     "build:itch": "node scripts/build-itch.mjs"
   },
   "devDependencies": {

@@ -1499,6 +1499,45 @@ belt-and-suspenders — in `welcome.js`, independent of the existing `fullscreen
 restore (browsers block it without a user gesture); the fix is to make the button reappear so the player
 taps it.
 
+## 45. Multi-sphere ship hitbox via segment-slice auto-fit (vs sphere-packing / hand-authored / a physics engine)
+
+Every ship used to collide as **one fat sphere** (`2.6 × scale` for enemies, a hardcoded `2.6` for the
+player, and the player↔rocket test ignored size entirely). On elongated hulls that both over-covers the
+sides (visual misses still hit) and under-covers the nose/tail (`2.6 < 3.06`, the model's real half-length),
+so tip shots miss. We replaced it with a **multi-sphere hitbox (~5-10 spheres)** auto-fit to each hull.
+
+**Fit = axial segment slices, not sphere-packing.** The fitter (`scripts/assets-hitspheres.mjs`) splits the
+normalized hull into 6 equal Z-bands, drops one sphere per band (center = the band's X/Y midpoint, radius =
+the band's cross-section half-extent), and adds up to 2 lateral **wing** spheres for bands much wider than
+tall — capped at 10. Chosen over convex decomposition / sphere-packing / a physics engine because the game
+is a top-down arcade shooter where "does this point touch the hull" is the only query (DECISIONS §30 — keep
+it simple): slices give a good hull-follow for a handful of cheap distance tests, no runtime BVH.
+
+**Frame + runtime.** Spheres live in the **group-local noseZ frame** (after ship-factory's auto-scale to
+`SHIP_MODEL_LEN` 3.4 + recenter + `yaw`), same frame as `userData.noseZ`. The fitter replicates that exact
+normalization on the glb verts. At runtime (`client/src/collision.js`) collision is **broad-phase**
+(one enclosing `broadR × mesh.scale.x` sphere at `mesh.position`) → **narrow-phase** (each sphere
+transformed by `mesh.matrixWorld`, radius `r × mesh.scale.x`). Transforming by `matrixWorld` (which folds
+in position + heading + the 1.8× world scale but **not** the child `bankGroup` roll) makes collisions
+correctly ignore the cosmetic bank. A global `HITSPHERE_PAD` 1.1 is baked into every radius by the fitter
+(keeps the hit feel close to the old generous bubble) so the runtime stays a plain squared-distance test.
+`collision.js` is intentionally **THREE-free** (inline matrix/vector math) so it's importable under
+`node --test`.
+
+**Config lands in the seed by auto-rewrite, not by hand.** `assets:hitspheres` writes the spheres into each
+ship's `model:{}` block in `catalog_seed.js` via a **marker-delimited, idempotent** surgical edit
+(`/* hitspheres:auto:start */ … /* hitspheres:auto:end */`), preserving comments/key order, then verifies
+by re-importing the seed and deep-comparing. Hand-authoring was rejected — the fit is bounds math no human
+should transcribe, and a marked span keeps re-runs deterministic (running twice yields an identical file).
+
+**No meshopt decoder shipped.** The combat glbs are meshopt-compressed and reading them via `NodeIO`
+needs a decoder we don't depend on. Rather than add `meshoptimizer`, the fitter decodes each glb to a plain
+temp glb with the `@gltf-transform/cli` via `npx` (the same "no hard dep" pattern as `assets:build`), then
+reads that. We fit the **combat** glb (what actually renders in battle), not the high-poly source/hangar.
+
+**Fallback.** Primitive/un-modeled ships (no `hitSpheres`) keep the legacy single `2.6 × sizeScale` broad
+sphere — unchanged behavior. `e.radius` is retained purely as the over-enemy health-bar / marker anchor.
+
 ---
 
 ## Future ideas
