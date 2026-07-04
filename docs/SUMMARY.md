@@ -418,7 +418,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   cyan warheads** (power 40 / health 10 each; flight = Heavy-rocket-class ×1.2: launchSpeed 14, accel 12)
   spiral around its axis (radius 1.4u, 6 rad/s, 120° apart). Each warhead is a real rocket — it detonates
   on its own proximity and can be individually shot down (all three connecting = 3× = 120 damage);
-  fireCooldown 7. Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
+  fireCooldown 7. Its shop/loadout stat line shows damage as **40×3** (`statLine` special-cases
+  `stats.spiral` — per-warhead × warhead count — so a 3-warhead weapon isn't misread as a single 40).
+  Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
   low damage 3; pirate gunner + buffed boss) and **Advanced pirate cannon** (id 10 — power 10, slow 1 shot/sec,
   long range 110; the Second Boss's main gun).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`). **Appearance = the ship's `.glb` model; we

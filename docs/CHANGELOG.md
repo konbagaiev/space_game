@@ -5,6 +5,10 @@
 
 ## 2026-07-04
 
+- **[2026-07-04-1740-triple-spiral-rocket] Shop damage reads 40×3 for the triple spiral rocket.**
+  Live-test follow-up: the shop/loadout stat line showed the triple spiral rocket's damage as a single
+  warhead's `40`, misrepresenting a 3-warhead weapon. `statLine` (`client/src/shop.js`) now renders
+  `40×3` for `stats.spiral` weapons (per-warhead × warhead count) so the true on-hit damage is shown.
 - **[2026-07-04-1740-triple-spiral-rocket] Triple spiral rocket + fading-line rocket trail.** New
   4000-credit shop rocket (weapon id 11, `stats.spiral:true`, top of the rocket ladder): firing it spawns
   an **invisible leading homing rocket** (steers via `findTargetInSector`, deals no damage, not shootable)
