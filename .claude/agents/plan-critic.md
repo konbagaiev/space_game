@@ -65,3 +65,21 @@ perfection beyond that is not the bar.
   offset along the camera's screen-up axis. When a plan positions a DOM overlay relative to a world object,
   block it unless it either works in screen space or explicitly accounts for the camera's orientation —
   "scales with distance" is not the same as "points up on screen".
+- **2026-07-04 — Internal consistency ≠ external validity. Have a genuinely critical eye: hunt what the
+  PLANNER missed, not just whether the plan is self-consistent.** A multi-sphere-hitbox plan was approved
+  because "`broadR` mathematically encloses the spheres" — true, but the generated spheres were ~2× too big
+  in absolute terms, and a whole gameplay path (rocket *damage*) silently broke. Both shipped and failed the
+  live test. Apply these four stances on every plan:
+  1. **Check absolute magnitudes against ground truth, not just internal consistency.** A self-consistent
+     formula can still be 2× wrong. When a plan replaces a tuned constant (e.g. `radius 2.6`) with a
+     computed/generated value, demand a reality anchor — is it the right SIZE vs the thing it models
+     (hitbox ≈ model half-length)? Compare to the constant it replaces; if the goal was "smaller" and the
+     result is larger, that's an automatic blocking flag.
+  2. **Enumerate every consumer of a changed value/code path; any the plan doesn't explicitly address is a
+     blocking question.** Collision-distance changed, and rocket damage (`detonateRocket`, a separate path)
+     silently depended on it. Plan silence about a known consumer = red flag, not "out of scope".
+  3. **Demand an OUTCOME test, not just a MECHANISM test.** A plan that unit-tests the new primitive (the
+     sphere test) but not the user-visible behaviour it powers ("a rocket actually damages an enemy") has a
+     test gap — block on it.
+  4. **For each change ask "what breaks if this is subtly wrong?"** Assume the planner's happy path is
+     optimistic and hunt the silent failure — that adversarial stance is the whole job.

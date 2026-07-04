@@ -53,3 +53,13 @@ PASS as soon as it's correct, tested, modular, and documented. Don't hold it for
 ## Learned guidance
 
 <!-- The orchestrator appends dated lessons here from retro feedback. Read and apply them. -->
+
+- **2026-07-04 — Verify absolute magnitudes and end-to-end outcomes, not just internal consistency.** A
+  multi-sphere-hitbox diff passed review on "`broadR` encloses the spheres" (mathematically true) — but the
+  generated spheres were ~2× too big vs the model, and rocket *damage* (a separate `detonateRocket` path
+  depending on the changed collision distance) silently broke. Both failed the live test. When a diff
+  replaces a tuned constant with a computed value, sanity-check its SIZE against ground truth (hitbox ≈
+  model size; new vs the old constant). Trace every consumer of a changed value/path — especially secondary
+  ones the diff doesn't touch but depends on it. And confirm there's a test for the user-visible OUTCOME
+  (rocket damages an enemy), not only the mechanism (the sphere test). "The math checks out" is necessary,
+  not sufficient.
