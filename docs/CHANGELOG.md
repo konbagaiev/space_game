@@ -5,6 +5,13 @@
 
 ## 2026-07-04
 
+- **[2026-07-04-0933-procedural-nebula-sky] Procedural nebula skybox (baked cubemap).** Replaced the flat
+  slate-blue `skyScene.background` with a procedurally generated ice-blue nebula + star field (GLSL fbm),
+  baked **once** into a `WebGLCubeRenderTarget` at `buildMap` time → per-frame cost unchanged (flat
+  background draw). Palette is data-driven in the `home-system` descriptor (`sky.nebula`). Tier-gated (High
+  1024/6-octave, Balance 512/4-octave, **Performance keeps the flat color**), skipped under `?debug` (visual
+  suite unchanged). Parallax `makeStars` thinned to 0.4× when the nebula is baked. Fully procedural — no
+  third-party asset, no `CREDITS.md` change.
 - **[2026-07-04-0121-touch-tap-vs-drag] Touch tap-vs-drag.** On touch, on-screen objects — **loot chests**
   and (during return-to-base) the **base station** — are now tappable **anywhere** on screen. The old
   `#stick-zone` (`left:0; width:58%`) claimed the whole left region for steering and **swallowed taps** there,

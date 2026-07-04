@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
+**Updated:** 2026-07-04 (**Procedural nebula skybox** — `skyScene.background` is now a baked procedural
+nebula + star-field cubemap (`makeNebulaSky`), tier-gated and skipped under `?debug`; see Visuals + DECISIONS §43.)
+(**Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
 single-finger gesture within `TAP_SLOP = 10px` is an object tap (shared `engageObjectAt` raycast — chests +
 the return-to-base station are tappable *anywhere*), beyond 10px is the steering stick; a 2nd finger = pinch
 (counts `targetTouches`, so holding FIRE while steering still steers); the rocket + zoom buttons layer above
@@ -618,13 +620,30 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   item). The list refreshes whenever the Main Window is shown (`refreshMissions`).
 
 ## Visuals
+- **Sky backdrop is a baked procedural nebula cubemap.** `makeNebulaSky` (`world.js`) runs a GLSL
+  multi-octave value-noise (fbm) nebula + a sparse power-law star field over the view direction and
+  renders it **once** into a `WebGLCubeRenderTarget` (via a `CubeCamera`) at `buildMap` time, then sets
+  it as `skyScene.background` — so the per-frame cost is a single flat background draw (same as the old
+  flat color), while the shader runs only 6 times total (once per cube face) at map build. Palette is
+  data-driven in the map descriptor (`sky.nebula`; fallback `NEBULA_ICEBLUE` in `world.js`) — the shipped
+  "ice blue sparse" look: deep-black space + faint blue wisps + a dense static field, tuned so the
+  backdrop never competes with ships/bullets/FX. The bake is **tier-gated** (`gfx.nebulaBake`): High bakes
+  1024/6-octave, Balance 512/4-octave, **Performance keeps the flat `background` color (no bake)** so the
+  weakest phones skip a 6-face shader hitch. It is **skipped under the `?debug` test hook** (mirrors
+  `prewarmShaders`), so the headless visual suite's backdrop is unchanged. The bake `ShaderMaterial` uses
+  `side: BackSide` + `depthTest/depthWrite: false` (load-bearing — the engine runs `autoClear = false` and
+  `CubeCamera.update` doesn't clear depth between faces). The previous cube RT is disposed on every
+  rebuild (`G.nebulaRT`). See DECISIONS §43.
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer)
   → planet + 2 moons (light parallax). **Stars are two point layers (`makeStars`):** the dim majority
   (small opaque points, power-law brightness — many faint, few less faint) plus a bright **~2%**
   (`brightFraction`, default 0.02) that pops via a **bigger size (5 vs 1.4) + a soft additive glow
   sprite + near-white full-luminance color** — the three cues that make a ~1px point read as brighter.
   The bright layer uses `depthTest: true` (unlike the dim layer) so the planet/moons occlude it and the
-  glow can't creep onto the planet disk (the transparency gotcha in DECISIONS §5). The asteroids are a
+  glow can't creep onto the planet disk (the transparency gotcha in DECISIONS §5). **When the nebula is
+  baked** (High/Balance, non-`?debug`) this moving parallax layer is thinned to **0.4×** count — the baked
+  nebula supplies the dense static field, the point layer only sells depth; on the flat-color path
+  (Performance/`?debug`) it keeps full count so the sky isn't empty. The asteroids are a
   **field of small rocks filling the whole disk**
   (annulus `inner`..`spread` radius; `inner` 0 → centered, `spread` 1000 in `home-system`) — inside the
   ±360 arena **and** far beyond it, sunk below the combat plane; the far edge fades into the fog (~600), so

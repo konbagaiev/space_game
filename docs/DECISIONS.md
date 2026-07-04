@@ -1443,6 +1443,28 @@ objects untappable on the left, which is the whole bug.
 
 ---
 
+## 43. Nebula sky: bake procedural GLSL once to a cubemap (vs live per-frame shader-sphere vs third-party cubemap assets)
+
+We wanted a real nebula backdrop without a per-frame cost or a shipped binary asset. **Live
+shader-sphere** (an fbm fragment shader drawn every frame behind the fight) was rejected: the two-pass
+sky/combat split (§5) already pays a full sky pass each frame, and a 6-octave fbm over every background
+fragment is exactly the fill-rate work weak phones can't spare. **Third-party cubemap PNGs** (the CC0
+StumpyStrust evaluation set we trialed) were rejected: they add shipped binary weight, a `CREDITS.md`
+attribution obligation, and can't be re-tinted per-map. **Chosen:** render the procedural shader **once**
+into a `WebGLCubeRenderTarget` at `buildMap` time and use it as `skyScene.background` — per-frame cost
+collapses to a flat background draw (identical to today), the look stays fully procedural +
+palette-driven from the descriptor, and nothing ships as an asset. The one-time bake is **tier-gated**
+(Performance keeps the flat color — a 6-face shader bake can hitch the weakest phones, matching the
+"Performance strips premium visuals" line from §23) and **skipped under `?debug`** (software-GL bake is
+slow/flaky and would churn visual baselines — same reasoning as the `prewarmShaders` skip). The bake
+`ShaderMaterial` must set `depthTest`/`depthWrite: false` (with `side: BackSide`): the bake runs under the
+engine's global `renderer.autoClear = false` and `CubeCamera.update` doesn't clear the shared depth buffer
+between the 6 faces, so with default depth test the stale face-0 depths would reject later faces' fragments
+and bake the wrong direction. The sRGB output path makes the baked cube read slightly brighter/greyer than
+a raw-canvas preview; the maintainer accepted the baked in-engine result as the baseline.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

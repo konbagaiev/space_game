@@ -3,7 +3,7 @@
 // reassigned per-map handles (sky/stars/skyAmbient/skySun/arenaDrift/…) live on the shared state
 // bag G; the arena geometry (ARENA/OOB constants, arenaCenter, arenaBorder) is exported const.
 import * as THREE from 'three';
-import { scene, skyScene } from './engine.js';
+import { scene, skyScene, renderer } from './engine.js';
 import { G, moons, setPieces } from './state.js';
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 
@@ -131,6 +131,122 @@ function makeStars(count, radius, brightFraction = 0.02) {
     group.add(bright);
   }
   return group;
+}
+
+// ---------- Procedural nebula sky (baked ONCE to a cubemap; see DECISIONS §43) ----------
+// A GLSL fragment shader generates a multi-octave value-noise nebula (2-3 color layers) + a sparse
+// power-law star field over the view DIRECTION. It is rendered ONCE into a WebGLCubeRenderTarget via a
+// CubeCamera at buildMap time and assigned to skyScene.background, so the per-frame cost is just a flat
+// background draw (same as a static cubemap) while the look stays fully procedural + palette-driven.
+// Palette lives in the map descriptor (sky.nebula); NEBULA_ICEBLUE is the safe fallback.
+const NEBULA_VERT = `
+  varying vec3 vDir;
+  void main() {
+    vDir = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`;
+
+// OCTAVES is prepended as a #define per tier (fbm loop bound must be a compile-time constant).
+const NEBULA_FRAG = `
+  precision highp float;
+  varying vec3 vDir;
+  uniform vec3 uBase, uColA, uColB, uColC;
+  uniform float uThLow, uThHigh, uGlow, uStarD, uStarB, uSat, uSeed;
+
+  float hash(vec3 p) {
+    p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3) + uSeed);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+  float vnoise(vec3 x) {
+    vec3 i = floor(x), f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    float n000 = hash(i + vec3(0,0,0)), n100 = hash(i + vec3(1,0,0));
+    float n010 = hash(i + vec3(0,1,0)), n110 = hash(i + vec3(1,1,0));
+    float n001 = hash(i + vec3(0,0,1)), n101 = hash(i + vec3(1,0,1));
+    float n011 = hash(i + vec3(0,1,1)), n111 = hash(i + vec3(1,1,1));
+    return mix(mix(mix(n000,n100,f.x), mix(n010,n110,f.x), f.y),
+               mix(mix(n001,n101,f.x), mix(n011,n111,f.x), f.y), f.z);
+  }
+  float fbm(vec3 p) {
+    float a = 0.5, s = 0.0;
+    for (int i = 0; i < OCTAVES; i++) { s += a * vnoise(p); p *= 2.02; a *= 0.5; }
+    return s;
+  }
+  // jittered-cell stars over the view direction: sparse (threshold 0.982), power-law-ish, soft falloff.
+  float starField(vec3 dir, float density) {
+    vec3 g = floor(dir * density);
+    float h = hash(g + 7.0);
+    if (h <= 0.982) return 0.0;
+    vec3 jit = (vec3(hash(g + 1.0), hash(g + 2.0), hash(g + 3.0)) - 0.5) * 0.8;
+    vec3 cellDir = normalize((g + 0.5 + jit) / density);
+    float dist = length(dir - cellDir) * density;
+    return smoothstep(0.18, 0.0, dist) * (0.4 + (h - 0.982) / 0.018 * 0.6); // brighter for rarer cells
+  }
+  void main() {
+    vec3 dir = normalize(vDir);
+    float d = smoothstep(uThLow, uThHigh, fbm(dir * 2.2));
+    float t = fbm(dir * 2.2 * 0.55 + 11.0);
+    vec3 neb = mix(uColA, uColB, clamp(t, 0.0, 1.0)) * d + uColC * pow(d, 2.5) * uGlow;
+    vec3 star = vec3(starField(dir, uStarD) * uStarB);
+    vec3 col = uBase + neb + star;
+    float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = mix(vec3(luma), col, uSat); // desaturate toward uSat (keeps it readable, not garish)
+    gl_FragColor = vec4(col, 1.0);
+  }`;
+
+// Ice-blue sparse fallback palette (used when the descriptor omits sky.nebula). Matches the approved
+// in-engine baseline. Arrays are linear RGB triples; the whole cube goes through the sRGB output path.
+const NEBULA_ICEBLUE = {
+  base:  [0.01, 0.015, 0.025],
+  colA:  [0.12, 0.22, 0.40],
+  colB:  [0.20, 0.35, 0.55],
+  colC:  [0.10, 0.20, 0.40],
+  thLow: 0.55, thHigh: 0.90, glow: 0.30,
+  starD: 75, starB: 1.10, sat: 0.90, seed: 0,
+};
+
+// Bake the nebula into a cubemap and return the WebGLCubeRenderTarget (caller reads .texture and owns
+// disposal). `bake` = { cube, octaves } from the active tier's gfx.nebulaBake (never null here — the
+// caller only bakes when nebulaBake is truthy). The ShaderMaterial + geometry are throwaway (disposed).
+function makeNebulaSky(prm, bake) {
+  const uniforms = {
+    uBase:  { value: new THREE.Vector3(...prm.base) },
+    uColA:  { value: new THREE.Vector3(...prm.colA) },
+    uColB:  { value: new THREE.Vector3(...prm.colB) },
+    uColC:  { value: new THREE.Vector3(...prm.colC) },
+    uThLow: { value: prm.thLow }, uThHigh: { value: prm.thHigh },
+    uGlow:  { value: prm.glow },  uStarD:  { value: prm.starD },
+    uStarB: { value: prm.starB }, uSat:    { value: prm.sat },
+    uSeed:  { value: prm.seed || 0 },
+  };
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    // depthTest/depthWrite MUST be false — this is load-bearing, not incidental. The bake runs under the
+    // engine's global `renderer.autoClear = false` (engine.js:94), and CubeCamera.update (three@0.160)
+    // does NOT clear between the 6 faces — each face is a plain renderer.render() whose per-render clear
+    // is gated on autoClear. So the shared cube DEPTH buffer is never cleared between faces; face 0's
+    // wall depths would persist and, since every face is the same box only rotated, coincide with later
+    // faces' depths and get REJECTED by the default depthTest:LESS — baking stale face-0 color into faces
+    // 1-5 (wrong nebula direction). A full-cover inside-out skybox needs neither depth test nor write, so
+    // with both off no stale depth can ever reject a fragment, regardless of the global autoClear state.
+    depthTest: false,
+    depthWrite: false,
+    uniforms,
+    vertexShader: NEBULA_VERT,
+    fragmentShader: `#define OCTAVES ${bake.octaves}\n` + NEBULA_FRAG,
+  });
+  const geo = new THREE.BoxGeometry(2, 2, 2);
+  const bakeScene = new THREE.Scene();
+  bakeScene.add(new THREE.Mesh(geo, mat));
+
+  const rt = new THREE.WebGLCubeRenderTarget(bake.cube);
+  rt.texture.colorSpace = THREE.SRGBColorSpace;
+  new THREE.CubeCamera(0.1, 10, rt).update(renderer, bakeScene); // renders all 6 faces once
+
+  mat.dispose();
+  geo.dispose();
+  return rt;
 }
 
 // ---------- Planet with moons (built by buildMap from the map descriptor) ----------
@@ -595,14 +711,30 @@ export function buildMap(descriptor) {
   G.baseStation = null; // rebuilt by buildSetPiece below when the map has a base-station set-piece
   arenaCenter.set(0, 0, 0);
   arenaBorder.line.position.set(0, 0, 0);
-  skyScene.background = new THREE.Color(d.background);
+  // Baked procedural nebula sky (DECISIONS §43): tier-gated (gfx.nebulaBake null on Performance → flat
+  // color) and SKIPPED under the ?debug test hook (mirrors prewarmShaders; keeps the visual suite's
+  // backdrop unchanged — do not regen baselines). Dispose the previous bake before rebuilding (buildMap
+  // re-runs on every level start / map switch, so a leaked cube RT would accumulate).
+  if (G.nebulaRT) { G.nebulaRT.dispose(); G.nebulaRT = null; }
+  const bakeNebula = G.gfx.nebulaBake && !location.search.includes('debug');
+  if (bakeNebula) {
+    const nb = { ...NEBULA_ICEBLUE, ...(d.sky.nebula || {}) }; // descriptor overrides fall back per-key
+    G.nebulaRT = makeNebulaSky(nb, G.gfx.nebulaBake);
+    skyScene.background = G.nebulaRT.texture;
+  } else {
+    skyScene.background = new THREE.Color(d.background);
+  }
   G.skyAmbient = new THREE.AmbientLight(d.sky.ambient.color, d.sky.ambient.intensity); // night-side fill
   skyScene.add(G.skyAmbient);
   G.skySun = new THREE.DirectionalLight(d.sky.sun.color, d.sky.sun.intensity);    // side light -> terminator
   G.skySun.position.set(...d.sky.sun.pos);
   skyScene.add(G.skySun);
 
-  G.stars = makeStars(Math.round(d.stars.count * G.gfx.starScale), d.stars.radius); // density scales with quality tier
+  // When the nebula is baked it supplies the dense STATIC star field, so thin the MOVING parallax layer
+  // to ~0.4× (it now only sells depth, not density). On the flat-color path keep full count. Still scales
+  // with the quality tier (gfx.starScale). See DECISIONS §43.
+  const starMul = bakeNebula ? 0.4 : 1.0;
+  G.stars = makeStars(Math.round(d.stars.count * G.gfx.starScale * starMul), d.stars.radius);
   G.stars.renderOrder = -1; // draw stars first, before the planet and moons
   skyScene.add(G.stars);
 

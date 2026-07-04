@@ -36,6 +36,14 @@ test('Performance caps live particles; High/Balance leave it off (no renderScale
   }
 });
 
+test('nebulaBake: High/Balance bake, Performance keeps the flat color', () => {
+  const hi = resolveTier('high').nebulaBake;
+  const ba = resolveTier('balance').nebulaBake;
+  assert.deepEqual(hi, { cube: 1024, octaves: 6 });
+  assert.deepEqual(ba, { cube: 512, octaves: 4 });
+  assert.equal(resolveTier('performance').nebulaBake, null);
+});
+
 test('resolveTier falls back to the default for an unknown name', () => {
   const r = resolveTier('nonsense');
   assert.equal(r.name, GRAPHICS_DEFAULT); // 'high'

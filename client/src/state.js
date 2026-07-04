@@ -24,6 +24,7 @@ export const G = {
   skyAmbient: null,           // sky-scene ambient light (mutated live by the ?tune panel)
   skySun: null,               // sky-scene directional light (the terminator source)
   currentMapDescriptor: null, // last descriptor passed to buildMap() (?tune "Rebuild" button)
+  nebulaRT: null,             // WebGLCubeRenderTarget of the baked nebula sky (disposed + rebuilt by buildMap); null on the flat-color (Performance/?debug) path
   mapSetpieces: [],           // the current map's set-piece specs (reset() rebuilds them fresh each run)
   arenaDrift: null,           // THREE.Vector3 (units/sec on x,z) when the current map drifts, else null
   // --- run/account scalars (read by the HUD; written by the loop, level runner, bank + account flows) ---
