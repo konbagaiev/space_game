@@ -11,7 +11,7 @@ import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updat
 import { repairTick } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke } from './projectiles.js';
+import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { updateDrops, spawnDrop, pickLoot, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock } from './autopilot-config.js';
@@ -468,7 +468,7 @@ export function update(dt) {
 
     // limited only by range/hits — bullets fly normally beyond the arena (no boundary culling)
     if (hit || b.traveled >= b.maxRange) {
-      if (hit) spawnExplosion(b.mesh.position); // micro-flash at the impact point
+      if (hit) spawnExplosion(b.mesh.position, HIT_FLASH_SCALE[b.class] ?? 0.8); // class-keyed hit-flash (kinetic spark / cannon flash)
       scene.remove(b.mesh);
       b.mesh.material.dispose();
       bullets.splice(i, 1);
