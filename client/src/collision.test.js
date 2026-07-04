@@ -4,7 +4,7 @@
 // group-local frame; the narrow phase is a point-vs-OBB projection test.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pointHitsShip, broadRadius } from './collision.js';
+import { pointHitsShip, broadRadius, segmentHitsShip } from './collision.js';
 
 // mesh stub: uniform scale `s`, translation `(px,py,pz)`; matrixWorld is column-major with scale on the
 // diagonal and translation in the last column — exactly what THREE.Object3D.updateMatrixWorld produces.
@@ -97,6 +97,24 @@ test('(outcome) bullet hits the hull, misses in the gap beyond a wing', () => {
   assert.equal(pointHitsShip(ship, V(-0.55, 0, 0)), false); // empty side (no wing there) → miss
 });
 
+// OUTCOME (the inverse — the case that shipped "transparent"): a bullet aimed at a THIN part (a swept wing
+// slab, a pointed nose) actually REGISTERS a hit. A wing/nose fits into a razor-thin box (h ~ MIN_HALF); if
+// such a box were dropped or ignored, the feature would be transparent to bullets. Assert points ON these
+// thin slabs hit, so a transparent/too-thin feature regresses the suite. (The data-side floor that keeps
+// these boxes thick enough to survive a discrete moving bullet is asserted in assets-hitboxes.test.mjs.)
+test('(outcome) a bullet aimed at a thin wing / nose slab registers a hit (not transparent)', () => {
+  const FLOOR = 0.1; // the fitter's min per-axis half-extent (a thin feature is clamped up to this slab)
+  // thin swept-wing slab out at +X, only FLOOR thick vertically (Y) — the shape spheres could not cover
+  const wing = { c: V(1.1, 0, 0), h: V(0.6, FLOOR, 0.35), u0: AX, u1: AY, u2: AZ };
+  // thin pointed-nose slab at +Z, only FLOOR thick laterally (X)
+  const nose = { c: V(0, 0, 1.4), h: V(FLOOR, 0.12, 0.35), u0: AX, u1: AY, u2: AZ };
+  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: [wing, nose], broadR: 2.0 };
+  assert.equal(pointHitsShip(ship, V(1.1, 0, 0)), true);      // dead-center of the thin wing → hit
+  assert.equal(pointHitsShip(ship, V(1.6, 0.05, 0.2)), true); // near the wingtip, inside the thin slab → hit
+  assert.equal(pointHitsShip(ship, V(0, 0, 1.4)), true);      // on the thin nose → hit
+  assert.equal(pointHitsShip(ship, V(0.08, 0, 1.5)), true);   // grazing inside the nose slab → hit
+});
+
 // OUTCOME (carry the sphere iteration's regression, retargeted to hitBoxes): a rocket actually damages an
 // enemy. Mirrors the FIXED hull-relative detonateRocket loop (`pointHitsShip(ship, pos, blastR)`), NOT a
 // center-distance test. The detonation point sits on a nose box but > blastR from the CENTER, so the old
@@ -122,4 +140,53 @@ test('(outcome) rocket direct-hit (detonation point right on the hull) also appl
   const rocket = { fromPlayer: true, damage: 30, blastR: 5, obj: { position: V(0, 0, 1) } }; // dead-center on the nose box
   if (pointHitsShip(enemy, rocket.obj.position, rocket.blastR)) enemy.hp -= rocket.damage;
   assert.equal(enemy.hp, 20);
+});
+
+// ---- swept segment collision (segmentHitsShip): the fix for bullet TUNNELING through thin boxes ----
+
+// segmentHitsShip == pointHitsShip when the segment is degenerate (p0==p1) — a strict superset.
+test('(swept) a degenerate segment (p0==p1) equals the point test', () => {
+  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  assert.equal(segmentHitsShip(ship, V(0, 0, 1), V(0, 0, 1)), true);   // inside the nose box
+  assert.equal(segmentHitsShip(ship, V(0, 0, 0), V(0, 0, 0)), false);  // between the boxes (miss)
+});
+
+// THE tunneling regression the point-based suite structurally cannot catch: a fast bullet whose two
+// consecutive frame positions STRADDLE a thin box (neither endpoint inside, the segment crosses it) must
+// register a HIT via the swept test. This is the player-wing / medium-nose case from the live test — a box
+// only ~0.2 world thick along the travel axis, a bullet stepping ~1 unit/frame.
+test('(swept) a fast bullet straddling a thin box registers a hit (no tunneling)', () => {
+  const thinNose = { c: V(0, 0, 1), h: V(0.4, 0.3, 0.1), u0: AX, u1: AY, u2: AZ }; // 0.1 half-extent along Z (travel)
+  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: [thinNose], broadR: 1.5 };
+  const p0 = V(0, 0, 0.5), p1 = V(0, 0, 1.5); // one frame's move in +Z, stepping clean over the box (z∈[0.9,1.1])
+  // the OLD point test misses at BOTH endpoints — this is exactly why bullets went transparent
+  assert.equal(pointHitsShip(ship, p0), false, 'pre-move point is outside the box');
+  assert.equal(pointHitsShip(ship, p1), false, 'post-move point is outside the box');
+  // the swept test catches the crossing
+  assert.equal(segmentHitsShip(ship, p0, p1), true, 'the movement segment crosses the box → hit');
+});
+
+// A swept segment through GENUINELY empty space (the gap beyond a wing) must still MISS — the tight-fit
+// property is preserved, the swept test doesn't just "hit everything near the ship".
+test('(swept) a segment through the empty gap beyond a wing still misses', () => {
+  const fuselage = { c: V(0, 0, 0), h: V(0.25, 0.3, 1.4), u0: AX, u1: AY, u2: AZ };
+  const wing = { c: V(1.2, 0, 0), h: V(0.3, 0.1, 0.4), u0: AX, u1: AY, u2: AZ }; // X∈[0.9,1.5]
+  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: [fuselage, wing], broadR: 2.2 };
+  // a bullet flying in +Z at X=0.55 (the empty lateral gap between fuselage and wing) crosses no box
+  assert.equal(segmentHitsShip(ship, V(0.55, 0, -1.6), V(0.55, 0, 1.6)), false, 'gap → miss even swept');
+  // but the same swept flight at X=1.2 (through the wing) hits
+  assert.equal(segmentHitsShip(ship, V(1.2, 0, -1.6), V(1.2, 0, 1.6)), true, 'through the wing → hit');
+  // and a broad-phase-rejected far segment misses
+  assert.equal(segmentHitsShip(ship, V(9, 0, -5), V(9, 0, 5)), false, 'far segment → broad reject');
+});
+
+// scale + pad behave under the swept test (rotated/scaled hull still swept-correct).
+test('(swept) mesh.scale and pad expand the swept hit', () => {
+  const box = { c: V(0, 0, 1), h: V(0.4, 0.3, 0.1), u0: AX, u1: AY, u2: AZ };
+  const s2 = { mesh: mesh(0, 0, 0, 2), sizeScale: 1, hitBoxes: [box], broadR: 1.5 };
+  // at scale 2 the box center is z=2, half-extent 0.2 → z∈[1.8,2.2]; a segment crossing z=2 hits
+  assert.equal(segmentHitsShip(s2, V(0, 0, 1), V(0, 0, 3)), true);
+  // a segment that stops short of the (scaled) box misses without pad, hits with pad
+  assert.equal(segmentHitsShip(s2, V(0, 0, 0), V(0, 0, 1.5)), false);
+  assert.equal(segmentHitsShip(s2, V(0, 0, 0), V(0, 0, 1.5), 0.4), true);
 });

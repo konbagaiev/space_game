@@ -60,7 +60,7 @@ the seed carrying the URLs); CDN binaries are already on S3.
 4. The script prints the resulting URLs → paste into `catalog_seed.js` (`model_url` / `model_url_high`).
 4b. `npm run assets:pull` (if the combat glbs aren't local yet) then **`npm run assets:hitboxes`** →
    decomposes each combat glb into near-convex parts with V-HACD (`vhacd-js` — run `npm install` once; it's
-   memory-capped, `voxelResolution 100000`/`maxHulls 16`) and writes one PCA oriented box per part into
+   memory-safe, `voxelResolution 400000` (bounded voxel count) / `maxHulls 48` (part-count cap, cheap)) and writes one PCA oriented box per part into
    `model.hitBoxes` / `model.broadR` in each ship's `model:{}` block in `catalog_seed.js` (marker-delimited,
    idempotent, round-trip verified; migrates off any legacy `hitSpheres` span). Re-run this whenever a ship's
    model, `yaw`, or `scaleMul` changes; eyeball the result in-game with `?hitboxes`.

@@ -305,28 +305,50 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the glb bounds); `model.muzzle` / `model.exhaust` optionally override them in group-local units.
   **`model.hitBoxes` + `model.broadR` — the auto-fit collision hitbox.** Instead of a single fat sphere,
   each real-model ship carries **one oriented bounding box per near-convex part** (V-HACD convex
-  decomposition → PCA box per hull, ~7-16 boxes) fitted to its actual hull by the `assets:hitboxes`
+  decomposition → PCA box per hull, **~48 boxes**) fitted to its actual hull by the `assets:hitboxes`
   pipeline step. Each box is `{c,h,u0,u1,u2}` — center, half-extents, and three orthonormal group-local
   axes — stored in the **same group-local noseZ frame** as `userData.noseZ` (after auto-scale to
   `SHIP_MODEL_LEN` 3.4 + recenter + `yaw`). The fit is **tight** (only a `HITBOX_MARGIN` 0.05 additive
   inflate, no round bubble), so a bullet passing through the empty gap **beyond a thin wing** no longer
-  connects. `broadR` is the enclosing radius (~1.9-2.2, the exact farthest box corner). Do **not**
-  hand-author these — regenerate with `npm run assets:hitboxes` (decomposes the combat glb with V-HACD
-  via `vhacd-js`, memory-capped `voxelResolution 100000`/`maxHulls 16`; writes into the seed's `model:{}`
+  connects — but each box's per-axis half-extent is floored at `MIN_HALF` 0.1 (group-local) so a razor-thin
+  wing/nose stays a **hittable slab** (a discrete ~1-world-unit/frame bullet would tunnel through anything
+  thinner). The box budget is `maxHulls` 48 + `minVolumePercentError` 0.5 so **the wing panels/tips get
+  their own hulls** (at 16-32 hulls V-HACD merged a wing into the fuselage → the player's outer wing was
+  uncovered/"transparent"); a surface-coverage test guards it. `broadR` is the enclosing radius (~1.9-2.2,
+  the exact farthest box corner). Do **not** hand-author these — regenerate with `npm run assets:hitboxes`
+  (decomposes the combat glb with V-HACD via `vhacd-js`, memory-safe `voxelResolution 400000` (bounded voxel
+  count, library default; `maxHulls` is only a part-count cap, cheap); writes into the seed's `model:{}`
   blocks via a marker-delimited idempotent edit, verified by a seed round-trip; `HITBOXES_DEBUG=1` prints
-  each fit's box count / broadR / union span). Collision (`client/src/collision.js`) is broad-phase (one
+  each fit's box count / broadR / union span). Collision
+  (`client/src/collision.js`) is broad-phase (one
   `broadR × mesh.scale.x` sphere at `mesh.position`) → narrow-phase (point-vs-OBB: each box center
   transformed by `mesh.matrixWorld`, axes rotated by its upper-3×3 and renormalized, hit iff
-  `|dot(p−c, uᵢ)| ≤ hᵢ·scale + pad` for all three axes; ignores the cosmetic bank roll). Ships with no
-  `hitBoxes` (primitive/cone fallbacks) keep the legacy single `2.6 × sizeScale` sphere. All four
-  bullet/rocket↔ship sites use `pointHitsShip` — including the **player** (fixing the old hardcoded `2.6`
-  and the player↔rocket test that ignored ship size); the rocket's `detonateR` becomes the hit `pad` — so
-  it's now a small **proximity fuse to the hull surface** (retuned down to ~1.0–1.2, from the old ~3.2–3.5
-  which measured to the ship *center*; leaving it large made rockets detonate a ship-length away).
+  `|dot(p−c, uᵢ)| ≤ hᵢ·scale + pad` for all three axes; ignores the cosmetic bank roll). **Bullets use a
+  SWEPT test** (`segmentHitsShip(ship, p0, p1)`) — the bullet's per-frame movement segment (pre-move →
+  post-move) vs each OBB (both endpoints transformed into the box's local frame, then a slab test), behind a
+  segment-vs-sphere broad phase — so a fast bullet (~1-3 world units/frame) can't tunnel clean over a thin
+  wing/nose box between frames (the point test only checked the end-of-frame position). `segmentHitsShip`
+  reduces to `pointHitsShip` when `p0==p1`, so it's a strict superset. Ships with no `hitBoxes`
+  (primitive/cone fallbacks) keep the legacy single `2.6 × sizeScale` sphere. All four bullet/rocket↔ship
+  sites hit-test the hull — bullets via the swept `segmentHitsShip`, rockets via `pointHitsShip` (slow +
+  homing + padded, no tunneling) — including the **player** (fixing the old hardcoded `2.6` and the
+  player↔rocket test that ignored ship size); the rocket's `detonateR` becomes the hit `pad` — so
+  it's now a small **proximity fuse to the hull surface** (`detonateRadius` **0.5** on all rocket rows —
+  near contact with the hull boxes, with a floor of ~one frame of rocket travel so a fast rocket can't
+  tunnel past without detonating; retuned down from the old ~3.2–3.5 which measured to the ship *center*
+  and made rockets detonate a ship-length away).
   **Rocket blast (AoE) damage is hull-relative too** (`detonateRocket` → `pointHitsShip(ship, pos, blastR)`),
   matching the detonation trigger — a center-distance test used to miss because the detonation point sits
   off-center on the hull. `e.radius` (`2.6 × scale`) is kept **only** as the over-enemy health-bar / marker
-  anchor. Dev-only `?hitboxes` draws the wireframe boxes over every ship for eyeballing. An optional
+  anchor. Dev-only `?hitboxes` draws the wireframe boxes over every ship for eyeballing.
+  **Known limitation — the y=0 aim plane (accepted, factor it in when choosing models):** bullets fly in the
+  combat plane (y≈0 = a ship's centre of mass), while the boxes hug the model's real 3D geometry. So a model
+  element that sits **off** y=0 is **not hit by a centre-aimed shot, and that is normal/expected** — e.g. the
+  player's wings hang ~0.27 below centre (a y=0 bullet passes over them → they read as "transparent"), and the
+  advanced-medium-pirate's drooped nose sits below y=0 (a shot registers deep in the body). The shot still
+  connects with the body; only the off-plane extremities are missed. **When picking/authoring a ship model,
+  prefer geometry whose hittable mass straddles y=0** (or accept that low/high appendages won't take hits).
+  The scheduled fix (extend each box's Y to cross y=0) is in ROADMAP. An optional
   **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
   lazy-loaded; the player + every real-model pirate have one — `player_hangar`, `enemy_1..4_hangar`,
   `enemy_1/2/3/4_orange_hangar`). See

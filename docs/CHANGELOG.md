@@ -7,18 +7,37 @@
 
 - **[2026-07-04-1253-multi-sphere-hitbox] Ship hitboxes: convex-decomposition OBBs (replaces multi-sphere).**
   Supersedes the same-branch multi-sphere iteration below (never shipped to prod). `npm run assets:hitboxes`
-  decomposes each combat glb into near-convex parts with V-HACD (`vhacd-js`, build-time-only, memory-capped
-  `voxelResolution 100000`/`maxHulls 16`/`maxVerticesPerHull 32`) and fits one tight PCA **oriented bounding
-  box** per part into `model.hitBoxes`/`model.broadR` (`{c,h,u0,u1,u2}` per box, group-local noseZ frame),
-  written into `server/src/catalog_seed.js` via a marker-delimited idempotent edit that also migrates off the
-  old `hitSpheres` span (round-trip verified). Runtime narrow-phase (`client/src/collision.js`) is now
-  **point-vs-OBB** — each box center transformed by `mesh.matrixWorld`, axes rotated by its upper-3×3 and
-  renormalized, hit iff `|dot(p−c, uᵢ)| ≤ hᵢ·scale + pad` on all three axes (behind the unchanged broad
-  sphere). The fit is **tight** (`HITBOX_MARGIN` 0.05, no 1.1 bubble), so a bullet through the empty gap
-  **beyond a thin wing** misses while shots that touch a wingtip connect — the case inscribed spheres
-  couldn't cover. The rocket hull-relative blast damage and the retuned `detonateRadius` (~1.0/1.2) carry
-  over unchanged (`sim.js`/`projectiles.js` untouched). Dev-only `?hitboxes` draws wireframe boxes over
-  every ship. No combat-glb hash change → no itch republish (collision data only).
+  decomposes each combat glb into near-convex parts with V-HACD (`vhacd-js`, build-time-only, memory-safe
+  `voxelResolution 400000` (bounded voxel count, library default) / `maxHulls 48` / `maxVerticesPerHull 32`)
+  and fits one tight PCA **oriented bounding box** per part into `model.hitBoxes`/`model.broadR`
+  (`{c,h,u0,u1,u2}` per box, group-local noseZ frame), written into `server/src/catalog_seed.js` via a
+  marker-delimited idempotent edit that also migrates off the old `hitSpheres` span (round-trip verified).
+  Runtime narrow-phase (`client/src/collision.js`) is now **point-vs-OBB** — each box center transformed by
+  `mesh.matrixWorld`, axes rotated by its upper-3×3 and renormalized, hit iff `|dot(p−c, uᵢ)| ≤ hᵢ·scale +
+  pad` on all three axes (behind the unchanged broad sphere). The fit is **tight** (`HITBOX_MARGIN` 0.05, no
+  1.1 bubble), so a bullet through the empty gap **beyond a thin wing** misses while shots that touch a
+  wingtip connect — the case inscribed spheres couldn't cover. **Live-test fixes:** (1) shots passed straight
+  through the player's wings — an offline surface-coverage diagnostic pinned it to a genuine **coverage hole**
+  (not misplacement): at `maxHulls 16` V-HACD merged the outer wing into a body hull whose tight OBB stopped
+  at x≈±1.5 while the wing reached ±1.7, so the player's +X wing was only ~16% covered. Fixed by raising the
+  decomposition budget to **`maxHulls 48` + `minVolumePercentError 0.5`** (the wing panels/tips now get their
+  own hulls → 100% surface coverage on every ship; box count ~48). Also raised voxelResolution 100k → 400k
+  (bounded; catches thin geometry) and floored every box's per-axis half-extent at `MIN_HALF` 0.1. (2) A
+  fast bullet (~1-3 world units/frame) can still step clean over a thin box between frames, so bullet↔ship is
+  now a **swept segment-vs-OBB test** `segmentHitsShip(ship, p0, p1)` (the bullet's per-frame movement
+  segment vs each box's local-frame slab, behind a segment-sphere broad phase); `sim.js` sweeps bullet↔enemy
+  and bullet↔player. (3) Rockets detonated "at a distance" — the `detonateRadius` proximity pad dropped from
+  ~1.0/1.2 to **0.5** (near contact, floored at ~one frame of rocket travel). Rockets keep the point test
+  (slow + homing + padded, no tunneling); the rocket hull-relative blast damage carries over unchanged. Guard
+  added: a `node --test` surface-coverage check (decode the glb, assert ≥97% of surface inside the boxes) —
+  the gate the size/span sanity couldn't provide. Dev-only `?hitboxes` draws wireframe boxes over every ship.
+  **Known limitation (accepted, deferred → ROADMAP):** bullets fly in the y=0 combat plane but the boxes hug
+  the model's real 3D geometry, so elements off y=0 aren't hit by centre-aimed shots — the **player's wings**
+  (~0.27 below centre) read as "transparent", and the **advanced-medium-pirate**'s drooped nose registers deep.
+  Diagnosed via offline renders (surface coverage is fine; the boxes correctly wrap geometry that simply sits
+  off the aim plane). Accepted for now and documented in SUMMARY as a model-choice factor; the fitter fix
+  (extend each box's Y to cross y=0) is scheduled in ROADMAP. No combat-glb hash change → no itch republish
+  (collision data only).
 - **[2026-07-04-1253-multi-sphere-hitbox] Multi-sphere ship hitboxes.** _(Superseded by the OBB entry above.)_
   Ships no longer collide as one fat
   sphere. A new `npm run assets:hitspheres` step auto-fits ~4-8 spheres to each combat hull — spheres

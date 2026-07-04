@@ -8,9 +8,11 @@
 // client/src/collision.js). A tiny additive HITBOX_MARGIN is baked into the half-extents for surface-hit
 // reliability; the boxes are meant to be TIGHT (bullets miss in the gap beyond a wing). See DECISIONS §45.
 //
-// MEMORY SAFETY (HARD requirement — a prior spike OOM-froze the maintainer's Mac): the V-HACD options cap
-// `voxelResolution: 100000` (≤100k) and `maxHulls: 16`, plus `maxVerticesPerHull: 32`. These caps are
-// non-negotiable — do NOT raise them. No unbounded voxel/distance/recursion work.
+// MEMORY SAFETY (HARD requirement): a prior spike OOM-froze the maintainer's Mac — that was an unbounded
+// dense distance-transform path, NOT V-HACD. V-HACD's `voxelResolution` is a bounded voxel COUNT (a few MB),
+// so we run it at the library default `voxelResolution: 400000` (needed to voxelize thin wings/noses a
+// coarser grid skips) and cap `maxVerticesPerHull: 32`. `maxHulls: 48` is a part-count cap only (it does not
+// grow the voxel grid, so it's free — see VHACD_OPTS). Do NOT switch to an unbounded voxel/distance path.
 //
 // The combat glbs are meshopt-compressed; reading them via NodeIO needs a decoder we don't ship, so we
 // first decode each to a plain temp glb with the gltf-transform CLI via npx (same "no hard dep" pattern as
@@ -36,13 +38,27 @@ const SHIPS_DIR = path.join(REPO, 'client/assets/ships');
 
 const SHIP_MODEL_LEN = 3.4; // mirror client/src/ship-factory.js:34 (normalize the model's longest axis)
 const HITBOX_MARGIN = 0.05; // tiny additive half-extent inflate (group-local units, ~1.5% of length) for surface hits
-// V-HACD options — the caps here are the MEMORY GUARD (see the header). Do not raise them.
+// Minimum per-axis half-extent (group-local). A discrete bullet steps ~1 world unit/frame (speed 48-65 ×
+// dt, world scale 1.8×sizeScale), so a razor-thin OBB (a swept wing / a pointed nose fits into an
+// h≈0.02-0.06 slab) is "transparent" — the bullet tunnels through the slab between frames. We clamp each
+// box's per-axis half-extent up to this floor so thin features become a hittable slab. It only affects
+// axes already below the floor (the thin axis of a thin box), so the chunky boss boxes (min ~0.09) are
+// untouched — a little slop on a wing edge is fine; transparent is not. See DECISIONS §45.
+const MIN_HALF = 0.1;
+// V-HACD options. The MEMORY guard is `voxelResolution` (a bounded voxel COUNT — a few MB, NOT the
+// unbounded dense distance-transform path that OOM-froze a prior spike); 400000 (the library default) is
+// memory-safe and fine enough to voxelize thin wings/noses. `maxHulls` is only a PART-COUNT cap — it does
+// NOT grow the voxel grid, so raising it costs nothing (empirically: identical ~2s/ship at 16 vs 64 hulls).
+// 48 hulls + `minVolumePercentError: 0.5` (refine a bit further) is what actually closes the surface: at 16
+// hulls / error 1, V-HACD spent its budget unevenly and MERGED one wing into a body hull whose tight OBB
+// didn't reach the wingtip (the player's +X wing was ~16% covered → "transparent"). 48/0.5 → 100% surface
+// coverage on every ship; 64/0.3 over-splits into slivers that leave OBB gaps (the boss nose regressed).
 const VHACD_OPTS = {
-  maxHulls: 16,             // ≤ 16 parts
-  voxelResolution: 100000,  // ≤ 100k voxels
+  maxHulls: 48,             // part-count cap only (cheap; voxelResolution is the memory guard)
+  voxelResolution: 400000,  // bounded voxel count (library default) — THE memory guard; fine for thin features
   fillMode: 'raycast',      // combat glbs are non-watertight → raycast interior test (no repair needed)
   maxVerticesPerHull: 32,
-  minVolumePercentError: 1,
+  minVolumePercentError: 0.5, // refine until each hull is within 0.5% volume — needed to separate both wings
   messages: 'none',
 };
 const DEBUG = !!process.env.HITBOXES_DEBUG; // print per-ship box extents/union span
@@ -63,12 +79,13 @@ const xform = (m, x, y, z) => [
   m[1] * x + m[5] * y + m[9] * z + m[13],
   m[2] * x + m[6] * y + m[10] * z + m[14],
 ];
-const IDENT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+export const IDENT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 // Recurse a glb node tree, accumulating parent matrices, pushing world-space positions + triangle indices
 // into `out = { pos: [], idx: [] }`. V-HACD needs triangles, so we carry indices (offset by the running
-// vertex base per primitive); un-indexed prims emit sequential triples.
-function gatherMesh(node, parentM, out) {
+// vertex base per primitive); un-indexed prims emit sequential triples. Exported so the alignment test can
+// reproduce the fitter's exact vertex frame.
+export function gatherMesh(node, parentM, out) {
   const m = mul(parentM, node.getMatrix());
   const mesh = node.getMesh && node.getMesh();
   if (mesh) {
@@ -96,7 +113,8 @@ function gatherMesh(node, parentM, out) {
 
 // Normalize raw (pos, idx) to the group-local noseZ frame — mirrors ship-factory.js:44-58 (auto-scale the
 // longest axis to SHIP_MODEL_LEN, recenter, rotateY(yaw)). Returns { positions:Float64Array, indices:Uint32Array }.
-function normalize(pos, idx, yaw, scaleMul) {
+// Exported so the alignment test can reproduce the exact runtime frame the boxes live in.
+export function normalize(pos, idx, yaw, scaleMul) {
   let mnx = Infinity, mny = Infinity, mnz = Infinity, mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
   for (let i = 0; i < pos.length; i += 3) {
     const x = pos[i], y = pos[i + 1], z = pos[i + 2];
@@ -161,7 +179,8 @@ function jacobiEigen(a) {
 
 // Fit a PCA oriented bounding box to a hull's vertex cloud (Float64Array xyz triplets).
 // Returns { c:{x,y,z}, h:{x,y,z}, u0, u1, u2 }, canonicalized (axes by descending half-extent, sign-fixed).
-function fitOBB(hp) {
+// Exported so the alignment/coverage test can fit boxes to a real decomposition.
+export function fitOBB(hp) {
   const n = hp.length / 3;
   let mx = 0, my = 0, mz = 0;
   for (let i = 0; i < hp.length; i += 3) { mx += hp[i]; my += hp[i + 1]; mz += hp[i + 2]; }
@@ -190,11 +209,12 @@ function fitOBB(hp) {
       if (d > proj[a][1]) proj[a][1] = d;
     }
   }
-  // half-extents + center offset along each axis
+  // half-extents + center offset along each axis. Clamp each half-extent up to MIN_HALF so a razor-thin
+  // wing/nose slab can't be tunneled through by a discrete bullet (only bumps axes below the floor).
   const triples = [];
   for (let a = 0; a < 3; a++) {
     const [lo, hi] = proj[a];
-    const half = (hi - lo) / 2 + HITBOX_MARGIN;
+    const half = Math.max((hi - lo) / 2 + HITBOX_MARGIN, MIN_HALF);
     const mid = (lo + hi) / 2;
     triples.push({ axis: axes[a], half, mid });
   }
@@ -262,7 +282,7 @@ export function upsertHitBoxes(fileText, modelUrl, boxes, broadR) {
 }
 
 // ---- main pipeline ----
-async function decodeToPlain(io, srcFile, tmpDir) {
+export async function decodeToPlain(io, srcFile, tmpDir) {
   const out = path.join(tmpDir, path.basename(srcFile));
   // `dedup` reads (decoding meshopt) and writes without re-encoding → a plain glb NodeIO can read.
   execFileSync('npx', ['--yes', '@gltf-transform/cli@^4', 'dedup', srcFile, out], {

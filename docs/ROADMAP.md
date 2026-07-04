@@ -207,3 +207,15 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - Leaderboards.
 - More ship classes / visual variety.
 - Weapon icons / 3D models (for the hangar shop stash + around-model slot icons).
+- **Hitbox y=0 aim-plane coverage.** Bullets fly in the combat plane (y≈0 = a ship's centre of mass), but
+  the OBB hitboxes hug the model's real 3D geometry — so model elements that sit **off** y=0 don't get hit
+  by centre-aimed shots. Two known cases: the **player's wings** hang ~0.27 below centre (all wing boxes are
+  entirely below y=0 → a y=0 bullet flies over them → the wings read as "transparent"), and the **advanced
+  medium pirate** (enemy_3) has a drooped nose below y=0 (a shot registers deep in the body at a fixed spot).
+  Not a surface hole or tunneling — a vertical (Y) offset between the aim plane and the box cluster; the
+  near-top-down camera flattens Y so it looks wrong. **Accepted for now** (see SUMMARY) — the shot still hits
+  the body, and it's a factor in choosing ship models. Proper fix when scheduled: make the fitter guarantee
+  the OBB set spans the y=0 plane across the XZ footprint — **extend each box's Y so it crosses y=0** (pull
+  off-plane boxes to the plane + a small band for muzzle-Y wobble); data-only regeneration, no runtime
+  change, fixes both cases. (Alternative: make bullet collision test the XZ footprint only.) Deferred from the
+  OBB hitbox work (2026-07-04).

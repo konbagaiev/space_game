@@ -47,7 +47,7 @@ mount offset). `scaleMul` is a rarely-needed extra multiplier applied inside the
 (use it only if a model's bounding box is dominated by something that shouldn't count toward "length").
 
 ### `hitBoxes` / `broadR` — the collision hitbox (auto-generated)
-The ship's collision shape is **one oriented bounding box per near-convex part** (~7-16 boxes), auto-fit to
+The ship's collision shape is **one oriented bounding box per near-convex part** (~48 boxes), auto-fit to
 the hull by convex decomposition (group-local noseZ frame, like `noseZ`/`tailZ`), plus `broadR`, its
 enclosing broad-phase radius. Each box is `{c,h,u0,u1,u2}` (center, half-extents, three orthonormal axes).
 **Don't hand-author these** — `npm run assets:hitboxes` decomposes the combat glb with V-HACD (`vhacd-js`;

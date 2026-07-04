@@ -1522,23 +1522,48 @@ because the game is a top-down arcade shooter where "does this point touch the h
 (DECISIONS §30 — keep it simple): a handful of cheap OBB projection tests behind the broad sphere, no runtime
 BVH/physics.
 
-**`vhacd-js` is build-time only, and memory-capped (HARD requirement).** A prior local spike OOM-froze the
-maintainer's Mac, so the fitter caps `voxelResolution: 100000` (≤100k voxels) and `maxHulls: 16`, plus
-`maxVerticesPerHull: 32`, and uses `fillMode: 'raycast'` (the combat glbs are non-watertight — raycast
-interior test, no repair needed). These caps are non-negotiable. `vhacd-js` has no `main`/`exports`, only
-`"module"`, so it is imported by the subpath `vhacd-js/lib/vhacd.js`; it never ships to the browser (the
-fitter runs in Node).
+**`vhacd-js` is build-time only, and memory-safe.** A prior local spike OOM-froze the maintainer's Mac —
+that was an unbounded dense distance-transform path, **not** V-HACD. V-HACD's `voxelResolution` is a bounded
+voxel *count* (a few MB), so the fitter runs it at the library default **`voxelResolution: 400000`** — needed
+to voxelize thin wings/noses that a coarser 100k grid skipped entirely. `maxVerticesPerHull: 32` and
+`fillMode: 'raycast'` (the combat glbs are non-watertight — raycast interior test, no repair needed). Do not
+go to an unbounded voxel/distance path. `vhacd-js` has no `main`/`exports`, only `"module"`, so it is
+imported by the subpath `vhacd-js/lib/vhacd.js`; it never ships to the browser (the fitter runs in Node).
 
-**Tight fit, and deterministic.** OBBs are meant to be tight — the whole point is that a bullet through the
-empty gap **beyond a thin wing** misses — so the fitter adds only a tiny additive `HITBOX_MARGIN = 0.05`
-(group-local, ~1.5% of length) to each half-extent for surface-hit reliability, not the old multiplicative
-`1.1` bubble. PCA eigenvector order/sign is otherwise arbitrary, so each OBB is **canonicalized** (axes
-sorted by descending half-extent, each flipped so its largest-magnitude component is ≥ 0); with fixed V-HACD
-options + fixed rounding this makes running the script twice byte-identical (asserted by the unit test).
-`broadR` is the exact farthest OBB corner from the origin (~1.9-2.2, near the model half-length). A
-`node --test` guard (`scripts/assets-hitboxes.test.mjs`) asserts every modeled ship's `broadR ≤ ~2.4`, each
-half-extent ≤ half-length, and the **union full span** along its longest axis sits `3.0 ≤ span ≤ 4.0`
-(≈ `SHIP_MODEL_LEN` 3.4) — so a ~2× over- or under-fit fails automatically.
+**Budget: `maxHulls` 48 + `minVolumePercentError` 0.5, to cover the wings (the "wing is transparent" fix).**
+`maxHulls` is only a **part-count cap** — it does not grow the voxel grid, so raising it costs nothing
+(empirically ~2 s/ship at 16 vs 64 hulls). At 16 hulls / error 1, V-HACD spent its budget unevenly and
+**merged one wing into a body hull** whose tight OBB stopped at x≈±1.5 while the wing reached ±1.7 → the
+player's outer +X wing was **~16% covered** (the rest of the ship ~99%), so shots passed straight through
+it. Raising to **48 hulls + `minVolumePercentError: 0.5`** (refine each hull to within 0.5% volume) gives the
+wing panels/tips their own hulls → **100% surface coverage** on every ship; 64/0.3 over-splits into slivers
+whose OBBs leave gaps (the boss nose regressed to ~96%). A `node --test` surface-coverage guard (below) is
+the gate that catches an under-covered fit — the size/union-span sanity all *passed* while the wing was 16%
+open, because a hole doesn't change the overall bounds.
+
+**Tight fit, with a min-thickness floor, and deterministic.** OBBs are meant to be tight — the whole point is
+that a bullet through the empty gap **beyond a thin wing** misses — so the fitter adds only a tiny additive
+`HITBOX_MARGIN = 0.05` (group-local, ~1.5% of length) to each half-extent, not the old multiplicative `1.1`
+bubble. But a razor-thin part (a swept wing / a pointed nose fits an `h ≈ 0.02-0.06` slab) is **transparent**
+to a discrete moving bullet: bullets step ~1 world unit/frame (speed 48-65 × dt, world scale 1.8×sizeScale),
+so they tunnel through a slab thinner than a step between frames. So each box's per-axis half-extent is
+**floored at `MIN_HALF = 0.1`** (group-local) — this only bumps the thin axis of a thin box (the boss's
+chunky boxes, min ~0.09, are barely touched), turning a thin wing/nose into a hittable slab. A little slop on
+a wing edge is the maintainer's arcade tolerance; transparent is not. PCA eigenvector order/sign is otherwise
+arbitrary, so each OBB is **canonicalized** (axes sorted by descending half-extent, each flipped so its
+largest-magnitude component is ≥ 0); with fixed V-HACD options + fixed rounding this makes running the script
+twice byte-identical (asserted by the unit test). `broadR` is the exact farthest OBB corner from the origin
+(~1.9-2.2, near the model half-length). Two `node --test` guards (`scripts/assets-hitboxes.test.mjs`): a
+**size-sanity** test asserts every modeled ship's `broadR ≤ ~2.4`, each half-extent ≤ half-length, **every
+box's min half-extent ≥ `MIN_HALF`** (so a transparent thin fit fails), and the **union full span** along
+its longest axis sits `3.0 ≤ span ≤ 4.3` (≈ `SHIP_MODEL_LEN` 3.4, headroom for rotated-OBB overhang + the
+clamp); and a **surface-coverage** test that decodes each ship's real combat glb, puts its vertices into the
+exact runtime frame (the fitter's `gatherMesh`+`normalize`, mirroring `ship-factory.js`), and asserts **≥97%
+of surface points overall + ≥90% per extremity (wingtips / nose / tail) are inside the fitted boxes** — the
+gate that catches an under-covered fit (the wing hole was invisible to every bounds-based test). It requires
+the combat glbs locally (`npm run assets:pull`) and skips cleanly without them (gitignored — same
+precondition as the fitter). This also validates **placement**: if the fitter's frame ever drifts from
+ship-factory's, coverage collapses and the test fails.
 
 **Runtime point-vs-OBB test.** At runtime (`client/src/collision.js`) collision is **broad-phase** (one
 enclosing `broadR × mesh.scale.x` sphere at `mesh.position`) → **narrow-phase** (point-vs-OBB): each box
@@ -1550,6 +1575,24 @@ expands every half-extent — a square-cornered Minkowski inflate, exact enough 
 collisions correctly ignore the cosmetic bank. `collision.js` is intentionally **THREE-free** (inline
 matrix/vector math) so it's importable under `node --test`.
 
+**Bullets are SWEPT (segment-vs-OBB), or they tunnel (the "bullets pass through thin wings" fix).** The
+narrow-phase point test only samples the projectile's *end-of-frame* position (`sim.js`). A bullet steps
+~1-3 world units/frame (`projectileSpeed` 48-65 × `dt` up to 0.05, × the 1.8×sizeScale world scale), which is
+larger than a thin box's half-extent **along the travel axis** — so a wingtip/nose box (~0.1-0.2 world thick
+in Z) sits entirely *between* two consecutive sample points and both land outside it → the bullet is
+transparent to it. This is orthogonal to `MIN_HALF` (which is the *perpendicular* thickness) and to
+resolution (the boxes are present — verified), so neither fixed it. The fix is `segmentHitsShip(ship, p0, p1,
+pad)`: the bullet's movement segment (pre-move `p0` → post-move `p1`) vs each OBB — both endpoints are
+transformed into the box's local frame (the same renormalized-axes/scale math), then a **slab test** clips
+the segment against `±(hᵢ·sc + pad)` per axis; a segment-vs-enclosing-sphere broad phase gates the box loop.
+It reduces to `pointHitsShip` when `p0==p1` (a strict superset). `sim.js` captures `p0` before
+`b.mesh.position.addScaledVector(b.vel, dt)` and passes `p1 =` the moved position, for both bullet→enemy and
+bullet→player. Rockets keep the point test — they're slow, homing (steer toward center) and carry a 0.5
+`detonateR` pad (a large capture region), so they don't tunnel. Broad-phase gates the swept loop, so only
+bullets already near a ship pay for it (mobile-safe). Why not just a bigger box / smaller bullet step: a
+uniform inflate slops up the tight fit (re-opening BUG A's over-cover), and a fixed sub-step multiplies the
+per-bullet cost; the analytic segment test is exact and cheap.
+
 **Rocket blast damage is hull-relative too (the "rockets deal no damage" fix).** A rocket's detonation is
 *triggered* hull-relative (`pointHitsShip(ship, pos, detonateR)`), so the detonation point lands on a
 hull box — off the ship's center. The blast *damage* loop in `projectiles.js:detonateRocket`
@@ -1559,9 +1602,11 @@ rockets. Fixed by making the damage loop hull-relative as well — `pointHitsShi
 `blastR ≥ detonateR`, a rocket that reaches a hull to detonate always deals its damage. A regression test
 (`client/src/collision.test.js`) covers player→enemy and enemy→player, including a detonation point beyond
 `blastR` of the center that the old test would have missed. **`detonateRadius` was also retuned down**
-(rockets: ~3.2–3.5 → ~1.0–1.2): since the trigger is now a `pad` measured from the *hull surface* (not the
-center as before), the old large values made rockets detonate a full ship-length away — it's now a small
-proximity fuse. It stays ≥ the per-frame rocket travel so a fast rocket can't tunnel through the hull.
+(rockets id 3/4/8: ~3.2–3.5 → **0.5**): since the trigger is now a `pad` measured from the *hull surface*
+(not the center as before), the old large values made rockets detonate a full ship-length away. `0.5` is
+near contact with the hull boxes while staying ≥ ~one frame of rocket travel (rockets accelerate to ~56 u/s,
+~0.9 world unit/frame at 60fps) so a fast rocket can't tunnel past the ship without detonating — and the
+broad-phase region (~4 world units) spans many samples as the rocket crosses it, so contact is reliable.
 
 **Frame.** Boxes live in the **group-local noseZ frame** (after ship-factory's auto-scale to
 `SHIP_MODEL_LEN` 3.4 + recenter + `yaw`), same frame as `userData.noseZ`. The fitter replicates that exact
