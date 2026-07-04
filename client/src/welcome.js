@@ -125,6 +125,13 @@ function syncFsClass() {
 }
 document.addEventListener('fullscreenchange', syncFsClass);
 document.addEventListener('webkitfullscreenchange', syncFsClass);
+// Mobile browsers often DON'T deliver fullscreenchange while the tab is backgrounded, so after a
+// minimize→restore `body.fs` can be stale-true (document.fullscreenElement is null but the class stuck),
+// which hides the ⛶ button just when the player needs it. Re-sync whenever the page returns to the
+// foreground so the button reliably reappears.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncFsClass(); });
+window.addEventListener('pageshow', syncFsClass);
+window.addEventListener('focus', syncFsClass);
 syncFsClass(); // initial state
 
 // ---------- Take off ----------

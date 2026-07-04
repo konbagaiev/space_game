@@ -178,7 +178,14 @@
     border: 1px solid rgba(170,200,255,.55);
     box-shadow: 0 2px 10px rgba(0,0,0,.35);
   }
-  body.touch.menu #fullscreen-btn { display: flex; }   /* show on touch menus … */
+  /* Show on touch whenever the HUD/menu is up — menus AND in-game (active + paused). The body.fs and
+     body.no-fs-api rules below still hide it (they win via !important). See DECISIONS §44. */
+  body.touch #fullscreen-btn { display: flex; }
+  /* In-game (HUD up, i.e. not a menu): move it just LEFT of the bottom-right rocket button and raise it
+     clear of the phone's bottom browser bar. Rocket = right:28 bottom:40 84×84 (left edge ~112px from
+     right); ⛶ near-edge sits at ~124px from right (real gap), center vertically aligned with the rocket.
+     Verified on the touch harness (see DECISIONS §44). */
+  body.touch:not(.menu) #fullscreen-btn { right: 124px; bottom: 58px; }
   body.fs #fullscreen-btn { display: none !important; } /* … but hide once fullscreen */
   #fullscreen-btn:active { background: rgba(60,85,150,.7); }
   /* iPhone Safari (no Fullscreen API): the ⛶ button can't work, so hide it and show an "Add to Home
@@ -196,8 +203,15 @@
     pointer-events: none;                                /* never intercepts menu taps */
   }
   #a2hs-hint .a2hs-glyph { font-size: 18px; line-height: 1; flex: none; }
-  body.touch.menu.no-fs-api #a2hs-hint { display: flex; }
+  /* iPhone Safari has no Fullscreen API, so "not in fullscreen" ≈ "not launched standalone" — show the
+     Add-to-Home-Screen hint whenever NOT standalone, on menus AND in-game (active + paused). Non-
+     interactive (pointer-events:none), so it never blocks controls. See DECISIONS §44. */
+  body.touch.no-fs-api:not(.standalone) #a2hs-hint { display: flex; }
   body.standalone #a2hs-hint { display: none !important; }
+  /* In-game the wide pill (max-width 230) can't sit where the 46px ⛶ goes; tuck it under the top-left
+     settings gear, clear of the rocket (bottom-right), pause button (top-center) and zoom (mid-right).
+     Verified on the harness it doesn't overlap the gear/minimap (see DECISIONS §44). */
+  body.touch:not(.menu).no-fs-api #a2hs-hint { right: auto; bottom: auto; left: 14px; top: 56px; }
   /* Shop bay (docs/plans/hangar-shop.md). Now the "bay" work-zone view in the Main Window — shown when a
      Loadout/Stash/Shop menu item is picked (the items are gated to the shop being unlocked). */
   /* zoom 0.67 = everything in the bay (Loadout/Stash/Shop) — fonts, buttons, paddings — ~1.5× smaller. */

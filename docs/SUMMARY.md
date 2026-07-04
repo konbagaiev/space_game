@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Procedural nebula skybox** — `skyScene.background` is now a baked procedural
+**Updated:** 2026-07-04 (**Full-screen button available in-game** — the touch `⛶` button now shows during
+active combat + pause (left of the rocket, raised above bottom chrome), and `body.fs` re-syncs on foreground
+so it reappears after a mobile minimize→restore; iPhone A2HS pill shows in-game too. See DECISIONS §44.)
+(**Procedural nebula skybox** — `skyScene.background` is now a baked procedural
 nebula + star-field cubemap (`makeNebulaSky`), tier-gated and skipped under `?debug`; see Visuals + DECISIONS §43.)
 (**Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
 single-finger gesture within `TAP_SLOP = 10px` is an object tap (shared `engageObjectAt` raycast — chests +
@@ -132,9 +135,16 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   description scrolls), so the **Take off** button is always on-screen. A single
   touch-only **floating Full-screen button** (`#fullscreen-btn`, fixed bottom-right, **icon-only `⛶`**,
   brighter than the old inline buttons) re-enters fullscreen to hide the browser chrome (URL bar, tabs) after
-  the app is minimized/restored. It is gated to **touch menus** (`body.touch.menu`) so it never overlaps the
-  bottom-right rocket button during a fight, and it **hides once fullscreen** (a `fullscreenchange` listener
-  toggles `body.fs`). The translated words live on its `aria-label`/`title` (key `ui.fullscreen`, re-applied
+  the app is minimized/restored. It is shown on **all touch screens** (`body.touch`) — **menus AND in-game
+  (active combat + paused)** — so the player can re-enter fullscreen mid-battle after the mobile browser
+  silently drops out of it on background/restore. On a **menu** it sits bottom-right (`right:14; bottom:14`);
+  **in-game** (`body.touch:not(.menu)`) it moves just **left of the rocket button**, raised clear of the
+  phone's bottom chrome (`right:124; bottom:58`, a ~12px gap from the rocket's left edge, vertically centered
+  on it). It **hides once fullscreen** (`body.fs`): a `fullscreenchange`/`webkitfullscreenchange` listener
+  toggles `body.fs`, **and** — because mobile browsers often don't deliver `fullscreenchange` to a
+  backgrounded tab, leaving `body.fs` stale-true after restore — it **re-syncs `body.fs` on foreground**
+  (`visibilitychange` when `!document.hidden`, plus `pageshow` and window `focus`) so the button reliably
+  reappears. The translated words live on its `aria-label`/`title` (key `ui.fullscreen`, re-applied
   by `applyTranslations` on language change); `requestFullscreen` no-ops if already fullscreen or unsupported.
   **iPhone Safari has no Fullscreen API** (it exists only on iPad/Android), so there the `⛶` button can't
   work — the only true full screen is the **standalone web app from "Add to Home Screen"** (we ship
@@ -145,8 +155,10 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   `input-touch`/`input-mouse` + `dev-phone|dev-tablet|dev-desktop|dev-desktop-lg`, keeps **`body.touch`** as a
   compatibility alias (set with `input-touch`, so the existing touch CSS/rotation/fullscreen rules are unchanged),
   and sets the touch-only `standalone` / `no-fs-api` gates. On a touch device with no FS API → `body.no-fs-api` hides the `⛶` button and
-  shows a non-interactive **A2HS hint pill** instead (`#a2hs-hint`, bottom-right, gated to `body.touch.menu.no-fs-api`,
-  text key `ui.a2hs.hint`); once already launched standalone → `body.standalone` hides both (no chrome to hide).
+  shows a non-interactive **A2HS hint pill** instead (`#a2hs-hint`, text key `ui.a2hs.hint`) — now gated to
+  `body.touch.no-fs-api:not(.standalone)` so it also shows **in-game** (bottom-right on menus; in-game it tucks
+  under the top-left settings gear at `left:14; top:56`, clear of the rocket/pause/zoom); once already launched
+  standalone → `body.standalone` hides both (no chrome to hide).
 
 ## Tools
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits

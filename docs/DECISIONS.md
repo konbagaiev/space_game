@@ -1465,6 +1465,42 @@ a raw-canvas preview; the maintainer accepted the baked in-engine result as the 
 
 ---
 
+## 44. Full-screen affordance shown over live combat (not menus-only), gated by `body.menu`, with a foreground `body.fs` re-sync
+
+**Context.** On a phone, backgrounding the browser and returning silently drops the tab out of
+fullscreen — the address bar/chrome reappears — but the floating `⛶` button (and, on iPhone, the
+Add-to-Home-Screen pill) was CSS-gated to **menus only** (`body.touch.menu`), so mid-battle the player had
+no way to re-enter fullscreen and was stuck with a shrunken screen. Two bugs compounded: (1) the menus-only
+gate, and (2) `body.fs` (which hides the button once fullscreen) was only re-synced on `fullscreenchange`,
+an event mobile browsers frequently **don't deliver to a backgrounded tab** — so after restore
+`document.fullscreenElement` is `null` but `body.fs` stuck true, hiding the button exactly when it was
+needed.
+
+**Decision.** Surface the fullscreen affordance **whenever the HUD/menu is up — active combat AND pause,
+not just menus** — as long as we're not already fullscreen. Reuse the **existing `body.menu`** signal
+(menu = `body.touch.menu`, in-game = `body.touch:not(.menu)`) rather than inventing a `body.paused`-based
+gate: paused is a subset of in-game and the real failure mode (chrome returns on background/restore) hits
+active play too, so a paused-only fix (the original narrower request) was rejected. The `⛶` keeps its
+bottom-right menu placement and moves **left of the rocket, raised above the bottom chrome** in-game
+(`right:124; bottom:58`), with an explicit ~12px horizontal gap from the rocket hit area so it never sits
+under the thumb's fire/boost path. On iPhone (no Fullscreen API, so "not fullscreen" ≈ "not standalone")
+the a2hs pill now shows in-game too (`body.touch.no-fs-api:not(.standalone)`), tucked under the top-left
+gear; it stays **non-interactive** (`pointer-events:none`).
+
+**Trade-off.** This puts a control (and, on iPhone, a persistent pill) over live combat — extra HUD
+clutter we'd normally avoid. Accepted because the harm from a stray tap is low (the button only re-enters
+fullscreen, a no-op if already fullscreen) and the explicit rocket gap keeps it off the thumb path, while
+the upside — recovering full screen without leaving the fight — directly addresses the failure mode.
+
+**Stale-`body.fs` fix.** `body.fs` now re-syncs whenever the page returns to the foreground —
+`visibilitychange` (only when `!document.hidden`), plus `pageshow` and window `focus` as
+belt-and-suspenders — in `welcome.js`, independent of the existing `fullscreenchange` listener and of the
+`autoPauseOnBlur` logic in `sim.js`. We deliberately **do not** try to force fullscreen programmatically on
+restore (browsers block it without a user gesture); the fix is to make the button reappear so the player
+taps it.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·
