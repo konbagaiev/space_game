@@ -322,7 +322,14 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.modelUrl, 'assets/ships/player_combat.f7171045.glb'); // real "Air & Space Vessel" model (textured)
   assert.equal(player.modelUrlHigh, 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb');
   assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8, grab: 29 }); // assembled from components (base grab included)
-  assert.deepEqual(player.stats.model, { yaw: 0, scale: 1.1 }); // model-presentation block (yaw/scale)
+  assert.equal(player.stats.model.yaw, 0);   // model-presentation block (yaw/scale)
+  assert.equal(player.stats.model.scale, 1.1);
+  // auto-fit OBB hitbox survives the JSON-blob round-trip (seedCatalog → fetch) on SQLite + Postgres
+  assert.ok(Array.isArray(player.stats.model.hitBoxes) && player.stats.model.hitBoxes.length >= 1, 'hitBoxes round-trips');
+  assert.ok(player.stats.model.hitBoxes.every((b) =>
+    ['c', 'h', 'u0', 'u1', 'u2'].every((k) => b[k] &&
+      ['x', 'y', 'z'].every((c) => typeof b[k][c] === 'number'))), 'hitBox fields are numbers');
+  assert.equal(typeof player.stats.model.broadR, 'number'); // enclosing broad-phase radius
   assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');

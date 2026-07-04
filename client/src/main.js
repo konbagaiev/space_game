@@ -21,6 +21,7 @@ import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, pro
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
+import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem } from './mainwindow.js'; // between-battles Main Window + model viewers
 import { showWelcome, applyTranslations } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache } from './account.js'; // auth block (bootstrap session restore + Sentry)
@@ -454,6 +455,7 @@ function animate() {
   const t0 = DEV ? performance.now() : 0;
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
   if (!G.paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
+  if (HITBOXES_DEBUG) syncHitBoxes(scene, G.player, enemies); // dev-only hitbox wireframe overlay
   const t1 = DEV ? performance.now() : 0; // end of sim
   updateHud();
   updateMarkers();

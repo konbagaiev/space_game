@@ -13,11 +13,14 @@ import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor } from
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
+import { pointHitsShip, segmentHitsShip } from './collision.js';
 import { updateDrops, spawnDrop, pickLoot, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
+
+const _bulletP0 = new THREE.Vector3(); // reused: a bullet's pre-move position for the swept collision test
 
 // ---------- Music ----------
 // Music follows game state: the driving combat mood during a live fight, the calmer hangar mood on
@@ -437,18 +440,21 @@ export function update(dt) {
   // --- projectiles ---
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
+    // SWEPT test: capture the pre-move position, then test the whole movement segment [p0→p1] vs the hull
+    // so a fast bullet (~1-3 world units/frame) can't tunnel through a thin box between frames.
+    _bulletP0.copy(b.mesh.position);
     b.traveled += b.vel.length() * dt;
     b.mesh.position.addScaledVector(b.vel, dt);
 
     let hit = false;
     if (b.fromPlayer) {
       for (const e of enemies) {
-        if (b.mesh.position.distanceTo(e.mesh.position) < e.radius) {
+        if (segmentHitsShip(e, _bulletP0, b.mesh.position)) {
           e.hp -= b.damage; hit = true; audio.sfx.hit(); break;
         }
       }
     } else {
-      if (G.player.mesh.position.distanceTo(b.mesh.position) < 2.6) {
+      if (segmentHitsShip(G.player, _bulletP0, b.mesh.position)) {
         G.player.hp -= b.damage; hit = true; audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
       }
     }
@@ -496,9 +502,9 @@ export function update(dt) {
     let det = false;
     if (r.fromPlayer) {
       for (const e of enemies) {
-        if (e.mesh.position.distanceTo(r.obj.position) <= Math.max(r.detonateR, e.radius)) { det = true; break; }
+        if (pointHitsShip(e, r.obj.position, r.detonateR)) { det = true; break; }
       }
-    } else if (G.player.alive && G.player.mesh.position.distanceTo(r.obj.position) <= r.detonateR) {
+    } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.detonateR)) {
       det = true;
     }
     // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)

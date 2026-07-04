@@ -58,8 +58,15 @@ the seed carrying the URLs); CDN binaries are already on S3.
 2. `npm run assets:build` → gltf-transform emits `_combat.glb` + `_hangar.glb`, content-hashed.
 3. `npm run assets:push` → `aws s3 cp/sync` the CDN outputs (+ source) to the bucket.
 4. The script prints the resulting URLs → paste into `catalog_seed.js` (`model_url` / `model_url_high`).
-5. Commit `catalog_seed.js` (URL/path references only — **no binaries**). On deploy, CI `aws s3 sync`s the
-   combat models onto the server (baked into the image) and seeds the URLs; hangar models already on CDN.
+4b. `npm run assets:pull` (if the combat glbs aren't local yet) then **`npm run assets:hitboxes`** →
+   decomposes each combat glb into near-convex parts with V-HACD (`vhacd-js` — run `npm install` once; it's
+   memory-safe, `voxelResolution 400000` (bounded voxel count) / `maxHulls 48` (part-count cap, cheap)) and writes one PCA oriented box per part into
+   `model.hitBoxes` / `model.broadR` in each ship's `model:{}` block in `catalog_seed.js` (marker-delimited,
+   idempotent, round-trip verified; migrates off any legacy `hitSpheres` span). Re-run this whenever a ship's
+   model, `yaw`, or `scaleMul` changes; eyeball the result in-game with `?hitboxes`.
+5. Commit `catalog_seed.js` (URL/path references + generated hitBoxes — **no binaries**). On deploy, CI
+   `aws s3 sync`s the combat models onto the server (baked into the image) and seeds the URLs; hangar
+   models already on CDN.
 6. **Credits check (mandatory — ask the maintainer).** Any time a model is **added, replaced, or removed**,
    confirm whether **`client/assets/CREDITS.md`** changes before finishing: a new source → add its row; the
    **last** use of an asset removed → offer to drop the stale row; a **CC-BY** asset's attribution must stay

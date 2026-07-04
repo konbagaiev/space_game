@@ -66,6 +66,17 @@ rm -f client/assets/ships/<old_combat>.glb
 cp assets-dist/<new_combat>.glb client/assets/ships/
 ```
 
+### 5b. Regenerate the collision hitbox
+The ship's `model.hitBoxes` / `model.broadR` (the per-part OBB collision hull) are auto-fit from the
+combat glb. After the new glb is in `client/assets/ships/` (step 5), regenerate them so collision follows
+the new/changed shape:
+```bash
+npm install                 # one-time: pulls vhacd-js (build-time-only convex-decomposition dep)
+npm run assets:hitboxes     # decomposes the glb (V-HACD, memory-capped) → one PCA box per part into catalog_seed.js (idempotent, round-trip verified)
+```
+Re-run whenever the model, `yaw`, or `scaleMul` changes. Eyeball the fit in-game with the dev-only
+`?hitboxes` wireframe overlay. (Primitive/un-modeled ships have none and use the legacy single sphere.)
+
 ### 6. Drift-check guard
 ```bash
 npm run assets:check    # every model_url* + SOUNDS url in the seed must exist on S3 — must say OK
@@ -122,5 +133,6 @@ was already redeployed in step 10.) See DECISIONS §37.
 
 ## Checklist
 S3 pushed ✅ · old S3 objects deleted (if replacement) ✅ · catalog wired ✅ · local files refreshed ✅ ·
-`assets:check` OK ✅ · **local server restarted** ✅ · CREDITS confirmed ✅ · docs + commit + deploy ✅ ·
+**hitboxes regenerated (`assets:hitboxes`)** ✅ · `assets:check` OK ✅ · **local server restarted** ✅ ·
+CREDITS confirmed ✅ · docs + commit + deploy ✅ ·
 **itch re-published (`/publish-itch`)** ✅
