@@ -1499,36 +1499,60 @@ belt-and-suspenders — in `welcome.js`, independent of the existing `fullscreen
 restore (browsers block it without a user gesture); the fix is to make the button reappear so the player
 taps it.
 
-## 45. Multi-sphere ship hitbox via segment-slice auto-fit (vs sphere-packing / hand-authored / a physics engine)
+## 45. Ship hitbox via convex decomposition → one OBB per part (vs multi-sphere / hand-authored / a physics engine)
 
 Every ship used to collide as **one fat sphere** (`2.6 × scale` for enemies, a hardcoded `2.6` for the
 player, and the player↔rocket test ignored size entirely). On elongated hulls that both over-covers the
 sides (visual misses still hit) and under-covers the nose/tail (`2.6 < 3.06`, the model's real half-length),
-so tip shots miss. We replaced it with a **multi-sphere hitbox (~5-10 spheres)** auto-fit to each hull.
+so tip shots miss. We replaced it with a **per-part oriented-bounding-box (OBB) hitbox** auto-fit to each
+hull by convex decomposition.
 
-**Fit = axial segment slices, not sphere-packing.** The fitter (`scripts/assets-hitspheres.mjs`) slices the
-normalized hull along its **longest horizontal axis** (X *or* Z — a ship whose wingspan exceeds its length,
-like the player, must be sliced across the wingspan, not the length) into 6 bands, dropping one sphere per
-band whose radius hugs the **perpendicular** cross-section (the other horizontal extent + the vertical),
-plus up to 2 thin lateral **wing** spheres for wide bands — capped at 10. Chosen over convex decomposition /
-sphere-packing / a physics engine because the game is a top-down arcade shooter where "does this point touch
-the hull" is the only query (DECISIONS §30 — keep it simple): slices give a good hull-follow for a handful of
-cheap distance tests, no runtime BVH.
+**Inscribed/packed spheres were the first cut, and were superseded.** The initial iteration on this branch
+fit a chain of axis-slice spheres (`docs/plans/multi-sphere-hitbox-fit-research.md`). Spheres cannot wrap a
+thin swept wing — a per-cross-section sphere is "a ball with bulges" that either over-covers the empty gap
+between wings or under-covers the wingtips. So we moved to convex decomposition + one box per part.
 
-**Radius cap (the "one giant round bubble" fix).** The first cut sized each slice's radius to the *full*
-cross-section circumradius while slicing along the wrong (short) axis, so a wide slice produced a fat sphere
-that bulged radius-far in every direction — collisions felt round, not hull-shaped, and `broadR` ballooned
-to ~2.8 (world ~5) for a 3.4-long ship, ~2× the old bubble instead of tighter. Fixed by (a) slicing along
-the *longest* horizontal axis and measuring radius only across the *perpendicular* cross-section, and (b)
-capping each sphere's radius at `(Lhalf − |offset along the long axis|) + AXIAL_MARGIN(0.35)` so it can't
-shoot past the hull's half-length. Result: `broadR` now lands near the model half-extent (~1.6-2.1),
-spheres hug the fuselage, and grazing shots past thin wings miss. A `node --test` guard
-(`scripts/assets-hitspheres.test.mjs`) asserts every ship's `broadR ≤ SHIP_MODEL_LEN/2 + 0.5` so an
-oversized regression fails automatically.
+**Fit = V-HACD convex decomposition, one PCA-OBB per part.** The fitter (`scripts/assets-hitboxes.mjs`)
+decomposes the normalized hull into near-convex parts with **V-HACD** (`vhacd-js`) — each wing (incl. its tip
+pod) becomes its own part — then wraps each hull's vertex cloud in a tight **PCA oriented box**: centroid +
+symmetric covariance → eigenvectors (a small deterministic Jacobi solver) = box axes, project verts per axis
+for the half-extents. Stored per box as `{c,h,u0,u1,u2}` (center, half-extents, three orthonormal group-local
+axes). Chosen over inscribed/packed spheres (can't wrap a wing), hand-authored boxes, and a physics engine
+because the game is a top-down arcade shooter where "does this point touch the hull" is the only query
+(DECISIONS §30 — keep it simple): a handful of cheap OBB projection tests behind the broad sphere, no runtime
+BVH/physics.
+
+**`vhacd-js` is build-time only, and memory-capped (HARD requirement).** A prior local spike OOM-froze the
+maintainer's Mac, so the fitter caps `voxelResolution: 100000` (≤100k voxels) and `maxHulls: 16`, plus
+`maxVerticesPerHull: 32`, and uses `fillMode: 'raycast'` (the combat glbs are non-watertight — raycast
+interior test, no repair needed). These caps are non-negotiable. `vhacd-js` has no `main`/`exports`, only
+`"module"`, so it is imported by the subpath `vhacd-js/lib/vhacd.js`; it never ships to the browser (the
+fitter runs in Node).
+
+**Tight fit, and deterministic.** OBBs are meant to be tight — the whole point is that a bullet through the
+empty gap **beyond a thin wing** misses — so the fitter adds only a tiny additive `HITBOX_MARGIN = 0.05`
+(group-local, ~1.5% of length) to each half-extent for surface-hit reliability, not the old multiplicative
+`1.1` bubble. PCA eigenvector order/sign is otherwise arbitrary, so each OBB is **canonicalized** (axes
+sorted by descending half-extent, each flipped so its largest-magnitude component is ≥ 0); with fixed V-HACD
+options + fixed rounding this makes running the script twice byte-identical (asserted by the unit test).
+`broadR` is the exact farthest OBB corner from the origin (~1.9-2.2, near the model half-length). A
+`node --test` guard (`scripts/assets-hitboxes.test.mjs`) asserts every modeled ship's `broadR ≤ ~2.4`, each
+half-extent ≤ half-length, and the **union full span** along its longest axis sits `3.0 ≤ span ≤ 4.0`
+(≈ `SHIP_MODEL_LEN` 3.4) — so a ~2× over- or under-fit fails automatically.
+
+**Runtime point-vs-OBB test.** At runtime (`client/src/collision.js`) collision is **broad-phase** (one
+enclosing `broadR × mesh.scale.x` sphere at `mesh.position`) → **narrow-phase** (point-vs-OBB): each box
+center is transformed by `mesh.matrixWorld` (affine), each axis `uᵢ` is rotated by the matrix's upper-3×3 and
+**renormalized** (world scale is uniform `sc = mesh.scale.x`), and the point is inside iff
+`|dot(p − c, uᵢ)| ≤ hᵢ·sc + pad` for **all three** axes. `pad` (the rocket proximity fuse / blast reach)
+expands every half-extent — a square-cornered Minkowski inflate, exact enough for a fuse. Transforming by
+`matrixWorld` folds in position + heading + the 1.8× world scale but **not** the child `bankGroup` roll, so
+collisions correctly ignore the cosmetic bank. `collision.js` is intentionally **THREE-free** (inline
+matrix/vector math) so it's importable under `node --test`.
 
 **Rocket blast damage is hull-relative too (the "rockets deal no damage" fix).** A rocket's detonation is
 *triggered* hull-relative (`pointHitsShip(ship, pos, detonateR)`), so the detonation point lands on a
-nose/tail/wing sphere — off the ship's center. The blast *damage* loop in `projectiles.js:detonateRocket`
+hull box — off the ship's center. The blast *damage* loop in `projectiles.js:detonateRocket`
 originally still used `distanceTo(center) ≤ blastR`, so with the offset detonation point (and any offset
 hitbox) it matched **nobody**: the rocket exploded visually but dealt zero damage, for both player and enemy
 rockets. Fixed by making the damage loop hull-relative as well — `pointHitsShip(ship, pos, blastR)`. Since
@@ -1539,29 +1563,25 @@ rockets. Fixed by making the damage loop hull-relative as well — `pointHitsShi
 center as before), the old large values made rockets detonate a full ship-length away — it's now a small
 proximity fuse. It stays ≥ the per-frame rocket travel so a fast rocket can't tunnel through the hull.
 
-**Frame + runtime.** Spheres live in the **group-local noseZ frame** (after ship-factory's auto-scale to
+**Frame.** Boxes live in the **group-local noseZ frame** (after ship-factory's auto-scale to
 `SHIP_MODEL_LEN` 3.4 + recenter + `yaw`), same frame as `userData.noseZ`. The fitter replicates that exact
-normalization on the glb verts. At runtime (`client/src/collision.js`) collision is **broad-phase**
-(one enclosing `broadR × mesh.scale.x` sphere at `mesh.position`) → **narrow-phase** (each sphere
-transformed by `mesh.matrixWorld`, radius `r × mesh.scale.x`). Transforming by `matrixWorld` (which folds
-in position + heading + the 1.8× world scale but **not** the child `bankGroup` roll) makes collisions
-correctly ignore the cosmetic bank. A global `HITSPHERE_PAD` 1.1 is baked into every radius by the fitter
-(keeps the hit feel close to the old generous bubble) so the runtime stays a plain squared-distance test.
-`collision.js` is intentionally **THREE-free** (inline matrix/vector math) so it's importable under
-`node --test`.
+normalization (including the merged triangle indices V-HACD needs) on the glb verts before decomposing, so
+the boxes drop straight into the runtime frame.
 
-**Config lands in the seed by auto-rewrite, not by hand.** `assets:hitspheres` writes the spheres into each
+**Config lands in the seed by auto-rewrite, not by hand.** `assets:hitboxes` writes the boxes into each
 ship's `model:{}` block in `catalog_seed.js` via a **marker-delimited, idempotent** surgical edit
-(`/* hitspheres:auto:start */ … /* hitspheres:auto:end */`), preserving comments/key order, then verifies
-by re-importing the seed and deep-comparing. Hand-authoring was rejected — the fit is bounds math no human
-should transcribe, and a marked span keeps re-runs deterministic (running twice yields an identical file).
+(`/* hitboxes:auto:start */ … /* hitboxes:auto:end */`); the same edit also **consumes any legacy
+`/* hitspheres:auto:* */` span**, so one run migrates the seed off the old data. It preserves comments/key
+order, then verifies by re-importing the seed and deep-comparing. Hand-authoring was rejected — the fit is
+bounds math no human should transcribe, and a marked span keeps re-runs deterministic (running twice yields
+an identical file).
 
 **No meshopt decoder shipped.** The combat glbs are meshopt-compressed and reading them via `NodeIO`
 needs a decoder we don't depend on. Rather than add `meshoptimizer`, the fitter decodes each glb to a plain
 temp glb with the `@gltf-transform/cli` via `npx` (the same "no hard dep" pattern as `assets:build`), then
 reads that. We fit the **combat** glb (what actually renders in battle), not the high-poly source/hangar.
 
-**Fallback.** Primitive/un-modeled ships (no `hitSpheres`) keep the legacy single `2.6 × sizeScale` broad
+**Fallback.** Primitive/un-modeled ships (no `hitBoxes`) keep the legacy single `2.6 × sizeScale` broad
 sphere — unchanged behavior. `e.radius` is retained purely as the over-enemy health-bar / marker anchor.
 
 ---

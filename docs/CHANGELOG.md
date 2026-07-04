@@ -5,7 +5,22 @@
 
 ## 2026-07-04
 
-- **[2026-07-04-1253-multi-sphere-hitbox] Multi-sphere ship hitboxes.** Ships no longer collide as one fat
+- **[2026-07-04-1253-multi-sphere-hitbox] Ship hitboxes: convex-decomposition OBBs (replaces multi-sphere).**
+  Supersedes the same-branch multi-sphere iteration below (never shipped to prod). `npm run assets:hitboxes`
+  decomposes each combat glb into near-convex parts with V-HACD (`vhacd-js`, build-time-only, memory-capped
+  `voxelResolution 100000`/`maxHulls 16`/`maxVerticesPerHull 32`) and fits one tight PCA **oriented bounding
+  box** per part into `model.hitBoxes`/`model.broadR` (`{c,h,u0,u1,u2}` per box, group-local noseZ frame),
+  written into `server/src/catalog_seed.js` via a marker-delimited idempotent edit that also migrates off the
+  old `hitSpheres` span (round-trip verified). Runtime narrow-phase (`client/src/collision.js`) is now
+  **point-vs-OBB** — each box center transformed by `mesh.matrixWorld`, axes rotated by its upper-3×3 and
+  renormalized, hit iff `|dot(p−c, uᵢ)| ≤ hᵢ·scale + pad` on all three axes (behind the unchanged broad
+  sphere). The fit is **tight** (`HITBOX_MARGIN` 0.05, no 1.1 bubble), so a bullet through the empty gap
+  **beyond a thin wing** misses while shots that touch a wingtip connect — the case inscribed spheres
+  couldn't cover. The rocket hull-relative blast damage and the retuned `detonateRadius` (~1.0/1.2) carry
+  over unchanged (`sim.js`/`projectiles.js` untouched). Dev-only `?hitboxes` draws wireframe boxes over
+  every ship. No combat-glb hash change → no itch republish (collision data only).
+- **[2026-07-04-1253-multi-sphere-hitbox] Multi-sphere ship hitboxes.** _(Superseded by the OBB entry above.)_
+  Ships no longer collide as one fat
   sphere. A new `npm run assets:hitspheres` step auto-fits ~4-8 spheres to each combat hull — spheres
   chained along the hull's **longest horizontal axis** (so a wide-winged ship like the player is fit across
   its wingspan, not its length), each radius hugging the perpendicular cross-section and **capped** so it
