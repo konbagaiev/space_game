@@ -516,6 +516,18 @@ export const MAPS = [
       sky: {
         ambient: { color: 0x3a506e, intensity: 0.7 },           // night-side fill
         sun: { color: 0xfff2e0, intensity: 3.4, pos: [170, -80, 40] }, // side light -> terminator
+        // Procedural nebula skybox palette (baked once to a cubemap by buildMap; see DECISIONS §43).
+        // "Ice blue sparse": deep-black space + faint blue wisps + a dense static star field, tuned so
+        // the backdrop never competes with ships/bullets/FX. Linear-RGB triples; omit any key to use the
+        // client's NEBULA_ICEBLUE fallback. Performance tier + ?debug ignore this (flat `background`).
+        nebula: {
+          base:  [0.01, 0.015, 0.025],
+          colA:  [0.12, 0.22, 0.40],
+          colB:  [0.20, 0.35, 0.55],
+          colC:  [0.10, 0.20, 0.40],
+          thLow: 0.55, thHigh: 0.90, glow: 0.30,
+          starD: 75, starB: 1.10, sat: 0.90, seed: 0,
+        },
       },
       stars: { count: 2500, radius: 400 },
       planet: { pos: [-150, -285, -110], radius: 60, ocean: 0x5a82c0, halo: { color: 0x6fa8ff, opacity: 0.13 } },
