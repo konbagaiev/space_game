@@ -9,6 +9,7 @@ import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driv
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
+import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
@@ -107,8 +108,16 @@ if (Device.hasTouch) {
   const fire = document.getElementById('fire-btn');
   const R = 60;          // stick radius
   const DEAD = 0.2;      // dead zone (fraction of radius) - below it no steering/thrust
-  let stickId = null;    // id of the touch holding the stick
-  let stickCx = 0, stickCy = 0;
+  // Tap-vs-drag over the whole play area (#stick-zone is now inset:0). A single-finger gesture within
+  // TAP_SLOP px = an object TAP (runs the shared object-pick raycast); beyond TAP_SLOP = the floating
+  // steering stick. A 2nd finger ON THE ZONE = pinch-zoom, which aborts the in-progress stick/tap.
+  let stickId = null;      // id of the touch holding the stick
+  let stickCx = 0, stickCy = 0;   // game-space center of the stick (touchstart point)
+  let startGX = 0, startGY = 0;   // game-space touchstart point, for slop measurement
+  let dragged = false;     // gesture has exceeded TAP_SLOP → it's steering, not a tap
+  let pinching = false;    // two fingers ON THE ZONE → pinch-zoom, suppress stick + tap
+  let pinchDist = 0;
+  const pinchD = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
   function showStick(x, y) {
     base.style.left = knob.style.left = x + 'px';
@@ -134,29 +143,57 @@ if (Device.hasTouch) {
     }
   }
   function clearStick() {
-    stickId = null;
+    stickId = null; dragged = false;
     touchAim.active = false; touchAim.thrust = 0;
     base.style.display = knob.style.display = 'none';
   }
+  function beginPinch(e) {
+    pinching = true;
+    clearStick();                       // abort any in-progress stick/tap so its end never fires a tap
+    pinchDist = pinchD(e.targetTouches[0], e.targetTouches[1]);
+  }
 
   zone.addEventListener('touchstart', e => {
-    if (stickId !== null) return;
+    // A 2nd finger ON THE ZONE switches to pinch (aborts stick/tap for this gesture). Count
+    // e.targetTouches (fingers on #stick-zone only), NOT e.touches — a finger held on FIRE/rocket (sibling
+    // targets with their own handlers) must not be counted, so holding FIRE while steering never trips
+    // pinch (see DECISIONS §20/§42).
+    if (e.targetTouches.length === 2) { beginPinch(e); e.preventDefault(); return; }
+    if (stickId !== null || pinching) return;
     const t = e.changedTouches[0];
     const p = toGame(t.clientX, t.clientY); // map viewport coords into (possibly rotated) game space
-    stickId = t.identifier; stickCx = p.x; stickCy = p.y;
-    showStick(stickCx, stickCy);
-    moveKnob(stickCx, stickCy, p.x, p.y);
+    stickId = t.identifier; dragged = false;
+    stickCx = startGX = p.x; stickCy = startGY = p.y;
+    showStick(stickCx, stickCy);          // stick appears immediately (a tap may briefly flash it)
+    moveKnob(stickCx, stickCy, p.x, p.y); // zero deflection → inside dead zone → no steering engaged
     e.preventDefault();
   }, { passive: false });
   zone.addEventListener('touchmove', e => {
+    if (pinching && e.targetTouches.length === 2) {
+      const d = pinchD(e.targetTouches[0], e.targetTouches[1]);
+      if (d > 0 && pinchDist > 0) { zoomBy(pinchDist / d); pinchDist = d; } // fingers apart (d↑) => zoom in
+      e.preventDefault(); return;
+    }
     for (const t of e.changedTouches) {
-      if (t.identifier === stickId) { const p = toGame(t.clientX, t.clientY); moveKnob(stickCx, stickCy, p.x, p.y); e.preventDefault(); }
+      if (t.identifier === stickId) {
+        const p = toGame(t.clientX, t.clientY);
+        // Slop is measured in the SAME rotated game space as the stick center (toGame coords), so
+        // TAP_SLOP=10 and the ~12px dead zone (DEAD*R) are apples-to-apples.
+        if (!dragged && exceedsSlop(startGX, startGY, p.x, p.y, TAP_SLOP)) dragged = true;
+        moveKnob(stickCx, stickCy, p.x, p.y); // moveKnob only steers beyond the dead zone
+        e.preventDefault();
+      }
     }
   }, { passive: false });
   function endStick(e) {
     for (const t of e.changedTouches) {
-      if (t.identifier === stickId) clearStick();
+      if (t.identifier === stickId) {
+        // A gesture that never exceeded the slop is a TAP → run the shared object-pick (chest/station).
+        if (!dragged && !pinching) engageObjectAt({ clientX: t.clientX, clientY: t.clientY });
+        clearStick();
+      }
     }
+    if (e.targetTouches.length < 2) { pinching = false; pinchDist = 0; }
   }
   zone.addEventListener('touchend', endStick);
   zone.addEventListener('touchcancel', endStick);
@@ -172,23 +209,13 @@ if (Device.hasTouch) {
   rocketBtn.addEventListener('touchend', e => { keys['_rocket'] = false; e.preventDefault(); }, { passive: false });
   rocketBtn.addEventListener('touchcancel', () => { keys['_rocket'] = false; });
 
-  // Pinch-to-zoom: two fingers over the open canvas area. Scoped to targetTouches so it never fights
-  // the steering stick (the stick lives in its own #stick-zone element with its own listeners).
-  let pinchDist = 0;
-  const pinchD = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-  renderer.domElement.addEventListener('touchstart', e => {
-    if (e.targetTouches.length === 2) pinchDist = pinchD(e.targetTouches[0], e.targetTouches[1]);
-  }, { passive: false });
-  renderer.domElement.addEventListener('touchmove', e => {
-    if (e.targetTouches.length === 2 && pinchDist > 0) {
-      const d = pinchD(e.targetTouches[0], e.targetTouches[1]);
-      if (d > 0) { zoomBy(pinchDist / d); pinchDist = d; } // fingers apart (d↑) => ratio<1 => zoom in
-      e.preventDefault();
-    }
-  }, { passive: false });
-  renderer.domElement.addEventListener('touchend', e => {
-    if (e.targetTouches.length < 2) pinchDist = 0;
-  }, { passive: false });
+  // Zoom +/- buttons on touch: fire directly on touchstart (like FIRE/rocket) instead of relying on a
+  // synthesized `click`. A `click` is only synthesized for a single-touch tap — the browser SUPPRESSES it
+  // while a 2nd touch point is active — so during flight (a steering finger down) a second-thumb tap on
+  // +/- never produced a click and zoom couldn't change (the reported bug; see DECISIONS §42). preventDefault
+  // also stops the compat click so a lone tap doesn't double-zoom. The `click` listeners below stay for mouse.
+  document.getElementById('zoom-in').addEventListener('touchstart', e => { zoomBy(1 / ZOOM_BTN); e.preventDefault(); }, { passive: false });
+  document.getElementById('zoom-out').addEventListener('touchstart', e => { zoomBy(ZOOM_BTN); e.preventDefault(); }, { passive: false });
 } else {
   // PC: the rocket circle is also clickable (besides the F key)
   const rocketBtn = document.getElementById('rocket-btn');
@@ -197,13 +224,19 @@ if (Device.hasTouch) {
 }
 
 // ---------- Zoom controls (both platforms): mouse wheel + on-screen +/- buttons ----------
+// ZOOM_BTN is referenced by the touch +/- handlers above (they fire on touchstart; see DECISIONS §42).
 const ZOOM_WHEEL = 1.12, ZOOM_BTN = 1.25;
 renderer.domElement.addEventListener('wheel', e => {
   e.preventDefault();
   zoomBy(e.deltaY < 0 ? 1/ZOOM_WHEEL : ZOOM_WHEEL); // scroll up = zoom in (closer)
 }, { passive: false });
-document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOOM_BTN));
-document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
+// Mouse-only: on touch the +/- buttons fire on `touchstart` (in the touch block above). Binding `click`
+// there too would DOUBLE-zoom a single tap — the compat click still fires alongside touchstart in some
+// browsers even after preventDefault — so keep the click path off touch entirely.
+if (!Device.hasTouch) {
+  document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOOM_BTN));
+  document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
+}
 
 // ---------- Click-to-fly: tap/click a loot chest OR (return-to-base) the base station ----------
 // HUD buttons are separate DOM elements over the canvas, so they don't reach this canvas listener; a
@@ -226,15 +259,20 @@ function dropUnderPointer(e) {
   }
   return best;
 }
-renderer.domElement.addEventListener('click', (e) => {
+// Shared object-pick for a pointer/tap event ({clientX, clientY}). A live chest under the pointer wins
+// over the base station on overlap. Used by BOTH the desktop click handler and the touch tap (a slop-gated
+// single-finger tap). Returns true if it engaged an autopilot. (Rotation handled by eventNdc → toGame.)
+function engageObjectAt(e) {
   // 1) a chest under the pointer wins (works in combat AND return-to-base)
   const drop = dropUnderPointer(e);
-  if (drop) { engageDropAutopilot(drop); return; }
+  if (drop) { engageDropAutopilot(drop); return true; }
   // 2) otherwise the clickable station (return-to-base only)
-  if (!G.returnToBase || !G.baseStation || !G.baseStation.active) return;
+  if (!G.returnToBase || !G.baseStation || !G.baseStation.active) return false;
   stationRay.setFromCamera(eventNdc(e), camera);
-  if (stationRay.intersectObject(G.baseStation.obj, true).length) engageAutopilot();
-});
+  if (stationRay.intersectObject(G.baseStation.obj, true).length) { engageAutopilot(); return true; }
+  return false;
+}
+renderer.domElement.addEventListener('click', (e) => { engageObjectAt(e); });
 
 // Hover cursors (mouse only — meaningless on touch). Hovering a clickable station shows a first-party
 // "dock here" glyph; hovering a loot chest shows the OS grab hand. A chest hover wins over the dock hover
@@ -495,6 +533,7 @@ if (location.search.includes('debug')) {
     get earned() { return G.earned; },   // credits earned this run
     get balance() { return G.balance; }, // persistent account balance
     get kills() { return G.kills; },
+    get touchAim() { return touchAim; }, // touch steering state (active/heading/thrust) — assert tap-vs-drag in headless
   };
 }
 

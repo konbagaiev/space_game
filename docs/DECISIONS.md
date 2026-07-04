@@ -626,6 +626,15 @@ finger is never counted toward the two-finger pinch. The wheel listener is likew
 on menus (where the hangar/welcome DOM overlays the canvas) the wheel scrolls the shop instead of
 zooming.
 
+**Amendment 2026-07-04 (see §42).** Pinch listeners **moved off `renderer.domElement` onto `#stick-zone`**,
+which now covers the **whole play area** (`inset:0`), not left 58% — because the stick zone would otherwise
+swallow the two-finger touches it used to leave for the canvas. The `e.targetTouches` scoping is
+**unchanged** and is exactly why a finger held on **FIRE/rocket** (sibling targets with their own handlers)
+isn't counted toward pinch, so holding FIRE while steering is preserved — that reasoning still holds, only
+the host element changed. Separately, the mobile zoom `+`/`−` buttons **no longer fire on a synthesized
+`click`** (which the browser suppresses while a second touch point is active, so they were dead during
+flight) — they fire on **`touchstart`** like FIRE/rocket; the `click` path is now mouse-only.
+
 ## 21. Color/lighting tuning — a dev tool (`?tune`), not a player setting
 
 **Decision.** Dialing in the space-backdrop palette + lighting is done with a **dev-only** lil-gui panel
@@ -1389,6 +1398,48 @@ target vanishes (collected by the Grab, or cleared on reset — the `drops.inclu
    §39 dock cursor; chest wins over station on overlap), a near-chrome **glint** material tweak on the drop
    glb + fallback box, and **green off-screen edge arrows** (own pool, nearest 6) reusing the enemy-marker
    projection math. No new asset (glint is a runtime material change), so no `CREDITS.md`/publish-itch.
+
+## 42. Touch input unified as tap-vs-drag over the whole canvas (10px slop), not a fixed left-58% stick zone
+
+**Problem.** The old `#stick-zone` (`left:0; width:58%; pointer-events:auto`) claimed the entire left region
+for steering and **swallowed every touch there**, so on-screen objects (loot chests, the return-to-base
+station) were **untappable across most of the screen** — the desktop click-to-fly (chest/station raycast)
+had no touch equivalent on the left ~58%.
+
+**Decision.** Expand `#stick-zone` to the **full play area** (`inset:0`) and disambiguate **per gesture by
+movement slop**: a single-finger gesture that never travels **>`TAP_SLOP = 10px`** from its touchstart point
+is an **object TAP** that reuses the desktop click's raycast (factored into one shared `engageObjectAt` — a
+live chest wins over the station on overlap), while a gesture beyond 10px becomes the **floating steering
+stick** for the rest of that gesture. Objects and steering both work **anywhere** on screen. The pure
+classifier (`exceedsSlop`) lives in `client/src/tap-gesture.js` and is unit-tested.
+
+**Why 10px, distance-only.** Matches platform touch-slop conventions (Android `ViewConfiguration` ~8dp,
+Hammer.js 9px). No time cap (§30 — simplest): a hold-still-then-release still counts as a tap, and time is
+only needed for long-press/double-tap, which we don't have. Slop is measured in the **rotated game space**
+(`toGame` coords), the same space the stick center and its ~12px dead zone live in, so the two thresholds
+are apples-to-apples on a rotated phone.
+
+**Trade-offs accepted.** (a) The stick base/knob is **shown on touchstart**, so a tap may briefly flash it
+(deferring the visual until the threshold was rejected as extra state for no real gain). A ≤10px tap never
+engages steering — it's inside the dead zone and `dragged` gates it. (b) Taps and steering now share the
+whole surface, so the **2nd finger is reserved for pinch** (no tap-while-steering). Pinch **moved from
+`renderer.domElement` onto `#stick-zone`** (the canvas no longer receives the touches) but still counts
+**`e.targetTouches`** (per §20), so a finger held on FIRE/rocket (sibling targets) isn't counted — holding
+FIRE while steering is preserved. `=== 2` (not `>= 2`) keeps today's pinch feel.
+
+**Zoom `+`/`−` during flight — the real cause, found by reproduction (not the z-index keep).** The full-screen
+zone would cover the rocket/zoom buttons, so `#rocket-btn`/`#zoom` are raised to `z-index:6` — a **necessary
+companion**, but reproduction on a Playwright+CDP multitouch touch harness showed the buttons were **already
+dead during flight before that**: the player steers with one finger, and tapping `+`/`−` with a second thumb
+did nothing. **Root cause:** the buttons fired on a synthesized **`click`**, and the browser **only
+synthesizes a click for a single-touch tap** — it suppresses the compat click while a second touch point (the
+steering finger) is active. **Fix:** the zoom buttons fire on **`touchstart`** (mirroring FIRE/rocket, which
+always worked during flight); the `click` path is kept **mouse-only** (empirically, the compat click still
+fires alongside `touchstart` in some browsers even after `preventDefault`, which would double-zoom a lone
+tap). Verified empirically that the zoom visibly changes when tapped mid-flight on touch.
+
+**Alternative rejected.** Keep the 58% zone and add tap detection only on the right 42% canvas — that leaves
+objects untappable on the left, which is the whole bug.
 
 ---
 

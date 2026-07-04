@@ -3,7 +3,12 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-03 (**Enemy health bars** — a translucent-red bar floats above each enemy, shown only
+**Updated:** 2026-07-04 (**Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
+single-finger gesture within `TAP_SLOP = 10px` is an object tap (shared `engageObjectAt` raycast — chests +
+the return-to-base station are tappable *anywhere*), beyond 10px is the steering stick; a 2nd finger = pinch
+(counts `targetTouches`, so holding FIRE while steering still steers); the rocket + zoom buttons layer above
+the full-screen zone and the zoom `+`/`−` fire on `touchstart` so they work during active flight. Previously:
+**Enemy health bars** — a translucent-red bar floats above each enemy, shown only
 once its HP drops below max. Previously: **Interactive chests** — loot drops are now clickable: clicking a chest engages
 autopilot toward it (in combat or return-to-base), a `grab` hand cursor shows on hover (mouse), chests are
 brushed silver so they read against dark space, and off-screen chests get their own green edge arrows. Autopilot
@@ -66,7 +71,9 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
 - **Autopilot (station or loot chest)** — after the last enemy is destroyed the **base station** (at
-  `(-20,-42,-20)`, up-left of the arena center) becomes clickable; **clicking/tapping it** (a canvas raycast, ignored on HUD buttons) engages autopilot,
+  `(-20,-42,-20)`, up-left of the arena center) becomes clickable; **clicking/tapping it** (a canvas raycast,
+  ignored on HUD buttons — on touch it's a **slop-gated tap**, a single finger that moved <10px, not a
+  raw touch-anywhere; both desktop click and touch tap route through the shared `engageObjectAt` pick) engages autopilot,
   which flies the ship home: **brake to a stop → rotate the nose to face the target → accelerate at max →
   kinematic symmetric-decel brake** so it coasts to a stop right next to it. The **same autopilot also flies
   to a clicked loot chest** (combat and return-to-base — see Grab & loot drops); on overlap a chest wins over
@@ -80,10 +87,28 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Zoom** — **PC:** mouse **wheel** (scroll up = closer) + on-screen **＋/−** buttons (right edge,
   vertically centered). **Mobile:** the **＋/−** buttons + two-finger **pinch**. Zoom scales the fixed
   camera offset along its angle within `0.6–2.2×`, **eases smoothly** toward the target (~0.2 s, frame-rate
-  independent) instead of snapping, and is **persisted** across runs (`localStorage` key `camZoom`).
-- **Touch (mobile browsers):** "steer toward direction" — the angle of the left stick = desired
-  nose direction (the ship turns toward it), the magnitude of deflection = thrust; on the right are the
-  "FIRE" and "🚀" (rocket) buttons. Shown only on touch devices.
+  independent) instead of snapping, and is **persisted** across runs (`localStorage` key `camZoom`). On touch
+  the `+`/`−` buttons fire on **`touchstart`** (like FIRE/🚀), not a synthesized `click`, and sit `z-index:6`
+  above the full-screen stick zone — so they (and two-finger pinch) stay usable **during active flight**
+  (a `click` is only synthesized for a single-touch tap; the browser suppresses it while a steering finger is
+  down, which is why the old click-based buttons were dead during flight — see DECISIONS §42). The `click`
+  path is kept **mouse-only** so a touch tap doesn't double-zoom.
+- **Touch (mobile browsers) — tap-vs-drag over the whole play area.** `#stick-zone` now covers the entire
+  play area (`inset:0`, not the old left 58%), and a single-finger gesture is disambiguated by **movement
+  slop**: a gesture that stays within **`TAP_SLOP = 10px`** of its touchstart point (measured in the rotated
+  game space, `toGame` coords — the same space as the stick, so slop and the ~12px dead zone are
+  apples-to-apples) is an **object TAP** that runs the **same raycast as the desktop click** (nearest live
+  loot chest wins over the base station → `engageObjectAt` → `engageDropAutopilot`/`engageAutopilot`); once
+  the gesture travels **>10px** it becomes the **floating steering stick** (angle = desired nose direction,
+  deflection = thrust) for the rest of that gesture. Steering and object taps both work **anywhere** on
+  screen. The stick base/knob **appears immediately** on touchstart (a tap may briefly flash it), but a tap
+  never engages steering (a ≤10px deflection is inside the dead zone, and `dragged` gates the classification).
+  The pure classifier is `client/src/tap-gesture.js` (`exceedsSlop`, unit-tested). A **2nd finger on the play
+  area = pinch-zoom**, which aborts the in-progress stick/tap; pinch counts **`e.targetTouches`** on
+  `#stick-zone` (not all screen fingers), so a finger held on **FIRE**/🚀 (sibling targets) isn't counted and
+  **holding FIRE while steering** is preserved. On the right are the "FIRE" and "🚀" (rocket) buttons, and the
+  zoom `+`/`−` buttons — all layered **above** the now full-screen stick zone (`#fire-btn` is a later
+  `#touch` child in the z-5 context; `#rocket-btn` and `#zoom` are `z-index:6`). Shown only on touch devices.
 - **Landscape on phones (forced via rotation):** touch devices always play in landscape. When a phone is
   held in **portrait**, the whole `<body>` is rotated 90° in CSS (`body.rot`, `transform: translateX(100vw)
   rotate(90deg)`) and the game runs in the **swapped** dimensions — the browser can't widen its viewport
@@ -459,7 +484,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   can fly home), a translucent **blue homing arrow** (`updateReturnArrow`, anchored to the ship, re-pointed at
   the station each frame) and a centered **"Sector cleared — return to base"** HUD hint (`updateReturnHint`,
   i18n `ui.return.hint`) appear, and the **base station becomes clickable** (`G.baseStation.active`). Clicking/
-  tapping the station is a **mandatory dock**: it calls `engageAutopilot()` (sets `G.autopilot.active` + phase
+  tapping the station is a **mandatory dock** (on touch a **slop-gated tap** — a <10px single-finger gesture —
+  through the shared `engageObjectAt` pick, not a raw touch-anywhere): it calls `engageAutopilot()` (sets `G.autopilot.active` + phase
   `brake0` + `target = { kind:'station' }`), and `checkArrival()` fires the existing `win()` once the ship is
   within `BASE_ARRIVE_RADIUS` (45u, horizontal xz) of `(0,0)`. `G.autopilot` now carries a typed **`target`**
   (the station **or** a loot drop — the same autopilot flies to loot chests, see Grab & loot drops); the
