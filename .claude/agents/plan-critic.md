@@ -83,3 +83,19 @@ perfection beyond that is not the bar.
      test gap — block on it.
   4. **For each change ask "what breaks if this is subtly wrong?"** Assume the planner's happy path is
      optimistic and hunt the silent failure — that adversarial stance is the whole job.
+- **2026-07-04 — Check a spatial plan against the game's ACTUAL spatial model, not abstract correctness.**
+  The OBB-hitbox plan fit tight 3D boxes to the ship meshes — "correct" in 3D, but this is a **near-top-down
+  shooter where bullets fly in the y=0 combat plane**, so model parts off that plane (the player's wings hang
+  ~0.27 below centre; a drooped nose) became **unhittable** in-game while every offline/unit check passed.
+  When a plan touches collision / hit-detection / aiming / anything spatial, block it unless it reasons about
+  what the **player** experiences given the planar aim — a hitbox that's 3D-accurate can still be gameplay-wrong.
+  See memory [[topdown-planar-collision]].
+- **2026-07-04 — When a plan ADDS an element, block it unless it says how the element is DESCRIBED in every
+  player-facing surface, and sanity-check those numbers.** The triple spiral rocket plan set `power: 40`
+  (per warhead) and simulated 3 warheads correctly, but never addressed the shop/loadout **stat line** — so
+  it shipped showing damage `40`, not `40×3`, misrepresenting the weapon to the buyer (caught only in
+  live-test). "Correctly described everywhere it appears" is part of external validity, not polish. On any
+  plan that adds/changes a catalog item, weapon, or stat, walk each display surface — shop `statLine`,
+  tooltips, HUD, comparison bar, SUMMARY's item list — and demand the plan state the exact text/number each
+  shows; if the number a player reads differs from the effective in-game value (multi-projectile, multi-hit,
+  per-instance, conditional), that mismatch is a blocking issue.

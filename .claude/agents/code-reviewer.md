@@ -63,3 +63,18 @@ PASS as soon as it's correct, tested, modular, and documented. Don't hold it for
   ones the diff doesn't touch but depends on it. And confirm there's a test for the user-visible OUTCOME
   (rocket damages an enemy), not only the mechanism (the sphere test). "The math checks out" is necessary,
   not sufficient.
+- **2026-07-04 — For collision/spatial/visual changes, offline & 3D-geometry metrics can pass while the
+  feature is broken for the player.** The OBB-hitbox diff had 100% surface coverage, green unit tests, and a
+  clean re-review — yet the player's wings and some enemy noses were transparent in-game, because this is a
+  **top-down shooter (bullets fly at y≈0)** and those model parts sit off the aim plane. When a change's
+  verification rests on aggregate/3D coverage numbers rather than the **player-visible** outcome on the real
+  aim plane, flag it and call for driving the actual running game. See memory [[topdown-planar-collision]].
+- **2026-07-04 — When a diff adds a catalog item/weapon/stat, verify it READS correctly on every display
+  surface, not just that it simulates correctly.** The triple spiral rocket diff correctly seeded `power: 40`
+  (per warhead) and fired 3 warheads — the review confirmed "catalog row correct" and passed — but the shop
+  `statLine` still rendered damage as a bare `40`, misrepresenting a 120-on-full-hit weapon to the buyer
+  (caught only in live-test). For any new/changed item, grep the display code (shop `statLine` in
+  `client/src/shop.js`, tooltips, HUD, comparison bar) and check the number/text a player actually reads
+  matches the effective in-game value — especially for multi-projectile / multi-hit / per-instance stats
+  where the raw stat ≠ what the player experiences. "Described correctly everywhere it appears" is part of
+  the review, not just "simulated correctly."

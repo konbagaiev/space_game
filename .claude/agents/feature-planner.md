@@ -82,3 +82,13 @@ Your final message: a point-by-point list of how each issue was resolved.
   anchor offsets along the **camera's screen-up axis** (its local +Y in world). Whenever a plan places a DOM
   overlay "above/below/beside" a world object, read the camera setup first and specify the offset in the
   camera's screen basis (or in screen pixels) — never assume world +Y maps to screen-up.
+- **2026-07-04 — For a NON-STANDARD feature, ask the MAXIMUM set of clarifications, and enumerate every
+  player-facing surface the new element touches.** The triple spiral rocket is a weapon whose "damage" is
+  not one number: it fires 3 warheads at 40 each. The plan seeded the catalog `power: 40` (per warhead) but
+  never specified that the shop/loadout **stat line** must show `40×3` — so it shipped reading a misleading
+  `40`, caught only in live-test. When a feature is unusual (multi-projectile, multi-hit, conditional,
+  stacking, per-instance stats), (1) ask more discovery questions, not fewer — how it's *described* and
+  *displayed*, not just how it behaves; and (2) in the plan, walk **every surface that presents the new
+  element** — shop stat line (`statLine` in `client/src/shop.js`), tooltips, HUD, comparison bar, SUMMARY's
+  weapon list — and state the exact text/number each must show. A new element is not "done" in the plan
+  until it is correctly described everywhere it appears, not only correctly simulated.
