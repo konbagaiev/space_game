@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Weapon hit/explosion FX pass** — bullet hit-flash is now keyed off the weapon
+**Updated:** 2026-07-04 (**Enemy HP bar clears the model** — the over-enemy health bar now pins its
+bottom edge just above the hull (world anchor `~e.radius*1.15 + 1.5`, CSS `translate(-50%, calc(-100% - 4px))`)
+instead of centering on the anchor, so it no longer merges with the ship.)
+(**Weapon hit/explosion FX pass** — bullet hit-flash is now keyed off the weapon
 `class` (`HIT_FLASH_SCALE`: kinetic tiny spark / cannon small flash) instead of one size, and rocket
 detonation uses a new small/fast layered `spawnRocketBurst` whose size/speed/tint are data-driven from
 the rocket weapon stats (`blastVisual`/`blastTimeScale` 0.8 = 20% quicker/`blastTint`); ship-death burst
@@ -195,10 +198,13 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Off-screen enemy markers** — for each enemy that's off-screen, an arrow on the screen edge points
   toward it, tinted by the enemy's marker color (`updateMarkers`, a pooled DOM overlay). Hidden while an
   overlay (game over / victory) is up.
-- **Enemy health bars** — a small translucent-red bar floats just above each enemy, shown **only while its
-  HP is below max** (undamaged enemies show nothing). `updateEnemyHealthBars` (a pooled DOM overlay in
-  `#markers`) projects the enemy's world position + `radius` each frame and sets the fill width to
-  `hp / maxHp`; enemies carry a `maxHp` from spawn (`ship-build.js`). CSS: `.enemy-hp` + its `> i` fill in
+- **Enemy health bars** — a small translucent-red bar whose **bottom edge is pinned just above** each
+  enemy model, shown **only while its HP is below max** (undamaged enemies show nothing).
+  `updateEnemyHealthBars` (a pooled DOM overlay in `#markers`) projects a world anchor
+  `~e.radius*1.15 + 1.5` units above the enemy center each frame; the CSS `translate(-50%, calc(-100% - 4px))`
+  then lifts the bar fully above that anchor with a constant 4 px gap (so it clears the hull at any
+  size/zoom). Fill width is set to `hp / maxHp`; enemies carry a `maxHp` from spawn (`ship-build.js`).
+  CSS: `.enemy-hp` + its `> i` fill in
   `styles.css`. Hidden while an overlay (game over / victory) is up.
 - **Kill credit popups** — a green `+xx` popup floats up from each destroyed enemy's position showing the
   credits earned, holding then fading over ~2 s (`updateCreditPopups`, a pooled DOM overlay in the `#markers`
