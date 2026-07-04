@@ -20,7 +20,7 @@ export function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
   const vel = dir.clone().normalize().multiplyScalar(weapon.projectileSpeed);
   if (shooterVel) vel.add(shooterVel);
   // despawn by distance traveled (maxRange), not time
-  bullets.push({ mesh: m, vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power });
+  bullets.push({ mesh: m, vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power, class: weapon.class });
 }
 
 // Scale a particle count by the current graphics tier (additive overdraw is the mobile fill-rate
@@ -51,6 +51,10 @@ export function spawnExplosion(pos, maxScale = 3, life = EXPLOSION_LIFE, color =
   scene.add(m);
   explosions.push({ mesh: m, life, maxLife: life, maxScale });
 }
+
+// Bullet hit-flash size by weapon class — a tiny kinetic spark vs. a heavier (still small) cannon
+// flash. Unset/kinetic → the small spark. Color stays the default 0xffb050 (see spawnExplosion).
+export const HIT_FLASH_SCALE = { kinetic: 0.8, cannon: 2 };
 
 // ---------- Ship destruction: a big, colorful burst (layered fireball + sparks + shockwave) ----------
 // Much louder than the hit-flash: stacked fireballs (white-hot core -> exhaust-colored glow ->
@@ -104,6 +108,52 @@ export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) 
     ring.rotation.x = -Math.PI / 2; // lay it flat on the arena
     scene.add(ring);
     shockwaves.push({ mesh: ring, life: 2.4, maxLife: 2.4, maxScale: 22 * s });
+  }
+}
+
+// ---------- Rocket detonation: a small, fast layered burst ----------
+// Same structure as spawnShipExplosion (fireball layers + a few sparks + a shockwave ring) but
+// shrunk and quick, so a rocket blast reads as a proper explosion rather than one glowing sphere.
+// Sized off the rocket's blastVisual (R); tint is a warm rocket orange. Reuses the same particle
+// pools + tier gating as the ship burst (no sim.js changes needed).
+export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050) {
+  const R = blastVis;
+  // Layered fireball: white-hot core -> tinted glow -> orange outer cloud, each bigger, slower, dimmer.
+  spawnExplosion(pos, R * 0.5, 0.40, 0xffffff);                                    // white-hot core (always)
+  if (G.gfx.particleScale >= 0.7) spawnExplosion(pos, R * 0.8, 0.65, tint);        // tinted glow
+  spawnExplosion(pos, R * 1.15, 0.90, 0xff5a20);                                   // orange outer cloud (always)
+
+  // A few warm sparks flung outward, clamped to the live-particle budget (like the ship burst).
+  const N = Math.max(0, Math.min(scaledCount(8), G.gfx.maxParticles - liveParticles()));
+  const s = R / 6; // spatial scale relative to the biggest rocket
+  for (let i = 0; i < N; i++) {
+    const col = SPARK_COLORS[i % SPARK_COLORS.length];
+    const mat = new THREE.MeshBasicMaterial({
+      color: col, transparent: true, opacity: 1,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    });
+    const m = new THREE.Mesh(sparkGeo, mat);
+    m.position.copy(pos);
+    const size = (0.2 + Math.random() * 0.3) * s;
+    m.scale.setScalar(size);
+    scene.add(m);
+    const a = (i / N) * Math.PI * 2 + Math.random() * 0.5;
+    const sp = (8 + Math.random() * 14) * s;
+    const vel = new THREE.Vector3(Math.cos(a) * sp, (Math.random() - 0.5) * 4 * s, Math.sin(a) * sp);
+    sparks.push({ mesh: m, vel, life: 0.5 + Math.random() * 0.6, maxLife: 1.1, size });
+  }
+
+  // Flat shockwave ring (tier-gated like the ship burst) — small + short-lived.
+  if (G.gfx.particleScale >= 0.5) {
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: tint, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
+    });
+    const ring = new THREE.Mesh(shockGeo, ringMat);
+    ring.position.copy(pos); ring.position.y = 0.6;
+    ring.rotation.x = -Math.PI / 2;
+    scene.add(ring);
+    shockwaves.push({ mesh: ring, life: 0.85, maxLife: 0.85, maxScale: R * 2.2 });
   }
 }
 
@@ -188,7 +238,7 @@ export function detonateRocket(r, dealDamage = true) {
       G.player.hp -= r.damage;
     }
   }
-  spawnExplosion(r.obj.position, r.blastVis);
+  spawnRocketBurst(r.obj.position, r.blastVis); // small, fast layered burst (see spawnRocketBurst)
   audio.sfx.explosion(0.7, r.sfxExplode, 0.3); // rocket blast — 70% quieter (sampled via the weapon-class map)
   scene.remove(r.obj);
   r.obj.children[0].material.dispose();

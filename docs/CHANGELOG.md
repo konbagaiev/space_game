@@ -5,6 +5,13 @@
 
 ## 2026-07-04
 
+- **[2026-07-04-1148-weapon-hit-fx] Weapon hit/explosion FX pass.** Bullet hit-flash is now keyed off the
+  weapon `class` (kinetic → tiny spark `maxScale 0.8`, cannon → small flash `maxScale 2`) instead of every
+  bullet using the same `maxScale 3` micro-flash; `class` is threaded onto the bullet in `spawnBullet` and
+  added to the enemy bullet weapons (id 2/9 kinetic, id 10 cannon) in `catalog_seed.js`. Rocket detonation
+  now uses a new small/fast layered `spawnRocketBurst` (fireball layers + a few sparks + shockwave ring,
+  ~0.4–0.9 s), sized off `blastVisual`, replacing the single-sphere blast — same particle-budget/tier gating
+  as the ship burst; ship-death explosion unchanged.
 - **Nebula clump size is now tunable (`sky.nebula.scale`).** Added a `scale` knob (noise frequency) to the
   procedural nebula: higher = smaller/finer clumps. Replaces the previously hardcoded `2.2` in the shader
   with a `uScale` uniform, threaded from the descriptor (fallback `2.2`). `home-system` ships **`scale: 3.6`**

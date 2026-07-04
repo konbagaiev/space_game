@@ -3,9 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Full-screen button available in-game** — the touch `⛶` button now shows during
-active combat + pause (left of the rocket, raised above bottom chrome), and `body.fs` re-syncs on foreground
-so it reappears after a mobile minimize→restore; iPhone A2HS pill shows in-game too. See DECISIONS §44.)
+**Updated:** 2026-07-04 (**Weapon hit/explosion FX pass** — bullet hit-flash is now keyed off the weapon
+`class` (`HIT_FLASH_SCALE`: kinetic tiny spark / cannon small flash) instead of one size, and rocket
+detonation uses a new small/fast layered `spawnRocketBurst` sized off `blastVisual`; ship-death burst
+unchanged.)
 (**Procedural nebula skybox** — `skyScene.background` is now a baked procedural
 nebula + star-field cubemap (`makeNebulaSky`), tier-gated and skipped under `?debug`; see Visuals + DECISIONS §43.)
 (**Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
@@ -744,7 +745,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   roll (aim/forward use `heading`, collisions use `mesh.position`).
 - **Enemy spawn ("warp in"):** a newly spawned enemy grows from a dot to its full size over
   `SPAWN_GROW_TIME` (1 s, ease-out cubic) — it scales up in place while the AI is already active.
-- Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
+- Effects: a bullet hit-flash at the impact point, **keyed off the weapon `class`** via the client
+  `HIT_FLASH_SCALE` map (`kinetic`/unset → a tiny `maxScale 0.8` spark, `cannon` → a heavier but still
+  small `maxScale 2` flash; color unchanged); a narrow glowing engine trail on **every ship**
   (player and enemies), via the shared `emitExhaust` — particle speed = ship speed + ejection backward
   along the nozzle, colored by the engine's `exhaust.color`, emitted while thrusting forward.
 - **Muzzle / exhaust spawn from the model's real bounds.** Bullets/rockets leave the **nose** and exhaust
@@ -759,6 +762,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the glow layer, accent sparks and ring), so the player's burst is cyan-blue, enemies' orange. Used on
   enemy and player death. An enemy death also spawns a floating `+xx` credit popup at the kill site (see
   the HUD "Kill credit popups").
+- **Rocket detonation** (`spawnRocketBurst`): a rocket blast uses the same layered structure (fireball
+  layers + a few sparks + a shockwave ring) but **shrunk and fast** (~0.4–0.9 s), sized off the rocket's
+  `blastVisual`, so it reads as a proper explosion rather than one glowing sphere. Reuses the same
+  particle pools + `G.gfx` tier gating as the ship burst — distinct from the (unchanged) ship-death
+  `spawnShipExplosion`.
 
 ## Audio (synth + sampled — `client/src/audio.js`)
 **Native Web Audio API, no library.** SFX are **synthesized** by default (oscillators + filtered white
