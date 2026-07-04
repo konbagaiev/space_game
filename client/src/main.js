@@ -500,7 +500,7 @@ function animate() {
 // so a scenario can seed entities and assert on state (counts, colors) instead of diffing pixels.
 if (location.search.includes('debug')) {
   window.__game = {
-    scene, enemies, bullets, rockets,
+    scene, camera, enemies, bullets, rockets,
     explosions, sparks, shockwaves, trail, smoke,
     spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, reset, levelRunner,
     drops, // the live loot-drop array (count/positions assertable in headless)

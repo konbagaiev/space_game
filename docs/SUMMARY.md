@@ -3,9 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Enemy HP bar clears the model** — the over-enemy health bar now pins its
-bottom edge just above the hull (world anchor `~e.radius*1.15 + 1.5`, CSS `translate(-50%, calc(-100% - 4px))`)
-instead of centering on the anchor, so it no longer merges with the ship.)
+**Updated:** 2026-07-04 (**Enemy HP bar floats above the model on screen** — the over-enemy health bar is
+now anchored along the camera's screen-up axis (not world +Y, which points nearly *at* the near-top-down
+camera), so it sits clearly above the ship sprite on the 2D screen instead of merging with it.)
 (**Weapon hit/explosion FX pass** — bullet hit-flash is now keyed off the weapon
 `class` (`HIT_FLASH_SCALE`: kinetic tiny spark / cannon small flash) instead of one size, and rocket
 detonation uses a new small/fast layered `spawnRocketBurst` whose size/speed/tint are data-driven from
@@ -198,14 +198,17 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Off-screen enemy markers** — for each enemy that's off-screen, an arrow on the screen edge points
   toward it, tinted by the enemy's marker color (`updateMarkers`, a pooled DOM overlay). Hidden while an
   overlay (game over / victory) is up.
-- **Enemy health bars** — a small translucent-red bar whose **bottom edge is pinned just above** each
-  enemy model, shown **only while its HP is below max** (undamaged enemies show nothing).
-  `updateEnemyHealthBars` (a pooled DOM overlay in `#markers`) projects a world anchor
-  `~e.radius*1.15 + 1.5` units above the enemy center each frame; the CSS `translate(-50%, calc(-100% - 4px))`
-  then lifts the bar fully above that anchor with a constant 4 px gap (so it clears the hull at any
-  size/zoom). Fill width is set to `hp / maxHp`; enemies carry a `maxHp` from spawn (`ship-build.js`).
-  CSS: `.enemy-hp` + its `> i` fill in
-  `styles.css`. Hidden while an overlay (game over / victory) is up.
+- **Enemy health bars** — a small translucent-red bar that floats **above each enemy on the 2D screen**,
+  shown **only while its HP is below max** (undamaged enemies show nothing). `updateEnemyHealthBars`
+  (a pooled DOM overlay in `#markers`) offsets the anchor along the **camera's screen-up axis**
+  (`camera` local +Y in world, `_screenUp`) by `~e.radius*1.6 + 2` units, then projects it — because the
+  camera is near-top-down (`CAM_OFFSET 0,110,26`), world +Y points almost *at* the camera, so a plain +Y
+  bump barely moves the bar up the screen; offsetting along screen-up lifts it straight up over the model
+  (still depth-correct, scales with zoom/distance). The CSS `translate(-50%, calc(-100% - 4px))` then pins
+  the bar's bottom edge above that anchor with a 4 px gap. Fill width is set to `hp / maxHp`; enemies carry
+  a `maxHp` from spawn (`ship-build.js`). CSS: `.enemy-hp` + its `> i` fill in `styles.css`. Hidden while an
+  overlay (game over / victory) is up. (`__game.camera` is exposed for the headless position assertion in
+  `visual/scenarios/16-enemy-health-bar.mjs`.)
 - **Kill credit popups** — a green `+xx` popup floats up from each destroyed enemy's position showing the
   credits earned, holding then fading over ~2 s (`updateCreditPopups`, a pooled DOM overlay in the `#markers`
   container; `creditPopups` FX array spawned in `sim.js` on enemy death with `maxLife` 2.0, skipped when

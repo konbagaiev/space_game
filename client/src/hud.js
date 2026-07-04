@@ -170,6 +170,7 @@ export function updateCreditPopups() {
 // ---------- Enemy health bars: a translucent red bar above each damaged enemy (hidden at full health) ----------
 const hpBarPool = [];
 const _hb = new THREE.Vector3();
+const _screenUp = new THREE.Vector3(); // world direction that maps to "up" on the screen (camera's local +Y)
 function getHpBar(i) {
   while (hpBarPool.length <= i) {
     const d = document.createElement('div');
@@ -184,10 +185,15 @@ export function updateEnemyHealthBars() {
   // hide everything while there's no player or an overlay (game over / victory) is up
   if (!G.player || el.overlay.style.display !== 'none') { for (const b of hpBarPool) b.style.display = 'none'; return; }
   const w = gameW(), h = gameH();
+  // Offset the anchor along the camera's screen-up axis (not world +Y): with the near-top-down camera
+  // (CAM_OFFSET 0,110,26) world "up" points almost at the camera, so a +Y bump barely moves the bar up
+  // the screen. The camera's local +Y in world *is* screen-up, so offsetting along it lifts the bar
+  // straight up on screen above the model, while staying depth-correct (scales with zoom/distance).
+  _screenUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
   let used = 0;
   for (const e of enemies) {
     if (e.hp >= e.maxHp) continue;                 // full health -> no bar
-    _hb.copy(e.mesh.position); _hb.y += e.radius * 1.15 + 1.5; // anchor above the hull; bar's bottom edge pins here (depth-correct, scales with model size)
+    _hb.copy(e.mesh.position).addScaledVector(_screenUp, e.radius * 1.6 + 2); // lift up-screen, clear of the hull
     _hb.project(camera);
     if (_hb.z > 1) continue;                        // behind the camera -> skip
     const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));

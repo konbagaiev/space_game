@@ -9,6 +9,13 @@
   now pins its bottom edge above the ship (CSS `translate(-50%, calc(-100% - 4px))` + a size-proportional
   world anchor `e.radius * 1.15 + 1.5`) instead of centering on the anchor, so it no longer merges with /
   dips into the hull (`hud.js` `updateEnemyHealthBars`, `styles.css` `.enemy-hp`).
+  - **Follow-up (live-test fix):** the first pass raised the anchor along **world +Y**, but the camera is
+    near-top-down (`CAM_OFFSET 0,110,26`) so world-up points almost *at* the camera — the bar barely moved
+    up the screen and still overlapped the model. Now the anchor is offset along the **camera's screen-up
+    axis** (`camera` local +Y in world) by `~e.radius*1.6 + 2`, so the bar sits straight above the model on
+    the 2D screen at any camera angle/zoom (still depth-correct). Exposed `__game.camera` and added a
+    position assertion in `visual/scenarios/16-enemy-health-bar.mjs` (bar top must be above the enemy's
+    projected center) so this can't silently regress.
 - **[2026-07-04-1148-weapon-hit-fx] Weapon hit/explosion FX pass.** Bullet hit-flash is now keyed off the
   weapon `class` (kinetic → tiny spark `maxScale 0.8`, cannon → small flash `maxScale 2`) instead of every
   bullet using the same `maxScale 3` micro-flash; `class` is threaded onto the bullet in `spawnBullet` and

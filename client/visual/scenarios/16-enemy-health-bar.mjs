@@ -41,4 +41,15 @@ export default async function ({ page, assert, shot }) {
   });
   assert.ok(after.count >= 1, 'a health bar appears once the enemy is below full HP');
   assert.equal(after.fill, '40%', 'the fill width tracks the remaining health fraction');
+
+  // The bar must sit ABOVE the enemy on the 2D screen (smaller `top` = higher). The anchor is offset
+  // along the camera's screen-up axis, so this holds regardless of the near-top-down camera angle.
+  const pos = await page.evaluate(() => {
+    const g = window.__game; const e = g.enemies[0];
+    const v = e.mesh.position.clone().project(g.camera);
+    const enemyCenterPx = (-v.y * 0.5 + 0.5) * window.innerHeight;
+    const bar = [...document.querySelectorAll('#markers .enemy-hp')].find((b) => b.style.display !== 'none');
+    return { enemyCenterPx, barTopPx: parseFloat(bar.style.top) };
+  });
+  assert.ok(pos.barTopPx < pos.enemyCenterPx - 20, 'bar sits clearly above the enemy center on screen');
 }
