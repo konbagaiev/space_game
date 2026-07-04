@@ -1506,12 +1506,38 @@ player, and the player↔rocket test ignored size entirely). On elongated hulls 
 sides (visual misses still hit) and under-covers the nose/tail (`2.6 < 3.06`, the model's real half-length),
 so tip shots miss. We replaced it with a **multi-sphere hitbox (~5-10 spheres)** auto-fit to each hull.
 
-**Fit = axial segment slices, not sphere-packing.** The fitter (`scripts/assets-hitspheres.mjs`) splits the
-normalized hull into 6 equal Z-bands, drops one sphere per band (center = the band's X/Y midpoint, radius =
-the band's cross-section half-extent), and adds up to 2 lateral **wing** spheres for bands much wider than
-tall — capped at 10. Chosen over convex decomposition / sphere-packing / a physics engine because the game
-is a top-down arcade shooter where "does this point touch the hull" is the only query (DECISIONS §30 — keep
-it simple): slices give a good hull-follow for a handful of cheap distance tests, no runtime BVH.
+**Fit = axial segment slices, not sphere-packing.** The fitter (`scripts/assets-hitspheres.mjs`) slices the
+normalized hull along its **longest horizontal axis** (X *or* Z — a ship whose wingspan exceeds its length,
+like the player, must be sliced across the wingspan, not the length) into 6 bands, dropping one sphere per
+band whose radius hugs the **perpendicular** cross-section (the other horizontal extent + the vertical),
+plus up to 2 thin lateral **wing** spheres for wide bands — capped at 10. Chosen over convex decomposition /
+sphere-packing / a physics engine because the game is a top-down arcade shooter where "does this point touch
+the hull" is the only query (DECISIONS §30 — keep it simple): slices give a good hull-follow for a handful of
+cheap distance tests, no runtime BVH.
+
+**Radius cap (the "one giant round bubble" fix).** The first cut sized each slice's radius to the *full*
+cross-section circumradius while slicing along the wrong (short) axis, so a wide slice produced a fat sphere
+that bulged radius-far in every direction — collisions felt round, not hull-shaped, and `broadR` ballooned
+to ~2.8 (world ~5) for a 3.4-long ship, ~2× the old bubble instead of tighter. Fixed by (a) slicing along
+the *longest* horizontal axis and measuring radius only across the *perpendicular* cross-section, and (b)
+capping each sphere's radius at `(Lhalf − |offset along the long axis|) + AXIAL_MARGIN(0.35)` so it can't
+shoot past the hull's half-length. Result: `broadR` now lands near the model half-extent (~1.6-2.1),
+spheres hug the fuselage, and grazing shots past thin wings miss. A `node --test` guard
+(`scripts/assets-hitspheres.test.mjs`) asserts every ship's `broadR ≤ SHIP_MODEL_LEN/2 + 0.5` so an
+oversized regression fails automatically.
+
+**Rocket blast damage is hull-relative too (the "rockets deal no damage" fix).** A rocket's detonation is
+*triggered* hull-relative (`pointHitsShip(ship, pos, detonateR)`), so the detonation point lands on a
+nose/tail/wing sphere — off the ship's center. The blast *damage* loop in `projectiles.js:detonateRocket`
+originally still used `distanceTo(center) ≤ blastR`, so with the offset detonation point (and any offset
+hitbox) it matched **nobody**: the rocket exploded visually but dealt zero damage, for both player and enemy
+rockets. Fixed by making the damage loop hull-relative as well — `pointHitsShip(ship, pos, blastR)`. Since
+`blastR ≥ detonateR`, a rocket that reaches a hull to detonate always deals its damage. A regression test
+(`client/src/collision.test.js`) covers player→enemy and enemy→player, including a detonation point beyond
+`blastR` of the center that the old test would have missed. **`detonateRadius` was also retuned down**
+(rockets: ~3.2–3.5 → ~1.0–1.2): since the trigger is now a `pad` measured from the *hull surface* (not the
+center as before), the old large values made rockets detonate a full ship-length away — it's now a small
+proximity fuse. It stays ≥ the per-frame rocket travel so a fast rocket can't tunnel through the hull.
 
 **Frame + runtime.** Spheres live in the **group-local noseZ frame** (after ship-factory's auto-scale to
 `SHIP_MODEL_LEN` 3.4 + recenter + `yaw`), same frame as `userData.noseZ`. The fitter replicates that exact

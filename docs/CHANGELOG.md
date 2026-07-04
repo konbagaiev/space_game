@@ -6,16 +6,21 @@
 ## 2026-07-04
 
 - **[2026-07-04-1253-multi-sphere-hitbox] Multi-sphere ship hitboxes.** Ships no longer collide as one fat
-  sphere. A new `npm run assets:hitspheres` step auto-fits ~5-10 spheres to each combat hull (axial
-  Z-slices + up to 2 wing spheres, `HITSPHERE_PAD` 1.1) and writes `model.hitSpheres`/`model.broadR` into
-  `server/src/catalog_seed.js` via a marker-delimited idempotent edit (round-trip verified). Collision
-  (`client/src/collision.js`) is now broad-phase (one `broadR × mesh.scale.x` sphere) → narrow-phase
-  (per-sphere, transformed by `mesh.matrixWorld`, ignoring the cosmetic bank roll). All four
-  bullet/rocket↔ship sites use it — including the **player**, fixing the old hardcoded `2.6` broad radius
-  and the player↔rocket test that ignored ship size (rocket `detonateR` is now the hit pad). Effect: hits
-  register on the real hull — grazing shots past a thin fuselage miss, nose/engine shots connect.
-  Primitive/un-modeled ships keep the legacy single `2.6 × sizeScale` sphere; `e.radius` stays as the
-  health-bar anchor only. Dev-only `?hitspheres` draws the wireframe hitbox over every ship.
+  sphere. A new `npm run assets:hitspheres` step auto-fits ~4-8 spheres to each combat hull — spheres
+  chained along the hull's **longest horizontal axis** (so a wide-winged ship like the player is fit across
+  its wingspan, not its length), each radius hugging the perpendicular cross-section and **capped** so it
+  can't balloon past the hull, + up to 2 thin wing spheres, `HITSPHERE_PAD` 1.1 — and writes
+  `model.hitSpheres`/`model.broadR` into `server/src/catalog_seed.js` via a marker-delimited idempotent edit
+  (round-trip verified). Collision (`client/src/collision.js`) is now broad-phase (one `broadR × mesh.scale.x`
+  sphere) → narrow-phase (per-sphere, transformed by `mesh.matrixWorld`, ignoring the cosmetic bank roll).
+  All four bullet/rocket↔ship sites use it — including the **player**, fixing the old hardcoded `2.6` broad
+  radius and the player↔rocket test that ignored ship size (rocket `detonateR` is now the hit pad). Rocket
+  **blast (AoE) damage is hull-relative too** (`detonateRocket` uses `pointHitsShip(…, blastR)`) — fixing a
+  bug where rockets exploded visually but dealt **zero damage** (the old center-distance check missed because
+  the detonation point sits off-center on a hull sphere), for both player and enemy rockets. Effect: hits
+  register on the real hull — grazing shots past a thin fuselage miss, nose/engine shots connect, and rockets
+  hurt again. Primitive/un-modeled ships keep the legacy single `2.6 × sizeScale` sphere; `e.radius` stays as
+  the health-bar anchor only. Dev-only `?hitspheres` draws the wireframe hitbox over every ship.
 - **[2026-07-04-1223-enemy-hp-bar-above-model] Enemy HP bar clears the model.** The over-enemy health bar
   now pins its bottom edge above the ship (CSS `translate(-50%, calc(-100% - 4px))` + a size-proportional
   world anchor `e.radius * 1.15 + 1.5`) instead of centering on the anchor, so it no longer merges with /

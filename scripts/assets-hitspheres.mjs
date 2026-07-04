@@ -28,8 +28,14 @@ const SHIPS_DIR = path.join(REPO, 'client/assets/ships');
 
 const SHIP_MODEL_LEN = 3.4; // mirror client/src/ship-factory.js:32 (normalize the model's longest axis)
 const HITSPHERE_PAD = 1.1;  // global radius inflate (kept close to the old generous single-sphere bubble)
-const BANDS = 6;            // axial Z-slices
+const BANDS = 6;            // axial slices along the ship's longest horizontal axis
 const MAX_SPHERES = 10;     // hard cap (axial + wing)
+// Cap each axial sphere so its centre-distance-from-origin + radius can't shoot far past the hull's
+// half-length: r ≤ (Lhalf − |offset along the long axis|) + AXIAL_MARGIN. This is the fix for the
+// "one giant round bubble" — a slice sized to the full wingspan used to bulge radius-far in every
+// direction; the cap keeps spheres hull-shaped and bounds broadR to ~Lhalf.
+const AXIAL_MARGIN = 0.35;
+const DEBUG = !!process.env.HITSPHERES_DEBUG; // print normalized bounds + emitted radii per ship
 const r3 = (v) => Math.round(v * 1000) / 1000;
 
 // ---- column-major 4x4 helpers (avoids a `three` install; matches glb node matrices) ----
@@ -67,8 +73,11 @@ function gatherVerts(node, parentM, out) {
   for (const c of node.listChildren()) gatherVerts(c, m, out);
 }
 
-// Normalize raw verts to the group-local noseZ frame, then fit axial + wing spheres. Returns { spheres, broadR }.
-function fitSpheres(verts, yaw, scaleMul) {
+// Normalize raw verts to the group-local noseZ frame, then fit a chain of spheres along the ship's
+// LONGEST horizontal axis (spine) + up to 2 lateral wing spheres. Radii hug the perpendicular hull
+// cross-section (never the full span of the long axis) and are capped so no sphere balloons past the
+// hull. Returns { spheres, broadR, dbg }. See DECISIONS §45.
+function fitSpheres(verts, yaw, scaleMul, name = '') {
   // raw AABB
   let mnx = Infinity, mny = Infinity, mnz = Infinity, mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
   for (let i = 0; i < verts.length; i += 3) {
@@ -83,59 +92,77 @@ function fitSpheres(verts, yaw, scaleMul) {
   const cos = Math.cos(yaw), sin = Math.sin(yaw);
   // normalized verts: (v - center) * s, then rotateY(yaw) — matches ship-factory.js:45-56
   const N = new Array(verts.length);
-  let zmin = Infinity, zmax = -Infinity;
+  let Xh = 0, Yh = 0, Zh = 0;
   for (let i = 0; i < verts.length; i += 3) {
     const x = (verts[i] - cx) * s, y = (verts[i + 1] - cy) * s, z = (verts[i + 2] - cz) * s;
     const rx = x * cos + z * sin;
     const rz = -x * sin + z * cos;
     N[i] = rx; N[i + 1] = y; N[i + 2] = rz;
-    if (rz < zmin) zmin = rz; if (rz > zmax) zmax = rz;
+    if (Math.abs(rx) > Xh) Xh = Math.abs(rx);
+    if (Math.abs(y) > Yh) Yh = Math.abs(y);
+    if (Math.abs(rz) > Zh) Zh = Math.abs(rz);
   }
 
-  const bw = (zmax - zmin) / BANDS || 1;
+  // Slice along whichever horizontal axis is LONGER (X or Z); the OTHER horizontal axis + Y (vertical)
+  // set each sphere's radius. Y is deliberately included (via the cross-section circumradius) so the
+  // sphere still spans the full hull width in the bullet plane even when its centre sits off y=0.
+  const lIsZ = Zh >= Xh;
+  const lOf = (i) => (lIsZ ? N[i + 2] : N[i]);          // position along the long (spine) axis
+  const pOf = (i) => (lIsZ ? N[i] : N[i + 2]);          // perpendicular horizontal
+  const mk = (l, p, v, r) => (lIsZ                       // map (long, perp, vertical) → {x,y,z}
+    ? { x: r3(p), y: r3(v), z: r3(l), r: r3(r) }
+    : { x: r3(l), y: r3(v), z: r3(p), r: r3(r) });
+  const Lhalf = lIsZ ? Zh : Xh;
+
+  let lmin = Infinity, lmax = -Infinity;
+  for (let i = 0; i < N.length; i += 3) { const l = lOf(i); if (l < lmin) lmin = l; if (l > lmax) lmax = l; }
+  const lc = (lmin + lmax) / 2;
+  const bw = (lmax - lmin) / BANDS || 1;
+
   const spheres = [];
-  let widest = null; // band descriptor for the wing pass
+  let widest = null; // widest wide band, for the wing pass
   for (let b = 0; b < BANDS; b++) {
-    const lo = zmin + b * bw, hi = (b === BANDS - 1) ? zmax + 1e-6 : zmin + (b + 1) * bw;
-    let bmnx = Infinity, bmxx = -Infinity, bmny = Infinity, bmxy = -Infinity, cnt = 0;
+    const lo = lmin + b * bw, hi = (b === BANDS - 1) ? lmax + 1e-6 : lmin + (b + 1) * bw;
+    let pmin = Infinity, pmax = -Infinity, vmin = Infinity, vmax = -Infinity, cnt = 0;
     for (let i = 0; i < N.length; i += 3) {
-      const z = N[i + 2];
-      if (z < lo || z >= hi) continue;
-      const x = N[i], y = N[i + 1];
-      if (x < bmnx) bmnx = x; if (x > bmxx) bmxx = x;
-      if (y < bmny) bmny = y; if (y > bmxy) bmxy = y;
+      const l = lOf(i); if (l < lo || l >= hi) continue;
+      const p = pOf(i), v = N[i + 1];
+      if (p < pmin) pmin = p; if (p > pmax) pmax = p;
+      if (v < vmin) vmin = v; if (v > vmax) vmax = v;
       cnt++;
     }
     if (!cnt) continue;
-    const zmid = zmin + (b + 0.5) * bw;
-    const ccx = (bmnx + bmxx) / 2, ccy = (bmny + bmxy) / 2;
-    let rad = 0;
-    for (let i = 0; i < N.length; i += 3) {
-      const z = N[i + 2];
-      if (z < lo || z >= hi) continue;
-      const dx = N[i] - ccx, dy = N[i + 1] - ccy;
-      const d = Math.hypot(dx, dy);
-      if (d > rad) rad = d;
-    }
-    if (rad < 0.15) continue; // drop degenerate tip slivers
-    spheres.push({ x: r3(ccx), y: r3(ccy), z: r3(zmid), r: r3(rad * HITSPHERE_PAD) });
-    const xspan = bmxx - bmnx, yspan = bmxy - bmny;
-    if (xspan > 1.4 * yspan && (!widest || xspan > widest.xspan)) {
-      widest = { xspan, yspan, ccx, ccy, zmid };
+    const lmid = lmin + (b + 0.5) * bw;
+    const pc = (pmin + pmax) / 2, vc = (vmin + vmax) / 2;
+    const ph = (pmax - pmin) / 2, vh = (vmax - vmin) / 2;
+    const rFull = Math.hypot(ph, vh) * HITSPHERE_PAD;      // hug the perpendicular cross-section
+    const cap = Math.max(0.2, (Lhalf - Math.abs(lmid - lc)) + AXIAL_MARGIN); // don't bulge past the hull
+    const r = Math.min(rFull, cap);
+    if (r < 0.15) continue; // drop degenerate tip slivers
+    spheres.push(mk(lmid, pc, vc, r));
+    // remember the widest band that the capped axial sphere failed to cover laterally (wing candidate)
+    if (rFull > cap + 0.15 && ph > 1.4 * vh && (!widest || ph > widest.ph)) {
+      widest = { lmid, pc, vc, ph, vh, cap };
     }
   }
 
-  // wing spheres: two lateral spheres on the widest wide band (radius = its Y half-thickness)
+  // wing spheres: two thin lateral spheres reaching the wingtips the capped spine can't (radius ≈ wing
+  // thickness so they don't inflate broadR). Placed just inside each perpendicular edge.
   if (widest && spheres.length + 2 <= MAX_SPHERES) {
-    const xHalf = widest.xspan / 2;
-    const wr = r3(Math.max(0.2, widest.yspan / 2) * HITSPHERE_PAD);
-    spheres.push({ x: r3(widest.ccx + 0.6 * xHalf), y: r3(widest.ccy), z: r3(widest.zmid), r: wr });
-    spheres.push({ x: r3(widest.ccx - 0.6 * xHalf), y: r3(widest.ccy), z: r3(widest.zmid), r: wr });
+    const wr = Math.min(widest.cap, Math.max(0.2, widest.vh) * HITSPHERE_PAD);
+    const off = Math.max(0, widest.ph - wr);
+    spheres.push(mk(widest.lmid, widest.pc + off, widest.vc, wr));
+    spheres.push(mk(widest.lmid, widest.pc - off, widest.vc, wr));
   }
 
   let broadR = 0;
   for (const sp of spheres) broadR = Math.max(broadR, Math.hypot(sp.x, sp.y, sp.z) + sp.r);
-  return { spheres, broadR: r3(broadR) };
+  const dbg = { name, half: { X: r3(Xh), Y: r3(Yh), Z: r3(Zh) }, lAxis: lIsZ ? 'Z' : 'X', broadR: r3(broadR) };
+  if (DEBUG) {
+    console.log(`  [dbg] ${name}: normHalf X=${dbg.half.X} Y=${dbg.half.Y} Z=${dbg.half.Z}  long=${dbg.lAxis}  Lhalf=${r3(Lhalf)}`);
+    console.log(`        radii ${spheres.map((s) => s.r).join(',')}  broadR=${dbg.broadR} (expect ≲ ${r3(Lhalf + AXIAL_MARGIN)})`);
+  }
+  return { spheres, broadR: r3(broadR), dbg };
 }
 
 // ---- surgical, idempotent seed edit (exported for the unit test) ----
@@ -191,7 +218,7 @@ async function main() {
     const doc = await decodeToPlain(io, file, tmpDir);
     const verts = [];
     for (const root of doc.getRoot().listScenes()[0].listChildren()) gatherVerts(root, IDENT, verts);
-    const { spheres, broadR } = fitSpheres(verts, yaw, scaleMul);
+    const { spheres, broadR } = fitSpheres(verts, yaw, scaleMul, ship.name);
     text = upsertHitSpheres(text, ship.modelUrl, spheres, broadR);
     generated.push({ url: ship.modelUrl, name: ship.name, spheres, broadR });
     console.log(`  ${ship.name.padEnd(24)} ${String(spheres.length).padStart(2)} spheres  broadR ${broadR}`);

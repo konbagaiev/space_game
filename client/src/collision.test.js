@@ -60,3 +60,31 @@ test('(f) mesh.scale scales both center and radius (a near-miss flips to a hit)'
   assert.equal(pointHitsShip(s1, V(0, 0, 1.6)), false);
   assert.equal(pointHitsShip(s2, V(0, 0, 1.6)), true);
 });
+
+// Regression for BUG B ("rockets detonate but deal no damage"). Mirrors the FIXED blast-damage loop in
+// projectiles.js `detonateRocket`, which must be HULL-relative (`pointHitsShip(ship, pos, blastR)`), not a
+// center-distance test. The detonation point sits on the hull (a nose sphere) but > blastR from the CENTER,
+// so the old `distanceTo(center) <= blastR` check missed everybody. Covers player→enemy and enemy→player.
+test('rocket blast applies damage on a hull hit even past blastR of the center (player→enemy)', () => {
+  const enemy = { hp: 100, mesh: mesh(20, 0, 0, 1), sizeScale: 1, hitSpheres: [{ x: 0, y: 0, z: 1.5, r: 0.6 }], broadR: 2.1 };
+  const rocket = { fromPlayer: true, damage: 40, blastR: 5, obj: { position: V(20, 0, 6.9) } };
+  // detonation point is 6.9 from the enemy CENTER (> blastR 5) → the OLD center test would miss:
+  assert.ok(Math.hypot(6.9) > rocket.blastR, 'setup: point is beyond blastR of center');
+  // FIXED loop (hull-relative): the point is 5.4 from the nose sphere center → within r(0.6)+blastR(5)
+  if (pointHitsShip(enemy, rocket.obj.position, rocket.blastR)) enemy.hp -= rocket.damage;
+  assert.equal(enemy.hp, 60, 'enemy hp dropped by the rocket damage');
+});
+
+test('rocket blast applies damage to the player (enemy→player)', () => {
+  const player = { hp: 100, alive: true, mesh: mesh(0, 0, 0, 1), sizeScale: 1, hitSpheres: [{ x: 0, y: 0, z: 1.5, r: 0.6 }], broadR: 2.1 };
+  const rocket = { fromPlayer: false, damage: 25, blastR: 5, obj: { position: V(0, 0, 6.9) } };
+  if (player.alive && pointHitsShip(player, rocket.obj.position, rocket.blastR)) player.hp -= rocket.damage;
+  assert.equal(player.hp, 75, 'player hp dropped by the enemy rocket damage');
+});
+
+test('rocket direct-hit (detonation point right on the hull) also applies damage', () => {
+  const enemy = { hp: 50, mesh: mesh(0, 0, 0, 1), sizeScale: 1, hitSpheres: [{ x: 0, y: 0, z: 1, r: 0.5 }], broadR: 1.5 };
+  const rocket = { fromPlayer: true, damage: 30, blastR: 5, obj: { position: V(0, 0, 1) } }; // dead-center on the nose sphere
+  if (pointHitsShip(enemy, rocket.obj.position, rocket.blastR)) enemy.hp -= rocket.damage;
+  assert.equal(enemy.hp, 20);
+});

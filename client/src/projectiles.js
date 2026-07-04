@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies } from './state.js';
 import { audio, sfxFor } from './sound-routing.js';
+import { pointHitsShip } from './collision.js';
 
 // ---------- Projectiles ----------
 // bullets moved to src/state.js
@@ -233,11 +234,15 @@ export function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
 // dealDamage=false - the rocket was shot down by gunfire (explosion without damage)
 export function detonateRocket(r, dealDamage = true) {
   if (dealDamage) {
+    // Blast damage is HULL-relative (within blastR of the multi-sphere hitbox), matching the hull-relative
+    // detonation trigger in sim.js — a center-distance test used to miss because the detonation point sits
+    // off the ship's center (on a nose/tail/wing sphere), so a rocket could detonate yet damage nobody.
+    // blastR (≥ detonateR) means a rocket that reaches a hull always deals its damage. See DECISIONS §45.
     if (r.fromPlayer) {
       for (const e of enemies) {
-        if (e.mesh.position.distanceTo(r.obj.position) <= r.blastR) e.hp -= r.damage;
+        if (pointHitsShip(e, r.obj.position, r.blastR)) e.hp -= r.damage;
       }
-    } else if (G.player.alive && G.player.mesh.position.distanceTo(r.obj.position) <= r.blastR) {
+    } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.blastR)) {
       G.player.hp -= r.damage;
     }
   }
