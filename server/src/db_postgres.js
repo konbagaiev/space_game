@@ -48,6 +48,8 @@ export async function migrate() {
     ALTER TABLE components ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE components ADD COLUMN IF NOT EXISTS model_url TEXT;       -- item 3D model (combat; unused for items)
     ALTER TABLE components ADD COLUMN IF NOT EXISTS model_url_high TEXT;  -- item hangar model (CloudFront, menu icon)
+    ALTER TABLE components ADD COLUMN IF NOT EXISTS rarity TEXT;          -- rarity tier: trash|common|rare (drop glow + pickup-log tint)
+    ALTER TABLE components ADD COLUMN IF NOT EXISTS color  TEXT;          -- hex color for the rarity (source for both the glow & the tint)
     CREATE TABLE IF NOT EXISTS ships (
       id         BIGSERIAL PRIMARY KEY,
       name       TEXT  NOT NULL UNIQUE,
@@ -69,6 +71,8 @@ export async function migrate() {
     ALTER TABLE weapons ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE weapons ADD COLUMN IF NOT EXISTS model_url TEXT;       -- item 3D model (combat; unused for items)
     ALTER TABLE weapons ADD COLUMN IF NOT EXISTS model_url_high TEXT;  -- item hangar model (CloudFront, menu icon)
+    ALTER TABLE weapons ADD COLUMN IF NOT EXISTS rarity TEXT;          -- rarity tier: trash|common|rare (drop glow + pickup-log tint)
+    ALTER TABLE weapons ADD COLUMN IF NOT EXISTS color  TEXT;          -- hex color for the rarity (source for both the glow & the tint)
     CREATE TABLE IF NOT EXISTS player_ships (
       id         BIGSERIAL PRIMARY KEY,
       player_id  TEXT    NOT NULL REFERENCES players(id),
@@ -187,15 +191,15 @@ export async function migrate() {
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
   for (const c of COMPONENTS) {
     await pool.query(
-      `INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high`,
-      [c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null]);
+      `INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high, rarity, color) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high, rarity = EXCLUDED.rarity, color = EXCLUDED.color`,
+      [c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null, c.rarity, c.color]);
   }
   for (const w of WEAPONS) {
     await pool.query(
-      `INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high`,
-      [w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null]);
+      `INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high, rarity, color) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high, rarity = EXCLUDED.rarity, color = EXCLUDED.color`,
+      [w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null, w.rarity, w.color]);
   }
   for (const s of SHIPS) {
     await pool.query(
@@ -491,13 +495,13 @@ export async function getShips() {
 }
 
 export async function getWeapons() {
-  const { rows } = await pool.query('SELECT id, name, type, price, stats, model_url, model_url_high FROM weapons ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
+  const { rows } = await pool.query('SELECT id, name, type, price, stats, model_url, model_url_high, rarity, color FROM weapons ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
 }
 
 export async function getComponents() {
-  const { rows } = await pool.query('SELECT id, name, type, weight, price, stats, model_url, model_url_high FROM components ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
+  const { rows } = await pool.query('SELECT id, name, type, weight, price, stats, model_url, model_url_high, rarity, color FROM components ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
 }
 
 // SFX catalog: sounds registry (key->url) + class-based routing map (mirrors db.js).

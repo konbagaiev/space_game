@@ -1758,6 +1758,27 @@ reworded to a "you recovered it" framing to match the new reveal.
 
 ---
 
+## 50. Item rarity is DERIVED from price/buyable, not hand-authored per row (one explicit override)
+
+The new `rarity`/`color` on `components`/`weapons` are stamped by a single classifier in `catalog_seed.js`
+(`rarity = explicit override ?? ((price>0 && stats.buyable !== false) ? 'common' : 'trash')`), not written
+out per row. The **only** hand-set value is `rarity: 'rare'` on the Triple spiral rocket. Colors are a fixed
+map (trash `#ffffff`, common `#59e0a0`, rare `#0000ff`).
+
+**Why derived.** The intended semantics *already exist* in the data: shop-available items (priced +
+buyable) should read common; every pirate/enemy part (`buyable:false`) and price-0 boss part should read
+trash. Deriving from those fields makes rarity **self-consistent by construction** — a new catalog row gets
+the right tier for free, and there's no risk of a hand-typed rarity drifting out of sync with a row's
+price/`buyable` flags. The escape hatch (a per-row `rarity`) covers the one case the rule can't infer (a
+priced, buyable, but "special" weapon), keeping the smallest surface area (DECISIONS §30).
+
+**Trade-off / when to revisit.** If rarity ever needs to diverge from price/buyable for many rows (e.g. a
+premium-but-cheap cosmetic, or a tiering that isn't price-monotonic), the derived rule stops paying off and
+the honest move is to hand-author `rarity` per row (or add a dedicated design column) rather than pile on
+overrides. Today, with one override, the rule is the simpler and safer choice.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

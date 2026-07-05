@@ -19,6 +19,7 @@ import { canDock } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
+import { logEvent, clearEventLog } from './eventlog.js';
 
 const _bulletP0 = new THREE.Vector3(); // reused: a bullet's pre-move position for the swept collision test
 // Triple spiral rocket: warhead corkscrew around the leader's flight axis.
@@ -694,6 +695,7 @@ export function update(dt) {
       if (reward > 0) {           // floating "+xx" green popup at the kill site (cosmetic feedback)
         creditPopups.push({ pos: e.mesh.position.clone(), amount: reward, life: 2.0, maxLife: 2.0 });
       }
+      logEvent(t('ui.log.killed', { name: e.name, amount: reward })); // event-log kill line
       // reward drop: the LAST enemy of a level that carries a lastKillDrop drops the reward model (cosmetic —
       // no stash deposit; the real copy is server-installed on victory), but only if the player doesn't already
       // own it. Otherwise fall back to the usual 20% metal-box loot roll (one of the enemy's non-hull parts /
@@ -795,6 +797,7 @@ export function reset() {
   shockwaves.length = 0;
   creditPopups.length = 0; // DOM-only, no scene meshes to dispose
   clearDrops(); // remove drop meshes + the pull line; DISCARD any uncollected/un-deposited loot on a fresh run
+  clearEventLog(); // start a fresh run with an empty event log
   G.autopilot.active = false; G.autopilot.target = null; // defensive: no dangling drop-target autopilot into the new run
 
   for (const e of enemies) scene.remove(e.mesh);

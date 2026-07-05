@@ -83,6 +83,7 @@ export function spawnEnemyShip(shipDef) {
   const mc = shipModelCfg(s); // per-ship model presentation (yaw/scale + optional overrides)
   const { hull, engine, thruster } = resolveComponents(shipDef.components);
   const e = {
+    name: shipDef.name, // DB ship name (English) — shown in the event-log kill line
     role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0,
     mesh: makeShip(s.color, modelSpec(shipDef.modelUrl, mc)), // model defines the look; never tint enemies by color
     vel: new THREE.Vector3(),

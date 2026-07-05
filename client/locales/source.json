@@ -1,9 +1,10 @@
 {
   "ui.hud.health": { "source": "Health", "context": "HUD label above the health bar. One word, very short." },
-  "ui.hud.credits": { "source": "Credits", "context": "HUD label above the persistent credit-balance number (the player's money). One word, very short." },
-  "ui.hud.earned": { "source": "Earned", "context": "HUD label above the credits-earned-this-run number. One word, very short." },
+  "ui.hud.credits": { "source": "Credits", "context": "Label before the player's credit balance (their money). Used in the shop bay header. One word, very short." },
+  "ui.hud.credits_line": { "source": "credits {total}/{earned} earned", "context": "In-game HUD money readout. {total} = total credits owned; {earned} = credits earned this run. Lowercase 'credits' and 'earned' are labels around the two numbers." },
   "ui.hud.destroyed": { "source": "Destroyed", "context": "HUD label above the kill count. One word, very short." },
-  "ui.hud.enemies": { "source": "Enemies", "context": "HUD label above the live-enemy count. One word, very short." },
+  "ui.log.killed": { "source": "{name} killed +{amount}", "context": "In-game event-log line when the player destroys an enemy ship. {name} = the enemy ship's name (English, from the catalog, may be left as-is if untranslated); {amount} = credits earned from the kill (integer, shown after a plus sign)." },
+  "ui.log.picked_up": { "source": "picked up {name}", "context": "In-game event-log line when the player's tractor beam collects a dropped item. {name} = the item's name (English, from the catalog)." },
   "ui.oob.warning": { "source": "You've left the battlefield — return to the combat zone", "context": "Warning shown when the player's ship flies outside the arena boundary. Urgent but not punishing." },
   "ui.oob.countdown": { "source": "Returning in {seconds}s", "context": "Countdown under the out-of-bounds warning; the ship is auto-warped back to center when it reaches 0. {seconds} is an integer; 's' is the seconds abbreviation." },
   "ui.return.hint": { "source": "Sector cleared — return to base", "context": "HUD hint shown after the last enemy is destroyed, directing the player to fly back to the base station to complete the mission." },

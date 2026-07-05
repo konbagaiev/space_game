@@ -13,6 +13,7 @@ export const WEIGHT_FALLBACK = 10;   // defensive: used only if an item somehow 
 // nothing (the one guaranteed copy is server-installed on victory; see DECISIONS).
 export const REWARD_TINT      = 0x59e0a0; // green — emissive tint + halo + off-screen pointer glow
 export const REWARD_HALO_SIZE = 5.0;      // world-units diameter of the additive halo sprite behind a reward drop
+export const DROP_HALO_SIZE   = 4.5;      // soft rarity-color glow behind a normal loot drop (smaller than the reward halo)
 
 // Pure deposit decision, factored out so it's node-testable: a special (cosmetic reward) drop deposits
 // NOTHING to the stash; a normal loot drop deposits its item. This is the load-bearing no-dupe guarantee.

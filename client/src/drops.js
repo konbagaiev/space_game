@@ -11,7 +11,9 @@ import { G, CATALOG } from './state.js';
 import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLoader
 import { audio } from './sound-routing.js';
 import { DROP_MODEL_URL, DROP_CHANCE, MAX_DROPS, ARM_DELAY, ROTATE_PERIOD, COLLECT_DIST, WEIGHT_FALLBACK,
-         REWARD_TINT, REWARD_HALO_SIZE, pullSpeed, pickLoot, shouldDeposit, rewardOwned } from './drops-config.js';
+         REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pullSpeed, pickLoot, shouldDeposit, rewardOwned } from './drops-config.js';
+import { logEvent } from './eventlog.js';
+import { t } from './i18n.js';
 
 export const drops = [];            // { obj, item:{kind,refId}, weight, inRange (sec), special? }
 export const pendingLoot = [];      // { kind, refId } collected this run — deposited on VICTORY only
@@ -77,6 +79,8 @@ export function spawnDrop(pos, item) {
   const obj = template ? template.clone(true) : fallbackBox();
   obj.position.copy(pos); obj.position.y = 0.8;
   scene.add(obj);
+  const colorInt = cat && cat.color ? new THREE.Color(cat.color).getHex() : 0xffffff;
+  addHalo(obj, colorInt, DROP_HALO_SIZE); // soft glow tinted by the item's rarity color
   drops.push({ obj, item, weight, inRange: 0 });
 }
 
@@ -128,10 +132,13 @@ function ensureHaloTexture() {
   haloTexture = new THREE.CanvasTexture(c);
   return haloTexture;
 }
-function addHalo(wrap) {
-  const mat = new THREE.SpriteMaterial({ map: ensureHaloTexture(), color: REWARD_TINT, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
+// color/size default to the green reward glow; normal loot drops pass their rarity color + a smaller size.
+// Each call makes a FRESH SpriteMaterial so a per-drop tint never cross-contaminates other drops (clones
+// share materials).
+function addHalo(wrap, color = REWARD_TINT, size = REWARD_HALO_SIZE) {
+  const mat = new THREE.SpriteMaterial({ map: ensureHaloTexture(), color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.setScalar(REWARD_HALO_SIZE);
+  sprite.scale.setScalar(size);
   wrap.add(sprite);
 }
 
@@ -233,6 +240,8 @@ function collect(d) {
   drops.splice(drops.indexOf(d), 1);
   if (shouldDeposit(d)) pendingLoot.push(d.item); // cosmetic reward drops deposit NOTHING (DECISIONS: exactly one copy)
   audio.sfx.pickup?.(); // small feedback blip
+  const cat = d.item.kind === 'component' ? CATALOG.components.get(d.item.refId) : CATALOG.weapons.get(d.item.refId);
+  if (cat) logEvent(t('ui.log.picked_up', { name: cat.name }), cat.color); // pickup line, tinted by the item color
   hideLine();
 }
 

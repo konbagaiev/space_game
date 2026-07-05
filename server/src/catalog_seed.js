@@ -154,7 +154,7 @@ export const WEAPONS = [
   // rockets spiral around its flight axis, each a real rocket (own power + HP, own proximity detonation,
   // individually shootable-down). `spiral:true` triggers the leader+3-orbiter spawn in projectiles.js.
   {
-    id: 11, name: 'Triple spiral rocket', type: 'rocket', price: 4000, stats: {
+    id: 11, name: 'Triple spiral rocket', type: 'rocket', price: 4000, rarity: 'rare', stats: {
       power: 40, accel: 12, turnRate: 1.0, launchSpeed: 14, maxRange: 150, health: 10, // per visible rocket
       seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 0.5, blastRadius: 5, // hull-proximity fuse (see id 3)
       blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050,
@@ -163,6 +163,17 @@ export const WEAPONS = [
     }
   },
 ];
+
+// --- item rarity + color (drives the in-world drop glow + the pickup-log tint on the client).
+// Rule: a shop-available item (price>0 AND not buyable:false) is 'common'; everything else (pirate/enemy
+// gear + price-0 boss parts) is 'trash'; a row may set `rarity` explicitly to override (Triple spiral → 'rare').
+const RARITY_COLOR = { trash: '#ffffff', common: '#59e0a0', rare: '#0000ff' };
+const classifyRarity = (row) =>
+  row.rarity || (((row.price ?? 0) > 0 && row.stats?.buyable !== false) ? 'common' : 'trash');
+for (const row of [...COMPONENTS, ...WEAPONS]) {
+  row.rarity = classifyRarity(row);
+  row.color = RARITY_COLOR[row.rarity];
+}
 
 // --- sounds: the SFX asset registry (key -> same-origin content-hashed url, optional playback gain).
 // Volume is mostly baked into the files (gain defaults to 1); per-sound `gain` trims it at playback. These
