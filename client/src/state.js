@@ -44,6 +44,7 @@ export const G = {
   })(),
   banked: false,              // guard so a run banks its credits exactly once
   gameStartTime: performance.now(), // run start (for the recorded game duration)
+  combatElapsed: 0,           // seconds of UNPAUSED combat since run start; gates the enemy hold-fire grace (see sim.js)
   gameStartSent: false,       // game_start funnel event fires once per page-load session (the funnel's top)
   quitSent: false,            // quit funnel event fires once per session when the player leaves
   pendingBriefing: null,      // a level briefing to show before the next Restart (set on advance)

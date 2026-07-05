@@ -5,6 +5,12 @@
 
 ## 2026-07-05
 
+- **[2026-07-05-2126-player-speed-cap-engine-buff] Combat pacing + engine buff.** The player now has a
+  flat top speed of **30 u/s** (`PLAYER_MAX_SPEED`, clamped in `sim.js`; enemies keep their per-engine
+  `maxSpeed`). All engine `power` (acceleration) is **+50%**: Basic 10→15, Scout 12.6→19, Boss 19→29,
+  Solid-fuel 14→21, Ion 18→27, Pirate 12.6→19, Second-boss 30→45 (thrusters/`maxSpeed` untouched).
+  Enemies **hold fire for the first 5 s** of each run (silent `G.combatElapsed` grace — they still spawn,
+  move and aim). Each run now **opens gliding forward at 3 u/s** (10% of top speed) instead of dead-stopped.
 - **Pirate rocket slower + weaker.** The enemy **Rocket pirate** (weapon id 4) had its launch speed cut
   `12 → 6` and damage `25 → 20`, so pirate rockets are easier to read/dodge and hit softer. Other stats
   (accel 9, turnRate 1.0, maxRange 120, health 20) unchanged. Seeded via the idempotent catalog upsert on

@@ -373,7 +373,7 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   assert.equal(light.stats.durability, 30); // fighter + rocketeer durability equalized to 30
   const scout = comps.find((c) => c.name === 'Scout engine');
   assert.equal(scout.type, 'engine');
-  assert.equal(scout.stats.power, 12.6); // acceleration (no turnPower — that's the thruster's job now)
+  assert.equal(scout.stats.power, 19); // acceleration (no turnPower — that's the thruster's job now)
   const scoutThr = comps.find((c) => c.name === 'Scout thrusters');
   assert.equal(scoutThr.type, 'thruster');
   assert.equal(scoutThr.stats.power, 1.6); // maneuverability (turn rate)
