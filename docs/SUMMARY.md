@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-05 (**Fixed bullet plane + model `lift` — top-down aim fix** — formalized the single combat plane as `state.js` `BULLET_PLANE_Y` (0.6) that every ship group sits on and all bullets fly in (spawn/recenter/ring-FX reference it, no bare `0.6`); new per-model signed `model.lift` moves a ship's visual model *and* its hitboxes together so an off-plane hull seats onto it; `assets:hitboxes` reports bullet-plane coverage + a robust (plateau-centre) suggested lift per ship. **All 9 modeled ships tuned to max coverage** (player `0.18`, enemy_1 `0.21`, enemy_2 `0.17`, enemy_3 `0.2`, enemy_4 `-0.132` — boss lowered). Prior: **Asset cleanup** — deleted 28 stale/unused S3 builds (`ships-combat/` 16, `ships-hangar/` 12) + 19 stale local pulled files; `git rm`'d 16 unreferenced legacy primitive glbs from `client/assets/`; pre-load fallback is procedural, not a binary. Prior: **Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
+**Updated:** 2026-07-05 (**In-game Credits/attributions screen** — a player-facing Credits panel opened from the Settings gear, listing every third-party 3D model (full CC-BY 4.0 attribution + license link + "Modified") and music/sound (CC0/Pixabay courtesy), build-generated from `client/assets/CREDITS.md` via `npm run credits:build` → committed `client/src/credits-data.js`, drift-guarded by a unit test and regenerated into the itch zip by `build:itch`; satisfies the CC-BY 4.0 obligation to show attributions to players. Prior: **Fixed bullet plane + model `lift` — top-down aim fix** — formalized the single combat plane as `state.js` `BULLET_PLANE_Y` (0.6) that every ship group sits on and all bullets fly in (spawn/recenter/ring-FX reference it, no bare `0.6`); new per-model signed `model.lift` moves a ship's visual model *and* its hitboxes together so an off-plane hull seats onto it; `assets:hitboxes` reports bullet-plane coverage + a robust (plateau-centre) suggested lift per ship. **All 9 modeled ships tuned to max coverage** (player `0.18`, enemy_1 `0.21`, enemy_2 `0.17`, enemy_3 `0.2`, enemy_4 `-0.132` — boss lowered). Prior: **Asset cleanup** — deleted 28 stale/unused S3 builds (`ships-combat/` 16, `ships-hangar/` 12) + 19 stale local pulled files; `git rm`'d 16 unreferenced legacy primitive glbs from `client/assets/`; pre-load fallback is procedural, not a binary. Prior: **Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
 (id 11): an invisible homing leader defines the path while three visible cyan warheads spiral around it,
 each a real rocket (own power 40 / HP 10, independent detonation + shoot-down; 3× on a full hit). The
 standard rocket smoke trail changed from an expanding sphere cone to a thin, fixed-size fading haze line
@@ -417,6 +417,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   extract/clean/encode an mp3 by hand (ffmpeg recipes in the audio plan), content-hash → `assets-dist/sounds/`,
   push, then add the hashed url to **`SOUNDS`** in `catalog_seed.js` (+ a `SOUND_MAP` row to route it to a
   ship/weapon class). See DECISIONS §14 + §22.
+  **`npm run credits:build`** (`scripts/credits-build.mjs`, DECISIONS §48) parses `client/assets/CREDITS.md`
+  → the committed `client/src/credits-data.js` powering the in-game Credits screen; `credits:build --check`
+  is the drift guard (wired into `client/src/credits-data.test.js`), and **`build:itch` regenerates the
+  staged `credits-data.js`** from `CREDITS.md` so the itch export can never ship stale attributions.
 - **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
   `maxRange`, `fireCooldown`; rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE), plus
@@ -942,6 +946,20 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   gestures, since it's destructive. Server-side it's the per-player `resetPlayer` (clears
   games/ships/stash/events, resets level/credits/shop to the new-player baseline, re-grants the starter
   ship; **keeps the account, login and language**). i18n keys `ui.settings.reset.*` (EN+RU).
+- **Credits & attributions screen (`client/src/credits.js`, DECISIONS §48).** A **"Credits"** button in the
+  settings modal (`#credits-open`) opens a scrollable, closeable `#credits-overlay` (z-index 21, above the
+  settings modal; backdrop/Close dismiss) listing every third-party asset: **3D models** (each CC-BY 4.0 —
+  work title, `by <author>`, a **Source** link, a **CC BY 4.0** license link, and a **Modified** chip, under
+  one blanket "all models are modified" note) and **Music & sound** (CC0 / Pixabay courtesy list — author +
+  Source where present, no license link / Modified chip). This satisfies the CC-BY 4.0 obligation to show
+  attributions to players on **both** vega.tenony.com and itch.io. The list is **build-generated** from
+  `client/assets/CREDITS.md` (single source of truth) by **`npm run credits:build`**
+  (`scripts/credits-build.mjs`) → the **committed** `client/src/credits-data.js` the buildless client
+  imports; the parser reads the 5-column asset table + the verbatim CC-BY blockquote work titles (matched by
+  URL, **throws** if a CC-BY row lacks one) and ignores the narrative prose. A drift test
+  (`client/src/credits-data.test.js`) fails CI if the committed module is stale (`credits:build --check`
+  mirrors the `assets:check` guard). Chrome labels are i18n (`ui.credits.*`, EN+RU); attribution content
+  (authors/titles/URLs/licenses) stays literal.
 - **Graphics quality tiers (`client/src/graphics.js`, DECISIONS §23).** A 3-way selector —
   **High / Balance / Performance** — for weak phones. **Note (measured on two GPUs, see DECISIONS §23):
   the weak-device bottleneck is NOT fragment fill rate** — a 5.5-7× backbuffer-pixel cut moved fps by
@@ -1240,7 +1258,8 @@ first translation). See DECISIONS §10.
 - **How to build it:** `npm run build:itch` (root, `scripts/build-itch.mjs`, no new deps — system `zip`).
   It stages `index.html` + `styles.css` + `favicon.svg` + `src/` + `locales/` + `assets/` from `client/`
   (index.html at the ZIP root), excludes `*.test.js`/`node_modules`/`.DS_Store`, bakes the prod `API_BASE`
-  into the staged `src/api-base.js`, and zips → **`dist/vega-sentinels-itch.zip`** (gitignored). It asserts
+  into the staged `src/api-base.js`, **regenerates the staged `src/credits-data.js` from `CREDITS.md`** (so
+  the export can't carry stale attributions), and zips → **`dist/vega-sentinels-itch.zip`** (gitignored). It asserts
   ≤1000 files / ≤500 MB and prints the file count + sizes. **Manual, not wired into CI.** Upload: itch.io
   project → Kind = HTML → upload the ZIP → tick "This file will be played in the browser" → set the embed
   viewport → save. itch limits: ≤1000 files, ≤500 MB extracted, ≤200 MB/file.

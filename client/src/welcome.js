@@ -13,6 +13,7 @@ import { buildPlayerFor } from './ship-build.js';
 import { Device } from './device.js';
 import { renderAccountBar } from './account.js';
 import { localizeSettings } from './settings.js';
+import { localizeCredits } from './credits.js';
 
 // A ship's hull HP for the welcome card (resolved from its hull component).
 const shipHullHp = (ship) => CATALOG.components.get(ship.components?.hull)?.stats.durability ?? '?';
@@ -100,6 +101,7 @@ async function setLanguage(lang) {
   applyTranslations();
   setPaused(G.paused); // re-localize the pause button's aria-label/tooltip (JS-set, not data-i18n)
   localizeSettings(); // re-localize the settings gear + audio toggles
+  localizeCredits(); // re-render the credits panel if it's open (chrome labels change)
   buildLangSwitch();
   if (lastPlayerShips.length) renderShipCards(lastPlayerShips); // re-render DB-sourced ship names
   if (G.playerId) fetch(API_BASE + `/api/players/${G.playerId}/language`, {

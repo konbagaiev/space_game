@@ -167,5 +167,16 @@
   "ui.settings.reset.confirm.title": { "source": "Reset progress?", "context": "Title of the confirm dialog shown after the player slides to reset. Short." },
   "ui.settings.reset.confirm.body": { "source": "This wipes your level, credits, ships and upgrades and starts you over from level 1. Your account and login stay. This can't be undone.", "context": "Body of the reset confirmation dialog: what is wiped, what is kept, and that it is irreversible." },
   "ui.settings.reset.confirm.ok": { "source": "Confirm reset", "context": "Button that performs the destructive progress reset. Short." },
-  "ui.settings.reset.cancel": { "source": "Cancel", "context": "Button that dismisses the reset confirmation without resetting. Short." }
+  "ui.settings.reset.cancel": { "source": "Cancel", "context": "Button that dismisses the reset confirmation without resetting. Short." },
+
+  "ui.credits.open": { "source": "Credits", "context": "Button in the settings modal that opens the credits & attributions screen. Short." },
+  "ui.credits.title": { "source": "Credits & attributions", "context": "Title of the credits screen that lists third-party assets (3D models, sound) with their authors and licenses." },
+  "ui.credits.intro": { "source": "Vega Sentinels uses third-party assets under open licenses. Thank you to their authors.", "context": "Intro line at the top of the credits screen. 'Vega Sentinels' is the game name; keep it." },
+  "ui.credits.modified_note": { "source": "All 3D models are modified — decimated, recolored and/or texture-downscaled — as permitted under CC BY 4.0.", "context": "Blanket note on the credits screen: every 3D model is a modified derivative, as CC BY 4.0 allows. Keep 'CC BY 4.0' and the em-dashes." },
+  "ui.credits.models": { "source": "3D models", "context": "Section heading on the credits screen for the 3D model assets. Short." },
+  "ui.credits.sounds": { "source": "Music & sound", "context": "Section heading on the credits screen for the audio (music + sound-effect) assets. Short." },
+  "ui.credits.by": { "source": "by {author}", "context": "Attribution prefix on a credit row; {author} is the asset author's literal name (never translated)." },
+  "ui.credits.modified": { "source": "Modified", "context": "Small chip on a credit row marking a CC-BY asset that was modified (decimated/recolored/downscaled). Short." },
+  "ui.credits.source": { "source": "Source", "context": "Link text on a credit row pointing to the asset's original source page. Short." },
+  "ui.credits.close": { "source": "Close", "context": "Button that dismisses the credits screen. Short." }
 }

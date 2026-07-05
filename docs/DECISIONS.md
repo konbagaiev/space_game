@@ -1703,6 +1703,41 @@ hull sat above the plane, so it's the one *lowered*).
 
 ---
 
+## 48. In-game credits screen: legal obligation + parse-at-build committed module (vs runtime fetch)
+
+Every 3D model we ship is **CC-BY 4.0**, whose license text *requires* attribution be shown to the people
+who receive the work — i.e. **players**, not just a repo doc. Keeping the credits only in
+`client/assets/CREDITS.md` (which players never see) left us formally out of compliance, so we added a
+player-facing **Credits & attributions** screen (opened from the Settings gear — the one chrome surface
+reachable on menus *and* in-game, and both distribution surfaces need it: vega.tenony.com and itch.io).
+
+**Data path = parse-at-build into a committed module, NOT a runtime fetch.** The client is buildless
+(§31 — raw ES modules; the vega/local serve has no build step, and `build-itch.mjs` only *copies*
+`client/`). A runtime `fetch('CREDITS.md')` would need the raw md served same-origin on **both** builds and
+still require filtering the repo-internal prose out of a compliance UI. Instead `npm run credits:build`
+(`scripts/credits-build.mjs`) parses `CREDITS.md` → a **committed** `client/src/credits-data.js` the client
+imports; both builds consume the committed module (and `build:itch` regenerates it into the staged tree as
+a belt-and-suspenders guard). A `--check` mode wired into `client/src/credits-data.test.js` fails CI if the
+committed module drifts from `CREDITS.md` — the same deploy-guard shape as `assets:check`.
+
+**Two STRUCTURED parts of `CREDITS.md` are parsed; the narrative prose is ignored.** (1) the 5-column asset
+table gives the asset SET + each row's author, source URL, license and group (`ships/` → models,
+`sounds/` → sounds); (2) the **verbatim CC-BY blockquote attribution lines** (`> "TITLE" (URL) by AUTHOR
+…`) give the TASL-correct **work title**, matched to its table row by Source URL. The Asset cell is a
+repo file path, so slicing it yields a broken label (`sounds/kinetic..mp3`, a dangling `.glb`) — a
+non-compliant credit — hence CC-BY rows take the blockquote title, courtesy rows take the parenthetical
+description, and a cleaned-filename fallback guarantees a label is never a raw path. **A CC-BY row with no
+matching verbatim block is a hard error** (throws): the verbatim block is itself required for compliance, so
+a missing one is a real bug, never a silent path fallback. An unknown license string also throws (a new
+license type must be handled deliberately).
+
+**Chrome i18n, attribution content literal.** Panel title, section headings, "Modified", "Source", "Close",
+"by {author}" are i18n keys (`ui.credits.*`, EN+RU); author names, work titles, license names and URLs come
+straight from the generated data and are never translated (they are literal/legal text). Scope is a plain
+scrollable list — no thumbnails/search/pagination (§30).
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

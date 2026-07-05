@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { buildModuleFromFile } from './credits-build.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const clientDir = path.join(root, 'client');
@@ -34,6 +35,14 @@ const files = ['index.html', 'styles.css', 'favicon.svg'];
 const dirs = ['src', 'locales', 'assets'];
 for (const f of files) fs.cpSync(path.join(clientDir, f), path.join(staging, f));
 for (const d of dirs) fs.cpSync(path.join(clientDir, d), path.join(staging, d), { recursive: true, filter });
+
+// Regenerate the credits data into the STAGED tree from CREDITS.md, so the itch export always carries
+// fresh attributions even if the committed client/src/credits-data.js drifted (the source tree is
+// untouched — same pattern as the api-base.js override below). See the credits-screen plan.
+fs.writeFileSync(
+  path.join(staging, 'src', 'credits-data.js'),
+  buildModuleFromFile(path.join(clientDir, 'assets', 'CREDITS.md')),
+);
 
 // Bake the production API base + build source into the STAGED api-base.js only (source tree stays
 // same-origin '' / 'web'). BUILD_SOURCE='itch' lets registerBoot() tag itch players (see net.js).

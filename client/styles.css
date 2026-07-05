@@ -529,6 +529,42 @@
   #reset-confirm .ghost { background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.35); }
   #reset-confirm .danger-btn { background: linear-gradient(90deg,#e53935,#b71c1c); color: #fff; border: 0; }
   #reset-confirm .danger-btn:disabled { opacity: .6; cursor: default; }
+  /* Credits & attributions overlay (opened from settings; z-index 21 so it sits above the settings modal).
+     A scrollable list of third-party 3D models (full CC-BY attribution) + music/sound (courtesy). */
+  #credits-overlay {
+    position: fixed; inset: 0; z-index: 21; display: none; align-items: center; justify-content: center;
+    background: rgba(5,6,13,.66); color: #e8f1ff; font-family: system-ui, sans-serif; padding: 20px;
+  }
+  #credits-overlay.on { display: flex; }
+  #credits-overlay .credits-box {
+    width: min(560px, 94vw); max-height: 92vh; overflow-y: auto; box-sizing: border-box;
+    background: rgba(16,24,44,.96); border: 1px solid rgba(140,175,255,.28);
+    border-radius: 16px; padding: 12px clamp(16px, 5vw, 32px); box-shadow: 0 18px 60px rgba(0,0,0,.55);
+  }
+  #credits-overlay h1 { font-size: 20px; letter-spacing: 1px; margin: 0 0 6px; }
+  #credits-overlay .credits-intro { font-size: 12px; opacity: .6; margin: 0 0 8px; }
+  #credits-overlay .credits-note { font-size: 12px; opacity: .78; margin: 0 0 10px; line-height: 1.4; }
+  #credits-overlay .credit-section-title {
+    font-size: 15px; font-weight: 700; letter-spacing: .5px; margin: 14px 0 6px;
+    padding-bottom: 3px; border-bottom: 1px solid rgba(140,175,255,.18);
+  }
+  #credits-overlay .credit-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 7px 0; }
+  #credits-overlay .credit-name { font-weight: 600; font-size: 14px; }
+  #credits-overlay .credit-by { font-size: 13px; opacity: .72; }
+  #credits-overlay .credit-meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; }
+  #credits-overlay .credit-meta a { color: #8fb4ff; text-decoration: none; }
+  #credits-overlay .credit-meta a:hover { text-decoration: underline; }
+  #credits-overlay .credit-license { opacity: .8; }
+  #credits-overlay .credit-modified {
+    font-size: 11px; font-weight: 700; letter-spacing: .4px; padding: 2px 8px; border-radius: 8px;
+    background: rgba(54,209,220,.18); color: #bff0f4; border: 1px solid rgba(140,175,255,.4);
+  }
+  #credits-close {
+    margin-top: 12px; width: 100%; cursor: pointer; pointer-events: auto; font: inherit;
+    padding: 9px 18px; font-size: 15px; font-weight: 600; border-radius: 10px;
+    background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.3);
+  }
+  #credits-close:hover { background: rgba(120,150,210,.12); }
   /* Perf/diagnostics overlay: dev-only, gated by the sticky ?dev flag (body.devmode, see client/src/dev.js).
      Hidden for normal players. body.devmode:not(.menu) beats the menu-hide so it never shows on menus. */
   #perf {
