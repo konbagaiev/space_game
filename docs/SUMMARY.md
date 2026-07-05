@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-05 (**HUD overhaul + item rarity/color** — the HUD credits readout is now one line
+**Updated:** 2026-07-05 (**base station moved off-origin** — the return-to-base station was pushed from
+`(-20,-20)` to `(-60,-60)` so the origin-spawning ship is no longer framed against its backdrop. Prior:
+**HUD overhaul + item rarity/color** — the HUD credits readout is now one line
 `credits {total}/{earned} earned` and the live **Enemies** counter is removed; a small **event log** above
 the rocket button shows the last 4 lines (kill: `{shipname} killed +{amount}`; pickup: `picked up {name}`
 tinted by the item's color), each fading over 5 s (`client/src/eventlog.js`); dropped loot now glows in its
@@ -64,7 +66,8 @@ strength, speed = (strength/2)·(10/weight)); collected drops deposit into the s
 never drop; pirate parts now priced for resale but hidden from the shop (`buyable:false`); `REFERENCE_MASS`
 48→50 so the base grab is mass-neutral; metal-box model shipped through the asset pipeline (703 KB→~6 KB).
 Also 2026-07-03: **Autopilot + return-to-base mission end** — a **base station** `.glb` set-piece now
-sits at the world origin `(0,0)`, and **every** mission (campaign L1–4 + the three side missions) ends by flying
+sits up-left of the arena center at `(-60,-60)` (moved off origin so the origin-spawning ship is
+never framed against it), and **every** mission (campaign L1–4 + the three side missions) ends by flying
 **back to it** instead of on the last kill. After the last enemy dies the out-of-bounds warp-back is lifted, a
 translucent **blue homing arrow** anchored to the ship points home, and a centered **"Sector cleared — return to
 base"** hint shows; the station becomes **clickable** and tapping it is a **mandatory dock** that engages
@@ -115,7 +118,7 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
 - **Autopilot (station or loot chest)** — after the last enemy is destroyed the **base station** (at
-  `(-20,-42,-20)`, up-left of the arena center) becomes clickable; **clicking/tapping it** (a canvas raycast,
+  `(-60,-42,-60)`, up-left of the arena center) becomes clickable; **clicking/tapping it** (a canvas raycast,
   ignored on HUD buttons — on touch it's a **slop-gated tap**, a single finger that moved <10px, not a
   raw touch-anywhere; both desktop click and touch tap route through the shared `engageObjectAt` pick) engages autopilot,
   which flies the ship home: **brake to a stop → rotate the nose to face the target → accelerate at max →
@@ -699,7 +702,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   tapping the station is a **mandatory dock** (on touch a **slop-gated tap** — a <10px single-finger gesture —
   through the shared `engageObjectAt` pick, not a raw touch-anywhere): it calls `engageAutopilot()` (sets `G.autopilot.active` + phase
   `brake0` + `target = { kind:'station' }`), and `checkArrival()` fires the existing `win()` once the ship is
-  within `BASE_ARRIVE_RADIUS` (45u, horizontal xz) of `(0,0)`. `G.autopilot` now carries a typed **`target`**
+  within `BASE_ARRIVE_RADIUS` (45u, horizontal xz) of the station's actual position `(-60,-60)` (the win
+  test measures distance to `G.baseStation.obj.position`, not a hardcoded origin). `G.autopilot` now carries a typed **`target`**
   (the station **or** a loot drop — the same autopilot flies to loot chests, see Grab & loot drops); the
   dock/win predicate `canDock(autopilot, dist)` (pure, in `client/src/autopilot-config.js` with
   `BASE_ARRIVE_RADIUS`, unit-tested) fires **only when the target is the station** — a chest-aimed autopilot is
@@ -823,7 +827,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   story counter** (repeatable grind to fund the shop). **Each mission fights at its own location in the
   world** (`descriptor.center` — mining at `(-550, 0)`, research at `(400, 0)`, freighter at `(-100, -450)`),
   away from the campaign center `(0,0)`. The map is **one shared world** — all set-pieces (the three mission
-  structures + the base station at `(0,0)`) exist at fixed positions on every level/mission; the mission only
+  structures + the base station at `(-60,-60)`) exist at fixed positions on every level/mission; the mission only
   moves the combat there (you spawn over the matching structure, the others — and the base station you return
   to — are in the distance). They sit **just below the combat plane** (strong
   parallax like the background asteroids). Server-owned (`GET /api/players/:id/missions`,
@@ -924,8 +928,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     → look unchanged when omitted) — the light extension point for future server-driven model effects
     (DECISIONS §38). **Cruises slowly forward** (`speed` units/sec — a transport in transit). (A separate
     `sync` + zone-drift escort mechanic exists but no mission turns it on.)
-  - **`base-station`** — the **return-to-base target** at the world origin `(0,0)` (the campaign/level-1
-    start). A `.glb`-backed set-piece (`base_station_combat`, CC-BY 4.0 "Low Poly space station." by MisterH)
+  - **`base-station`** — the **return-to-base target** at `(-60,-60)`, up-left of the arena center (so
+    the origin-spawning ship isn't lost against its backdrop). A `.glb`-backed set-piece (`base_station_combat`, CC-BY 4.0 "Low Poly space station." by MisterH)
     loaded by `makeBaseStation` (`world.js`, mirroring the freighter's async center/scale/`yaw` normalization
     but with **no exhaust**), auto-scaled (longest axis → `BASE_STATION_LEN` 100) with an optional slow idle
     `spin` (0.03 rad/s). It sits at `pos.y = -42` — raised **closer to the plane than the freighter** (`-48`)

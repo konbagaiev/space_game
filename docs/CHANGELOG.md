@@ -5,6 +5,13 @@
 
 ## 2026-07-05
 
+- **Base station moved farther off the arena center.** The return-to-base station set-piece was pushed
+  from `(-20,-42,-20)` to `(-60,-42,-60)` (screen top-left, same diagonal) in `catalog_seed.js` MAPS
+  `home-system`, so the ship — which spawns and fights near the origin — is no longer framed against the
+  big station and lost on its backdrop. Below-plane `y` is unchanged (`-42`). The dock/win test measures
+  distance to the station's live position, so return-to-base still completes correctly; the homing arrow
+  and mandatory-dock flow are unaffected. Takes effect on server restart (MAPS upsert `ON CONFLICT DO
+  UPDATE`).
 - **[2026-07-05-1844-touch-hud-log-item-colors] HUD overhaul + item rarity/color + fading event log.**
   Reworked several in-combat HUD surfaces and added an item rarity data model. **HUD:** the credits
   readout is now a single line `credits {total}/{earned} earned` (total owned / earned this run) and the
