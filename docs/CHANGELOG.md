@@ -5,6 +5,20 @@
 
 ## 2026-07-05
 
+- **[2026-07-05-1641-briefing-staged-reveal] Staged briefing reveal (L1-3).** On the first three campaign
+  levels the landing briefing now appears **in sequence** instead of all at once. **L1** (the welcome / ship-
+  picker screen): the greeting shows immediately, the `.intro` briefing **types out over ~5 s**, then the
+  **ship picker** fades in, then the **Take off** button **+0.5 s** later. **L2/L3** (the Main Window
+  campaign briefing): the briefing text types out over ~5 s, then the right-column **ship-preview window** +
+  the **granted-item showcase** (Machine Gun on L2 / Repair drone on L3) fade in together, then **Take off
+  +0.5 s** later. **Tap the briefing text to skip** the typewriter and reveal everything at once. Plays
+  **once per landing** (a language switch / bay switch / launch settles to the full state, no replay);
+  hidden steps use `visibility:hidden` so nothing reflows. The L1 welcome `.intro` was **enlarged to 26px**
+  (16px on mobile) to match the mission-briefing size. A shared `client/src/typewriter.js` drives both
+  screens. **L4+ and side missions are unchanged (instant).** Client-only; no server/catalog/i18n/asset
+  changes. Visual coverage: new `18-briefing-staged-reveal.mjs` (both screens + the L4 instant negative);
+  the existing `97-briefing-showcase.mjs` now skips the L2/L3 typewriter before asserting the showcase.
+
 - **Milestone banners ("10 enemies left" / "Final Stage").** A big, semi-transparent line now flashes
   in the upper third of the screen at key moments and fades to invisible over 3 s: when the level's
   remaining-enemy count drops to **10** and to **5** (keyed off `enemyTotal − kills`, once each), and

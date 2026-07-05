@@ -58,7 +58,13 @@
   }
   #lang-switch button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
   #welcome h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
-  #welcome .intro { opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
+  #welcome .intro { font-size: 26px; opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
+  /* Staged L1 welcome briefing: the ship picker + Take-off are hidden while `.intro` types out, then fade in
+     (picker at typing-complete, Take-off +0.5s). Same visibility technique as the Main Window. */
+  #welcome .pick, #welcome #ship-choices, #welcome #takeoff { transition: opacity .25s ease; }
+  #welcome.welcome-hide-pick .pick,
+  #welcome.welcome-hide-pick #ship-choices { opacity: 0; visibility: hidden; }
+  #welcome.welcome-hide-go #takeoff        { opacity: 0; visibility: hidden; }
   /* ---- Main Window (the redesigned between-battles / landing screen; was the "Hangar") ----
      A fixed landscape layout: the top bar (settings gear + auth + Vega Sentinels wordmark + inactive
      Ships) lives in its own fixed elements; below it a 3-column grid — left menu | work zone |
@@ -130,6 +136,13 @@
   /* ship-model preview (right ~25%) */
   #mw-ship-col { display: flex; flex-direction: column; min-width: 0; }   /* stats strip on top, model fills the rest */
   #mw-ship { flex: 1 1 auto; width: 100%; min-height: 0; display: block; }
+  /* Staged briefing reveal (L2/L3 campaign briefing, docs/plans/2026-07-05-1641-briefing-staged-reveal.md):
+     the ship window + Take-off are hidden while the briefing text types out, then fade in (ship window at
+     typing-complete, Take-off +0.5s). visibility (not display) keeps their layout box so neither the grid
+     nor the mission view reflows when they appear. */
+  #mw-ship-col, #mw-go { transition: opacity .25s ease; }
+  #mainwin.briefing-hide-ship #mw-ship-col { opacity: 0; visibility: hidden; }
+  #mainwin.briefing-hide-go   #mw-go        { opacity: 0; visibility: hidden; }
   #welcome .pick { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: .6; margin-bottom: 12px; }
   #ship-choices { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 28px; }
   .ship-card {
@@ -245,6 +258,7 @@
     .shop-pane { grid-template-columns: 1fr; }
     .shop-types { flex-direction: row; flex-wrap: wrap; }
     #mw-mission-desc { font-size: 14px; }
+    #welcome .intro { font-size: 16px; }
   }
   /* ---- Desktop (mouse / large-screen) Main Window polish (device-profiles iteration 1) ----
      Scoped to the desktop + desktop-lg FORM classes only; phone/tablet + the mobile @media override are
