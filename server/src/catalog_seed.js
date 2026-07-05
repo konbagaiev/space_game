@@ -103,7 +103,7 @@ export const WEAPONS = [
   },
   {
     id: 4, name: 'Rocket pirate', type: 'rocket', price: 200, stats: { // enemy gear: resale-only (hidden from the shop)
-      power: 25, accel: 9, turnRate: 1.0, launchSpeed: 12, maxRange: 120, health: 20,
+      power: 20, accel: 9, turnRate: 1.0, launchSpeed: 6, maxRange: 120, health: 20,
       detonateRadius: 0.5, blastRadius: 5, // hull-proximity fuse (see id 3)
       blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, // detonation FX: size / speed (<1 = quicker) / tint
       fireCooldown: 4, weight: 6, projectileColor: 0xffcc66, class: 'rocket', buyable: false // class only drives detonation (→ blast); enemy fire stays synth (isPlayer gate)
