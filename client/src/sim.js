@@ -14,7 +14,7 @@ import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { pointHitsShip, segmentHitsShip } from './collision.js';
-import { updateDrops, spawnDrop, spawnSpecialDrop, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
+import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
 import { t } from './i18n.js';
@@ -69,6 +69,10 @@ export const levelRunner = {
     if (G.baseStation) G.baseStation.active = false;
     firedBanners.clear(); G.banner.life = 0; // fresh run: re-arm the milestone banners + clear any lingering one
     G.enemyTotal = (level && level.enemyTotal) || 0; // total enemies for the HUD killed/total (0 if not seeded)
+    // Warm the last-kill reward model NOW (only if it will actually drop) so the last-enemy spawn is
+    // hitch-free — the high-poly CloudFront hangar glb is fetched/parsed here, not on the killing frame.
+    const lkd = level && level.lastKillDrop;
+    if (lkd && !ownsReward(lkd)) preloadRewardModel(lkd);
     this.enterPhase();
   },
   get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },

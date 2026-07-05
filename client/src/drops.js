@@ -135,31 +135,68 @@ function addHalo(wrap) {
   wrap.add(sprite);
 }
 
+// Resolve a reward { kind, refId } to its catalog row + hangar url + drop target size (longest axis,
+// world units). The Machine Gun (weapon 5) reads thin at the shared 2.5, so its drop is enlarged 1.5×.
+function rewardModelSpec(reward) {
+  const cat = reward.kind === 'component' ? CATALOG.components.get(reward.refId) : CATALOG.weapons.get(reward.refId);
+  if (!cat) return null;
+  const targetLen = 2.5 * (reward.kind === 'weapon' && reward.refId === 5 ? 1.5 : 1);
+  return { cat, url: cat.modelUrlHigh, targetLen };
+}
+
+// Cache of NORMALIZED reward templates keyed by url, so the (high-poly CloudFront hangar) glb is fetched +
+// parsed ONCE — warmed at level start (preloadRewardModel) — and every drop is an instant clone. Without
+// this the glb loaded on the last-enemy kill, hitching that exact frame. entry = { model, waiters }.
+const rewardModelCache = new Map();
+function requestRewardModel(url, targetLen, cb) {
+  let entry = rewardModelCache.get(url);
+  if (entry) {                                   // already loaded or in flight
+    if (entry.model) { if (cb) cb(entry.model.clone(true)); }
+    else if (cb) entry.waiters.push(cb);
+    return;
+  }
+  entry = { model: null, waiters: cb ? [cb] : [] };
+  rewardModelCache.set(url, entry);
+  gltfLoader.load(url, (g) => {
+    entry.model = normalizeGreen(g.scene, targetLen);   // GREEN emissive + scaled, kept as a template (never in-scene)
+    for (const w of entry.waiters) w(entry.model.clone(true));
+    entry.waiters.length = 0;
+  }, undefined, () => { rewardModelCache.delete(url); entry.waiters.length = 0; }); // let a later attempt retry
+}
+
+// Warm the reward model at level start so the last-kill spawn is hitch-free (no CloudFront fetch/parse mid-frame).
+export function preloadRewardModel(reward) {
+  if (!reward) return;
+  const spec = rewardModelSpec(reward);
+  if (spec && spec.url) requestRewardModel(spec.url, spec.targetLen, null);
+}
+
 // Spawn the cosmetic reward drop (reward = { kind, refId } from the level's lastKillDrop). It reuses the
 // normal drops[] lifecycle (rotate, arm, pull, off-screen marker) but is GREEN + haloed and, being
 // `special: true`, deposits NOTHING when collected (see collect() / DECISIONS: exactly one copy). The
-// hangar glb is lazy-loaded from CloudFront, so a green fallback box appears at once and the real model
-// swaps in on load (same wrap group, so an in-flight pull continues).
+// model is cloned instantly from the warm cache (preloadRewardModel); if it isn't ready yet a green
+// fallback box shows and the model swaps in on load (same wrap group, so an in-flight pull continues).
 export function spawnSpecialDrop(pos, reward) {
   if (!reward) return;
   if (drops.length >= MAX_DROPS) { console.warn('drops: cap reached, skipping reward drop'); return; }
-  const cat = reward.kind === 'component' ? CATALOG.components.get(reward.refId) : CATALOG.weapons.get(reward.refId);
-  if (!cat) return;
-  const weight = cat.weight || WEIGHT_FALLBACK;
+  const spec = rewardModelSpec(reward);
+  if (!spec) return;
+  const weight = spec.cat.weight || WEIGHT_FALLBACK;
   const wrap = new THREE.Group();
-  wrap.add(greenFallbackBox());          // immediate glowing green stand-in until the glb loads
   addHalo(wrap);                         // additive green halo sprite behind the model
   wrap.position.copy(pos); wrap.position.y = 0.8;
   scene.add(wrap);
-  const url = cat.modelUrlHigh;
-  // The Machine Gun (weapon 5) reads thin at the shared 2.5 longest-axis, so its drop is enlarged 1.5×.
-  const targetLen = 2.5 * (reward.kind === 'weapon' && reward.refId === 5 ? 1.5 : 1);
-  if (url) gltfLoader.load(url, (g) => {
-    const model = normalizeGreen(g.scene, targetLen);   // center+scale like normalize(), but GREEN emissive (no silver)
-    const box = wrap.children.find((c) => c.userData.__fallback);
-    if (box) { wrap.remove(box); box.geometry.dispose(); box.material.dispose(); }
-    wrap.add(model);
-  }, undefined, () => {}); // on error the green fallback box stays — still reads as a reward
+  const cached = spec.url && rewardModelCache.get(spec.url);
+  if (cached && cached.model) {
+    wrap.add(cached.model.clone(true));  // warm cache → instant clone, no hitch
+  } else {
+    wrap.add(greenFallbackBox());        // not preloaded yet: glowing green stand-in until the glb arrives
+    if (spec.url) requestRewardModel(spec.url, spec.targetLen, (model) => {
+      const box = wrap.children.find((c) => c.userData.__fallback);
+      if (box) { wrap.remove(box); box.geometry.dispose(); box.material.dispose(); }
+      wrap.add(model);
+    });
+  }
   drops.push({ obj: wrap, item: reward, weight, inRange: 0, special: true });
 }
 

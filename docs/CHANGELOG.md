@@ -43,6 +43,11 @@
   - **Follow-up:** the Machine-Gun reward drop model is scaled **1.5×** (it read thin at the shared 2.5
     longest-axis) — `normalizeGreen(obj, targetLen)` in `drops.js` takes a per-reward target size; only
     weapon 5 is enlarged, the Repair-drone drop is unchanged.
+  - **Follow-up (perf):** fixed a frame **hitch on the last-enemy kill** — the high-poly CloudFront hangar
+    glb was fetched+parsed on the killing frame. Reward models are now **warmed at level start**
+    (`preloadRewardModel` in `sim.js` `levelRunner.start`, gated on `!ownsReward`) into a normalized
+    template cache keyed by url; `spawnSpecialDrop` clones instantly from the warm cache (falls back to the
+    old lazy load + green box only if it isn't ready yet).
 - **Tuned `model.lift` on every remaining ship for consistency (enemy_1/2/4).** The coverage report flagged
   the other enemy models as partly see-through from above too, so all 9 modeled ships now sit at their
   robust max bullet-plane coverage: enemy_1 (`Basic pirate ship`/`pirate gunner`) `lift: 0.21` (30→40 of
