@@ -360,7 +360,7 @@
   .community-link:hover { opacity: 1; color: #cfe7ff; }
   #overlay .community-link { margin-top: 18px; }
   /* hide the in-game HUD while the welcome screen is up */
-  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #markers, body.menu #oob-warn, body.menu #return-hint, body.menu #banner, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay, body.menu #zoom { display: none; }
+  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #event-log, body.menu #markers, body.menu #oob-warn, body.menu #return-hint, body.menu #banner, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay, body.menu #zoom { display: none; }
   /* Account dialog (login / register / post-level-1 name prompt) */
   #account {
     position: fixed; inset: 0; z-index: 14; display: none;
@@ -627,6 +627,19 @@
   #rocket-btn .rb-icon { position: relative; z-index: 1; font-size: 34px; text-shadow: 0 0 5px #000; }
   #rocket-btn.ready { border-color: #77ee77; box-shadow: 0 0 12px rgba(110,238,110,.5); }
   #rocket-btn:active { filter: brightness(1.25); }
+  /* Event log: last 4 lines above the rocket button (both desktop + touch), each fading over 5s. */
+  #event-log {
+    position: fixed; right: 22px; bottom: 132px; z-index: 6;
+    width: 240px; pointer-events: none;
+    display: flex; flex-direction: column; align-items: flex-end; /* newest appended at the bottom */
+    gap: 2px; text-align: right;
+  }
+  .event-line {
+    color: #dfe8ff; font: 600 14px system-ui, sans-serif;
+    text-shadow: 0 0 4px #000, 0 1px 2px #000;
+    animation: eventfade 5s linear forwards;
+  }
+  @keyframes eventfade { 0%,60% { opacity: 1; } 100% { opacity: 0; } }
   /* Zoom controls (+/-): PC + mobile. Hidden on menus like the rest of the HUD. */
   #zoom {
     position: fixed; right: 16px; top: 50%; transform: translateY(-50%); z-index: 6;
@@ -640,6 +653,13 @@
   }
   #zoom button:hover { background: rgba(40,60,100,.7); }
   #zoom button:active { filter: brightness(1.3); }
+  /* Touch: move the zoom pair to the bottom-center, laid out horizontally as "−  +" (minus left, plus right). */
+  body.touch #zoom {
+    right: auto; left: 50%; top: auto; bottom: 40px;
+    transform: translateX(-50%);
+    flex-direction: row-reverse; /* DOM is [＋, −]; row-reverse renders − (left) then ＋ (right) */
+    gap: 14px;
+  }
   /* Off-screen enemy indicators: arrows on the screen edge pointing toward off-screen enemies */
   #markers { position: fixed; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
   .marker {

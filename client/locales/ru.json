@@ -1,9 +1,10 @@
 {
   "ui.hud.health": "Здоровье",
   "ui.hud.credits": "Кредиты",
-  "ui.hud.earned": "Заработано",
+  "ui.hud.credits_line": "кредиты {total}/{earned} заработано",
   "ui.hud.destroyed": "Уничтожено",
-  "ui.hud.enemies": "Враги",
+  "ui.log.killed": "{name} уничтожен +{amount}",
+  "ui.log.picked_up": "подобрано: {name}",
   "ui.oob.warning": "Вы покинули поле боя — вернитесь в зону боевых действий",
   "ui.oob.countdown": "Возврат через {seconds} с",
   "ui.return.hint": "Сектор зачищен — вернитесь на базу",

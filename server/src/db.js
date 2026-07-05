@@ -26,12 +26,12 @@ export async function migrate() {
 // catalog_seed.js updates the rows (ids/foreign keys preserved — weapons keyed by id, ships by name).
 async function seedCatalog() {
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
-  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high`);
-  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null);
-  const upW = db.prepare(`INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high`);
-  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null);
+  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high, rarity, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, rarity = excluded.rarity, color = excluded.color`);
+  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null, c.rarity, c.color);
+  const upW = db.prepare(`INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high, rarity, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, rarity = excluded.rarity, color = excluded.color`);
+  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null, w.rarity, w.color);
   const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url, model_url_high, components) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, components = excluded.components`);
   for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, s.modelUrlHigh ?? null, JSON.stringify(s.components));
@@ -329,13 +329,13 @@ export function getShips() {
 }
 
 export function getWeapons() {
-  return db.prepare('SELECT id, name, type, price, stats, model_url, model_url_high FROM weapons ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
+  return db.prepare('SELECT id, name, type, price, stats, model_url, model_url_high, rarity, color FROM weapons ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
 }
 
 export function getComponents() {
-  return db.prepare('SELECT id, name, type, weight, price, stats, model_url, model_url_high FROM components ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
+  return db.prepare('SELECT id, name, type, weight, price, stats, model_url, model_url_high, rarity, color FROM components ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
 }
 
 // SFX catalog: the sounds registry (key->url) + the class-based routing map. The client preloads the

@@ -18,10 +18,8 @@ const byId = (id) => {
 
 export const el = {
   // HUD readouts (updated every frame by hud.js)
-  earned: byId('earned'),       // credits earned this run
-  credits: byId('credits'),     // persistent account balance
+  credits: byId('credits'),     // single "credits {total}/{earned} earned" line
   kills: byId('kills'),         // destroyed enemies this run
-  enemies: byId('enemies'),     // enemies currently alive
   hpFill: byId('hpfill'),       // health bar fill width
   hpPct: byId('hppct'),         // health bar numeric percent
   rocketBtn: byId('rocket-btn'),   // 🚀 button (gets a .ready class when reloaded)

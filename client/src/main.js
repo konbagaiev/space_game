@@ -509,13 +509,13 @@ if (location.search.includes('debug')) {
     drops, // the live loot-drop array (count/positions assertable in headless)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
     // with `?dev` — start a fight, run `for (let i=0;i<40;i++) __game.spawnTestDrop()`, watch the perf FPS.
-    spawnTestDrop() {
+    spawnTestDrop(item) {
       const p = G.player; if (!p) return null;
       const items = [{ kind: 'component', refId: 6 }, { kind: 'component', refId: 9 }, { kind: 'weapon', refId: 9 }, { kind: 'weapon', refId: 4 }];
-      const item = items[(Math.random() * items.length) | 0];
+      const chosen = item || items[(Math.random() * items.length) | 0]; // optional explicit item → deterministic (tests)
       const pos = p.mesh.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 30, 0, (Math.random() - 0.5) * 30));
-      spawnDrop(pos, item);
-      return item;
+      spawnDrop(pos, chosen);
+      return chosen;
     },
     pickLoot, // expose for tests (loot-pool selection off an enemy)
     audio, // procedural audio engine (settings + scene); SFX/music are inaudible in headless but state is assertable
@@ -597,7 +597,7 @@ async function bootstrap() {
     // Weapons are flattened (stats spread to top level); keep the model URLs too (the `...w.stats` spread
     // also lifts `stats.model` to a top-level `model` key — read by itemModelCfg). Components are stored
     // whole, so their `modelUrlHigh` + nested `stats.model` flow through as-is.
-    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, modelUrl: w.modelUrl, modelUrlHigh: w.modelUrlHigh, ...w.stats });
+    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, modelUrl: w.modelUrl, modelUrlHigh: w.modelUrlHigh, rarity: w.rarity, color: w.color, ...w.stats });
     for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);

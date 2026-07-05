@@ -5,6 +5,25 @@
 
 ## 2026-07-05
 
+- **[2026-07-05-1844-touch-hud-log-item-colors] HUD overhaul + item rarity/color + fading event log.**
+  Reworked several in-combat HUD surfaces and added an item rarity data model. **HUD:** the credits
+  readout is now a single line `credits {total}/{earned} earned` (total owned / earned this run) and the
+  live **Enemies** counter was removed. **Event log:** a new stack of up to **4** lines above the rocket
+  button (`#event-log`, `client/src/eventlog.js`), each fading out over 5 s — a kill logs
+  `{shipname} killed +{amount}`, a grab pickup logs `picked up {name}` tinted by the item's color (fires
+  for every collected drop, reward drops included). **Touch:** the zoom `+`/`−` buttons moved from the
+  right edge to the **bottom-center**, laid out horizontally as `−  +` (desktop unchanged). **Data model:**
+  new `rarity` (`trash`/`common`/`rare`) + `color` (hex) columns on **both** `components` and `weapons`
+  (SQLite migration `020_item_rarity_color.js` + Postgres bootstrap parity), seeded via a derived rule in
+  `catalog_seed.js` (shop-available → common/green `#59e0a0`; enemy/price-0 → trash/white `#ffffff`; the
+  single override Triple spiral rocket → rare/blue `#0000ff`) and exposed through the client CATALOG.
+  **World loot:** dropped items now show a soft additive halo tinted by their rarity color (fresh
+  per-drop material; off-screen edge pointers stay fixed green). Added a server test asserting rarity +
+  color come through `/api/components` + `/api/weapons`, and a visual scenario
+  (`19-hud-log.mjs`) covering the removed counter, the credits line, the kill/pickup event lines with the
+  pickup tint, the world-drop halo color, and the bottom-center touch zoom. EN+RU strings for the credits
+  line + both log templates (the enemy ship / item names still render via the English DB name — a surface
+  for a later i18n pass). Shop UI does not surface rarity/color yet (data only). No model/asset changes.
 - **[2026-07-05-1641-briefing-staged-reveal] Staged briefing reveal (L1-3).** On the first three campaign
   levels the landing briefing now appears **in sequence** instead of all at once. **L1** (the welcome / ship-
   picker screen): the greeting shows immediately, the `.intro` briefing **types out over ~5 s**, then the

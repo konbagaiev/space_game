@@ -18,10 +18,8 @@ const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the p
 
 // ---------- HUD ----------
 export function updateHud() {
-  el.earned.textContent = G.earned;
-  el.credits.textContent = G.balance;
+  el.credits.textContent = t('ui.hud.credits_line', { total: G.balance, earned: G.earned });
   el.kills.textContent = G.enemyTotal > 0 ? `${G.kills}/${G.enemyTotal}` : G.kills;
-  el.enemies.textContent = enemies.length;
   const hpPct = Math.max(0, G.player.hp / G.player.maxHp * 100);
   el.hpFill.style.width = hpPct + '%';
   el.hpPct.textContent = hpPct.toFixed(1) + '%'; // remaining health, one decimal

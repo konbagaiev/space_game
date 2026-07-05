@@ -3,7 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-05 (**Staged briefing reveal (L1-3)** — the L1 welcome briefing and the L2/L3 Main
+**Updated:** 2026-07-05 (**HUD overhaul + item rarity/color** — the HUD credits readout is now one line
+`credits {total}/{earned} earned` and the live **Enemies** counter is removed; a small **event log** above
+the rocket button shows the last 4 lines (kill: `{shipname} killed +{amount}`; pickup: `picked up {name}`
+tinted by the item's color), each fading over 5 s (`client/src/eventlog.js`); dropped loot now glows in its
+own rarity color (trash white / common green / rare blue); on **touch** the zoom `−  +` pair moved to the
+bottom-center. New `rarity`/`color` columns on `components`/`weapons` (migration 020 + Postgres parity)
+drive the glow + tint. Prior: **Staged briefing reveal (L1-3)** — the L1 welcome briefing and the L2/L3 Main
 Window campaign briefing now **type out over ~5 s** (`client/src/typewriter.js`), then reveal the ship
 picker / ship-preview window (+ granted-item showcase), then the **Take off** button **+0.5 s** later;
 **tap the briefing text to skip**; plays once per landing; the L1 `.intro` was enlarged to 26px; L4+ and
@@ -123,7 +129,8 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   touch stick), fire (`Space`/FIRE), or rocket (`F`/🚀) — instantly cancels autopilot and returns control; a
   cancelled dock does not win (re-tap the station to resume). See the Level flow / Victory section.
 - **Zoom** — **PC:** mouse **wheel** (scroll up = closer) + on-screen **＋/−** buttons (right edge,
-  vertically centered). **Mobile:** the **＋/−** buttons + two-finger **pinch**. Zoom scales the fixed
+  vertically centered — unchanged). **Mobile:** the buttons (**bottom-center**, laid out horizontally as
+  **`−  +`** — minus left, plus right; `body.touch #zoom` override) + two-finger **pinch**. Zoom scales the fixed
   camera offset along its angle within `0.6–2.2×`, **eases smoothly** toward the target (~0.2 s, frame-rate
   independent) instead of snapping, and is **persisted** across runs (`localStorage` key `camZoom`). On touch
   the `+`/`−` buttons fire on **`touchstart`** (like FIRE/🚀), not a synthesized `click`, and sit `z-index:6`
@@ -242,6 +249,17 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   container; `creditPopups` FX array spawned in `sim.js` on enemy death with `maxLife` 2.0, skipped when
   reward ≤ 0; opacity holds full then fades over the last ~1 s). Green (not the credits gold) so it stays
   legible against the warm ship-explosion burst it spawns on. Hidden while an overlay is up and cleared on restart.
+- **Event log** — a short stack of fading lines (`#event-log`) directly above the rocket button (fixed,
+  bottom-right, `z-index:6`, right-aligned; same anchor on desktop + touch). Keeps the **last 4** lines,
+  newest at the bottom; each line fades out over **5 s** via the CSS `eventfade` animation then removes
+  itself (`animationend`). On an enemy kill it logs `{shipname} killed +{amount}` (default text color); on
+  a grab pickup it logs `picked up {name}` tinted by the item's rarity **color** (fires for every collected
+  drop, including the L1/L2 cosmetic reward drops). Module `client/src/eventlog.js` (`logEvent(text,color)` /
+  `clearEventLog()`); called from `sim.js` (kill line + `clearEventLog()` in `reset()`) and `drops.js`
+  `collect()` (pickup line). Purely cosmetic — the fade is wall-clock, so it keeps fading while paused
+  (DECISIONS §30, no per-frame integration). Strings `ui.log.killed` / `ui.log.picked_up` (EN+RU); the enemy
+  ship name (kill line) and the component/weapon name (pickup line) render to players via the **English DB
+  name** (unlocalized — a later i18n pass should localize these surfaces). Hidden on menus via `body.menu`.
 - **Milestone banners** — a big, semi-transparent line (`#banner`, upper third, centered, non-interactive)
   flashes at full opacity and fades to 0 over **3 s** at key beats: when the remaining-enemy count hits
   **10** and **5** (`enemyTotal − kills`, once each) showing `N enemies left`, and when the **final combat
@@ -296,6 +314,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     18, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
     **2500**), and repair tiers **Repair drone II** (id 19: 1.5 HP / 1 s / 85% / **1800**) + **Nanobot repair**
     (id 20: 2 HP / 1 s / 90% / **7000**). Upgrades are **mass trade-offs, not power-creep**.
+  - **Rarity + color** (`rarity`/`color` columns on **both** `components` and `weapons`; migration 020,
+    Postgres bootstrap parity; flow into the client CATALOG). Three tiers with a fixed hex each: **trash
+    `#ffffff`** (white), **common `#59e0a0`** (green, the loot-glow green), **rare `#0000ff`** (blue).
+    Rarity is **derived** in `catalog_seed.js`, not hand-authored per row: `rarity = explicit override ??
+    ((price>0 && stats.buyable !== false) ? 'common' : 'trash')` — so every shop-available item is
+    common/green and every pirate/enemy part (`buyable:false`) + price-0 boss part is trash/white. The
+    **only** explicit override is **Triple spiral rocket (weapon 11) → rare/blue**. `color` is the single
+    source for both the in-world **drop glow** (see Grab & loot drops) and the pickup-log **line tint**. The
+    **shop UI does not surface rarity/color yet** — it's data only (no card borders/badges), left for a
+    later iteration.
 - **Repair drone:** installed on the player's ship via the **level-3 briefing** (server-authoritative
   `installComponent` action; persisted in `player_ships.components.repair`). During live combat the
   client ticks `repairTick` (pure, in `components.js`) each frame, slowly healing the hull up to the
@@ -541,9 +569,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Drops read as **brushed silver** — their glb (and the fallback box) material is overridden to a light silver
   albedo (`0xd2d6de`, `metalness 0.55`, `roughness 0.4`) with a faint **emissive floor** (`0x3a3e46`) so a
   crate is visible against dark space and never fully black (a one-time tweak in `normalize()`; a pure chrome
-  mirror had gone black where the backdrop was dark). **Off-screen drops
+  mirror had gone black where the backdrop was dark). Each drop also gets a **soft additive halo tinted by
+  its item's rarity `color`** (trash white / common green / rare blue) — `addHalo(obj, colorInt,
+  DROP_HALO_SIZE=4.5)` in `spawnDrop`, using a **fresh SpriteMaterial per drop** so a per-drop tint never
+  cross-contaminates other drops (clones share materials); the reward-drop halo keeps the default green.
+  On collection the pickup is logged to the **event log** tinted the same color (see Tools → Event log).
+  **Off-screen drops
   show green `0x59e0a0` edge arrows** (`updateDropMarkers` in `hud.js`, its own pool + `.drop-marker` CSS,
-  the **nearest 6**), distinct from the enemy edge markers.
+  the **nearest 6**), distinct from the enemy edge markers — the edge pointers stay **fixed green** (not
+  recolored by rarity).
   - **L1/L2 reward drops (cosmetic).** The **last enemy of Level 1** drops the **Machine Gun** model and the
     **last enemy of Level 2** the **Repair drone** — rendered from each item's `modelUrlHigh` (the same
     lazy-loaded hangar glbs the menu preview uses; a **green fallback box** shows until it loads). Marked
@@ -739,12 +773,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   total. Completing a level **doubles** Earned (`win` applies `earned ×= 2`). The separate **kill count**
   drives level thresholds. At the **end of each run — death OR victory — Earned is banked** into the
   player's persistent **Credits** balance (server-authoritative; closing the browser mid-run loses the
-  unbanked amount). New players start at **1000 credits**. HUD (top-right) shows two counters — **Credits**
-  (the persistent balance) and **Earned** (this run) — plus **Destroyed** and **Enemies** (alive).
+  unbanked amount). New players start at **1000 credits**. HUD (top-right) shows one credits line —
+  `credits {total}/{earned} earned` (total persistent balance / Earned this run; `ui.hud.credits_line`,
+  EN+RU) — plus **Destroyed**. The live **Enemies** (alive) counter has been **removed**.
   **Destroyed** reads **killed / total** (e.g. `8/16`): *total* is the number of enemies destroyed to clear
   the whole level/mission, precomputed on the server from the descriptor's phase script and embedded as
   `descriptor.enemyTotal` (the client reads it in `levelRunner.start`; falls back to the bare kill count when
-  the total is unknown, e.g. a level row not yet reseeded). **Enemies** (alive) is unchanged.
+  the total is unknown, e.g. a level row not yet reseeded).
   Banking posts `{ credits, kills, durationMs }` to `POST /api/games`, which returns the new balance.
 - **Shop & stash (the "spend" side)** — once the player **clears the final level**, the Main Window's left
   menu gains three items — **Loadout** (what's equipped), **Stash** (owned-but-not-equipped inventory, a qty
@@ -1097,10 +1132,14 @@ first translation). See DECISIONS §10.
 - **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url` (combat),
   `model_url_high` (hangar high-poly, nullable), `components` JSON ref `{hull,engine,thruster[,repair]}`),
   `components` (`name`, `type`
-  `hull`/`engine`/`thruster`/`repair`, `weight`, **`price`**, `stats` JSON; stable ids) and `weapons`
-  (`name`, `type` `bullet`/`rocket`, **`price`**, `stats` JSON; stable ids), seeded from a shared snapshot
+  `hull`/`engine`/`thruster`/`repair`/`grab`, `weight`, **`price`**, `stats` JSON, **`rarity`**/**`color`**;
+  stable ids) and `weapons`
+  (`name`, `type` `bullet`/`rocket`, **`price`**, `stats` JSON, **`rarity`**/**`color`**; stable ids), seeded
+  from a shared snapshot
   (`server/src/catalog_seed.js`). **`price`** (credits, hangar shop) defaults to **0** until real prices
-  are set. **The client assembles all ships from these.**
+  are set. **`rarity`** (`trash`/`common`/`rare`) + **`color`** (hex; migration 020, Postgres bootstrap
+  parity) are derived in the seed (see Ship model → Rarity + color) and drive the client's drop glow +
+  pickup-log tint. **The client assembles all ships from these.**
 - **`player_ships`:** ships a player owns; exactly one `is_active` goes into battle. `loadout` JSON
   overrides `mounts` (empty ⇒ the ship's default weapons), `components` JSON overrides the ship's
   hull/engine (null ⇒ ship defaults), `meta` JSON for the future. A new player auto-gets a default

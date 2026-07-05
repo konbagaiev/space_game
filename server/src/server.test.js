@@ -437,6 +437,24 @@ test('catalog: weapons are seeded with type bullet/rocket', async () => {
   assert.equal(rocket.stats.maxRange, 150);
 });
 
+test('catalog: components + weapons carry a rarity tier + matching hex color', async () => {
+  const RARITY_COLOR = { trash: '#ffffff', common: '#59e0a0', rare: '#0000ff' };
+  const comps = await getJson('/api/components');
+  const weapons = await getJson('/api/weapons');
+  // every row has a valid rarity and a color that matches its tier
+  for (const row of [...comps, ...weapons]) {
+    assert.ok(['trash', 'common', 'rare'].includes(row.rarity), `${row.name}: rarity ${row.rarity}`);
+    assert.equal(row.color, RARITY_COLOR[row.rarity], `${row.name}: color for ${row.rarity}`);
+  }
+  const byId = (arr, id) => arr.find((r) => r.id === id);
+  // spot cases (derived rule: shop-available → common; enemy/price-0 → trash; explicit override → rare)
+  assert.deepEqual({ rarity: byId(weapons, 5).rarity, color: byId(weapons, 5).color }, { rarity: 'common', color: '#59e0a0' }); // Machine Gun
+  assert.deepEqual({ rarity: byId(weapons, 11).rarity, color: byId(weapons, 11).color }, { rarity: 'rare', color: '#0000ff' }); // Triple spiral rocket (override)
+  assert.deepEqual({ rarity: byId(weapons, 9).rarity, color: byId(weapons, 9).color }, { rarity: 'trash', color: '#ffffff' }); // Pirate machine gun (buyable:false)
+  assert.deepEqual({ rarity: byId(comps, 12).rarity, color: byId(comps, 12).color }, { rarity: 'common', color: '#59e0a0' }); // Repair drone
+  assert.deepEqual({ rarity: byId(comps, 22).rarity, color: byId(comps, 22).color }, { rarity: 'trash', color: '#ffffff' }); // Pirate hull (buyable:false)
+});
+
 test('maps: home-system descriptor is served', async () => {
   const map = await getJson('/api/maps/home-system');
   assert.equal(map.name, 'home-system');
