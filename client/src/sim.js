@@ -33,6 +33,24 @@ function musicForState() {
 }
 export function refreshMusic() { audio.setScene(musicForState()); }
 
+// ---------- Transient HUD banner ("10 enemies left", "Final Stage") ----------
+// A big, semi-transparent line centered on screen that appears at full opacity and fades to 0 over
+// `dur` seconds (opacity = life/maxLife, drawn by updateBanner). One slot: a newer banner overrides
+// the current one. `firedBanners` guards each milestone so it shows once per run (reset in reset()).
+const BANNER_FADE = 3;              // seconds to fade from full to invisible (per the design)
+const firedBanners = new Set();     // milestone keys already shown this run (10, 5, 'final')
+function showBanner(text, dur = BANNER_FADE) { G.banner.text = text; G.banner.life = dur; G.banner.maxLife = dur; }
+// Draw: apply the current banner's text + fading opacity; hidden while faded out, on menus/overlays,
+// or with no player. Ages in update(dt) (so it freezes on pause), like the credit popups.
+export function updateBanner() {
+  const b = G.banner;
+  const show = b.life > 0 && G.player && el.overlay.style.display === 'none';
+  if (!show) { el.banner.style.display = 'none'; return; }
+  el.banner.style.display = 'block';
+  el.banner.textContent = b.text;
+  el.banner.style.opacity = String(b.life / b.maxLife);
+}
+
 // ---------- Level runner: plays a DB level descriptor (an ordered phase/wave script) ----------
 // Each phase optionally spawns a weighted pool up to `maxConcurrent` (with an optional `total` cap),
 // and advances when its condition is met: { kills } (cumulative), { killsSincePhase }, or
@@ -49,6 +67,7 @@ export const levelRunner = {
     this.returningToBase = false;
     G.returnToBase = false; G.autopilot.active = false; G.autopilot.target = null;
     if (G.baseStation) G.baseStation.active = false;
+    firedBanners.clear(); G.banner.life = 0; // fresh run: re-arm the milestone banners + clear any lingering one
     G.enemyTotal = (level && level.enemyTotal) || 0; // total enemies for the HUD killed/total (0 if not seeded)
     this.enterPhase();
   },
@@ -57,6 +76,13 @@ export const levelRunner = {
   enterPhase() {
     this.killsAtPhaseStart = G.kills; this.spawnedThisPhase = 0;
     const ph = this.phase;
+    // "Final Stage" banner: fire when entering the last combat phase — the one right before the
+    // `event: 'win'` phase (the boss/finale on every level). Once per run.
+    const next = this.level && this.level.phases[this.phaseIndex + 1];
+    if (ph && !ph.event && next && next.event === 'win' && !firedBanners.has('final')) {
+      firedBanners.add('final');
+      showBanner(t('ui.banner.final_stage'));
+    }
     if (ph && ph.event === 'win') {
       // defer the overlay by `delay` seconds so the boss explosion can play out first
       this.winTextKey = ph.textKey; this.winText = ph.text; // i18n key (+ English fallback)
@@ -628,6 +654,9 @@ export function update(dt) {
     }
   }
 
+  // --- transient banner: fade the centered announcement toward invisible (drawn by updateBanner) ---
+  if (G.banner.life > 0) G.banner.life = Math.max(0, G.banner.life - dt);
+
   // --- credit popups: "+xx" gold text that floats up and fades over ~1s (drawn by hud.js) ---
   for (let i = creditPopups.length - 1; i >= 0; i--) {
     creditPopups[i].life -= dt;
@@ -647,6 +676,15 @@ export function update(dt) {
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
       G.kills++;                  // count (drives level thresholds + HUD)
+      // "N enemies left" banner at the 10- and 5-remaining milestones (once each, only when the level's
+      // total is known). kills increments by 1, so `left` lands on each value exactly once.
+      if (G.enemyTotal > 0) {
+        const left = G.enemyTotal - G.kills;
+        if ((left === 10 || left === 5) && !firedBanners.has(left)) {
+          firedBanners.add(left);
+          showBanner(t('ui.banner.enemies_left', { count: left }));
+        }
+      }
       const reward = e.reward || 0;
       G.earned += reward;         // credits (reward for this ship type)
       if (reward > 0) {           // floating "+xx" green popup at the kill site (cosmetic feedback)

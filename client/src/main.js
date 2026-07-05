@@ -18,7 +18,7 @@ import { el } from './dom.js'; // single fail-loud inventory of shared index.htm
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars)
 import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base
+import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
@@ -465,6 +465,7 @@ function animate() {
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
   updateReturnArrow();  // world-space blue homing arrow toward the base station (return-to-base)
   updateReturnHint();   // centered "return to base" HUD hint
+  updateBanner();       // transient centered milestone banner ("10 enemies left", "Final Stage")
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies

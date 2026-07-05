@@ -60,6 +60,9 @@ export const G = {
   // active + target.kind==='station' is the mandatory "dock" gate (only the station target can win the mission).
   autopilot: { active: false, phase: 'brake0', target: null },
   baseStation: null,                               // { obj, active } — set by buildSetPiece; .active = clickable this run
+  // transient centered HUD announcement ("10 enemies left", "Final Stage"): appears at full opacity and
+  // fades to 0 over `maxLife` seconds. opacity = life/maxLife; hidden once life hits 0 (see updateBanner).
+  banner: { text: '', life: 0, maxLife: 0 },
 };
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---

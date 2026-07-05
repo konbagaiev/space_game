@@ -5,6 +5,15 @@
 
 ## 2026-07-05
 
+- **Milestone banners ("10 enemies left" / "Final Stage").** A big, semi-transparent line now flashes
+  in the upper third of the screen at key moments and fades to invisible over 3 s: when the level's
+  remaining-enemy count drops to **10** and to **5** (keyed off `enemyTotal − kills`, once each), and
+  when the **final combat phase** begins (the boss/finale — the phase right before the `event: 'win'`
+  phase) showing **Final Stage**. New `#banner` DOM node + CSS, `G.banner {text,life,maxLife}`,
+  `showBanner`/`updateBanner` in `client/src/sim.js` (fades in `update(dt)` like the credit popups,
+  drawn each frame from `main.js`), and EN/RU strings `ui.banner.enemies_left` / `ui.banner.final_stage`.
+  Fires once per run (reset in `levelRunner.start`); hidden on menus/overlays.
+
 - **[2026-07-05-1340-credits-screen] In-game Credits screen (CC-BY compliance).** Added a player-facing
   **Credits & attributions** panel, opened from the Settings gear (`#credits-open` → scrollable
   `#credits-overlay`, `client/src/credits.js`): 3D models get the full CC-BY 4.0 credit (work title,

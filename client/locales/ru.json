@@ -7,6 +7,8 @@
   "ui.oob.warning": "Вы покинули поле боя — вернитесь в зону боевых действий",
   "ui.oob.countdown": "Возврат через {seconds} с",
   "ui.return.hint": "Сектор зачищен — вернитесь на базу",
+  "ui.banner.enemies_left": "Осталось врагов: {count}",
+  "ui.banner.final_stage": "Финальная стадия",
   "ui.mission.slot": "Миссия {n}",
   "ui.mainwin.missions": "Миссии",
   "ui.mainwin.ships": "Корабли",

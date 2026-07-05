@@ -42,4 +42,6 @@ export const el = {
   oobWarn: byId('oob-warn'),
   // "Sector cleared — return to base" hint shown during return-to-base (updateReturnHint)
   returnHint: byId('return-hint'),
+  // transient centered milestone banner ("10 enemies left", "Final Stage") (updateBanner)
+  banner: byId('banner'),
 };
