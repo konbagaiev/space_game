@@ -5,6 +5,32 @@
 
 ## 2026-07-05
 
+- **Model `lift` — top-down aim fix for hulls that sit off the bullet plane.** The game is top-down and
+  bullets fly in the world y≈0.6 plane (the ship group's origin). A model whose bounding-box centre sits
+  above its hull left the nose/deck below that plane, so centre-aimed shots visibly passed *over* the ship —
+  reported on **enemy_3** (mini-boss + orange `advanced medium pirate`): shots flew over the drooped nose.
+  Added a per-model **`model.lift`** (signed group-local Y, pre-scale) resolved in `shipModelCfg`: it offsets
+  `pivot.position.y` (visual) **and** every hitbox `c.y`, and grows `broadR` by `|lift|`, so the visual model
+  and its collision boxes stay in lockstep while the hull seats onto the bullet plane (positive raises,
+  negative lowers). Applied `lift: 0.2` to both enemy_3 configs and `lift: 0.18` to the player ship. Verified
+  offline (nose OBBs now span the y=0.6 plane; boxes intersecting the plane rose enemy_3 23→35 / player
+  29→47 of 48) and in-game (model + `?hitboxes` overlay render in lockstep). Default `lift: 0` leaves every
+  other ship unchanged.
+- **Formalized the combat plane as an invariant (`BULLET_PLANE_Y`).** The "move the model, never the
+  bullets" rule needs exactly one bullet plane, so `client/src/state.js` now exports `BULLET_PLANE_Y = 0.6`
+  as the single source of truth. Replaced the scattered bare `0.6` ship-plane literals — group spawn Y
+  (`ship-factory`), enemy spawn Y (`ship-build`), player warp/recenter Y (`sim` ×2), and the flat hit-ring
+  FX Y (`projectiles` ×2) — with references to it. (Kept the plane at 0.6, not literal world 0: it's already
+  model-independent, and re-zeroing would be cosmetic churn across exhaust/HP-bar/ring code for no gameplay
+  gain — see DECISIONS §47.)
+- **`assets:hitboxes` now reports bullet-plane coverage + a suggested `model.lift` per ship.** So a
+  freshly-fit model isn't shipped accidentally see-through from above, the generator prints, per ship, how
+  many hitboxes the bullet plane crosses at the current lift (`· plane y=0 N/total (lift L)`) and warns
+  `⚠ up to M at lift≈L` when a signed lift would seat ≥2 more boxes on the plane. Coverage is computed as
+  `|c.y + lift| ≤ Σ|uᵢ.y|·hᵢ` — exact and invariant to heading and scale. It's a warning, not a build
+  failure (over-lifting floats the model, so the maintainer decides). The report currently flags
+  **enemy_1/2/4** as under-covered (enemy_4 wants a slight *negative* lift); those aren't tuned yet. New
+  `planeCoverage`/`bestLift` helpers + unit tests in `scripts/assets-hitboxes.mjs`.
 - **Asset cleanup — removed stale/unused pipeline builds from S3, local, and git.** Diffed every asset
   store against the authoritative keep-set (the 29 combat/hangar/sfx URLs referenced by
   `server/src/catalog_seed.js` + `client/src/drops-config.js`; `assets:check` stays green). Deleted **28

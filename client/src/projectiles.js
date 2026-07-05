@@ -4,7 +4,7 @@
 // are gated by the live graphics tier (G.gfx) to cap fill-rate on weak phones.
 import * as THREE from 'three';
 import { scene } from './engine.js';
-import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { pointHitsShip } from './collision.js';
 
@@ -105,7 +105,7 @@ export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) 
       blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
     });
     const ring = new THREE.Mesh(shockGeo, ringMat);
-    ring.position.copy(pos); ring.position.y = 0.6;
+    ring.position.copy(pos); ring.position.y = BULLET_PLANE_Y; // keep the flat ring on the combat plane
     ring.rotation.x = -Math.PI / 2; // lay it flat on the arena
     scene.add(ring);
     shockwaves.push({ mesh: ring, life: 2.4, maxLife: 2.4, maxScale: 22 * s });
@@ -153,7 +153,7 @@ export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050, timeScale
       blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
     });
     const ring = new THREE.Mesh(shockGeo, ringMat);
-    ring.position.copy(pos); ring.position.y = 0.6;
+    ring.position.copy(pos); ring.position.y = BULLET_PLANE_Y; // keep the flat ring on the combat plane
     ring.rotation.x = -Math.PI / 2;
     scene.add(ring);
     shockwaves.push({ mesh: ring, life: 0.85 * T, maxLife: 0.85 * T, maxScale: R * 2.2 });

@@ -241,6 +241,50 @@ export function fitOBB(hp) {
   };
 }
 
+// ---- bullet-plane coverage check (top-down aim) ----
+// The game is top-down and ALL bullets fly in one horizontal plane at the ship group's origin
+// (client/src/state.js BULLET_PLANE_Y; group-local y=0). A ship is only hittable where its hitboxes cross
+// that plane, so a hull sitting off it lets centre-aimed shots pass over/under — the `stats.model.lift`
+// knob raises the model + boxes onto the plane (see ship-factory.js / DECISIONS §47). These helpers report
+// how many boxes the plane crosses at a given lift, and the lift that maximises it, so a freshly-fit model
+// isn't shipped accidentally see-through from above.
+//
+// A box's half-extent projected onto world Y. Rotation about Y (heading) preserves every axis's Y
+// component and uniform world scale cancels through the origin, so this — and thus plane coverage — is
+// invariant to the ship's facing AND its scale: it depends only on the boxes and the lift.
+const boxHalfY = (b) => Math.abs(b.u0.y) * b.h.x + Math.abs(b.u1.y) * b.h.y + Math.abs(b.u2.y) * b.h.z;
+// How many boxes the bullet plane (group-local y=0) crosses for a given lift.
+export function planeCoverage(boxes, lift = 0) {
+  let n = 0;
+  for (const b of boxes) if (Math.abs(b.c.y + lift) <= boxHalfY(b) + 1e-9) n++;
+  return n;
+}
+// The lift that puts the plane through the MOST boxes. `lift` is a SIGNED group-local offset (positive
+// raises the model, negative lowers it — whichever seats the hull on the plane). Each box covers the lifts
+// L in the closed interval [-c.y - halfY, -c.y + halfY]; we want the L inside the most intervals. Coverage
+// is piecewise-constant between interval endpoints, so sampling each endpoint + each gap midpoint finds the
+// max (N ≤ 48 → cheap). Among lifts that tie for the max, returns the one with the SMALLEST |lift| (least
+// visual displacement). Returns { lift, count }.
+export function bestLift(boxes) {
+  const iv = boxes.map((b) => { const hy = boxHalfY(b); return [-b.c.y - hy, -b.c.y + hy]; });
+  const cover = (L) => iv.reduce((n, [lo, hi]) => n + (L >= lo - 1e-9 && L <= hi + 1e-9 ? 1 : 0), 0);
+  const coords = [...new Set(iv.flat())].sort((a, b) => a - b);
+  // Phase 1: the max coverage. Coverage is piecewise-constant, maximal on some closed band whose edges are
+  // interval endpoints, so sampling endpoints + gap midpoints finds the peak value.
+  let bestC = 0;
+  for (let i = 0; i < coords.length; i++) {
+    bestC = Math.max(bestC, cover(coords[i]));
+    if (i + 1 < coords.length) bestC = Math.max(bestC, cover((coords[i] + coords[i + 1]) / 2));
+  }
+  // Phase 2: among lifts achieving bestC, the smallest |lift| (least displacement). The max-coverage region
+  // is a union of closed bands bounded by endpoints; if 0 is inside, no move is needed — else the nearest
+  // point of that region to 0 is one of its endpoints, so scan endpoints at max coverage for the one nearest 0.
+  if (cover(0) === bestC) return { lift: 0, count: bestC };
+  let bestL = null;
+  for (const x of coords) if (cover(x) === bestC && (bestL === null || Math.abs(x) < Math.abs(bestL))) bestL = x;
+  return { lift: r3(bestL ?? 0), count: bestC };
+}
+
 // Exact enclosing radius: the farthest of every box's 8 corners from the group origin.
 function computeBroadR(boxes) {
   let br = 0;
@@ -297,6 +341,7 @@ async function main() {
   const original = fs.readFileSync(SEED, 'utf8');
   let text = original;
   const generated = []; // { url, name, boxes, broadR }
+  const planeWarnings = []; // ships whose current lift leaves recoverable boxes off the bullet plane
 
   const dec = await ConvexMeshDecomposition.create(); // create once, reuse across ships
 
@@ -336,10 +381,32 @@ async function main() {
       const span = Math.max(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]);
       console.log(`  [dbg] ${ship.name}: ${boxes.length} boxes  broadR ${broadR}  union span ${r3(span)}`);
     }
-    console.log(`  ${ship.name.padEnd(24)} ${String(boxes.length).padStart(2)} boxes  broadR ${broadR}`);
+    // Bullet-plane coverage: how many boxes the top-down bullet plane crosses at this model's current lift,
+    // and the lift that would maximise it. Flag ships that could recover ≥2 boxes by adjusting `model.lift`.
+    const lift = ship.stats?.model?.lift ?? 0;
+    const cur = planeCoverage(boxes, lift);
+    const best = bestLift(boxes);
+    const gain = best.count - cur;
+    const flag = gain >= 2 ? `  ⚠ up to ${best.count} at lift≈${best.lift}` : '';
+    if (gain >= 2) planeWarnings.push({ name: ship.name, cur, total: boxes.length, lift, best });
+    console.log(
+      `  ${ship.name.padEnd(24)} ${String(boxes.length).padStart(2)} boxes  broadR ${broadR}` +
+      `  · plane y=0 ${cur}/${boxes.length} (lift ${lift})${flag}`
+    );
   }
 
   fs.writeFileSync(SEED, text);
+
+  // Top-down aim guard: surface any ship that would be partly see-through from above so the maintainer sets
+  // `model.lift` deliberately (it's a visual/gameplay tradeoff — raising floats the model — so this warns,
+  // it does not fail). See client/src/state.js BULLET_PLANE_Y + DECISIONS §47.
+  if (planeWarnings.length) {
+    console.log('\n⚠ Bullet-plane coverage — these models could seat more hitboxes on the plane via model.lift:');
+    for (const w of planeWarnings) {
+      console.log(`    ${w.name.padEnd(24)} now ${w.cur}/${w.total} at lift ${w.lift}  →  ${w.best.count}/${w.total} at lift ≈ ${w.best.lift}`);
+    }
+    console.log('  Set/adjust each `stats.model.lift` (raises the visual model AND its hitboxes together), then re-run to confirm.');
+  }
 
   // round-trip verification: re-import the just-written seed and deep-compare every ship's values
   const mod = await import(`../server/src/catalog_seed.js?ts=${Date.now()}`);

@@ -8,25 +8,37 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { BULLET_PLANE_Y } from './state.js'; // the canonical combat plane every ship group sits on
 
 // Per-ship model-presentation config (stats.model), with back-compat for the old loose keys
 // (stats.modelYaw / stats.sizeScale) so a stale player_ships row or cache can't break.
 export const shipModelCfg = (s) => {
   const m = s.model || {};
+  // `lift` (group-local +Y, pre-scale) raises BOTH the visual model (applyShipModel) and the hitboxes
+  // together. Bullets fly in the fixed BULLET_PLANE_Y plane, which is the group origin (group-local y=0).
+  // A model whose bounding-box center sits above its hull leaves the nose/deck below that plane, so shots
+  // pass over it (see enemy_3). We fix this by moving the MODEL onto the plane, never the bullets: lift
+  // slides the hull up into the bullet plane, and visual + hitboxes stay in lockstep by sharing this value.
+  const lift = m.lift ?? 0;
+  const raw = m.hitBoxes ?? null;
+  const hitBoxes = (raw && lift)
+    ? raw.map((b) => ({ ...b, c: { x: b.c.x, y: b.c.y + lift, z: b.c.z } }))
+    : raw;
   return {
     yaw: m.yaw ?? s.modelYaw ?? 0,
     scale: m.scale ?? s.sizeScale ?? 1,
     scaleMul: m.scaleMul ?? 1,
+    lift,                       // group-local +Y offset applied to the visual model + hitboxes (top-down aim fix)
     muzzle: m.muzzle ?? null,   // group-local +Z override for the projectile spawn (null → auto from glb bounds)
     exhaust: m.exhaust ?? null, // group-local −Z override for the exhaust spawn (null → auto from glb bounds)
-    hitBoxes: m.hitBoxes ?? null, // per-part OBB hitbox (group-local noseZ frame); null → primitive single-sphere fallback
-    broadR: m.broadR ?? null,   // enclosing broad-phase radius (group-local); null → legacy 2.6×sizeScale
+    hitBoxes,                   // per-part OBB hitbox (group-local noseZ frame, lift-adjusted); null → single-sphere fallback
+    broadR: m.broadR == null ? null : m.broadR + Math.abs(lift), // grow the broad sphere so lifted boxes stay enclosed
   };
 };
 
 // Build the spec applyShipModel/makeShip consume from a resolved shipModelCfg (mc). null url → primitive.
 export const modelSpec = (url, mc = {}) => (url
-  ? { url, tint: false, yaw: mc.yaw ?? 0, scaleMul: mc.scaleMul ?? 1, muzzle: mc.muzzle ?? null, exhaust: mc.exhaust ?? null }
+  ? { url, tint: false, yaw: mc.yaw ?? 0, scaleMul: mc.scaleMul ?? 1, lift: mc.lift ?? 0, muzzle: mc.muzzle ?? null, exhaust: mc.exhaust ?? null }
   : null);
 
 export const gltfLoader = new GLTFLoader();
@@ -38,7 +50,7 @@ export const SHIP_MODEL_LEN = 3.4; // auto-normalize a model's longest axis to ~
 // optionally recolored, and oriented. Falls back to the primitive on error.
 function applyShipModel(group, spec, color) {
   const cfg = (typeof spec === 'string') ? { url: spec } : spec;
-  const { url, yaw = 0, tint = true, scaleMul = 1, muzzle = null, exhaust = null } = cfg;
+  const { url, yaw = 0, tint = true, scaleMul = 1, lift = 0, muzzle = null, exhaust = null } = cfg;
   gltfLoader.load(url, (gltf) => {
     const model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
@@ -56,6 +68,7 @@ function applyShipModel(group, spec, color) {
     });
     const pivot = new THREE.Group(); // rotate the centered model without disturbing its centering
     pivot.rotation.y = yaw;
+    pivot.position.y = lift; // top-down aim fix: raise the model (group-local +Y) to match its lifted hitboxes
     pivot.add(model);
     // Cache the model's real forward/back extent (group-LOCAL units) so muzzle flashes + exhaust spawn AT
     // the nose / engines, not at a fixed offset tuned for the old primitive. Measure NOW, while `pivot` has
@@ -101,7 +114,7 @@ export function makeShip(color, model = null) {
   );
   glow.position.z = -1.6;
   bank.add(glow);
-  g.position.y = 0.6;
+  g.position.y = BULLET_PLANE_Y; // sit the group on the canonical combat plane (bullets fly here)
   g.scale.setScalar(1.8); // larger - the arena is far away, otherwise ships look tiny
   g.userData.noseZ = 1.6;  // muzzle/forward spawn (group-local: primitive cone nose) — replaced by the
   g.userData.tailZ = -1.6; // exhaust/rear spawn (primitive engine glow) — real glb bounds in applyShipModel

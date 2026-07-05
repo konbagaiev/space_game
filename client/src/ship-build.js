@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { scene } from './engine.js';
 import { arenaCenter } from './world.js';
-import { G, CATALOG, enemies, SPAWN_GROW_TIME } from './state.js';
+import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js';
 import { deriveDrive } from './components.js';
 import { shipModelCfg, modelSpec, makeShip } from './ship-factory.js';
 import { spawnBullet, spawnRocket, findTargetInSector } from './projectiles.js';
@@ -108,7 +108,7 @@ export function spawnEnemyShip(shipDef) {
   const d = 70 + Math.random() * 60; // 70..130 from the zone center
   e.mesh.position.set(
     arenaCenter.x + Math.cos(ang) * d,
-    0.6,
+    BULLET_PLANE_Y, // sit on the canonical combat plane so enemy hull + fire line up with the player's
     arenaCenter.z + Math.sin(ang) * d
   );
   scene.add(e.mesh);

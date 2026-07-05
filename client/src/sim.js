@@ -4,7 +4,7 @@
 // imports the leaves (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported
 // only by the composition root (the inline script / main). It never imports the loop's callers.
 import * as THREE from 'three';
-import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, creditPopups } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
@@ -260,7 +260,7 @@ export function updateReturnHint() {
 // Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,
 // and replay the warp-in animation so the return reads as intentional (not a glitch).
 export function warpPlayerToCenter() {
-  G.player.mesh.position.set(arenaCenter.x, 0.6, arenaCenter.z); // back to the (possibly drifted) arena center
+  G.player.mesh.position.set(arenaCenter.x, BULLET_PLANE_Y, arenaCenter.z); // back to the (possibly drifted) arena center
   G.player.vel.set(0, 0, 0);
   G.player.oobTime = 0;
   if (!G.player.spawnScale) G.player.spawnScale = G.player.mesh.scale.clone(); // capture full size (model is loaded by now)
@@ -762,7 +762,7 @@ export function reset() {
   for (const sp of setPieces) scene.remove(sp.obj);
   setPieces.length = 0;
   for (const spec of G.mapSetpieces) buildSetPiece(spec);
-  G.player.mesh.position.set(cx, 0.6, cz);
+  G.player.mesh.position.set(cx, BULLET_PLANE_Y, cz);
   G.player.vel.set(0, 0, 0);
   G.player.heading = 0;
   G.player.hp = G.player.maxHp;

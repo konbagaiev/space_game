@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { upsertHitBoxes, decodeToPlain, gatherMesh, normalize, IDENT } from './assets-hitboxes.mjs';
+import { upsertHitBoxes, decodeToPlain, gatherMesh, normalize, IDENT, planeCoverage, bestLift } from './assets-hitboxes.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SHIPS_DIR = path.join(REPO, 'client/assets/ships');
@@ -211,4 +211,42 @@ test('fitted hitBoxes cover the real model surface (alignment + no coverage hole
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+// ---- bullet-plane coverage (top-down aim / model.lift suggestion) ----
+// Axis-aligned box: u1 = world Y, so its Y half-extent is exactly h.y (hand-checkable).
+const box = (cy, hy) => ({
+  c: { x: 0, y: cy, z: 0 }, h: { x: 0.2, y: hy, z: 0.2 },
+  u0: { x: 1, y: 0, z: 0 }, u1: { x: 0, y: 1, z: 0 }, u2: { x: 0, y: 0, z: 1 },
+});
+
+test('planeCoverage: a box crosses the plane iff |c.y + lift| <= its Y half-extent', () => {
+  const b = box(-0.3, 0.1);               // sits 0.3 below, half-extent 0.1 → top at -0.2, misses y=0
+  assert.equal(planeCoverage([b], 0), 0);
+  assert.equal(planeCoverage([b], 0.3), 1); // lift 0.3 centres it on the plane
+  assert.equal(planeCoverage([b], 0.25), 1); // 0.05 off-centre, still within the 0.1 half-extent
+  assert.equal(planeCoverage([b], 0.45), 0); // over-lifted past it
+});
+
+test('bestLift: finds the smallest lift that seats the most boxes on the plane', () => {
+  // Three hulls clustered below the plane; only a positive lift puts all three on y=0.
+  const boxes = [box(-0.25, 0.1), box(-0.20, 0.1), box(-0.30, 0.1)];
+  assert.equal(planeCoverage(boxes, 0), 0);         // as-fit: fully see-through from above
+  const best = bestLift(boxes);
+  assert.equal(best.count, 3);                       // all three recoverable
+  assert.equal(best.lift, 0.2);                      // smallest lift that does it (least visual float)
+  assert.equal(planeCoverage(boxes, best.lift), 3);  // suggestion actually delivers the count
+});
+
+test('bestLift: lift is SIGNED — a hull sitting above the plane is lowered (negative lift)', () => {
+  const boxes = [box(0.4, 0.1), box(0.5, 0.1)]; // both above y=0 → overlap at L in [-0.5,-0.4]
+  const best = bestLift(boxes);
+  assert.equal(best.count, 2);
+  assert.ok(best.lift < 0, `expected a negative (lowering) lift, got ${best.lift}`);
+  assert.equal(planeCoverage(boxes, best.lift), 2);
+});
+
+test('bestLift: among lifts tying for max coverage, prefers the smallest |lift|', () => {
+  const boxes = [box(-0.05, 0.1)]; // already crosses y=0 (|−0.05| ≤ 0.1) → no displacement needed
+  assert.equal(bestLift(boxes).lift, 0);
 });

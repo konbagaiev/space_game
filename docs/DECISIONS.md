@@ -1653,6 +1653,51 @@ proximity `detonateRadius` (0.5, hull-relative — see §45), and blast.
 
 ---
 
+## 47. Off-plane hulls: per-model `lift` workaround, not a global collision fix (yet)
+
+The game is top-down and bullets fly in the world **y≈0.6 plane** (the ship group's origin, group-local
+y=0). Models are auto-centered on their bounding box, so a ship whose visual mass sits **below** its bbox
+centre (tall turrets pulling the centre up, a drooped nose) leaves the hull below the bullet plane —
+centre-aimed shots pass *over* it. Reported concretely on **enemy_3** (shots flew over the nose). §45's
+tight OBB fit is faithful to the model, so it faithfully reproduces this miss.
+
+**Decision:** a per-model **`model.lift`** (group-local +Y, pre-scale) that raises the **visual model and
+its hitboxes together** into the bullet plane, rather than a global collision change.
+
+- **Alternatives (deferred to ROADMAP):** (a) flatten every hitbox onto the y=0 plane / give bullets a tall
+  vertical capsule — changes collision feel for *all* ships and hides genuine vertical structure; (b) fix it
+  at export time by re-centering each glb — re-runs the whole asset pipeline per model and isn't trusted
+  (§ model transforms are runtime-normalized, not baked). Both are heavier than the problem, which today is
+  a handful of models.
+- **Why lift is safe:** it's a single value that drives **both** `pivot.position.y` (visual) **and** every
+  hitbox `c.y` (plus `broadR += |lift|`), so the model and its collision boxes can never desync — the class
+  of bug that a "shift the hitboxes only" fix would invite. Default `0` leaves every other ship untouched.
+- **Why not just accept the limitation:** it's a per-model *tuning* knob, not a mechanic — cheap to set
+  (`enemy_3: 0.2`, player `0.18`), verified per model, and reversible. The general fix stays scheduled; this
+  removes the visible sting on the ships that have it now (§30 keep-it-simple).
+
+**The bullet plane is a formalized invariant, not a scattered `0.6`.** The move-the-model (never the
+bullets) rule only holds if there's exactly one bullet plane. So `client/src/state.js` exports
+**`BULLET_PLANE_Y = 0.6`** as the single source of truth: every ship group sits at this world Y, and since
+muzzle/exhaust spawn from `mesh.position` + a **planar** (y=0) forward/right vector, ALL bullets — player
+and enemy, every model — fly in exactly this plane. Ship spawn/recenter Y (`ship-factory`, `ship-build`,
+`sim`) and the flat hit-ring FX (`projectiles`) reference the constant, never a bare literal. (We kept the
+plane at 0.6 rather than shifting to literal world 0 — 0.6 is already model-independent, and re-zeroing
+would be cosmetic churn across exhaust/HP-bar/ring code with shadow/ground regressions for no gameplay
+gain.) `lift` is then simply "the signed offset that anchors a model's hull onto this invariant plane."
+
+**`lift` is signed, and the fitter warns when a model needs one.** A hull can sit *above* the plane
+(bbox centre below the deck) as easily as below, so `lift` is a signed group-local Y offset (positive
+raises, negative lowers). To stop a freshly-fit model from silently shipping see-through from above, the
+`assets:hitboxes` generator prints a **bullet-plane coverage** report — how many hitboxes the plane crosses
+at the current `lift`, and the lift that maximises it (smallest |offset| among the ties) — and flags any
+ship that could seat ≥2 more boxes. Coverage is computed as `|c.y + lift| ≤ Σ|uᵢ.y|·hᵢ`, which is exact and
+**invariant to heading and scale** (rotation about Y preserves each axis's Y component; uniform scale
+cancels through the origin). It's a *warning, not a build failure*: over-lifting to grab one more box can
+float the model, so the maintainer sets `lift` deliberately (see the `update-ship-model` skill).
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

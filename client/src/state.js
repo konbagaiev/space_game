@@ -94,6 +94,13 @@ export const CATALOG = {
 
 // --- Gameplay constants ---
 export const SPAWN_GROW_TIME = 1.0; // ships grow from a dot to full size over this many seconds (warp-in)
+// The single canonical combat plane. INVARIANT: every ship's group sits at this world Y, and because
+// muzzle/exhaust spawn from `mesh.position` + a PLANAR (y=0) forward/right vector, ALL bullets — player
+// and enemy, every model — fly in exactly this horizontal plane. Ships are top-down, so gameplay is 2D at
+// this height; a model whose hull sits off this plane is corrected with `stats.model.lift` (raises the
+// visual mesh AND its hitboxes onto the plane — see ship-factory.js), NOT by moving the bullets. Anything
+// that must line up with combat (ship spawn/recenter Y, hit-ring FX) references THIS, never a bare 0.6.
+export const BULLET_PLANE_Y = 0.6;
 
 // --- Input state ---
 export const keys = {};                                          // KeyboardEvent.code -> bool

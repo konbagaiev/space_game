@@ -64,6 +64,12 @@ the seed carrying the URLs); CDN binaries are already on S3.
    `model.hitBoxes` / `model.broadR` in each ship's `model:{}` block in `catalog_seed.js` (marker-delimited,
    idempotent, round-trip verified; migrates off any legacy `hitSpheres` span). Re-run this whenever a ship's
    model, `yaw`, or `scaleMul` changes; eyeball the result in-game with `?hitboxes`.
+   The run also prints a **bullet-plane coverage** line per ship (`· plane y=0 N/total (lift L)`) and warns
+   `⚠ up to M at lift≈L` when the model sits off the top-down bullet plane (`state.js` `BULLET_PLANE_Y`) and
+   a `stats.model.lift` (signed group-local Y offset, raises the visual model + its hitboxes together) would
+   seat ≥2 more boxes on it — otherwise centre-aimed shots pass over/under the hull. Set `lift` toward the
+   suggested value (smallest offset that seats the hull; over-lifting floats the model), then re-run. See
+   DECISIONS §47.
 5. Commit `catalog_seed.js` (URL/path references + generated hitBoxes — **no binaries**). On deploy, CI
    `aws s3 sync`s the combat models onto the server (baked into the image) and seeds the URLs; hangar
    models already on CDN.

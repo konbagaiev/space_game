@@ -77,6 +77,17 @@ npm run assets:hitboxes     # decomposes the glb (V-HACD, memory-capped) → one
 Re-run whenever the model, `yaw`, or `scaleMul` changes. Eyeball the fit in-game with the dev-only
 `?hitboxes` wireframe overlay. (Primitive/un-modeled ships have none and use the legacy single sphere.)
 
+**Check the bullet-plane coverage report (top-down aim).** `assets:hitboxes` prints, per ship, how many
+hitboxes the top-down bullet plane crosses at the current `model.lift` — e.g. `· plane y=0 35/48 (lift 0.2)`
+— and a `⚠ up to N at lift≈L` when raising/lowering the model would seat ≥2 more boxes on the plane. The
+game is top-down and every bullet flies in one fixed horizontal plane (`state.js` `BULLET_PLANE_Y`), so a
+model whose hull sits off it is partly **see-through from above** — centre-aimed shots pass over/under it.
+If a ship is flagged, set/adjust its **`stats.model.lift`** (a signed group-local Y offset that raises the
+visual model *and* its hitboxes together; positive = up, negative = down) toward the suggested value, then
+re-run to confirm the count rose. `lift` is a **judgement call**, not an auto-apply: pushing to the
+absolute max can float the model noticeably, so pick the smallest offset that seats the hull and confirm it
+looks right in-game with `?hitboxes`. See DECISIONS §47 + `docs/SUMMARY.md`.
+
 ### 6. Drift-check guard
 ```bash
 npm run assets:check    # every model_url* + SOUNDS url in the seed must exist on S3 — must say OK
