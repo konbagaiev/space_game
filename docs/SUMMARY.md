@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-05 (**base station moved off-origin** — the return-to-base station was pushed from
+**Updated:** 2026-07-05 (**combat pacing + engine buff** — flat player top speed 30 u/s, all engine
+`power` +50%, 5 s enemy hold-fire grace at run start, and each run opens gliding forward at 3 u/s. Prior:
+**base station moved off-origin** — the return-to-base station was pushed from
 `(-20,-20)` to `(-60,-60)` so the origin-spawning ship is no longer framed against its backdrop. Prior:
 **HUD overhaul + item rarity/color** — the HUD credits readout is now one line
 `credits {total}/{earned} earned` and the live **Enemies** counter is removed; a small **event log** above
@@ -313,8 +315,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     `buyable` key → shown.
   - **Player shop ladder** (priced; `docs/plans/economy-shop-v2.md`) adds buyable upgrades beyond the
     enemy/starter parts: **Heavy hull** (id 13: 200 hp / weight 50 / **6000** — the upgrade "ship": 2× HP for
-    accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 14 / **1400**) + **Ion engine** (id 16: power
-    18, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
+    accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 21 / **1400**) + **Ion engine** (id 16: power
+    27, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
     **2500**), and repair tiers **Repair drone II** (id 19: 1.5 HP / 1 s / 85% / **1800**) + **Nanobot repair**
     (id 20: 2 HP / 1 s / 90% / **7000**). Upgrades are **mass trade-offs, not power-creep**.
   - **Rarity + color** (`rarity`/`color` columns on **both** `components` and `weapons`; migration 020,
@@ -336,7 +338,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Acceleration and turn rate are **derived AND scaled by mass** (`deriveDrive`): `massFactor =
   REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`, `turnRate = thruster.power ×
   massFactor`. `REFERENCE_MASS` = 50 (the player's starter loadout: hull 20 + engine 10 + thrusters 4 + gun 6
-  + rocket 8 + **grab 2**) keeps the player at accel 10 / turn 2.0; heavier ships are slower & less agile.
+  + rocket 8 + **grab 2**) keeps the player at accel 15 / turn 2.0; heavier ships are slower & less agile.
   (`REFERENCE_MASS` was bumped 48 → 50 when the base grab was auto-equipped, so its 2 weight is mass-neutral
   at the baseline — a deliberate neutralization, not a nerf.) A **required slot
   (hull/engine/thruster) may legitimately be empty** in the hangar (you can unequip it back into the
@@ -527,7 +529,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 
 ## Gameplay
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
-  buttons are released — smooth braking.
+  buttons are released — smooth braking. The **player** velocity is capped at a **flat top speed of
+  30 u/s** (`PLAYER_MAX_SPEED`, a movement-system constant — enemies still clamp to their per-engine
+  `maxSpeed`). Each run **opens already gliding forward at 3 u/s** (10% of top speed, `+Z`), and
+  **enemies hold fire for the first 5 s** of a run (`G.combatElapsed` grace — they still spawn, move
+  and aim; silent, no HUD countdown).
 - **Soft arena boundary (±360).** The player can fly **past** the edge freely — there's no hard wall. A
   faint glowing **edge marker** (a Line at ±360, brightens as you approach/cross) shows where the
   battlefield ends. After **2 s continuously out of bounds** (`OOB_WARN_DELAY`) a centered HUD **warning +

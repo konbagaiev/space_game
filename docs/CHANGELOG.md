@@ -5,6 +5,13 @@
 
 ## 2026-07-05
 
+- **[2026-07-05-2126-player-speed-cap-engine-buff] Combat pacing + engine buff.** The player now has a
+  flat top speed of **30 u/s** (`PLAYER_MAX_SPEED`, clamped in `sim.js`; enemies keep their per-engine
+  `maxSpeed`). All engine `power` (acceleration) is **+50%**: Basic 10→15, Scout 12.6→19, Boss 19→29,
+  Solid-fuel 14→21, Ion 18→27, Pirate 12.6→19, Second-boss 30→45 (thrusters/`maxSpeed` untouched).
+  Enemies **hold fire for the first 5 s** of each run (silent `G.combatElapsed` grace — they still spawn,
+  move and aim). Each run now **opens gliding forward at 3 u/s** (10% of top speed) instead of dead-stopped.
+
 - **Base station moved farther off the arena center.** The return-to-base station set-piece was pushed
   from `(-20,-42,-20)` to `(-60,-42,-60)` (screen top-left, same diagonal) in `catalog_seed.js` MAPS
   `home-system`, so the ship — which spawns and fights near the origin — is no longer framed against the

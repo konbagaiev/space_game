@@ -317,6 +317,10 @@ export function updateOobWarning() {
 // Thrust/turn/speed/weapon are taken from the ship's components (engine/weapon).
 const DRAG = 1.8;        // friction (enemies)
 const IDLE_DRAG = 0.8;   // soft braking for the player when controls are released
+// Flat top speed for the PLAYER only (world units/s). Enemies use their per-engine `maxSpeed` instead.
+// Applied after thrust, before position integration, on BOTH the manual and autopilot paths.
+export const PLAYER_MAX_SPEED = 30;
+const ENEMY_FIRE_GRACE = 5; // seconds at run start during which enemies move/aim but hold fire
 const BANK_MAX  = 20 * Math.PI / 180; // max wing bank, radians (~0.349) — hard cap, "20 degrees, no more"
 const BANK_TAU  = 0.15;               // smoothing time-constant (s); smaller = snappier, larger = lazier
 
@@ -340,6 +344,8 @@ function updateBank(ship, turnRate, dt) {
 
 export function update(dt) {
   if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
+
+  G.combatElapsed += dt; // unpaused combat clock (update() is skipped while paused) — drives the enemy hold-fire grace
 
   // --- repair drone: passive hull regen, capped at a fraction of max HP (no-op without a drone) ---
   if (G.player.repair) {
@@ -386,8 +392,9 @@ export function update(dt) {
     if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
   }
 
-  // pure inertia: no friction, no speed limit - the ship
-  // keeps flying in its current direction, no matter where the nose points
+  // Flat top speed: pure inertia, but the player never exceeds PLAYER_MAX_SPEED (manual + autopilot alike).
+  if (G.player.vel.length() > PLAYER_MAX_SPEED) G.player.vel.setLength(PLAYER_MAX_SPEED);
+  // the ship keeps flying in its current direction, no matter where the nose points
   G.player.mesh.position.addScaledVector(G.player.vel, dt);
 
   // Drifting arena (e.g. freighter escort): slowly pan the combat zone's center; the boundary, warp-back
@@ -467,8 +474,9 @@ export function update(dt) {
     // engine trail: same exhaust behavior as the player, when thrusting forward
     if (thrust > 0.1) emitExhaust(e.mesh, ef, e.vel, e.engine.exhaust);
 
-    // fire each group whose AI rule (range + aim tolerance) is satisfied
-    updateGroups(e, ef, false, dt, (g) => g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
+    // fire each group whose AI rule (range + aim tolerance) is satisfied — and only after the opening grace
+    updateGroups(e, ef, false, dt,
+      (g) => G.combatElapsed >= ENEMY_FIRE_GRACE && g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
   }
 
   // --- projectiles ---
@@ -815,8 +823,8 @@ export function reset() {
   setPieces.length = 0;
   for (const spec of G.mapSetpieces) buildSetPiece(spec);
   G.player.mesh.position.set(cx, BULLET_PLANE_Y, cz);
-  G.player.vel.set(0, 0, 0);
-  G.player.heading = 0;
+  G.player.heading = 0;                                  // forward = +Z (forwardVec(0) = (0,0,1))
+  G.player.vel.set(0, 0, PLAYER_MAX_SPEED * 0.1);        // open the fight already gliding forward at 10% of top speed (3 u/s)
   G.player.hp = G.player.maxHp;
   G.player.oobTime = 0;             // fresh run: clear the out-of-bounds timer
   G.player.spawnAge = SPAWN_GROW_TIME; // and any in-progress warp-back animation (back to full size)
@@ -826,6 +834,7 @@ export function reset() {
   G.player.alive = true;
   G.earned = 0; G.kills = 0; G.banked = false; // new run: reset session credits + the bank-once guard (balance persists)
   G.gameStartTime = performance.now(); // start timing a new game (for history)
+  G.combatElapsed = 0;  // fresh run: restart the enemy hold-fire grace clock
   levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
   setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
   refreshMusic();   // a live fight → combat music

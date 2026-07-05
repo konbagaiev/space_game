@@ -23,9 +23,9 @@ export const COMPONENTS = [
   { id: 2, name: 'Light hull', type: 'hull', weight: 8, price: 150, stats: { durability: 30, volume: 40, buyable: false } }, // enemy gear: resale-only (hidden from the shop)
   { id: 3, name: 'Medium hull', type: 'hull', weight: 60, stats: { durability: 150, volume: 200 } },
   { id: 4, name: 'Boss hull', type: 'hull', weight: 100, stats: { durability: 310, volume: 400 } }, // boss buff: 210 → 310 (+100 HP)
-  { id: 5, name: 'Basic engine', type: 'engine', weight: 10, price: 500, stats: { power: 10, maxSpeed: 0, exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 } } }, // starter gear: cheap
-  { id: 6, name: 'Scout engine', type: 'engine', weight: 6, price: 250, stats: { power: 12.6, maxSpeed: 10.5, exhaust: { color: 0xff8a5a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 }, buyable: false } }, // enemy gear: resale-only
-  { id: 7, name: 'Boss engine', type: 'engine', weight: 50, stats: { power: 19, maxSpeed: 10.4, exhaust: { color: 0xff5a3a, speed: 10, life: 0.6, size: 0.9, spread: 0.45 } } }, // boss buff: maxSpeed 8 → 10.4 (+30%)
+  { id: 5, name: 'Basic engine', type: 'engine', weight: 10, price: 500, stats: { power: 15, maxSpeed: 0, exhaust: { color: 0x6fd0ff, speed: 12, life: 0.55, size: 0.5, spread: 0.35 } } }, // starter gear: cheap
+  { id: 6, name: 'Scout engine', type: 'engine', weight: 6, price: 250, stats: { power: 19, maxSpeed: 10.5, exhaust: { color: 0xff8a5a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 }, buyable: false } }, // enemy gear: resale-only
+  { id: 7, name: 'Boss engine', type: 'engine', weight: 50, stats: { power: 29, maxSpeed: 10.4, exhaust: { color: 0xff5a3a, speed: 10, life: 0.6, size: 0.9, spread: 0.45 } } }, // boss buff: maxSpeed 8 → 10.4 (+30%)
   { id: 8, name: 'Basic thrusters', type: 'thruster', weight: 4, price: 400, stats: { power: 2.0 } }, // starter gear: cheap
   { id: 9, name: 'Scout thrusters', type: 'thruster', weight: 3, price: 200, stats: { power: 1.6, buyable: false } }, // enemy gear: resale-only
   { id: 10, name: 'Medium thrusters', type: 'thruster', weight: 8, stats: { power: 0.63 } }, // sluggish (turn ~0.35)
@@ -42,8 +42,8 @@ export const COMPONENTS = [
   // Hull: "a new ship = a new hull" — 2× HP for a real mobility cost (mass 48→78: accel ~6.2, turn ~1.2).
   { id: 13, name: 'Heavy hull', type: 'hull', weight: 50, price: 6000, stats: { durability: 200, volume: 350 } },
   // Engines: Racing = T2 (more power, heavier); Ion = high-accel and light (premium top-tier).
-  { id: 15, name: 'Solid-fuel engine', type: 'engine', weight: 14, price: 1400, stats: { power: 14, maxSpeed: 12, exhaust: { color: 0x7fb0ff, speed: 13, life: 0.55, size: 0.55, spread: 0.35 } } },
-  { id: 16, name: 'Ion engine', type: 'engine', weight: 10, price: 6400, stats: { power: 18, maxSpeed: 14, exhaust: { color: 0xffd24d, speed: 14, life: 0.45, size: 0.45, spread: 0.30 } } },
+  { id: 15, name: 'Solid-fuel engine', type: 'engine', weight: 14, price: 1400, stats: { power: 21, maxSpeed: 12, exhaust: { color: 0x7fb0ff, speed: 13, life: 0.55, size: 0.55, spread: 0.35 } } },
+  { id: 16, name: 'Ion engine', type: 'engine', weight: 10, price: 6400, stats: { power: 27, maxSpeed: 14, exhaust: { color: 0xffd24d, speed: 14, life: 0.45, size: 0.45, spread: 0.30 } } },
   // Repair drones: faster cadence + higher cap (the "future tiers" from the repair-drone spec).
   // All tick every 1 s; per-tick HP keeps each tier 3× its old healing rate and preserves the ladder.
   { id: 19, name: 'Repair drone II', type: 'repair', weight: 6, price: 1800, stats: { repairPerTick: 1.5, intervalSec: 1, maxFraction: 0.85 } },
@@ -54,7 +54,7 @@ export const COMPONENTS = [
   // +50% top speed over the base enemy (fighter: Light hull 30 HP + Scout engine maxSpeed 10.5).
   // Enemy gear → price 0 (hidden from the shop). ids continue past the max (21).
   { id: 22, name: 'Pirate hull', type: 'hull', weight: 10, price: 200, stats: { durability: 36, volume: 45, buyable: false } },          // 30 × 1.2; enemy gear: resale-only
-  { id: 23, name: 'Pirate engine', type: 'engine', weight: 6, price: 400, stats: { power: 12.6, maxSpeed: 15.75, exhaust: { color: 0xff6a4a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 }, buyable: false } }, // maxSpeed 10.5 × 1.5; same accel as Scout; enemy gear: resale-only
+  { id: 23, name: 'Pirate engine', type: 'engine', weight: 6, price: 400, stats: { power: 19, maxSpeed: 15.75, exhaust: { color: 0xff6a4a, speed: 10, life: 0.4, size: 0.4, spread: 0.3 }, buyable: false } }, // maxSpeed 10.5 × 1.5; same accel as Scout; enemy gear: resale-only
 
   // --- Level-4 enemies (docs/plans/level-4-difficulty.md). Tunable; net turn/accel are mass-scaled, so
   // component power is bumped above the headline +30% to land roughly +30% NET after the heavier hulls.
@@ -62,7 +62,7 @@ export const COMPONENTS = [
   { id: 24, name: 'Pirate heavy hull', type: 'hull', weight: 100, price: 1200, stats: { durability: 300, volume: 250, buyable: false } }, // 2× mini-boss (150); enemy gear: resale-only
   { id: 25, name: 'Pirate medium thruster', type: 'thruster', weight: 8, price: 350, stats: { power: 1.25, buyable: false } },          // ~+30% net turn vs Medium (0.63) once mass-scaled; enemy gear: resale-only
   // Second Boss (550 HP, speed/accel/turn ~+30% vs the first boss):
-  { id: 26, name: 'Second-boss engine', type: 'engine', weight: 50, price: 1500, stats: { power: 30, maxSpeed: 14.3, exhaust: { color: 0xff3a2a, speed: 11, life: 0.6, size: 0.95, spread: 0.45 }, buyable: false } }, // boss buff: maxSpeed 11 → 14.3 (+30%); enemy gear: resale-only
+  { id: 26, name: 'Second-boss engine', type: 'engine', weight: 50, price: 1500, stats: { power: 45, maxSpeed: 14.3, exhaust: { color: 0xff3a2a, speed: 11, life: 0.6, size: 0.95, spread: 0.45 }, buyable: false } }, // boss buff: maxSpeed 11 → 14.3 (+30%); enemy gear: resale-only
   { id: 27, name: 'Second-boss thruster', type: 'thruster', weight: 20, price: 900, stats: { power: 2.7, buyable: false } },            // boss 1.66 bumped for ~+30% net turn; enemy gear: resale-only
   { id: 28, name: 'Second-boss hull', type: 'hull', weight: 140, price: 2000, stats: { durability: 550, volume: 600, buyable: false } }, // boss buff: 450 → 550 (+100 HP); enemy gear: resale-only
 

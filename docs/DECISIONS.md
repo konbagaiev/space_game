@@ -48,6 +48,12 @@ the player is at center so it reads the same, but after they wander the waves st
 And the **30 s OOB auto-warp is suspended while returning to base** (after the last kill), so a side mission
 fought far from `(0,0)` can fly the whole way home without being yanked back. See §39.
 
+**Amendment (§51, 2026-07-05):** the "no speed limit" clause above is now narrowed for the PLAYER
+only — player velocity is capped at a flat `PLAYER_MAX_SPEED = 30` u/s (a movement-system constant,
+not a per-engine stat). §2's inertia otherwise still holds: no friction while thrusting, passive
+`IDLE_DRAG` braking on release, and free drift. **Enemies are unchanged** — they still clamp to their
+per-engine `maxSpeed`. See §51.
+
 ---
 
 ## 3. Camera
@@ -1778,6 +1784,33 @@ the honest move is to hand-author `rarity` per row (or add a dedicated design co
 overrides. Today, with one override, the rule is the simpler and safer choice.
 
 ---
+
+## 51. Flat player top speed + engine buff + pause-safe opening-combat grace (supersedes §2's "no speed limit" for the player)
+
+Four correlated pacing/feel changes to the opening of a run (`docs/plans/2026-07-05-2126-player-speed-cap-engine-buff.md`):
+
+**Flat `PLAYER_MAX_SPEED = 30` for the player, per-engine `maxSpeed` for enemies.** The player was
+previously *uncapped* (§2's "no speed limit"), so velocity grew unbounded with thrust and arena traversal
+time was unpredictable. We cap the player at a single flat movement-system constant clamped in `sim.js`
+(after thrust/autopilot converge, before position integration — so both control paths obey it). We did
+**not** repurpose the player's engine `maxSpeed` for this: the Basic engine (id 5) carries `maxSpeed: 0`, so
+there was no per-engine cap to reuse, and a flat constant keeps player handling **predictable independent of
+engine choice**. Enemies are untouched — they still clamp to `e.engine.maxSpeed`. This **supersedes §2's
+"no speed limit" clause for the player** (mirrored by the §2 amendment); §2's inertia/no-friction/drift model
+otherwise stands. Cosmetic wrinkle (left as-is): the per-engine `maxSpeed` shop stat is now decorative for
+the player — but it already was, since the player was uncapped before.
+
+**+50% engine `power` (acceleration), `maxSpeed` untouched.** Every engine's `power` is buffed ×1.5 (Basic
+10→15, Scout 12.6→19, Boss 19→29, Solid-fuel 14→21, Ion 18→27, Pirate 12.6→19, Second-boss 30→45) so ships
+(player *and* engine-sharing enemies) reach top speed faster — snappier acceleration without raising the
+ceiling. Thrusters (turn) and all `maxSpeed`/`exhaust`/`weight`/`price` values are unchanged.
+
+**5 s enemy hold-fire grace, timed on accumulated sim `dt` (pause-safe) not wall-clock.** Enemies spawn,
+move and aim from frame one but hold fire until `G.combatElapsed >= 5`. The clock advances by `dt` inside
+`update(dt)`, which is skipped entirely while paused — so **pausing during the on-ramp does not burn the
+breather** (a wall-clock `performance.now()` timer would). Deliberately **silent** (no HUD/countdown/banner,
+DECISIONS §30). The player also **opens each run gliding forward at 3 u/s** (10% of top speed) instead of
+dead-stopped; the drift is momentary by design (bleeds off via `IDLE_DRAG` if no control is held).
 
 ## Future ideas
 
