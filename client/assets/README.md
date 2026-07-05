@@ -17,7 +17,7 @@ Ships use built-in primitive shapes by default. To replace one with a real model
    (e.g. in Blender: *File → Export → glTF 2.0 (.glb)*). Prefer **low-poly** (the camera is far and
    ships are small; watch the perf overlay's `draw`/`tris`).
 
-3. **Drop the file** in `assets/ships/`, e.g. `assets/ships/fighter.glb`.
+3. **Drop the file** in `assets/ships/`, e.g. `assets/ships/my_ship.glb`.
 
 4. **Point to it** from the **seed** (`server/src/catalog_seed.js`), not from `index.html` — ships are
    DB-driven. Set the ship's **`modelUrl`** (combat, same-origin) and optional **`modelUrlHigh`**

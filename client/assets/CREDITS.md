@@ -102,8 +102,10 @@ compresses it into `base_station_combat`.
 > "Low Poly space station." (https://skfb.ly/ozESS) by MisterH is licensed under Creative Commons
 > Attribution (http://creativecommons.org/licenses/by/4.0/).
 
-The older primitive fallbacks (`player.glb`, `fighter.glb`, `rocketeer.glb`,
-`heavy.glb`, `boss.glb`, `Spaceship*.glb`) are placeholder geometry, not from either pack.
+The old in-git primitive placeholder glbs (`player.glb`, `fighter.glb`, `rocketeer.glb`, `heavy.glb`,
+`boss.glb`, `Spaceship*.glb`, plus the pre-pipeline non-hashed `enemy_1`–`enemy_4.glb`) were **removed**
+on 2026-07-05 — they were unreferenced by code. The runtime pre-load fallback is a **procedural** placeholder
+ship built in `client/src/ship-factory.js` (no binary asset).
 
 **CC-BY housekeeping:** if a model from this pack is ever removed and no longer used by any ship, drop
 its row here too (don't keep stale attribution); if a new model from a new source is added, add its row.

@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
+**Updated:** 2026-07-05 (**Asset cleanup** — deleted 28 stale/unused S3 builds (`ships-combat/` 16, `ships-hangar/` 12) + 19 stale local pulled files; `git rm`'d 16 unreferenced legacy primitive glbs from `client/assets/`; pre-load fallback is procedural, not a binary. Prior: **Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
 (id 11): an invisible homing leader defines the path while three visible cyan warheads spiral around it,
 each a real rocket (own power 40 / HP 10, independent detonation + shoot-down; 3× on a full hit). The
 standard rocket smoke trail changed from an expanding sphere cone to a thin, fixed-size fading haze line
@@ -296,9 +296,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   an **inner "bank" group** (`g.userData.bankGroup`) that holds the primitives / `.glb` and rolls about the
   nose; `applyShipModel` swaps the loaded `.glb` into that bank group (applying `model.yaw`). The per-frame
   heading is written as `mesh.rotation.y` in the update loop (player ~`index.html:2153`, enemies ~`:2191`).
-  Each ship's `model_url` (in the DB) points to the **combat** `.glb` (the exported
-  primitives live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it
-  loads / as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. **Per-ship model
+  Each ship's `model_url` (in the DB) points to the **combat** `.glb`; `makeShip` shows a **procedural
+  placeholder ship** (built in code in `ship-factory.js`, no binary asset) while it loads / as a
+  fallback, and `applyShipModel` auto-centers/scales/tints/orients it. **Per-ship model
   presentation lives in one documented block, `stats.model`** (`{ yaw, scale, scaleMul?, muzzle?, exhaust? }`),
   resolved client-side by `shipModelCfg(s)` (with back-compat fallback to the old loose `stats.modelYaw` /
   `stats.sizeScale` keys so a stale row/cache can't break) and threaded seed → `modelSpec` → `applyShipModel`.
@@ -375,7 +375,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     decals, markings) — `assets:build` just **downscales** them via the `player` preset override
     (`PRESET_OVERRIDES` in `assets-config.mjs`): combat `player_combat` ~371 KB (128px textures + meshopt
     geometry, same-origin — loads through the wired meshopt decoder) + hangar `player_hangar` ~1.7 MB (512px,
-    CloudFront, lazy-loaded). The in-git `player.glb` primitive stays only as the pre-load fallback. Metal
+    CloudFront, lazy-loaded). The pre-load fallback is the procedural placeholder ship (no in-git binary). Metal
     surfaces shine via the env map (see Visuals).
 - **Asset pipeline** (`docs/plans/ship-model-pipeline.md` + `audio-sample-pipeline.md`): repo-root `npm run
   assets:recolor` (`scripts/assets-recolor.mjs` — regenerates the `enemy_*_orange` sources by tinting the
@@ -390,8 +390,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (→ S3 `vega-sentinels-assets`: glbs to `ships-combat/`+`ships-hangar/`, **SFX mp3s to `sfx/`**, sources to
   `source/`) / `assets:pull` (S3 → `client/assets/ships/` **+ `client/assets/sounds/`**) / `assets:check`
   (drift-check: every pipeline `model_url*` in the seed **and every `SOUNDS` url in `catalog_seed.js`**
-  exists on S3 — the deploy guard). **No binaries in git** (S3 canonical; the in-git primitives stay as a
-  fallback). `scripts/assets-*.mjs`. **CI is wired** (the deploy job runs check + pull before the build,
+  exists on S3 — the deploy guard). **No model binaries in git** (S3 canonical; the pre-load fallback is a
+  procedural placeholder ship, not a binary). `scripts/assets-*.mjs`. **CI is wired** (the deploy job runs check + pull before the build,
   baking combat models **and SFX** into the image) via a scoped **read-only IAM key** (`vega-assets-ci-read`,
   bucket-wide read → GitHub secrets `ASSETS_AWS_*`). **Audio SFX**: drop a source in `assets-src/sounds/`,
   extract/clean/encode an mp3 by hand (ffmpeg recipes in the audio plan), content-hash → `assets-dist/sounds/`,

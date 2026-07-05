@@ -3,6 +3,26 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-05
+
+- **Asset cleanup — removed stale/unused pipeline builds from S3, local, and git.** Diffed every asset
+  store against the authoritative keep-set (the 29 combat/hangar/sfx URLs referenced by
+  `server/src/catalog_seed.js` + `client/src/drops-config.js`; `assets:check` stays green). Deleted **28
+  unused S3 objects**: `ships-combat/` 16 (superseded content-hashes of live models + the never-referenced
+  combat builds of the menu-only `machine_gun`/`repair_drone` items) and `ships-hangar/` 12 (stale hashes +
+  hangar builds nothing references — `base_station`/`freighter` set-pieces, `metal_box` drop, and the
+  non-orange `enemy_2/3/4` hangars the menu doesn't use). Deleted the matching **19 stale local pulled
+  files** (`client/assets/ships/` 16 hashed combat glbs + `client/assets/sounds/` 3: `kinetic` ×2,
+  `rocket` ×1). `git rm`'d **16 unreferenced legacy binaries** from `client/assets/` (`Spaceship{,_1,_2,_3}`,
+  `boss/fighter/heavy/player/rocketeer.glb`, pre-pipeline non-hashed `enemy_1–4.glb`,
+  `projectiles/Missile.glb`, `weapons/{Rocket Launcher,Missile Turret}.glb`) — none referenced by code; the
+  runtime pre-load fallback is a **procedural** placeholder ship (`client/src/ship-factory.js`), never a
+  glb file. **Kept** the S3 `source/` prefix (24 high-poly originals + raw sound sources — the backups that
+  let the pipeline deterministically re-build any model) and every in-use combat/hangar/sfx asset +
+  `ui/dock-cursor.png`. Corrected stale SUMMARY/CREDITS wording that named `player.glb` as the fallback.
+  Prod gets the clean image on the next deploy (CI `assets:pull` has no `--delete`, so the running
+  container still carries the old combat glbs until rebuilt).
+
 ## 2026-07-04
 
 - **[2026-07-04-1740-triple-spiral-rocket] Shop damage reads 40×3 for the triple spiral rocket.**
