@@ -636,6 +636,13 @@
   }
   /* Off-screen loot-drop arrows: same arrow shape as .marker, a fixed green so chests read as loot, not enemies */
   .drop-marker { border-left-color: #59e0a0; }
+  /* Reward (L1/L2 last-kill) loot arrow: brighter green + a pulsing green glow so it stands out from the
+     plain green loot arrows (which are already #59e0a0 — the pulse, not the hue, is the distinction) */
+  .drop-marker.special { border-left-color: #7dffbf; animation: dropMarkerGlow 1.1s ease-in-out infinite; }
+  @keyframes dropMarkerGlow {
+    0%,100% { filter: drop-shadow(0 0 3px rgba(0,0,0,.85)) drop-shadow(0 0 4px rgba(89,224,160,.6)); }
+    50%     { filter: drop-shadow(0 0 3px rgba(0,0,0,.85)) drop-shadow(0 0 10px rgba(89,224,160,1)); }
+  }
   /* Kill credit popup: gold "+xx" text floating up from a destroyed enemy, fading over ~1s (in #markers) */
   .credit-popup {
     position: absolute; transform: translate(-50%, -50%); will-change: transform, opacity;

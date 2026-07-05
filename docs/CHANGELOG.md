@@ -25,6 +25,21 @@
   `build:itch` regenerates it into the staged export. Chrome labels are i18n (`ui.credits.*`, EN+RU);
   attribution content stays literal. Satisfies the CC-BY 4.0 obligation to show attributions to players on
   **both** vega.tenony.com and itch.io. See DECISIONS §48.
+- **[2026-07-05-1244-l1-machine-gun-drop] L1/L2 reward drops on the battlefield.** The **last enemy of
+  Level 1** now drops the **Machine Gun** model (and the last enemy of **Level 2** the **Repair drone**) as a
+  **green-glowing, green-haloed** battlefield drop with a **pulsing green off-screen arrow** — shown only when
+  the reward isn't already owned. The drop is **cosmetic**: grabbing it deposits **nothing** to the stash
+  (`collect()` gates the `pendingLoot` push on the pure `shouldDeposit` = `!d.special`), so the single
+  guaranteed copy still comes solely from the **unchanged, idempotent** server force-install on victory
+  (clearing L1 runs L2's briefing `replaceWeapon 1→5`, clearing L2 runs L3's `installComponent repair 12`) —
+  a player **never ends up with two** Machine Guns / repair drones, whether they grab the drop or fly past it.
+  Marked declaratively by a new `lastKillDrop {kind,refId}` field on the L1/L2 descriptors (`catalog_seed.js`,
+  re-seeded via the normal upsert — no migration); spawned by `spawnSpecialDrop` when `G.kills === G.enemyTotal`
+  and `!ownsReward(...)`, rendered green (emissive tint + one additive halo sprite, no bloom) with the pulsing
+  `.drop-marker.special` pointer. The **L2/L3 briefings were reworded** from "command installed it" to a
+  "you recovered it" framing (EN source + RU), while **keeping** their grant actions and the spinning
+  item showcase. No new assets/hash/CREDITS/itch changes (reuses the existing `modelUrlHigh` hangar glbs).
+  See DECISIONS §49.
 - **Tuned `model.lift` on every remaining ship for consistency (enemy_1/2/4).** The coverage report flagged
   the other enemy models as partly see-through from above too, so all 9 modeled ships now sit at their
   robust max bullet-plane coverage: enemy_1 (`Basic pirate ship`/`pirate gunner`) `lift: 0.21` (30→40 of

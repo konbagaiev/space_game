@@ -3,7 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-05 (**Milestone banners** — a big, semi-transparent HUD line flashes and fades over 3 s at "10 enemies left", "5 enemies left" (from `enemyTotal − kills`) and "Final Stage" (entering the boss/finale phase); `#banner` + `showBanner`/`updateBanner` in `sim.js`, once per run. Prior: **In-game Credits/attributions screen** — a player-facing Credits panel opened from the Settings gear, listing every third-party 3D model (full CC-BY 4.0 attribution + license link + "Modified") and music/sound (CC0/Pixabay courtesy), build-generated from `client/assets/CREDITS.md` via `npm run credits:build` → committed `client/src/credits-data.js`, drift-guarded by a unit test and regenerated into the itch zip by `build:itch`; satisfies the CC-BY 4.0 obligation to show attributions to players. Prior: **Fixed bullet plane + model `lift` — top-down aim fix** — formalized the single combat plane as `state.js` `BULLET_PLANE_Y` (0.6) that every ship group sits on and all bullets fly in (spawn/recenter/ring-FX reference it, no bare `0.6`); new per-model signed `model.lift` moves a ship's visual model *and* its hitboxes together so an off-plane hull seats onto it; `assets:hitboxes` reports bullet-plane coverage + a robust (plateau-centre) suggested lift per ship. **All 9 modeled ships tuned to max coverage** (player `0.18`, enemy_1 `0.21`, enemy_2 `0.17`, enemy_3 `0.2`, enemy_4 `-0.132` — boss lowered). Prior: **Asset cleanup** — deleted 28 stale/unused S3 builds (`ships-combat/` 16, `ships-hangar/` 12) + 19 stale local pulled files; `git rm`'d 16 unreferenced legacy primitive glbs from `client/assets/`; pre-load fallback is procedural, not a binary. Prior: **Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
+**Updated:** 2026-07-05 (**L1/L2 reward drops** — the last enemy of Level 1 drops the Machine Gun model, and
+the last enemy of Level 2 the Repair drone, as a **green-glowing, green-haloed cosmetic battlefield drop** with
+a **pulsing green off-screen pointer** (`.drop-marker.special`), shown only when the reward isn't already owned
+(`lastKillDrop` on the L1/L2 descriptors + `ownsReward`); collecting it deposits **nothing** — the one
+guaranteed copy still comes from the **unchanged** server force-install on victory, so a player never ends with
+two; the L2/L3 briefings were reworded to a "you recovered it" framing (EN + RU), item still spinning; no
+asset/hash/itch changes. Prior: **Milestone banners** — a big, semi-transparent HUD line flashes and fades over 3 s at "10 enemies left", "5 enemies left" (from `enemyTotal − kills`) and "Final Stage" (entering the boss/finale phase); `#banner` + `showBanner`/`updateBanner` in `sim.js`, once per run. Prior: **In-game Credits/attributions screen** — a player-facing Credits panel opened from the Settings gear, listing every third-party 3D model (full CC-BY 4.0 attribution + license link + "Modified") and music/sound (CC0/Pixabay courtesy), build-generated from `client/assets/CREDITS.md` via `npm run credits:build` → committed `client/src/credits-data.js`, drift-guarded by a unit test and regenerated into the itch zip by `build:itch`; satisfies the CC-BY 4.0 obligation to show attributions to players. Prior: **Fixed bullet plane + model `lift` — top-down aim fix** — formalized the single combat plane as `state.js` `BULLET_PLANE_Y` (0.6) that every ship group sits on and all bullets fly in (spawn/recenter/ring-FX reference it, no bare `0.6`); new per-model signed `model.lift` moves a ship's visual model *and* its hitboxes together so an off-plane hull seats onto it; `assets:hitboxes` reports bullet-plane coverage + a robust (plateau-centre) suggested lift per ship. **All 9 modeled ships tuned to max coverage** (player `0.18`, enemy_1 `0.21`, enemy_2 `0.17`, enemy_3 `0.2`, enemy_4 `-0.132` — boss lowered). Prior: **Asset cleanup** — deleted 28 stale/unused S3 builds (`ships-combat/` 16, `ships-hangar/` 12) + 19 stale local pulled files; `git rm`'d 16 unreferenced legacy primitive glbs from `client/assets/`; pre-load fallback is procedural, not a binary. Prior: **Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
 (id 11): an invisible homing leader defines the path while three visible cyan warheads spiral around it,
 each a real rocket (own power 40 / HP 10, independent detonation + shoot-down; 3× on a full hit). The
 standard rocket smoke trail changed from an expanding sphere cone to a thin, fixed-size fading haze line
@@ -398,6 +404,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   S3 prefix. Today two items have a model: the **Repair drone** (component 12) and the **Machine Gun**
   (weapon 5), both CC-BY 4.0; every other item's `model_url_high` is null (the viewer degrades to nothing).
   `assets:check` validates item model URLs alongside ships. See `docs/plans/component-weapon-models.md`.
+  The **L2 and L3 briefings still showcase the granted item** spinning at full size (Machine Gun on L2,
+  repair drone on L3) and still run the **same idempotent grant actions** (`replaceWeapon 1→5` /
+  `installComponent repair 12`) — only their **text was reworded** to a "you recovered / picked it up" framing
+  (EN source + RU), since the reveal now also happens as a glowing battlefield drop at the end of the prior
+  level (see Grab & loot drops → L1/L2 reward drops).
   - **Player ship** = the real **"Air & Space Vessel"** model (Raven, CC-BY): a light-grey/red textured
     fighter, **`model.scale: 1.1`**. Unlike the flat low-poly enemy pack, it **keeps its textures** (paint,
     decals, markings) — `assets:build` just **downscales** them via the `player` preset override
@@ -529,6 +540,24 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   mirror had gone black where the backdrop was dark). **Off-screen drops
   show green `0x59e0a0` edge arrows** (`updateDropMarkers` in `hud.js`, its own pool + `.drop-marker` CSS,
   the **nearest 6**), distinct from the enemy edge markers.
+  - **L1/L2 reward drops (cosmetic).** The **last enemy of Level 1** drops the **Machine Gun** model and the
+    **last enemy of Level 2** the **Repair drone** — rendered from each item's `modelUrlHigh` (the same
+    lazy-loaded hangar glbs the menu preview uses; a **green fallback box** shows until it loads). Marked
+    declaratively by a `lastKillDrop` `{ kind, refId }` field on the L1/L2 level descriptors
+    (`catalog_seed.js`); the sim spawns it (`spawnSpecialDrop`) when `G.kills === G.enemyTotal` **and** the
+    player doesn't already own the reward (`ownsReward`/`rewardOwned` — L1: no mount with `weapon === 5`; L2:
+    the `components.repair` slot empty), else it falls back to the normal 20 % metal-box roll. The special
+    drop renders **green** (an emissive `REWARD_TINT 0x59e0a0` tint via `normalizeGreen`, **not** the silver
+    override) with one **additive green halo sprite** behind it (`addHalo`, radial-gradient `CanvasTexture`,
+    additive/`depthWrite:false`; no bloom/post), and its off-screen pointer uses the **pulsing `.drop-marker.special`**
+    variant (brighter green `#7dffbf` + an animated green `drop-shadow` — the pulse, not the hue, is what
+    distinguishes it from the plain green loot arrows). It reuses the whole normal drop lifecycle (rotate,
+    grab-pull, click/tap `engageDropAutopilot` to fly to it) but is **cosmetic — collecting it deposits
+    NOTHING** (`collect()` gates the `pendingLoot` push on the pure `shouldDeposit(d)` = `!d.special`). The one
+    guaranteed copy of the reward still comes solely from the **unchanged** server force-install on victory
+    (clearing L1 runs L2's briefing `replaceWeapon 1→5`; clearing L2 runs L3's `installComponent repair 12`,
+    both idempotent), so grabbing the drop or ignoring it makes no difference and the player never ends with
+    two. Only L1/L2 carry `lastKillDrop`.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate. The fixed offset
   (`CAM_OFFSET`) is scaled by the player's zoom (`0.6–2.2×`) along its angle — zoom never changes the
   angle, FOV, or camera type.

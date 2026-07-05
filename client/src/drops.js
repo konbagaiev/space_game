@@ -10,9 +10,10 @@ import { scene } from './engine.js';
 import { G, CATALOG } from './state.js';
 import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLoader
 import { audio } from './sound-routing.js';
-import { DROP_MODEL_URL, DROP_CHANCE, MAX_DROPS, ARM_DELAY, ROTATE_PERIOD, COLLECT_DIST, WEIGHT_FALLBACK, pullSpeed, pickLoot } from './drops-config.js';
+import { DROP_MODEL_URL, DROP_CHANCE, MAX_DROPS, ARM_DELAY, ROTATE_PERIOD, COLLECT_DIST, WEIGHT_FALLBACK,
+         REWARD_TINT, REWARD_HALO_SIZE, pullSpeed, pickLoot, shouldDeposit, rewardOwned } from './drops-config.js';
 
-export const drops = [];            // { obj, item:{kind,refId}, weight, inRange (sec) }
+export const drops = [];            // { obj, item:{kind,refId}, weight, inRange (sec), special? }
 export const pendingLoot = [];      // { kind, refId } collected this run — deposited on VICTORY only
 export { DROP_CHANCE, pickLoot };   // re-export so sim.js/main.js read one source (pickLoot is pure, in drops-config.js)
 
@@ -79,6 +80,91 @@ export function spawnDrop(pos, item) {
   drops.push({ obj, item, weight, inRange: 0 });
 }
 
+// ---------- Special (L1/L2 reward) drops: green model + halo, cosmetic (no stash deposit) ----------
+// A green variant of normalize(): keep the center + scale-longest-axis logic, but give the model a GREEN
+// emissive tint (no silver albedo override) so it reads as a glowing reward, not a metal crate.
+function normalizeGreen(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  obj.position.sub(center);
+  const longest = Math.max(size.x, size.y, size.z) || 1;
+  obj.scale.multiplyScalar(2.5 / longest);
+  obj.traverse((o) => {
+    if (o.isMesh && o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (m.emissive) { m.emissive.setHex(REWARD_TINT); m.emissiveIntensity = 0.9; } // glowing green tint
+        m.needsUpdate = true;
+      }
+    }
+  });
+  const wrap = new THREE.Group(); // wrap so the per-drop rotation.y spins about the center
+  wrap.add(obj);
+  return wrap;
+}
+
+// An immediate green glowing stand-in shown until the (lazy CloudFront) reward glb loads / if it fails.
+function greenFallbackBox() {
+  const geo = new THREE.BoxGeometry(2, 2, 2);
+  const mat = new THREE.MeshStandardMaterial({ color: REWARD_TINT, emissive: REWARD_TINT, emissiveIntensity: 0.9, metalness: 0.2, roughness: 0.5 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData.__fallback = true;   // so spawnSpecialDrop can find + remove it once the model arrives
+  return mesh;
+}
+
+// One shared additive green halo texture (a radial gradient on a small canvas) — reads as a soft glow
+// behind the reward model. Sprites always face the camera, so it glows regardless of the drop's spin.
+let haloTexture = null;
+function ensureHaloTexture() {
+  if (haloTexture) return haloTexture;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.4, 'rgba(255,255,255,0.5)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+  haloTexture = new THREE.CanvasTexture(c);
+  return haloTexture;
+}
+function addHalo(wrap) {
+  const mat = new THREE.SpriteMaterial({ map: ensureHaloTexture(), color: REWARD_TINT, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.setScalar(REWARD_HALO_SIZE);
+  wrap.add(sprite);
+}
+
+// Spawn the cosmetic reward drop (reward = { kind, refId } from the level's lastKillDrop). It reuses the
+// normal drops[] lifecycle (rotate, arm, pull, off-screen marker) but is GREEN + haloed and, being
+// `special: true`, deposits NOTHING when collected (see collect() / DECISIONS: exactly one copy). The
+// hangar glb is lazy-loaded from CloudFront, so a green fallback box appears at once and the real model
+// swaps in on load (same wrap group, so an in-flight pull continues).
+export function spawnSpecialDrop(pos, reward) {
+  if (!reward) return;
+  if (drops.length >= MAX_DROPS) { console.warn('drops: cap reached, skipping reward drop'); return; }
+  const cat = reward.kind === 'component' ? CATALOG.components.get(reward.refId) : CATALOG.weapons.get(reward.refId);
+  if (!cat) return;
+  const weight = cat.weight || WEIGHT_FALLBACK;
+  const wrap = new THREE.Group();
+  wrap.add(greenFallbackBox());          // immediate glowing green stand-in until the glb loads
+  addHalo(wrap);                         // additive green halo sprite behind the model
+  wrap.position.copy(pos); wrap.position.y = 0.8;
+  scene.add(wrap);
+  const url = cat.modelUrlHigh;
+  if (url) gltfLoader.load(url, (g) => {
+    const model = normalizeGreen(g.scene);   // center+scale like normalize(), but GREEN emissive (no silver)
+    const box = wrap.children.find((c) => c.userData.__fallback);
+    if (box) { wrap.remove(box); box.geometry.dispose(); box.material.dispose(); }
+    wrap.add(model);
+  }, undefined, () => {}); // on error the green fallback box stays — still reads as a reward
+  drops.push({ obj: wrap, item: reward, weight, inRange: 0, special: true });
+}
+
+// Ownership gate off G.activeShip: has the player already got this reward? Delegates to the pure
+// rewardOwned() (drops-config.js) so the logic stays node-testable; here we just supply G.activeShip.
+export function ownsReward(reward) { return rewardOwned(G.activeShip, reward); }
+
 export function updateDrops(dt) {
   // 1) rotate every drop (cosmetic) — one turn / ROTATE_PERIOD
   for (const d of drops) d.obj.rotation.y += dt * (Math.PI * 2 / ROTATE_PERIOD);
@@ -106,7 +192,7 @@ export function updateDrops(dt) {
 function collect(d) {
   scene.remove(d.obj);
   drops.splice(drops.indexOf(d), 1);
-  pendingLoot.push(d.item);
+  if (shouldDeposit(d)) pendingLoot.push(d.item); // cosmetic reward drops deposit NOTHING (DECISIONS: exactly one copy)
   audio.sfx.pickup?.(); // small feedback blip
   hideLine();
 }

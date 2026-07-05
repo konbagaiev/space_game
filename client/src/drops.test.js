@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // Only the PURE pieces of the drop system are imported (drops-config.js has no THREE / engine deps, so it
 // stays node-safe). The THREE/scene behavior (meshes, the blue pull line) is covered by the headless suite.
-import { pullSpeed, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY } from './drops-config.js';
+import { pullSpeed, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY, shouldDeposit, rewardOwned } from './drops-config.js';
 
 // --- pull speed: (strength / 2) * (10 / weight), in world units/sec ---
 test('pullSpeed: anchor cases (s10/w10 → 5, s10/w2 → 25)', () => {
@@ -62,4 +62,33 @@ test('pickLoot: an enemy with no non-hull parts yields null (nothing to drop)', 
 test('config: drop chance is 20% and the grab arms after 0.3 s in range', () => {
   assert.equal(DROP_CHANCE, 0.2);
   assert.equal(ARM_DELAY, 0.3);
+});
+
+// --- shouldDeposit: the no-dupe guarantee — a SPECIAL (cosmetic reward) drop deposits NOTHING ---
+test('shouldDeposit: a normal loot drop deposits; a special reward drop never does', () => {
+  assert.equal(shouldDeposit({ item: { kind: 'weapon', refId: 5 } }), true);   // normal loot → into the stash
+  assert.equal(shouldDeposit({ item: { kind: 'weapon', refId: 5 }, special: true }), false); // reward → nothing (server force-installs the one copy)
+  assert.equal(shouldDeposit({ special: false }), true);
+  assert.equal(shouldDeposit(null), false); // defensive
+});
+
+// --- rewardOwned: the ownership gate that suppresses the special drop on replays ---
+test('rewardOwned: L1 weapon reward is owned iff a mount references its refId', () => {
+  const reward = { kind: 'weapon', refId: 5 };
+  assert.equal(rewardOwned({ loadout: { mounts: [{ weapon: 5 }] } }, reward), true);   // MG mounted → owned
+  assert.equal(rewardOwned({ loadout: { mounts: [{ weapon: 1 }] } }, reward), false);  // only the basic gun → not owned
+  assert.equal(rewardOwned({ ship: { stats: { mounts: [{ weapon: 5 }] } } }, reward), true); // falls back to ship.stats.mounts
+});
+
+test('rewardOwned: L2 component reward is owned iff the repair slot is filled', () => {
+  const reward = { kind: 'component', refId: 12 };
+  assert.equal(rewardOwned({ components: { repair: 12 } }, reward), true);   // repair installed → owned
+  assert.equal(rewardOwned({ components: {} }, reward), false);              // empty repair slot → not owned
+  assert.equal(rewardOwned({ components: { repair: null } }, reward), false);
+});
+
+test('rewardOwned: null active ship / null reward → not owned (drop shows on a first playthrough)', () => {
+  assert.equal(rewardOwned(null, { kind: 'weapon', refId: 5 }), false);
+  assert.equal(rewardOwned({ loadout: { mounts: [] } }, null), false);
+  assert.equal(rewardOwned({ loadout: { mounts: [] } }, { kind: 'other' }), false);
 });

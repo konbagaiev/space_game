@@ -372,6 +372,7 @@ export const LEVELS = [
   {
     name: 'level-1', descriptor: {
       title: 'Level 1', map: 'home-system',
+      lastKillDrop: { kind: 'weapon', refId: 5 },   // cosmetic reward drop on the last enemy (Machine Gun); server force-installs the real copy on victory
       phases: [
         {
           name: 'wave-1', // only plain fighters, 3 at a time
@@ -402,9 +403,10 @@ export const LEVELS = [
   {
     name: 'level-2', descriptor: {
       title: 'Level 2', map: 'home-system',
+      lastKillDrop: { kind: 'component', refId: 12 }, // cosmetic reward drop on the last enemy (Repair drone)
       briefing: {
         textKey: 'level.2.briefing',
-        text: 'The pirates are storming our weapons factory — we have to push them back before they arm their fleet. Their heavier squadrons are dug in there, so command has refitted your ship: the basic gun is out, a Machine Gun is in. Go take it back, Sentinel.',
+        text: 'You pulled a Machine Gun out of the wreckage back there, Sentinel — lighter on the trigger and a real help for shooting down incoming rockets. Now push the pirates off our weapons factory before they arm their fleet.',
         actions: [{ type: 'replaceWeapon', from: 1, to: 5 }], // Basic kinetic -> Machine Gun
       },
       phases: [
@@ -439,7 +441,7 @@ export const LEVELS = [
       title: 'Level 3', map: 'home-system',
       briefing: {
         textKey: 'level.3.briefing',
-        text: "Good news, Sentinel — we salvaged a spare repair drone and fitted it to your ship. It'll patch up your hull mid-fight, a little at a time. If you take heavy damage, peel off to a quiet corner of the map and let it work.",
+        text: "I see you salvaged a repair drone from that last fight, Sentinel — good. It's fitted and will patch your hull mid-battle, a little at a time. If you take heavy damage, peel off to a quiet corner and let it work.",
         actions: [{ type: 'installComponent', slot: 'repair', component: 12 }],
       },
       phases: [
