@@ -8,6 +8,32 @@ export const ROTATE_PERIOD  = 5.0;   // seconds per full drop revolution
 export const COLLECT_DIST   = 3.0;   // world units: within this of the ship → collected
 export const WEIGHT_FALLBACK = 10;   // defensive: used only if an item somehow has no weight
 
+// Reward (L1/L2 last-kill) special drops: the model gets a green emissive tint + an additive green halo
+// sprite, and its off-screen pointer pulses green. Cosmetic only — collecting a special drop deposits
+// nothing (the one guaranteed copy is server-installed on victory; see DECISIONS).
+export const REWARD_TINT      = 0x59e0a0; // green — emissive tint + halo + off-screen pointer glow
+export const REWARD_HALO_SIZE = 5.0;      // world-units diameter of the additive halo sprite behind a reward drop
+
+// Pure deposit decision, factored out so it's node-testable: a special (cosmetic reward) drop deposits
+// NOTHING to the stash; a normal loot drop deposits its item. This is the load-bearing no-dupe guarantee.
+export function shouldDeposit(drop) { return !!drop && !drop.special; }
+
+// Pure ownership gate: does the player's active-ship record already carry this reward? A weapon reward is
+// owned if any mount references it; a component reward (the L2 repair drone) is owned if the repair slot is
+// filled. Takes the active ship explicitly (drops.js passes G.activeShip) so it's THREE-free + node-testable.
+export function rewardOwned(activeShip, reward) {
+  const as = activeShip; if (!as || !reward) return false;
+  if (reward.kind === 'weapon') {
+    const mounts = (as.loadout && as.loadout.mounts) || (as.ship && as.ship.stats && as.ship.stats.mounts) || [];
+    return mounts.some((m) => m.weapon === reward.refId);
+  }
+  if (reward.kind === 'component') {
+    const comps = as.components || (as.ship && as.ship.components) || {};
+    return comps.repair != null; // L2 reward is the repair slot; refId 12 lands here
+  }
+  return false;
+}
+
 // Pure pull-speed formula (world units/sec): (strength / 2) * (10 / itemWeight). Anchor: strength 10,
 // weight 10 → 5 u/s; light parts pull faster (weight 2 → 25 u/s), heavy parts slower. A zero/missing
 // weight falls back to WEIGHT_FALLBACK so the sim never divides by zero. Kept here (import-free) so it's

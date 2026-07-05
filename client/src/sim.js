@@ -14,7 +14,7 @@ import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { pointHitsShip, segmentHitsShip } from './collision.js';
-import { updateDrops, spawnDrop, pickLoot, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
+import { updateDrops, spawnDrop, spawnSpecialDrop, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
 import { t } from './i18n.js';
@@ -652,9 +652,16 @@ export function update(dt) {
       if (reward > 0) {           // floating "+xx" green popup at the kill site (cosmetic feedback)
         creditPopups.push({ pos: e.mesh.position.clone(), amount: reward, life: 2.0, maxLife: 2.0 });
       }
-      // loot: one roll per kill — on success drop ONE of the enemy's non-hull parts / mounted weapons as a
-      // metal-box the grab can pull in (deposited to the stash only on victory; hulls never drop).
-      if (Math.random() < DROP_CHANCE) { const loot = pickLoot(e); if (loot) spawnDrop(e.mesh.position, loot); }
+      // reward drop: the LAST enemy of a level that carries a lastKillDrop drops the reward model (cosmetic —
+      // no stash deposit; the real copy is server-installed on victory), but only if the player doesn't already
+      // own it. Otherwise fall back to the usual 20% metal-box loot roll (one of the enemy's non-hull parts /
+      // mounted weapons the grab can pull in — deposited on victory; hulls never drop).
+      const lkd = levelRunner.level && levelRunner.level.lastKillDrop;
+      if (lkd && G.kills === G.enemyTotal && !ownsReward(lkd)) {
+        spawnSpecialDrop(e.mesh.position, lkd);
+      } else if (Math.random() < DROP_CHANCE) {
+        const loot = pickLoot(e); if (loot) spawnDrop(e.mesh.position, loot);
+      }
     }
   }
   // pull in-range drops toward the ship (blue line while active); inside update(dt) → frozen on pause

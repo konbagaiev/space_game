@@ -1703,6 +1703,28 @@ hull sat above the plane, so it's the one *lowered*).
 
 ---
 
+## 48. L1/L2 reward is server-installed (unchanged); the battlefield drop is COSMETIC to guarantee exactly one copy
+
+The L1 Machine Gun / L2 repair drone reveal now happens as a glowing drop on the battlefield when the level's
+last enemy dies, but the **one guaranteed copy is still delivered solely by the existing, idempotent server
+force-install on victory** (clearing L1 runs L2's briefing `replaceWeapon 1→5`; clearing L2 runs L3's
+`installComponent repair 12`). The battlefield drop **deposits nothing** to the stash.
+
+**Why cosmetic-only.** If the drop *also* deposited into the stash, any player who grabbed it would end up with
+**two** Machine Guns / repair drones (one from the grab, one from the server install). Leaving the guaranteed
+copy exclusively with the idempotent server path keeps "grab it or not — doesn't matter" literally true and is
+**dupe-proof on replays** (the install is a no-op when the item is already mounted/installed). The single
+load-bearing line is `collect()` gating the `pendingLoot` push on `shouldDeposit(d)` = `!d.special`.
+
+**Why not refactor the reward path** (a `reward.actions` block, a `/claim-reward` endpoint, moving the grants
+off the briefings): the existing briefing actions already deliver exactly one copy at the right time and are
+idempotent, so the smallest correct change (DECISIONS §30) is a **client-side cosmetic drop** plus an
+ownership gate (`ownsReward` — don't spawn the drop if the reward is already owned, so replays show at most a
+normal loot box). The showcase + grant actions on the L2/L3 briefings are untouched; only their **text** was
+reworded to a "you recovered it" framing to match the new reveal.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·
