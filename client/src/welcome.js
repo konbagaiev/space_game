@@ -14,12 +14,16 @@ import { Device } from './device.js';
 import { renderAccountBar } from './account.js';
 import { localizeSettings } from './settings.js';
 import { localizeCredits } from './credits.js';
+import { typeText } from './typewriter.js';
 
 // A ship's hull HP for the welcome card (resolved from its hull component).
 const shipHullHp = (ship) => CATALOG.components.get(ship.components?.hull)?.stats.durability ?? '?';
 
 const welcomeEl = document.getElementById('welcome');
 let selectedShip = null;
+export let welcomeStaged = false; // a staged L1 welcome reveal is animating (read by ?debug __game)
+let welcomeCtl = null;            // active typewriter controller
+let welcomeGoTimer = 0;           // the +0.5s Take-off reveal timeout handle
 
 function mountSummary(stats) { // "2× gun · 2× rocket" from the ship's mounts
   const count = (type) => stats.mounts.filter((m) => CATALOG.weapons.get(m.weapon)?.type === type).length;
@@ -47,6 +51,37 @@ function renderShipCards(playerShips) {
     wrap.appendChild(card);
   });
 }
+function clearWelcomeReveal() {
+  if (welcomeCtl) { welcomeCtl.cancel(); welcomeCtl = null; }
+  if (welcomeGoTimer) { clearTimeout(welcomeGoTimer); welcomeGoTimer = 0; }
+}
+// Show the fully-revealed welcome state at once (skip-on-tap + settle when setLanguage re-renders mid-type).
+function revealWelcomeNow() {
+  clearWelcomeReveal();
+  const intro = welcomeEl.querySelector('.intro');
+  if (intro) intro.textContent = t('ui.welcome.intro');
+  welcomeEl.classList.remove('welcome-hide-pick', 'welcome-hide-go');
+  welcomeStaged = false;
+}
+// Staged L1 reveal: greeting h1 shows immediately → `.intro` types ~5s → ship picker in → +0.5s Take-off.
+function startWelcomeReveal() {
+  clearWelcomeReveal();
+  welcomeStaged = true;
+  const intro = welcomeEl.querySelector('.intro');
+  welcomeEl.classList.add('welcome-hide-pick', 'welcome-hide-go');
+  welcomeCtl = typeText(intro, t('ui.welcome.intro'), { total: 5000, onDone: () => {
+    welcomeEl.classList.remove('welcome-hide-pick');       // ship picker (.pick + #ship-choices) fades in…
+    welcomeGoTimer = setTimeout(() => {                    // …Take-off 0.5s later
+      welcomeGoTimer = 0;
+      welcomeEl.classList.remove('welcome-hide-go');
+      welcomeStaged = false;
+    }, 500);
+  }});
+}
+// Tap the `.intro` while it's typing → skip to full + reveal picker & Take-off at once. `.intro` is static
+// markup (client/index.html:44), never rebuilt (only its textContent changes), so bind once at module load.
+welcomeEl.querySelector('.intro').addEventListener('click', () => { if (welcomeStaged) revealWelcomeNow(); });
+
 export function showWelcome(playerShips) {
   lastPlayerShips = playerShips;
   renderShipCards(playerShips);
@@ -55,6 +90,7 @@ export function showWelcome(playerShips) {
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   refreshMusic(); // menu → calmer hangar music
   welcomeEl.style.display = 'flex';
+  startWelcomeReveal();
 }
 
 // ---------- Localization (i18n) UI glue ----------
@@ -108,6 +144,7 @@ async function setLanguage(lang) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ language: getLanguage() }),
   }).catch(() => {}); // best-effort: persist the preference server-side
+  if (welcomeStaged) revealWelcomeNow(); // a language switch re-renders `.intro` (applyTranslations) — settle to full
 }
 // Go fullscreen so the mobile browser chrome (address bar) doesn't eat the screen — must run inside
 // the click gesture. Works on Android/iPad; silently ignored where unsupported (e.g. iPhone Safari).

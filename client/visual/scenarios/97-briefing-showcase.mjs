@@ -24,12 +24,14 @@ export default async function ({ page, assert, shot }) {
   const isShip = (u) => /player_hangar\.|player_combat\./.test(u || '');
 
   await landOn(1); // L2 briefing → Machine Gun in the work zone, ship still in the right preview
+  await page.click('#mw-mission-desc'); // skip the L2/L3 staged typewriter so the showcase reveals now
   await page.waitForFunction('!!(window.__game.itemShowcaseTarget)', null, { timeout: 4000 });
   assert.match(await item(), /machine_gun_hangar\./, 'L2 briefing showcases the Machine Gun model');
   assert.ok(isShip(await ship()), 'L2: the ship preview still shows the player ship (item does not replace it)');
   await shot('L2-machine-gun');
 
   await landOn(2); // L3 briefing → Repair drone in the work zone, ship still in the right preview
+  await page.click('#mw-mission-desc'); // skip the L2/L3 staged typewriter so the showcase reveals now
   await page.waitForFunction('!!(window.__game.itemShowcaseTarget)', null, { timeout: 4000 });
   assert.match(await item(), /repair_drone_hangar\./, 'L3 briefing showcases the Repair drone model');
   assert.ok(isShip(await ship()), 'L3: the ship preview still shows the player ship (item does not replace it)');

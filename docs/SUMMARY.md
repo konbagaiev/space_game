@@ -3,7 +3,11 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-05 (**L1/L2 reward drops** — the last enemy of Level 1 drops the Machine Gun model, and
+**Updated:** 2026-07-05 (**Staged briefing reveal (L1-3)** — the L1 welcome briefing and the L2/L3 Main
+Window campaign briefing now **type out over ~5 s** (`client/src/typewriter.js`), then reveal the ship
+picker / ship-preview window (+ granted-item showcase), then the **Take off** button **+0.5 s** later;
+**tap the briefing text to skip**; plays once per landing; the L1 `.intro` was enlarged to 26px; L4+ and
+side missions stay instant. Prior: **L1/L2 reward drops** — the last enemy of Level 1 drops the Machine Gun model, and
 the last enemy of Level 2 the Repair drone, as a **green-glowing, green-haloed cosmetic battlefield drop** with
 a **pulsing green off-screen pointer** (`.drop-marker.special`), shown only when the reward isn't already owned
 (`lastKillDrop` on the L1/L2 descriptors + `ownsReward`); collecting it deposits **nothing** — the one
@@ -567,6 +571,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"), frames the
   threat as a pirate raid, lets them **pick a ship** (cards with HP + weapon summary) and **Take off**.
   Either way the scene backdrop renders behind it and the level only starts on take-off.
+  - **Staged L1 welcome reveal** (`docs/plans/2026-07-05-1641-briefing-staged-reveal.md`): on the L1
+    landing the greeting `h1` shows immediately, then the `.intro` briefing **types out over ~5 s at 26px**
+    (matching the L2/L3 mission-briefing size; 16px on the `≤760px` mobile override), then the **ship
+    picker** (`.pick` + `#ship-choices`) fades in, then the **Take off** button **+0.5 s** later. **Tap the
+    intro to skip** to the full text + everything revealed at once. Hidden steps use `visibility:hidden`
+    (not `display`) so nothing reflows. Plays **once per landing**; a language switch mid-type settles to
+    full. The shared typewriter lives in `client/src/typewriter.js`; the community/feedback link is not
+    staged.
 - **Main Window (the between-battles / landing screen; was the "Hangar")** — `#mainwin`, a **fixed
   landscape layout** (CSS grid, not a scrolling column), built for mobile landscape but unified for desktop
   (`docs/plans/main-window-redesign.md`). **Top bar** (fixed elements above the grid): the **settings gear**
@@ -589,6 +601,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   work-zone view; `buildMissionList()` + `renderMissionView(m)` drive the mission list/description;
   `launchCampaign()` (was `launchFromHangar`) and `launchMission(m)` launch + stop the preview; `openBay()`
   (was `openHangarShop`) gates + loads the bay.
+  - **Staged campaign-briefing reveal (L2/L3)** (`docs/plans/2026-07-05-1641-briefing-staged-reveal.md`):
+    when the **primary (campaign) briefing** lands on **levels 1-3** (in practice L2/L3; L1 lands on the
+    welcome screen), the briefing text (`#mw-mission-text`) **types out over ~5 s** while the right-column
+    **ship-preview window** (`#mw-ship-col`) and the **Take off** button (`#mw-go`) are hidden
+    (`visibility:hidden`, so nothing reflows); when typing completes the ship window + the **granted-item
+    showcase** (`#mw-item`, Machine Gun on L2 / Repair drone on L3) fade in together, then **Take off +0.5 s**
+    later. **Tap the briefing text (`#mw-mission-desc`) to skip** to full + reveal everything at once. The
+    level is parsed from the descriptor `title` ("Level N"); it plays **once per landing** (switching to
+    a bay view / launching / re-selecting the row after settles to full, no replay). **L4+ and side missions
+    stay instant** (no staging). Shared typewriter: `client/src/typewriter.js`.
   - **Desktop (PC) form polish** (`docs/plans/2026-07-01-1933-device-profiles-desktop-polish.md`,
     device-profiles iteration 1) — additive CSS scoped to `body.dev-desktop` / `body.dev-desktop-lg` only
     (phone/tablet + the `@media (max-width:760px)` mobile override are untouched): the briefing **title is 32px**

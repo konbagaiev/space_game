@@ -19,12 +19,18 @@ import { Device } from './device.js';
 import { openBay, showBayView, updateTakeoffGate, renderShipStatsBar, deriveShipStats, resetShipStatsDelta } from './shop.js';
 import { renderAccountBar, openAccount, shouldPromptAccount } from './account.js';
 import { requestFullscreen } from './welcome.js';
+import { typeText } from './typewriter.js';
 
 const mainEl = document.getElementById('mainwin');
 export let mainBriefing = null; // the campaign briefing shown as the primary mission ({ textKey, text } or null)
 let mwView = 'missions';        // which work-zone view is active: 'missions' | 'bay'
 let mwMission = null;           // selected side-mission offer, or null = the campaign (primary) mission
 export let missionOffers = [];  // side missions from /api/players/:id/missions (unlocked after the campaign)
+export let stagedActive = false; // a staged campaign-briefing reveal is animating (read by ?debug __game)
+let briefingRevealDone = false;  // the current landing's campaign briefing is fully revealed (no re-animate)
+let stagedFullText = '';         // the briefing text being revealed (also used by skip-to-full)
+let stagedCtl = null;            // active typewriter controller
+let stagedGoTimer = 0;           // the +0.5s Take-off reveal timeout handle
 
 export function showMain(briefing) {
   // The campaign (primary) row always reflects the CURRENT level's briefing. An explicit briefing
@@ -32,6 +38,7 @@ export function showMain(briefing) {
   // descriptor briefing so returning from a side mission (showMain(null)) doesn't blank the campaign
   // mission to the "standby" default. briefingShowcase() reads either shape (showcase or raw actions).
   mainBriefing = briefing || (CATALOG.level && CATALOG.level.briefing) || null;
+  resetBriefingReveal();
   el.overlay.style.display = 'none';
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the Main Window
@@ -48,8 +55,8 @@ export function showMain(briefing) {
     resetShipStatsDelta();
     renderShipStatsBar(deriveShipStats(G.activeShip.components, G.activeShip.loadout && G.activeShip.loadout.mounts));
   }
-  startShipPreview();                  // spin up the right-column ship model
-  applyPreviewTarget();                // …showing the granted item if this is a showcase briefing, else the ship
+  startShipPreview();                       // spin up the right-column ship model (hidden by CSS while staging)
+  if (!stagedActive) applyPreviewTarget();  // when staging, the reveal defers the preview/showcase itself
 }
 function launchCampaign() {
   G.pendingBriefing = null;
@@ -57,6 +64,7 @@ function launchCampaign() {
   if (Device.hasTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
   mainEl.classList.remove('on');
   stopShipPreview();
+  settleBriefingReveal();                    // stop a stray timer/rAF from toggling classes after close
   stopViewer(mwItem);                        // stop the work-zone item showcase too
   document.body.classList.remove('menu');    // restore the in-game HUD
   G.gameStarted = true;                        // first launch from the landing Main Window starts the loop
@@ -86,7 +94,7 @@ function selectMenu(which) {
   document.getElementById('mw-view-mission').classList.toggle('active', isMissions);
   document.getElementById('mw-view-bay').classList.toggle('active', !isMissions);
   if (isMissions) { buildMissionList(); renderMissionView(mwMission); }
-  else { showBayView(which); stopViewer(mwItem); } // bay view hides the mission canvas → idle the loop
+  else { settleBriefingReveal(); showBayView(which); stopViewer(mwItem); } // bay view hides the mission canvas → idle the loop
 }
 document.getElementById('mw-menu').addEventListener('click', (e) => {
   const b = e.target.closest('.mw-item');
@@ -122,6 +130,61 @@ function buildMissionList() {
   });
 }
 
+function clearStagedReveal() {
+  if (stagedCtl) { stagedCtl.cancel(); stagedCtl = null; }
+  if (stagedGoTimer) { clearTimeout(stagedGoTimer); stagedGoTimer = 0; }
+}
+// New landing (showMain): allow the staged reveal to play once.
+function resetBriefingReveal() {
+  clearStagedReveal();
+  mainEl.classList.remove('briefing-hide-ship', 'briefing-hide-go');
+  stagedActive = false; briefingRevealDone = false;
+}
+// Leaving the mission view / launching: stop any animation, drop the hide classes, and mark the briefing
+// revealed so returning to the mission view shows the full state (no replay).
+function settleBriefingReveal() {
+  clearStagedReveal();
+  mainEl.classList.remove('briefing-hide-ship', 'briefing-hide-go');
+  stagedActive = false; briefingRevealDone = true;
+}
+// The current campaign level number (1..N) from the descriptor title ("Level 1".."Level 4" — a stable,
+// non-localized field set in catalog_seed.js). null if unknown.
+function campaignLevelIndex() {
+  const m = /(\d+)/.exec((CATALOG.level && CATALOG.level.title) || '');
+  return m ? parseInt(m[1], 10) : null;
+}
+// Staged reveal applies only to the CAMPAIGN (primary) briefing on levels 1-3 (not L4+, not side missions).
+function stagedBriefingActive() {
+  const lvl = campaignLevelIndex();
+  return mwMission == null && lvl != null && lvl <= 3;
+}
+// Show the fully-revealed state at once (skip-on-tap + re-renders after the reveal has played).
+function revealBriefingNow() {
+  clearStagedReveal();
+  document.getElementById('mw-mission-text').textContent = stagedFullText;
+  mainEl.classList.remove('briefing-hide-ship', 'briefing-hide-go');
+  applyPreviewTarget();          // ship preview + the granted-item showcase (if any)
+  stagedActive = false; briefingRevealDone = true;
+}
+// Staged sequence: typewriter (~5s) → ship window + showcase in → +0.5s Take-off in.
+function startStagedReveal() {
+  clearStagedReveal();
+  stagedActive = true; briefingRevealDone = false;
+  const textEl = document.getElementById('mw-mission-text');
+  mainEl.classList.add('briefing-hide-ship', 'briefing-hide-go'); // hide ship window + Take-off while typing
+  showShowcaseItem(null);        // hold the work-zone granted-item showcase during typing
+  previewShip();                 // preload the ship model behind the hidden panel (no hitch at reveal)
+  stagedCtl = typeText(textEl, stagedFullText, { total: 5000, onDone: () => {
+    mainEl.classList.remove('briefing-hide-ship');  // ship window fades in…
+    applyPreviewTarget();                            // …together with the granted-item showcase (L2/L3)
+    stagedGoTimer = setTimeout(() => {               // Take-off 0.5s later
+      stagedGoTimer = 0;
+      mainEl.classList.remove('briefing-hide-go');
+      stagedActive = false; briefingRevealDone = true;
+    }, 500);
+  }});
+}
+
 // Render the selected mission into the work zone. null → the campaign (primary) briefing + launchCampaign;
 // otherwise a side mission's flavor + est. reward + launchMission.
 function renderMissionView(m) {
@@ -137,12 +200,19 @@ function renderMissionView(m) {
     showShowcaseItem(null);   // …and hide the work-zone item showcase
   } else {
     titleEl.textContent = t('ui.mainwin.primary');
-    textEl.textContent = mainBriefing
+    stagedFullText = mainBriefing
       ? (mainBriefing.textKey ? t(mainBriefing.textKey) : (mainBriefing.text || ''))
       : t('ui.hangar.default');
     rewEl.textContent = '';
     rewEl.style.display = 'none';
-    applyPreviewTarget();     // primary row → the campaign briefing's showcase item (if any), else the ship
+    if (stagedActive) {
+      /* a reveal is already animating this landing — leave it in control of text/preview/showcase */
+    } else if (stagedBriefingActive() && !briefingRevealDone) {
+      startStagedReveal();
+    } else {
+      textEl.textContent = stagedFullText;
+      applyPreviewTarget();     // primary row → the campaign briefing's showcase item (if any), else the ship
+    }
   }
   updateTakeoffGate(G.activeShip);
 }
@@ -150,6 +220,10 @@ function renderMissionView(m) {
 document.getElementById('mw-go').addEventListener('click', () => {
   if (mwMission) launchMission(mwMission);
   else launchCampaign();
+});
+// Tap the briefing text while it's staging → skip to full text + reveal ship window & Take-off at once.
+document.getElementById('mw-mission-desc').addEventListener('click', () => {
+  if (stagedActive) revealBriefingNow();
 });
 
 // Reload the side missions (gated to the shop being unlocked), then rebuild the list + re-render if
@@ -171,6 +245,7 @@ export function launchMission(m) {
   if (Device.hasTouch) requestFullscreen();
   mainEl.classList.remove('on');
   stopShipPreview();
+  settleBriefingReveal();              // stop a stray timer/rAF from toggling classes after close
   stopViewer(mwItem);                  // stop the work-zone item showcase too
   document.getElementById('welcome').style.display = 'none';
   document.body.classList.remove('menu');

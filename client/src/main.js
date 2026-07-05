@@ -22,8 +22,8 @@ import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
-import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem } from './mainwindow.js'; // between-battles Main Window + model viewers
-import { showWelcome, applyTranslations } from './welcome.js'; // welcome screen + i18n UI glue
+import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
+import { showWelcome, applyTranslations, welcomeStaged } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache } from './account.js'; // auth block (bootstrap session restore + Sentry)
 
 // audio engine + tracksFor/sfxFor routing moved to src/sound-routing.js (imported at top).
@@ -527,6 +527,8 @@ if (location.search.includes('debug')) {
     get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url in the right-column ship preview
     // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
     get itemShowcaseTarget() { const d = document.getElementById('mw-mission-desc'); return d && d.classList.contains('show-item') ? (mwItem && mwItem.url) : null; },
+    get briefingStaged() { return stagedActive; },   // Main Window staged reveal animating (L2/L3)
+    get welcomeStaged() { return welcomeStaged; },   // welcome-screen staged reveal animating (L1)
 
     launchMission, refreshMissions, showMain, // test/tool: drive the side-mission board + the Main Window
     get mainBriefing() { return mainBriefing; }, // the campaign (primary) briefing currently shown
