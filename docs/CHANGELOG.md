@@ -5,6 +5,14 @@
 
 ## 2026-07-05
 
+- **Tuned `model.lift` on every remaining ship for consistency (enemy_1/2/4).** The coverage report flagged
+  the other enemy models as partly see-through from above too, so all 9 modeled ships now sit at their
+  robust max bullet-plane coverage: enemy_1 (`Basic pirate ship`/`pirate gunner`) `lift: 0.21` (30→40 of
+  48), enemy_2 (`basic`/`advanced rocket pirate`) `0.17` (28→36), enemy_4 (`first`/`second pirate boss`)
+  **`-0.132`** (32→37 — the boss hull sat *above* the plane, so it's *lowered*, not raised). Also hardened
+  `bestLift`: it now scans a fine grid and returns the **centre of the peak plateau** (robust — the plane
+  passes *through* the seated boxes) instead of the plane-crossing extremum, which could land on a box edge
+  (a tangent, razor-line "hit"). Tests updated to the plateau-centre semantics.
 - **Model `lift` — top-down aim fix for hulls that sit off the bullet plane.** The game is top-down and
   bullets fly in the world y≈0.6 plane (the ship group's origin). A model whose bounding-box centre sits
   above its hull left the nose/deck below that plane, so centre-aimed shots visibly passed *over* the ship —

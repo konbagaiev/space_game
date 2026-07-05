@@ -259,30 +259,30 @@ export function planeCoverage(boxes, lift = 0) {
   for (const b of boxes) if (Math.abs(b.c.y + lift) <= boxHalfY(b) + 1e-9) n++;
   return n;
 }
-// The lift that puts the plane through the MOST boxes. `lift` is a SIGNED group-local offset (positive
-// raises the model, negative lowers it — whichever seats the hull on the plane). Each box covers the lifts
-// L in the closed interval [-c.y - halfY, -c.y + halfY]; we want the L inside the most intervals. Coverage
-// is piecewise-constant between interval endpoints, so sampling each endpoint + each gap midpoint finds the
-// max (N ≤ 48 → cheap). Among lifts that tie for the max, returns the one with the SMALLEST |lift| (least
-// visual displacement). Returns { lift, count }.
+// The lift that puts the plane SOLIDLY through the most boxes. `lift` is a SIGNED group-local offset
+// (positive raises the model, negative lowers it — whichever seats the hull on the plane). We scan a fine
+// grid of candidate lifts rather than the exact box-edge coordinates: a lift sitting exactly on a box edge
+// grazes that box (a razor-line "hit" a real bullet won't land), so the true, robust coverage is what
+// generic (off-edge) lifts see. Among the lifts at peak coverage we return the CENTRE of the plateau
+// nearest 0 — margin on both sides so the seated boxes are crossed through, not tangent, with the least
+// displacement. Returns { lift, count }.
 export function bestLift(boxes) {
-  const iv = boxes.map((b) => { const hy = boxHalfY(b); return [-b.c.y - hy, -b.c.y + hy]; });
-  const cover = (L) => iv.reduce((n, [lo, hi]) => n + (L >= lo - 1e-9 && L <= hi + 1e-9 ? 1 : 0), 0);
-  const coords = [...new Set(iv.flat())].sort((a, b) => a - b);
-  // Phase 1: the max coverage. Coverage is piecewise-constant, maximal on some closed band whose edges are
-  // interval endpoints, so sampling endpoints + gap midpoints finds the peak value.
-  let bestC = 0;
-  for (let i = 0; i < coords.length; i++) {
-    bestC = Math.max(bestC, cover(coords[i]));
-    if (i + 1 < coords.length) bestC = Math.max(bestC, cover((coords[i] + coords[i + 1]) / 2));
+  const STEP = 0.005, N = 100; // scan lift ∈ [-0.5, 0.5] in group-local units (well past any real hull offset)
+  let peak = 0;
+  const covs = [];
+  for (let k = -N; k <= N; k++) { const L = k * STEP; const c = planeCoverage(boxes, L); covs.push([L, c]); peak = Math.max(peak, c); }
+  // Centre of the contiguous peak plateau whose centre is nearest 0 (least float among equally-good bands).
+  let bestMid = 0, bestAbs = Infinity, runStart = -1;
+  for (let i = 0; i <= covs.length; i++) {
+    const atPeak = i < covs.length && covs[i][1] === peak;
+    if (atPeak && runStart < 0) runStart = i;
+    else if (!atPeak && runStart >= 0) {
+      const mid = (covs[runStart][0] + covs[i - 1][0]) / 2;
+      if (Math.abs(mid) < bestAbs) { bestAbs = Math.abs(mid); bestMid = mid; }
+      runStart = -1;
+    }
   }
-  // Phase 2: among lifts achieving bestC, the smallest |lift| (least displacement). The max-coverage region
-  // is a union of closed bands bounded by endpoints; if 0 is inside, no move is needed — else the nearest
-  // point of that region to 0 is one of its endpoints, so scan endpoints at max coverage for the one nearest 0.
-  if (cover(0) === bestC) return { lift: 0, count: bestC };
-  let bestL = null;
-  for (const x of coords) if (cover(x) === bestC && (bestL === null || Math.abs(x) < Math.abs(bestL))) bestL = x;
-  return { lift: r3(bestL ?? 0), count: bestC };
+  return { lift: r3(bestMid), count: peak };
 }
 
 // Exact enclosing radius: the farthest of every box's 8 corners from the group origin.

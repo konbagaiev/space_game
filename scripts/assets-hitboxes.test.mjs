@@ -228,25 +228,26 @@ test('planeCoverage: a box crosses the plane iff |c.y + lift| <= its Y half-exte
   assert.equal(planeCoverage([b], 0.45), 0); // over-lifted past it
 });
 
-test('bestLift: finds the smallest lift that seats the most boxes on the plane', () => {
-  // Three hulls clustered below the plane; only a positive lift puts all three on y=0.
+test('bestLift: seats the most boxes on the plane, at the plateau centre (robust, not tangent)', () => {
+  // Three hulls clustered below the plane; only a positive lift puts all three on y=0. They all cross the
+  // plane for lift ∈ [0.20, 0.30], so the robust pick is the centre 0.25 (margin on both sides).
   const boxes = [box(-0.25, 0.1), box(-0.20, 0.1), box(-0.30, 0.1)];
   assert.equal(planeCoverage(boxes, 0), 0);         // as-fit: fully see-through from above
   const best = bestLift(boxes);
   assert.equal(best.count, 3);                       // all three recoverable
-  assert.equal(best.lift, 0.2);                      // smallest lift that does it (least visual float)
+  assert.equal(best.lift, 0.25);                     // centre of the [0.20,0.30] plateau, not an edge
   assert.equal(planeCoverage(boxes, best.lift), 3);  // suggestion actually delivers the count
 });
 
 test('bestLift: lift is SIGNED — a hull sitting above the plane is lowered (negative lift)', () => {
-  const boxes = [box(0.4, 0.1), box(0.5, 0.1)]; // both above y=0 → overlap at L in [-0.5,-0.4]
+  const boxes = [box(0.4, 0.1), box(0.5, 0.1)]; // both above y=0 → all-covered band is L ∈ [-0.5,-0.4]
   const best = bestLift(boxes);
   assert.equal(best.count, 2);
   assert.ok(best.lift < 0, `expected a negative (lowering) lift, got ${best.lift}`);
   assert.equal(planeCoverage(boxes, best.lift), 2);
 });
 
-test('bestLift: among lifts tying for max coverage, prefers the smallest |lift|', () => {
-  const boxes = [box(-0.05, 0.1)]; // already crosses y=0 (|−0.05| ≤ 0.1) → no displacement needed
+test('bestLift: a hull already centred on the plane needs no lift', () => {
+  const boxes = [box(0, 0.1)]; // symmetric about y=0 → plateau centre is 0
   assert.equal(bestLift(boxes).lift, 0);
 });

@@ -1690,11 +1690,16 @@ gain.) `lift` is then simply "the signed offset that anchors a model's hull onto
 (bbox centre below the deck) as easily as below, so `lift` is a signed group-local Y offset (positive
 raises, negative lowers). To stop a freshly-fit model from silently shipping see-through from above, the
 `assets:hitboxes` generator prints a **bullet-plane coverage** report — how many hitboxes the plane crosses
-at the current `lift`, and the lift that maximises it (smallest |offset| among the ties) — and flags any
-ship that could seat ≥2 more boxes. Coverage is computed as `|c.y + lift| ≤ Σ|uᵢ.y|·hᵢ`, which is exact and
-**invariant to heading and scale** (rotation about Y preserves each axis's Y component; uniform scale
-cancels through the origin). It's a *warning, not a build failure*: over-lifting to grab one more box can
-float the model, so the maintainer sets `lift` deliberately (see the `update-ship-model` skill).
+at the current `lift`, and the lift that maximises it — and flags any ship that could seat ≥2 more boxes.
+Coverage is `|c.y + lift| ≤ Σ|uᵢ.y|·hᵢ`, which is exact and **invariant to heading and scale** (rotation
+about Y preserves each axis's Y component; uniform scale cancels through the origin). `bestLift` scans a
+**fine grid** and returns the **centre of the peak plateau**, not the plane-crossing extremum: a lift
+exactly on a box edge grazes that box on a razor line (not a real hit), so the plateau centre — where the
+plane passes *through* the seated boxes with margin on both sides — is the robust suggestion. It's a
+*warning, not a build failure*: over-shifting to grab one more box can float/sink the model, so the
+maintainer sets `lift` deliberately (see the `update-ship-model` skill). All 9 modeled ships are tuned to
+their robust max (player `0.18`; enemy_1 `0.21`, enemy_2 `0.17`, enemy_3 `0.2`, enemy_4 `-0.132` — the boss
+hull sat above the plane, so it's the one *lowered*).
 
 ---
 

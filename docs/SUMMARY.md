@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-05 (**Fixed bullet plane + model `lift` — top-down aim fix** — formalized the single combat plane as `state.js` `BULLET_PLANE_Y` (0.6) that every ship group sits on and all bullets fly in (spawn/recenter/ring-FX reference it, no bare `0.6`); new per-model signed `model.lift` moves a ship's visual model *and* its hitboxes together so an off-plane hull seats onto it (enemy_3 `0.2`, player `0.18`); `assets:hitboxes` now reports bullet-plane coverage + a suggested lift per ship (enemy_1/2/4 flagged, not yet tuned). Prior: **Asset cleanup** — deleted 28 stale/unused S3 builds (`ships-combat/` 16, `ships-hangar/` 12) + 19 stale local pulled files; `git rm`'d 16 unreferenced legacy primitive glbs from `client/assets/`; pre-load fallback is procedural, not a binary. Prior: **Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
+**Updated:** 2026-07-05 (**Fixed bullet plane + model `lift` — top-down aim fix** — formalized the single combat plane as `state.js` `BULLET_PLANE_Y` (0.6) that every ship group sits on and all bullets fly in (spawn/recenter/ring-FX reference it, no bare `0.6`); new per-model signed `model.lift` moves a ship's visual model *and* its hitboxes together so an off-plane hull seats onto it; `assets:hitboxes` reports bullet-plane coverage + a robust (plateau-centre) suggested lift per ship. **All 9 modeled ships tuned to max coverage** (player `0.18`, enemy_1 `0.21`, enemy_2 `0.17`, enemy_3 `0.2`, enemy_4 `-0.132` — boss lowered). Prior: **Asset cleanup** — deleted 28 stale/unused S3 builds (`ships-combat/` 16, `ships-hangar/` 12) + 19 stale local pulled files; `git rm`'d 16 unreferenced legacy primitive glbs from `client/assets/`; pre-load fallback is procedural, not a binary. Prior: **Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
 (id 11): an invisible homing leader defines the path while three visible cyan warheads spiral around it,
 each a real rocket (own power 40 / HP 10, independent detonation + shoot-down; 3× on a full hit). The
 standard rocket smoke trail changed from an expanding sphere cone to a thin, fixed-size fading haze line
@@ -17,9 +17,10 @@ wireframe overlay. Bullets use a **swept** segment test (no tunneling through th
 miss in the empty gap beyond a thin wing. **Known accepted limitation:** off-y=0 model elements (low wings /
 drooped noses) aren't hit by centre-aimed shots — a model-choice factor; global fix scheduled in ROADMAP.
 **Per-model workaround:** a `model.lift` (signed group-local Y, pre-scale) moves the visual model *and* its
-hitboxes together so a hull that sits off the fixed bullet plane (`BULLET_PLANE_Y`) seats onto it (enemy_3
-`lift: 0.2`, player `lift: 0.18`; positive raises, negative lowers). The `assets:hitboxes` run reports
-bullet-plane coverage + a suggested lift per ship so this isn't missed. Supersedes the same-branch
+hitboxes together so a hull that sits off the fixed bullet plane (`BULLET_PLANE_Y`) seats onto it (positive
+raises, negative lowers; all 9 modeled ships tuned — see the model-presentation section). The
+`assets:hitboxes` run reports bullet-plane coverage + a suggested lift per ship so this isn't missed.
+Supersedes the same-branch
 multi-sphere iteration.)
 (**Enemy HP bar floats above the model on screen** — anchored along the camera's screen-up axis, not world
 +Y (which points nearly *at* the near-top-down camera), so it sits clearly above the ship on the 2D screen.)
@@ -324,10 +325,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   centre sits off its hull leaves the nose/deck off that plane, so centre-aimed shots pass over/under it. We
   fix it by moving the MODEL, never the bullets: `shipModelCfg` adds `lift` to `pivot.position.y` (visual)
   **and** to every hitbox `c.y` (and grows `broadR` by `|lift|`), keeping model + hitboxes in lockstep as the
-  hull seats onto the plane. `lift` is signed (positive raises, negative lowers). In use: enemy_3
-  mini-boss/`advanced medium pirate` `lift: 0.2`, player `lift: 0.18` (default `0` = no lift). The
-  `assets:hitboxes` run prints per-ship bullet-plane coverage + a suggested lift so an off-plane hull is
-  caught at model-prep time (enemy_1/2/4 are currently flagged — not yet tuned).
+  hull seats onto the plane. `lift` is signed (positive raises, negative lowers). **All 9 modeled ships are
+  tuned to their robust max plane coverage** (default `0` = no lift): player `0.18`, enemy_1
+  (`Basic pirate ship`/`pirate gunner`) `0.21`, enemy_2 (`basic`/`advanced rocket pirate`) `0.17`, enemy_3
+  (mini-boss/`advanced medium pirate`) `0.2`, enemy_4 (`first`/`second pirate boss`) **`-0.132`** (the boss
+  bbox centre sat *below* the deck, so it's lowered). The `assets:hitboxes` run prints per-ship bullet-plane
+  coverage + a suggested lift (`bestLift` scans a fine grid and returns the plateau *centre*, so the plane
+  passes *through* the seated boxes, not tangent) so any future off-plane hull is caught at model-prep time.
   **`model.hitBoxes` + `model.broadR` — the auto-fit collision hitbox.** Instead of a single fat sphere,
   each real-model ship carries **one oriented bounding box per near-convex part** (V-HACD convex
   decomposition → PCA box per hull, **~48 boxes**) fitted to its actual hull by the `assets:hitboxes`
