@@ -35,13 +35,15 @@
 </div>
 <div id="welcome">
   <div id="lang-switch"></div>
-  <h1 data-i18n="ui.welcome.greeting">Welcome, Sentinel</h1>
-  <p class="intro" data-i18n="ui.welcome.intro">Pirates are raiding our home system — we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't let them pin you down.</p>
-  <div class="pick" data-i18n="ui.welcome.pick">Pick your ship</div>
-  <div id="ship-choices"></div>
-  <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
-  <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
-     target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
+  <div id="welcome-scroll">
+    <h1 data-i18n="ui.welcome.greeting">Welcome, Sentinel</h1>
+    <p class="intro" data-i18n="ui.welcome.intro">Pirates are raiding our home system — we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't let them pin you down.</p>
+  </div>
+  <div id="welcome-footer">
+    <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
+    <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
+       target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
+  </div>
 </div>
 <!-- Main Window (was the "Hangar"): top bar lives in fixed elements (gear/account-bar/wordmark/#mw-ships);
      this grid is left menu | work zone | ship-model preview. See docs/plans/main-window-redesign.md. -->

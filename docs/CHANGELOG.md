@@ -5,6 +5,13 @@
 
 ## 2026-07-05
 
+- **[2026-07-05-2101-welcome-pin-takeoff] Welcome screen: dropped the L1 ship picker, pinned Take off
+  structurally.** The Level-1 welcome is now a fixed grid (scrollable greeting/intro over a pinned footer)
+  so the Take off button is on-screen regardless of content height — replacing a centered-flex column whose
+  `justify-content:center` + overflow clipped the unreachable *top* of the intro on short/wide viewports.
+  The decorative single-ship picker (`.pick` + `#ship-choices` cards) was removed (L1 owns exactly one
+  ship). Staged L1 reveal simplified to intro-types → Take off. Scenario 18 gains a 900×360 structural-pin
+  regression guard (scroll region overflows + footer flush to the bottom).
 - **[2026-07-05-1844-touch-hud-log-item-colors] HUD overhaul + item rarity/color + fading event log.**
   Reworked several in-combat HUD surfaces and added an item rarity data model. **HUD:** the credits
   readout is now a single line `credits {total}/{earned} earned` (total owned / earned this run) and the

@@ -1,7 +1,7 @@
 // Pure presentation helpers: HTML-escaping, color formatting, and i18n-aware
 // price/slot labels. No shared game state — they take their inputs and return
-// strings/numbers. (CATALOG-dependent helpers like mountSummary/shipHullHp live
-// closer to the shop/welcome code, not here.)
+// strings/numbers. (CATALOG-dependent helpers, e.g. ship stat/mount summaries,
+// live closer to the shop code, not here.)
 import { t } from './i18n.js';
 
 // Escape user/DB-sourced text before interpolating into innerHTML.

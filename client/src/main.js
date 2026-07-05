@@ -558,7 +558,7 @@ addEventListener('orientationchange', applyOrientation);
 // buildPlayerFor (rebuild the player ship + swap it into the scene) moved to src/ship-build.js;
 // imported at the top. It reads/writes G.activeShip + G.currentShipName on the shared bag.
 // ---------- Welcome screen + i18n UI glue moved to src/welcome.js ----------
-// showWelcome/renderShipCards/take-off + applyTranslations/the EN-RU lang switch + requestFullscreen
+// showWelcome/take-off + applyTranslations/the EN-RU lang switch + requestFullscreen
 // are imported at the top. The audio-settings modal is src/settings.js.
 
 // ---------- Account / authentication moved to src/account.js ----------
@@ -628,7 +628,7 @@ async function bootstrap() {
     camera.lookAt(G.player.mesh.position);
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
     // Homepage reflects the current level: if it has a briefing (level 2+), land on the Hangar showing
-    // it; otherwise (level 1 / new player) show the welcome screen with the ship picker + intro.
+    // it; otherwise (level 1 / new player) show the welcome screen (greeting + intro).
     if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
     else showWelcome(playerShips);
     animate(); // render loop (idle until Take off)
