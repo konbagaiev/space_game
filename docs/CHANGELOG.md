@@ -5,6 +5,10 @@
 
 ## 2026-07-05
 
+- **Pirate rocket slower + weaker.** The enemy **Rocket pirate** (weapon id 4) had its launch speed cut
+  `12 → 6` and damage `25 → 20`, so pirate rockets are easier to read/dodge and hit softer. Other stats
+  (accel 9, turnRate 1.0, maxRange 120, health 20) unchanged. Seeded via the idempotent catalog upsert on
+  server startup (`server/src/catalog_seed.js`, weapons keyed by id) — no migration; live on vega.
 - **Base station moved farther off the arena center.** The return-to-base station set-piece was pushed
   from `(-20,-42,-20)` to `(-60,-42,-60)` (screen top-left, same diagonal) in `catalog_seed.js` MAPS
   `home-system`, so the ship — which spawns and fights near the origin — is no longer framed against the
