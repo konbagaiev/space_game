@@ -167,5 +167,16 @@
   "ui.settings.reset.confirm.title": "Сбросить прогресс?",
   "ui.settings.reset.confirm.body": "Это сотрёт уровень, кредиты, корабли и улучшения и вернёт вас на уровень 1. Аккаунт и вход сохранятся. Отменить нельзя.",
   "ui.settings.reset.confirm.ok": "Сбросить",
-  "ui.settings.reset.cancel": "Отмена"
+  "ui.settings.reset.cancel": "Отмена",
+
+  "ui.credits.open": "Титры",
+  "ui.credits.title": "Титры и авторы",
+  "ui.credits.intro": "Vega Sentinels использует сторонние ассеты под открытыми лицензиями. Спасибо их авторам.",
+  "ui.credits.modified_note": "Все 3D-модели изменены — упрощены, перекрашены и/или с уменьшенными текстурами — как разрешено лицензией CC BY 4.0.",
+  "ui.credits.models": "3D-модели",
+  "ui.credits.sounds": "Музыка и звук",
+  "ui.credits.by": "автор: {author}",
+  "ui.credits.modified": "Изменено",
+  "ui.credits.source": "Источник",
+  "ui.credits.close": "Закрыть"
 }

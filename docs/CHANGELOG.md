@@ -5,6 +5,17 @@
 
 ## 2026-07-05
 
+- **[2026-07-05-1340-credits-screen] In-game Credits screen (CC-BY compliance).** Added a player-facing
+  **Credits & attributions** panel, opened from the Settings gear (`#credits-open` → scrollable
+  `#credits-overlay`, `client/src/credits.js`): 3D models get the full CC-BY 4.0 credit (work title,
+  `by <author>`, Source link, CC BY 4.0 license link, "Modified" chip + a blanket "all models are modified"
+  note); music/sound get a CC0/Pixabay courtesy list. Content is **generated at build time** from
+  `client/assets/CREDITS.md` (single source of truth) via new **`npm run credits:build`**
+  (`scripts/credits-build.mjs`) → committed `client/src/credits-data.js`; a drift unit test
+  (`client/src/credits-data.test.js`, mirroring `assets:check`) fails CI if the module is stale, and
+  `build:itch` regenerates it into the staged export. Chrome labels are i18n (`ui.credits.*`, EN+RU);
+  attribution content stays literal. Satisfies the CC-BY 4.0 obligation to show attributions to players on
+  **both** vega.tenony.com and itch.io. See DECISIONS §48.
 - **Tuned `model.lift` on every remaining ship for consistency (enemy_1/2/4).** The coverage report flagged
   the other enemy models as partly see-through from above too, so all 9 modeled ships now sit at their
   robust max bullet-plane coverage: enemy_1 (`Basic pirate ship`/`pirate gunner`) `lift: 0.21` (30→40 of

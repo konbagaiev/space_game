@@ -162,6 +162,7 @@
       </div>
       <div class="set-note" data-i18n="ui.settings.reset.note">Wipes your level, credits, ships and upgrades. Your account and login stay.</div>
     </div>
+    <button id="credits-open" class="ghost" data-i18n="ui.credits.open">Credits</button>
     <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
   </div>
   <!-- confirm step shown after the slide is completed (sits above the settings box) -->
@@ -174,6 +175,15 @@
         <button id="reset-do" class="danger-btn" data-i18n="ui.settings.reset.confirm.ok">Confirm reset</button>
       </div>
     </div>
+  </div>
+</div>
+<div id="credits-overlay">
+  <div class="credits-box">
+    <h1 data-i18n="ui.credits.title">Credits &amp; attributions</h1>
+    <p class="credits-intro" data-i18n="ui.credits.intro">Vega Sentinels uses third-party assets under open licenses. Thank you to their authors.</p>
+    <div class="credits-note" data-i18n="ui.credits.modified_note">All 3D models are modified — decimated, recolored and/or texture-downscaled — as permitted under CC BY 4.0.</div>
+    <div id="credits-list"></div>
+    <button id="credits-close" class="ghost" data-i18n="ui.credits.close">Close</button>
   </div>
 </div>
 <div id="markers"></div>

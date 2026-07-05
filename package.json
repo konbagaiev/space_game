@@ -9,7 +9,8 @@
     "assets:pull": "node scripts/assets-pull.mjs",
     "assets:check": "node scripts/assets-check.mjs",
     "assets:hitboxes": "node scripts/assets-hitboxes.mjs",
-    "build:itch": "node scripts/build-itch.mjs"
+    "build:itch": "node scripts/build-itch.mjs",
+    "credits:build": "node scripts/credits-build.mjs"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4",
