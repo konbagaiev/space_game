@@ -83,13 +83,13 @@ export function spawnDrop(pos, item) {
 // ---------- Special (L1/L2 reward) drops: green model + halo, cosmetic (no stash deposit) ----------
 // A green variant of normalize(): keep the center + scale-longest-axis logic, but give the model a GREEN
 // emissive tint (no silver albedo override) so it reads as a glowing reward, not a metal crate.
-function normalizeGreen(obj) {
+function normalizeGreen(obj, targetLen = 2.5) {
   const box = new THREE.Box3().setFromObject(obj);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   obj.position.sub(center);
   const longest = Math.max(size.x, size.y, size.z) || 1;
-  obj.scale.multiplyScalar(2.5 / longest);
+  obj.scale.multiplyScalar(targetLen / longest);
   obj.traverse((o) => {
     if (o.isMesh && o.material) {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -152,8 +152,10 @@ export function spawnSpecialDrop(pos, reward) {
   wrap.position.copy(pos); wrap.position.y = 0.8;
   scene.add(wrap);
   const url = cat.modelUrlHigh;
+  // The Machine Gun (weapon 5) reads thin at the shared 2.5 longest-axis, so its drop is enlarged 1.5×.
+  const targetLen = 2.5 * (reward.kind === 'weapon' && reward.refId === 5 ? 1.5 : 1);
   if (url) gltfLoader.load(url, (g) => {
-    const model = normalizeGreen(g.scene);   // center+scale like normalize(), but GREEN emissive (no silver)
+    const model = normalizeGreen(g.scene, targetLen);   // center+scale like normalize(), but GREEN emissive (no silver)
     const box = wrap.children.find((c) => c.userData.__fallback);
     if (box) { wrap.remove(box); box.geometry.dispose(); box.material.dispose(); }
     wrap.add(model);
