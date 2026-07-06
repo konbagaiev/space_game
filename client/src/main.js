@@ -217,6 +217,13 @@ if (Device.hasTouch) {
   // also stops the compat click so a lone tap doesn't double-zoom. The `click` listeners below stay for mouse.
   document.getElementById('zoom-in').addEventListener('touchstart', e => { zoomBy(1 / ZOOM_BTN); e.preventDefault(); }, { passive: false });
   document.getElementById('zoom-out').addEventListener('touchstart', e => { zoomBy(ZOOM_BTN); e.preventDefault(); }, { passive: false });
+
+  // "Return to base" button on touch: fire on touchstart (like FIRE/rocket/zoom), NOT a synthesized
+  // `click` — a click is suppressed while a 2nd touch point is down, so a second-thumb tap during flight
+  // (steering finger on #stick-zone) would never fire (the DECISIONS §42 bug). preventDefault stops the
+  // compat click so a lone tap doesn't double-engage. audio.sfx.uiClick() gives click-sound parity — the
+  // global capture-phase click→uiClick (main.js:53) also won't fire during flight for the same reason.
+  el.returnBtn.addEventListener('touchstart', e => { engageAutopilot(); audio.sfx.uiClick(); e.preventDefault(); }, { passive: false });
 } else {
   // PC: the rocket circle is also clickable (besides the F key)
   const rocketBtn = document.getElementById('rocket-btn');
@@ -237,6 +244,11 @@ renderer.domElement.addEventListener('wheel', e => {
 if (!Device.hasTouch) {
   document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOOM_BTN));
   document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
+}
+
+// Mouse-only: on touch the "Return to base" button fires on `touchstart` (in the touch block above).
+if (!Device.hasTouch) {
+  el.returnBtn.addEventListener('click', () => { engageAutopilot(); });
 }
 
 // ---------- Click-to-fly: tap/click a loot chest OR (return-to-base) the base station ----------
