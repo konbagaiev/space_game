@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-05 (**combat pacing + engine buff** — flat player top speed 30 u/s, all engine
+**Updated:** 2026-07-06 (**staggered enemy spawns** — enemies now trickle in one at a time on a
+randomized 2–4 s cooldown (`client/src/spawn-timing.js`), first-of-phase immediate, instead of the arena
+snapping to `maxConcurrent` every frame. Prior: **combat pacing + engine buff** — flat player top speed 30 u/s, all engine
 `power` +50%, 5 s enemy hold-fire grace at run start, and each run opens gliding forward at 3 u/s. Prior:
 **base station moved off-origin** — the return-to-base station was pushed from
 `(-20,-20)` to `(-60,-60)` so the origin-spawning ship is no longer framed against its backdrop. Prior:
@@ -782,6 +784,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `chance` weights + max concurrent) is per-phase in the level; a `win` phase's `delay` defers the
   outcome so the last/boss explosion plays out — but the `win` phase no longer wins outright: it now opens the
   **return-to-base** gate (fly home to the station to complete the mission — see Level flow / Victory).
+  Enemies spawn **one at a time on a randomized 2–4 s cooldown** (`stepSpawnGate`/`nextSpawnDelay` in
+  `client/src/spawn-timing.js`, driven by `levelRunner`): the **first** enemy of each phase appears
+  immediately, then each spawn arms a fresh 2–4 s delay, so a phase fills 1→2→3… toward `maxConcurrent`
+  rather than snapping to it — and a killed enemy's replacement also waits 2–4 s (never an instant refill).
+  The `maxConcurrent` numbers above are the **cap**, not the fill rate. Totals (`enemyTotal`) are unchanged
+  by pacing.
 - **Rockets can be shot down by the machine gun:** a bullet subtracts its damage from an opposite-side
   rocket's HP (shot down at 0) — you can deflect enemy rockets, and an enemy can shoot down yours.
 - Player health is 100; HUD shows the remaining health as a percentage with one decimal
@@ -1443,7 +1451,8 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   (backend identity/banking/progression + funnel telemetry: `fetchJson`/`bankRun`/`track`/
   `currentLevelLabel`/`unlockNextLevel`/`depositLoot`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
-  `autoPauseOnBlur` + the `reset` restart), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
+  `autoPauseOnBlur` + the `reset` restart), `spawn-timing.js` (the pure enemy-spawn stagger gate
+  `stepSpawnGate`/`nextSpawnDelay`, unit-tested; driven by `levelRunner`), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
 - **Between-battles UI:** `shop.js` (hangar shop + stash + live ship-stats bar; a leaf the Main Window
   calls into), `settings.js` (audio-settings gear modal + graphics-quality picker + slide-to-confirm
   progress reset; a leaf whose only outward export is `localizeSettings`), `mainwindow.js` (the Main Window

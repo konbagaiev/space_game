@@ -3,6 +3,15 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-06
+
+- **[2026-07-06-1313-stagger-enemy-spawns] Staggered enemy spawns.** The level runner no longer tops the
+  arena up to `maxConcurrent` every frame — every enemy spawn is gated by a randomized **2–4 s** cooldown
+  (`client/src/spawn-timing.js`). The first enemy of each phase still appears immediately; each subsequent
+  spawn (and each post-kill replacement) waits 2–4 s, so phases populate gradually. All phases/levels;
+  totals (`enemyTotal`) and the win/return-to-base flow are unchanged. Updated `01-smoke`/`04-combat` visual
+  scenarios (they encoded the old instant-fill).
+
 ## 2026-07-05
 
 - **[2026-07-05-2126-player-speed-cap-engine-buff] Combat pacing + engine buff.** The player now has a
