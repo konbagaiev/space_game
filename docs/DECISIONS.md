@@ -1902,6 +1902,29 @@ and the **separate** blast-splash loop in `projectiles.js`), so a warping enemy'
 health bar ever shows on a dot. The shot-down rocket path (`detonateRocket(r,false)`) is unaffected. This
 supersedes §53's "No server/`enemyTotal` change" claim.
 
+## 55. Pipeline run history = committed JSONL journal, not an observability platform
+
+The `/feature-pipeline` orchestrator now persists every run to `docs/pipeline-runs.jsonl` (one JSONL line
+per run: per-agent tokens/tool-calls/time, loop counters, critic/reviewer findings, review-gate decision,
+live-test outcome) to enable longitudinal analysis of agent effectiveness — chiefly the **escaped-defect
+rate** (bugs the live test caught that critic *and* reviewer both passed), plus token cost trends.
+
+**Decision.** Store it as a **committed, append-only JSONL file in `docs/`**, queried with `jq`/DuckDB —
+not a hosted observability platform. Rationale: this is a single-author repo with a few pipeline runs at a
+time; a git-diffable, human-readable journal is the simplest thing that answers "how good is the critic /
+reviewer, and what did this cost" without standing up Langfuse/OTel + ClickHouse/Redis (§30). Rates are
+**derived at query time**, not stored, so metric definitions can evolve without a migration.
+
+**Alternatives considered.** *CSV* — rejected: records are nested (per-agent objects, findings arrays)
+and the schema will grow; CSV forces flattening. *Committed SQLite* — deferred: JSONL suffices until SQL
+with indexes is actually needed. *SaaS/self-hosted observability (Langfuse, Arize Phoenix, OTel collector
+→ Grafana)* — rejected **for now** as over-engineering for one author, but kept as the documented **escape
+hatch**: Claude Code emits OTel GenAI spans/metrics natively (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, per-subagent
+tokens/cost, delegation chain as one trace), so the upgrade path is real if run volume or a dashboard need
+ever justifies it. The **review gate** (Stage 4.5) shipped in the same change is the standard
+human-in-the-loop interrupt, deliberately placed on the least-reversible step (implementation + deploy) per
+"don't interrupt on reversible steps." Full spec: `docs/plans/pipeline-review-gate-and-run-log.md`.
+
 ---
 
 ## Future ideas

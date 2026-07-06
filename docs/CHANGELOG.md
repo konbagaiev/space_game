@@ -5,6 +5,18 @@
 
 ## 2026-07-06
 
+- **Feature-pipeline: pre-implementation review gate + committed run-log.** The `/feature-pipeline`
+  orchestrator gained two things. (1) A **review gate (Stage 4.5)** — after the critic approves and
+  *before* any code is written, the maintainer sees a compact digest (what the critic caught & how it was
+  resolved · files that will change · tests planned · open decisions) and chooses approve / request-changes
+  / stop. It's the one human-in-the-loop interrupt, placed on the least-reversible step. (2) A committed
+  **`docs/pipeline-runs.jsonl`** run-log (Stage 11) — one JSONL line per run with per-agent
+  tokens/tool-calls/time, the loop counters, critic/reviewer findings, review-gate decision, and live-test
+  outcome, so critic/reviewer effectiveness and token cost can be tracked over time via `jq`/DuckDB (the
+  headline metric = **escaped-defect rate**: bugs the live test caught that critic *and* reviewer both
+  passed). Storage is a git-diffable JSONL journal, not an observability platform (DECISIONS §55; OTel
+  export is the documented escape hatch). Docs: `SKILL.md`, `multi-agent-pipeline.md` (flow + "Analyzing
+  runs" section + query recipes), full spec in `docs/plans/pipeline-review-gate-and-run-log.md`.
 - **[2026-07-06-2044-return-to-base-button] Return-to-base button.** A bottom-center "Return to base" pill
   button (`#return-btn`) now appears during return-to-base (after the last enemy is destroyed), giving
   players an obvious, always-on-screen tap target to auto-fly home and dock — the base station model is

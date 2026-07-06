@@ -16,7 +16,9 @@ Full rationale and rules: `docs/plans/multi-agent-pipeline.md`. Follow `CLAUDE.m
 (**keep it simple — don't over-engineer**). Consider using `TaskCreate` to track the stages below.
 
 Track these counters across the run for the retro: `plannerRevisions`, `scopeGrewInDiscovery` (bool),
-`criticRounds`, `reviewRounds`.
+`criticRounds`, `reviewRounds`. These counters, plus per-agent usage (`subagent_tokens` / `tool_uses` /
+`duration_ms`) summed from each `task-notification`, are persisted to `docs/pipeline-runs.jsonl` at
+Stage 11 — so build the run record in memory as you go.
 
 ---
 
@@ -55,6 +57,37 @@ Spawn `plan-critic` with the feature description, the plan path, and the worktre
   `criticRounds` and `plannerRevisions`.
 - If `criticRounds` reaches **5** without APPROVE → **STOP. Escalate** to the maintainer: summarize the
   critic's outstanding blockers + the planner's last response, and ask how to proceed. Do not implement.
+
+## Stage 4.5 — Review gate (human checkpoint before implementation)
+
+The critic approved the plan; now the **maintainer** approves it before any code is written. This is the
+one interrupt on the expensive, least-reversible step (implementation + deploy) — keep it, but make it
+fast to clear.
+
+Read the approved plan file (`docs/plans/<id>.md` in the worktree) and assemble a **compact digest** — do
+NOT paste the whole plan. It has exactly four parts:
+
+1. **What the critic caught & how it was resolved** — one bullet per blocking issue raised across the
+   critic rounds (empty if the critic approved on round 1 — say "critic approved first pass, no blocking
+   issues").
+2. **Files that will change** — the file list from the plan's implementation steps (paths only).
+3. **Tests planned** — the plan's testing section: new test files/cases, or "existing suite only (no new
+   tests)" with the reason the plan gives.
+4. **Open decisions** — any decisions the plan recorded (with the chosen answer), so the maintainer can
+   veto a choice before it is built.
+
+Then ask via `AskUserQuestion` (header "Review gate"): **Approve the plan for implementation?**
+- **Approve** → proceed to Stage 5.
+- **Request changes** (maintainer types what to change) → `SendMessage` the notes to the planner
+  (**REVISE** mode); it edits the plan; then continue the **same** critic (`SendMessage`) to re-verify
+  the edited plan is still sound; then **re-show this gate**. Increment `plannerRevisions` (and
+  `criticRounds` for the re-verify). Record the maintainer's edit request in the run-log `review_gate.edits`.
+- **Stop** → do not implement. Ask whether to **park** (leave worktree + branch) or **abandon**
+  (`git worktree remove --force` + `git branch -D`). Persist the run record (Stage 11) with
+  `outcome: "parked"`/`"abandoned"` and `review_gate.decision: "stop"`, then end the run.
+
+Keep the digest tight — the goal is a 20-second read that lets the maintainer catch a wrong direction
+*before* implementation, not a re-review of the whole plan.
 
 ## Stage 5 — Implement
 
@@ -131,6 +164,31 @@ must exercise the deployed/built result. Do this before collecting any agent fee
   always check SUMMARY's data-model section"; or a live-test miss the automated tests couldn't catch).
   Also write a short memory `feedback` note. Keep lessons concrete and few — grow rubrics from real misses,
   not speculation (DECISIONS §30).
+
+## Stage 11 — Persist run record (always, at the terminal point)
+
+Whatever way the run ended (deployed, parked, abandoned, or escalated), append **one** JSONL line to
+`docs/pipeline-runs.jsonl` in the **main checkout** (not the worktree — the worktree may already be
+removed). Build the record in memory across the run and write it once here. Schema + a worked example live
+in `docs/plans/pipeline-review-gate-and-run-log.md`; the fields are: `id`, `slug`, `date`, `feature`,
+`outcome`, `counters{plannerRevisions,criticRounds,reviewRounds,scopeGrewInDiscovery}`,
+`agents{planner,critic,implementer,reviewer}` (each `{tokens,tool_uses,duration_ms}` **summed across all
+that agent's notifications**), `critic_findings[]`, `reviewer_findings[]`, `planned_tests[]`,
+`review_gate{decision,edits}`, `live_test{channel,result,escaped_defects}`, `flags[]`.
+
+- Append without touching prior lines and verify it parses:
+  `printf '%s\n' "$RECORD_JSON" >> docs/pipeline-runs.jsonl && tail -1 docs/pipeline-runs.jsonl | jq .`
+  (the record must be valid single-line JSON).
+- **Commit policy:** on a **deployed** run, append + `git add docs/pipeline-runs.jsonl && git commit -m
+  "chore(pipeline): log run <id>"` **after** the feature merge/push, so a failed run never dirties `main`.
+  If the Stage 8 working-tree guard stashed unrelated work, append the line **after** `git stash pop` so
+  it isn't stashed away. On a **parked/abandoned/escalated** run, still append + commit the line (it's
+  data about a real run) and tell the maintainer.
+- If a run dies mid-flight (session lost), the record is simply not written — acceptable (§30); no
+  partial-write or locking machinery.
+
+For analyzing the accumulated log (critic/reviewer effectiveness, cost trends), see the "Analyzing runs"
+section in `docs/plans/multi-agent-pipeline.md`.
 
 ---
 
