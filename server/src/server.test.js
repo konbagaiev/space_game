@@ -15,6 +15,7 @@ const { createApp } = await import('./server.js');
 const { outbox } = await import('./ses.js');
 const { setResetToken, consumeResetToken } = await import('./datastore.js');
 const { hashToken } = await import('./auth.js');
+const { deviceLabel } = await import('./admin.js');
 const app = await createApp();
 // The same suite runs against either backend (the backend is chosen by DATABASE_URL in datastore.js).
 // SQLite uses a throwaway temp file (fresh every run); Postgres is a persistent server, so wipe the
@@ -1001,6 +1002,51 @@ test('referrer: auto-register (active-ship) creates the player with no referrer'
   const html = await (await get('/admin', adminAuth)).text();
   // the row exists (id shown, truncated to 8 chars) but carries no referrer text
   assert.ok(html.includes('notaref'), 'the auto-registered player shows up');
+});
+
+// ---------- Admin "device" column (docs/plans/2026-07-06-2154-admin-device-column.md) ----------
+
+const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
+
+test('deviceLabel: parse ladder (browser · model → OS → raw UA → blank), never throws', () => {
+  // Android Chrome + a known device code → marketing name
+  assert.equal(deviceLabel(ANDROID_UA, 'SM-A037F'), 'Chrome · Galaxy A03s');
+  // Android Chrome + an unknown code → raw-code fallback
+  assert.equal(deviceLabel(ANDROID_UA, 'SM-ZZZZ'), 'Chrome · SM-ZZZZ');
+  // Android Chrome + no model hint → OS from the UA
+  assert.equal(deviceLabel(ANDROID_UA, null), 'Chrome · Android 10');
+  // Desktop Chrome/Windows (no model)
+  assert.equal(deviceLabel(DESKTOP_UA, null), 'Chrome · Windows');
+  // iPhone Safari with an OS version
+  assert.equal(deviceLabel(IPHONE_UA, null), 'Safari · iOS 17.4');
+  // Empty/junk → never throws, returns a string
+  assert.equal(deviceLabel('', null), '');
+  assert.equal(deviceLabel('!!!garbage!!!', null), '!!!garbage!!!');
+});
+
+test('device: captured at boot register + rendered; latest-wins overwrites the UA', async () => {
+  // 1) first boot: Android + model hint (quoted, as browsers send it) → best-case label
+  await post('/api/players/register', { playerId: 'devx' }, { 'user-agent': ANDROID_UA, 'sec-ch-ua-model': '"SM-A037F"' });
+  let html = await (await get('/admin', adminAuth)).text();
+  assert.ok(html.includes('Chrome · Galaxy A03s'), 'renders the best-case browser · model label');
+  // 2) latest-wins: same player boots on desktop (no model hint) → user_agent overwritten while
+  // device_model is preserved by COALESCE. Prove the UA was overwritten via the cell title= (which
+  // carries the raw UA). The label still reads the preserved model — that's the documented behavior.
+  await post('/api/players/register', { playerId: 'devx' }, { 'user-agent': DESKTOP_UA });
+  html = await (await get('/admin', adminAuth)).text();
+  assert.ok(html.includes(DESKTOP_UA), 'user_agent overwritten latest-wins (raw UA in the cell title)');
+});
+
+test('device: anonymous auto-register (no device headers) → empty device cell, no crash', async () => {
+  await getJson('/api/players/notdev/active-ship'); // auto-registers with no device info
+  const r = await get('/admin', adminAuth);
+  assert.equal(r.status, 200, 'admin renders fine with a null-UA player');
+  const html = await r.text();
+  const row = html.split('<tr>').find((rr) => rr.includes('notdev'));
+  assert.ok(row, 'the auto-registered player shows up');
+  assert.ok(row.includes('class="device" title=""'), 'its device cell is empty (null UA)');
 });
 
 test('admin: aggregates sum kills/time/earned across a player\'s games', async () => {

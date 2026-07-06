@@ -3,7 +3,12 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-06 (**Return-to-base button** — a bottom-center "Return to base" pill button
+**Updated:** 2026-07-06 (**Admin "device" column** — `GET /admin` now shows a best-effort
+`Browser · Device/OS` label per player (`Chrome · Galaxy A03s` → `Chrome · Android 10` → raw UA → blank);
+`players` gained nullable `user_agent` + `device_model` columns (migration 021 / PG bootstrap) captured at
+the boot register call latest-wins, via an `Accept-CH: Sec-CH-UA-Model` response header + client hint;
+parsing + a curated code→name lookup live in `server/src/admin.js` (`deviceLabel`) — see the Admin
+dashboard section. Prior: **Return-to-base button** — a bottom-center "Return to base" pill button
 (`#return-btn`, i18n `ui.return.button`) now appears during return-to-base as an explicit tap target that
 auto-flies the ship home (same as clicking the station); shown only while return-to-base is available and the
 ship is under player control, hidden once the autopilot engages; touch fires on `touchstart` / mouse on
@@ -1188,6 +1193,20 @@ first translation). See DECISIONS §10.
   **itch.io players are tagged** (`{"source":"itch"}`) even though `document.referrer` is blank inside
   itch's sandboxed CDN iframe. Organic web players stay untagged (`BUILD_SOURCE==='web'`). Requires a
   fresh itch build to be published for the tag to take effect on itch.
+- **Device capture (`players.user_agent` + `players.device_model`, migration 021 / Postgres bootstrap):**
+  two nullable `TEXT` columns written **latest-wins** at the boot register call — unlike `referrer` (which
+  is write-once), each `registerPlayer(id, referrer, device)` overwrites them with any **non-null** value it
+  carries via `COALESCE(?, col)` (a call that omits the info never wipes a good prior value). `user_agent`
+  is the raw `User-Agent` (capped 512 chars); `device_model` is the raw `Sec-CH-UA-Model` **client-hint
+  device code** (e.g. `SM-A037F`, capped 128 chars) — the server opts in by sending `Accept-CH:
+  Sec-CH-UA-Model, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version` on **every** response, so Chromium
+  browsers attach the hint on subsequent **same-origin** requests (the register route strips the RFC-8941
+  quotes). Best-effort: non-Chromium browsers and the cross-origin itch embed send no model hint; existing
+  prod rows stay `NULL` until the player next boots (no backfill). No client change — the browser sends the
+  headers automatically. All other auto-register call sites pass no device (`COALESCE` preserves the prior
+  value). `resetPlayer` intentionally leaves `user_agent`/`device_model` in place (device metadata, not
+  progress; overwritten latest-wins on the next boot). Parsed into a `Browser · Device/OS` label at render
+  time in `server/src/admin.js` (`deviceLabel` + the curated `DEVICE_NAMES` code→marketing-name map).
 - **Player progress:** `players.current_progress` stores the player's currently-available level — an
   integer **foreign key into `levels(id)`** (a real, enforced FK in Postgres; a plain integer in SQLite,
   whose `ALTER TABLE` can't add a FK column with a non-null default, and which doesn't enforce FKs
@@ -1254,10 +1273,15 @@ first translation). See DECISIONS §10.
   `POST /api/perf` (client perf samples from the `?dev` monitor — write-only diagnostic telemetry).
 - **Admin dashboard (`GET /admin`, `server/src/admin.js`):** a private, **server-rendered** HTML page
   listing every player (id short, username, email, email_verified, created_at, last_seen,
-  current_progress, credits, games_played, referrer) plus per-player aggregates from `games` (total time
-  played, total kills, total earned), one aggregated query `players LEFT JOIN games GROUP BY player`
-  ordered `last_seen DESC`, hard-capped at **1000 rows** — via the `getAdminPlayers` datastore fn (both
-  backends; Postgres coerces the BIGINT `SUM`s with `Number()` and `email_verified` with `!!Number()`).
+  current_progress, credits, games_played, referrer, **device**) plus per-player aggregates from `games`
+  (total time played, total kills, total earned), one aggregated query `players LEFT JOIN games GROUP BY
+  player` ordered `last_seen DESC`, hard-capped at **1000 rows** — via the `getAdminPlayers` datastore fn
+  (both backends; Postgres coerces the BIGINT `SUM`s with `Number()` and `email_verified` with
+  `!!Number()`). The **device** column (last column) is a best-effort `Browser · Device/OS` label composed
+  from `user_agent` + `device_model` by `deviceLabel(ua, model)` at render time: `Browser · Model` (known
+  device code → marketing name via the curated `DEVICE_NAMES` map, else the raw code) → `Browser · OS` →
+  `Browser` → `OS` → the raw UA (truncated) → blank, HTML-escaped, with the full raw UA on `title` hover
+  (`parseBrowser`/`parseOS` are hand-rolled regexes, no npm dependency — DECISIONS §55).
   Client-side click-to-sort per column (inline JS); no pagination/search/export. Protected by **HTTP
   Basic Auth** (`ADMIN_USER` / `ADMIN_PASSWORD` from the server `.env`, compared with
   `crypto.timingSafeEqual`); **404 (disabled) when either env var is unset**, so it's never wide open on
