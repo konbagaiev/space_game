@@ -5,6 +5,18 @@
 
 ## 2026-07-06
 
+- **[2026-07-06-1738-fix-spawn-count-warpin] Deterministic spawn counts + enemy warp-in.** Fixed a
+  staggered-spawns regression where the last-kill reward drops (L1 Machine Gun, L2 Repair drone) stopped
+  appearing and the destroyed X/Y counter finished short (14/16, 15/16): the precomputed `enemyTotal`
+  assumed the old instant-fill "carry". Every spawning phase now has an explicit `total` (threshold phase =
+  its kill-delta, 0 leftovers; clear-out/finale waves carry the remainder), so `enemyTotal` = sum of phase
+  totals and the counter reaches N/N and the drop fires on the true last kill. Totals preserved except L1
+  (16→14). Enemies now appear immediately and materialize over their 2–4 s stagger interval — invulnerable,
+  non-firing, and not homing-targetable until fully formed (player warp-back stays 1 s). New pure
+  `client/src/level-sim.js` + test proves counter=enemyTotal and the drop fires on the last kill; server
+  `enemy_total` simplified to sum-of-totals. New visual scenario `20-warp-blast-immunity` proves a rocket
+  blast spares a co-located warping enemy. Catalog reseeds on server restart (prod on deploy).
+
 - **[2026-07-06-1313-stagger-enemy-spawns] Staggered enemy spawns.** The level runner no longer tops the
   arena up to `maxConcurrent` every frame — every enemy spawn is gated by a randomized **2–4 s** cooldown
   (`client/src/spawn-timing.js`). The first enemy of each phase still appears immediately; each subsequent

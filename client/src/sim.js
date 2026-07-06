@@ -14,6 +14,7 @@ import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
+import { isLastKillDrop } from './level-sim.js';
 import { pointHitsShip, segmentHitsShip } from './collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock } from './autopilot-config.js';
@@ -168,7 +169,9 @@ export const levelRunner = {
       this.spawnCooldown = gate.cooldown;
       if (gate.spawn) {
         const def = CATALOG.shipByName.get(this.pickShip(ph.spawn.pool));
-        if (def) { spawnEnemyShip(def); this.spawnedThisPhase++; }
+        // The enemy materializes over its armed stagger delay: "the delay IS the arrival animation"
+        // (DECISIONS §54). spawnEnemyShip already set e.warping = true; override the 1 s default here.
+        if (def) { const e = spawnEnemyShip(def); e.spawnDur = gate.cooldown; this.spawnedThisPhase++; }
       }
     }
     // advance to the next phase when this one's condition is met
@@ -450,12 +453,15 @@ export function update(dt) {
 
   // --- enemy AI ---
   for (const e of enemies) {
-    // spawn animation: grow from a dot to full size over SPAWN_GROW_TIME (ease-out)
-    if (e.spawnAge < SPAWN_GROW_TIME) {
-      e.spawnAge = Math.min(SPAWN_GROW_TIME, e.spawnAge + dt);
-      const t = e.spawnAge / SPAWN_GROW_TIME;
+    // spawn animation: grow from a dot to full size over the enemy's warp duration (ease-out). While
+    // warping the enemy is invulnerable + can't fire + isn't homing-targetable (guards below); the
+    // duration is its stagger interval so "the delay IS the arrival animation" (DECISIONS §54).
+    if (e.spawnAge < e.spawnDur) {
+      e.spawnAge = Math.min(e.spawnDur, e.spawnAge + dt);
+      const t = e.spawnAge / e.spawnDur;
       const k = 1 - Math.pow(1 - t, 3); // ease-out cubic
       e.mesh.scale.copy(e.spawnScale).multiplyScalar(Math.max(0.001, k));
+      if (e.spawnAge >= e.spawnDur) e.warping = false; // fully formed: now a normal combatant
     }
 
     const toPlayer = G.player.mesh.position.clone().sub(e.mesh.position);
@@ -483,7 +489,7 @@ export function update(dt) {
 
     // fire each group whose AI rule (range + aim tolerance) is satisfied — and only after the opening grace
     updateGroups(e, ef, false, dt,
-      (g) => G.combatElapsed >= ENEMY_FIRE_GRACE && g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
+      (g) => !e.warping && G.combatElapsed >= ENEMY_FIRE_GRACE && g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
   }
 
   // --- projectiles ---
@@ -498,6 +504,7 @@ export function update(dt) {
     let hit = false;
     if (b.fromPlayer) {
       for (const e of enemies) {
+        if (e.warping) continue; // invulnerable while forming — bullets pass through
         if (segmentHitsShip(e, _bulletP0, b.mesh.position)) {
           e.hp -= b.damage; hit = true; audio.sfx.hit(); break;
         }
@@ -592,6 +599,7 @@ export function update(dt) {
     let det = false;
     if (r.fromPlayer) {
       for (const e of enemies) {
+        if (e.warping) continue; // no detonation on a forming enemy
         if (pointHitsShip(e, r.obj.position, r.detonateR)) { det = true; break; }
       }
     } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.detonateR)) {
@@ -716,7 +724,7 @@ export function update(dt) {
       // own it. Otherwise fall back to the usual 20% metal-box loot roll (one of the enemy's non-hull parts /
       // mounted weapons the grab can pull in — deposited on victory; hulls never drop).
       const lkd = levelRunner.level && levelRunner.level.lastKillDrop;
-      if (lkd && G.kills === G.enemyTotal && !ownsReward(lkd)) {
+      if (lkd && isLastKillDrop({ kills: G.kills, enemyTotal: G.enemyTotal }) && !ownsReward(lkd)) {
         spawnSpecialDrop(e.mesh.position, lkd);
       } else if (Math.random() < DROP_CHANCE) {
         const loot = pickLoot(e); if (loot) spawnDrop(e.mesh.position, loot);

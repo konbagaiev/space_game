@@ -15,14 +15,17 @@ const GUNNER = 'pirate gunner', ROCKETEER = 'basic rocket pirate', HEAVY = 'pira
 function sideMissionPhases() {
   return [
     { name: 'wave-1', // 40% gunner / 40% rocketeer / 20% heavy until 7 kills
-      spawn: { maxConcurrent: 4, pool: [
+      spawn: { maxConcurrent: 4, total: 7, pool: [
         { ship: GUNNER, chance: 40 }, { ship: ROCKETEER, chance: 40 }, { ship: HEAVY, chance: 20 }] },
       advanceWhen: { kills: 7 } },
     { name: 'wave-2', // 35 / 35 / 30 until 14 cumulative kills ("another 7")
-      spawn: { maxConcurrent: 4, pool: [
+      spawn: { maxConcurrent: 4, total: 7, pool: [
         { ship: GUNNER, chance: 35 }, { ship: ROCKETEER, chance: 35 }, { ship: HEAVY, chance: 30 }] },
       advanceWhen: { kills: 14 } },
-    { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
+    { name: 'clear-out', // deterministic final wave before the bosses (carries the old "carry" count)
+      spawn: { maxConcurrent: 4, total: 4, pool: [
+        { ship: GUNNER, chance: 35 }, { ship: ROCKETEER, chance: 35 }, { ship: HEAVY, chance: 30 }] },
+      advanceWhen: { allCleared: true } },
     { name: 'bosses', // a 2-boss finale (the upgraded "first boss")
       spawn: { maxConcurrent: 4, total: 2, pool: [{ ship: BOSS, chance: 1 }] },
       advanceWhen: { allCleared: true } },

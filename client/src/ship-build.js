@@ -101,6 +101,8 @@ export function spawnEnemyShip(shipDef) {
   // "warp in": grow from a dot to full size over SPAWN_GROW_TIME (see the enemy update loop)
   e.spawnScale = e.mesh.scale.clone(); // the full target scale to grow into
   e.spawnAge = 0;
+  e.spawnDur = SPAWN_GROW_TIME; // warp-in duration; the level runner overrides this to the stagger delay
+  e.warping = true;             // invulnerable + can't fire + not homing-targetable until fully formed
   e.mesh.scale.setScalar(0.001); // start as a dot
   deriveDrive(e);
   // spawn in a ring around the MISSION ZONE center (arenaCenter), not the hero — waves originate at the
