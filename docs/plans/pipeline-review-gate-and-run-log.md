@@ -120,6 +120,7 @@ One record per pipeline run. Fields are gathered **in memory as the run progress
   "reviewer_findings": [],
   "planned_tests":     ["existing client suite only (no new test file); i18n JSON parse check — plan's rationale: DOM/CSS/i18n-only affordance"],
   "review_gate":       { "decision": "approve", "edits": [] },
+  "human_review":      { "decision": "approve", "rounds": 0 },
   "live_test":         { "channel": "maintainer-manual", "result": "pass", "escaped_defects": [] },
   "flags":             []
 }
@@ -137,6 +138,7 @@ One record per pipeline run. Fields are gathered **in memory as the run progress
 | `reviewer_findings` | one short string per CHANGES finding the reviewer raised; `[]` if PASS first pass | Stage 6 |
 | `planned_tests` | the plan's testing section (what will be added, or "existing suite only" + reason) | Stage 4.5 |
 | `review_gate` | `{decision: "approve"\|"stop", edits: [<maintainer change requests>]}` | Stage 4.5 |
+| `human_review` | `{decision: "approve"\|"request-changes", rounds: <# of human-requested fix loops>}` | Stage 6.5 |
 | `live_test` | `{channel, result: "pass"\|"fail"\|"skipped"\|"accepted-gaps", escaped_defects: [<bugs live-test caught that critic+reviewer both passed>]}` | Stage 9 |
 | `flags` | the retro flags that fired (e.g. `"planner:revised>1"`, `"critic:rounds>2"`, `"reviewer:rounds>1"`, `"escaped-defect"`) | Stage 7 + 9 |
 

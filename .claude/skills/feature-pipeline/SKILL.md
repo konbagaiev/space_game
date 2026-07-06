@@ -104,6 +104,27 @@ and reviews the diff.
   tests → continue the **same** reviewer (`SendMessage`) to re-check. Increment `reviewRounds`.
 - If `reviewRounds` reaches **3** without PASS → escalate to the maintainer with the open findings.
 
+## Stage 6.5 — Human code review (maintainer reviews the diff)
+
+The `code-reviewer` agent passed; now the **maintainer** reviews the actual diff before commit. This runs
+**every run**. It is NOT a correctness re-check (the agent + tests already did that) — its point is a final
+human sign-off and, chiefly, to **keep the maintainer's mental model of the codebase current** (where new
+code lives, what it touches, why it's placed there).
+
+- Get the diff from the worktree: `git -C <worktree> diff --stat main` (file overview) and
+  `git -C <worktree> diff main` (the hunks).
+- Present a **guided walkthrough** (the maintainer's stated goal is understanding structure, so lead with
+  architecture, not a line-by-line restatement): for **each changed file** — what changed, why, and how it
+  fits the existing code — with `file:line` refs and ties back to the plan. **Then show the diff itself**
+  (the `--stat` summary + the actual hunks; for a large diff, show `--stat` + the key hunks and point the
+  maintainer to read the rest in their editor).
+- Ask via `AskUserQuestion` (header "Code review"): **Approve the diff?**
+  - **Approve** → proceed to Stage 7 (commit).
+  - **Request changes** (maintainer says what) → `SendMessage` the notes to the implementer (**fix mode**)
+    → it fixes + re-runs tests → continue the **same** `code-reviewer` agent to re-check (increment
+    `reviewRounds`) → **re-show this walkthrough**.
+  - Record the decision + how many human rounds in the run-log `human_review`.
+
 ## Stage 7 — Commit + retro (metrics only — do NOT collect agent feedback yet)
 
 - Ensure the work is committed on the branch: `git -C <worktree> add -A && git -C <worktree> commit` with
@@ -174,7 +195,7 @@ in `docs/plans/pipeline-review-gate-and-run-log.md`; the fields are: `id`, `slug
 `outcome`, `counters{plannerRevisions,criticRounds,reviewRounds,scopeGrewInDiscovery}`,
 `agents{planner,critic,implementer,reviewer}` (each `{tokens,tool_uses,duration_ms}` **summed across all
 that agent's notifications**), `critic_findings[]`, `reviewer_findings[]`, `planned_tests[]`,
-`review_gate{decision,edits}`, `live_test{channel,result,escaped_defects}`, `flags[]`.
+`review_gate{decision,edits}`, `human_review{decision,rounds}`, `live_test{channel,result,escaped_defects}`, `flags[]`.
 
 - Append without touching prior lines and verify it parses:
   `printf '%s\n' "$RECORD_JSON" >> docs/pipeline-runs.jsonl && tail -1 docs/pipeline-runs.jsonl | jq .`

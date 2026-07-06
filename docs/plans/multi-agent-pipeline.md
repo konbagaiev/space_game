@@ -63,6 +63,7 @@ intake → worktree → planner(questions) → ASK MAINTAINER → planner(plan)
        → [critic ⇄ planner]×≤5 (target ≤2) → APPROVE
        → REVIEW GATE (maintainer approve / request-changes / stop)
        → implementer → [reviewer ⇄ implementer]×≤3 → PASS
+       → HUMAN CODE REVIEW (maintainer diff walkthrough → approve / request-changes)
        → retro (metrics) → deploy? → DEPLOY/park → LIVE TEST → satisfaction + self-improve
        → persist run record (docs/pipeline-runs.jsonl)
 ```
@@ -81,6 +82,13 @@ decisions — and chooses **approve / request-changes / stop**. This is the one 
 placed on the least-reversible step (implementation + deploy) per the "don't interrupt on reversible steps"
 rule; earlier stages (discovery questions) already have their own asks. "Request-changes" loops
 planner→critic→gate; "stop" parks or abandons the run.
+
+**Human code review (after the agent).** After the `code-reviewer` agent returns PASS, the maintainer
+reviews the actual diff before commit (Stage 6.5, every run). This is **not** a correctness re-check — the
+agent and the test suite already did that — its purpose is a final human sign-off and, chiefly, to keep the
+maintainer's mental model of the codebase current. The orchestrator gives a **guided walkthrough** (per
+changed file: what changed, why, how it fits the architecture, with `file:line` refs) **and shows the
+diff**, then asks approve / request-changes. "Request-changes" loops implementer→reviewer→walkthrough.
 
 - **Critic loop:** max 5 rounds; aim for ≤2. At 5 without APPROVE → **stop and escalate** to the
   maintainer with the outstanding blockers.

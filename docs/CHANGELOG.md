@@ -3,6 +3,18 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-07
+
+- **Feature-pipeline: human code-review step after the reviewer agent.** Added **Stage 6.5** to
+  `/feature-pipeline` — once the `code-reviewer` agent returns PASS, the maintainer reviews the diff before
+  commit, **every run**. The orchestrator gives a guided per-file walkthrough (what changed, why, how it
+  fits the architecture, with `file:line` refs) **and** shows the diff, then asks approve / request-changes;
+  "request-changes" loops implementer→reviewer→walkthrough. It's not a correctness re-check (the agent +
+  tests cover that) — the point is a final human sign-off and keeping the maintainer's mental model of the
+  codebase current. New run-log field `human_review{decision,rounds}`. Docs: `SKILL.md`,
+  `multi-agent-pipeline.md` (flow + description), run-log schema in
+  `docs/plans/pipeline-review-gate-and-run-log.md`.
+
 ## 2026-07-06
 
 - **Grab tractor = inverse-square field with emergent range** `[2026-07-06-2350-grab-inverse-square-pull]`
