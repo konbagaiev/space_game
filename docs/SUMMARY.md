@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-06 (**Admin "device" column** — `GET /admin` now shows a best-effort
+**Updated:** 2026-07-06 (**Grab inverse-square field** — the Grab (tractor) now pulls drops via an
+inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
+weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base) and pull speed rises the closer a drop
+is — see **Grab & loot drops**. Prior: **Admin "device" column** — `GET /admin` now shows a best-effort
 `Browser · Device/OS` label per player (`Chrome · Galaxy A03s` → `Chrome · Android 10` → raw UA → blank);
 `players` gained nullable `user_agent` + `device_model` columns (migration 021 / PG bootstrap) captured at
 the boot register call latest-wins, via an `Accept-CH: Sec-CH-UA-Model` response header + client hint;
@@ -332,7 +335,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   JSON): a **hull** has `{ durability (= maxHp), volume }`; an **engine** has `{ power → acceleration,
   maxSpeed, exhaust }`; a **thruster** has `{ power → maneuverability (turn rate) }`; a **repair drone**
   (4th type) has `{ repairPerTick, intervalSec, maxFraction }` → passive hull regen; a **grab** (5th type,
-  the tractor beam) has `{ strength }` → its loot pull range/speed (see **Grab & loot drops** under
+  the tractor beam) has `{ strength }` → scales its inverse-square loot-pull field (reach is emergent,
+  ≈11.2 u base / ≈15.8 u advanced; see **Grab & loot drops** under
   Gameplay). Seeded: hulls
   Basic(100hp)/Light(30hp)/Medium(150hp)/Boss(310hp); engines + thrusters Basic/Scout/Medium/Boss; one
   **Repair drone** (id 12: heal 1 HP / 1 s, capped at 80% of max HP); two **Grab** items — the **base Grab**
@@ -591,13 +595,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   kind; `pickLoot`). **Hulls NEVER drop** (progression guard — a looted 550-HP boss hull would be
   equippable and break balance). A drop is a slowly-rotating **metal-box** glb (one turn / 5 s), rendered
   from the single `DROP_MODEL_URL` (a fallback metallic box shows until the model loads). The **Grab**
-  component (if equipped) pulls drops in: **range = strength** world units; a drop must sit in range for
+  component (if equipped) pulls drops in via an **inverse-square field** (`field = strength·FIELD_K/dist²`,
+  `FIELD_K = 5`; `field()` in `drops-config.js`): a drop must sit where **field ≥ 0.4** (`FIELD_CUTOFF`) for
   **0.3 s** (`ARM_DELAY`) to arm, then the **nearest** armed drop is pulled toward the ship's live position
-  at **speed = (strength/2)·(10/itemWeight)** u/s (`pullSpeed` — light parts pull fast, heavy parts slow;
-  a zero/missing weight falls back to 10). A single **thin blue line** (pooled `THREE.Line`, `0x4db6ff`) is
-  drawn only **while actively pulling**; at most one drop is pulled at a time. Within 3 units the drop is
-  **collected** (`pendingLoot`). The base grab's short range (10) is a deliberate "vacuum assist"; the
-  Advanced grab (20) is the real tractor + the upgrade incentive. A **`MAX_DROPS = 40`** cap bounds the
+  at **speed = field·(10/itemWeight)** u/s (`pullSpeed` — faster the closer the drop is; light parts pull
+  fast, heavy parts slow; a zero/missing weight falls back to 10). Reach is **emergent + weight-independent**
+  (`range(strength) = sqrt(strength·5/0.4)`, no weight term): base strength 10 → **≈11.2 u**, Advanced
+  strength 20 → **≈15.8 u (= √2× base, not 2×)**. A single **thin blue line** (pooled `THREE.Line`,
+  `0x4db6ff`) is drawn only **while actively pulling** and **hides the instant** a drop drops below the
+  cutoff; at most one drop is pulled at a time. Within 3 units the drop is **collected** (`pendingLoot`). The
+  base grab's short reach (≈11.2) is a deliberate "vacuum assist"; the Advanced grab (≈15.8) is the real
+  tractor + the upgrade incentive. A **`MAX_DROPS = 40`** cap bounds the
   arena. Collected loot is deposited into the **Stash only on mission VICTORY** (`levelRunner.win` →
   `depositLoot` → `POST /api/players/:id/loot`); on **death** or **restart** the haul (and any un-grabbed
   drops) is **lost** — nothing about a run persists until it's won, consistent with credit banking. The
@@ -1542,7 +1550,8 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
 - **Client logic** — `client/src/*.test.js`: drive derivation (engine + mass, incl. the grab slot + the
   mass-neutral 48+2=50 baseline), balance, repair-drone
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), **loot drops**
-  (`drops.test.js`: `pullSpeed` anchor cases + weight fallback, range = strength, `pickLoot` only draws
+  (`drops.test.js`: `pullSpeed` distance-aware anchors + weight fallback, `field`/emergent-`range` cutoff
+  boundary (range(20)/range(10)=√2), `pickLoot` only draws
   engine/thruster/weapon ids — **never the hull**), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping), and
   **audio settings** (`clamp01`, `loadAudioSettings`/`saveAudioSettings` round-trip + defaults + garbage

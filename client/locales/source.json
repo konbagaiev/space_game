@@ -62,7 +62,7 @@
   "ui.shop.stat.maxspeed": { "source": "Top speed", "context": "Stat label — engine maximum speed cap. Short." },
   "ui.shop.stat.heal": { "source": "Heal", "context": "Stat label — repair-drone healing, followed by e.g. '+1/1s' (HP per interval). Short." },
   "ui.shop.stat.cap": { "source": "Cap", "context": "Stat label — repair-drone heal cap as a percentage of max HP (e.g. '80%'). Short." },
-  "ui.shop.stat.grab": { "source": "Grab", "context": "Stat label — grab (tractor) strength; = the pull range in world units (followed by e.g. '10'). Short." },
+  "ui.shop.stat.grab": { "source": "Grab", "context": "Stat label — abstract grab (tractor) strength (followed by e.g. '10'/'20'). NOT the world-unit reach: actual range is emergent from an inverse-square field. Short." },
   "ui.shop.filter.all": { "source": "All", "context": "Shop filter chip — show every item type. Short." },
   "ui.shop.filter.hull": { "source": "Hulls", "context": "Shop filter chip — show only hulls. Short." },
   "ui.shop.filter.engine": { "source": "Engines", "context": "Shop filter chip — show only engines. Short." },

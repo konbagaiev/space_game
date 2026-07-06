@@ -8,6 +8,12 @@ export const ROTATE_PERIOD  = 5.0;   // seconds per full drop revolution
 export const COLLECT_DIST   = 3.0;   // world units: within this of the ship → collected
 export const WEIGHT_FALLBACK = 10;   // defensive: used only if an item somehow has no weight
 
+// Grab (tractor) inverse-square pull field. The pull FIELD at a drop is strength·FIELD_K/dist²; the
+// beam ENGAGES a drop only where field ≥ FIELD_CUTOFF, so the reach is EMERGENT (derived from the
+// cutoff), not a stored stat — see range() below. Both are fixed this iteration.
+export const FIELD_K      = 5;    // field numerator scale
+export const FIELD_CUTOFF = 0.4;  // field threshold: below this the drop leaves the beam (line hides)
+
 // Reward (L1/L2 last-kill) special drops: the model gets a green emissive tint + an additive green halo
 // sprite, and its off-screen pointer pulses green. Cosmetic only — collecting a special drop deposits
 // nothing (the one guaranteed copy is server-installed on victory; see DECISIONS).
@@ -35,12 +41,21 @@ export function rewardOwned(activeShip, reward) {
   return false;
 }
 
-// Pure pull-speed formula (world units/sec): (strength / 2) * (10 / itemWeight). Anchor: strength 10,
-// weight 10 → 5 u/s; light parts pull faster (weight 2 → 25 u/s), heavy parts slower. A zero/missing
-// weight falls back to WEIGHT_FALLBACK so the sim never divides by zero. Kept here (import-free) so it's
-// node-testable without pulling in THREE.
-export function pullSpeed(strength, weight) {
-  return (strength / 2) * (10 / (weight || WEIGHT_FALLBACK));
+// Grab pull math (inverse-square field). All pure + import-free so drops.test.js runs under node.
+//   field(strength, dist)  = strength · FIELD_K / dist²        — pull strength at a given distance
+//   engaged                = field ≥ FIELD_CUTOFF               — below this the drop leaves the beam
+//   pullSpeed(s, w, dist)  = field · (10 / w)                  — u/s toward the ship (light parts pull faster)
+//   range(strength)        = sqrt(strength · FIELD_K / FIELD_CUTOFF)  — EMERGENT, weight-INDEPENDENT reach
+// A zero/missing weight falls back to WEIGHT_FALLBACK so the sim never divides by zero. dist is always
+// > 0 in practice (collection at COLLECT_DIST=3 fires before dist→0; drops.js caps the step at the gap).
+export function field(strength, dist) {
+  return (strength * FIELD_K) / (dist * dist);
+}
+export function pullSpeed(strength, weight, dist) {
+  return field(strength, dist) * (10 / (weight || WEIGHT_FALLBACK));
+}
+export function range(strength) {
+  return Math.sqrt((strength * FIELD_K) / FIELD_CUTOFF);
 }
 
 // Pick one looted item uniformly among the enemy's NON-HULL parts (engine, thruster) + mounted weapons.

@@ -1,7 +1,8 @@
 // Loot drops + the Grab (tractor) sim (docs/plans/2026-07-03-1412-grab-tractor-drops.md).
 // On an enemy kill the death loop rolls DROP_CHANCE; on success it spawns ONE metal-box drop carrying a
 // real looted item (a non-hull component or a mounted weapon). A drop within the player's grab RANGE is
-// pulled toward the ship (range = grab.strength; speed = (strength/2)*(10/itemWeight)), and collected
+// pulled toward the ship (the Grab's inverse-square field pulls a drop in — engaged where field ≥ cutoff,
+// so reach is emergent; pull speed rises the closer the drop is), and collected
 // drops accumulate in `pendingLoot` — deposited into the stash on mission VICTORY only (see sim.js).
 //
 // Pure math (pullSpeed, pickLoot) lives here / in drops-config.js so it's node-testable without THREE.
@@ -11,7 +12,7 @@ import { G, CATALOG } from './state.js';
 import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLoader
 import { audio } from './sound-routing.js';
 import { DROP_MODEL_URL, DROP_CHANCE, MAX_DROPS, ARM_DELAY, ROTATE_PERIOD, COLLECT_DIST, WEIGHT_FALLBACK,
-         REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pullSpeed, pickLoot, shouldDeposit, rewardOwned } from './drops-config.js';
+         REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pullSpeed, field, FIELD_CUTOFF, pickLoot, shouldDeposit, rewardOwned } from './drops-config.js';
 import { logEvent } from './eventlog.js';
 import { t } from './i18n.js';
 
@@ -217,20 +218,22 @@ export function updateDrops(dt) {
   const p = G.player, grab = p && p.grab;
   // feature inert with no grab / dead player: hide the line and stop pulling
   if (!p || !p.alive || !grab) { hideLine(); return; }
-  const range = grab.strength;                 // units
   const ppos = p.mesh.position;
-  // 2) arm timers + find the nearest ARMED in-range drop
+  // 2) arm timers + find the nearest ARMED, field-eligible drop. Eligibility is the inverse-square
+  //    field crossing FIELD_CUTOFF (weight-independent) — the reach is emergent, not a stored radius.
   let target = null, best = Infinity;
   for (const d of drops) {
     const dist = tmp.copy(d.obj.position).sub(ppos).length();
-    if (dist <= range) { d.inRange += dt; if (d.inRange >= ARM_DELAY && dist < best) { best = dist; target = d; } }
-    else d.inRange = 0;
+    if (field(grab.strength, dist) >= FIELD_CUTOFF) {
+      d.inRange += dt;
+      if (d.inRange >= ARM_DELAY && dist < best) { best = dist; target = d; }
+    } else d.inRange = 0;
   }
   if (!target) { hideLine(); return; }
-  // 3) pull the target toward the ship at the weight-scaled speed
-  const speed = pullSpeed(grab.strength, target.weight);
+  // 3) pull the target toward the ship at the distance-aware, weight-scaled speed
   tmp.copy(ppos).sub(target.obj.position); const d = tmp.length();
   if (d <= COLLECT_DIST) return collect(target);         // arrived → collect + re-target next frame
+  const speed = pullSpeed(grab.strength, target.weight, d);
   target.obj.position.addScaledVector(tmp.normalize(), Math.min(speed * dt, d));
   drawLine(ppos, target.obj.position);                   // thin blue activity indicator
 }

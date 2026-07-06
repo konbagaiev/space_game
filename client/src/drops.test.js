@@ -2,31 +2,43 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // Only the PURE pieces of the drop system are imported (drops-config.js has no THREE / engine deps, so it
 // stays node-safe). The THREE/scene behavior (meshes, the blue pull line) is covered by the headless suite.
-import { pullSpeed, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY, shouldDeposit, rewardOwned } from './drops-config.js';
+import { pullSpeed, field, range, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY, shouldDeposit, rewardOwned } from './drops-config.js';
 
-// --- pull speed: (strength / 2) * (10 / weight), in world units/sec ---
-test('pullSpeed: anchor cases (s10/w10 → 5, s10/w2 → 25)', () => {
-  assert.equal(pullSpeed(10, 10), 5);   // strength 10, weight 10 → 5 u/s
-  assert.equal(pullSpeed(10, 2), 25);   // light part pulls faster
-  assert.equal(pullSpeed(20, 10), 10);  // advanced grab (strength 20) → 2× the base at the same weight
+const approx = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) <= eps, `${a} ≈ ${b}`);
+
+// --- pull speed: strength·FIELD_K·10 / (weight·dist²), in world units/sec (distance-aware) ---
+test('pullSpeed: anchor cases (distance-aware inverse-square)', () => {
+  approx(pullSpeed(10, 10, 3), 50 / 9);    // ≈5.556 u/s at d=3
+  approx(pullSpeed(10, 10, 5), 2.0);       // slower farther out
+  assert.ok(pullSpeed(10, 10, 3) > pullSpeed(10, 10, 5)); // closer = faster
 });
 
-test('pullSpeed: heavier items pull slower; the advanced grab pulls faster than the base', () => {
-  assert.ok(pullSpeed(10, 50) < pullSpeed(10, 10)); // heavier = slower
-  assert.ok(pullSpeed(20, 10) > pullSpeed(10, 10)); // stronger grab = faster
+test('pullSpeed: lighter items pull faster; the stronger grab pulls faster at the same distance', () => {
+  assert.ok(pullSpeed(10, 2, 5) > pullSpeed(10, 50, 5));  // lighter = faster (same grab, same dist)
+  assert.ok(pullSpeed(20, 10, 5) > pullSpeed(10, 10, 5)); // stronger grab = faster
 });
 
 test('pullSpeed: a zero/undefined weight falls back to WEIGHT_FALLBACK (never divides by zero)', () => {
-  assert.equal(pullSpeed(10, 0), pullSpeed(10, WEIGHT_FALLBACK));
-  assert.equal(pullSpeed(10, undefined), pullSpeed(10, WEIGHT_FALLBACK));
-  assert.ok(Number.isFinite(pullSpeed(10, 0))); // not Infinity/NaN
+  assert.equal(pullSpeed(10, 0, 5), pullSpeed(10, WEIGHT_FALLBACK, 5));
+  assert.equal(pullSpeed(10, undefined, 5), pullSpeed(10, WEIGHT_FALLBACK, 5));
+  assert.ok(Number.isFinite(pullSpeed(10, 0, 5)));
 });
 
-// range = grab.strength (documented world-unit radius) — asserted at the formula level.
-test('range equals the grab strength (base 10, advanced 20 world units)', () => {
-  const range = (grab) => grab.strength;
-  assert.equal(range({ strength: 10 }), 10);
-  assert.equal(range({ strength: 20 }), 20);
+// --- field: inverse-square; the FIELD_CUTOFF boundary is what defines the emergent range ---
+test('field: falls off as 1/dist² and crosses FIELD_CUTOFF exactly at range()', () => {
+  approx(field(10, 5), 10 * 5 / 25);                 // = 2.0
+  assert.ok(field(10, 3) > field(10, 5));            // stronger closer in
+  const r = range(10);
+  approx(field(10, r), 0.4);                         // at the emergent edge the field == FIELD_CUTOFF
+  assert.ok(field(10, r - 0.01) > 0.4);              // just inside → engaged
+  assert.ok(field(10, r + 0.01) < 0.4);              // just outside → released
+});
+
+// --- range: EMERGENT (sqrt(strength·FIELD_K/FIELD_CUTOFF)), weight-INDEPENDENT ---
+test('range: base ≈11.18, advanced ≈15.81, advanced/base === sqrt(2)', () => {
+  approx(range(10), Math.sqrt(125));   // ≈ 11.1803
+  approx(range(20), Math.sqrt(250));   // ≈ 15.8114
+  approx(range(20) / range(10), Math.SQRT2, 1e-9); // advanced reaches √2× the base, not 2×
 });
 
 // --- pickLoot: uniform among the enemy's NON-HULL components + mounted weapons; hulls NEVER drop ---
