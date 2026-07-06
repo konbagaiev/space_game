@@ -1839,6 +1839,34 @@ content bottom, so a revert to the flex column fails loudly.
 
 ---
 
+## 53. Enemy spawns are staggered (2–4 s cooldown), first-of-phase immediate
+
+The level runner previously refilled the arena to `maxConcurrent` **every frame**: a phase's opening wave
+snapped to full instantly and a killed enemy was replaced on the very next frame. That felt cramped and
+spawn-camped — the arena was always packed and refills were invisible.
+
+**Decision.** Gate **every** enemy spawn behind a randomized **2–4 s** cooldown (`2 + Math.random()*2`) so
+enemies trickle in one at a time and a phase populates 1→2→3… toward its `maxConcurrent`. The **first** enemy
+of each phase is **immediate** (the cooldown resets to 0 on `enterPhase()`), so no phase ever shows an empty
+arena at its start — and the boss/finale (which spawns alone after its clear-out phase empties the arena)
+still appears the instant its phase begins, **with no special-case**. Each spawn arms a fresh 2–4 s delay.
+
+**Post-kill replacements are staggered too.** The cooldown only counts down while a slot is actually open
+(`alive < maxConcurrent` and budget remains); while the arena is **full the timer is frozen**, so the moment
+a kill frees a slot the remaining 2–4 s must still elapse — a kill never triggers an instant refill. This is
+deliberate (a future reader must not "fix" it back to a per-frame top-up); the unit test pins it down.
+
+**Scope/shape.** Simplest form per §30: an inline `2 + rand()*2` in one tiny pure helper
+(`client/src/spawn-timing.js` — `stepSpawnGate`/`nextSpawnDelay`), unit-tested by injecting a stub RNG. **No**
+seeded-RNG system, **no** per-phase/per-level tuning of the window. The helper is a separate leaf (not inline
+in `sim.js`) because `sim.js` imports `engine.js`, which builds a `WebGLRenderer` at import and can't load
+headless — mirroring why `server/src/enemy_total.js` exists as a testable oracle. **No server/`enemyTotal`
+change:** staggering changes *pacing*, not the total number of enemies that eventually spawn, so the
+per-level totals and the `allCleared` advance condition are unaffected (clear-out phases just take a little
+longer to fully spawn). The `win` / return-to-base flow is untouched.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

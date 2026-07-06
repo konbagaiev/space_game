@@ -13,6 +13,7 @@ import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spira
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
+import { stepSpawnGate } from './spawn-timing.js';
 import { pointHitsShip, segmentHitsShip } from './collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock } from './autopilot-config.js';
@@ -59,7 +60,7 @@ export function updateBanner() {
 // the level with a victory overlay. The boss phase pool is the boss only, after clear-out empties
 // the arena -> the boss always appears alone.
 export const levelRunner = {
-  level: null, phaseIndex: 0, killsAtPhaseStart: 0, spawnedThisPhase: 0, won: false,
+  level: null, phaseIndex: 0, killsAtPhaseStart: 0, spawnedThisPhase: 0, spawnCooldown: 0, won: false,
   winPending: 0, winText: '', returningToBase: false,
 
   start(level) {
@@ -79,7 +80,7 @@ export const levelRunner = {
   get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },
 
   enterPhase() {
-    this.killsAtPhaseStart = G.kills; this.spawnedThisPhase = 0;
+    this.killsAtPhaseStart = G.kills; this.spawnedThisPhase = 0; this.spawnCooldown = 0;
     const ph = this.phase;
     // "Final Stage" banner: fire when entering the last combat phase — the one right before the
     // `event: 'win'` phase (the boss/finale on every level). Once per run.
@@ -154,14 +155,20 @@ export const levelRunner = {
     }
     // returning to base: no more spawning; just wait for the player to fly home and dock
     if (this.returningToBase) { this.checkArrival(); return; }
-    // spawn up to maxConcurrent (respecting an optional total cap for this phase)
+    // Staggered spawn: one enemy at a time on a randomized 2–4 s cooldown (see spawn-timing.js). The
+    // first enemy of a phase is immediate (cooldown reset to 0 in enterPhase); every spawn re-arms 2–4 s.
+    // A full arena freezes the timer, so a kill's replacement still waits 2–4 s (never instant).
     if (ph.spawn) {
       const cap = ph.spawn.total;
-      while (enemies.length < ph.spawn.maxConcurrent && (cap == null || this.spawnedThisPhase < cap)) {
+      const capRemaining = cap == null ? null : cap - this.spawnedThisPhase;
+      const gate = stepSpawnGate({
+        cooldown: this.spawnCooldown, dt,
+        alive: enemies.length, maxConcurrent: ph.spawn.maxConcurrent, capRemaining,
+      });
+      this.spawnCooldown = gate.cooldown;
+      if (gate.spawn) {
         const def = CATALOG.shipByName.get(this.pickShip(ph.spawn.pool));
-        if (!def) break;
-        spawnEnemyShip(def);
-        this.spawnedThisPhase++;
+        if (def) { spawnEnemyShip(def); this.spawnedThisPhase++; }
       }
     }
     // advance to the next phase when this one's condition is met
