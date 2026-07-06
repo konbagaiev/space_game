@@ -1812,6 +1812,33 @@ breather** (a wall-clock `performance.now()` timer would). Deliberately **silent
 DECISIONS §30). The player also **opens each run gliding forward at 3 u/s** (10% of top speed) instead of
 dead-stopped; the drift is momentary by design (bleeds off via `IDLE_DRAG` if no control is held).
 
+---
+
+## 52. L1 welcome drops the ship picker (single-ship level) + pins Take off via grid
+
+At Level 1 the player owns **exactly one ship** (extra hulls are bought in the Main Window shop at L2+), so
+the welcome-screen ship picker (`.pick` label + `#ship-choices` cards) offered no real choice — it was
+decorative. Removing it loses no functionality (take-off still needs a non-null `selectedShip`, now defaulted
+directly to `playerShips[0]` in `showWelcome`) and, on its own, already relieved the *visible* symptom by
+shrinking the content.
+
+Separately, `#welcome` moved from a **centered-flex column** (`overflow-y:auto`, whose `justify-content:center`
++ overflow **clips the unreachable *top*** of the greeting/intro on short viewports — the classic
+centering-in-a-scroll-container trap, where the overflowed top can't be scrolled into reach) to a
+**`1fr/auto` CSS grid**: a scrollable greeting/intro cell over a **pinned footer** (Take off + community link).
+The scroll cell keeps the "centered when it fits, top-aligned + scrolls when it overflows" behavior via the
+flexbox auto-margin trick (`:first-child{margin-top:auto}` / `:last-child{margin-bottom:auto}`), which does
+NOT clip the top.
+
+**Why.** This makes the Take-off on-screen invariant **structural** — guaranteed by the layout, not a
+content-dependent side effect of how tall the intro happens to render — mirroring the Main Window's
+already-pinned Take off. It's a minimal robustness fix (a few lines of CSS remove a whole class of "the
+button drifted off-screen" fragility), **not** §30 over-engineering. A committed regression guard (scenario
+18 at 900×360) asserts both that the scroll region genuinely overflows and that the footer is flush to the
+content bottom, so a revert to the flex column fails loudly.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

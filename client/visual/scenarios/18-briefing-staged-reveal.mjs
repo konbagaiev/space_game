@@ -1,5 +1,5 @@
 // Staged briefing reveal (docs/plans/2026-07-05-1641-briefing-staged-reveal.md): on L1 the welcome
-// briefing types out then reveals the ship picker + Take-off; on L2/L3 the Main Window campaign briefing
+// briefing types out then reveals Take-off (no ship picker); on L2/L3 the Main Window campaign briefing
 // types out then reveals the ship-preview window + granted-item showcase + Take-off. L4+ stays instant.
 // The typewriter runs ~5s, so each screen is SKIPPED (tap the briefing text) for deterministic assertions.
 export const name = '18-briefing-staged-reveal';
@@ -25,20 +25,45 @@ export default async function ({ page, assert, shot }) {
   };
 
   await landWelcome();
-  // 1. mid-type: picker + Take-off hidden, intro not yet full.
-  assert.equal(await css('#ship-choices', 'visibility'), 'hidden', 'L1: ship picker hidden while intro types');
+  // 1. mid-type: Take-off hidden, intro not yet full.
   assert.equal(await css('#takeoff', 'visibility'), 'hidden', 'L1: Take-off hidden while intro types');
   const introMid = await textLen('#welcome .intro');
   // 2. the .intro font bump (26px desktop).
   assert.equal(await css('#welcome .intro', 'fontSize'), '26px', 'L1: welcome .intro is 26px');
-  // 3. skip → everything revealed at once, intro full.
+  // 3. skip → intro full + Take-off revealed at once.
   await page.click('#welcome .intro');
   await page.waitForFunction('window.__game.welcomeStaged === false', null, { timeout: 2000 });
   const introFull = await textLen('#welcome .intro');
   assert.ok(introMid < introFull, 'L1: intro was mid-type (shorter) before the skip');
-  assert.equal(await css('#ship-choices', 'visibility'), 'visible', 'L1: ship picker visible after skip');
   assert.equal(await css('#takeoff', 'visibility'), 'visible', 'L1: Take-off visible after skip');
   await shot('L1-welcome-revealed');
+
+  // 4. Regression guard (welcome-pin-takeoff): the grid pins the footer to the viewport bottom while the
+  // greeting/intro scroll INDEPENDENTLY. At 900×360 the intro overflows its scroll cell, so we assert BOTH
+  // (a) the scroll region genuinely scrolls AND (b) the footer is flush to the content bottom. This FAILS
+  // if #welcome is reverted to the centered-flex column — there is no #welcome-scroll, and the footer
+  // (last children) is vertically centered, not pinned. (A "takeoff.bottom <= innerHeight" check would NOT
+  // catch a revert: the bottom-anchored button stays on-screen in the flex layout too — the flex trap
+  // clips the unreachable TOP, not the button. This is why we assert the pin, not mere visibility.)
+  await page.setViewportSize({ width: 900, height: 360 });
+  const pin = await page.evaluate(() => {
+    const scroll = document.getElementById('welcome-scroll');
+    const foot = document.getElementById('welcome-footer'); // null on a centered-flex revert → assertion fails
+    const wel = document.getElementById('welcome');
+    const padBottom = parseFloat(getComputedStyle(wel).paddingBottom); // 24px
+    return {
+      overflows: scroll.scrollHeight > scroll.clientHeight,
+      scrollH: scroll.scrollHeight, clientH: scroll.clientHeight,
+      footBottom: foot.getBoundingClientRect().bottom,
+      contentBottom: window.innerHeight - padBottom, // 360 − 24 = 336
+    };
+  });
+  // (a) the text region actually overflows (measured: scrollHeight 239 > clientHeight 201 at 900×360).
+  assert.ok(pin.overflows, `L1: intro region scrolls at 900×360 (scrollH ${pin.scrollH} > clientH ${pin.clientH})`);
+  // (b) the footer is pinned flush to the bottom (measured: footBottom 336 === innerHeight−24). ≤2px tolerance.
+  assert.ok(Math.abs(pin.footBottom - pin.contentBottom) <= 2,
+    `L1: footer pinned to bottom at 900×360 (footBottom ${Math.round(pin.footBottom)} ≈ contentBottom ${pin.contentBottom})`);
+  await page.setViewportSize({ width: 1280, height: 800 }); // restore for the L2/L3/L4 Main Window section
 
   // ---- L2/L3/L4: the Main Window. Reuse 97's previewTarget-gated landOn helper (works on these levels). ----
   const landOn = async (n) => {

@@ -7,15 +7,20 @@
 `power` +50%, 5 s enemy hold-fire grace at run start, and each run opens gliding forward at 3 u/s. Prior:
 **base station moved off-origin** — the return-to-base station was pushed from
 `(-20,-20)` to `(-60,-60)` so the origin-spawning ship is no longer framed against its backdrop. Prior:
-**HUD overhaul + item rarity/color** — the HUD credits readout is now one line
+**Welcome screen: dropped the L1 ship picker + pinned Take off** — the Level-1
+welcome (`#welcome`) is now a fixed CSS grid (`1fr auto`): a scrollable greeting/intro cell (`#welcome-scroll`)
+over a pinned footer (`#welcome-footer`, Take off + community link), so the **Take off** button is always
+on-screen regardless of content height, replacing a centered-flex column whose `justify-content:center` +
+overflow clipped the unreachable *top* of the intro on short viewports. The decorative single-ship picker
+(`.pick` + `#ship-choices` cards) was removed (L1 owns exactly one ship). Prior: **HUD overhaul + item rarity/color** — the HUD credits readout is now one line
 `credits {total}/{earned} earned` and the live **Enemies** counter is removed; a small **event log** above
 the rocket button shows the last 4 lines (kill: `{shipname} killed +{amount}`; pickup: `picked up {name}`
 tinted by the item's color), each fading over 5 s (`client/src/eventlog.js`); dropped loot now glows in its
 own rarity color (trash white / common green / rare blue); on **touch** the zoom `−  +` pair moved to the
 bottom-center. New `rarity`/`color` columns on `components`/`weapons` (migration 020 + Postgres parity)
 drive the glow + tint. Prior: **Staged briefing reveal (L1-3)** — the L1 welcome briefing and the L2/L3 Main
-Window campaign briefing now **type out over ~5 s** (`client/src/typewriter.js`), then reveal the ship
-picker / ship-preview window (+ granted-item showcase), then the **Take off** button **+0.5 s** later;
+Window campaign briefing now **type out over ~5 s** (`client/src/typewriter.js`), then reveal the
+ship-preview window (+ granted-item showcase; L1 has no picker), then the **Take off** button **+0.5 s** later;
 **tap the briefing text to skip**; plays once per landing; the L1 `.intro` was enlarged to 26px; L4+ and
 side missions stay instant. Prior: **L1/L2 reward drops** — the last enemy of Level 1 drops the Machine Gun model, and
 the last enemy of Level 2 the Repair drone, as a **green-glowing, green-haloed cosmetic battlefield drop** with
@@ -175,9 +180,10 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   steering stick and the reset-progress slider); pinch distance is rotation-invariant so it needs no mapping.
   When auto-rotate is on and the user turns the phone to real landscape, `rotated` becomes false and the
   native landscape viewport takes over seamlessly. Desktop is unaffected (`rotated` is touch-only).
-- **Mobile menus & Full screen:** the **welcome** screen still **scrolls** (top-aligned + `overflow-y:auto`
-  on short/landscape viewports); the **Main Window** is a fixed full-height grid (only its work-zone
-  description scrolls), so the **Take off** button is always on-screen. A single
+- **Mobile menus & Full screen:** the **welcome** screen is a **fixed grid** (scrollable greeting/intro
+  cell on top, pinned Take-off footer at the bottom) — only the text scrolls and the **Take off** button
+  is always on-screen, like the Main Window; the **Main Window** is a fixed full-height grid (only its
+  work-zone description scrolls), so its **Take off** button is likewise always on-screen. A single
   touch-only **floating Full-screen button** (`#fullscreen-btn`, fixed bottom-right, **icon-only `⛶`**,
   brighter than the old inline buttons) re-enters fullscreen to hide the browser chrome (URL bar, tabs) after
   the app is minimized/restored. It is shown on **all touch screens** (`body.touch`) — **menus AND in-game
@@ -612,16 +618,18 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   level: if it has a **briefing** (level 2+), the client lands on the **Main Window** showing that briefing
   (so a returning player sees *their* mission, not the level-1 intro); otherwise (level 1 / new player) it
   shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"), frames the
-  threat as a pirate raid, lets them **pick a ship** (cards with HP + weapon summary) and **Take off**.
+  threat as a pirate raid, and offers **Take off**. Its layout is a **fixed grid** (`grid-template-rows:
+  1fr auto`): a scrollable greeting/intro cell (`#welcome-scroll`) over a pinned footer (`#welcome-footer`,
+  Take off + community link), so the Take off button is always on-screen regardless of content height (the
+  scroll cell top-aligns + scrolls via auto margins on short viewports, avoiding the flex-center clip trap).
   Either way the scene backdrop renders behind it and the level only starts on take-off.
   - **Staged L1 welcome reveal** (`docs/plans/2026-07-05-1641-briefing-staged-reveal.md`): on the L1
     landing the greeting `h1` shows immediately, then the `.intro` briefing **types out over ~5 s at 26px**
-    (matching the L2/L3 mission-briefing size; 16px on the `≤760px` mobile override), then the **ship
-    picker** (`.pick` + `#ship-choices`) fades in, then the **Take off** button **+0.5 s** later. **Tap the
-    intro to skip** to the full text + everything revealed at once. Hidden steps use `visibility:hidden`
-    (not `display`) so nothing reflows. Plays **once per landing**; a language switch mid-type settles to
-    full. The shared typewriter lives in `client/src/typewriter.js`; the community/feedback link is not
-    staged.
+    (matching the L2/L3 mission-briefing size; 16px on the `≤760px` mobile override), then the **Take off**
+    button fades in **+0.5 s** later (no ship picker). **Tap the intro to skip** to the full text +
+    Take off revealed at once. Hidden steps use `visibility:hidden` (not `display`) so nothing reflows.
+    Plays **once per landing**; a language switch mid-type settles to full. The shared typewriter lives in
+    `client/src/typewriter.js`; the community/feedback link is not staged.
 - **Main Window (the between-battles / landing screen; was the "Hangar")** — `#mainwin`, a **fixed
   landscape layout** (CSS grid, not a scrolling column), built for mobile landscape but unified for desktop
   (`docs/plans/main-window-redesign.md`). **Top bar** (fixed elements above the grid): the **settings gear**

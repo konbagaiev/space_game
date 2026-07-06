@@ -39,17 +39,31 @@
     margin-top: 10px; background: rgba(255,255,255,.08); color: #dce8ff;
     border: 1px solid rgba(160,190,255,.35);
   }
-  /* Welcome / start screen (still a centered column; only the Main Window was redesigned) */
+  /* Welcome / start screen: a fixed grid — scrollable greeting/intro on top, pinned Take-off footer at the
+     bottom (only the text scrolls; Take off is always on-screen, like the Main Window). */
   #welcome {
     position: fixed; inset: 0; z-index: 12; display: none;
-    align-items: center; justify-content: center; flex-direction: column;
+    grid-template-columns: 100%;
+    grid-template-rows: 1fr auto;
+    box-sizing: border-box;
     background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
     color: #e8f1ff; font-family: system-ui, sans-serif; text-align: center; padding: 24px;
-    overflow-y: auto; /* content taller than the viewport (e.g. the ship picker on short/landscape screens) scrolls */
   }
-  /* On short viewports (mobile landscape) the content can exceed the height — align to top so it all
-     scrolls into reach instead of being centred + clipped. */
-  @media (max-height: 600px) { #welcome { justify-content: flex-start; } }
+  /* Scroll region: centers the greeting+intro when they fit, and (via auto margins, NOT
+     justify-content:center — which would clip the top in a scroll container) top-aligns + scrolls fully
+     into reach when the text overflows a short viewport. */
+  #welcome-scroll {
+    overflow-y: auto; min-height: 0;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  #welcome-scroll > :first-child { margin-top: auto; }
+  #welcome-scroll > :last-child  { margin-bottom: auto; }
+  /* Pinned footer: Take off + community link, always visible. */
+  #welcome-footer {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding-top: 16px;
+  }
+  #welcome-footer .community-link { margin-top: 0; } /* footer gap handles spacing (override the default 20px) */
   #lang-switch { position: absolute; top: 18px; right: 18px; display: flex; gap: 6px; }
   #lang-switch button {
     font: inherit; font-size: 13px; letter-spacing: 1px; color: #cfe0ff; cursor: pointer;
@@ -59,12 +73,10 @@
   #lang-switch button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
   #welcome h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
   #welcome .intro { font-size: 26px; opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
-  /* Staged L1 welcome briefing: the ship picker + Take-off are hidden while `.intro` types out, then fade in
-     (picker at typing-complete, Take-off +0.5s). Same visibility technique as the Main Window. */
-  #welcome .pick, #welcome #ship-choices, #welcome #takeoff { transition: opacity .25s ease; }
-  #welcome.welcome-hide-pick .pick,
-  #welcome.welcome-hide-pick #ship-choices { opacity: 0; visibility: hidden; }
-  #welcome.welcome-hide-go #takeoff        { opacity: 0; visibility: hidden; }
+  /* Staged L1 welcome briefing: Take-off is hidden while `.intro` types out, then fades in +0.5s after
+     typing completes. Same visibility technique as the Main Window (visibility, not display → no reflow). */
+  #welcome #takeoff { transition: opacity .25s ease; }
+  #welcome.welcome-hide-go #takeoff { opacity: 0; visibility: hidden; }
   /* ---- Main Window (the redesigned between-battles / landing screen; was the "Hangar") ----
      A fixed landscape layout: the top bar (settings gear + auth + Vega Sentinels wordmark + inactive
      Ships) lives in its own fixed elements; below it a 3-column grid — left menu | work zone |
@@ -143,18 +155,6 @@
   #mw-ship-col, #mw-go { transition: opacity .25s ease; }
   #mainwin.briefing-hide-ship #mw-ship-col { opacity: 0; visibility: hidden; }
   #mainwin.briefing-hide-go   #mw-go        { opacity: 0; visibility: hidden; }
-  #welcome .pick { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; opacity: .6; margin-bottom: 12px; }
-  #ship-choices { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 28px; }
-  .ship-card {
-    pointer-events: auto; cursor: pointer; width: 200px; text-align: left;
-    background: rgba(20,28,48,.6); border: 2px solid rgba(120,150,210,.25); border-radius: 12px;
-    padding: 16px; transition: border-color .15s, transform .1s;
-  }
-  .ship-card:hover { transform: translateY(-2px); }
-  .ship-card.selected { border-color: #5b86e5; box-shadow: 0 0 16px rgba(91,134,229,.4); }
-  .ship-card .ship-name { font-weight: 700; font-size: 17px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-  .ship-card .ship-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
-  .ship-card .ship-stat { font-size: 13px; opacity: .8; line-height: 1.7; }
   #takeoff, #mw-go {
     pointer-events: auto; cursor: pointer;
     padding: 14px 44px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
@@ -175,9 +175,6 @@
     transform-origin: top left;
     transform: translateX(100vw) rotate(90deg);
   }
-  /* Rotated game area is short (it's a phone's narrow side) → top-align the welcome column so it scrolls
-     into reach. The Main Window is a fixed full-height grid, so it needs no top-align. */
-  body.rot #welcome { justify-content: flex-start; }
   /* Floating full-screen button — touch-only, bottom-right corner, hidden when already fullscreen.
      Only shown on menus (body.menu): during a live fight the bottom-right corner is the rocket
      button, so gating to menus avoids the overlap. */
