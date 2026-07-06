@@ -39,7 +39,7 @@ function statLine(kind, type, s, weight) {
       parts.push(`${t('ui.shop.stat.heal')} +${s.repairPerTick}/${s.intervalSec}s`);
       if (s.maxFraction != null) parts.push(`${t('ui.shop.stat.cap')} ${Math.round(s.maxFraction * 100)}%`);
     }
-    else if (type === 'grab') add('ui.shop.stat.grab', s.strength); // tractor: range = strength (world units)
+    else if (type === 'grab') add('ui.shop.stat.grab', s.strength); // tractor: abstract grab strength (reach is emergent, not equal to this number)
   } else { // weapon
     // Triple spiral rocket fires 3 real warheads, each dealing `power` — show the per-warhead × count
     // so the shop reflects the true on-hit damage (40×3), not one warhead's 40. (See catalog id 11.)

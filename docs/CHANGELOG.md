@@ -5,6 +5,14 @@
 
 ## 2026-07-06
 
+- **Grab tractor = inverse-square field with emergent range** `[2026-07-06-2350-grab-inverse-square-pull]`
+  — the pull is now `strength·5/dist²`, engaging where field ≥ 0.4 (`FIELD_CUTOFF`); pull speed rises the
+  closer a drop is, and the blue pull line hides the instant a drop drops below the cutoff. Range is now
+  **derived** (not a stored stat) and **weight-independent**: base ≈11.2 u, Advanced ≈15.8 u (= √2× base,
+  not 2×) — item weight scales only pull speed. Shop still shows the abstract strength number (10/20),
+  relabeled so it no longer claims to equal the world-unit range. No DB/schema change (strength values
+  unchanged at 10/20).
+
 - **Feature-pipeline: pre-implementation review gate + committed run-log.** The `/feature-pipeline`
   orchestrator gained two things. (1) A **review gate (Stage 4.5)** — after the critic approves and
   *before* any code is written, the maintainer sees a compact digest (what the critic caught & how it was

@@ -1373,6 +1373,10 @@ simpler and closes the exploit outright (decision 4). (c) *Server-side roll/seal
 integrity item, consistent with §18 (decision 7). (d) *Deposit loot on death too* — rejected to keep a real
 stake on surviving the mission (decision 5).
 
+**(Grab pull model superseded by §57 — the flat `range = strength` radius + distance-independent pull speed
+described in decisions 1–2 above were replaced by an inverse-square field with emergent, weight-independent
+range; the strength values, weight-scaled speed, hull/deposit/pricing decisions here still hold.)**
+
 ---
 
 ## 41. Autopilot generalized to a typed target (station or loot drop); win gated to the station
@@ -1944,6 +1948,37 @@ parsing/formatting at **render time**, so the label (and the `DEVICE_NAMES` map)
 migration or backfill**. Capture is **latest-wins** (unlike write-once `referrer`, §36): device metadata
 reflects the player's *current* device, and `resetPlayer` intentionally leaves it in place (it's not
 progress).
+
+---
+
+## 57. Grab tractor = inverse-square field with emergent, weight-independent range
+
+The Grab (tractor) used to pull any drop inside a hard radius (`range = strength`) at a constant,
+distance-independent speed (`(strength/2)·(10/weight)`). We replaced it with an **inverse-square field**:
+`field(strength, dist) = strength·FIELD_K/dist²` (`FIELD_K = 5`), and the beam **engages a drop only where
+`field ≥ FIELD_CUTOFF`** (`0.4`). Pull speed is `field·(10/weight)` — it now **rises the closer a drop is**,
+so near drops snap in and far ones crawl, which reads like a real tractor beam.
+
+Two consequences are deliberate. (1) **Range is emergent, not a stored stat:** the reach is wherever the
+field crosses the cutoff, `range(strength) = sqrt(strength·FIELD_K/FIELD_CUTOFF)`, so there is no separate
+range number to store, tune, or keep in sync — one `strength` value drives both reach and speed. (2) **Range
+is weight-independent:** the cutoff test uses `field`, which has **no weight term**; weight scales only the
+speed. A heavy item is pulled from just as far as a light one, only slower — item weight can never change how
+far the beam reaches.
+
+We **kept the strength values at 10 (base) / 20 (Advanced)** rather than retuning them. Because range scales
+with `sqrt(strength)`, the equal 2× ratio makes the Advanced grab reach exactly **√2× the base** (≈15.8 vs
+≈11.2 u) — a modest, believable reach upgrade instead of doubling it, while still doubling the field strength
+(and thus pull speed) at any given distance. No DB/schema change: `strength` lives in the catalog `stats`
+JSON and is untouched.
+
+The **shop keeps showing the raw `strength` number** (10/20), relabeled as an abstract "grab strength"
+rather than claiming to equal the world-unit range (option a). Per §30 (keep-it-simple, single author) this
+is one existing surface with minimal churn; showing the derived range would add a computed display for a
+maintainer-facing tuning aid nobody asked for. Near-ship singularity (`field→∞` as `dist→0`) needs **no
+clamp**: collection at `COLLECT_DIST = 3` fires before a drop nears `dist=0`, and the per-frame move is
+capped at `Math.min(speed·dt, d)`, so an over-large near-field speed can never overshoot the ship.
+Constants `FIELD_K = 5` and `FIELD_CUTOFF = 0.4` are fixed for this iteration (no player-facing tuning UI).
 
 ---
 
