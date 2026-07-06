@@ -1927,6 +1927,26 @@ human-in-the-loop interrupt, deliberately placed on the least-reversible step (i
 
 ---
 
+## 56. Admin device label = hand-rolled UA parse + curated code→marketing-name lookup, no dependency
+
+The `/admin` "device" column needs to turn a raw `User-Agent` + a `Sec-CH-UA-Model` device **code** into a
+readable `Browser · Device/OS` label. We deliberately **skip** `ua-parser-js` / a full device database and
+hand-roll it: a few robust regexes (`parseBrowser`/`parseOS`) plus a small curated `DEVICE_NAMES` map
+(common Samsung/Xiaomi/Pixel/Apple codes → marketing names) with a **raw-code fallback** for anything
+unknown. Rationale: the admin panel has a **no-new-deps precedent** and DECISIONS §30 (keep-it-simple,
+single author) — a device DB is heavy, needs updating, and this is a maintainer-only eyeballing aid, not
+analytics. The trade-off is accepted: unknown device codes show the raw code, and browser/OS detection is
+approximate. The signal is **deliberately partial**: the model only arrives from **Chromium same-origin**
+visits (opt-in via the `Accept-CH: Sec-CH-UA-Model` header — modern Android's UA hides the model), so
+Safari/Firefox and the cross-origin itch embed degrade to UA-only, and existing rows stay `NULL` until the
+player next boots (no retroactive data, no backfill). We store the **raw** UA + model code and do all
+parsing/formatting at **render time**, so the label (and the `DEVICE_NAMES` map) can improve later with **no
+migration or backfill**. Capture is **latest-wins** (unlike write-once `referrer`, §36): device metadata
+reflects the player's *current* device, and `resetPlayer` intentionally leaves it in place (it's not
+progress).
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

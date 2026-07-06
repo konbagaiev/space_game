@@ -51,6 +51,16 @@ export async function createApp() {
   await migrate(); // bring the schema up to date before serving (backend chosen by DATABASE_URL)
 
   const app = express();
+
+  // Ask Chromium browsers to send device Client Hints (UA Reduction hides the device model). The hints
+  // arrive on subsequent same-origin requests — e.g. the boot POST /api/players/register — where we read
+  // Sec-CH-UA-Model. Best-effort: other browsers ignore it; cross-origin (itch) isn't delegated the hint.
+  // See docs/plans/2026-07-06-2154-admin-device-column.md.
+  app.use((req, res, next) => {
+    res.setHeader('Accept-CH', 'Sec-CH-UA-Model, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version');
+    next();
+  });
+
   app.use(express.json());
 
   // CORS for the cross-origin itch.io build (docs/plans/2026-07-01-1824-itch-html5-export.md). We reflect
@@ -79,7 +89,9 @@ export async function createApp() {
     if (!playerId || typeof playerId !== 'string') {
       return res.status(400).json({ error: 'playerId (string) required' });
     }
-    res.json(await registerPlayer(playerId, typeof referrer === 'string' ? referrer : null));
+    const model = String(req.headers['sec-ch-ua-model'] || '').replace(/"/g, '').trim() || null; // client-hint device code
+    const device = { userAgent: req.headers['user-agent'] || null, model };
+    res.json(await registerPlayer(playerId, typeof referrer === 'string' ? referrer : null, device));
   }));
 
   // Record one finished game and bank the credits earned into the player's balance.

@@ -17,6 +17,17 @@
   passed). Storage is a git-diffable JSONL journal, not an observability platform (DECISIONS §55; OTel
   export is the documented escape hatch). Docs: `SKILL.md`, `multi-agent-pipeline.md` (flow + "Analyzing
   runs" section + query recipes), full spec in `docs/plans/pipeline-review-gate-and-run-log.md`.
+- **[2026-07-06-2154-admin-device-column] Admin "device" column.** `GET /admin` now shows the browser +
+  device model each player played from — best-effort `Chrome · Galaxy A03s`, degrading to `Chrome ·
+  Android 10` → raw User-Agent → blank, never crashing on odd/empty UAs (full raw UA on `title` hover).
+  New nullable `players.user_agent` + `players.device_model` columns (migration 021 / PG bootstrap)
+  captured at the boot `POST /api/players/register` call **latest-wins** (via `COALESCE`, so covers
+  anonymous players too), using an `Accept-CH: Sec-CH-UA-Model` response header + the `Sec-CH-UA-Model`
+  Chromium client hint (the device model is hidden from the modern Android UA). Curated code→marketing-name
+  lookup + a hand-rolled UA parser (`deviceLabel`/`parseBrowser`/`parseOS`) in `server/src/admin.js`, **no
+  new npm dependency** (DECISIONS §56). Best-effort: non-Chromium browsers + the cross-origin itch embed
+  send no model hint, and existing rows stay `NULL` until the player next boots (no backfill). No client
+  change (the browser sends the headers automatically).
 - **[2026-07-06-2044-return-to-base-button] Return-to-base button.** A bottom-center "Return to base" pill
   button (`#return-btn`) now appears during return-to-base (after the last enemy is destroyed), giving
   players an obvious, always-on-screen tap target to auto-fly home and dock — the base station model is

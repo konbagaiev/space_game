@@ -71,16 +71,19 @@ function ensureDefaultShip(playerId) {
 
 // Auto-register: create the player if new, otherwise just bump last_seen. Either way they end
 // up owning their default active ship.
-export function registerPlayer(id, referrer = null) {
+export function registerPlayer(id, referrer = null, device = null) {
   const now = Date.now();
+  const ua = device && device.userAgent ? String(device.userAgent).slice(0, 512) : null;
+  const model = device && device.model ? String(device.model).slice(0, 128) : null;
   const existing = db.prepare('SELECT created_at, games_played, current_progress, language, credits, shop_unlocked FROM players WHERE id = ?').get(id);
   if (existing) {
-    db.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(now, id);   // NOTE: referrer never touched here (write-once)
+    // last_seen bump + latest-wins device (COALESCE keeps a prior value when this call has none); referrer never touched (write-once).
+    db.prepare('UPDATE players SET last_seen = ?, user_agent = COALESCE(?, user_agent), device_model = COALESCE(?, device_model) WHERE id = ?').run(now, ua, model, id);
     ensureDefaultShip(id);
     return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, language: existing.language, credits: existing.credits, shopUnlocked: !!existing.shop_unlocked, createdAt: existing.created_at };
   }
   const ref = referrer ? String(referrer).slice(0, 512) : null;   // safety cap
-  db.prepare('INSERT INTO players (id, created_at, last_seen, referrer) VALUES (?, ?, ?, ?)').run(id, now, now, ref);
+  db.prepare('INSERT INTO players (id, created_at, last_seen, referrer, user_agent, device_model) VALUES (?, ?, ?, ?, ?, ?)').run(id, now, now, ref, ua, model);
   ensureDefaultShip(id);
   return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
@@ -304,7 +307,7 @@ export function stats() {
 export function getAdminPlayers(limit = 1000) {
   return db.prepare(`
     SELECT p.id, p.username, p.email, p.email_verified, p.created_at, p.last_seen,
-           p.current_progress, p.credits, p.games_played, p.referrer,
+           p.current_progress, p.credits, p.games_played, p.referrer, p.user_agent, p.device_model,
            COALESCE(SUM(g.duration_ms), 0) AS total_time_ms,
            COALESCE(SUM(g.kills), 0)       AS total_kills,
            COALESCE(SUM(g.credits), 0)     AS total_earned
@@ -317,6 +320,7 @@ export function getAdminPlayers(limit = 1000) {
       emailVerified: !!r.email_verified, createdAt: r.created_at, lastSeen: r.last_seen,
       currentProgress: r.current_progress, credits: r.credits, gamesPlayed: r.games_played,
       referrer: r.referrer ?? null,
+      userAgent: r.user_agent ?? null, deviceModel: r.device_model ?? null,
       totalTimeMs: Number(r.total_time_ms), totalKills: Number(r.total_kills), totalEarned: Number(r.total_earned),
     }));
 }
