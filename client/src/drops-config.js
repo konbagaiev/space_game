@@ -11,8 +11,9 @@ export const WEIGHT_FALLBACK = 10;   // defensive: used only if an item somehow 
 // Grab (tractor) inverse-square pull field. The pull FIELD at a drop is strength·FIELD_K/dist²; the
 // beam ENGAGES a drop only where field ≥ FIELD_CUTOFF, so the reach is EMERGENT (derived from the
 // cutoff), not a stored stat — see range() below. Both are fixed this iteration.
-export const FIELD_K      = 5;    // field numerator scale
+export const FIELD_K      = 5;    // field numerator scale (sets the emergent reach together with FIELD_CUTOFF)
 export const FIELD_CUTOFF = 0.4;  // field threshold: below this the drop leaves the beam (line hides)
+export const PULL_SPEED_SCALE = 0.67; // reel-in SPEED multiplier only — tunes how fast drops pull in WITHOUT changing reach
 
 // Reward (L1/L2 last-kill) special drops: the model gets a green emissive tint + an additive green halo
 // sprite, and its off-screen pointer pulses green. Cosmetic only — collecting a special drop deposits
@@ -44,7 +45,8 @@ export function rewardOwned(activeShip, reward) {
 // Grab pull math (inverse-square field). All pure + import-free so drops.test.js runs under node.
 //   field(strength, dist)  = strength · FIELD_K / dist²        — pull strength at a given distance
 //   engaged                = field ≥ FIELD_CUTOFF               — below this the drop leaves the beam
-//   pullSpeed(s, w, dist)  = field · (10 / w)                  — u/s toward the ship (light parts pull faster)
+//   pullSpeed(s, w, dist)  = field · (10 / w) · PULL_SPEED_SCALE — u/s toward the ship (light parts pull faster;
+//                            the scale tunes reel-in SPEED only, it does NOT affect field/cutoff → reach unchanged)
 //   range(strength)        = sqrt(strength · FIELD_K / FIELD_CUTOFF)  — EMERGENT, weight-INDEPENDENT reach
 // A zero/missing weight falls back to WEIGHT_FALLBACK so the sim never divides by zero. dist is always
 // > 0 in practice (collection at COLLECT_DIST=3 fires before dist→0; drops.js caps the step at the gap).
@@ -52,7 +54,7 @@ export function field(strength, dist) {
   return (strength * FIELD_K) / (dist * dist);
 }
 export function pullSpeed(strength, weight, dist) {
-  return field(strength, dist) * (10 / (weight || WEIGHT_FALLBACK));
+  return field(strength, dist) * (10 / (weight || WEIGHT_FALLBACK)) * PULL_SPEED_SCALE;
 }
 export function range(strength) {
   return Math.sqrt((strength * FIELD_K) / FIELD_CUTOFF);

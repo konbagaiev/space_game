@@ -2,15 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // Only the PURE pieces of the drop system are imported (drops-config.js has no THREE / engine deps, so it
 // stays node-safe). The THREE/scene behavior (meshes, the blue pull line) is covered by the headless suite.
-import { pullSpeed, field, range, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY, shouldDeposit, rewardOwned } from './drops-config.js';
+import { pullSpeed, field, range, PULL_SPEED_SCALE, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY, shouldDeposit, rewardOwned } from './drops-config.js';
 
 const approx = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) <= eps, `${a} ≈ ${b}`);
 
-// --- pull speed: strength·FIELD_K·10 / (weight·dist²), in world units/sec (distance-aware) ---
-test('pullSpeed: anchor cases (distance-aware inverse-square)', () => {
-  approx(pullSpeed(10, 10, 3), 50 / 9);    // ≈5.556 u/s at d=3
-  approx(pullSpeed(10, 10, 5), 2.0);       // slower farther out
-  assert.ok(pullSpeed(10, 10, 3) > pullSpeed(10, 10, 5)); // closer = faster
+// --- pull speed: field·(10/weight)·PULL_SPEED_SCALE, in world units/sec (distance-aware) ---
+test('pullSpeed: anchor cases (distance-aware inverse-square, speed-scaled)', () => {
+  approx(pullSpeed(10, 10, 3), (50 / 9) * PULL_SPEED_SCALE); // ≈3.72 u/s at d=3 (0.67× the raw field speed)
+  approx(pullSpeed(10, 10, 5), 2.0 * PULL_SPEED_SCALE);      // ≈1.34 — slower farther out
+  assert.ok(pullSpeed(10, 10, 3) > pullSpeed(10, 10, 5));    // closer = faster
+});
+
+test('PULL_SPEED_SCALE tunes speed only, not reach: it scales pullSpeed but not field/range', () => {
+  // pullSpeed carries the scale; field (which sets eligibility/range) does not.
+  approx(pullSpeed(10, 10, 5), field(10, 5) * (10 / 10) * PULL_SPEED_SCALE);
+  approx(range(10), Math.sqrt(125)); // reach is unchanged by the speed scale
 });
 
 test('pullSpeed: lighter items pull faster; the stronger grab pulls faster at the same distance', () => {

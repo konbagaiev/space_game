@@ -1980,6 +1980,14 @@ clamp**: collection at `COLLECT_DIST = 3` fires before a drop nears `dist=0`, an
 capped at `Math.min(speed·dt, d)`, so an over-large near-field speed can never overshoot the ship.
 Constants `FIELD_K = 5` and `FIELD_CUTOFF = 0.4` are fixed for this iteration (no player-facing tuning UI).
 
+**Follow-up (2026-07-07): reel-in speed decoupled from reach via `PULL_SPEED_SCALE`.** Live play found the
+distance right but the pull too fast. Because `FIELD_K` scales *both* reach and speed, we could not slow the
+pull by lowering it without also shrinking the reach the maintainer liked. So we added a dedicated speed-only
+multiplier `PULL_SPEED_SCALE = 0.67` applied in `pullSpeed` (`field·(10/weight)·PULL_SPEED_SCALE`) but **not**
+in `field`/`range` — reel-in speed drops ~1.5× while the emergent reach is provably unchanged (the range tests
+did not move). This is the clean separation of the two axes (reach vs speed) that the coupled single-`strength`
+model didn't offer; `PULL_SPEED_SCALE` is now the speed knob, `FIELD_K`/`FIELD_CUTOFF` the reach knobs.
+
 ---
 
 ## Future ideas

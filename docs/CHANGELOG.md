@@ -5,6 +5,13 @@
 
 ## 2026-07-07
 
+- **Grab pull speed tuned down ~1.5× (reach unchanged).** Added `PULL_SPEED_SCALE = 0.67` to
+  `drops-config.js` and applied it in `pullSpeed` only, so drops reel in about 1.5× slower while the
+  emergent reach (base ≈11.2 u, Advanced ≈15.8 u) stays exactly the same — `field`/`FIELD_CUTOFF` (which
+  define the range) are untouched. Follow-up to the inverse-square rebalance after live play felt the pull
+  too fast. Docs: SUMMARY (Grab & loot drops), DECISIONS §57. Tests: `drops.test.js` anchors rescaled + a
+  new "speed-only, not reach" assertion; client 115/115.
+
 - **Feature-pipeline: human code-review step after the reviewer agent.** Added **Stage 6.5** to
   `/feature-pipeline` — once the `code-reviewer` agent returns PASS, the maintainer reviews the diff before
   commit, **every run**. The orchestrator gives a guided per-file walkthrough (what changed, why, how it

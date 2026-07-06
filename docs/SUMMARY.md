@@ -3,10 +3,11 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-06 (**Grab inverse-square field** — the Grab (tractor) now pulls drops via an
+**Updated:** 2026-07-07 (**Grab inverse-square field** — the Grab (tractor) now pulls drops via an
 inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
 weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base) and pull speed rises the closer a drop
-is — see **Grab & loot drops**. Prior: **Admin "device" column** — `GET /admin` now shows a best-effort
+is. Reel-in speed is scaled by `PULL_SPEED_SCALE = 0.67` (speed-only tune, reach unchanged) — see
+**Grab & loot drops**. Prior: **Admin "device" column** — `GET /admin` now shows a best-effort
 `Browser · Device/OS` label per player (`Chrome · Galaxy A03s` → `Chrome · Android 10` → raw UA → blank);
 `players` gained nullable `user_agent` + `device_model` columns (migration 021 / PG bootstrap) captured at
 the boot register call latest-wins, via an `Accept-CH: Sec-CH-UA-Model` response header + client hint;
@@ -598,8 +599,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   component (if equipped) pulls drops in via an **inverse-square field** (`field = strength·FIELD_K/dist²`,
   `FIELD_K = 5`; `field()` in `drops-config.js`): a drop must sit where **field ≥ 0.4** (`FIELD_CUTOFF`) for
   **0.3 s** (`ARM_DELAY`) to arm, then the **nearest** armed drop is pulled toward the ship's live position
-  at **speed = field·(10/itemWeight)** u/s (`pullSpeed` — faster the closer the drop is; light parts pull
-  fast, heavy parts slow; a zero/missing weight falls back to 10). Reach is **emergent + weight-independent**
+  at **speed = field·(10/itemWeight)·PULL_SPEED_SCALE** u/s (`pullSpeed` — faster the closer the drop is; light
+  parts pull fast, heavy parts slow; a zero/missing weight falls back to 10). `PULL_SPEED_SCALE = 0.67` tunes
+  reel-in **speed only** — it multiplies `pullSpeed` but not `field`, so the reach is unchanged. Reach is
+  **emergent + weight-independent**
   (`range(strength) = sqrt(strength·5/0.4)`, no weight term): base strength 10 → **≈11.2 u**, Advanced
   strength 20 → **≈15.8 u (= √2× base, not 2×)**. A single **thin blue line** (pooled `THREE.Line`,
   `0x4db6ff`) is drawn only **while actively pulling** and **hides the instant** a drop drops below the
