@@ -293,9 +293,15 @@ export function updateReturnArrow() {
 export function updateReturnHint() {
   const show = G.returnToBase && G.player && G.player.alive && !levelRunner.won
     && el.overlay.style.display === 'none';
-  if (!show) { el.returnHint.style.display = 'none'; return; }
-  el.returnHint.style.display = 'block';
-  el.returnHint.textContent = t('ui.return.hint');
+  if (!show) { el.returnHint.style.display = 'none'; } else {
+    el.returnHint.style.display = 'block';
+    el.returnHint.textContent = t('ui.return.hint');
+  }
+  // Bottom-center "Return to base" tap button: same availability as the hint, but ALSO requires the
+  // station to be clickable AND the autopilot NOT already engaged (hide it once the ship is flying home;
+  // it re-appears if the player cancels the autopilot mid-flight — accepted). Mirrors stationClickable().
+  const btnShow = show && G.baseStation && G.baseStation.active && !G.autopilot.active;
+  el.returnBtn.style.display = btnShow ? 'block' : 'none';
 }
 
 // Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,

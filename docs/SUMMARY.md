@@ -3,7 +3,11 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-06 (**PC menu layout** — on non-phone forms the start/welcome screen top-aligns the
+**Updated:** 2026-07-06 (**Return-to-base button** — a bottom-center "Return to base" pill button
+(`#return-btn`, i18n `ui.return.button`) now appears during return-to-base as an explicit tap target that
+auto-flies the ship home (same as clicking the station); shown only while return-to-base is available and the
+ship is under player control, hidden once the autopilot engages; touch fires on `touchstart` / mouse on
+`click` per DECISIONS §42 — see the Return-to-base section. Prior: **PC menu layout** — on non-phone forms the start/welcome screen top-aligns the
 greeting/intro + Take-off, and the Main Window left column is widened to `minmax(240px, 18%)` so the
 top-left account bar no longer clips the mission title; see the Welcome + Main Window sections. Prior:
 **deterministic spawn totals + enemy warp-in-as-arrival** — every spawning phase
@@ -747,6 +751,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (clears `active` + `target`) so a cancelled/manual approach doesn't complete (re-tap to resume). Clicking
   while already inside the radius wins on the next frame. `win()` tears the return state back down (arrow/hint/clickable off) and reuses the existing
   victory handling (overlay, `bankRun`, `×2`, `unlockNextLevel` for campaign only).
+  A **bottom-center "Return to base" pill button** (`#return-btn`, i18n `ui.return.button`, shown/hidden in
+  `updateReturnHint`) is also drawn as an **explicit, always-on-screen tap target** — same effect as clicking
+  the station (`engageAutopilot()`) — since the station model is small and often off-screen. It's visible only
+  while return-to-base is available and the ship is still under player control (the same predicate as
+  `stationClickable()` **and** `!G.autopilot.active`), so it **hides the moment the autopilot engages** and
+  reappears if the player cancels the dock mid-flight. Wired **split per DECISIONS §42**: on touch it fires on
+  `touchstart` (a second-thumb tap works while a steering finger holds `#stick-zone`), and the `click` path is
+  **mouse-only**; the button sits `z-index:6` above the full-screen `#stick-zone`, is hidden on menus
+  (`body.menu #return-btn`), and its label localizes via `data-i18n`/`applyTranslations` (EN + RU).
 - **Victory → Main Window → next level.** On a win the result overlay shows a **Continue** button (a loss
   shows **Restart**/retry); Continue opens the **Main Window** (see above) — the between-battles screen (also
   the landing/homepage). The campaign briefing shows as the **primary mission** in the work zone with a

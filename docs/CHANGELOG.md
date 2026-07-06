@@ -5,6 +5,16 @@
 
 ## 2026-07-06
 
+- **[2026-07-06-2044-return-to-base-button] Return-to-base button.** A bottom-center "Return to base" pill
+  button (`#return-btn`) now appears during return-to-base (after the last enemy is destroyed), giving
+  players an obvious, always-on-screen tap target to auto-fly home and dock — the base station model is
+  small and often off-screen. It does exactly what clicking the station does (`engageAutopilot()`). Shown
+  only while return-to-base is available and the ship is still under player control (same predicate as
+  `stationClickable()`), and hidden the moment the autopilot engages (reappears if the dock is cancelled
+  mid-flight). Wired **split per DECISIONS §42** — touch fires on `touchstart` (so a second-thumb tap works
+  while a steering finger holds `#stick-zone`), mouse on `click` — layered `z-index:6` above the full-screen
+  stick zone and hidden on menus. New i18n key `ui.return.button` (EN + RU). The existing top-center
+  `#return-hint` and station-click dock are unchanged.
 - **PC menu layout: top-aligned start screen + un-clipped mission title.** Two CSS-only fixes scoped to
   non-phone forms (`body:not(.dev-phone)`). (1) The **welcome/start screen** now pins the greeting/intro
   **and** the Take-off footer to the **top** of the screen (button still directly under the text) instead
