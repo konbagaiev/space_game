@@ -203,6 +203,7 @@ const spiralRocketGeo = new THREE.ConeGeometry(0.34, 2.0, 6);
 export function findTargetInSector(pos, fwd, halfAngle) {
   let best = null, bestDist = Infinity;
   for (const e of enemies) {
+    if (e.warping) continue; // not a valid homing target until fully formed
     const to = e.mesh.position.clone().sub(pos);
     const d = to.length();
     if (d < 0.001) continue;
@@ -284,6 +285,7 @@ export function detonateRocket(r, dealDamage = true) {
     // blastR (≥ detonateR) means a rocket that reaches a hull always deals its damage. See DECISIONS §45.
     if (r.fromPlayer) {
       for (const e of enemies) {
+        if (e.warping) continue; // invulnerable while forming — no splash damage
         if (pointHitsShip(e, r.obj.position, r.blastR)) e.hp -= r.damage;
       }
     } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.blastR)) {

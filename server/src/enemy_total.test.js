@@ -39,7 +39,7 @@ function simulateKillsToClear(phases) {
   return kills;
 }
 
-const EXPECTED = { 'level-1': 16, 'level-2': 17, 'level-3': 21, 'level-4': 22 };
+const EXPECTED = { 'level-1': 14, 'level-2': 17, 'level-3': 21, 'level-4': 22 };
 
 test('enemyTotalFromPhases: campaign totals match the anchors AND the sim oracle', () => {
   const byName = Object.fromEntries(LEVELS.map((l) => [l.name, l.descriptor]));
@@ -59,23 +59,15 @@ test('side missions: total 20, stamped, formula and sim agree', () => {
   }
 });
 
-test('enemyTotalFromPhases: rule pieces (carry from leftovers)', () => {
+test('enemyTotalFromPhases: sums every phase spawn.total (no carry), ignores non-spawning phases', () => {
   assert.equal(enemyTotalFromPhases([]), 0);
-  // two kills thresholds are a MAX (absolute), not a sum; the last carry only lands via a later allCleared
   assert.equal(enemyTotalFromPhases([
-    { spawn: { maxConcurrent: 3 }, advanceWhen: { kills: 6 } },
-    { spawn: { maxConcurrent: 3 }, advanceWhen: { kills: 12 } },
-    { spawn: null, advanceWhen: { allCleared: true } }, // clears the 3 leftovers -> 12 + 3
-  ]), 15);
-  // killsSincePhase sums; boss allCleared adds its spawn.total on top of the carry
+    { spawn: { maxConcurrent: 3, total: 6 }, advanceWhen: { kills: 6 } },
+    { spawn: { maxConcurrent: 3, total: 6 }, advanceWhen: { kills: 12 } },
+    { spawn: { maxConcurrent: 4, total: 2 }, advanceWhen: { allCleared: true } },
+  ]), 14);
   assert.equal(enemyTotalFromPhases([
-    { spawn: { maxConcurrent: 4 }, advanceWhen: { killsSincePhase: 7 } },
-    { spawn: { maxConcurrent: 4 }, advanceWhen: { killsSincePhase: 7 } },
-    { spawn: { maxConcurrent: 1, total: 2 }, advanceWhen: { allCleared: true } }, // 7+7 + carry 4 + 2
-  ]), 20);
-  // a threshold phase with NO following allCleared drops its carry (those leftovers never die)
-  assert.equal(enemyTotalFromPhases([
-    { spawn: { maxConcurrent: 3 }, advanceWhen: { kills: 5 } },
-    { event: 'win' },
-  ]), 5);
+    { spawn: null, advanceWhen: { allCleared: true } }, // clear-out with no spawn adds 0
+    { event: 'win' },                                    // win phase adds 0
+  ]), 0);
 });

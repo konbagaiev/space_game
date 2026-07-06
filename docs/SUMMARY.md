@@ -3,7 +3,14 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-06 (**staggered enemy spawns** — enemies now trickle in one at a time on a
+**Updated:** 2026-07-06 (**deterministic spawn totals + enemy warp-in-as-arrival** — every spawning phase
+now carries an explicit `total` cap (threshold phase `total` = its kill-delta → 0 enemies alive at advance;
+clear-out/finale waves carry the remainder), so `enemyTotal` is the exact sum of phase totals — fixing a
+staggered-spawns regression where the killed/total counter stopped short and the last-kill reward drops
+(L1 Machine Gun, L2 Repair drone) never fired. L1 total is now 14 (was 16). A spawning enemy appears
+immediately as a dot and **materializes over its 2–4 s stagger interval** — invulnerable, non-firing, and
+not homing-targetable until fully formed (`e.warping`/`e.spawnDur`; player warp-back stays 1 s). Prior:
+**staggered enemy spawns** — enemies trickle in one at a time on a
 randomized 2–4 s cooldown (`client/src/spawn-timing.js`), first-of-phase immediate, instead of the arena
 snapping to `maxConcurrent` every frame. Prior: **combat pacing + engine buff** — flat player top speed 30 u/s, all engine
 `power` +50%, 5 s enemy hold-fire grace at run start, and each run opens gliding forward at 3 u/s. Prior:
@@ -770,7 +777,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (`server/src/enemy_total.js`), stamped in `catalog_seed.js` (campaign) and `missions.js` (side missions);
   it drives the HUD killed/total counter. Four campaign levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **6 kills** rocketeers join at 25%
-    → at **12 kills** spawning stops, one last rocketeer appears, clear the field → **Victory!** No boss.
+    → at **12 kills** two last rocketeers appear, clear the field → **Victory!** No boss (enemyTotal **14**).
   - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 12 kills →
     spawning stops → a single **medium** appears alone as the boss → clear → Victory.
   - **`level-3` (full fight):** waves of all three enemy types → after 16 kills spawning stops → the
@@ -788,8 +795,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `client/src/spawn-timing.js`, driven by `levelRunner`): the **first** enemy of each phase appears
   immediately, then each spawn arms a fresh 2–4 s delay, so a phase fills 1→2→3… toward `maxConcurrent`
   rather than snapping to it — and a killed enemy's replacement also waits 2–4 s (never an instant refill).
-  The `maxConcurrent` numbers above are the **cap**, not the fill rate. Totals (`enemyTotal`) are unchanged
-  by pacing.
+  The `maxConcurrent` numbers above are the **cap**, not the fill rate. **Spawn counts are deterministic:**
+  every spawning phase carries an explicit `spawn.total` cap — a threshold (`kills`/`killsSincePhase`)
+  phase's `total` equals its kill-delta so it leaves **0** enemies alive when it advances, and the
+  clear-out/finale (`allCleared`) phases are real spawning waves (drawn from that level's wave-2 pool) that
+  carry the remainder. So `enemyTotal` is the exact **sum of every phase's `spawn.total`**, the killed/total
+  counter reaches N/N, and the last-kill reward drop (`isLastKillDrop` in `client/src/level-sim.js`) fires on
+  the true final kill. Per-level totals: L1 **14**, L2 **17**, L3 **21**, L4 **22**, side missions **20**.
 - **Rockets can be shot down by the machine gun:** a bullet subtracts its damage from an opposite-side
   rocket's HP (shot down at 0) — you can deflect enemy rockets, and an enemy can shoot down yours.
 - Player health is 100; HUD shows the remaining health as a percentage with one decimal
@@ -968,8 +980,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   covers keyboard, touch, warp-back and enemy AI turning. **Cosmetic only** — nothing gameplay reads the
   roll (aim/forward use `heading`; collisions use the OBB hitbox, whose boxes ride `mesh.matrixWorld`
   — which excludes the child `bankGroup` roll — so the cosmetic roll never shifts the hitbox).
-- **Enemy spawn ("warp in"):** a newly spawned enemy grows from a dot to its full size over
-  `SPAWN_GROW_TIME` (1 s, ease-out cubic) — it scales up in place while the AI is already active.
+- **Enemy spawn ("warp in" IS the arrival):** a newly spawned enemy appears **immediately** as a dot and
+  **materializes over its stagger interval** — the armed 2–4 s cooldown, carried per-instance on `e.spawnDur`
+  (ease-out cubic grow). While forming (`e.warping`, cleared once `spawnAge >= spawnDur`) it is
+  **invulnerable, cannot fire, and is not a valid homing-rocket target** — but it still counts toward
+  `maxConcurrent` (preserving the stagger) and shows its off-screen edge marker so the player sees it
+  arriving; because no player damage path touches it, its hp stays full and no health bar shows on the dot.
+  It becomes a normal combatant the instant it finishes forming. `SPAWN_GROW_TIME` (1 s) stays as the
+  per-instance default and drives the **player warp-back** (unchanged).
 - Effects: a bullet hit-flash at the impact point, **keyed off the weapon `class`** via the client
   `HIT_FLASH_SCALE` map (`kinetic`/unset → a tiny `maxScale 0.8` spark, `cannon` → a heavier but still
   small `maxScale 2` flash; color unchanged); a narrow glowing engine trail on **every ship**
@@ -1452,7 +1470,10 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   `currentLevelLabel`/`unlockNextLevel`/`depositLoot`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
   `autoPauseOnBlur` + the `reset` restart), `spawn-timing.js` (the pure enemy-spawn stagger gate
-  `stepSpawnGate`/`nextSpawnDelay`, unit-tested; driven by `levelRunner`), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
+  `stepSpawnGate`/`nextSpawnDelay`, unit-tested; driven by `levelRunner`), `level-sim.js` (a pure headless
+  replay of the staggered level runner + the `isLastKillDrop` reward-drop predicate: `levelEnemyTotal`/
+  `simulateLevel`, unit-tested — proves the killed/total counter reaches `enemyTotal` and the drop fires on
+  the last kill), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
 - **Between-battles UI:** `shop.js` (hangar shop + stash + live ship-stats bar; a leaf the Main Window
   calls into), `settings.js` (audio-settings gear modal + graphics-quality picker + slide-to-confirm
   progress reset; a leaf whose only outward export is `localizeSettings`), `mainwindow.js` (the Main Window

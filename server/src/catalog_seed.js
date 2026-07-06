@@ -387,21 +387,21 @@ export const LEVELS = [
       phases: [
         {
           name: 'wave-1', // only plain fighters, 3 at a time
-          spawn: { maxConcurrent: 3, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
+          spawn: { maxConcurrent: 3, total: 6, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
           advanceWhen: { kills: 6 }
         },
         {
           name: 'wave-2', // rocketeers join at 25%
           spawn: {
-            maxConcurrent: 3, pool: [
+            maxConcurrent: 3, total: 6, pool: [
               { ship: 'Basic pirate ship', chance: 75 },
               { ship: 'basic rocket pirate', chance: 25 }]
           },
           advanceWhen: { kills: 12 }
         },
         {
-          name: 'finale', // spawning stops; one last rocketeer, then clear the field
-          spawn: { maxConcurrent: 4, total: 1, pool: [{ ship: 'basic rocket pirate', chance: 100 }] },
+          name: 'finale', // two last rocketeers materialize, then clear the field (carries the remainder)
+          spawn: { maxConcurrent: 4, total: 2, pool: [{ ship: 'basic rocket pirate', chance: 100 }] },
           advanceWhen: { allCleared: true }
         },
         { name: 'victory', event: 'win', delay: 2, textKey: 'level.1.victory', text: 'Level 1 cleared! Nice flying, Sentinel.' },
@@ -423,19 +423,23 @@ export const LEVELS = [
       phases: [
         {
           name: 'wave-1', // only fighters until 5 kills
-          spawn: { maxConcurrent: 4, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
+          spawn: { maxConcurrent: 4, total: 5, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
           advanceWhen: { kills: 5 }
         },
         {
-          name: 'wave-2', // fighters + rocketeers 75/25 until 15 kills
+          name: 'wave-2', // fighters + rocketeers 75/25 until 12 kills
           spawn: {
-            maxConcurrent: 4, pool: [
+            maxConcurrent: 4, total: 7, pool: [
               { ship: 'Basic pirate ship', chance: 75 },
               { ship: 'basic rocket pirate', chance: 25 }]
           },
           advanceWhen: { kills: 12 }
         },
-        { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
+        { name: 'clear-out', // deterministic final wave before the boss (carries the old "carry" count)
+          spawn: { maxConcurrent: 4, total: 4, pool: [
+            { ship: 'Basic pirate ship', chance: 75 },
+            { ship: 'basic rocket pirate', chance: 25 }] },
+          advanceWhen: { allCleared: true } },
         {
           name: 'boss', // a single medium appears alone — it's the level's boss
           spawn: { maxConcurrent: 1, total: 1, pool: [{ ship: 'pirate mini boss', chance: 1 }] },
@@ -459,7 +463,7 @@ export const LEVELS = [
         {
           name: 'wave-1',
           spawn: {
-            maxConcurrent: 4, pool: [
+            maxConcurrent: 4, total: 8, pool: [
               { ship: 'Basic pirate ship', chance: 75 },
               { ship: 'basic rocket pirate', chance: 25 }]
           },
@@ -468,14 +472,19 @@ export const LEVELS = [
         {
           name: 'wave-2',
           spawn: {
-            maxConcurrent: 4, pool: [
+            maxConcurrent: 4, total: 8, pool: [
               { ship: 'Basic pirate ship', chance: 65 },
               { ship: 'basic rocket pirate', chance: 20 },
               { ship: 'pirate mini boss', chance: 15 }]
           },
           advanceWhen: { kills: 16 }
         },
-        { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
+        { name: 'clear-out', // deterministic final wave before the boss (carries the old "carry" count)
+          spawn: { maxConcurrent: 4, total: 4, pool: [
+            { ship: 'Basic pirate ship', chance: 65 },
+            { ship: 'basic rocket pirate', chance: 20 },
+            { ship: 'pirate mini boss', chance: 15 }] },
+          advanceWhen: { allCleared: true } },
         {
           name: 'boss',
           spawn: { maxConcurrent: 1, total: 1, pool: [{ ship: 'first pirate boss', chance: 1 }] },
@@ -501,7 +510,7 @@ export const LEVELS = [
         {
           name: 'wave-1', // pirate gunners + rocketeers + advanced medium pirates (docs/plans/level-4-difficulty.md)
           spawn: {
-            maxConcurrent: 5, pool: [
+            maxConcurrent: 5, total: 8, pool: [
               { ship: 'pirate gunner', chance: 40 },
               { ship: 'basic rocket pirate', chance: 40 },
               { ship: 'advanced medium pirate', chance: 20 }]
@@ -511,14 +520,19 @@ export const LEVELS = [
         {
           name: 'wave-2', // more heavies as the trail closes in on the base
           spawn: {
-            maxConcurrent: 5, pool: [
+            maxConcurrent: 5, total: 8, pool: [
               { ship: 'pirate gunner', chance: 35 },
               { ship: 'basic rocket pirate', chance: 35 },
               { ship: 'advanced medium pirate', chance: 30 }]
           },
           advanceWhen: { kills: 16 }
         },
-        { name: 'clear-out', spawn: null, advanceWhen: { allCleared: true } },
+        { name: 'clear-out', // deterministic final wave before the boss (carries the old "carry" count)
+          spawn: { maxConcurrent: 5, total: 5, pool: [
+            { ship: 'pirate gunner', chance: 35 },
+            { ship: 'basic rocket pirate', chance: 35 },
+            { ship: 'advanced medium pirate', chance: 30 }] },
+          advanceWhen: { allCleared: true } },
         {
           name: 'boss', // the Second Boss guards the base's coordinates
           spawn: { maxConcurrent: 1, total: 1, pool: [{ ship: 'second pirate boss', chance: 1 }] },

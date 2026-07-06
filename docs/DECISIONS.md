@@ -1867,6 +1867,43 @@ longer to fully spawn). The `win` / return-to-base flow is untouched.
 
 ---
 
+## 54. Deterministic spawn totals (explicit per-phase `total`) + warp-in IS the stagger delay
+
+§53's staggering **broke** the assumption §53 claimed to preserve. The precomputed `enemyTotal`
+(`server/src/enemy_total.js`) modeled the *old* instant-fill runner: a `kills`/`killsSincePhase` threshold
+phase snapped to `maxConcurrent` and so left exactly `maxConcurrent` enemies **alive** ("carry") when it
+advanced, which a later `allCleared` clear-out phase then killed. Staggering trickles enemies in one at a
+time, so a threshold phase now advances with **far fewer** than `maxConcurrent` alive — the actual kills to
+clear a level came out variable (e.g. L1 14/15 instead of the precomputed 16). The HUD "destroyed X/Y"
+counter stopped short and the single drop trigger `kills === enemyTotal` (§30) never fired, so the L1
+Machine Gun and L2 Repair-drone reward drops silently vanished. A carry-based oracle can't survive a
+non-deterministic fill rate.
+
+**Decision.** Make counts **deterministic**: every spawning phase carries an explicit `spawn.total` cap. A
+threshold phase's `total` equals its kill-delta (so it leaves **0** alive at advance — a larger cap leaves
+survivors; a smaller cap deadlocks), and the "carry" remainder becomes a **real spawning clear-out/finale
+wave** (drawn from that level's wave-2 pool; L1, which has no clear-out, folds it into its finale). So
+`enemyTotal` is simply the **sum of every phase's `spawn.total`** — `enemy_total.js` collapses to that sum,
+the counter reaches N/N, and the drop fires on the true last kill. Per-level totals are preserved except
+**L1 intentionally drops 16→14** (two fewer finale rocketeers): L1=14, L2=17, L3=21, L4=22, side=20. **No
+second/structural drop trigger** (§30) — the one deterministic condition stays, extracted into a pure
+`isLastKillDrop({kills, enemyTotal})` and guarded by a new headless full-level replay
+(`client/src/level-sim.js` + test) that proves the counter reaches `enemyTotal` and the drop fires on the
+last kill. That missing coverage is what let the regression ship.
+
+**Warp-in becomes the arrival animation.** Rather than an empty 2–4 s gap then a separate 1 s pop, a spawned
+enemy appears **immediately** as a dot and **materializes over its stagger interval** — the armed 2–4 s
+cooldown, carried per-instance on `e.spawnDur` (the global `SPAWN_GROW_TIME` 1 s stays as the default and
+the player warp-back). While forming (`e.warping`) it is **invulnerable, cannot fire, and is not a valid
+homing-rocket target**, so the staggered trickle can't be spawn-camped mid-materialize; it still counts
+toward `maxConcurrent` (preserving §53's pacing) and shows its edge marker so the arrival reads. All three
+player→enemy damage paths skip warping enemies (bullet collision + rocket detonation trigger in `sim.js`,
+and the **separate** blast-splash loop in `projectiles.js`), so a warping enemy's hp stays `maxHp` and no
+health bar ever shows on a dot. The shot-down rocket path (`detonateRocket(r,false)`) is unaffected. This
+supersedes §53's "No server/`enemyTotal` change" claim.
+
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·
