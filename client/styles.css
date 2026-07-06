@@ -58,6 +58,12 @@
   }
   #welcome-scroll > :first-child { margin-top: auto; }
   #welcome-scroll > :last-child  { margin-bottom: auto; }
+  /* On PC (non-phone) the start screen pins the greeting/intro AND the Take-off footer to the TOP (button
+     still directly under the text), instead of the mobile vertical-center. Both rows size to content and
+     align to the top; the scroll cell's centering auto-margins are dropped so the text starts at the top. */
+  body:not(.dev-phone) #welcome { grid-template-rows: auto auto; align-content: start; }
+  body:not(.dev-phone) #welcome-scroll > :first-child { margin-top: 0; }
+  body:not(.dev-phone) #welcome-scroll > :last-child  { margin-bottom: 0; }
   /* Pinned footer: Take off + community link, always visible. */
   #welcome-footer {
     display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -91,6 +97,12 @@
     color: #e8f1ff; font-family: system-ui, sans-serif; text-align: left;
   }
   #mainwin.on { display: grid; }
+  /* The top-left #account-bar floats OVER the left column (it's fixed-position, outside the grid). On
+     non-phone forms give that column a wider min so the bar — which grows with a longer localized
+     "guest / log in" string (RU is ~1.5× EN) — is always fully contained by it and never spills right
+     into the work zone to clip the mission title. Phone keeps the narrow 160px min (screen too small to
+     spare it). Pairs with #account-bar's own max-width cap below. */
+  body:not(.dev-phone) #mainwin { grid-template-columns: minmax(240px, 18%) 1fr 25%; }
   /* left menu */
   /* margin-top (NOT padding) gives the menu its OWN scroll section starting BELOW the top-left auth
      (nickname / login-signup) block: the overflow viewport begins below it, so scrolled menu items are
@@ -394,7 +406,9 @@
     position: fixed; top: 11px; left: 56px; z-index: 13; display: none; /* top-aligned with the settings gear; shifted right to clear it (top-left corner) */
     font-family: system-ui, sans-serif; font-size: 13px; color: #cfe0ff;
     background: rgb(11,17,32); border: 1px solid rgba(120,150,210,.25); /* opaque: scrolled left-menu items must not show through it */
-    border-radius: 9px; padding: 8px 12px; max-width: 340px; text-align: left; line-height: 1.5;
+    border-radius: 9px; padding: 8px 12px; max-width: 200px; text-align: left; line-height: 1.5;
+    /* Capped so the bar stays within its (≥240px) left column and never overlaps the work zone; a longer
+       localized string wraps to another line here instead of spilling right over the mission title. */
   }
   body.menu #account-bar { display: block; }
   /* "Ships" — top-right of the Main Window. Inactive for now (future ship-buying); shown muted +

@@ -5,6 +5,18 @@
 
 ## 2026-07-06
 
+- **PC menu layout: top-aligned start screen + un-clipped mission title.** Two CSS-only fixes scoped to
+  non-phone forms (`body:not(.dev-phone)`). (1) The **welcome/start screen** now pins the greeting/intro
+  **and** the Take-off footer to the **top** of the screen (button still directly under the text) instead
+  of the mobile vertical-center — `#welcome` switches to `grid-template-rows: auto auto; align-content:
+  start` and the scroll cell's centering auto-margins are dropped. (2) The **Main Window mission title**
+  no longer hid behind the top-left account block: the floating `#account-bar` (fixed-position, over the
+  left column) grew with the longer RU "guest / log in" string and spilled past a narrow 18% column into
+  the work zone, clipping the title's first letters at windowed/tablet widths. The left column now gets a
+  wider `minmax(240px, 18%)` min on non-phone forms so it fully contains the bar, and the bar's own
+  `max-width` is capped (340→200px) so a long localized string wraps instead of overflowing right. Phone
+  layout unchanged.
+
 - **[2026-07-06-1738-fix-spawn-count-warpin] Deterministic spawn counts + enemy warp-in.** Fixed a
   staggered-spawns regression where the last-kill reward drops (L1 Machine Gun, L2 Repair drone) stopped
   appearing and the destroyed X/Y counter finished short (14/16, 15/16): the precomputed `enemyTotal`
@@ -32,6 +44,11 @@
   Solid-fuel 14→21, Ion 18→27, Pirate 12.6→19, Second-boss 30→45 (thrusters/`maxSpeed` untouched).
   Enemies **hold fire for the first 5 s** of each run (silent `G.combatElapsed` grace — they still spawn,
   move and aim). Each run now **opens gliding forward at 3 u/s** (10% of top speed) instead of dead-stopped.
+- **Ship-speed readout in the `?dev` perf overlay.** The perf line now appends `spd {current} pk {peak}`
+  (world units/sec) — the live player velocity magnitude plus a per-run peak-hold (resets on each new
+  player-ship build). Instrumentation only (no gameplay change), added to measure the actual speed range
+  before introducing a max-speed cap; the player currently has no speed limit (`sim.js` "pure inertia").
+  `client/src/hud.js` `updatePerf`. Visible only under the sticky `?dev` flag.
 - **Pirate rocket slower + weaker.** The enemy **Rocket pirate** (weapon id 4) had its launch speed cut
   `12 → 6` and damage `25 → 20`, so pirate rockets are easier to read/dodge and hit softer. Other stats
   (accel 9, turnRate 1.0, maxRange 120, health 20) unchanged. Seeded via the idempotent catalog upsert on

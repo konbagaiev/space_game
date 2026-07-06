@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-06 (**deterministic spawn totals + enemy warp-in-as-arrival** — every spawning phase
+**Updated:** 2026-07-06 (**PC menu layout** — on non-phone forms the start/welcome screen top-aligns the
+greeting/intro + Take-off, and the Main Window left column is widened to `minmax(240px, 18%)` so the
+top-left account bar no longer clips the mission title; see the Welcome + Main Window sections. Prior:
+**deterministic spawn totals + enemy warp-in-as-arrival** — every spawning phase
 now carries an explicit `total` cap (threshold phase `total` = its kill-delta → 0 enemies alive at advance;
 clear-out/finale waves carry the remainder), so `enemyTotal` is the exact sum of phase totals — fixing a
 staggered-spawns regression where the killed/total counter stopped short and the last-kill reward drops
@@ -19,7 +22,8 @@ snapping to `maxConcurrent` every frame. Prior: **combat pacing + engine buff** 
 **Welcome screen: dropped the L1 ship picker + pinned Take off** — the Level-1
 welcome (`#welcome`) is now a fixed CSS grid (`1fr auto`): a scrollable greeting/intro cell (`#welcome-scroll`)
 over a pinned footer (`#welcome-footer`, Take off + community link), so the **Take off** button is always
-on-screen regardless of content height, replacing a centered-flex column whose `justify-content:center` +
+on-screen regardless of content height (on **non-phone/PC forms** the greeting/intro + footer are top-aligned
+rather than vertically centered — see the Mobile menus section), replacing a centered-flex column whose `justify-content:center` +
 overflow clipped the unreachable *top* of the intro on short viewports. The decorative single-ship picker
 (`.pick` + `#ship-choices` cards) was removed (L1 owns exactly one ship). Prior: **HUD overhaul + item rarity/color** — the HUD credits readout is now one line
 `credits {total}/{earned} earned` and the live **Enemies** counter is removed; a small **event log** above
@@ -191,7 +195,9 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   native landscape viewport takes over seamlessly. Desktop is unaffected (`rotated` is touch-only).
 - **Mobile menus & Full screen:** the **welcome** screen is a **fixed grid** (scrollable greeting/intro
   cell on top, pinned Take-off footer at the bottom) — only the text scrolls and the **Take off** button
-  is always on-screen, like the Main Window; the **Main Window** is a fixed full-height grid (only its
+  is always on-screen, like the Main Window. On **non-phone forms** (`body:not(.dev-phone)`, i.e. PC) the
+  greeting/intro **and** the Take-off footer are instead pinned to the **top** (`grid-template-rows: auto
+  auto; align-content: start`), button still directly under the text; the **Main Window** is a fixed full-height grid (only its
   work-zone description scrolls), so its **Take off** button is likewise always on-screen. A single
   touch-only **floating Full-screen button** (`#fullscreen-btn`, fixed bottom-right, **icon-only `⛶`**,
   brighter than the old inline buttons) re-enters fullscreen to hide the browser chrome (URL bar, tabs) after
@@ -232,7 +238,10 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   backgrounded fight doesn't run on; the player resumes manually. **This is a client-side, single-player
   freeze — it must be reworked server-side when multiplayer lands (a client can't freeze a shared world);
   see DECISIONS §16.**
-- **Perf overlay** at the top center: FPS, frame time (ms), draw calls, triangles
+- **Perf overlay** at the top center: FPS, frame time (ms), draw calls, triangles, and a **ship-speed
+  readout** `spd {current} pk {peak}` (world units/sec — the live `|G.player.vel|` plus a per-run peak-hold
+  that resets when a new player ship is built; instrumentation for tuning a future max-speed cap, since the
+  player currently has no speed limit — see Movement)
   (the `?dev` per-second perf sample posted to `/api/perf` also carries `load.drops` = the live loot-drop
   count, next to `enemies`/`particles`, so drop cost shows up on a real device)
   (across both render passes), and the **real backbuffer resolution** (`w×h` = CSS size × pixelRatio —
@@ -647,7 +656,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Sentinels** wordmark centered (`#gametitle`, scaled up on `body.menu`; the old on-screen "Hangar" title is
   gone), and an **inactive "Ships"** label top-right (`#mw-ships`, reserved for future ship-buying).
   **Below**: a 3-column grid — **left menu** (`#mw-menu`: Missions / Loadout / Stash / Shop) | **work zone**
-  (`#mw-work`) | a **25% live ship-model preview** (`#mw-ship`). The **Missions** item (collapsible via the
+  (`#mw-work`) | a **25% live ship-model preview** (`#mw-ship`). Left column = `minmax(160px, 18%)`, widened
+  to `minmax(240px, 18%)` on **non-phone forms** (`body:not(.dev-phone)`) so it fully contains the
+  fixed-position `#account-bar` floating over it — otherwise a long localized (RU) "guest / log in" string
+  spilled past a narrow 18% column into the work zone and clipped the mission title's first letters (the bar
+  is also `max-width: 200px`, wrapping rather than overflowing). The **Missions** item (collapsible via the
   caret) lists the **campaign mission (primary)** and, once the shop is unlocked, the **three side missions
   (secondary)**; selecting a row renders its description + Take-off into the work zone (**only the
   description scrolls**, `#mw-mission-desc`). Loadout/Stash/Shop open the **shop bay in the work zone**

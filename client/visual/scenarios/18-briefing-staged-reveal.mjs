@@ -38,32 +38,51 @@ export default async function ({ page, assert, shot }) {
   assert.equal(await css('#takeoff', 'visibility'), 'visible', 'L1: Take-off visible after skip');
   await shot('L1-welcome-revealed');
 
-  // 4. Regression guard (welcome-pin-takeoff): the grid pins the footer to the viewport bottom while the
-  // greeting/intro scroll INDEPENDENTLY. At 900×360 the intro overflows its scroll cell, so we assert BOTH
-  // (a) the scroll region genuinely scrolls AND (b) the footer is flush to the content bottom. This FAILS
-  // if #welcome is reverted to the centered-flex column — there is no #welcome-scroll, and the footer
-  // (last children) is vertically centered, not pinned. (A "takeoff.bottom <= innerHeight" check would NOT
-  // catch a revert: the bottom-anchored button stays on-screen in the flex layout too — the flex trap
-  // clips the unreachable TOP, not the button. This is why we assert the pin, not mere visibility.)
-  await page.setViewportSize({ width: 900, height: 360 });
+  // 4a. Regression guard (welcome-pin-takeoff), PHONE form: the grid pins the footer to the viewport bottom
+  // while the greeting/intro scroll INDEPENDENTLY. This is now the PHONE-only layout (non-phone forms
+  // top-align instead — see 4b), so we test it at a phone-form viewport (880×360, longest edge < 900 →
+  // dev-phone). At that size the intro overflows its scroll cell, so we assert BOTH (a) the scroll region
+  // genuinely scrolls AND (b) the footer is flush to the content bottom. This FAILS if #welcome is reverted
+  // to the centered-flex column — there is no #welcome-scroll, and the footer (last children) is vertically
+  // centered, not pinned. (A "takeoff.bottom <= innerHeight" check would NOT catch a revert: the
+  // bottom-anchored button stays on-screen in the flex layout too — the flex trap clips the unreachable
+  // TOP, not the button. This is why we assert the pin, not mere visibility.)
+  await page.setViewportSize({ width: 880, height: 360 });
+  await page.evaluate(() => window.dispatchEvent(new Event('resize'))); // recompute the form class for the new size
+  await page.waitForTimeout(50);
   const pin = await page.evaluate(() => {
     const scroll = document.getElementById('welcome-scroll');
     const foot = document.getElementById('welcome-footer'); // null on a centered-flex revert → assertion fails
     const wel = document.getElementById('welcome');
     const padBottom = parseFloat(getComputedStyle(wel).paddingBottom); // 24px
     return {
+      form: document.body.className.match(/dev-\S+/)?.[0],
       overflows: scroll.scrollHeight > scroll.clientHeight,
       scrollH: scroll.scrollHeight, clientH: scroll.clientHeight,
       footBottom: foot.getBoundingClientRect().bottom,
       contentBottom: window.innerHeight - padBottom, // 360 − 24 = 336
     };
   });
-  // (a) the text region actually overflows (measured: scrollHeight 239 > clientHeight 201 at 900×360).
-  assert.ok(pin.overflows, `L1: intro region scrolls at 900×360 (scrollH ${pin.scrollH} > clientH ${pin.clientH})`);
-  // (b) the footer is pinned flush to the bottom (measured: footBottom 336 === innerHeight−24). ≤2px tolerance.
+  assert.equal(pin.form, 'dev-phone', `L1: 880×360 is phone form (pinned-footer layout) — got ${pin.form}`);
+  // (a) the text region actually overflows.
+  assert.ok(pin.overflows, `L1: intro region scrolls at 880×360 (scrollH ${pin.scrollH} > clientH ${pin.clientH})`);
+  // (b) the footer is pinned flush to the bottom (footBottom === innerHeight−24). ≤2px tolerance.
   assert.ok(Math.abs(pin.footBottom - pin.contentBottom) <= 2,
-    `L1: footer pinned to bottom at 900×360 (footBottom ${Math.round(pin.footBottom)} ≈ contentBottom ${pin.contentBottom})`);
+    `L1: footer pinned to bottom at 880×360 (footBottom ${Math.round(pin.footBottom)} ≈ contentBottom ${pin.contentBottom})`);
+
+  // 4b. New PC layout guard: on non-phone forms the greeting/intro + Take-off footer are pinned to the TOP
+  // (grid-template-rows: auto auto; align-content: start), NOT vertically centered or bottom-pinned. At
+  // 1280×800 (desktop) the footer sits well above the viewport bottom, directly under the short intro.
   await page.setViewportSize({ width: 1280, height: 800 }); // restore for the L2/L3/L4 Main Window section
+  await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+  await page.waitForTimeout(50);
+  const topPin = await page.evaluate(() => {
+    const foot = document.getElementById('welcome-footer');
+    return { form: document.body.className.match(/dev-\S+/)?.[0], footBottom: Math.round(foot.getBoundingClientRect().bottom), h: window.innerHeight };
+  });
+  assert.equal(topPin.form, 'dev-desktop', `L1: 1280×800 is desktop form — got ${topPin.form}`);
+  assert.ok(topPin.footBottom < topPin.h / 2,
+    `L1(PC): footer top-aligned, well above the viewport bottom (footBottom ${topPin.footBottom} < ${topPin.h / 2})`);
 
   // ---- L2/L3/L4: the Main Window. Reuse 97's previewTarget-gated landOn helper (works on these levels). ----
   const landOn = async (n) => {
