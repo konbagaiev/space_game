@@ -5,7 +5,14 @@
 
 ## 2026-07-07
 
-- **Grab reel-in speed is now a linear ramp (no near-ship jerk).** Replaced the `1/dist²` field-based pull
+- **Fix: touch HUD overlap — zoom buttons vs the Return-to-base button.** On phones the `＋/−` zoom pair
+  (`body.touch #zoom`) sat bottom-center at `bottom:40px`, directly under the Return-to-base pill
+  (`#return-btn`, `bottom:34px`), so during the return-to-base phase the two overlapped. Moved the touch
+  zoom pair to the **top-right, a vertical column under the "Destroyed X/Y" counter** (clear of the counter,
+  the rocket button, and the return button). Also **restyled `#return-btn` to match the Take-off button**
+  (orange gradient `#ffb35a→#ff7a3c`, dark text) so it reads as the primary "go" action instead of a blue
+  pill. CSS-only (`client/styles.css`); verified with a headless layout check (no rect overlaps on an
+  812×375 touch viewport). Docs: SUMMARY zoom + return-button sections. Replaced the `1/dist²` field-based pull
   *speed* with a **linear ramp by distance** — `PULL_SPEED_FAR = 1` u/s far out rising linearly to
   `PULL_SPEED_NEAR = 4` u/s at the ship (weight-10 refs; `·(10/weight)`), floored at/beyond `PULL_FAR_DIST = 11`.
   Deliberately un-physical: a constant slope removes the sharp near-ship snap the inverse-square speed produced,

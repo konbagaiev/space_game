@@ -118,6 +118,11 @@ code lives, what it touches, why it's placed there).
   fits the existing code — with `file:line` refs and ties back to the plan. **Then show the diff itself**
   (the `--stat` summary + the actual hunks; for a large diff, show `--stat` + the key hunks and point the
   maintainer to read the rest in their editor).
+- **If the change adds or moves a UI element:** explicitly call out its on-screen position **relative to
+  existing elements** — enumerate what already occupies that region (especially the **touch/phone** layout:
+  bottom-center bar, corners, zoom pair, rocket/fire) and confirm no overlap. A cheap headless layout check
+  (load `styles.css` over the HUD DOM, assert the new element's rect doesn't intersect the others) is worth
+  running here. (This is a real escaped defect — the Return-to-base button overlapped the touch zoom pair.)
 - Ask via `AskUserQuestion` (header "Code review"): **Approve the diff?**
   - **Approve** → proceed to Stage 7 (commit).
   - **Request changes** (maintainer says what) → `SendMessage` the notes to the implementer (**fix mode**)

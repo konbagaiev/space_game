@@ -664,12 +664,14 @@
   }
   #zoom button:hover { background: rgba(40,60,100,.7); }
   #zoom button:active { filter: brightness(1.3); }
-  /* Touch: move the zoom pair to the bottom-center, laid out horizontally as "−  +" (minus left, plus right). */
+  /* Touch: place the zoom pair at the TOP-RIGHT, directly under the "Destroyed X/Y" HUD counter
+     (the #hud .right column). Kept out of the bottom-center so it never collides with the
+     Return-to-base button (#return-btn, also bottom-center on the return-to-base phase). Vertical
+     "＋ / −" column, inheriting the base flex-direction:column. */
   body.touch #zoom {
-    right: auto; left: 50%; top: auto; bottom: 40px;
-    transform: translateX(-50%);
-    flex-direction: row-reverse; /* DOM is [＋, −]; row-reverse renders − (left) then ＋ (right) */
-    gap: 14px;
+    right: 16px; left: auto; top: 96px; bottom: auto;
+    transform: none;
+    gap: 10px;
   }
   /* Off-screen enemy indicators: arrows on the screen edge pointing toward off-screen enemies */
   #markers { position: fixed; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
@@ -723,19 +725,21 @@
   }
   /* Bottom-center "Return to base" tap button (return-to-base). Explicit dock target, complements the
      top #return-hint. Interactive (pointer-events auto) and layered above the full-screen touch
-     #stick-zone (z-5); horizontally centered, clear of the bottom-right #rocket-btn. Shown/hidden by
-     updateReturnHint (display none by default). */
+     #stick-zone (z-5); horizontally centered, clear of the bottom-right #rocket-btn (and, on touch, of
+     the zoom pair which now lives top-right). Styled to match the Take-off button (orange gradient,
+     dark text) so it reads as the primary "go" action. Shown/hidden by updateReturnHint (display none
+     by default). */
   #return-btn {
     position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 6;
     display: none; pointer-events: auto; cursor: pointer;
-    font-family: system-ui, sans-serif; font-weight: 700; font-size: 16px; letter-spacing: .5px;
-    color: #7ec8ff; background: rgba(8,12,24,.55); border: 1px solid rgba(126,200,255,.55);
-    border-radius: 22px; padding: 11px 22px;
-    box-shadow: 0 0 14px rgba(90,170,255,.35); text-shadow: 0 0 6px rgba(0,0,0,.8);
+    font-family: system-ui, sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px;
+    color: #1a0c02; background: linear-gradient(90deg,#ffb35a,#ff7a3c); border: 0;
+    border-radius: 22px; padding: 12px 24px;
+    box-shadow: 0 0 16px rgba(255,140,60,.4);
     -webkit-tap-highlight-color: transparent;
   }
-  #return-btn:hover { background: rgba(18,26,44,.7); border-color: #7ec8ff; }
-  #return-btn:active { filter: brightness(1.25); }
+  #return-btn:hover { filter: brightness(1.08); }
+  #return-btn:active { filter: brightness(1.15); }
   /* Transient milestone banner ("10 enemies left", "Final Stage"): big centered line in the upper third
      so it clears the ship. Non-interactive; opacity is set inline by updateBanner (fades to 0 over 3s). */
   #banner {

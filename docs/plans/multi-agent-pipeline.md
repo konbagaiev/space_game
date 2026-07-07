@@ -184,7 +184,11 @@ Tests exist for new logic **and the full suite passes** (`client && node --test`
 logic is modularized, **not dumped into `index.html`** (see `docs/plans/client-code-structure.md`) ·
 SUMMARY updated to match reality + CHANGELOG bullet added (+ DECISIONS entry if a real trade-off) ·
 English-only · matches surrounding style · no secrets / dead code · the plan was actually fulfilled · not
-over-engineered (DECISIONS §30).
+over-engineered (DECISIONS §30) · **a new/moved UI element is checked for on-screen overlap** — enumerate
+what already occupies that screen region (**especially the touch/phone layout**: the bottom-center bar, the
+corners, the zoom pair, the rocket/fire buttons) and confirm the new element collides with none of them.
+This is a real escaped defect: the Return-to-base button shipped overlapping the bottom-center touch zoom
+pair because neither the plan, the critic, nor the reviewer enumerated the existing touch-layout elements.
 
 ## Open questions (resolved)
 

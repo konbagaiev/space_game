@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-07 (**Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
+**Updated:** 2026-07-07 (**Touch HUD overlap fix** — on touch the zoom `＋/−` pair moved to the top-right
+(under the Destroyed counter) so it no longer collides with the bottom-center Return-to-base button, which is
+now styled like the Take-off button (orange gradient). Previously: **Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
 inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
 weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base). Reel-in speed is a **linear ramp** by
 distance (1 u/s far → 4 u/s at the ship, weight-scaled) — un-physical but no near-ship jerk, replacing the
@@ -42,8 +44,9 @@ overflow clipped the unreachable *top* of the intro on short viewports. The deco
 `credits {total}/{earned} earned` and the live **Enemies** counter is removed; a small **event log** above
 the rocket button shows the last 4 lines (kill: `{shipname} killed +{amount}`; pickup: `picked up {name}`
 tinted by the item's color), each fading over 5 s (`client/src/eventlog.js`); dropped loot now glows in its
-own rarity color (trash white / common green / rare blue); on **touch** the zoom `−  +` pair moved to the
-bottom-center. New `rarity`/`color` columns on `components`/`weapons` (migration 020 + Postgres parity)
+own rarity color (trash white / common green / rare blue); on **touch** the zoom `＋/−` pair sits at the
+**top-right, under the Destroyed counter** (moved off the bottom-center so it never collides with the
+Return-to-base button). New `rarity`/`color` columns on `components`/`weapons` (migration 020 + Postgres parity)
 drive the glow + tint. Prior: **Staged briefing reveal (L1-3)** — the L1 welcome briefing and the L2/L3 Main
 Window campaign briefing now **type out over ~5 s** (`client/src/typewriter.js`), then reveal the
 ship-preview window (+ granted-item showcase; L1 has no picker), then the **Take off** button **+0.5 s** later;
@@ -165,8 +168,9 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   touch stick), fire (`Space`/FIRE), or rocket (`F`/🚀) — instantly cancels autopilot and returns control; a
   cancelled dock does not win (re-tap the station to resume). See the Level flow / Victory section.
 - **Zoom** — **PC:** mouse **wheel** (scroll up = closer) + on-screen **＋/−** buttons (right edge,
-  vertically centered — unchanged). **Mobile:** the buttons (**bottom-center**, laid out horizontally as
-  **`−  +`** — minus left, plus right; `body.touch #zoom` override) + two-finger **pinch**. Zoom scales the fixed
+  vertically centered — unchanged). **Mobile:** the buttons (**top-right, a vertical `＋/−` column under the
+  Destroyed X/Y counter** — clear of the bottom-center Return-to-base button; `body.touch #zoom` override) +
+  two-finger **pinch**. Zoom scales the fixed
   camera offset along its angle within `0.6–2.2×`, **eases smoothly** toward the target (~0.2 s, frame-rate
   independent) instead of snapping, and is **persisted** across runs (`localStorage` key `camZoom`). On touch
   the `+`/`−` buttons fire on **`touchstart`** (like FIRE/🚀), not a synthesized `click`, and sit `z-index:6`
@@ -777,7 +781,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   reappears if the player cancels the dock mid-flight. Wired **split per DECISIONS §42**: on touch it fires on
   `touchstart` (a second-thumb tap works while a steering finger holds `#stick-zone`), and the `click` path is
   **mouse-only**; the button sits `z-index:6` above the full-screen `#stick-zone`, is hidden on menus
-  (`body.menu #return-btn`), and its label localizes via `data-i18n`/`applyTranslations` (EN + RU).
+  (`body.menu #return-btn`), and its label localizes via `data-i18n`/`applyTranslations` (EN + RU). It is
+  **styled to match the Take-off button** (orange gradient `#ffb35a→#ff7a3c`, dark text) so it reads as the
+  primary "go" action, and on **touch** the zoom `＋/−` pair lives top-right (not bottom-center) so the two
+  never overlap.
 - **Victory → Main Window → next level.** On a win the result overlay shows a **Continue** button (a loss
   shows **Restart**/retry); Continue opens the **Main Window** (see above) — the between-battles screen (also
   the landing/homepage). The campaign briefing shows as the **primary mission** in the work zone with a
