@@ -1996,6 +1996,64 @@ strength drives reach only; the speed profile is uniform across grabs. `PULL_SPE
 
 ---
 
+## 58. Perf regression gate is a relative A/B (same job), not an absolute threshold
+
+**Problem.** Weak phones (A03s/Redmi, DECISIONS §23) are the floor, but a code change that quietly adds ~2%
+per-frame CPU cost is invisible in review and only surfaces as "the game feels heavier" much later. We want to
+catch a **>2% CPU regression before it lands** — but 2% is far below the noise of any single wall-clock
+number (vsync/compositor jitter, thermal drift, GC pauses swamp it), and it's device- and browser-specific, so
+there is no meaningful *absolute* budget ("update must be < 0.5ms") to assert against.
+
+**Decision.** Measure it as a **relative A/B**: replay a fixed input **trace** identically on the **merge-base
+build (A)** and the **feature build (B)** on the **same machine, same headless Chromium, same job**, interleave
+the reps (`A,B,A,B,…`, cancels slow thermal drift), and compare each JS-work bucket's **median across reps**
+with a **bootstrap 95% CI on the ratio `(B/A−1)`**. Flag **REGRESSION** only when the CI *lower bound* exceeds
+**+2%** — i.e. we are statistically confident the true delta is >2%, not point-estimate noise. Because both
+builds run on one browser binary, transcendental last-bit FP differences never enter the comparison, and the
+absolute machine speed cancels in the ratio. Determinism is bought by pinning the three nondeterminism sources
+(seeded `Math.random`, a fixed `1/60` `dt`, a recorded per-tick input snapshot) — the game sim is already a
+pure function of `(state, keys, touchAim, dt, random)` with **no wall-clock in the math**.
+
+**Metric = `js.*`, never `fps`/`frameMs`.** Wall-clock frame time is vsync/compositor-noisy and never
+2%-detectable (per `perf-low-end-phones.md`). The gate keys on the CPU/JS buckets `update`/`dom`/`render`/
+`total` that `devPerf` already produces — the half that *can* be measured deterministically on a desktop. Two
+resolution details the implementation forced (both from measuring on the swiftshader dev machine): (1) Chromium
+clamps `performance.now()` to 100µs, so a per-tick **median** of quantized samples jumps in coarse steps — each
+rep is aggregated by the **mean** (of ~780 ticks, which averages back to sub-quantum resolution), with the
+**median taken *across* reps** for GC robustness. (2) On **software GL the `render` bucket rasterizes on the
+CPU** and is genuinely ~10–20% noisy, dominating `full.js.total`; the tight 2%-sensitive signal is therefore
+**`sim`-mode `js.update`** (a pure `update(dt)` loop, no render). The gate fires on **either** `sim.js.update`
+**or** `full.js.total`, so a real CPU regression is caught by the clean `sim` signal even when `full` is too
+noisy to resolve 2% (on real-GPU CI the `full` bucket tightens). This is why the CI is **paired** — `A[i]`/`B[i]`
+run back-to-back (order flipped each round) so common-mode machine noise cancels in the ratio.
+
+**Scope: CPU-only — the GPU blind spot is explicit.** A green gate is **not** "no A03s regression": a change
+that only adds GPU cost (an extra additive-particle layer, a render pass, a bigger backbuffer, a heavier
+shader) can regress a real phone while `js.*` stays flat, because browsers don't expose GPU execution time on
+mobile. The perf-low-end work found those devices were largely **fill-rate/thermal/compositor-governed**, which
+no desktop run reproduces. So the gate additionally tracks structural signals from the per-tick `load` snapshot
+(`draws`/`tris`/`particles`) and flags growth — but states plainly it is a **proxy, not a GPU measurement**.
+Real-device `?dev` telemetry (§23) remains the source of truth for the GPU/thermal half.
+
+**Load-pinning for gameplay diffs.** A trace replays *inputs*, not the world; a diff that changes gameplay
+(turn rate, damage, spawn timing) could yield a different entity population on B and contaminate the delta with
+"different amount of work." The canonical trace is **load-pinned** (`setup.maintainEnemies`): the replayer
+respawns to hold a fixed enemy count each tick, so the per-frame workload is structurally constant regardless
+of who wins the fight. The runner also reports per-build `load.*` and annotates "load diverged — treat Δ as
+approximate" when A and B drift apart.
+
+**Standalone tool + documented pipeline prose, NOT a CI hard-fail (§30).** Ship the runnable
+`node client/bench/run.mjs` + the `?bench` hooks, and **document** the PERF A/B stage in the feature pipeline
+(`multi-agent-pipeline.md` + the skill prompt) as prose the pipeline Claude executes — no GitHub Actions job,
+no orchestrator code. On a REGRESSION the pipeline **surfaces the per-bucket table to the maintainer as a
+blocking question** (accept the intended cost / send back / abandon), the same posture as the reviewer
+returning CHANGES. Rationale: the gate needs a merge-base build to compare against (materialized per-PR), it is
+inherently advisory (a 2% CPU cost can be a deliberate trade), and a single author doesn't need CI machinery
+to enforce it (§30). Because build A is always the merge-base, on the first branch *after* the harness lands
+build A has no `window.__bench` → the runner prints `gate inactive` and exits 0; real A/B activates on the
+next feature. Cross-references §23 (the `?dev` monitor this reuses) and `docs/plans/perf-low-end-phones.md`.
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

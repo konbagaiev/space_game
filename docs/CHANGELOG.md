@@ -266,6 +266,31 @@
 
 ## 2026-07-04
 
+- **[2026-07-04-0949-perf-benchmark-replay] Deterministic replay benchmark + pre-commit perf-regression
+  gate.** A standalone A/B tool that catches when a code change makes the **per-frame CPU cost** worse by
+  **>2%** before it lands. It replays a fixed input **trace** identically on two builds — the **merge-base**
+  (`A`) and the **worktree** (`B`) — on the same headless Chromium in the same job, and compares the JS-work
+  buckets (`js.update`/`js.dom`/`js.render`/`js.total`, the CPU half of the shipped `?dev` `devPerf` monitor).
+  New `client/src/bench.js`: the sticky **`?bench`** flag (`benchMode`/`isBench`, mirrors `?dev`) + a seeded
+  PRNG (`installSeededRandom`/`mulberry32`) + `BENCH_DT` (fixed 1/60 step) — the three nondeterminism sources
+  (RNG, `dt`, input) pinned so the client sim replays bit-for-bit. **`?bench=record`** captures the per-tick
+  resolved input; `window.__bench.stop()` downloads a trace JSON. **`?bench=replay`** →
+  `window.__bench.replay(trace,{mode})` re-seeds, `reset()`s to a clean fight, **sets `G.gameStarted=true`**
+  (the headless page never runs the launch flows, so without it `update()` early-returns and the bench
+  measures nothing), and drives the trace through the exact per-frame work `animate()` does, timed into the
+  same buckets. Canonical trace `client/bench/traces/combat-heavy.json` (produced deterministically by
+  `node bench/gen-trace.mjs`, **load-pinned** to 6 enemies so a gameplay-touching diff still gets a clean
+  A/B). Runner **`node client/bench/run.mjs`** (`npm run bench`) starts an isolated server + one Chromium,
+  interleaves reps `A,B,…` (default 15, 4× CDP CPU throttle), and via the pure, unit-tested
+  `client/bench/stats.mjs` reports a per-bucket **median + bootstrap-95%-CI** table, flagging **REGRESSION**
+  only when the CI lower bound of `(B/A−1)` exceeds +2% (keys on `js.total` full / `js.update` sim, plus
+  structural `load.draws/tris/particles` growth as a GPU-cost proxy). If either build lacks `window.__bench`
+  it prints `gate inactive` and exits 0 (so this very PR, whose merge-base predates the harness, passes). New
+  tests: `client/src/bench.test.js` (flag + PRNG) and `client/bench/stats.test.js` (verdict thresholds), both
+  under `node --test`. **Scope: CPU-only** — GPU/fill-rate isn't measured (browsers don't expose it on
+  mobile); real-device `?dev` telemetry stays the source of truth for the GPU/thermal half. Wired as a
+  **documented (not CI-enforced)** PERF A/B stage in the feature pipeline (`docs/plans/multi-agent-pipeline.md`
+  + the skill prompt). See DECISIONS §58 + `client/bench/README.md`.
 - **[2026-07-04-1740-triple-spiral-rocket] Shop damage reads 40×3 for the triple spiral rocket.**
   Live-test follow-up: the shop/loadout stat line showed the triple spiral rocket's damage as a single
   warhead's `40`, misrepresenting a 3-warhead weapon. `statLine` (`client/src/shop.js`) now renders

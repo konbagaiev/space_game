@@ -16,7 +16,7 @@ Full rationale and rules: `docs/plans/multi-agent-pipeline.md`. Follow `CLAUDE.m
 (**keep it simple — don't over-engineer**). Consider using `TaskCreate` to track the stages below.
 
 Track these counters across the run for the retro: `plannerRevisions`, `scopeGrewInDiscovery` (bool),
-`criticRounds`, `reviewRounds`. These counters, plus per-agent usage (`subagent_tokens` / `tool_uses` /
+`criticRounds`, `reviewRounds`, `perfGate` (`FLAT`/`REGRESSION(…)`/`inactive`, from Stage 6.7). These counters, plus per-agent usage (`subagent_tokens` / `tool_uses` /
 `duration_ms`) summed from each `task-notification`, are persisted to `docs/pipeline-runs.jsonl` at
 Stage 11 — so build the run record in memory as you go.
 
@@ -125,6 +125,24 @@ code lives, what it touches, why it's placed there).
     `reviewRounds`) → **re-show this walkthrough**.
   - Record the decision + how many human rounds in the run-log `human_review`.
 
+## Stage 6.7 — Perf A/B gate (after human review, before commit)
+
+Catch a >2% per-frame **CPU** regression before it lands (DECISIONS §58, `docs/plans/multi-agent-pipeline.md`).
+Do this yourself (no agent) after the human review approves:
+- Compute the merge-base: `base=$(git -C <worktree> merge-base HEAD main)`.
+- Materialize build **A** from the merge-base into a temp dir (e.g. `git -C <worktree> archive "$base" | tar -x
+  -C <tmpA>`), and run from the worktree:
+  `cd <worktree>/client && BENCH_A_DIR=<tmpA>/client BENCH_B_DIR=<worktree>/client node bench/run.mjs`.
+- Read the verdict and record `perfGate` for the retro:
+  - **`gate inactive`** (merge-base predates the bench harness → build A has no `window.__bench`) → note it,
+    `perfGate = inactive`, continue. Expected until the first feature merges after the harness itself.
+  - **All traces `FLAT`/`IMPROVED`** → `perfGate = FLAT`, continue.
+  - **Any `REGRESSION`** → set `perfGate = REGRESSION(bucket, Δ%)` and **STOP: surface the per-bucket table to
+    the maintainer as a blocking question** (same posture as a reviewer CHANGES): accept the intended cost /
+    send back to the implementer (fix mode) / abandon. Only continue on the maintainer's call.
+- It is **CPU-only** — a green gate is not "no weak-phone regression"; the GPU half stays with real-device
+  `?dev`. Say so if the maintainer treats FLAT as a full all-clear.
+
 ## Stage 7 — Commit + retro (metrics only — do NOT collect agent feedback yet)
 
 - Ensure the work is committed on the branch: `git -C <worktree> add -A && git -C <worktree> commit` with
@@ -137,6 +155,8 @@ code lives, what it touches, why it's placed there).
       scope* during discovery is not a planner miss — say so rather than blaming the planner.)
     - Critic — flag if `criticRounds > 2`.
     - Reviewer — flag if `reviewRounds > 1`.
+    - Perf gate — report `perfGate` = `FLAT` / `REGRESSION(bucket, Δ%)` / `inactive`; a REGRESSION the
+      maintainer accepted may signal a perf-blind implementer or plan.
   - If any flag fired, name it explicitly to the maintainer (this is the whole point of the retro).
 - Ask, via `AskUserQuestion`, the **deploy question ONLY**: **Deploy this feature?** (yes / not yet / abandon).
   **Do NOT ask for per-agent satisfaction here** — agent feedback is collected in Stage 9, *after* the live

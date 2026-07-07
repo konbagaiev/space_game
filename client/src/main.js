@@ -3,6 +3,7 @@
 // the Main Window / shop / welcome / account / settings UI. It imports the extracted modules (sibling
 // paths, no `src/` segment) and `three` via the index.html importmap. Slices are peeling cohesive UI
 // modules out of here next; for now it is the single composition root.
+import { benchMode, isBench, installSeededRandom, BENCH_DT } from './bench.js'; // ?bench replay perf gate — imported FIRST so its seeded RNG is installable before any module calls Math.random
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG } from './i18n.js'; // language load/resolve for bootstrap
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
@@ -34,6 +35,15 @@ let soundUrls = {};                 // logical key → same-origin url (fed to a
 
 // Graphics quality tier lives in G.gfx (built in state.js, read by engine.js at construction).
 const DEV = isDev(); // ?dev → record per-frame perf samples to the server (see devPerf / dev.js)
+
+// ---------- Benchmark harness (?bench): deterministic replay perf gate ----------
+// BENCH is the sticky ?bench mode ('record' | 'replay') this load, or null (off — zero overhead for players).
+// See docs/plans/2026-07-04-0949-perf-benchmark-replay.md. In record mode animate() snapshots per-tick input;
+// in replay mode the window.__bench.replay() hook (built near the ?debug block) drives its own timed loop.
+const BENCH = benchMode();
+const BENCH_SEED = 1234567;   // record-mode PRNG seed; must match gen-trace.mjs so record == replay
+let benchRecording = false;   // record mode: set by __bench.record(), makes animate() push input snapshots
+const benchRecord = [];       // captured per-tick { k:[codes], t:[heading,thrust]|null } for __bench.stop()
 
 // musicForState/refreshMusic moved to src/sim.js (music follows the live game state). refreshMusic is
 // imported at the top; tryUnlockAudio below calls it on the first unlocking gesture.
@@ -461,12 +471,17 @@ function prewarmShaders() {
 }
 
 function animate() {
+  // ?bench=replay drives its own timed tick loop (window.__bench.replay). Keep the rAF loop idle so leftover
+  // combat state can't churn/render (under software GL) between measurements and stall the next navigation.
+  if (BENCH === 'replay') return;
   requestAnimationFrame(animate);
   const rawSec = clock.getDelta();        // true frame interval (unclamped) — for the perf metrics
-  const dt = Math.min(rawSec, 0.05);      // clamped — for the sim only (stability on a long/background frame)
+  const dt = BENCH ? BENCH_DT : Math.min(rawSec, 0.05); // bench: fixed step for determinism; else clamped for sim stability
   const t0 = DEV ? performance.now() : 0;
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
   if (!G.paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
+  // record mode: snapshot the resolved input AFTER update() so the trace replays identically (see bench.js)
+  if (benchRecording) benchRecord.push({ k: Object.keys(keys).filter((c) => keys[c]), t: touchAim.active ? [touchAim.heading, touchAim.thrust] : null });
   if (HITBOXES_DEBUG) syncHitBoxes(scene, G.player, enemies); // dev-only hitbox wireframe overlay
   const t1 = DEV ? performance.now() : 0; // end of sim
   updateHud();
@@ -554,6 +569,116 @@ if (location.search.includes('debug')) {
   };
 }
 
+// ---------- Benchmark hooks (?bench): recorder + deterministic replayer on window.__bench ----------
+// Attached only under ?bench (record or replay), independent of ?debug. Inert for normal players.
+// The replayer is the perf gate's engine: it re-seeds the RNG, resets to a clean load-pinned fight, then
+// drives trace.ticks through the exact per-frame work animate() does — timed into the same three buckets
+// devPerf uses — and returns the raw per-tick arrays for client/bench/run.mjs to compare A vs B.
+// See docs/plans/2026-07-04-0949-perf-benchmark-replay.md (Component 3).
+if (isBench()) {
+  const median = (a) => { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const shipById = (id) => { for (const s of CATALOG.shipByName.values()) if (s.id === id) return s; return null; };
+  // cheap deterministic state hash (rounded entity positions) — the self-check compares it across reps
+  const stateHash = () => {
+    let h = 2166136261 >>> 0;
+    const mix = (n) => { h = Math.imul(h ^ (Math.round(n * 100) | 0), 16777619) >>> 0; };
+    for (const e of enemies) { mix(e.mesh.position.x); mix(e.mesh.position.z); }
+    if (G.player) { mix(G.player.mesh.position.x); mix(G.player.mesh.position.z); mix(G.player.heading); }
+    mix(enemies.length);
+    return h >>> 0;
+  };
+  // One full frame's work, reusing animate()'s exact call sequence (minus tickZoom / dock+grab raycasts /
+  // updatePerf — none feed the sim; dropped consistently on A and B, see plan Component 3 step 2).
+  const fullFrame = (dt) => {
+    const t0 = performance.now();
+    update(dt);
+    const t1 = performance.now();
+    updateHud(); updateMarkers(); updateDropMarkers(); updateCreditPopups();
+    updateEnemyHealthBars(); updateOobWarning(); updateReturnArrow(); updateReturnHint(); updateMiniMap();
+    const t2 = performance.now();
+    renderer.info.reset();
+    renderer.clear();
+    renderer.render(skyScene, camera);
+    renderer.clearDepth();
+    renderer.render(scene, camera);
+    const t3 = performance.now();
+    return { update: t1 - t0, dom: t2 - t1, render: t3 - t2, total: t3 - t0,
+             draws: renderer.info.render.calls, tris: renderer.info.render.triangles };
+  };
+  // 'sim' mode: only update(dt) — tightest, lowest-noise, most 2%-sensitive for pure-sim diffs.
+  const simFrame = (dt) => {
+    const t0 = performance.now();
+    update(dt);
+    const t1 = performance.now();
+    return { update: t1 - t0, dom: 0, render: 0, total: t1 - t0, draws: 0, tris: 0 };
+  };
+
+  window.__bench = {
+    // True once the catalog + player exist (bootstrap resolved) — the runner waits on this before replay().
+    ready: () => !!(G.player && CATALOG.enemyShips && CATALOG.enemyShips.length),
+    // ---- Recorder (drives the deferred human authoring flow; see client/bench/README.md) ----
+    record() { benchRecord.length = 0; benchRecording = true; },
+    stop(name = 'combat-heavy', setup) {
+      benchRecording = false;
+      const trace = { version: 1, name, seed: BENCH_SEED, dt: BENCH_DT, warmupTicks: 120,
+        ticks: benchRecord.slice(),
+        setup: setup || { shipId: 1, spawns: [{ atTick: 0, count: 6 }], maintainEnemies: 6 } };
+      try {
+        const blob = new Blob([JSON.stringify(trace, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = `${name}.json`;
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch { /* headless / no DOM download — the trace object is still returned */ }
+      return trace;
+    },
+    // ---- Replayer (the gate's engine) ----
+    async replay(trace, { mode = 'full' } = {}) {
+      const setup = trace.setup || {};
+      // 1. deterministic setup: re-seed, build the fixed ship, reset to a clean fight, spawn the fixed waves.
+      installSeededRandom(trace.seed);
+      const shipDef = setup.shipId != null ? shipById(setup.shipId) : null;
+      if (shipDef) buildPlayerFor(shipDef);
+      reset();
+      // PRECONDITION (plan Component 3 step 1): reset() does NOT set G.gameStarted — the launch flows do, and
+      // the headless ?bench=replay page never runs them. Without this, every timed update(dt) early-returns
+      // at sim.js:305 and the benchmark measures nothing. Set it, then assert the sim will actually run.
+      G.gameStarted = true;
+      for (const w of (setup.spawns || [])) if ((w.atTick || 0) === 0) for (let i = 0; i < (w.count || 0); i++) spawnEnemyShip(CATALOG.enemyShips[0]);
+      if (!(G.player && G.player.alive === true && levelRunner.won === false)) {
+        throw new Error(`bench replay precondition failed (alive=${G.player && G.player.alive}, won=${levelRunner.won}) — sim would not run`);
+      }
+      const maintain = setup.maintainEnemies || 0;
+      const dt = trace.dt || BENCH_DT;
+      const frame = mode === 'sim' ? simFrame : fullFrame;
+      const warmup = trace.warmupTicks || 0;
+      const upd = [], dom = [], render = [], total = [], draws = [], tris = [], particles = [], enemyCount = [];
+      // 2. run the trace in order. Synchronous loop → no rAF interleaving mid-measurement.
+      for (let i = 0; i < trace.ticks.length; i++) {
+        const tick = trace.ticks[i];
+        for (const c in keys) keys[c] = false;
+        for (const c of (tick.k || [])) keys[c] = true;
+        if (tick.t) { touchAim.active = true; touchAim.heading = tick.t[0]; touchAim.thrust = tick.t[1]; }
+        else touchAim.active = false;
+        while (maintain && enemies.length < maintain) spawnEnemyShip(CATALOG.enemyShips[0]); // load-pin (deterministic on A and B)
+        const f = frame(dt);
+        if (i >= warmup) { // 3. discard warmup ticks from timing
+          upd.push(f.update); dom.push(f.dom); render.push(f.render); total.push(f.total);
+          draws.push(f.draws); tris.push(f.tris); particles.push(liveParticles()); enemyCount.push(enemies.length);
+        }
+      }
+      // 4. medians (robust to a stray GC pause) + raw per-tick arrays (runner's bootstrap CI) + the state hash.
+      return {
+        mode, name: trace.name,
+        update: median(upd), dom: median(dom), render: median(render), total: median(total),
+        load: { draws: median(draws), tris: median(tris), particles: median(particles), enemies: median(enemyCount) },
+        ticks: { update: upd, dom, render, total },
+        loadTicks: { draws, tris, particles, enemies: enemyCount },
+        finalEnemies: enemies.length, finalHash: stateHash(),
+      };
+    },
+  };
+}
+
 // Re-evaluate the portrait→landscape rotation and resize the renderer/camera to the game dimensions.
 // (applyOrientation is the single place we size the renderer; see its definition near the camera.)
 addEventListener('resize', applyOrientation);
@@ -578,6 +703,7 @@ addEventListener('orientationchange', applyOrientation);
 // are in account.js; bootstrap calls restoreSession()/initSentry(), the Main Window opens the dialog.
 
 async function bootstrap() {
+  if (BENCH) installSeededRandom(BENCH_SEED); // deterministic RNG for record/replay (replay() re-seeds per trace)
   initSentry(); // fire-and-forget: don't delay the game waiting on the monitoring SDK
   try {
     // Pick the language and load the message catalogs before the first render. Initial guess from
