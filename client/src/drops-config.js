@@ -13,7 +13,12 @@ export const WEIGHT_FALLBACK = 10;   // defensive: used only if an item somehow 
 // cutoff), not a stored stat — see range() below. Both are fixed this iteration.
 export const FIELD_K      = 5;    // field numerator scale (sets the emergent reach together with FIELD_CUTOFF)
 export const FIELD_CUTOFF = 0.4;  // field threshold: below this the drop leaves the beam (line hides)
-export const PULL_SPEED_SCALE = 0.67; // reel-in SPEED multiplier only — tunes how fast drops pull in WITHOUT changing reach
+// Reel-in SPEED is a LINEAR ramp by distance (NOT the 1/dist² field) — deliberately un-physical but more
+// playable: no sharp near-ship jerk. Speed rises linearly from PULL_SPEED_FAR (far) to PULL_SPEED_NEAR (at
+// the ship), both weight-10 references. Reach is unaffected — it still comes from field()/FIELD_CUTOFF.
+export const PULL_SPEED_NEAR = 4.0; // u/s at the ship (COLLECT_DIST), weight-10 ref — top of the linear ramp
+export const PULL_SPEED_FAR  = 1.0; // u/s far out (≥ PULL_FAR_DIST), weight-10 ref — floor (drops still move at the edge)
+export const PULL_FAR_DIST   = 11;  // distance at/beyond which the pull speed sits at PULL_SPEED_FAR
 
 // Reward (L1/L2 last-kill) special drops: the model gets a green emissive tint + an additive green halo
 // sprite, and its off-screen pointer pulses green. Cosmetic only — collecting a special drop deposits
@@ -42,22 +47,25 @@ export function rewardOwned(activeShip, reward) {
   return false;
 }
 
-// Grab pull math (inverse-square field). All pure + import-free so drops.test.js runs under node.
-//   field(strength, dist)  = strength · FIELD_K / dist²        — pull strength at a given distance
-//   engaged                = field ≥ FIELD_CUTOFF               — below this the drop leaves the beam
-//   pullSpeed(s, w, dist)  = field · (10 / w) · PULL_SPEED_SCALE — u/s toward the ship (light parts pull faster;
-//                            the scale tunes reel-in SPEED only, it does NOT affect field/cutoff → reach unchanged)
-//   range(strength)        = sqrt(strength · FIELD_K / FIELD_CUTOFF)  — EMERGENT, weight-INDEPENDENT reach
-// A zero/missing weight falls back to WEIGHT_FALLBACK so the sim never divides by zero. dist is always
-// > 0 in practice (collection at COLLECT_DIST=3 fires before dist→0; drops.js caps the step at the gap).
+// Grab pull math. All pure + import-free so drops.test.js runs under node.
+//   field(strength, dist) = strength · FIELD_K / dist²   — the inverse-square field; drives ELIGIBILITY/reach only
+//   engaged               = field ≥ FIELD_CUTOFF          — below this the drop leaves the beam
+//   range(strength)       = sqrt(strength · FIELD_K / FIELD_CUTOFF)  — EMERGENT, weight-INDEPENDENT reach
+//   pullSpeed(w, dist)    = LINEAR ramp PULL_SPEED_FAR→PULL_SPEED_NEAR by distance, · (10 / w)
+// SPEED is deliberately NOT the field: a linear ramp (constant slope) has no near-ship jerk and plays better.
+// It depends on distance + item weight only (light parts faster), NOT on strength — strength sets reach, not
+// speed. A zero/missing weight falls back to WEIGHT_FALLBACK. dist is always > 0 in practice (collection at
+// COLLECT_DIST=3 fires before dist→0; drops.js caps the step at the gap).
 export function field(strength, dist) {
   return (strength * FIELD_K) / (dist * dist);
 }
-export function pullSpeed(strength, weight, dist) {
-  return field(strength, dist) * (10 / (weight || WEIGHT_FALLBACK)) * PULL_SPEED_SCALE;
-}
 export function range(strength) {
   return Math.sqrt((strength * FIELD_K) / FIELD_CUTOFF);
+}
+export function pullSpeed(weight, dist) {
+  const t = Math.max(0, Math.min(1, (PULL_FAR_DIST - dist) / (PULL_FAR_DIST - COLLECT_DIST))); // 0 far → 1 at the ship
+  const vRef = PULL_SPEED_FAR + (PULL_SPEED_NEAR - PULL_SPEED_FAR) * t; // linear (weight-10 reference)
+  return vRef * (10 / (weight || WEIGHT_FALLBACK));
 }
 
 // Pick one looted item uniformly among the enemy's NON-HULL parts (engine, thruster) + mounted weapons.

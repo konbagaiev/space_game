@@ -230,10 +230,10 @@ export function updateDrops(dt) {
     } else d.inRange = 0;
   }
   if (!target) { hideLine(); return; }
-  // 3) pull the target toward the ship at the distance-aware, weight-scaled speed
+  // 3) pull the target toward the ship at the linear-ramp, weight-scaled speed (faster the closer it is)
   tmp.copy(ppos).sub(target.obj.position); const d = tmp.length();
   if (d <= COLLECT_DIST) return collect(target);         // arrived → collect + re-target next frame
-  const speed = pullSpeed(grab.strength, target.weight, d);
+  const speed = pullSpeed(target.weight, d);
   target.obj.position.addScaledVector(tmp.normalize(), Math.min(speed * dt, d));
   drawLine(ppos, target.obj.position);                   // thin blue activity indicator
 }

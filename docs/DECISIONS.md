@@ -1980,13 +1980,19 @@ clamp**: collection at `COLLECT_DIST = 3` fires before a drop nears `dist=0`, an
 capped at `Math.min(speed·dt, d)`, so an over-large near-field speed can never overshoot the ship.
 Constants `FIELD_K = 5` and `FIELD_CUTOFF = 0.4` are fixed for this iteration (no player-facing tuning UI).
 
-**Follow-up (2026-07-07): reel-in speed decoupled from reach via `PULL_SPEED_SCALE`.** Live play found the
-distance right but the pull too fast. Because `FIELD_K` scales *both* reach and speed, we could not slow the
-pull by lowering it without also shrinking the reach the maintainer liked. So we added a dedicated speed-only
-multiplier `PULL_SPEED_SCALE = 0.67` applied in `pullSpeed` (`field·(10/weight)·PULL_SPEED_SCALE`) but **not**
-in `field`/`range` — reel-in speed drops ~1.5× while the emergent reach is provably unchanged (the range tests
-did not move). This is the clean separation of the two axes (reach vs speed) that the coupled single-`strength`
-model didn't offer; `PULL_SPEED_SCALE` is now the speed knob, `FIELD_K`/`FIELD_CUTOFF` the reach knobs.
+**Follow-up (2026-07-07): reel-in speed is a linear ramp, not the field.** Two rounds of live play refined the
+*speed* (the reach was right from the start and never changed). First we decoupled speed from reach with a
+scalar `PULL_SPEED_SCALE = 0.67` (since `FIELD_K` scaled both), slowing the pull ~1.5×. But the `1/dist²` speed
+still spiked near the ship — drops crawled far out then snapped in, which read as a jerk. So we **replaced the
+speed model entirely with a linear ramp by distance**: `pullSpeed(weight, dist)` rises linearly from
+`PULL_SPEED_FAR = 1` u/s (far, and the floor at/beyond `PULL_FAR_DIST = 11`) to `PULL_SPEED_NEAR = 4` u/s at the
+ship (both weight-10 refs), then `·(10/weight)`. A constant slope is deliberately un-physical but has **no
+near-ship jerk** and plays better — the maintainer explicitly preferred playability over physical correctness
+here. `PULL_SPEED_SCALE` was retired (folded into the near/far anchors). **Reach is untouched** — it still comes
+only from `field`/`FIELD_CUTOFF` (the range tests did not move), so the emergent √2 advanced-vs-base ratio holds.
+A consequence: **pull speed no longer depends on `strength`** (it dropped out of the `pullSpeed` signature) —
+strength drives reach only; the speed profile is uniform across grabs. `PULL_SPEED_NEAR`/`PULL_SPEED_FAR`/
+`PULL_FAR_DIST` are the speed knobs, `FIELD_K`/`FIELD_CUTOFF` the reach knobs.
 
 ---
 

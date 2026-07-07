@@ -5,9 +5,9 @@
 
 **Updated:** 2026-07-07 (**Grab inverse-square field** — the Grab (tractor) now pulls drops via an
 inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
-weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base) and pull speed rises the closer a drop
-is. Reel-in speed is scaled by `PULL_SPEED_SCALE = 0.67` (speed-only tune, reach unchanged) — see
-**Grab & loot drops**. Prior: **Admin "device" column** — `GET /admin` now shows a best-effort
+weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base). Reel-in speed is a **linear ramp** by
+distance (1 u/s far → 4 u/s at the ship, weight-scaled) — un-physical but no near-ship jerk, replacing the
+`1/dist²` field speed; speed depends on distance + weight only, not strength — see **Grab & loot drops**. Prior: **Admin "device" column** — `GET /admin` now shows a best-effort
 `Browser · Device/OS` label per player (`Chrome · Galaxy A03s` → `Chrome · Android 10` → raw UA → blank);
 `players` gained nullable `user_agent` + `device_model` columns (migration 021 / PG bootstrap) captured at
 the boot register call latest-wins, via an `Accept-CH: Sec-CH-UA-Model` response header + client hint;
@@ -599,10 +599,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   component (if equipped) pulls drops in via an **inverse-square field** (`field = strength·FIELD_K/dist²`,
   `FIELD_K = 5`; `field()` in `drops-config.js`): a drop must sit where **field ≥ 0.4** (`FIELD_CUTOFF`) for
   **0.3 s** (`ARM_DELAY`) to arm, then the **nearest** armed drop is pulled toward the ship's live position
-  at **speed = field·(10/itemWeight)·PULL_SPEED_SCALE** u/s (`pullSpeed` — faster the closer the drop is; light
-  parts pull fast, heavy parts slow; a zero/missing weight falls back to 10). `PULL_SPEED_SCALE = 0.67` tunes
-  reel-in **speed only** — it multiplies `pullSpeed` but not `field`, so the reach is unchanged. Reach is
-  **emergent + weight-independent**
+  at a **linear-ramp speed** (`pullSpeed(weight, dist)` — deliberately **not** the field): speed rises linearly
+  from **`PULL_SPEED_FAR` (1 u/s)** far out to **`PULL_SPEED_NEAR` (4 u/s)** at the ship (weight-10 refs, at/beyond
+  `PULL_FAR_DIST = 11` it sits at the floor), then `·(10/itemWeight)` (light parts fast, heavy slow; zero/missing
+  weight falls back to 10). The linear ramp is un-physical on purpose — a **constant slope has no near-ship jerk**
+  and plays better than the `1/dist²` field speed it replaced. **Speed depends on distance + weight only, not on
+  strength** — strength drives reach, not speed. Reach is **emergent + weight-independent**
   (`range(strength) = sqrt(strength·5/0.4)`, no weight term): base strength 10 → **≈11.2 u**, Advanced
   strength 20 → **≈15.8 u (= √2× base, not 2×)**. A single **thin blue line** (pooled `THREE.Line`,
   `0x4db6ff`) is drawn only **while actively pulling** and **hides the instant** a drop drops below the

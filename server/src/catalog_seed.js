@@ -71,8 +71,9 @@ export const COMPONENTS = [
   // grab's RANGE is pulled toward the ship, and collected drops deposit into the stash on mission victory.
   //   Inverse-square field: FIELD = strength·5/dist²; the beam engages where FIELD ≥ 0.4, so RANGE is
   //   EMERGENT (base strength 10 → ≈11.2 u, Advanced 20 → ≈15.8 u = √2× base) and weight-INDEPENDENT.
-  //   PULL SPEED (u/s) = FIELD · (10 / pulledItemWeight) · 0.67 (PULL_SPEED_SCALE — reel-in speed tune, not reach)
-  //                       — rises the closer the drop is; light parts faster.
+  //   PULL SPEED (u/s) = a LINEAR ramp by distance (4 u/s at the ship → 1 u/s far, weight-10 ref) · (10/weight)
+  //                       — rises linearly the closer the drop is (no near-ship jerk); light parts faster.
+  //                       Speed depends on distance + weight only, NOT strength — strength sets reach, not speed.
   // The player owns the base Grab from the start; the Advanced grab is buyable (see docs/plans/2026-07-03-1412-grab-tractor-drops.md).
   { id: 29, name: 'Grab', type: 'grab', weight: 2, price: 500, stats: { strength: 10 } },
   { id: 30, name: 'Advanced grab', type: 'grab', weight: 3, price: 2000, stats: { strength: 20 } },

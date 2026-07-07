@@ -5,6 +5,15 @@
 
 ## 2026-07-07
 
+- **Grab reel-in speed is now a linear ramp (no near-ship jerk).** Replaced the `1/dist²` field-based pull
+  *speed* with a **linear ramp by distance** — `PULL_SPEED_FAR = 1` u/s far out rising linearly to
+  `PULL_SPEED_NEAR = 4` u/s at the ship (weight-10 refs; `·(10/weight)`), floored at/beyond `PULL_FAR_DIST = 11`.
+  Deliberately un-physical: a constant slope removes the sharp near-ship snap the inverse-square speed produced,
+  which plays better. Speed now depends on **distance + weight only, not strength** (strength still drives reach).
+  Retired `PULL_SPEED_SCALE`. **Reach is unchanged** (still `field`/`FIELD_CUTOFF`: base ≈11.2 u, Advanced ≈15.8 u,
+  √2 ratio). `pullSpeed` signature dropped its `strength` arg. Docs: SUMMARY, DECISIONS §57. Tests: `drops.test.js`
+  pull-speed suite rewritten (linear anchors, constant-slope + floor-clamp checks); client 116/116.
+
 - **Grab pull speed tuned down ~1.5× (reach unchanged).** Added `PULL_SPEED_SCALE = 0.67` to
   `drops-config.js` and applied it in `pullSpeed` only, so drops reel in about 1.5× slower while the
   emergent reach (base ≈11.2 u, Advanced ≈15.8 u) stays exactly the same — `field`/`FIELD_CUTOFF` (which

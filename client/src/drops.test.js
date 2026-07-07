@@ -2,32 +2,41 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // Only the PURE pieces of the drop system are imported (drops-config.js has no THREE / engine deps, so it
 // stays node-safe). The THREE/scene behavior (meshes, the blue pull line) is covered by the headless suite.
-import { pullSpeed, field, range, PULL_SPEED_SCALE, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY, shouldDeposit, rewardOwned } from './drops-config.js';
+import { pullSpeed, field, range, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY, shouldDeposit, rewardOwned } from './drops-config.js';
 
 const approx = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) <= eps, `${a} ≈ ${b}`);
 
-// --- pull speed: field·(10/weight)·PULL_SPEED_SCALE, in world units/sec (distance-aware) ---
-test('pullSpeed: anchor cases (distance-aware inverse-square, speed-scaled)', () => {
-  approx(pullSpeed(10, 10, 3), (50 / 9) * PULL_SPEED_SCALE); // ≈3.72 u/s at d=3 (0.67× the raw field speed)
-  approx(pullSpeed(10, 10, 5), 2.0 * PULL_SPEED_SCALE);      // ≈1.34 — slower farther out
-  assert.ok(pullSpeed(10, 10, 3) > pullSpeed(10, 10, 5));    // closer = faster
+// --- pull speed: LINEAR ramp PULL_SPEED_FAR→PULL_SPEED_NEAR by distance, · (10/weight). NOT the field:
+//     a constant slope (no near-ship 1/dist² jerk). Anchors are weight-10 refs (NEAR=4 @d=3, FAR=1 @d=11). ---
+test('pullSpeed: linear ramp — NEAR at the ship, FAR floor, linear midpoint, closer=faster', () => {
+  approx(pullSpeed(10, 3), 4.0);    // at COLLECT_DIST → PULL_SPEED_NEAR
+  approx(pullSpeed(10, 11), 1.0);   // at PULL_FAR_DIST → PULL_SPEED_FAR
+  approx(pullSpeed(10, 7), 2.5);    // halfway (d=7) → linear halfway between 1 and 4
+  assert.ok(pullSpeed(10, 3) > pullSpeed(10, 7) && pullSpeed(10, 7) > pullSpeed(10, 11)); // closer = faster
 });
 
-test('PULL_SPEED_SCALE tunes speed only, not reach: it scales pullSpeed but not field/range', () => {
-  // pullSpeed carries the scale; field (which sets eligibility/range) does not.
-  approx(pullSpeed(10, 10, 5), field(10, 5) * (10 / 10) * PULL_SPEED_SCALE);
-  approx(range(10), Math.sqrt(125)); // reach is unchanged by the speed scale
+test('pullSpeed: constant slope (no jerk) and clamped floor beyond PULL_FAR_DIST', () => {
+  // equal distance steps → equal speed steps (linear, unlike the 1/dist² field)
+  approx((pullSpeed(10, 5) - pullSpeed(10, 7)), (pullSpeed(10, 7) - pullSpeed(10, 9)));
+  approx(pullSpeed(10, 20), pullSpeed(10, 11)); // past the far anchor → clamped to the FAR floor, never negative
+  assert.ok(pullSpeed(10, 20) > 0);
 });
 
-test('pullSpeed: lighter items pull faster; the stronger grab pulls faster at the same distance', () => {
-  assert.ok(pullSpeed(10, 2, 5) > pullSpeed(10, 50, 5));  // lighter = faster (same grab, same dist)
-  assert.ok(pullSpeed(20, 10, 5) > pullSpeed(10, 10, 5)); // stronger grab = faster
+test('pullSpeed: lighter items pull faster; speed no longer depends on grab strength (reach does)', () => {
+  assert.ok(pullSpeed(2, 7) > pullSpeed(50, 7)); // lighter = faster at the same distance
+  approx(pullSpeed(10, 7), 2.5);                 // strength is not even an argument now — speed is reach-independent
 });
 
 test('pullSpeed: a zero/undefined weight falls back to WEIGHT_FALLBACK (never divides by zero)', () => {
-  assert.equal(pullSpeed(10, 0, 5), pullSpeed(10, WEIGHT_FALLBACK, 5));
-  assert.equal(pullSpeed(10, undefined, 5), pullSpeed(10, WEIGHT_FALLBACK, 5));
-  assert.ok(Number.isFinite(pullSpeed(10, 0, 5)));
+  assert.equal(pullSpeed(0, 7), pullSpeed(WEIGHT_FALLBACK, 7));
+  assert.equal(pullSpeed(undefined, 7), pullSpeed(WEIGHT_FALLBACK, 7));
+  assert.ok(Number.isFinite(pullSpeed(0, 7)));
+});
+
+// reach is unchanged by the speed-model swap — range() still comes from field/FIELD_CUTOFF (see range test below)
+test('reach unchanged: range() is independent of the linear speed model', () => {
+  approx(range(10), Math.sqrt(125));  // ≈ 11.18, exactly as before
+  approx(range(20), Math.sqrt(250));  // ≈ 15.81
 });
 
 // --- field: inverse-square; the FIELD_CUTOFF boundary is what defines the emergent range ---
