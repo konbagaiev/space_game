@@ -12,18 +12,19 @@ import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, app
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
-import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
+import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars)
 import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base
+import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
-import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem } from './mainwindow.js'; // between-battles Main Window + model viewers
-import { showWelcome, applyTranslations } from './welcome.js'; // welcome screen + i18n UI glue
+import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
+import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
+import { showWelcome, applyTranslations, welcomeStaged } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache } from './account.js'; // auth block (bootstrap session restore + Sentry)
 
 // audio engine + tracksFor/sfxFor routing moved to src/sound-routing.js (imported at top).
@@ -226,6 +227,13 @@ if (Device.hasTouch) {
   // also stops the compat click so a lone tap doesn't double-zoom. The `click` listeners below stay for mouse.
   document.getElementById('zoom-in').addEventListener('touchstart', e => { zoomBy(1 / ZOOM_BTN); e.preventDefault(); }, { passive: false });
   document.getElementById('zoom-out').addEventListener('touchstart', e => { zoomBy(ZOOM_BTN); e.preventDefault(); }, { passive: false });
+
+  // "Return to base" button on touch: fire on touchstart (like FIRE/rocket/zoom), NOT a synthesized
+  // `click` — a click is suppressed while a 2nd touch point is down, so a second-thumb tap during flight
+  // (steering finger on #stick-zone) would never fire (the DECISIONS §42 bug). preventDefault stops the
+  // compat click so a lone tap doesn't double-engage. audio.sfx.uiClick() gives click-sound parity — the
+  // global capture-phase click→uiClick (main.js:53) also won't fire during flight for the same reason.
+  el.returnBtn.addEventListener('touchstart', e => { engageAutopilot(); audio.sfx.uiClick(); e.preventDefault(); }, { passive: false });
 } else {
   // PC: the rocket circle is also clickable (besides the F key)
   const rocketBtn = document.getElementById('rocket-btn');
@@ -246,6 +254,11 @@ renderer.domElement.addEventListener('wheel', e => {
 if (!Device.hasTouch) {
   document.getElementById('zoom-in').addEventListener('click',  () => zoomBy(1/ZOOM_BTN));
   document.getElementById('zoom-out').addEventListener('click', () => zoomBy(ZOOM_BTN));
+}
+
+// Mouse-only: on touch the "Return to base" button fires on `touchstart` (in the touch block above).
+if (!Device.hasTouch) {
+  el.returnBtn.addEventListener('click', () => { engageAutopilot(); });
 }
 
 // ---------- Click-to-fly: tap/click a loot chest OR (return-to-base) the base station ----------
@@ -469,6 +482,7 @@ function animate() {
   if (!G.paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
   // record mode: snapshot the resolved input AFTER update() so the trace replays identically (see bench.js)
   if (benchRecording) benchRecord.push({ k: Object.keys(keys).filter((c) => keys[c]), t: touchAim.active ? [touchAim.heading, touchAim.thrust] : null });
+  if (HITBOXES_DEBUG) syncHitBoxes(scene, G.player, enemies); // dev-only hitbox wireframe overlay
   const t1 = DEV ? performance.now() : 0; // end of sim
   updateHud();
   updateMarkers();
@@ -478,6 +492,7 @@ function animate() {
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
   updateReturnArrow();  // world-space blue homing arrow toward the base station (return-to-base)
   updateReturnHint();   // centered "return to base" HUD hint
+  updateBanner();       // transient centered milestone banner ("10 enemies left", "Final Stage")
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
@@ -515,19 +530,19 @@ function animate() {
 // so a scenario can seed entities and assert on state (counts, colors) instead of diffing pixels.
 if (location.search.includes('debug')) {
   window.__game = {
-    scene, enemies, bullets, rockets,
+    scene, camera, enemies, bullets, rockets,
     explosions, sparks, shockwaves, trail, smoke,
-    spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, reset, levelRunner,
+    spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, spawnRocket, reset, levelRunner,
     drops, // the live loot-drop array (count/positions assertable in headless)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
     // with `?dev` — start a fight, run `for (let i=0;i<40;i++) __game.spawnTestDrop()`, watch the perf FPS.
-    spawnTestDrop() {
+    spawnTestDrop(item) {
       const p = G.player; if (!p) return null;
       const items = [{ kind: 'component', refId: 6 }, { kind: 'component', refId: 9 }, { kind: 'weapon', refId: 9 }, { kind: 'weapon', refId: 4 }];
-      const item = items[(Math.random() * items.length) | 0];
+      const chosen = item || items[(Math.random() * items.length) | 0]; // optional explicit item → deterministic (tests)
       const pos = p.mesh.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 30, 0, (Math.random() - 0.5) * 30));
-      spawnDrop(pos, item);
-      return item;
+      spawnDrop(pos, chosen);
+      return chosen;
     },
     pickLoot, // expose for tests (loot-pool selection off an enemy)
     audio, // procedural audio engine (settings + scene); SFX/music are inaudible in headless but state is assertable
@@ -539,6 +554,8 @@ if (location.search.includes('debug')) {
     get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url in the right-column ship preview
     // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
     get itemShowcaseTarget() { const d = document.getElementById('mw-mission-desc'); return d && d.classList.contains('show-item') ? (mwItem && mwItem.url) : null; },
+    get briefingStaged() { return stagedActive; },   // Main Window staged reveal animating (L2/L3)
+    get welcomeStaged() { return welcomeStaged; },   // welcome-screen staged reveal animating (L1)
 
     launchMission, refreshMissions, showMain, // test/tool: drive the side-mission board + the Main Window
     get mainBriefing() { return mainBriefing; }, // the campaign (primary) briefing currently shown
@@ -678,7 +695,7 @@ addEventListener('orientationchange', applyOrientation);
 // buildPlayerFor (rebuild the player ship + swap it into the scene) moved to src/ship-build.js;
 // imported at the top. It reads/writes G.activeShip + G.currentShipName on the shared bag.
 // ---------- Welcome screen + i18n UI glue moved to src/welcome.js ----------
-// showWelcome/renderShipCards/take-off + applyTranslations/the EN-RU lang switch + requestFullscreen
+// showWelcome/take-off + applyTranslations/the EN-RU lang switch + requestFullscreen
 // are imported at the top. The audio-settings modal is src/settings.js.
 
 // ---------- Account / authentication moved to src/account.js ----------
@@ -718,7 +735,7 @@ async function bootstrap() {
     // Weapons are flattened (stats spread to top level); keep the model URLs too (the `...w.stats` spread
     // also lifts `stats.model` to a top-level `model` key — read by itemModelCfg). Components are stored
     // whole, so their `modelUrlHigh` + nested `stats.model` flow through as-is.
-    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, modelUrl: w.modelUrl, modelUrlHigh: w.modelUrlHigh, ...w.stats });
+    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, modelUrl: w.modelUrl, modelUrlHigh: w.modelUrlHigh, rarity: w.rarity, color: w.color, ...w.stats });
     for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);
@@ -749,7 +766,7 @@ async function bootstrap() {
     camera.lookAt(G.player.mesh.position);
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
     // Homepage reflects the current level: if it has a briefing (level 2+), land on the Hangar showing
-    // it; otherwise (level 1 / new player) show the welcome screen with the ship picker + intro.
+    // it; otherwise (level 1 / new player) show the welcome screen (greeting + intro).
     if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
     else showWelcome(playerShips);
     animate(); // render loop (idle until Take off)

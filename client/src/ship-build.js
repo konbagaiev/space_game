@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { scene } from './engine.js';
 import { arenaCenter } from './world.js';
-import { G, CATALOG, enemies, SPAWN_GROW_TIME } from './state.js';
+import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js';
 import { deriveDrive } from './components.js';
 import { shipModelCfg, modelSpec, makeShip } from './ship-factory.js';
 import { spawnBullet, spawnRocket, findTargetInSector } from './projectiles.js';
@@ -46,6 +46,7 @@ export function buildPlayer(active) {
     vel: new THREE.Vector3(),
     heading: 0,                       // rotation angle around Y
     sizeScale: mc.scale,
+    hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
     class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
     hull, engine, thruster, repair, grab, // `repair` = repair-drone stats (or null); `grab` = tractor stats (or null) — feeds mass + the grab pull sim
     _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
@@ -82,6 +83,7 @@ export function spawnEnemyShip(shipDef) {
   const mc = shipModelCfg(s); // per-ship model presentation (yaw/scale + optional overrides)
   const { hull, engine, thruster } = resolveComponents(shipDef.components);
   const e = {
+    name: shipDef.name, // DB ship name (English) — shown in the event-log kill line
     role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0,
     mesh: makeShip(s.color, modelSpec(shipDef.modelUrl, mc)), // model defines the look; never tint enemies by color
     vel: new THREE.Vector3(),
@@ -90,7 +92,8 @@ export function spawnEnemyShip(shipDef) {
     mounts: buildMounts(s.mounts),
     hp: hull.durability,
     maxHp: hull.durability, // for the over-enemy health bar (shown once hp dips below max)
-    radius: 2.6 * mc.scale,  // hit radius scales with model size
+    radius: 2.6 * mc.scale,  // health-bar/marker anchor only (collision now uses hitBoxes/broadR)
+    hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
     alive: true,
   };
   e.groups = buildGroups(s.groups, e.mounts);
@@ -98,6 +101,8 @@ export function spawnEnemyShip(shipDef) {
   // "warp in": grow from a dot to full size over SPAWN_GROW_TIME (see the enemy update loop)
   e.spawnScale = e.mesh.scale.clone(); // the full target scale to grow into
   e.spawnAge = 0;
+  e.spawnDur = SPAWN_GROW_TIME; // warp-in duration; the level runner overrides this to the stagger delay
+  e.warping = true;             // invulnerable + can't fire + not homing-targetable until fully formed
   e.mesh.scale.setScalar(0.001); // start as a dot
   deriveDrive(e);
   // spawn in a ring around the MISSION ZONE center (arenaCenter), not the hero — waves originate at the
@@ -106,7 +111,7 @@ export function spawnEnemyShip(shipDef) {
   const d = 70 + Math.random() * 60; // 70..130 from the zone center
   e.mesh.position.set(
     arenaCenter.x + Math.cos(ang) * d,
-    0.6,
+    BULLET_PLANE_Y, // sit on the canonical combat plane so enemy hull + fire line up with the player's
     arenaCenter.z + Math.sin(ang) * d
   );
   scene.add(e.mesh);

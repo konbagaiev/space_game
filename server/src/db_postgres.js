@@ -16,11 +16,15 @@ export async function migrate() {
       games_played INTEGER NOT NULL DEFAULT 0,
       language     TEXT    NOT NULL DEFAULT 'en',  -- UI/content language preference (resolution is client-side)
       credits      INTEGER NOT NULL DEFAULT 1000,  -- persistent credit balance (new players start at 1000)
-      referrer     TEXT                            -- where the player first came from (write-once at row creation)
+      referrer     TEXT,                           -- where the player first came from (write-once at row creation)
+      user_agent   TEXT,                           -- raw UA from the boot register call (latest-wins)
+      device_model TEXT                            -- Sec-CH-UA-Model device code, latest-wins
     );
     ALTER TABLE players ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en';
     ALTER TABLE players ADD COLUMN IF NOT EXISTS credits INTEGER NOT NULL DEFAULT 1000;
     ALTER TABLE players ADD COLUMN IF NOT EXISTS referrer TEXT;   -- where the player first came from (write-once)
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS user_agent   TEXT;   -- raw UA from the boot register call (latest-wins)
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS device_model TEXT;   -- Sec-CH-UA-Model device code, latest-wins
     CREATE TABLE IF NOT EXISTS games (
       id          BIGSERIAL PRIMARY KEY,
       player_id   TEXT    NOT NULL REFERENCES players(id),
@@ -48,6 +52,8 @@ export async function migrate() {
     ALTER TABLE components ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE components ADD COLUMN IF NOT EXISTS model_url TEXT;       -- item 3D model (combat; unused for items)
     ALTER TABLE components ADD COLUMN IF NOT EXISTS model_url_high TEXT;  -- item hangar model (CloudFront, menu icon)
+    ALTER TABLE components ADD COLUMN IF NOT EXISTS rarity TEXT;          -- rarity tier: trash|common|rare (drop glow + pickup-log tint)
+    ALTER TABLE components ADD COLUMN IF NOT EXISTS color  TEXT;          -- hex color for the rarity (source for both the glow & the tint)
     CREATE TABLE IF NOT EXISTS ships (
       id         BIGSERIAL PRIMARY KEY,
       name       TEXT  NOT NULL UNIQUE,
@@ -69,6 +75,8 @@ export async function migrate() {
     ALTER TABLE weapons ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE weapons ADD COLUMN IF NOT EXISTS model_url TEXT;       -- item 3D model (combat; unused for items)
     ALTER TABLE weapons ADD COLUMN IF NOT EXISTS model_url_high TEXT;  -- item hangar model (CloudFront, menu icon)
+    ALTER TABLE weapons ADD COLUMN IF NOT EXISTS rarity TEXT;          -- rarity tier: trash|common|rare (drop glow + pickup-log tint)
+    ALTER TABLE weapons ADD COLUMN IF NOT EXISTS color  TEXT;          -- hex color for the rarity (source for both the glow & the tint)
     CREATE TABLE IF NOT EXISTS player_ships (
       id         BIGSERIAL PRIMARY KEY,
       player_id  TEXT    NOT NULL REFERENCES players(id),
@@ -187,15 +195,15 @@ export async function migrate() {
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
   for (const c of COMPONENTS) {
     await pool.query(
-      `INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high`,
-      [c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null]);
+      `INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high, rarity, color) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, weight = EXCLUDED.weight, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high, rarity = EXCLUDED.rarity, color = EXCLUDED.color`,
+      [c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null, c.rarity, c.color]);
   }
   for (const w of WEAPONS) {
     await pool.query(
-      `INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
-       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high`,
-      [w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null]);
+      `INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high, rarity, color) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high, rarity = EXCLUDED.rarity, color = EXCLUDED.color`,
+      [w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null, w.rarity, w.color]);
   }
   for (const s of SHIPS) {
     await pool.query(
@@ -259,16 +267,19 @@ async function ensureDefaultShip(playerId, db = pool) {
     [playerId, ship.rows[0].id, '{}', Date.now()]);
 }
 
-export async function registerPlayer(id, referrer = null) {
+export async function registerPlayer(id, referrer = null, device = null) {
   const now = Date.now();
+  const ua = device && device.userAgent ? String(device.userAgent).slice(0, 512) : null;
+  const model = device && device.model ? String(device.model).slice(0, 128) : null;
   const { rows } = await pool.query('SELECT created_at, games_played, current_progress, language, credits, shop_unlocked FROM players WHERE id = $1', [id]);
   if (rows[0]) {
-    await pool.query('UPDATE players SET last_seen = $1 WHERE id = $2', [now, id]);   // referrer untouched (write-once)
+    // last_seen bump + latest-wins device (COALESCE keeps a prior value when this call has none); referrer untouched (write-once).
+    await pool.query('UPDATE players SET last_seen = $1, user_agent = COALESCE($2, user_agent), device_model = COALESCE($3, device_model) WHERE id = $4', [now, ua, model, id]);
     await ensureDefaultShip(id);
     return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, language: rows[0].language, credits: rows[0].credits, shopUnlocked: !!rows[0].shop_unlocked, createdAt: Number(rows[0].created_at) };
   }
   const ref = referrer ? String(referrer).slice(0, 512) : null;
-  await pool.query('INSERT INTO players (id, created_at, last_seen, referrer) VALUES ($1, $2, $3, $4)', [id, now, now, ref]);
+  await pool.query('INSERT INTO players (id, created_at, last_seen, referrer, user_agent, device_model) VALUES ($1, $2, $3, $4, $5, $6)', [id, now, now, ref, ua, model]);
   await ensureDefaultShip(id);
   return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
@@ -467,7 +478,7 @@ export async function stats() {
 export async function getAdminPlayers(limit = 1000) {
   const { rows } = await pool.query(`
     SELECT p.id, p.username, p.email, p.email_verified, p.created_at, p.last_seen,
-           p.current_progress, p.credits, p.games_played, p.referrer,
+           p.current_progress, p.credits, p.games_played, p.referrer, p.user_agent, p.device_model,
            COALESCE(SUM(g.duration_ms), 0) AS total_time_ms,
            COALESCE(SUM(g.kills), 0)       AS total_kills,
            COALESCE(SUM(g.credits), 0)     AS total_earned
@@ -480,6 +491,7 @@ export async function getAdminPlayers(limit = 1000) {
     emailVerified: !!Number(r.email_verified), createdAt: Number(r.created_at), lastSeen: Number(r.last_seen),
     currentProgress: Number(r.current_progress), credits: Number(r.credits), gamesPlayed: Number(r.games_played),
     referrer: r.referrer ?? null,
+    userAgent: r.user_agent ?? null, deviceModel: r.device_model ?? null,
     totalTimeMs: Number(r.total_time_ms), totalKills: Number(r.total_kills), totalEarned: Number(r.total_earned),
   }));
 }
@@ -491,13 +503,13 @@ export async function getShips() {
 }
 
 export async function getWeapons() {
-  const { rows } = await pool.query('SELECT id, name, type, price, stats, model_url, model_url_high FROM weapons ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
+  const { rows } = await pool.query('SELECT id, name, type, price, stats, model_url, model_url_high, rarity, color FROM weapons ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
 }
 
 export async function getComponents() {
-  const { rows } = await pool.query('SELECT id, name, type, weight, price, stats, model_url, model_url_high FROM components ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
+  const { rows } = await pool.query('SELECT id, name, type, weight, price, stats, model_url, model_url_high, rarity, color FROM components ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
 }
 
 // SFX catalog: sounds registry (key->url) + class-based routing map (mirrors db.js).

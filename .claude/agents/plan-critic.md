@@ -57,3 +57,45 @@ perfection beyond that is not the bar.
 ## Learned guidance
 
 <!-- The orchestrator appends dated lessons here from retro feedback. Read and apply them. -->
+
+- **2026-07-04 — For an "above/below a 3D object" screen overlay, verify the plan reasoned about camera
+  ANGLE, not just distance.** An HP-bar plan that anchored along **world +Y** was approved as "robust to
+  camera distance" — but the camera is near-top-down (`CAM_OFFSET 0,110,26`), so world-up ≈ toward the
+  camera and the bar didn't move up the screen; it shipped, failed the live test, and needed a re-do to
+  offset along the camera's screen-up axis. When a plan positions a DOM overlay relative to a world object,
+  block it unless it either works in screen space or explicitly accounts for the camera's orientation —
+  "scales with distance" is not the same as "points up on screen".
+- **2026-07-04 — Internal consistency ≠ external validity. Have a genuinely critical eye: hunt what the
+  PLANNER missed, not just whether the plan is self-consistent.** A multi-sphere-hitbox plan was approved
+  because "`broadR` mathematically encloses the spheres" — true, but the generated spheres were ~2× too big
+  in absolute terms, and a whole gameplay path (rocket *damage*) silently broke. Both shipped and failed the
+  live test. Apply these four stances on every plan:
+  1. **Check absolute magnitudes against ground truth, not just internal consistency.** A self-consistent
+     formula can still be 2× wrong. When a plan replaces a tuned constant (e.g. `radius 2.6`) with a
+     computed/generated value, demand a reality anchor — is it the right SIZE vs the thing it models
+     (hitbox ≈ model half-length)? Compare to the constant it replaces; if the goal was "smaller" and the
+     result is larger, that's an automatic blocking flag.
+  2. **Enumerate every consumer of a changed value/code path; any the plan doesn't explicitly address is a
+     blocking question.** Collision-distance changed, and rocket damage (`detonateRocket`, a separate path)
+     silently depended on it. Plan silence about a known consumer = red flag, not "out of scope".
+  3. **Demand an OUTCOME test, not just a MECHANISM test.** A plan that unit-tests the new primitive (the
+     sphere test) but not the user-visible behaviour it powers ("a rocket actually damages an enemy") has a
+     test gap — block on it.
+  4. **For each change ask "what breaks if this is subtly wrong?"** Assume the planner's happy path is
+     optimistic and hunt the silent failure — that adversarial stance is the whole job.
+- **2026-07-04 — Check a spatial plan against the game's ACTUAL spatial model, not abstract correctness.**
+  The OBB-hitbox plan fit tight 3D boxes to the ship meshes — "correct" in 3D, but this is a **near-top-down
+  shooter where bullets fly in the y=0 combat plane**, so model parts off that plane (the player's wings hang
+  ~0.27 below centre; a drooped nose) became **unhittable** in-game while every offline/unit check passed.
+  When a plan touches collision / hit-detection / aiming / anything spatial, block it unless it reasons about
+  what the **player** experiences given the planar aim — a hitbox that's 3D-accurate can still be gameplay-wrong.
+  See memory [[topdown-planar-collision]].
+- **2026-07-04 — When a plan ADDS an element, block it unless it says how the element is DESCRIBED in every
+  player-facing surface, and sanity-check those numbers.** The triple spiral rocket plan set `power: 40`
+  (per warhead) and simulated 3 warheads correctly, but never addressed the shop/loadout **stat line** — so
+  it shipped showing damage `40`, not `40×3`, misrepresenting the weapon to the buyer (caught only in
+  live-test). "Correctly described everywhere it appears" is part of external validity, not polish. On any
+  plan that adds/changes a catalog item, weapon, or stat, walk each display surface — shop `statLine`,
+  tooltips, HUD, comparison bar, SUMMARY's item list — and demand the plan state the exact text/number each
+  shows; if the number a player reads differs from the effective in-game value (multi-projectile, multi-hit,
+  per-instance, conditional), that mismatch is a blocking issue.

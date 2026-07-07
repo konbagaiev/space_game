@@ -48,6 +48,12 @@ the player is at center so it reads the same, but after they wander the waves st
 And the **30 s OOB auto-warp is suspended while returning to base** (after the last kill), so a side mission
 fought far from `(0,0)` can fly the whole way home without being yanked back. See §39.
 
+**Amendment (§51, 2026-07-05):** the "no speed limit" clause above is now narrowed for the PLAYER
+only — player velocity is capped at a flat `PLAYER_MAX_SPEED = 30` u/s (a movement-system constant,
+not a per-engine stat). §2's inertia otherwise still holds: no friction while thrusting, passive
+`IDLE_DRAG` braking on release, and free drift. **Enemies are unchanged** — they still clamp to their
+per-engine `maxSpeed`. See §51.
+
 ---
 
 ## 3. Camera
@@ -1367,6 +1373,10 @@ simpler and closes the exploit outright (decision 4). (c) *Server-side roll/seal
 integrity item, consistent with §18 (decision 7). (d) *Deposit loot on death too* — rejected to keep a real
 stake on surviving the mission (decision 5).
 
+**(Grab pull model superseded by §57 — the flat `range = strength` radius + distance-independent pull speed
+described in decisions 1–2 above were replaced by an inverse-square field with emergent, weight-independent
+range; the strength values, weight-scaled speed, hull/deposit/pricing decisions here still hold.)**
+
 ---
 
 ## 41. Autopilot generalized to a typed target (station or loot drop); win gated to the station
@@ -1443,7 +1453,550 @@ objects untappable on the left, which is the whole bug.
 
 ---
 
-## 43. Perf regression gate is a relative A/B (same job), not an absolute threshold
+## 43. Nebula sky: bake procedural GLSL once to a cubemap (vs live per-frame shader-sphere vs third-party cubemap assets)
+
+We wanted a real nebula backdrop without a per-frame cost or a shipped binary asset. **Live
+shader-sphere** (an fbm fragment shader drawn every frame behind the fight) was rejected: the two-pass
+sky/combat split (§5) already pays a full sky pass each frame, and a 6-octave fbm over every background
+fragment is exactly the fill-rate work weak phones can't spare. **Third-party cubemap PNGs** (the CC0
+StumpyStrust evaluation set we trialed) were rejected: they add shipped binary weight, a `CREDITS.md`
+attribution obligation, and can't be re-tinted per-map. **Chosen:** render the procedural shader **once**
+into a `WebGLCubeRenderTarget` at `buildMap` time and use it as `skyScene.background` — per-frame cost
+collapses to a flat background draw (identical to today), the look stays fully procedural +
+palette-driven from the descriptor, and nothing ships as an asset. The one-time bake is **tier-gated**
+(Performance keeps the flat color — a 6-face shader bake can hitch the weakest phones, matching the
+"Performance strips premium visuals" line from §23) and **skipped under `?debug`** (software-GL bake is
+slow/flaky and would churn visual baselines — same reasoning as the `prewarmShaders` skip). The bake
+`ShaderMaterial` must set `depthTest`/`depthWrite: false` (with `side: BackSide`): the bake runs under the
+engine's global `renderer.autoClear = false` and `CubeCamera.update` doesn't clear the shared depth buffer
+between the 6 faces, so with default depth test the stale face-0 depths would reject later faces' fragments
+and bake the wrong direction. The sRGB output path makes the baked cube read slightly brighter/greyer than
+a raw-canvas preview; the maintainer accepted the baked in-engine result as the baseline.
+
+---
+
+## 44. Full-screen affordance shown over live combat (not menus-only), gated by `body.menu`, with a foreground `body.fs` re-sync
+
+**Context.** On a phone, backgrounding the browser and returning silently drops the tab out of
+fullscreen — the address bar/chrome reappears — but the floating `⛶` button (and, on iPhone, the
+Add-to-Home-Screen pill) was CSS-gated to **menus only** (`body.touch.menu`), so mid-battle the player had
+no way to re-enter fullscreen and was stuck with a shrunken screen. Two bugs compounded: (1) the menus-only
+gate, and (2) `body.fs` (which hides the button once fullscreen) was only re-synced on `fullscreenchange`,
+an event mobile browsers frequently **don't deliver to a backgrounded tab** — so after restore
+`document.fullscreenElement` is `null` but `body.fs` stuck true, hiding the button exactly when it was
+needed.
+
+**Decision.** Surface the fullscreen affordance **whenever the HUD/menu is up — active combat AND pause,
+not just menus** — as long as we're not already fullscreen. Reuse the **existing `body.menu`** signal
+(menu = `body.touch.menu`, in-game = `body.touch:not(.menu)`) rather than inventing a `body.paused`-based
+gate: paused is a subset of in-game and the real failure mode (chrome returns on background/restore) hits
+active play too, so a paused-only fix (the original narrower request) was rejected. The `⛶` keeps its
+bottom-right menu placement and moves **left of the rocket, raised above the bottom chrome** in-game
+(`right:124; bottom:58`), with an explicit ~12px horizontal gap from the rocket hit area so it never sits
+under the thumb's fire/boost path. On iPhone (no Fullscreen API, so "not fullscreen" ≈ "not standalone")
+the a2hs pill now shows in-game too (`body.touch.no-fs-api:not(.standalone)`), tucked under the top-left
+gear; it stays **non-interactive** (`pointer-events:none`).
+
+**Trade-off.** This puts a control (and, on iPhone, a persistent pill) over live combat — extra HUD
+clutter we'd normally avoid. Accepted because the harm from a stray tap is low (the button only re-enters
+fullscreen, a no-op if already fullscreen) and the explicit rocket gap keeps it off the thumb path, while
+the upside — recovering full screen without leaving the fight — directly addresses the failure mode.
+
+**Stale-`body.fs` fix.** `body.fs` now re-syncs whenever the page returns to the foreground —
+`visibilitychange` (only when `!document.hidden`), plus `pageshow` and window `focus` as
+belt-and-suspenders — in `welcome.js`, independent of the existing `fullscreenchange` listener and of the
+`autoPauseOnBlur` logic in `sim.js`. We deliberately **do not** try to force fullscreen programmatically on
+restore (browsers block it without a user gesture); the fix is to make the button reappear so the player
+taps it.
+
+## 45. Ship hitbox via convex decomposition → one OBB per part (vs multi-sphere / hand-authored / a physics engine)
+
+Every ship used to collide as **one fat sphere** (`2.6 × scale` for enemies, a hardcoded `2.6` for the
+player, and the player↔rocket test ignored size entirely). On elongated hulls that both over-covers the
+sides (visual misses still hit) and under-covers the nose/tail (`2.6 < 3.06`, the model's real half-length),
+so tip shots miss. We replaced it with a **per-part oriented-bounding-box (OBB) hitbox** auto-fit to each
+hull by convex decomposition.
+
+**Inscribed/packed spheres were the first cut, and were superseded.** The initial iteration on this branch
+fit a chain of axis-slice spheres (`docs/plans/multi-sphere-hitbox-fit-research.md`). Spheres cannot wrap a
+thin swept wing — a per-cross-section sphere is "a ball with bulges" that either over-covers the empty gap
+between wings or under-covers the wingtips. So we moved to convex decomposition + one box per part.
+
+**Fit = V-HACD convex decomposition, one PCA-OBB per part.** The fitter (`scripts/assets-hitboxes.mjs`)
+decomposes the normalized hull into near-convex parts with **V-HACD** (`vhacd-js`) — each wing (incl. its tip
+pod) becomes its own part — then wraps each hull's vertex cloud in a tight **PCA oriented box**: centroid +
+symmetric covariance → eigenvectors (a small deterministic Jacobi solver) = box axes, project verts per axis
+for the half-extents. Stored per box as `{c,h,u0,u1,u2}` (center, half-extents, three orthonormal group-local
+axes). Chosen over inscribed/packed spheres (can't wrap a wing), hand-authored boxes, and a physics engine
+because the game is a top-down arcade shooter where "does this point touch the hull" is the only query
+(DECISIONS §30 — keep it simple): a handful of cheap OBB projection tests behind the broad sphere, no runtime
+BVH/physics.
+
+**`vhacd-js` is build-time only, and memory-safe.** A prior local spike OOM-froze the maintainer's Mac —
+that was an unbounded dense distance-transform path, **not** V-HACD. V-HACD's `voxelResolution` is a bounded
+voxel *count* (a few MB), so the fitter runs it at the library default **`voxelResolution: 400000`** — needed
+to voxelize thin wings/noses that a coarser 100k grid skipped entirely. `maxVerticesPerHull: 32` and
+`fillMode: 'raycast'` (the combat glbs are non-watertight — raycast interior test, no repair needed). Do not
+go to an unbounded voxel/distance path. `vhacd-js` has no `main`/`exports`, only `"module"`, so it is
+imported by the subpath `vhacd-js/lib/vhacd.js`; it never ships to the browser (the fitter runs in Node).
+
+**Budget: `maxHulls` 48 + `minVolumePercentError` 0.5, to cover the wings (the "wing is transparent" fix).**
+`maxHulls` is only a **part-count cap** — it does not grow the voxel grid, so raising it costs nothing
+(empirically ~2 s/ship at 16 vs 64 hulls). At 16 hulls / error 1, V-HACD spent its budget unevenly and
+**merged one wing into a body hull** whose tight OBB stopped at x≈±1.5 while the wing reached ±1.7 → the
+player's outer +X wing was **~16% covered** (the rest of the ship ~99%), so shots passed straight through
+it. Raising to **48 hulls + `minVolumePercentError: 0.5`** (refine each hull to within 0.5% volume) gives the
+wing panels/tips their own hulls → **100% surface coverage** on every ship; 64/0.3 over-splits into slivers
+whose OBBs leave gaps (the boss nose regressed to ~96%). A `node --test` surface-coverage guard (below) is
+the gate that catches an under-covered fit — the size/union-span sanity all *passed* while the wing was 16%
+open, because a hole doesn't change the overall bounds.
+
+**Tight fit, with a min-thickness floor, and deterministic.** OBBs are meant to be tight — the whole point is
+that a bullet through the empty gap **beyond a thin wing** misses — so the fitter adds only a tiny additive
+`HITBOX_MARGIN = 0.05` (group-local, ~1.5% of length) to each half-extent, not the old multiplicative `1.1`
+bubble. But a razor-thin part (a swept wing / a pointed nose fits an `h ≈ 0.02-0.06` slab) is **transparent**
+to a discrete moving bullet: bullets step ~1 world unit/frame (speed 48-65 × dt, world scale 1.8×sizeScale),
+so they tunnel through a slab thinner than a step between frames. So each box's per-axis half-extent is
+**floored at `MIN_HALF = 0.1`** (group-local) — this only bumps the thin axis of a thin box (the boss's
+chunky boxes, min ~0.09, are barely touched), turning a thin wing/nose into a hittable slab. A little slop on
+a wing edge is the maintainer's arcade tolerance; transparent is not. PCA eigenvector order/sign is otherwise
+arbitrary, so each OBB is **canonicalized** (axes sorted by descending half-extent, each flipped so its
+largest-magnitude component is ≥ 0); with fixed V-HACD options + fixed rounding this makes running the script
+twice byte-identical (asserted by the unit test). `broadR` is the exact farthest OBB corner from the origin
+(~1.9-2.2, near the model half-length). Two `node --test` guards (`scripts/assets-hitboxes.test.mjs`): a
+**size-sanity** test asserts every modeled ship's `broadR ≤ ~2.4`, each half-extent ≤ half-length, **every
+box's min half-extent ≥ `MIN_HALF`** (so a transparent thin fit fails), and the **union full span** along
+its longest axis sits `3.0 ≤ span ≤ 4.3` (≈ `SHIP_MODEL_LEN` 3.4, headroom for rotated-OBB overhang + the
+clamp); and a **surface-coverage** test that decodes each ship's real combat glb, puts its vertices into the
+exact runtime frame (the fitter's `gatherMesh`+`normalize`, mirroring `ship-factory.js`), and asserts **≥97%
+of surface points overall + ≥90% per extremity (wingtips / nose / tail) are inside the fitted boxes** — the
+gate that catches an under-covered fit (the wing hole was invisible to every bounds-based test). It requires
+the combat glbs locally (`npm run assets:pull`) and skips cleanly without them (gitignored — same
+precondition as the fitter). This also validates **placement**: if the fitter's frame ever drifts from
+ship-factory's, coverage collapses and the test fails.
+
+**Runtime point-vs-OBB test.** At runtime (`client/src/collision.js`) collision is **broad-phase** (one
+enclosing `broadR × mesh.scale.x` sphere at `mesh.position`) → **narrow-phase** (point-vs-OBB): each box
+center is transformed by `mesh.matrixWorld` (affine), each axis `uᵢ` is rotated by the matrix's upper-3×3 and
+**renormalized** (world scale is uniform `sc = mesh.scale.x`), and the point is inside iff
+`|dot(p − c, uᵢ)| ≤ hᵢ·sc + pad` for **all three** axes. `pad` (the rocket proximity fuse / blast reach)
+expands every half-extent — a square-cornered Minkowski inflate, exact enough for a fuse. Transforming by
+`matrixWorld` folds in position + heading + the 1.8× world scale but **not** the child `bankGroup` roll, so
+collisions correctly ignore the cosmetic bank. `collision.js` is intentionally **THREE-free** (inline
+matrix/vector math) so it's importable under `node --test`.
+
+**Bullets are SWEPT (segment-vs-OBB), or they tunnel (the "bullets pass through thin wings" fix).** The
+narrow-phase point test only samples the projectile's *end-of-frame* position (`sim.js`). A bullet steps
+~1-3 world units/frame (`projectileSpeed` 48-65 × `dt` up to 0.05, × the 1.8×sizeScale world scale), which is
+larger than a thin box's half-extent **along the travel axis** — so a wingtip/nose box (~0.1-0.2 world thick
+in Z) sits entirely *between* two consecutive sample points and both land outside it → the bullet is
+transparent to it. This is orthogonal to `MIN_HALF` (which is the *perpendicular* thickness) and to
+resolution (the boxes are present — verified), so neither fixed it. The fix is `segmentHitsShip(ship, p0, p1,
+pad)`: the bullet's movement segment (pre-move `p0` → post-move `p1`) vs each OBB — both endpoints are
+transformed into the box's local frame (the same renormalized-axes/scale math), then a **slab test** clips
+the segment against `±(hᵢ·sc + pad)` per axis; a segment-vs-enclosing-sphere broad phase gates the box loop.
+It reduces to `pointHitsShip` when `p0==p1` (a strict superset). `sim.js` captures `p0` before
+`b.mesh.position.addScaledVector(b.vel, dt)` and passes `p1 =` the moved position, for both bullet→enemy and
+bullet→player. Rockets keep the point test — they're slow, homing (steer toward center) and carry a 0.5
+`detonateR` pad (a large capture region), so they don't tunnel. Broad-phase gates the swept loop, so only
+bullets already near a ship pay for it (mobile-safe). Why not just a bigger box / smaller bullet step: a
+uniform inflate slops up the tight fit (re-opening BUG A's over-cover), and a fixed sub-step multiplies the
+per-bullet cost; the analytic segment test is exact and cheap.
+
+**Rocket blast damage is hull-relative too (the "rockets deal no damage" fix).** A rocket's detonation is
+*triggered* hull-relative (`pointHitsShip(ship, pos, detonateR)`), so the detonation point lands on a
+hull box — off the ship's center. The blast *damage* loop in `projectiles.js:detonateRocket`
+originally still used `distanceTo(center) ≤ blastR`, so with the offset detonation point (and any offset
+hitbox) it matched **nobody**: the rocket exploded visually but dealt zero damage, for both player and enemy
+rockets. Fixed by making the damage loop hull-relative as well — `pointHitsShip(ship, pos, blastR)`. Since
+`blastR ≥ detonateR`, a rocket that reaches a hull to detonate always deals its damage. A regression test
+(`client/src/collision.test.js`) covers player→enemy and enemy→player, including a detonation point beyond
+`blastR` of the center that the old test would have missed. **`detonateRadius` was also retuned down**
+(rockets id 3/4/8: ~3.2–3.5 → **0.5**): since the trigger is now a `pad` measured from the *hull surface*
+(not the center as before), the old large values made rockets detonate a full ship-length away. `0.5` is
+near contact with the hull boxes while staying ≥ ~one frame of rocket travel (rockets accelerate to ~56 u/s,
+~0.9 world unit/frame at 60fps) so a fast rocket can't tunnel past the ship without detonating — and the
+broad-phase region (~4 world units) spans many samples as the rocket crosses it, so contact is reliable.
+
+**Frame.** Boxes live in the **group-local noseZ frame** (after ship-factory's auto-scale to
+`SHIP_MODEL_LEN` 3.4 + recenter + `yaw`), same frame as `userData.noseZ`. The fitter replicates that exact
+normalization (including the merged triangle indices V-HACD needs) on the glb verts before decomposing, so
+the boxes drop straight into the runtime frame.
+
+**Config lands in the seed by auto-rewrite, not by hand.** `assets:hitboxes` writes the boxes into each
+ship's `model:{}` block in `catalog_seed.js` via a **marker-delimited, idempotent** surgical edit
+(`/* hitboxes:auto:start */ … /* hitboxes:auto:end */`); the same edit also **consumes any legacy
+`/* hitspheres:auto:* */` span**, so one run migrates the seed off the old data. It preserves comments/key
+order, then verifies by re-importing the seed and deep-comparing. Hand-authoring was rejected — the fit is
+bounds math no human should transcribe, and a marked span keeps re-runs deterministic (running twice yields
+an identical file).
+
+**No meshopt decoder shipped.** The combat glbs are meshopt-compressed and reading them via `NodeIO`
+needs a decoder we don't depend on. Rather than add `meshoptimizer`, the fitter decodes each glb to a plain
+temp glb with the `@gltf-transform/cli` via `npx` (the same "no hard dep" pattern as `assets:build`), then
+reads that. We fit the **combat** glb (what actually renders in battle), not the high-poly source/hangar.
+
+**Fallback.** Primitive/un-modeled ships (no `hitBoxes`) keep the legacy single `2.6 × sizeScale` broad
+sphere — unchanged behavior. `e.radius` is retained purely as the over-enemy health-bar / marker anchor.
+## 46. Triple spiral rocket = 1 invisible homing leader + 3 real child rockets (not a single leader-detonation)
+
+The triple spiral rocket (weapon id 11) is modeled as **four `rockets`-pool entries per fire**: an
+**invisible leader** that carries all the homing (steer + accelerate toward the target, no damage, not
+shootable) and **three visible warheads** that ride it, each a full rocket with its own `power`, `health`,
+proximity `detonateRadius` (0.5, hull-relative — see §45), and blast.
+
+- **Alternative considered:** one homing rocket that, on detonation, deals 3× damage (or spawns three
+  cosmetic sub-rockets). Rejected — the headline feature is that **each warhead is real**: it deals its own
+  damage, can be **individually shot down** by gunfire, and connects independently (1–3 hits land depending
+  on how many survive). A single-detonation model can't express "shoot one down, the other two still hit."
+- **Why the split (leader vs. warheads):** it keeps the **homing logic in exactly one place** (the leader
+  reuses the existing rocket steering block verbatim) while the three warheads reuse the **existing
+  rocket-vs-bullet interception and `detonateRocket` code paths untouched** — they already have `hp`,
+  `obj.position`, `fromPlayer`, and blast fields, so no new pool, no per-warhead guidance, no bespoke
+  collision code (§30 simplicity). The warheads' positions are derived each frame from the leader
+  (`spiralOffset` corkscrew), so they don't steer themselves.
+- **Lifecycle bookkeeping:** the leader counts live `children`; every warhead-removal path (proximity
+  detonation, bullet shoot-down, out-of-range) funnels through one `removeRocket` helper that decrements it,
+  and the leader self-removes when the count hits 0 or it reaches `maxRange`. The leader is never passed to
+  `detonateRocket` (no mesh child / blast fields) — it's skipped in the interception + detonation loops and
+  cleaned up in its own branch.
+
+---
+
+## 47. Off-plane hulls: per-model `lift` workaround, not a global collision fix (yet)
+
+The game is top-down and bullets fly in the world **y≈0.6 plane** (the ship group's origin, group-local
+y=0). Models are auto-centered on their bounding box, so a ship whose visual mass sits **below** its bbox
+centre (tall turrets pulling the centre up, a drooped nose) leaves the hull below the bullet plane —
+centre-aimed shots pass *over* it. Reported concretely on **enemy_3** (shots flew over the nose). §45's
+tight OBB fit is faithful to the model, so it faithfully reproduces this miss.
+
+**Decision:** a per-model **`model.lift`** (group-local +Y, pre-scale) that raises the **visual model and
+its hitboxes together** into the bullet plane, rather than a global collision change.
+
+- **Alternatives (deferred to ROADMAP):** (a) flatten every hitbox onto the y=0 plane / give bullets a tall
+  vertical capsule — changes collision feel for *all* ships and hides genuine vertical structure; (b) fix it
+  at export time by re-centering each glb — re-runs the whole asset pipeline per model and isn't trusted
+  (§ model transforms are runtime-normalized, not baked). Both are heavier than the problem, which today is
+  a handful of models.
+- **Why lift is safe:** it's a single value that drives **both** `pivot.position.y` (visual) **and** every
+  hitbox `c.y` (plus `broadR += |lift|`), so the model and its collision boxes can never desync — the class
+  of bug that a "shift the hitboxes only" fix would invite. Default `0` leaves every other ship untouched.
+- **Why not just accept the limitation:** it's a per-model *tuning* knob, not a mechanic — cheap to set
+  (`enemy_3: 0.2`, player `0.18`), verified per model, and reversible. The general fix stays scheduled; this
+  removes the visible sting on the ships that have it now (§30 keep-it-simple).
+
+**The bullet plane is a formalized invariant, not a scattered `0.6`.** The move-the-model (never the
+bullets) rule only holds if there's exactly one bullet plane. So `client/src/state.js` exports
+**`BULLET_PLANE_Y = 0.6`** as the single source of truth: every ship group sits at this world Y, and since
+muzzle/exhaust spawn from `mesh.position` + a **planar** (y=0) forward/right vector, ALL bullets — player
+and enemy, every model — fly in exactly this plane. Ship spawn/recenter Y (`ship-factory`, `ship-build`,
+`sim`) and the flat hit-ring FX (`projectiles`) reference the constant, never a bare literal. (We kept the
+plane at 0.6 rather than shifting to literal world 0 — 0.6 is already model-independent, and re-zeroing
+would be cosmetic churn across exhaust/HP-bar/ring code with shadow/ground regressions for no gameplay
+gain.) `lift` is then simply "the signed offset that anchors a model's hull onto this invariant plane."
+
+**`lift` is signed, and the fitter warns when a model needs one.** A hull can sit *above* the plane
+(bbox centre below the deck) as easily as below, so `lift` is a signed group-local Y offset (positive
+raises, negative lowers). To stop a freshly-fit model from silently shipping see-through from above, the
+`assets:hitboxes` generator prints a **bullet-plane coverage** report — how many hitboxes the plane crosses
+at the current `lift`, and the lift that maximises it — and flags any ship that could seat ≥2 more boxes.
+Coverage is `|c.y + lift| ≤ Σ|uᵢ.y|·hᵢ`, which is exact and **invariant to heading and scale** (rotation
+about Y preserves each axis's Y component; uniform scale cancels through the origin). `bestLift` scans a
+**fine grid** and returns the **centre of the peak plateau**, not the plane-crossing extremum: a lift
+exactly on a box edge grazes that box on a razor line (not a real hit), so the plateau centre — where the
+plane passes *through* the seated boxes with margin on both sides — is the robust suggestion. It's a
+*warning, not a build failure*: over-shifting to grab one more box can float/sink the model, so the
+maintainer sets `lift` deliberately (see the `update-ship-model` skill). All 9 modeled ships are tuned to
+their robust max (player `0.18`; enemy_1 `0.21`, enemy_2 `0.17`, enemy_3 `0.2`, enemy_4 `-0.132` — the boss
+hull sat above the plane, so it's the one *lowered*).
+
+---
+
+## 48. In-game credits screen: legal obligation + parse-at-build committed module (vs runtime fetch)
+
+Every 3D model we ship is **CC-BY 4.0**, whose license text *requires* attribution be shown to the people
+who receive the work — i.e. **players**, not just a repo doc. Keeping the credits only in
+`client/assets/CREDITS.md` (which players never see) left us formally out of compliance, so we added a
+player-facing **Credits & attributions** screen (opened from the Settings gear — the one chrome surface
+reachable on menus *and* in-game, and both distribution surfaces need it: vega.tenony.com and itch.io).
+
+**Data path = parse-at-build into a committed module, NOT a runtime fetch.** The client is buildless
+(§31 — raw ES modules; the vega/local serve has no build step, and `build-itch.mjs` only *copies*
+`client/`). A runtime `fetch('CREDITS.md')` would need the raw md served same-origin on **both** builds and
+still require filtering the repo-internal prose out of a compliance UI. Instead `npm run credits:build`
+(`scripts/credits-build.mjs`) parses `CREDITS.md` → a **committed** `client/src/credits-data.js` the client
+imports; both builds consume the committed module (and `build:itch` regenerates it into the staged tree as
+a belt-and-suspenders guard). A `--check` mode wired into `client/src/credits-data.test.js` fails CI if the
+committed module drifts from `CREDITS.md` — the same deploy-guard shape as `assets:check`.
+
+**Two STRUCTURED parts of `CREDITS.md` are parsed; the narrative prose is ignored.** (1) the 5-column asset
+table gives the asset SET + each row's author, source URL, license and group (`ships/` → models,
+`sounds/` → sounds); (2) the **verbatim CC-BY blockquote attribution lines** (`> "TITLE" (URL) by AUTHOR
+…`) give the TASL-correct **work title**, matched to its table row by Source URL. The Asset cell is a
+repo file path, so slicing it yields a broken label (`sounds/kinetic..mp3`, a dangling `.glb`) — a
+non-compliant credit — hence CC-BY rows take the blockquote title, courtesy rows take the parenthetical
+description, and a cleaned-filename fallback guarantees a label is never a raw path. **A CC-BY row with no
+matching verbatim block is a hard error** (throws): the verbatim block is itself required for compliance, so
+a missing one is a real bug, never a silent path fallback. An unknown license string also throws (a new
+license type must be handled deliberately).
+
+**Chrome i18n, attribution content literal.** Panel title, section headings, "Modified", "Source", "Close",
+"by {author}" are i18n keys (`ui.credits.*`, EN+RU); author names, work titles, license names and URLs come
+straight from the generated data and are never translated (they are literal/legal text). Scope is a plain
+scrollable list — no thumbnails/search/pagination (§30).
+
+## 49. L1/L2 reward is server-installed (unchanged); the battlefield drop is COSMETIC to guarantee exactly one copy
+
+The L1 Machine Gun / L2 repair drone reveal now happens as a glowing drop on the battlefield when the level's
+last enemy dies, but the **one guaranteed copy is still delivered solely by the existing, idempotent server
+force-install on victory** (clearing L1 runs L2's briefing `replaceWeapon 1→5`; clearing L2 runs L3's
+`installComponent repair 12`). The battlefield drop **deposits nothing** to the stash.
+
+**Why cosmetic-only.** If the drop *also* deposited into the stash, any player who grabbed it would end up with
+**two** Machine Guns / repair drones (one from the grab, one from the server install). Leaving the guaranteed
+copy exclusively with the idempotent server path keeps "grab it or not — doesn't matter" literally true and is
+**dupe-proof on replays** (the install is a no-op when the item is already mounted/installed). The single
+load-bearing line is `collect()` gating the `pendingLoot` push on `shouldDeposit(d)` = `!d.special`.
+
+**Why not refactor the reward path** (a `reward.actions` block, a `/claim-reward` endpoint, moving the grants
+off the briefings): the existing briefing actions already deliver exactly one copy at the right time and are
+idempotent, so the smallest correct change (DECISIONS §30) is a **client-side cosmetic drop** plus an
+ownership gate (`ownsReward` — don't spawn the drop if the reward is already owned, so replays show at most a
+normal loot box). The showcase + grant actions on the L2/L3 briefings are untouched; only their **text** was
+reworded to a "you recovered it" framing to match the new reveal.
+
+---
+
+## 50. Item rarity is DERIVED from price/buyable, not hand-authored per row (one explicit override)
+
+The new `rarity`/`color` on `components`/`weapons` are stamped by a single classifier in `catalog_seed.js`
+(`rarity = explicit override ?? ((price>0 && stats.buyable !== false) ? 'common' : 'trash')`), not written
+out per row. The **only** hand-set value is `rarity: 'rare'` on the Triple spiral rocket. Colors are a fixed
+map (trash `#ffffff`, common `#59e0a0`, rare `#0000ff`).
+
+**Why derived.** The intended semantics *already exist* in the data: shop-available items (priced +
+buyable) should read common; every pirate/enemy part (`buyable:false`) and price-0 boss part should read
+trash. Deriving from those fields makes rarity **self-consistent by construction** — a new catalog row gets
+the right tier for free, and there's no risk of a hand-typed rarity drifting out of sync with a row's
+price/`buyable` flags. The escape hatch (a per-row `rarity`) covers the one case the rule can't infer (a
+priced, buyable, but "special" weapon), keeping the smallest surface area (DECISIONS §30).
+
+**Trade-off / when to revisit.** If rarity ever needs to diverge from price/buyable for many rows (e.g. a
+premium-but-cheap cosmetic, or a tiering that isn't price-monotonic), the derived rule stops paying off and
+the honest move is to hand-author `rarity` per row (or add a dedicated design column) rather than pile on
+overrides. Today, with one override, the rule is the simpler and safer choice.
+
+---
+
+## 51. Flat player top speed + engine buff + pause-safe opening-combat grace (supersedes §2's "no speed limit" for the player)
+
+Four correlated pacing/feel changes to the opening of a run (`docs/plans/2026-07-05-2126-player-speed-cap-engine-buff.md`):
+
+**Flat `PLAYER_MAX_SPEED = 30` for the player, per-engine `maxSpeed` for enemies.** The player was
+previously *uncapped* (§2's "no speed limit"), so velocity grew unbounded with thrust and arena traversal
+time was unpredictable. We cap the player at a single flat movement-system constant clamped in `sim.js`
+(after thrust/autopilot converge, before position integration — so both control paths obey it). We did
+**not** repurpose the player's engine `maxSpeed` for this: the Basic engine (id 5) carries `maxSpeed: 0`, so
+there was no per-engine cap to reuse, and a flat constant keeps player handling **predictable independent of
+engine choice**. Enemies are untouched — they still clamp to `e.engine.maxSpeed`. This **supersedes §2's
+"no speed limit" clause for the player** (mirrored by the §2 amendment); §2's inertia/no-friction/drift model
+otherwise stands. Cosmetic wrinkle (left as-is): the per-engine `maxSpeed` shop stat is now decorative for
+the player — but it already was, since the player was uncapped before.
+
+**+50% engine `power` (acceleration), `maxSpeed` untouched.** Every engine's `power` is buffed ×1.5 (Basic
+10→15, Scout 12.6→19, Boss 19→29, Solid-fuel 14→21, Ion 18→27, Pirate 12.6→19, Second-boss 30→45) so ships
+(player *and* engine-sharing enemies) reach top speed faster — snappier acceleration without raising the
+ceiling. Thrusters (turn) and all `maxSpeed`/`exhaust`/`weight`/`price` values are unchanged.
+
+**5 s enemy hold-fire grace, timed on accumulated sim `dt` (pause-safe) not wall-clock.** Enemies spawn,
+move and aim from frame one but hold fire until `G.combatElapsed >= 5`. The clock advances by `dt` inside
+`update(dt)`, which is skipped entirely while paused — so **pausing during the on-ramp does not burn the
+breather** (a wall-clock `performance.now()` timer would). Deliberately **silent** (no HUD/countdown/banner,
+DECISIONS §30). The player also **opens each run gliding forward at 3 u/s** (10% of top speed) instead of
+dead-stopped; the drift is momentary by design (bleeds off via `IDLE_DRAG` if no control is held).
+
+---
+
+## 52. L1 welcome drops the ship picker (single-ship level) + pins Take off via grid
+
+At Level 1 the player owns **exactly one ship** (extra hulls are bought in the Main Window shop at L2+), so
+the welcome-screen ship picker (`.pick` label + `#ship-choices` cards) offered no real choice — it was
+decorative. Removing it loses no functionality (take-off still needs a non-null `selectedShip`, now defaulted
+directly to `playerShips[0]` in `showWelcome`) and, on its own, already relieved the *visible* symptom by
+shrinking the content.
+
+Separately, `#welcome` moved from a **centered-flex column** (`overflow-y:auto`, whose `justify-content:center`
++ overflow **clips the unreachable *top*** of the greeting/intro on short viewports — the classic
+centering-in-a-scroll-container trap, where the overflowed top can't be scrolled into reach) to a
+**`1fr/auto` CSS grid**: a scrollable greeting/intro cell over a **pinned footer** (Take off + community link).
+The scroll cell keeps the "centered when it fits, top-aligned + scrolls when it overflows" behavior via the
+flexbox auto-margin trick (`:first-child{margin-top:auto}` / `:last-child{margin-bottom:auto}`), which does
+NOT clip the top.
+
+**Why.** This makes the Take-off on-screen invariant **structural** — guaranteed by the layout, not a
+content-dependent side effect of how tall the intro happens to render — mirroring the Main Window's
+already-pinned Take off. It's a minimal robustness fix (a few lines of CSS remove a whole class of "the
+button drifted off-screen" fragility), **not** §30 over-engineering. A committed regression guard (scenario
+18 at 900×360) asserts both that the scroll region genuinely overflows and that the footer is flush to the
+content bottom, so a revert to the flex column fails loudly.
+
+---
+
+## 53. Enemy spawns are staggered (2–4 s cooldown), first-of-phase immediate
+
+The level runner previously refilled the arena to `maxConcurrent` **every frame**: a phase's opening wave
+snapped to full instantly and a killed enemy was replaced on the very next frame. That felt cramped and
+spawn-camped — the arena was always packed and refills were invisible.
+
+**Decision.** Gate **every** enemy spawn behind a randomized **2–4 s** cooldown (`2 + Math.random()*2`) so
+enemies trickle in one at a time and a phase populates 1→2→3… toward its `maxConcurrent`. The **first** enemy
+of each phase is **immediate** (the cooldown resets to 0 on `enterPhase()`), so no phase ever shows an empty
+arena at its start — and the boss/finale (which spawns alone after its clear-out phase empties the arena)
+still appears the instant its phase begins, **with no special-case**. Each spawn arms a fresh 2–4 s delay.
+
+**Post-kill replacements are staggered too.** The cooldown only counts down while a slot is actually open
+(`alive < maxConcurrent` and budget remains); while the arena is **full the timer is frozen**, so the moment
+a kill frees a slot the remaining 2–4 s must still elapse — a kill never triggers an instant refill. This is
+deliberate (a future reader must not "fix" it back to a per-frame top-up); the unit test pins it down.
+
+**Scope/shape.** Simplest form per §30: an inline `2 + rand()*2` in one tiny pure helper
+(`client/src/spawn-timing.js` — `stepSpawnGate`/`nextSpawnDelay`), unit-tested by injecting a stub RNG. **No**
+seeded-RNG system, **no** per-phase/per-level tuning of the window. The helper is a separate leaf (not inline
+in `sim.js`) because `sim.js` imports `engine.js`, which builds a `WebGLRenderer` at import and can't load
+headless — mirroring why `server/src/enemy_total.js` exists as a testable oracle. **No server/`enemyTotal`
+change:** staggering changes *pacing*, not the total number of enemies that eventually spawn, so the
+per-level totals and the `allCleared` advance condition are unaffected (clear-out phases just take a little
+longer to fully spawn). The `win` / return-to-base flow is untouched.
+
+---
+
+## 54. Deterministic spawn totals (explicit per-phase `total`) + warp-in IS the stagger delay
+
+§53's staggering **broke** the assumption §53 claimed to preserve. The precomputed `enemyTotal`
+(`server/src/enemy_total.js`) modeled the *old* instant-fill runner: a `kills`/`killsSincePhase` threshold
+phase snapped to `maxConcurrent` and so left exactly `maxConcurrent` enemies **alive** ("carry") when it
+advanced, which a later `allCleared` clear-out phase then killed. Staggering trickles enemies in one at a
+time, so a threshold phase now advances with **far fewer** than `maxConcurrent` alive — the actual kills to
+clear a level came out variable (e.g. L1 14/15 instead of the precomputed 16). The HUD "destroyed X/Y"
+counter stopped short and the single drop trigger `kills === enemyTotal` (§30) never fired, so the L1
+Machine Gun and L2 Repair-drone reward drops silently vanished. A carry-based oracle can't survive a
+non-deterministic fill rate.
+
+**Decision.** Make counts **deterministic**: every spawning phase carries an explicit `spawn.total` cap. A
+threshold phase's `total` equals its kill-delta (so it leaves **0** alive at advance — a larger cap leaves
+survivors; a smaller cap deadlocks), and the "carry" remainder becomes a **real spawning clear-out/finale
+wave** (drawn from that level's wave-2 pool; L1, which has no clear-out, folds it into its finale). So
+`enemyTotal` is simply the **sum of every phase's `spawn.total`** — `enemy_total.js` collapses to that sum,
+the counter reaches N/N, and the drop fires on the true last kill. Per-level totals are preserved except
+**L1 intentionally drops 16→14** (two fewer finale rocketeers): L1=14, L2=17, L3=21, L4=22, side=20. **No
+second/structural drop trigger** (§30) — the one deterministic condition stays, extracted into a pure
+`isLastKillDrop({kills, enemyTotal})` and guarded by a new headless full-level replay
+(`client/src/level-sim.js` + test) that proves the counter reaches `enemyTotal` and the drop fires on the
+last kill. That missing coverage is what let the regression ship.
+
+**Warp-in becomes the arrival animation.** Rather than an empty 2–4 s gap then a separate 1 s pop, a spawned
+enemy appears **immediately** as a dot and **materializes over its stagger interval** — the armed 2–4 s
+cooldown, carried per-instance on `e.spawnDur` (the global `SPAWN_GROW_TIME` 1 s stays as the default and
+the player warp-back). While forming (`e.warping`) it is **invulnerable, cannot fire, and is not a valid
+homing-rocket target**, so the staggered trickle can't be spawn-camped mid-materialize; it still counts
+toward `maxConcurrent` (preserving §53's pacing) and shows its edge marker so the arrival reads. All three
+player→enemy damage paths skip warping enemies (bullet collision + rocket detonation trigger in `sim.js`,
+and the **separate** blast-splash loop in `projectiles.js`), so a warping enemy's hp stays `maxHp` and no
+health bar ever shows on a dot. The shot-down rocket path (`detonateRocket(r,false)`) is unaffected. This
+supersedes §53's "No server/`enemyTotal` change" claim.
+
+## 55. Pipeline run history = committed JSONL journal, not an observability platform
+
+The `/feature-pipeline` orchestrator now persists every run to `docs/pipeline-runs.jsonl` (one JSONL line
+per run: per-agent tokens/tool-calls/time, loop counters, critic/reviewer findings, review-gate decision,
+live-test outcome) to enable longitudinal analysis of agent effectiveness — chiefly the **escaped-defect
+rate** (bugs the live test caught that critic *and* reviewer both passed), plus token cost trends.
+
+**Decision.** Store it as a **committed, append-only JSONL file in `docs/`**, queried with `jq`/DuckDB —
+not a hosted observability platform. Rationale: this is a single-author repo with a few pipeline runs at a
+time; a git-diffable, human-readable journal is the simplest thing that answers "how good is the critic /
+reviewer, and what did this cost" without standing up Langfuse/OTel + ClickHouse/Redis (§30). Rates are
+**derived at query time**, not stored, so metric definitions can evolve without a migration.
+
+**Alternatives considered.** *CSV* — rejected: records are nested (per-agent objects, findings arrays)
+and the schema will grow; CSV forces flattening. *Committed SQLite* — deferred: JSONL suffices until SQL
+with indexes is actually needed. *SaaS/self-hosted observability (Langfuse, Arize Phoenix, OTel collector
+→ Grafana)* — rejected **for now** as over-engineering for one author, but kept as the documented **escape
+hatch**: Claude Code emits OTel GenAI spans/metrics natively (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, per-subagent
+tokens/cost, delegation chain as one trace), so the upgrade path is real if run volume or a dashboard need
+ever justifies it. The **review gate** (Stage 4.5) shipped in the same change is the standard
+human-in-the-loop interrupt, deliberately placed on the least-reversible step (implementation + deploy) per
+"don't interrupt on reversible steps." Full spec: `docs/plans/pipeline-review-gate-and-run-log.md`.
+
+---
+
+## 56. Admin device label = hand-rolled UA parse + curated code→marketing-name lookup, no dependency
+
+The `/admin` "device" column needs to turn a raw `User-Agent` + a `Sec-CH-UA-Model` device **code** into a
+readable `Browser · Device/OS` label. We deliberately **skip** `ua-parser-js` / a full device database and
+hand-roll it: a few robust regexes (`parseBrowser`/`parseOS`) plus a small curated `DEVICE_NAMES` map
+(common Samsung/Xiaomi/Pixel/Apple codes → marketing names) with a **raw-code fallback** for anything
+unknown. Rationale: the admin panel has a **no-new-deps precedent** and DECISIONS §30 (keep-it-simple,
+single author) — a device DB is heavy, needs updating, and this is a maintainer-only eyeballing aid, not
+analytics. The trade-off is accepted: unknown device codes show the raw code, and browser/OS detection is
+approximate. The signal is **deliberately partial**: the model only arrives from **Chromium same-origin**
+visits (opt-in via the `Accept-CH: Sec-CH-UA-Model` header — modern Android's UA hides the model), so
+Safari/Firefox and the cross-origin itch embed degrade to UA-only, and existing rows stay `NULL` until the
+player next boots (no retroactive data, no backfill). We store the **raw** UA + model code and do all
+parsing/formatting at **render time**, so the label (and the `DEVICE_NAMES` map) can improve later with **no
+migration or backfill**. Capture is **latest-wins** (unlike write-once `referrer`, §36): device metadata
+reflects the player's *current* device, and `resetPlayer` intentionally leaves it in place (it's not
+progress).
+
+---
+
+## 57. Grab tractor = inverse-square field with emergent, weight-independent range
+
+The Grab (tractor) used to pull any drop inside a hard radius (`range = strength`) at a constant,
+distance-independent speed (`(strength/2)·(10/weight)`). We replaced it with an **inverse-square field**:
+`field(strength, dist) = strength·FIELD_K/dist²` (`FIELD_K = 5`), and the beam **engages a drop only where
+`field ≥ FIELD_CUTOFF`** (`0.4`). Pull speed is `field·(10/weight)` — it now **rises the closer a drop is**,
+so near drops snap in and far ones crawl, which reads like a real tractor beam.
+
+Two consequences are deliberate. (1) **Range is emergent, not a stored stat:** the reach is wherever the
+field crosses the cutoff, `range(strength) = sqrt(strength·FIELD_K/FIELD_CUTOFF)`, so there is no separate
+range number to store, tune, or keep in sync — one `strength` value drives both reach and speed. (2) **Range
+is weight-independent:** the cutoff test uses `field`, which has **no weight term**; weight scales only the
+speed. A heavy item is pulled from just as far as a light one, only slower — item weight can never change how
+far the beam reaches.
+
+We **kept the strength values at 10 (base) / 20 (Advanced)** rather than retuning them. Because range scales
+with `sqrt(strength)`, the equal 2× ratio makes the Advanced grab reach exactly **√2× the base** (≈15.8 vs
+≈11.2 u) — a modest, believable reach upgrade instead of doubling it, while still doubling the field strength
+(and thus pull speed) at any given distance. No DB/schema change: `strength` lives in the catalog `stats`
+JSON and is untouched.
+
+The **shop keeps showing the raw `strength` number** (10/20), relabeled as an abstract "grab strength"
+rather than claiming to equal the world-unit range (option a). Per §30 (keep-it-simple, single author) this
+is one existing surface with minimal churn; showing the derived range would add a computed display for a
+maintainer-facing tuning aid nobody asked for. Near-ship singularity (`field→∞` as `dist→0`) needs **no
+clamp**: collection at `COLLECT_DIST = 3` fires before a drop nears `dist=0`, and the per-frame move is
+capped at `Math.min(speed·dt, d)`, so an over-large near-field speed can never overshoot the ship.
+Constants `FIELD_K = 5` and `FIELD_CUTOFF = 0.4` are fixed for this iteration (no player-facing tuning UI).
+
+**Follow-up (2026-07-07): reel-in speed is a linear ramp, not the field.** Two rounds of live play refined the
+*speed* (the reach was right from the start and never changed). First we decoupled speed from reach with a
+scalar `PULL_SPEED_SCALE = 0.67` (since `FIELD_K` scaled both), slowing the pull ~1.5×. But the `1/dist²` speed
+still spiked near the ship — drops crawled far out then snapped in, which read as a jerk. So we **replaced the
+speed model entirely with a linear ramp by distance**: `pullSpeed(weight, dist)` rises linearly from
+`PULL_SPEED_FAR = 1` u/s (far, and the floor at/beyond `PULL_FAR_DIST = 11`) to `PULL_SPEED_NEAR = 4` u/s at the
+ship (both weight-10 refs), then `·(10/weight)`. A constant slope is deliberately un-physical but has **no
+near-ship jerk** and plays better — the maintainer explicitly preferred playability over physical correctness
+here. `PULL_SPEED_SCALE` was retired (folded into the near/far anchors). **Reach is untouched** — it still comes
+only from `field`/`FIELD_CUTOFF` (the range tests did not move), so the emergent √2 advanced-vs-base ratio holds.
+A consequence: **pull speed no longer depends on `strength`** (it dropped out of the `pullSpeed` signature) —
+strength drives reach only; the speed profile is uniform across grabs. `PULL_SPEED_NEAR`/`PULL_SPEED_FAR`/
+`PULL_FAR_DIST` are the speed knobs, `FIELD_K`/`FIELD_CUTOFF` the reach knobs.
+
+---
+
+## 58. Perf regression gate is a relative A/B (same job), not an absolute threshold
 
 **Problem.** Weak phones (A03s/Redmi, DECISIONS §23) are the floor, but a code change that quietly adds ~2%
 per-frame CPU cost is invisible in review and only surfaces as "the game feels heavier" much later. We want to
@@ -1499,7 +2052,6 @@ inherently advisory (a 2% CPU cost can be a deliberate trade), and a single auth
 to enforce it (§30). Because build A is always the merge-base, on the first branch *after* the harness lands
 build A has no `window.__bench` → the runner prints `gate inactive` and exits 0; real A/B activates on the
 next feature. Cross-references §23 (the `?dev` monitor this reuses) and `docs/plans/perf-low-end-phones.md`.
-
 ---
 
 ## Future ideas

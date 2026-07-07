@@ -8,12 +8,64 @@ export const ROTATE_PERIOD  = 5.0;   // seconds per full drop revolution
 export const COLLECT_DIST   = 3.0;   // world units: within this of the ship → collected
 export const WEIGHT_FALLBACK = 10;   // defensive: used only if an item somehow has no weight
 
-// Pure pull-speed formula (world units/sec): (strength / 2) * (10 / itemWeight). Anchor: strength 10,
-// weight 10 → 5 u/s; light parts pull faster (weight 2 → 25 u/s), heavy parts slower. A zero/missing
-// weight falls back to WEIGHT_FALLBACK so the sim never divides by zero. Kept here (import-free) so it's
-// node-testable without pulling in THREE.
-export function pullSpeed(strength, weight) {
-  return (strength / 2) * (10 / (weight || WEIGHT_FALLBACK));
+// Grab (tractor) inverse-square pull field. The pull FIELD at a drop is strength·FIELD_K/dist²; the
+// beam ENGAGES a drop only where field ≥ FIELD_CUTOFF, so the reach is EMERGENT (derived from the
+// cutoff), not a stored stat — see range() below. Both are fixed this iteration.
+export const FIELD_K      = 5;    // field numerator scale (sets the emergent reach together with FIELD_CUTOFF)
+export const FIELD_CUTOFF = 0.4;  // field threshold: below this the drop leaves the beam (line hides)
+// Reel-in SPEED is a LINEAR ramp by distance (NOT the 1/dist² field) — deliberately un-physical but more
+// playable: no sharp near-ship jerk. Speed rises linearly from PULL_SPEED_FAR (far) to PULL_SPEED_NEAR (at
+// the ship), both weight-10 references. Reach is unaffected — it still comes from field()/FIELD_CUTOFF.
+export const PULL_SPEED_NEAR = 4.0; // u/s at the ship (COLLECT_DIST), weight-10 ref — top of the linear ramp
+export const PULL_SPEED_FAR  = 1.0; // u/s far out (≥ PULL_FAR_DIST), weight-10 ref — floor (drops still move at the edge)
+export const PULL_FAR_DIST   = 11;  // distance at/beyond which the pull speed sits at PULL_SPEED_FAR
+
+// Reward (L1/L2 last-kill) special drops: the model gets a green emissive tint + an additive green halo
+// sprite, and its off-screen pointer pulses green. Cosmetic only — collecting a special drop deposits
+// nothing (the one guaranteed copy is server-installed on victory; see DECISIONS).
+export const REWARD_TINT      = 0x59e0a0; // green — emissive tint + halo + off-screen pointer glow
+export const REWARD_HALO_SIZE = 5.0;      // world-units diameter of the additive halo sprite behind a reward drop
+export const DROP_HALO_SIZE   = 4.5;      // soft rarity-color glow behind a normal loot drop (smaller than the reward halo)
+
+// Pure deposit decision, factored out so it's node-testable: a special (cosmetic reward) drop deposits
+// NOTHING to the stash; a normal loot drop deposits its item. This is the load-bearing no-dupe guarantee.
+export function shouldDeposit(drop) { return !!drop && !drop.special; }
+
+// Pure ownership gate: does the player's active-ship record already carry this reward? A weapon reward is
+// owned if any mount references it; a component reward (the L2 repair drone) is owned if the repair slot is
+// filled. Takes the active ship explicitly (drops.js passes G.activeShip) so it's THREE-free + node-testable.
+export function rewardOwned(activeShip, reward) {
+  const as = activeShip; if (!as || !reward) return false;
+  if (reward.kind === 'weapon') {
+    const mounts = (as.loadout && as.loadout.mounts) || (as.ship && as.ship.stats && as.ship.stats.mounts) || [];
+    return mounts.some((m) => m.weapon === reward.refId);
+  }
+  if (reward.kind === 'component') {
+    const comps = as.components || (as.ship && as.ship.components) || {};
+    return comps.repair != null; // L2 reward is the repair slot; refId 12 lands here
+  }
+  return false;
+}
+
+// Grab pull math. All pure + import-free so drops.test.js runs under node.
+//   field(strength, dist) = strength · FIELD_K / dist²   — the inverse-square field; drives ELIGIBILITY/reach only
+//   engaged               = field ≥ FIELD_CUTOFF          — below this the drop leaves the beam
+//   range(strength)       = sqrt(strength · FIELD_K / FIELD_CUTOFF)  — EMERGENT, weight-INDEPENDENT reach
+//   pullSpeed(w, dist)    = LINEAR ramp PULL_SPEED_FAR→PULL_SPEED_NEAR by distance, · (10 / w)
+// SPEED is deliberately NOT the field: a linear ramp (constant slope) has no near-ship jerk and plays better.
+// It depends on distance + item weight only (light parts faster), NOT on strength — strength sets reach, not
+// speed. A zero/missing weight falls back to WEIGHT_FALLBACK. dist is always > 0 in practice (collection at
+// COLLECT_DIST=3 fires before dist→0; drops.js caps the step at the gap).
+export function field(strength, dist) {
+  return (strength * FIELD_K) / (dist * dist);
+}
+export function range(strength) {
+  return Math.sqrt((strength * FIELD_K) / FIELD_CUTOFF);
+}
+export function pullSpeed(weight, dist) {
+  const t = Math.max(0, Math.min(1, (PULL_FAR_DIST - dist) / (PULL_FAR_DIST - COLLECT_DIST))); // 0 far → 1 at the ship
+  const vRef = PULL_SPEED_FAR + (PULL_SPEED_NEAR - PULL_SPEED_FAR) * t; // linear (weight-10 reference)
+  return vRef * (10 / (weight || WEIGHT_FALLBACK));
 }
 
 // Pick one looted item uniformly among the enemy's NON-HULL parts (engine, thruster) + mounted weapons.

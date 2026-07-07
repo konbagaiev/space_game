@@ -17,14 +17,9 @@
     <div id="hppct">100.0%</div>
   </div>
   <div class="right">
-    <div class="label" data-i18n="ui.hud.credits">Credits</div>
-    <div id="credits" style="font-size:20px">0</div>
-    <div class="label" style="margin-top:6px" data-i18n="ui.hud.earned">Earned</div>
-    <div class="bigval" id="earned">0</div>
+    <div class="bigval" id="credits">credits 0/0 earned</div>
     <div class="label" style="margin-top:6px" data-i18n="ui.hud.destroyed">Destroyed</div>
     <div id="kills" style="font-size:18px">0</div>
-    <div class="label" style="margin-top:6px" data-i18n="ui.hud.enemies">Enemies</div>
-    <div id="enemies" style="font-size:18px">0</div>
   </div>
 </div>
 <div id="help" data-i18n="ui.help" data-i18n-html>
@@ -40,13 +35,15 @@
 </div>
 <div id="welcome">
   <div id="lang-switch"></div>
-  <h1 data-i18n="ui.welcome.greeting">Welcome, Sentinel</h1>
-  <p class="intro" data-i18n="ui.welcome.intro">Pirates are raiding our home system — we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't let them pin you down.</p>
-  <div class="pick" data-i18n="ui.welcome.pick">Pick your ship</div>
-  <div id="ship-choices"></div>
-  <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
-  <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
-     target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
+  <div id="welcome-scroll">
+    <h1 data-i18n="ui.welcome.greeting">Welcome, Sentinel</h1>
+    <p class="intro" data-i18n="ui.welcome.intro">Pirates are raiding our home system — we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't let them pin you down.</p>
+  </div>
+  <div id="welcome-footer">
+    <button id="takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
+    <a class="community-link" data-i18n="ui.community.label" data-i18n-href="ui.community.url"
+       target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
+  </div>
 </div>
 <!-- Main Window (was the "Hangar"): top bar lives in fixed elements (gear/account-bar/wordmark/#mw-ships);
      this grid is left menu | work zone | ship-model preview. See docs/plans/main-window-redesign.md. -->
@@ -162,6 +159,7 @@
       </div>
       <div class="set-note" data-i18n="ui.settings.reset.note">Wipes your level, credits, ships and upgrades. Your account and login stay.</div>
     </div>
+    <button id="credits-open" class="ghost" data-i18n="ui.credits.open">Credits</button>
     <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
   </div>
   <!-- confirm step shown after the slide is completed (sits above the settings box) -->
@@ -176,9 +174,20 @@
     </div>
   </div>
 </div>
+<div id="credits-overlay">
+  <div class="credits-box">
+    <h1 data-i18n="ui.credits.title">Credits &amp; attributions</h1>
+    <p class="credits-intro" data-i18n="ui.credits.intro">Vega Sentinels uses third-party assets under open licenses. Thank you to their authors.</p>
+    <div class="credits-note" data-i18n="ui.credits.modified_note">All 3D models are modified — decimated, recolored and/or texture-downscaled — as permitted under CC BY 4.0.</div>
+    <div id="credits-list"></div>
+    <button id="credits-close" class="ghost" data-i18n="ui.credits.close">Close</button>
+  </div>
+</div>
 <div id="markers"></div>
 <div id="oob-warn"></div>
 <div id="return-hint"></div>
+<button id="return-btn" data-i18n="ui.return.button">Return to base</button>
+<div id="banner"></div>
 <canvas id="minimap" width="132" height="132"></canvas>
 <div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
 <div id="touch">
@@ -188,6 +197,7 @@
   <div id="fire-btn" data-i18n="ui.touch.fire">FIRE</div>
 </div>
 <div id="rocket-btn"><div id="rocket-fill"></div><span class="rb-icon">🚀</span></div>
+<div id="event-log" aria-live="polite"></div>
 <div id="zoom">
   <button id="zoom-in"  aria-label="Zoom in"  title="Zoom in">＋</button>
   <button id="zoom-out" aria-label="Zoom out" title="Zoom out">−</button>

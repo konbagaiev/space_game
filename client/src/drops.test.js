@@ -2,31 +2,58 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // Only the PURE pieces of the drop system are imported (drops-config.js has no THREE / engine deps, so it
 // stays node-safe). The THREE/scene behavior (meshes, the blue pull line) is covered by the headless suite.
-import { pullSpeed, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY } from './drops-config.js';
+import { pullSpeed, field, range, pickLoot, WEIGHT_FALLBACK, DROP_CHANCE, ARM_DELAY, shouldDeposit, rewardOwned } from './drops-config.js';
 
-// --- pull speed: (strength / 2) * (10 / weight), in world units/sec ---
-test('pullSpeed: anchor cases (s10/w10 → 5, s10/w2 → 25)', () => {
-  assert.equal(pullSpeed(10, 10), 5);   // strength 10, weight 10 → 5 u/s
-  assert.equal(pullSpeed(10, 2), 25);   // light part pulls faster
-  assert.equal(pullSpeed(20, 10), 10);  // advanced grab (strength 20) → 2× the base at the same weight
+const approx = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) <= eps, `${a} ≈ ${b}`);
+
+// --- pull speed: LINEAR ramp PULL_SPEED_FAR→PULL_SPEED_NEAR by distance, · (10/weight). NOT the field:
+//     a constant slope (no near-ship 1/dist² jerk). Anchors are weight-10 refs (NEAR=4 @d=3, FAR=1 @d=11). ---
+test('pullSpeed: linear ramp — NEAR at the ship, FAR floor, linear midpoint, closer=faster', () => {
+  approx(pullSpeed(10, 3), 4.0);    // at COLLECT_DIST → PULL_SPEED_NEAR
+  approx(pullSpeed(10, 11), 1.0);   // at PULL_FAR_DIST → PULL_SPEED_FAR
+  approx(pullSpeed(10, 7), 2.5);    // halfway (d=7) → linear halfway between 1 and 4
+  assert.ok(pullSpeed(10, 3) > pullSpeed(10, 7) && pullSpeed(10, 7) > pullSpeed(10, 11)); // closer = faster
 });
 
-test('pullSpeed: heavier items pull slower; the advanced grab pulls faster than the base', () => {
-  assert.ok(pullSpeed(10, 50) < pullSpeed(10, 10)); // heavier = slower
-  assert.ok(pullSpeed(20, 10) > pullSpeed(10, 10)); // stronger grab = faster
+test('pullSpeed: constant slope (no jerk) and clamped floor beyond PULL_FAR_DIST', () => {
+  // equal distance steps → equal speed steps (linear, unlike the 1/dist² field)
+  approx((pullSpeed(10, 5) - pullSpeed(10, 7)), (pullSpeed(10, 7) - pullSpeed(10, 9)));
+  approx(pullSpeed(10, 20), pullSpeed(10, 11)); // past the far anchor → clamped to the FAR floor, never negative
+  assert.ok(pullSpeed(10, 20) > 0);
+});
+
+test('pullSpeed: lighter items pull faster; speed no longer depends on grab strength (reach does)', () => {
+  assert.ok(pullSpeed(2, 7) > pullSpeed(50, 7)); // lighter = faster at the same distance
+  approx(pullSpeed(10, 7), 2.5);                 // strength is not even an argument now — speed is reach-independent
 });
 
 test('pullSpeed: a zero/undefined weight falls back to WEIGHT_FALLBACK (never divides by zero)', () => {
-  assert.equal(pullSpeed(10, 0), pullSpeed(10, WEIGHT_FALLBACK));
-  assert.equal(pullSpeed(10, undefined), pullSpeed(10, WEIGHT_FALLBACK));
-  assert.ok(Number.isFinite(pullSpeed(10, 0))); // not Infinity/NaN
+  assert.equal(pullSpeed(0, 7), pullSpeed(WEIGHT_FALLBACK, 7));
+  assert.equal(pullSpeed(undefined, 7), pullSpeed(WEIGHT_FALLBACK, 7));
+  assert.ok(Number.isFinite(pullSpeed(0, 7)));
 });
 
-// range = grab.strength (documented world-unit radius) — asserted at the formula level.
-test('range equals the grab strength (base 10, advanced 20 world units)', () => {
-  const range = (grab) => grab.strength;
-  assert.equal(range({ strength: 10 }), 10);
-  assert.equal(range({ strength: 20 }), 20);
+// reach is unchanged by the speed-model swap — range() still comes from field/FIELD_CUTOFF (see range test below)
+test('reach unchanged: range() is independent of the linear speed model', () => {
+  approx(range(10), Math.sqrt(125));  // ≈ 11.18, exactly as before
+  approx(range(20), Math.sqrt(250));  // ≈ 15.81
+});
+
+// --- field: inverse-square; the FIELD_CUTOFF boundary is what defines the emergent range ---
+test('field: falls off as 1/dist² and crosses FIELD_CUTOFF exactly at range()', () => {
+  approx(field(10, 5), 10 * 5 / 25);                 // = 2.0
+  assert.ok(field(10, 3) > field(10, 5));            // stronger closer in
+  const r = range(10);
+  approx(field(10, r), 0.4);                         // at the emergent edge the field == FIELD_CUTOFF
+  assert.ok(field(10, r - 0.01) > 0.4);              // just inside → engaged
+  assert.ok(field(10, r + 0.01) < 0.4);              // just outside → released
+});
+
+// --- range: EMERGENT (sqrt(strength·FIELD_K/FIELD_CUTOFF)), weight-INDEPENDENT ---
+test('range: base ≈11.18, advanced ≈15.81, advanced/base === sqrt(2)', () => {
+  approx(range(10), Math.sqrt(125));   // ≈ 11.1803
+  approx(range(20), Math.sqrt(250));   // ≈ 15.8114
+  approx(range(20) / range(10), Math.SQRT2, 1e-9); // advanced reaches √2× the base, not 2×
 });
 
 // --- pickLoot: uniform among the enemy's NON-HULL components + mounted weapons; hulls NEVER drop ---
@@ -62,4 +89,33 @@ test('pickLoot: an enemy with no non-hull parts yields null (nothing to drop)', 
 test('config: drop chance is 20% and the grab arms after 0.3 s in range', () => {
   assert.equal(DROP_CHANCE, 0.2);
   assert.equal(ARM_DELAY, 0.3);
+});
+
+// --- shouldDeposit: the no-dupe guarantee — a SPECIAL (cosmetic reward) drop deposits NOTHING ---
+test('shouldDeposit: a normal loot drop deposits; a special reward drop never does', () => {
+  assert.equal(shouldDeposit({ item: { kind: 'weapon', refId: 5 } }), true);   // normal loot → into the stash
+  assert.equal(shouldDeposit({ item: { kind: 'weapon', refId: 5 }, special: true }), false); // reward → nothing (server force-installs the one copy)
+  assert.equal(shouldDeposit({ special: false }), true);
+  assert.equal(shouldDeposit(null), false); // defensive
+});
+
+// --- rewardOwned: the ownership gate that suppresses the special drop on replays ---
+test('rewardOwned: L1 weapon reward is owned iff a mount references its refId', () => {
+  const reward = { kind: 'weapon', refId: 5 };
+  assert.equal(rewardOwned({ loadout: { mounts: [{ weapon: 5 }] } }, reward), true);   // MG mounted → owned
+  assert.equal(rewardOwned({ loadout: { mounts: [{ weapon: 1 }] } }, reward), false);  // only the basic gun → not owned
+  assert.equal(rewardOwned({ ship: { stats: { mounts: [{ weapon: 5 }] } } }, reward), true); // falls back to ship.stats.mounts
+});
+
+test('rewardOwned: L2 component reward is owned iff the repair slot is filled', () => {
+  const reward = { kind: 'component', refId: 12 };
+  assert.equal(rewardOwned({ components: { repair: 12 } }, reward), true);   // repair installed → owned
+  assert.equal(rewardOwned({ components: {} }, reward), false);              // empty repair slot → not owned
+  assert.equal(rewardOwned({ components: { repair: null } }, reward), false);
+});
+
+test('rewardOwned: null active ship / null reward → not owned (drop shows on a first playthrough)', () => {
+  assert.equal(rewardOwned(null, { kind: 'weapon', refId: 5 }), false);
+  assert.equal(rewardOwned({ loadout: { mounts: [] } }, null), false);
+  assert.equal(rewardOwned({ loadout: { mounts: [] } }, { kind: 'other' }), false);
 });

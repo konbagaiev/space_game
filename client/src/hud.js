@@ -18,10 +18,8 @@ const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the p
 
 // ---------- HUD ----------
 export function updateHud() {
-  el.earned.textContent = G.earned;
-  el.credits.textContent = G.balance;
+  el.credits.textContent = t('ui.hud.credits_line', { total: G.balance, earned: G.earned });
   el.kills.textContent = G.enemyTotal > 0 ? `${G.kills}/${G.enemyTotal}` : G.kills;
-  el.enemies.textContent = enemies.length;
   const hpPct = Math.max(0, G.player.hp / G.player.maxHp * 100);
   el.hpFill.style.width = hpPct + '%';
   el.hpPct.textContent = hpPct.toFixed(1) + '%'; // remaining health, one decimal
@@ -119,7 +117,7 @@ export function updateDropMarkers() {
     if (!behind && x >= -1 && x <= 1 && y >= -1 && y <= 1) continue; // on screen → no marker
     const k = margin / Math.max(Math.abs(x), Math.abs(y), 1e-4);
     const dx = d.obj.position.x - ppos.x, dz = d.obj.position.z - ppos.z;
-    offs.push({ cx: x * k, cy: y * k, d2: dx * dx + dz * dz });
+    offs.push({ cx: x * k, cy: y * k, d2: dx * dx + dz * dz, special: !!d.special });
   }
   offs.sort((a, b) => a.d2 - b.d2);
   const n = Math.min(offs.length, DROP_MARKER_MAX);
@@ -127,11 +125,12 @@ export function updateDropMarkers() {
     const { cx, cy } = offs[i];
     const m = getDropMarker(i);
     m.style.display = 'block';
+    m.classList.toggle('special', !!offs[i].special); // pulsing green glow for the L1/L2 reward pointer
     m.style.left = ((cx * 0.5 + 0.5) * w) + 'px';
     m.style.top = ((-cy * 0.5 + 0.5) * h) + 'px';
     m.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(-cy, cx) * 180 / Math.PI}deg)`;
   }
-  for (let i = n; i < dropMarkerPool.length; i++) dropMarkerPool[i].style.display = 'none';
+  for (let i = n; i < dropMarkerPool.length; i++) { dropMarkerPool[i].style.display = 'none'; dropMarkerPool[i].classList.remove('special'); }
 }
 
 // ---------- Credit popups: "+xx" green text floating up from each kill, holding then fading over ~2s ----------
@@ -170,6 +169,7 @@ export function updateCreditPopups() {
 // ---------- Enemy health bars: a translucent red bar above each damaged enemy (hidden at full health) ----------
 const hpBarPool = [];
 const _hb = new THREE.Vector3();
+const _screenUp = new THREE.Vector3(); // world direction that maps to "up" on the screen (camera's local +Y)
 function getHpBar(i) {
   while (hpBarPool.length <= i) {
     const d = document.createElement('div');
@@ -184,10 +184,15 @@ export function updateEnemyHealthBars() {
   // hide everything while there's no player or an overlay (game over / victory) is up
   if (!G.player || el.overlay.style.display !== 'none') { for (const b of hpBarPool) b.style.display = 'none'; return; }
   const w = gameW(), h = gameH();
+  // Offset the anchor along the camera's screen-up axis (not world +Y): with the near-top-down camera
+  // (CAM_OFFSET 0,110,26) world "up" points almost at the camera, so a +Y bump barely moves the bar up
+  // the screen. The camera's local +Y in world *is* screen-up, so offsetting along it lifts the bar
+  // straight up on screen above the model, while staying depth-correct (scales with zoom/distance).
+  _screenUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
   let used = 0;
   for (const e of enemies) {
     if (e.hp >= e.maxHp) continue;                 // full health -> no bar
-    _hb.copy(e.mesh.position); _hb.y += e.radius + 2; // anchor just above the ship (depth-correct)
+    _hb.copy(e.mesh.position).addScaledVector(_screenUp, e.radius * 1.6 + 2); // lift up-screen, clear of the hull
     _hb.project(camera);
     if (_hb.z > 1) continue;                        // behind the camera -> skip
     const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));

@@ -18,10 +18,8 @@ const byId = (id) => {
 
 export const el = {
   // HUD readouts (updated every frame by hud.js)
-  earned: byId('earned'),       // credits earned this run
-  credits: byId('credits'),     // persistent account balance
+  credits: byId('credits'),     // single "credits {total}/{earned} earned" line
   kills: byId('kills'),         // destroyed enemies this run
-  enemies: byId('enemies'),     // enemies currently alive
   hpFill: byId('hpfill'),       // health bar fill width
   hpPct: byId('hppct'),         // health bar numeric percent
   rocketBtn: byId('rocket-btn'),   // 🚀 button (gets a .ready class when reloaded)
@@ -42,4 +40,8 @@ export const el = {
   oobWarn: byId('oob-warn'),
   // "Sector cleared — return to base" hint shown during return-to-base (updateReturnHint)
   returnHint: byId('return-hint'),
+  // bottom-center "Return to base" tap button: engages the dock autopilot (updateReturnHint show/hide)
+  returnBtn: byId('return-btn'),
+  // transient centered milestone banner ("10 enemies left", "Final Stage") (updateBanner)
+  banner: byId('banner'),
 };

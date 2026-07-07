@@ -24,6 +24,7 @@ export const G = {
   skyAmbient: null,           // sky-scene ambient light (mutated live by the ?tune panel)
   skySun: null,               // sky-scene directional light (the terminator source)
   currentMapDescriptor: null, // last descriptor passed to buildMap() (?tune "Rebuild" button)
+  nebulaRT: null,             // WebGLCubeRenderTarget of the baked nebula sky (disposed + rebuilt by buildMap); null on the flat-color (Performance/?debug) path
   mapSetpieces: [],           // the current map's set-piece specs (reset() rebuilds them fresh each run)
   arenaDrift: null,           // THREE.Vector3 (units/sec on x,z) when the current map drifts, else null
   // --- run/account scalars (read by the HUD; written by the loop, level runner, bank + account flows) ---
@@ -43,6 +44,7 @@ export const G = {
   })(),
   banked: false,              // guard so a run banks its credits exactly once
   gameStartTime: performance.now(), // run start (for the recorded game duration)
+  combatElapsed: 0,           // seconds of UNPAUSED combat since run start; gates the enemy hold-fire grace (see sim.js)
   gameStartSent: false,       // game_start funnel event fires once per page-load session (the funnel's top)
   quitSent: false,            // quit funnel event fires once per session when the player leaves
   pendingBriefing: null,      // a level briefing to show before the next Restart (set on advance)
@@ -59,6 +61,9 @@ export const G = {
   // active + target.kind==='station' is the mandatory "dock" gate (only the station target can win the mission).
   autopilot: { active: false, phase: 'brake0', target: null },
   baseStation: null,                               // { obj, active } — set by buildSetPiece; .active = clickable this run
+  // transient centered HUD announcement ("10 enemies left", "Final Stage"): appears at full opacity and
+  // fades to 0 over `maxLife` seconds. opacity = life/maxLife; hidden once life hits 0 (see updateBanner).
+  banner: { text: '', life: 0, maxLife: 0 },
 };
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---
@@ -93,6 +98,13 @@ export const CATALOG = {
 
 // --- Gameplay constants ---
 export const SPAWN_GROW_TIME = 1.0; // ships grow from a dot to full size over this many seconds (warp-in)
+// The single canonical combat plane. INVARIANT: every ship's group sits at this world Y, and because
+// muzzle/exhaust spawn from `mesh.position` + a PLANAR (y=0) forward/right vector, ALL bullets — player
+// and enemy, every model — fly in exactly this horizontal plane. Ships are top-down, so gameplay is 2D at
+// this height; a model whose hull sits off this plane is corrected with `stats.model.lift` (raises the
+// visual mesh AND its hitboxes onto the plane — see ship-factory.js), NOT by moving the bullets. Anything
+// that must line up with combat (ship spawn/recenter Y, hit-ring FX) references THIS, never a bare 0.6.
+export const BULLET_PLANE_Y = 0.6;
 
 // --- Input state ---
 export const keys = {};                                          // KeyboardEvent.code -> bool

@@ -26,12 +26,12 @@ export async function migrate() {
 // catalog_seed.js updates the rows (ids/foreign keys preserved — weapons keyed by id, ships by name).
 async function seedCatalog() {
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
-  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high`);
-  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null);
-  const upW = db.prepare(`INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high`);
-  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null);
+  const upC = db.prepare(`INSERT INTO components (id, name, type, weight, price, stats, model_url, model_url_high, rarity, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, weight = excluded.weight, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, rarity = excluded.rarity, color = excluded.color`);
+  for (const c of COMPONENTS) upC.run(c.id, c.name, c.type, c.weight, c.price ?? 0, JSON.stringify(c.stats), c.modelUrl ?? null, c.modelUrlHigh ?? null, c.rarity, c.color);
+  const upW = db.prepare(`INSERT INTO weapons (id, name, type, price, stats, model_url, model_url_high, rarity, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name, type = excluded.type, price = excluded.price, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, rarity = excluded.rarity, color = excluded.color`);
+  for (const w of WEAPONS) upW.run(w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null, w.rarity, w.color);
   const upS = db.prepare(`INSERT INTO ships (name, type, stats, model_url, model_url_high, components) VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET type = excluded.type, stats = excluded.stats, model_url = excluded.model_url, model_url_high = excluded.model_url_high, components = excluded.components`);
   for (const s of SHIPS) upS.run(s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, s.modelUrlHigh ?? null, JSON.stringify(s.components));
@@ -71,16 +71,19 @@ function ensureDefaultShip(playerId) {
 
 // Auto-register: create the player if new, otherwise just bump last_seen. Either way they end
 // up owning their default active ship.
-export function registerPlayer(id, referrer = null) {
+export function registerPlayer(id, referrer = null, device = null) {
   const now = Date.now();
+  const ua = device && device.userAgent ? String(device.userAgent).slice(0, 512) : null;
+  const model = device && device.model ? String(device.model).slice(0, 128) : null;
   const existing = db.prepare('SELECT created_at, games_played, current_progress, language, credits, shop_unlocked FROM players WHERE id = ?').get(id);
   if (existing) {
-    db.prepare('UPDATE players SET last_seen = ? WHERE id = ?').run(now, id);   // NOTE: referrer never touched here (write-once)
+    // last_seen bump + latest-wins device (COALESCE keeps a prior value when this call has none); referrer never touched (write-once).
+    db.prepare('UPDATE players SET last_seen = ?, user_agent = COALESCE(?, user_agent), device_model = COALESCE(?, device_model) WHERE id = ?').run(now, ua, model, id);
     ensureDefaultShip(id);
     return { id, isNew: false, gamesPlayed: existing.games_played, currentProgress: existing.current_progress, language: existing.language, credits: existing.credits, shopUnlocked: !!existing.shop_unlocked, createdAt: existing.created_at };
   }
   const ref = referrer ? String(referrer).slice(0, 512) : null;   // safety cap
-  db.prepare('INSERT INTO players (id, created_at, last_seen, referrer) VALUES (?, ?, ?, ?)').run(id, now, now, ref);
+  db.prepare('INSERT INTO players (id, created_at, last_seen, referrer, user_agent, device_model) VALUES (?, ?, ?, ?, ?, ?)').run(id, now, now, ref, ua, model);
   ensureDefaultShip(id);
   return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
@@ -304,7 +307,7 @@ export function stats() {
 export function getAdminPlayers(limit = 1000) {
   return db.prepare(`
     SELECT p.id, p.username, p.email, p.email_verified, p.created_at, p.last_seen,
-           p.current_progress, p.credits, p.games_played, p.referrer,
+           p.current_progress, p.credits, p.games_played, p.referrer, p.user_agent, p.device_model,
            COALESCE(SUM(g.duration_ms), 0) AS total_time_ms,
            COALESCE(SUM(g.kills), 0)       AS total_kills,
            COALESCE(SUM(g.credits), 0)     AS total_earned
@@ -317,6 +320,7 @@ export function getAdminPlayers(limit = 1000) {
       emailVerified: !!r.email_verified, createdAt: r.created_at, lastSeen: r.last_seen,
       currentProgress: r.current_progress, credits: r.credits, gamesPlayed: r.games_played,
       referrer: r.referrer ?? null,
+      userAgent: r.user_agent ?? null, deviceModel: r.device_model ?? null,
       totalTimeMs: Number(r.total_time_ms), totalKills: Number(r.total_kills), totalEarned: Number(r.total_earned),
     }));
 }
@@ -329,13 +333,13 @@ export function getShips() {
 }
 
 export function getWeapons() {
-  return db.prepare('SELECT id, name, type, price, stats, model_url, model_url_high FROM weapons ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
+  return db.prepare('SELECT id, name, type, price, stats, model_url, model_url_high, rarity, color FROM weapons ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
 }
 
 export function getComponents() {
-  return db.prepare('SELECT id, name, type, weight, price, stats, model_url, model_url_high FROM components ORDER BY id').all()
-    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high }));
+  return db.prepare('SELECT id, name, type, weight, price, stats, model_url, model_url_high, rarity, color FROM components ORDER BY id').all()
+    .map((r) => ({ id: r.id, name: r.name, type: r.type, weight: r.weight, price: r.price, stats: JSON.parse(r.stats), modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
 }
 
 // SFX catalog: the sounds registry (key->url) + the class-based routing map. The client preloads the

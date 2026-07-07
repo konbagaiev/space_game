@@ -41,3 +41,17 @@ The orchestrator gives you the **plan path** (`docs/plans/<id>.md`) and the **ab
 
 When the orchestrator sends you the reviewer's findings, address **each** one, re-run the suites, and
 report what changed per finding. Don't introduce unrelated changes.
+
+## Learned guidance
+
+<!-- The orchestrator appends dated lessons here from retro feedback. Read and apply them. -->
+
+- **2026-07-04 — When you position a screen overlay over a 3D object, sanity-check it against the CAMERA,
+  not just the world axes — and write a test that asserts the on-screen relationship.** An HP-bar fix
+  raised the anchor along **world +Y** exactly as the plan said; unit + visual suites passed, but on the
+  near-top-down camera (`CAM_OFFSET 0,110,26`) world-up ≈ toward the camera, so the bar didn't actually move
+  up the screen and the live test failed. Two habits that would have caught it: (1) if a plan offsets a DOM
+  overlay along a world axis to appear "above/below" something, confirm that axis maps to that screen
+  direction under the actual camera (offset along the camera's screen-up basis instead), and (2) add an
+  assertion on the *projected* screen coordinates (e.g. bar top < object center), not just "an element
+  exists" — a green suite that never checks the spatial relationship won't catch a mis-projected overlay.

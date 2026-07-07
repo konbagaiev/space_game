@@ -3,10 +3,86 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-04 (**Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool
-(`?bench=record`/`replay` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the
-merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See
-the perf-samples subsection. Previously: **Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
+**Updated:** 2026-07-07 (**Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
+inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
+weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base). Reel-in speed is a **linear ramp** by
+distance (1 u/s far → 4 u/s at the ship, weight-scaled) — un-physical but no near-ship jerk, replacing the
+`1/dist²` field speed; speed depends on distance + weight only, not strength — see **Grab & loot drops**. Prior: **Admin "device" column** — `GET /admin` now shows a best-effort
+`Browser · Device/OS` label per player (`Chrome · Galaxy A03s` → `Chrome · Android 10` → raw UA → blank);
+`players` gained nullable `user_agent` + `device_model` columns (migration 021 / PG bootstrap) captured at
+the boot register call latest-wins, via an `Accept-CH: Sec-CH-UA-Model` response header + client hint;
+parsing + a curated code→name lookup live in `server/src/admin.js` (`deviceLabel`) — see the Admin
+dashboard section. Prior: **Return-to-base button** — a bottom-center "Return to base" pill button
+(`#return-btn`, i18n `ui.return.button`) now appears during return-to-base as an explicit tap target that
+auto-flies the ship home (same as clicking the station); shown only while return-to-base is available and the
+ship is under player control, hidden once the autopilot engages; touch fires on `touchstart` / mouse on
+`click` per DECISIONS §42 — see the Return-to-base section. Prior: **PC menu layout** — on non-phone forms the start/welcome screen top-aligns the
+greeting/intro + Take-off, and the Main Window left column is widened to `minmax(240px, 18%)` so the
+top-left account bar no longer clips the mission title; see the Welcome + Main Window sections. Prior:
+**deterministic spawn totals + enemy warp-in-as-arrival** — every spawning phase
+now carries an explicit `total` cap (threshold phase `total` = its kill-delta → 0 enemies alive at advance;
+clear-out/finale waves carry the remainder), so `enemyTotal` is the exact sum of phase totals — fixing a
+staggered-spawns regression where the killed/total counter stopped short and the last-kill reward drops
+(L1 Machine Gun, L2 Repair drone) never fired. L1 total is now 14 (was 16). A spawning enemy appears
+immediately as a dot and **materializes over its 2–4 s stagger interval** — invulnerable, non-firing, and
+not homing-targetable until fully formed (`e.warping`/`e.spawnDur`; player warp-back stays 1 s). Prior:
+**staggered enemy spawns** — enemies trickle in one at a time on a
+randomized 2–4 s cooldown (`client/src/spawn-timing.js`), first-of-phase immediate, instead of the arena
+snapping to `maxConcurrent` every frame. Prior: **combat pacing + engine buff** — flat player top speed 30 u/s, all engine
+`power` +50%, 5 s enemy hold-fire grace at run start, and each run opens gliding forward at 3 u/s. Prior:
+**base station moved off-origin** — the return-to-base station was pushed from
+`(-20,-20)` to `(-60,-60)` so the origin-spawning ship is no longer framed against its backdrop. Prior:
+**Welcome screen: dropped the L1 ship picker + pinned Take off** — the Level-1
+welcome (`#welcome`) is now a fixed CSS grid (`1fr auto`): a scrollable greeting/intro cell (`#welcome-scroll`)
+over a pinned footer (`#welcome-footer`, Take off + community link), so the **Take off** button is always
+on-screen regardless of content height (on **non-phone/PC forms** the greeting/intro + footer are top-aligned
+rather than vertically centered — see the Mobile menus section), replacing a centered-flex column whose `justify-content:center` +
+overflow clipped the unreachable *top* of the intro on short viewports. The decorative single-ship picker
+(`.pick` + `#ship-choices` cards) was removed (L1 owns exactly one ship). Prior: **HUD overhaul + item rarity/color** — the HUD credits readout is now one line
+`credits {total}/{earned} earned` and the live **Enemies** counter is removed; a small **event log** above
+the rocket button shows the last 4 lines (kill: `{shipname} killed +{amount}`; pickup: `picked up {name}`
+tinted by the item's color), each fading over 5 s (`client/src/eventlog.js`); dropped loot now glows in its
+own rarity color (trash white / common green / rare blue); on **touch** the zoom `−  +` pair moved to the
+bottom-center. New `rarity`/`color` columns on `components`/`weapons` (migration 020 + Postgres parity)
+drive the glow + tint. Prior: **Staged briefing reveal (L1-3)** — the L1 welcome briefing and the L2/L3 Main
+Window campaign briefing now **type out over ~5 s** (`client/src/typewriter.js`), then reveal the
+ship-preview window (+ granted-item showcase; L1 has no picker), then the **Take off** button **+0.5 s** later;
+**tap the briefing text to skip**; plays once per landing; the L1 `.intro` was enlarged to 26px; L4+ and
+side missions stay instant. Prior: **L1/L2 reward drops** — the last enemy of Level 1 drops the Machine Gun model, and
+the last enemy of Level 2 the Repair drone, as a **green-glowing, green-haloed cosmetic battlefield drop** with
+a **pulsing green off-screen pointer** (`.drop-marker.special`), shown only when the reward isn't already owned
+(`lastKillDrop` on the L1/L2 descriptors + `ownsReward`); collecting it deposits **nothing** — the one
+guaranteed copy still comes from the **unchanged** server force-install on victory, so a player never ends with
+two; the L2/L3 briefings were reworded to a "you recovered it" framing (EN + RU), item still spinning; no
+asset/hash/itch changes. Prior: **Milestone banners** — a big, semi-transparent HUD line flashes and fades over 3 s at "10 enemies left", "5 enemies left" (from `enemyTotal − kills`) and "Final Stage" (entering the boss/finale phase); `#banner` + `showBanner`/`updateBanner` in `sim.js`, once per run. Prior: **In-game Credits/attributions screen** — a player-facing Credits panel opened from the Settings gear, listing every third-party 3D model (full CC-BY 4.0 attribution + license link + "Modified") and music/sound (CC0/Pixabay courtesy), build-generated from `client/assets/CREDITS.md` via `npm run credits:build` → committed `client/src/credits-data.js`, drift-guarded by a unit test and regenerated into the itch zip by `build:itch`; satisfies the CC-BY 4.0 obligation to show attributions to players. Prior: **Fixed bullet plane + model `lift` — top-down aim fix** — formalized the single combat plane as `state.js` `BULLET_PLANE_Y` (0.6) that every ship group sits on and all bullets fly in (spawn/recenter/ring-FX reference it, no bare `0.6`); new per-model signed `model.lift` moves a ship's visual model *and* its hitboxes together so an off-plane hull seats onto it; `assets:hitboxes` reports bullet-plane coverage + a robust (plateau-centre) suggested lift per ship. **All 9 modeled ships tuned to max coverage** (player `0.18`, enemy_1 `0.21`, enemy_2 `0.17`, enemy_3 `0.2`, enemy_4 `-0.132` — boss lowered). Prior: **Asset cleanup** — deleted 28 stale/unused S3 builds (`ships-combat/` 16, `ships-hangar/` 12) + 19 stale local pulled files; `git rm`'d 16 unreferenced legacy primitive glbs from `client/assets/`; pre-load fallback is procedural, not a binary. Prior: **Triple spiral rocket + fading-line rocket trail** — new 4000-credit shop rocket
+(id 11): an invisible homing leader defines the path while three visible cyan warheads spiral around it,
+each a real rocket (own power 40 / HP 10, independent detonation + shoot-down; 3× on a full hit). The
+standard rocket smoke trail changed from an expanding sphere cone to a thin, fixed-size fading haze line
+(now particle-budget-capped); the spiral volley reads as three intertwined smoke helices.)
+(**Convex-decomposition OBB ship hitboxes** — each real-model ship now collides as
+one **oriented bounding box per near-convex part** (broad-phase enclosing sphere → point-vs-OBB narrow-phase)
+instead of a multi-sphere fit; the combat glb is decomposed with V-HACD (`vhacd-js`, memory-capped) and each
+hull wrapped in a tight PCA box, generated by `assets:hitboxes` into `model.hitBoxes`/`broadR`, wired at all
+four bullet/rocket↔ship sites plus the rocket blast-damage loop (player included), with a `?hitboxes`
+wireframe overlay. Bullets use a **swept** segment test (no tunneling through thin boxes); tight fit → bullets
+miss in the empty gap beyond a thin wing. **Known accepted limitation:** off-y=0 model elements (low wings /
+drooped noses) aren't hit by centre-aimed shots — a model-choice factor; global fix scheduled in ROADMAP.
+**Per-model workaround:** a `model.lift` (signed group-local Y, pre-scale) moves the visual model *and* its
+hitboxes together so a hull that sits off the fixed bullet plane (`BULLET_PLANE_Y`) seats onto it (positive
+raises, negative lowers; all 9 modeled ships tuned — see the model-presentation section). The
+`assets:hitboxes` run reports bullet-plane coverage + a suggested lift per ship so this isn't missed.
+Supersedes the same-branch
+multi-sphere iteration.)
+(**Enemy HP bar floats above the model on screen** — anchored along the camera's screen-up axis, not world
++Y (which points nearly *at* the near-top-down camera), so it sits clearly above the ship on the 2D screen.)
+(**Weapon hit/explosion FX pass** — bullet hit-flash is now keyed off the weapon
+`class` (`HIT_FLASH_SCALE`: kinetic tiny spark / cannon small flash) instead of one size, and rocket
+detonation uses a new small/fast layered `spawnRocketBurst` whose size/speed/tint are data-driven from
+the rocket weapon stats (`blastVisual`/`blastTimeScale` 0.8 = 20% quicker/`blastTint`); ship-death burst
+unchanged.)
+(**Procedural nebula skybox** — `skyScene.background` is now a baked procedural
+nebula + star-field cubemap (`makeNebulaSky`), tier-gated and skipped under `?debug`; see Visuals + DECISIONS §43.)
+(**Touch tap-vs-drag** — `#stick-zone` now covers the whole play area (`inset:0`); a
 single-finger gesture within `TAP_SLOP = 10px` is an object tap (shared `engageObjectAt` raycast — chests +
 the return-to-base station are tappable *anywhere*), beyond 10px is the steering stick; a 2nd finger = pinch
 (counts `targetTouches`, so holding FIRE while steering still steers); the rocket + zoom buttons layer above
@@ -23,7 +99,8 @@ strength, speed = (strength/2)·(10/weight)); collected drops deposit into the s
 never drop; pirate parts now priced for resale but hidden from the shop (`buyable:false`); `REFERENCE_MASS`
 48→50 so the base grab is mass-neutral; metal-box model shipped through the asset pipeline (703 KB→~6 KB).
 Also 2026-07-03: **Autopilot + return-to-base mission end** — a **base station** `.glb` set-piece now
-sits at the world origin `(0,0)`, and **every** mission (campaign L1–4 + the three side missions) ends by flying
+sits up-left of the arena center at `(-60,-60)` (moved off origin so the origin-spawning ship is
+never framed against it), and **every** mission (campaign L1–4 + the three side missions) ends by flying
 **back to it** instead of on the last kill. After the last enemy dies the out-of-bounds warp-back is lifted, a
 translucent **blue homing arrow** anchored to the ship points home, and a centered **"Sector cleared — return to
 base"** hint shows; the station becomes **clickable** and tapping it is a **mandatory dock** that engages
@@ -74,7 +151,7 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
 - **Autopilot (station or loot chest)** — after the last enemy is destroyed the **base station** (at
-  `(-20,-42,-20)`, up-left of the arena center) becomes clickable; **clicking/tapping it** (a canvas raycast,
+  `(-60,-42,-60)`, up-left of the arena center) becomes clickable; **clicking/tapping it** (a canvas raycast,
   ignored on HUD buttons — on touch it's a **slop-gated tap**, a single finger that moved <10px, not a
   raw touch-anywhere; both desktop click and touch tap route through the shared `engageObjectAt` pick) engages autopilot,
   which flies the ship home: **brake to a stop → rotate the nose to face the target → accelerate at max →
@@ -88,7 +165,8 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   touch stick), fire (`Space`/FIRE), or rocket (`F`/🚀) — instantly cancels autopilot and returns control; a
   cancelled dock does not win (re-tap the station to resume). See the Level flow / Victory section.
 - **Zoom** — **PC:** mouse **wheel** (scroll up = closer) + on-screen **＋/−** buttons (right edge,
-  vertically centered). **Mobile:** the **＋/−** buttons + two-finger **pinch**. Zoom scales the fixed
+  vertically centered — unchanged). **Mobile:** the buttons (**bottom-center**, laid out horizontally as
+  **`−  +`** — minus left, plus right; `body.touch #zoom` override) + two-finger **pinch**. Zoom scales the fixed
   camera offset along its angle within `0.6–2.2×`, **eases smoothly** toward the target (~0.2 s, frame-rate
   independent) instead of snapping, and is **persisted** across runs (`localStorage` key `camZoom`). On touch
   the `+`/`−` buttons fire on **`touchstart`** (like FIRE/🚀), not a synthesized `click`, and sit `z-index:6`
@@ -128,14 +206,24 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   steering stick and the reset-progress slider); pinch distance is rotation-invariant so it needs no mapping.
   When auto-rotate is on and the user turns the phone to real landscape, `rotated` becomes false and the
   native landscape viewport takes over seamlessly. Desktop is unaffected (`rotated` is touch-only).
-- **Mobile menus & Full screen:** the **welcome** screen still **scrolls** (top-aligned + `overflow-y:auto`
-  on short/landscape viewports); the **Main Window** is a fixed full-height grid (only its work-zone
-  description scrolls), so the **Take off** button is always on-screen. A single
+- **Mobile menus & Full screen:** the **welcome** screen is a **fixed grid** (scrollable greeting/intro
+  cell on top, pinned Take-off footer at the bottom) — only the text scrolls and the **Take off** button
+  is always on-screen, like the Main Window. On **non-phone forms** (`body:not(.dev-phone)`, i.e. PC) the
+  greeting/intro **and** the Take-off footer are instead pinned to the **top** (`grid-template-rows: auto
+  auto; align-content: start`), button still directly under the text; the **Main Window** is a fixed full-height grid (only its
+  work-zone description scrolls), so its **Take off** button is likewise always on-screen. A single
   touch-only **floating Full-screen button** (`#fullscreen-btn`, fixed bottom-right, **icon-only `⛶`**,
   brighter than the old inline buttons) re-enters fullscreen to hide the browser chrome (URL bar, tabs) after
-  the app is minimized/restored. It is gated to **touch menus** (`body.touch.menu`) so it never overlaps the
-  bottom-right rocket button during a fight, and it **hides once fullscreen** (a `fullscreenchange` listener
-  toggles `body.fs`). The translated words live on its `aria-label`/`title` (key `ui.fullscreen`, re-applied
+  the app is minimized/restored. It is shown on **all touch screens** (`body.touch`) — **menus AND in-game
+  (active combat + paused)** — so the player can re-enter fullscreen mid-battle after the mobile browser
+  silently drops out of it on background/restore. On a **menu** it sits bottom-right (`right:14; bottom:14`);
+  **in-game** (`body.touch:not(.menu)`) it moves just **left of the rocket button**, raised clear of the
+  phone's bottom chrome (`right:124; bottom:58`, a ~12px gap from the rocket's left edge, vertically centered
+  on it). It **hides once fullscreen** (`body.fs`): a `fullscreenchange`/`webkitfullscreenchange` listener
+  toggles `body.fs`, **and** — because mobile browsers often don't deliver `fullscreenchange` to a
+  backgrounded tab, leaving `body.fs` stale-true after restore — it **re-syncs `body.fs` on foreground**
+  (`visibilitychange` when `!document.hidden`, plus `pageshow` and window `focus`) so the button reliably
+  reappears. The translated words live on its `aria-label`/`title` (key `ui.fullscreen`, re-applied
   by `applyTranslations` on language change); `requestFullscreen` no-ops if already fullscreen or unsupported.
   **iPhone Safari has no Fullscreen API** (it exists only on iPad/Android), so there the `⛶` button can't
   work — the only true full screen is the **standalone web app from "Add to Home Screen"** (we ship
@@ -146,8 +234,10 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   `input-touch`/`input-mouse` + `dev-phone|dev-tablet|dev-desktop|dev-desktop-lg`, keeps **`body.touch`** as a
   compatibility alias (set with `input-touch`, so the existing touch CSS/rotation/fullscreen rules are unchanged),
   and sets the touch-only `standalone` / `no-fs-api` gates. On a touch device with no FS API → `body.no-fs-api` hides the `⛶` button and
-  shows a non-interactive **A2HS hint pill** instead (`#a2hs-hint`, bottom-right, gated to `body.touch.menu.no-fs-api`,
-  text key `ui.a2hs.hint`); once already launched standalone → `body.standalone` hides both (no chrome to hide).
+  shows a non-interactive **A2HS hint pill** instead (`#a2hs-hint`, text key `ui.a2hs.hint`) — now gated to
+  `body.touch.no-fs-api:not(.standalone)` so it also shows **in-game** (bottom-right on menus; in-game it tucks
+  under the top-left settings gear at `left:14; top:56`, clear of the rocket/pause/zoom); once already launched
+  standalone → `body.standalone` hides both (no chrome to hide).
 
 ## Tools
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
@@ -161,7 +251,10 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   backgrounded fight doesn't run on; the player resumes manually. **This is a client-side, single-player
   freeze — it must be reworked server-side when multiplayer lands (a client can't freeze a shared world);
   see DECISIONS §16.**
-- **Perf overlay** at the top center: FPS, frame time (ms), draw calls, triangles
+- **Perf overlay** at the top center: FPS, frame time (ms), draw calls, triangles, and a **ship-speed
+  readout** `spd {current} pk {peak}` (world units/sec — the live `|G.player.vel|` plus a per-run peak-hold
+  that resets when a new player ship is built; instrumentation for tuning a future max-speed cap, since the
+  player currently has no speed limit — see Movement)
   (the `?dev` per-second perf sample posted to `/api/perf` also carries `load.drops` = the live loot-drop
   count, next to `enemies`/`particles`, so drop cost shows up on a real device)
   (across both render passes), and the **real backbuffer resolution** (`w×h` = CSS size × pixelRatio —
@@ -182,16 +275,41 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - **Off-screen enemy markers** — for each enemy that's off-screen, an arrow on the screen edge points
   toward it, tinted by the enemy's marker color (`updateMarkers`, a pooled DOM overlay). Hidden while an
   overlay (game over / victory) is up.
-- **Enemy health bars** — a small translucent-red bar floats just above each enemy, shown **only while its
-  HP is below max** (undamaged enemies show nothing). `updateEnemyHealthBars` (a pooled DOM overlay in
-  `#markers`) projects the enemy's world position + `radius` each frame and sets the fill width to
-  `hp / maxHp`; enemies carry a `maxHp` from spawn (`ship-build.js`). CSS: `.enemy-hp` + its `> i` fill in
-  `styles.css`. Hidden while an overlay (game over / victory) is up.
+- **Enemy health bars** — a small translucent-red bar that floats **above each enemy on the 2D screen**,
+  shown **only while its HP is below max** (undamaged enemies show nothing). `updateEnemyHealthBars`
+  (a pooled DOM overlay in `#markers`) offsets the anchor along the **camera's screen-up axis**
+  (`camera` local +Y in world, `_screenUp`) by `~e.radius*1.6 + 2` units, then projects it — because the
+  camera is near-top-down (`CAM_OFFSET 0,110,26`), world +Y points almost *at* the camera, so a plain +Y
+  bump barely moves the bar up the screen; offsetting along screen-up lifts it straight up over the model
+  (still depth-correct, scales with zoom/distance). The CSS `translate(-50%, calc(-100% - 4px))` then pins
+  the bar's bottom edge above that anchor with a 4 px gap. Fill width is set to `hp / maxHp`; enemies carry
+  a `maxHp` from spawn (`ship-build.js`). CSS: `.enemy-hp` + its `> i` fill in `styles.css`. Hidden while an
+  overlay (game over / victory) is up. (`__game.camera` is exposed for the headless position assertion in
+  `visual/scenarios/16-enemy-health-bar.mjs`.)
 - **Kill credit popups** — a green `+xx` popup floats up from each destroyed enemy's position showing the
   credits earned, holding then fading over ~2 s (`updateCreditPopups`, a pooled DOM overlay in the `#markers`
   container; `creditPopups` FX array spawned in `sim.js` on enemy death with `maxLife` 2.0, skipped when
   reward ≤ 0; opacity holds full then fades over the last ~1 s). Green (not the credits gold) so it stays
   legible against the warm ship-explosion burst it spawns on. Hidden while an overlay is up and cleared on restart.
+- **Event log** — a short stack of fading lines (`#event-log`) directly above the rocket button (fixed,
+  bottom-right, `z-index:6`, right-aligned; same anchor on desktop + touch). Keeps the **last 4** lines,
+  newest at the bottom; each line fades out over **5 s** via the CSS `eventfade` animation then removes
+  itself (`animationend`). On an enemy kill it logs `{shipname} killed +{amount}` (default text color); on
+  a grab pickup it logs `picked up {name}` tinted by the item's rarity **color** (fires for every collected
+  drop, including the L1/L2 cosmetic reward drops). Module `client/src/eventlog.js` (`logEvent(text,color)` /
+  `clearEventLog()`); called from `sim.js` (kill line + `clearEventLog()` in `reset()`) and `drops.js`
+  `collect()` (pickup line). Purely cosmetic — the fade is wall-clock, so it keeps fading while paused
+  (DECISIONS §30, no per-frame integration). Strings `ui.log.killed` / `ui.log.picked_up` (EN+RU); the enemy
+  ship name (kill line) and the component/weapon name (pickup line) render to players via the **English DB
+  name** (unlocalized — a later i18n pass should localize these surfaces). Hidden on menus via `body.menu`.
+- **Milestone banners** — a big, semi-transparent line (`#banner`, upper third, centered, non-interactive)
+  flashes at full opacity and fades to 0 over **3 s** at key beats: when the remaining-enemy count hits
+  **10** and **5** (`enemyTotal − kills`, once each) showing `N enemies left`, and when the **final combat
+  phase** begins (the boss/finale — the phase right before the `event: 'win'` phase) showing **Final Stage**.
+  State is `G.banner {text,life,maxLife}`; `showBanner`/`updateBanner` live in `sim.js` (opacity = `life/maxLife`,
+  aged in `update(dt)` so it freezes on pause, drawn each frame from `main.js`). Fires once per run
+  (`firedBanners` set, cleared in `levelRunner.start`); hidden on menus/overlays. Strings
+  `ui.banner.enemies_left` / `ui.banner.final_stage` (EN+RU).
 - **Marker colors by size tier** — the edge arrows, the mini-map dots and the hangar ship-dot all read a
   ship's `stats.color`, sourced from the `MARKER` palette in `catalog_seed.js` (NOT ad-hoc per ship; it
   does not tint the 3D model). Convention: **small → orange `#f4741f`** (enemy_1 fighters/gunners +
@@ -218,7 +336,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   JSON): a **hull** has `{ durability (= maxHp), volume }`; an **engine** has `{ power → acceleration,
   maxSpeed, exhaust }`; a **thruster** has `{ power → maneuverability (turn rate) }`; a **repair drone**
   (4th type) has `{ repairPerTick, intervalSec, maxFraction }` → passive hull regen; a **grab** (5th type,
-  the tractor beam) has `{ strength }` → its loot pull range/speed (see **Grab & loot drops** under
+  the tractor beam) has `{ strength }` → scales its inverse-square loot-pull field (reach is emergent,
+  ≈11.2 u base / ≈15.8 u advanced; see **Grab & loot drops** under
   Gameplay). Seeded: hulls
   Basic(100hp)/Light(30hp)/Medium(150hp)/Boss(310hp); engines + thrusters Basic/Scout/Medium/Boss; one
   **Repair drone** (id 12: heal 1 HP / 1 s, capped at 80% of max HP); two **Grab** items — the **base Grab**
@@ -234,10 +353,20 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     `buyable` key → shown.
   - **Player shop ladder** (priced; `docs/plans/economy-shop-v2.md`) adds buyable upgrades beyond the
     enemy/starter parts: **Heavy hull** (id 13: 200 hp / weight 50 / **6000** — the upgrade "ship": 2× HP for
-    accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 14 / **1400**) + **Ion engine** (id 16: power
-    18, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
+    accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 21 / **1400**) + **Ion engine** (id 16: power
+    27, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
     **2500**), and repair tiers **Repair drone II** (id 19: 1.5 HP / 1 s / 85% / **1800**) + **Nanobot repair**
     (id 20: 2 HP / 1 s / 90% / **7000**). Upgrades are **mass trade-offs, not power-creep**.
+  - **Rarity + color** (`rarity`/`color` columns on **both** `components` and `weapons`; migration 020,
+    Postgres bootstrap parity; flow into the client CATALOG). Three tiers with a fixed hex each: **trash
+    `#ffffff`** (white), **common `#59e0a0`** (green, the loot-glow green), **rare `#0000ff`** (blue).
+    Rarity is **derived** in `catalog_seed.js`, not hand-authored per row: `rarity = explicit override ??
+    ((price>0 && stats.buyable !== false) ? 'common' : 'trash')` — so every shop-available item is
+    common/green and every pirate/enemy part (`buyable:false`) + price-0 boss part is trash/white. The
+    **only** explicit override is **Triple spiral rocket (weapon 11) → rare/blue**. `color` is the single
+    source for both the in-world **drop glow** (see Grab & loot drops) and the pickup-log **line tint**. The
+    **shop UI does not surface rarity/color yet** — it's data only (no card borders/badges), left for a
+    later iteration.
 - **Repair drone:** installed on the player's ship via the **level-3 briefing** (server-authoritative
   `installComponent` action; persisted in `player_ships.components.repair`). During live combat the
   client ticks `repairTick` (pure, in `components.js`) each frame, slowly healing the hull up to the
@@ -247,7 +376,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Acceleration and turn rate are **derived AND scaled by mass** (`deriveDrive`): `massFactor =
   REFERENCE_MASS / mass`; `acceleration = engine.power × massFactor`, `turnRate = thruster.power ×
   massFactor`. `REFERENCE_MASS` = 50 (the player's starter loadout: hull 20 + engine 10 + thrusters 4 + gun 6
-  + rocket 8 + **grab 2**) keeps the player at accel 10 / turn 2.0; heavier ships are slower & less agile.
+  + rocket 8 + **grab 2**) keeps the player at accel 15 / turn 2.0; heavier ships are slower & less agile.
   (`REFERENCE_MASS` was bumped 48 → 50 when the base grab was auto-equipped, so its 2 weight is mass-neutral
   at the baseline — a deliberate neutralization, not a nerf.) A **required slot
   (hull/engine/thruster) may legitimately be empty** in the hangar (you can unequip it back into the
@@ -261,10 +390,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   an **inner "bank" group** (`g.userData.bankGroup`) that holds the primitives / `.glb` and rolls about the
   nose; `applyShipModel` swaps the loaded `.glb` into that bank group (applying `model.yaw`). The per-frame
   heading is written as `mesh.rotation.y` in the update loop (player ~`index.html:2153`, enemies ~`:2191`).
-  Each ship's `model_url` (in the DB) points to the **combat** `.glb` (the exported
-  primitives live in `client/assets/ships/`, e.g. `player.glb`); `makeShip` shows the primitive while it
-  loads / as a fallback, and `applyShipModel` auto-centers/scales/tints/orients it. **Per-ship model
-  presentation lives in one documented block, `stats.model`** (`{ yaw, scale, scaleMul?, muzzle?, exhaust? }`),
+  Each ship's `model_url` (in the DB) points to the **combat** `.glb`; `makeShip` shows a **procedural
+  placeholder ship** (built in code in `ship-factory.js`, no binary asset) while it loads / as a
+  fallback, and `applyShipModel` auto-centers/scales/tints/orients it. **Per-ship model
+  presentation lives in one documented block, `stats.model`** (`{ yaw, scale, scaleMul?, lift?, muzzle?, exhaust? }`),
   resolved client-side by `shipModelCfg(s)` (with back-compat fallback to the old loose `stats.modelYaw` /
   `stats.sizeScale` keys so a stale row/cache can't break) and threaded seed → `modelSpec` → `applyShipModel`.
   Full convention + onboarding steps: **`docs/plans/adding-a-ship-model.md`**.
@@ -276,7 +405,68 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   convention); the **player ship** (`player_combat`) uses `model.yaw: 0`. `model.scale` is the size
   multiplier (auto-normalize the longest axis to `SHIP_MODEL_LEN` 3.4 first, then scale; also scales the hit
   radius). Muzzle/exhaust spawn at the model's real nose/tail (`userData.noseZ`/`tailZ`, auto-derived from
-  the glb bounds); `model.muzzle` / `model.exhaust` optionally override them in group-local units. An optional
+  the glb bounds); `model.muzzle` / `model.exhaust` optionally override them in group-local units.
+  **`model.lift` (signed group-local Y, pre-scale) — top-down aim fix.** The camera is near-top-down and
+  **all** bullets fly in ONE fixed horizontal plane at `state.js` **`BULLET_PLANE_Y`** (`0.6`), which is the
+  ship group's origin (group-local y=0) — every ship group sits at this world Y and muzzle/exhaust spawn from
+  a planar (y=0) forward vector, so the plane is model-independent (that constant is the single source of
+  truth; ship spawn/recenter + hit-ring FX reference it, never a bare `0.6`). A model whose bounding-box
+  centre sits off its hull leaves the nose/deck off that plane, so centre-aimed shots pass over/under it. We
+  fix it by moving the MODEL, never the bullets: `shipModelCfg` adds `lift` to `pivot.position.y` (visual)
+  **and** to every hitbox `c.y` (and grows `broadR` by `|lift|`), keeping model + hitboxes in lockstep as the
+  hull seats onto the plane. `lift` is signed (positive raises, negative lowers). **All 9 modeled ships are
+  tuned to their robust max plane coverage** (default `0` = no lift): player `0.18`, enemy_1
+  (`Basic pirate ship`/`pirate gunner`) `0.21`, enemy_2 (`basic`/`advanced rocket pirate`) `0.17`, enemy_3
+  (mini-boss/`advanced medium pirate`) `0.2`, enemy_4 (`first`/`second pirate boss`) **`-0.132`** (the boss
+  bbox centre sat *below* the deck, so it's lowered). The `assets:hitboxes` run prints per-ship bullet-plane
+  coverage + a suggested lift (`bestLift` scans a fine grid and returns the plateau *centre*, so the plane
+  passes *through* the seated boxes, not tangent) so any future off-plane hull is caught at model-prep time.
+  **`model.hitBoxes` + `model.broadR` — the auto-fit collision hitbox.** Instead of a single fat sphere,
+  each real-model ship carries **one oriented bounding box per near-convex part** (V-HACD convex
+  decomposition → PCA box per hull, **~48 boxes**) fitted to its actual hull by the `assets:hitboxes`
+  pipeline step. Each box is `{c,h,u0,u1,u2}` — center, half-extents, and three orthonormal group-local
+  axes — stored in the **same group-local noseZ frame** as `userData.noseZ` (after auto-scale to
+  `SHIP_MODEL_LEN` 3.4 + recenter + `yaw`). The fit is **tight** (only a `HITBOX_MARGIN` 0.05 additive
+  inflate, no round bubble), so a bullet passing through the empty gap **beyond a thin wing** no longer
+  connects — but each box's per-axis half-extent is floored at `MIN_HALF` 0.1 (group-local) so a razor-thin
+  wing/nose stays a **hittable slab** (a discrete ~1-world-unit/frame bullet would tunnel through anything
+  thinner). The box budget is `maxHulls` 48 + `minVolumePercentError` 0.5 so **the wing panels/tips get
+  their own hulls** (at 16-32 hulls V-HACD merged a wing into the fuselage → the player's outer wing was
+  uncovered/"transparent"); a surface-coverage test guards it. `broadR` is the enclosing radius (~1.9-2.2,
+  the exact farthest box corner). Do **not** hand-author these — regenerate with `npm run assets:hitboxes`
+  (decomposes the combat glb with V-HACD via `vhacd-js`, memory-safe `voxelResolution 400000` (bounded voxel
+  count, library default; `maxHulls` is only a part-count cap, cheap); writes into the seed's `model:{}`
+  blocks via a marker-delimited idempotent edit, verified by a seed round-trip; `HITBOXES_DEBUG=1` prints
+  each fit's box count / broadR / union span). Collision
+  (`client/src/collision.js`) is broad-phase (one
+  `broadR × mesh.scale.x` sphere at `mesh.position`) → narrow-phase (point-vs-OBB: each box center
+  transformed by `mesh.matrixWorld`, axes rotated by its upper-3×3 and renormalized, hit iff
+  `|dot(p−c, uᵢ)| ≤ hᵢ·scale + pad` for all three axes; ignores the cosmetic bank roll). **Bullets use a
+  SWEPT test** (`segmentHitsShip(ship, p0, p1)`) — the bullet's per-frame movement segment (pre-move →
+  post-move) vs each OBB (both endpoints transformed into the box's local frame, then a slab test), behind a
+  segment-vs-sphere broad phase — so a fast bullet (~1-3 world units/frame) can't tunnel clean over a thin
+  wing/nose box between frames (the point test only checked the end-of-frame position). `segmentHitsShip`
+  reduces to `pointHitsShip` when `p0==p1`, so it's a strict superset. Ships with no `hitBoxes`
+  (primitive/cone fallbacks) keep the legacy single `2.6 × sizeScale` sphere. All four bullet/rocket↔ship
+  sites hit-test the hull — bullets via the swept `segmentHitsShip`, rockets via `pointHitsShip` (slow +
+  homing + padded, no tunneling) — including the **player** (fixing the old hardcoded `2.6` and the
+  player↔rocket test that ignored ship size); the rocket's `detonateR` becomes the hit `pad` — so
+  it's now a small **proximity fuse to the hull surface** (`detonateRadius` **0.5** on all rocket rows —
+  near contact with the hull boxes, with a floor of ~one frame of rocket travel so a fast rocket can't
+  tunnel past without detonating; retuned down from the old ~3.2–3.5 which measured to the ship *center*
+  and made rockets detonate a ship-length away).
+  **Rocket blast (AoE) damage is hull-relative too** (`detonateRocket` → `pointHitsShip(ship, pos, blastR)`),
+  matching the detonation trigger — a center-distance test used to miss because the detonation point sits
+  off-center on the hull. `e.radius` (`2.6 × scale`) is kept **only** as the over-enemy health-bar / marker
+  anchor. Dev-only `?hitboxes` draws the wireframe boxes over every ship for eyeballing.
+  **Known limitation — the y=0 aim plane (accepted, factor it in when choosing models):** bullets fly in the
+  combat plane (y≈0 = a ship's centre of mass), while the boxes hug the model's real 3D geometry. So a model
+  element that sits **off** y=0 is **not hit by a centre-aimed shot, and that is normal/expected** — e.g. the
+  player's wings hang ~0.27 below centre (a y=0 bullet passes over them → they read as "transparent"), and the
+  advanced-medium-pirate's drooped nose sits below y=0 (a shot registers deep in the body). The shot still
+  connects with the body; only the off-plane extremities are missed. **When picking/authoring a ship model,
+  prefer geometry whose hittable mass straddles y=0** (or accept that low/high appendages won't take hits).
+  The scheduled fix (extend each box's Y to cross y=0) is in ROADMAP. An optional
   **`model_url_high`** (DB column, migration 012) holds the **hangar** high-poly `.glb` (CloudFront,
   lazy-loaded; the player + every real-model pirate have one — `player_hangar`, `enemy_1..4_hangar`,
   `enemy_1/2/3/4_orange_hangar`). See
@@ -289,12 +479,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   S3 prefix. Today two items have a model: the **Repair drone** (component 12) and the **Machine Gun**
   (weapon 5), both CC-BY 4.0; every other item's `model_url_high` is null (the viewer degrades to nothing).
   `assets:check` validates item model URLs alongside ships. See `docs/plans/component-weapon-models.md`.
+  The **L2 and L3 briefings still showcase the granted item** spinning at full size (Machine Gun on L2,
+  repair drone on L3) and still run the **same idempotent grant actions** (`replaceWeapon 1→5` /
+  `installComponent repair 12`) — only their **text was reworded** to a "you recovered / picked it up" framing
+  (EN source + RU), since the reveal now also happens as a glowing battlefield drop at the end of the prior
+  level (see Grab & loot drops → L1/L2 reward drops).
   - **Player ship** = the real **"Air & Space Vessel"** model (Raven, CC-BY): a light-grey/red textured
     fighter, **`model.scale: 1.1`**. Unlike the flat low-poly enemy pack, it **keeps its textures** (paint,
     decals, markings) — `assets:build` just **downscales** them via the `player` preset override
     (`PRESET_OVERRIDES` in `assets-config.mjs`): combat `player_combat` ~371 KB (128px textures + meshopt
     geometry, same-origin — loads through the wired meshopt decoder) + hangar `player_hangar` ~1.7 MB (512px,
-    CloudFront, lazy-loaded). The in-git `player.glb` primitive stays only as the pre-load fallback. Metal
+    CloudFront, lazy-loaded). The pre-load fallback is the procedural placeholder ship (no in-git binary). Metal
     surfaces shine via the env map (see Visuals).
 - **Asset pipeline** (`docs/plans/ship-model-pipeline.md` + `audio-sample-pipeline.md`): repo-root `npm run
   assets:recolor` (`scripts/assets-recolor.mjs` — regenerates the `enemy_*_orange` sources by tinting the
@@ -309,17 +504,24 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (→ S3 `vega-sentinels-assets`: glbs to `ships-combat/`+`ships-hangar/`, **SFX mp3s to `sfx/`**, sources to
   `source/`) / `assets:pull` (S3 → `client/assets/ships/` **+ `client/assets/sounds/`**) / `assets:check`
   (drift-check: every pipeline `model_url*` in the seed **and every `SOUNDS` url in `catalog_seed.js`**
-  exists on S3 — the deploy guard). **No binaries in git** (S3 canonical; the in-git primitives stay as a
-  fallback). `scripts/assets-*.mjs`. **CI is wired** (the deploy job runs check + pull before the build,
+  exists on S3 — the deploy guard). **No model binaries in git** (S3 canonical; the pre-load fallback is a
+  procedural placeholder ship, not a binary). `scripts/assets-*.mjs`. **CI is wired** (the deploy job runs check + pull before the build,
   baking combat models **and SFX** into the image) via a scoped **read-only IAM key** (`vega-assets-ci-read`,
   bucket-wide read → GitHub secrets `ASSETS_AWS_*`). **Audio SFX**: drop a source in `assets-src/sounds/`,
   extract/clean/encode an mp3 by hand (ffmpeg recipes in the audio plan), content-hash → `assets-dist/sounds/`,
   push, then add the hashed url to **`SOUNDS`** in `catalog_seed.js` (+ a `SOUND_MAP` row to route it to a
   ship/weapon class). See DECISIONS §14 + §22.
+  **`npm run credits:build`** (`scripts/credits-build.mjs`, DECISIONS §48) parses `client/assets/CREDITS.md`
+  → the committed `client/src/credits-data.js` powering the in-game Credits screen; `credits:build --check`
+  is the drift guard (wired into `client/src/credits-data.test.js`), and **`build:itch` regenerates the
+  staged `credits-data.js`** from `CREDITS.md` so the itch export can never ship stale attributions.
 - **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
   `maxRange`, `fireCooldown`; rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
-  `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE). The
-  player's homing rocket seeks the nearest enemy in a forward cone and trails smoke; a bullet subtracts
+  `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE), plus
+  **detonation-FX stats** `blastVisual` (burst size), `blastTimeScale` (burst speed — `0.8` = 20% quicker),
+  `blastTint` (burst color) read by `spawnRocketBurst`. The
+  player's homing rocket seeks the nearest enemy in a forward cone and trails a thin fading haze line
+  (see FX below); a bullet subtracts
   its `power` from an opposite-side rocket's HP, shooting it down at 0 (enemy rocket 20 HP = two player
   gun hits). Seeded bullets: **Basic kinetic** (id 1, power 10 / cooldown 0.18; **price 800** — granted
   into the stash on shop unlock, sells ~600 toward the Heavy hull), **Kinetic (enemy)** (id 2, power 4),
@@ -328,7 +530,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **priced 600**), **Rocket (enemy)** (id 4, power 25). **Player shop ladder** (priced;
   `docs/plans/economy-shop-v2.md`): **Heavy cannon** (id 6: power 25, slow fire / long range / **2000**),
   **Heavy Machine Gun** (id 7: power 12, high RoF / **6000**), **Heavy rocket** (id 8: homing, power 90, slow
-  reload, big blast / **2600**). Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
+  reload, big blast / **2600**), and **Triple spiral rocket** (id 11: **4000**, top of the rocket ladder —
+  `stats.spiral:true`). The triple spiral fires an **invisible leading homing rocket** (steers via
+  `findTargetInSector`, deals no damage, not shootable) that defines the flight path; **three visible
+  cyan warheads** (power 40 / health 10 each; flight = Heavy-rocket-class ×1.2: launchSpeed 14, accel 12)
+  spiral around its axis (radius 1.4u, 6 rad/s, 120° apart). Each warhead is a real rocket — it detonates
+  on its own proximity and can be individually shot down (all three connecting = 3× = 120 damage);
+  fireCooldown 7. Its shop/loadout stat line shows damage as **40×3** (`statLine` special-cases
+  `stats.spiral` — per-warhead × warhead count — so a 3-warhead weapon isn't misread as a single 40).
+  Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
   low damage 3; pirate gunner + buffed boss) and **Advanced pirate cannon** (id 10 — power 10, slow 1 shot/sec,
   long range 110; the Second Boss's main gun).
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`). **Appearance = the ship's `.glb` model; we
@@ -357,7 +567,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 
 ## Gameplay
 - Inertial physics (like Asteroids): thrust along the nose, velocity is preserved; when all
-  buttons are released — smooth braking.
+  buttons are released — smooth braking. The **player** velocity is capped at a **flat top speed of
+  30 u/s** (`PLAYER_MAX_SPEED`, a movement-system constant — enemies still clamp to their per-engine
+  `maxSpeed`). Each run **opens already gliding forward at 3 u/s** (10% of top speed, `+Z`), and
+  **enemies hold fire for the first 5 s** of a run (`G.combatElapsed` grace — they still spawn, move
+  and aim; silent, no HUD countdown).
 - **Soft arena boundary (±360).** The player can fly **past** the edge freely — there's no hard wall. A
   faint glowing **edge marker** (a Line at ±360, brightens as you approach/cross) shows where the
   battlefield ends. After **2 s continuously out of bounds** (`OOB_WARN_DELAY`) a centered HUD **warning +
@@ -382,13 +596,21 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   kind; `pickLoot`). **Hulls NEVER drop** (progression guard — a looted 550-HP boss hull would be
   equippable and break balance). A drop is a slowly-rotating **metal-box** glb (one turn / 5 s), rendered
   from the single `DROP_MODEL_URL` (a fallback metallic box shows until the model loads). The **Grab**
-  component (if equipped) pulls drops in: **range = strength** world units; a drop must sit in range for
+  component (if equipped) pulls drops in via an **inverse-square field** (`field = strength·FIELD_K/dist²`,
+  `FIELD_K = 5`; `field()` in `drops-config.js`): a drop must sit where **field ≥ 0.4** (`FIELD_CUTOFF`) for
   **0.3 s** (`ARM_DELAY`) to arm, then the **nearest** armed drop is pulled toward the ship's live position
-  at **speed = (strength/2)·(10/itemWeight)** u/s (`pullSpeed` — light parts pull fast, heavy parts slow;
-  a zero/missing weight falls back to 10). A single **thin blue line** (pooled `THREE.Line`, `0x4db6ff`) is
-  drawn only **while actively pulling**; at most one drop is pulled at a time. Within 3 units the drop is
-  **collected** (`pendingLoot`). The base grab's short range (10) is a deliberate "vacuum assist"; the
-  Advanced grab (20) is the real tractor + the upgrade incentive. A **`MAX_DROPS = 40`** cap bounds the
+  at a **linear-ramp speed** (`pullSpeed(weight, dist)` — deliberately **not** the field): speed rises linearly
+  from **`PULL_SPEED_FAR` (1 u/s)** far out to **`PULL_SPEED_NEAR` (4 u/s)** at the ship (weight-10 refs, at/beyond
+  `PULL_FAR_DIST = 11` it sits at the floor), then `·(10/itemWeight)` (light parts fast, heavy slow; zero/missing
+  weight falls back to 10). The linear ramp is un-physical on purpose — a **constant slope has no near-ship jerk**
+  and plays better than the `1/dist²` field speed it replaced. **Speed depends on distance + weight only, not on
+  strength** — strength drives reach, not speed. Reach is **emergent + weight-independent**
+  (`range(strength) = sqrt(strength·5/0.4)`, no weight term): base strength 10 → **≈11.2 u**, Advanced
+  strength 20 → **≈15.8 u (= √2× base, not 2×)**. A single **thin blue line** (pooled `THREE.Line`,
+  `0x4db6ff`) is drawn only **while actively pulling** and **hides the instant** a drop drops below the
+  cutoff; at most one drop is pulled at a time. Within 3 units the drop is **collected** (`pendingLoot`). The
+  base grab's short reach (≈11.2) is a deliberate "vacuum assist"; the Advanced grab (≈15.8) is the real
+  tractor + the upgrade incentive. A **`MAX_DROPS = 40`** cap bounds the
   arena. Collected loot is deposited into the **Stash only on mission VICTORY** (`levelRunner.win` →
   `depositLoot` → `POST /api/players/:id/loot`); on **death** or **restart** the haul (and any un-grabbed
   drops) is **lost** — nothing about a run persists until it's won, consistent with credit banking. The
@@ -402,9 +624,33 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Drops read as **brushed silver** — their glb (and the fallback box) material is overridden to a light silver
   albedo (`0xd2d6de`, `metalness 0.55`, `roughness 0.4`) with a faint **emissive floor** (`0x3a3e46`) so a
   crate is visible against dark space and never fully black (a one-time tweak in `normalize()`; a pure chrome
-  mirror had gone black where the backdrop was dark). **Off-screen drops
+  mirror had gone black where the backdrop was dark). Each drop also gets a **soft additive halo tinted by
+  its item's rarity `color`** (trash white / common green / rare blue) — `addHalo(obj, colorInt,
+  DROP_HALO_SIZE=4.5)` in `spawnDrop`, using a **fresh SpriteMaterial per drop** so a per-drop tint never
+  cross-contaminates other drops (clones share materials); the reward-drop halo keeps the default green.
+  On collection the pickup is logged to the **event log** tinted the same color (see Tools → Event log).
+  **Off-screen drops
   show green `0x59e0a0` edge arrows** (`updateDropMarkers` in `hud.js`, its own pool + `.drop-marker` CSS,
-  the **nearest 6**), distinct from the enemy edge markers.
+  the **nearest 6**), distinct from the enemy edge markers — the edge pointers stay **fixed green** (not
+  recolored by rarity).
+  - **L1/L2 reward drops (cosmetic).** The **last enemy of Level 1** drops the **Machine Gun** model and the
+    **last enemy of Level 2** the **Repair drone** — rendered from each item's `modelUrlHigh` (the same
+    lazy-loaded hangar glbs the menu preview uses; a **green fallback box** shows until it loads). Marked
+    declaratively by a `lastKillDrop` `{ kind, refId }` field on the L1/L2 level descriptors
+    (`catalog_seed.js`); the sim spawns it (`spawnSpecialDrop`) when `G.kills === G.enemyTotal` **and** the
+    player doesn't already own the reward (`ownsReward`/`rewardOwned` — L1: no mount with `weapon === 5`; L2:
+    the `components.repair` slot empty), else it falls back to the normal 20 % metal-box roll. The special
+    drop renders **green** (an emissive `REWARD_TINT 0x59e0a0` tint via `normalizeGreen`, **not** the silver
+    override) with one **additive green halo sprite** behind it (`addHalo`, radial-gradient `CanvasTexture`,
+    additive/`depthWrite:false`; no bloom/post), and its off-screen pointer uses the **pulsing `.drop-marker.special`**
+    variant (brighter green `#7dffbf` + an animated green `drop-shadow` — the pulse, not the hue, is what
+    distinguishes it from the plain green loot arrows). It reuses the whole normal drop lifecycle (rotate,
+    grab-pull, click/tap `engageDropAutopilot` to fly to it) but is **cosmetic — collecting it deposits
+    NOTHING** (`collect()` gates the `pendingLoot` push on the pure `shouldDeposit(d)` = `!d.special`). The one
+    guaranteed copy of the reward still comes solely from the **unchanged** server force-install on victory
+    (clearing L1 runs L2's briefing `replaceWeapon 1→5`; clearing L2 runs L3's `installComponent repair 12`,
+    both idempotent), so grabbing the drop or ignoring it makes no difference and the player never ends with
+    two. Only L1/L2 carry `lastKillDrop`.
 - Camera: nearly vertical, rigidly attached to the player, does not rotate. The fixed offset
   (`CAM_OFFSET`) is scaled by the player's zoom (`0.6–2.2×`) along its angle — zoom never changes the
   angle, FOV, or camera type.
@@ -412,8 +658,18 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   level: if it has a **briefing** (level 2+), the client lands on the **Main Window** showing that briefing
   (so a returning player sees *their* mission, not the level-1 intro); otherwise (level 1 / new player) it
   shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"), frames the
-  threat as a pirate raid, lets them **pick a ship** (cards with HP + weapon summary) and **Take off**.
+  threat as a pirate raid, and offers **Take off**. Its layout is a **fixed grid** (`grid-template-rows:
+  1fr auto`): a scrollable greeting/intro cell (`#welcome-scroll`) over a pinned footer (`#welcome-footer`,
+  Take off + community link), so the Take off button is always on-screen regardless of content height (the
+  scroll cell top-aligns + scrolls via auto margins on short viewports, avoiding the flex-center clip trap).
   Either way the scene backdrop renders behind it and the level only starts on take-off.
+  - **Staged L1 welcome reveal** (`docs/plans/2026-07-05-1641-briefing-staged-reveal.md`): on the L1
+    landing the greeting `h1` shows immediately, then the `.intro` briefing **types out over ~5 s at 26px**
+    (matching the L2/L3 mission-briefing size; 16px on the `≤760px` mobile override), then the **Take off**
+    button fades in **+0.5 s** later (no ship picker). **Tap the intro to skip** to the full text +
+    Take off revealed at once. Hidden steps use `visibility:hidden` (not `display`) so nothing reflows.
+    Plays **once per landing**; a language switch mid-type settles to full. The shared typewriter lives in
+    `client/src/typewriter.js`; the community/feedback link is not staged.
 - **Main Window (the between-battles / landing screen; was the "Hangar")** — `#mainwin`, a **fixed
   landscape layout** (CSS grid, not a scrolling column), built for mobile landscape but unified for desktop
   (`docs/plans/main-window-redesign.md`). **Top bar** (fixed elements above the grid): the **settings gear**
@@ -422,7 +678,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Sentinels** wordmark centered (`#gametitle`, scaled up on `body.menu`; the old on-screen "Hangar" title is
   gone), and an **inactive "Ships"** label top-right (`#mw-ships`, reserved for future ship-buying).
   **Below**: a 3-column grid — **left menu** (`#mw-menu`: Missions / Loadout / Stash / Shop) | **work zone**
-  (`#mw-work`) | a **25% live ship-model preview** (`#mw-ship`). The **Missions** item (collapsible via the
+  (`#mw-work`) | a **25% live ship-model preview** (`#mw-ship`). Left column = `minmax(160px, 18%)`, widened
+  to `minmax(240px, 18%)` on **non-phone forms** (`body:not(.dev-phone)`) so it fully contains the
+  fixed-position `#account-bar` floating over it — otherwise a long localized (RU) "guest / log in" string
+  spilled past a narrow 18% column into the work zone and clipped the mission title's first letters (the bar
+  is also `max-width: 200px`, wrapping rather than overflowing). The **Missions** item (collapsible via the
   caret) lists the **campaign mission (primary)** and, once the shop is unlocked, the **three side missions
   (secondary)**; selecting a row renders its description + Take-off into the work zone (**only the
   description scrolls**, `#mw-mission-desc`). Loadout/Stash/Shop open the **shop bay in the work zone**
@@ -436,6 +696,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   work-zone view; `buildMissionList()` + `renderMissionView(m)` drive the mission list/description;
   `launchCampaign()` (was `launchFromHangar`) and `launchMission(m)` launch + stop the preview; `openBay()`
   (was `openHangarShop`) gates + loads the bay.
+  - **Staged campaign-briefing reveal (L2/L3)** (`docs/plans/2026-07-05-1641-briefing-staged-reveal.md`):
+    when the **primary (campaign) briefing** lands on **levels 1-3** (in practice L2/L3; L1 lands on the
+    welcome screen), the briefing text (`#mw-mission-text`) **types out over ~5 s** while the right-column
+    **ship-preview window** (`#mw-ship-col`) and the **Take off** button (`#mw-go`) are hidden
+    (`visibility:hidden`, so nothing reflows); when typing completes the ship window + the **granted-item
+    showcase** (`#mw-item`, Machine Gun on L2 / Repair drone on L3) fade in together, then **Take off +0.5 s**
+    later. **Tap the briefing text (`#mw-mission-desc`) to skip** to full + reveal everything at once. The
+    level is parsed from the descriptor `title` ("Level N"); it plays **once per landing** (switching to
+    a bay view / launching / re-selecting the row after settles to full, no replay). **L4+ and side missions
+    stay instant** (no staging). Shared typewriter: `client/src/typewriter.js`.
   - **Desktop (PC) form polish** (`docs/plans/2026-07-01-1933-device-profiles-desktop-polish.md`,
     device-profiles iteration 1) — additive CSS scoped to `body.dev-desktop` / `body.dev-desktop-lg` only
     (phone/tablet + the `@media (max-width:760px)` mobile override are untouched): the briefing **title is 32px**
@@ -490,7 +760,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   tapping the station is a **mandatory dock** (on touch a **slop-gated tap** — a <10px single-finger gesture —
   through the shared `engageObjectAt` pick, not a raw touch-anywhere): it calls `engageAutopilot()` (sets `G.autopilot.active` + phase
   `brake0` + `target = { kind:'station' }`), and `checkArrival()` fires the existing `win()` once the ship is
-  within `BASE_ARRIVE_RADIUS` (45u, horizontal xz) of `(0,0)`. `G.autopilot` now carries a typed **`target`**
+  within `BASE_ARRIVE_RADIUS` (45u, horizontal xz) of the station's actual position `(-60,-60)` (the win
+  test measures distance to `G.baseStation.obj.position`, not a hardcoded origin). `G.autopilot` now carries a typed **`target`**
   (the station **or** a loot drop — the same autopilot flies to loot chests, see Grab & loot drops); the
   dock/win predicate `canDock(autopilot, dist)` (pure, in `client/src/autopilot-config.js` with
   `BASE_ARRIVE_RADIUS`, unit-tested) fires **only when the target is the station** — a chest-aimed autopilot is
@@ -498,6 +769,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (clears `active` + `target`) so a cancelled/manual approach doesn't complete (re-tap to resume). Clicking
   while already inside the radius wins on the next frame. `win()` tears the return state back down (arrow/hint/clickable off) and reuses the existing
   victory handling (overlay, `bankRun`, `×2`, `unlockNextLevel` for campaign only).
+  A **bottom-center "Return to base" pill button** (`#return-btn`, i18n `ui.return.button`, shown/hidden in
+  `updateReturnHint`) is also drawn as an **explicit, always-on-screen tap target** — same effect as clicking
+  the station (`engageAutopilot()`) — since the station model is small and often off-screen. It's visible only
+  while return-to-base is available and the ship is still under player control (the same predicate as
+  `stationClickable()` **and** `!G.autopilot.active`), so it **hides the moment the autopilot engages** and
+  reappears if the player cancels the dock mid-flight. Wired **split per DECISIONS §42**: on touch it fires on
+  `touchstart` (a second-thumb tap works while a steering finger holds `#stick-zone`), and the `click` path is
+  **mouse-only**; the button sits `z-index:6` above the full-screen `#stick-zone`, is hidden on menus
+  (`body.menu #return-btn`), and its label localizes via `data-i18n`/`applyTranslations` (EN + RU).
 - **Victory → Main Window → next level.** On a win the result overlay shows a **Continue** button (a loss
   shows **Restart**/retry); Continue opens the **Main Window** (see above) — the between-battles screen (also
   the landing/homepage). The campaign briefing shows as the **primary mission** in the work zone with a
@@ -541,7 +821,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (`server/src/enemy_total.js`), stamped in `catalog_seed.js` (campaign) and `missions.js` (side missions);
   it drives the HUD killed/total counter. Four campaign levels are seeded (played in order via the player's progress):
   - **`level-1` (beginner):** fighters only (3 at a time) → after **6 kills** rocketeers join at 25%
-    → at **12 kills** spawning stops, one last rocketeer appears, clear the field → **Victory!** No boss.
+    → at **12 kills** two last rocketeers appear, clear the field → **Victory!** No boss (enemyTotal **14**).
   - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 12 kills →
     spawning stops → a single **medium** appears alone as the boss → clear → Victory.
   - **`level-3` (full fight):** waves of all three enemy types → after 16 kills spawning stops → the
@@ -555,6 +835,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `chance` weights + max concurrent) is per-phase in the level; a `win` phase's `delay` defers the
   outcome so the last/boss explosion plays out — but the `win` phase no longer wins outright: it now opens the
   **return-to-base** gate (fly home to the station to complete the mission — see Level flow / Victory).
+  Enemies spawn **one at a time on a randomized 2–4 s cooldown** (`stepSpawnGate`/`nextSpawnDelay` in
+  `client/src/spawn-timing.js`, driven by `levelRunner`): the **first** enemy of each phase appears
+  immediately, then each spawn arms a fresh 2–4 s delay, so a phase fills 1→2→3… toward `maxConcurrent`
+  rather than snapping to it — and a killed enemy's replacement also waits 2–4 s (never an instant refill).
+  The `maxConcurrent` numbers above are the **cap**, not the fill rate. **Spawn counts are deterministic:**
+  every spawning phase carries an explicit `spawn.total` cap — a threshold (`kills`/`killsSincePhase`)
+  phase's `total` equals its kill-delta so it leaves **0** enemies alive when it advances, and the
+  clear-out/finale (`allCleared`) phases are real spawning waves (drawn from that level's wave-2 pool) that
+  carry the remainder. So `enemyTotal` is the exact **sum of every phase's `spawn.total`**, the killed/total
+  counter reaches N/N, and the last-kill reward drop (`isLastKillDrop` in `client/src/level-sim.js`) fires on
+  the true final kill. Per-level totals: L1 **14**, L2 **17**, L3 **21**, L4 **22**, side missions **20**.
 - **Rockets can be shot down by the machine gun:** a bullet subtracts its damage from an opposite-side
   rocket's HP (shot down at 0) — you can deflect enemy rockets, and an enemy can shoot down yours.
 - Player health is 100; HUD shows the remaining health as a percentage with one decimal
@@ -564,12 +855,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   total. Completing a level **doubles** Earned (`win` applies `earned ×= 2`). The separate **kill count**
   drives level thresholds. At the **end of each run — death OR victory — Earned is banked** into the
   player's persistent **Credits** balance (server-authoritative; closing the browser mid-run loses the
-  unbanked amount). New players start at **1000 credits**. HUD (top-right) shows two counters — **Credits**
-  (the persistent balance) and **Earned** (this run) — plus **Destroyed** and **Enemies** (alive).
+  unbanked amount). New players start at **1000 credits**. HUD (top-right) shows one credits line —
+  `credits {total}/{earned} earned` (total persistent balance / Earned this run; `ui.hud.credits_line`,
+  EN+RU) — plus **Destroyed**. The live **Enemies** (alive) counter has been **removed**.
   **Destroyed** reads **killed / total** (e.g. `8/16`): *total* is the number of enemies destroyed to clear
   the whole level/mission, precomputed on the server from the descriptor's phase script and embedded as
   `descriptor.enemyTotal` (the client reads it in `levelRunner.start`; falls back to the bare kill count when
-  the total is unknown, e.g. a level row not yet reseeded). **Enemies** (alive) is unchanged.
+  the total is unknown, e.g. a level row not yet reseeded).
   Banking posts `{ credits, kills, durationMs }` to `POST /api/games`, which returns the new balance.
 - **Shop & stash (the "spend" side)** — once the player **clears the final level**, the Main Window's left
   menu gains three items — **Loadout** (what's equipped), **Stash** (owned-but-not-equipped inventory, a qty
@@ -613,7 +905,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   story counter** (repeatable grind to fund the shop). **Each mission fights at its own location in the
   world** (`descriptor.center` — mining at `(-550, 0)`, research at `(400, 0)`, freighter at `(-100, -450)`),
   away from the campaign center `(0,0)`. The map is **one shared world** — all set-pieces (the three mission
-  structures + the base station at `(0,0)`) exist at fixed positions on every level/mission; the mission only
+  structures + the base station at `(-60,-60)`) exist at fixed positions on every level/mission; the mission only
   moves the combat there (you spawn over the matching structure, the others — and the base station you return
   to — are in the distance). They sit **just below the combat plane** (strong
   parallax like the background asteroids). Server-owned (`GET /api/players/:id/missions`,
@@ -621,13 +913,30 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   item). The list refreshes whenever the Main Window is shown (`refreshMissions`).
 
 ## Visuals
+- **Sky backdrop is a baked procedural nebula cubemap.** `makeNebulaSky` (`world.js`) runs a GLSL
+  multi-octave value-noise (fbm) nebula + a sparse power-law star field over the view direction and
+  renders it **once** into a `WebGLCubeRenderTarget` (via a `CubeCamera`) at `buildMap` time, then sets
+  it as `skyScene.background` — so the per-frame cost is a single flat background draw (same as the old
+  flat color), while the shader runs only 6 times total (once per cube face) at map build. Palette is
+  data-driven in the map descriptor (`sky.nebula`; fallback `NEBULA_ICEBLUE` in `world.js`) — the shipped
+  "ice blue sparse" look: deep-black space + faint blue wisps + a dense static field, tuned so the
+  backdrop never competes with ships/bullets/FX. The bake is **tier-gated** (`gfx.nebulaBake`): High bakes
+  1024/6-octave, Balance 512/4-octave, **Performance keeps the flat `background` color (no bake)** so the
+  weakest phones skip a 6-face shader hitch. It is **skipped under the `?debug` test hook** (mirrors
+  `prewarmShaders`), so the headless visual suite's backdrop is unchanged. The bake `ShaderMaterial` uses
+  `side: BackSide` + `depthTest/depthWrite: false` (load-bearing — the engine runs `autoClear = false` and
+  `CubeCamera.update` doesn't clear depth between faces). The previous cube RT is disposed on every
+  rebuild (`G.nebulaRT`). See DECISIONS §43.
 - Background in 3 layers: stars (varying brightness, a static backdrop) → asteroids (a parallax layer)
   → planet + 2 moons (light parallax). **Stars are two point layers (`makeStars`):** the dim majority
   (small opaque points, power-law brightness — many faint, few less faint) plus a bright **~2%**
   (`brightFraction`, default 0.02) that pops via a **bigger size (5 vs 1.4) + a soft additive glow
   sprite + near-white full-luminance color** — the three cues that make a ~1px point read as brighter.
   The bright layer uses `depthTest: true` (unlike the dim layer) so the planet/moons occlude it and the
-  glow can't creep onto the planet disk (the transparency gotcha in DECISIONS §5). The asteroids are a
+  glow can't creep onto the planet disk (the transparency gotcha in DECISIONS §5). **When the nebula is
+  baked** (High/Balance, non-`?debug`) this moving parallax layer is thinned to **0.4×** count — the baked
+  nebula supplies the dense static field, the point layer only sells depth; on the flat-color path
+  (Performance/`?debug`) it keeps full count so the sky isn't empty. The asteroids are a
   **field of small rocks filling the whole disk**
   (annulus `inner`..`spread` radius; `inner` 0 → centered, `spread` 1000 in `home-system`) — inside the
   ±360 arena **and** far beyond it, sunk below the combat plane; the far edge fades into the fog (~600), so
@@ -697,8 +1006,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     → look unchanged when omitted) — the light extension point for future server-driven model effects
     (DECISIONS §38). **Cruises slowly forward** (`speed` units/sec — a transport in transit). (A separate
     `sync` + zone-drift escort mechanic exists but no mission turns it on.)
-  - **`base-station`** — the **return-to-base target** at the world origin `(0,0)` (the campaign/level-1
-    start). A `.glb`-backed set-piece (`base_station_combat`, CC-BY 4.0 "Low Poly space station." by MisterH)
+  - **`base-station`** — the **return-to-base target** at `(-60,-60)`, up-left of the arena center (so
+    the origin-spawning ship isn't lost against its backdrop). A `.glb`-backed set-piece (`base_station_combat`, CC-BY 4.0 "Low Poly space station." by MisterH)
     loaded by `makeBaseStation` (`world.js`, mirroring the freighter's async center/scale/`yaw` normalization
     but with **no exhaust**), auto-scaled (longest axis → `BASE_STATION_LEN` 100) with an optional slow idle
     `spin` (0.03 rad/s). It sits at `pos.y = -42` — raised **closer to the plane than the freighter** (`-48`)
@@ -713,10 +1022,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (0.15 s, frame-rate-independent), and applies it as `bankGroup.rotation.z` (the inner bank group, so it
   composes with the root's heading yaw + scale and the model's `modelYaw` without fighting them). One path
   covers keyboard, touch, warp-back and enemy AI turning. **Cosmetic only** — nothing gameplay reads the
-  roll (aim/forward use `heading`, collisions use `mesh.position`).
-- **Enemy spawn ("warp in"):** a newly spawned enemy grows from a dot to its full size over
-  `SPAWN_GROW_TIME` (1 s, ease-out cubic) — it scales up in place while the AI is already active.
-- Effects: a micro-explosion at the hit point; a narrow glowing engine trail on **every ship**
+  roll (aim/forward use `heading`; collisions use the OBB hitbox, whose boxes ride `mesh.matrixWorld`
+  — which excludes the child `bankGroup` roll — so the cosmetic roll never shifts the hitbox).
+- **Enemy spawn ("warp in" IS the arrival):** a newly spawned enemy appears **immediately** as a dot and
+  **materializes over its stagger interval** — the armed 2–4 s cooldown, carried per-instance on `e.spawnDur`
+  (ease-out cubic grow). While forming (`e.warping`, cleared once `spawnAge >= spawnDur`) it is
+  **invulnerable, cannot fire, and is not a valid homing-rocket target** — but it still counts toward
+  `maxConcurrent` (preserving the stagger) and shows its off-screen edge marker so the player sees it
+  arriving; because no player damage path touches it, its hp stays full and no health bar shows on the dot.
+  It becomes a normal combatant the instant it finishes forming. `SPAWN_GROW_TIME` (1 s) stays as the
+  per-instance default and drives the **player warp-back** (unchanged).
+- Effects: a bullet hit-flash at the impact point, **keyed off the weapon `class`** via the client
+  `HIT_FLASH_SCALE` map (`kinetic`/unset → a tiny `maxScale 0.8` spark, `cannon` → a heavier but still
+  small `maxScale 2` flash; color unchanged); a narrow glowing engine trail on **every ship**
   (player and enemies), via the shared `emitExhaust` — particle speed = ship speed + ejection backward
   along the nozzle, colored by the engine's `exhaust.color`, emitted while thrusting forward.
 - **Muzzle / exhaust spawn from the model's real bounds.** Bullets/rockets leave the **nose** and exhaust
@@ -731,6 +1049,18 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the glow layer, accent sparks and ring), so the player's burst is cyan-blue, enemies' orange. Used on
   enemy and player death. An enemy death also spawns a floating `+xx` credit popup at the kill site (see
   the HUD "Kill credit popups").
+- **Rocket detonation** (`spawnRocketBurst`): a rocket blast uses the same layered structure (fireball
+  layers + a few sparks + a shockwave ring) but **shrunk and fast**, so it reads as a proper explosion
+  rather than one glowing sphere. Its **size, speed and tint are data-driven** from the rocket's weapon
+  stats — `blastVisual` (size), `blastTimeScale` (lifetime multiplier; `0.8` = 20% quicker) and
+  `blastTint` (color). Reuses the same particle pools + `G.gfx` tier gating as the ship burst — distinct
+  from the (unchanged) ship-death `spawnShipExplosion`.
+- **Rocket smoke trail** (`spawnSmoke`): every rocket (player + enemy) leaves a **thin, dissipating haze
+  line** — small **fixed-size** gray puffs that only fade out (no expansion), emitted densely along the
+  flight path so it reads as a vapor line, not a widening cone. `spawnSmoke` honors the particle ceiling
+  (`liveParticles()` + `particleScale`), so smoke thins/skips on weak tiers. The **Triple spiral rocket**'s
+  three visible warheads each emit their own trail, so its volley reads as **three intertwined smoke
+  helices** corkscrewing around the (invisible) flight axis.
 
 ## Audio (synth + sampled — `client/src/audio.js`)
 **Native Web Audio API, no library.** SFX are **synthesized** by default (oscillators + filtered white
@@ -798,6 +1128,20 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   gestures, since it's destructive. Server-side it's the per-player `resetPlayer` (clears
   games/ships/stash/events, resets level/credits/shop to the new-player baseline, re-grants the starter
   ship; **keeps the account, login and language**). i18n keys `ui.settings.reset.*` (EN+RU).
+- **Credits & attributions screen (`client/src/credits.js`, DECISIONS §48).** A **"Credits"** button in the
+  settings modal (`#credits-open`) opens a scrollable, closeable `#credits-overlay` (z-index 21, above the
+  settings modal; backdrop/Close dismiss) listing every third-party asset: **3D models** (each CC-BY 4.0 —
+  work title, `by <author>`, a **Source** link, a **CC BY 4.0** license link, and a **Modified** chip, under
+  one blanket "all models are modified" note) and **Music & sound** (CC0 / Pixabay courtesy list — author +
+  Source where present, no license link / Modified chip). This satisfies the CC-BY 4.0 obligation to show
+  attributions to players on **both** vega.tenony.com and itch.io. The list is **build-generated** from
+  `client/assets/CREDITS.md` (single source of truth) by **`npm run credits:build`**
+  (`scripts/credits-build.mjs`) → the **committed** `client/src/credits-data.js` the buildless client
+  imports; the parser reads the 5-column asset table + the verbatim CC-BY blockquote work titles (matched by
+  URL, **throws** if a CC-BY row lacks one) and ignores the narrative prose. A drift test
+  (`client/src/credits-data.test.js`) fails CI if the committed module is stale (`credits:build --check`
+  mirrors the `assets:check` guard). Chrome labels are i18n (`ui.credits.*`, EN+RU); attribution content
+  (authors/titles/URLs/licenses) stays literal.
 - **Graphics quality tiers (`client/src/graphics.js`, DECISIONS §23).** A 3-way selector —
   **High / Balance / Performance** — for weak phones. **Note (measured on two GPUs, see DECISIONS §23):
   the weak-device bottleneck is NOT fragment fill rate** — a 5.5-7× backbuffer-pixel cut moved fps by
@@ -806,8 +1150,9 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   only blurred the image for no fps gain). Per tier: **pixel-ratio cap** (2 / 1.5 / 1), **antialias** (on /
   off / off), **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales spark count,
   drops the 2 middle fireball layers + the shockwave, and thins the exhaust), and **maxParticles** (∞ / ∞ /
-  **300** — a hard ceiling on live additive particles, exhaust trail + sparks; new emits skip over budget,
-  capping per-frame JS / draw-call submit). maxParticles is **off (∞) on High & Balance**. Persisted in
+  **300** — a hard ceiling on live additive particles, exhaust trail + sparks + **rocket smoke**
+  (`liveParticles()` now counts smoke, and `spawnSmoke` honors the ceiling + `particleScale`); new emits
+  skip over budget, capping per-frame JS / draw-call submit). maxParticles is **off (∞) on High & Balance**. Persisted in
   `localStorage` (key `gfxTier`). **Default High**; a touch device's **first run defaults to Balance**. **Picking a tier
   reloads the page** so the whole preset (antialias — a `WebGLRenderer` constructor arg — + pixel ratio +
   star/particle density) applies cleanly from startup, no half-applied state (server-side progress is
@@ -861,6 +1206,20 @@ first translation). See DECISIONS §10.
   **itch.io players are tagged** (`{"source":"itch"}`) even though `document.referrer` is blank inside
   itch's sandboxed CDN iframe. Organic web players stay untagged (`BUILD_SOURCE==='web'`). Requires a
   fresh itch build to be published for the tag to take effect on itch.
+- **Device capture (`players.user_agent` + `players.device_model`, migration 021 / Postgres bootstrap):**
+  two nullable `TEXT` columns written **latest-wins** at the boot register call — unlike `referrer` (which
+  is write-once), each `registerPlayer(id, referrer, device)` overwrites them with any **non-null** value it
+  carries via `COALESCE(?, col)` (a call that omits the info never wipes a good prior value). `user_agent`
+  is the raw `User-Agent` (capped 512 chars); `device_model` is the raw `Sec-CH-UA-Model` **client-hint
+  device code** (e.g. `SM-A037F`, capped 128 chars) — the server opts in by sending `Accept-CH:
+  Sec-CH-UA-Model, Sec-CH-UA-Platform, Sec-CH-UA-Platform-Version` on **every** response, so Chromium
+  browsers attach the hint on subsequent **same-origin** requests (the register route strips the RFC-8941
+  quotes). Best-effort: non-Chromium browsers and the cross-origin itch embed send no model hint; existing
+  prod rows stay `NULL` until the player next boots (no backfill). No client change — the browser sends the
+  headers automatically. All other auto-register call sites pass no device (`COALESCE` preserves the prior
+  value). `resetPlayer` intentionally leaves `user_agent`/`device_model` in place (device metadata, not
+  progress; overwritten latest-wins on the next boot). Parsed into a `Browser · Device/OS` label at render
+  time in `server/src/admin.js` (`deviceLabel` + the curated `DEVICE_NAMES` code→marketing-name map).
 - **Player progress:** `players.current_progress` stores the player's currently-available level — an
   integer **foreign key into `levels(id)`** (a real, enforced FK in Postgres; a plain integer in SQLite,
   whose `ALTER TABLE` can't add a FK column with a non-null default, and which doesn't enforce FKs
@@ -875,10 +1234,14 @@ first translation). See DECISIONS §10.
 - **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url` (combat),
   `model_url_high` (hangar high-poly, nullable), `components` JSON ref `{hull,engine,thruster[,repair]}`),
   `components` (`name`, `type`
-  `hull`/`engine`/`thruster`/`repair`, `weight`, **`price`**, `stats` JSON; stable ids) and `weapons`
-  (`name`, `type` `bullet`/`rocket`, **`price`**, `stats` JSON; stable ids), seeded from a shared snapshot
+  `hull`/`engine`/`thruster`/`repair`/`grab`, `weight`, **`price`**, `stats` JSON, **`rarity`**/**`color`**;
+  stable ids) and `weapons`
+  (`name`, `type` `bullet`/`rocket`, **`price`**, `stats` JSON, **`rarity`**/**`color`**; stable ids), seeded
+  from a shared snapshot
   (`server/src/catalog_seed.js`). **`price`** (credits, hangar shop) defaults to **0** until real prices
-  are set. **The client assembles all ships from these.**
+  are set. **`rarity`** (`trash`/`common`/`rare`) + **`color`** (hex; migration 020, Postgres bootstrap
+  parity) are derived in the seed (see Ship model → Rarity + color) and drive the client's drop glow +
+  pickup-log tint. **The client assembles all ships from these.**
 - **`player_ships`:** ships a player owns; exactly one `is_active` goes into battle. `loadout` JSON
   overrides `mounts` (empty ⇒ the ship's default weapons), `components` JSON overrides the ship's
   hull/engine (null ⇒ ship defaults), `meta` JSON for the future. A new player auto-gets a default
@@ -923,10 +1286,15 @@ first translation). See DECISIONS §10.
   `POST /api/perf` (client perf samples from the `?dev` monitor — write-only diagnostic telemetry).
 - **Admin dashboard (`GET /admin`, `server/src/admin.js`):** a private, **server-rendered** HTML page
   listing every player (id short, username, email, email_verified, created_at, last_seen,
-  current_progress, credits, games_played, referrer) plus per-player aggregates from `games` (total time
-  played, total kills, total earned), one aggregated query `players LEFT JOIN games GROUP BY player`
-  ordered `last_seen DESC`, hard-capped at **1000 rows** — via the `getAdminPlayers` datastore fn (both
-  backends; Postgres coerces the BIGINT `SUM`s with `Number()` and `email_verified` with `!!Number()`).
+  current_progress, credits, games_played, referrer, **device**) plus per-player aggregates from `games`
+  (total time played, total kills, total earned), one aggregated query `players LEFT JOIN games GROUP BY
+  player` ordered `last_seen DESC`, hard-capped at **1000 rows** — via the `getAdminPlayers` datastore fn
+  (both backends; Postgres coerces the BIGINT `SUM`s with `Number()` and `email_verified` with
+  `!!Number()`). The **device** column (last column) is a best-effort `Browser · Device/OS` label composed
+  from `user_agent` + `device_model` by `deviceLabel(ua, model)` at render time: `Browser · Model` (known
+  device code → marketing name via the curated `DEVICE_NAMES` map, else the raw code) → `Browser · OS` →
+  `Browser` → `OS` → the raw UA (truncated) → blank, HTML-escaped, with the full raw UA on `title` hover
+  (`parseBrowser`/`parseOS` are hand-rolled regexes, no npm dependency — DECISIONS §56).
   Client-side click-to-sort per column (inline JS); no pagination/search/export. Protected by **HTTP
   Basic Auth** (`ADMIN_USER` / `ADMIN_PASSWORD` from the server `.env`, compared with
   `crypto.timingSafeEqual`); **404 (disabled) when either env var is unset**, so it's never wide open on
@@ -999,7 +1367,7 @@ first translation). See DECISIONS §10.
     GPU-cost proxy). On software GL the full-mode `render` bucket rasterizes on the CPU and is noisy, so the
     tight 2%-sensitive signal is **`sim`-mode `js.update`**. If either build lacks `window.__bench` it prints
     `gate inactive` and exits 0. **CPU-only** — the GPU/fill-rate half stays with real-device `?dev`. Documented (not CI-wired) as the pipeline PERF A/B stage in
-    `docs/plans/multi-agent-pipeline.md`. See DECISIONS §43 + `client/bench/README.md`.
+    `docs/plans/multi-agent-pipeline.md`. See DECISIONS §58 + `client/bench/README.md`.
 
 ### Accounts / authentication (DECISIONS §11)
 - **Anonymous-first, optional account.** Players keep the localStorage UUID and auto-register as
@@ -1120,7 +1488,8 @@ first translation). See DECISIONS §10.
 - **How to build it:** `npm run build:itch` (root, `scripts/build-itch.mjs`, no new deps — system `zip`).
   It stages `index.html` + `styles.css` + `favicon.svg` + `src/` + `locales/` + `assets/` from `client/`
   (index.html at the ZIP root), excludes `*.test.js`/`node_modules`/`.DS_Store`, bakes the prod `API_BASE`
-  into the staged `src/api-base.js`, and zips → **`dist/vega-sentinels-itch.zip`** (gitignored). It asserts
+  into the staged `src/api-base.js`, **regenerates the staged `src/credits-data.js` from `CREDITS.md`** (so
+  the export can't carry stale attributions), and zips → **`dist/vega-sentinels-itch.zip`** (gitignored). It asserts
   ≤1000 files / ≤500 MB and prints the file count + sizes. **Manual, not wired into CI.** Upload: itch.io
   project → Kind = HTML → upload the ZIP → tick "This file will be played in the browser" → set the embed
   viewport → save. itch limits: ≤1000 files, ≤500 MB extracted, ≤200 MB/file.
@@ -1188,7 +1557,11 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   (backend identity/banking/progression + funnel telemetry: `fetchJson`/`bankRun`/`track`/
   `currentLevelLabel`/`unlockNextLevel`/`depositLoot`), `sim.js` (the per-frame `update(dt)` + `levelRunner` + wing-bank +
   soft-boundary warp/OOB warning + music routing `refreshMusic` + pause `setPaused`/`togglePause`/
-  `autoPauseOnBlur` + the `reset` restart), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
+  `autoPauseOnBlur` + the `reset` restart), `spawn-timing.js` (the pure enemy-spawn stagger gate
+  `stepSpawnGate`/`nextSpawnDelay`, unit-tested; driven by `levelRunner`), `level-sim.js` (a pure headless
+  replay of the staggered level runner + the `isLastKillDrop` reward-drop predicate: `levelEnemyTotal`/
+  `simulateLevel`, unit-tested — proves the killed/total counter reaches `enemyTotal` and the drop fires on
+  the last kill), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
 - **Between-battles UI:** `shop.js` (hangar shop + stash + live ship-stats bar; a leaf the Main Window
   calls into), `settings.js` (audio-settings gear modal + graphics-quality picker + slide-to-confirm
   progress reset; a leaf whose only outward export is `localizeSettings`), `mainwindow.js` (the Main Window
@@ -1208,7 +1581,8 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
 - **Client logic** — `client/src/*.test.js`: drive derivation (engine + mass, incl. the grab slot + the
   mass-neutral 48+2=50 baseline), balance, repair-drone
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), **loot drops**
-  (`drops.test.js`: `pullSpeed` anchor cases + weight fallback, range = strength, `pickLoot` only draws
+  (`drops.test.js`: `pullSpeed` distance-aware anchors + weight fallback, `field`/emergent-`range` cutoff
+  boundary (range(20)/range(10)=√2), `pickLoot` only draws
   engine/thruster/weapon ids — **never the hull**), steering math,
   i18n (`t()` resolution/fallback/interpolation, language resolution order, browser-lang mapping), and
   **audio settings** (`clamp01`, `loadAudioSettings`/`saveAudioSettings` round-trip + defaults + garbage
@@ -1257,7 +1631,10 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   persist to `localStorage`; the gear hides during a live fight), **ship-bank** (the player rolls into a turn,
   capped ≤20°, eases back to level on release, opposite turns bank opposite ways, enemies have a bank group),
   and **reset-progress** (the settings modal fits the viewport with no internal scroll; the slide-to-confirm
-  arms only on a near-full drag and opens the confirm dialog; Cancel snaps it back; Confirm POSTs `/reset`).
+  arms only on a near-full drag and opens the confirm dialog; Cancel snaps it back; Confirm POSTs `/reset`),
+  and **triple-spiral-rocket** (firing the id-11 spiral weapon spawns exactly 1 invisible leader + 3 visible
+  warheads into the `rockets` pool, and the whole volley drains to 0 after homing + detonation — the leader
+  self-removes once its last child is gone, no leaked entries).
   Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`. A stable, growing suite for

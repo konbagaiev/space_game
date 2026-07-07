@@ -10,8 +10,8 @@ const HULL = {
   medium: { weight: 60, durability: 150 },
 };
 const ENGINE = {
-  basic: { weight: 10, power: 10 },
-  scout: { weight: 6,  power: 12.6 },
+  basic: { weight: 10, power: 15 },
+  scout: { weight: 6,  power: 19 },
 };
 const THR = {
   basic: { weight: 4, power: 2.0 },
@@ -42,7 +42,7 @@ test('shipMass with no mounts = hull + engine + thruster only', () => {
 test('deriveDrive: at the reference mass, stats equal the engine/thruster power', () => {
   const s = deriveDrive(playerShip());
   assert.equal(s.mass, REFERENCE_MASS);
-  assert.equal(s.acceleration, 10);  // engine.power, massFactor = 1
+  assert.equal(s.acceleration, 15);  // engine.power, massFactor = 1
   assert.equal(s.turnRate, 2.0);     // thruster.power, massFactor = 1
 });
 

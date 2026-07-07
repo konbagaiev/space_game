@@ -61,13 +61,16 @@ zero-downtime-deploys to vega.tenony.com.
 ```
 intake → worktree → planner(questions) → ASK MAINTAINER → planner(plan)
        → [critic ⇄ planner]×≤5 (target ≤2) → APPROVE
+       → REVIEW GATE (maintainer approve / request-changes / stop)
        → implementer → [reviewer ⇄ implementer]×≤3 → PASS
+       → HUMAN CODE REVIEW (maintainer diff walkthrough → approve / request-changes)
        → PERF A/B GATE (node client/bench/run.mjs; A=merge-base, B=worktree)
-       → retro (metrics + satisfaction) → deploy? → self-improve
+       → retro (metrics) → deploy? → DEPLOY/park → LIVE TEST → satisfaction + self-improve
+       → persist run record (docs/pipeline-runs.jsonl)
 ```
 
-**PERF A/B GATE (after reviewer PASS, before retro).** Catches a >2% per-frame **CPU** regression before it
-lands (DECISIONS §43). The orchestrator: computes the **merge-base** of the worktree branch vs `main`;
+**PERF A/B GATE (after human review, before retro).** Catches a >2% per-frame **CPU** regression before it
+lands (DECISIONS §58). The orchestrator: computes the **merge-base** of the worktree branch vs `main`;
 materializes build **A** from that merge-base (`git worktree add` at the merge-base commit, or `git archive`
 to a temp dir) and sets `BENCH_A_DIR` = that build's `client/` and `BENCH_B_DIR` = the worktree `client/`;
 runs `node client/bench/run.mjs` from the worktree. Then:
@@ -82,6 +85,28 @@ runs `node client/bench/run.mjs` from the worktree. Then:
 It is **CPU-only** (the `js.*` buckets); a green gate is not "no weak-phone regression" — the GPU/fill-rate
 half stays with real-device `?dev` (§23). It is a **documented stage the orchestrator runs**, not a GitHub
 Actions job.
+
+**Agent feedback comes *after* a live test, not before.** Passing automated suites does not prove the
+feature works for a human on a real device (esp. touch/feel/visual changes). So the retro asks only the
+**deploy** question; the feature is then deployed (or built for a parked worktree) and **exercised live**
+— maintainer-manual on a device, or agent-driven via Claude-in-Chrome / a local+tunnel build — against a
+concrete checklist derived from the acceptance criteria. A live-test failure the automated tests missed is
+itself the most valuable self-improve signal. Only after the live test is settled does the orchestrator
+collect per-agent satisfaction and append learned guidance.
+
+**Review gate (before implementation).** After the critic approves, the maintainer sees a compact digest —
+what the critic caught & how it was resolved, the files that will change, the tests planned, and any open
+decisions — and chooses **approve / request-changes / stop**. This is the one human-in-the-loop interrupt,
+placed on the least-reversible step (implementation + deploy) per the "don't interrupt on reversible steps"
+rule; earlier stages (discovery questions) already have their own asks. "Request-changes" loops
+planner→critic→gate; "stop" parks or abandons the run.
+
+**Human code review (after the agent).** After the `code-reviewer` agent returns PASS, the maintainer
+reviews the actual diff before commit (Stage 6.5, every run). This is **not** a correctness re-check — the
+agent and the test suite already did that — its purpose is a final human sign-off and, chiefly, to keep the
+maintainer's mental model of the codebase current. The orchestrator gives a **guided walkthrough** (per
+changed file: what changed, why, how it fits the architecture, with `file:line` refs) **and shows the
+diff**, then asks approve / request-changes. "Request-changes" loops implementer→reviewer→walkthrough.
 
 - **Critic loop:** max 5 rounds; aim for ≤2. At 5 without APPROVE → **stop and escalate** to the
   maintainer with the outstanding blockers.
@@ -101,10 +126,57 @@ The orchestrator counts, and at the end flags when a count suggests an agent nee
 | Reviewer | **>1** review round | implementer missed rubric items, or reviewer's rubric is vague |
 | Perf gate | `FLAT` / `REGRESSION(bucket, Δ%)` / `inactive` | a REGRESSION the maintainer accepted may signal a perf-blind implementer or plan |
 
-After PASS the orchestrator: shows what was built + test status + these metrics, asks **deploy y/n**, and
-asks **satisfaction per agent**. Any dissatisfaction or flag → capture the concrete gripe and append a
-dated note to that agent's `## Learned guidance` section (and a memory `feedback` note). The agents'
+After PASS the orchestrator: shows what was built + test status + these metrics, asks **deploy y/n**,
+deploys (or parks), runs a **live test** of the result, and *then* asks **satisfaction per agent** —
+informed by how the feature actually behaved live. Any dissatisfaction, flag, or live-test failure →
+capture the concrete gripe and append a dated note to that agent's `## Learned guidance` section (and a
+memory `feedback` note). The agents'
 rubrics thus grow from *real* feedback, not speculation (DECISIONS §30).
+
+Every run is also persisted as one line in **`docs/pipeline-runs.jsonl`** (committed) — per-agent
+tokens/tool-calls/time, the counters, critic/reviewer findings, the review-gate decision, and the
+live-test outcome. See "Analyzing runs" below. (DECISIONS §55: a committed JSONL journal, not an
+observability platform.)
+
+## Analyzing runs
+
+`docs/pipeline-runs.jsonl` is the longitudinal record. Rates are **derived at query time** (not stored),
+so definitions can evolve without a migration. Full schema + a worked example:
+`docs/plans/pipeline-review-gate-and-run-log.md`.
+
+Key metrics:
+- **Critic catch rate** — runs with ≥1 `critic_findings` ÷ total. (Is the critic earning its slot?)
+- **Reviewer catch rate** — runs with `reviewRounds > 0` ÷ total.
+- **Escaped-defect rate** — runs with non-empty `live_test.escaped_defects` ÷ deployed+live-tested runs.
+  **The headline** — a bug that reached the live test means critic *and* reviewer both missed it.
+- **Planner miss rate** — runs with `plannerRevisions > 1` OR `scopeGrewInDiscovery` ÷ total.
+- **Cost per feature** — sum of `agents.*.tokens`, split by agent, trended over time.
+
+```bash
+# runs, critic catch count, total escaped defects
+jq -s '{runs: length,
+        critic_caught: (map(select(.critic_findings|length>0))|length),
+        escaped: (map(.live_test.escaped_defects|length)|add)}' docs/pipeline-runs.jsonl
+
+# tokens per agent, summed across all runs
+jq -s 'map(.agents|to_entries[])|group_by(.key)
+       |map({agent: .[0].key, tokens: (map(.value.tokens)|add)})' docs/pipeline-runs.jsonl
+```
+
+```sql
+-- DuckDB: one row per run, newest first (agents is inferred as a fixed STRUCT)
+SELECT date, id, counters.criticRounds, counters.reviewRounds,
+       agents.planner.tokens + agents.critic.tokens
+     + agents.implementer.tokens + agents.reviewer.tokens AS total_tokens,
+       len(live_test.escaped_defects) AS escaped
+FROM read_json_auto('docs/pipeline-runs.jsonl')
+ORDER BY date DESC;
+```
+(The `jq` recipes are verified against the seed row; the DuckDB one is a starting point — adjust to your
+DuckDB version.)
+
+Note: `duration_ms` is the agent's wall-clock **including** orchestrator pauses between `SendMessage`s — a
+good relative cost signal, not pure model latency (that needs the OTel escape hatch, §55). `tokens` is exact.
 
 ## Initial code-review rubric (grows over time)
 

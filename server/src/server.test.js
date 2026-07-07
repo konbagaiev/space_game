@@ -15,6 +15,7 @@ const { createApp } = await import('./server.js');
 const { outbox } = await import('./ses.js');
 const { setResetToken, consumeResetToken } = await import('./datastore.js');
 const { hashToken } = await import('./auth.js');
+const { deviceLabel } = await import('./admin.js');
 const app = await createApp();
 // The same suite runs against either backend (the backend is chosen by DATABASE_URL in datastore.js).
 // SQLite uses a throwaway temp file (fresh every run); Postgres is a persistent server, so wipe the
@@ -322,7 +323,14 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.modelUrl, 'assets/ships/player_combat.f7171045.glb'); // real "Air & Space Vessel" model (textured)
   assert.equal(player.modelUrlHigh, 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb');
   assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8, grab: 29 }); // assembled from components (base grab included)
-  assert.deepEqual(player.stats.model, { yaw: 0, scale: 1.1 }); // model-presentation block (yaw/scale)
+  assert.equal(player.stats.model.yaw, 0);   // model-presentation block (yaw/scale)
+  assert.equal(player.stats.model.scale, 1.1);
+  // auto-fit OBB hitbox survives the JSON-blob round-trip (seedCatalog → fetch) on SQLite + Postgres
+  assert.ok(Array.isArray(player.stats.model.hitBoxes) && player.stats.model.hitBoxes.length >= 1, 'hitBoxes round-trips');
+  assert.ok(player.stats.model.hitBoxes.every((b) =>
+    ['c', 'h', 'u0', 'u1', 'u2'].every((k) => b[k] &&
+      ['x', 'y', 'z'].every((c) => typeof b[k][c] === 'number'))), 'hitBox fields are numbers');
+  assert.equal(typeof player.stats.model.broadR, 'number'); // enclosing broad-phase radius
   assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');
@@ -366,7 +374,7 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   assert.equal(light.stats.durability, 30); // fighter + rocketeer durability equalized to 30
   const scout = comps.find((c) => c.name === 'Scout engine');
   assert.equal(scout.type, 'engine');
-  assert.equal(scout.stats.power, 12.6); // acceleration (no turnPower — that's the thruster's job now)
+  assert.equal(scout.stats.power, 19); // acceleration (no turnPower — that's the thruster's job now)
   const scoutThr = comps.find((c) => c.name === 'Scout thrusters');
   assert.equal(scoutThr.type, 'thruster');
   assert.equal(scoutThr.stats.power, 1.6); // maneuverability (turn rate)
@@ -405,7 +413,8 @@ test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector bo
 test('catalog: weapons are seeded with type bullet/rocket', async () => {
   const weapons = await getJson('/api/weapons');
   // 5 base (ids 1–5) + 3 player-shop ladder weapons (Heavy cannon 6, Heavy Machine Gun 7, Heavy rocket 8)
-  assert.equal(weapons.length, 10);
+  // + 2 enemy weapons (ids 9–10) + Triple spiral rocket (11)
+  assert.equal(weapons.length, 11);
   const types = new Set(weapons.map((w) => w.type));
   assert.deepEqual([...types].sort(), ['bullet', 'rocket']);
   const basic = weapons.find((w) => w.name === 'Basic kinetic');
@@ -427,6 +436,24 @@ test('catalog: weapons are seeded with type bullet/rocket', async () => {
   assert.equal(rocket.stats.power, 60);
   assert.equal(rocket.stats.health, 10);  // HP, reduced by a bullet's damage
   assert.equal(rocket.stats.maxRange, 150);
+});
+
+test('catalog: components + weapons carry a rarity tier + matching hex color', async () => {
+  const RARITY_COLOR = { trash: '#ffffff', common: '#59e0a0', rare: '#0000ff' };
+  const comps = await getJson('/api/components');
+  const weapons = await getJson('/api/weapons');
+  // every row has a valid rarity and a color that matches its tier
+  for (const row of [...comps, ...weapons]) {
+    assert.ok(['trash', 'common', 'rare'].includes(row.rarity), `${row.name}: rarity ${row.rarity}`);
+    assert.equal(row.color, RARITY_COLOR[row.rarity], `${row.name}: color for ${row.rarity}`);
+  }
+  const byId = (arr, id) => arr.find((r) => r.id === id);
+  // spot cases (derived rule: shop-available → common; enemy/price-0 → trash; explicit override → rare)
+  assert.deepEqual({ rarity: byId(weapons, 5).rarity, color: byId(weapons, 5).color }, { rarity: 'common', color: '#59e0a0' }); // Machine Gun
+  assert.deepEqual({ rarity: byId(weapons, 11).rarity, color: byId(weapons, 11).color }, { rarity: 'rare', color: '#0000ff' }); // Triple spiral rocket (override)
+  assert.deepEqual({ rarity: byId(weapons, 9).rarity, color: byId(weapons, 9).color }, { rarity: 'trash', color: '#ffffff' }); // Pirate machine gun (buyable:false)
+  assert.deepEqual({ rarity: byId(comps, 12).rarity, color: byId(comps, 12).color }, { rarity: 'common', color: '#59e0a0' }); // Repair drone
+  assert.deepEqual({ rarity: byId(comps, 22).rarity, color: byId(comps, 22).color }, { rarity: 'trash', color: '#ffffff' }); // Pirate hull (buyable:false)
 });
 
 test('maps: home-system descriptor is served', async () => {
@@ -975,6 +1002,51 @@ test('referrer: auto-register (active-ship) creates the player with no referrer'
   const html = await (await get('/admin', adminAuth)).text();
   // the row exists (id shown, truncated to 8 chars) but carries no referrer text
   assert.ok(html.includes('notaref'), 'the auto-registered player shows up');
+});
+
+// ---------- Admin "device" column (docs/plans/2026-07-06-2154-admin-device-column.md) ----------
+
+const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
+
+test('deviceLabel: parse ladder (browser · model → OS → raw UA → blank), never throws', () => {
+  // Android Chrome + a known device code → marketing name
+  assert.equal(deviceLabel(ANDROID_UA, 'SM-A037F'), 'Chrome · Galaxy A03s');
+  // Android Chrome + an unknown code → raw-code fallback
+  assert.equal(deviceLabel(ANDROID_UA, 'SM-ZZZZ'), 'Chrome · SM-ZZZZ');
+  // Android Chrome + no model hint → OS from the UA
+  assert.equal(deviceLabel(ANDROID_UA, null), 'Chrome · Android 10');
+  // Desktop Chrome/Windows (no model)
+  assert.equal(deviceLabel(DESKTOP_UA, null), 'Chrome · Windows');
+  // iPhone Safari with an OS version
+  assert.equal(deviceLabel(IPHONE_UA, null), 'Safari · iOS 17.4');
+  // Empty/junk → never throws, returns a string
+  assert.equal(deviceLabel('', null), '');
+  assert.equal(deviceLabel('!!!garbage!!!', null), '!!!garbage!!!');
+});
+
+test('device: captured at boot register + rendered; latest-wins overwrites the UA', async () => {
+  // 1) first boot: Android + model hint (quoted, as browsers send it) → best-case label
+  await post('/api/players/register', { playerId: 'devx' }, { 'user-agent': ANDROID_UA, 'sec-ch-ua-model': '"SM-A037F"' });
+  let html = await (await get('/admin', adminAuth)).text();
+  assert.ok(html.includes('Chrome · Galaxy A03s'), 'renders the best-case browser · model label');
+  // 2) latest-wins: same player boots on desktop (no model hint) → user_agent overwritten while
+  // device_model is preserved by COALESCE. Prove the UA was overwritten via the cell title= (which
+  // carries the raw UA). The label still reads the preserved model — that's the documented behavior.
+  await post('/api/players/register', { playerId: 'devx' }, { 'user-agent': DESKTOP_UA });
+  html = await (await get('/admin', adminAuth)).text();
+  assert.ok(html.includes(DESKTOP_UA), 'user_agent overwritten latest-wins (raw UA in the cell title)');
+});
+
+test('device: anonymous auto-register (no device headers) → empty device cell, no crash', async () => {
+  await getJson('/api/players/notdev/active-ship'); // auto-registers with no device info
+  const r = await get('/admin', adminAuth);
+  assert.equal(r.status, 200, 'admin renders fine with a null-UA player');
+  const html = await r.text();
+  const row = html.split('<tr>').find((rr) => rr.includes('notdev'));
+  assert.ok(row, 'the auto-registered player shows up');
+  assert.ok(row.includes('class="device" title=""'), 'its device cell is empty (null UA)');
 });
 
 test('admin: aggregates sum kills/time/earned across a player\'s games', async () => {

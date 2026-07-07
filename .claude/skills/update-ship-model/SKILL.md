@@ -66,6 +66,28 @@ rm -f client/assets/ships/<old_combat>.glb
 cp assets-dist/<new_combat>.glb client/assets/ships/
 ```
 
+### 5b. Regenerate the collision hitbox
+The ship's `model.hitBoxes` / `model.broadR` (the per-part OBB collision hull) are auto-fit from the
+combat glb. After the new glb is in `client/assets/ships/` (step 5), regenerate them so collision follows
+the new/changed shape:
+```bash
+npm install                 # one-time: pulls vhacd-js (build-time-only convex-decomposition dep)
+npm run assets:hitboxes     # decomposes the glb (V-HACD, memory-capped) → one PCA box per part into catalog_seed.js (idempotent, round-trip verified)
+```
+Re-run whenever the model, `yaw`, or `scaleMul` changes. Eyeball the fit in-game with the dev-only
+`?hitboxes` wireframe overlay. (Primitive/un-modeled ships have none and use the legacy single sphere.)
+
+**Check the bullet-plane coverage report (top-down aim).** `assets:hitboxes` prints, per ship, how many
+hitboxes the top-down bullet plane crosses at the current `model.lift` — e.g. `· plane y=0 35/48 (lift 0.2)`
+— and a `⚠ up to N at lift≈L` when raising/lowering the model would seat ≥2 more boxes on the plane. The
+game is top-down and every bullet flies in one fixed horizontal plane (`state.js` `BULLET_PLANE_Y`), so a
+model whose hull sits off it is partly **see-through from above** — centre-aimed shots pass over/under it.
+If a ship is flagged, set/adjust its **`stats.model.lift`** (a signed group-local Y offset that raises the
+visual model *and* its hitboxes together; positive = up, negative = down) toward the suggested value, then
+re-run to confirm the count rose. `lift` is a **judgement call**, not an auto-apply: pushing to the
+absolute max can float the model noticeably, so pick the smallest offset that seats the hull and confirm it
+looks right in-game with `?hitboxes`. See DECISIONS §47 + `docs/SUMMARY.md`.
+
 ### 6. Drift-check guard
 ```bash
 npm run assets:check    # every model_url* + SOUNDS url in the seed must exist on S3 — must say OK
@@ -122,5 +144,6 @@ was already redeployed in step 10.) See DECISIONS §37.
 
 ## Checklist
 S3 pushed ✅ · old S3 objects deleted (if replacement) ✅ · catalog wired ✅ · local files refreshed ✅ ·
-`assets:check` OK ✅ · **local server restarted** ✅ · CREDITS confirmed ✅ · docs + commit + deploy ✅ ·
+**hitboxes regenerated (`assets:hitboxes`)** ✅ · `assets:check` OK ✅ · **local server restarted** ✅ ·
+CREDITS confirmed ✅ · docs + commit + deploy ✅ ·
 **itch re-published (`/publish-itch`)** ✅

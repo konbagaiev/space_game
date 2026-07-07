@@ -1,10 +1,9 @@
-// Welcome screen (pick a ship → take off) + the i18n UI glue (apply [data-i18n] chrome, the EN/RU lang
+// Welcome screen (greeting + intro → take off) + the i18n UI glue (apply [data-i18n] chrome, the EN/RU lang
 // switch, runtime language change) + the mobile fullscreen helper. Part of the between-battles UI cycle:
-// showWelcome renders the account bar (account), setLanguage re-localizes the settings gear (settings) and
-// re-renders the ship cards; take-off starts a run via reset (sim). Exports: showWelcome (account +
-// bootstrap), applyTranslations (bootstrap), requestFullscreen (mainwindow take-off flows).
-import { G, CATALOG } from './state.js';
-import { cssColor } from './format.js';
+// showWelcome renders the account bar (account) and starts the staged L1 intro reveal, setLanguage
+// re-localizes the chrome (settings gear, etc.); take-off starts a run via reset (sim). Exports:
+// showWelcome (account + bootstrap), applyTranslations (bootstrap), requestFullscreen (mainwindow take-off flows).
+import { G } from './state.js';
 import { t, loadLanguage, getLanguage, SUPPORTED } from './i18n.js';
 import { fetchJson } from './net.js';
 import { API_BASE } from './api-base.js';
@@ -13,52 +12,56 @@ import { buildPlayerFor } from './ship-build.js';
 import { Device } from './device.js';
 import { renderAccountBar } from './account.js';
 import { localizeSettings } from './settings.js';
-
-// A ship's hull HP for the welcome card (resolved from its hull component).
-const shipHullHp = (ship) => CATALOG.components.get(ship.components?.hull)?.stats.durability ?? '?';
+import { localizeCredits } from './credits.js';
+import { typeText } from './typewriter.js';
 
 const welcomeEl = document.getElementById('welcome');
 let selectedShip = null;
+export let welcomeStaged = false; // a staged L1 welcome reveal is animating (read by ?debug __game)
+let welcomeCtl = null;            // active typewriter controller
+let welcomeGoTimer = 0;           // the +0.5s Take-off reveal timeout handle
 
-function mountSummary(stats) { // "2× gun · 2× rocket" from the ship's mounts
-  const count = (type) => stats.mounts.filter((m) => CATALOG.weapons.get(m.weapon)?.type === type).length;
-  const parts = [];
-  if (count('bullet')) parts.push(t('ui.mount.gun', { n: count('bullet') }));
-  if (count('rocket')) parts.push(t('ui.mount.rocket', { n: count('rocket') }));
-  return parts.join(' · ') || t('ui.mount.unarmed');
+function clearWelcomeReveal() {
+  if (welcomeCtl) { welcomeCtl.cancel(); welcomeCtl = null; }
+  if (welcomeGoTimer) { clearTimeout(welcomeGoTimer); welcomeGoTimer = 0; }
 }
-let lastPlayerShips = []; // remembered so a language switch can re-render the (DB-sourced) cards
-function renderShipCards(playerShips) {
-  const wrap = document.getElementById('ship-choices');
-  wrap.innerHTML = '';
-  if (!selectedShip || !playerShips.includes(selectedShip)) selectedShip = playerShips[0] || null;
-  playerShips.forEach((s) => {
-    const card = document.createElement('div');
-    card.className = 'ship-card' + (s === selectedShip ? ' selected' : '');
-    card.innerHTML =
-      `<div class="ship-name"><span class="ship-dot" style="background:${cssColor(s.stats.color)}"></span>${shipName(s)}</div>` +
-      `<div class="ship-stat">${t('ui.card.hull', { hp: shipHullHp(s) })}</div>` +
-      `<div class="ship-stat">${t('ui.card.weapons', { summary: mountSummary(s.stats) })}</div>`;
-    card.addEventListener('click', () => {
-      selectedShip = s;
-      [...wrap.children].forEach((c, i) => c.classList.toggle('selected', playerShips[i] === s));
-    });
-    wrap.appendChild(card);
-  });
+// Show the fully-revealed welcome state at once (skip-on-tap + settle when setLanguage re-renders mid-type).
+function revealWelcomeNow() {
+  clearWelcomeReveal();
+  const intro = welcomeEl.querySelector('.intro');
+  if (intro) intro.textContent = t('ui.welcome.intro');
+  welcomeEl.classList.remove('welcome-hide-go');
+  welcomeStaged = false;
 }
+// Staged L1 reveal: greeting h1 shows immediately → `.intro` types ~5s → +0.5s Take-off fades in.
+function startWelcomeReveal() {
+  clearWelcomeReveal();
+  welcomeStaged = true;
+  const intro = welcomeEl.querySelector('.intro');
+  welcomeEl.classList.add('welcome-hide-go');
+  welcomeCtl = typeText(intro, t('ui.welcome.intro'), { total: 5000, onDone: () => {
+    welcomeGoTimer = setTimeout(() => {                    // Take-off 0.5s after the intro finishes
+      welcomeGoTimer = 0;
+      welcomeEl.classList.remove('welcome-hide-go');
+      welcomeStaged = false;
+    }, 500);
+  }});
+}
+// Tap the `.intro` while it's typing → skip to full + reveal Take-off at once. `.intro` is static
+// markup (client/index.html:40), never rebuilt (only its textContent changes), so bind once at module load.
+welcomeEl.querySelector('.intro').addEventListener('click', () => { if (welcomeStaged) revealWelcomeNow(); });
+
 export function showWelcome(playerShips) {
-  lastPlayerShips = playerShips;
-  renderShipCards(playerShips);
+  selectedShip = playerShips[0] || null; // L1 owns exactly one ship; take-off needs a non-null selection
   buildLangSwitch();
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   refreshMusic(); // menu → calmer hangar music
-  welcomeEl.style.display = 'flex';
+  welcomeEl.style.display = 'grid';
+  startWelcomeReveal();
 }
 
 // ---------- Localization (i18n) UI glue ----------
-// Resolve a ship's display name through i18n (key → translation → English fallback).
-function shipName(s) { return s.stats.nameKey ? t(s.stats.nameKey) : s.name; }
 // Apply every [data-i18n] element's text (or innerHTML for [data-i18n-html]) for the active language.
 // Also resolves [data-i18n-href] → href, so links (e.g. the locale-specific community group) follow
 // the active language like the rest of the i18n flow.
@@ -100,12 +103,13 @@ async function setLanguage(lang) {
   applyTranslations();
   setPaused(G.paused); // re-localize the pause button's aria-label/tooltip (JS-set, not data-i18n)
   localizeSettings(); // re-localize the settings gear + audio toggles
+  localizeCredits(); // re-render the credits panel if it's open (chrome labels change)
   buildLangSwitch();
-  if (lastPlayerShips.length) renderShipCards(lastPlayerShips); // re-render DB-sourced ship names
   if (G.playerId) fetch(API_BASE + `/api/players/${G.playerId}/language`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ language: getLanguage() }),
   }).catch(() => {}); // best-effort: persist the preference server-side
+  if (welcomeStaged) revealWelcomeNow(); // a language switch re-renders `.intro` (applyTranslations) — settle to full
 }
 // Go fullscreen so the mobile browser chrome (address bar) doesn't eat the screen — must run inside
 // the click gesture. Works on Android/iPad; silently ignored where unsupported (e.g. iPhone Safari).
@@ -125,6 +129,13 @@ function syncFsClass() {
 }
 document.addEventListener('fullscreenchange', syncFsClass);
 document.addEventListener('webkitfullscreenchange', syncFsClass);
+// Mobile browsers often DON'T deliver fullscreenchange while the tab is backgrounded, so after a
+// minimize→restore `body.fs` can be stale-true (document.fullscreenElement is null but the class stuck),
+// which hides the ⛶ button just when the player needs it. Re-sync whenever the page returns to the
+// foreground so the button reliably reappears.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncFsClass(); });
+window.addEventListener('pageshow', syncFsClass);
+window.addEventListener('focus', syncFsClass);
 syncFsClass(); // initial state
 
 // ---------- Take off ----------
