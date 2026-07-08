@@ -52,7 +52,10 @@ const FLAVORS = [
 // full descriptor the client plays directly. `sideMission: true` tells the client to bank-without-advance.
 // ONE shared world (map `home-system` holds all the set-pieces at fixed positions); a mission only changes
 // WHERE you fight — its `center` spawns the player + arena over the matching structure; the others are at
-// a distance. The mission centers match the set-piece positions in catalog_seed.js's `home-system`.
+// a distance. The mission centers match the set-piece positions in catalog_seed.js's `home-system`, EXCEPT
+// the freighter: its render position is intentionally offset +50 z (to -400) ahead of the mission center
+// (z -450) so the freighter + its ghost battle sit ahead of the player's forward-gliding spawn. The center
+// stays at -450 (balance-neutral: enemy/player spawns key off center, not the non-collidable freighter).
 export function generateMissions() {
   const phases = sideMissionPhases();
   const enemyTotal = enemyTotalFromPhases(phases);

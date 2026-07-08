@@ -843,6 +843,14 @@ export function reset() {
   for (const sp of setPieces) scene.remove(sp.obj);
   setPieces.length = 0;
   for (const spec of G.mapSetpieces) buildSetPiece(spec);
+  // Ambient distant ghost battle: shown in every mission EXCEPT the freighter escort (you're IN that fight
+  // there). Anchored at a fixed ABSOLUTE world point (default the freighter start -100,-450; see ghost-battle.js)
+  // — a distant landmark the player flies toward. Dynamic import → off the initial bundle + avoids a static
+  // sim.js↔world.js↔ghost-battle.js cycle; self-gates on tier/?debug/?bench. It adds its group to scene AND
+  // pushes a setPieces entry, so the teardown loop above removes it on the next reset (universal cleanup path).
+  if (G.activeMission?.title !== 'freighter') {
+    import('./ghost-battle.js').then((m) => m.buildGhostBattle()).catch(() => {}); // async; distant decor
+  }
   G.player.mesh.position.set(cx, BULLET_PLANE_Y, cz);
   G.player.heading = 0;                                  // forward = +Z (forwardVec(0) = (0,0,1))
   G.player.vel.set(0, 0, PLAYER_MAX_SPEED * 0.1);        // open the fight already gliding forward at 10% of top speed (3 u/s)

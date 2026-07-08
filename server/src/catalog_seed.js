@@ -600,7 +600,7 @@ export const MAPS = [
         // delivered effect config (palette + particle params) — omit to use the built-in fiery defaults;
         // this is the light extension point for future server-driven model effects (DECISIONS §38).
         {
-          type: 'freighter', pos: [-100, -48, -450], scale: 0.33, speed: 2,
+          type: 'freighter', pos: [-100, -48, -400], scale: 0.33, speed: 2,
           modelUrl: 'assets/ships/freighter_combat.ffdacc37.glb',
           yaw: 0, // nose already faces +Z (bridge-aft freighter); flip to Math.PI for a -Z export
           // exhaust: { palette: { hot: 0xfff1c0, mid: 0xff7a2a, end: 0x7a1208 }, count: 90, len: 48, size: 5, speed: 1.4 },

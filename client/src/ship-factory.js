@@ -50,7 +50,8 @@ export const SHIP_MODEL_LEN = 3.4; // auto-normalize a model's longest axis to ~
 // optionally recolored, and oriented. Falls back to the primitive on error.
 function applyShipModel(group, spec, color) {
   const cfg = (typeof spec === 'string') ? { url: spec } : spec;
-  const { url, yaw = 0, tint = true, scaleMul = 1, lift = 0, muzzle = null, exhaust = null } = cfg;
+  const { url, yaw = 0, tint = true, scaleMul = 1, lift = 0, muzzle = null, exhaust = null,
+    opacity = null, darken = 0 } = cfg; // opacity/darken: ghost-battle readability treatment (real ships pass neither)
   gltfLoader.load(url, (gltf) => {
     const model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
@@ -64,6 +65,20 @@ function applyShipModel(group, spec, color) {
         o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => m.color && m.color.set(color));
+      }
+    });
+    // Ghost-battle readability treatment: darken + fade + fog so the ghost skirmish reads as distant decor.
+    // Guarded by truthiness → real ships (which pass neither key) are byte-unaffected. Clones each material
+    // so the darken/opacity don't leak onto other instances sharing the glb's cached materials.
+    if (opacity != null || darken) model.traverse((o) => {
+      if (o.isMesh && o.material) {
+        o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => {
+          if (darken && m.color) m.color.multiplyScalar(darken);
+          if (opacity != null) { m.transparent = true; m.opacity = opacity; }
+          m.fog = true;
+        });
       }
     });
     const pivot = new THREE.Group(); // rotate the centered model without disturbing its centering
