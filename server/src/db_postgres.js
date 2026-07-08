@@ -188,6 +188,11 @@ export async function migrate() {
     -- idempotent so an existing DB created with the old 3-col PK migrates in place.
     ALTER TABLE sound_map DROP CONSTRAINT IF EXISTS sound_map_pkey;
     ALTER TABLE sound_map ADD CONSTRAINT sound_map_pkey PRIMARY KEY (entity, class, event, sound_key);
+    -- one-shot migration ledger (Postgres has no versioned migrations; this records applied one-offs).
+    CREATE TABLE IF NOT EXISTS migrations_pg (
+      name       TEXT   PRIMARY KEY,
+      applied_at BIGINT NOT NULL
+    );
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
@@ -232,6 +237,15 @@ export async function migrate() {
       `INSERT INTO levels (name, descriptor) VALUES ($1, $2::jsonb)
        ON CONFLICT (name) DO UPDATE SET descriptor = EXCLUDED.descriptor`,
       [l.name, JSON.stringify(l.descriptor)]);
+  }
+  // One-shot: intro "Level 0" progress shift (+1). Mirrors SQLite migration 022. ON CONFLICT DO NOTHING
+  // makes it run exactly once; RETURNING tells us whether this run is the one that claimed it. Runs AFTER
+  // the levels seed so the new final level (id 5) exists and the FK on current_progress validates.
+  const shift = await pool.query(
+    `INSERT INTO migrations_pg (name, applied_at) VALUES ('intro_level0_progress_shift', $1)
+     ON CONFLICT (name) DO NOTHING RETURNING name`, [Date.now()]);
+  if (shift.rows[0]) {
+    await pool.query('UPDATE players SET current_progress = current_progress + 1');
   }
   for (const s of (SOUNDS ?? [])) {
     await pool.query(

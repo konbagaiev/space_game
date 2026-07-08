@@ -383,9 +383,32 @@ export const SHIPS = [
 //   { allCleared: true }    — no enemies left (and the phase's `total` has all spawned)
 // A phase with `event: 'win'` ends the level with a victory overlay.
 export const LEVELS = [
-  // Level 1 — beginner-friendly: gentle ramp, no boss.
+  // Level 0 — the intro patrol. Gentle, non-skippable FIRST level for new players (the campaign's
+  // "Level 1"-"Level 4" moved down one id — see docs/plans/2026-07-08-2224-intro-first-level.md).
+  // Enemies warp in ONE AT A TIME (maxConcurrent 1) so it plays as a calm, recordable opener.
+  // No boss, no reward, no briefing. On first launch the client auto-launches this level straight into
+  // the fight (no welcome screen / Take-off) — see the client bootstrap change (main.js) in the plan.
   {
     name: 'level-1', descriptor: {
+      title: 'Level 0', map: 'home-system',
+      phases: [
+        {
+          name: 'wave-1', // three basic pirates, one at a time (kill one -> the next warps in)
+          spawn: { maxConcurrent: 1, total: 3, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
+          advanceWhen: { kills: 3 }
+        },
+        {
+          name: 'finale', // a single rocket pirate to close it out
+          spawn: { maxConcurrent: 1, total: 1, pool: [{ ship: 'basic rocket pirate', chance: 100 }] },
+          advanceWhen: { allCleared: true }
+        },
+        { name: 'victory', event: 'win', delay: 2, textKey: 'level.0.victory', text: 'First patrol clear, Sentinel.' },
+      ]
+    }
+  },
+  // Level 1 (old content, now id 2) — beginner-friendly: gentle ramp, no boss.
+  {
+    name: 'level-2', descriptor: {
       title: 'Level 1', map: 'home-system',
       lastKillDrop: { kind: 'weapon', refId: 5 },   // cosmetic reward drop on the last enemy (Machine Gun); server force-installs the real copy on victory
       phases: [
@@ -416,7 +439,7 @@ export const LEVELS = [
   // `briefing` is shown when the player unlocks this level (after clearing level 1); its `actions`
   // run server-side once, on advance (see advanceProgress). Here: swap the basic gun for a Machine Gun.
   {
-    name: 'level-2', descriptor: {
+    name: 'level-3', descriptor: {
       title: 'Level 2', map: 'home-system',
       lastKillDrop: { kind: 'component', refId: 12 }, // cosmetic reward drop on the last enemy (Repair drone)
       briefing: {
@@ -456,7 +479,7 @@ export const LEVELS = [
   // Level 3 — the full fight: waves of all three enemy types, then the Sector boss.
   // Briefing shown when the player reaches level 3 (after clearing level 2). Installs the repair drone.
   {
-    name: 'level-3', descriptor: {
+    name: 'level-4', descriptor: {
       title: 'Level 3', map: 'home-system',
       briefing: {
         textKey: 'level.3.briefing',
@@ -503,7 +526,7 @@ export const LEVELS = [
   // (`unlockShop` action — text-only otherwise). Clearly harder than L3: pirate gunners + more heavies,
   // higher kill thresholds, and the upgraded boss (two pirate MGs). Sets up L5 ("Storm the pirate base").
   {
-    name: 'level-4', descriptor: {
+    name: 'level-5', descriptor: {
       title: 'Level 4', map: 'home-system',
       briefing: {
         textKey: 'level.4.briefing',

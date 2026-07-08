@@ -2178,6 +2178,30 @@ conflict with the `?debug`/`?bench`-off runtime). **No new assets** (ghost ships
 set-piece), §43/§23 (gating), §58 (the bench harness the bootstrap reuses + the gate this self-skips).
 ---
 
+## 61. Intro "Level 0" via content-shift on stable seed names + one-shot `current_progress` +1, not a `sort_order` column or a full renumber
+
+Level order is `levels.id` (insertion order) with name-keyed upserts, so a new *first* level needs the
+lowest id. Rather than add a `sort_order` column (over-engineering, §30) or renumber every campaign title,
+we keep the seed names `level-1`..`level-4` (stable ids 1-4), shift their descriptor CONTENT down one, and
+append `level-5`. The campaign keeps its "Level 1"-"Level 4" labels/rewards/briefings intact (content
+travels with the descriptor); only new players see the "Level 0" intro. Existing players are bumped `+1`
+once (SQLite migration `022_intro_level0_shift.js`; a guarded `migrations_pg` one-shot on Postgres, run
+after the levels seed so the FK on `current_progress` validates) so nobody is shoved onto different content.
+The guard is load-bearing: Postgres has no versioned migrations, so a bare `+1` on every boot would keep
+incrementing each deploy — the `INSERT ... ON CONFLICT (name) DO NOTHING RETURNING name` sentinel makes it
+run exactly once. Trade-off: the intro is labeled "Level 0" (a prologue) rather than a renumbered "Level 1",
+accepted to avoid relabeling the whole campaign and touching every title/textKey. The intro also
+**auto-launches** on first load (no welcome screen / Take-off, gated to `level.name === 'level-1'`) so a
+brand-new player is dropped straight into the gentle fight; this skips the welcome take-off flow (default
+ship only, no picker — which the welcome screen no longer offers anyway).
+
+**§-number collision hazard (parallel-merge doc-conflict pattern):** on `main` the next free number was §60,
+but the **parked** branch `feature/2026-07-08-2007-level-0-intro-cutscene` already claims `## 60.` (the
+intro-cutscene decision). To avoid a collision when that branch later merges, this entry uses **§61**. If
+§61 is somehow taken by merge time, renumber to the next free slot; whoever merges second reconciles. Do not
+reuse §60.
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

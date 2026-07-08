@@ -39,7 +39,7 @@ function simulateKillsToClear(phases) {
   return kills;
 }
 
-const EXPECTED = { 'level-1': 14, 'level-2': 17, 'level-3': 21, 'level-4': 22 };
+const EXPECTED = { 'level-1': 4, 'level-2': 14, 'level-3': 17, 'level-4': 21, 'level-5': 22 };
 
 test('enemyTotalFromPhases: campaign totals match the anchors AND the sim oracle', () => {
   const byName = Object.fromEntries(LEVELS.map((l) => [l.name, l.descriptor]));

@@ -66,7 +66,7 @@ test('register: same id again is not new', async () => {
   assert.equal(j.isNew, false);
 });
 
-test('register: a new player starts at progress 1 (level-1 unlocked)', async () => {
+test('register: a new player starts at progress 1 (the intro / Level 0 unlocked)', async () => {
   const j = await (await post('/api/players/register', { playerId: 'prog-1' })).json();
   assert.equal(j.currentProgress, 1);
 });
@@ -92,13 +92,13 @@ test('language: defaults to en, can be set to ru, rejects unsupported, and is re
   assert.equal((await post('/api/players/lang-1/language', {})).status, 400);
 });
 
-test('progress: current level is level-1, and advancing unlocks the next levels', async () => {
-  // a fresh player is on level-1
+test('progress: current level is level-1 (the intro), and advancing unlocks the next levels', async () => {
+  // a fresh player is on level-1 (the intro / "Level 0")
   const lvl1 = await getJson('/api/players/prog-2/level');
   assert.equal(lvl1.name, 'level-1');
   assert.ok(lvl1.descriptor.phases, 'returns the full descriptor');
 
-  // clearing it unlocks level-2, then level-3
+  // clearing the intro unlocks level-2, then level-3
   const a1 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a1.advanced, true);
   assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-2');
@@ -107,19 +107,23 @@ test('progress: current level is level-1, and advancing unlocks the next levels'
   assert.equal(a2.advanced, true);
   assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-3');
 
-  // clearing level-3 advances into level-4
+  // clearing level-3 advances into level-4, then level-5 (the last)
   const a3 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a3.advanced, true);
   assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-4');
 
-  // already at the last level (level-4) → no-op
   const a4 = await (await post('/api/players/prog-2/advance', {})).json();
-  assert.equal(a4.advanced, false);
-  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-4');
+  assert.equal(a4.advanced, true);
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-5');
+
+  // already at the last level (level-5) → no-op
+  const a5 = await (await post('/api/players/prog-2/advance', {})).json();
+  assert.equal(a5.advanced, false);
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-5');
 
   // progress persists on re-register
   const reg = await (await post('/api/players/register', { playerId: 'prog-2' })).json();
-  assert.equal(reg.currentProgress, 4);
+  assert.equal(reg.currentProgress, 5);
 });
 
 test('reset: POST /reset wipes progress to the new-player baseline, keeps the account', async () => {
@@ -127,7 +131,7 @@ test('reset: POST /reset wipes progress to the new-player baseline, keeps the ac
   await post('/api/players/register', { playerId: 'reset-1' });
   await clearCampaign('reset-1'); // advance to the last level → unlocks the shop (shop_unlocked = 1)
   await post('/api/games', { playerId: 'reset-1', credits: 50, kills: 5, durationMs: 1000 }); // banks credits, games_played++
-  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-4');
+  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-5');
   assert.equal((await getJson('/api/players/reset-1/stash')).shopUnlocked, true); // shop is unlocked pre-reset
 
   const r = await post('/api/players/reset-1/reset', {});
@@ -155,13 +159,19 @@ test('reset: unknown player -> 404', async () => {
   assert.equal(r.status, 404);
 });
 
-test('briefing: advancing into level-2 returns its message and swaps the basic gun for the Machine Gun', async () => {
-  // a fresh player starts with the basic kinetic (weapon 1) as the gun
+test('briefing: the intro has none, then the shifted campaign chain swaps the gun for the Machine Gun', async () => {
+  // a fresh player starts on the intro (level-1) with the basic kinetic (weapon 1) as the gun
   const before = await getJson('/api/players/brief-1/active-ship');
   const gunBefore = before.loadout.mounts.find((m) => m.group === 'gun');
   assert.equal(gunBefore.weapon, 1); // Basic kinetic
 
-  // clearing level-1 advances to level-2 → runs its briefing (message + replaceWeapon action)
+  // 1st advance (intro id 1 → id 2 = old level-1 content): NO briefing yet, gun still the basic kinetic
+  const adv1 = await (await post('/api/players/brief-1/advance', {})).json();
+  assert.equal(adv1.advanced, true);
+  assert.equal(adv1.briefing, null, 'the intro has no briefing');
+  assert.equal((await getJson('/api/players/brief-1/active-ship')).loadout.mounts.find((m) => m.group === 'gun').weapon, 1);
+
+  // 2nd advance (id 2 → id 3): the Machine-Gun briefing (message + replaceWeapon action)
   const adv = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv.advanced, true);
   assert.equal(adv.briefing.textKey, 'level.2.briefing');
@@ -173,7 +183,7 @@ test('briefing: advancing into level-2 returns its message and swaps the basic g
   assert.equal(after.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3);
   assert.ok(!after.loadout.mounts.some((m) => m.weapon === 1), 'no basic kinetic remains');
 
-  // advancing to level-3 returns its briefing and installs the repair drone on the active ship
+  // 3rd advance (id 3 → id 4): the drone briefing installs the repair drone on the active ship
   const adv2 = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv2.advanced, true);
   assert.equal(adv2.briefing.textKey, 'level.3.briefing');
@@ -182,15 +192,15 @@ test('briefing: advancing into level-2 returns its message and swaps the basic g
   assert.equal(l3ship.components.hull, 1);    // existing slots untouched
   assert.equal(l3ship.components.engine, 5);
 
-  // advancing into level-4 returns its (text-only) briefing and OPENS THE SHOP (unlockShop action)
+  // 4th advance (id 4 → id 5, the last level): text-only briefing that OPENS THE SHOP (unlockShop action)
   const beforeShop = (await getJson('/api/players/brief-1/active-ship')).shopUnlocked;
-  assert.equal(beforeShop, false, 'shop still locked while on level-3');
+  assert.equal(beforeShop, false, 'shop still locked while on id 4');
   const adv3 = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv3.advanced, true);
   assert.equal(adv3.briefing.textKey, 'level.4.briefing');
-  assert.equal((await getJson('/api/players/brief-1/active-ship')).shopUnlocked, true, 'reaching level-4 unlocked the shop');
+  assert.equal((await getJson('/api/players/brief-1/active-ship')).shopUnlocked, true, 'reaching the last level unlocked the shop');
 
-  // already at the last level (level-4) → no advance, no briefing
+  // 5th advance (already at the last level, id 5) → no advance, no briefing
   const adv4 = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv4.advanced, false);
   assert.equal(adv4.briefing, null);
@@ -382,30 +392,45 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   assert.equal(medium.weight, 60);         // heavier hull -> sluggish via mass
 });
 
-test('levels: level-1 (easy, no boss), level-2 (medium boss), level-3 (Sector boss) are served', async () => {
+test('levels: intro Level 0 (no boss), then Level 1-4 served in order (content shifted down one id)', async () => {
+  // level-1 is now the INTRO ("Level 0"): 3 basic pirates one at a time → 1 rocket-pirate finale, no boss
   const l1 = await getJson('/api/levels/level-1');
   assert.equal(l1.descriptor.map, 'home-system');
-  assert.equal(l1.descriptor.phases[0].advanceWhen.kills, 6);              // gentle ramp
+  assert.equal(l1.descriptor.title, 'Level 0');
+  assert.equal(l1.descriptor.phases[0].advanceWhen.kills, 3);              // gentle: only 3 kills
   assert.equal(l1.descriptor.phases[0].spawn.pool[0].ship, 'Basic pirate ship'); // fighters only
+  assert.equal(l1.descriptor.phases[0].spawn.maxConcurrent, 1);           // one at a time
+  assert.equal(l1.descriptor.enemyTotal, 4);
   assert.equal(l1.descriptor.phases.at(-1).event, 'win');
-  assert.ok(!JSON.stringify(l1.descriptor).includes('first pirate boss'), 'level-1 has no boss');
+  assert.ok(!JSON.stringify(l1.descriptor).includes('first pirate boss'), 'the intro has no boss');
 
+  // level-2 is now old level-1 content ("Level 1"): rocketeer finale, no boss
   const l2 = await getJson('/api/levels/level-2');
-  assert.equal(l2.descriptor.phases.at(-2).spawn.pool[0].ship, 'pirate mini boss'); // the medium IS the boss
+  assert.equal(l2.descriptor.title, 'Level 1');
+  assert.equal(l2.descriptor.phases.at(-2).spawn.pool[0].ship, 'basic rocket pirate'); // rocketeer finale
+  assert.ok(!JSON.stringify(l2.descriptor).includes('pirate mini boss'), 'old level-1 has no boss');
 
+  // level-3 is now old level-2 content ("Level 2"): the medium IS the boss
   const l3 = await getJson('/api/levels/level-3');
-  assert.equal(l3.descriptor.phases.at(-2).spawn.pool[0].ship, 'first pirate boss');       // the Sector boss
+  assert.equal(l3.descriptor.title, 'Level 2');
+  assert.equal(l3.descriptor.phases.at(-2).spawn.pool[0].ship, 'pirate mini boss');
 
-  // level-4 ("Find the pirate base"): advanced-medium-pirate waves (8/16 kills), the Second Boss finale,
-  // and an unlockShop briefing (docs/plans/level-4-difficulty.md)
+  // level-4 is now old level-3 content ("Level 3"): the Sector boss
   const l4 = await getJson('/api/levels/level-4');
-  assert.equal(l4.descriptor.briefing.textKey, 'level.4.briefing');
-  assert.ok(l4.descriptor.briefing.actions.some((a) => a.type === 'unlockShop'), 'L4 briefing opens the shop');
-  assert.ok(l4.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'pirate gunner'), 'L4 wave-1 has pirate gunners');
-  assert.ok(l4.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'advanced medium pirate'), 'L4 waves use the advanced medium pirate');
-  assert.equal(l4.descriptor.phases[0].advanceWhen.kills, 8);
-  assert.equal(l4.descriptor.phases.at(-2).spawn.pool[0].ship, 'second pirate boss'); // the Second Boss finale
-  assert.equal(l4.descriptor.phases.at(-1).textKey, 'level.4.victory');
+  assert.equal(l4.descriptor.title, 'Level 3');
+  assert.equal(l4.descriptor.phases.at(-2).spawn.pool[0].ship, 'first pirate boss');
+
+  // level-5 is now old level-4 content ("Level 4", "Find the pirate base"): advanced-medium-pirate waves
+  // (8/16 kills), the Second Boss finale, and an unlockShop briefing (docs/plans/level-4-difficulty.md)
+  const l5 = await getJson('/api/levels/level-5');
+  assert.equal(l5.descriptor.title, 'Level 4');
+  assert.equal(l5.descriptor.briefing.textKey, 'level.4.briefing');
+  assert.ok(l5.descriptor.briefing.actions.some((a) => a.type === 'unlockShop'), 'the last level opens the shop');
+  assert.ok(l5.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'pirate gunner'), 'wave-1 has pirate gunners');
+  assert.ok(l5.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'advanced medium pirate'), 'waves use the advanced medium pirate');
+  assert.equal(l5.descriptor.phases[0].advanceWhen.kills, 8);
+  assert.equal(l5.descriptor.phases.at(-2).spawn.pool[0].ship, 'second pirate boss'); // the Second Boss finale
+  assert.equal(l5.descriptor.phases.at(-1).textKey, 'level.4.victory');
 
   assert.equal((await fetch(base + '/api/levels/nope')).status, 404);
 });

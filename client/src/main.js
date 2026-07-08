@@ -867,10 +867,19 @@ async function bootstrap() {
     camera.position.copy(G.player.mesh.position).add(camOffset);
     camera.lookAt(G.player.mesh.position);
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
-    // Homepage reflects the current level: if it has a briefing (level 2+), land on the Hangar showing
-    // it; otherwise (level 1 / new player) show the welcome screen (greeting + intro).
-    if (CATALOG.level.briefing) showMain(CATALOG.level.briefing);
-    else showWelcome(playerShips);
+    // The intro ("Level 0", seed name 'level-1', served only while current_progress === 1) has NO menu
+    // gate: drop the new player straight into the fight — ship visible + controllable at once, no welcome
+    // screen, no Take-off. Everything else lands as before (Level 1 → welcome, level 2+ → Main Window
+    // briefing). The default player ship was already built above (buildPlayerFor), so we just start the sim.
+    if (level.name === 'level-1') {
+      document.body.classList.remove('menu'); // ensure the in-game HUD (never a menu) — safety no-op
+      G.gameStarted = true;
+      reset(); // position the player + start the level (mirrors welcome.js takeOff, minus the welcome UI)
+    } else if (CATALOG.level.briefing) {
+      showMain(CATALOG.level.briefing);
+    } else {
+      showWelcome(playerShips);
+    }
     animate(); // render loop (idle until Take off)
     // Warm shaders a couple frames in — OFF the critical path (a synchronous compile here would block
     // first paint / startup readiness). The menu renders meanwhile, and the player ship + sky already

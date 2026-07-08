@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-08 (**Ambient ghost battle** — a clearly visible looping recorded skirmish (near-opaque, full-color, below-plane (`y≈−60`) ghost ships with births+deaths + bullets, up to 16 slots) plays as a distant landmark at a FIXED ABSOLUTE world point (default `(−100,−450)`) in every mission EXCEPT the freighter escort; a committed transform-replay track (re-centered by a single fixed offset = the player's mean path, so the player flies FREELY, no birth/death jumps) replayed as a dumb lerped animation that never runs a second sim. Built in `sim.js reset()` gated `activeMission?.title !== 'freighter'`; self-skips under `?debug` AND `?bench`. Canonical track is a REAL battle recorded in-game via a `?dev` "Backdrop" panel (Start/Stop-record + REC readout + live Depth/Scale/Opacity/Anchor X/Anchor Z sliders, persisted `ghostTune`); synthetic `gen-backdrop.mjs` is a bootstrap. Tier-gated CONCURRENT ceiling (High 8 / Balance 4 / Performance off). Freighter render pos nudged +50 z to -400. See the ghost-battle subsection. Previously: **L2/L3 difficulty ease** — max simultaneous enemies in the non-boss spawning phases of **level-2 and level-3** lowered from 4 to **3 at a time** (`maxConcurrent`), matching level-1; `enemyTotal` (17/21) + boss phases unchanged. Previously: **Touch HUD overlap fix** — on touch the zoom `＋/−` pair moved to the top-right (under the Destroyed counter) so it no longer collides with the bottom-center Return-to-base button, now styled like the Take-off button (orange gradient). Previously: **Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
+**Updated:** 2026-07-08 (**Intro "Level 0" first level** — a gentle, non-skippable opening level (3 basic pirates one at a time via `maxConcurrent 1` → 1 rocket-pirate finale, no boss, no reward, `enemyTotal 4`) is now the first level every new player plays. Implemented by keeping the seed names `level-1`..`level-4` (stable ids) and shifting the campaign descriptors down one id + appending `level-5` (old L4); the campaign keeps its "Level 1"-"Level 4" titles/rewards/briefings, one id higher. Existing players were migrated `+1` (SQLite migration 022 + a guarded `migrations_pg` one-shot on Postgres). On first launch the intro AUTO-LAUNCHES straight into the fight — no welcome screen, no "Take off" — flying the default player ship; Level 1+ landing is unchanged. New EN+RU `level.0.victory` string. Previously: **Ambient ghost battle** — a clearly visible looping recorded skirmish (near-opaque, full-color, below-plane (`y≈−60`) ghost ships with births+deaths + bullets, up to 16 slots) plays as a distant landmark at a FIXED ABSOLUTE world point (default `(−100,−450)`) in every mission EXCEPT the freighter escort; a committed transform-replay track (re-centered by a single fixed offset = the player's mean path, so the player flies FREELY, no birth/death jumps) replayed as a dumb lerped animation that never runs a second sim. Built in `sim.js reset()` gated `activeMission?.title !== 'freighter'`; self-skips under `?debug` AND `?bench`. Canonical track is a REAL battle recorded in-game via a `?dev` "Backdrop" panel (Start/Stop-record + REC readout + live Depth/Scale/Opacity/Anchor X/Anchor Z sliders, persisted `ghostTune`); synthetic `gen-backdrop.mjs` is a bootstrap. Tier-gated CONCURRENT ceiling (High 8 / Balance 4 / Performance off). Freighter render pos nudged +50 z to -400. See the ghost-battle subsection. Previously: **L2/L3 difficulty ease** — max simultaneous enemies in the non-boss spawning phases of **level-2 and level-3** lowered from 4 to **3 at a time** (`maxConcurrent`), matching level-1; `enemyTotal` (17/21) + boss phases unchanged. Previously: **Touch HUD overlap fix** — on touch the zoom `＋/−` pair moved to the top-right (under the Destroyed counter) so it no longer collides with the bottom-center Return-to-base button, now styled like the Take-off button (orange gradient). Previously: **Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
 inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
 weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base). Reel-in speed is a **linear ramp** by
 distance (1 u/s far → 4 u/s at the ship, weight-scaled) — un-physical but no near-ship jerk, replacing the
@@ -657,10 +657,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (`CAM_OFFSET`) is scaled by the player's zoom (`0.6–2.2×`) along its angle — zoom never changes the
   angle, FOV, or camera type.
 - **Landing screen (reflects the current level)** — on load the homepage depends on the player's current
-  level: if it has a **briefing** (level 2+), the client lands on the **Main Window** showing that briefing
-  (so a returning player sees *their* mission, not the level-1 intro); otherwise (level 1 / new player) it
-  shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"), frames the
-  threat as a pirate raid, and offers **Take off**. Its layout is a **fixed grid** (`grid-template-rows:
+  level, a **three-way branch** (`main.js`): (1) the **intro ("Level 0", seed name `level-1`, served only
+  while `current_progress === 1`) AUTO-LAUNCHES straight into the fight** — no welcome screen, no "Take off",
+  no menu gate: the ship is controllable immediately (flying the default player ship), the client just sets
+  `G.gameStarted = true` + calls `reset()`. Once the intro is cleared, the normal landing resumes: (2) if the
+  level has a **briefing** (level 2+, i.e. "Level 2"–"Level 4"), the client lands on the **Main Window**
+  showing that briefing (so a returning player sees *their* mission); (3) otherwise ("Level 1" / id 2, no
+  briefing) it shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"),
+  frames the threat as a pirate raid, and offers **Take off**. Its layout is a **fixed grid** (`grid-template-rows:
   1fr auto`): a scrollable greeting/intro cell (`#welcome-scroll`) over a pinned footer (`#welcome-footer`,
   Take off + community link), so the Take off button is always on-screen regardless of content height (the
   scroll cell top-aligns + scrolls via auto margins on short viewports, avoiding the flex-center clip trap).
@@ -750,7 +754,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **Progression** — each player has a **`current_progress`** (their highest unlocked level; see
   Backend). On load the client fetches **that** level (`GET /api/players/:id/level`, not a hard-coded
   one); clearing a level **unlocks the next** (the `win` handler POSTs `/advance`, then loads the new
-  level so the next **Restart** plays it). A new player starts on `level-1`; the last level stays put.
+  level so the next **Restart** plays it). A new player starts on `level-1` — which is now the **intro
+  ("Level 0")**; the last level (`level-5`) stays put. Existing players were bumped `+1` once by the
+  intro-shift migration (see below) so they stayed on their exact same content, just one id higher.
 - **Return-to-base mission end (all missions).** Killing the last enemy **no longer wins immediately**. A single
   `levelRunner` intercept (`sim.js`) replaces the `win` phase's `this.win()` with `beginReturn()`, so **every**
   mission — campaign L1–4 **and** the three side missions — ends the same way, with no per-descriptor edits (the
@@ -824,18 +830,26 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `levelRunner`. Each descriptor also carries a server-computed **`enemyTotal`** — the exact number of
   enemies destroyed to complete it — derived from the phase script by `enemyTotalFromPhases`
   (`server/src/enemy_total.js`), stamped in `catalog_seed.js` (campaign) and `missions.js` (side missions);
-  it drives the HUD killed/total counter. Four campaign levels are seeded (played in order via the player's progress):
-  - **`level-1` (beginner):** fighters only (3 at a time) → after **6 kills** rocketeers join at 25%
-    → at **12 kills** two last rocketeers appear, clear the field → **Victory!** No boss (enemyTotal **14**).
-  - **`level-2` (medium):** fighters only until 5 kills → fighters + rocketeers 75/25 until 12 kills →
-    spawning stops → a single **medium** appears alone as the boss → clear → Victory. Spawning phases cap at
-    **3 at a time** (`maxConcurrent`).
-  - **`level-3` (full fight):** waves of all three enemy types → after 16 kills spawning stops → the
-    **Sector boss** spawns alone → on its death the game runs ~5 s (watch it explode) → Victory. Spawning
-    phases cap at **3 at a time** (`maxConcurrent`).
-  - **`level-4` ("Find the pirate base"):** clearly harder — **pirate gunners + rocketeers + advanced
-    medium pirates** (40/40/20 → 35/35/30, maxConcurrent 5) to 8 then 16 kills → clear-out → the
-    **Second Boss** (450 hp, two Advanced pirate cannons + three rockets) → Victory. Its briefing **opens the
+  it drives the HUD killed/total counter. **Five levels are seeded** (an intro + four campaign levels,
+  played in order via the player's progress). Level order is `levels.id` (seed insertion order); the intro
+  keeps seed name `level-1` (id 1, first) so the campaign moved down one id (names `level-2`..`level-5`)
+  while keeping its "Level 1"–"Level 4" titles, rewards and briefings:
+  - **`level-1` (id 1) — "Level 0", the intro patrol:** the gentle, non-skippable FIRST level for new
+    players. **3 basic pirates one at a time** (`maxConcurrent 1`, kill one → the next warps in) → a single
+    **rocket pirate** finale → **Victory!** No boss, no reward, no briefing (enemyTotal **4**). On first
+    launch it auto-launches straight into the fight (see the Landing screen).
+  - **`level-2` (id 2) — "Level 1" (beginner):** fighters only (3 at a time) → after **6 kills** rocketeers
+    join at 25% → at **12 kills** two last rocketeers appear, clear the field → **Victory!** No boss
+    (enemyTotal **14**). Carries the Machine-Gun `lastKillDrop`.
+  - **`level-3` (id 3) — "Level 2" (medium):** fighters only until 5 kills → fighters + rocketeers 75/25
+    until 12 kills → spawning stops → a single **medium** appears alone as the boss → clear → Victory.
+    Spawning phases cap at **3 at a time** (`maxConcurrent`). MG-replace briefing + repair-drone drop.
+  - **`level-4` (id 4) — "Level 3" (full fight):** waves of all three enemy types → after 16 kills spawning
+    stops → the **Sector boss** spawns alone → on its death the game runs ~5 s (watch it explode) → Victory.
+    Spawning phases cap at **3 at a time** (`maxConcurrent`). Drone-install briefing.
+  - **`level-5` (id 5) — "Level 4" ("Find the pirate base"):** clearly harder — **pirate gunners + rocketeers
+    + advanced medium pirates** (40/40/20 → 35/35/30, maxConcurrent 5) to 8 then 16 kills → clear-out → the
+    **Second Boss** (two Advanced pirate cannons + three rockets) → Victory. Its briefing **opens the
     hangar shop + side missions** (`unlockShop` action — see Between-level briefings); its victory sets up the
     planned L5 ("Storm the pirate base"). Currently the final level. (Balance: `docs/plans/level-4-difficulty.md`.)
   The AI keeps its distance and fires its weapon groups by range/aim. Spawn composition (ships +
@@ -1301,6 +1315,12 @@ first translation). See DECISIONS §10.
   `GET /api/players/:id/level` returns that level's descriptor; `POST /api/players/:id/advance` unlocks
   the next level (smallest level id greater than the current — gap-tolerant; a no-op at the last level),
   runs the newly-unlocked level's `briefing.actions` server-side, and returns its `briefing` message.
+  **Intro-shift migration:** when the intro "Level 0" was prepended, every existing player was bumped
+  `current_progress += 1` **once** so they stayed on their exact same content (now one id higher). SQLite
+  runs it as versioned migration `022_intro_level0_shift.js` (before `seedCatalog`, FK off → safe);
+  Postgres has no versioned migrations, so it uses a guarded one-shot — a `migrations_pg (name, applied_at)`
+  ledger + `INSERT ... ON CONFLICT (name) DO NOTHING RETURNING name`, run **after** the levels seed (so the
+  new `level-5`/id 5 exists and the FK validates), applied only when the INSERT actually claimed the sentinel.
 - **Game history & credits:** at the end of each run the client posts `{ credits, kills, durationMs }`
   to `/api/games`; the server stores it (`games.credits`, renamed from `score` in migration 008) **and
   banks the earned credits** into `players.credits` (the persistent balance, default **1000** for new

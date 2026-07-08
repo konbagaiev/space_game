@@ -23,26 +23,26 @@ export default async function ({ page, assert, shot }) {
   const item = () => page.evaluate(() => window.__game.itemShowcaseTarget);
   const isShip = (u) => /player_hangar\.|player_combat\./.test(u || '');
 
-  await landOn(1); // L2 briefing → Machine Gun in the work zone, ship still in the right preview
+  await landOn(2); // MG briefing (id 3) → Machine Gun in the work zone, ship still in the right preview
   await page.click('#mw-mission-desc'); // skip the L2/L3 staged typewriter so the showcase reveals now
   await page.waitForFunction('!!(window.__game.itemShowcaseTarget)', null, { timeout: 4000 });
   assert.match(await item(), /machine_gun_hangar\./, 'L2 briefing showcases the Machine Gun model');
   assert.ok(isShip(await ship()), 'L2: the ship preview still shows the player ship (item does not replace it)');
   await shot('L2-machine-gun');
 
-  await landOn(2); // L3 briefing → Repair drone in the work zone, ship still in the right preview
+  await landOn(3); // drone briefing (id 4) → Repair drone in the work zone, ship still in the right preview
   await page.click('#mw-mission-desc'); // skip the L2/L3 staged typewriter so the showcase reveals now
   await page.waitForFunction('!!(window.__game.itemShowcaseTarget)', null, { timeout: 4000 });
   assert.match(await item(), /repair_drone_hangar\./, 'L3 briefing showcases the Repair drone model');
   assert.ok(isShip(await ship()), 'L3: the ship preview still shows the player ship (item does not replace it)');
   await shot('L3-repair-drone');
 
-  await landOn(3); // L4 briefing (unlockShop, no granted item) → no item, ship preview unchanged
+  await landOn(4); // unlockShop briefing (id 5, no granted item) → no item, ship preview unchanged
   assert.equal(await item(), null, 'L4 briefing (no item) hides the work-zone showcase');
   assert.ok(isShip(await ship()), 'L4: the ship preview shows the player ship');
 
   // selecting a side mission (campaign cleared) hides the item showcase and keeps the ship preview
-  await landOn(4);
+  await landOn(5);
   await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
   await page.waitForFunction('window.__game.missionOffers.length === 3', null, { timeout: 6000 });
   await page.evaluate(() => document.querySelectorAll('#mw-mission-list .mw-sub')[1].click()); // first side mission
