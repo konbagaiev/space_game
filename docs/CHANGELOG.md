@@ -3,6 +3,29 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-08
+
+- **Balance: ease level-2 & level-3 — 3 enemies on-screen at once (was 4).** Players reported these
+  missions felt too hard, so the non-boss spawning phases of `level-2` and `level-3` had their
+  `maxConcurrent` lowered from **4 → 3** (`server/src/catalog_seed.js`: L2 `wave-1`/`wave-2`/`clear-out`,
+  L3 `wave-1`/`wave-2`/`clear-out`), matching level-1's cap. Only the simultaneous-alive cap changed —
+  per-phase `spawn.total` and the stamped `enemyTotal` (L2 = 17, L3 = 21), the boss phases, and the
+  killed/total counter and last-kill reward are all unchanged. Enemies still trickle in one at a time on the
+  2–4 s cooldown, just filling toward 3 instead of 4. `enemy_total`, `level-sim`, and `spawn-timing` tests
+  still pass. The new descriptors reach players automatically on deploy — the server re-upserts the level
+  catalog from `catalog_seed.js` on every startup (`db_postgres.js` `ON CONFLICT (name) DO UPDATE`).
+
+- **Dev: live ship-speed readout in the perf overlay.** `updatePerf` (`client/src/hud.js`) now appends
+  `· spd N pk N` (current `|velocity|` + a per-run peak-hold, units/s) to the perf line, to help tune a
+  future player max-speed cap (the ship has no speed limit today). Dev-only — the perf overlay only renders
+  under `body.devmode` (`styles.css`), so regular players never see it. Peak resets when a fresh `G.player`
+  is built (run start / loadout change).
+
+- **Tooling: pipeline agent retro-learnings.** Appended hard-won lessons to `.claude/agents/` guidance
+  (`code-reviewer`, `feature-planner`, `plan-critic`): on any spawn/timing/**pacing** diff, trace every
+  reward/counter/threshold derived from the old timing and demand a full-level outcome test; and when citing
+  an existing test as a helper, check what it *asserts* against the behavior being changed. No runtime effect.
+
 ## 2026-07-07
 
 - **Fix: touch HUD overlap — zoom buttons vs the Return-to-base button.** On phones the `＋/−` zoom pair

@@ -92,3 +92,11 @@ Your final message: a point-by-point list of how each issue was resolved.
   element** — shop stat line (`statLine` in `client/src/shop.js`), tooltips, HUD, comparison bar, SUMMARY's
   weapon list — and state the exact text/number each must show. A new element is not "done" in the plan
   until it is correctly described everywhere it appears, not only correctly simulated.
+- **2026-07-05 — When you cite an EXISTING test/scenario as a helper or precedent, check what it ASSERTS
+  against the behavior you're changing.** The staged-briefing-reveal plan pointed the implementer at
+  visual scenario `97-briefing-showcase.mjs` for its `landOn()` helper, but never noticed 97 *asserts the
+  granted-item showcase is visible immediately on landing* — the exact thing the new ~5s typewriter delays
+  past 97's 4000ms wait, so 97 would have timed out. The critic had to catch it. Whenever a change alters
+  timing/visibility/state of something an existing test observes, grep the test suite for scenarios that
+  touch the same element/hook and list the REQUIRED edits to them in the plan — a reused helper's own
+  assertions can be collateral damage, not just a convenient utility.

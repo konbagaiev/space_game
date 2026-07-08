@@ -427,20 +427,20 @@ export const LEVELS = [
       phases: [
         {
           name: 'wave-1', // only fighters until 5 kills
-          spawn: { maxConcurrent: 4, total: 5, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
+          spawn: { maxConcurrent: 3, total: 5, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
           advanceWhen: { kills: 5 }
         },
         {
           name: 'wave-2', // fighters + rocketeers 75/25 until 12 kills
           spawn: {
-            maxConcurrent: 4, total: 7, pool: [
+            maxConcurrent: 3, total: 7, pool: [
               { ship: 'Basic pirate ship', chance: 75 },
               { ship: 'basic rocket pirate', chance: 25 }]
           },
           advanceWhen: { kills: 12 }
         },
         { name: 'clear-out', // deterministic final wave before the boss (carries the old "carry" count)
-          spawn: { maxConcurrent: 4, total: 4, pool: [
+          spawn: { maxConcurrent: 3, total: 4, pool: [
             { ship: 'Basic pirate ship', chance: 75 },
             { ship: 'basic rocket pirate', chance: 25 }] },
           advanceWhen: { allCleared: true } },
@@ -467,7 +467,7 @@ export const LEVELS = [
         {
           name: 'wave-1',
           spawn: {
-            maxConcurrent: 4, total: 8, pool: [
+            maxConcurrent: 3, total: 8, pool: [
               { ship: 'Basic pirate ship', chance: 75 },
               { ship: 'basic rocket pirate', chance: 25 }]
           },
@@ -476,7 +476,7 @@ export const LEVELS = [
         {
           name: 'wave-2',
           spawn: {
-            maxConcurrent: 4, total: 8, pool: [
+            maxConcurrent: 3, total: 8, pool: [
               { ship: 'Basic pirate ship', chance: 65 },
               { ship: 'basic rocket pirate', chance: 20 },
               { ship: 'pirate mini boss', chance: 15 }]
@@ -484,7 +484,7 @@ export const LEVELS = [
           advanceWhen: { kills: 16 }
         },
         { name: 'clear-out', // deterministic final wave before the boss (carries the old "carry" count)
-          spawn: { maxConcurrent: 4, total: 4, pool: [
+          spawn: { maxConcurrent: 3, total: 4, pool: [
             { ship: 'Basic pirate ship', chance: 65 },
             { ship: 'basic rocket pirate', chance: 20 },
             { ship: 'pirate mini boss', chance: 15 }] },

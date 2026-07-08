@@ -99,3 +99,16 @@ perfection beyond that is not the bar.
   tooltips, HUD, comparison bar, SUMMARY's item list — and demand the plan state the exact text/number each
   shows; if the number a player reads differs from the effective in-game value (multi-projectile, multi-hit,
   per-instance, conditional), that mismatch is a blocking issue.
+- **2026-07-06 — A change to spawn/timing/PACING is a change to every value derived from pacing. Trace it.**
+  A "stagger enemy spawns 2–4s apart" plan was approved with the explicit claim "enemyTotal is
+  pacing-independent (pacing changes the schedule, not the count)." False. `server/src/enemy_total.js`
+  modeled the OLD instant-fill behavior — a `kills:`-threshold phase leaves exactly `maxConcurrent` enemies
+  ALIVE ("carry") when it advances, and those leftovers are counted. Staggering made that leftover count
+  variable and near-zero, so the precomputed `enemyTotal` became an unreachable over-count → the last-kill
+  reward drops (keyed on `kills === enemyTotal` at `sim.js`) stopped firing AND the HUD counter finished
+  short (14/16, 15/16). It shipped and broke on prod. Lesson: when a plan changes WHEN/HOW-FAST/HOW-MANY
+  things spawn, do not accept "the total is unaffected" as a premise — **find every precomputed value or
+  trigger that was derived under the old timing** (`enemy_total.js` oracle, `kills === total` drop trigger,
+  any "N enemies left" banner, HUD counters) and demand the plan prove, with arithmetic on the real
+  descriptors, that it still holds under the new timing. A count/threshold that was deterministic only
+  because the arena was always full is a silent casualty of any spawn-rate change.

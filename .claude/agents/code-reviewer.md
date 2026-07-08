@@ -78,3 +78,16 @@ PASS as soon as it's correct, tested, modular, and documented. Don't hold it for
   matches the effective in-game value — especially for multi-projectile / multi-hit / per-instance stats
   where the raw stat ≠ what the player experiences. "Described correctly everywhere it appears" is part of
   the review, not just "simulated correctly."
+- **2026-07-06 — On a spawn/timing/pacing diff, trace the reward/score/counter triggers that were tuned to
+  the OLD timing — don't rubber-stamp "counts are unaffected."** A staggered-spawn diff passed review with
+  the assertion "enemyTotal is pacing-independent"; nobody traced the last-kill reward drop (`kills ===
+  enemyTotal` in `client/src/sim.js`) back through `server/src/enemy_total.js`, whose "carry ==
+  maxConcurrent leftovers" model only held under instant-fill. Staggering zeroed the leftovers, so the
+  precomputed total became unreachable → the L1 machine-gun and L2 repair-drone drops silently stopped and
+  the destroyed counter finished short (14/16). Automated tests were green because there was NO full-level
+  test exercising the count-to-drop path — a green suite proved nothing about the actual regression. When you
+  review a change to WHEN/HOW-MANY enemies spawn: (1) grep for every consumer of the spawn count /
+  `enemyTotal` / kill thresholds (drop triggers, milestone banners, HUD `X/Y`), (2) do the arithmetic on the
+  REAL descriptors to confirm the last kill still lands exactly on the trigger, and (3) if no test drives a
+  whole level from spawn through the reward drop, that missing end-to-end coverage is itself a blocking
+  finding — mechanism tests on the timing primitive don't cover the outcome.

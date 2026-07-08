@@ -37,7 +37,17 @@ export function updateHud() {
 
 // ---------- Perf overlay (load) ----------
 let perfAccum = 0, perfFrames = 0, perfFps = 0;
+// Live ship-speed readout (world units/sec) for tuning a future max-speed cap: the current |velocity|
+// plus a peak-hold. The peak resets whenever a fresh player ship is built (run start / loadout change —
+// `buildPlayer` makes a new `G.player`), so it reflects the current run, not all-time. The player has NO
+// speed limit today (sim.js "pure inertia: no friction, no speed limit"), so this shows the real range.
+let speedNow = 0, speedPeak = 0, speedPlayerRef = null;
 export function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim's clamped dt — see animate)
+  if (G.player) { // sample every frame so the peak-hold catches transient maxima between DOM writes
+    if (G.player !== speedPlayerRef) { speedPlayerRef = G.player; speedPeak = 0; } // new build → reset peak
+    speedNow = G.player.vel.length();
+    if (speedNow > speedPeak) speedPeak = speedNow;
+  }
   perfAccum += sec; perfFrames++;
   if (perfAccum >= 0.4) { // update ~2.5 times per sec
     perfFps = Math.round(perfFrames / perfAccum);
@@ -52,7 +62,8 @@ export function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim
     const res = `${renderer.domElement.width}×${renderer.domElement.height}`;
     // In ?dev, append live JS-heap usage (Chrome only) so the tester can eyeball current RAM.
     const devSuffix = DEV ? (performance.memory ? ` · ${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '') + ' ●dev' : '';
-    el.perf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + devSuffix;
+    const spd = ` · spd ${Math.round(speedNow)} pk ${Math.round(speedPeak)}`; // current speed + run peak (units/s)
+    el.perf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + spd + devSuffix;
     perfAccum = 0; perfFrames = 0;
   }
 }
