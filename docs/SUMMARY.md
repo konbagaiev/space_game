@@ -1052,8 +1052,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
         live **`REC 12s/60s`** readout (auto-stops at `maxSeconds`, default **60 s**), which captures the player
         (slot 0) + every enemy — **including later-spawned waves, which join as new slots with a `birth`** (up
         to the 16-slot cap) instead of the clip decaying to a lone ship — plus ≤24 bullets at 20 fps, then
-        downloads a `backdrop-battle.js` module (move it to `client/src/`, run `node --test`, commit). Console
-        `window.__backdrop.record()/stop()/status()` is the secondary trigger. **Authoring note: don't OOB-warp /
+        downloads a `backdrop-battle.js` module. Console `window.__backdrop.record()/stop()/status()` is the
+        secondary trigger. **We can now record these backdrop clips repeatably via the `/record-backdrop-clip`
+        skill** (`.claude/skills/record-backdrop-clip/`): it starts the local server, guides the recording,
+        then runs **`node client/bench/process-recording.mjs`** to **trim the low-action tail** (a clip that
+        winds down plays as a 2–4 s "lag" before the loop restarts), **re-center** (trimming shifts the
+        player's mean), **validate** against the runtime guards, and install `client/src/backdrop-battle.js` —
+        so making more such recorded background elements is a one-command flow, not a manual dance. **Authoring note: don't OOB-warp /
         return-to-base mid-record** — a teleport skews the player's mean and shifts the whole cloud off the
         anchor (nudge it back with the Anchor X/Z sliders); fly normally. The panel has live **Depth / Scale /
         Opacity / Anchor X / Anchor Z** sliders that drive a persisted `GHOST_TUNE` object
