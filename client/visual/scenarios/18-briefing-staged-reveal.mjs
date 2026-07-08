@@ -17,7 +17,12 @@ export default async function ({ page, assert, shot }) {
   // ---- L1: the welcome / ship-picker screen. landOn (below) is previewTarget-gated and never resolves on
   // the welcome screen, so drive the reset+reload directly and wait for the staged welcome reveal. ----
   const landWelcome = async () => {
-    await page.evaluate(async ({ pid }) => { await fetch(`/api/players/${pid}/reset`, { method: 'POST' }); }, { pid });
+    // Reset lands on the intro (id 1), which AUTO-LAUNCHES the fight (no welcome screen). Advance once to
+    // "Level 1" (id 2, no briefing → welcome screen) so the staged welcome reveal is what loads.
+    await page.evaluate(async ({ pid }) => {
+      await fetch(`/api/players/${pid}/reset`, { method: 'POST' });
+      await fetch(`/api/players/${pid}/advance`, { method: 'POST' });
+    }, { pid });
     await page.goto(page.url(), { waitUntil: 'load' });
     await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
     await page.waitForSelector('#welcome', { state: 'visible', timeout: 6000 });
@@ -115,11 +120,12 @@ export default async function ({ page, assert, shot }) {
     await shot(label);
   };
 
-  await stagedCase(1, /machine_gun_hangar\./, 'L2-staged-revealed'); // L2 → Machine Gun
-  await stagedCase(2, /repair_drone_hangar\./, 'L3-staged-revealed'); // L3 → Repair drone
+  await stagedCase(2, /machine_gun_hangar\./, 'L2-staged-revealed'); // MG briefing (id 3) → Machine Gun
+  await stagedCase(3, /repair_drone_hangar\./, 'L3-staged-revealed'); // drone briefing (id 4) → Repair drone
 
-  // 7. Negative: L4 is instant — no staging, ship window + Take-off already visible, text already full.
-  await landOn(3);
+  // 7. Negative: the unlockShop briefing (id 5) is instant — no staging, ship window + Take-off already
+  // visible, text already full.
+  await landOn(4);
   await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
   assert.equal(await page.evaluate(() => window.__game.briefingStaged), false, 'L4: not staged (instant)');
   assert.equal(await css('#mw-ship-col', 'visibility'), 'visible', 'L4: ship window visible immediately');

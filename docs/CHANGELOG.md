@@ -5,6 +5,18 @@
 
 ## 2026-07-08
 
+- **[2026-07-08-2224-intro-first-level] Intro "Level 0" first level.** A gentle, non-skippable opening
+  level (3 basic pirates one at a time via `maxConcurrent 1` → 1 rocket-pirate finale, no boss, no reward,
+  `enemyTotal 4`) is now the first level every new player plays. Implemented by keeping the seed names
+  `level-1`..`level-4` stable (stable ids) and shifting the campaign descriptors down one id + appending
+  `level-5` (old L4) — the campaign keeps its "Level 1"–"Level 4" titles/rewards/briefings, one id higher.
+  Existing players were migrated `+1` (SQLite migration `022_intro_level0_shift.js` + an idempotent guarded
+  one-shot on Postgres via a `migrations_pg` ledger, run after the levels seed so the FK validates) so they
+  stayed on their exact same content. New EN+RU `level.0.victory` string ("First patrol clear, Sentinel.").
+  **On first launch the intro auto-launches straight into the fight — no welcome screen, no "Take off"**
+  (the ship is controllable at once, flying the default player ship, gated to `level.name === 'level-1'`);
+  Level 1+ landing is unchanged. The maintainer will record a playthrough of this level for the parked intro
+  cutscene (Step 2). Deploy needs a catalog reseed + the `+1` migration to run.
 - **Balance: ease level-2 & level-3 — 3 enemies on-screen at once (was 4).** Players reported these
   missions felt too hard, so the non-boss spawning phases of `level-2` and `level-3` had their
   `maxConcurrent` lowered from **4 → 3** (`server/src/catalog_seed.js`: L2 `wave-1`/`wave-2`/`clear-out`,
