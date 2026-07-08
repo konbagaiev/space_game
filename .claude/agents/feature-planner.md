@@ -100,3 +100,11 @@ Your final message: a point-by-point list of how each issue was resolved.
   timing/visibility/state of something an existing test observes, grep the test suite for scenarios that
   touch the same element/hook and list the REQUIRED edits to them in the plan — a reused helper's own
   assertions can be collateral damage, not just a convenient utility.
+- 2026-07-09 (intro-first-level): for any feature that touches the **new-player onboarding / landing flow**
+  (the welcome screen, briefings, auto-launch, ship-select, first-launch gating), surface the flow decisions
+  as FIRST-CLASS discovery questions with their own options — do NOT fold them into a "map + briefing" default
+  bullet. The maintainer had strong, specific opinions ("no briefing", then "no welcome screen at all — first
+  launch drops straight into the fight") that only emerged when asked, and the second reversed the plan's
+  "intro lands on welcome, no client change" AFTER approval, forcing a revision. When the feature changes what
+  a new player sees on first load, ask explicitly: welcome screen or not? briefing or not? auto-launch into
+  combat or a menu gate? — one question each, defaults offered but never assumed.
