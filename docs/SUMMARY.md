@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-07 (**Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
+**Updated:** 2026-07-08 (**Ambient ghost battle** — a clearly visible looping recorded skirmish (near-opaque, full-color, below-plane (`y≈−60`) ghost ships with births+deaths + bullets, up to 16 slots) plays as a distant landmark at a FIXED ABSOLUTE world point (default `(−100,−450)`) in every mission EXCEPT the freighter escort; a committed transform-replay track (re-centered by a single fixed offset = the player's mean path, so the player flies FREELY, no birth/death jumps) replayed as a dumb lerped animation that never runs a second sim. Built in `sim.js reset()` gated `activeMission?.title !== 'freighter'`; self-skips under `?debug` AND `?bench`. Canonical track is a REAL battle recorded in-game via a `?dev` "Backdrop" panel (Start/Stop-record + REC readout + live Depth/Scale/Opacity/Anchor X/Anchor Z sliders, persisted `ghostTune`); synthetic `gen-backdrop.mjs` is a bootstrap. Tier-gated CONCURRENT ceiling (High 8 / Balance 4 / Performance off). Freighter render pos nudged +50 z to -400. See the ghost-battle subsection. Previously: **Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
 inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
 weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base). Reel-in speed is a **linear ramp** by
 distance (1 u/s far → 4 u/s at the ship, weight-scaled) — un-physical but no near-ship jerk, replacing the
@@ -1004,8 +1004,70 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     width). The exhaust palette + particle params (`palette` hot/mid/end, `count`, `len`, `size`, `speed`)
     are an **optional, server-delivered `exhaust:` effect config** on the set-piece spec (defaults built in
     → look unchanged when omitted) — the light extension point for future server-driven model effects
-    (DECISIONS §38). **Cruises slowly forward** (`speed` units/sec — a transport in transit). (A separate
-    `sync` + zone-drift escort mechanic exists but no mission turns it on.)
+    (DECISIONS §38). **Cruises slowly forward** (`speed` units/sec — a transport in transit). Its render
+    position is `pos [-100,-48,-400]` — intentionally offset **+50 z ahead of the freighter mission center**
+    (`z -450`, which is unchanged), so the freighter sits ahead of the player's
+    forward-gliding spawn; balance-neutral (enemy/player spawns key off the mission center, not the
+    non-collidable freighter — DECISIONS §59). (A separate `sync` + zone-drift escort mechanic exists but no
+    mission turns it on.)
+    - **Ambient "ghost battle" (a distant landmark, shown in every mission EXCEPT the freighter escort).** A
+      **clearly visible, looping recorded skirmish** — ghost ships (with **births AND deaths**, so later waves
+      keep the clip populated) + their bullets — plays as decor at a **FIXED ABSOLUTE world point** you fly
+      toward (default `(ax,az) = (−100,−450)`, the freighter mission's spot — which is why it's documented here,
+      though it is **not** tied to the freighter set-piece). It is **near-opaque (`opacity` default 0.9),
+      full-color (no darken), moderate scale (default 0.8), at depth `y≈−60`** — a separate layer BELOW the
+      `y=0.6` combat plane (so the player can never shoot the ghosts), a distinct depth layer under the
+      near-top-down camera. It reads as a *separate distant* battle through **horizontal separation** (a
+      landmark off across the arena you fly toward), NOT through dimming (over-dimming was the first playtest
+      failure). Strictly **non-interactive**: no HUD/markers/health-bars, no collision, no targeting, no audio.
+      It is a **committed, quantized transform-replay track** (`client/src/backdrop-battle.js`) — the runtime
+      (`client/src/ghost-battle.js`) just **lerps** ship transforms (shortest-arc yaw) and snaps bullets; it
+      **never runs a second sim** and never touches the live world. A ghost death regenerates the **real**
+      small-pirate explosion at the ghost's own below-plane depth (`spawnShipExplosion`'s `ringY` param keeps
+      the shockwave ring off the combat plane).
+      - **Built in `sim.js reset()`, gated to non-freighter missions.** After the set-piece rebuild loop,
+        `reset()` dynamically imports + calls `buildGhostBattle()` when `G.activeMission?.title !== 'freighter'`
+        (campaign `null` → shows; mining/research → show; **freighter escort → hidden**, you're IN that fight).
+        `buildGhostBattle()` takes **no argument** — it anchors at the absolute `GHOST_TUNE.ax/y/az`, adds its
+        group to `scene` AND pushes a `setPieces` entry so the universal teardown at the next `reset()` removes
+        it. It **self-skips under `?debug` AND `?bench`** (both headless harnesses — the async glb loads would
+        add nondeterministic draw counts to the §58 perf gate, which now runs the campaign where this fires).
+      - **Births + deaths + a concurrent cap.** Each track slot carries a `birth` (keyframe it appears, default
+        0) and a `death` (keyframe it dies, `−1` = survives). A slot renders only for `birth ≤ frame < death`.
+        The track holds up to **`MAX_GHOST_SHIPS` = 16 slots** over the whole loop (player + up to 15 enemy
+        waves); one mesh is built per slot but **only born-and-alive slots up to a per-tier CONCURRENT ceiling
+        are ever visible** (hidden meshes don't draw). **Tier-gated `maxConcurrent`: High 8 + bullets, Balance
+        4 / no bullets, Performance = off**. A death only explodes if that ghost was actually on-screen the prior
+        frame (a capped-out or never-shown slot doesn't pop a sourceless burst). No new assets — ghost ships
+        reuse the existing `player_combat` + `enemy_*_combat` glbs.
+      - **Authoring (canonical track = a REAL in-game recording).** The maintainer plays a fight and records it
+        via the **`?dev` "Backdrop" panel** (lil-gui, mirrors `?tune`): a **Start/Stop-record** button with a
+        live **`REC 12s/60s`** readout (auto-stops at `maxSeconds`, default **60 s**), which captures the player
+        (slot 0) + every enemy — **including later-spawned waves, which join as new slots with a `birth`** (up
+        to the 16-slot cap) instead of the clip decaying to a lone ship — plus ≤24 bullets at 20 fps, then
+        downloads a `backdrop-battle.js` module (move it to `client/src/`, run `node --test`, commit). Console
+        `window.__backdrop.record()/stop()/status()` is the secondary trigger. **Authoring note: don't OOB-warp /
+        return-to-base mid-record** — a teleport skews the player's mean and shifts the whole cloud off the
+        anchor (nudge it back with the Anchor X/Z sliders); fly normally. The panel has live **Depth / Scale /
+        Opacity / Anchor X / Anchor Z** sliders that drive a persisted `GHOST_TUNE` object
+        (`localStorage['ghostTune']`, defaults `GHOST_TUNE_DEFAULTS = {y:−60, scale:0.8, opacity:0.9, ax:−100,
+        az:−450}`) — `ax/az` are the **absolute world anchor** (range ±600) that moves the battle across the
+        ground plane (clearly visible), while **Depth (y)** (range [−80,0]) mostly changes apparent size/layer
+        under the near-top-down camera (`CAM_OFFSET 0,110,26`) — so Anchor X/Z is the placement control, Depth is
+        layer separation. Final numbers are baked into the defaults. A **synthetic headless generator**
+        (`window.__bench.bakeBackdrop` → `client/bench/gen-backdrop.mjs`, `npm run bench:backdrop`) is kept only
+        as a **bootstrap/fallback** so the runtime + tests work before a real recording exists.
+      - Both authoring paths re-center via the shared pure helper **`recenterAndQuantize`** (in
+        `ghost-battle-track.js`): it subtracts **ONE FIXED offset — the MEAN of the player's (slot-0) path over
+        the whole track** — from every ship + bullet. Only a constant is removed, so the **player's real
+        free-flight motion is preserved** (it visibly flies) and the cloud centers near the anchor, with **no
+        per-frame membership dependence → no birth/death jumps** (earlier per-keyframe slot-0 pinning froze the
+        player at center — rejected; the cast-centroid anchor stepped at every birth/death — also rejected). The
+        cloud centers on the player's mean *path* (not the cast centroid), so an enemy-biased formation sits
+        slightly off the anchor — that's what the Anchor X/Z sliders nudge. Then quantizes to ints. Pure helpers
+        (gating `ghostBattlePlan`, `slotAlive`, sampler, quantize, the tune helpers
+        `clampGhostTune`/`loadGhostTune`/`saveGhostTune`, `recenterAndQuantize`) live in
+        `client/src/ghost-battle-track.js` (unit-tested, `ghost-battle-track.test.js`).
   - **`base-station`** — the **return-to-base target** at `(-60,-60)`, up-left of the arena center (so
     the origin-spawning ship isn't lost against its backdrop). A `.glb`-backed set-piece (`base_station_combat`, CC-BY 4.0 "Low Poly space station." by MisterH)
     loaded by `makeBaseStation` (`world.js`, mirroring the freighter's async center/scale/`yaw` normalization

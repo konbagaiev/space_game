@@ -68,7 +68,7 @@ const SPARK_COLORS = [0xffffff, 0xfff0a0, 0xffd040, 0xff8030, 0xff3020];
 // shockwaves moved to src/state.js
 const shockGeo = new THREE.RingGeometry(0.78, 1, 28); // unit ring, scaled up as it expands
 
-export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
+export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, ringY = BULLET_PLANE_Y) {
   const s = sizeScale; // scales every spatial dimension to the ship's size
   // Layered fireball: each layer bigger, dimmer-colored and slower than the last. The
   // second layer glows in the engine's exhaust color (the destroyed engine's signature).
@@ -105,7 +105,7 @@ export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) 
       blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
     });
     const ring = new THREE.Mesh(shockGeo, ringMat);
-    ring.position.copy(pos); ring.position.y = BULLET_PLANE_Y; // keep the flat ring on the combat plane
+    ring.position.copy(pos); ring.position.y = ringY; // flat ring on the combat plane by default; a below-plane ghost death passes its own depth
     ring.rotation.x = -Math.PI / 2; // lay it flat on the arena
     scene.add(ring);
     shockwaves.push({ mesh: ring, life: 2.4, maxLife: 2.4, maxScale: 22 * s });

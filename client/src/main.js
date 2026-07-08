@@ -26,6 +26,7 @@ import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only 
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
 import { showWelcome, applyTranslations, welcomeStaged } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache } from './account.js'; // auth block (bootstrap session restore + Sentry)
+import { recenterAndQuantize, MAX_GHOST_SHIPS, MAX_GHOST_BULLETS } from './ghost-battle-track.js'; // ?dev in-game backdrop recorder + synthetic bake
 
 // audio engine + tracksFor/sfxFor routing moved to src/sound-routing.js (imported at top).
 let samplesLoaded = false; // one-time guard so the sample preload fires once, after the context unlocks
@@ -470,6 +471,70 @@ function prewarmShaders() {
   } catch { /* best-effort — shader warmup must never break startup */ }
 }
 
+// ---- In-game backdrop recorder (?dev authoring tool). Captures a live-played battle → downloads a committed
+// backdrop-battle.js. Inert unless isDev(). PRIMARY authoring path (the synthetic bake is a bootstrap). See
+// docs/plans/2026-07-07-1606-backdrop-ghost-battle.md Step 3. ----
+let bdRec = null; // active recording state or null
+function backdropCapture(dt) {            // called from animate() after update(), only while recording + live
+  if (!bdRec) return;
+  bdRec.acc += dt; bdRec.elapsed += dt;
+  if (bdRec.acc < 1 / bdRec.fps) return;  // decimate live frames → fps keyframes
+  bdRec.acc -= 1 / bdRec.fps;
+  const kf = bdRec.ships[0].x.length;     // keyframe index about to be pushed (= current length of every slot)
+  // BIRTHS: any enemy without a slot gets one (under the total cap), back-filled to length kf with its birth pos
+  // so all slot arrays stay length `frames`. Later waves join the ghost cast instead of the clip decaying to
+  // one ship. No slot reuse (a dead slot is never re-assigned); enemies appearing after the cap is full are ignored.
+  for (const e of enemies) {
+    if (e._bdSlot === undefined && bdRec.ships.length < MAX_GHOST_SHIPS) {
+      const slot = bdRec.ships.length; e._bdSlot = slot;
+      const bx = e.mesh.position.x, bz = e.mesh.position.z, by = e.heading;
+      const S = { shipName: e.name, scale: e.sizeScale || 1, birth: kf, death: -1, x: [], z: [], yaw: [] };
+      for (let i = 0; i < kf; i++) { S.x.push(bx); S.z.push(bz); S.yaw.push(by); } // pre-birth placeholders (hidden + not re-centered)
+      bdRec.ships.push(S); bdRec.cast[slot] = e; bdRec.last[slot] = { x: bx, z: bz, yaw: by };
+    }
+  }
+  const rec = (s, x, z, yaw) => { const S = bdRec.ships[s]; S.x.push(x); S.z.push(z); S.yaw.push(yaw); bdRec.last[s] = { x, z, yaw }; };
+  // Slot 0 = the player. recenterAndQuantize subtracts ONE FIXED offset (the MEAN of the player's path) from
+  // everything, so the player's real free-flight motion is preserved (it visibly flies) and the cloud centers
+  // near the anchor. AUTHORING NOTE: don't OOB-warp / return-to-base mid-record — a teleport skews the player's
+  // mean and shifts the whole cloud off the anchor (nudge it back with the ?dev Anchor X/Z sliders). Fly normally.
+  if (G.player && G.player.alive) rec(0, G.player.mesh.position.x, G.player.mesh.position.z, G.player.heading);
+  else rec(0, bdRec.last[0].x, bdRec.last[0].z, bdRec.last[0].yaw);       // player always recorded, birth:0/death:-1
+  for (let s = 1; s < bdRec.ships.length; s++) {
+    const e = bdRec.cast[s];              // cast[s] aligned to slot s (cast[0] = null, the player)
+    if (enemies.includes(e)) rec(s, e.mesh.position.x, e.mesh.position.z, e.heading);
+    else { if (bdRec.ships[s].death < 0) bdRec.ships[s].death = kf; rec(s, bdRec.last[s].x, bdRec.last[s].z, bdRec.last[s].yaw); }
+  }
+  let bc = 0; for (const b of bullets) { if (bc >= MAX_GHOST_BULLETS) break; bdRec.bullets.x.push(b.mesh.position.x); bdRec.bullets.z.push(b.mesh.position.z); bc++; }
+  bdRec.bullets.counts.push(bc);
+  if (bdRec.elapsed >= bdRec.maxSeconds) window.__backdrop.stop();       // auto-stop
+}
+if (isDev()) window.__backdrop = {
+  record({ maxSeconds = 60, fps = 20 } = {}) {   // default 60 s (~150–250 KB @ 20fps / ≤16 slots / ≤24 bullets)
+    const p = G.player; if (!p) { console.warn('[backdrop] no player — start a fight first'); return; }
+    for (const e of enemies) delete e._bdSlot;   // clear stale slot tags from a prior recording (enemies persist without a reload)
+    // start with ONLY the player slot; enemies (current + all later waves) join via births in backdropCapture
+    const ships = [{ shipName: G.currentShipName || G.activeShip?.ship?.name, scale: 1, birth: 0, death: -1, x: [], z: [], yaw: [] }];
+    // acc:0 → the remainder-preserving `acc -= 1/fps` decrement yields exactly `fps` keyframes/sec. Do NOT use
+    // a large sentinel (e.g. 1e9): the guard would pass EVERY live frame (~60fps) while the track is stamped
+    // fps:20, so playback would run 3× too long at 1/3 speed — and no shape/bounded guard would catch it.
+    bdRec = { fps, maxSeconds, acc: 0, elapsed: 0, cast: [null], ships, last: [{ x: 0, z: 0, yaw: 0 }], bullets: { counts: [], x: [], z: [] } };
+    console.log(`[backdrop] recording (player + up to ${MAX_GHOST_SHIPS - 1} enemy waves, ~${maxSeconds}s @ ${fps}fps)…`);
+  },
+  stop(name = 'freighter-skirmish') {
+    if (!bdRec) return null;
+    const raw = { name, seed: 0, fps: bdRec.fps, frames: bdRec.ships[0].x.length, ships: bdRec.ships, bullets: bdRec.bullets };
+    bdRec = null;
+    const track = recenterAndQuantize(raw, { name });
+    const src = `// GENERATED — a real recorded battle (do not hand-edit). See docs/plans/2026-07-07-1606-backdrop-ghost-battle.md\nexport const BACKDROP_BATTLE = ${JSON.stringify(track)};\n`;
+    try { const b = new Blob([src], { type: 'text/javascript' }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'backdrop-battle.js'; document.body.appendChild(a); a.click(); a.remove(); } catch {}
+    console.log(`[backdrop] ${track.frames} frames, ${track.ships.length} ships, ${(src.length / 1024).toFixed(0)} KB → downloaded backdrop-battle.js`);
+    return track;
+  },
+  // Live status for the panel's REC readout + Start/Stop toggle (polled by buildBackdropPanel).
+  status() { return { recording: !!bdRec, elapsed: bdRec ? bdRec.elapsed : 0, maxSeconds: bdRec ? bdRec.maxSeconds : 60 }; },
+};
+
 function animate() {
   // ?bench=replay drives its own timed tick loop (window.__bench.replay). Keep the rAF loop idle so leftover
   // combat state can't churn/render (under software GL) between measurements and stall the next navigation.
@@ -482,6 +547,9 @@ function animate() {
   if (!G.paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
   // record mode: snapshot the resolved input AFTER update() so the trace replays identically (see bench.js)
   if (benchRecording) benchRecord.push({ k: Object.keys(keys).filter((c) => keys[c]), t: touchAim.active ? [touchAim.heading, touchAim.thrust] : null });
+  // ?dev backdrop recorder: capture live-played transforms → backdrop-battle.js. Gate on !G.paused so a pause
+  // mid-record can't accumulate dt/elapsed, record frozen duplicate frames, or auto-stop during a pause.
+  if (bdRec && !G.paused) backdropCapture(dt);
   if (HITBOXES_DEBUG) syncHitBoxes(scene, G.player, enemies); // dev-only hitbox wireframe overlay
   const t1 = DEV ? performance.now() : 0; // end of sim
   updateHud();
@@ -676,6 +744,40 @@ if (isBench()) {
         finalEnemies: enemies.length, finalHash: stateHash(),
       };
     },
+    // ---- Ghost-battle backdrop baker (SECONDARY / bootstrap; see client/bench/gen-backdrop.mjs +
+    // docs/plans/2026-07-07-1606-backdrop-ghost-battle.md Step 4) ----
+    // Runs the REAL sim headless & deterministically (seeded RNG + fixed dt), dumps per-keyframe ship + bullet
+    // transforms for a fixed, non-respawning cast. Returns RAW floats in the SAME shape the in-game recorder
+    // builds; gen-backdrop.mjs runs the shared recenterAndQuantize + writes client/src/backdrop-battle.js. This
+    // is a bootstrap so the runtime + tests work before the maintainer records the real battle (Step 3).
+    // Thrust-only seeded player: with the FIXED-mean-offset re-center (player flies freely) + the loose < 600 u
+    // runaway guard, the natural drift stays in bounds — no circling/warmup needed (that was for the old
+    // slot-0-pinning guard, now reverted). Deterministic; the canonical track is a real in-game recording anyway.
+    async bakeBackdrop({ seconds = 15, fps = 20 } = {}) {
+      installSeededRandom(BENCH_SEED);           // deterministic
+      const playerDef = shipById(1); if (playerDef) buildPlayerFor(playerDef);
+      reset(); G.gameStarted = true;
+      const defs = [CATALOG.enemyShips[0], CATALOG.enemyShips[0], CATALOG.enemyShips[1] || CATALOG.enemyShips[0],
+                    CATALOG.enemyShips[2] || CATALOG.enemyShips[0], CATALOG.enemyShips[0]];
+      const cast = defs.map((d) => spawnEnemyShip(d));                     // fixed cast, all born at frame 0
+      const ships = [{ shipName: playerDef.name, scale: 1, birth: 0, death: -1, x: [], z: [], yaw: [] }]
+        .concat(cast.map((e) => ({ shipName: e.name, scale: e.sizeScale || 1, birth: 0, death: -1, x: [], z: [], yaw: [] })));
+      const last = ships.map(() => ({ x: 0, z: 0, yaw: 0 })), bul = { counts: [], x: [], z: [] };
+      const rec = (s, x, z, yaw) => { const S = ships[s]; S.x.push(x); S.z.push(z); S.yaw.push(yaw); last[s] = { x, z, yaw }; };
+      for (const c in keys) keys[c] = false; keys['KeyW'] = true; keys['Space'] = true;   // seeded player skirmishes
+      const step = Math.round((1 / fps) / BENCH_DT) || 3, total = Math.round(seconds / BENCH_DT);
+      for (let tick = 0; tick <= total; tick++) {
+        update(BENCH_DT);
+        if (tick % step) continue;
+        const kf = ships[0].x.length;
+        if (G.player) rec(0, G.player.mesh.position.x, G.player.mesh.position.z, G.player.heading); else rec(0, last[0].x, last[0].z, last[0].yaw);
+        for (let s = 1; s < ships.length; s++) { const e = cast[s - 1];
+          if (enemies.includes(e)) rec(s, e.mesh.position.x, e.mesh.position.z, e.heading);
+          else { if (ships[s].death < 0) ships[s].death = kf; rec(s, last[s].x, last[s].z, last[s].yaw); } }
+        let bc = 0; for (const b of bullets) { if (bc >= MAX_GHOST_BULLETS) break; bul.x.push(b.mesh.position.x); bul.z.push(b.mesh.position.z); bc++; } bul.counts.push(bc);
+      }
+      return { seed: BENCH_SEED, fps, frames: ships[0].x.length, ships, bullets: bul };  // RAW floats
+    },
   };
 }
 
@@ -784,6 +886,13 @@ async function bootstrap() {
     if (location.search.includes('tune')) {
       const { default: GUI } = await import('three/addons/libs/lil-gui.module.min.js');
       buildTunePanel(GUI);
+    }
+    // ?dev "Backdrop authoring" panel: Start/Stop-record controls + a REC readout + live Depth/Scale/Opacity
+    // sliders for the freighter ghost battle. Dynamic imports → zero cost (no lil-gui fetch) when ?dev is off.
+    if (isDev()) {
+      const { default: GUI } = await import('three/addons/libs/lil-gui.module.min.js');
+      const { buildBackdropPanel } = await import('./ghost-battle.js');
+      buildBackdropPanel(GUI);
     }
   } catch (err) {
     console.error('Failed to load the game from the API:', err);

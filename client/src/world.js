@@ -695,6 +695,8 @@ export function buildSetPiece(spec) {
   setPieces.push(entry);
   // Stash the base station on G so the sim/HUD/click code can find it (the return-to-base target).
   if (spec.type === 'base-station') G.baseStation = { obj: entry.obj, active: false };
+  // (The ambient ghost battle is NOT built here — it's a fixed-world-anchor decor built in sim.js reset() for
+  // every NON-freighter mission, not tied to the freighter set-piece. See DECISIONS §59.)
 }
 
 // ---------- Build the scene from a map descriptor (see server catalog_seed.js MAPS) ----------

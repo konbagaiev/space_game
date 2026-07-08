@@ -2052,6 +2052,130 @@ inherently advisory (a 2% CPU cost can be a deliberate trade), and a single auth
 to enforce it (§30). Because build A is always the merge-base, on the first branch *after* the harness lands
 build A has no `window.__bench` → the runner prints `gate inactive` and exits 0; real A/B activates on the
 next feature. Cross-references §23 (the `?dev` monitor this reuses) and `docs/plans/perf-low-end-phones.md`.
+
+## 59. Ambient ghost battle = committed transform-replay of a REAL in-game recording, a FIXED-world-anchor landmark shown in every mission except the freighter escort, re-centered by the player's mean path (player flies freely)
+
+**Problem.** We want a small, *watchable* far-off skirmish — a distant space battle you can see raging as you
+fly a mission — cheap enough to ship, that never perturbs the real fight. (It began as decor for the "save the
+transport" freighter escort, hence the freighter reposition + the default anchor at that mission's spot, but
+pivoted: it now reads better as a **distant landmark in the OTHER missions** — showing it inside the freighter
+escort would compete with the player's own fight, so that mission is exactly where it's hidden.)
+
+**Transform-replay, not a second sim.** The game world is **module-level singletons** (`G`, `enemies`,
+`bullets`, the projectile pools in `state.js`); a concurrent second `update()` to animate a live ghost fight
+would corrupt the player's actual fight. So we play a **committed transform track** at runtime as a **dumb
+lerped animation** (ship transforms lerp with shortest-arc yaw; bullets snap) — no live sim, no
+collision/targeting/HUD/audio wired to the ghosts by construction. The track records **transforms, not
+inputs** (unlike the §58 perf trace): inputs would require re-running the sim at playback (the thing we're
+avoiding), and transforms are trivially interpolable and never diverge.
+
+**Authored by a REAL in-game recording (the primary path).** The maintainer wanted to conduct + watch *their*
+battle, so the canonical track is captured by a **`?dev` recorder** (`window.__backdrop.record()/stop()/
+status()` in `main.js`) that observes a live-played fight — the player (slot 0) + every enemy that appears
+(each joins as a new `birth` slot, up to 16 slots) + ≤24 bullets, at 20 fps via a **dt accumulator initialized
+`acc:0`** (a large sentinel would pass every ~60 fps frame while
+the track is stamped `fps:20` → playback 3× too long at ⅓ speed; the `acc -= 1/fps` remainder-preserving
+decrement yields exactly 20 keyframes/s) — then re-centers/quantizes and downloads a `backdrop-battle.js`
+module (an authoring tool, like the credits/itch generators; the output is committed by hand). **A hand-flown
+recording is NOT re-generable byte-identically — the committed JSON is the artifact** (no byte-identical
+expectation). A **synthetic headless generator** (`window.__bench.bakeBackdrop` + `client/bench/
+gen-backdrop.mjs`, seeded/fixed-dt via the §58 harness) is kept **only as a bootstrap/fallback** so the
+runtime + tests function before the real recording exists; its output *is* deterministic, but that's a
+convenience, not a requirement.
+
+**VISIBLE-distant — reversing the initial "faint ambiance" guardrail (the playtest fix).** The first build
+over-dimmed the battle into invisibility (`opacity 0.35 × darken 0.45 × scale 0.5 × y −48` — the near-top-down
+camera foreshortened the ships to nothing and only the additive death-explosion punched through). The design
+goal is now **a watchable distant battle**: near-opaque (`opacity 0.9`), **full color (no darken)**, moderate
+scale (`0.8`), on a **lower layer at `y ≈ −60`**. The "distant / not-mine" read comes from **horizontal
+separation** (a landmark off across the arena you fly toward) plus the depth separation, NOT from dimming.
+`y −60 < 0.6` keeps it a **separate, unshootable layer** below the combat plane, and ghost death rings are
+relocated off the combat plane (`spawnShipExplosion` gained an optional `ringY` param; the truthiness-guarded
+`opacity`/`darken` hook on `applyShipModel` leaves real ships byte-unaffected — ghosts now pass `opacity` only).
+All five values are **live-tunable**: a `?dev` "Backdrop" panel (lil-gui, mirrors `?tune`) exposes
+**Depth / Scale / Opacity / Anchor X / Anchor Z** sliders that drive a persisted `GHOST_TUNE` object
+(`localStorage['ghostTune']`, key + clamp/load/save mirror `graphics.js`'s tier discipline; committed defaults
+in `GHOST_TUNE_DEFAULTS`) applied live each frame — so placement is dialed in during a real playtest, then the
+final numbers are baked back into the defaults. **Depth default −14 → −30 → −60**: the maintainer reported the
+Depth slider "does nothing", diagnosed **live** (camera projection) as **camera geometry**, not a bug — under
+the near-top-down camera (`CAM_OFFSET 0,110,26`, world +Y ~97% along the view axis) moving `group.position.y`
+moves the battle almost entirely **into depth** (apparent size / layer separation: ~19 px on screen per 16 u Δy
+vs ~97 px for an equal Δz). So **Depth controls the layer only; the new absolute Anchor X/Z sliders are the
+across-screen placement control** (they move the group across the ground plane, clearly visible) — Depth was NOT
+repurposed for screen motion. `GHOST_TUNE` is a **single module-scope object** that both the panel (lil-gui
+mutates in place) and the runtime `entry.update` (reads `GHOST_TUNE.y/ax/az` each frame) share — identity
+confirmed, so slider drags reach the runtime; `loadGhostTune()` is called exactly once.
+
+**Births + deaths, not a frozen cast (the second playtest fix).** The first recorder froze the cast at
+record-start (nearest N enemies) — so over a 60 s clip every ghost eventually died and the loop decayed to a
+lone player ship (the game spawns enemies in waves). Fix: each ship slot carries a **`birth`** (keyframe it
+first appears, default 0) alongside **`death`** (−1 or a keyframe); a slot renders only for
+`birth ≤ frame < death`. The recorder starts **player-only** and assigns a NEW `birth` slot to every enemy as
+it appears — **including later waves** — up to a **16-slot total cap** (`MAX_GHOST_SHIPS`), back-filling
+pre-birth placeholder samples so every slot array stays length `frames`. Slots are never reused (§30). This is
+what keeps a long recording populated. Because the track can now hold 16 slots but a weak phone must not draw
+16 ships, the tier gate became a **CONCURRENT-visible ceiling** (`maxConcurrent`, not "first N slots"): the
+runtime builds one mesh per slot but shows only the born-and-alive ones up to `maxConcurrent` (hidden meshes
+don't draw, so the draw-call cost §23 is bounded by the ceiling, not 16). A death only fires the explosion if
+that ghost was **on-screen the prior frame** (`wasVisible`), so a capped-out or never-shown slot never pops a
+sourceless burst. *(Playtest watch-item: on the **Balance** tier — concurrent cap 4 — if >4 slots are alive
+when a visible ghost dies, a waiting slot pops in to fill the vacancy; it's masked by the coincident death
+explosion and does not occur on High/8. Confirm it doesn't read as a jarring spawn.)*
+
+**Re-center by a SINGLE FIXED OFFSET = the player's mean path → the player flies FREELY (the final anchoring
+model, reversing two rejected ones).** The shared pure helper `recenterAndQuantize` (used by BOTH authoring
+paths — one source of truth) subtracts **one constant** `(mean(p0.x), mean(p0.z))` (the mean of slot-0's / the
+player's positions over the whole track) from every ship AND every bullet. Because only a **constant** is
+removed: the player's real free-flight motion is **preserved** (it visibly flies, which the maintainer
+required), enemies move naturally, and there is **no per-frame membership dependence → no birth/death jumps**.
+Two earlier anchors were rejected: (a) the **per-frame cast centroid** stepped at every birth/death (~15
+membership events), jerking the whole formation "downward" (a +Z step reads as downward on the top-down
+camera); (b) **per-keyframe slot-0 subtraction** removed the drift jump-free but **pinned the player at origin**
+(it stopped flying) — the maintainer rejected that too. The fixed mean offset is the synthesis: bounded like a
+re-center, but the player keeps its motion. The cloud centers on the player's mean *path* (not the cast
+centroid), so an enemy-biased formation sits slightly off the anchor — that's what the Anchor X/Z sliders nudge.
+The committed track's bounded guard drops the old `slot0 ≡ (0,0)` assertion and instead asserts slot 0 is **NOT
+constant** (its coords vary, its mean ≈ 0 — guards against regressing to pinning) and a loose `< 600 u` runaway
+bound over live frames; a stale (old slot-0-pinned) committed track fails the "not constant" check, forcing a
+re-record.
+
+**Fixed ABSOLUTE world anchor + gate flipped to non-freighter missions.** The group is placed at the absolute
+world coordinate `(GHOST_TUNE.ax, y, az)` (default `(−100,−450)`, the freighter mission's start) — the **same
+world spot regardless of mission**, NOT `arenaCenter`-relative and NOT following any object; it's a **distant
+landmark the freely-flying player heads toward**, fading in through the scene fog. It shows in **every mission
+EXCEPT the freighter escort** (`G.activeMission?.title !== 'freighter'`: campaign `null` → shows, mining/
+research → show, freighter → hidden because you're IN that fight). The build trigger MOVED off the freighter
+set-piece into **`sim.js reset()`** (after the set-piece rebuild loop): a dynamic `import('./ghost-battle.js')`
+(keeps it off the initial bundle + avoids a `sim.js↔world.js↔ghost-battle.js` static cycle) calls
+`buildGhostBattle()` (no argument), which adds its group to `scene` AND pushes a `setPieces` entry so the
+universal teardown at the next `reset()` removes it (no double-build). It **self-skips under both `?debug` AND
+`?bench`** (`headless = search.includes('debug') || search.includes('bench')`) — the gate flip means the
+feature now fires in the campaign, which the §58 perf trace exercises (`activeMission` null), and the async glb
+loads would add nondeterministic draw/tri counts to `load.*`; skipping keeps the gate FLAT/deterministic. Its
+real per-frame cost (≤8 extra ship draws + ≤24 bullet dots on High, less on Balance, 0 on Performance, and
+**zero `update` cost** — it never touches `G`/`enemies`/projectiles) is a draw/fill matter judged on-device
+(§58 GPU blind spot), deliberately not benched.
+
+**Freighter reposition (render only).** The freighter render position moved **+50 z (−450 → −400)** while its
+**mission `center` stays at −450**. The freighter is non-collidable decor with zero mechanical role
+(enemy/player spawns + soft boundary key off `arenaCenter` = the mission center, not the freighter). Moving
+both would shift the whole mission by a constant the player can't perceive; moving **only** the freighter is
+what actually changes what the player sees (it now sits ahead of the forward-gliding spawn) and is
+balance-neutral. 50 u is small vs the 70–130 u enemy spawn ring, so the freighter stays inside the fight.
+(The ghost battle's default anchor `(−100,−450)` is the freighter mission's spot, but the ghost battle no
+longer *shows* in that mission — it's the campaign/other-mission landmark; the two just share a default coord.)
+
+**Record length 60 s** (~150–250 KB @ 20 fps / ≤16 slots / ≤24 bullets) — a longer, more watchable loop, still
+within the KB budget.
+
+**Tier / `?debug` / `?bench` gating** (the pure `ghostBattlePlan(tierName, headless)`): Performance = off
+entirely (mirrors `nebulaBake:null`, §23); the **runtime** is skipped under `?debug` (headless visual suite,
+mirroring the nebula bake §43) AND under `?bench` (the perf gate now runs the campaign where this fires — skip
+so async glb loads don't flake `load.*`); `maxConcurrent` = **High/unknown 8 + bullets, Balance 4 / no bullets,
+Performance 0**. The `?dev` recorder + panel are a separate flag and observe the live fight directly (no
+conflict with the `?debug`/`?bench`-off runtime). **No new assets** (ghost ships reuse `player_combat` +
+`enemy_*_combat`), so no CREDITS change and no itch-glb-404 risk (§37). Cross-references §38 (freighter
+set-piece), §43/§23 (gating), §58 (the bench harness the bootstrap reuses + the gate this self-skips).
 ---
 
 ## Future ideas

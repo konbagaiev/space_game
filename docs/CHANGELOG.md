@@ -5,6 +5,49 @@
 
 ## 2026-07-07
 
+- **Ambient "ghost battle"** — a **clearly visible** looping recorded "ghost battle" (near-opaque, full-color,
+  below-plane (`y≈−60`) ghost ships **with births AND deaths** + their bullets) now plays as decor at a **FIXED
+  ABSOLUTE world point** (default `(−100,−450)`) — a distant landmark you fly toward — in **every mission EXCEPT
+  the freighter escort** (you're IN that fight there). The ghosts sit on a separate layer below the `y=0.6`
+  combat plane (the player can never shoot them) and carry no HUD/markers/health-bars, collision, targeting, or
+  audio — the "distant/not-mine" read comes from horizontal separation, not dimming (over-dimming was the first
+  playtest failure). It is a **committed transform-replay track** (`client/src/backdrop-battle.js`) replayed at
+  runtime (`client/src/ghost-battle.js`) as a dumb lerped animation — it **never runs a second sim** and never
+  touches the live world. A ghost death regenerates the real small-pirate explosion at the ghost's own depth
+  (`spawnShipExplosion` gained an optional `ringY` param so the shockwave ring stays off the combat plane). The
+  freighter render position was nudged **+50 z (−450 → −400)** (mission `center` stays at −450, balance-neutral).
+  No new assets (ghost ships reuse the existing `player_combat` + `enemy_*_combat` glbs).
+  - **Built in `sim.js reset()`**, gated `G.activeMission?.title !== 'freighter'` (campaign `null` → shows;
+    mining/research → show; freighter escort → hidden), at the absolute `GHOST_TUNE.ax/y/az` (NOT arenaCenter-
+    relative, NOT following any object). `buildGhostBattle()` takes no argument, adds its group to `scene` + a
+    `setPieces` entry (universal teardown on the next reset), and **self-skips under `?debug` AND `?bench`** (both
+    headless harnesses — the async glb loads would add nondeterministic draw counts to the §58 perf gate, which
+    now runs the campaign where this fires).
+  - **Player flies FREELY — re-center by a SINGLE FIXED OFFSET (the mean of the player's path).** The shared
+    `recenterAndQuantize` subtracts one constant `(mean(p0.x), mean(p0.z))` from every ship + bullet, so only a
+    constant is removed → the player's real free-flight motion is preserved (it visibly flies), enemies move
+    naturally, and there's **no per-frame membership dependence → no birth/death jumps**. (Reverses the two
+    rejected earlier anchors: per-keyframe slot-0 pinning froze the player at center; the cast-centroid anchor
+    stepped at every birth/death and jerked the whole formation "downward".)
+  - **Births keep the clip populated.** Each slot carries `birth` + `death`; the track holds up to **16 slots**
+    and the recorder assigns a NEW `birth` slot to every enemy — **including later-spawned waves** — instead of
+    freezing the record-start cast. The runtime builds one mesh per slot but shows only born-and-alive slots up
+    to a per-tier **CONCURRENT ceiling** (`maxConcurrent`: **High 8 + bullets, Balance 4 / no bullets,
+    Performance off**). A death only explodes if the ghost was on-screen the prior frame (no sourceless burst).
+  - **Authoring = a REAL in-game recording** via a new **`?dev` "Backdrop" panel** (lil-gui, mirrors `?tune`):
+    a **Start/Stop-record** button with a live **`REC 12s/60s`** readout (auto-stops at 60 s) captures the
+    played battle (`window.__backdrop.record()/stop()/status()`) and downloads a `backdrop-battle.js` module;
+    plus live **Depth / Scale / Opacity / Anchor X / Anchor Z** sliders driving a persisted `GHOST_TUNE`
+    (`localStorage['ghostTune']`, defaults `{y:−60, scale:0.8, opacity:0.9, ax:−100, az:−450}`). **Anchor X/Z**
+    are the absolute world anchor (±600) that moves the battle across the ground plane (the placement control);
+    **Depth (y)** mostly changes apparent size under the near-top-down camera (layer separation). Authoring note:
+    don't OOB-warp mid-record (it skews the player's mean → shifts the cloud; nudge back with Anchor X/Z). A
+    synthetic `client/bench/gen-backdrop.mjs` (`window.__bench.bakeBackdrop`, `npm run bench:backdrop`) is a
+    **bootstrap/fallback**; both paths share the pure `recenterAndQuantize`. Docs: SUMMARY, DECISIONS §59.
+    Tests: `client/src/ghost-battle-track.test.js` (gating + `slotAlive` + sampler + quantize + 5-key tune
+    helpers + `recenterAndQuantize` fixed-mean-offset/born-late + shape (birth/death invariants, ≤16) +
+    player-flies-freely / `<600u` runaway guard).
+
 - **Grab reel-in speed is now a linear ramp (no near-ship jerk).** Replaced the `1/dist²` field-based pull
   *speed* with a **linear ramp by distance** — `PULL_SPEED_FAR = 1` u/s far out rising linearly to
   `PULL_SPEED_NEAR = 4` u/s at the ship (weight-10 refs; `·(10/weight)`), floored at/beyond `PULL_FAR_DIST = 11`.
