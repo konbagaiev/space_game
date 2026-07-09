@@ -225,3 +225,9 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
   off-plane boxes to the plane + a small band for muzzle-Y wobble); data-only regeneration, no runtime
   change, fixes both cases. (Alternative: make bullet collision test the XZ footprint only.) Deferred from the
   OBB hitbox work (2026-07-04).
+- **Re-record the freighter backdrop battle WITH rockets.** The shipped ambient "ghost battle" backdrop
+  (near the freighter, `client/src/backdrop-battle.js`) was recorded before the transform recorder captured
+  the `rockets` array — so its rocketeers never fire visible rockets. Once the Level-0 cutscene work adds
+  **rocket capture to the shared recorder** (Step 2 of the intro cutscene, 2026-07-09), re-record the
+  backdrop clip via `/record-backdrop-clip` so the distant skirmish shows rockets too. Data-only (a new
+  committed track); no runtime change beyond the shared rocket render already added for the cutscene.
