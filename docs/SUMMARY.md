@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-08 (**Intro "Level 0" first level** — a gentle, non-skippable opening level (3 basic pirates one at a time via `maxConcurrent 1` → 1 rocket-pirate finale, no boss, no reward, `enemyTotal 4`) is now the first level every new player plays. Implemented by keeping the seed names `level-1`..`level-4` (stable ids) and shifting the campaign descriptors down one id + appending `level-5` (old L4); the campaign keeps its "Level 1"-"Level 4" titles/rewards/briefings, one id higher. Existing players were migrated `+1` (SQLite migration 022 + a guarded `migrations_pg` one-shot on Postgres). On first launch the intro AUTO-LAUNCHES straight into the fight — no welcome screen, no "Take off" — flying the default player ship; Level 1+ landing is unchanged. New EN+RU `level.0.victory` string. Previously: **Ambient ghost battle** — a clearly visible looping recorded skirmish (near-opaque, full-color, below-plane (`y≈−60`) ghost ships with births+deaths + bullets, up to 16 slots) plays as a distant landmark at a FIXED ABSOLUTE world point (default `(−100,−450)`) in every mission EXCEPT the freighter escort; a committed transform-replay track (re-centered by a single fixed offset = the player's mean path, so the player flies FREELY, no birth/death jumps) replayed as a dumb lerped animation that never runs a second sim. Built in `sim.js reset()` gated `activeMission?.title !== 'freighter'`; self-skips under `?debug` AND `?bench`. Canonical track is a REAL battle recorded in-game via a `?dev` "Backdrop" panel (Start/Stop-record + REC readout + live Depth/Scale/Opacity/Anchor X/Anchor Z sliders, persisted `ghostTune`); synthetic `gen-backdrop.mjs` is a bootstrap. Tier-gated CONCURRENT ceiling (High 8 / Balance 4 / Performance off). Freighter render pos nudged +50 z to -400. See the ghost-battle subsection. Previously: **L2/L3 difficulty ease** — max simultaneous enemies in the non-boss spawning phases of **level-2 and level-3** lowered from 4 to **3 at a time** (`maxConcurrent`), matching level-1; `enemyTotal` (17/21) + boss phases unchanged. Previously: **Touch HUD overlap fix** — on touch the zoom `＋/−` pair moved to the top-right (under the Destroyed counter) so it no longer collides with the bottom-center Return-to-base button, now styled like the Take-off button (orange gradient). Previously: **Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
+**Updated:** 2026-07-09 (**Combat record/playback (input-replay)** — a general `?record=1&level={id}` / `?playback&id={id}` mechanism that records a fight as INPUT + RNG seed and replays it on the REAL `sim` (real bullet colors, physics, FX, collisions), built to later carry the Level-0 cutscene / alt-angle views / video capture. `client/src/replay.js` (pure core, unit-tested) + `main.js` wiring. Record lands on the real ship idle with a **Start recording** button that unlocks after the model loads; capture is one input snapshot per sim tick; **Stop & Save** → localStorage + a `{id}.json` download + a **Play it ▶** link. Both modes pace the sim with a fixed-timestep accumulator (real-time on any refresh rate) and isolate the seeded `Math.random` to the sim ONLY (a private PRNG swapped in around `update()`/`reset()`; render/HUD/FX/audio/idle frames use the native RNG) so record↔playback reproduce a fight bit-for-bit regardless of frame rate / audio / model-load timing. `audio.js` pitch randomness moved to a module-local PRNG for the same reason. Trace: `{seed,dt,shipId,level,ticks:[{k,t}]}`; storage is localStorage now, S3-asset planned. See the record/playback subsection under Tools. Previously: **Intro "Level 0" first level** — a gentle, non-skippable opening level (3 basic pirates one at a time via `maxConcurrent 1` → 1 rocket-pirate finale, no boss, no reward, `enemyTotal 4`) is now the first level every new player plays. Implemented by keeping the seed names `level-1`..`level-4` (stable ids) and shifting the campaign descriptors down one id + appending `level-5` (old L4); the campaign keeps its "Level 1"-"Level 4" titles/rewards/briefings, one id higher. Existing players were migrated `+1` (SQLite migration 022 + a guarded `migrations_pg` one-shot on Postgres). On first launch the intro AUTO-LAUNCHES straight into the fight — no welcome screen, no "Take off" — flying the default player ship; Level 1+ landing is unchanged. New EN+RU `level.0.victory` string. Previously: **Ambient ghost battle** — a clearly visible looping recorded skirmish (near-opaque, full-color, below-plane (`y≈−60`) ghost ships with births+deaths + bullets, up to 16 slots) plays as a distant landmark at a FIXED ABSOLUTE world point (default `(−100,−450)`) in every mission EXCEPT the freighter escort; a committed transform-replay track (re-centered by a single fixed offset = the player's mean path, so the player flies FREELY, no birth/death jumps) replayed as a dumb lerped animation that never runs a second sim. Built in `sim.js reset()` gated `activeMission?.title !== 'freighter'`; self-skips under `?debug` AND `?bench`. Canonical track is a REAL battle recorded in-game via a `?dev` "Backdrop" panel (Start/Stop-record + REC readout + live Depth/Scale/Opacity/Anchor X/Anchor Z sliders, persisted `ghostTune`); synthetic `gen-backdrop.mjs` is a bootstrap. Tier-gated CONCURRENT ceiling (High 8 / Balance 4 / Performance off). Freighter render pos nudged +50 z to -400. See the ghost-battle subsection. Previously: **L2/L3 difficulty ease** — max simultaneous enemies in the non-boss spawning phases of **level-2 and level-3** lowered from 4 to **3 at a time** (`maxConcurrent`), matching level-1; `enemyTotal` (17/21) + boss phases unchanged. Previously: **Touch HUD overlap fix** — on touch the zoom `＋/−` pair moved to the top-right (under the Destroyed counter) so it no longer collides with the bottom-center Return-to-base button, now styled like the Take-off button (orange gradient). Previously: **Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
 inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
 weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base). Reel-in speed is a **linear ramp** by
 distance (1 u/s far → 4 u/s at the ship, weight-scaled) — un-physical but no near-ship jerk, replacing the
@@ -322,6 +322,39 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   that the player can wander out of bounds). Shows the **arena boundary** square (±360), the **player** as a
   heading triangle (clamped to the radar edge so it stays visible when far out, red while out of bounds), and
   **enemies** as dots tinted by type color (`updateMiniMap`). Hidden on menus and while a result overlay is up.
+
+### Combat record/playback (input-replay) — `?record` / `?playback`
+A general, reusable mechanism to **record a fight and replay it on the real engine** (not a movie of
+positions — it captures the player's INPUT + the RNG seed, then re-runs the actual `sim`, so playback has
+real bullet colors, smooth physics, real FX and real collisions). Consumers: the Level-0 intro cutscene
+(built on top, next), "watch a fight from another angle", video capture. Files: `client/src/replay.js`
+(pure core — URL parsing, trace shape, snapshot/apply/validate, unit-tested) + wiring in `main.js`.
+- **Record:** `/?record=1&level={id}` (bare number → seed name `level-{id}`, so `?record=1&level=1` is the
+  intro four-ship level; or pass a full name). Lands on the level with the **real ship idle**; a top bar
+  shows a **Start recording** button that unlocks once the ship `.glb` has loaded (no placeholder capture).
+  Start installs a fresh captured seed (`Date.now()>>>0`), `reset()`s the level, and captures one input
+  snapshot per sim tick. **Stop & Save** writes the trace and offers a **Play it ▶** link.
+- **Playback:** `/?playback&id={id}` (or `?playback` alone = the last recording). Loads the trace, rebuilds
+  the recorded ship, re-seeds, and re-sims the fight; holds on the idle frame until the model loads, then
+  plays. A top bar shows `tick / total` + Restart.
+- **Trace format** (`{version, kind:'input-replay', id, level, seed, dt, shipId, ticks:[{k,t}]}`): `k` = held
+  key codes, `t` = `[heading,thrust]` when the touch stick is active. That is the ENTIRE recording — the
+  determinism audit found the sim needs only the seed (no wall-clock / Map-Set-order deps in the sim path).
+- **Real-time pacing:** both modes advance the sim with a **fixed-timestep accumulator** (real elapsed time
+  → whole `BENCH_DT` steps), so a recording made/played on a 120 Hz screen runs at true speed, not 2×.
+- **Determinism isolation (load-bearing):** the seeded `Math.random` feeds the sim **only** — `main.js`
+  swaps a private seeded PRNG in around `update()`/`reset()` and restores the native RNG for everything else
+  (render, HUD, FX animation, audio, idle frames). Otherwise cosmetic per-frame draws — whose count differs
+  between record and playback because frames ≠ ticks — would desync the stream. `audio.js` also draws its
+  pitch/variant randomness from a module-local PRNG for the same reason. Verified: record↔playback reproduce
+  a fight **bit-for-bit** (a rounded-position state hash) regardless of frame rate, audio state, or
+  model-load timing.
+- **Storage:** currently the trace is cached in `localStorage` (`replay:{id}` + `replay:last`) for the
+  same-browser record→playback loop, and downloaded as `{id}.json`. Planned: promote recordings to an **S3
+  asset** (like the ship `.glb`s — `assets:pull`/S3, referenced from seed on prod) so they sync prod↔local.
+- **`window.__replay`** console/automation hook (under either flag): `begin()` (== Start), `stop()`,
+  `step(n)` (synchronous sim stepping, bypasses rAF — for tests + a background tab that throttles rAF),
+  `hash()` (state hash), `status()`. See `docs/plans/2026-07-09-replay-record.md`.
 
 ## Ship model (DB-driven)
 Ships, components and weapons are **defined in the database** (`ships`, `components`, `weapons`); the
@@ -1667,8 +1700,13 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   ESM resolves (edges fire on user actions, not module init).
 - **Composition root:** `main.js` (~630 lines) — imports + input/touch/zoom wiring + the `?dev` `devPerf`
   monitor + `animate`/`prewarmShaders` + the `?debug` `window.__game` test hook + the `?bench`
-  `window.__bench` record/replay perf hook (`bench.js`) + `bootstrap()` (fetch the DB catalog/level/active-
-  ship, build the world + player, restore the session, show the landing screen).
+  `window.__bench` record/replay perf hook (`bench.js`) + the `?record`/`?playback` input-replay
+  record/playback (`replay.js` pure core + `window.__replay`) + `bootstrap()` (fetch the DB
+  catalog/level/active-ship, build the world + player, restore the session, show the landing screen).
+- **Input-replay:** `replay.js` — the pure, DOM/engine-free half of `?record`/`?playback` (URL-flag parsing,
+  the `{seed,dt,shipId,level,ticks}` trace shape, per-tick input snapshot/apply, validate; unit-tested in
+  `replay.test.js`). The engine wiring (accumulator pacing, seeded-RNG isolation, the record/playback UI) is
+  in `main.js`. See the record/playback subsection under Tools.
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)

@@ -11,6 +11,21 @@
 //   2) createAudio() — the engine; lazily builds an AudioContext on the first user gesture (autoplay policy),
 //      so importing this module never touches the DOM/AudioContext (safe under node:test).
 
+// ---------- Cosmetic RNG (decoupled from the seeded sim RNG) ----------
+// Audio pitch/variant/noise randomness is purely cosmetic and MUST NOT draw from the global arand: the
+// input-replay recorder (bench.js installSeededRandom) seeds arand so the SIM is reproducible, but audio
+// runs only when the AudioContext is unlocked (a user gesture) — so if audio shared that stream, a recording
+// made with sound would desync from a playback made without it (or vice versa). This module-local PRNG keeps
+// audio randomness independent, so replay determinism holds regardless of the audio state. (Seed source is
+// wall-clock — cosmetic, never needs to be reproducible.)
+let _arandState = ((typeof performance !== 'undefined' ? (performance.now() * 1000) | 0 : 123456789) ^ 0x9e3779b9) >>> 0;
+function arand() {
+  _arandState = (_arandState + 0x6D2B79F5) | 0;
+  let t = Math.imul(_arandState ^ (_arandState >>> 15), 1 | _arandState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
 // ---------- Settings (pure, testable) ----------
 export const AUDIO_STORAGE_KEYS = {
   master: 'audioMaster', music: 'audioMusic', sfx: 'audioSfx',
@@ -100,7 +115,7 @@ export function createAudio(initialSettings) {
     if (!noiseBuf) {
       noiseBuf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.5), ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      for (let i = 0; i < d.length; i++) d[i] = arand() * 2 - 1;
     }
     const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; return s;
   }
@@ -163,7 +178,7 @@ export function createAudio(initialSettings) {
     // like a robotic loop. No kind (or the sample isn't loaded) → the synthesized descending zap below.
     shoot(kind, opts) {
       if (kind) {
-        const rate = opts && opts.rate != null ? opts.rate : 0.96 + Math.random() * 0.08;
+        const rate = opts && opts.rate != null ? opts.rate : 0.96 + arand() * 0.08;
         if (playSample(kind, { rate, gain: (opts && opts.gain) ?? 1 })) return;
       }
       if (!sfxPlayable()) return;
@@ -189,7 +204,7 @@ export function createAudio(initialSettings) {
     // A bullet connects: a short metallic tick. With a `kind` (e.g. 'shipHit' when the PLAYER's ship is
     // struck) it plays that preloaded sample with a tiny pitch jitter; no kind / not loaded → the synth tick.
     hit(kind) {
-      if (kind && playSample(kind, { rate: 0.97 + Math.random() * 0.06 })) return;
+      if (kind && playSample(kind, { rate: 0.97 + arand() * 0.06 })) return;
       if (!sfxPlayable()) return;
       const t = ctx.currentTime;
       const n = noise();
@@ -200,7 +215,7 @@ export function createAudio(initialSettings) {
     // Rocket launch. With a `kind` (a rocket weapon's stats.sfx) it plays that preloaded sample (tiny pitch
     // jitter); otherwise — or if the sample isn't loaded — the synthesized rising whoosh + low body below.
     rocket(kind) {
-      if (kind && playSample(kind, { rate: 0.98 + Math.random() * 0.04 })) return;
+      if (kind && playSample(kind, { rate: 0.98 + arand() * 0.04 })) return;
       if (!sfxPlayable()) return;
       const t = ctx.currentTime;
       const n = noise();
@@ -279,7 +294,7 @@ export function createAudio(initialSettings) {
     if (list.length === 1) return list[0];
     const fresh = list.filter((k) => k !== lastMusicKey);              // avoid an immediate repeat
     const pool = fresh.length ? fresh : list;
-    return pool[Math.floor(Math.random() * pool.length)];
+    return pool[Math.floor(arand() * pool.length)];
   }
 
   // Start a scene's music (a random track), fading it in. No-op if the buffer isn't decoded yet — the

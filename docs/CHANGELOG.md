@@ -3,6 +3,30 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-09
+
+- **[2026-07-09-replay-record] Combat record/playback via deterministic input-replay.** A new general
+  mechanism to **record a fight and replay it on the real engine**: `?record=1&level={id}` captures the
+  player's INPUT + the RNG seed (trace `{seed,dt,shipId,level,ticks:[{k,t}]}`), and `?playback&id={id}`
+  re-runs the actual `sim` from it — so playback has real bullet colors, smooth physics, real FX and real
+  collisions (not the old "movie of positions"). New `client/src/replay.js` (pure core, unit-tested in
+  `replay.test.js`) + wiring in `main.js`; a `window.__replay` console/automation hook. Record lands on the
+  **real ship idle** with a **Start recording** button that unlocks once the ship `.glb` has loaded (no
+  placeholder capture); **Stop & Save** writes the trace to `localStorage` + downloads `{id}.json` + offers a
+  **Play it ▶** link. **User-visible effect:** you can record a Level-0 playthrough and watch it play back
+  faithfully. Built as the foundation the Level-0 intro cutscene (and alt-angle views / video capture) will
+  sit on. Storage today is `localStorage` + file download; **S3-asset storage is the planned next step**.
+  - **Real-time pacing.** Both modes advance the sim with a **fixed-timestep accumulator** (real elapsed time
+    → whole `BENCH_DT` steps), fixing a 2× fast-forward on 120 Hz displays (one fixed step ran per frame).
+  - **Determinism isolation (load-bearing fix).** The seeded `Math.random` now feeds the **sim only** — a
+    private seeded PRNG is swapped in around `update()`/`reset()`, and the native RNG serves render / HUD / FX
+    animation / audio / idle frames. Without this, cosmetic per-frame draws (whose count differs between
+    record and playback because frames ≠ ticks) desynced the run. `client/src/audio.js` pitch/variant/noise
+    randomness was likewise moved to a **module-local PRNG** (audio only runs when the ctx is unlocked, so it
+    would otherwise consume the seeded stream asymmetrically). Verified: record↔playback reproduce a fight
+    **bit-for-bit** (rounded-position state hash) regardless of frame rate, audio state, or model-load timing.
+  - New `/record-playback` skill documents the record→playback loop.
+
 ## 2026-07-08
 
 - **[2026-07-08-2224-intro-first-level] Intro "Level 0" first level.** A gentle, non-skippable opening
