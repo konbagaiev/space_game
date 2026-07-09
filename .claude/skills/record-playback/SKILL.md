@@ -57,6 +57,13 @@ canonical store is an **S3 asset** (like ship `.glb`s — off git, synced prod�
 referenced from seed on prod); `loadTrace` already falls back to `/recordings/{id}.json`. Wiring the S3
 push/pull is a pending step (see the spec).
 
+**Testing caveat — don't clobber the maintainer's recordings.** The `localStorage` store is per-browser, and
+Claude's `claude-in-chrome` automation drives the maintainer's REAL Chrome. So automated test recordings
+write to the same `replay:last` / `replay:{id}` and can **overwrite the maintainer's own recording** — then
+`?playback&cutscene=1` (no id → plays `replay:last`) shows the test clip and looks broken. When testing via
+automation: use throwaway ids, list existing `replay:*` keys first, and **clean up afterward** (remove the
+keys you created, restore `replay:last` to the maintainer's recording). This bit us once (2026-07-10).
+
 ## Files / reference
 
 - `client/src/replay.js` — pure core (trace shape, URL parsing, snapshot/apply/validate; `replay.test.js`).

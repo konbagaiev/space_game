@@ -31,14 +31,16 @@ export function evalRecord(search) {
   return { level: normalizeLevelName(p.get('level')) };
 }
 
-// ?playback&id={id}  (or the shorthand ?playback={id}) → { id } | null. URL-only. A missing id resolves to the
-// most recent same-browser recording at load time (main.js falls back to the 'last' dev-cache slot).
+// ?playback&id={id}  (or the shorthand ?playback={id}) → { id, cutscene } | null. URL-only. A missing id
+// resolves to the most recent same-browser recording (main.js falls back to the 'last' dev-cache slot).
+// `&cutscene` (=1) overlays the level's scripted, event-driven text pauses (Level-0 intro cutscene).
 export function evalPlayback(search) {
   const p = new URLSearchParams(search || '');
   if (!p.has('playback')) return null;
   const v = p.get('playback');
   const id = (p.get('id') || (v && v !== '' && v !== '1' && v !== 'true' ? v : '') || '').trim();
-  return { id: id || null };
+  const cutscene = p.has('cutscene') && !['0', 'false', 'off'].includes(p.get('cutscene'));
+  return { id: id || null, cutscene };
 }
 
 // Snapshot the resolved input for ONE tick, exactly as the recorder captures it and the replayer re-applies it:
@@ -65,8 +67,10 @@ export function applyInput(tick, keys, touchAim) {
 
 // Assemble a trace object from the captured run. `seed` is the mulberry32 seed actually installed at record
 // start (the ONLY thing beyond input that determinism needs — the audit found no other non-seeded source in the
-// sim path). `dt` is the fixed step used both to record and to replay. `shipId` rebuilds the same player ship.
-export function makeTrace({ id, level, seed, dt, shipId, ticks }) {
+// sim path). `dt` is the fixed step used both to record and to replay. `shipId` + `loadout`/`components` rebuild
+// the EXACT player ship+weapons used at record time, so a replay is independent of the current account loadout
+// (both are id-only refs — `loadout.mounts:[{weapon,group,…}]`, `components:{hull,engine,…}` — so serializable).
+export function makeTrace({ id, level, seed, dt, shipId, loadout, components, ticks }) {
   return {
     version: TRACE_VERSION,
     kind: 'input-replay',
@@ -75,6 +79,8 @@ export function makeTrace({ id, level, seed, dt, shipId, ticks }) {
     seed: seed >>> 0,
     dt,
     shipId: shipId == null ? null : shipId,
+    loadout: loadout || null,       // { mounts:[{weapon,group,offset,delay}] } — null → playback uses ship defaults
+    components: components || null,  // { hull,engine,thruster,repair,grab } ids — null → ship defaults
     ticks: ticks ? ticks.slice() : [],
   };
 }

@@ -354,7 +354,28 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   asset** (like the ship `.glb`s — `assets:pull`/S3, referenced from seed on prod) so they sync prod↔local.
 - **`window.__replay`** console/automation hook (under either flag): `begin()` (== Start), `stop()`,
   `step(n)` (synchronous sim stepping, bypasses rAF — for tests + a background tab that throttles rAF),
-  `hash()` (state hash), `status()`. See `docs/plans/2026-07-09-replay-record.md`.
+  `hash()` (state hash), `status()`, `cut()`/`advance()` (cutscene state / dismiss a card). See
+  `docs/plans/2026-07-09-replay-record.md`.
+- **READ-ONLY (`G.replayMode`).** A `?record`/`?playback` session must not mutate the server: `win()` gates
+  `unlockNextLevel`/`bankRun`/`depositLoot`/funnel on `!G.replayMode`, so a (re)played win shows the victory
+  overlay but never advances progress or banks credits.
+- **Account-independent loadout.** Playback rebuilds the ship+weapons the recording was MADE with — captured
+  in the trace (`loadout`/`components`) for new recordings, or the ship's catalog defaults for old ones —
+  via a `buildPlayerFor(ship, override)` param, so a later-unlocked weapon (e.g. the Machine Gun) never leaks
+  into an intro-level replay.
+- **`settleView()`** (extracted from `sim.js update()`) frames the camera + sky/stars/planet on the player
+  right after `reset()`, so a frozen cutscene P0 frame doesn't jump when the re-sim's first tick runs.
+
+### Level-0 intro cutscene (on the playback) — `?playback&id={id}&cutscene=1`
+Overlays the Level-0 pause SCRIPT on an input-replay playback (`client/src/level0-cutscene.js` = the script;
+runtime in `main.js`). Each beat is triggered by a **SIM EVENT** observed each playback tick (NOT a fixed
+tick — survives re-recording) and fires **~1s after** it: P0 = a pre-fight opening card (freeze until tap);
+P1/P2 = 1s after the 1st/2nd kill; P3 = 1s after the rocket pirate warps in; P4 = 1s after the rocketeer's
+2nd rocket. A **cutscene-local freeze** (`cutFrozen`, NOT `G.paused` → the combat Pause overlay never pops)
+halts the accumulator; a localized lower-third card (`ui.cutscene.p*`, EN+RU) + tap/Space/Enter to advance,
+Skip/Escape to end; `body.cutscene` hides the HUD. On clearing the fight it **simulates the "Return to base"
+button** (`engageAutopilot` — a click, absent from the key trace) and flies home to the victory overlay. This
+is the mechanism the real new-player intro will sit on (auto-play from an S3 recording — pending).
 
 ## Ship model (DB-driven)
 Ships, components and weapons are **defined in the database** (`ships`, `components`, `weapons`); the

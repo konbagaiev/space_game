@@ -3,7 +3,32 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
-## 2026-07-09
+## 2026-07-10
+
+- **[2026-07-09-replay-record] Level-0 intro cutscene on the input-replay playback (event-driven pauses +
+  auto return-to-base).** `?playback&id={id}&cutscene=1` overlays the Level-0 script on a playback: a P0
+  opening card (freeze before the fight, tap to begin) + P1–P4 text pauses each firing **~1s after their SIM
+  EVENT** (1st/2nd kill, rocketeer warp-in, the rocketeer's 2nd rocket) — event-driven, so re-recording never
+  needs re-timing. New `client/src/level0-cutscene.js` (the pause script) + runtime in `main.js` (event
+  detection, a cutscene-local freeze that never pops the combat Pause overlay, a localized lower-third card,
+  Skip). EN+RU `ui.cutscene.p0..p4` + skip/tap. On clearing the fight it **simulates the "Return to base"
+  button** (`engageAutopilot` — a click, so not in the key trace) and flies home to the victory overlay.
+- **Record/playback are READ-ONLY (`G.replayMode`).** A replayed win showed the victory overlay but was also
+  calling `unlockNextLevel()`/`bankRun()`/`depositLoot()`/funnel — silently advancing the real player's
+  progress (skipping levels) and banking credits. `win()` now gates every server side effect on
+  `!G.replayMode` (set for `?record`/`?playback`). Verified: a replayed win fires ZERO server mutations.
+- **Recordings are account-independent.** Playback rebuilt the player from the CURRENT account loadout, so a
+  weapon unlocked on a later level (e.g. the Machine Gun) leaked into an intro-level replay. `buildPlayerFor`
+  gained an `override` param; playback now builds the **recorded** loadout — captured in the trace
+  (`loadout`/`components`) for new recordings, or the ship's catalog defaults for old ones — never the account.
+  Verified bit-for-bit with the captured loadout.
+- **Camera/planet no longer jump when the cutscene un-freezes.** Extracted `settleView()` from `update()` and
+  call it right after `reset()` in record/playback, so a frozen P0 frame is already framed on the player (the
+  camera + stars + planet parallax + moons were only set inside `update()`, which the freeze skips).
+- **Campaign flow: a no-briefing level lands on the Welcome/take-off screen after a victory, not the "Stand
+  by" default.** `leaveOverlay` (post-victory Continue) now mirrors bootstrap/account
+  (`briefing ? showMain : showWelcome`) — fixes Level 1 (no briefing yet) showing "Stand by for new orders"
+  right after the Level 0 intro.
 
 - **[2026-07-09-replay-record] Combat record/playback via deterministic input-replay.** A new general
   mechanism to **record a fight and replay it on the real engine**: `?record=1&level={id}` captures the

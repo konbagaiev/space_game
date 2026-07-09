@@ -24,11 +24,14 @@ test('evalRecord parses ?record + level, honors the off switches', () => {
   assert.equal(evalRecord(''), null);
 });
 
-test('evalPlayback parses ?playback&id and the ?playback=id shorthand', () => {
-  assert.deepEqual(evalPlayback('?playback&id=level-1-123'), { id: 'level-1-123' });
-  assert.deepEqual(evalPlayback('?playback=level-1-123'), { id: 'level-1-123' });
-  assert.deepEqual(evalPlayback('?playback'), { id: null });       // bare → last recording
-  assert.deepEqual(evalPlayback('?playback=1'), { id: null });     // ?playback=1 is the on-flag, not an id
+test('evalPlayback parses ?playback&id, the ?playback=id shorthand, and &cutscene', () => {
+  assert.deepEqual(evalPlayback('?playback&id=level-1-123'), { id: 'level-1-123', cutscene: false });
+  assert.deepEqual(evalPlayback('?playback=level-1-123'), { id: 'level-1-123', cutscene: false });
+  assert.deepEqual(evalPlayback('?playback'), { id: null, cutscene: false });   // bare → last recording
+  assert.deepEqual(evalPlayback('?playback=1'), { id: null, cutscene: false }); // ?playback=1 is the on-flag, not an id
+  assert.deepEqual(evalPlayback('?playback&id=r1&cutscene'), { id: 'r1', cutscene: true });
+  assert.deepEqual(evalPlayback('?playback&id=r1&cutscene=1'), { id: 'r1', cutscene: true });
+  assert.deepEqual(evalPlayback('?playback&id=r1&cutscene=0'), { id: 'r1', cutscene: false });
   assert.equal(evalPlayback('?record=1'), null);
   assert.equal(evalPlayback(''), null);
 });

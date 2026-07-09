@@ -2235,8 +2235,12 @@ Two load-bearing sub-decisions surfaced in live testing:
 `assets:pull`, referenced from seed when promoted to prod), chosen over committing traces to git or a DB
 table. The current build uses `localStorage` (`replay:{id}`/`replay:last`) + a `{id}.json` download as the
 same-browser dev loop; the S3 pipeline is the next iteration. See `docs/plans/2026-07-09-replay-record.md`
-and the `/record-playback` skill. Cross-ref §59 (transform-replay backdrop this supersedes for foreground),
-§58 (`?bench` seeded-replay foundation reused), §30 (simplest-thing-that-works).
+and the `/record-playback` skill. **Testing caveat (bit us once):** the `localStorage` store is per-browser,
+and Claude's `claude-in-chrome` automation drives the maintainer's REAL Chrome — so automated test recordings
+write to the same `replay:last`/`replay:{id}` and can clobber the maintainer's own recording (they'd then see
+a test clip on `?playback&cutscene=1` and think it's broken). When testing via automation, use throwaway ids
+and clean up afterward; restore `replay:last`. Cross-ref §59 (transform-replay backdrop this supersedes for
+foreground), §58 (`?bench` seeded-replay foundation reused), §30 (simplest-thing-that-works).
 ---
 
 ## Future ideas

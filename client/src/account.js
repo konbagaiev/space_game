@@ -36,6 +36,7 @@ const acc = {
 };
 // bootstrap remembers the player-type ships here so a later login can re-render the welcome screen.
 export function setPlayerShipsCache(ships) { playerShipsCache = ships; }
+export function getPlayerShips() { return playerShipsCache; } // for the post-victory landing (welcome screen fallback)
 
 const AUTH_TOKEN_KEY = 'authToken'; // bearer session token for cross-origin (itch) auth; see DECISIONS
 const getAuthToken = () => { try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; } };

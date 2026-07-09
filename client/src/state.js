@@ -42,6 +42,8 @@ export const G = {
       return id;
     } catch { return null; }
   })(),
+  replayMode: false,          // true during ?record/?playback dev sessions → the sim must NOT mutate the server
+                              //   (no unlockNextLevel/bankRun/depositLoot/funnel on a replayed win). Set in main.js.
   banked: false,              // guard so a run banks its credits exactly once
   gameStartTime: performance.now(), // run start (for the recorded game duration)
   combatElapsed: 0,           // seconds of UNPAUSED combat since run start; gates the enemy hold-fire grace (see sim.js)
