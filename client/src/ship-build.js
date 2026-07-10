@@ -67,11 +67,14 @@ export function buildPlayer(active) {
 // *active* ship we use its persisted loadout/components (so a DB weapon swap from a level briefing
 // actually takes effect); other (preview) ships fall back to their catalog defaults. G.currentShipName
 // + G.activeShip live on the shared bag — written by the welcome/shop/account/net flows.
-export function buildPlayerFor(ship) {
+export function buildPlayerFor(ship, override = null) {
   if (G.player) scene.remove(G.player.mesh);
-  const useActive = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === ship.name;
-  const loadout = useActive ? G.activeShip.loadout : { mounts: ship.stats.mounts };
-  const components = useActive ? G.activeShip.components : ship.components;
+  // `override` ({ loadout, components }) forces an EXACT build independent of the current account — used by
+  // ?playback so a recording reproduces the ship+weapons it was MADE with, not whatever the player has equipped
+  // now (e.g. a machine gun unlocked on a later level would otherwise leak into an intro-level playback).
+  const useActive = !override && G.activeShip && G.activeShip.ship && G.activeShip.ship.name === ship.name;
+  const loadout = override ? override.loadout : (useActive ? G.activeShip.loadout : { mounts: ship.stats.mounts });
+  const components = override ? override.components : (useActive ? G.activeShip.components : ship.components);
   G.player = buildPlayer({ ship, loadout, components });
   G.currentShipName = ship.name;
   scene.add(G.player.mesh);

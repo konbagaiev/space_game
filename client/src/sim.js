@@ -129,12 +129,17 @@ export const levelRunner = {
     el.restart.textContent = t('ui.button.continue'); // a win continues to the Hangar
     el.backHangar.style.display = 'none'; // Continue already goes to the Hangar — no separate button on a win
     el.overlay.style.display = 'flex';
-    track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
-    bankRun(); // bank the earned credits into the account balance
-    const loot = takeLoot(); if (loot.length) depositLoot(loot); // victory only: dump the run's collected drops into the stash
-    // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
-    // levels advance progression as before.
-    if (!this.level.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
+    // A ?record/?playback dev session is READ-ONLY: show the victory overlay but do NOT mutate the server —
+    // otherwise a (re)played win banks credits, deposits loot AND advances current_progress, silently skipping
+    // the level for the real player. All server side effects below are gated on !G.replayMode.
+    if (!G.replayMode) {
+      track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
+      bankRun(); // bank the earned credits into the account balance
+      const loot = takeLoot(); if (loot.length) depositLoot(loot); // victory only: dump the run's collected drops into the stash
+      // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
+      // levels advance progression as before.
+      if (!this.level.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
+    }
   },
 
   pickShip(pool) {
@@ -757,22 +762,24 @@ export function update(dt) {
     el.overlay.style.display = 'flex';
   }
 
-  // --- camera: rigidly attached to the player (no lag or "floating" - no jitter),
-  //     fixed angle - does NOT rotate with the ship's turn ---
-  camera.position.copy(G.player.mesh.position).add(camOffset);
-  camera.lookAt(G.player.mesh.position);
-
-  // stars - an infinitely distant backdrop (stuck to the camera, no parallax)
-  G.stars.position.copy(camera.position);
-  // the planet shifts slightly as the player moves - a light parallax (depth)
-  const PARALLAX = 0.6;
-  G.sky.position.copy(camera.position).addScaledVector(G.player.mesh.position, -PARALLAX);
-
-  // moons orbit the planet (they do not rotate themselves - the terminator does not "wander")
-  updateMoons(dt);
+  settleView(dt); // camera rigid-follow + sky/stars/planet parallax + moon orbit
 
   // mission set-pieces: their own slow animation (station spin, beams, exhaust, …)
   for (const sp of setPieces) sp.update?.(dt);
+}
+
+// Position the camera + sky backdrop (stars, planet parallax, moons) on the player. Called at the end of every
+// update(), AND once right after reset() by the replay/cutscene start so a FROZEN pre-fight frame (the Level-0
+// opening card) is already correctly framed — otherwise the camera/planet/moons sit at the pre-reset spot and
+// visibly JUMP when the re-sim's first tick runs. `dt` only advances the moon orbit; pass 0 to just settle.
+export function settleView(dt = 0) {
+  // camera: rigidly attached to the player (no lag/floating), fixed angle (does NOT rotate with the ship's turn)
+  camera.position.copy(G.player.mesh.position).add(camOffset);
+  camera.lookAt(G.player.mesh.position);
+  G.stars.position.copy(camera.position); // stars: an infinitely distant backdrop stuck to the camera (no parallax)
+  const PARALLAX = 0.6;                    // the planet shifts slightly as the player moves — a light parallax (depth)
+  G.sky.position.copy(camera.position).addScaledVector(G.player.mesh.position, -PARALLAX);
+  updateMoons(dt);                         // moons orbit the planet (they don't spin — the terminator doesn't wander)
 }
 
 // ---------- Pause ----------

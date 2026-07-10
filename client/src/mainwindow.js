@@ -17,8 +17,8 @@ import { reset, levelRunner, refreshMusic } from './sim.js';
 import { shipModelCfg, gltfLoader, SHIP_MODEL_LEN } from './ship-factory.js';
 import { Device } from './device.js';
 import { openBay, showBayView, updateTakeoffGate, renderShipStatsBar, deriveShipStats, resetShipStatsDelta } from './shop.js';
-import { renderAccountBar, openAccount, shouldPromptAccount } from './account.js';
-import { requestFullscreen } from './welcome.js';
+import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } from './account.js';
+import { requestFullscreen, showWelcome } from './welcome.js';
 import { typeText } from './typewriter.js';
 
 const mainEl = document.getElementById('mainwin');
@@ -72,10 +72,15 @@ function launchCampaign() {
 }
 function leaveOverlay() {
   if (levelRunner.won) {
-    // After clearing level 1, prompt once for a username + optional account (DECISIONS §11), then
-    // continue to the Main Window. Otherwise (or once prompted/registered) go straight there.
-    if (shouldPromptAccount()) { openAccount('prompt', { after: () => showMain(G.pendingBriefing) }); return; }
-    showMain(G.pendingBriefing); return; // victory → Main Window
+    // Land on the now-current level after a victory. A level WITH a briefing (levels 2+) → the Main Window
+    // briefing; a level WITHOUT one (e.g. Level 1, reached right after the Level 0 intro) → the Welcome /
+    // take-off screen — same rule bootstrap + account use, so Continue matches a page reload (never the
+    // "Stand by for new orders" default that showMain(null) would render).
+    const brief = G.pendingBriefing || (CATALOG.level && CATALOG.level.briefing) || null;
+    const land = () => { if (brief) showMain(brief); else showWelcome(getPlayerShips()); };
+    // After clearing level 1, prompt once for a username + optional account (DECISIONS §11), then land.
+    if (shouldPromptAccount()) { openAccount('prompt', { after: land }); return; }
+    land(); return;
   }
   reset(); // loss → straight retry
 }

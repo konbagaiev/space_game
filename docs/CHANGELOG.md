@@ -3,6 +3,71 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-10
+
+- **[2026-07-09-replay-record] Real new-player intro flow wired: auto-cutscene from S3 → Level 1 briefing.**
+  A brand-new player (or reset progress) at Level 0 now **auto-plays the intro cutscene** (bootstrap
+  `startIntroCutscene` fetches the canonical recording named on the level descriptor's `introTrace` and drives
+  the playback+cutscene machinery), then on finish/Skip **advances `current_progress` 1→2** (`finishIntro` →
+  `unlockNextLevel`) and lands on the **Level 1 Main Window briefing** + Take off (shop stays gated). Headless
+  (`?debug`/`?bench`), already-seen (`localStorage['introSeen']`), or no recording → the playable Level 0 (the
+  arena the harnesses + `?dev` re-record path expect). Verified: a fresh player auto-opens on the P0 card with
+  the HUD hidden, no console errors.
+  - **Canonical recording is an S3 asset.** The intro trace (`level0-intro.<hash>.json`) lives on S3 under a
+    new `recordings/` prefix, pulled same-origin by `assets:pull` (config + pull wired in
+    `scripts/assets-config.mjs` / `assets-pull.mjs`), and referenced content-hashed from the `level-1`
+    descriptor (`introTrace`). New recording = new URL, like the ship glbs.
+  - **Level 1 got its briefing back.** Restored the original first-flight briefing (`level.1.briefing`, EN+RU
+    — "Pirates are raiding our home system…") on the `level-2` descriptor, so after the intro the player lands
+    on a real Main Window briefing (not the "Stand by" default). Reseed the catalog on deploy.
+
+- **[2026-07-09-replay-record] Level-0 intro cutscene on the input-replay playback (event-driven pauses +
+  auto return-to-base).** `?playback&id={id}&cutscene=1` overlays the Level-0 script on a playback: a P0
+  opening card (freeze before the fight, tap to begin) + P1–P4 text pauses each firing **~1s after their SIM
+  EVENT** (1st/2nd kill, rocketeer warp-in, the rocketeer's 2nd rocket) — event-driven, so re-recording never
+  needs re-timing. New `client/src/level0-cutscene.js` (the pause script) + runtime in `main.js` (event
+  detection, a cutscene-local freeze that never pops the combat Pause overlay, a localized lower-third card,
+  Skip). EN+RU `ui.cutscene.p0..p4` + skip/tap. On clearing the fight it **simulates the "Return to base"
+  button** (`engageAutopilot` — a click, so not in the key trace) and flies home to the victory overlay.
+- **Record/playback are READ-ONLY (`G.replayMode`).** A replayed win showed the victory overlay but was also
+  calling `unlockNextLevel()`/`bankRun()`/`depositLoot()`/funnel — silently advancing the real player's
+  progress (skipping levels) and banking credits. `win()` now gates every server side effect on
+  `!G.replayMode` (set for `?record`/`?playback`). Verified: a replayed win fires ZERO server mutations.
+- **Recordings are account-independent.** Playback rebuilt the player from the CURRENT account loadout, so a
+  weapon unlocked on a later level (e.g. the Machine Gun) leaked into an intro-level replay. `buildPlayerFor`
+  gained an `override` param; playback now builds the **recorded** loadout — captured in the trace
+  (`loadout`/`components`) for new recordings, or the ship's catalog defaults for old ones — never the account.
+  Verified bit-for-bit with the captured loadout.
+- **Camera/planet no longer jump when the cutscene un-freezes.** Extracted `settleView()` from `update()` and
+  call it right after `reset()` in record/playback, so a frozen P0 frame is already framed on the player (the
+  camera + stars + planet parallax + moons were only set inside `update()`, which the freeze skips).
+- **Campaign flow: a no-briefing level lands on the Welcome/take-off screen after a victory, not the "Stand
+  by" default.** `leaveOverlay` (post-victory Continue) now mirrors bootstrap/account
+  (`briefing ? showMain : showWelcome`) — fixes Level 1 (no briefing yet) showing "Stand by for new orders"
+  right after the Level 0 intro.
+
+- **[2026-07-09-replay-record] Combat record/playback via deterministic input-replay.** A new general
+  mechanism to **record a fight and replay it on the real engine**: `?record=1&level={id}` captures the
+  player's INPUT + the RNG seed (trace `{seed,dt,shipId,level,ticks:[{k,t}]}`), and `?playback&id={id}`
+  re-runs the actual `sim` from it — so playback has real bullet colors, smooth physics, real FX and real
+  collisions (not the old "movie of positions"). New `client/src/replay.js` (pure core, unit-tested in
+  `replay.test.js`) + wiring in `main.js`; a `window.__replay` console/automation hook. Record lands on the
+  **real ship idle** with a **Start recording** button that unlocks once the ship `.glb` has loaded (no
+  placeholder capture); **Stop & Save** writes the trace to `localStorage` + downloads `{id}.json` + offers a
+  **Play it ▶** link. **User-visible effect:** you can record a Level-0 playthrough and watch it play back
+  faithfully. Built as the foundation the Level-0 intro cutscene (and alt-angle views / video capture) will
+  sit on. Storage today is `localStorage` + file download; **S3-asset storage is the planned next step**.
+  - **Real-time pacing.** Both modes advance the sim with a **fixed-timestep accumulator** (real elapsed time
+    → whole `BENCH_DT` steps), fixing a 2× fast-forward on 120 Hz displays (one fixed step ran per frame).
+  - **Determinism isolation (load-bearing fix).** The seeded `Math.random` now feeds the **sim only** — a
+    private seeded PRNG is swapped in around `update()`/`reset()`, and the native RNG serves render / HUD / FX
+    animation / audio / idle frames. Without this, cosmetic per-frame draws (whose count differs between
+    record and playback because frames ≠ ticks) desynced the run. `client/src/audio.js` pitch/variant/noise
+    randomness was likewise moved to a **module-local PRNG** (audio only runs when the ctx is unlocked, so it
+    would otherwise consume the seeded stream asymmetrically). Verified: record↔playback reproduce a fight
+    **bit-for-bit** (rounded-position state hash) regardless of frame rate, audio state, or model-load timing.
+  - New `/record-playback` skill documents the record→playback loop.
+
 ## 2026-07-08
 
 - **[2026-07-08-2224-intro-first-level] Intro "Level 0" first level.** A gentle, non-skippable opening

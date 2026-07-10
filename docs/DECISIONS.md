@@ -2202,6 +2202,47 @@ intro-cutscene decision). To avoid a collision when that branch later merges, th
 reuse §60.
 ---
 
+## 62. Combat replay = deterministic INPUT-replay (record input + seed, re-run the real sim), NOT a transform "movie of positions"
+
+We need to replay real fights — first for the Level-0 intro cutscene, later for alt-angle views and video
+capture. The pre-existing ambient ghost-battle (§59) bakes per-frame **transforms** and dumb-replays them on
+ghost meshes. That was fine for a distant backdrop but is structurally wrong for a hero close-up: bullets are
+an anonymous position stream (can't be colored by owner → enemy bullets came out blue), there are no real
+collisions, and 20 fps samples teleport (jerky). So combat replay uses **deterministic input-replay**:
+record the player's per-tick input + the mulberry32 seed; replay by re-running the actual `sim`. Everything
+is then native and free — real projectile colors, smooth physics, real FX, real collisions ("you see your
+fire shoot down the rocket because it *is* the game"). The whole recording is `{seed, dt, shipId, level,
+ticks:[{k,t}]}` — the determinism audit found the sim needs only the seed (spawn timing/positions/loot/reload
+jitter all draw the global `Math.random`; no wall-clock or Map/Set-iteration-order deps in the sim path).
+Reuses the `?bench` foundation (`installSeededRandom`/`mulberry32`/`BENCH_DT`). This mechanism is intended to
+**supersede** the transform-replay for the foreground (§59's backdrop can migrate onto it later).
+
+Two load-bearing sub-decisions surfaced in live testing:
+- **Fixed-timestep accumulator, not one-step-per-frame.** Advancing one `BENCH_DT` step per rAF frame ran 2×
+  on a 120 Hz screen. Both record and playback accumulate real elapsed time and take whole `BENCH_DT` steps,
+  so pacing is real-time on any refresh rate while each tick stays a fixed dt. Frames ≠ ticks by design.
+- **The seeded RNG must feed the sim ONLY.** Because frames ≠ ticks, any cosmetic per-frame `Math.random`
+  (stars/FX/HUD/idle frames — and audio, which only runs when the ctx is unlocked) would consume the seeded
+  stream by a count that differs between record and playback → divergence. Fix: keep a private seeded PRNG
+  and swap it into `Math.random` **only around `update()`/`reset()`**, restoring a native (cosmetic) RNG for
+  everything else; `audio.js` randomness moved to its own module-local PRNG. This is a stricter contract than
+  §58's `?bench` (which runs headless with no cosmetic frames between ticks, so a bare global override
+  sufficed there). Verified bit-for-bit (rounded-position state hash) across frame rate / audio / model-load
+  timing. Also: record/playback wait for the ship `.glb` before the first tick (a **Start recording** button;
+  playback holds the idle frame) so a run never opens on the blue placeholder.
+
+**Storage:** recordings are treated as an **S3 asset** (like ship `.glb`s — off git, synced prod↔local via
+`assets:pull`, referenced from seed when promoted to prod), chosen over committing traces to git or a DB
+table. The current build uses `localStorage` (`replay:{id}`/`replay:last`) + a `{id}.json` download as the
+same-browser dev loop; the S3 pipeline is the next iteration. See `docs/plans/2026-07-09-replay-record.md`
+and the `/record-playback` skill. **Testing caveat (bit us once):** the `localStorage` store is per-browser,
+and Claude's `claude-in-chrome` automation drives the maintainer's REAL Chrome — so automated test recordings
+write to the same `replay:last`/`replay:{id}` and can clobber the maintainer's own recording (they'd then see
+a test clip on `?playback&cutscene=1` and think it's broken). When testing via automation, use throwaway ids
+and clean up afterward; restore `replay:last`. Cross-ref §59 (transform-replay backdrop this supersedes for
+foreground), §58 (`?bench` seeded-replay foundation reused), §30 (simplest-thing-that-works).
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

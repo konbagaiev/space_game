@@ -391,6 +391,10 @@ export const LEVELS = [
   {
     name: 'level-1', descriptor: {
       title: 'Level 0', map: 'home-system',
+      // The canonical input-replay recording the intro CUTSCENE plays (a real Level-0 playthrough). Served
+      // same-origin from S3 via assets:pull (content-hashed → new recording = new URL). The client bootstrap
+      // plays this as the cutscene for a new player, then advances to Level 1. See docs/plans/2026-07-09-replay-record.md.
+      introTrace: 'assets/recordings/level0-intro.a39d1f46.json',
       phases: [
         {
           name: 'wave-1', // three basic pirates, one at a time (kill one -> the next warps in)
@@ -411,6 +415,10 @@ export const LEVELS = [
     name: 'level-2', descriptor: {
       title: 'Level 1', map: 'home-system',
       lastKillDrop: { kind: 'weapon', refId: 5 },   // cosmetic reward drop on the last enemy (Machine Gun); server force-installs the real copy on victory
+      // Shown in the Main Window when the player reaches Level 1 (right after the Level 0 intro cutscene) — the
+      // original "first flight" briefing (pirates in the home system + a fast ship). No `actions` (nothing to
+      // install yet); the shop is still locked, so the Main Window shows just the briefing + Take off.
+      briefing: { textKey: 'level.1.briefing' },
       phases: [
         {
           name: 'wave-1', // only plain fighters, 3 at a time
