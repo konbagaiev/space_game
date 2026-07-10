@@ -1,7 +1,7 @@
 # Combat record/playback — deterministic input-replay (`?record` / `?playback`)
 
 **Feature ID:** 2026-07-09-replay-record · **Branch/worktree:** `feature/2026-07-09-replay-record`
-**Status:** mechanism built + verified (see below). Next: S3-asset storage, then the Level-0 cutscene on top.
+**Status:** SHIPPED to prod + itch (2026-07-10) — mechanism + Level-0 cutscene + real intro flow all live (see Status below).
 
 ## Goal
 
@@ -73,10 +73,16 @@ same-browser dev loop). **Next:** wire an `assets-*`-style push/pull for `record
 - The engine path (accumulator, isolation, UI) is browser-only; validated via the `window.__replay` state-hash
   check above.
 
-## Next steps
+## Status — SHIPPED (prod + itch, 2026-07-10)
 
-1. **S3-asset storage + `/record-playback` polish** (push/pull, `/recordings/` fetch, seed reference).
-2. **Level-0 cutscene on top** — camera-follow + scripted text **pauses** (the 5-beat EN+RU narrative is in
-   `docs/plans/2026-07-09-cutscene-input-replay.md` §5): freeze the re-sim at scripted ticks, show a localized
-   lower-third card, tap to resume. Reuse this mechanism as the combat source.
-3. **Migrate the freighter backdrop** (§59) onto input-replay (optional, later).
+1. ✅ **S3-asset storage.** The canonical intro trace is a content-hashed S3 asset (`recordings/` prefix in
+   `assets-config`/`assets-pull`), referenced from the `level-1` descriptor's `introTrace`, bundled into the
+   itch build.
+2. ✅ **Level-0 cutscene** — event-driven text pauses (P0–P4, +1s after each SIM EVENT) + auto "Return to
+   base" to victory, on the real re-simmed fight (`client/src/level0-cutscene.js` + `main.js` runtime).
+3. ✅ **Real new-player intro flow** — bootstrap `startIntroCutscene` (auto-play from the S3 trace) →
+   `finishIntro` advances 1→2 → Level 1 Main Window briefing (restored `level.1.briefing`).
+
+### Still open
+- **Migrate the freighter backdrop** (§59) onto input-replay (optional, later).
+- **itch:** the trace is bundled today; if the trace grows, consider fetching it from the CDN instead.

@@ -2234,7 +2234,9 @@ Two load-bearing sub-decisions surfaced in live testing:
 **Storage:** recordings are treated as an **S3 asset** (like ship `.glb`s — off git, synced prod↔local via
 `assets:pull`, referenced from seed when promoted to prod), chosen over committing traces to git or a DB
 table. The current build uses `localStorage` (`replay:{id}`/`replay:last`) + a `{id}.json` download as the
-same-browser dev loop; the S3 pipeline is the next iteration. See `docs/plans/2026-07-09-replay-record.md`
+same-browser dev loop, and the canonical intro trace ships as a content-hashed S3 asset (`recordings/`
+prefix in `assets-config`/`assets-pull`, referenced from the `level-1` descriptor's `introTrace`, bundled
+into the itch build). See `docs/plans/2026-07-09-replay-record.md`
 and the `/record-playback` skill. **Testing caveat (bit us once):** the `localStorage` store is per-browser,
 and Claude's `claude-in-chrome` automation drives the maintainer's REAL Chrome — so automated test recordings
 write to the same `replay:last`/`replay:{id}` and can clobber the maintainer's own recording (they'd then see
