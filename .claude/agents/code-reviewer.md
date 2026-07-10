@@ -54,6 +54,17 @@ PASS as soon as it's correct, tested, modular, and documented. Don't hold it for
 
 <!-- The orchestrator appends dated lessons here from retro feedback. Read and apply them. -->
 
+- **2026-07-10 — A new/moved fixed-position UI element must be checked against EVERY existing element
+  in the same screen region, not just for functional correctness.** Reviewing the language-selector diff,
+  the review PASSed on the substance (no-skip via body-sibling + stopPropagation, teardown, i18n keys) but
+  missed that the new intro-cutscene toggle at `#cutscene-lang { top:14px; left:16px; z-index:99999 }`
+  landed directly on top of the always-visible settings gear `#settings-btn { top:11px; left:12px; 36×36 }`
+  — both in the top-left corner — so it painted over the gear during the whole intro. The maintainer caught
+  it at the human-review gate. When a diff adds or moves an element with `position: fixed`/`absolute`, grep
+  the CSS for every other fixed/absolute element and compute the rects: a same-corner (top/left or
+  top/right) neighbor is an overlap until the numbers prove otherwise (`newLeft ≥ existingLeft+existingW`,
+  or a vertical gap). Do NOT assume an element is hidden in the new element's context (the gear is *always*
+  visible, including over the cutscene overlay) — confirm the hide, don't presume it.
 - **2026-07-04 — Verify absolute magnitudes and end-to-end outcomes, not just internal consistency.** A
   multi-sphere-hitbox diff passed review on "`broadR` encloses the spheres" (mathematically true) — but the
   generated spheres were ~2× too big vs the model, and rocket *damage* (a separate `detonateRocket` path
