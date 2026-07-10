@@ -17,6 +17,12 @@ export function setSource(src) { source = src || {}; }
 export function setBundle(bnd) { bundle = bnd || {}; }
 export function getLanguage() { return current; }
 
+// Describe the EN/RU switch buttons for the active language: code, label, and which is active.
+// Pure (no DOM) so mountLangSwitch renders from it and it's unit-testable.
+export function langButtons(current) {
+  return SUPPORTED.map((lang) => ({ lang, label: lang.toUpperCase(), active: current === lang }));
+}
+
 // Map a raw BCP-47 tag (e.g. 'ru-RU') to a supported code, falling back to English.
 export function normalizeLang(tag) {
   const base = String(tag || '').toLowerCase().split('-')[0];

@@ -34,7 +34,7 @@
      target="_blank" rel="noopener">💬 Feedback &amp; community on Telegram</a>
 </div>
 <div id="welcome">
-  <div id="lang-switch"></div>
+  <div id="lang-switch" class="lang-switch"></div>
   <div id="welcome-scroll">
     <h1 data-i18n="ui.welcome.greeting">Welcome, Sentinel</h1>
     <p class="intro" data-i18n="ui.welcome.intro">Pirates are raiding our home system — we need you to push them back. Good news: you've got a fast, nimble ship. Use that agility — keep moving, out-turn them, and don't let them pin you down.</p>
@@ -149,6 +149,10 @@
       </div>
     </div>
     <div class="set-note" id="set-quality-note" data-i18n="ui.settings.quality.note">Changing quality reloads the game.</div>
+    <div class="set-row stack">
+      <label data-i18n="ui.settings.language">Language</label>
+      <div id="settings-lang" class="lang-switch"></div>
+    </div>
     <div class="set-row stack danger">
       <label data-i18n="ui.settings.reset.label">Reset my progress</label>
       <!-- slide-to-confirm: drag the knob left→right to arm the destructive reset -->

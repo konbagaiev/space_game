@@ -5,6 +5,19 @@
 
 ## 2026-07-10
 
+- **[2026-07-10-1524-language-selector-menu] Language selector in Settings + intro cutscene.** EN/RU toggles
+  added to the **Settings modal** (`#settings-lang`, a Language row between Graphics quality and the reset
+  danger zone; `ui.settings.language`, EN "Language" / RU "Язык") and the **intro cutscene screen**
+  (`#cutscene-lang`, a persistent top-left toggle beside Skip) so a Russian-defaulted player (e.g. on itch) can
+  switch language after the welcome screen — where a brand-new player, dropped straight into the Level-0
+  cutscene, never sees the welcome toggle. Both reuse the existing `setLanguage()` i18n path (live, no reload):
+  all three toggle hosts share a `.lang-switch` look and a single re-localize entry point — `applyTranslations()`
+  re-renders every mounted host from a module-scoped `langHosts` registry (via the pure `langButtons()` helper +
+  `mountLangSwitch()`), so a non-`en` initial load highlights the right button on first paint and a live switch
+  updates every host at once. The cutscene toggle is a `<body>` sibling of the overlay (+ `stopPropagation` on
+  each button) so tapping it re-localizes the visible card without advancing/skipping the cutscene, and is
+  removed in `cutsceneEnd()` so it can't leak into live Level 1. New unit test (`langButtons`) + visual
+  scenarios (21 RU-initial-state guard, extended 14 live-switch).
 - **[2026-07-10-1303-fix-intro-replay-teardown] Intro → Take-off dead-screen fix + reset now replays the
   intro.** (1) The playback/cutscene lifecycle state is now one `makeReplaySession()` object in `replay.js`
   (unit-tested `teardown()`); `finishIntro()` calls `rs.teardown()` + clears `G.replayMode` before landing on

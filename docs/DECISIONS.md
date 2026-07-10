@@ -2261,6 +2261,37 @@ reflects "you have not actually advanced." Single source of truth, simpler (§30
 `current_progress` +1 intro model) and §62 (the input-replay the cutscene rides on).
 ---
 
+## 64. Language switching is surfaced only on the welcome screen, the Settings modal, and the intro cutscene — one re-localize entry point drives all toggle hosts via a small registry
+
+**Problem.** A player whose browser defaulted to Russian (common on itch.io) could only change language via
+the EN/RU toggle on the **welcome screen** — which a brand-new player never sees (the intro drops them straight
+into the Level-0 cutscene) and returning players skip (they land on the Main Window / a live fight). They were
+stuck in the wrong language with no escape.
+
+**Decision.** Surface the same EN/RU toggle in two more places — the **Settings modal** (`#settings-lang`, the
+single post-intro path, reachable anywhere incl. mid-fight since the gear pauses) and the **intro cutscene**
+(`#cutscene-lang`, a persistent top-left toggle beside Skip) — and **not** as a persistent in-combat HUD control
+or on the Main Window / hangar / shop (Settings is the one place, keeping the chrome uncluttered; §30). No new
+i18n framework: this is pure wiring of the existing mechanism (§10) into two more hosts.
+
+**How.** A **single re-localize entry point** — `applyTranslations()`, called by both bootstrap's initial load
+and `setLanguage()` — re-renders **every** mounted toggle host from a module-scoped `langHosts` registry (via the
+pure `langButtons(current)` helper + `mountLangSwitch()`). Putting the host rebuild in `applyTranslations()` (not
+only in `setLanguage`) is load-bearing: bootstrap resolves + loads the real language and then calls
+`applyTranslations()` **without** ever calling `setLanguage`, so a non-`en` initial load (the RU-on-itch target
+user) highlights the right button on **first paint** instead of staying stuck on EN. To avoid an import cycle
+(`welcome.js` already imports from `settings.js`/`credits.js`), the static `#settings-lang` host is mounted from
+the i18n-glue module (`welcome.js`) rather than importing `setLanguage` into `settings.js`; the dynamic cutscene
+host is mounted from `main.js` (which already imports from `welcome.js`).
+
+**Cutscene safety.** `cutOverlayEl` has a whole-overlay click→advance listener, so the cutscene toggle host is a
+separate `<body>` sibling (its clicks don't bubble through the overlay) **and** each button `stopPropagation`s
+(belt-and-suspenders) — tapping it re-localizes the visible card in place without advancing/skipping. Its
+lifecycle is tied to the cutscene overlay (built in `buildCutsceneOverlay()`, removed in `cutsceneEnd()`), so it
+can't leak into the playable-Level-0 fallback (which never builds the overlay) nor live Level 1. Cross-ref §10
+(single i18n path), §30 (no gold-plating), §63 (the intro cutscene it rides on).
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·
