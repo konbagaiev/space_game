@@ -108,3 +108,16 @@ Your final message: a point-by-point list of how each issue was resolved.
   "intro lands on welcome, no client change" AFTER approval, forcing a revision. When the feature changes what
   a new player sees on first load, ask explicitly: welcome screen or not? briefing or not? auto-launch into
   combat or a menu gate? — one question each, defaults offered but never assumed.
+- **2026-07-10 — A bug fix is not planned until it plans how the bug is kept from recurring. "It lives in
+  DOM-bound `main.js`, so it's untestable" is a design smell to fix, not a valid reason to ship a regression
+  with no guard.** The intro→Level-1 dead-screen fix (finishIntro forgot to tear down the `PLAY`/`play*`/`CUT`
+  playback state, so `animate()` stayed stuck in the playback branch) was planned as a bare ~4-line teardown
+  with "no unit test possible — the code is in three.js/DOM `main.js`." The maintainer rejected that: for a bug
+  fix, always design a testable seam that would have CAUGHT this bug and will catch its return. The move is to
+  extract the fragile cluster into an importable pure unit (`node --test` has no jsdom, so pure modules like
+  `client/src/replay.js` are the testable surface) — here a `makeReplaySession()` object with an `active`
+  getter + `teardown()` — and unit-test the invariant the bug violated (teardown clears every field; `active`
+  flips false). When you plan ANY bug fix: (1) name the invariant that was violated, (2) find or CREATE a
+  testable seam that asserts it (propose the minimal extraction if the current code isn't reachable from a
+  unit test — do not stop at "untestable"), and (3) add the regression test to the plan. Live/manual
+  verification is a complement to that guard, never a substitute for it.

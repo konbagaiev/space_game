@@ -112,3 +112,16 @@ perfection beyond that is not the bar.
   any "N enemies left" banner, HUD counters) and demand the plan prove, with arithmetic on the real
   descriptors, that it still holds under the new timing. A count/threshold that was deterministic only
   because the arena was always full is a silent casualty of any spawn-rate change.
+- **2026-07-10 — On a BUG-FIX plan, block it unless it adds a regression guard that would have caught the bug.
+  Reject "the code is in DOM-bound `main.js`, so no unit test is possible" as a stopping point — that is a
+  testability defect to fix, not an excuse.** The intro→Level-1 dead-screen fix (finishIntro didn't tear down
+  the `PLAY`/`play*`/`CUT` playback state → `animate()` stuck in the playback branch) was approved with a
+  testing section that claimed no unit test was feasible and leaned entirely on live/manual verification. That
+  should have been a REVISE: a bug that silently returns on the next edit of `finishIntro` has no guard. The
+  fix was made testable by extracting the fragile state into a pure, importable unit
+  (`makeReplaySession()` in `client/src/replay.js`) with a `teardown()`/`active` invariant and a unit test on
+  it. When reviewing any fix, demand: (1) the plan names the invariant the bug violated; (2) it adds an
+  automated test asserting that invariant — and if it says the code "can't be unit-tested," require the plan
+  to extract a testable seam (the pure `src/*.js` modules are the reachable surface under `node --test`;
+  there's no jsdom) instead of accepting the gap. A fix with only a live-test and no regression test is
+  incomplete unless the plan gives a concrete, defensible reason no seam exists.
