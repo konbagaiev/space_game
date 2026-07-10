@@ -16,7 +16,27 @@ export default async function ({ page, assert, shot }) {
   await page.click('#settings-btn');
   await page.waitForTimeout(100);
 
-  // the modal must fit on screen even with the reset danger zone added
+  // Language row: switching to RU updates BOTH the settings and welcome toggle hosts live (no reload)
+  // and re-localizes the modal chrome — exercises "setLanguage updates ALL mounted hosts". Checked first
+  // so it runs independently of the modal-fit assertion below.
+  const langBefore = await page.evaluate(() => document.documentElement.lang);
+  assert.equal(langBefore, 'en', 'starts in English');
+  await page.click('#settings-lang button:last-child'); // RU (SUPPORTED = [en, ru])
+  await page.waitForTimeout(120);
+  const langAfter = await page.evaluate(() => ({
+    docLang: document.documentElement.lang,
+    settingsActive: document.querySelector('#settings-lang button.active')?.textContent,
+    welcomeActive: document.querySelector('#lang-switch button.active')?.textContent,
+    title: document.querySelector('#settings-overlay h1')?.textContent,
+  }));
+  assert.equal(langAfter.docLang, 'ru', 'language switched to RU live (no reload)');
+  assert.equal(langAfter.settingsActive, 'RU', 'settings toggle shows RU active');
+  assert.equal(langAfter.welcomeActive, 'RU', 'welcome toggle re-rendered to RU active (all hosts updated)');
+  assert.equal(langAfter.title, 'Настройки', 'modal chrome re-localized live');
+  await page.click('#settings-lang button:first-child'); // restore EN so later shots/state are stable
+  await page.waitForTimeout(120);
+
+  // the modal must fit on screen even with the reset danger zone + Language row added
   const fit = await page.evaluate(() => {
     const box = document.querySelector('#settings-overlay .settings-box');
     const r = box.getBoundingClientRect();

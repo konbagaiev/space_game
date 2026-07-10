@@ -26,7 +26,7 @@ import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
-import { showWelcome, applyTranslations, welcomeStaged } from './welcome.js'; // welcome screen + i18n UI glue
+import { showWelcome, applyTranslations, welcomeStaged, mountLangSwitch } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
 import { recenterAndQuantize, MAX_GHOST_SHIPS, MAX_GHOST_BULLETS } from './ghost-battle-track.js'; // ?dev in-game backdrop recorder + synthetic bake
 
@@ -91,7 +91,7 @@ let cutPrevKills = 0;         // G.kills last tick (detect 0→1, 1→2 transiti
 let cutRocketeerSeen = false; // the rocket pirate has warped in
 let cutEnemyRockets = 0;      // count of the rocketeer's launched (non-lead) rockets
 const cutSeenRockets = new WeakSet(); // rocket objects already counted (detect a NEW launch)
-let cutOverlayEl = null, cutCardEl = null, cutSkipEl = null;
+let cutOverlayEl = null, cutCardEl = null, cutSkipEl = null, cutLangEl = null;
 
 // musicForState/refreshMusic moved to src/sim.js (music follows the live game state). refreshMusic is
 // imported at the top; tryUnlockAudio below calls it on the first unlocking gesture.
@@ -1121,9 +1121,10 @@ function cutsceneEnd() { // tear down the overlay so the normal HUD / victory ov
   rs.cutDone = true; cutFrozen = false; rs.cutReturning = false; cutsceneHideCard();
   document.body.classList.remove('cutscene');
   if (cutSkipEl) { cutSkipEl.remove(); cutSkipEl = null; }
+  if (cutLangEl) { cutLangEl.remove(); cutLangEl = null; }
   if (introMode) finishIntro(); // real intro: advance 1→2 + land on the Level 1 briefing
 }
-function cutsceneShowCard(textKey) { if (cutOverlayEl) { cutCardEl.textContent = t(textKey); cutOverlayEl.style.display = 'flex'; } }
+function cutsceneShowCard(textKey) { if (cutOverlayEl) { cutCardEl.setAttribute('data-i18n', textKey); cutCardEl.textContent = t(textKey); cutOverlayEl.style.display = 'flex'; } }
 function cutsceneHideCard() { if (cutOverlayEl) cutOverlayEl.style.display = 'none'; }
 function buildCutsceneOverlay() {
   const style = document.createElement('style');
@@ -1133,19 +1134,27 @@ function buildCutsceneOverlay() {
     #cutscene-card { max-width: min(760px, 88vw); margin: 0 0 12vh; padding: 20px 26px; background: rgba(6,10,16,.82); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; color: #eaf2ff; font: 500 clamp(15px,2.4vw,21px)/1.5 system-ui, sans-serif; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
     #cutscene-tap { margin-top: 12px; font-size: 13px; opacity: .55; letter-spacing: .4px; }
     #cutscene-skip { position: fixed; top: 14px; right: 16px; z-index: 99999; cursor: pointer; font: 600 13px system-ui, sans-serif; color: #eaf2ff; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 6px 12px; }
+    #cutscene-lang { position: fixed; top: 14px; left: 56px; z-index: 99999; display: flex; gap: 6px; }
   `;
   document.head.appendChild(style);
   document.body.classList.add('cutscene');
   cutOverlayEl = document.createElement('div');
   cutOverlayEl.id = 'cutscene-overlay';
-  cutOverlayEl.innerHTML = `<div id="cutscene-card"><div id="cutscene-text"></div><div id="cutscene-tap">${t('ui.cutscene.tap')}</div></div>`;
+  cutOverlayEl.innerHTML = `<div id="cutscene-card"><div id="cutscene-text"></div><div id="cutscene-tap" data-i18n="ui.cutscene.tap">${t('ui.cutscene.tap')}</div></div>`;
   cutOverlayEl.addEventListener('click', cutsceneAdvance);
   document.body.appendChild(cutOverlayEl);
   cutCardEl = cutOverlayEl.querySelector('#cutscene-text');
   cutSkipEl = document.createElement('button');
-  cutSkipEl.id = 'cutscene-skip'; cutSkipEl.textContent = t('ui.cutscene.skip');
+  cutSkipEl.id = 'cutscene-skip'; cutSkipEl.setAttribute('data-i18n', 'ui.cutscene.skip'); cutSkipEl.textContent = t('ui.cutscene.skip');
   cutSkipEl.addEventListener('click', (e) => { e.stopPropagation(); cutsceneSkip(); });
   document.body.appendChild(cutSkipEl);
+  // A persistent EN/RU toggle beside Skip: a body sibling of cutOverlayEl (not a child), so its clicks
+  // don't bubble to the overlay's click→advance listener. Mounted via the shared registry so a live
+  // switch re-localizes the visible card in place; removed in cutsceneEnd() so it can't leak past the intro.
+  cutLangEl = document.createElement('div');
+  cutLangEl.id = 'cutscene-lang'; cutLangEl.className = 'lang-switch';
+  document.body.appendChild(cutLangEl);
+  mountLangSwitch(cutLangEl);
   addEventListener('keydown', (e) => {
     if (!rs.cut || rs.cutDone) return;
     if (e.code === 'Escape') cutsceneSkip();

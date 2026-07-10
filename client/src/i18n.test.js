@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { t, setSource, setBundle, normalizeLang, resolveLanguage } from './i18n.js';
+import { t, setSource, setBundle, normalizeLang, resolveLanguage, langButtons } from './i18n.js';
 
 const SRC = {
   'ui.hud.health': { source: 'Health', context: 'x' },
@@ -55,4 +55,12 @@ test('resolveLanguage: explicit > server > browser > en', () => {
   assert.equal(resolveLanguage({ browser: 'fr-FR' }), 'en');                               // fallback en
   assert.equal(resolveLanguage({}), 'en');
   assert.equal(resolveLanguage({ explicit: 'de' }), 'en'); // unsupported explicit ignored → browser(none)→en
+});
+
+test('langButtons: marks the active language and lists en then ru', () => {
+  assert.deepEqual(langButtons('ru'), [
+    { lang: 'en', label: 'EN', active: false },
+    { lang: 'ru', label: 'RU', active: true },
+  ]);
+  assert.deepEqual(langButtons('en').map((b) => b.active), [true, false]);
 });

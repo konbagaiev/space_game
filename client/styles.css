@@ -71,12 +71,12 @@
   }
   #welcome-footer .community-link { margin-top: 0; } /* footer gap handles spacing (override the default 20px) */
   #lang-switch { position: absolute; top: 18px; right: 18px; display: flex; gap: 6px; }
-  #lang-switch button {
+  .lang-switch button {
     font: inherit; font-size: 13px; letter-spacing: 1px; color: #cfe0ff; cursor: pointer;
     background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.28);
     border-radius: 7px; padding: 5px 11px;
   }
-  #lang-switch button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
+  .lang-switch button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
   #welcome h1 { font-size: 40px; letter-spacing: 1px; margin-bottom: 10px; }
   #welcome .intro { font-size: 26px; opacity: .82; max-width: 560px; line-height: 1.5; margin-bottom: 26px; }
   /* Staged L1 welcome briefing: Take-off is hidden while `.intro` types out, then fades in +0.5s after

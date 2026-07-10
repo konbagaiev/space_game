@@ -4,7 +4,7 @@
 // re-localizes the chrome (settings gear, etc.); take-off starts a run via reset (sim). Exports:
 // showWelcome (account + bootstrap), applyTranslations (bootstrap), requestFullscreen (mainwindow take-off flows).
 import { G } from './state.js';
-import { t, loadLanguage, getLanguage, SUPPORTED } from './i18n.js';
+import { t, loadLanguage, getLanguage, langButtons } from './i18n.js';
 import { fetchJson } from './net.js';
 import { API_BASE } from './api-base.js';
 import { setPaused, refreshMusic, reset } from './sim.js';
@@ -53,7 +53,6 @@ welcomeEl.querySelector('.intro').addEventListener('click', () => { if (welcomeS
 
 export function showWelcome(playerShips) {
   selectedShip = playerShips[0] || null; // L1 owns exactly one ship; take-off needs a non-null selection
-  buildLangSwitch();
   renderAccountBar();
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   refreshMusic(); // menu → calmer hangar music
@@ -62,6 +61,9 @@ export function showWelcome(playerShips) {
 }
 
 // ---------- Localization (i18n) UI glue ----------
+// Every mounted EN/RU toggle host (welcome + settings + intro cutscene). Rebuilt on every language
+// re-render (applyTranslations) so each host's active button reflects the active language.
+const langHosts = new Set();
 // Apply every [data-i18n] element's text (or innerHTML for [data-i18n-html]) for the active language.
 // Also resolves [data-i18n-href] → href, so links (e.g. the locale-specific community group) follow
 // the active language like the rest of the i18n flow.
@@ -82,35 +84,48 @@ export function applyTranslations(root = document) {
     fsBtn.setAttribute('title', fsLabel);
   }
   document.documentElement.lang = getLanguage();
+  // Re-render every mounted EN/RU toggle so its active button matches the active language. Prune
+  // detached hosts (the intro cutscene host is removed on teardown) so the set doesn't leak.
+  for (const h of [...langHosts]) { if (h.isConnected) mountLangSwitch(h); else langHosts.delete(h); }
 }
-// EN/RU toggle on the welcome screen.
-function buildLangSwitch() {
-  const host = document.getElementById('lang-switch');
+// Render the EN/RU buttons into `host` and register it so a later language re-render refreshes it.
+// stopPropagation: the intro cutscene overlay has a whole-overlay click→advance listener; a button
+// click must switch language WITHOUT advancing/skipping a card.
+export function mountLangSwitch(host) {
   if (!host) return;
+  langHosts.add(host);
   host.innerHTML = '';
-  SUPPORTED.forEach((lang) => {
+  for (const { lang, label, active } of langButtons(getLanguage())) {
     const b = document.createElement('button');
-    b.textContent = lang.toUpperCase();
-    if (getLanguage() === lang) b.className = 'active';
-    b.addEventListener('click', () => { if (getLanguage() !== lang) setLanguage(lang); });
+    b.textContent = label;
+    if (active) b.className = 'active';
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (getLanguage() !== lang) setLanguage(lang);
+    });
     host.appendChild(b);
-  });
+  }
 }
 // Switch language at runtime: load the bundle, re-render static + dynamic strings, persist both ways.
-async function setLanguage(lang) {
+export async function setLanguage(lang) {
   await loadLanguage(lang, fetchJson);
   try { localStorage.setItem('lang', getLanguage()); } catch {}
-  applyTranslations();
+  applyTranslations(); // re-localizes static [data-i18n] chrome + the cutscene card + ALL toggle hosts
   setPaused(G.paused); // re-localize the pause button's aria-label/tooltip (JS-set, not data-i18n)
   localizeSettings(); // re-localize the settings gear + audio toggles
   localizeCredits(); // re-render the credits panel if it's open (chrome labels change)
-  buildLangSwitch();
   if (G.playerId) fetch(API_BASE + `/api/players/${G.playerId}/language`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ language: getLanguage() }),
   }).catch(() => {}); // best-effort: persist the preference server-side
   if (welcomeStaged) revealWelcomeNow(); // a language switch re-renders `.intro` (applyTranslations) — settle to full
 }
+// Mount the two static toggle hosts once at module init (both exist in index.html before this deferred
+// module runs). The dynamic intro-cutscene host is mounted from main.js when the overlay is built.
+// Every applyTranslations() (incl. bootstrap's initial localize) refreshes them, so the active button
+// reflects the loaded language on first paint.
+mountLangSwitch(document.getElementById('lang-switch'));   // welcome screen
+mountLangSwitch(document.getElementById('settings-lang')); // settings modal
 // Go fullscreen so the mobile browser chrome (address bar) doesn't eat the screen — must run inside
 // the click gesture. Works on Android/iPad; silently ignored where unsupported (e.g. iPhone Safari).
 // (Landscape is enforced by the CSS body rotation, not orientation.lock, so nothing extra to do here.)
