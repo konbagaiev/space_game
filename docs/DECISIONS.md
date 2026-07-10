@@ -2245,6 +2245,22 @@ and clean up afterward; restore `replay:last`. Cross-ref §59 (transform-replay 
 foreground), §58 (`?bench` seeded-replay foundation reused), §30 (simplest-thing-that-works).
 ---
 
+## 63. Intro cutscene is gated by server progress alone (no client `introSeen`), so `reset-progress` replays it
+
+The intro's one-time-ness comes from **`current_progress`**: the server serves the `introTrace`-carrying
+`level-1` descriptor only while `current_progress === 1`, and `finishIntro` → `unlockNextLevel` advances
+1→2 (thereafter the served level has no `introTrace`). So the bootstrap gate is now a pure
+`shouldPlayIntro(location.search, CATALOG.level.introTrace)` — "the served level carries `introTrace`" +
+the existing headless check — and nothing else. We **dropped the redundant client
+`localStorage['introSeen']` guard**: it persisted across a server-side progress reset and permanently
+suppressed the cutscene on that browser, so `reset-progress` dropped the player straight into the playable
+Level 0 instead of replaying the intro (the exact bug found in live-test). **Trade-off accepted:** if
+`finishIntro`'s server advance fails (e.g. a network error) progress stays 1, so a reload replays the
+cutscene — acceptable, because the replay is READ-ONLY (`G.replayMode`) and skippable and correctly
+reflects "you have not actually advanced." Single source of truth, simpler (§30). Cross-ref §61 (the
+`current_progress` +1 intro model) and §62 (the input-replay the cutscene rides on).
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

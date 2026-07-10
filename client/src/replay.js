@@ -85,6 +85,39 @@ export function makeTrace({ id, level, seed, dt, shipId, loadout, components, ti
   };
 }
 
+// The live playback/cutscene session (the intro cutscene rides the ?playback machinery). Kept as ONE
+// object so the whole cluster is torn down together — a PARTIAL reset leaves animate() stuck in the
+// playback branch (the intro→Level-1 dead-screen bug this guards against). Unit-tested; main.js holds
+// exactly one instance. NOTE: `replayAcc`, the record vars, `G.replayMode`, and the cutscene-runtime
+// detail (cutFrozen/cutFired/cutQueue/… + overlay els) stay module-level in main.js — they are NOT part
+// of the return-to-live gate.
+export function makeReplaySession() {
+  return {
+    play: null,          // was module `PLAY` — { id, cutscene } | null; the animate() gate
+    trace: null,         // was playTrace  — the loaded trace during ?playback / intro
+    armed: false,        // was playArmed  — step the trace only after the ship model has loaded
+    index: 0,            // was playIndex  — next playback tick to apply
+    done: false,         // was playDone   — trace exhausted (freezes the re-sim on the last frame)
+    cut: null,           // was CUT        — the LEVEL0_CUTSCENE script or null
+    cutDone: false,      // was cutDone    — after Skip / last pause: stop observing events
+    cutReturning: false, // was cutReturning — fight cleared → simulate "Return to base"
+    get active() { return !!this.play; },
+    teardown() {
+      this.play = null; this.trace = null; this.armed = false; this.index = 0;
+      this.done = false; this.cut = null; this.cutDone = false; this.cutReturning = false;
+    },
+  };
+}
+
+// Decide whether to auto-play the intro cutscene for this load. Server-authoritative: `introTrace` is
+// present ONLY on the level-1 descriptor served while current_progress===1 (a NEW or freshly-RESET
+// player), so hasIntroTrace is the real one-time gate — no client localStorage flag, so a genuine
+// progress reset replays the intro. Headless suites (?debug/?bench) always get the playable Level 0.
+export function shouldPlayIntro(search, hasIntroTrace) {
+  const headless = search.includes('debug') || search.includes('bench');
+  return !headless && !!hasIntroTrace;
+}
+
 // Validate a loaded trace before we drive the engine from it. Returns an array of problem strings (empty = ok),
 // so a stale/corrupt recording fails loudly with a reason instead of silently running an empty or wrong fight.
 export function validateTrace(t) {

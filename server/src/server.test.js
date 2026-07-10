@@ -97,11 +97,17 @@ test('progress: current level is level-1 (the intro), and advancing unlocks the 
   const lvl1 = await getJson('/api/players/prog-2/level');
   assert.equal(lvl1.name, 'level-1');
   assert.ok(lvl1.descriptor.phases, 'returns the full descriptor');
+  // the served level-1 descriptor carries `introTrace` while progress===1 — the server-authoritative
+  // one-time gate the client's shouldPlayIntro() reads (a new/reset player replays the intro cutscene).
+  assert.ok(lvl1.descriptor.introTrace, 'level-1 (progress 1) carries introTrace');
 
   // clearing the intro unlocks level-2, then level-3
   const a1 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a1.advanced, true);
-  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-2');
+  const lvl2 = await getJson('/api/players/prog-2/level');
+  assert.equal(lvl2.name, 'level-2');
+  // once advanced, the served level has NO introTrace → shouldPlayIntro() is false → no intro replay.
+  assert.ok(!lvl2.descriptor.introTrace, 'level-2 (progress 2) has no introTrace');
 
   const a2 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a2.advanced, true);
@@ -139,7 +145,11 @@ test('reset: POST /reset wipes progress to the new-player baseline, keeps the ac
   assert.deepEqual(await r.json(), { ok: true });
 
   // back to baseline: level-1, 1000 credits, games_played 0 — but the account row (and id) remain
-  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-1');
+  const resetLvl = await getJson('/api/players/reset-1/level');
+  assert.equal(resetLvl.name, 'level-1');
+  // a RESET player is served an intro-capable level (introTrace present) → the client replays the intro
+  // cutscene (server-side half of the "reset → intro" guard; the client gate is shouldPlayIntro()).
+  assert.ok(resetLvl.descriptor.introTrace, 'reset player is served a level-1 descriptor with introTrace');
   const reg = await (await post('/api/players/register', { playerId: 'reset-1' })).json();
   assert.equal(reg.isNew, false);            // the player row was kept, not recreated
   assert.equal(reg.currentProgress, 1);

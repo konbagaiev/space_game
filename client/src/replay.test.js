@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TRACE_VERSION, normalizeLevelName, evalRecord, evalPlayback,
-  snapshotInput, applyInput, makeTrace, validateTrace,
+  snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro,
 } from './replay.js';
 
 test('normalizeLevelName maps bare numbers to level-N and passes names through', () => {
@@ -92,4 +92,31 @@ test('validateTrace accepts a good trace and flags the broken ones', () => {
   assert.ok(validateTrace({ ...good, dt: 0 }).some((p) => p.includes('dt')));
   assert.ok(validateTrace({ ...good, ticks: [] }).some((p) => p.includes('empty')));
   assert.ok(validateTrace({ ...good, version: 99 }).some((p) => p.includes('version')));
+});
+
+test('makeReplaySession: fresh session is inactive; teardown clears every field', () => {
+  const s = makeReplaySession();
+  assert.equal(s.active, false);
+
+  // simulate an ACTIVE intro cutscene (the state finishIntro must fully clear)
+  s.play = { id: 'level-1-intro', cutscene: true };
+  s.trace = { ticks: [{}, {}] };
+  s.armed = true; s.index = 5; s.done = true;
+  s.cut = { pauses: [] }; s.cutDone = true; s.cutReturning = true;
+  assert.equal(s.active, true);
+
+  s.teardown();
+  assert.equal(s.active, false);
+  // deepEqual the owned fields back to a fresh session's defaults — this is what catches a forgotten reset
+  const fresh = makeReplaySession();
+  for (const k of ['play', 'trace', 'armed', 'index', 'done', 'cut', 'cutDone', 'cutReturning'])
+    assert.deepEqual(s[k], fresh[k], `teardown must reset ${k}`);
+});
+
+test('shouldPlayIntro: server-authoritative gate — trace present + not headless', () => {
+  assert.equal(shouldPlayIntro('', true), true);              // new/RESET player (trace present) → plays the intro — the reset→cutscene guard
+  assert.equal(shouldPlayIntro('', false), false);            // progress advanced (no trace) → no intro
+  assert.equal(shouldPlayIntro('?debug', true), false);       // headless visual suite → playable Level 0
+  assert.equal(shouldPlayIntro('?bench=replay', true), false);// headless perf suite → playable Level 0
+  assert.equal(shouldPlayIntro('?tune', true), true);         // a non-debug/bench dev flag still plays
 });
