@@ -159,16 +159,17 @@ test('reset: unknown player -> 404', async () => {
   assert.equal(r.status, 404);
 });
 
-test('briefing: the intro has none, then the shifted campaign chain swaps the gun for the Machine Gun', async () => {
+test('briefing: Level 1 has the first-flight briefing (no weapon change), then the campaign chain swaps the gun for the Machine Gun', async () => {
   // a fresh player starts on the intro (level-1) with the basic kinetic (weapon 1) as the gun
   const before = await getJson('/api/players/brief-1/active-ship');
   const gunBefore = before.loadout.mounts.find((m) => m.group === 'gun');
   assert.equal(gunBefore.weapon, 1); // Basic kinetic
 
-  // 1st advance (intro id 1 → id 2 = old level-1 content): NO briefing yet, gun still the basic kinetic
+  // 1st advance (intro id 1 → id 2 = Level 1): the restored first-flight briefing (pirates in the home
+  // system). It has NO weapon action, so the gun stays the basic kinetic.
   const adv1 = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv1.advanced, true);
-  assert.equal(adv1.briefing, null, 'the intro has no briefing');
+  assert.equal(adv1.briefing.textKey, 'level.1.briefing', 'Level 1 shows the first-flight briefing');
   assert.equal((await getJson('/api/players/brief-1/active-ship')).loadout.mounts.find((m) => m.group === 'gun').weapon, 1);
 
   // 2nd advance (id 2 → id 3): the Machine-Gun briefing (message + replaceWeapon action)
