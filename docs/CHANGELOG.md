@@ -5,6 +5,18 @@
 
 ## 2026-07-10
 
+- **[2026-07-10-1303-fix-intro-replay-teardown] Intro → Take-off dead-screen fix + reset now replays the
+  intro.** (1) The playback/cutscene lifecycle state is now one `makeReplaySession()` object in `replay.js`
+  (unit-tested `teardown()`); `finishIntro()` calls `rs.teardown()` + clears `G.replayMode` before landing on
+  the Level 1 briefing, so `animate()` leaves the inert `if (REC || rs.play)` branch and Take-off's `reset()`
+  runs the live sim (previously the loop stayed stuck in playback → no player/enemies/input). The
+  `PLAY`/`play*`/`CUT`/`cut*` module vars in `main.js` are mechanically renamed to `rs.*`; no behavior change
+  for `?record`/`?playback`. (2) The intro trigger is now **server-authoritative**: gated solely on the
+  served level carrying `introTrace` (present only while `current_progress===1`) + the headless check, via a
+  new pure `shouldPlayIntro()` — the redundant client `localStorage['introSeen']` guard is gone, so a genuine
+  `reset-progress` now REPLAYS the intro. New `shouldPlayIntro` unit test + a server test that a
+  progress-1/reset player is served an `introTrace`-carrying level (and level-2 is not).
+
 - **[2026-07-09-replay-record] Real new-player intro flow wired: auto-cutscene from S3 → Level 1 briefing.**
   A brand-new player (or reset progress) at Level 0 now **auto-plays the intro cutscene** (bootstrap
   `startIntroCutscene` fetches the canonical recording named on the level descriptor's `introTrace` and drives
