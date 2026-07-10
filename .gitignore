@@ -28,6 +28,8 @@ assets-dist/
 client/assets/ships/*.*.glb
 # content-hashed SFX mp3s pulled from S3 (sfx manifest holds the hashed URLs; bytes stay out of git)
 client/assets/sounds/*.*.mp3
+# content-hashed input-replay traces (intro cutscene) pulled from S3 (the seed holds the hashed URL)
+client/assets/recordings/*.json
 
 # Logs
 *.log

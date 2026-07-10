@@ -19,6 +19,7 @@ function pull(prefix, dest, ext) {
   aws(['s3', 'sync', `s3://${BUCKET}/${prefix}`, dest, '--exclude', '*', '--include', `*.${ext}`]);
 }
 
-pull(PREFIX.combat, DIR.combatServe, 'glb');   // combat models → client/assets/ships/
-pull(PREFIX.sounds, DIR.soundsServe, 'mp3');    // SFX mp3s → client/assets/sounds/
-console.log('Done. Combat models + SFX are in place (same-origin).');
+pull(PREFIX.combat, DIR.combatServe, 'glb');       // combat models → client/assets/ships/
+pull(PREFIX.sounds, DIR.soundsServe, 'mp3');        // SFX mp3s → client/assets/sounds/
+pull(PREFIX.recordings, DIR.recordingsServe, 'json'); // input-replay traces (intro cutscene) → client/assets/recordings/
+console.log('Done. Combat models + SFX + recordings are in place (same-origin).');

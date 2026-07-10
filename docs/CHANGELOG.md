@@ -5,6 +5,22 @@
 
 ## 2026-07-10
 
+- **[2026-07-09-replay-record] Real new-player intro flow wired: auto-cutscene from S3 → Level 1 briefing.**
+  A brand-new player (or reset progress) at Level 0 now **auto-plays the intro cutscene** (bootstrap
+  `startIntroCutscene` fetches the canonical recording named on the level descriptor's `introTrace` and drives
+  the playback+cutscene machinery), then on finish/Skip **advances `current_progress` 1→2** (`finishIntro` →
+  `unlockNextLevel`) and lands on the **Level 1 Main Window briefing** + Take off (shop stays gated). Headless
+  (`?debug`/`?bench`), already-seen (`localStorage['introSeen']`), or no recording → the playable Level 0 (the
+  arena the harnesses + `?dev` re-record path expect). Verified: a fresh player auto-opens on the P0 card with
+  the HUD hidden, no console errors.
+  - **Canonical recording is an S3 asset.** The intro trace (`level0-intro.<hash>.json`) lives on S3 under a
+    new `recordings/` prefix, pulled same-origin by `assets:pull` (config + pull wired in
+    `scripts/assets-config.mjs` / `assets-pull.mjs`), and referenced content-hashed from the `level-1`
+    descriptor (`introTrace`). New recording = new URL, like the ship glbs.
+  - **Level 1 got its briefing back.** Restored the original first-flight briefing (`level.1.briefing`, EN+RU
+    — "Pirates are raiding our home system…") on the `level-2` descriptor, so after the intro the player lands
+    on a real Main Window briefing (not the "Stand by" default). Reseed the catalog on deploy.
+
 - **[2026-07-09-replay-record] Level-0 intro cutscene on the input-replay playback (event-driven pauses +
   auto return-to-base).** `?playback&id={id}&cutscene=1` overlays the Level-0 script on a playback: a P0
   opening card (freeze before the fight, tap to begin) + P1–P4 text pauses each firing **~1s after their SIM

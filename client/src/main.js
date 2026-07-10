@@ -17,7 +17,7 @@ import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; //
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars)
-import { fetchJson, track, currentLevelLabel, registerBoot } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture)
+import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1)
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -27,7 +27,7 @@ import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscen
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
 import { showWelcome, applyTranslations, welcomeStaged } from './welcome.js'; // welcome screen + i18n UI glue
-import { initSentry, restoreSession, setPlayerShipsCache } from './account.js'; // auth block (bootstrap session restore + Sentry)
+import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
 import { recenterAndQuantize, MAX_GHOST_SHIPS, MAX_GHOST_BULLETS } from './ghost-battle-track.js'; // ?dev in-game backdrop recorder + synthetic bake
 
 // audio engine + tracksFor/sfxFor routing moved to src/sound-routing.js (imported at top).
@@ -53,7 +53,8 @@ const benchRecord = [];       // captured per-tick { k:[codes], t:[heading,thrus
 // ?bench perf gate above). Both run the sim at the fixed BENCH_DT step so a tick maps 1:1 to a sim frame.
 // docs/plans/2026-07-09-replay-record.md. Zero overhead when neither flag is present.
 const REC = evalRecord(typeof location !== 'undefined' ? location.search : '');   // { level } | null
-const PLAY = evalPlayback(typeof location !== 'undefined' ? location.search : ''); // { id, cutscene } | null
+let PLAY = evalPlayback(typeof location !== 'undefined' ? location.search : ''); // { id, cutscene } | null — also SET programmatically by the intro cutscene (bootstrap), reusing the playback machinery
+let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
 if (REC || PLAY) G.replayMode = true; // dev record/playback sessions are READ-ONLY: the sim must not advance progress / bank credits / deposit loot on a (re)played win
 let recSeed = 0;              // mulberry32 seed installed at record start (captured into the trace)
 let recShipId = null;         // the player ship id used for the recording (rebuilt on playback)
@@ -1027,6 +1028,35 @@ function updatePlaybackHud() {
   if (p) p.textContent = `${Math.min(playIndex, playTrace.ticks.length)} / ${playTrace.ticks.length}${playDone ? ' ✓' : ''}`;
 }
 
+// Start the INTRO cutscene for a new player: fetch the canonical recording (a same-origin S3 asset named on
+// the level descriptor's `introTrace`), then reuse the playback machinery. READ-ONLY — the sim never advances
+// progress; the advance is explicit in finishIntro() when the cutscene ends. Returns false if the trace is
+// missing/invalid so bootstrap can fall back to the playable Level 0.
+async function startIntroCutscene() {
+  const url = CATALOG.level && CATALOG.level.introTrace;
+  if (!url) return false;
+  let trace = null;
+  try { trace = await (await fetch(url)).json(); } catch (e) { console.error('[intro] trace fetch failed', e); }
+  const problems = trace ? validateTrace(trace) : ['intro trace missing/unfetchable'];
+  if (problems.length) { console.error('[intro] invalid trace:', problems); return false; }
+  playTrace = trace;
+  PLAY = { id: trace.id, cutscene: true };   // drive the playback accumulator + cutscene like ?playback&cutscene
+  introMode = true;
+  G.replayMode = true;                        // read-only — win() won't advance; finishIntro() does it explicitly
+  startPlaybackSession(trace);
+  return true;
+}
+// The intro cutscene finished (won or Skip) → advance the player 1→2 (server-authoritative, so the intro is
+// one-time + cross-device) and land on the Level 1 Main Window briefing (shop stays gated until unlocked).
+async function finishIntro() {
+  if (!introMode) return;
+  introMode = false;
+  try { localStorage.setItem('introSeen', '1'); } catch {}
+  try { await unlockNextLevel(); } catch (e) { console.error('[intro] advance failed', e); }
+  if (CATALOG.level && CATALOG.level.briefing) showMain(CATALOG.level.briefing);
+  else showWelcome(getPlayerShips());
+}
+
 // --- Level-0 cutscene runtime: event detection + freeze + localized card (see level0-cutscene.js) ---
 function cutsceneStart() {
   buildCutsceneOverlay();
@@ -1088,6 +1118,7 @@ function cutsceneEnd() { // tear down the overlay so the normal HUD / victory ov
   cutDone = true; cutFrozen = false; cutReturning = false; cutsceneHideCard();
   document.body.classList.remove('cutscene');
   if (cutSkipEl) { cutSkipEl.remove(); cutSkipEl = null; }
+  if (introMode) finishIntro(); // real intro: advance 1→2 + land on the Level 1 briefing
 }
 function cutsceneShowCard(textKey) { if (cutOverlayEl) { cutCardEl.textContent = t(textKey); cutOverlayEl.style.display = 'flex'; } }
 function cutsceneHideCard() { if (cutOverlayEl) cutOverlayEl.style.display = 'none'; }
@@ -1275,9 +1306,14 @@ async function bootstrap() {
     } else if (PLAY) {
       startPlaybackSession(playTrace); // re-run the recorded fight on the real engine
     } else if (level.name === 'level-1') {
-      document.body.classList.remove('menu'); // ensure the in-game HUD (never a menu) — safety no-op
-      G.gameStarted = true;
-      reset(); // position the player + start the level (mirrors welcome.js takeOff, minus the welcome UI)
+      // Intro. A REAL new player (not headless, not already-seen) with a canonical recording → WATCH the
+      // CUTSCENE, then finishIntro advances to Level 1. Headless (?debug/?bench visual/perf suites),
+      // already-seen, or no recording → the PLAYABLE Level 0 (the arena the harnesses expect + ?dev re-record).
+      const headless = location.search.includes('debug') || location.search.includes('bench');
+      let seen = false; try { seen = !!localStorage.getItem('introSeen'); } catch {}
+      let started = false;
+      if (!headless && !seen && CATALOG.level.introTrace) started = await startIntroCutscene();
+      if (!started) { document.body.classList.remove('menu'); G.gameStarted = true; reset(); }
     } else if (CATALOG.level.briefing) {
       showMain(CATALOG.level.briefing);
     } else {
