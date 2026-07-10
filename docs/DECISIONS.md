@@ -2292,6 +2292,26 @@ can't leak into the playable-Level-0 fallback (which never builds the overlay) n
 (single i18n path), §30 (no gold-plating), §63 (the intro cutscene it rides on).
 ---
 
+## 65. Narrative register: grounded rookie + diegetic mechanic-teaching, not chirpy tutorial voice
+
+**Problem.** The original intro/first-mission copy read naive: the briefing tone-shifted from "pirates are
+raiding our home system" straight into chirpy tutorial-speak ("**Good news:** you've got a fast, nimble ship");
+the cutscene was a string of hero quips ("Heh —", "So this is what all those years of training were for",
+`!!!`) with no fear or cost; and lines existed transparently to explain mechanics ("mine just cut out" to
+justify disabled rockets).
+
+**Decision.** The pilot is a **rookie Vega Sentinel** ambushed on approach to their first posting — **scared but
+holding**, no quips, no exclamation-mark bravado. Mechanics are taught **diegetically through the beats** rather
+than narrated as tutorial: dodge enemy fire (p1) → the ship's own **rocket launcher** downs the second pirate
+(p1→p2) → an enemy rocketeer's missiles can be **outrun** (p3) and **shot down** with the cannon (p4). The
+Level 1 briefing switched POV to a **station dispatcher** (relieved, a little wry) who asks the player to clear
+the pirates off the station **first** and sort out the rest later — this is the register to keep for later
+briefings (it matches the already-good Level 4 voice; the Level 2/3 salvage framing already fit). Keep the
+starter weapon the **cannon** (+ rockets) so the Machine Gun stays the Level-1 salvage reward (don't hand the
+rookie an MG in the intro — it breaks the L2 "pulled it out of the wreckage" arc). English stays the source of
+truth (§10); RU mirrors. Cross-ref §63 (the intro cutscene), §64 (its i18n plumbing).
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

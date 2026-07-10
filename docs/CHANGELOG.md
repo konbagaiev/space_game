@@ -3,6 +3,20 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-11
+
+- **Rewrote the intro-cutscene + first-mission narrative (less naive, grounded register).** Replaced the
+  Level-0 intro cutscene lines (`ui.cutscene.p0`–`p4`), the Level 1 briefing (`level.1.briefing`), and the
+  welcome-screen intro (`ui.welcome.intro`) in EN + RU. New voice: the pilot is a rookie **Vega Sentinel**
+  ambushed on approach to their first posting — scared but holding, no hero quips or `!!!` bravado. The
+  cutscene now deliberately teaches the mechanics through the beats: dodge enemy fire (p1) → the ship's own
+  **rocket launcher** downs the second pirate (p1→p2) → an enemy rocketeer's missiles can be **outrun** (p3)
+  and **shot down** with the cannon (p4). The Level 1 briefing is now spoken by a **station dispatcher**
+  ("you made it in just in time, and in a ship like that…") who asks the player to drive the pirates off the
+  station first and sort out the rest later. Strings-only change (`source.json` + `ru.json`); no code/logic.
+  Starter weapon stays the **cannon** (+ rockets); the Machine Gun remains the Level-1 salvage reward, so the
+  L2 briefing arc is unaffected.
+
 ## 2026-07-10
 
 - **[2026-07-10-1524-language-selector-menu] Language selector in Settings + intro cutscene.** EN/RU toggles
