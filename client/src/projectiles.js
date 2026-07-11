@@ -7,6 +7,22 @@ import { scene } from './engine.js';
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { pointHitsShip } from './collision.js';
+import { absorbDamage } from './components.js';
+
+// Route ALL incoming player damage through the shield first (bullets + rocket blast). The shield absorbs
+// until fully depleted, spilling only the excess to the hull; once broken it stays at 0 and recharges in
+// sim.update (shieldRecharge). No shield, or already depleted → full damage hits the hull. The player
+// entity is passed in explicitly (not read from G) so the routing is state-independent and testable.
+export function applyPlayerDamage(player, dmg) {
+  if (player.shield && player._shieldValue > 0) {
+    const r = absorbDamage(player._shieldValue, dmg);
+    player._shieldValue = r.shieldValue;
+    if (r.broke) player._shieldRechargeAccum = 0; // start the recharge timer fresh on the breaking hit
+    if (r.toHull > 0) player.hp -= r.toHull;
+  } else {
+    player.hp -= dmg;
+  }
+}
 
 // ---------- Projectiles ----------
 // bullets moved to src/state.js
@@ -289,7 +305,7 @@ export function detonateRocket(r, dealDamage = true) {
         if (pointHitsShip(e, r.obj.position, r.blastR)) e.hp -= r.damage;
       }
     } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.blastR)) {
-      G.player.hp -= r.damage;
+      applyPlayerDamage(G.player, r.damage);
     }
   }
   spawnRocketBurst(r.obj.position, r.blastVis, r.blastTint, r.blastTime); // small, fast layered burst (params from the rocket's weapon stats)

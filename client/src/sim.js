@@ -8,10 +8,10 @@ import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enem
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
-import { repairTick } from './components.js';
+import { repairTick, shieldRecharge } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, HIT_FLASH_SCALE } from './projectiles.js';
+import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, applyPlayerDamage, HIT_FLASH_SCALE } from './projectiles.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
 import { isLastKillDrop } from './level-sim.js';
@@ -374,6 +374,12 @@ export function update(dt) {
     G.player.hp = r.hp; G.player._repairAccum = r.accum;
   }
 
+  // --- shield: recharge only once fully depleted, then refill to full (no-op without a shield) ---
+  if (G.player.shield) {
+    const s = shieldRecharge(G.player._shieldValue, G.player.shield.capacity, G.player.shield.rechargeSec, dt, G.player._shieldRechargeAccum);
+    G.player._shieldValue = s.shieldValue; G.player._shieldRechargeAccum = s.accum;
+  }
+
   const eng = G.player.engine;         // main engine (for exhaust)
   const accel = G.player.acceleration; // derived: acceleration <- main engine power
   const turn = G.player.turnRate;      // derived: maneuverability <- thruster power
@@ -522,7 +528,7 @@ export function update(dt) {
       }
     } else {
       if (segmentHitsShip(G.player, _bulletP0, b.mesh.position)) {
-        G.player.hp -= b.damage; hit = true; audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
+        applyPlayerDamage(G.player, b.damage); hit = true; audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
       }
     }
 
@@ -866,6 +872,8 @@ export function reset() {
   G.player.spawnAge = SPAWN_GROW_TIME; // and any in-progress warp-back animation (back to full size)
   if (G.player.spawnScale) G.player.mesh.scale.copy(G.player.spawnScale);
   G.player._repairAccum = 0; // fresh run: clear banked repair-drone time
+  G.player._shieldValue = G.player.shield ? G.player.shield.capacity : 0; // fresh run: shield full & active
+  G.player._shieldRechargeAccum = 0;
   for (const g of Object.values(G.player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   G.player.alive = true;
   G.earned = 0; G.kills = 0; G.banked = false; // new run: reset session credits + the bank-once guard (balance persists)

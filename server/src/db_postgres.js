@@ -266,6 +266,11 @@ export async function migrate() {
   // so they need no change. Idempotent: the `NOT (components ? 'grab')` guard skips rows already carrying it.
   await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{grab}', '29'::jsonb)
     WHERE components IS NOT NULL AND NOT (components ? 'grab')`);
+  // Backfill the Base shield (component 31) onto existing players (mirrors SQLite migration 023). NEW
+  // players get it from the reseeded ship default; players with an explicit pre-shield `components`
+  // override don't. Idempotent: the `NOT (components ? 'shield')` guard skips rows already carrying it.
+  await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{shield}', '31'::jsonb)
+    WHERE components IS NOT NULL AND NOT (components ? 'shield')`);
 
   console.log('[migrate] postgres schema ready');
 }
@@ -546,7 +551,7 @@ export async function getLevel(name) {
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
 const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']);
-const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair', 'grab']);
+const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']);
 const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket' };
 const sellPrice = (price) => Math.floor((price | 0) * 0.75);
 

@@ -11,12 +11,12 @@ import { spawnBullet, spawnRocket, findTargetInSector } from './projectiles.js';
 import { audio, sfxFor } from './sound-routing.js';
 
 export const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
-// Resolve a ship's component refs ({ hull, engine, thruster, repair, grab }) to objects (id + stats + weight).
+// Resolve a ship's component refs ({ hull, engine, thruster, repair, grab, shield }) to objects (id + stats + weight).
 // `id` is carried through so the loot-drop picker can name the exact looted item (reads hull.id/engine.id/…).
 export function resolveComponents(refs) {
   const r = refs || {};
   const get = (id) => { const c = CATALOG.components.get(id); return c ? { id: c.id, name: c.name, weight: c.weight, ...c.stats } : null; };
-  return { hull: get(r.hull), engine: get(r.engine), thruster: get(r.thruster), repair: get(r.repair), grab: get(r.grab) };
+  return { hull: get(r.hull), engine: get(r.engine), thruster: get(r.thruster), repair: get(r.repair), grab: get(r.grab), shield: get(r.shield) };
 }
 
 // Resolve a ship's mounts (weapon ids -> weapon objects).
@@ -40,7 +40,7 @@ function buildGroups(groupDefs, mounts) {
 export function buildPlayer(active) {
   const s = active.ship.stats;
   const mc = shipModelCfg(s); // per-ship model presentation (yaw/scale + optional overrides)
-  const { hull, engine, thruster, repair, grab } = resolveComponents(active.components); // hull + engine + thrusters + repair drone + grab
+  const { hull, engine, thruster, repair, grab, shield } = resolveComponents(active.components); // hull + engine + thrusters + repair drone + grab + shield
   const p = {
     mesh: makeShip(s.color, modelSpec(active.ship.modelUrl, mc)),
     vel: new THREE.Vector3(),
@@ -48,8 +48,10 @@ export function buildPlayer(active) {
     sizeScale: mc.scale,
     hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
     class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
-    hull, engine, thruster, repair, grab, // `repair` = repair-drone stats (or null); `grab` = tractor stats (or null) — feeds mass + the grab pull sim
+    hull, engine, thruster, repair, grab, shield, // `repair` = repair-drone stats (or null); `grab` = tractor stats (or null); `shield` = base-shield stats { capacity, rechargeSec } or null — all feed mass
     _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
+    _shieldValue: shield ? shield.capacity : 0, // current absorption remaining (starts full & active)
+    _shieldRechargeAccum: 0,          // seconds banked while broken → drives recharge + HUD purple fill
     mounts: buildMounts(active.loadout.mounts), // resolved weapons; also feeds ship mass
     hp: hull ? hull.durability : 0, maxHp: hull ? hull.durability : 0, // hull may be unequipped in the hangar; the launchable gate blocks take-off
     alive: true,

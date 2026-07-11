@@ -14,7 +14,7 @@ export const REFERENCE_MASS = 50;
 // Total ship mass = hull + engine + thruster + repair-drone + grab weight + the weight of every mounted weapon.
 export function shipMass(ship) {
   let mass = 0;
-  for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab']) {
+  for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']) {
     if (ship[slot] && typeof ship[slot].weight === 'number') mass += ship[slot].weight;
   }
   if (Array.isArray(ship.mounts)) {
@@ -57,4 +57,23 @@ export function repairTick(hp, maxHp, repairComp, dt, accum) {
   }
   if (hp >= cap) accum = 0; // topped up: don't bank time toward an instant heal after the next hit
   return { hp, accum };
+}
+
+// Absorb incoming damage with the shield first. Returns the new shield value, the damage that spills to
+// the hull, and whether this hit FULLY depleted the shield. A partial hit (dmg < shieldValue) leaves the
+// shield reduced with nothing reaching the hull; a hit >= shieldValue breaks it to 0 and spills the excess.
+// Assumes shieldValue > 0 (the caller routes to the hull directly when the shield is already depleted).
+export function absorbDamage(shieldValue, dmg) {
+  if (dmg < shieldValue) return { shieldValue: shieldValue - dmg, toHull: 0, broke: false };
+  return { shieldValue: 0, toHull: dmg - shieldValue, broke: true };
+}
+
+// Recharge a BROKEN shield. Only runs once fully depleted (shieldValue <= 0): a partial shield holds
+// indefinitely (returns accum 0 = not recharging). While broken, banks dt; on reaching rechargeSec the
+// shield refills to full capacity and reactivates. Pure: the caller passes the accumulator in/out.
+export function shieldRecharge(shieldValue, capacity, rechargeSec, dt, accum) {
+  if (shieldValue > 0 || !(capacity > 0) || !(rechargeSec > 0)) return { shieldValue, accum: 0 };
+  accum += dt;
+  if (accum >= rechargeSec) return { shieldValue: capacity, accum: 0 }; // refilled → active again
+  return { shieldValue, accum };
 }

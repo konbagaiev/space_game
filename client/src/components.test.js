@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveDrive, hitsToKill, shipMass, REFERENCE_MASS, repairTick } from './components.js';
+import { deriveDrive, hitsToKill, shipMass, REFERENCE_MASS, repairTick, absorbDamage, shieldRecharge } from './components.js';
 
 // Synthetic components mirroring the DB seed: hull {weight,durability}, engine {weight,power},
 // thruster {weight,power}.
@@ -113,4 +113,33 @@ test('repairTick: no-op when hp is already at/above the cap', () => {
 test('repairTick: no drone (or disabled stats) is a no-op', () => {
   assert.deepEqual(repairTick(50, 100, null, 5, 2), { hp: 50, accum: 0 });
   assert.deepEqual(repairTick(50, 100, { repairPerTick: 0, intervalSec: 3 }, 5, 0), { hp: 50, accum: 0 });
+});
+
+// --- shield (absorbDamage / shieldRecharge) — base shield mirrors the DB seed (id 31): cap 20, recharge 10s ---
+test('absorbDamage: a partial hit reduces the shield with nothing reaching the hull', () => {
+  assert.deepEqual(absorbDamage(20, 5), { shieldValue: 15, toHull: 0, broke: false });
+});
+
+test('absorbDamage: an exact-capacity hit breaks the shield to 0 with no overflow', () => {
+  assert.deepEqual(absorbDamage(20, 20), { shieldValue: 0, toHull: 0, broke: true });
+});
+
+test('absorbDamage: an over-capacity hit breaks the shield and spills the excess to the hull', () => {
+  assert.deepEqual(absorbDamage(20, 30), { shieldValue: 0, toHull: 10, broke: true });
+});
+
+test('shieldRecharge: no-op while the shield is still active/partial (does not bank time)', () => {
+  assert.deepEqual(shieldRecharge(15, 20, 10, 5, 0), { shieldValue: 15, accum: 0 });
+});
+
+test('shieldRecharge: banks dt while broken but not yet full', () => {
+  assert.deepEqual(shieldRecharge(0, 20, 10, 4, 0), { shieldValue: 0, accum: 4 });
+});
+
+test('shieldRecharge: refills to full capacity and resets the accumulator at rechargeSec', () => {
+  assert.deepEqual(shieldRecharge(0, 20, 10, 6, 4), { shieldValue: 20, accum: 0 });
+});
+
+test('shieldRecharge: a large dt still refills to exactly capacity (no overshoot)', () => {
+  assert.deepEqual(shieldRecharge(0, 20, 10, 100, 0), { shieldValue: 20, accum: 0 });
 });
