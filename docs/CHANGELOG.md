@@ -5,6 +5,20 @@
 
 ## 2026-07-11
 
+- **Polished the level victory lines (L0–L3) into the mission-control register.** Rewrote
+  `level.0.victory`…`level.3.victory` (EN + RU) to match the dispatcher voice already used by
+  `level.4.victory`, dropping game vocabulary ("Level N cleared!", "mid-boss"). Also fixed two canon
+  slips: `level.0.victory` no longer calls the intro a "patrol" (it's an ambush now), and
+  `level.3.victory` no longer reads as the finale (Levels 4–5 follow — it now sets up the hunt for the
+  pirate base). Strings-only; no code/logic.
+- **Added a narrative-canon doc home (`docs/narrative/`).** A seed for story/character/tone reference
+  that future player-facing text is generated *from*, so the writing stays consistent as the game grows.
+  `README.md` (conventions: reference not shipped text, English-only, capture-established-only),
+  `canon.md` (premise, setting, factions, the level-by-level story spine cross-referenced to the locale
+  keys, and the tone/register from §65), and `characters/player-sentinel.md` (the protagonist =
+  **rookie Vega Sentinel**). Deliberately minimal (DECISIONS §30) — the far-reaching setting bible is
+  deferred; this exists so the canon that already exists is captured and reusable. Also noted a known
+  stale line to reconcile later (`level.3.victory` says "final level" but L4–L5 exist).
 - **Rewrote the intro-cutscene + first-mission narrative (less naive, grounded register).** Replaced the
   Level-0 intro cutscene lines (`ui.cutscene.p0`–`p4`), the Level 1 briefing (`level.1.briefing`), and the
   welcome-screen intro (`ui.welcome.intro`) in EN + RU. New voice: the pilot is a rookie **Vega Sentinel**

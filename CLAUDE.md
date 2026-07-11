@@ -22,7 +22,9 @@ this rule for anything we author or version.
 - `client/` — Three.js game (frontend), single `index.html`.
 - `server/` — backend (player accounts, multiplayer) — planned.
 - `docs/` — `ROADMAP.md` (end-to-end scope & phases), `SUMMARY.md` (current state), `CHANGELOG.md`
-  (change log), `DECISIONS.md` (rationale), `plans/*.md` (per-feature build briefs).
+  (change log), `DECISIONS.md` (rationale), `plans/*.md` (per-feature build briefs),
+  `narrative/*` (story canon, character cards, tone — the reference player-facing text is generated
+  *from*; read before writing new briefings/cutscene/mission copy).
 
 ## Code changes: offer the `/feature-pipeline` skill first
 
