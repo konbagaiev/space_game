@@ -40,13 +40,18 @@ not copied.
   greets the just-arrived rookie ("you made it in just in time, and in a ship like that…") and asks
   them to clear the pirates off the station first, questions later. → After clearing, the player is
   asked to name themselves.
-- **Level 2 — the weapons factory** (`level.2.briefing`). Framed as the player having **salvaged a
-  Machine Gun** from the Level 1 wreckage (now their primary — lighter trigger, good vs rockets).
-  Push the pirates off the factory before they arm their fleet.
-- **Level 3** (`level.3.briefing`). The player **salvaged a repair drone** last fight (now fitted,
-  slow hull heal mid-combat).
-- **Level 4 — find the pirate base** (`level.4.briefing`, `level.4.victory`). Ships fled the factory;
-  track them, gear up (heavy enemies ahead), find where they're hiding. Victory: the base is located.
+- **Level 2 — reach the weapons factory** (`level.2.briefing`, `level.2.victory`). The player now
+  carries the **Machine Gun** salvaged from Level 1 (primary — lighter trigger, good vs rockets).
+  Contact with the factory (two sectors out) is lost and the lanes to it are held by pirates; **fight
+  through and reach it**. Ends with a heavier escort (the medium **mini-boss** — first tougher enemy).
+  Victory: the lane's open and the factory's in range, but it's dug in hard — the assault is next.
+- **Level 3 — take the factory** (`level.3.briefing`, `level.3.victory`). The player has the **repair
+  drone** salvaged in Level 2 (fitted; slow mid-combat hull heal; retreat to let it work). Mission:
+  **assault the factory itself**, guarded by the **first genuinely big enemy warship** (the Sector boss).
+  Victory: the warship is scrap and the factory is taken; a few pirates flee — setting up the hunt.
+- **Level 4 — find the pirate base** (`level.4.briefing`, `level.4.victory`). Follows the fleeing ships
+  from the factory; track them, gear up (heavy enemies ahead), find where they're hiding. Victory: the
+  base is located.
 - **Level 5 — storm the pirate base** (target set up by L4 victory).
 - **Side missions** (`mission.*.desc`) — self-contained defend/clear jobs: **mining** belt gone
   quiet, **research** station threatened, **freighter** distress call.

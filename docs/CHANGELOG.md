@@ -5,6 +5,15 @@
 
 ## 2026-07-11
 
+- **Reworked the Level 2–3 campaign spine so the briefings mean something (grounded in the actual
+  bosses).** Level 2 is now "**fight through to the weapons factory**" (was "push the pirates off the
+  factory"); its ending medium mini-boss is framed as the heavier escort holding the door. Level 3 is now
+  "**take the factory**", defended by the **first genuinely big enemy warship** (the Sector boss that
+  actually spawns at the end of that level) — previously `level.3.briefing` only talked about the salvaged
+  repair drone and named no mission at all. Level 3 victory reframed (warship down, factory taken, some
+  pirates flee) and the Level 4 briefing tweaked to follow on ("those ships that ran when the factory
+  fell…"). Salvage-gear framing preserved (MG before L2, repair drone before L3 — matches the drops).
+  EN + RU; `source.json` + `ru.json` + `docs/narrative/canon.md`; no code/logic.
 - **Polished the level victory lines (L0–L3) into the mission-control register.** Rewrote
   `level.0.victory`…`level.3.victory` (EN + RU) to match the dispatcher voice already used by
   `level.4.victory`, dropping game vocabulary ("Level N cleared!", "mid-boss"). Also fixed two canon
