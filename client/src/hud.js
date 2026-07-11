@@ -24,6 +24,26 @@ export function updateHud() {
   el.hpFill.style.width = hpPct + '%';
   el.hpPct.textContent = hpPct.toFixed(1) + '%'; // remaining health, one decimal
 
+  // shield bar (above the health bar): blue while active (width = remaining fraction), purple while broken
+  // (width grows over the recharge time); hidden entirely when the ship carries no shield component.
+  const sh = G.player.shield;
+  if (sh && sh.capacity > 0) {
+    el.shieldBar.style.display = 'block';
+    el.hpBar.classList.add('with-shield');
+    const val = G.player._shieldValue;
+    if (val > 0) { // active → blue, width = remaining fraction
+      el.shieldBar.classList.remove('recharging');
+      el.shieldFill.style.width = Math.max(0, Math.min(1, val / sh.capacity)) * 100 + '%';
+    } else {       // broken → purple, width grows over the recharge time
+      el.shieldBar.classList.add('recharging');
+      const frac = sh.rechargeSec > 0 ? Math.min(1, G.player._shieldRechargeAccum / sh.rechargeSec) : 0;
+      el.shieldFill.style.width = frac * 100 + '%';
+    }
+  } else { // no shield component → hide the bar, health bar reverts to full rounded corners
+    el.shieldBar.style.display = 'none';
+    el.hpBar.classList.remove('with-shield');
+  }
+
   // rocket reload: the 🚀 circle fills up (radial) as the rocket group reloads
   const rg = G.player.groups.rocket;
   const cd = rg ? rg.reload : 1;

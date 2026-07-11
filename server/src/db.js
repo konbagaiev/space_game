@@ -366,7 +366,7 @@ export function getLevel(name) {
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // All mutations here are server-authoritative + transactional (no double-spend / item dupe).
 const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']); // a ship can't take off without these
-const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair', 'grab']);
+const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']);
 const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket' }; // which fire-group a weapon type slots into
 const sellPrice = (price) => Math.floor((price | 0) * 0.75); // resale value (server-computed)
 

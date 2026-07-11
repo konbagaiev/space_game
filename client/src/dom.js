@@ -20,8 +20,11 @@ export const el = {
   // HUD readouts (updated every frame by hud.js)
   credits: byId('credits'),     // single "credits {total}/{earned} earned" line
   kills: byId('kills'),         // destroyed enemies this run
+  hpBar: byId('hpbar'),         // health bar container (toggles .with-shield for the stacked layout)
   hpFill: byId('hpfill'),       // health bar fill width
   hpPct: byId('hppct'),         // health bar numeric percent
+  shieldBar: byId('shieldbar'), // shield bar container (toggles .recharging → purple)
+  shieldFill: byId('shieldfill'), // shield bar fill (width = current fraction)
   rocketBtn: byId('rocket-btn'),   // 🚀 button (gets a .ready class when reloaded)
   rocketFill: byId('rocket-fill'), // radial reload indicator on the rocket button
   perf: byId('perf'),           // fps / ms / draw-calls overlay

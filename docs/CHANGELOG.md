@@ -5,6 +5,18 @@
 
 ## 2026-07-11
 
+- **[2026-07-11-1503-shield-component] Base shield component.** New `shield` component type (a real catalog
+  component in a new optional `shield` slot): the **Base shield** (id 31, capacity 20 / recharge 10 s /
+  weight 0 / price 500) is equipped on the starter ship and buyable in the shop. All incoming player damage
+  (enemy bullets + rocket blast) now routes through one `applyPlayerDamage(player, dmg)` helper that absorbs
+  into the shield first, spilling only the **excess** to the hull; a hit that fully depletes the shield
+  breaks it and it recharges to **full** over the recharge time (a partial shield holds indefinitely and
+  never triggers recharge). New HUD **shield bar directly above a now-red health bar** — blue while active
+  (width = remaining fraction), purple while recharging (width grows over the recharge time); the standalone
+  "Health" label was dropped (the colour-coded stacked bars are self-descriptive). Pure, unit-tested
+  `absorbDamage`/`shieldRecharge` in `components.js`. SQLite migration `023_backfill_shield.js` + a mirrored
+  Postgres back-fill grant the slot to existing players; EN+RU shop strings added. **No** ship-visual / FX
+  this iteration — HUD bar states only.
 - **Reworked the Level 2–3 campaign spine so the briefings mean something (grounded in the actual
   bosses).** Level 2 is now "**fight through to the weapons factory**" (was "push the pirates off the
   factory"); its ending medium mini-boss is framed as the heavier escort holding the door. Level 3 is now

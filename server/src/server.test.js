@@ -343,7 +343,7 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player_combat.f7171045.glb'); // real "Air & Space Vessel" model (textured)
   assert.equal(player.modelUrlHigh, 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb');
-  assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8, grab: 29 }); // assembled from components (base grab included)
+  assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8, grab: 29, shield: 31 }); // assembled from components (base grab + base shield included)
   assert.equal(player.stats.model.yaw, 0);   // model-presentation block (yaw/scale)
   assert.equal(player.stats.model.scale, 1.1);
   // auto-fit OBB hitbox survives the JSON-blob round-trip (seedCatalog → fetch) on SQLite + Postgres
@@ -381,13 +381,17 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   const comps = await getJson('/api/components');
   // 4 hulls + 3 engines + 4 thrusters + 1 repair drone (enemy/starter) + 6 player-shop ladder rows
   // (Heavy hull 13, Solid-fuel 15, Ion 16, Repair II 19, Nanobot 20, Advanced thrusters 21)
-  // + 2 Grab components (base 29, advanced 30) = 27
-  assert.equal(comps.length, 27);
+  // + 2 Grab components (base 29, advanced 30) + 1 base shield (31) = 28
+  assert.equal(comps.length, 28);
   const drone = comps.find((c) => c.name === 'Repair drone');
   assert.equal(drone.id, 12);
   assert.equal(drone.type, 'repair');
   assert.equal(drone.weight, 4);
   assert.deepEqual(drone.stats, { repairPerTick: 1, intervalSec: 1, maxFraction: 0.8, model: { yaw: 0, scale: 1 } });
+  const shield = comps.find((c) => c.name === 'Base shield');
+  assert.equal(shield.id, 31);
+  assert.equal(shield.type, 'shield');
+  assert.deepEqual(shield.stats, { capacity: 20, rechargeSec: 10 });
   assert.match(drone.modelUrlHigh, /\/ships-hangar\/repair_drone_hangar\./); // item 3D model (menu icon) wired
   const light = comps.find((c) => c.name === 'Light hull');
   assert.equal(light.type, 'hull');
@@ -726,7 +730,7 @@ test('active ship: a new player gets a default active ship (empty loadout -> shi
   assert.equal(active.loadout.mounts.length, 2);
   assert.equal(active.loadout.mounts.find((m) => m.group === 'gun').weapon, 1);    // Basic kinetic
   assert.equal(active.loadout.mounts.find((m) => m.group === 'rocket').weapon, 3); // Rocket (homing)
-  assert.deepEqual(active.components, { hull: 1, engine: 5, thruster: 8, grab: 29 }); // starter loadout incl. the base grab
+  assert.deepEqual(active.components, { hull: 1, engine: 5, thruster: 8, grab: 29, shield: 31 }); // starter loadout incl. the base grab + base shield
 });
 
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------

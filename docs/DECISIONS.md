@@ -2312,6 +2312,37 @@ rookie an MG in the intro — it breaks the L2 "pulled it out of the wreckage" a
 truth (§10); RU mirrors. Cross-ref §63 (the intro cutscene), §64 (its i18n plumbing).
 ---
 
+## 66. Shield = break-then-recharge (partial holds; recharge only on FULL depletion, refills to full), one damage router, weight 0
+
+**Problem.** Adding a regenerating damage buffer to the starter ship opened several independent choices:
+the recharge model, how many damage sites to touch, and how much the base emitter should weigh.
+
+**Decision.**
+- **Mechanic = break-then-recharge, not a continuous regen.** The shield holds its remaining value
+  **indefinitely** until a hit **fully depletes** it; only then does it go inactive and recharge over
+  `rechargeSec`, refilling to **full** capacity and reactivating. Partial damage never starts a recharge.
+  This is one clear player-legible state machine (active ↔ broken) rather than a fiddly always-trickling
+  bar, and it mirrors the repair-drone's pure/stateless shape (`absorbDamage`/`shieldRecharge` in
+  `components.js`, caller holds `_shieldValue`/`_shieldRechargeAccum`, ticked off the sim `dt`).
+- **One damage router.** Every incoming player-damage site (enemy bullets in `sim.js`, rocket blast in
+  `projectiles.js`) goes through a single `applyPlayerDamage(player, dmg)` helper (shield-first absorb,
+  overflow spills to the hull), so shielding can never be forgotten at one site. The player entity is
+  passed **explicitly** (not read from a module global) so the routing branch is state-independent /
+  testable. `applyPlayerDamage` itself is untested glue (projectiles.js pulls in Three at module top → not
+  Node-importable); the required coverage is on the pure functions it calls, per the repair-drone precedent.
+- **Base shield `weight: 0`.** The shield sits on the *starter* ship, so any nonzero weight would silently
+  nerf starter accel/turn (mass 50 → 54) **and** force a `REFERENCE_MASS` bump (which also buffs every
+  enemy's `massFactor`) plus mass-test churn. Weight 0 keeps starter handling + all enemy balance
+  byte-for-byte unchanged — thematically "the base emitter is negligible; heavier capacitor tiers add mass
+  later." `'shield'` is still in the `shipMass` loop so future weighted tiers count.
+- **HUD "Health" label dropped.** With a shield bar stacked directly above the health bar, one label can't
+  correctly name both; the colour-coded bars (blue/purple shield over a red hull) are self-descriptive.
+
+Optional slot + a buyable base tier mirror the grab precedent, incl. the SQLite-migration + Postgres
+back-fill for existing players. Cross-ref §30 (keep it simple — no FX / tiers / enemy shields this pass),
+§40 (grab back-fill this mirrors), §57 (grab as the optional-component precedent).
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

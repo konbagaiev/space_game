@@ -40,6 +40,7 @@ function statLine(kind, type, s, weight) {
       if (s.maxFraction != null) parts.push(`${t('ui.shop.stat.cap')} ${Math.round(s.maxFraction * 100)}%`);
     }
     else if (type === 'grab') add('ui.shop.stat.grab', s.strength); // tractor: abstract grab strength (reach is emergent, not equal to this number)
+    else if (type === 'shield') { add('ui.shop.stat.shield', s.capacity); parts.push(`${t('ui.shop.stat.recharge')} ${s.rechargeSec}s`); } // damage buffer: capacity + recharge time
   } else { // weapon
     // Triple spiral rocket fires 3 real warheads, each dealing `power` — show the per-warhead × count
     // so the shop reflects the true on-hit damage (40×3), not one warhead's 40. (See catalog id 11.)
@@ -60,7 +61,7 @@ function statLine(kind, type, s, weight) {
 export function deriveShipStats(components, mounts) {
   const rc = resolveComponents(components);
   const ship = {
-    hull: rc.hull, engine: rc.engine, thruster: rc.thruster, repair: rc.repair, grab: rc.grab, // grab weighs into mass — must be spread in explicitly (rc isn't spread)
+    hull: rc.hull, engine: rc.engine, thruster: rc.thruster, repair: rc.repair, grab: rc.grab, shield: rc.shield, // grab + shield weigh into mass — must be spread in explicitly (rc isn't spread)
     mounts: (mounts || []).map((m) => ({ weapon: CATALOG.weapons.get(m.weapon) })).filter((m) => m.weapon),
   };
   const weight = shipMass(ship);
@@ -138,7 +139,7 @@ function ownedCount(kind, refId) {
   const active = shopData && shopData.activeShip;
   if (active) {
     if (kind === 'component') {
-      for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab']) if (active.components && active.components[slot] === refId) n++;
+      for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']) if (active.components && active.components[slot] === refId) n++;
     } else {
       for (const m of (active.loadout && active.loadout.mounts) || []) if (m.weapon === refId) n++;
     }
@@ -158,10 +159,10 @@ function renderLoadout(active) {
   const comps = active.components || {};
   const groups = Object.keys((active.ship && active.ship.stats && active.ship.stats.groups) || {});
   const rows = [];
-  for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab']) {
+  for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']) {
     const required = REQUIRED_SLOTS.includes(slot);
     const id = comps[slot];
-    if (id == null) { if (slot !== 'repair' && slot !== 'grab') rows.push(emptySlotCard(slot, required)); continue; } // hide an empty optional repair/grab slot
+    if (id == null) { if (slot !== 'repair' && slot !== 'grab' && slot !== 'shield') rows.push(emptySlotCard(slot, required)); continue; } // hide an empty optional repair/grab/shield slot
     const actions = [{ act: 'unequip', label: t('ui.shop.action.unequip'), slot }];
     if (!required) actions.push({ act: 'sell-equipped', label: t('ui.shop.action.sell'), cls: 'sell', slot });
     rows.push(itemCard(normComponent(CATALOG.components.get(id)), slotLabel(slot), actions, 'sell'));
@@ -194,7 +195,7 @@ function renderStash(stash) {
 // The shop is a two-pane screen: a type list (left) → the items of that type (right). It lists buyable
 // items only — catalog entries with price > 0 (economy-shop-v2.md). Enemy/starter parts are priced 0 and
 // stay hidden; the player ladder (priced) shows. Weapons are one of the "types".
-const SHOP_TYPES = ['hull', 'engine', 'thruster', 'repair', 'weapon', 'grab'];
+const SHOP_TYPES = ['hull', 'engine', 'thruster', 'repair', 'shield', 'weapon', 'grab'];
 function renderShopTypes() {
   document.getElementById('shop-types').innerHTML = SHOP_TYPES.map((tp) =>
     `<button class="${tp === shopType ? 'active' : ''}" data-act="type" data-type="${tp}">${esc(t(`ui.shop.filter.${tp}`))}</button>`).join('');

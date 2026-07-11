@@ -12,8 +12,13 @@
   #hud .right { text-align: right; }
   .bigval { font-size: 26px; font-weight: 700; }
   .label { font-size: 12px; letter-spacing: 1px; opacity: .6; text-transform: uppercase; }
+  #shieldbar { width: 220px; height: 10px; border: 1px solid #3a6ea5; border-bottom: 0;
+               border-radius: 7px 7px 0 0; overflow: hidden; margin-top: 4px; background: rgba(0,0,0,.4); }
+  #shieldfill { height: 100%; width: 100%; background: linear-gradient(90deg,#36d1dc,#5b86e5); transition: width .15s; } /* blue = active */
+  #shieldbar.recharging #shieldfill { background: linear-gradient(90deg,#7b2ff7,#b06bff); } /* purple = recharging */
   #hpbar { width: 220px; height: 14px; border: 1px solid #3a6ea5; border-radius: 7px; overflow: hidden; margin-top: 4px; background: rgba(0,0,0,.4); }
-  #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg,#36d1dc,#5b86e5); transition: width .15s; }
+  #hpbar.with-shield { border-radius: 0 0 7px 7px; border-top: 0; margin-top: 0; } /* touch the shield bar above */
+  #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg,#ff5a5a,#c81e1e); transition: width .15s; } /* health = red */
   #hppct { margin-top: 4px; font: 700 14px system-ui, sans-serif; color: #cfe6ff; }
   #help {
     position: fixed; bottom: 14px; left: 18px;
