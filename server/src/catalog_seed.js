@@ -1,7 +1,7 @@
 import { enemyTotalFromPhases } from './enemy_total.js';
 
 // Seed data for the ships/weapons catalog — a snapshot of the game's ship/weapon design.
-// Both backends seed from this via an idempotent upsert on startup (see db.js / db_postgres.js),
+// The data layer seeds from this via an idempotent upsert on startup (see db.js),
 // so editing this file updates the catalog on the next start.
 //
 // References are by id everywhere. A ship has named fire GROUPS (a channel triggered by a key for

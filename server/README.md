@@ -1,8 +1,9 @@
 # Server (backend)
 
 Node.js + Express backend. It serves the game client (static files from `../client`) AND a
-JSON API on the same origin, so the client can call `/api/...` without CORS. Storage is SQLite
-via the built-in `node:sqlite` module (no native dependencies).
+JSON API on the same origin, so the client can call `/api/...` without CORS. Storage is
+**PostgreSQL** (via the `pg` driver); it connects via `DATABASE_URL`, or a local
+`postgres://localhost:5432/spacegame` default for zero-config dev.
 
 ## Run
 
@@ -32,29 +33,24 @@ Port can be overridden with `PORT=xxxx npm start`.
 
 ## Storage & migrations
 
-SQLite file at `server/data/game.db` (gitignored). On a fresh/remote server the file and schema
-are created automatically — no separate DB service to provision; just make sure `server/data/`
-is writable and persistent.
+PostgreSQL. In production `DATABASE_URL` points at the shared Postgres; locally it defaults to
+`postgres://localhost:5432/spacegame` (create it once with `createdb spacegame`). No file to
+provision — just a reachable Postgres.
 
-Schema is managed by a **minimal migration runner** (`src/migrate.js`, no dependencies). The
-schema version is stored in SQLite's built-in `PRAGMA user_version`. Migrations are
-`src/migrations/NNN_name.js` files, each exporting `up(db)`; the runner applies, in order, every
-migration whose number is greater than the current version, each in a transaction.
+The schema is an **idempotent bootstrap** in `src/db.js` `migrate()`: `CREATE TABLE IF NOT EXISTS`
++ guarded `ALTER TABLE … ADD COLUMN IF NOT EXISTS` and `DO $$ … $$` one-shots, then an upsert of the
+catalog from `catalog_seed.js`. One-off data backfills are recorded in a `migrations_pg
+(name, applied_at)` ledger so they run at most once. This is the single, forward-only migration story
+(DECISIONS §9).
 
-- Migrations run automatically on server startup.
-- Run them standalone (e.g. on deploy, before starting): `npm run migrate`.
-- Add a change: create the next file (e.g. `002_add_x.js`) with an `up(db)` — never edit applied ones.
-
-Tables (after `001_init`):
-- `players` — `id` (browser UUID, PK), `created_at`, `last_seen`, `games_played`.
-- `games` — `id`, `player_id`, `score`, `kills`, `duration_ms`, `ended_at`.
+- `migrate()` runs automatically on server startup (`createApp()` awaits it).
+- Run it standalone (e.g. before starting): `npm run migrate`.
+- Evolve the schema by editing `migrate()` (idempotent statements only — it runs on every boot).
 
 ## Layout
 
-- `src/server.js` — Express app (static client + API routes); runs migrations on startup.
-- `src/db.js` — opens the SQLite database and exposes queries.
-- `src/migrate.js` — migration runner (also runnable via `npm run migrate`).
-- `src/migrations/` — ordered migration files (`001_init.js`, ...).
+- `src/server.js` — Express app (static client + API routes); runs `migrate()` on startup.
+- `src/db.js` — the PostgreSQL data layer (schema bootstrap in `migrate()` + all queries).
 
 ## Production
 

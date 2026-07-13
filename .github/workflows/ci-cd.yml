@@ -8,10 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # A throwaway Postgres so the server suite runs against BOTH backends. The same tests run twice:
-    # once on SQLite (loose typing) and once on Postgres (strict). Postgres-only regressions — e.g. a
-    # JS boolean written to an INTEGER column, which SQLite silently accepts but Postgres rejects with
-    # a 500 — only surface in the Postgres pass. The container is fresh each run → clean slate.
+    # A throwaway Postgres service — the only storage engine. `pretest` drops+recreates spacegame_test
+    # each run for a clean schema; the container is fresh anyway. Runs the full server API suite.
     services:
       postgres:
         image: postgres:16
@@ -31,11 +29,14 @@ jobs:
         run: cd client && node --test
       - name: Install server deps
         run: cd server && npm ci
-      - name: Server API tests (SQLite)
-        run: cd server && npm test
       - name: Server API tests (Postgres)
         env:
+          # pretest (dropdb/createdb) + the pg pool both read these; PGPASSWORD lets dropdb authenticate.
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/spacegame_test
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: spacegame_test
         run: cd server && npm test
 
   deploy:

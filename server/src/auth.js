@@ -84,7 +84,7 @@ export function sessionTokenFromReq(req) {
 
 // Express middleware factory: resolve the session cookie to a player via the datastore's
 // getSessionPlayer, attach it as req.player, or 401. `getSessionPlayer` is injected so this stays
-// backend-agnostic (datastore picks SQLite/Postgres).
+// backend-agnostic via the datastore façade.
 export function makeRequireAuth(getSessionPlayer) {
   return async function requireAuth(req, res, next) {
     try {

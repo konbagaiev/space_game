@@ -1,12 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
 
-// Use a throwaway temp database (must be set before importing the server/db).
-const dbPath = path.join(os.tmpdir(), `spacegame-test-${process.pid}-${Date.now()}.db`);
-process.env.DB_PATH = dbPath;
 process.env.NODE_ENV = 'test'; // non-Secure cookies so local-http tests can read/replay them
 process.env.ADMIN_USER = 'admin';       // enable the /admin dashboard for the suite (Basic Auth)
 process.env.ADMIN_PASSWORD = 'secret';
@@ -17,24 +11,15 @@ const { setResetToken, consumeResetToken } = await import('./datastore.js');
 const { hashToken } = await import('./auth.js');
 const { deviceLabel } = await import('./admin.js');
 const app = await createApp();
-// The same suite runs against either backend (the backend is chosen by DATABASE_URL in datastore.js).
-// SQLite uses a throwaway temp file (fresh every run); Postgres is a persistent server, so wipe the
-// player-scoped tables up front for a clean slate (the seeded catalog is kept). This is what lets the
-// suite catch Postgres-only regressions — e.g. a boolean written to an INTEGER column — that SQLite's
-// loose typing silently accepts. See `npm run test:pg` and the Postgres pass in .github/workflows.
-if (process.env.DATABASE_URL) {
-  const { resetAllPlayers } = await import('./datastore.js');
-  await resetAllPlayers();
-}
+// The suite runs against Postgres (the only backend). `pretest` drops+recreates spacegame_test for a
+// clean schema; a direct `node --test` skips that, so wipe the player-scoped tables here for clean
+// data too (the seeded catalog is kept). See package.json `pretest` + the Postgres CI job.
+const { resetAllPlayers } = await import('./datastore.js');
+await resetAllPlayers();
 const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
 const base = `http://localhost:${server.address().port}`;
 
-after(() => {
-  server.close();
-  for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`, `${dbPath}-journal`]) {
-    try { fs.rmSync(f); } catch {}
-  }
-});
+after(() => { server.close(); });
 
 const post = (p, body, headers = {}) =>
   fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -157,7 +142,7 @@ test('reset: POST /reset wipes progress to the new-player baseline, keeps the ac
   assert.equal(reg.gamesPlayed, 0);
   // shop_unlocked is reset too. This is the assertion that catches the prod bug: on Postgres,
   // resetPlayer wrote `shop_unlocked = false` into an INTEGER column → the UPDATE threw a 500 and
-  // nothing reset. SQLite accepts the boolean, so this only fails under the Postgres test pass.
+  // nothing reset. Postgres rejects a boolean in an INTEGER column, so a mis-typed reset surfaces here.
   assert.equal((await getJson('/api/players/reset-1/stash')).shopUnlocked, false);
   // the starter ship is re-granted so the reset account is immediately playable
   const ship = await getJson('/api/players/reset-1/active-ship');
@@ -346,7 +331,7 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8, grab: 29, shield: 31 }); // assembled from components (base grab + base shield included)
   assert.equal(player.stats.model.yaw, 0);   // model-presentation block (yaw/scale)
   assert.equal(player.stats.model.scale, 1.1);
-  // auto-fit OBB hitbox survives the JSON-blob round-trip (seedCatalog → fetch) on SQLite + Postgres
+  // auto-fit OBB hitbox survives the JSON-blob round-trip (seedCatalog → fetch)
   assert.ok(Array.isArray(player.stats.model.hitBoxes) && player.stats.model.hitBoxes.length >= 1, 'hitBoxes round-trips');
   assert.ok(player.stats.model.hitBoxes.every((b) =>
     ['c', 'h', 'u0', 'u1', 'u2'].every((k) => b[k] &&
@@ -800,16 +785,11 @@ test('catalog: marker colors follow the size-tier palette (small=orange, medium=
 });
 
 test('catalog: orphaned enemy ships are pruned on re-seed (rename/removal cleanup)', async () => {
-  const { backend, migrate } = await import('./datastore.js');
+  const { migrate } = await import('./datastore.js');
   const STALE = 'zzz stale enemy (test)';
   // insert an enemy row not present in the seed, the same way an old rename left one behind
-  if (backend === 'sqlite') {
-    const { db } = await import('./db.js');
-    db.prepare("INSERT INTO ships (name, type, stats, components) VALUES (?, 'enemy', '{}', '{}') ON CONFLICT(name) DO NOTHING").run(STALE);
-  } else {
-    const { pool } = await import('./db_postgres.js');
-    await pool.query("INSERT INTO ships (name, type, stats, components) VALUES ($1, 'enemy', '{}'::jsonb, '{}'::jsonb) ON CONFLICT (name) DO NOTHING", [STALE]);
-  }
+  const { pool } = await import('./db.js');
+  await pool.query("INSERT INTO ships (name, type, stats, components) VALUES ($1, 'enemy', '{}'::jsonb, '{}'::jsonb) ON CONFLICT (name) DO NOTHING", [STALE]);
   assert.ok((await getJson('/api/ships')).some((s) => s.name === STALE), 'stale enemy inserted');
   await migrate(); // re-run the seed → prune
   assert.ok(!(await getJson('/api/ships')).some((s) => s.name === STALE), 'stale enemy pruned on re-seed');

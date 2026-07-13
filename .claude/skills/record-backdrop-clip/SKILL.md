@@ -28,7 +28,7 @@ track — always regenerate through the recorder + `process-recording.mjs`.
 Reuse the **`run-local`** skill (pull the gitignored S3 assets, then start `server/src/server.js` on
 `http://localhost:4000`). **Note (learned):** a server started as a Claude background process tends to get
 reaped — if it keeps dying, ask the maintainer to run it in **their own terminal**:
-`cd <checkout>/server && PORT=4000 node --disable-warning=ExperimentalWarning src/server.js`.
+`cd <checkout>/server && PORT=4000 node src/server.js`.
 The maintainer needs the shop unlocked to reach side missions, but a backdrop clip can be recorded in ANY
 dense fight (campaign works) — the clip is replayed at the anchor regardless of where it was recorded.
 

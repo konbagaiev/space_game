@@ -1,5 +1,5 @@
 // Backend server: serves the game client (static) AND the JSON API on one origin
-// (so the client can call /api/... without CORS). Storage is SQLite (see db.js).
+// (so the client can call /api/... without CORS). Storage is PostgreSQL (see db.js).
 import { sentryEnabled } from './instrument.js'; // MUST be first: Sentry.init before anything else loads
 import * as Sentry from '@sentry/node';
 import express from 'express';
@@ -251,10 +251,9 @@ export async function createApp() {
   const authLimiter = rateLimit({ windowMs: 60_000, max: 10 }); // per-IP, per-minute on auth routes
 
   // Open a fresh session for a player: random token in an httpOnly cookie, hash stored server-side.
-  // MUST await the insert before responding: on Postgres a fire-and-forget createSession can still be
-  // in flight when the client makes its next (authenticated) request, so the session lookup misses and
-  // auth fails intermittently. node:sqlite runs the insert synchronously, which is why this only bit
-  // the Postgres path (see the SQLite/Postgres parity note in DECISIONS).
+  // MUST await the insert before responding: a fire-and-forget createSession can still be in flight
+  // when the client makes its next (authenticated) request, so the session lookup misses and auth
+  // fails intermittently.
   const startSession = async (res, playerId, req) => {
     const token = newSessionToken();
     await createSession(playerId, hashToken(token), req.headers['user-agent']);

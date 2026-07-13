@@ -21,4 +21,4 @@ ENV PORT=4000
 ARG GIT_SHA=dev
 ENV SENTRY_RELEASE=$GIT_SHA
 EXPOSE 4000
-CMD ["node", "--disable-warning=ExperimentalWarning", "src/server.js"]
+CMD ["node", "src/server.js"]

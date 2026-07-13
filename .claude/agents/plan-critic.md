@@ -27,8 +27,7 @@ actually resolved.
 2. **Self-contained & executable** — could an implementer with **zero extra context** follow it without
    asking questions? Exact paths, decisions resolved inline, no hand-waving. This is the bar from
    `CLAUDE.md`.
-3. **Tests** — is there a concrete, runnable test plan for the new behavior? (Server = both SQLite +
-   Postgres.)
+3. **Tests** — is there a concrete, runnable test plan for the new behavior? (Server = Postgres.)
 4. **Docs** — does it update the right SUMMARY section + a CHANGELOG bullet (+ DECISIONS only if a real
    trade-off)?
 5. **Simplicity** — is it the smallest thing that works, or is it gold-plating for hypothetical needs?

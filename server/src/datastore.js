@@ -1,9 +1,9 @@
-// Data backend selector: PostgreSQL when DATABASE_URL is set (production),
-// otherwise SQLite (local dev / tests). Both expose the same async API.
-const usePostgres = !!process.env.DATABASE_URL;
-const impl = usePostgres ? await import('./db_postgres.js') : await import('./db.js');
+// Thin façade over the single data layer (db.js — PostgreSQL). Kept as the stable import surface
+// every consumer (server.js, reset.js, tests) uses, so the data layer's filename can change without
+// touching them.
+const impl = await import('./db.js');
 
-export const backend = usePostgres ? 'postgres' : 'sqlite';
+export const backend = 'postgres';
 export const migrate = (...a) => impl.migrate(...a);
 export const registerPlayer = (...a) => impl.registerPlayer(...a);
 // Player-data reset (admin; see server/src/reset.js CLI + .claude/skills/reset-progress)

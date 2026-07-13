@@ -1,6 +1,6 @@
-// CLI: reset player progress. The backend is auto-selected by datastore.js — SQLite locally
-// (server/data/game.db), PostgreSQL when DATABASE_URL is set. The schema is migrated first so the
-// script works against a fresh database too. Invoked via the `reset-progress` skill, or directly:
+// CLI: reset player progress. Talks to PostgreSQL via datastore.js (DATABASE_URL, or a local
+// Postgres default). The schema is migrated first so it works against a fresh database too.
+// Invoked via the `reset-progress` skill, or directly:
 //
 //   node src/reset.js --player <id>     reset ONE player's progress (account + login kept)
 //   node src/reset.js --all --yes       wipe ALL players (fresh DB; catalog kept/re-seeded)
@@ -34,4 +34,4 @@ if (has('--player')) {
   usage();
 }
 
-process.exit(0); // close the (Postgres) pool / SQLite handle and exit cleanly
+process.exit(0); // close the Postgres pool and exit cleanly

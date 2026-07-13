@@ -42,7 +42,7 @@ or the new `listen` will `EADDRINUSE`. Don't blindly kill a process you didn't s
 
 ### 3. Start the server (background)
 ```
-cd "$ROOT/server" && PORT=4000 node --disable-warning=ExperimentalWarning src/server.js
+cd "$ROOT/server" && PORT=4000 node src/server.js
 ```
 Run it **in the background** (it's a long-running process). It prints
 `Space game server running: http://localhost:4000`.
@@ -65,7 +65,7 @@ Expect `200`. Optionally spot-check an asset serves:
   **`reset-progress`** skill / `server/src/reset.js` to set a player's progress or unlock the shop, or
   play through the campaign. Ask the maintainer which they want.
 - **Local, no email/prod.** Auth email (SES) and the prod Postgres are not involved — this is the local
-  SQLite backend. `?dev` enables the perf overlay; `?tune` the palette panel.
+  Postgres backend. `?dev` enables the perf overlay; `?tune` the palette panel.
 - **Don't confuse with the itch build.** `build-itch`/`publish-itch` package a static bundle that talks
   to **prod**; this skill runs the **local** server for development/playtesting.
 - Keep it simple (DECISIONS §30): this skill is just `assets:pull` + `node server.js` — no watchers,

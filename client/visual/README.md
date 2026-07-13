@@ -29,7 +29,7 @@ npm run test:visual
 ```
 
 The runner (`visual/run.mjs`) is self-contained: it starts its own game server on an isolated
-port with a throwaway SQLite DB (your real `game.db` is untouched), runs every scenario in
+port with a throwaway Postgres DB `spacegame_test` (your real `spacegame` DB is untouched), runs every scenario in
 `visual/scenarios/`, prints a pass/fail summary, and exits non-zero on failure. Frames are written
 to `visual/__screenshots__/` (gitignored) — open them to review the look.
 

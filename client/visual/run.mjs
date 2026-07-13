@@ -1,8 +1,9 @@
 // Headless visual test runner (NOT part of CI — run manually, see README.md).
 //
 // What it does:
-//   1. Starts its own game server on an isolated port + a throwaway SQLite DB
-//      (so it never touches your real data and needs nothing already running).
+//   1. Starts its own game server on an isolated port + a throwaway Postgres DB (`spacegame_test`)
+//      (so it never touches your real data; needs a local Postgres with `spacegame_test` — run
+//      `cd server && npm test` once, or `createdb spacegame_test`, to create it).
 //   2. Launches headless Chromium (software WebGL via swiftshader) and opens the game
 //      with `?debug`, which exposes `window.__game` (see the hook in index.html).
 //   3. Runs every scenario in scenarios/ (auto-discovered, alphabetical).
@@ -18,7 +19,6 @@ import { spawn } from 'node:child_process';
 import { readdir, mkdir, rm } from 'node:fs/promises';
 import { strict as assert } from 'node:assert';
 import path from 'node:path';
-import os from 'node:os';
 import http from 'node:http';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -56,12 +56,11 @@ async function main() {
   await rm(shotsDir, { recursive: true, force: true });
   await mkdir(shotsDir, { recursive: true });
 
-  // 1. start an isolated server (throwaway DB so real data is untouched)
-  const dbPath = path.join(os.tmpdir(), `space-visual-${process.pid}.db`);
+  // 1. start an isolated server (throwaway Postgres DB `spacegame_test` so real data is untouched)
   const server = spawn(
     process.execPath,
-    ['--disable-warning=ExperimentalWarning', 'src/server.js'],
-    { cwd: serverDir, env: { ...process.env, PORT: String(PORT), DB_PATH: dbPath }, stdio: 'ignore' },
+    ['src/server.js'],
+    { cwd: serverDir, env: { ...process.env, PORT: String(PORT), DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost:5432/spacegame_test' }, stdio: 'ignore' },
   );
   const stopServer = () => { try { server.kill('SIGTERM'); } catch {} };
   process.on('exit', stopServer);
@@ -120,7 +119,6 @@ async function main() {
   } finally {
     if (browser) await browser.close();
     stopServer();
-    await rm(dbPath, { force: true }).catch(() => {});
   }
 
   const passed = results.filter((r) => r.ok).length;

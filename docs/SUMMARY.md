@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-07-11 (**Base shield component** — a new `shield` component type (6th type): the **Base shield** (id 31, capacity 20 / recharge 10 s / weight 0 / 500) sits in an **optional** `shield` slot on the starter ship and is **buyable**. Every incoming player-damage site (enemy bullets + rocket blast) now routes through `applyPlayerDamage(player, dmg)` (in `projectiles.js`), which absorbs into the shield first (`absorbDamage`) and spills only the **excess** to the hull; a fully-depleting hit breaks the shield and it recharges to **full** over `rechargeSec` (`shieldRecharge`, ticked in `sim.update`) — a **partial** shield holds indefinitely. HUD gained a **shield bar above a now-red health bar** (blue = active / purple = recharging); the standalone "Health" label was dropped. SQLite migration `023_backfill_shield.js` + Postgres back-fill grant the slot to existing players. Previously: **Language selector in Settings + intro cutscene** — the EN/RU toggle now appears in three places (welcome screen, **Settings modal** `#settings-lang`, **intro cutscene** `#cutscene-lang` top-left beside Skip), all fed by one re-localize entry point: `applyTranslations()` re-renders every mounted toggle host from a shared `langHosts` registry, so a non-`en` initial load highlights the right button on first paint; the cutscene toggle is a `<body>` sibling of `cutOverlayEl` (+ `stopPropagation`) so it never advances/skips the cutscene and is removed in `cutsceneEnd()`. Reuses the existing `setLanguage()` i18n path (live, no reload). Previously: **Intro → Take-off dead-screen fix + reset replays the intro** — `finishIntro()` now calls `rs.teardown()` + clears `G.replayMode` so `animate()` leaves the inert playback branch and the Level-1 Take-off runs the live sim; the playback/cutscene lifecycle state is one unit-tested `makeReplaySession()` object in `replay.js`. The intro trigger is now server-authoritative (pure `shouldPlayIntro()` gates on the served level's `introTrace` + the headless check, no client `introSeen` flag), so a genuine `reset-progress` replays the intro. Previously: **Level-0 intro cutscene SHIPPED (prod + itch)** — a new player, or reset progress, at Level 0 auto-plays the intro CUTSCENE from an S3 recording: event-driven text pauses (P0 opening card; P1/P2 = 1st/2nd kill; P3 = rocketeer warp-in; P4 = 2nd rocket, each +1s) over a real re-simmed fight, then it simulates "Return to base", flies home to victory, **advances `current_progress` 1→2** and lands on the **Level 1 Main Window briefing** (restored `level.1.briefing` — "pirates raiding our home system"). Bootstrap `startIntroCutscene`/`finishIntro`; the canonical trace is a content-hashed S3 asset (`introTrace` on the `level-1` descriptor, pulled by `assets:pull`, bundled into the itch build). Gated server-authoritatively by `shouldPlayIntro` (served level carries `introTrace`, i.e. `current_progress===1`, + not headless); a `reset-progress` replays it. Headless (`?debug`/`?bench`) / no trace → the playable Level 0. Previously: **Combat record/playback (input-replay)** — a general `?record=1&level={id}` / `?playback&id={id}` mechanism that records a fight as INPUT + RNG seed and replays it on the REAL `sim` (real bullet colors, physics, FX, collisions), built to later carry the Level-0 cutscene / alt-angle views / video capture. `client/src/replay.js` (pure core, unit-tested) + `main.js` wiring. Record lands on the real ship idle with a **Start recording** button that unlocks after the model loads; capture is one input snapshot per sim tick; **Stop & Save** → localStorage + a `{id}.json` download + a **Play it ▶** link. Both modes pace the sim with a fixed-timestep accumulator (real-time on any refresh rate) and isolate the seeded `Math.random` to the sim ONLY (a private PRNG swapped in around `update()`/`reset()`; render/HUD/FX/audio/idle frames use the native RNG) so record↔playback reproduce a fight bit-for-bit regardless of frame rate / audio / model-load timing. `audio.js` pitch randomness moved to a module-local PRNG for the same reason. Trace: `{seed,dt,shipId,level,ticks:[{k,t}]}`; localStorage for the same-browser dev loop, and the canonical intro trace is an **S3 asset** (served same-origin via `assets:pull`, referenced from the seed's `introTrace`). The real new-player intro auto-plays this cutscene then lands on the Level 1 briefing. See the record/playback + cutscene subsections under Tools. Previously: **Intro "Level 0" first level** — a gentle, non-skippable opening level (3 basic pirates one at a time via `maxConcurrent 1` → 1 rocket-pirate finale, no boss, no reward, `enemyTotal 4`) is now the first level every new player plays. Implemented by keeping the seed names `level-1`..`level-4` (stable ids) and shifting the campaign descriptors down one id + appending `level-5` (old L4); the campaign keeps its "Level 1"-"Level 4" titles/rewards/briefings, one id higher. Existing players were migrated `+1` (SQLite migration 022 + a guarded `migrations_pg` one-shot on Postgres). On first launch the intro AUTO-LAUNCHES straight into the fight — no welcome screen, no "Take off" — flying the default player ship; Level 1+ landing is unchanged. New EN+RU `level.0.victory` string. Previously: **Ambient ghost battle** — a clearly visible looping recorded skirmish (near-opaque, full-color, below-plane (`y≈−60`) ghost ships with births+deaths + bullets, up to 16 slots) plays as a distant landmark at a FIXED ABSOLUTE world point (default `(−100,−450)`) in every mission EXCEPT the freighter escort; a committed transform-replay track (re-centered by a single fixed offset = the player's mean path, so the player flies FREELY, no birth/death jumps) replayed as a dumb lerped animation that never runs a second sim. Built in `sim.js reset()` gated `activeMission?.title !== 'freighter'`; self-skips under `?debug` AND `?bench`. Canonical track is a REAL battle recorded in-game via a `?dev` "Backdrop" panel (Start/Stop-record + REC readout + live Depth/Scale/Opacity/Anchor X/Anchor Z sliders, persisted `ghostTune`); synthetic `gen-backdrop.mjs` is a bootstrap. Tier-gated CONCURRENT ceiling (High 8 / Balance 4 / Performance off). Freighter render pos nudged +50 z to -400. See the ghost-battle subsection. Previously: **L2/L3 difficulty ease** — max simultaneous enemies in the non-boss spawning phases of **level-2 and level-3** lowered from 4 to **3 at a time** (`maxConcurrent`), matching level-1; `enemyTotal` (17/21) + boss phases unchanged. Previously: **Touch HUD overlap fix** — on touch the zoom `＋/−` pair moved to the top-right (under the Destroyed counter) so it no longer collides with the bottom-center Return-to-base button, now styled like the Take-off button (orange gradient). Previously: **Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
+**Updated:** 2026-07-12 (**Backend is Postgres-only** — the hand-maintained SQLite data layer (`db.js`) + the `migrate.js` runner + `migrations/001…023` were deleted; `db_postgres.js` was renamed to `db.js` (the single data layer) and `datastore.js` is now a static façade with `backend = 'postgres'`. The pool defaults to `postgres://localhost:5432/spacegame` so `npm start`/`reset.js` work with zero env; prod/CI set `DATABASE_URL`. `npm test` targets a local `spacegame_test` that a `pretest` step drops+recreates for a clean schema (folds in the old `test:pg`); CI runs one Postgres job. Pure maintainability refactor — no runtime behavior change. See DECISIONS §67. Previously: **Base shield component** — a new `shield` component type (6th type): the **Base shield** (id 31, capacity 20 / recharge 10 s / weight 0 / 500) sits in an **optional** `shield` slot on the starter ship and is **buyable**. Every incoming player-damage site (enemy bullets + rocket blast) now routes through `applyPlayerDamage(player, dmg)` (in `projectiles.js`), which absorbs into the shield first (`absorbDamage`) and spills only the **excess** to the hull; a fully-depleting hit breaks the shield and it recharges to **full** over `rechargeSec` (`shieldRecharge`, ticked in `sim.update`) — a **partial** shield holds indefinitely. HUD gained a **shield bar above a now-red health bar** (blue = active / purple = recharging); the standalone "Health" label was dropped. SQLite migration `023_backfill_shield.js` + Postgres back-fill grant the slot to existing players. Previously: **Language selector in Settings + intro cutscene** — the EN/RU toggle now appears in three places (welcome screen, **Settings modal** `#settings-lang`, **intro cutscene** `#cutscene-lang` top-left beside Skip), all fed by one re-localize entry point: `applyTranslations()` re-renders every mounted toggle host from a shared `langHosts` registry, so a non-`en` initial load highlights the right button on first paint; the cutscene toggle is a `<body>` sibling of `cutOverlayEl` (+ `stopPropagation`) so it never advances/skips the cutscene and is removed in `cutsceneEnd()`. Reuses the existing `setLanguage()` i18n path (live, no reload). Previously: **Intro → Take-off dead-screen fix + reset replays the intro** — `finishIntro()` now calls `rs.teardown()` + clears `G.replayMode` so `animate()` leaves the inert playback branch and the Level-1 Take-off runs the live sim; the playback/cutscene lifecycle state is one unit-tested `makeReplaySession()` object in `replay.js`. The intro trigger is now server-authoritative (pure `shouldPlayIntro()` gates on the served level's `introTrace` + the headless check, no client `introSeen` flag), so a genuine `reset-progress` replays the intro. Previously: **Level-0 intro cutscene SHIPPED (prod + itch)** — a new player, or reset progress, at Level 0 auto-plays the intro CUTSCENE from an S3 recording: event-driven text pauses (P0 opening card; P1/P2 = 1st/2nd kill; P3 = rocketeer warp-in; P4 = 2nd rocket, each +1s) over a real re-simmed fight, then it simulates "Return to base", flies home to victory, **advances `current_progress` 1→2** and lands on the **Level 1 Main Window briefing** (restored `level.1.briefing` — "pirates raiding our home system"). Bootstrap `startIntroCutscene`/`finishIntro`; the canonical trace is a content-hashed S3 asset (`introTrace` on the `level-1` descriptor, pulled by `assets:pull`, bundled into the itch build). Gated server-authoritatively by `shouldPlayIntro` (served level carries `introTrace`, i.e. `current_progress===1`, + not headless); a `reset-progress` replays it. Headless (`?debug`/`?bench`) / no trace → the playable Level 0. Previously: **Combat record/playback (input-replay)** — a general `?record=1&level={id}` / `?playback&id={id}` mechanism that records a fight as INPUT + RNG seed and replays it on the REAL `sim` (real bullet colors, physics, FX, collisions), built to later carry the Level-0 cutscene / alt-angle views / video capture. `client/src/replay.js` (pure core, unit-tested) + `main.js` wiring. Record lands on the real ship idle with a **Start recording** button that unlocks after the model loads; capture is one input snapshot per sim tick; **Stop & Save** → localStorage + a `{id}.json` download + a **Play it ▶** link. Both modes pace the sim with a fixed-timestep accumulator (real-time on any refresh rate) and isolate the seeded `Math.random` to the sim ONLY (a private PRNG swapped in around `update()`/`reset()`; render/HUD/FX/audio/idle frames use the native RNG) so record↔playback reproduce a fight bit-for-bit regardless of frame rate / audio / model-load timing. `audio.js` pitch randomness moved to a module-local PRNG for the same reason. Trace: `{seed,dt,shipId,level,ticks:[{k,t}]}`; localStorage for the same-browser dev loop, and the canonical intro trace is an **S3 asset** (served same-origin via `assets:pull`, referenced from the seed's `introTrace`). The real new-player intro auto-plays this cutscene then lands on the Level 1 briefing. See the record/playback + cutscene subsections under Tools. Previously: **Intro "Level 0" first level** — a gentle, non-skippable opening level (3 basic pirates one at a time via `maxConcurrent 1` → 1 rocket-pirate finale, no boss, no reward, `enemyTotal 4`) is now the first level every new player plays. Implemented by keeping the seed names `level-1`..`level-4` (stable ids) and shifting the campaign descriptors down one id + appending `level-5` (old L4); the campaign keeps its "Level 1"-"Level 4" titles/rewards/briefings, one id higher. Existing players were migrated `+1` (SQLite migration 022 + a guarded `migrations_pg` one-shot on Postgres). On first launch the intro AUTO-LAUNCHES straight into the fight — no welcome screen, no "Take off" — flying the default player ship; Level 1+ landing is unchanged. New EN+RU `level.0.victory` string. Previously: **Ambient ghost battle** — a clearly visible looping recorded skirmish (near-opaque, full-color, below-plane (`y≈−60`) ghost ships with births+deaths + bullets, up to 16 slots) plays as a distant landmark at a FIXED ABSOLUTE world point (default `(−100,−450)`) in every mission EXCEPT the freighter escort; a committed transform-replay track (re-centered by a single fixed offset = the player's mean path, so the player flies FREELY, no birth/death jumps) replayed as a dumb lerped animation that never runs a second sim. Built in `sim.js reset()` gated `activeMission?.title !== 'freighter'`; self-skips under `?debug` AND `?bench`. Canonical track is a REAL battle recorded in-game via a `?dev` "Backdrop" panel (Start/Stop-record + REC readout + live Depth/Scale/Opacity/Anchor X/Anchor Z sliders, persisted `ghostTune`); synthetic `gen-backdrop.mjs` is a bootstrap. Tier-gated CONCURRENT ceiling (High 8 / Balance 4 / Performance off). Freighter render pos nudged +50 z to -400. See the ghost-battle subsection. Previously: **L2/L3 difficulty ease** — max simultaneous enemies in the non-boss spawning phases of **level-2 and level-3** lowered from 4 to **3 at a time** (`maxConcurrent`), matching level-1; `enemyTotal` (17/21) + boss phases unchanged. Previously: **Touch HUD overlap fix** — on touch the zoom `＋/−` pair moved to the top-right (under the Destroyed counter) so it no longer collides with the bottom-center Return-to-base button, now styled like the Take-off button (orange gradient). Previously: **Deterministic replay benchmark + perf-regression gate** — a standalone A/B tool (`?bench` + `client/bench/run.mjs` + `stats.mjs`) that replays a fixed input trace on the merge-base vs the worktree and flags a >2% CPU (`js.*`) regression; CPU-only, documented pipeline stage. See the perf-samples subsection. Previously: **Grab inverse-square field** — the Grab (tractor) now pulls drops via an
 inverse-square field (`field = strength·5/dist²`, engaged where `field ≥ 0.4`); reach is emergent +
 weight-independent (base ≈11.2 u, Advanced ≈15.8 u = √2× base). Reel-in speed is a **linear ramp** by
 distance (1 u/s far → 4 u/s at the ship, weight-scaled) — un-physical but no near-ship jerk, replacing the
@@ -1377,9 +1377,9 @@ first translation). See DECISIONS §10.
 ## Backend
 - **Node.js + Express** server (`server/`): serves the game client (static) AND a JSON API on
   the same origin (no CORS).
-- **Storage is pluggable** (`datastore.js`): **Postgres** when `DATABASE_URL` is set (production),
-  otherwise **SQLite** via built-in `node:sqlite` (local dev / tests). Same async API either way
-  (`db.js` = SQLite, `db_postgres.js` = Postgres via `pg`).
+- **Storage is PostgreSQL** (`db.js`, via `pg`), exposed through the `datastore.js` façade (one async
+  API). Connects via `DATABASE_URL`; defaults to `postgres://localhost:5432/spacegame` for zero-config
+  local dev/test. (SQLite was dropped 2026-07-12 — see DECISIONS §67.)
 - **Auto-registration by browser:** the client makes a UUID on first visit (kept in `localStorage`)
   and posts it on load; the server creates the player if new. Anonymous, minimal friction. The client
   now calls **`POST /api/players/register`** once early in `bootstrap()` (previously it relied only on
@@ -1411,16 +1411,14 @@ first translation). See DECISIONS §10.
   progress; overwritten latest-wins on the next boot). Parsed into a `Browser · Device/OS` label at render
   time in `server/src/admin.js` (`deviceLabel` + the curated `DEVICE_NAMES` code→marketing-name map).
 - **Player progress:** `players.current_progress` stores the player's currently-available level — an
-  integer **foreign key into `levels(id)`** (a real, enforced FK in Postgres; a plain integer in SQLite,
-  whose `ALTER TABLE` can't add a FK column with a non-null default, and which doesn't enforce FKs
-  anyway). Defaults to **1** (`level-1`). `registerPlayer` returns it as `currentProgress`;
+  integer **foreign key into `levels(id)`** (a real, enforced FK, added after the `levels` table exists
+  so the non-null default validates). Defaults to **1** (`level-1`). `registerPlayer` returns it as `currentProgress`;
   `GET /api/players/:id/level` returns that level's descriptor; `POST /api/players/:id/advance` unlocks
   the next level (smallest level id greater than the current — gap-tolerant; a no-op at the last level),
   runs the newly-unlocked level's `briefing.actions` server-side, and returns its `briefing` message.
   **Intro-shift migration:** when the intro "Level 0" was prepended, every existing player was bumped
-  `current_progress += 1` **once** so they stayed on their exact same content (now one id higher). SQLite
-  runs it as versioned migration `022_intro_level0_shift.js` (before `seedCatalog`, FK off → safe);
-  Postgres has no versioned migrations, so it uses a guarded one-shot — a `migrations_pg (name, applied_at)`
+  `current_progress += 1` **once** so they stayed on their exact same content (now one id higher). It
+  runs as a guarded one-shot in `db.js migrate()` — a `migrations_pg (name, applied_at)`
   ledger + `INSERT ... ON CONFLICT (name) DO NOTHING RETURNING name`, run **after** the levels seed (so the
   new `level-5`/id 5 exists and the FK validates), applied only when the INSERT actually claimed the sentinel.
 - **Game history & credits:** at the end of each run the client posts `{ credits, kills, durationMs }`
@@ -1448,7 +1446,7 @@ first translation). See DECISIONS §10.
   by `level-4`'s **`unlockShop`** briefing action (i.e. on **clearing `level-3`**, the original campaign end),
   or as a fallback when a player advances off the final level; it also **backfills the basic gun (id 1)** into
   the stash. `replaceWeapon` briefing actions also deposit the replaced weapon.
-  Datastore methods (both backends, server-authoritative + transactional): `getStash` (joined to the catalog),
+  Datastore methods (server-authoritative + transactional): `getStash` (joined to the catalog),
   `buyItem` (price ≤ balance → deduct → qty++), `sellItem` (stash item, or an *optional* equipped item via a
   `slot` → credit `floor(price*0.75)`), `equipItem` (stash → active ship; component slots by `type`, weapons
   by fire-group; the displaced item returns to the stash), `unequipItem` (slot → stash; required slots allowed
@@ -1485,7 +1483,7 @@ first translation). See DECISIONS §10.
   current_progress, credits, games_played, referrer, **device**) plus per-player aggregates from `games`
   (total time played, total kills, total earned), one aggregated query `players LEFT JOIN games GROUP BY
   player` ordered `last_seen DESC`, hard-capped at **1000 rows** — via the `getAdminPlayers` datastore fn
-  (both backends; Postgres coerces the BIGINT `SUM`s with `Number()` and `email_verified` with
+  (Postgres coerces the BIGINT `SUM`s with `Number()` and `email_verified` with
   `!!Number()`). The **device** column (last column) is a best-effort `Browser · Device/OS` label composed
   from `user_agent` + `device_model` by `deviceLabel(ua, model)` at render time: `Browser · Model` (known
   device code → marketing name via the curated `DEVICE_NAMES` map, else the raw code) → `Browser · OS` →
@@ -1600,9 +1598,8 @@ first translation). See DECISIONS §10.
 - **Schema (migration 009 / Postgres bootstrap):** `players` gains `username`, `email`,
   `password_hash`, `password_salt`, `email_verified`, `email_verify_token_hash`,
   `email_verify_sent_at`; plus `password_reset_token_hash` + `password_reset_sent_at` (**migration 017** /
-  Postgres bootstrap). Email uniqueness via a **partial unique index** (`WHERE email IS NOT NULL`,
-  since SQLite can't add a UNIQUE column). New `sessions` table (real FK on `player_id` in Postgres;
-  logical FK in SQLite).
+  Postgres bootstrap). Email uniqueness via a **partial unique index** (`WHERE email IS NOT NULL`).
+  New `sessions` table (real FK on `player_id`).
 - **Email:** Amazon SES (`us-east-1`), outbound only, from `noreply@vega.tenony.com`, sent via
   **hand-rolled AWS SigV4 over built-in `fetch`**, isolated in `server/src/ses.js` — **no `@aws-sdk`
   dep**. Reads `SES_REGION`/`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`SES_FROM_ADDRESS`/
@@ -1630,12 +1627,13 @@ first translation). See DECISIONS §10.
   reset-password (10/min); disabled
   under the test suite. Input validation: email shape, password ≥ 8 chars → 400; bad creds → 401;
   duplicate email → 409.
-- **Schema:** SQLite uses a versioned migration runner (`migrate.js`, `PRAGMA user_version`);
-  Postgres uses idempotent `CREATE TABLE IF NOT EXISTS` bootstrap (versioned PG migrations: TODO).
-  Migrations run on startup; `npm run migrate` runs them for the active backend.
+- **Schema** is an idempotent `CREATE TABLE IF NOT EXISTS` + guarded `ALTER`/one-shot bootstrap in
+  `db.js migrate()`, plus a `migrations_pg (name, applied_at)` ledger for one-off data backfills — the
+  single forward-only migration story (DECISIONS §9). Runs on every boot (`createApp()` awaits it);
+  `npm run migrate` runs it standalone.
 - **Catalog seeding (data safety):** `server/src/catalog_seed.js` is the single source of truth for the
-  **reference tables** (`components`, `weapons`, `ships`, `maps`, `levels`). On **every server startup** both backends
-  **upsert** these rows from the seed (`INSERT … ON CONFLICT DO UPDATE`, keyed by weapon `id` / ship/map/
+  **reference tables** (`components`, `weapons`, `ships`, `maps`, `levels`). On **every server startup** the data layer
+  **upserts** these rows from the seed (`INSERT … ON CONFLICT DO UPDATE`, keyed by weapon `id` / ship/map/
   level `name`) — so editing `catalog_seed.js` ships content/balance changes to prod on the next deploy.
   This is **update-and-insert, not a wipe** — with one exception: **orphaned `enemy` ships are pruned**
   (a rename/removal would otherwise leave the old enemy row lingering). The prune deletes only
@@ -1645,14 +1643,12 @@ first translation). See DECISIONS §10.
   `games`, `player_ships` persist across deploys. (If we ever want the catalog editable in prod, switch to
   seed-only-when-empty + migrations for changes.)
 - **Player-data reset (admin):** `server/src/reset.js` is a CLI for wiping *progress* (never the
-  catalog). Two modes, both implemented per-backend in `db.js`/`db_postgres.js` (`resetPlayer` /
-  `resetAllPlayers`, re-exported via `datastore.js`): **`--player <id>`** clears one player's games,
-  ships, stash and events and resets level/credits/shop to the new-player baseline (re-granting the
-  starter ship) while **keeping the account, login session and language** (per-player SQL DELETEs,
-  correct for SQLite + Postgres); **`--all --yes`** wipes every player-scoped table (fresh DB —
-  SQLite `DELETE`s + `sqlite_sequence` reset; Postgres `TRUNCATE … RESTART IDENTITY CASCADE`), leaving
-  the catalog to re-seed on startup. Backend is auto-selected by `DATABASE_URL` (local SQLite unless
-  set). Wrapped by the **`reset-progress`** skill (`.claude/skills/reset-progress/`). The **per-player**
+  catalog). Two modes, in `db.js` (`resetPlayer` / `resetAllPlayers`, re-exported via `datastore.js`):
+  **`--player <id>`** clears one player's games, ships, stash and events and resets level/credits/shop
+  to the new-player baseline (re-granting the starter ship) while **keeping the account, login session
+  and language** (per-player SQL DELETEs); **`--all --yes`** wipes every player-scoped table
+  (`TRUNCATE … RESTART IDENTITY CASCADE`), leaving the catalog to re-seed on startup. Wrapped by the
+  **`reset-progress`** skill (`.claude/skills/reset-progress/`). The **per-player**
   reset is also reachable by players themselves via **`POST /api/players/:id/reset`** (the settings
   "Reset my progress" control) — same `resetPlayer` op. See DECISIONS §19.
 - Run locally: `cd server && npm install && npm start` → open **http://localhost:4000**.
@@ -1702,13 +1698,11 @@ first translation). See DECISIONS §10.
   internal `spacegame` container/image/router/dir/DB names are unchanged (renaming is cosmetic churn).
 - **CI/CD:** `.github/workflows/ci-cd.yml` — runs client + server tests on every push/PR (incl.
   PR merges), and on push to `main` deploys. Secrets: `DEPLOY_SSH_KEY`, `DEPLOY_HOST`, `DEPLOY_USER`.
-- **Server tests run against BOTH backends.** The `server.test.js` suite is backend-agnostic (the
-  backend is chosen by `DATABASE_URL`). The `test` CI job runs it twice — once on SQLite
-  (`npm test`) and once against a throwaway `postgres:16` service container
-  (`DATABASE_URL=… npm test`) — so Postgres-only regressions that SQLite's loose typing hides (e.g. a
-  JS boolean written to an `INTEGER` column) get caught. On Postgres the suite first
-  `resetAllPlayers()`-truncates for a clean slate (catalog kept). Locally: `npm run test:pg`
-  (defaults to `postgres://localhost:5432/spacegame_test` — `createdb spacegame_test` once first).
+- **Server tests run against Postgres.** The `server.test.js` suite runs against a `postgres:16`
+  service container in the CI `test` job (one pass). Locally, `npm test` targets
+  `postgres://localhost:5432/spacegame_test`, and a `pretest` step drops+recreates that DB for a
+  clean schema each run (a direct `node --test` skips `pretest`, so the suite also
+  `resetAllPlayers()`-truncates up front for clean data; catalog kept).
 - **Graceful shutdown:** on `SIGTERM`/`SIGINT` the server stops accepting new connections and lets
   in-flight requests finish (`server.close()`) before exiting, with an 8 s hard cap so a hung request
   can't block exit forever (`server.js`). This drains the old container cleanly when it's removed
@@ -1805,20 +1799,21 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   real-price buy/sell/overspend-402, the priced player-shop ladder is seeded) +
   **Grab + loot drops** (Grab components 29/30 seeded, enemy parts priced with `buyable:false`, player starts
   with the base grab; `POST /loot` deposits collected drops into the stash + empty/absent = no-op 200; a
-  looted grab equips into its optional slot and round-trips through the stash — **run on both backends via
-  `npm run test:pg`**, which exercises the `withTx`/`client` deposit path SQLite-only runs miss) +
+  looted grab equips into its optional slot and round-trips through the stash — exercises the
+  `withTx`/`client` transactional deposit path) +
   **side missions** (`/missions` 403 until unlocked → 3 same-difficulty offers with the 2-boss composition;
   pirate gunner + Pirate machine gun id 9 seeded; boss guns swapped to the MG) +
   **auth** (username, register happy/duplicate-409/weak-400, login happy/wrong-401, `/me` authed vs 401,
   logout clears the session, verify-token flips `email_verified`, cross-device login adopts progress) +
   **monitoring** (`/api/config` returns `sentry:null` when unset; `/api/events` 204 allowlisted / 400
   junk / batch).
-  Mounts the Express app on an ephemeral port against a temp SQLite DB (`DB_PATH` env, `NODE_ENV=test`)
-  — the real `game.db` is untouched; SES uses its no-creds outbox. Run: `cd server && npm test`.
+  Mounts the Express app on an ephemeral port against a `spacegame_test` Postgres DB recreated by
+  `pretest` (`NODE_ENV=test`) — the real `spacegame` DB is untouched; SES uses its no-creds outbox.
+  Run: `cd server && npm test`.
 - **Auth unit** — `server/src/auth.test.js` (5): scrypt round-trip (right/wrong password), per-user
   salt, token uniqueness + SHA-256 hashing, cookie-header parsing.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
-  run directly), `db.js` honors `DB_PATH`.
+  run directly).
 - **Visual / e2e** — `client/visual/` (Playwright headless, **not in CI**): boots the real game and
   asserts on simulation state (particle counts, size ratios, exhaust colors) via a `?debug`-gated
   `window.__game` hook; saves frames to `__screenshots__/` for review (no pixel diffing). Scenarios:
@@ -1847,4 +1842,4 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
 ## Project structure
 - `client/` — the game (Three.js): `index.html` (markup + importmap + inline module script being
   split out), `styles.css` (extracted CSS), `src/*.js` (ES modules); `client/locales/` — i18n catalogs
-  (`source.json` + `<lang>.json`); `server/` — Node.js/Express backend + SQLite; `docs/` — documentation.
+  (`source.json` + `<lang>.json`); `server/` — Node.js/Express backend + PostgreSQL; `docs/` — documentation.
