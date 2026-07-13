@@ -11,7 +11,8 @@ import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updat
 import { repairTick, shieldRecharge } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, applyPlayerDamage, HIT_FLASH_SCALE } from './projectiles.js';
+import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, spawnShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
+import { spawnShieldReady } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
 import { isLastKillDrop } from './level-sim.js';
@@ -376,8 +377,10 @@ export function update(dt) {
 
   // --- shield: recharge only once fully depleted, then refill to full (no-op without a shield) ---
   if (G.player.shield) {
+    const wasBroken = G.player._shieldValue <= 0;
     const s = shieldRecharge(G.player._shieldValue, G.player.shield.capacity, G.player.shield.rechargeSec, dt, G.player._shieldRechargeAccum);
     G.player._shieldValue = s.shieldValue; G.player._shieldRechargeAccum = s.accum;
+    if (wasBroken && s.shieldValue > 0) spawnShieldReady(); // recharge just completed → whole sphere flashes once
   }
 
   const eng = G.player.engine;         // main engine (for exhaust)
@@ -528,7 +531,9 @@ export function update(dt) {
       }
     } else {
       if (segmentHitsShip(G.player, _bulletP0, b.mesh.position)) {
-        applyPlayerDamage(G.player, b.damage); hit = true; audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
+        const dr = applyPlayerDamage(G.player, b.damage); hit = true;
+        if (dr.absorbed) spawnShieldHit(b.mesh.position, dr.broke); // cyan ripple where the shot connects with the shield
+        audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
       }
     }
 

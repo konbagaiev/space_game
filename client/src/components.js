@@ -77,3 +77,21 @@ export function shieldRecharge(shieldValue, capacity, rechargeSec, dt, accum) {
   if (accum >= rechargeSec) return { shieldValue: capacity, accum: 0 }; // refilled → active again
   return { shieldValue, accum };
 }
+
+// Route ALL incoming player damage through the shield first (bullets + rocket blast). The shield absorbs
+// until fully depleted, spilling only the excess to the hull; once broken it stays at 0 and recharges in
+// sim.update (shieldRecharge). No shield, or already depleted → full damage hits the hull. Pure: mutates
+// only the passed-in player (no THREE/DOM), so the damage routing is state-independent and unit-testable.
+// Returns { absorbed, broke }: whether the shield took any of this hit (so the caller can spawn the
+// shield-ripple FX at the impact point) and whether this hit was the one that broke it (bigger flash).
+export function applyPlayerDamage(player, dmg) {
+  if (player.shield && player._shieldValue > 0) {
+    const r = absorbDamage(player._shieldValue, dmg);
+    player._shieldValue = r.shieldValue;
+    if (r.broke) player._shieldRechargeAccum = 0; // start the recharge timer fresh on the breaking hit
+    if (r.toHull > 0) player.hp -= r.toHull;
+    return { absorbed: true, broke: r.broke };
+  }
+  player.hp -= dmg;
+  return { absorbed: false, broke: false };
+}

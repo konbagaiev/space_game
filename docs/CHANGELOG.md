@@ -3,6 +3,22 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-13
+
+- **[2026-07-13-1844-shield-hit-ripple] Shield-hit FX — a shield bubble that flashes & ripples on hit.**
+  Added a cosmetic translucent **shield bubble** around the player ship (new `client/src/shield-fx.js`, a
+  `ShaderMaterial` sphere). While a shield is equipped it shows a faint idle Fresnel rim; on every **absorbed
+  hit** it flashes and sends a ripple **outward from the impact point** (an expanding gaussian ring capped to
+  the near hemisphere, up to 6 concurrent), brighter/near-white on the **breaking** hit; and when the shield
+  **finishes recharging** (broken → full) the **whole sphere flashes once**. Wired from the existing damage
+  sites via `spawnShieldHit(pos, broke)` (`sim.js` bullet + `projectiles.js` rocket) and the recharge-complete
+  transition via `spawnShieldReady()` (`sim.js`); advanced per rendered frame by `updateShieldBubble(dt)` in
+  `main.js`. **Pure render** — reads sim state but writes none and uses no seeded RNG, so record/playback and
+  the intro cutscene stay bit-identical. Refactor: `applyPlayerDamage` moved from `projectiles.js` to
+  `components.js` (alongside `absorbDamage`/`shieldRecharge`) and now returns `{ absorbed, broke }` (the FX
+  trigger contract), making it unit-testable — **+5 tests** in `components.test.js`. No new assets (procedural
+  shader → no `CREDITS.md` change). See DECISIONS §68.
+
 ## 2026-07-12
 
 - **[2026-07-12-1826-backend-postgres-only] Backend is Postgres-only — SQLite dropped (maintainability, no

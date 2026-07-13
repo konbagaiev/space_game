@@ -2363,6 +2363,35 @@ is cheap now that Postgres runs locally (Homebrew `postgresql@16`, same major as
 
 **No runtime change:** prod already ran Postgres; forward-only migrations (§9) mean the prod schema is
 untouched. Cross-ref §30 (keep it simple — one backend, not two).
+
+## 68. Shield-hit FX = a hand-written shader bubble, not a flat ring or a bought flipbook
+
+The shield was mechanically complete (§66) but had **no visual** — hits and recharge were invisible except
+for the HUD bar. We wanted "a wave rippling out from the impact point." Three approaches were on the table:
+**(A)** cheap additive **primitives** in the existing FX vocabulary (a flat expanding ring on the combat
+plane, like the ship-death shockwave); **(B)** a **shader bubble** — a translucent sphere around the ship
+with a Fresnel rim and a per-impact ripple in the fragment shader; **(C)** a bought/free **flipbook** VFX
+sprite sheet (pre-rendered hex-shield frames played as a billboard).
+
+**Decision:** ship **B**. Reasoning, confirmed by live iteration in the maintainer's hands (not on paper):
+- **A read as "a small explosion," not "a force field."** A flat plane ring under our near-top-down camera
+  looks like a decal, and it doesn't convey a *sphere* around the ship. We prototyped A first and rejected it
+  live. (A survives in one spot: the recharge-complete cue started as a plane ring but the maintainer wanted
+  the **whole sphere** to flash, so that too became a bubble effect — `uReady`.)
+- **C (flipbook) clashes with our art + camera and is rigid.** Our entire FX language is clean additive glow;
+  a painted hex-texture sprite reads as a foreign asset, can't be re-tinted/re-timed live (baked frames), and
+  billboards flat under the top-down camera. It would also add a **third-party asset** (CREDITS.md +
+  attribution upkeep) for a look we can get procedurally.
+- **B is 3D-correct, fully tunable live, and asset-free.** The sphere genuinely wraps the ship; every knob
+  (radius, ripple speed/width, hemisphere reach, idle-rim strength, colors, flash duration) is a uniform/const
+  we tuned in real time. Being an authored shader, it needs **no CREDITS.md** entry.
+
+**Constraints honored:** the FX is **pure render** — it reads sim state (player pos, shield value) but never
+writes it and uses **no seeded RNG**, so record/playback + the intro cutscene stay bit-identical (the same
+rule that governs all cosmetic frame work, per the record/playback design). `applyPlayerDamage` was moved to
+`components.js` and made to return `{ absorbed, broke }` so the trigger contract is unit-tested rather than
+buried in the FX path. Scoped to the **base/starter shield** for now; higher shield tiers can diverge later.
+Cross-ref §66 (shield mechanics), §30 (keep it simple — no asset pipeline for a shader we can write).
 ---
 
 ## Future ideas

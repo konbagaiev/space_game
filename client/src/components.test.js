@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveDrive, hitsToKill, shipMass, REFERENCE_MASS, repairTick, absorbDamage, shieldRecharge } from './components.js';
+import { deriveDrive, hitsToKill, shipMass, REFERENCE_MASS, repairTick, absorbDamage, shieldRecharge, applyPlayerDamage } from './components.js';
 
 // Synthetic components mirroring the DB seed: hull {weight,durability}, engine {weight,power},
 // thruster {weight,power}.
@@ -142,4 +142,41 @@ test('shieldRecharge: refills to full capacity and resets the accumulator at rec
 
 test('shieldRecharge: a large dt still refills to exactly capacity (no overshoot)', () => {
   assert.deepEqual(shieldRecharge(0, 20, 10, 100, 0), { shieldValue: 20, accum: 0 });
+});
+
+// --- applyPlayerDamage: shield-first damage routing + the { absorbed, broke } contract the hit FX rely on ---
+// The shield-bubble FX (shield-fx.js) fires a ripple only when `absorbed` is true and a bigger flash when
+// `broke` is true, so these return values are load-bearing for the visual — guard them.
+test('applyPlayerDamage: a partial hit is fully absorbed by the shield (no hull damage, ripple only)', () => {
+  const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 0, hp: 100 };
+  assert.deepEqual(applyPlayerDamage(p, 5), { absorbed: true, broke: false });
+  assert.equal(p._shieldValue, 15);
+  assert.equal(p.hp, 100);
+});
+
+test('applyPlayerDamage: an exact-capacity hit breaks the shield and resets its recharge timer', () => {
+  const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 7, hp: 100 };
+  assert.deepEqual(applyPlayerDamage(p, 20), { absorbed: true, broke: true });
+  assert.equal(p._shieldValue, 0);
+  assert.equal(p._shieldRechargeAccum, 0); // timer reset on the breaking hit
+  assert.equal(p.hp, 100);                 // exact break spills nothing
+});
+
+test('applyPlayerDamage: an over-capacity hit breaks the shield and spills the excess to the hull', () => {
+  const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 0, hp: 100 };
+  assert.deepEqual(applyPlayerDamage(p, 30), { absorbed: true, broke: true });
+  assert.equal(p._shieldValue, 0);
+  assert.equal(p.hp, 90); // 10 excess to hull
+});
+
+test('applyPlayerDamage: with no shield the full damage hits the hull (no ripple)', () => {
+  const p = { shield: null, _shieldValue: 0, hp: 100 };
+  assert.deepEqual(applyPlayerDamage(p, 12), { absorbed: false, broke: false });
+  assert.equal(p.hp, 88);
+});
+
+test('applyPlayerDamage: an already-broken shield (value 0) takes nothing; damage goes to the hull', () => {
+  const p = { shield: {}, _shieldValue: 0, hp: 100 };
+  assert.deepEqual(applyPlayerDamage(p, 8), { absorbed: false, broke: false });
+  assert.equal(p.hp, 92);
 });
