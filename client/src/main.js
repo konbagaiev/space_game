@@ -13,6 +13,7 @@ import { Device } from './device.js'; // device capabilities (input/form axes + 
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
+import { updateShieldBubble } from './shield-fx.js'; // player shield bubble: faint idle rim + ripple-on-hit (variant B)
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
@@ -640,6 +641,7 @@ function animate() {
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
+  updateShieldBubble(G.paused ? 0 : Math.min(rawSec, 0.05)); // track the ship + tick the shield-bubble shader (frozen while paused)
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays
   // two passes: first the sky backdrop (with its own light), then combat on top
   renderer.info.reset();
