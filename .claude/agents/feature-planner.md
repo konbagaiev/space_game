@@ -121,3 +121,13 @@ Your final message: a point-by-point list of how each issue was resolved.
   testable seam that asserts it (propose the minimal extraction if the current code isn't reachable from a
   unit test — do not stop at "untestable"), and (3) add the regression test to the plan. Live/manual
   verification is a complement to that guard, never a substitute for it.
+- **2026-07-12 — When a plan DELETES or RENAMES a widely-referenced symbol/concept, the consumer sweep must
+  grep the plain CONCEPT WORD, not just code symbols.** The Postgres-only plan swept for
+  `db_postgres|node:sqlite|DatabaseSync|test:pg|DB_PATH` (imports/paths) but not the bare word `SQLite` /
+  `PRAGMA`, so it missed several ACTIVE surfaces still describing the deleted backend — the root + server
+  READMEs, two pipeline agent rubrics still mandating "test on both backends" — and, worst, a **functional
+  regression**: the bench/visual dev runners passed a now-no-op `DB_PATH`, so their isolated servers would
+  silently hit the developer's real local DB. Broadening the sweep to the concept word `\bSQLite\b` surfaced
+  all of it. Whenever you remove/rename something, grep BOTH the code identifiers AND the human-readable
+  concept name across code, config, docs, skills, and agent instructions — and put that broadened grep in the
+  plan's final "gate" so the implementer re-runs it. Comment-only prose and dev tooling count.
