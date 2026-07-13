@@ -20,8 +20,8 @@ The orchestrator gives you the **plan path** (`docs/plans/<id>.md`) and the **ab
 1. Read the plan, then `docs/SUMMARY.md` (the file map) and any `docs/plans/*.md` it references.
 2. Implement the steps in order. Match surrounding code style; keep logic **modular** — do not pile new
    logic into `index.html` (see `docs/plans/client-code-structure.md`). English only.
-3. **Write/adjust tests** for the new behavior. Server tests must pass on **both** SQLite and Postgres —
-   keep `server/src/db.js` and `server/src/db_postgres.js` in sync.
+3. **Write/adjust tests** for the new behavior. Server tests run against Postgres (`npm test`
+   drops+recreates a local `spacegame_test`); the data layer is the single `server/src/db.js` (PostgreSQL).
 4. **Run the suites and make them pass:** `cd client && node --test`, `cd server && npm test`. Paste the
    results in your report — never claim green without running.
 5. **Update the docs** as part of the change (CLAUDE.md docs-workflow): edit the relevant `SUMMARY.md`

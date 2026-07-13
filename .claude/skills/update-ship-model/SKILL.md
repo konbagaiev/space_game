@@ -12,8 +12,8 @@ deploy and served same-origin, hangar glbs go via CloudFront. Full rationale:
 
 ## Two non-obvious facts this skill exists to enforce
 
-1. **The catalog is upserted into the DB only on server STARTUP** (`seedCatalog` in `server/src/db.js`
-   / `db_postgres.js`, ships keyed by **name**). So changing `catalog_seed.js` does nothing until a
+1. **The catalog is upserted into the DB only on server STARTUP** (`seedCatalog` in `server/src/db.js`,
+   ships keyed by **name**). So changing `catalog_seed.js` does nothing until a
    restart. → **Locally, ALWAYS restart the server after a model change.** On prod, the deploy starts a
    fresh container, so the reseed is automatic.
 2. **A stale running server + replaced files = the "generic primitive" bug.** If the old combat glb is
@@ -97,7 +97,7 @@ npm run assets:check    # every model_url* + SOUNDS url in the seed must exist o
 The catalog reseeds only on startup (see fact #1). Find and restart it:
 ```bash
 # find it:  ps aux | grep 'src/server.js' | grep -v grep   → kill <pid>
-cd server && node --disable-warning=ExperimentalWarning src/server.js   # run in background
+cd server && node src/server.js   # run in background
 ```
 Verify: `curl -s localhost:4000/api/ships` shows the new `modelUrl`; the new glb returns 200 and the
 old one 404. Tell the user to **hard-refresh** the browser (Cmd+Shift+R) to drop the cached catalog.

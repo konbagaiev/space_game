@@ -44,7 +44,7 @@ You'll receive the maintainer's answers. Write the plan to `docs/plans/<id>.md`.
   `client/index.html:2076`, `server/src/catalog_seed.js` component id N) and code snippets where helpful.
   Respect SUMMARY's file map; prefer modular files over piling logic into `index.html`.
 - **Tests** — what to add/change and how to run them (`client && node --test`, `server && npm test`;
-  remember server tests run on **both** SQLite and Postgres — keep `db.js` and `db_postgres.js` in sync).
+  server tests run against Postgres (`npm test` drops+recreates a local `spacegame_test`); the single data layer is `db.js`).
 - **Docs to update** — the exact SUMMARY section(s), a CHANGELOG bullet, and a DECISIONS entry **only if**
   there's a real trade-off.
 - **Out of scope / non-goals** — to keep the implementer from gold-plating (DECISIONS §30).

@@ -2343,6 +2343,28 @@ back-fill for existing players. Cross-ref §30 (keep it simple — no FX / tiers
 §40 (grab back-fill this mirrors), §57 (grab as the optional-component precedent).
 ---
 
+## 67. Backend is Postgres-only — the SQLite layer was dropped to kill dual-implementation drift
+
+The data layer was written twice by hand — `db.js` (SQLite via `node:sqlite`) and `db_postgres.js`
+(Postgres via `pg`) — selected at runtime by `datastore.js` on `DATABASE_URL`. Every schema/query change
+had to land in **both** files, and the test suite only ran the SQLite copy for free, so Postgres-only
+bugs (a JS boolean into an INTEGER column; a missing transaction) repeatedly slipped through until a
+separate `test:pg` pass. That parity tax is the documented recurring risk (was the
+`backend-parity-sqlite-postgres` memory note).
+
+**Decision:** Postgres is the single storage engine. Deleted `db.js` (SQLite), `migrate.js`, and
+`migrations/001…023`; renamed `db_postgres.js → db.js`; `datastore.js` is now a static façade over it.
+The idempotent bootstrap + `migrations_pg` one-shot ledger is the single forward-only migration story.
+
+**What replaced SQLite's one real benefit — zero local setup:** the test suite drops+recreates a local
+`spacegame_test` DB in a `pretest` step (matching CI's throwaway `postgres:16` container), and the pool
+defaults to `postgres://localhost:5432/spacegame` so `npm start`/`reset.js` still work with no env. This
+is cheap now that Postgres runs locally (Homebrew `postgresql@16`, same major as prod/CI).
+
+**No runtime change:** prod already ran Postgres; forward-only migrations (§9) mean the prod schema is
+untouched. Cross-ref §30 (keep it simple — one backend, not two).
+---
+
 ## Future ideas
 
 solid asteroids with bounce ·

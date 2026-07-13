@@ -3,6 +3,21 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-12
+
+- **[2026-07-12-1826-backend-postgres-only] Backend is Postgres-only — SQLite dropped (maintainability, no
+  behavior change).** Deleted the hand-maintained SQLite data layer (`db.js`, 678 lines), the `migrate.js`
+  runner, and `migrations/001…023`; renamed `db_postgres.js → db.js` (the single data layer); `datastore.js`
+  is now a static façade with `backend = 'postgres'`. The pool defaults to
+  `postgres://localhost:5432/spacegame` so `npm start`/`reset.js` work with zero env; prod/CI set
+  `DATABASE_URL`. `npm test` now targets Postgres and a `pretest` drops+recreates `spacegame_test` for a
+  clean schema (folds in the old `test:pg`); CI runs one Postgres job (the second, SQLite, job removed).
+  Removed the now-inert `--disable-warning=ExperimentalWarning` flags (node:sqlite was their only trigger)
+  from package.json/Dockerfile/bench/visual/skills; the bench/visual dev runners now point their isolated
+  server at `spacegame_test` (their old `DB_PATH` throwaway-file isolation became a no-op). reset-progress
+  skill + READMEs rewritten Postgres-only. Deleted `backfill-grab.test.js` (SQLite-only unit test of
+  migration 019; the PG backfill stays idempotent in `db.js migrate()`). See DECISIONS §67.
+
 ## 2026-07-11
 
 - **[2026-07-11-1503-shield-component] Base shield component.** New `shield` component type (a real catalog

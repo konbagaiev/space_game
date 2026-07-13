@@ -5,10 +5,10 @@
   "type": "module",
   "description": "Backend for the space-combat game: serves the client and stores players & game history.",
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning src/server.js",
-    "migrate": "node --disable-warning=ExperimentalWarning -e \"import('./src/datastore.js').then(m=>m.migrate())\"",
-    "test": "node --disable-warning=ExperimentalWarning --test",
-    "test:pg": "DATABASE_URL=\"${DATABASE_URL:-postgres://localhost:5432/spacegame_test}\" node --disable-warning=ExperimentalWarning --test"
+    "start": "node src/server.js",
+    "migrate": "node -e \"import('./src/datastore.js').then(m=>m.migrate())\"",
+    "pretest": "dropdb --if-exists spacegame_test && createdb spacegame_test",
+    "test": "DATABASE_URL=\"${DATABASE_URL:-postgres://localhost:5432/spacegame_test}\" node --test"
   },
   "dependencies": {
     "@sentry/node": "^10.59.0",

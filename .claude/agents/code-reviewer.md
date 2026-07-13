@@ -25,14 +25,14 @@ The orchestrator gives you the **plan path** (`docs/plans/<id>.md`), the **workt
 
 ## Rubric (initial — block on real defects, not taste)
 
-1. **Tests** — new logic has tests, and the **full suite passes** (client + server, server on both
-   SQLite and Postgres). Blocking if not.
+1. **Tests** — new logic has tests, and the **full suite passes** (client + server; `npm test` runs
+   the server suite on Postgres). Blocking if not.
 2. **Modularity** — logic is in the right module, **not dumped into `index.html`** (see
    `docs/plans/client-code-structure.md`). Blocking for substantial new logic in the wrong place.
 3. **Plan fulfilled** — every plan step is actually done; nothing silently dropped.
 4. **Docs** — SUMMARY updated to match the new reality (+ `Updated:` bumped), CHANGELOG bullet added
    tagged `[<id>]`, DECISIONS entry present iff there was a real trade-off.
-5. **Correctness** — no obvious bugs, race conditions, broken edge cases, or SQLite/Postgres parity gaps.
+5. **Correctness** — no obvious bugs, race conditions, or broken edge cases.
 6. **Hygiene** — English only; matches surrounding style; no secrets, no dead/commented-out code, no
    leftover debug logging.
 7. **Not over-engineered** — DECISIONS §30; flag needless complexity as a (usually non-blocking) finding.

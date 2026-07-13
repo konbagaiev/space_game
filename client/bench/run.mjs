@@ -2,7 +2,7 @@
 // `npm test` — it forks Chromium + a server. Run: `cd client && npm run bench` (or `node bench/run.mjs`).
 //
 // What it does:
-//   1. Starts ONE isolated API server (throwaway SQLite) — the game sim is client-side, so /api is only the
+//   1. Starts ONE isolated API server (throwaway Postgres `spacegame_test`) — the game sim is client-side, so /api is only the
 //      branch-agnostic catalog/accounts backend. Reuses visual/run.mjs's isolated-server pattern.
 //   2. Serves TWO client builds over their own tiny static+proxy HTTP routes: A = merge-base build
 //      (BENCH_A_DIR), B = worktree build (BENCH_B_DIR). Both proxy /api to the one API server. If neither env
@@ -20,7 +20,6 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { analyzeMode, median, mean } from './stats.mjs';
@@ -114,9 +113,8 @@ function pushRep(acc, r) {
 const emptyAcc = () => ({ update: [], dom: [], render: [], total: [], load: { draws: [], tris: [], particles: [], enemies: [] }, hash: [] });
 
 async function main() {
-  const dbPath = path.join(os.tmpdir(), `space-bench-${process.pid}.db`);
-  const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/server.js'],
-    { cwd: serverDir, env: { ...process.env, PORT: String(API_PORT), DB_PATH: dbPath }, stdio: 'ignore' });
+  const server = spawn(process.execPath, ['src/server.js'],
+    { cwd: serverDir, env: { ...process.env, PORT: String(API_PORT), DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost:5432/spacegame_test' }, stdio: 'ignore' });
   const stopServer = () => { try { server.kill('SIGTERM'); } catch {} };
   process.on('exit', stopServer);
 

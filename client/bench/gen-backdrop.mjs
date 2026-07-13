@@ -4,7 +4,7 @@
 //   cd client && node bench/gen-backdrop.mjs   (or: npm run bench:backdrop)
 //
 // What it does:
-//   1. Starts ONE isolated API server (throwaway SQLite) + one static server for THIS client dir, and
+//   1. Starts ONE isolated API server (throwaway Postgres `spacegame_test`) + one static server for THIS client dir, and
 //      launches ONE headless Chromium (swiftshader) — reusing run.mjs's harness.
 //   2. goto /?bench=replay, waits for window.__bench.ready(), calls window.__bench.bakeBackdrop(...) which
 //      runs the REAL sim deterministically (seeded RNG + fixed dt) and dumps RAW per-keyframe ship + bullet
@@ -18,7 +18,6 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { recenterAndQuantize } from '../src/ghost-battle-track.js';
@@ -73,9 +72,8 @@ function startStatic(dir, apiPort) {
 }
 
 async function main() {
-  const dbPath = path.join(os.tmpdir(), `backdrop-bake-${process.pid}.db`);
-  const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/server.js'],
-    { cwd: serverDir, env: { ...process.env, PORT: String(API_PORT), DB_PATH: dbPath }, stdio: 'ignore' });
+  const server = spawn(process.execPath, ['src/server.js'],
+    { cwd: serverDir, env: { ...process.env, PORT: String(API_PORT), DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost:5432/spacegame_test' }, stdio: 'ignore' });
   const stopServer = () => { try { server.kill('SIGTERM'); } catch {} };
   process.on('exit', stopServer);
 

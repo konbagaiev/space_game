@@ -26,7 +26,7 @@ or vice-versa** — verify with the state-hash check below after any change to t
 
 ### 1. Start the local server
 Use the **run-local** skill (pull the gitignored assets first, then serve on `localhost:4000`). From this
-worktree: `npm run assets:pull` → `cd server && PORT=4000 node --disable-warning=ExperimentalWarning src/server.js`.
+worktree: `npm run assets:pull` → `cd server && PORT=4000 node src/server.js`.
 (In a fresh git worktree, symlink `node_modules` + `server/node_modules` from the main checkout, or `npm i`.)
 
 ### 2. Record (maintainer plays)

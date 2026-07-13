@@ -1,7 +1,7 @@
 # Vega Sentinels
 
 A browser game prototype: several 3D spaceships fighting on a plane.
-Built on **Three.js** (frontend) with a **Node.js + Express + SQLite** backend
+Built on **Three.js** (frontend) with a **Node.js + Express + PostgreSQL** backend
 (anonymous player auto-registration and game history; multiplayer is planned).
 
 ## Structure

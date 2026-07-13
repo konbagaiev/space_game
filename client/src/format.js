@@ -17,6 +17,6 @@ export const slotLabel = (slot) => t(`ui.shop.slot.${slot}`) || slot;
 export const priceLabel = (p) => (p > 0 ? `${p} ◈` : t('ui.shop.free'));
 
 // Resale value shown in Stash + Loadout — the amount the player actually gets for selling. Mirrors the
-// server's sellPrice (db.js / db_postgres.js): floor(price * 0.75). Keep in sync if the server rate changes.
+// server's sellPrice (db.js): floor(price * 0.75). Keep in sync if the server rate changes.
 export const SELL_RATE = 0.75;
 export const sellLabel = (p) => (p > 0 ? `${Math.floor(p * SELL_RATE)} ◈` : t('ui.shop.free'));

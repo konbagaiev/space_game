@@ -1,7 +1,7 @@
 # Dependencies
 node_modules/
 
-# Server data (SQLite db)
+# Server data (legacy local dir; unused now that storage is Postgres)
 server/data/
 
 # Builds
