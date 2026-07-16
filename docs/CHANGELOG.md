@@ -5,6 +5,17 @@
 
 ## 2026-07-16
 
+- **Fix: enemy bullets dealt no damage and stuttered the frame.** `applyPlayerDamage` was called but not
+  imported in `sim.js` after the shield-ripple refactor (commit 51eec94, which moved it from `projectiles.js`
+  to `components.js`), so every hostile-bullet→player hit threw a `ReferenceError` that aborted the rest of
+  the frame's `update()` (the visible stutter) and skipped the bullet cull below — the shot flew straight
+  through the player dealing no damage. Extracted the enemy-bullet→player hit-resolution into a pure,
+  THREE-free `resolveHostileBulletHit(player, p0, p1, damage) → { hit, damageResult, remove }` helper in
+  `collision.js` (side-effect-/RNG-free, so record/playback stays deterministic) and wired `sim.js` to it, so
+  `sim.js` no longer names `applyPlayerDamage` at all. Scene.remove / hit-flash / shield-ripple / SFX and the
+  range-based bullet culling stay inline in `sim.update()`. Enemy fire again damages the player (shield-first,
+  then hull) and the offending bullet is consumed on impact. +3 unit tests in `collision.test.js`. [2026-07-16-1409-fix-player-damage-import]
+
 - **Music is ~2× quieter by default (players found it too loud).** Added a baked `MUSIC_TRIM = 0.5` on the
   music bus in `client/src/audio.js`, applied in both `effectiveGain('music')` and `applyVolumes`. The Music
   slider stays the user's control at its ≈-middle default (45%), but the whole music channel is halved behind
