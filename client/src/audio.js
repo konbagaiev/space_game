@@ -33,6 +33,13 @@ export const AUDIO_STORAGE_KEYS = {
 };
 export const AUDIO_DEFAULTS = { master: 0.7, music: 0.45, sfx: 0.8, musicOn: true, sfxOn: true };
 
+// A baked correction on the whole music bus (the music tracks are mastered hot relative to the SFX, so
+// players consistently found the default too loud). This trims the music channel to half BEHIND the slider
+// — the Music slider stays the user's control (default 45%, ≈ middle) but 100% now means half the old 100%,
+// so music is ~2× quieter for everyone, including players who had already raised their slider. Mirrors the
+// per-SFX `gain` trims (e.g. kinetic fire at 0.7). See DECISIONS §69.
+export const MUSIC_TRIM = 0.5;
+
 export function clamp01(v) {
   v = Number(v);
   if (!Number.isFinite(v)) return 0;
@@ -70,7 +77,8 @@ export function effectiveGain(s, channel) {
   const on = channel === 'music' ? s.musicOn : channel === 'sfx' ? s.sfxOn : true;
   if (!on) return 0;
   const ch = channel === 'music' ? s.music : channel === 'sfx' ? s.sfx : 1;
-  return clamp01(s.master) * clamp01(ch);
+  const trim = channel === 'music' ? MUSIC_TRIM : 1; // music bus is baked down (files mastered hot)
+  return clamp01(s.master) * clamp01(ch) * trim;
 }
 
 // ---------- Engine (browser-only; lazy) ----------
@@ -106,7 +114,7 @@ export function createAudio(initialSettings) {
     if (!ctx) return;
     const now = ctx.currentTime;
     master.gain.setTargetAtTime(clamp01(settings.master), now, ramp);
-    musicGain.gain.setTargetAtTime(settings.musicOn ? clamp01(settings.music) : 0, now, ramp);
+    musicGain.gain.setTargetAtTime(settings.musicOn ? clamp01(settings.music) * MUSIC_TRIM : 0, now, ramp);
     sfxGain.gain.setTargetAtTime(settings.sfxOn ? clamp01(settings.sfx) : 0, now, ramp);
   }
 

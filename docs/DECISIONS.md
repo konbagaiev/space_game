@@ -2394,6 +2394,27 @@ buried in the FX path. Scoped to the **base/starter shield** for now; higher shi
 Cross-ref §66 (shield mechanics), §30 (keep it simple — no asset pipeline for a shader we can write).
 ---
 
+## 69. Music is too loud → a baked `MUSIC_TRIM = 0.5` on the bus, not a lower slider default or remaster
+
+Players consistently reported the background music as too loud. The Music slider already defaulted to 45%
+(≈ middle), so the perceived loudness came from the **tracks themselves being mastered hot** relative to the
+SFX — the slider position wasn't the lever. Three options:
+- **(a)** lower the slider *default* (0.45 → ~0.22). Only helps players who never touched the slider; anyone
+  who had already raised it (the ones complaining loudest) stays loud. Also fights the maintainer's wish that
+  the slider sit ≈ middle.
+- **(b)** re-master / re-encode the mp3 tracks quieter. Touches binary S3 assets + content hashes + the itch
+  bundle for a pure gain change; heavy and irreversible-ish.
+- **(c)** a baked gain trim on the whole music bus, behind the slider.
+
+**Decision:** (c) — `export const MUSIC_TRIM = 0.5` in `audio.js`, applied in both `effectiveGain('music')`
+(the pure, unit-tested seam) and `applyVolumes` (the live WebAudio graph). Music is ~2× quieter for
+**everyone** — new and existing, including players who had raised their slider — while the slider stays the
+user's control at its ≈-middle default (45%); 100% now simply means half the old 100%. This mirrors the
+existing per-SFX `gain` trims (e.g. kinetic fire at 0.7, §—the sound-map gain), so it's a familiar pattern,
+and it's a one-constant change with no asset churn (DECISIONS §30, keep it simple). If music needs to reach
+its old ceiling again, raise `MUSIC_TRIM`; the constant is the single knob. Guarded by an `audio.test.js`
+case asserting the trim applies to music only (SFX/master untouched).
+
 ## Future ideas
 
 solid asteroids with bounce ·

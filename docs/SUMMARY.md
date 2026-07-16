@@ -1299,7 +1299,10 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   loops it seamlessly; **multiple tracks per scene rotate at random** (no immediate repeat) — add more rows
   with the same `(scene, …, 'music')` in `SOUND_MAP`. Tracks are stereo mp3s preloaded with the SFX; if a
   track isn't decoded yet when the scene starts, the preload-completion hook starts it. Volume follows the
-  Music slider/toggle (`musicGain`).
+  Music slider/toggle (`musicGain`), **times a baked `MUSIC_TRIM = 0.5`** on the music bus — the tracks are
+  mastered hot relative to the SFX, so the whole music channel is halved behind the slider (the slider stays
+  the user's control, default 45%; 100% now = half the old 100%). Mirrors the per-SFX `gain` trims. See
+  DECISIONS §69.
 - **Settings menu — the project's dedicated settings screen.** A ⚙ **gear**
   (`#settings-btn`, **top-left corner, always visible** — incl. during a live fight; the HUD shield/health
   bars block is padded right so the gear never overlaps it) opens a modal (`#settings-overlay`). **Opening it doubles as
