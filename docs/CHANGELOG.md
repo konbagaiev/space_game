@@ -3,6 +3,24 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-16
+
+- **Music is ~2× quieter by default (players found it too loud).** Added a baked `MUSIC_TRIM = 0.5` on the
+  music bus in `client/src/audio.js`, applied in both `effectiveGain('music')` and `applyVolumes`. The Music
+  slider stays the user's control at its ≈-middle default (45%), but the whole music channel is halved behind
+  it — so music is ~2× quieter for **everyone**, including players who had already raised their slider (100%
+  now = half the old 100%). SFX/master untouched; mirrors the per-SFX `gain` trims. No asset changes (pure
+  gain constant). +1 test guarding the trim applies to music only. See DECISIONS §69.
+
+## 2026-07-14
+
+- **Simplify `datastore.js` — the façade is now `export * from './db.js'`.** Follow-up to the
+  Postgres-only refactor (§67): now that the runtime SQLite/Postgres selector is gone, the 40 hand-written
+  `export const foo = (...a) => impl.foo(...a)` pass-throughs collapse to a single `export * from './db.js'`
+  (plus the `backend = 'postgres'` const). Same stable import surface for every consumer, but new `db.js`
+  functions are exported automatically instead of needing a matching wrapper line. No behavior change;
+  server suite green (85/85). (`pool` is now also re-exported via the façade — harmless.)
+
 ## 2026-07-13
 
 - **[2026-07-13-1844-shield-hit-ripple] Shield-hit FX — a shield bubble that flashes & ripples on hit.**
