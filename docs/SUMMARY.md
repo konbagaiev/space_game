@@ -1080,6 +1080,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (annulus `inner`..`spread` radius; `inner` 0 → centered, `spread` 1000 in `home-system`) — inside the
   ±360 arena **and** far beyond it, sunk below the combat plane; the far edge fades into the fog (~600), so
   distant rocks read as a faraway field you can fly out into. Flying past them gives the sense of speed.
+  These backdrop rocks are **procedural low-poly icosahedra** (`makeAsteroids`, one `InstancedMesh`, ~40k
+  tris) — deliberately **not** the `.glb` model the mission field uses: a full-disk field of thousands of
+  instanced model rocks is ~1.6M tris, and at that distance the rocks are sub-pixel specks (DECISIONS §71).
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the planet and moons).
 - **Shader pre-warm (`prewarmShaders`).** THREE compiles a material's GL program lazily on its first
@@ -1126,12 +1129,18 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **`research-station`** — a hub + a ring on spokes, two solar-panel wings, docking modules and
     emissive windows; slowly rotates around its own axis. A `tilt` param tips it off-vertical so the ring
     reads as a 3D wheel from the top-down camera (the research mission uses a light tilt).
-  - **`asteroid-field`** — a wide cluster of **irregular, cratered** rocks (noise-deformed icosahedra +
-    `makeMoonTexture`, varied sizes; distinct from the round parallax-backdrop asteroids) plus **two
-    mining rigs**, each a host rock + a **tilted station** + a **mining beam** (a particle stream flowing
-    from the host up to the collector). The rigs are tilted off vertical so the beam reads from the
-    top-down camera. Rocks tumble slowly. Tunable: `count`, `spread`, `hostSize`, `beamLen`, `beamTilt`.
-  - **`freighter`** — the **first `.glb`-backed set-piece** (all others are procedural). It loads the
+  - **`asteroid-field`** — a wide cluster of rocks (random **`.glb` variants** from the `asteroids_combat`
+    pack, fog OFF for readability up close; `makeMoonTexture` icosahedra remain the `?debug`/load-failure
+    fallback — the distant backdrop `asteroids` layer stays procedural, only this up-close field uses the
+    model) plus **two mining rigs**, each a
+    host rock + a **tilted station** + a **mining beam** (a particle stream flowing from the host up to the
+    collector). The rigs are tilted off vertical so the beam reads from the top-down camera. Rocks tumble
+    slowly. Like the freighter it builds **asynchronously**: the random scatter/tumble list is precomputed
+    synchronously, then `placeRocks` populates the rocks + host rocks once the pack loads (or immediately,
+    procedurally, in the fallback). Carries the same `modelUrl` as the backdrop. Tunable: `count`, `spread`,
+    `hostSize`, `beamLen`, `beamTilt`.
+  - **`freighter`** — the **first `.glb`-backed set-piece** (the base-station and asteroid-field packs
+    followed; the research-station is still procedural). It loads the
     `freighter_combat` combat glb (CC-BY "Freighter - Spaceship"), auto center/scaled (longest axis →
     `FREIGHTER_MODEL_LEN` 130, then `spec.scale`) and **`yaw`-oriented like a ship model** (nose faces +Z;
     `spec.yaw` 0 here — the model already faces +Z with its bridge/engines aft). A standalone loader in

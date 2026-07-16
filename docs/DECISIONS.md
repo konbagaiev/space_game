@@ -2430,6 +2430,77 @@ and it's a one-constant change with no asset churn (DECISIONS §30, keep it simp
 its old ceiling again, raise `MUSIC_TRIM`; the constant is the single knob. Guarded by an `audio.test.js`
 case asserting the trim applies to music only (SFX/master untouched).
 
+## 70. Rockets launch straight along the nose — they do NOT inherit the ship's velocity (gun does; rocket must not)
+
+The gun (`spawnBullet`) inherits the shooter's velocity: a bullet's launch velocity is
+`nose·projectileSpeed + shipVel`, so shots track with your motion — this feels right for a fast, dumb
+kinetic round. It's tempting to make **rockets** consistent ("start at the ship's speed, like the gun").
+We tried it locally and it does **not** play well.
+
+What we tested:
+- **(a)** add `shipVel` to the rocket's launch velocity, exactly like the gun. Because a homing rocket's
+  motion model in `sim.js` collapses velocity to a pure *heading* vector each frame (`vel = headingDir ·
+  (|vel| + accel·dt)`), the inherited sideways momentum doesn't read as graceful drift — it just **tilts
+  the rocket's nose off the launch direction** (orientation is derived from `vel` via
+  `atan2(vel.x, vel.z)`), so rockets visibly fire "crabbed" sideways when you're moving.
+- **(b)** decouple it: keep **thrust** strictly along the nose (drives orientation + homing) and carry the
+  ship's velocity as a separate constant `drift` added to position. Nose then points correctly, and the net
+  initial velocity matches the gun's. But the constant lateral drift makes rockets **slide past** a target
+  you're strafing and the flight arcs feel floaty/unpredictable — a "more realistic" model that's simply
+  less fun to aim.
+
+**Decision:** keep the original behavior — `spawnRocket`/`spawnSpiralRocket` set launch velocity to
+`nose·launchSpeed` with **no** velocity inheritance (the existing `// start direction - strictly along the
+ship's nose (without the ship's inertia)` comment stays). Realistic inherited-inertia physics is explicitly
+rejected for rockets on **playability** grounds: a homing rocket wants a clean, readable launch heading, not
+momentum drift. The gun keeps inheriting velocity; the asymmetry is intentional. No code shipped — this entry
+exists so we don't re-attempt it.
+
+## 71. Asteroids: real `.glb` model for the mission FIELD only — the distant backdrop stays procedural
+
+The asteroids were procedural (noise-deformed icosahedra + `makeMoonTexture`): the parallax **backdrop**
+field (`makeAsteroids`) and the mission **`asteroid-field`** set-piece. We put a real CC-BY model pack
+("Wandering Asteroids Of Andromeda" by ARCTIC WOLVES™, **3 rock meshes** in one `.glb`) into the mission
+field, and **deliberately left the backdrop procedural**.
+
+- **Why the split (the load-bearing call).** We first wired the model into BOTH. The mission field is only
+  ~24 rocks + 2 host rocks (~20–25k tris, rendered only when you're actually in the field) — the model
+  there is basically free and looks great up close. But the **backdrop** is a full-disk field of **2000**
+  instanced rocks: at ~800 tris/mesh that's **~1.6M tris on screen** (vs a ~70–100k budget), and at that
+  distance each rock is a **sub-pixel speck** where the model detail is wasted. Instancing collapses draw
+  calls but not triangle count, so it's pure cost for no visible gain. So the backdrop reverted to the
+  procedural low-poly icosahedra (`IcosahedronGeometry(1,0)` = 20 faces × 2000 ≈ **40k tris**). Rejected
+  alternatives: a heavily-simplified backdrop LOD (~40–70 tris/rock → ~100–140k tris, still over budget and
+  more build complexity for a two-asset pipeline) and texturing the procedural backdrop (a texture doesn't
+  read on a sub-pixel dot).
+- **The shared loader.** `loadAsteroidPack(url)` (cached per URL) loads the pack once and returns 3
+  variants, each geometry **re-centered on its bounding sphere and scaled to unit radius**, so the field
+  sizes a rock by a single scale factor (matching the old `radius` arg). The field **clones** a variant per
+  rock with fog **OFF** (readable up close), set on a material clone so the pack's material isn't mutated.
+- **Keep the procedural path as a fallback.** Under `?debug` (the visual-test hook) or if the model fails
+  to load, the field falls back to the original procedural rocks — so the headless visual baseline is
+  unchanged and a CDN/asset hiccup degrades gracefully instead of emptying the field.
+- **Async build like the freighter.** The model loads async, so the field returns an empty group now and
+  populates on load; the random scatter/tumble list is **precomputed synchronously** so the tumble
+  animation matches whatever ends up rendering (procedural now, or model-on-load).
+- **Build preset (the fiddly part).** The source is a 4.5 MB textured pack; the combat build is ~171 KB.
+  Three non-obvious steps: (1) three.js r160 **dropped `KHR_materials_pbrSpecularGlossiness`**, so the source
+  is converted spec-gloss → **metal-rough** (`gltf-transform metalrough`) or the rocks render untextured;
+  (2) `gltf-transform optimize` **prunes "solid-color" textures by default**, and the low-contrast rock
+  diffuse maps trip that heuristic — baking them to a flat dark `baseColorFactor` and dropping ALL surface
+  detail. Fixed by threading a **`--prune-solid-textures`** flag through `assets-build.mjs` and setting
+  `pruneSolidTextures: false` in the `asteroids` preset. (3) **meshopt compression must be OFF for this
+  pack** (`compress: false`): `EXT_meshopt_compression` + `KHR_mesh_quantization` **shreds these meshes'
+  geometry and normals into a shattered, spiky mess** in-game (the raw model coordinates quantize badly;
+  the ships survive the same pipeline, these don't). Diagnosed by rendering source vs built geometry with
+  `MeshNormalMaterial` — the source is smooth, the meshopt build is chaos. Disabling meshopt keeps the
+  geometry raw float32 (~171 KB, fine for a set-piece). Geometry is **not** simplified either (the source is
+  already ~700–870 tris/mesh; simplifying shreds the rounded silhouette into angular shards). Textures →
+  256px WebP.
+
+Note the asteroids stay **non-collidable decor** (like before) — "solid asteroids with bounce" remains a
+separate future idea.
+
 ## Future ideas
 
 solid asteroids with bounce ·

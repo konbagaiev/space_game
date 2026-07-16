@@ -628,7 +628,11 @@ export const MAPS = [
       // one; the others sit at a distance). Spread far apart so they don't overlap. Just below the plane
       // (strong parallax like the background asteroids), static decor (not collidable). docs/plans/mission-maps.md.
       setpieces: [
-        { type: 'asteroid-field', pos: [-550, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66 },
+        // `modelUrl` = the .glb asteroid pack (3 rock meshes); the field rocks + each mining rig's host rock
+        // pick a random variant (procedural cratered icosahedra remain the ?debug / load-failure fallback).
+        // Only the up-close field uses the model — the distant backdrop `asteroids` layer stays procedural
+        // (a full-disk instanced model field was ~1.6M tris; see DECISIONS §71).
+        { type: 'asteroid-field', pos: [-550, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
         { type: 'research-station', pos: [400, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
         // Freighter set-piece: the first .glb-backed set-piece. modelUrl = combat glb (served same-origin,
         // baked in by assets:pull at deploy). `yaw` orients the nose to +Z like a ship model (0 = this

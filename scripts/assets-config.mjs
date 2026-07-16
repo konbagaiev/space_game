@@ -55,6 +55,22 @@ export const PRESET_OVERRIDES = {
   metal_box: {
     combat: { textureSize: 128, textureCompress: 'webp' },
   },
+  // Asteroid pack (3 rock meshes in one .glb) used BOTH up-close (the mission asteroid-field rocks/hosts)
+  // and far away as the parallax backdrop field (hundreds of INSTANCES). Source is a 4.5 MB textured pack;
+  // shrink textures hard (256px → WebP) and simplify geometry to ~half so a big instanced field stays cheap.
+  // `instance: false` keeps the 3 meshes as separate nodes so the client can pick a random variant per rock.
+  // See docs/plans/asteroid-model-pipeline notes in DECISIONS.
+  asteroids: {
+    // The source rocks are already low-poly (~700–870 tris); simplifying further shreds their rounded
+    // silhouette into angular shards, so KEEP the geometry (ratio 1.0) and only shrink textures (256 WebP)
+    // + meshopt-compress. `instance: false` keeps the 3 meshes as separate nodes for random-variant picks.
+    // `pruneSolidTextures: false` — the low-contrast rock diffuse maps trip optimize's solid-texture pruner,
+    // which would flatten them to a dark baseColorFactor and drop ALL surface detail (see assets-build.mjs).
+    // `compress: false` (no meshopt/quantization) — meshopt's KHR_mesh_quantization SHREDS these meshes'
+    // geometry+normals into a shattered spiky mess (the raw model coords quantize badly); ships survive it,
+    // these don't. Geometry stays raw float32 → a ~190 KB glb (fine for a set-piece). See DECISIONS §71.
+    combat: { simplifyRatio: 1.0, textureSize: 256, textureCompress: 'webp', instance: false, pruneSolidTextures: false, compress: false },
+  },
 };
 // Merge the base preset for `kind` with any override for this source base name.
 export const presetFor = (base, kind) => ({ ...PRESET[kind], ...(PRESET_OVERRIDES[base]?.[kind]) });

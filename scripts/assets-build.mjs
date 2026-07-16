@@ -24,6 +24,10 @@ function optimize(input, output, p) {
     '--texture-compress', String(p.textureCompress),    // 'webp' | false (keep original format)
     '--texture-size', String(p.textureSize),
     '--instance', String(p.instance ?? true),           // EXT_mesh_gpu_instancing
+    // `optimize` prunes textures it deems single-color by default; low-contrast rock/asteroid diffuse maps
+    // can trip that heuristic and get baked to a flat baseColorFactor (losing all surface detail). Let a
+    // preset opt out with `pruneSolidTextures: false`.
+    '--prune-solid-textures', String(p.pruneSolidTextures ?? true),
     '--simplify', p.simplifyRatio < 1 ? 'true' : 'false',
     ...(p.simplifyRatio < 1 ? ['--simplify-error', String(p.simplifyError)] : []),
   ]);

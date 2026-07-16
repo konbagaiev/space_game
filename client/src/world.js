@@ -382,11 +382,48 @@ export function updateMoons(dt) {
   }
 }
 
-// A parallax asteroid layer (one InstancedMesh = one draw call): small rocks BEHIND the combat
-// plane in WORLD coordinates (not stuck to the camera). Distributed in a RING (annulus) well OUTSIDE
-// the arena — a distant field beyond the battlefield, not clutter inside it. `inner`/`spread` are the
-// ring's inner/outer radius; `minSize`/`maxSize`/`depth`/`depthVar` size and sink the rocks (defaults
-// keep older descriptors working). Flying toward the edge brings them closer → a sense of speed.
+// ---------- Shared .glb asteroid pack ----------
+// The mission asteroid-field set-piece draws its rocks from a .glb pack of 3 rock meshes (AST_01/02/03,
+// each with its own baked texture — CC-BY, see CREDITS.md). NOT used for the parallax backdrop: that stays
+// procedural, because a full-disk field of thousands of instanced model rocks is ~1.6M tris vs the ~40k of
+// the procedural icosahedra, and at that distance the rocks are sub-pixel specks where the detail is wasted
+// (DECISIONS §71). Load the pack ONCE per URL and hand back normalized VARIANTS: each geometry re-centered
+// on its bounding sphere and scaled to UNIT radius, so a caller sizes a rock by a single scale factor.
+const _asteroidPacks = new Map(); // url -> Promise<[{ geo, mat }]>
+function loadAsteroidPack(url) {
+  let p = _asteroidPacks.get(url);
+  if (!p) {
+    p = new Promise((resolve, reject) => {
+      gltfLoader.load(url, (gltf) => {
+        const variants = [];
+        gltf.scene.updateMatrixWorld(true);
+        gltf.scene.traverse((o) => {
+          if (!o.isMesh) return;
+          const geo = o.geometry.clone();
+          geo.applyMatrix4(o.matrixWorld);                 // bake the node transform into the geometry
+          geo.computeBoundingSphere();
+          const { center, radius } = geo.boundingSphere;
+          geo.translate(-center.x, -center.y, -center.z);  // center at origin
+          geo.scale(1 / radius, 1 / radius, 1 / radius);   // → unit radius; caller scales to taste
+          geo.computeBoundingSphere();
+          variants.push({ geo, mat: o.material });
+        });
+        variants.length ? resolve(variants) : reject(new Error('asteroid pack had no meshes'));
+      }, undefined, reject);
+    });
+    _asteroidPacks.set(url, p);
+  }
+  return p;
+}
+// A per-use material clone so the mission field can force fog OFF (readable up close) without
+// sharing/mutating the pack's material.
+function asteroidMat(src, fog) { const m = src.clone(); m.fog = fog; return m; }
+
+// A parallax asteroid layer (one InstancedMesh = one draw call): small low-poly rocks BEHIND the combat
+// plane in WORLD coordinates (not stuck to the camera). Distributed in a RING (annulus) well OUTSIDE the
+// arena; `inner`/`spread` are the ring's inner/outer radius; `minSize`/`maxSize`/`depth`/`depthVar` size and
+// sink the rocks. Flying toward the edge brings them closer → a sense of speed. Procedural on purpose (kept
+// cheap — thousands of distant sub-pixel specks; see the pack note above / DECISIONS §71).
 function makeAsteroids({ count, spread, color, inner = 0, minSize = 0.4, maxSize = 1.3, depth = 6, depthVar = 10 }) {
   const mesh = new THREE.InstancedMesh(
     new THREE.IcosahedronGeometry(1, 0), // low-poly rock
@@ -499,35 +536,40 @@ function makeIrregularAsteroid(radius, tex, seed) {
 function makeAsteroidField(spec) {
   const g = new THREE.Group();
   const base = spec.color ?? 0x6e6a63;
-  const texes = [makeMoonTexture(base), makeMoonTexture(0x5f5a52), makeMoonTexture(0x726a60)];
   const count = spec.count ?? 14, spread = spec.spread ?? 120;
   const minS = spec.minSize ?? 6, maxS = spec.maxSize ?? 26;
   const beamColor = spec.beamColor ?? 0xffcc66;
   const metal = new THREE.MeshStandardMaterial({ color: 0x8b94a0, metalness: 0.8, roughness: 0.4, flatShading: true, fog: false });
   const litMat = new THREE.MeshBasicMaterial({ color: beamColor, fog: false });
+  const useModel = spec.modelUrl && !location.search.includes('debug'); // ?debug keeps the procedural rocks
+  const V = 3; // pack variant count (also the procedural texture count)
 
-  // scattered field rocks (vertical scatter kept shallow so the field stays just below the plane)
-  const rocks = [];
-  for (let i = 0; i < count; i++) {
-    const r = minS + Math.random() * (maxS - minS);
-    const m = makeIrregularAsteroid(r, texes[i % 3], i * 1.37 + 1);
-    m.position.set((Math.random() * 2 - 1) * spread, (Math.random() * 2 - 1) * spread * 0.22, (Math.random() * 2 - 1) * spread);
-    m.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
-    g.add(m);
-    rocks.push({ mesh: m, sx: (Math.random() - 0.5) * 0.2, sy: (Math.random() - 0.5) * 0.2, sz: (Math.random() - 0.5) * 0.2 });
-  }
-
-  // mining rigs: a host asteroid + a tilted station + a tilted beam. Two of them, placed apart.
+  // Precompute the random field scatter ONCE so the tumble list matches whatever ends up rendering the
+  // rocks — .glb rocks are placed asynchronously once the pack loads; procedural rocks are placed now.
   const hostR = spec.hostSize ?? 26, beamLen = spec.beamLen ?? 34, tilt = spec.beamTilt ?? 0.5; // tilt rad off vertical
   const N = spec.beamCount ?? 50, width = spec.beamWidth ?? 3, speed = spec.beamSpeed ?? 0.5;
   const UP = new THREE.Vector3(0, 1, 0);
+  const fieldData = [];
+  for (let i = 0; i < count; i++) {
+    fieldData.push({
+      pos: [(Math.random() * 2 - 1) * spread, (Math.random() * 2 - 1) * spread * 0.22, (Math.random() * 2 - 1) * spread],
+      rot: [Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28],
+      r: minS + Math.random() * (maxS - minS), vi: (Math.random() * V) | 0,
+      sx: (Math.random() - 0.5) * 0.2, sy: (Math.random() - 0.5) * 0.2, sz: (Math.random() - 0.5) * 0.2,
+    });
+  }
+
+  // mining rigs: a host asteroid (an empty Group whose rock is added by placeRocks) + a tilted station +
+  // a tilted beam. Two of them, placed apart.
   const placements = [
     { pos: new THREE.Vector3(-spread * 0.30, -spread * 0.08, spread * 0.18), az: 0.6 },
     { pos: new THREE.Vector3(spread * 0.32, spread * 0.08, -spread * 0.22), az: 3.6 },
   ];
+  const rocks = []; // { mesh, sx, sy, sz } tumble list, populated by placeRocks()
   const rigs = placements.map((pl, k) => {
     const dir = new THREE.Vector3(Math.sin(tilt) * Math.cos(pl.az), Math.cos(tilt), Math.sin(tilt) * Math.sin(pl.az)).normalize();
-    const host = makeIrregularAsteroid(hostR, texes[k % 3], 90 + k);
+    const host = new THREE.Group(); // the host rock is added by placeRocks() (now, or on pack load)
+    host.hostVi = (90 + k) % V;
     host.position.copy(pl.pos); g.add(host);
 
     const station = new THREE.Group();
@@ -554,6 +596,29 @@ function makeAsteroidField(spec) {
     g.add(new THREE.Points(bgeo, bmat));
     return { host, from, seg, perp1, perp2, bpos, bt, boff, bgeo };
   });
+
+  // Place the field rocks + each rig's host rock. `rockFor(radius, vi)` returns a sized Object3D — either
+  // a random .glb variant or a procedural cratered icosahedron. Registers each field rock for tumbling.
+  const placeRocks = (rockFor) => {
+    fieldData.forEach((d, i) => {
+      const m = rockFor(d.r, d.vi, i + 1);
+      m.position.set(...d.pos); m.rotation.set(...d.rot);
+      g.add(m); rocks.push({ mesh: m, sx: d.sx, sy: d.sy, sz: d.sz });
+    });
+    rigs.forEach((rig, k) => rig.host.add(rockFor(hostR, rig.host.hostVi, 90 + k)));
+  };
+  const proceduralRock = () => {
+    const texes = [makeMoonTexture(base), makeMoonTexture(0x5f5a52), makeMoonTexture(0x726a60)];
+    return (radius, vi, seed) => makeIrregularAsteroid(radius, texes[vi % V], seed * 1.37 + 1);
+  };
+  if (useModel) {
+    loadAsteroidPack(spec.modelUrl).then((variants) => {
+      const mats = variants.map((v) => asteroidMat(v.mat, false)); // fog OFF: readable up close in the arena
+      placeRocks((radius, vi) => { const m = new THREE.Mesh(variants[vi % variants.length].geo, mats[vi % variants.length]); m.scale.setScalar(radius); return m; });
+    }).catch((err) => { console.warn('Asteroid-field model failed, using procedural rocks:', spec.modelUrl, err); placeRocks(proceduralRock()); });
+  } else {
+    placeRocks(proceduralRock());
+  }
 
   return { obj: g, update: (dt) => {
     for (const r of rocks) { r.mesh.rotation.x += r.sx * dt; r.mesh.rotation.y += r.sy * dt; r.mesh.rotation.z += r.sz * dt; }

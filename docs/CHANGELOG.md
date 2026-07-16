@@ -27,7 +27,26 @@
   `sim.js` no longer names `applyPlayerDamage` at all. Scene.remove / hit-flash / shield-ripple / SFX and the
   range-based bullet culling stay inline in `sim.update()`. Enemy fire again damages the player (shield-first,
   then hull) and the offending bullet is consumed on impact. +3 unit tests in `collision.test.js`. [2026-07-16-1409-fix-player-damage-import]
-
+- **Mission asteroid-field rocks are now a real 3D model (CC-BY pack).** The mission `asteroid-field`
+  set-piece (the ~24 field rocks + the 2 mining-rig host rocks) now scatters random variants from a 3-mesh
+  `.glb` pack (`asteroids_combat`, "Wandering Asteroids Of Andromeda" by ARCTIC WOLVES™, CC-BY 4.0 — added
+  to `CREDITS.md`). A shared loader (`loadAsteroidPack`, `world.js`) fetches the pack once and hands back 3
+  variants normalized to unit radius; the field clones them per rock (fog OFF, readable up close), builds
+  **asynchronously** (empty group now, populated on load) like the freighter set-piece, and keeps the
+  procedural cratered icosahedra as the `?debug` / load-failure fallback. `modelUrl` lives on the
+  `asteroid-field` set-piece in the `home-system` descriptor (`catalog_seed.js`).
+- **The distant parallax backdrop field stays procedural** (low-poly instanced icosahedra, ~40k tris). A
+  model backdrop was prototyped but reverted: a full-disk field of 2000 instanced model rocks is ~1.6M tris
+  (vs a ~70–100k budget) and the rocks are sub-pixel specks at that distance where the detail is wasted.
+  See DECISIONS §71.
+- **Asset pipeline:** new `asteroids` preset override (`assets-config.mjs`) — the source's legacy
+  spec-gloss materials are converted to metal-rough (three r160 dropped spec-gloss), textures shrunk to
+  256px WebP, geometry kept (already low-poly; simplifying shredded the rock silhouette) → a ~171 KB combat
+  glb. Two pipeline gotchas fixed: (1) wired a new `--prune-solid-textures` flag through `assets-build.mjs`
+  (`optimize` was baking the low-contrast rock diffuse maps into a flat `baseColorFactor`, losing all
+  surface detail → preset sets `pruneSolidTextures: false`); (2) **meshopt compression disabled**
+  (`compress: false`) — `EXT_meshopt_compression`/`KHR_mesh_quantization` shredded these meshes' geometry
+  and normals into a shattered spiky mess in-game (the ships survive it, these don't). See DECISIONS §71.
 - **Music is ~2× quieter by default (players found it too loud).** Added a baked `MUSIC_TRIM = 0.5` on the
   music bus in `client/src/audio.js`, applied in both `effectiveGain('music')` and `applyVolumes`. The Music
   slider stays the user's control at its ≈-middle default (45%), but the whole music channel is halved behind
