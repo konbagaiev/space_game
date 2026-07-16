@@ -8,6 +8,8 @@
 // is projected onto the box's world axes inline. That keeps this module importable under `node --test` (the
 // client has no `three` install for node), so collision.test.js can exercise it. See DECISIONS §45.
 
+import { applyPlayerDamage } from './components.js';
+
 const LEGACY_R = 2.6; // primitive/cone fallback radius (the historical single-sphere hit radius), ×sizeScale
 
 // World broad-phase radius. Modeled ships → broadR (group-local) × world scale; primitives → legacy 2.6×sizeScale.
@@ -127,4 +129,21 @@ export function segmentHitsShip(ship, p0, p1, pad = 0) {
     if (segIntersectsAABB(_a0, _a1, _H)) return true;
   }
   return false;
+}
+
+// Resolve a hostile (enemy) bullet against the player for a single frame: swept-test the bullet's movement
+// segment [p0→p1] against the player hull and, on a connect, route the damage through the shield-then-hull
+// path (applyPlayerDamage). Deliberately side-effect-free, RNG-free and THREE-free — it mutates ONLY the
+// passed-in `player` and never touches scene/audio/FX or the seeded sim RNG — so it is unit-testable under
+// `node --test` and record/playback stays deterministic. The caller (sim.update) owns the scene.remove /
+// hit-flash / shield-ripple / SFX and the range-based bullet culling. Returns:
+//   { hit, damageResult, remove }
+//   hit          — the segment connected with the player hull
+//   damageResult — the { absorbed, broke } contract from applyPlayerDamage (null when no hit), so the caller
+//                  can spawn the cyan shield ripple at the impact point
+//   remove       — whether this hit consumes the bullet (true on any hit; range culling stays in sim.update)
+export function resolveHostileBulletHit(player, p0, p1, damage) {
+  if (!segmentHitsShip(player, p0, p1)) return { hit: false, damageResult: null, remove: false };
+  const damageResult = applyPlayerDamage(player, damage);
+  return { hit: true, damageResult, remove: true };
 }

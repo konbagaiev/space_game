@@ -16,7 +16,7 @@ import { spawnShieldReady } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
 import { isLastKillDrop } from './level-sim.js';
-import { pointHitsShip, segmentHitsShip } from './collision.js';
+import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
@@ -530,9 +530,10 @@ export function update(dt) {
         }
       }
     } else {
-      if (segmentHitsShip(G.player, _bulletP0, b.mesh.position)) {
-        const dr = applyPlayerDamage(G.player, b.damage); hit = true;
-        if (dr.absorbed) spawnShieldHit(b.mesh.position, dr.broke); // cyan ripple where the shot connects with the shield
+      const res = resolveHostileBulletHit(G.player, _bulletP0, b.mesh.position, b.damage);
+      if (res.hit) {
+        hit = true;
+        if (res.damageResult.absorbed) spawnShieldHit(b.mesh.position, res.damageResult.broke); // cyan ripple where the shot connects with the shield
         audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
       }
     }

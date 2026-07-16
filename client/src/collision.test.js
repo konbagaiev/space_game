@@ -4,7 +4,7 @@
 // group-local frame; the narrow phase is a point-vs-OBB projection test.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pointHitsShip, broadRadius, segmentHitsShip } from './collision.js';
+import { pointHitsShip, broadRadius, segmentHitsShip, resolveHostileBulletHit } from './collision.js';
 
 // mesh stub: uniform scale `s`, translation `(px,py,pz)`; matrixWorld is column-major with scale on the
 // diagonal and translation in the last column — exactly what THREE.Object3D.updateMatrixWorld produces.
@@ -189,4 +189,38 @@ test('(swept) mesh.scale and pad expand the swept hit', () => {
   // a segment that stops short of the (scaled) box misses without pad, hits with pad
   assert.equal(segmentHitsShip(s2, V(0, 0, 0), V(0, 0, 1.5)), false);
   assert.equal(segmentHitsShip(s2, V(0, 0, 0), V(0, 0, 1.5), 0.4), true);
+});
+
+// --- resolveHostileBulletHit: the enemy-bullet → player damage+cull path (regression for the missing
+// applyPlayerDamage import in sim.js, commit 51eec94). ---
+const hostilePlayer = (over = {}) => ({
+  mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: null, broadR: null,
+  hp: 100, shield: false, _shieldValue: 0, _shieldRechargeAccum: 0, ...over,
+});
+
+test('resolveHostileBulletHit: a swept segment through the hull damages the hull and consumes the bullet', () => {
+  const p = hostilePlayer();                       // no shield → full damage to hull
+  const r = resolveHostileBulletHit(p, V(-3, 0, 0), V(3, 0, 0), 12); // segment crosses the origin sphere
+  assert.equal(r.hit, true);
+  assert.equal(r.remove, true);                    // bullet is consumed (would reach sim's splice)
+  assert.equal(p.hp, 88);                          // 100 − 12, routed by applyPlayerDamage
+  assert.deepEqual(r.damageResult, { absorbed: false, broke: false });
+});
+
+test('resolveHostileBulletHit: with a shield, damage is absorbed shield-first (ripple contract)', () => {
+  const p = hostilePlayer({ shield: true, _shieldValue: 20 });
+  const r = resolveHostileBulletHit(p, V(-3, 0, 0), V(3, 0, 0), 5);
+  assert.equal(r.hit, true);
+  assert.equal(p._shieldValue, 15);                // absorbed by the shield
+  assert.equal(p.hp, 100);                          // hull untouched
+  assert.deepEqual(r.damageResult, { absorbed: true, broke: false });
+});
+
+test('resolveHostileBulletHit: a segment that misses the hull does nothing and does not consume the bullet', () => {
+  const p = hostilePlayer();
+  const r = resolveHostileBulletHit(p, V(-3, 5, 0), V(3, 5, 0), 12); // 5 units off-plane → outside the 2.6 sphere
+  assert.equal(r.hit, false);
+  assert.equal(r.remove, false);
+  assert.equal(p.hp, 100);
+  assert.equal(r.damageResult, null);
 });
