@@ -131,3 +131,17 @@ Your final message: a point-by-point list of how each issue was resolved.
   all of it. Whenever you remove/rename something, grep BOTH the code identifiers AND the human-readable
   concept name across code, config, docs, skills, and agent instructions — and put that broadened grep in the
   plan's final "gate" so the implementer re-runs it. Comment-only prose and dev tooling count.
+- **2026-07-16 — When a change alters the SIM's damage/collision/physics behavior, proactively analyze its
+  effect on the recorded REPLAYS that re-run `sim.update()` — chiefly the Level-0 intro cutscene.** The
+  enemy-bullet-damage fix restored player damage that had been silently broken; because the intro cutscene
+  re-sims a recorded fight through the real `sim.update()` (only `G.replayMode` gates progress-advance, NOT
+  the damage path), the fix genuinely changes intro playback from "player takes zero damage" to "real hits" —
+  a divergence that could in principle kill the player mid-intro and break the scripted victory→progress→L1
+  ending. This was sound (the trace was recorded 07-10 under working damage + now-extra shield → player is
+  more protected than at record time, so it survives), but neither the planner nor the critic raised it — the
+  MAINTAINER had to ask at the review gate. Rule: any plan touching combat damage, collision radius/hitboxes,
+  bullet/rocket behavior, movement, or RNG must include a "Replay/intro impact" subsection that (1) states
+  whether the change affects the deterministic re-sim of `client/src/replay.js` consumers (the intro trace on
+  the `level-1` descriptor; any `?playback` trace), (2) checks whether restored/changed behavior can make the
+  recorded input diverge (esp. player death, timing, kill-count), and (3) adds a Stage-9 live-test: reset
+  progress → play the intro end-to-end → confirm it still reaches victory + the Level 1 briefing.
