@@ -1,49 +1,7 @@
-// Thin façade over the single data layer (db.js — PostgreSQL). Kept as the stable import surface
-// every consumer (server.js, reset.js, tests) uses, so the data layer's filename can change without
-// touching them.
-const impl = await import('./db.js');
+// Thin façade over the single data layer (db.js — PostgreSQL). Re-exports its full public API as the
+// stable import surface every consumer (server.js, reset.js, tests) uses, so db.js's filename or
+// internals can change without touching them. (Was a runtime SQLite/Postgres selector — DECISIONS §67.)
+export * from './db.js';
 
+// A datastore-level constant (not a db.js export): read by /api/health (server.js) and reset.js's log.
 export const backend = 'postgres';
-export const migrate = (...a) => impl.migrate(...a);
-export const registerPlayer = (...a) => impl.registerPlayer(...a);
-// Player-data reset (admin; see server/src/reset.js CLI + .claude/skills/reset-progress)
-export const resetPlayer = (...a) => impl.resetPlayer(...a);
-export const resetAllPlayers = (...a) => impl.resetAllPlayers(...a);
-export const setPlayerLanguage = (...a) => impl.setPlayerLanguage(...a);
-export const getCurrentLevel = (...a) => impl.getCurrentLevel(...a);
-export const advanceProgress = (...a) => impl.advanceProgress(...a);
-export const recordGame = (...a) => impl.recordGame(...a);
-export const recordEvent = (...a) => impl.recordEvent(...a);
-export const recordPerfSample = (...a) => impl.recordPerfSample(...a);
-export const getPerfSamples = (...a) => impl.getPerfSamples(...a);
-export const getPlayerGames = (...a) => impl.getPlayerGames(...a);
-export const stats = (...a) => impl.stats(...a);
-export const getAdminPlayers = (...a) => impl.getAdminPlayers(...a); // admin dashboard (server/src/admin.js)
-export const getShips = (...a) => impl.getShips(...a);
-export const getWeapons = (...a) => impl.getWeapons(...a);
-export const getComponents = (...a) => impl.getComponents(...a);
-export const getSoundCatalog = (...a) => impl.getSoundCatalog(...a);
-export const getActivePlayerShip = (...a) => impl.getActivePlayerShip(...a);
-export const getMap = (...a) => impl.getMap(...a);
-export const getLevel = (...a) => impl.getLevel(...a);
-// Hangar shop + stash (docs/plans/hangar-shop.md)
-export const getStash = (...a) => impl.getStash(...a);
-export const buyItem = (...a) => impl.buyItem(...a);
-export const sellItem = (...a) => impl.sellItem(...a);
-export const equipItem = (...a) => impl.equipItem(...a);
-export const unequipItem = (...a) => impl.unequipItem(...a);
-export const depositLoot = (...a) => impl.depositLoot(...a); // victory loot deposit (grab-tractor-drops)
-// Authentication (DECISIONS §11)
-export const getPlayerPublic = (...a) => impl.getPlayerPublic(...a);
-export const setUsername = (...a) => impl.setUsername(...a);
-export const findPlayerForLogin = (...a) => impl.findPlayerForLogin(...a);
-export const emailInUse = (...a) => impl.emailInUse(...a);
-export const registerAccount = (...a) => impl.registerAccount(...a);
-export const setVerifyToken = (...a) => impl.setVerifyToken(...a);
-export const verifyEmailToken = (...a) => impl.verifyEmailToken(...a);
-export const createSession = (...a) => impl.createSession(...a);
-export const getSessionPlayer = (...a) => impl.getSessionPlayer(...a);
-export const deleteSession = (...a) => impl.deleteSession(...a);
-export const setResetToken = (...a) => impl.setResetToken(...a);
-export const consumeResetToken = (...a) => impl.consumeResetToken(...a);
-export const deleteSessionsForPlayer = (...a) => impl.deleteSessionsForPlayer(...a);
