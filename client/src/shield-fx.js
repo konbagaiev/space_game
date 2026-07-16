@@ -7,9 +7,10 @@
 import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G } from './state.js';
+import { SHIELD_RADIUS } from './collision.js';
 
 const MAX_IMPACTS = 6;                          // concurrent ripples (round-robin ring buffer)
-const RADIUS = 4.0;                             // bubble radius — encloses the ship (SHIP_MODEL_LEN ≈ 3.4); tune live
+const RADIUS = SHIELD_RADIUS;                   // bubble radius — the same sphere shots are intercepted on (collision.js); encloses the ship (SHIP_MODEL_LEN ≈ 3.4)
 const SHIELD_COLOR = new THREE.Color(0x36d1dc); // active (blue) shield tint — matches the HUD bar gradient
 const BREAK_COLOR = new THREE.Color(0xdff6ff);  // brighter near-white for the breaking hit
 

@@ -12,6 +12,10 @@ import { applyPlayerDamage } from './components.js';
 
 const LEGACY_R = 2.6; // primitive/cone fallback radius (the historical single-sphere hit radius), ×sizeScale
 
+// Shield bubble radius (world units) — the sphere an ACTIVE shield intercepts hostile shots on. MUST match
+// the drawn bubble in shield-fx.js (which imports this) so the impact FX land exactly on the visible sphere.
+export const SHIELD_RADIUS = 4.0;
+
 // World broad-phase radius. Modeled ships → broadR (group-local) × world scale; primitives → legacy 2.6×sizeScale.
 export function broadRadius(ship) {
   const sc = ship.mesh.scale.x || 1;
@@ -72,8 +76,35 @@ function segDistSq(p0, p1, c) {
   return ex * ex + ey * ey + ez * ez;
 }
 
+// Entry point where the movement segment [p0,p1] (world) first crosses the sphere of radius R centered at c —
+// the shield-bubble interception. Writes the world entry point into `out` and returns true on a crossing
+// (t∈[0,1]); if p0 already sits inside the sphere the impact is clamped to p0 (t=0). THREE-free. Standard
+// ray-sphere: solve |p0 + t·d − c|² = R² and take the near root that lands on this frame's step.
+function segmentSphereHit(p0, p1, c, R, out) {
+  const dx = p1.x - p0.x, dy = p1.y - p0.y, dz = p1.z - p0.z;
+  const fx = p0.x - c.x, fy = p0.y - c.y, fz = p0.z - c.z;
+  const a = dx * dx + dy * dy + dz * dz;
+  const cc = fx * fx + fy * fy + fz * fz - R * R;
+  let t;
+  if (a < 1e-12) {                 // zero-length step: hit only if p0 is already inside the sphere
+    if (cc > 0) return false;
+    t = 0;
+  } else {
+    const b = 2 * (fx * dx + fy * dy + fz * dz);
+    const disc = b * b - 4 * a * cc;
+    if (disc < 0) return false;    // the segment's line misses the sphere entirely
+    const t0 = (-b - Math.sqrt(disc)) / (2 * a); // near (entry) root
+    if (t0 >= 0 && t0 <= 1) t = t0;
+    else if (cc <= 0) t = 0;       // p0 started inside the sphere → impact at the segment start
+    else return false;             // sphere lies before or after this frame's step
+  }
+  out.x = p0.x + t * dx; out.y = p0.y + t * dy; out.z = p0.z + t * dz;
+  return true;
+}
+
 // reused scratch buffers (single-threaded; avoids per-call allocation in the hot projectile loop)
 const _tmp = [0, 0, 0];
+const _shieldImpact = { x: 0, y: 0, z: 0 }; // segmentSphereHit entry point, read by the caller before reuse
 const _wu0 = [0, 0, 0], _wu1 = [0, 0, 0], _wu2 = [0, 0, 0];
 const _a0 = [0, 0, 0], _a1 = [0, 0, 0], _H = [0, 0, 0];
 
@@ -136,14 +167,26 @@ export function segmentHitsShip(ship, p0, p1, pad = 0) {
 // path (applyPlayerDamage). Deliberately side-effect-free, RNG-free and THREE-free — it mutates ONLY the
 // passed-in `player` and never touches scene/audio/FX or the seeded sim RNG — so it is unit-testable under
 // `node --test` and record/playback stays deterministic. The caller (sim.update) owns the scene.remove /
-// hit-flash / shield-ripple / SFX and the range-based bullet culling. Returns:
-//   { hit, damageResult, remove }
-//   hit          — the segment connected with the player hull
+// hit-flash / shield-ripple / SFX and the range-based bullet culling. While the shield is UP the shot is
+// intercepted on the bubble SPHERE (radius SHIELD_RADIUS) instead of the hull, so the impact — bullet removal,
+// hit-flash and ripple — lands on the shield surface, not the ship inside it; a broken/absent shield falls
+// back to the swept hull test (bullets reach the ship as before). Returns:
+//   { hit, damageResult, remove, impact }
+//   hit          — the shot connected (with the shield sphere while up, else the hull)
 //   damageResult — the { absorbed, broke } contract from applyPlayerDamage (null when no hit), so the caller
 //                  can spawn the cyan shield ripple at the impact point
 //   remove       — whether this hit consumes the bullet (true on any hit; range culling stays in sim.update)
+//   impact       — the world point to place the impact FX at: the sphere-entry point when the shield caught it,
+//                  else null (caller uses the bullet's own position, i.e. the hull). Reused scratch — read it
+//                  before the next call. THREE-free.
 export function resolveHostileBulletHit(player, p0, p1, damage) {
-  if (!segmentHitsShip(player, p0, p1)) return { hit: false, damageResult: null, remove: false };
+  if (player.shield && player._shieldValue > 0) {
+    if (!segmentSphereHit(p0, p1, player.mesh.position, SHIELD_RADIUS, _shieldImpact))
+      return { hit: false, damageResult: null, remove: false, impact: null };
+    const damageResult = applyPlayerDamage(player, damage);
+    return { hit: true, damageResult, remove: true, impact: _shieldImpact };
+  }
+  if (!segmentHitsShip(player, p0, p1)) return { hit: false, damageResult: null, remove: false, impact: null };
   const damageResult = applyPlayerDamage(player, damage);
-  return { hit: true, damageResult, remove: true };
+  return { hit: true, damageResult, remove: true, impact: null };
 }

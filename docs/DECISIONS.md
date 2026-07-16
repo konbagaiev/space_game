@@ -2392,6 +2392,21 @@ rule that governs all cosmetic frame work, per the record/playback design). `app
 `components.js` and made to return `{ absorbed, broke }` so the trigger contract is unit-tested rather than
 buried in the FX path. Scoped to the **base/starter shield** for now; higher shield tiers can diverge later.
 Cross-ref §66 (shield mechanics), §30 (keep it simple — no asset pipeline for a shader we can write).
+
+**Follow-up (2026-07-16): intercept the shot ON the sphere, not just draw the ripple there.** The FX above
+computed the ripple *direction* from the impact point but the collision still resolved against the **hull**,
+so the bullet flew through the visible bubble and its hit-flash spawned at the ship inside it — the shield
+didn't read as *stopping* the shot. Fixed by making the hitbox match the bubble **while the shield is up**:
+`resolveHostileBulletHit` now swept-tests the shot against the shield **sphere** (`SHIELD_RADIUS`, exported
+from `collision.js` and imported by `shield-fx.js` for the drawn geometry — one source of truth) and returns
+the sphere-entry `impact` point; `sim.js` snaps the bullet there before the hit-flash + ripple, so both land
+on the sphere surface. A **broken/absent** shield still falls back to the hull swept test (unchanged reach).
+This is a **sim/collision** change, not pure FX: while shielded the effective hitbox is the radius-4 sphere
+(wider and rounder than the hull OBB), so a few near-misses are now caught by the shield — a deliberate,
+readable "the field is bigger than the ship" trade. We kept the sphere test pure/THREE-free (a standard
+ray-sphere) so it stays unit-tested and record/playback deterministic, and **verified the recorded Level-0
+intro still wins and reaches the Level-1 briefing** under the wider shielded hitbox (headless playback) — the
+mandatory sim-change check (a collision change re-runs through the intro/replays).
 ---
 
 ## 69. Music is too loud → a baked `MUSIC_TRIM = 0.5` on the bus, not a lower slider default or remaster

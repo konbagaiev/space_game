@@ -5,6 +5,18 @@
 
 ## 2026-07-16
 
+- **Shield hits land ON the bubble sphere, not on the hull inside it.** While a shield is UP, an incoming
+  hostile shot is now intercepted on the shield **sphere** (radius `SHIELD_RADIUS = 4`, the same sphere
+  `shield-fx.js` draws) instead of the ship hull — the bullet stops at the sphere surface and its hit-flash +
+  cyan ripple appear there, so the shield visibly *blocks* the shot rather than letting it reach the ship. A
+  **broken/absent** shield falls back to the swept hull test exactly as before (bullets reach the ship). Net
+  effect while shielded: the effective hitbox is the (slightly larger, rounder) bubble sphere, so a few shots
+  that would have flown just past the hull are now caught by the shield. Implemented in `collision.js`
+  (`resolveHostileBulletHit` gains an `impact` return = the sphere-entry point via a new pure ray-sphere
+  `segmentSphereHit`; `SHIELD_RADIUS` is exported and `shield-fx.js` imports it so FX-sphere and hitbox share
+  one source of truth); `sim.js` snaps the bullet to `res.impact` before spawning the hit-flash/ripple. +4
+  unit tests. Verified the recorded Level-0 intro re-sim still wins and reaches the Level-1 briefing with the
+  wider shielded hitbox (headless playback). See DECISIONS §68.
 - **Fix: enemy bullets dealt no damage and stuttered the frame.** `applyPlayerDamage` was called but not
   imported in `sim.js` after the shield-ripple refactor (commit 51eec94, which moved it from `projectiles.js`
   to `components.js`), so every hostile-bullet→player hit threw a `ReferenceError` that aborted the rest of

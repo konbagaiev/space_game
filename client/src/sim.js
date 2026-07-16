@@ -533,6 +533,7 @@ export function update(dt) {
       const res = resolveHostileBulletHit(G.player, _bulletP0, b.mesh.position, b.damage);
       if (res.hit) {
         hit = true;
+        if (res.impact) b.mesh.position.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
         if (res.damageResult.absorbed) spawnShieldHit(b.mesh.position, res.damageResult.broke); // cyan ripple where the shot connects with the shield
         audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
       }

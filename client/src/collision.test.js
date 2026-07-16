@@ -216,6 +216,32 @@ test('resolveHostileBulletHit: with a shield, damage is absorbed shield-first (r
   assert.deepEqual(r.damageResult, { absorbed: true, broke: false });
 });
 
+test('resolveHostileBulletHit: an ACTIVE shield intercepts on the sphere and reports the surface impact point', () => {
+  const p = hostilePlayer({ shield: true, _shieldValue: 20 }); // sphere radius 4 at the origin
+  const r = resolveHostileBulletHit(p, V(-6, 0, 0), V(0, 0, 0), 5); // approaches +X from outside the sphere
+  assert.equal(r.hit, true);
+  assert.ok(r.impact, 'impact point returned so the FX land ON the sphere, not at the hull');
+  assert.ok(Math.abs(r.impact.x + 4) < 1e-9, 'entry point is the −X face of the radius-4 sphere');
+  assert.ok(Math.abs(r.impact.y) < 1e-9 && Math.abs(r.impact.z) < 1e-9);
+});
+
+test('resolveHostileBulletHit: an ACTIVE shield catches a shot the tight hull would MISS (sphere is wider)', () => {
+  // y=3.5 is outside the 2.6 broad hull sphere but inside the radius-4 shield sphere → caught by the shield.
+  const p = hostilePlayer({ shield: true, _shieldValue: 20 });
+  const r = resolveHostileBulletHit(p, V(-3, 3.5, 0), V(3, 3.5, 0), 5);
+  assert.equal(r.hit, true);
+  assert.equal(p._shieldValue, 15);
+});
+
+test('resolveHostileBulletHit: a BROKEN shield (value 0) falls back to the hull test — a wide shot misses', () => {
+  // Same off-plane shot as above, but with the shield down it must revert to the tight hull sphere and miss.
+  const p = hostilePlayer({ shield: true, _shieldValue: 0 });
+  const r = resolveHostileBulletHit(p, V(-3, 3.5, 0), V(3, 3.5, 0), 5);
+  assert.equal(r.hit, false);
+  assert.equal(r.impact, null);
+  assert.equal(r.remove, false);
+});
+
 test('resolveHostileBulletHit: a segment that misses the hull does nothing and does not consume the bullet', () => {
   const p = hostilePlayer();
   const r = resolveHostileBulletHit(p, V(-3, 5, 0), V(3, 5, 0), 12); // 5 units off-plane → outside the 2.6 sphere
