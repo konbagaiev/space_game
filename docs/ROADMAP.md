@@ -126,6 +126,22 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
   have a head start: the pure logic is extracted into `client/src/*.js` (`components.js`, `steering.js`),
   which is groundwork for a shared/server simulation. This path keeps the "open in browser, no install"
   advantage and is well-suited to **co-op (PvE)**.
+- **Client-side head start — the "ghost battle" is already a remote-entity renderer.** In MP, ships NOT
+  controlled by this client are driven by a **server stream of transforms** (position / orientation /
+  velocity / turn-rate) that the client **interpolates** in real time. That is a *remote-entity renderer,
+  not a second sim* — no AI / spawn / collision decisions for those ships, just "apply transform + smooth"
+  — so it costs **"more objects on screen," not 2× sim**. The current `client/src/ghost-battle.js` (the
+  distant ambient "ghost battle" that lerps a committed transform track, `backdrop-battle.js`) is **already
+  a primitive of exactly this**: a transform-stream interpolator. **Planned convergence (its own branch,
+  taken up with MP):** make the "battle recording" format a stand-in for the **server stream format** and
+  unify the backdrop + MP remote-entity render into **one path** (plus richer fidelity — real bullets/FX),
+  so the freighter/truck backdrop battle becomes remote-controlled entities fed by a recording. Projectiles
+  stay client-side for now (consistent with "Don't stream bullets" below). This reframes the earlier "rip
+  out the backdrop lerp and re-play it on the engine" idea: the lerp is not thrown away — it **evolves into
+  the networked remote-entity renderer**. Why not a *true* concurrent second live sim instead: `sim.js
+  update()` mutates ~20 module-level singletons (`G`, `enemies`, `bullets`, `drops`, …) with no world
+  context, so a second sim would mean instancing the whole core — the remote-entity path avoids that.
+  **Until that branch, the existing backdrop battle stays exactly as-is.**
 - **Godot only if/when fast competitive PvP needs it.** The browser's transport ceiling is WebSocket
   (TCP) / WebRTC; real-time PvP wants UDP/ENet, which only a native (downloaded) client gives — that's
   the real reason to reconsider Godot (DECISIONS §1), at the cost of the frictionless browser client.
