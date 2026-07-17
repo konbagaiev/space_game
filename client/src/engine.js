@@ -65,7 +65,7 @@ applyOrientation(); // correct the initial portrait sizing before the first fram
 
 // --- camera zoom: scale the offset toward/away along its fixed angle (smaller = closer/zoom-in).
 //     Input sets a target; camZoom eases toward it over ~ZOOM_SMOOTH s so zoom feels smooth, not snappy. ---
-const ZOOM_MIN = 0.6, ZOOM_MAX = 2.2;   // closest / farthest multiples of CAM_OFFSET
+const ZOOM_MIN = 0.35, ZOOM_MAX = 3.5;  // closest / farthest multiples of CAM_OFFSET
 const ZOOM_SMOOTH = 0.2;                // seconds to (almost) reach a new zoom target
 export const camOffset = CAM_OFFSET.clone();   // effective offset used by the follow code (eased toward the target)
 const clampZoom = z => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));

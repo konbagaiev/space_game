@@ -169,7 +169,7 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   vertically centered — unchanged). **Mobile:** the buttons (**top-right, a vertical `＋/−` column under the
   Destroyed X/Y counter** — clear of the bottom-center Return-to-base button; `body.touch #zoom` override) +
   two-finger **pinch**. Zoom scales the fixed
-  camera offset along its angle within `0.6–2.2×`, **eases smoothly** toward the target (~0.2 s, frame-rate
+  camera offset along its angle within `0.35–3.5×`, **eases smoothly** toward the target (~0.2 s, frame-rate
   independent) instead of snapping, and is **persisted** across runs (`localStorage` key `camZoom`). On touch
   the `+`/`−` buttons fire on **`touchstart`** (like FIRE/🚀), not a synthesized `click`, and sit `z-index:6`
   above the full-screen stick zone — so they (and two-finger pinch) stay usable **during active flight**

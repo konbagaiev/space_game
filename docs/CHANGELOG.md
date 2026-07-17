@@ -5,6 +5,10 @@
 
 ## 2026-07-16
 
+- **Wider camera zoom range.** The zoom clamp widened from `0.6–2.2×` to `0.35–3.5×` of the fixed camera
+  offset (`ZOOM_MIN`/`ZOOM_MAX` in `engine.js`) — you can now zoom in noticeably closer and pull out much
+  farther via the wheel / ＋−  buttons / pinch. No change to smoothing or persistence.
+
 - **Shield hits land ON the bubble sphere, not on the hull inside it.** While a shield is UP, an incoming
   hostile shot is now intercepted on the shield **sphere** (radius `SHIELD_RADIUS = 4`, the same sphere
   `shield-fx.js` draws) instead of the ship hull — the bullet stops at the sphere surface and its hit-flash +
