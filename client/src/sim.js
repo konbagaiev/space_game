@@ -4,7 +4,7 @@
 // imports the leaves (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported
 // only by the composition root (the inline script / main). It never imports the loop's callers.
 import * as THREE from 'three';
-import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
@@ -12,6 +12,7 @@ import { repairTick, shieldRecharge } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, spawnShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
+import { updateFlipbooks } from './flipbook-fx.js';
 import { spawnShieldReady } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
@@ -647,6 +648,9 @@ export function update(dt) {
     }
   }
 
+  // --- flipbook (sprite-sheet) explosions: advance frame, fade + drop when finished ---
+  updateFlipbooks(dt);
+
   // --- engine trail: particles fly backward, fade out and shrink ---
   for (let i = trail.length - 1; i >= 0; i--) {
     const p = trail[i];
@@ -844,6 +848,8 @@ export function reset() {
   sparks.length = 0;
   for (const w of shockwaves) { scene.remove(w.mesh); w.mesh.material.dispose(); }
   shockwaves.length = 0;
+  for (const fb of flipbooks) { scene.remove(fb.mesh); fb.mat.dispose(); }
+  flipbooks.length = 0;
   creditPopups.length = 0; // DOM-only, no scene meshes to dispose
   clearDrops(); // remove drop meshes + the pull line; DISCARD any uncollected/un-deposited loot on a fresh run
   clearEventLog(); // start a fresh run with an empty event log

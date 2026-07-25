@@ -1,6 +1,7 @@
-// Ship-destruction burst: layered fireball + sparks + shockwave, sized by the ship and tinted
-// by its engine's exhaust color. Asserts the construction (counts, scale ratio, colors) rather
-// than pixels, then saves a frame at full bloom.
+// Ship-destruction burst: a flipbook (sprite-sheet) fireball + sparks + shockwave, sized by the ship.
+// The sparks + ring are tinted by the engine's exhaust color; the flipbook carries its own baked fire.
+// Asserts the surviving construction (spark count + shockwave scale ratio) rather than pixels, then
+// saves a frame at full bloom.
 export const name = '02-ship-explosion';
 
 export default async function ({ page, assert, shot }) {
@@ -24,13 +25,11 @@ export default async function ({ page, assert, shot }) {
     };
   });
 
-  // each burst = 4 fireball layers + 22 sparks + 1 shockwave
-  assert.equal(data.addedExplosions, 8, 'two bursts add 8 fireball layers');
+  // The fireball is now ONE flipbook (sprite-sheet) quad per burst (flipbook-fx.js), not the old 4
+  // additive spheres — so a burst no longer feeds the `explosions` pool. Sparks + shockwave remain:
+  // each burst = 22 sparks + 1 shockwave.
   assert.equal(data.addedSparks, 44, 'two bursts add 44 spark particles');
   assert.deepEqual(data.shockwaveScales, [22, 44], 'shockwave radius scales with ship size (22 and 2×22)');
-  // the exhaust-colored glow layer carries the engine's color
-  assert.ok(data.explosionColors.includes(data.playerExhaust), 'a layer uses the player exhaust color');
-  assert.ok(data.explosionColors.includes(data.heavyExhaust), 'a layer uses the heavy exhaust color');
 
   await page.waitForTimeout(900); // let the fireball bloom
   await shot('bloom');

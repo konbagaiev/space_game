@@ -2501,6 +2501,29 @@ field, and **deliberately left the backdrop procedural**.
 Note the asteroids stay **non-collidable decor** (like before) — "solid asteroids with bounce" remains a
 separate future idea.
 
+## 72. The `/v2` experimental sandbox is a SUBPATH on shared prod DB — safe only because it is client-only
+
+We want a live, shareable URL to prototype the FX-polish visuals ("juicier" shots/hits/explosions) and
+test them on a real weak phone (a Galaxy A03s), without risking production. Two axes were decided:
+**subpath `vega.tenony.com/v2`** (over a `v2.` subdomain) and **shared production Postgres** (over a
+separate `spacegame_v2` DB). See `docs/plans/v2-experimental-branch.md` for the build brief.
+
+- **Why subpath over subdomain.** Same origin → the v2 client shares the prod cookie/session and its
+  `fetch('/api/...')` is an **absolute-from-root** path (`API_BASE = ''`), which has no `/v2` prefix, so
+  Traefik routes it to the **production `app` container** with **no CORS and no second backend**. Only the
+  static client files under `/v2` are served by a separate `app-v2` container (Traefik `PathPrefix(/v2)` +
+  StripPrefix). A subdomain would have made `/api` cross-origin (solvable via our existing Origin-reflecting
+  CORS + Bearer auth, like the itch build) but for no benefit here — the subpath is strictly simpler.
+- **Why shared prod DB is acceptable — and the load-bearing constraint.** It is acceptable **only because
+  v2 is a hard client-only branch**: no `server/` code, no API/schema/migration changes, no
+  `catalog_seed.js` changes, no persisted-sim changes. The in-scope FX work is **pure render** (particle
+  emitters, materials, post-processing) — it touches no sim RNG and no persisted state — so sharing the
+  live DB lets us test on our real account with zero data risk. If an experiment ever needs a server or
+  schema change it does **not** belong on `/v2`: promote it to a normal `feature-pipeline` branch first.
+  The accepted downside of the subpath choice: the `app-v2` router lives in the same Traefik/compose, so
+  standing v2 up is a (one-time) touch of the prod host — but the prod `app` service itself is never
+  modified, and v2 is disposable (drop the container → prod is untouched).
+
 ## Future ideas
 
 solid asteroids with bounce ·

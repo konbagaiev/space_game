@@ -77,6 +77,7 @@ export const creditPopups = []; // floating "+xx" credit-gain popups at enemy de
 export const trail = [];   // engine exhaust puffs
 export const rockets = [];
 export const smoke = [];    // rocket smoke trails
+export const flipbooks = []; // sprite-sheet explosion quads (flipbook-fx.js) { mesh, mat, frame, fps }
 
 // --- Combatants ---
 export const enemies = [];

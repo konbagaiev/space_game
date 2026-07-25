@@ -9,6 +9,8 @@ import { audio, sfxFor } from './sound-routing.js';
 import { pointHitsShip } from './collision.js';
 import { applyPlayerDamage } from './components.js';
 import { registerShieldImpact } from './shield-fx.js';
+import { spawnFlipbookExplosion } from './flipbook-fx.js';
+import { makeBolt } from './bolt-fx.js';
 
 // applyPlayerDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -26,15 +28,29 @@ export function spawnShieldHit(pos, broke = false) {
 export const bulletGeo = new THREE.SphereGeometry(0.28, 8, 8);
 
 export function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
-  const mat = new THREE.MeshBasicMaterial({ color: weapon.projectileColor });
-  const m = new THREE.Mesh(bulletGeo, mat);
-  m.position.copy(from);
-  scene.add(m);
   // velocity = projectile speed along the nose + ship velocity (inherited)
   const vel = dir.clone().normalize().multiplyScalar(weapon.projectileSpeed);
   if (shooterVel) vel.add(shooterVel);
+  // Kinetic fire = a glowing, travel-aligned energy bolt + a quick muzzle flash at the barrel; other
+  // classes keep the plain sphere. Both are a single Mesh with one material (disposed on despawn in
+  // sim.js). No Math.random → replay-safe (bolt orientation is derived from the constant velocity).
+  let m;
+  if (weapon.class === 'kinetic') {
+    m = makeBolt(weapon.projectileColor, vel);
+    spawnMuzzleFlash(from, weapon.projectileColor);
+  } else {
+    m = new THREE.Mesh(bulletGeo, new THREE.MeshBasicMaterial({ color: weapon.projectileColor }));
+  }
+  m.position.copy(from);
+  scene.add(m);
   // despawn by distance traveled (maxRange), not time
   bullets.push({ mesh: m, vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power, class: weapon.class });
+}
+
+// Quick bright additive pop at the gun barrel on each kinetic shot — reuses the micro-explosion flash
+// (round, short-lived), tinted by the weapon color to match the bolt.
+function spawnMuzzleFlash(pos, color) {
+  spawnExplosion(pos, 1.7, 0.06, color);
 }
 
 // Scale a particle count by the current graphics tier (additive overdraw is the mobile fill-rate
@@ -83,12 +99,10 @@ const shockGeo = new THREE.RingGeometry(0.78, 1, 28); // unit ring, scaled up as
 
 export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, ringY = BULLET_PLANE_Y) {
   const s = sizeScale; // scales every spatial dimension to the ship's size
-  // Layered fireball: each layer bigger, dimmer-colored and slower than the last. The
-  // second layer glows in the engine's exhaust color (the destroyed engine's signature).
-  spawnExplosion(pos, 5 * s, 1.05, 0xffffff);     // white-hot flash core (always)
-  if (G.gfx.particleScale >= 0.7) spawnExplosion(pos, 8 * s, 1.8, exhaustColor);  // exhaust-colored glow (engine signature)
-  if (G.gfx.particleScale >= 0.7) spawnExplosion(pos, 11 * s, 2.55, 0xffc040);    // orange fireball
-  spawnExplosion(pos, 14 * s, 3.75, 0xff3a18);    // red outer cloud (always) — lower tiers drop the 2 middle layers (overdraw)
+  // Fireball: a single flipbook (sprite-sheet) quad — one draw call, one shared texture — replaces the
+  // old stack of 4 additive fireball spheres. The sparks + shockwave below stay (they add outward
+  // motion the flat flipbook lacks). See flipbook-fx.js + DECISIONS §72 (v2 FX-polish sandbox).
+  spawnFlipbookExplosion(pos, s);
 
   // Radial spark spray: warm embers + a few in the engine's exhaust color, flung outward.
   // Clamp to the live-particle budget so a death mid-fight can't blow past the ceiling on the lowest tier.

@@ -3,6 +3,77 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-25
+
+- **FX polish shipped to prod + itch: flipbook explosions + kinetic energy bolts.** Two visual upgrades,
+  prototyped in the `/v2` sandbox and now promoted to `main`/production and re-published to itch.io:
+  1. **Flipbook (sprite-sheet) ship-death fireball** (`client/src/flipbook-fx.js`) — a single
+     camera-facing quad that plays a procedurally-baked explosion animation (~0.78 s) replaces the old
+     stack of 4 additive fireball spheres in `spawnShipExplosion`. Sparks + shockwave ring stay. **One
+     draw call per blast + one sprite-sheet texture uploaded once for the session** (vs ~28 meshes
+     before), so it's cheaper on weak phones (the measured draw-call-submit bottleneck, DECISIONS §23)
+     yet reads like a movie fireball.
+  2. **Kinetic energy bolt + muzzle flash** (`client/src/bolt-fx.js`) — kinetic bullets render as a
+     travel-aligned additive glow bolt (hot core + soft rim, one shared glow texture) laid on the combat
+     plane instead of a flat opaque sphere, and each shot pops a quick tinted muzzle flash at the barrel.
+     `spawnBullet` branches on `weapon.class`; other classes keep the sphere. One draw call per shot.
+
+  Both are **pure render** — no sim/RNG/economy/schema changes — so the intro cutscene + `?playback`
+  replays stay deterministic (verified: client unit tests 183/0; the sim RNG draw sequence is unchanged).
+  New `flipbooks` pool in `state.js` (advanced in `sim.update()`, cleared in `reset()`). The
+  `02-ship-explosion` visual scenario was updated to assert the surviving sparks + shockwave (the fireball
+  no longer feeds the `explosions` pool). Deployed to prod via the normal `main` CI/CD + `publish-itch`.
+
+- **Multiplayer architecture brief written (docs only, no code, nothing decided).** New
+  `docs/plans/multiplayer-architecture.md` audits the current code against the parked Phase 5 netcode
+  notes and lays out a sequenced path to **server-authoritative co-op**: what already helps (mission
+  scripts + catalog are already server-side; `?record`/`?playback` is already an input-stream protocol;
+  `ghost-battle.js` is already a remote-entity interpolator; the THREE-free pure modules), and the four
+  real blockers (sim state lives inside Three.js objects, `sim.js` mixes sim + FX + DOM + network, the
+  world is a module-level singleton in `state.js`, and the economy is client-authoritative). Phases:
+  throwaway feel-check spike → **decouple the sim from Three.js/DOM/audio/net into `shared/sim/`** (the
+  bulk of the cost, single-player, guarded by the intro-trace/replay/bench oracle) → run it headless in
+  Node + seal the economy server-side → `ws` transport + rooms (one room per worker process) →
+  prediction/reconciliation + generalized remote-entity renderer → the MP-only game rules (pause per
+  DECISIONS §16, loot attribution, victory condition, disconnects) → ops (blue-green deploys currently
+  kill live sockets). Open decisions are listed in the brief; PvP is explicitly out of scope.
+
+- **`/v2` experimental client sandbox is LIVE + deploy architecture documented.** A client-only
+  visual-FX sandbox is now serving at **https://vega.tenony.com/v2** — a standalone `nginx:alpine`
+  container (`docker-compose.v2.yml`, `deploy/v2/*` on the new `v2` git branch) that Traefik routes via
+  `Host(vega.tenony.com) && PathPrefix(/v2)` (priority 100, trailing-slash redirect + StripPrefix). It
+  shares the **production `/api` + Postgres** for free (bare `/api` calls carry no `/v2` prefix, so they
+  fall through to the prod `app` container) and joins only the `proxy` network — **the prod `app`
+  service/router are untouched**. Hard rule: `v2` changes the **client only** (no server/schema/catalog/
+  sim), so sharing the live DB carries no data risk. Verified: `/v2/` 200, assets + models 200, prod
+  unaffected. Auto-deploy CI on push to `v2` is still TODO (redeploy is manual rsync + compose-up).
+  `docs/SUMMARY.md` Deployment & CI/CD section now spells out the **single-origin serving** model — one
+  Node container serves the static client (`express.static(clientDir)`, `client/` baked into the Docker
+  image) *and* the `/api` on port 4000, the client reaching the API via a baked same-origin `API_BASE`
+  (`client/src/api-base.js`) — and the **full CI deploy pipeline** (assets-check → assets-pull → rsync to
+  `/opt/projects/spacegame/` → `docker compose build --build-arg GIT_SHA` → `docker rollout` blue-green →
+  `/api/health` smoke check with legacy-host fallback → optional Sentry release). New build brief
+  `docs/plans/v2-experimental-branch.md` + **DECISIONS §72** record a planned **`vega.tenony.com/v2`**
+  sandbox for FX-polish visual experiments: **subpath** (same origin, so `/api` + prod DB are shared for
+  free), **shared production Postgres**, and a **hard client-only rule** (no server/schema/catalog/sim
+  changes — the FX work is pure render, so sharing the live DB carries no data risk).
+
+## 2026-07-17
+
+- **Dev diagnostics no longer leak onto touch devices.** Two fixes so a phone/tablet that once opened
+  `?dev` (e.g. to collect low-end perf telemetry) doesn't get stuck with dev UI:
+  1. **`?dev` is now non-sticky on touch** — `evalDevForDevice` (`client/src/dev.js`) ignores (and never
+     writes) `localStorage['devMode']` when `Device.input === 'touch'`, so dev diagnostics — the top-center
+     **FPS/triangles perf overlay** *and* the `devPerf` telemetry — are on **only** while an explicit truthy
+     `?dev` is in the current URL. This kills the "FPS/tris sometimes visible in normal play" leak (the
+     sticky flag survived from an earlier `?dev` visit). Desktop keeps the sticky flag unchanged.
+  2. **The right-docked lil-gui panels are never built on touch** — the `?tune` palette/**colors** panel and
+     the `?dev` **"Backdrop authoring" record/sliders** panel are gated behind `Device.input !== 'touch'` in
+     `main.js` bootstrap; they're mouse-only tools that just clutter a phone screen. Under an explicit `?dev`
+     on touch the perf overlay still shows — only these panels are suppressed.
+  Regression guard: `dev.test.js` covers touch ignoring a stuck sticky flag + honoring (but not persisting)
+  an explicit `?dev`. Quick unblock for anyone already stuck: open `/?dev=false` once.
+
 ## 2026-07-16
 
 - **Wider camera zoom range.** The zoom clamp widened from `0.6–2.2×` to `0.35–3.5×` of the fixed camera
