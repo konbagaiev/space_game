@@ -3,6 +3,13 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-26
+
+- **HUD "credits X/Y earned" font no longer oversized.** The top-right credits readout used
+  `.bigval` (26px / weight 700) — nearly double every other HUD readout, so it read as gigantic. Dropped
+  to **14px / weight 600**, matching the sibling `#hppct` readout (14px) and the rest of the HUD scale.
+  CSS-only (`.bigval` is used only by `#credits`).
+
 ## 2026-07-25
 
 - **FX polish shipped to prod + itch: flipbook explosions + kinetic energy bolts.** Two visual upgrades,
