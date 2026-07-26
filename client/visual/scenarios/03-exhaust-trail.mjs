@@ -36,7 +36,7 @@ export default async function ({ page, assert, shot }) {
 
   assert.equal(data.attached, data.enemyCount, 'every thrusting enemy has an attached exhaust plume');
   assert.ok(data.maxThrottle > 0, `a thrusting enemy plume faded in (throttle ${data.maxThrottle} > 0)`);
-  assert.equal(data.mode, 'points', 'the global exhaust look defaults to the point plume');
+  assert.equal(data.mode, 'flame', 'the global exhaust look defaults to the flame plume');
   const usesEnemyColor = data.colors.some((c) => data.enemyExhausts.includes(c));
   assert.ok(usesEnemyColor, `plume uses an enemy exhaust color (saw ${data.colors.map((c) => '0x' + c.toString(16))})`);
 

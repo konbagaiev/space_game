@@ -16,6 +16,7 @@
 // hash(i) (exhaust-config.js). Pure render: nothing touches sim/damage/collision/economy or the seeded
 // stream, so recorded replays/intro re-sim bit-identical (DECISIONS §73/§74).
 import * as THREE from 'three';
+import { scene } from './engine.js';
 import { G } from './state.js';
 import { EXHAUST_DEFAULTS, SHIP_DEFAULTS, hash, plumeCfg, decayThrottle, derivePalette } from './exhaust-config.js';
 
@@ -109,7 +110,7 @@ const FLAME_VERT = /* glsl */`
   void main() {
     float along = uv.y;                 // 0 at the nozzle .. 1 at the tip
     float across = position.x;          // -0.5 .. 0.5 across the plume
-    float taper = 1.0 - along * 0.6;    // narrow toward the tip
+    float taper = 1.0 - along * 0.75;   // narrow sharply toward the tip (a pointed jet tongue)
     vec3 p = uOrigin + vec3(across * uSpread * 2.0 * taper, 0.0, -along * uLen);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
     vUv = uv;
@@ -120,15 +121,21 @@ const FLAME_FRAG = /* glsl */`
   uniform vec3 uColHot, uColMid, uColEnd;
   varying vec2 vUv;
   void main() {
-    float t = vUv.y;
-    vec3 col = t < 0.5 ? mix(uColHot, uColMid, t / 0.5)
-                       : mix(uColMid, uColEnd, (t - 0.5) / 0.5);
-    // two cheap sin octaves scrolling down the length → a flickering flame body (no texture-fetch loop)
-    float n1 = sin((t * 9.0 - uTime * uSpeed * 4.0) + sin(vUv.x * 12.0) * 1.5);
-    float n2 = sin((t * 17.0 - uTime * uSpeed * 6.3) + 2.0);
-    float n = 0.5 + 0.35 * n1 + 0.15 * n2;
-    float edge = 1.0 - abs(vUv.x - 0.5) * 2.0;          // 0 at the side edges, 1 at the centerline
-    float a = edge * (1.0 - t) * n * uThrottle * uSoft;
+    float t = vUv.y;                                    // 0 nozzle .. 1 tip
+    // weight the gradient toward the HOT color: a jet is a bright hot core, brief orange, quick to dark
+    vec3 col = t < 0.35 ? mix(uColHot, uColMid, t / 0.35)
+                        : mix(uColMid, uColEnd, (t - 0.35) / 0.65);
+    // fast flicker: sin octaves scrolling down the length (no texture-fetch loop). Higher freq + higher
+    // time multipliers than points → an intense, rapidly-churning jet (not a slow shimmer).
+    float n1 = sin((t * 11.0 - uTime * uSpeed * 9.0) + sin(vUv.x * 14.0) * 1.6);
+    float n2 = sin((t * 23.0 - uTime * uSpeed * 14.0) + 2.0);
+    float n = 0.78 + 0.16 * n1 + 0.06 * n2;             // high floor → dense/solid body, not gappy
+    float across = abs(vUv.x - 0.5) * 2.0;              // 0 centerline .. 1 side edge
+    float edge = 1.0 - across;
+    float core = pow(edge, 2.5);                        // tight bright spine down the middle
+    float body = 1.0 - t;                               // fade toward the tip
+    float a = (0.5 * edge + 1.3 * core) * body * n * uThrottle * uSoft;
+    col += uColHot * core * 0.7 * body;                 // additive white-hot center → reads as intense
     gl_FragColor = vec4(col, max(0.0, a));
   }
 `;
@@ -276,8 +283,25 @@ export function makeFreighterExhaust(spec) {
   };
 }
 
-// ---- Ship helper + registry: one plume per ship, parented to the ship mesh (rigidly straight, follows
-// position + yaw for free), built lazily on first thrust and cached on mesh.userData.exhaustPlume. ----
+// ---- Ship helper + registry: one plume per ship, SCENE-parented and tracked to the hull each frame with a
+// yaw LAG (so a fast turn whips the tail behind the ship naturally instead of the rigid tail snapping around
+// with the nose). Built lazily on first thrust and cached on mesh.userData.exhaustPlume. ----
+const _wp = new THREE.Vector3();
+const _wq = new THREE.Quaternion();
+
+// Track a ship plume to its hull: orient with a smoothed yaw lag, then position AT the world-space nozzle.
+// `alpha` in [0,1] is the per-frame slerp toward the hull's orientation (1 = snap, used on attach).
+function syncShipPlume(p, alpha) {
+  const m = p.mesh;
+  if (!m) return;
+  m.getWorldQuaternion(_wq);        // hull's current world orientation (also refreshes its world matrix)
+  if (alpha >= 1) p.obj.quaternion.copy(_wq);
+  else p.obj.quaternion.slerp(_wq, alpha);
+  _wp.set(0, 0, p.tailZ);
+  m.localToWorld(_wp);              // world-space nozzle (includes hull scale + position + rotation)
+  p.obj.position.copy(_wp);
+}
+
 export function attachShipExhaust(mesh, exhaust) {
   const existing = mesh.userData.exhaustPlume;
   if (existing) return existing;
@@ -290,10 +314,13 @@ export function attachShipExhaust(mesh, exhaust) {
   };
   const plume = makePlume(cfg);
   plume.colorHex = exhaust.color;                          // the engine's single exhaust color (test contract)
-  plume.setOrigin(new THREE.Vector3(0, 0, mesh.userData.tailZ ?? -1.6)); // ship-local tail
+  plume.mesh = mesh;                                       // back-ref: the plume tracks this hull each frame
+  plume.tailZ = mesh.userData.tailZ ?? -1.6;               // ship-local nozzle (world-scaled in syncShipPlume)
+  plume.setOrigin(new THREE.Vector3(0, 0, 0));             // obj is world-placed AT the nozzle; plume streams from its own origin
   plume.throttle = 0;                                      // starts invisible; rises with thrust
   plume.setThrottle(0);
-  mesh.add(plume.obj);
+  scene.add(plume.obj);                                    // SCENE-parented (not the hull) so its yaw can lag
+  syncShipPlume(plume, 1);                                 // snap to the hull's current pose (no first-frame pop)
   mesh.userData.exhaustPlume = plume;
   shipPlumes.add(plume);
   return plume;
@@ -308,12 +335,15 @@ export function disposeShipExhaust(mesh) {
 }
 
 // Advance every ship plume: decay its smoothed throttle toward the per-frame target (set by emitExhaust),
-// push it into the shader, then zero the target so a ship that stops thrusting fades out.
+// push it into the shader, track it to the hull with a yaw lag, then zero the target so a ship that stops
+// thrusting fades out. The lag (k) makes the tail trail behind on fast turns instead of snapping rigidly.
 export function updateShipExhaust(dt) {
+  const k = 1 - Math.exp(-8 * dt); // yaw-lag catch-up per frame (higher = snappier; frame-rate independent)
   for (const p of shipPlumes) {
     p.throttle = decayThrottle(p.throttle, p.throttleTarget, dt);
     p.throttleTarget = 0;
     p.setThrottle(p.throttle);
+    syncShipPlume(p, k);
     p.update(dt);
   }
 }

@@ -9,17 +9,17 @@
 // Shipped defaults for the FREIGHTER plume (paste ?dev-tuned values here to change the default look).
 // Freighter reads `spec.exhaust` merged over these (plumeCfg).
 export const EXHAUST_DEFAULTS = {
-  mode: 'points',            // 'points' (a, silhouette-preserving glow points) | 'flame' (b, noise-scroll)
-  count: 90, len: 48, size: 5, speed: 1.4, spread: 3,
-  palette: { hot: 0xfff1c0, mid: 0xff7a2a, end: 0x7a1208 },
-  turbulence: 0.4,           // lateral wobble amount (0 = laminar)
-  softness: 1.0,             // glow edge / alpha falloff multiplier
+  mode: 'flame',             // 'flame' (intense noise-scroll jet, DEFAULT) | 'points' (legacy glow points)
+  count: 90, len: 60, size: 5, speed: 2.2, spread: 2.4,
+  palette: { hot: 0xfff0c0, mid: 0xff6a15, end: 0x4a1000 }, // fiery orange (default until exotic/ion engines)
+  turbulence: 0.4,           // lateral wobble amount (0 = laminar) — points mode only
+  softness: 1.5,             // glow edge / alpha falloff multiplier — freighter runs hotter/denser
 };
 
 // Shipped defaults for the per-SHIP engine plume (smaller than the freighter; palette is derived from the
 // engine's single exhaust color at attach time, so these palette entries are placeholders).
 export const SHIP_DEFAULTS = {
-  count: 24, len: 6, size: 3, speed: 1.6, spread: 0.6,
+  count: 24, len: 3, size: 3, speed: 2.4, spread: 0.4,
   palette: { hot: 0xffffff, mid: 0xff8030, end: 0x401004 },
   turbulence: 0.5,
   softness: 1.0,
