@@ -2216,6 +2216,8 @@ ticks:[{k,t}]}` — the determinism audit found the sim needs only the seed (spa
 jitter all draw the global `Math.random`; no wall-clock or Map/Set-iteration-order deps in the sim path).
 Reuses the `?bench` foundation (`installSeededRandom`/`mulberry32`/`BENCH_DT`). This mechanism is intended to
 **supersede** the transform-replay for the foreground (§59's backdrop can migrate onto it later).
+*(Amended 2026-07-26 — §73: the seeded stream is no longer a global `Math.random` override; gameplay sites
+call `simRandom()` from `sim-random.js` explicitly and cosmetic code keeps the native RNG.)*
 
 Two load-bearing sub-decisions surfaced in live testing:
 - **Fixed-timestep accumulator, not one-step-per-frame.** Advancing one `BENCH_DT` step per rAF frame ran 2×
@@ -2523,6 +2525,53 @@ separate `spacegame_v2` DB). See `docs/plans/v2-experimental-branch.md` for the 
   The accepted downside of the subpath choice: the `app-v2` router lives in the same Traefik/compose, so
   standing v2 up is a (one-time) touch of the prod host — but the prod `app` service itself is never
   modified, and v2 is disposable (drop the container → prod is untouched).
+
+## 73. Seeded sim RNG is OPT-IN (`simRandom()`), not an opt-out global `Math.random` swap
+
+Amends §62 (which established the seeded-stream isolation by *swapping* a private PRNG into `Math.random`
+around `update()`/`reset()`). The mechanism changed; the goal — record↔playback reproducing a fight
+bit-for-bit — did not.
+
+- **The problem the swap created.** Under the opt-out model, *every* draw made anywhere inside
+  `update()`/`reset()` consumed the seeded stream — including purely cosmetic ones: explosion sparks
+  (~5 randoms × up to 22 sparks per kill), exhaust puffs (2-3 per ship per tick), rocket smoke, and all of
+  `world.js`'s decor/set-piece scatter (rebuilt *inside* `reset()`, i.e. **before tick 0**). So any FX or
+  decor change shifted the stream and desynced the canonical Level-0 intro trace. It shipped **three times**
+  in three weeks — `db78736` (shield sphere → extra absorbed hits → extra spark draws), `7d8fa50`
+  (asteroid-field `.glb` → different decor draw count inside `reset()`), `0e5766a` (flipbook/bolt FX → the
+  explosion path again) — each time turning a new player's *first* impression into a broken cutscene that
+  shot at empty space and never cleared. The reviews couldn't catch it: nothing in an FX diff *looks* like
+  it touches replay.
+- **Bonus: the old model made a trace device-dependent.** Spark/exhaust counts are gated on the graphics
+  tier (`G.gfx.particleScale`/`maxParticles`), so the same trace consumed a *different* number of seeded
+  values on a Performance-tier phone than on a High-tier desktop — the intro could desync on a weak device
+  with no code change at all. Opt-in removes that class of bug too.
+- **The decision.** The stream lives in `client/src/sim-random.js` (`simRandom()`/`seedSim()`/`isSimSeeded()`
+  + `mulberry32`, imports nothing). Roughly **8 gameplay draw sites** opt in explicitly (which enemy spawns,
+  the spawn cooldown injected into `stepSpawnGate`, spawn angle/distance, initial enemy heading, enemy reload
+  stagger, the drop roll, `pickLoot`); everything cosmetic keeps the native `Math.random` and is
+  replay-neutral **by default**. `withSimRand`/`installSeededRandom` are deleted, so the trap cannot be
+  re-armed by new FX code.
+- **Alternative considered — keep the swap, move the cosmetic modules onto a captured native RNG.** Rejected:
+  it inverts the same trap rather than removing it. Every future FX/decor addition would have to *remember*
+  to import the cosmetic RNG, and forgetting is silent (it only surfaces weeks later as a broken intro). The
+  opt-in direction fails safe: forgetting means "cosmetic", which is the common case and is harmless.
+- **Accepted costs.** (a) A *missed gameplay* site now degrades determinism **non**-deterministically (a
+  replay drifts) instead of deterministically — mitigated by the site list being short, enumerated and
+  commented, plus the new committed guard test (`client/visual/scenarios/22-intro-replay.mjs`) that re-sims
+  the canonical intro trace and asserts 4 kills / cards `p0..p4` / win. (b) Decor/asteroid layout now varies
+  between two playbacks of the same trace — cosmetic, and in normal play it already varied run to run.
+- **Purification invalidates every pre-existing trace** (cosmetic draws vastly outnumbered gameplay draws, so
+  the stream is necessarily different) — there was no salvage path. The intro trace was **re-recorded**;
+  older local `?playback` clips in `localStorage` are invalid too. To make a failed re-sim harmless in the
+  meantime, the same change added a **return-home watchdog** (`CUTSCENE_STALL_TICKS` ≈ 15 s of sim time) and
+  mirrored `animate()`'s end-of-trace exit into `__replay.step()`: both route through
+  `cutsceneEnd()` → `finishIntro()`, so a broken re-sim ends on the Level 1 briefing instead of hanging.
+- **Unaffected.** The `?bench` perf gate (§58) stays valid — it is load-pinned and compares medians, not
+  state hashes (its `finalHash` legitimately differs across this change, since the two builds simulate
+  different fights). The ghost-battle backdrop (§59) is a transform replay and is never re-simmed. Live play
+  is unchanged: with no seed installed, `simRandom()` delegates to `Math.random()`. Consistent with §30
+  (simplest thing that works: one leaf module, no framework).
 
 ## Future ideas
 

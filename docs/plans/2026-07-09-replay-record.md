@@ -30,6 +30,8 @@ transform-replay approach (DECISIONS §59) for foreground combat; see DECISIONS 
   `animate()`; `enterRecordMode`/`beginRecordCapture`/`stopRecordSession`/`startPlaybackSession`; the
   seeded-RNG isolation (`withSimRand`, `simRand`, `nativeRandom`); `watchModelsReady`; the record/playback
   UI; `loadTrace`/`downloadTrace`; the `window.__replay` hook.
+  *SUPERSEDED 2026-07-26: the seeded stream is opt-in via `sim-random.js` — see
+  `docs/plans/2026-07-26-0009-fix-intro-replay-desync.md` / DECISIONS §73.*
 - **`client/src/audio.js`** — pitch/variant/noise randomness moved to a module-local PRNG (`arand`), so audio
   never draws from the seeded sim stream.
 
@@ -54,6 +56,8 @@ transform-replay approach (DECISIONS §59) for foreground combat; see DECISIONS 
    (stars/FX/HUD/idle frames/audio) would consume the seeded stream by a frame-count that differs between
    record and playback → divergence. `withSimRand(fn)` swaps the private seeded PRNG into `Math.random` only
    around `update()`/`reset()`; everything else uses `nativeRandom`. `audio.js` uses its own `arand`.
+   *SUPERSEDED 2026-07-26: the seeded stream is opt-in via `sim-random.js` — see
+   `docs/plans/2026-07-26-0009-fix-intro-replay-desync.md` / DECISIONS §73.*
 
 **Verification:** `window.__replay.hash()` (rounded-position state hash) matches between record and playback
 bit-for-bit — validated for an idle run and an active fight (thrust+fire+turns), independent of frame rate,

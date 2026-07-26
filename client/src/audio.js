@@ -13,7 +13,7 @@
 
 // ---------- Cosmetic RNG (decoupled from the seeded sim RNG) ----------
 // Audio pitch/variant/noise randomness is purely cosmetic and MUST NOT draw from the global arand: the
-// input-replay recorder (bench.js installSeededRandom) seeds arand so the SIM is reproducible, but audio
+// input-replay recorder (sim-random.js seedSim) seeds the SIM stream so a fight is reproducible, but audio
 // runs only when the AudioContext is unlocked (a user gesture) — so if audio shared that stream, a recording
 // made with sound would desync from a playback made without it (or vice versa). This module-local PRNG keeps
 // audio randomness independent, so replay determinism holds regardless of the audio state. (Seed source is

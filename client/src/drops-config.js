@@ -1,4 +1,6 @@
-// Pure constants for the loot-drop system (no imports → importable by scripts/assets-check.mjs under node).
+// Pure constants for the loot-drop system (its only import is the DOM-free, dependency-free sim-random.js, so
+// it stays importable by scripts/assets-check.mjs under node).
+import { simRandom } from './sim-random.js'; // which item drops is a GAMEPLAY draw → the seeded stream
 // SINGLE source of truth for the shared drop model URL (client renders it; assets:check validates it).
 export const DROP_MODEL_URL = 'assets/ships/metal_box_combat.ee25e1bd.glb'; // built by assets:build (metal box, CC-BY District24)
 export const DROP_CHANCE    = 0.2;   // per-kill chance to drop one item
@@ -76,5 +78,5 @@ export function pickLoot(e) {
   const pool = [];
   for (const c of [e.engine, e.thruster]) if (c && c.id != null) pool.push({ kind: 'component', refId: c.id }); // NO e.hull
   for (const m of (e.mounts || [])) if (m.weapon && m.weapon.id != null) pool.push({ kind: 'weapon', refId: m.weapon.id });
-  return pool.length ? pool[(Math.random() * pool.length) | 0] : null;
+  return pool.length ? pool[(simRandom() * pool.length) | 0] : null;
 }

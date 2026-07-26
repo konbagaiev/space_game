@@ -1,7 +1,7 @@
 // Input-replay record/playback core (docs/plans/2026-07-09-replay-record.md).
 //
 // A "recording" is NOT a movie of positions — it is the player's INPUT + the RNG seed. Playback re-runs the
-// REAL sim (seeded Math.random via bench.js installSeededRandom, fixed BENCH_DT step) from that input, so
+// REAL sim (the seeded gameplay stream from sim-random.js, fixed BENCH_DT step) from that input, so
 // everything is native: real bullet colors, smooth physics, real FX, real collisions. One mechanism, many
 // consumers (the Level-0 cutscene, a "watch the fight from another angle" viewer, video capture, …).
 //
@@ -65,6 +65,16 @@ export function applyInput(tick, keys, touchAim) {
   }
 }
 
+// ~15 s of sim time at the fixed 1/60 step. Once the cutscene engages "return to base" (rs.cutReturning)
+// only a WIN ends it: rs.index is frozen and rs.done is never set, so a run that can never dock (dead
+// player, or a desync that leaves the ship unable to reach the station) loops forever. This bail-out ends
+// it through the normal path (cutsceneEnd → finishIntro) = "the intro stops early and you land on the
+// Level 1 briefing" instead of a dead screen.
+// The limit must clear a LEGITIMATE flight home: the station sits at [-60,-42,-60] (catalog_seed.js:656),
+// BASE_ARRIVE_RADIUS = 45 (autopilot-config.js:5) and PLAYER_MAX_SPEED = 30 (sim.js), so a fight that ends
+// ~200 u out is a ~7-8 s flight — 8 s would abort real intros. 15 s is ~2× the expected worst case.
+export const CUTSCENE_STALL_TICKS = 900;
+
 // Assemble a trace object from the captured run. `seed` is the mulberry32 seed actually installed at record
 // start (the ONLY thing beyond input that determinism needs — the audit found no other non-seeded source in the
 // sim path). `dt` is the fixed step used both to record and to replay. `shipId` + `loadout`/`components` rebuild
@@ -101,10 +111,15 @@ export function makeReplaySession() {
     cut: null,           // was CUT        — the LEVEL0_CUTSCENE script or null
     cutDone: false,      // was cutDone    — after Skip / last pause: stop observing events
     cutReturning: false, // was cutReturning — fight cleared → simulate "Return to base"
+    stallTicks: 0,       // consecutive RETURN-HOME ticks without a win (see CUTSCENE_STALL_TICKS)
     get active() { return !!this.play; },
+    // Count one stepped tick. `returningNoWin` = rs.cutReturning is engaged and the level is still not won.
+    noteTick(returningNoWin) { this.stallTicks = returningNoWin ? this.stallTicks + 1 : 0; return this.stallTicks; },
+    stalled(limitTicks = CUTSCENE_STALL_TICKS) { return this.stallTicks >= limitTicks; },
     teardown() {
       this.play = null; this.trace = null; this.armed = false; this.index = 0;
       this.done = false; this.cut = null; this.cutDone = false; this.cutReturning = false;
+      this.stallTicks = 0;
     },
   };
 }

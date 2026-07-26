@@ -26,7 +26,12 @@ From `client/`:
 npm install                       # once: installs playwright (dev dependency)
 npx playwright install chromium   # once: downloads the browser binary
 npm run test:visual
+node visual/run.mjs 22-intro-replay   # optional argv filter: run just the scenario(s) whose filename matches
 ```
+
+Some scenarios need the gitignored S3 assets — run `npm run assets:pull` from the repo root first.
+`22-intro-replay` (the Level-0 intro cutscene guard: re-sims the canonical trace and asserts 4 kills, cards
+`p0..p4`, win) hard-fails with that instruction if the recording is missing.
 
 The runner (`visual/run.mjs`) is self-contained: it starts its own game server on an isolated
 port with a throwaway Postgres DB `spacegame_test` (your real `spacegame` DB is untouched), runs every scenario in
@@ -50,6 +55,10 @@ export default async function ({ page, assert, shot }) {
 
 The page is freshly reloaded (clean state) before each scenario. The runner already fails a
 scenario if the page logs any JS error during it, so you don't need to check for that yourself.
+
+A scenario may also navigate on its own (it receives `baseURL`) when it needs different URL flags than the
+runner's `?debug` — see `21-language-initial-ru.mjs` (reload) and `22-intro-replay.mjs` (its own
+`?playback&…&cutscene=1&debug` url). Clean up any `localStorage` you write, so the next scenario starts neutral.
 
 Keep assertions **state-based and tolerant** (counts, ranges, colors) so they stay stable; use the
 screenshots for the subjective "does it look right" part.

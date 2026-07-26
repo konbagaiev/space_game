@@ -9,6 +9,7 @@ import { deriveDrive } from './components.js';
 import { shipModelCfg, modelSpec, makeShip } from './ship-factory.js';
 import { spawnBullet, spawnRocket, findTargetInSector } from './projectiles.js';
 import { audio, sfxFor } from './sound-routing.js';
+import { simRandom } from './sim-random.js'; // seeded GAMEPLAY stream: enemy spawn placement/facing + reload jitter
 
 export const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
 // Resolve a ship's component refs ({ hull, engine, thruster, repair, grab, shield }) to objects (id + stats + weight).
@@ -92,7 +93,7 @@ export function spawnEnemyShip(shipDef) {
     role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0,
     mesh: makeShip(s.color, modelSpec(shipDef.modelUrl, mc)), // model defines the look; never tint enemies by color
     vel: new THREE.Vector3(),
-    heading: Math.random() * Math.PI * 2,
+    heading: simRandom() * Math.PI * 2,   // GAMEPLAY: facing decides how long it turns before its first shot
     hull, engine, thruster,
     mounts: buildMounts(s.mounts),
     hp: hull.durability,
@@ -112,8 +113,8 @@ export function spawnEnemyShip(shipDef) {
   deriveDrive(e);
   // spawn in a ring around the MISSION ZONE center (arenaCenter), not the hero — waves originate at the
   // arena/set-piece even after the player wanders. No arena clamp (enemies fight fine out of bounds).
-  const ang = Math.random() * Math.PI * 2;
-  const d = 70 + Math.random() * 60; // 70..130 from the zone center
+  const ang = simRandom() * Math.PI * 2;   // GAMEPLAY: where the enemy appears
+  const d = 70 + simRandom() * 60; // 70..130 from the zone center
   e.mesh.position.set(
     arenaCenter.x + Math.cos(ang) * d,
     BULLET_PLANE_Y, // sit on the canonical combat plane so enemy hull + fire line up with the player's
@@ -164,7 +165,7 @@ export function updateGroups(ship, fwd, isPlayer, dt, wantsFire) {
       if (g.pending[i].t <= 0) { fireMount(ship, g.pending[i].mount, fwd, isPlayer); g.pending.splice(i, 1); }
     }
     if (g.mounts.length && g.cooldown <= 0 && wantsFire(g)) {
-      g.cooldown = g.reload + (isPlayer ? 0 : Math.random() * 0.5); // enemies stagger their reloads a bit
+      g.cooldown = g.reload + (isPlayer ? 0 : simRandom() * 0.5); // enemies stagger their reloads a bit (GAMEPLAY: shifts when their bullets exist)
       for (const m of g.mounts) g.pending.push({ mount: m, t: m.delay });
     }
   }

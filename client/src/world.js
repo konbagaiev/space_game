@@ -745,6 +745,13 @@ function makeBaseStation(spec) {
 }
 
 // Dispatch a set-piece spec to its procedural builder, position it, and add it to the combat scene.
+//
+// RNG CONTRACT: decor (this builder, the asteroid scatter, stars, nebula/planet textures, the parallax ring)
+// draws the NATIVE `Math.random` on purpose — never `simRandom()`. Gameplay-affecting randomness lives in
+// `sim-random.js`; keeping decor out of the seeded stream is what makes the recorded intro/replays survive
+// decor changes (DECISIONS §73). Set-pieces are (re)built inside reset(), i.e. BEFORE tick 0, so a seeded
+// decor draw would displace the whole fight's stream — that is exactly how the .glb asteroid field broke the
+// intro. Consequence, accepted: asteroid layout differs between two playbacks of the same trace (cosmetic).
 export function buildSetPiece(spec) {
   let entry = null;
   switch (spec.type) {

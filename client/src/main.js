@@ -3,7 +3,8 @@
 // the Main Window / shop / welcome / account / settings UI. It imports the extracted modules (sibling
 // paths, no `src/` segment) and `three` via the index.html importmap. Slices are peeling cohesive UI
 // modules out of here next; for now it is the single composition root.
-import { benchMode, isBench, installSeededRandom, mulberry32, BENCH_DT } from './bench.js'; // ?bench replay perf gate — imported FIRST so its seeded RNG is installable before any module calls Math.random
+import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
+import { seedSim, isSimSeeded } from './sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
@@ -68,15 +69,10 @@ let recCapturing = false;     // true while capturing input (set by startRecordS
 const recTicks = [];          // captured per-tick input snapshots for the current recording
 let replayAcc = 0;            // real-time accumulator (s) driving the fixed-timestep record/playback loop
 let modelsReady = false;      // the player ship .glb has loaded (gates record Start + playback arm)
-// Record/playback determinism isolation: the seeded stream must feed ONLY the sim, never per-frame cosmetic
-// draws (stars/FX/HUD/idle frames). Otherwise, since a frame-rate accumulator makes frames ≠ ticks, cosmetic
-// draws would consume the seeded stream by a frame-count that differs between record and playback → divergence.
-// So we keep a private seeded PRNG for the sim and swap it in ONLY around update()/reset(); everything else
-// (including idle frames before the first tick) uses the native Math.random captured here at module load.
-const nativeRandom = Math.random;
-let simRand = null;           // the sim's seeded PRNG (set from the trace seed at record begin / playback arm)
-// Run fn with Math.random pointed at the seeded sim stream, then restore the cosmetic (native) stream.
-function withSimRand(fn) { const prev = Math.random; Math.random = simRand; try { return fn(); } finally { Math.random = prev; } }
+// Record/playback determinism isolation lives in sim-random.js: the seeded stream is OPT-IN, consumed only by
+// the enumerated GAMEPLAY draw sites (spawn timing/placement/pick, enemy reload jitter, loot rolls). Cosmetic
+// FX + decor keep using the native Math.random, so an FX/decor change can never shift a recorded trace.
+// This module just installs (seedSim) and clears (seedSim(null)) the stream around a session — DECISIONS §73.
 
 // ---------- Level-0 intro cutscene (event-driven text pauses over ?playback&cutscene) ----------
 // Active only when ?playback carries &cutscene AND the loaded trace is the intro level. Observes sim EVENTS
@@ -608,10 +604,18 @@ function animate() {
           if (rs.index < rs.trace.ticks.length) applyInput(rs.trace.ticks[rs.index], keys, touchAim);
           else { rs.done = true; break; }
         }
-        withSimRand(() => update(BENCH_DT));       // seed feeds ONLY the sim; cosmetic frame work uses native RNG
+        update(BENCH_DT);                          // the seeded stream is opt-in inside the sim (sim-random.js)
         if (rs.play && rs.trace && !rs.cutReturning) rs.index++;
         if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
         if (rs.cut) cutsceneObserve();             // may freeze (fire a pause), engage return-to-base, or end
+        // RETURN-HOME watchdog (see CUTSCENE_STALL_TICKS in replay.js): while rs.cutReturning is engaged only
+        // a WIN ends the cutscene, so a run that can never dock would loop here forever. Only that path reaches
+        // this line — an EXHAUSTED trace breaks out above (`rs.done = true; break;`) and is ended by the
+        // post-loop cutsceneEnd() below instead.
+        if (rs.cut && !rs.cutDone) {
+          rs.noteTick(rs.cutReturning && !levelRunner.won);
+          if (rs.stalled()) { cutsceneEnd(); rs.done = true; break; } // ends the intro via finishIntro()
+        }
         replayAcc -= BENCH_DT;
         steps++;
       }
@@ -781,7 +785,7 @@ if (isBench()) {
     async replay(trace, { mode = 'full' } = {}) {
       const setup = trace.setup || {};
       // 1. deterministic setup: re-seed, build the fixed ship, reset to a clean fight, spawn the fixed waves.
-      installSeededRandom(trace.seed);
+      seedSim(trace.seed);
       const shipDef = setup.shipId != null ? shipById(setup.shipId) : null;
       if (shipDef) buildPlayerFor(shipDef);
       reset();
@@ -832,7 +836,7 @@ if (isBench()) {
     // runaway guard, the natural drift stays in bounds — no circling/warmup needed (that was for the old
     // slot-0-pinning guard, now reverted). Deterministic; the canonical track is a real in-game recording anyway.
     async bakeBackdrop({ seconds = 15, fps = 20 } = {}) {
-      installSeededRandom(BENCH_SEED);           // deterministic
+      seedSim(BENCH_SEED);                       // deterministic
       const playerDef = shipById(1); if (playerDef) buildPlayerFor(playerDef);
       reset(); G.gameStarted = true;
       const defs = [CATALOG.enemyShips[0], CATALOG.enemyShips[0], CATALOG.enemyShips[1] || CATALOG.enemyShips[0],
@@ -906,12 +910,12 @@ function enterRecordMode() {
   buildRecordUI();
   watchModelsReady(() => { if (recStartBtn) { recStartBtn.disabled = false; recStartBtn.textContent = 'Start recording'; recStartBtn.style.opacity = '1'; } });
 }
-// Seed BEFORE reset() (reset() draws Math.random for spawn timing) so the whole run is reproducible from
+// Seed BEFORE reset() (reset() draws the sim RNG for spawn timing) so the whole run is reproducible from
 // (seed + input). animate()'s accumulator then captures one tick per fixed step while the operator flies.
 function beginRecordCapture() {
   if (recCapturing) return;
   recSeed = (Date.now() >>> 0);                 // the one wall-clock touch — captured into the trace (determinism preserved)
-  simRand = mulberry32(recSeed);                 // the sim's seeded stream (swapped in only around update()/reset())
+  seedSim(recSeed);                              // install the sim's seeded stream (gameplay draws only)
   recShipId = (CATALOG.shipByName.get(G.currentShipName) || {}).id ?? 1;
   // Capture the loadout/components actually used, so the trace reproduces this exact ship independent of the
   // account later. Only when the built ship IS the active ship (else the bootstrap used the ship's defaults →
@@ -921,7 +925,7 @@ function beginRecordCapture() {
   recComponents = activeMatches ? G.activeShip.components : null;
   G.gameStarted = true;
   replayAcc = 0;
-  withSimRand(() => reset());                     // position the player + start REC.level from tick 0 (seeded)
+  reset();                                        // position the player + start REC.level from tick 0 (seeded)
   settleView();                                   // frame camera + sky on the reset player (no jump when capture begins)
   recTicks.length = 0; recCapturing = true;
   setRecordUIRecording();
@@ -937,6 +941,7 @@ function stopRecordSession() {
   try { localStorage.setItem(`replay:${id}`, JSON.stringify(trace)); localStorage.setItem('replay:last', JSON.stringify(trace)); } catch {}
   downloadTrace(trace, `${id}.json`);
   showRecordDone(id, trace.ticks.length);
+  seedSim(null); // session over → back to the native RNG (never leave live play on a stale seeded stream)
 }
 
 // Start the PLAYBACK session from an already-loaded, validated trace: re-seed, rebuild the recorded ship,
@@ -944,7 +949,7 @@ function stopRecordSession() {
 function startPlaybackSession(trace) {
   rs.trace = trace; rs.index = 0; rs.done = false;
   // Rebuild the recorded ship BEFORE seeding — record built the player during bootstrap (pre-seed), so any
-  // Math.random buildPlayerFor draws must NOT come out of the seeded stream, or the sim RNG offsets and the
+  // sim-RNG draw inside buildPlayerFor must NOT come out of the seeded stream, or the sim RNG offsets and the
   // whole replay diverges. Install the seed only after, so reset()+the fight draw from an identical stream.
   const shipDef = trace.shipId != null ? shipByIdGlobal(trace.shipId) : null;
   if (shipDef) {
@@ -956,11 +961,11 @@ function startPlaybackSession(trace) {
       components: trace.components || shipDef.components,
     });
   }
-  simRand = mulberry32(trace.seed);              // the sim's seeded stream (swapped in only around update()/reset())
+  seedSim(trace.seed);                           // install the sim's seeded stream (gameplay draws only)
   document.body.classList.remove('menu');
   G.gameStarted = true;
   replayAcc = 0;
-  withSimRand(() => reset());
+  reset();
   settleView(); // frame the camera + sky on the (reset) player NOW, so the frozen P0 frame doesn't jump on play
   // ?playback&cutscene on the intro level → overlay the event-driven Level-0 pauses (freeze + localized card)
   // instead of the plain playback bar; the opening card (P0) freezes before the first tick until tapped.
@@ -1056,6 +1061,7 @@ async function finishIntro() {
   // (no player/enemies/input). Clear replayMode too so the REAL Level-1 win can advance/bank (sim.js
   // gates its server effects on !G.replayMode).
   rs.teardown();
+  seedSim(null); // clear the seeded stream too — live Level-1 play must run off the native RNG
   G.replayMode = false;
   try { await unlockNextLevel(); } catch (e) { console.error('[intro] advance failed', e); }
   if (CATALOG.level && CATALOG.level.briefing) showMain(CATALOG.level.briefing);
@@ -1181,7 +1187,9 @@ if (REC || rs.play) {
     begin: () => beginRecordCapture(),  // record: seed + reset + start capturing (what the Start button does)
     stop: () => stopRecordSession(),
     hash: stateHash,
-    status: () => ({ recording: recCapturing, ticks: recTicks.length, playIndex: rs.index, playDone: rs.done, total: rs.trace ? rs.trace.ticks.length : 0 }),
+    // `armed` is the models-ready gate: the ship .glb sets mesh.userData.noseZ/tailZ (where bullets spawn), so
+    // stepping before it resolves changes the sim — automated stepping MUST wait on it.
+    status: () => ({ recording: recCapturing, armed: rs.armed, ticks: recTicks.length, playIndex: rs.index, playDone: rs.done, total: rs.trace ? rs.trace.ticks.length : 0 }),
     // Cutscene state (for tests / console): is a card up, which pauses fired, the visible card text.
     cut: () => ({ on: !!rs.cut, frozen: cutFrozen, done: rs.cutDone, returning: rs.cutReturning, won: levelRunner.won,
       fired: [...cutFired], queued: cutQueue.length,
@@ -1193,7 +1201,7 @@ if (REC || rs.play) {
     // whatever input is currently held (none under automation → a deterministic no-input run). Stops on a
     // cutscene freeze (call advance() to continue), mirroring the accumulator.
     step(n = 1) {
-      if (!simRand) return this.status(); // record: not started yet (call begin() first); playback sets it on arm
+      if (!isSimSeeded()) return this.status(); // record: not started yet (call begin() first); playback seeds on arm
       for (let i = 0; i < n; i++) {
         if (cutFrozen) break;
         if (rs.cutReturning) {                 // mirror the accumulator: no recorded input while flying home
@@ -1202,11 +1210,19 @@ if (REC || rs.play) {
           if (rs.index < rs.trace.ticks.length) applyInput(rs.trace.ticks[rs.index], keys, touchAim);
           else { rs.done = true; break; }
         }
-        if (!rs.done) withSimRand(() => update(BENCH_DT));
+        if (!rs.done) update(BENCH_DT);
         if (rs.play && rs.trace && !rs.cutReturning && !rs.done) rs.index++;
         if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
         if (rs.cut) cutsceneObserve();
+        if (rs.cut && !rs.cutDone) {               // mirror the accumulator's return-home watchdog
+          rs.noteTick(rs.cutReturning && !levelRunner.won);
+          if (rs.stalled()) { cutsceneEnd(); rs.done = true; break; }
+        }
       }
+      // Mirror animate()'s post-loop exit: when the trace runs out with the fight unfinished, end the cutscene
+      // instead of returning a session that can never progress. Without this, a stepped run of a DESYNCED trace
+      // never terminates (the loop body is unreachable once rs.done).
+      if (rs.play && rs.done && rs.cut && !rs.cutDone) cutsceneEnd();
       return this.status();
     },
   };
@@ -1236,7 +1252,7 @@ addEventListener('orientationchange', applyOrientation);
 // are in account.js; bootstrap calls restoreSession()/initSentry(), the Main Window opens the dialog.
 
 async function bootstrap() {
-  if (BENCH) installSeededRandom(BENCH_SEED); // deterministic RNG for record/replay (replay() re-seeds per trace)
+  if (BENCH) seedSim(BENCH_SEED); // deterministic sim RNG for record/replay (replay() re-seeds per trace)
   initSentry(); // fire-and-forget: don't delay the game waiting on the monitoring SDK
   try {
     // Pick the language and load the message catalogs before the first render. Initial guess from

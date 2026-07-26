@@ -16,11 +16,23 @@ top), alt-angle views, video capture.
 
 ## The one thing to keep straight
 
-The seeded `Math.random` must feed the **sim only**. Record and playback run the sim at a fixed step but at
-different frame rates (frames ≠ ticks), so if any cosmetic per-frame code (stars/FX/HUD/idle frames/audio)
-drew from the seeded stream, the run would desync. The code already isolates this (`withSimRand` around
-`update()`/`reset()` in `main.js`; `audio.js` uses its own PRNG). **Don't route sim RNG through cosmetic code
-or vice-versa** — verify with the state-hash check below after any change to the record/playback path.
+The seeded RNG must feed the **sim only**. Record and playback run the sim at a fixed step but at different
+frame rates (frames ≠ ticks), so if any cosmetic per-frame code (stars/FX/HUD/idle frames/audio) drew from the
+seeded stream, the run would desync — and any later change to that cosmetic code would desync every existing
+recording. It did, three times, back when the stream was a global `Math.random` swap.
+
+The stream is therefore **OPT-IN** (`client/src/sim-random.js`, DECISIONS §73):
+
+- **Gameplay** draw (positions, timing, damage, loot) → `simRandom()`. Today's sites: `sim.js` (which enemy
+  spawns, the drop roll, `stepSpawnGate(..., simRandom)`), `ship-build.js` (spawn angle/distance, initial
+  heading, enemy reload stagger), `drops-config.js` (`pickLoot`).
+- **Cosmetic** draw (what the frame LOOKS like) → plain `Math.random()`. FX in `projectiles.js`, all decor in
+  `world.js`, flipbook/bolt/shield FX; `audio.js` has its own `arand`. When in doubt: cosmetic.
+
+`seedSim(n)` installs the stream (record start / playback arm / `?bench`), `seedSim(null)` clears it back to
+native on teardown. **Don't route sim RNG through cosmetic code or vice-versa** — verify with the state-hash
+check below after any change to the record/playback path, and run the committed guard
+`cd client && node visual/run.mjs 22-intro-replay` (re-sims the canonical intro trace to a win).
 
 ## Steps
 
@@ -67,7 +79,12 @@ keys you created, restore `replay:last` to the maintainer's recording). This bit
 ## Files / reference
 
 - `client/src/replay.js` — pure core (trace shape, URL parsing, snapshot/apply/validate; `replay.test.js`).
-- `client/src/main.js` — engine wiring (accumulator pacing, seeded-RNG isolation, record/playback UI,
+- `client/src/sim-random.js` — the opt-in seeded sim RNG (`simRandom`/`seedSim`/`isSimSeeded`/`mulberry32`;
+  `sim-random.test.js`).
+- `client/src/main.js` — engine wiring (accumulator pacing, seed install/clear, record/playback UI,
   `window.__replay`).
 - `client/src/audio.js` — cosmetic RNG decoupled (`arand`).
-- Spec + rationale: `docs/plans/2026-07-09-replay-record.md`, DECISIONS §62. Tests: `cd client && node --test`.
+- `client/visual/scenarios/22-intro-replay.mjs` — the committed guard: re-sims the canonical intro trace and
+  asserts 4 kills / cards p0..p4 / win (`node visual/run.mjs 22-intro-replay`; needs `npm run assets:pull`).
+- Spec + rationale: `docs/plans/2026-07-09-replay-record.md`, DECISIONS §62 + §73 (opt-in RNG).
+  Tests: `cd client && node --test`.

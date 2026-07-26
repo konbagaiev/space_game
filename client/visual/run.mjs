@@ -6,7 +6,8 @@
 //      `cd server && npm test` once, or `createdb spacegame_test`, to create it).
 //   2. Launches headless Chromium (software WebGL via swiftshader) and opens the game
 //      with `?debug`, which exposes `window.__game` (see the hook in index.html).
-//   3. Runs every scenario in scenarios/ (auto-discovered, alphabetical).
+//   3. Runs every scenario in scenarios/ (auto-discovered, alphabetical). An optional argv filter runs a
+//      single one by (sub)name: `node visual/run.mjs 22-intro-replay`.
 //   4. Each scenario asserts on SIMULATION STATE (counts, colors) — stable across machines —
 //      and also saves PNG frames to __screenshots__/ for a human to eyeball.
 //
@@ -79,9 +80,10 @@ async function main() {
     const pageErrors = [];
     page.on('pageerror', (e) => pageErrors.push(String(e.message || e)));
 
-    // 3. discover scenarios
+    // 3. discover scenarios (an optional argv filter runs just one: `node visual/run.mjs 22-intro-replay`)
+    const only = process.argv[2] || '';
     const files = (await readdir(path.join(__dirname, 'scenarios')))
-      .filter((f) => f.endsWith('.mjs'))
+      .filter((f) => f.endsWith('.mjs') && f.includes(only))
       .sort();
 
     for (const file of files) {

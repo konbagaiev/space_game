@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   TRACE_VERSION, normalizeLevelName, evalRecord, evalPlayback,
   snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro,
+  CUTSCENE_STALL_TICKS,
 } from './replay.js';
 
 test('normalizeLevelName maps bare numbers to level-N and passes names through', () => {
@@ -102,15 +103,43 @@ test('makeReplaySession: fresh session is inactive; teardown clears every field'
   s.play = { id: 'level-1-intro', cutscene: true };
   s.trace = { ticks: [{}, {}] };
   s.armed = true; s.index = 5; s.done = true;
-  s.cut = { pauses: [] }; s.cutDone = true; s.cutReturning = true;
+  s.cut = { pauses: [] }; s.cutDone = true; s.cutReturning = true; s.stallTicks = 42;
   assert.equal(s.active, true);
 
   s.teardown();
   assert.equal(s.active, false);
   // deepEqual the owned fields back to a fresh session's defaults — this is what catches a forgotten reset
   const fresh = makeReplaySession();
-  for (const k of ['play', 'trace', 'armed', 'index', 'done', 'cut', 'cutDone', 'cutReturning'])
+  for (const k of ['play', 'trace', 'armed', 'index', 'done', 'cut', 'cutDone', 'cutReturning', 'stallTicks'])
     assert.deepEqual(s[k], fresh[k], `teardown must reset ${k}`);
+});
+
+test('makeReplaySession: return-home watchdog counts consecutive stalled ticks and trips at the limit', () => {
+  const s = makeReplaySession();
+  assert.equal(s.stallTicks, 0);
+  assert.equal(s.stalled(), false);
+
+  // returning home without a win → the counter climbs
+  assert.equal(s.noteTick(true), 1);
+  assert.equal(s.noteTick(true), 2);
+  // any tick that is NOT "returning and not won" resets it (a fight in progress can't trip the watchdog)
+  assert.equal(s.noteTick(false), 0);
+  assert.equal(s.stalled(), false);
+
+  // it trips exactly AT the limit, not before
+  for (let i = 0; i < CUTSCENE_STALL_TICKS - 1; i++) s.noteTick(true);
+  assert.equal(s.stallTicks, CUTSCENE_STALL_TICKS - 1);
+  assert.equal(s.stalled(), false);
+  s.noteTick(true);
+  assert.equal(s.stalled(), true);
+  // 900 ticks == 15 s of sim time at the fixed 1/60 step — must clear a legitimate flight home (~7-8 s)
+  assert.equal(CUTSCENE_STALL_TICKS, 900);
+  assert.ok(CUTSCENE_STALL_TICKS / 60 >= 15);
+  // an explicit limit is honored (the callers use the default)
+  assert.equal(s.stalled(CUTSCENE_STALL_TICKS + 1), false);
+
+  s.teardown();
+  assert.equal(s.stalled(), false);
 });
 
 test('shouldPlayIntro: server-authoritative gate — trace present + not headless', () => {
