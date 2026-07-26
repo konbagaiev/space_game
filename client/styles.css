@@ -417,14 +417,24 @@
        localized string wraps to another line here instead of spilling right over the mission title. */
   }
   body.menu #account-bar { display: block; }
-  /* "Ships" — top-right of the Main Window. Inactive for now (future ship-buying); shown muted +
-     non-interactive on menus. (The side-mission board moved into the left menu's Missions list.) */
-  #mw-ships {
+  /* Top-right of the Main Window: the credit balance + the "Ships" label, on one line (menus only).
+     Ships is inactive for now (future ship-buying) — muted + non-interactive. (The side-mission board
+     moved into the left menu's Missions list.) */
+  #mw-topright {
     position: fixed; top: 14px; right: 18px; z-index: 13; display: none;
-    font-family: system-ui, sans-serif; font-size: 18px; letter-spacing: 1px; color: #cfe0ff;
-    opacity: .4; pointer-events: none;
+    align-items: baseline; gap: 14px; pointer-events: none;
+    font-family: system-ui, sans-serif; font-size: 18px; letter-spacing: 1px;
   }
-  body.menu #mw-ships { display: block; }
+  body.menu #mw-topright { display: flex; }
+  /* Money — the one live number up here, so it reads at full opacity in credit gold. A notch smaller
+     than "Ships" (relative, so it follows the narrow-viewport step-down below). */
+  #mw-credits { color: #ffd27a; font-weight: 600; font-size: .82em; white-space: nowrap; }
+  #mw-ships { color: #cfe0ff; opacity: .4; }
+  /* Narrow (phone-landscape) viewports: the enlarged centered wordmark grows with 4.5vw and would run
+     into a two-item row, so stack the pair into a right-aligned column instead. */
+  @media (max-width: 780px) {
+    #mw-topright { flex-direction: column; align-items: flex-end; gap: 4px; font-size: 15px; }
+  }
   #account-bar button {
     pointer-events: auto; cursor: pointer; font: inherit; font-size: 12px; color: #cfe0ff;
     background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.28);
@@ -761,9 +771,12 @@
   /* "Grab this chest" cursor: hovering a clickable loot drop shows the OS grab hand (mouse only; the
      class is toggled on the WebGL canvas by main.js). Built-in cursor — no asset needed. */
   canvas.grab-cursor { cursor: grab; }
-  /* Corner radar: arena bounds + player + type-colored enemy dots. Non-interactive (touches pass through). */
+  /* Corner radar: arena bounds + player + type-colored enemy dots. Non-interactive (touches pass through).
+     Sits in the top-left cluster directly UNDER the shield/health bars and their % readout, left-aligned
+     with them: #hud's 18px padding + the 44px inset that clears the settings gear = 62px; the bars stack
+     to y≈63 (14 padding + 4 + 10 shield + 14 health + 4 + ~16 percent), so 72px leaves a small gap. */
   #minimap {
-    position: fixed; left: 14px; top: 50%; transform: translateY(-50%); z-index: 4;
+    position: fixed; left: 62px; top: 72px; z-index: 4;
     width: 132px; height: 132px; pointer-events: none; opacity: .82;
     background: rgba(8,12,24,.26); border: 1px solid rgba(120,150,210,.2); border-radius: 8px;
   }

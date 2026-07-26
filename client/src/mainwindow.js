@@ -18,6 +18,7 @@ import { shipModelCfg, gltfLoader, SHIP_MODEL_LEN } from './ship-factory.js';
 import { Device } from './device.js';
 import { openBay, showBayView, updateTakeoffGate, renderShipStatsBar, deriveShipStats, resetShipStatsDelta } from './shop.js';
 import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } from './account.js';
+import { updateMenuCredits } from './hud.js';
 import { requestFullscreen, showWelcome } from './welcome.js';
 import { typeText } from './typewriter.js';
 
@@ -41,6 +42,7 @@ export function showMain(briefing) {
   resetBriefingReveal();
   el.overlay.style.display = 'none';
   renderAccountBar();
+  updateMenuCredits();                 // top-bar balance beside "Ships" (openBay refreshes it from the server)
   document.body.classList.add('menu'); // hide the in-game HUD behind the Main Window
   refreshMusic();                      // menu → calmer hangar music
   mainEl.classList.add('on');

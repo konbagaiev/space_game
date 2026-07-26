@@ -57,6 +57,14 @@ export function updateHud() {
   el.rocketBtn.classList.toggle('ready', ready);
 }
 
+// The Main Window top-bar credit balance (beside the inactive "Ships" label). Menus only — the in-fight
+// balance is the HUD credits line above — so it's pushed on menu entry (showMain/showWelcome) and after
+// every shop action (renderBay), not per frame. The bay passes the server's own `credits` (authoritative
+// and fresher than G.balance, which openBay doesn't sync); everyone else falls back to G.balance.
+export function updateMenuCredits(balance = G.balance) {
+  el.mwCreditsVal.textContent = balance;
+}
+
 // ---------- Perf overlay (load) ----------
 let perfAccum = 0, perfFrames = 0, perfFps = 0;
 // Live ship-speed readout (world units/sec) for tuning a future max-speed cap: the current |velocity|

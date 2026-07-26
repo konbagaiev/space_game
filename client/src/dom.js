@@ -30,6 +30,8 @@ export const el = {
   perf: byId('perf'),           // fps / ms / draw-calls overlay
   markers: byId('markers'),     // container for off-screen enemy edge arrows
   minimap: byId('minimap'),     // radar canvas
+  // Main Window top bar: the credit balance beside the (inactive) "Ships" label — menus only
+  mwCreditsVal: byId('mw-credits-val'),
   // result overlay (read by the HUD to hide markers/radar; written by the sim death/win + restart flows)
   overlay: byId('overlay'),
   overlayTitle: byId('overlay-title'),   // "Victory" / "Ship destroyed"

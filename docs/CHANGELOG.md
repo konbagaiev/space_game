@@ -5,6 +5,18 @@
 
 ## 2026-07-26
 
+- **UI: credit balance in the Main Window top bar + the radar moved under the health bars.** The
+  between-battles top-right now reads `<n> cr.` in credit-gold beside the (still inactive) "Ships" label —
+  the player finally sees what they can spend without opening the shop. Both live in a new `#mw-topright`
+  flex row; below 780px it stacks into a right-aligned column so it clears the centered wordmark (which
+  scales with `4.5vw`) on phone landscape. The number is pushed by `updateMenuCredits()` (`hud.js`) from
+  `showMain`/`showWelcome` and, using the server's authoritative `credits`, from `renderBay` after every
+  buy/sell. New i18n key `ui.mainwin.credits_unit` (EN `cr.` / RU `кр.`). In-fight, the mini-map/radar left
+  the vertical center of the left edge and joined the top-left HUD cluster: directly under the
+  shield/health bars and their % readout, left-aligned with them — it no longer sits in the middle of the
+  play area. Guard: `client/visual/scenarios/23-topbar-credits-radar.mjs` asserts the radar geometry, the
+  `<n> cr.` format against the live balance, and that the top-right pair never overlaps the wordmark on
+  either a desktop or a 667×375 phone-landscape viewport.
 - **Intro replay desync fixed — the seeded sim RNG is now opt-in.** Cosmetic FX (explosion sparks, exhaust,
   smoke) and world decor were drawing from the seeded stream inside `update()`/`reset()`, because `main.js`
   swapped a seeded `Math.random` in around those calls. So *any* FX/decor change silently shifted the stream

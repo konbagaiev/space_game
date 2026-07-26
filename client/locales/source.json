@@ -14,6 +14,7 @@
   "ui.mission.slot": { "source": "Mission {n}", "context": "Label for one of the side-mission rows in the Main Window's Missions list (under the primary campaign mission). {n} is 1, 2 or 3. Keep it short." },
   "ui.mainwin.missions": { "source": "Missions", "context": "Left-menu item in the Main Window (the between-battles screen); expands to the campaign mission + side missions. Short." },
   "ui.mainwin.ships": { "source": "Ships", "context": "Inactive top-right label in the Main Window (reserved for a future ship-buying screen). One word, short." },
+  "ui.mainwin.credits_unit": { "source": "cr.", "context": "Currency unit shown right after the player's credit balance in the Main Window top bar (e.g. \"1250 cr.\"). An abbreviation of \"credits\" — keep it 2-4 characters." },
   "ui.mainwin.primary": { "source": "Main operation", "context": "Label for the primary (campaign) mission row in the Main Window's Missions list, above the optional side missions. Short." },
   "ui.mission.est_reward": { "source": "Est. reward: {credits}", "context": "Shown in the mission description panel: the approximate credits the mission pays. {credits} is a number." },
   "ui.help": { "source": "<b>W / ↑</b> — thrust · <b>S / ↓</b> — reverse · <b>A / D</b> or <b>← →</b> — turn · <b>Space</b> — fire · <b>F</b> — rocket", "context": "On-screen controls cheatsheet (HTML). Keep the key glyphs (W, ↑, S, Space, F, arrows) as-is; translate only the action words (thrust/reverse/turn/fire/rocket)." },

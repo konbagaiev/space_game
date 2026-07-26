@@ -114,8 +114,12 @@
   </div>
 </div>
 <div id="gametitle" data-i18n="ui.title">Vega Sentinels</div>
-<!-- Inactive "Ships" label (top-right, menus only) — future ship-buying -->
-<div id="mw-ships" data-i18n="ui.mainwin.ships" aria-disabled="true">Ships</div>
+<!-- Top-right of the Main Window (menus only): the player's credit balance beside the inactive
+     "Ships" label (future ship-buying). -->
+<div id="mw-topright">
+  <div id="mw-credits"><span id="mw-credits-val">0</span> <span data-i18n="ui.mainwin.credits_unit">cr.</span></div>
+  <div id="mw-ships" data-i18n="ui.mainwin.ships" aria-disabled="true">Ships</div>
+</div>
 <button id="pause-btn" aria-label="Pause" title="Pause">⏸</button>
 <div id="pause-overlay">
   <div class="pause-title" data-i18n="ui.pause.paused">Paused</div>

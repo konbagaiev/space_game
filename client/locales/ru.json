@@ -14,6 +14,7 @@
   "ui.mission.slot": "Миссия {n}",
   "ui.mainwin.missions": "Миссии",
   "ui.mainwin.ships": "Корабли",
+  "ui.mainwin.credits_unit": "кр.",
   "ui.mainwin.primary": "Основная операция",
   "ui.mission.est_reward": "Награда ≈ {credits}",
   "ui.help": "<b>W / ↑</b> — тяга · <b>S / ↓</b> — назад · <b>A / D</b> или <b>← →</b> — поворот · <b>Space</b> — огонь · <b>F</b> — ракета",

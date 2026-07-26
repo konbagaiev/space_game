@@ -11,6 +11,7 @@ import { setPaused, refreshMusic, reset } from './sim.js';
 import { buildPlayerFor } from './ship-build.js';
 import { Device } from './device.js';
 import { renderAccountBar } from './account.js';
+import { updateMenuCredits } from './hud.js';
 import { localizeSettings } from './settings.js';
 import { localizeCredits } from './credits.js';
 import { typeText } from './typewriter.js';
@@ -54,6 +55,7 @@ welcomeEl.querySelector('.intro').addEventListener('click', () => { if (welcomeS
 export function showWelcome(playerShips) {
   selectedShip = playerShips[0] || null; // L1 owns exactly one ship; take-off needs a non-null selection
   renderAccountBar();
+  updateMenuCredits();                 // top-bar balance beside "Ships" (shown on every menu screen)
   document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   refreshMusic(); // menu → calmer hangar music
   welcomeEl.style.display = 'grid';

@@ -7,7 +7,7 @@ import { esc, slotLabel, priceLabel, sellLabel } from './format.js';
 import { G, CATALOG } from './state.js';
 import { shipMass, deriveDrive } from './components.js';
 import { resolveComponents, buildPlayerFor } from './ship-build.js';
-import { updateHud } from './hud.js';
+import { updateHud, updateMenuCredits } from './hud.js';
 import { fetchJson } from './net.js';
 import { API_BASE } from './api-base.js';
 import { t } from './i18n.js';
@@ -237,6 +237,7 @@ export function renderBay() {
   if (!shopData || !shopData.activeShip) return;
   const active = shopData.activeShip;
   document.getElementById('bay-credits-val').textContent = shopData.credits;
+  updateMenuCredits(shopData.credits); // buying/selling moves the balance → refresh the top-bar readout too
   renderShipStatsBar(deriveShipStats(active.components, active.loadout && active.loadout.mounts));
   renderLoadout(active);
   renderStash(shopData.stash || []);
