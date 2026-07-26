@@ -227,6 +227,17 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
   2026-07 — global look toggle + freighter palette/shape sliders + **Copy JSON**) is the first small
   instance of this pattern; the ghost-battle "Backdrop" panel (persisted `ghostTune`) is another. The
   general version generalizes them into one panel and adds a real save path. See DECISIONS §74/§30.
+- **Feature-pipeline: review the planner sessions.** The `/feature-pipeline` planner has been the slowest
+  and most revision-prone stage (e.g. the 2026-07-26-2114 exhaust run: ~15 min across discovery + write +
+  2 revisions, and it once shipped an incomplete edit-list — a removed pool's third importer was missed and
+  only the critic caught it). Go back over recorded planner sessions and tighten its discovery/plan-write:
+  exhaustive consumer sweeps for any *removal*, tighter time budget, fewer round-trips. Data source:
+  `docs/pipeline-runs.jsonl` + the agent transcripts.
+- **Feature-pipeline: make the visual/UI test run OPTIONAL.** The visual-scenario harness (software-WebGL)
+  dominates implementer wall-clock (~27 min on the exhaust run) and is baseline-flaky on ~6 scenarios. Make
+  running the visual suite an opt-in gate (like the perf A/B gate) — default to the fast unit suite +
+  the mandatory replay guard, and only run the broader visual scenarios on request or when the change is
+  visual. Keep the intro replay guard (`22-intro-replay`) always-on.
 - Daily/repeatable missions for retention.
 - Leaderboards.
 - More ship classes / visual variety.
