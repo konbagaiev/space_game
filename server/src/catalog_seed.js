@@ -399,7 +399,7 @@ export const LEVELS = [
       // The canonical input-replay recording the intro CUTSCENE plays (a real Level-0 playthrough). Served
       // same-origin from S3 via assets:pull (content-hashed → new recording = new URL). The client bootstrap
       // plays this as the cutscene for a new player, then advances to Level 1. See docs/plans/2026-07-09-replay-record.md.
-      introTrace: 'assets/recordings/level0-intro.a39d1f46.json',
+      introTrace: 'assets/recordings/level0-intro.0526e940.json',
       phases: [
         {
           name: 'wave-1', // three basic pirates, one at a time (kill one -> the next warps in)
