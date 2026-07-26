@@ -16,7 +16,8 @@
   shield/health bars and their % readout, left-aligned with them — it no longer sits in the middle of the
   play area. Guard: `client/visual/scenarios/23-topbar-credits-radar.mjs` asserts the radar geometry, the
   `<n> cr.` format against the live balance, and that the top-right pair never overlaps the wordmark on
-  either a desktop or a 667×375 phone-landscape viewport.
+  either a desktop or a 667×375 phone-landscape viewport. Shipped to **prod** (`vega.tenony.com`) and
+  **itch.io** (`html5` build #1834315).
 - **Intro replay desync fixed — the seeded sim RNG is now opt-in.** Cosmetic FX (explosion sparks, exhaust,
   smoke) and world decor were drawing from the seeded stream inside `update()`/`reset()`, because `main.js`
   swapped a seeded `Math.random` in around those calls. So *any* FX/decor change silently shifted the stream
