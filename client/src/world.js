@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { scene, skyScene, renderer } from './engine.js';
 import { G, moons, setPieces } from './state.js';
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
+import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -646,34 +647,19 @@ const FREIGHTER_MODEL_LEN = 130; // normalize the glb's longest axis to the old 
 function makeFreighter(spec) {
   const g = new THREE.Group();
 
-  // --- Exhaust effect config: OPTIONAL, delivered from the server via the set-piece spec (map descriptor).
-  //     Falls back to the built-in fiery look. Extension point for future server-driven model effects. ---
-  const ex = spec.exhaust || {};
-  const pal = ex.palette || {};
-  const N    = ex.count ?? 90;
-  const len  = ex.len   ?? 48;
-  const size = ex.size  ?? 5;
-  const espd = ex.speed ?? 1.4;
-  const cHot = new THREE.Color(pal.hot ?? 0xfff1c0);
-  const cMid = new THREE.Color(pal.mid ?? 0xff7a2a);
-  const cEnd = new THREE.Color(pal.end ?? 0x7a1208);
-  const tmp  = new THREE.Color();
+  // --- Exhaust: the shared GPU/baked-texture, shader-driven axis-aligned plume (exhaust-fx.js), built
+  //     ONCE (no per-frame buffer re-upload). Reads spec.exhaust merged over the module defaults
+  //     (palette/count/len/size/speed + optional turbulence/softness). OPTIONAL & server-driven; absent →
+  //     all defaults. Honors the GLOBAL (a)/(b) look toggle shared with every ship plume. ---
+  const fx = makeFreighterExhaust(spec);
 
-  // Emitter origin + lateral spread are MUTABLE: the exhaust is built now, but the model (whose real rear
-  // bounds define where fire should stream from) loads async. The loader overwrites these; the update loop
-  // reads them each frame. Sensible pre-load default so a trail shows immediately.
+  // Emitter origin + lateral spread are MUTABLE: the plume is built now, but the model (whose real rear
+  // bounds define where fire should stream from) loads async. The loader pushes the derived origin/spread
+  // into the plume uniforms via fx.setOrigin. Sensible pre-load default so a plume shows immediately.
   const emit = new THREE.Vector3(0, 0, -60); // group-local (pre-scale) units
   let spread = 3;                            // lateral jitter half-extent, group-local
-
-  // fiery exhaust: additive points streaming aft from a single rear-center emitter, colored hot→orange→red
-  const epos = new Float32Array(N * 3), ecol = new Float32Array(N * 3), et = new Float32Array(N);
-  const eoff = new Float32Array(N * 2);
-  for (let i = 0; i < N; i++) { et[i] = Math.random(); eoff[i * 2] = Math.random() - 0.5; eoff[i * 2 + 1] = Math.random() - 0.5; }
-  const egeo = new THREE.BufferGeometry();
-  egeo.setAttribute('position', new THREE.BufferAttribute(epos, 3));
-  egeo.setAttribute('color', new THREE.BufferAttribute(ecol, 3));
-  const emat = new THREE.PointsMaterial({ size, vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-  g.add(new THREE.Points(egeo, emat));
+  fx.setOrigin(emit, spread);
+  g.add(fx.obj);
 
   // load the .glb (exhaust-only during load and on error — no procedural fallback), then re-derive the
   // emitter from the model's real group-local rear bounds so fire streams from behind the actual engines
@@ -693,20 +679,12 @@ function makeFreighter(spec) {
     // single rear-center emitter: model's tail (-Z), vertical center, spread scaled to the rear width
     emit.set(0, (lbox.min.y + lbox.max.y) / 2, lbox.min.z);
     spread = (lbox.max.x - lbox.min.x) * 0.2;
+    fx.setOrigin(emit, spread); // push the model-derived origin/spread into the plume uniforms
     g.add(pivot);
   }, undefined, (err) => console.warn('Freighter model failed to load, keeping exhaust only:', spec.modelUrl, err));
 
-  return { obj: g, update: (dt) => {
-    for (let i = 0; i < N; i++) {
-      et[i] += dt * espd; if (et[i] > 1) et[i] -= 1;
-      const t = et[i], sp = 1 + t * 4;
-      epos[i * 3]     = emit.x + eoff[i * 2] * spread * sp;
-      epos[i * 3 + 1] = emit.y + eoff[i * 2 + 1] * spread * sp;
-      epos[i * 3 + 2] = emit.z - t * len;
-      if (t < 0.5) tmp.copy(cHot).lerp(cMid, t / 0.5); else tmp.copy(cMid).lerp(cEnd, (t - 0.5) / 0.5);
-      ecol[i * 3] = tmp.r; ecol[i * 3 + 1] = tmp.g; ecol[i * 3 + 2] = tmp.b;
-    }
-    egeo.attributes.position.needsUpdate = true; egeo.attributes.color.needsUpdate = true;
+  return { obj: g, dispose: () => fx.dispose(), update: (dt) => {
+    fx.update(dt); // advance the plume's uTime (no buffer re-upload)
     // a transport in transit: it slowly cruises forward (along its nose, +z) at `speed` units/sec
     if (spec.speed) g.position.z += spec.speed * dt;
     // (escort drift) ride the zone center while the arena is drifting — off unless a mission turns it on

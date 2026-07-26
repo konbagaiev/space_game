@@ -74,7 +74,6 @@ export const explosions = [];
 export const sparks = [];
 export const shockwaves = [];
 export const creditPopups = []; // floating "+xx" credit-gain popups at enemy death { pos, amount, life, maxLife }
-export const trail = [];   // engine exhaust puffs
 export const rockets = [];
 export const smoke = [];    // rocket smoke trails
 export const flipbooks = []; // sprite-sheet explosion quads (flipbook-fx.js) { mesh, mat, frame, fps }

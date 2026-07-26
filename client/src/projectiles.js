@@ -9,13 +9,14 @@
 // the graphics tier, so seeding them would make a trace device-dependent as well.
 import * as THREE from 'three';
 import { scene } from './engine.js';
-import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { pointHitsShip } from './collision.js';
 import { applyPlayerDamage } from './components.js';
 import { registerShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
+import { attachShipExhaust } from './exhaust-fx.js';
 
 // applyPlayerDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -62,11 +63,11 @@ function spawnMuzzleFlash(pos, color) {
 // cost). Reads the live `gfx`, so a tier switch affects subsequent spawns immediately. Min 1.
 const scaledCount = (n) => Math.max(1, Math.round(n * G.gfx.particleScale));
 
-// Live count of the high-volume additive particles (continuous exhaust trail + burst sparks). The hard
-// ceiling `G.gfx.maxParticles` (Infinity off High/Balance) skips new emits when over budget — caps both
-// fill-rate overdraw and per-frame JS on the weakest phones. trail+sparks+smoke dominate; the few
-// short-lived explosion/shockwave meshes aren't counted.
-export const liveParticles = () => trail.length + sparks.length + smoke.length;
+// Live count of the high-volume additive particles (burst sparks + rocket smoke). The hard ceiling
+// `G.gfx.maxParticles` (Infinity off High/Balance) skips new emits when over budget — caps both
+// fill-rate overdraw and per-frame JS on the weakest phones. The engine exhaust is no longer a growing
+// particle pool (it's a fixed-cost attached plume, exhaust-fx.js), so it isn't counted here.
+export const liveParticles = () => sparks.length + smoke.length;
 
 // ---------- Micro-explosions at the impact point ----------
 // explosions moved to src/state.js
@@ -193,35 +194,15 @@ export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050, timeScale
 }
 
 // ---------- Engine trail (exhaust is part of the engine) ----------
-// trail moved to src/state.js
-const trailGeo = new THREE.SphereGeometry(1, 6, 6); // unit sphere, scale set by the exhaust
-
-function spawnTrail(pos, fwd, shipVel, exhaust) {
-  // glowing exhaust particle: additive, fades out.
-  // Start velocity = ship velocity + ejection backward along the nozzle (-fwd).
-  const mat = new THREE.MeshBasicMaterial({
-    color: exhaust.color, transparent: true, opacity: 0.85,
-    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-  });
-  const m = new THREE.Mesh(trailGeo, mat);
-  m.position.copy(pos);
-  m.scale.setScalar(exhaust.size);
-  scene.add(m);
-  const vel = shipVel.clone().addScaledVector(fwd, -exhaust.speed);
-  trail.push({ mesh: m, vel, life: exhaust.life, maxLife: exhaust.life, baseSize: exhaust.size });
-}
-
-// Emit one exhaust puff from a ship's nozzle. Shared by every ship (player and enemies):
-// the nozzle sits behind the hull (scaled by the ship's size) with a little width spread.
+// Each ship carries ONE shared exhaust plume (exhaust-fx.js), lazily attached + parented to its mesh so it
+// streams rigidly straight along the ship's aft -Z (the old curved position-history trail is gone —
+// deliberate trade-off, DECISIONS §74). This is now a fixed-cost render object, not a growing particle
+// pool: emitExhaust just flags "thrusting this frame" and the plume fades in/out (updateShipExhaust).
 export function emitExhaust(mesh, fwd, shipVel, exhaust) {
-  if (liveParticles() >= G.gfx.maxParticles) return; // hard ceiling on the lowest tier (overdraw + JS)
-  if (G.gfx.particleScale < 1 && Math.random() > G.gfx.particleScale) return; // thin the trail on lower tiers (per-frame overdraw)
-  const sc = mesh.scale.x || 1;                          // world scale (incl. spawn-grow + sizeScale)
-  const back = (mesh.userData.tailZ ?? -1.6) * sc;       // spawn at the model's actual tail (engines)
-  const pos = mesh.position.clone().addScaledVector(fwd, back);
-  pos.x += (Math.random() - 0.5) * exhaust.spread;
-  pos.z += (Math.random() - 0.5) * exhaust.spread;
-  spawnTrail(pos, fwd, shipVel, exhaust);
+  const plume = attachShipExhaust(mesh, exhaust); // lazily builds + caches on mesh.userData.exhaustPlume
+  plume.throttleTarget = 1;                        // decayed toward 0 each frame in updateShipExhaust
+  // fwd/shipVel are unused now (orientation comes from the parent mesh); kept in the signature so the
+  // sim.js call sites (player/enemy thrust) stay unchanged.
 }
 
 // ---------- Rockets (homing) ----------

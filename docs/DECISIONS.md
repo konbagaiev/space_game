@@ -2573,6 +2573,52 @@ bit-for-bit — did not.
   is unchanged: with no seed installed, `simRandom()` delegates to `Math.random()`. Consistent with §30
   (simplest thing that works: one leaf module, no framework).
 
+## 74. Exhaust FX = one shared shader plume with a GLOBAL look toggle; ship trails go straight (curve dropped)
+
+**Context.** The game had **two** independent engine-exhaust systems, both per-frame CPU particle clouds:
+the cargo-freighter set-piece (`world.js`, a `THREE.Points` cloud re-uploading position **and** color
+buffers every frame) and the per-ship engine trail (`projectiles.js`, a growing pool of additive sphere
+puffs — a curved *history* of past emit positions). The recent FX pass (`bolt-fx.js` / `flipbook-fx.js`)
+established a house style: bake a texture **once**, compile **one** program per look, per-instance material
+with uniforms, no per-frame allocations. This unifies both exhaust systems onto that style.
+
+**Decisions.**
+1. **One shared plume module (`exhaust-fx.js`), both systems.** Freighter + every ship use the same
+   `makePlume` factory: a baked-once glow texture, an axis-aligned plume streaming along the model's aft
+   `-Z` (NOT a camera-facing billboard — a billboard fights the stream under the near-top-down camera).
+   Freighter reads `spec.exhaust` merged over module defaults; ships derive a 3-stop palette from the
+   engine's single `exhaust.color`. `spec.exhaust` + engine `stats.exhaust` schemas are **unchanged** (new
+   `turbulence`/`softness` are optional client-side defaults) — no server/catalog change.
+2. **Ship the (a) point-glow + (b) noise-scroll flame looks BEHIND a GLOBAL `?dev` toggle; decide the final
+   one on a live build.** Every plume (freighter + all ships) builds **both** meshes and renders whichever
+   the shared `currentMode` selects (default the safe, silhouette-preserving `points`). The `?dev` Exhaust
+   panel's Mode dropdown flips **all** plumes at once (`setGlobalExhaustMode`); palette/shape sliders are
+   **freighter-only** (ships keep their engine-derived palettes). Per-ship cost stays sane — one Points
+   mesh + one flame quad that reuses a **module-singleton geometry** (N ships don't multiply geometry). Why
+   a live toggle vs. picking one now: visual/feel calls only settle in play (the maintainer picks by eye) —
+   `visual-features-need-early-playable-build`.
+3. **Ship trails become RIGID STRAIGHT plumes — the curved position-history is intentionally dropped.** The
+   old trail *curved* because it was a history of past emit positions; the converted trail is a straight
+   plume parented to the ship (same primitive as the freighter). Accepted loss of the turn-curve in exchange
+   for simpler, cheaper, one-FX-style code. A ship fades its plume via a smoothed `throttle` (thrust flags
+   `throttleTarget = 1`; `updateShipExhaust` decays it), so stopping thrust fades out. The `trail` particle
+   pool is removed entirely.
+4. **Tuning = live `?dev` edit + Copy-JSON export, no persistence.** The panel mutates an in-memory copy and
+   the runtime `currentMode` only; **Copy JSON** is the save path (paste tuned numbers into the module
+   defaults). Prod behavior is driven only by `spec.exhaust` + defaults, never a dev-session tune. The
+   general "unified visual/UX live-tuning panel + save-to-file" is **deferred to ROADMAP** (§30 — build the
+   smallest thing that delivers; this `?dev` panel is the first small instance).
+
+**Replay safety (cross-ref §73).** The FX use **no** `Math.random` and **no** `simRandom` — per-particle
+seeds are a deterministic `hash(i)` (like `flipbook-fx.js`). Pure render: nothing touches
+sim/damage/collision/economy or the seeded stream, so the recorded Level-0 intro re-sim is bit-identical
+(the `22-intro-replay` guard passes). Tier gating (§23) moves from per-frame particle thinning to a
+one-time count scale at plume attach. No model/asset change → no `CREDITS.md` change, no `/publish-itch`.
+
+**Testable-seam split.** The pure config/fade/palette/hash helpers live in `exhaust-config.js` (no `three`
+import) so `node --test` can cover them without the browser importmap — same pattern as
+`ghost-battle-track.js` ↔ `ghost-battle.js`.
+
 ## Future ideas
 
 solid asteroids with bounce ·
