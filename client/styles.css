@@ -11,6 +11,7 @@
   }
   #hud .right { text-align: right; }
   .bigval { font-size: 14px; font-weight: 600; }
+  .hud-earned { color: #77ee77; } /* credits earned this run — green, matches the "+xx" kill popups */
   .label { font-size: 12px; letter-spacing: 1px; opacity: .6; text-transform: uppercase; }
   #shieldbar { width: 220px; height: 10px; border: 1px solid #3a6ea5; border-bottom: 0;
                border-radius: 7px 7px 0 0; overflow: hidden; margin-top: 4px; background: rgba(0,0,0,.4); }

@@ -5,6 +5,12 @@
 
 ## 2026-07-26
 
+- **HUD earned-credits counter now green.** In the top-right `credits {total}/{earned} earned`
+  readout, the **Earned this run** number is now rendered green (`.hud-earned`, `#77ee77` — the same
+  green as the "+xx" kill popups) so the live mission gain stands out from the persistent balance.
+  `updateHud` wraps the `{earned}` interpolation in a `<span class="hud-earned">`; works for both EN
+  and RU. CSS + one-line `hud.js` change.
+
 - **HUD "credits X/Y earned" font no longer oversized.** The top-right credits readout used
   `.bigval` (26px / weight 700) — nearly double every other HUD readout, so it read as gigantic. Dropped
   to **14px / weight 600**, matching the sibling `#hppct` readout (14px) and the rest of the HUD scale.

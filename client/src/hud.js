@@ -18,7 +18,9 @@ const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the p
 
 // ---------- HUD ----------
 export function updateHud() {
-  el.credits.textContent = t('ui.hud.credits_line', { total: G.balance, earned: G.earned });
+  // {earned} = credits banked this run → green so it reads as live mission gain (matches the "+xx" kill popups).
+  // total/earned are numbers and the catalog string is trusted, so innerHTML here is safe.
+  el.credits.innerHTML = t('ui.hud.credits_line', { total: G.balance, earned: `<span class="hud-earned">${G.earned}</span>` });
   el.kills.textContent = G.enemyTotal > 0 ? `${G.kills}/${G.enemyTotal}` : G.kills;
   const hpPct = Math.max(0, G.player.hp / G.player.maxHp * 100);
   el.hpFill.style.width = hpPct + '%';

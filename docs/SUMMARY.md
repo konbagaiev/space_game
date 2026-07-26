@@ -1004,7 +1004,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   player's persistent **Credits** balance (server-authoritative; closing the browser mid-run loses the
   unbanked amount). New players start at **1000 credits**. HUD (top-right) shows one credits line —
   `credits {total}/{earned} earned` (total persistent balance / Earned this run; `ui.hud.credits_line`,
-  EN+RU) — plus **Destroyed**. The live **Enemies** (alive) counter has been **removed**.
+  EN+RU), where the **Earned** number is rendered **green** (`.hud-earned`, `#77ee77`, matching the
+  "+xx" kill popups) so live mission gain stands out — plus **Destroyed**. The live **Enemies** (alive) counter has been **removed**.
   **Destroyed** reads **killed / total** (e.g. `8/16`): *total* is the number of enemies destroyed to clear
   the whole level/mission, precomputed on the server from the descriptor's phase script and embedded as
   `descriptor.enemyTotal` (the client reads it in `levelRunner.start`; falls back to the bare kill count when
