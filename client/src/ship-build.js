@@ -8,6 +8,7 @@ import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js
 import { deriveDrive } from './components.js';
 import { shipModelCfg, modelSpec, makeShip } from './ship-factory.js';
 import { spawnBullet, spawnRocket, findTargetInSector } from './projectiles.js';
+import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
 import { audio, sfxFor } from './sound-routing.js';
 import { simRandom } from './sim-random.js'; // seeded GAMEPLAY stream: enemy spawn placement/facing + reload jitter
 
@@ -71,7 +72,7 @@ export function buildPlayer(active) {
 // actually takes effect); other (preview) ships fall back to their catalog defaults. G.currentShipName
 // + G.activeShip live on the shared bag — written by the welcome/shop/account/net flows.
 export function buildPlayerFor(ship, override = null) {
-  if (G.player) scene.remove(G.player.mesh);
+  if (G.player) { disposeShipExhaust(G.player.mesh); scene.remove(G.player.mesh); } // the retired mesh carries a parented plume → dispose its ShaderMaterials (GPU-leak guard)
   // `override` ({ loadout, components }) forces an EXACT build independent of the current account — used by
   // ?playback so a recording reproduces the ship+weapons it was MADE with, not whatever the player has equipped
   // now (e.g. a machine gun unlocked on a later level would otherwise leak into an intro-level playback).

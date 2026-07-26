@@ -4,7 +4,7 @@
 // imports the leaves (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported
 // only by the composition root (the inline script / main). It never imports the loop's callers.
 import * as THREE from 'three';
-import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
@@ -13,6 +13,7 @@ import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spira
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, spawnShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
 import { updateFlipbooks } from './flipbook-fx.js';
+import { updateShipExhaust, disposeShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
@@ -652,20 +653,9 @@ export function update(dt) {
   // --- flipbook (sprite-sheet) explosions: advance frame, fade + drop when finished ---
   updateFlipbooks(dt);
 
-  // --- engine trail: particles fly backward, fade out and shrink ---
-  for (let i = trail.length - 1; i >= 0; i--) {
-    const p = trail[i];
-    p.mesh.position.addScaledVector(p.vel, dt);
-    p.life -= dt;
-    const t = 1 - Math.max(0, p.life) / p.maxLife; // 0 → 1
-    p.mesh.material.opacity = (1 - t) * 0.85;
-    p.mesh.scale.setScalar(p.baseSize * (1.1 - t * 0.8));
-    if (p.life <= 0) {
-      scene.remove(p.mesh);
-      p.mesh.material.dispose();
-      trail.splice(i, 1);
-    }
-  }
+  // --- engine exhaust: advance every ship's attached plume (uTime) + decay its thrust throttle so a ship
+  //     that stops thrusting fades out. Fixed-cost render objects, not a growing pool (exhaust-fx.js). ---
+  updateShipExhaust(dt);
 
   // --- rocket smoke trail: fixed-size puffs that only fade (a thin dissipating line, not a cone) ---
   for (let i = smoke.length - 1; i >= 0; i--) {
@@ -730,6 +720,7 @@ export function update(dt) {
       const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(e.role);
       audio.sfx.explosion(e.sizeScale || 1, sfxFor('ship', e.class, 'explode'), louderBoom ? 1.5 : 0.3); // ship-class map; vol by size
 
+      disposeShipExhaust(enemies[i].mesh); // free the dead ship's attached exhaust plume (ShaderMaterials)
       scene.remove(enemies[i].mesh);
       enemies.splice(i, 1);
       G.kills++;                  // count (drives level thresholds + HUD)
@@ -835,8 +826,6 @@ export function reset() {
   bullets.length = 0;
   for (const x of explosions) { scene.remove(x.mesh); x.mesh.material.dispose(); }
   explosions.length = 0;
-  for (const p of trail) { scene.remove(p.mesh); p.mesh.material.dispose(); }
-  trail.length = 0;
   for (const r of rockets) {
     scene.remove(r.obj);
     const mesh = r.obj.children[0]; // the spiral leader is an empty Group (invisible) → no mesh child
@@ -856,7 +845,7 @@ export function reset() {
   clearEventLog(); // start a fresh run with an empty event log
   G.autopilot.active = false; G.autopilot.target = null; // defensive: no dangling drop-target autopilot into the new run
 
-  for (const e of enemies) scene.remove(e.mesh);
+  for (const e of enemies) { disposeShipExhaust(e.mesh); scene.remove(e.mesh); }
   enemies.length = 0;
   // A side mission fights over its own location in the world (its set-piece); the campaign uses (0,0).
   const cx = (G.activeMission && G.activeMission.center && G.activeMission.center.x) || 0;
@@ -867,7 +856,7 @@ export function reset() {
   G.arenaDrift = (G.activeMission && G.activeMission.drift)
     ? new THREE.Vector3(G.activeMission.drift.x || 0, 0, G.activeMission.drift.z || 0) : null;
   // rebuild the shared world's set-pieces fresh each run (resets the cruising freighter to its start)
-  for (const sp of setPieces) scene.remove(sp.obj);
+  for (const sp of setPieces) { sp.dispose?.(); scene.remove(sp.obj); } // dispose() frees the freighter plume's materials (no-op for others)
   setPieces.length = 0;
   for (const spec of G.mapSetpieces) buildSetPiece(spec);
   // Ambient distant ghost battle: shown in every mission EXCEPT the freighter escort (you're IN that fight

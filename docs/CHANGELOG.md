@@ -18,6 +18,31 @@
   `<n> cr.` format against the live balance, and that the top-right pair never overlaps the wordmark on
   either a desktop or a 667×375 phone-landscape viewport. Shipped to **prod** (`vega.tenony.com`) and
   **itch.io** (`html5` build #1834315).
+- **Exhaust FX unified onto a shared GPU/baked-texture plume.** [2026-07-26-2114-freighter-exhaust-fx] The
+  cargo-freighter set-piece exhaust (`world.js makeFreighter`) **and** every ship's engine trail
+  (`projectiles.js emitExhaust`/`spawnTrail`) were converted from per-frame CPU-simulated particle clouds
+  (position **and** color buffers re-uploaded every frame) to **one** additive, baked-texture-once,
+  shader-driven **axis-aligned plume** in the `bolt-fx`/`flipbook-fx` FX family — new module
+  `client/src/exhaust-fx.js` (GL factory + registry + `?dev` panel) with the pure, unit-tested seams
+  (`hash`, `plumeCfg`, `decayThrottle`, `derivePalette`) split into `client/src/exhaust-config.js`. Each
+  plume builds **both** looks — (a) silhouette-preserving **point-glow** (default) / (b) **noise-scroll
+  flame** — and a new `?dev` "Exhaust" tuning panel toggles the look **GLOBALLY** (freighter + all ships at
+  once, `setGlobalExhaustMode`), with **freighter-only** palette/shape sliders (count/len/size/speed/spread/
+  turbulence/softness) + a **Copy JSON** export (no persistence — Copy JSON is the save path). Per-ship
+  trails are now **rigidly straight** plumes parented to each ship (the old curved position-history is
+  intentionally dropped — DECISIONS §74); they attach lazily on first thrust (count tier-scaled once), fade
+  in/out with a smoothed `throttle`, and are disposed on ship **death/reset** (`disposeShipExhaust`) and
+  **player ship-swap** (`ship-build.js`). The dead `trail` particle pool (`state.js`), `spawnTrail`, and its
+  `sim.js` drain loop / reset teardown / `window.__game` export are **removed**; `liveParticles()` no longer
+  counts exhaust. User-visible: prettier, unified engine fire the maintainer can retune live and pick the
+  final look by eye. **Replay-neutral by construction** — no `Math.random`/`simRandom` in the FX
+  (deterministic `hash(i)` seeds), no sim/damage/collision/economy change; the mandatory `22-intro-replay`
+  guard passes (4 kills / cards p0..p4 / win). `spec.exhaust` schema unchanged (+ optional
+  `turbulence`/`softness`, defaults on the client); **no server/catalog/model/asset change** (no
+  `CREDITS.md` change, no `/publish-itch`). New unit test `exhaust-fx.test.js`; `03-exhaust-trail` rewritten
+  to assert attached plumes; new visual scenario `24-freighter-exhaust` (global toggle flips freighter **and**
+  ship plumes). The general "unified visual/UX live-tuning panel + save-to-file" is parked to ROADMAP
+  (DECISIONS §30/§74).
 - **Intro replay desync fixed — the seeded sim RNG is now opt-in.** Cosmetic FX (explosion sparks, exhaust,
   smoke) and world decor were drawing from the seeded stream inside `update()`/`reset()`, because `main.js`
   swapped a seeded `Math.random` in around those calls. So *any* FX/decor change silently shifted the stream

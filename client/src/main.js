@@ -8,13 +8,14 @@ import { seedSim, isSimSeeded } from './sim-random.js'; // the seeded GAMEPLAY s
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
-import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
+import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { updateShieldBubble } from './shield-fx.js'; // player shield bubble: faint idle rim + ripple-on-hit (variant B)
+import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
@@ -504,7 +505,7 @@ function prewarmShaders() {
     renderer.compile(skyScene, camera);
     renderer.compile(scene, camera);
     const warm = new THREE.Group();
-    const addMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }); // explosions/sparks/trail/shockwave
+    const addMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }); // explosions/sparks/shockwave
     const fogMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // bullets/rockets (opaque, scene fog on)
     warm.add(new THREE.Mesh(explosionGeo, addMat), new THREE.Mesh(bulletGeo, fogMat));
     warm.position.y = -100000; // far off-camera (compile ignores culling, but keep it invisible if a frame slips in)
@@ -681,7 +682,14 @@ function animate() {
 if (location.search.includes('debug')) {
   window.__game = {
     scene, camera, enemies, bullets, rockets,
-    explosions, sparks, shockwaves, trail, smoke,
+    explosions, sparks, shockwaves, smoke,
+    // Exhaust FX debug hooks: the GLOBAL (a)/(b) look toggle + read the current mode / live freighter plume.
+    exhaust: {
+      setGlobalExhaustMode,
+      get currentMode() { return getCurrentMode(); },
+      get activeFreighterPlume() { return getActiveFreighterPlume(); },
+      pump: updateShipExhaust, // headless-test hook: step every ship plume's throttle fade by a fixed dt (deterministic, no reliance on the software-WebGL frame rate)
+    },
     spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, spawnRocket, reset, levelRunner,
     drops, // the live loot-drop array (count/positions assertable in headless)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
@@ -1371,6 +1379,9 @@ async function bootstrap() {
       const { default: GUI } = await import('three/addons/libs/lil-gui.module.min.js');
       const { buildBackdropPanel } = await import('./ghost-battle.js');
       buildBackdropPanel(GUI);
+      // Exhaust tuning panel: GLOBAL points/flame toggle + freighter-only palette/shape sliders + Copy JSON.
+      const { buildExhaustPanel } = await import('./exhaust-fx.js');
+      buildExhaustPanel(GUI);
     }
   } catch (err) {
     console.error('Failed to load the game from the API:', err);
