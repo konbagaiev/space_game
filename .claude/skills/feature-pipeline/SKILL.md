@@ -130,10 +130,18 @@ code lives, what it touches, why it's placed there).
     `reviewRounds`) → **re-show this walkthrough**.
   - Record the decision + how many human rounds in the run-log `human_review`.
 
-## Stage 6.7 — Perf A/B gate (after human review, before commit)
+## Stage 6.7 — Perf A/B gate (after human review, before commit) — **OPT-IN, ASK FIRST**
 
 Catch a >2% per-frame **CPU** regression before it lands (DECISIONS §58, `docs/plans/multi-agent-pipeline.md`).
-Do this yourself (no agent) after the human review approves:
+
+**Do NOT run this by default.** The bench takes ~25-40 minutes of wall clock (15×2 reps per trace under a 4×
+CPU throttle) and stalls the whole pipeline. **Ask the maintainer whether to run it** — a one-line question
+naming the cost, with "skip" as the default — and run it only on an explicit yes. Skipped → `perfGate =
+skipped` in the retro + run record. Worth proposing a yes when the diff touches the per-frame hot path
+(render loop, particle/FX systems, per-entity update work); not worth it for docs, tests, tooling, UI chrome,
+or logic that runs once per level.
+
+If the maintainer says yes, do it yourself (no agent) after the human review approves:
 - Compute the merge-base: `base=$(git -C <worktree> merge-base HEAD main)`.
 - Materialize build **A** from the merge-base into a temp dir (e.g. `git -C <worktree> archive "$base" | tar -x
   -C <tmpA>`), and run from the worktree:
