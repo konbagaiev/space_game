@@ -3,6 +3,38 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-26
+
+- **Intro replay desync fixed — the seeded sim RNG is now opt-in.** Cosmetic FX (explosion sparks, exhaust,
+  smoke) and world decor were drawing from the seeded stream inside `update()`/`reset()`, because `main.js`
+  swapped a seeded `Math.random` in around those calls. So *any* FX/decor change silently shifted the stream
+  and desynced the recorded Level-0 intro — it broke **three times** (shield sphere `db78736`, asteroid `.glb`
+  `7d8fa50`, flipbook FX `0e5766a`), leaving a brand-new player's first impression as a cutscene that shoots
+  at empty space and never clears. New `client/src/sim-random.js` (`simRandom`/`seedSim`/`isSimSeeded`, plus
+  `mulberry32` moved here and re-exported from `bench.js`); the ~8 **gameplay** draw sites opt in explicitly
+  (`sim.js` enemy pick + drop roll + the `stepSpawnGate(..., simRandom)` injection, `ship-build.js` spawn
+  angle/distance/heading + enemy reload stagger, `drops-config.js` `pickLoot`) and the global `Math.random`
+  swapping (`withSimRand`, `installSeededRandom`) is **gone** — so new FX code is replay-safe by default, and
+  a trace is no longer graphics-tier dependent (spark/exhaust counts are gated on `G.gfx`, so the same trace
+  used to consume a different number of seeded values on a weak phone). The seed is also **cleared** on
+  teardown (`finishIntro`, `stopRecordSession`) so live play never runs off a stale stream. Verified
+  record→playback still reproduces a fight bit-for-bit (identical state hash over 900 ticks).
+- **Two termination guards so a failed intro re-sim can never dead-end** — a **return-home watchdog** on the
+  replay session (`CUTSCENE_STALL_TICKS = 900` ≈ 15 s of sim time in `replay.js`, unit-tested) ends a
+  cutscene that engaged "return to base" but can never dock, and `__replay.step()` now mirrors `animate()`'s
+  missing **end-of-trace** exit. Both route through the normal `cutsceneEnd()` → `finishIntro()` path, so the
+  player still advances 1→2 and lands on the Level 1 briefing instead of staring at a hung screen.
+- **Committed headless guard against the whole bug class** — `client/visual/scenarios/22-intro-replay.mjs`
+  (in `npm run test:visual`) re-sims the canonical intro trace on its own `?playback&…&cutscene=1&debug` url
+  and asserts **4 kills, cards `p0..p4`, win**; it waits on the new `__replay.status().armed` gate (models
+  loaded = correct bullet spawn point) and hard-fails with "run `npm run assets:pull`" when the trace asset is
+  absent. `visual/run.mjs` accepts a name filter (`node visual/run.mjs 22-intro-replay`) to re-run one
+  scenario. **The intro trace was re-recorded** as part of this change — the purified stream necessarily
+  invalidates the old one, so a red guard test must be fixed by re-recording, never by reverting the
+  purification. Older local `?playback` recordings (`replay:*` in localStorage) are invalidated too.
+- **`assets:check` gained a third lane** (ops): the `level-1` descriptor's `introTrace` must exist on S3
+  (`recordings/`), so a bad hash blocks the deploy instead of shipping a 404 intro. See DECISIONS §73.
+
 ## 2026-07-25
 
 - **FX polish shipped to prod + itch: flipbook explosions + kinetic energy bolts.** Two visual upgrades,

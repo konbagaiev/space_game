@@ -19,8 +19,9 @@ flat. To partly cover this the gate also tracks structural signals from the per-
 
 ## Files
 
-- `src/bench.js` (in `client/src/`) — the `?bench` flag (`benchMode`/`isBench`, sticky like `?dev`) + the
-  seeded RNG (`installSeededRandom` / `mulberry32`) + `BENCH_DT` (fixed 1/60 step).
+- `src/bench.js` (in `client/src/`) — the `?bench` flag (`benchMode`/`isBench`, sticky like `?dev`) +
+  `BENCH_DT` (fixed 1/60 step). The seeded RNG lives in `src/sim-random.js` (`seedSim`/`simRandom`, opt-in per
+  gameplay draw site — DECISIONS §73); `bench.js` only re-exports `mulberry32` from there.
 - `gen-trace.mjs` — deterministic generator for the canonical trace.
 - `traces/combat-heavy.json` — the committed canonical trace (output of the generator).
 - `run.mjs` — the A/B runner (forks Chromium + an isolated server).

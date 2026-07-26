@@ -16,6 +16,7 @@ import { updateFlipbooks } from './flipbook-fx.js';
 import { spawnShieldReady } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
+import { simRandom } from './sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
 import { isLastKillDrop } from './level-sim.js';
 import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
@@ -146,7 +147,7 @@ export const levelRunner = {
 
   pickShip(pool) {
     const total = pool.reduce((s, p) => s + (p.chance || 1), 0); // `chance` = spawn frequency
-    let r = Math.random() * total;
+    let r = simRandom() * total;   // GAMEPLAY draw (which enemy spawns) → the seeded stream
     for (const p of pool) { r -= (p.chance || 1); if (r < 0) return p.ship; }
     return pool[0].ship;
   },
@@ -172,7 +173,7 @@ export const levelRunner = {
       const gate = stepSpawnGate({
         cooldown: this.spawnCooldown, dt,
         alive: enemies.length, maxConcurrent: ph.spawn.maxConcurrent, capRemaining,
-      });
+      }, simRandom);   // the spawn cooldown is a GAMEPLAY draw — inject the seeded stream explicitly
       this.spawnCooldown = gate.cooldown;
       if (gate.spawn) {
         const def = CATALOG.shipByName.get(this.pickShip(ph.spawn.pool));
@@ -754,7 +755,7 @@ export function update(dt) {
       const lkd = levelRunner.level && levelRunner.level.lastKillDrop;
       if (lkd && isLastKillDrop({ kills: G.kills, enemyTotal: G.enemyTotal }) && !ownsReward(lkd)) {
         spawnSpecialDrop(e.mesh.position, lkd);
-      } else if (Math.random() < DROP_CHANCE) {
+      } else if (simRandom() < DROP_CHANCE) {   // GAMEPLAY draw (does this kill drop loot?)
         const loot = pickLoot(e); if (loot) spawnDrop(e.mesh.position, loot);
       }
     }

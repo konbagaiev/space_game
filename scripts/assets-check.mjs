@@ -1,21 +1,24 @@
 // assets:check — drift-check / deploy guard: every PIPELINE asset URL referenced in the codebase must
 // exist on S3, else exit non-zero (no shipping ghost ships / silent SFX). Doubles as the CI deploy guard.
-// Covers two lanes:
+// Covers three lanes:
 //  - Ship models in catalog_seed.js — content-hashed combat paths (assets/ships/<...>.<hash>.glb) under
 //    ships-combat/; CloudFront hangar URLs (modelUrlHigh) under ships-hangar/. In-git primitive paths
 //    (assets/ships/<ship>.glb, no hash) are skipped — they live in the repo.
 //  - SFX in catalog_seed.js SOUNDS — content-hashed same-origin paths (assets/sounds/<name>.<hash>.mp3)
 //    under sfx/.
+//  - Input-replay traces on a LEVELS descriptor (`introTrace`, the Level-0 intro cutscene) — content-hashed
+//    same-origin paths (assets/recordings/<name>.<hash>.json) under recordings/. A typo would ship a 404 intro.
 // Because the bytes live on S3 and the content-hashed URLs live in git, they can't drift — a URL only
 // resolves if that exact build was pushed. Run: `npm run assets:check`. See docs/plans/ship-model-pipeline.md
 // and docs/plans/audio-sample-pipeline.md.
 import { execFileSync } from 'node:child_process';
 import { BUCKET, awsArgs, PREFIX, CDN } from './assets-config.mjs';
-import { SHIPS, SOUNDS, COMPONENTS, WEAPONS } from '../server/src/catalog_seed.js';
+import { SHIPS, SOUNDS, COMPONENTS, WEAPONS, LEVELS } from '../server/src/catalog_seed.js';
 import { DROP_MODEL_URL } from '../client/src/drops-config.js'; // shared loot-drop model (single source of truth)
 
 const HASHED_GLB = /\.[0-9a-f]{8}\.glb$/; // content-hashed → a pipeline (S3) model, not an in-git primitive
 const HASHED_MP3 = /\.[0-9a-f]{8}\.mp3$/; // content-hashed SFX → must be on S3
+const HASHED_JSON = /\.[0-9a-f]{8}\.json$/; // content-hashed input-replay trace → must be on S3
 
 // → the S3 key a model URL should resolve to, or null if it's an in-git primitive (skip).
 function modelKey(url) {
@@ -32,6 +35,11 @@ function soundKey(url) {
     return PREFIX.sounds + url.slice('assets/sounds/'.length);
   }
   return null;
+}
+// → the S3 key an input-replay trace URL should resolve to, or null if not a content-hashed recording.
+function traceKey(url) {
+  return (url && url.startsWith('assets/recordings/') && HASHED_JSON.test(url))
+    ? PREFIX.recordings + url.slice('assets/recordings/'.length) : null;
 }
 
 function existsOnS3(key) {
@@ -56,6 +64,11 @@ for (const [label, rows] of [['', SHIPS], ['component:', COMPONENTS], ['weapon:'
 for (const s of SOUNDS) {
   const key = soundKey(s.url);
   if (key) targets.push({ name: `sfx:${s.key}`, field: 'url', url: s.url, key });
+}
+// Input-replay traces named on a level descriptor (today: the Level-0 intro cutscene's `introTrace`).
+for (const l of LEVELS) {
+  const key = traceKey(l.descriptor && l.descriptor.introTrace);
+  if (key) targets.push({ name: `intro:${l.name}`, field: 'introTrace', url: l.descriptor.introTrace, key });
 }
 // Shared equipment-drop model (client renders it from DROP_MODEL_URL; there is no modelUrl-on-component copy).
 { const key = modelKey(DROP_MODEL_URL); if (key) targets.push({ name: 'drop:metal_box', field: 'DROP_MODEL_URL', url: DROP_MODEL_URL, key }); }

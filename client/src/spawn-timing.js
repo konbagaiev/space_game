@@ -5,7 +5,8 @@
 export const SPAWN_DELAY_MIN = 2;   // seconds — floor of the post-spawn cooldown
 export const SPAWN_DELAY_SPAN = 2;  // seconds — added window (so the delay is 2..4 s)
 
-// Randomized 2..4 s delay to arm after a spawn. `rand` is injectable for deterministic tests.
+// Randomized 2..4 s delay to arm after a spawn. Injectable RNG — the sim MUST pass `simRandom` (see sim.js);
+// the `Math.random` default exists for tests only.
 export function nextSpawnDelay(rand = Math.random) {
   return SPAWN_DELAY_MIN + rand() * SPAWN_DELAY_SPAN;
 }
@@ -16,6 +17,8 @@ export function nextSpawnDelay(rand = Math.random) {
 // The cooldown only drains while a slot is open (alive < maxConcurrent AND budget remains); a FULL arena
 // freezes the timer, so when a kill frees a slot the remaining 2–4 s still has to elapse (post-kill
 // replacements are staggered too, never instant). One spawn per call at most (staggered one at a time).
+// `rand` is the injectable RNG — the sim MUST pass `simRandom` (see sim.js); the `Math.random` default exists
+// for tests only (and for level-sim.js's headless projection, which injects its own).
 export function stepSpawnGate({ cooldown, dt, alive, maxConcurrent, capRemaining }, rand = Math.random) {
   const wantSpawn = alive < maxConcurrent && (capRemaining == null || capRemaining > 0);
   if (!wantSpawn) return { spawn: false, cooldown };  // arena full / budget spent → freeze the timer

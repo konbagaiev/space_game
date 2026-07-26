@@ -2,6 +2,11 @@
 // + shockwave), engine exhaust trail, homing rockets and rocket smoke. Spawners push into the shared
 // pools in state.js (drained by the update loop) and add meshes to the combat scene. Particle counts
 // are gated by the live graphics tier (G.gfx) to cap fill-rate on weak phones.
+//
+// RNG CONTRACT: the cosmetic FX in here draw the NATIVE `Math.random` on purpose — never `simRandom()`.
+// Gameplay-affecting randomness lives in `sim-random.js`; keeping FX out of the seeded stream is what makes
+// the recorded intro/replays survive FX changes (DECISIONS §73). Spark/exhaust/smoke counts are also gated on
+// the graphics tier, so seeding them would make a trace device-dependent as well.
 import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G, bullets, explosions, sparks, shockwaves, trail, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
