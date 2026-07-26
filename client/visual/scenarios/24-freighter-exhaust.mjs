@@ -1,7 +1,7 @@
-// Freighter set-piece exhaust → the shared shader plume (exhaust-fx.js), and the GLOBAL (a)/(b) look
-// toggle. Launch the freighter mission (its set-piece cruises at the arena center), wait for the plume,
-// assert it exists in the default 'points' look, then flip the GLOBAL mode to 'flame' and assert the flame
-// mesh becomes visible on BOTH the freighter plume AND a thrusting ship plume (the toggle is global).
+// Freighter set-piece exhaust → the shared shader plume (exhaust-fx.js), and the GLOBAL look toggle.
+// Launch the freighter mission (its set-piece cruises at the arena center), wait for the plume, assert it
+// exists in the default 'flame' look, then flip the GLOBAL mode to 'points' and assert the point mesh
+// becomes visible on BOTH the freighter plume AND a thrusting ship plume (the toggle is global).
 export const name = '24-freighter-exhaust';
 
 export default async function ({ page, assert, shot }) {
@@ -43,17 +43,17 @@ export default async function ({ page, assert, shot }) {
     };
   });
   assert.ok(before.hasFreighter, 'the freighter mission builds an active freighter plume');
-  assert.equal(before.mode, 'points', 'the global look defaults to the point plume');
-  assert.equal(before.freighterPointsVisible, true, 'freighter shows the point mesh by default');
-  assert.equal(before.freighterFlameVisible, false, 'freighter flame mesh is hidden by default');
+  assert.equal(before.mode, 'flame', 'the global look defaults to the flame plume');
+  assert.equal(before.freighterFlameVisible, true, 'freighter shows the flame mesh by default');
+  assert.equal(before.freighterPointsVisible, false, 'freighter point mesh is hidden by default');
   assert.ok(before.hasShipPlume, 'a thrusting enemy has an attached plume');
-  assert.equal(before.shipMode, 'points', 'the ship plume comes up in the global point look');
-  await shot('points');
+  assert.equal(before.shipMode, 'flame', 'the ship plume comes up in the global flame look');
+  await shot('flame');
 
-  // flip the GLOBAL look → flame; it must retarget the freighter AND every ship plume at once
+  // flip the GLOBAL look → points; it must retarget the freighter AND every ship plume at once
   const after = await page.evaluate(() => {
     const g = window.__game;
-    g.exhaust.setGlobalExhaustMode('flame');
+    g.exhaust.setGlobalExhaustMode('points');
     const fp = g.exhaust.activeFreighterPlume;
     const ship = g.enemies.map((e) => e.mesh.userData.exhaustPlume).find(Boolean);
     return {
@@ -63,9 +63,9 @@ export default async function ({ page, assert, shot }) {
       shipMode: ship ? ship.mode : null,
     };
   });
-  assert.equal(after.mode, 'flame', 'the global mode switched to flame');
-  assert.equal(after.freighterFlameVisible, true, 'freighter flame mesh is visible after the global toggle');
-  assert.equal(after.freighterPointsVisible, false, 'freighter point mesh is hidden in flame mode');
-  assert.equal(after.shipMode, 'flame', 'the GLOBAL toggle also flipped the ship plume to flame');
-  await shot('flame');
+  assert.equal(after.mode, 'points', 'the global mode switched to points');
+  assert.equal(after.freighterPointsVisible, true, 'freighter point mesh is visible after the global toggle');
+  assert.equal(after.freighterFlameVisible, false, 'freighter flame mesh is hidden in points mode');
+  assert.equal(after.shipMode, 'points', 'the GLOBAL toggle also flipped the ship plume to points');
+  await shot('points');
 }

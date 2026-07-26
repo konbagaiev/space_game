@@ -3,6 +3,21 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-27
+
+- **Exhaust FX live-tuning: flame is the default look + ship tails whip on turns.** [2026-07-26-2114-freighter-exhaust-fx]
+  Follow-up to yesterday's shared-plume conversion, tuned on a live build. The **flame** look is now the
+  shipped default (the `points` glow read as slow drifting particles, not engine thrust — kept as a
+  `?dev`-only legacy option). Flame was made **intense**: fiery-orange by default (until exotic/ion
+  engines), bright white-hot core, dense body, fast flicker, shorter + thinner on ships; the **freighter
+  plume is ~2× longer and hotter/denser** (its own `len`/`softness`). Ship tails no longer snap rigidly with
+  the hull on a fast turn — each ship plume is now **scene-parented and tracked to the hull with a smoothed
+  yaw lag** (`syncShipPlume`), so the tail trails behind on a hard turn and settles straight in level flight
+  (natural jet inertia; still no curved position-history, DECISIONS §74). Flame length is now in world units
+  (independent of hull scale). Pure render — replay-neutral (intro guard still passes); `points`↔`flame` is
+  still the global `?dev` toggle. `03-exhaust-trail` + `24-freighter-exhaust` scenarios updated to the flame
+  default.
+
 ## 2026-07-26
 
 - **UI: credit balance in the Main Window top bar + the radar moved under the health bars.** The

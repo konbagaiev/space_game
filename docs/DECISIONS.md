@@ -2591,18 +2591,26 @@ with uniforms, no per-frame allocations. This unifies both exhaust systems onto 
    `turbulence`/`softness` are optional client-side defaults) — no server/catalog change.
 2. **Ship the (a) point-glow + (b) noise-scroll flame looks BEHIND a GLOBAL `?dev` toggle; decide the final
    one on a live build.** Every plume (freighter + all ships) builds **both** meshes and renders whichever
-   the shared `currentMode` selects (default the safe, silhouette-preserving `points`). The `?dev` Exhaust
-   panel's Mode dropdown flips **all** plumes at once (`setGlobalExhaustMode`); palette/shape sliders are
-   **freighter-only** (ships keep their engine-derived palettes). Per-ship cost stays sane — one Points
-   mesh + one flame quad that reuses a **module-singleton geometry** (N ships don't multiply geometry). Why
-   a live toggle vs. picking one now: visual/feel calls only settle in play (the maintainer picks by eye) —
-   `visual-features-need-early-playable-build`.
-3. **Ship trails become RIGID STRAIGHT plumes — the curved position-history is intentionally dropped.** The
-   old trail *curved* because it was a history of past emit positions; the converted trail is a straight
-   plume parented to the ship (same primitive as the freighter). Accepted loss of the turn-curve in exchange
-   for simpler, cheaper, one-FX-style code. A ship fades its plume via a smoothed `throttle` (thrust flags
-   `throttleTarget = 1`; `updateShipExhaust` decays it), so stopping thrust fades out. The `trail` particle
-   pool is removed entirely.
+   the shared `currentMode` selects. The `?dev` Exhaust panel's Mode dropdown flips **all** plumes at once
+   (`setGlobalExhaustMode`); palette/shape sliders are **freighter-only** (ships keep their engine-derived
+   palettes). Per-ship cost stays sane — one Points mesh + one flame quad that reuses a **module-singleton
+   geometry** (N ships don't multiply geometry). Why a live toggle vs. picking one now: visual/feel calls
+   only settle in play (the maintainer picks by eye) — `visual-features-need-early-playable-build`.
+   **Amended 2026-07-27 (live-tuning outcome):** on a live build the maintainer rejected `points` (reads as
+   slow drifting particles, not engine thrust) and picked **`flame` as the shipped default** — an intense,
+   fiery-orange (default until exotic/ion engines), short, dense jet with a bright hot core and fast flicker.
+   `points` stays as a `?dev`-only legacy option (full removal is a parked follow-up). The freighter runs a
+   longer, hotter plume than ships (its own `len`/`softness` uniforms).
+3. **Ship trails go straight (no curved position-history) but with a YAW LAG.** The old trail *curved*
+   because it was a history of past emit positions; we intentionally dropped that history. **Amended
+   2026-07-27:** the first cut parented the plume rigidly to the hull, so a fast turn snapped the whole tail
+   around with the nose — unnatural on a small ship with a long tail. The ship plume is now **scene-parented
+   and tracked to the hull each frame** with a smoothed yaw **slerp** (`syncShipPlume`, catch-up `k = 1 −
+   e^(−8·dt)`), so the tail trails behind on a fast turn and settles straight in level flight — natural jet
+   inertia, still no per-position history. A ship fades its plume via a smoothed `throttle` (thrust flags
+   `throttleTarget = 1`; `updateShipExhaust` decays it + syncs the transform), so stopping thrust fades out.
+   Because it's scene-parented, the flame length is now in world units (independent of hull scale). The
+   `trail` particle pool is removed entirely.
 4. **Tuning = live `?dev` edit + Copy-JSON export, no persistence.** The panel mutates an in-memory copy and
    the runtime `currentMode` only; **Copy JSON** is the save path (paste tuned numbers into the module
    defaults). Prod behavior is driven only by `spec.exhaust` + defaults, never a dev-session tune. The
