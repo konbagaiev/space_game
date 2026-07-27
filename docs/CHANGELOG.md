@@ -5,6 +5,19 @@
 
 ## 2026-07-27
 
+- **Explosions/rings/hits unified onto the flipbook+shader family; boss chain-detonation.** The ship-death
+  burst is now the flipbook fireball + a soft expanding **shockwave ring** only — the old CPU **spark
+  spray** is gone (DECISIONS §75). The shockwave ring became a **baked soft-ring texture on an additive
+  quad** (`spawnShockRing`, shared by ship death + rocket burst) instead of a hard `RingGeometry`. The
+  **bullet hit-flash** is now a small **flipbook mini-blast** (`spawnHitSprite`, same baked fire sheet,
+  sized by weapon class) instead of an additive sphere. **Bosses** (`boss`/`boss2`) get a **staged chain
+  detonation** (`spawnBossExplosion`): oversized primary fireball + big ring, then a brighter **yellow
+  secondary detonation** (~0.7 s later) + its own ring, plus scattered small pops — driven by a deterministic
+  deferred queue (`updateDeferredBlasts`, cleared on reset). The **flipbook fireball** was made smoother +
+  longer: sprite sheet 6×6→**8×8 (64 frames, 2048px)** with **shader frame-blending** (cross-fades baked
+  frames → synthesized in-between frames), playing over ~1.8 s. All pure render / **replay-neutral** (no
+  `Math.random`/`simRandom` in FX; intro guard bit-identical). `02-ship-explosion` scenario updated (asserts
+  no sparks + textured rings).
 - **Exhaust FX live-tuning: flame is the default look + ship tails whip on turns.** [2026-07-26-2114-freighter-exhaust-fx]
   Follow-up to yesterday's shared-plume conversion, tuned on a live build. The **flame** look is now the
   shipped default (the `points` glow read as slow drifting particles, not engine thrust — kept as a

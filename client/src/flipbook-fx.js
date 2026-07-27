@@ -22,12 +22,14 @@ import { scene } from './engine.js';
 import { flipbooks } from './state.js';
 
 // ---- Tunables (edit + reload to retune live; these become GUI sliders in a later pass) ----
-const COLS = 6, ROWS = 6;              // sprite-sheet grid → COLS*ROWS animation frames
-const FRAMES = COLS * ROWS;            // 36 frames
-const SHEET_PX = 1024;                 // full sheet resolution (cell = SHEET_PX/COLS ≈ 170px)
-const FPS = 46;                        // playback speed → whole blast lasts FRAMES/FPS ≈ 0.78 s
+const COLS = 8, ROWS = 8;              // sprite-sheet grid → COLS*ROWS animation frames
+const FRAMES = COLS * ROWS;            // 64 frames (more baked frames → smoother, esp. with shader blending)
+const SHEET_PX = 2048;                 // full sheet resolution (cell = SHEET_PX/COLS = 256px)
+const FPS = 36;                        // frame-advance rate → whole blast lasts FRAMES/FPS ≈ 1.8 s
 const BASE_SIZE = 26;                  // world diameter of the quad at sizeScale = 1
-const TAIL_FADE = 0.35;               // fraction of the animation over which it fades to nothing at the end
+const TAIL_FADE = 0.45;               // fraction of the animation over which it fades to nothing at the end
+const HIT_SIZE = 5;                    // world diameter of a bullet-hit mini-blast at sizeScale = 1
+const HIT_FPS = 90;                    // bullet hits pop fast (a quick spark, not a lingering fireball)
 
 // ---- Shared sprite-sheet texture (built once, lazily) ----
 let sheet = null;
@@ -121,26 +123,33 @@ const VERT = /* glsl */`
 `;
 const FRAG = /* glsl */`
   uniform sampler2D map;
-  uniform float uCols, uRows, uFrame, uOpacity;
+  uniform float uCols, uRows, uFrames, uFrame, uOpacity;
+  uniform vec3 uTint;                                        // per-blast color multiplier (1,1,1 = the baked fire; >1 = brighter/tinted)
   varying vec2 vUv;
-  void main() {
-    float f = floor(uFrame);
+  vec2 cellUv(float f) {                                     // UV into the sprite-sheet cell for frame index f
     float col = mod(f, uCols);
     float row = floor(f / uCols);
-    vec2 cellUv = vec2((col + vUv.x) / uCols, 1.0 - (row + 1.0 - vUv.y) / uRows);
-    vec4 tx = texture2D(map, cellUv);
-    gl_FragColor = vec4(tx.rgb, tx.a * uOpacity); // AdditiveBlending (SRC_ALPHA, ONE) uses the alpha
+    return vec2((col + vUv.x) / uCols, 1.0 - (row + 1.0 - vUv.y) / uRows);
+  }
+  void main() {
+    // Frame BLENDING: cross-fade the current baked frame into the next by the fractional part of uFrame,
+    // so the animation looks smooth (synthesized in-between frames) even at a slow frame-advance rate.
+    float f0 = floor(uFrame);
+    float f1 = min(f0 + 1.0, uFrames - 1.0);
+    vec4 tx = mix(texture2D(map, cellUv(f0)), texture2D(map, cellUv(f1)), uFrame - f0);
+    gl_FragColor = vec4(tx.rgb * uTint, tx.a * uOpacity);    // AdditiveBlending (SRC_ALPHA, ONE) uses the alpha
   }
 `;
 
 const quadGeo = new THREE.PlaneGeometry(1, 1);
 
-function makeMaterial(size) {
+function makeMaterial(size, tint) {
   return new THREE.ShaderMaterial({
     uniforms: {
       map: { value: ensureSheet() },   // SHARED texture — referenced, never cloned
-      uCols: { value: COLS }, uRows: { value: ROWS },
+      uCols: { value: COLS }, uRows: { value: ROWS }, uFrames: { value: FRAMES },
       uFrame: { value: 0 }, uOpacity: { value: 1 }, uSize: { value: size },
+      uTint: { value: tint ? tint.clone() : new THREE.Vector3(1, 1, 1) }, // default: the baked orange fire, untinted
     },
     vertexShader: VERT, fragmentShader: FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -149,9 +158,9 @@ function makeMaterial(size) {
 
 let spawnCount = 0; // deterministic variety source (no Math.random → replay-safe)
 
-export function spawnFlipbookExplosion(pos, sizeScale = 1) {
+export function spawnFlipbookExplosion(pos, sizeScale = 1, tint = null) {
   const size = BASE_SIZE * sizeScale;
-  const mat = makeMaterial(size);
+  const mat = makeMaterial(size, tint);
   const m = new THREE.Mesh(quadGeo, mat);
   m.position.copy(pos);
   m.renderOrder = 3;             // draw over ships/bullets (additive, no depth write)
@@ -159,6 +168,20 @@ export function spawnFlipbookExplosion(pos, sizeScale = 1) {
   const skew = (spawnCount++ % 5) * 0.6;
   scene.add(m);
   flipbooks.push({ mesh: m, mat, frame: skew, fps: FPS });
+}
+
+// A bullet-hit mini-blast: the SAME baked fire flipbook as the ship death, just small and fast — so a hit
+// reads as a tiny explosion in the same visual family (one draw call, shared texture). `sizeScale` comes
+// from the weapon-class HIT_FLASH_SCALE (kinetic spark vs. heavier cannon flash).
+export function spawnHitSprite(pos, sizeScale = 1) {
+  const size = HIT_SIZE * sizeScale;
+  const mat = makeMaterial(size);
+  const m = new THREE.Mesh(quadGeo, mat);
+  m.position.copy(pos);
+  m.renderOrder = 3;
+  const skew = (spawnCount++ % 5) * 0.6;
+  scene.add(m);
+  flipbooks.push({ mesh: m, mat, frame: skew, fps: HIT_FPS });
 }
 
 // Advance every live blast one frame-step; drop + dispose when the animation finishes.
