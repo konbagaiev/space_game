@@ -5,6 +5,14 @@
 
 ## 2026-07-27
 
+- **Rocket detonation unified onto the flipbook fireball; blast look is now weapon-driven.** A rocket blast
+  is the **same flipbook fireball + soft shockwave ring** as a ship death (the old layered additive spheres +
+  spark spray are gone), just **smaller, faster and brighter** — a white-hot `uTint` > 1 on the flipbook.
+  The whole blast appearance is **data-driven from the rocket weapon's stats** so a **new weapon type changes
+  its explosion with no code change**: `blastVisual` (size), `blastTimeScale` (speed), `blastTint` (ring
+  color) and a **new `blastBright`** (fireball brightness / white flecks; default `1.6` in code, added to all
+  4 rocket weapons in `catalog_seed.js`). `spawnFlipbookExplosion` gained a `speed`/`tint` arg; `spawnRocket`
+  threads `blastBright`. Pure render / replay-neutral (intro rocket-finale re-sim bit-identical). DECISIONS §75.
 - **Explosions/rings/hits unified onto the flipbook+shader family; boss chain-detonation.** The ship-death
   burst is now the flipbook fireball + a soft expanding **shockwave ring** only — the old CPU **spark
   spray** is gone (DECISIONS §75). The shockwave ring became a **baked soft-ring texture on an additive

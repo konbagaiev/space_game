@@ -106,7 +106,7 @@ export const WEAPONS = [
     id: 3, name: 'Rocket (homing)', type: 'rocket', price: 600, stats: { // player starter rocket: cheap to rebuy
       power: 60, accel: 10, turnRate: 1.0, launchSpeed: 12, maxRange: 150, health: 10,
       seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 0.5, blastRadius: 5, // detonateRadius = proximity fuse to the HULL (hitBoxes), not to center — near contact; floor ≥ ~1 frame of rocket travel so a fast rocket can't tunnel past
-      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, // detonation FX: size / speed (<1 = quicker) / tint
+      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, blastBright: 1.6, // detonation FX (weapon-driven → new weapons change the blast): size / speed (<1=quicker) / ring tint / fireball brightness (>1 = brighter, whiter)
       fireCooldown: 5, weight: 8, projectileColor: 0xffaa44, class: 'rocket'
     }
   },
@@ -114,7 +114,7 @@ export const WEAPONS = [
     id: 4, name: 'Rocket pirate', type: 'rocket', price: 200, stats: { // enemy gear: resale-only (hidden from the shop)
       power: 20, accel: 9, turnRate: 1.0, launchSpeed: 6, maxRange: 120, health: 20,
       detonateRadius: 0.5, blastRadius: 5, // hull-proximity fuse (see id 3)
-      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, // detonation FX: size / speed (<1 = quicker) / tint
+      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, blastBright: 1.6, // detonation FX (weapon-driven → new weapons change the blast): size / speed (<1=quicker) / ring tint / fireball brightness (>1 = brighter, whiter)
       fireCooldown: 4, weight: 6, projectileColor: 0xffcc66, class: 'rocket', buyable: false // class only drives detonation (→ blast); enemy fire stays synth (isPlayer gate)
     }
   },
@@ -141,7 +141,7 @@ export const WEAPONS = [
     id: 8, name: 'Heavy rocket', type: 'rocket', price: 2600, stats: { // homing: high damage, slow reload, big blast
       power: 90, accel: 9, turnRate: 0.8, launchSpeed: 12, maxRange: 180, health: 20,
       seekHalfAngle: 50 * Math.PI / 180, detonateRadius: 0.5, blastRadius: 7, // hull-proximity fuse (see id 3)
-      blastVisual: 6, blastTimeScale: 0.8, blastTint: 0xffb050, // detonation FX: size / speed (<1 = quicker) / tint
+      blastVisual: 6, blastTimeScale: 0.8, blastTint: 0xffb050, blastBright: 1.7, // detonation FX (weapon-driven): size / speed / ring tint / fireball brightness (heavy rocket = bigger + brighter)
       fireCooldown: 7, weight: 12, projectileColor: 0xff7a3c, class: 'rocket'
     }
   },
@@ -166,7 +166,7 @@ export const WEAPONS = [
     id: 11, name: 'Triple spiral rocket', type: 'rocket', price: 4000, rarity: 'rare', stats: {
       power: 40, accel: 12, turnRate: 1.0, launchSpeed: 14, maxRange: 150, health: 10, // per visible rocket
       seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 0.5, blastRadius: 5, // hull-proximity fuse (see id 3)
-      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050,
+      blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, blastBright: 1.6, // detonation FX (weapon-driven): size / speed / ring tint / fireball brightness
       fireCooldown: 7, weight: 13, projectileColor: 0x66ddff, class: 'rocket',
       spiral: true // spawn as an invisible leader + 3 visible spiraling rockets (see spawnRocket)
     }

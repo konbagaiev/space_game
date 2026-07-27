@@ -158,7 +158,7 @@ function makeMaterial(size, tint) {
 
 let spawnCount = 0; // deterministic variety source (no Math.random → replay-safe)
 
-export function spawnFlipbookExplosion(pos, sizeScale = 1, tint = null) {
+export function spawnFlipbookExplosion(pos, sizeScale = 1, tint = null, speed = 1) {
   const size = BASE_SIZE * sizeScale;
   const mat = makeMaterial(size, tint);
   const m = new THREE.Mesh(quadGeo, mat);
@@ -167,7 +167,7 @@ export function spawnFlipbookExplosion(pos, sizeScale = 1, tint = null) {
   // A small deterministic per-blast frame skew so simultaneous deaths don't animate in lockstep.
   const skew = (spawnCount++ % 5) * 0.6;
   scene.add(m);
-  flipbooks.push({ mesh: m, mat, frame: skew, fps: FPS });
+  flipbooks.push({ mesh: m, mat, frame: skew, fps: FPS * speed }); // speed > 1 → quicker (e.g. rocket blast)
 }
 
 // Cyan tint for a hit ABSORBED BY A SHIELD (player or enemy): the same baked fire sprite pushed cold —
