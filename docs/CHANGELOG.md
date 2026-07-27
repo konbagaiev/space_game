@@ -5,6 +5,17 @@
 
 ## 2026-07-27
 
+- **HUD stopped costing a fixed ~8 ms every frame.** Weak-phone telemetry showed `js.dom` pinned at
+  7.5-8.3 ms no matter what was on screen (against 1-2 ms for the whole sim) — 40% of a 50fps budget. Two
+  causes, both now fixed in `hud.js`: it rewrote values that had not changed (`innerHTML` re-parsed 60×/s
+  for a credits line that changes on a kill; the same widths, percentages and `display` values rewritten
+  every frame), and it positioned every floating overlay with pixel `left`/`top`, which invalidates layout
+  per element per frame. New `setText`/`setHTML`/`setStyle` helpers skip identical writes, and `place()`
+  positions via a single compositor-only `translate3d` — the CSS anchor offsets moved into that transform,
+  and the pooled overlays are pinned at `left:0/top:0`. The radar canvas (a full 2D repaint) is throttled
+  to ~20 Hz; everything anchored to a moving ship stays per-frame so it can't lag. No visual change. See
+  DECISIONS §80.
+
 - **Ship models are now parsed once and cloned per spawn (was: a full re-parse on EVERY spawn).**
   `applyShipModel` called `gltfLoader.load` per spawn with no cache anywhere, so every enemy that appeared
   rebuilt the model from scratch — new geometry, a fresh texture decode + GPU upload, one VRAM copy per

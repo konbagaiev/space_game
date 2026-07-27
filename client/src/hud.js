@@ -16,33 +16,59 @@ import { isDev } from './dev.js';
 
 const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the perf overlay (see dev.js)
 
+// ---------- Cheap DOM writes ----------
+// The HUD redraws every frame, and field telemetry from a weak phone measured it at a FIXED ~8 ms/frame
+// (`js.dom`) no matter what was happening — 40% of a 50fps budget before the sim or the renderer run at
+// all. Two habits caused it, and both are free to fix:
+//
+//   1. Writing values that had not changed. `updateHud` re-ran `innerHTML` (an HTML parse + child rebuild)
+//      sixty times a second for a credits line that changes on a kill, and rewrote the same percentages
+//      and widths every frame. `setText`/`setHTML`/`setStyle` skip the write when the value is identical.
+//   2. Positioning with `left`/`top`, which invalidates LAYOUT for every element every frame. `place()`
+//      writes one `transform` instead — the compositor handles it and layout is never touched. The
+//      elements' own centring/anchor offsets moved out of CSS and into the `extra` argument, since a JS
+//      `style.transform` would otherwise override the CSS one.
+//
+// Both are behaviour-identical: the DOM ends in exactly the same state, just without the redundant work.
+// The cached value lives on the node so a pooled element that gets reused keeps its own history.
+const setText = (node, v) => { if (node._txt !== v) { node._txt = v; node.textContent = v; } };
+const setHTML = (node, v) => { if (node._html !== v) { node._html = v; node.innerHTML = v; } };
+const setStyle = (node, prop, v) => {
+  const k = '_st_' + prop;
+  if (node[k] !== v) { node[k] = v; node.style[prop] = v; }
+};
+// Position an absolutely-positioned overlay element (all of them sit at left:0/top:0 in CSS). `extra` is
+// the element's own centring/rotation, appended so everything stays in ONE transform.
+const place = (node, x, y, extra = '') =>
+  setStyle(node, 'transform', `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)${extra}`);
+
 // ---------- HUD ----------
 export function updateHud() {
   // {earned} = credits banked this run → green so it reads as live mission gain (matches the "+xx" kill popups).
   // total/earned are numbers and the catalog string is trusted, so innerHTML here is safe.
-  el.credits.innerHTML = t('ui.hud.credits_line', { total: G.balance, earned: `<span class="hud-earned">${G.earned}</span>` });
-  el.kills.textContent = G.enemyTotal > 0 ? `${G.kills}/${G.enemyTotal}` : G.kills;
+  setHTML(el.credits, t('ui.hud.credits_line', { total: G.balance, earned: `<span class="hud-earned">${G.earned}</span>` }));
+  setText(el.kills, G.enemyTotal > 0 ? `${G.kills}/${G.enemyTotal}` : String(G.kills));
   const hpPct = Math.max(0, G.player.hp / G.player.maxHp * 100);
-  el.hpFill.style.width = hpPct + '%';
-  el.hpPct.textContent = hpPct.toFixed(1) + '%'; // remaining health, one decimal
+  setStyle(el.hpFill, 'width', hpPct + '%');
+  setText(el.hpPct, hpPct.toFixed(1) + '%'); // remaining health, one decimal
 
   // shield bar (above the health bar): blue while active (width = remaining fraction), purple while broken
   // (width grows over the recharge time); hidden entirely when the ship carries no shield component.
   const sh = G.player.shield;
   if (sh && sh.capacity > 0) {
-    el.shieldBar.style.display = 'block';
+    setStyle(el.shieldBar, 'display', 'block');
     el.hpBar.classList.add('with-shield');
     const val = G.player._shieldValue;
     if (val > 0) { // active → blue, width = remaining fraction
       el.shieldBar.classList.remove('recharging');
-      el.shieldFill.style.width = Math.max(0, Math.min(1, val / sh.capacity)) * 100 + '%';
+      setStyle(el.shieldFill, 'width', Math.max(0, Math.min(1, val / sh.capacity)) * 100 + '%');
     } else {       // broken → purple, width grows over the recharge time
       el.shieldBar.classList.add('recharging');
       const frac = sh.rechargeSec > 0 ? Math.min(1, G.player._shieldRechargeAccum / sh.rechargeSec) : 0;
-      el.shieldFill.style.width = frac * 100 + '%';
+      setStyle(el.shieldFill, 'width', frac * 100 + '%');
     }
   } else { // no shield component → hide the bar, health bar reverts to full rounded corners
-    el.shieldBar.style.display = 'none';
+    setStyle(el.shieldBar, 'display', 'none');
     el.hpBar.classList.remove('with-shield');
   }
 
@@ -53,7 +79,7 @@ export function updateHud() {
   const ready = left <= 0;
   const deg = Math.round((cd > 0 ? 1 - left / cd : 1) * 360);
   const col = ready ? '#77ee77' : '#ffaa55';
-  el.rocketFill.style.background = `conic-gradient(${col} ${deg}deg, rgba(120,90,60,.22) ${deg}deg)`;
+  setStyle(el.rocketFill, 'background', `conic-gradient(${col} ${deg}deg, rgba(120,90,60,.22) ${deg}deg)`);
   el.rocketBtn.classList.toggle('ready', ready);
 }
 
@@ -93,7 +119,7 @@ export function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim
     // In ?dev, append live JS-heap usage (Chrome only) so the tester can eyeball current RAM.
     const devSuffix = DEV ? (performance.memory ? ` · ${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '') + ' ●dev' : '';
     const spd = ` · spd ${Math.round(speedNow)} pk ${Math.round(speedPeak)}`; // current speed + run peak (units/s)
-    el.perf.textContent = t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + spd + devSuffix;
+    setText(el.perf, t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + spd + devSuffix);
     perfAccum = 0; perfFrames = 0;
   }
 }
@@ -112,7 +138,7 @@ function getMarker(i) {
 }
 export function updateMarkers() {
   // hide everything while there's no player or an overlay (game over / victory) is up
-  if (!G.player || el.overlay.style.display !== 'none') { for (const m of markerPool) m.style.display = 'none'; return; }
+  if (!G.player || el.overlay.style.display !== 'none') { for (const m of markerPool) setStyle(m, 'display', 'none'); return; }
   const w = gameW(), h = gameH(), margin = 0.92; // game (rotated) screen size, not the raw viewport
   let used = 0;
   for (const e of enemies) {
@@ -124,13 +150,12 @@ export function updateMarkers() {
     const k = margin / Math.max(Math.abs(x), Math.abs(y), 1e-4);     // clamp dir to the edge box
     const cx = x * k, cy = y * k;
     const m = getMarker(used++);
-    m.style.display = 'block';
-    m.style.left = ((cx * 0.5 + 0.5) * w) + 'px';
-    m.style.top = ((-cy * 0.5 + 0.5) * h) + 'px';
-    m.style.borderLeftColor = cssColor(e.color ?? 0xffffff);          // tint by enemy type
-    m.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(-cy, cx) * 180 / Math.PI}deg)`;
+    setStyle(m, 'display', 'block');
+    setStyle(m, 'borderLeftColor', cssColor(e.color ?? 0xffffff));    // tint by enemy type
+    place(m, (cx * 0.5 + 0.5) * w, (-cy * 0.5 + 0.5) * h,
+      ` translate(-50%,-50%) rotate(${(Math.atan2(-cy, cx) * 180 / Math.PI).toFixed(1)}deg)`);
   }
-  for (let i = used; i < markerPool.length; i++) markerPool[i].style.display = 'none';
+  for (let i = used; i < markerPool.length; i++) setStyle(markerPool[i], 'display', 'none');
 }
 
 // ---------- Off-screen loot markers: green edge arrows toward off-screen drops (nearest N) ----------
@@ -146,7 +171,7 @@ function getDropMarker(i) {
   return dropMarkerPool[i];
 }
 export function updateDropMarkers() {
-  if (!G.player || el.overlay.style.display !== 'none') { for (const m of dropMarkerPool) m.style.display = 'none'; return; }
+  if (!G.player || el.overlay.style.display !== 'none') { for (const m of dropMarkerPool) setStyle(m, 'display', 'none'); return; }
   const w = gameW(), h = gameH(), margin = 0.92;
   // collect off-screen drops with their edge position + squared distance, keep the nearest DROP_MARKER_MAX
   const ppos = G.player.mesh.position, offs = [];
@@ -165,13 +190,12 @@ export function updateDropMarkers() {
   for (let i = 0; i < n; i++) {
     const { cx, cy } = offs[i];
     const m = getDropMarker(i);
-    m.style.display = 'block';
+    setStyle(m, 'display', 'block');
     m.classList.toggle('special', !!offs[i].special); // pulsing green glow for the L1/L2 reward pointer
-    m.style.left = ((cx * 0.5 + 0.5) * w) + 'px';
-    m.style.top = ((-cy * 0.5 + 0.5) * h) + 'px';
-    m.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(-cy, cx) * 180 / Math.PI}deg)`;
+    place(m, (cx * 0.5 + 0.5) * w, (-cy * 0.5 + 0.5) * h,
+      ` translate(-50%,-50%) rotate(${(Math.atan2(-cy, cx) * 180 / Math.PI).toFixed(1)}deg)`);
   }
-  for (let i = n; i < dropMarkerPool.length; i++) { dropMarkerPool[i].style.display = 'none'; dropMarkerPool[i].classList.remove('special'); }
+  for (let i = n; i < dropMarkerPool.length; i++) { setStyle(dropMarkerPool[i], 'display', 'none'); dropMarkerPool[i].classList.remove('special'); }
 }
 
 // ---------- Credit popups: "+xx" green text floating up from each kill, holding then fading over ~2s ----------
@@ -188,7 +212,7 @@ function getPopup(i) {
 }
 export function updateCreditPopups() {
   // hide everything while there's no player or an overlay (game over / victory) is up
-  if (!G.player || el.overlay.style.display !== 'none') { for (const p of popupPool) p.style.display = 'none'; return; }
+  if (!G.player || el.overlay.style.display !== 'none') { for (const p of popupPool) setStyle(p, 'display', 'none'); return; }
   const w = gameW(), h = gameH();
   let used = 0;
   for (const cp of creditPopups) {
@@ -198,13 +222,12 @@ export function updateCreditPopups() {
     const x = (_pp.x * 0.5 + 0.5) * w;
     const y = (-_pp.y * 0.5 + 0.5) * h - t * 40; // drift up ~40px in screen space
     const p = getPopup(used++);
-    p.style.display = 'block';
-    p.style.left = x + 'px';
-    p.style.top = y + 'px';
-    p.style.opacity = String(Math.min(1, Math.max(0, cp.life))); // hold full, then fade over the last ~1s
-    p.textContent = '+' + cp.amount;
+    setStyle(p, 'display', 'block');
+    place(p, x, y, ' translate(-50%,-50%)');
+    setStyle(p, 'opacity', String(Math.min(1, Math.max(0, cp.life)).toFixed(2))); // hold full, then fade over the last ~1s
+    setText(p, '+' + cp.amount);
   }
-  for (let i = used; i < popupPool.length; i++) popupPool[i].style.display = 'none';
+  for (let i = used; i < popupPool.length; i++) setStyle(popupPool[i], 'display', 'none');
 }
 
 // ---------- Enemy health bars: a translucent red bar above each damaged enemy (hidden at full health) ----------
@@ -238,8 +261,8 @@ function getShieldBar(i) {
 export function updateEnemyHealthBars() {
   // hide everything while there's no player or an overlay (game over / victory) is up
   if (!G.player || el.overlay.style.display !== 'none') {
-    for (const b of hpBarPool) b.style.display = 'none';
-    for (const s of shieldBarPool) s.style.display = 'none';
+    for (const b of hpBarPool) setStyle(b, 'display', 'none');
+    for (const s of shieldBarPool) setStyle(s, 'display', 'none');
     return;
   }
   const w = gameW(), h = gameH();
@@ -256,30 +279,27 @@ export function updateEnemyHealthBars() {
     _hb.copy(e.mesh.position).addScaledVector(_screenUp, e.radius * 1.6 + 2); // lift up-screen, clear of the hull
     _hb.project(camera);
     if (_hb.z > 1) continue;                        // behind the camera -> skip
-    const left = ((_hb.x * 0.5 + 0.5) * w) + 'px';
-    const top = ((-_hb.y * 0.5 + 0.5) * h) + 'px';
+    const px = (_hb.x * 0.5 + 0.5) * w, py = (-_hb.y * 0.5 + 0.5) * h;
     const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));
     const i = used++;
     const b = getHpBar(i);
-    b.style.display = 'block';
-    b.style.left = left;
-    b.style.top = top;
-    b.firstChild.style.width = (frac * 100) + '%';
+    setStyle(b, 'display', 'block');
+    place(b, px, py, ' translate(-50%, calc(-100% - 4px))'); // bottom edge pinned just above the anchor
+    setStyle(b.firstChild, 'width', (frac * 100) + '%');
     // Shield strip: same anchor, lifted by the CSS transform. Enemies without a shield get no strip.
     const s = getShieldBar(i);
-    if (!sh) { s.style.display = 'none'; continue; }
+    if (!sh) { setStyle(s, 'display', 'none'); continue; }
     const broken = !(e._shieldValue > 0);
     const sFrac = broken
       ? Math.max(0, Math.min(1, (e._shieldRechargeAccum || 0) / sh.rechargeSec)) // purple: recharge progress
       : Math.max(0, Math.min(1, e._shieldValue / sh.capacity));                  // blue: remaining absorption
     s.classList.toggle('recharging', broken);
-    s.style.display = 'block';
-    s.style.left = left;
-    s.style.top = top;
-    s.firstChild.style.width = (sFrac * 100) + '%';
+    setStyle(s, 'display', 'block');
+    place(s, px, py, ' translate(-50%, calc(-100% - 10px))'); // stacked above the red bar (4+5+1 px)
+    setStyle(s.firstChild, 'width', (sFrac * 100) + '%');
   }
-  for (let i = used; i < hpBarPool.length; i++) hpBarPool[i].style.display = 'none';
-  for (let i = used; i < shieldBarPool.length; i++) shieldBarPool[i].style.display = 'none';
+  for (let i = used; i < hpBarPool.length; i++) setStyle(hpBarPool[i], 'display', 'none');
+  for (let i = used; i < shieldBarPool.length; i++) setStyle(shieldBarPool[i], 'display', 'none');
 }
 
 // ---------- Mini-map / radar: arena bounds, the player (with heading), and type-colored enemy dots ----------
@@ -288,9 +308,18 @@ export function updateEnemyHealthBars() {
 // out-of-bounds player still reads near the edge.
 const miniCtx = el.minimap.getContext('2d');
 const MINI_VIEW = ARENA * 1.18; // world half-extent the radar shows (a touch beyond the arena)
+// The radar is a full 2D-canvas repaint (clear + arena box + an arc per enemy) and it was running at the
+// render frame rate. A radar does not need 60 Hz — nothing on it moves fast enough to read — and on a weak
+// phone the repaint + canvas re-upload is a real slice of the per-frame DOM cost. Redraw at ~20 Hz; the
+// caller still invokes this every frame, so hiding/showing stays instant.
+const MINI_INTERVAL_MS = 50;
+let miniLastDraw = -1e9;
 export function updateMiniMap() {
-  if (!G.player || el.overlay.style.display !== 'none') { el.minimap.style.visibility = 'hidden'; return; }
-  el.minimap.style.visibility = 'visible';
+  if (!G.player || el.overlay.style.display !== 'none') { setStyle(el.minimap, 'visibility', 'hidden'); return; }
+  setStyle(el.minimap, 'visibility', 'visible');
+  const now = performance.now();
+  if (now - miniLastDraw < MINI_INTERVAL_MS) return; // throttled: keep the last painted frame on screen
+  miniLastDraw = now;
   const S = el.minimap.width, c = S / 2, scale = (c - 6) / MINI_VIEW;
   // map world → radar relative to the arena center (so the boundary square stays centered when it drifts)
   const toX = (x) => c + (x - arenaCenter.x) * scale, toY = (z) => c + (z - arenaCenter.z) * scale;

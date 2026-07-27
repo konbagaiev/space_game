@@ -2841,6 +2841,40 @@ another, and asserts the pair shares a geometry set and a material set while rem
 objects, and that a different type does not. Mutation-verified: with the cache bypassed it fails on the
 shared-geometry assertion.
 
+## 80. Per-frame HUD overlays position via `transform`, and never write a DOM value that has not changed
+
+**Problem.** Field telemetry from a weak phone put the HUD at a **fixed ~8 ms per frame** (`js.dom`)
+regardless of what was happening in the fight — 40% of a 50fps budget spent before the sim (1-2 ms) or the
+renderer even ran. Two habits paid for it:
+
+1. **Rewriting unchanged values.** `updateHud` ran `innerHTML` — an HTML parse plus a child rebuild — sixty
+   times a second for a credits line that changes on a kill, and rewrote the same percentages, bar widths
+   and `display` values every frame across every pooled element.
+2. **Positioning with `left`/`top`.** Every floating overlay (enemy health/shield bars, off-screen enemy and
+   loot arrows, credit popups) wrote pixel `left`/`top` each frame, which invalidates **layout** for that
+   element. `transform` does not: the compositor moves the box and layout is never consulted.
+
+**Decision.** `hud.js` owns three tiny helpers — `setText` / `setHTML` / `setStyle` cache the last written
+value on the node and skip identical writes, and `place(node, x, y, extra)` writes a single
+`translate3d(...)` transform. The pooled overlays are pinned at `left: 0; top: 0` in CSS and their own
+centring/anchor offsets (`translate(-50%, calc(-100% - 4px))` and friends) moved **into** the JS transform
+string, because a JS `style.transform` would otherwise override the CSS one. The radar, which is a full 2D
+canvas repaint, is throttled to ~20 Hz (`MINI_INTERVAL_MS`) — nothing on a radar moves fast enough to read
+at 60 Hz.
+
+**What was deliberately NOT throttled:** anything anchored to a moving ship — the health/shield bars, the
+edge arrows, the credit popups. At 20 Hz they visibly lag behind a ship flying at 60 fps. They stay
+per-frame; they are just cheap now.
+
+**The convention this sets.** New per-frame HUD code must go through the helpers: position with `place`,
+write with `setText`/`setStyle`. Writing `style.left`/`style.top` in a per-frame path, or assigning
+`textContent`/`innerHTML` unconditionally, silently reintroduces the cost. A test that reads back
+`style.top` to check placement is now wrong by construction — assert on `getBoundingClientRect()` instead
+(scenario `16-enemy-health-bar` was updated for exactly this reason).
+
+**Behaviour is unchanged** — the DOM ends in the same state, the same elements in the same places; only the
+redundant work is gone.
+
 ## Future ideas
 
 solid asteroids with bounce ·
