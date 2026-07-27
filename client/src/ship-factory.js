@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { BULLET_PLANE_Y } from './state.js'; // the canonical combat plane every ship group sits on
+import { scene, renderer, camera } from './engine.js'; // needed to warm a freshly parsed model onto the GPU
 
 // Per-ship model-presentation config (stats.model), with back-compat for the old loose keys
 // (stats.modelYaw / stats.sizeScale) so a stale player_ships row or cache can't break.
@@ -60,6 +61,36 @@ export const SHIP_MODEL_LEN = 3.4; // auto-normalize a model's longest axis to ~
 // entry = { scene, waiters }. The template `scene` is never added to the scene graph itself.
 const shipModelCache = new Map();
 
+// Parsing the glb is only HALF the cost. three.js uploads geometry + textures to the GPU and compiles the
+// material's shader program LAZILY — the first time the object is actually drawn. So warming a model at
+// level start still left the frame to pay for it the first time that ship TYPE appeared in a fight: field
+// telemetry from a weak phone caught **215 ms inside `js.render`** on such a frame, which is what the
+// player feels as "the game freezes for a second when a new ship shows up".
+//
+// So finish the job here: park the template far off-camera in the REAL scene (the program depends on the
+// scene's lights/fog, so compiling it in a bare throwaway scene would produce a different program and get
+// recompiled anyway), let `renderer.compile` build the programs, and push each texture up explicitly —
+// `compile()` handles shaders, not texture uploads. Mirrors `prewarmShaders()` in main.js, which does the
+// same for the FX materials at startup but runs long before any ship model exists.
+const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap'];
+function warmModel(root) {
+  try {
+    const holder = new THREE.Group();
+    holder.position.y = -100000; // compile ignores culling; this only guards against a stray rendered frame
+    holder.add(root);
+    scene.add(holder);
+    renderer.compile(scene, camera);
+    root.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        for (const slot of TEX_SLOTS) if (m[slot]) renderer.initTexture(m[slot]);
+      }
+    });
+    holder.remove(root);      // hand the template back unparented — clones are what ever reach the scene
+    scene.remove(holder);
+  } catch { /* best-effort: a warm failure must never cost us the model itself */ }
+}
+
 export function requestShipModel(url, cb) {
   let entry = shipModelCache.get(url);
   if (entry) {                                     // already parsed, or a load is in flight
@@ -71,6 +102,7 @@ export function requestShipModel(url, cb) {
   shipModelCache.set(url, entry);
   gltfLoader.load(url, (gltf) => {
     entry.scene = gltf.scene;
+    warmModel(entry.scene); // compile + upload NOW, not on the first frame this ship type is drawn
     for (const w of entry.waiters) w(entry.scene.clone(true));
     entry.waiters.length = 0;
   }, undefined, (err) => {

@@ -2836,10 +2836,23 @@ visual state (a damage flash, a cloak, a team colour) must clone the material fo
 **Safe on teardown:** a dead enemy only disposes its attached exhaust plume (`sim.js`), never the model's
 geometry or materials, so sharing cannot leave another instance with disposed GPU resources.
 
+**Parsing is only half of it — the model must also be WARMED onto the GPU.** three.js uploads geometry and
+textures, and compiles a material's shader program, **lazily: on the first frame the object is actually
+drawn**. So the cache + level-start preload above removed the re-parse but still left the frame to pay for
+the upload the first time each ship TYPE appeared — field telemetry caught **215 ms inside `js.render`** on
+such a frame, and the player reported "a new ship shows up somewhere on the map and it's instantly 2 fps".
+`requestShipModel` therefore calls `warmModel()` right after parsing: it parks the template far off-camera
+in the **real** scene, runs `renderer.compile()`, and pushes every texture up with `renderer.initTexture()`.
+The real scene matters — a program depends on the scene's lights and fog, so compiling against a bare
+throwaway scene would build a program that gets thrown away and recompiled on first draw. `compile()`
+covers shaders only, hence the explicit texture pass. This mirrors `prewarmShaders()` in `main.js`, which
+does the same for the FX materials but runs at startup, long before any ship model exists.
+
 **Guard:** `client/visual/scenarios/26-ship-model-cache.mjs` spawns two ships of one type and one of
 another, and asserts the pair shares a geometry set and a material set while remaining distinct scene
 objects, and that a different type does not. Mutation-verified: with the cache bypassed it fails on the
-shared-geometry assertion.
+shared-geometry assertion. The GPU warm itself has no headless guard — software WebGL does not reproduce
+the stall — so its verification is the field telemetry (`js.render` spikes on first-sighting frames).
 
 ## 80. Per-frame HUD overlays position via `transform`, and never write a DOM value that has not changed
 

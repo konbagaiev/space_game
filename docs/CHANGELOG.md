@@ -5,6 +5,15 @@
 
 ## 2026-07-27
 
+- **First sighting of an enemy type no longer freezes the frame.** Caching the parsed glb removed the
+  re-parse, but three.js uploads geometry/textures and compiles the shader program **lazily, on the first
+  frame an object is drawn** — so the first time each ship TYPE appeared in a fight still cost **215 ms
+  inside `js.render`** on a weak phone ("a new ship shows up on the map and it's instantly 2 fps").
+  `ship-factory.js` now **warms** each model right after parsing: parks the template off-camera in the real
+  scene (the program depends on its lights/fog), runs `renderer.compile()`, and pushes every texture up via
+  `renderer.initTexture()` — `compile()` covers shaders only. Same idea as `prewarmShaders()`, which warms
+  the FX materials at startup but runs before any ship model exists. See DECISIONS §79.
+
 - **HUD stopped costing a fixed ~8 ms every frame.** Weak-phone telemetry showed `js.dom` pinned at
   7.5-8.3 ms no matter what was on screen (against 1-2 ms for the whole sim) — 40% of a 50fps budget. Two
   causes, both now fixed in `hud.js`: it rewrote values that had not changed (`innerHTML` re-parsed 60×/s

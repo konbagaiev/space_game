@@ -598,7 +598,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **Each glb is fetched + parsed ONCE** — `ship-factory.js` keeps a `shipModelCache` (url -> template +
   in-flight waiters, exactly like `drops.js`'s `rewardModelCache`) and every ship gets a
   `template.clone(true)`; `levelRunner.start` warms every model the level's spawn pools can produce via
-  `preloadLevelShipModels`, so no spawn ever pays for a fetch/parse/texture-upload mid-fight. Cloning
+  `preloadLevelShipModels`, and each freshly parsed template is **warmed onto the GPU** (`warmModel`: parked off-camera in the real scene → `renderer.compile()` → `renderer.initTexture()` per map) because three.js otherwise uploads geometry/textures and compiles the program lazily on the first frame an object is DRAWN — which cost 215 ms in `js.render` the first time each type appeared. So no spawn pays for a fetch/parse/upload/compile mid-fight. Cloning
   **shares geometry and materials** (one GPU copy per ship TYPE, not per instance), which means **a live
   ship's material must never be mutated in place** — the `tint` recolour and the ghost-battle
   `darken`/`opacity` treatment clone their materials first, and anything new that wants a per-ship visual
