@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { arenaCenter } from './world.js';
 import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js';
-import { deriveDrive } from './components.js';
+import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC } from './components.js';
 import { shipModelCfg, modelSpec, makeShip } from './ship-factory.js';
 import { spawnBullet, spawnRocket, findTargetInSector } from './projectiles.js';
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
@@ -89,6 +89,7 @@ export function spawnEnemyShip(shipDef) {
   const s = shipDef.stats;
   const mc = shipModelCfg(s); // per-ship model presentation (yaw/scale + optional overrides)
   const { hull, engine, thruster } = resolveComponents(shipDef.components);
+  const { shieldCap, hullMax } = enemyShieldSplit(hull.durability); // 1/3 shield + 2/3 hull; total unchanged
   const e = {
     name: shipDef.name, // DB ship name (English) — shown in the event-log kill line
     role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0,
@@ -97,8 +98,13 @@ export function spawnEnemyShip(shipDef) {
     heading: simRandom() * Math.PI * 2,   // GAMEPLAY: facing decides how long it turns before its first shot
     hull, engine, thruster,
     mounts: buildMounts(s.mounts),
-    hp: hull.durability,
-    maxHp: hull.durability, // for the over-enemy health bar (shown once hp dips below max)
+    hp: hullMax,
+    maxHp: hullMax, // HULL max only (the shield is a separate pool) — drives the floating health bar
+    // Derived shield (NOT a DB component): same shape as the player's resolved shield component, minus
+    // `weight` — so shipMass() skips it and enemy mass/accel/turn are bit-identical to before.
+    shield: shieldCap > 0 ? { capacity: shieldCap, rechargeSec: ENEMY_SHIELD_RECHARGE_SEC } : null,
+    _shieldValue: shieldCap,   // starts full & active
+    _shieldRechargeAccum: 0,   // seconds banked while broken → drives recharge + the purple bar fill
     radius: 2.6 * mc.scale,  // health-bar/marker anchor only (collision now uses hitBoxes/broadR)
     hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
     alive: true,

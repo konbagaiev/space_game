@@ -170,12 +170,19 @@ export function spawnFlipbookExplosion(pos, sizeScale = 1, tint = null) {
   flipbooks.push({ mesh: m, mat, frame: skew, fps: FPS });
 }
 
+// Cyan tint for a hit ABSORBED BY A SHIELD (player or enemy): the same baked fire sprite pushed cold —
+// red multiplied down to near-zero, green/blue up — so an absorbed hit reads as "the field stopped it"
+// instead of an orange hull spark, without leaving the one FX family. Matches the shield-bubble /
+// HUD-bar blue (#36d1dc). Same uTint mechanism as BOSS_SECONDARY_TINT in projectiles.js.
+export const SHIELD_HIT_TINT = new THREE.Vector3(0.18, 1.25, 1.5);
+
 // A bullet-hit mini-blast: the SAME baked fire flipbook as the ship death, just small and fast — so a hit
 // reads as a tiny explosion in the same visual family (one draw call, shared texture). `sizeScale` comes
-// from the weapon-class HIT_FLASH_SCALE (kinetic spark vs. heavier cannon flash).
-export function spawnHitSprite(pos, sizeScale = 1) {
+// from the weapon-class HIT_FLASH_SCALE (kinetic spark vs. heavier cannon flash); optional `tint` is the
+// per-blast color multiplier (null = the baked orange fire, SHIELD_HIT_TINT = an absorbed shield hit).
+export function spawnHitSprite(pos, sizeScale = 1, tint = null) {
   const size = HIT_SIZE * sizeScale;
-  const mat = makeMaterial(size);
+  const mat = makeMaterial(size, tint);
   const m = new THREE.Mesh(quadGeo, mat);
   m.position.copy(pos);
   m.renderOrder = 3;

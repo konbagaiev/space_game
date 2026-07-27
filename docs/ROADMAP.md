@@ -242,6 +242,14 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - Leaderboards.
 - More ship classes / visual variety.
 - Weapon icons / 3D models (for the hangar shop stash + around-model slot icons).
+- **Distinct shield-absorb sound (player + enemy).** Absorbed hits currently share the hull-hit audio
+  (`audio.sfx.hit()` synth tick for enemies; the sampled `shipHit` for the player) — only the *visual*
+  distinguishes them (cyan flash + bubble ripple). Two options were scoped: a **synthesized voice** in
+  `client/src/audio.js` (a short bright filtered ping next to `hit()`; asset-free, no `SOUNDS`/`SOUND_MAP`
+  rows, ships instantly) or a **sampled clip** (new CC0 asset → `client/assets/sounds/` → S3 + hash →
+  `SOUNDS` + `SOUND_MAP` rows in `server/src/catalog_seed.js` → `CREDITS.md`). Apply it to **both** sides so
+  "a shield absorb sounds like a shield" regardless of who is hit. (Deferred out of the enemy-shields
+  change, DECISIONS §74.)
 - **Ship-explosion overhaul (visual).** The current death burst (`spawnShipExplosion` in
   `client/src/projectiles.js`) reads as a big single-color blob — fine as a first pass, but not the
   "gorgeous explosion" we want. Wanted: fire that actually *burns* (more natural, layered flame — not one

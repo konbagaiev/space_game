@@ -192,7 +192,7 @@ test('(swept) mesh.scale and pad expand the swept hit', () => {
 });
 
 // --- resolveHostileBulletHit: the enemy-bullet → player damage+cull path (regression for the missing
-// applyPlayerDamage import in sim.js, commit 51eec94). ---
+// applyShieldedDamage import in sim.js, commit 51eec94). ---
 const hostilePlayer = (over = {}) => ({
   mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: null, broadR: null,
   hp: 100, shield: false, _shieldValue: 0, _shieldRechargeAccum: 0, ...over,
@@ -203,7 +203,7 @@ test('resolveHostileBulletHit: a swept segment through the hull damages the hull
   const r = resolveHostileBulletHit(p, V(-3, 0, 0), V(3, 0, 0), 12); // segment crosses the origin sphere
   assert.equal(r.hit, true);
   assert.equal(r.remove, true);                    // bullet is consumed (would reach sim's splice)
-  assert.equal(p.hp, 88);                          // 100 − 12, routed by applyPlayerDamage
+  assert.equal(p.hp, 88);                          // 100 − 12, routed by applyShieldedDamage
   assert.deepEqual(r.damageResult, { absorbed: false, broke: false });
 });
 

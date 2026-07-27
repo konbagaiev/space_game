@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G } from './state.js';
-import { SHIELD_RADIUS } from './collision.js';
+import { SHIELD_RADIUS, broadRadius } from './collision.js';
 
 const MAX_IMPACTS = 6;                          // concurrent ripples (round-robin ring buffer)
 const RADIUS = SHIELD_RADIUS;                   // bubble radius — the same sphere shots are intercepted on (collision.js); encloses the ship (SHIP_MODEL_LEN ≈ 3.4)
@@ -68,16 +68,22 @@ const frag = /* glsl */`
   }
 `;
 
-function ensureBubble() {
-  if (bubble) return;
-  mat = new THREE.ShaderMaterial({
+// One material per bubble (player + each pooled enemy slot). The vert/frag SOURCE is identical for all of
+// them, so three.js compiles a single program and reuses it — only the uniform arrays differ.
+function makeBubbleMaterial(dirs, starts, brokes) {
+  return new THREE.ShaderMaterial({
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.FrontSide,
     uniforms: {
       uTime: { value: 0 }, uColor: { value: SHIELD_COLOR }, uBreak: { value: BREAK_COLOR }, uBase: { value: 0 }, uReady: { value: 0 },
-      uImpactDir: { value: impactDir }, uImpactStart: { value: impactStart }, uImpactBroke: { value: impactBroke },
+      uImpactDir: { value: dirs }, uImpactStart: { value: starts }, uImpactBroke: { value: brokes },
     },
     vertexShader: vert, fragmentShader: frag,
   });
+}
+
+function ensureBubble() {
+  if (bubble) return;
+  mat = makeBubbleMaterial(impactDir, impactStart, impactBroke);
   bubble = new THREE.Mesh(new THREE.SphereGeometry(RADIUS, 32, 24), mat);
   bubble.visible = false;
   bubble.frustumCulled = false; // it tracks the player every frame; never cull it out
@@ -109,8 +115,8 @@ export function spawnShieldReady() {
 // Advance the bubble once per rendered frame: track the ship, tick the shader clock, and set the idle rim
 // (faint while the shield is up, off while broken). dtSec is the real frame delta (0 while paused).
 export function updateShieldBubble(dtSec) {
-  if (!bubble) return;
-  time += dtSec;
+  time += dtSec;         // module clock: ALWAYS advances (the enemy bubbles share it; see updateEnemyShieldBubbles)
+  if (!bubble) return;   // no player bubble built yet (player never hit) — nothing else to do
   const pl = G.player;
   const show = !!(pl && pl.alive && pl.shield);
   bubble.visible = show;
@@ -120,3 +126,92 @@ export function updateShieldBubble(dtSec) {
   mat.uniforms.uBase.value = pl._shieldValue > 0 ? 0.12 : 0.0; // faint rim only while the shield holds
   mat.uniforms.uReady.value = Math.max(0, 1 - (time - readyStart) / 0.6); // "back online" flash decays over 0.6s
 }
+
+// --- Enemy shield bubbles ------------------------------------------------------------------------
+// Enemies get NO idle rim (uBase stays 0): a bubble only exists for the ~1s ripple of an ABSORBED hit,
+// so an unengaged wave costs nothing. Slot count is capped by the graphics tier (G.gfx.enemyShieldBubbles:
+// High 6 / Balance 3 / Performance 0) and the OLDEST slot is recycled when all are busy. Pure render:
+// reads enemy positions, never writes sim state and never touches the seeded sim RNG (DECISIONS §73).
+const IMPACT_LIFE = 1.0;                       // must match the shader's `age > 1.0` cutoff
+const enemyGeo = new THREE.SphereGeometry(1, 24, 16); // unit sphere, scaled per enemy (cheaper than the player's 32×24)
+const enemySlots = [];                          // { mesh, mat, dir[], start[], broke[], writeIdx, enemy, until }
+
+function makeEnemySlot() {
+  const dir = Array.from({ length: MAX_IMPACTS }, () => new THREE.Vector3(0, 0, 1));
+  const start = new Array(MAX_IMPACTS).fill(-999);
+  const broke = new Array(MAX_IMPACTS).fill(0);
+  const m = makeBubbleMaterial(dir, start, broke);
+  const mesh = new THREE.Mesh(enemyGeo, m);
+  mesh.frustumCulled = false; // it tracks a moving enemy every frame; never cull it out
+  mesh.visible = false;
+  scene.add(mesh);
+  const slot = { mesh, mat: m, dir, start, broke, writeIdx: 0, enemy: null, until: -999 };
+  enemySlots.push(slot);
+  return slot;
+}
+
+// Pick the slot this impact should play on: the one already bound to this enemy > a free (expired) one >
+// a fresh allocation while under the tier cap > the OLDEST busy slot (smallest `until`).
+function acquireSlot(enemy, cap) {
+  for (const s of enemySlots) if (s.enemy === enemy) return s;
+  for (const s of enemySlots) if (s.until <= time) return s;
+  if (enemySlots.length < cap) return makeEnemySlot();
+  let oldest = enemySlots[0];
+  for (const s of enemySlots) if (s.until < oldest.until) oldest = s;
+  return oldest;
+}
+
+// Register an absorbed hit on an ENEMY's shield: its bubble flashes + ripples from the impact point for
+// ~1s and then disappears (no idle rim). worldPos = where the shot connected. No RNG → replay-safe.
+export function registerEnemyShieldImpact(enemy, worldPos, broke = false) {
+  const cap = (G.gfx && G.gfx.enemyShieldBubbles) || 0;
+  if (!cap || !enemy || !enemy.mesh) return;      // Performance tier: nothing is ever allocated
+  const slot = acquireSlot(enemy, cap);
+  // REBIND: this slot was showing a DIFFERENT enemy (recycled oldest, or one that died mid-ripple). Its
+  // impact ring still holds that enemy's hits, which are < IMPACT_LIFE old and would therefore replay on
+  // the new enemy's bubble as phantom ripples. Retire them before writing the new impact.
+  if (slot.enemy !== enemy) { slot.start.fill(-999); slot.writeIdx = 0; }
+  const p = enemy.mesh.position;
+  const d = slot.dir[slot.writeIdx];
+  d.set(worldPos.x - p.x, worldPos.y - p.y, worldPos.z - p.z);
+  if (d.lengthSq() < 1e-6) d.set(0, 0, 1); else d.normalize();
+  slot.start[slot.writeIdx] = time;
+  slot.broke[slot.writeIdx] = broke ? 1 : 0;
+  slot.writeIdx = (slot.writeIdx + 1) % MAX_IMPACTS;
+  // Radius in WORLD units: broadR is group-local, so it must be folded with mesh.scale.x — broadRadius()
+  // does exactly that (and handles the primitive fallback). enemyGeo is a UNIT sphere → scale === radius.
+  slot.mesh.scale.setScalar(broadRadius(enemy) * 1.05);
+  slot.mesh.position.copy(p);
+  slot.enemy = enemy;
+  slot.until = time + IMPACT_LIFE;
+  slot.mesh.visible = true;
+}
+
+// Advance the pooled enemy bubbles. Call once per rendered frame, immediately AFTER updateShieldBubble()
+// — it owns the shared `time` clock; this function never advances it (hence no dt parameter), so a paused
+// frame (dtSec 0) freezes an in-flight ripple instead of expiring it.
+export function updateEnemyShieldBubbles() {
+  for (const s of enemySlots) {
+    if (time >= s.until) { s.mesh.visible = false; s.enemy = null; continue; }
+    // The enemy died mid-ripple (sim.js removes its mesh from the scene): let the ripple fade in place.
+    if (s.enemy && !s.enemy.mesh.parent) s.enemy = null;
+    if (s.enemy) s.mesh.position.copy(s.enemy.mesh.position);
+    s.mat.uniforms.uTime.value = time;
+    s.mat.uniforms.uBase.value = 0;   // enemies never get the idle Fresnel rim (player-exclusive read)
+    s.mat.uniforms.uReady.value = 0;  // and no "back online" whole-sphere flash
+  }
+}
+
+// Hide + unbind every pooled enemy bubble (called from sim.reset()). The meshes are KEPT (pooled, ≤ the
+// tier cap, bound to the persistent scene) so repeated runs can't accumulate meshes — no leak, no rebuild.
+export function clearEnemyShieldBubbles() {
+  for (const s of enemySlots) {
+    s.mesh.visible = false;
+    s.enemy = null;
+    s.until = -999;
+    s.start.fill(-999);
+  }
+}
+
+// Diagnostic accessor for the headless tests (exposed on window.__game under ?debug) — the live slot array.
+export function enemyShieldSlots() { return enemySlots; }

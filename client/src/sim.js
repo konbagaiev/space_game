@@ -8,13 +8,13 @@ import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, 
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
-import { repairTick, shieldRecharge } from './components.js';
+import { repairTick, shieldRecharge, applyShieldedDamage } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, spawnShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
-import { updateFlipbooks, spawnHitSprite } from './flipbook-fx.js';
+import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
+import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust, disposeShipExhaust } from './exhaust-fx.js';
-import { spawnShieldReady } from './shield-fx.js';
+import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
 import { simRandom } from './sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
@@ -487,6 +487,16 @@ export function update(dt) {
       if (e.spawnAge >= e.spawnDur) e.warping = false; // fully formed: now a normal combatant
     }
 
+    // --- enemy shield: recharge only once fully depleted, then refill to full (same rule as the player).
+    // NOTE: the timer runs from the BREAKING hit and keeps banking under continuous fire — hull damage
+    // never resets it (see DECISIONS §76).
+    if (e.shield) {
+      const wasBroken = e._shieldValue <= 0;
+      const s = shieldRecharge(e._shieldValue, e.shield.capacity, e.shield.rechargeSec, dt, e._shieldRechargeAccum);
+      e._shieldValue = s.shieldValue; e._shieldRechargeAccum = s.accum;
+      if (wasBroken && s.shieldValue > 0) G.enemyShieldRefills++; // diagnostic counter (replay triage)
+    }
+
     const toPlayer = G.player.mesh.position.clone().sub(e.mesh.position);
     const dist = toPlayer.length();
     toPlayer.normalize();
@@ -525,11 +535,14 @@ export function update(dt) {
     b.mesh.position.addScaledVector(b.vel, dt);
 
     let hit = false;
+    let absorbed = false;                 // this hit landed on a SHIELD → cyan flash instead of the orange spark
     if (b.fromPlayer) {
       for (const e of enemies) {
         if (e.warping) continue; // invulnerable while forming — bullets pass through
         if (segmentHitsShip(e, _bulletP0, b.mesh.position)) {
-          e.hp -= b.damage; hit = true; audio.sfx.hit(); break;
+          const dr = applyShieldedDamage(e, b.damage); // shield first, excess spills to the hull this tick
+          if (dr.absorbed) { absorbed = true; spawnEnemyShieldHit(e, b.mesh.position, dr.broke); }
+          hit = true; audio.sfx.hit(); break;
         }
       }
     } else {
@@ -558,7 +571,11 @@ export function update(dt) {
 
     // limited only by range/hits — bullets fly normally beyond the arena (no boundary culling)
     if (hit || b.traveled >= b.maxRange) {
-      if (hit) spawnHitSprite(b.mesh.position, HIT_FLASH_SCALE[b.class] ?? 0.8); // class-keyed hit-flash: a small flipbook mini-blast (kinetic spark / cannon flash)
+      // Class-keyed hit-flash: a small flipbook mini-blast (kinetic spark / cannon flash). A hit ABSORBED
+      // by a shield instead plays the same mini-blast smaller and tinted CYAN (SHIELD_HIT_TINT), so "the
+      // field stopped it" reads differently from an orange hull hit while staying in the one FX family
+      // (DECISIONS §75). spawnHitSprite draws no RNG → replay-safe either way.
+      if (hit) spawnHitSprite(b.mesh.position, (HIT_FLASH_SCALE[b.class] ?? 0.8) * (absorbed ? 0.7 : 1), absorbed ? SHIELD_HIT_TINT : null);
       scene.remove(b.mesh);
       b.mesh.material.dispose();
       bullets.splice(i, 1);
@@ -848,6 +865,7 @@ export function reset() {
   flipbooks.length = 0;
   clearDeferredBlasts(); // drop any pending boss chain-detonations so a restart can't fire stale blasts
   creditPopups.length = 0; // DOM-only, no scene meshes to dispose
+  clearEnemyShieldBubbles(); // hide + unbind pooled enemy shield bubbles (no cross-run leaks)
   clearDrops(); // remove drop meshes + the pull line; DISCARD any uncollected/un-deposited loot on a fresh run
   clearEventLog(); // start a fresh run with an empty event log
   G.autopilot.active = false; G.autopilot.target = null; // defensive: no dangling drop-target autopilot into the new run
@@ -887,6 +905,7 @@ export function reset() {
   for (const g of Object.values(G.player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   G.player.alive = true;
   G.earned = 0; G.kills = 0; G.banked = false; // new run: reset session credits + the bank-once guard (balance persists)
+  G.enemyShieldRefills = 0; // diagnostic: completed enemy shield refills this run (replay triage)
   G.gameStartTime = performance.now(); // start timing a new game (for history)
   G.combatElapsed = 0;  // fresh run: restart the enemy hold-fire grace clock
   levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level

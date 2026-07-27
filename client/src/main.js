@@ -13,8 +13,8 @@ import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, app
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
-import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
-import { updateShieldBubble } from './shield-fx.js'; // player shield bubble: faint idle rim + ripple-on-hit (variant B)
+import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket, spawnEnemyShieldHit } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
+import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples
 import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
@@ -646,7 +646,8 @@ function animate() {
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
-  updateShieldBubble(G.paused ? 0 : Math.min(rawSec, 0.05)); // track the ship + tick the shield-bubble shader (frozen while paused)
+  updateShieldBubble(G.paused ? 0 : Math.min(rawSec, 0.05)); // advances the shared FX clock + tracks the ship (frozen while paused)
+  updateEnemyShieldBubbles(); // enemy hit-ripples (pooled, tier-capped) — MUST run after updateShieldBubble (shared clock)
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays
   // two passes: first the sky backdrop (with its own light), then combat on top
   renderer.info.reset();
@@ -691,6 +692,9 @@ if (location.search.includes('debug')) {
       pump: updateShipExhaust, // headless-test hook: step every ship plume's throttle fade by a fixed dt (deterministic, no reliance on the software-WebGL frame rate)
     },
     spawnEnemy, spawnEnemyShip, spawnShipExplosion, emitExhaust, spawnRocket, reset, levelRunner,
+    spawnEnemyShieldHit, // test/tool hook: fire an enemy shield ripple at a world point
+    get enemyShieldSlots() { return enemyShieldSlots(); }, // diagnostic: the pooled enemy bubble slots
+    get enemyShieldRefills() { return G.enemyShieldRefills; }, // diagnostic: completed enemy shield refills this run (replay triage)
     drops, // the live loot-drop array (count/positions assertable in headless)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
     // with `?dev` — start a fight, run `for (let i=0;i<40;i++) __game.spawnTestDrop()`, watch the perf FPS.

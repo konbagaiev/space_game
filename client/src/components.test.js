@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveDrive, hitsToKill, shipMass, REFERENCE_MASS, repairTick, absorbDamage, shieldRecharge, applyPlayerDamage } from './components.js';
+import {
+  deriveDrive, hitsToKill, shipMass, REFERENCE_MASS, repairTick, absorbDamage, shieldRecharge,
+  applyShieldedDamage, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC,
+} from './components.js';
 
 // Synthetic components mirroring the DB seed: hull {weight,durability}, engine {weight,power},
 // thruster {weight,power}.
@@ -144,39 +147,125 @@ test('shieldRecharge: a large dt still refills to exactly capacity (no overshoot
   assert.deepEqual(shieldRecharge(0, 20, 10, 100, 0), { shieldValue: 20, accum: 0 });
 });
 
-// --- applyPlayerDamage: shield-first damage routing + the { absorbed, broke } contract the hit FX rely on ---
+// --- applyShieldedDamage: shield-first damage routing + the { absorbed, broke } contract the hit FX rely on ---
 // The shield-bubble FX (shield-fx.js) fires a ripple only when `absorbed` is true and a bigger flash when
 // `broke` is true, so these return values are load-bearing for the visual — guard them.
-test('applyPlayerDamage: a partial hit is fully absorbed by the shield (no hull damage, ripple only)', () => {
+test('applyShieldedDamage: a partial hit is fully absorbed by the shield (no hull damage, ripple only)', () => {
   const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 0, hp: 100 };
-  assert.deepEqual(applyPlayerDamage(p, 5), { absorbed: true, broke: false });
+  assert.deepEqual(applyShieldedDamage(p, 5), { absorbed: true, broke: false });
   assert.equal(p._shieldValue, 15);
   assert.equal(p.hp, 100);
 });
 
-test('applyPlayerDamage: an exact-capacity hit breaks the shield and resets its recharge timer', () => {
+test('applyShieldedDamage: an exact-capacity hit breaks the shield and resets its recharge timer', () => {
   const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 7, hp: 100 };
-  assert.deepEqual(applyPlayerDamage(p, 20), { absorbed: true, broke: true });
+  assert.deepEqual(applyShieldedDamage(p, 20), { absorbed: true, broke: true });
   assert.equal(p._shieldValue, 0);
   assert.equal(p._shieldRechargeAccum, 0); // timer reset on the breaking hit
   assert.equal(p.hp, 100);                 // exact break spills nothing
 });
 
-test('applyPlayerDamage: an over-capacity hit breaks the shield and spills the excess to the hull', () => {
+test('applyShieldedDamage: an over-capacity hit breaks the shield and spills the excess to the hull', () => {
   const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 0, hp: 100 };
-  assert.deepEqual(applyPlayerDamage(p, 30), { absorbed: true, broke: true });
+  assert.deepEqual(applyShieldedDamage(p, 30), { absorbed: true, broke: true });
   assert.equal(p._shieldValue, 0);
   assert.equal(p.hp, 90); // 10 excess to hull
 });
 
-test('applyPlayerDamage: with no shield the full damage hits the hull (no ripple)', () => {
+test('applyShieldedDamage: with no shield the full damage hits the hull (no ripple)', () => {
   const p = { shield: null, _shieldValue: 0, hp: 100 };
-  assert.deepEqual(applyPlayerDamage(p, 12), { absorbed: false, broke: false });
+  assert.deepEqual(applyShieldedDamage(p, 12), { absorbed: false, broke: false });
   assert.equal(p.hp, 88);
 });
 
-test('applyPlayerDamage: an already-broken shield (value 0) takes nothing; damage goes to the hull', () => {
+test('applyShieldedDamage: an already-broken shield (value 0) takes nothing; damage goes to the hull', () => {
   const p = { shield: {}, _shieldValue: 0, hp: 100 };
-  assert.deepEqual(applyPlayerDamage(p, 8), { absorbed: false, broke: false });
+  assert.deepEqual(applyShieldedDamage(p, 8), { absorbed: false, broke: false });
   assert.equal(p.hp, 92);
+});
+
+// --- Enemy shield split & lossless damage -----------------------------------------------------------
+// Enemies carve 1/3 of their catalog hull durability into a shield buffer (the rest stays hull), so a kill
+// finished inside one shield cycle costs EXACTLY the damage it cost before shields. These tests are the
+// guard for that invariant — the recorded Level-0 intro replay depends on it (DECISIONS §76).
+const DURABILITIES = [30, 36, 150, 300, 310, 550]; // every enemy hull in catalog_seed.js
+
+const makeEnemy = (d) => {
+  const { shieldCap, hullMax } = enemyShieldSplit(d);
+  return {
+    shield: shieldCap ? { capacity: shieldCap, rechargeSec: ENEMY_SHIELD_RECHARGE_SEC } : null,
+    _shieldValue: shieldCap, _shieldRechargeAccum: 0, hp: hullMax, maxHp: hullMax,
+  };
+};
+const killWith = (d, perHit) => {
+  const e = makeEnemy(d);
+  let hits = 0;
+  while (e.hp > 0) { applyShieldedDamage(e, perHit); hits++; if (hits > 10000) throw new Error('runaway'); }
+  return { hits, dealt: hits * perHit, overkill: -e.hp };
+};
+
+test('enemyShieldSplit: the split is integer, exact and always sums back to the catalog durability', () => {
+  for (const d of DURABILITIES) {
+    const { shieldCap, hullMax } = enemyShieldSplit(d);
+    assert.equal(shieldCap, Math.round(d / 3), `${d} → shield is 1/3 rounded`);
+    assert.ok(Number.isInteger(shieldCap) && Number.isInteger(hullMax), `${d} → both pools are integers`);
+    assert.equal(shieldCap + hullMax, d, `${d} → shield + hull equals the original durability`);
+  }
+});
+
+test('enemyShieldSplit: a missing/zero durability yields no shield (defensive)', () => {
+  assert.deepEqual(enemyShieldSplit(0), { shieldCap: 0, hullMax: 0 });
+  assert.deepEqual(enemyShieldSplit(undefined), { shieldCap: 0, hullMax: 0 });
+});
+
+test('enemy shields are LOSSLESS: damage-to-kill is identical to the pre-shield hull', () => {
+  for (const d of DURABILITIES) {
+    for (const perHit of [6, 7, 13, 40, 100]) {
+      const { hits, dealt, overkill } = killWith(d, perHit);
+      assert.equal(hits, hitsToKill(d, perHit), `${d} HP @ ${perHit}/hit → same hit count as before shields`);
+      assert.equal(dealt - overkill, d, `${d} HP @ ${perHit}/hit → every damage point is accounted for`);
+    }
+  }
+});
+
+test('enemy shields: a single overkill hit still kills in one hit', () => {
+  for (const d of DURABILITIES) {
+    const { hits } = killWith(d, d + 50);
+    assert.equal(hits, 1, `${d} HP dies to one oversized hit`);
+  }
+});
+
+test('enemy shields: an exact-capacity hit breaks the shield without touching the hull', () => {
+  const { shieldCap, hullMax } = enemyShieldSplit(150);
+  const e = makeEnemy(150);
+  e._shieldRechargeAccum = 4; // banked time from an earlier break must be cleared by the breaking hit
+  assert.deepEqual(applyShieldedDamage(e, shieldCap), { absorbed: true, broke: true });
+  assert.equal(e._shieldValue, 0);
+  assert.equal(e._shieldRechargeAccum, 0);
+  assert.equal(e.hp, hullMax);              // exact break spills nothing
+  applyShieldedDamage(e, 10);               // the next hit goes 100% to the hull
+  assert.equal(e.hp, hullMax - 10);
+});
+
+test('enemy shields: a multi-hit volley (triple spiral 3×40) deals its full 120 to a mini boss', () => {
+  const e = makeEnemy(150); // 50 shield + 100 hull
+  for (let i = 0; i < 3; i++) applyShieldedDamage(e, 40);
+  assert.equal(e._shieldValue, 0);
+  assert.equal(e.hp, 100 - 70);             // 120 dealt: 50 absorbed, 70 to the hull
+  assert.equal(e.shield.capacity + e.maxHp - (e._shieldValue + e.hp), 120);
+});
+
+test('enemy shields: a PARTIAL shield never recharges; a broken one refills to full after rechargeSec', () => {
+  const { shieldCap } = enemyShieldSplit(30); // 10
+  assert.deepEqual(shieldRecharge(shieldCap - 1, shieldCap, 10, 5, 0), { shieldValue: shieldCap - 1, accum: 0 });
+  assert.deepEqual(shieldRecharge(0, shieldCap, 10, 10, 0), { shieldValue: shieldCap, accum: 0 });
+});
+
+test('the derived enemy shield is WEIGHTLESS: mass, acceleration and turn rate are unchanged', () => {
+  const base = () => ({ hull: HULL.light, engine: ENGINE.scout, thruster: THR.scout, mounts: [] });
+  const withShield = deriveDrive({ ...base(), shield: { capacity: 10, rechargeSec: ENEMY_SHIELD_RECHARGE_SEC } });
+  const without = deriveDrive({ ...base(), shield: null });
+  assert.equal(shipMass(withShield), shipMass(without), 'a weightless shield does not add mass');
+  assert.equal(withShield.acceleration, without.acceleration);
+  assert.equal(withShield.turnRate, without.turnRate);
 });
