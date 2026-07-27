@@ -1375,13 +1375,16 @@ async function bootstrap() {
     if (!location.search.includes('debug')) requestAnimationFrame(() => requestAnimationFrame(prewarmShaders));
 
     // Dev-only palette tuning panel; lil-gui is fetched only here so players never download it.
-    if (location.search.includes('tune')) {
+    // Skipped on touch: the right-docked lil-gui panels (colors here, backdrop/record below) are
+    // mouse-only tools that just clutter a phone/tablet screen — never build them there.
+    if (location.search.includes('tune') && Device.input !== 'touch') {
       const { default: GUI } = await import('three/addons/libs/lil-gui.module.min.js');
       buildTunePanel(GUI);
     }
     // ?dev "Backdrop authoring" panel: Start/Stop-record controls + a REC readout + live Depth/Scale/Opacity
     // sliders for the freighter ghost battle. Dynamic imports → zero cost (no lil-gui fetch) when ?dev is off.
-    if (isDev()) {
+    // Also skipped on touch (see the tune panel above) — the perf overlay still shows under ?dev, just not this.
+    if (isDev() && Device.input !== 'touch') {
       const { default: GUI } = await import('three/addons/libs/lil-gui.module.min.js');
       const { buildBackdropPanel } = await import('./ghost-battle.js');
       buildBackdropPanel(GUI);

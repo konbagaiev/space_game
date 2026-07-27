@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { evalDev } from './dev.js';
+import { evalDev, evalDevForDevice } from './dev.js';
 
 // Map-backed fake localStorage: getItem returns null for a missing key (like the real API).
 const fake = () => { const m = new Map();
@@ -41,4 +41,18 @@ test('evalDev: an unrecognized value falls back to the stored flag', () => {
 
 test('evalDev: ?dev with no storage returns true without throwing (private mode)', () => {
   assert.equal(evalDev('?dev', null), true);
+});
+
+// TOUCH is non-sticky: the stored flag is ignored and never written; only an explicit URL ?dev counts.
+test('evalDevForDevice: touch ignores a stuck sticky flag in normal mode (the FPS/tris leak)', () => {
+  const stuck = fake(); stuck.setItem('devMode', '1');
+  assert.equal(evalDevForDevice(true, '', stuck), false);        // no URL dev → OFF despite the sticky flag
+  assert.equal(evalDevForDevice(false, '', stuck), true);        // desktop still honors the sticky flag
+});
+
+test('evalDevForDevice: touch honors an explicit ?dev but does NOT persist it', () => {
+  const s = fake();
+  assert.equal(evalDevForDevice(true, '?dev', s), true);         // explicit URL dev → ON
+  assert.equal(s.getItem('devMode'), null);                      // ...but nothing written (non-sticky)
+  assert.equal(evalDevForDevice(true, '?dev=false', fake()), false);
 });

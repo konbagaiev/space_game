@@ -3,6 +3,13 @@
 // an explicit ?dev=false / ?dev=0 turns it OFF and clears the stored flag; no dev param (or an
 // unrecognized value) → the stored flag decides. Evaluated ONCE per page load and cached.
 // Reuses the existing ?dev flag (perf telemetry) — no new endpoint, no new flag name.
+//
+// TOUCH is NON-STICKY: on a touch device the localStorage flag is ignored (and never written) — dev
+// diagnostics are on ONLY when an explicit truthy ?dev is in THIS load's URL. A phone/tablet has no
+// ergonomic way to clear a stuck flag, so a one-off ?dev telemetry visit must not leave the perf overlay
+// (FPS/tris) — or the tuning panels — showing in normal play. Desktop keeps the sticky flag (a dev opens
+// ?dev once and keeps the overlay across reloads). See evalDevForDevice below.
+import { Device } from './device.js'; // touch/mouse input axis (dependency-free, import-safe)
 const KEY = 'devMode';
 
 // Pure decision + storage side effect, so it's unit-testable without a DOM. Returns the on/off boolean.
@@ -22,9 +29,14 @@ export function evalDev(search, storage) {
   } catch { return url === true; } // localStorage blocked (private mode) → honor the URL only
 }
 
+// PURE device-aware gate: touch → non-sticky (ignore & never write storage), mouse → sticky as before.
+export function evalDevForDevice(isTouch, search, storage) {
+  return evalDev(search, isTouch ? null : storage);
+}
+
 const _search = typeof location !== 'undefined' ? location.search : '';
 const _storage = typeof localStorage !== 'undefined' ? localStorage : null;
-const DEV = evalDev(_search, _storage);
+const DEV = evalDevForDevice(Device.input === 'touch', _search, _storage);
 
 // True when the dev diagnostics flag is on (URL this load, or sticky from a previous ?dev visit).
 export function isDev() { return DEV; }
