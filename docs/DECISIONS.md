@@ -2627,6 +2627,43 @@ one-time count scale at plume attach. No model/asset change → no `CREDITS.md` 
 import) so `node --test` can cover them without the browser importmap — same pattern as
 `ghost-battle-track.js` ↔ `ghost-battle.js`.
 
+## 75. Explosions/rings/hits unified onto the flipbook+shader family; CPU spark spray dropped; boss chain-detonation
+
+**Context.** After the exhaust unification (§74), the ship-death burst was still a hybrid: the flipbook
+fireball (§72) **plus** a CPU-simulated **spark spray** (`sparks` pool) **plus** a hard `RingGeometry`
+shockwave, and the bullet hit-flash was a separate additive **sphere** (`explosions` pool). The maintainer
+wanted the whole hit/explosion family to read as one thing — the flipbook look — and dropped the sparks.
+
+**Decisions.**
+1. **Ship death = flipbook fireball + a soft shockwave RING only; the CPU spark spray is GONE.** The radial
+   spark particles (`sparks.push` in `spawnShipExplosion`) are deleted. The `sparks` pool itself stays —
+   the **rocket burst** still uses it (a separate, deliberately snappy effect left as-is).
+2. **Shockwave ring → a baked soft-ring TEXTURE on an additive quad** (`ringTexture()` + `ringQuadGeo` +
+   `spawnShockRing`), replacing the hard `RingGeometry`. Same bake-once-texture family as flipbook/bolt; it
+   reuses the existing `shockwaves` pool (grow-scale + fade in `sim.update`). Both ship death and rocket
+   burst share it.
+3. **Bullet hit-flash → a small flipbook mini-blast** (`spawnHitSprite`, reusing the SAME baked fire sheet,
+   small + fast), replacing the additive sphere. So a hit reads as a tiny explosion in the same family.
+   (Muzzle flash + player-arrival flash keep the cheap `spawnExplosion` sphere — not worth converting.)
+4. **Bosses get a STAGED chain detonation** (`spawnBossExplosion`, gated on role `boss`/`boss2`): an
+   oversized primary fireball + a big ring NOW, a brighter **yellow** SECONDARY detonation a beat later
+   (the reactor going up, `uTint` > 1 under additive blending) + its own ring, and a few small pops
+   scattered around the wreck. Timing is a deferred queue (`deferredBlasts` + `updateDeferredBlasts(dt)`,
+   cleared in `reset()`); offsets/delays are DETERMINISTIC (a local `bhash`, NO `Math.random`).
+5. **Flipbook smoothness = more baked frames + shader frame-blending, NOT a faster playback.** The sheet
+   went 6×6=36 → **8×8=64** frames (1024→2048 px) and the fragment shader **cross-fades** the current
+   baked frame into the next by `fract(uFrame)` (`uFrames` uniform) — synthesized in-between frames make
+   the blast buttery at any duration. FPS (frame-advance) sets duration only (~1.8 s); a slower blast stays
+   smooth because of the blend.
+
+**Replay safety (cross-ref §73).** All of this is pure render: no `simRandom`, no `Math.random` in the FX
+timing/placement (deterministic hashes), no sim/damage/collision/economy change. The intro (Level 0) has no
+boss, and the `22-intro-replay` guard asserts sim state (kills/cards/win), which stays bit-identical.
+
+**Perf note.** The flipbook sheet is now 2048² (one shared texture, uploaded once) — a deliberate
+quality-over-footprint call for the flagship explosion; the draw-call win (§72) is unchanged. Ring/hit are
+still one additive quad each.
+
 ## Future ideas
 
 solid asteroids with bounce ·

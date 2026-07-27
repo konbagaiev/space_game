@@ -11,8 +11,8 @@ import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updat
 import { repairTick, shieldRecharge } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { spawnExplosion, spawnShipExplosion, emitExhaust, detonateRocket, spawnSmoke, spawnShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
-import { updateFlipbooks } from './flipbook-fx.js';
+import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, spawnShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
+import { updateFlipbooks, spawnHitSprite } from './flipbook-fx.js';
 import { updateShipExhaust, disposeShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups } from './ship-build.js';
@@ -558,7 +558,7 @@ export function update(dt) {
 
     // limited only by range/hits — bullets fly normally beyond the arena (no boundary culling)
     if (hit || b.traveled >= b.maxRange) {
-      if (hit) spawnExplosion(b.mesh.position, HIT_FLASH_SCALE[b.class] ?? 0.8); // class-keyed hit-flash (kinetic spark / cannon flash)
+      if (hit) spawnHitSprite(b.mesh.position, HIT_FLASH_SCALE[b.class] ?? 0.8); // class-keyed hit-flash: a small flipbook mini-blast (kinetic spark / cannon flash)
       scene.remove(b.mesh);
       b.mesh.material.dispose();
       bullets.splice(i, 1);
@@ -652,6 +652,8 @@ export function update(dt) {
 
   // --- flipbook (sprite-sheet) explosions: advance frame, fade + drop when finished ---
   updateFlipbooks(dt);
+  // --- deferred boss chain-detonations: fire each staged blast when its delay elapses ---
+  updateDeferredBlasts(dt);
 
   // --- engine exhaust: advance every ship's attached plume (uTime) + decay its thrust throttle so a ship
   //     that stops thrusting fades out. Fixed-cost render objects, not a growing pool (exhaust-fx.js). ---
@@ -715,7 +717,11 @@ export function update(dt) {
     if (enemies[i].hp <= 0) {
       // colorful death burst: sized to the ship, tinted by its engine's exhaust color
       const e = enemies[i];
-      spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
+      // Bosses go up bigger + in stages (secondary detonation + expanding rings); everyone else = the
+      // standard flipbook fireball + one ring.
+      const isBoss = e.role === 'boss' || e.role === 'boss2';
+      if (isBoss) spawnBossExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
+      else spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
       // Per-size loudness: medium ships + bosses +50% louder; small ships 70% quieter.
       const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(e.role);
       audio.sfx.explosion(e.sizeScale || 1, sfxFor('ship', e.class, 'explode'), louderBoom ? 1.5 : 0.3); // ship-class map; vol by size
@@ -840,6 +846,7 @@ export function reset() {
   shockwaves.length = 0;
   for (const fb of flipbooks) { scene.remove(fb.mesh); fb.mat.dispose(); }
   flipbooks.length = 0;
+  clearDeferredBlasts(); // drop any pending boss chain-detonations so a restart can't fire stale blasts
   creditPopups.length = 0; // DOM-only, no scene meshes to dispose
   clearDrops(); // remove drop meshes + the pull line; DISCARD any uncollected/un-deposited loot on a fresh run
   clearEventLog(); // start a fresh run with an empty event log

@@ -101,49 +101,105 @@ const sparkGeo = new THREE.SphereGeometry(1, 6, 6);
 // warm ember palette; a few sparks take the engine's exhaust color for variety
 const SPARK_COLORS = [0xffffff, 0xfff0a0, 0xffd040, 0xff8030, 0xff3020];
 // shockwaves moved to src/state.js
-const shockGeo = new THREE.RingGeometry(0.78, 1, 28); // unit ring, scaled up as it expands
+// Soft shockwave ring: a baked ring texture (transparent core → bright thin rim → transparent edge) on a
+// flat additive quad, in the same bake-once-texture family as the flipbook fireball / glow bolt — replaces
+// the old hard `RingGeometry`. The quad spans -1..1 so the bright rim sits at world-radius ≈ 0.78 at
+// scale 1 (matching the old ring), then the shockwaves pool loop grows the scale + fades the opacity.
+const ringQuadGeo = new THREE.PlaneGeometry(2, 2);
+let ringTex = null;
+function ringTexture() {
+  if (ringTex) return ringTex;
+  const S = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  g.addColorStop(0.0, 'rgba(255,255,255,0)');   // hollow core
+  g.addColorStop(0.6, 'rgba(255,255,255,0)');
+  g.addColorStop(0.8, 'rgba(255,255,255,0.95)'); // bright thin rim
+  g.addColorStop(0.9, 'rgba(255,255,255,0.35)');
+  g.addColorStop(1.0, 'rgba(255,255,255,0)');    // soft outer falloff
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  ringTex = new THREE.CanvasTexture(cv);
+  ringTex.colorSpace = THREE.SRGBColorSpace;
+  ringTex.needsUpdate = true;
+  return ringTex;
+}
+
+// Spawn one flat, expanding soft ring on the combat plane (tinted, additive), pushed into the shockwaves
+// pool so sim.update()'s shockwave loop grows its scale + fades it. Shared by ship death + rocket burst.
+function spawnShockRing(pos, y, maxScale, life, color) {
+  const mat = new THREE.MeshBasicMaterial({
+    map: ringTexture(), color, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(ringQuadGeo, mat);
+  ring.position.copy(pos); ring.position.y = y; // flat on the combat plane (a below-plane ghost passes its own depth)
+  ring.rotation.x = -Math.PI / 2;
+  scene.add(ring);
+  shockwaves.push({ mesh: ring, life, maxLife: life, maxScale });
+}
 
 export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, ringY = BULLET_PLANE_Y) {
   const s = sizeScale; // scales every spatial dimension to the ship's size
-  // Fireball: a single flipbook (sprite-sheet) quad — one draw call, one shared texture — replaces the
-  // old stack of 4 additive fireball spheres. The sparks + shockwave below stay (they add outward
-  // motion the flat flipbook lacks). See flipbook-fx.js + DECISIONS §72 (v2 FX-polish sandbox).
+  // Fireball: a single flipbook (sprite-sheet) quad — one draw call, one shared texture (flipbook-fx.js,
+  // DECISIONS §72). The old CPU spark spray is GONE (DECISIONS §75); the death now reads as the flipbook
+  // fireball + a soft expanding shockwave ring, both in the baked-texture/shader FX family.
   spawnFlipbookExplosion(pos, s);
 
-  // Radial spark spray: warm embers + a few in the engine's exhaust color, flung outward.
-  // Clamp to the live-particle budget so a death mid-fight can't blow past the ceiling on the lowest tier.
-  const N = Math.max(0, Math.min(scaledCount(22), G.gfx.maxParticles - liveParticles()));
-  for (let i = 0; i < N; i++) {
-    const col = (i % 4 === 0) ? exhaustColor : SPARK_COLORS[i % SPARK_COLORS.length];
-    const mat = new THREE.MeshBasicMaterial({
-      color: col, transparent: true, opacity: 1,
-      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-    });
-    const m = new THREE.Mesh(sparkGeo, mat);
-    m.position.copy(pos);
-    const size = (0.35 + Math.random() * 0.5) * s;
-    m.scale.setScalar(size);
-    scene.add(m);
-    const a = (i / N) * Math.PI * 2 + Math.random() * 0.5;       // spread around the circle
-    const sp = (14 + Math.random() * 26) * s;                    // outward speed scales with size
-    const vel = new THREE.Vector3(Math.cos(a) * sp, (Math.random() - 0.5) * 6 * s, Math.sin(a) * sp);
-    sparks.push({ mesh: m, vel, life: 2.7 + Math.random() * 2.7, maxLife: 5.4, size });
-  }
+  // Shockwave: a soft, tinted, expanding ring on the combat plane. One additive quad per death — skip it
+  // on the lowest tier to cut overdraw.
+  if (G.gfx.particleScale >= 0.5) spawnShockRing(pos, ringY, 22 * s, 2.9, exhaustColor);
+}
 
-  // Shockwave: a flat additive ring (tinted by the exhaust color) that expands and fades. It's one big
-  // DoubleSide additive quad per death — skip it on the lowest tier to cut overdraw.
-  if (G.gfx.particleScale >= 0.5) {
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: exhaustColor, transparent: true, opacity: 0.9,
-      blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
-    });
-    const ring = new THREE.Mesh(shockGeo, ringMat);
-    ring.position.copy(pos); ring.position.y = ringY; // flat ring on the combat plane by default; a below-plane ghost death passes its own depth
-    ring.rotation.x = -Math.PI / 2; // lay it flat on the arena
-    scene.add(ring);
-    shockwaves.push({ mesh: ring, life: 2.4, maxLife: 2.4, maxScale: 22 * s });
+// ---------- Boss death: an oversized, STAGED chain detonation ----------
+// A boss goes up bigger and in beats: an oversized primary fireball + a large expanding ring NOW, then a
+// big SECONDARY detonation a fraction of a second later (the reactor going up) with its own expanding ring,
+// plus a handful of small pops scattered around the wreck for a chain-reaction feel. All timing/positions
+// are DETERMINISTIC (a local hash + module counter, NO Math.random) so it stays replay-safe (DECISIONS §75).
+let bossBlastCount = 0;
+const bhash = (a, b = 0) => { const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return s - Math.floor(s); };
+// Bright yellow-white tint (>1 = brighter under additive blending) for the boss's SECONDARY detonation, so
+// the reactor-going-up beat reads hotter/yellower than the orange primary.
+const BOSS_SECONDARY_TINT = new THREE.Vector3(1.6, 1.45, 0.6);
+// Deferred blasts fired later by updateDeferredBlasts(dt): { t (remaining delay), pos, size, color, ring, tint }.
+const deferredBlasts = [];
+
+export function spawnBossExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
+  const s = sizeScale;
+  const seed = bossBlastCount++;
+  // Primary: an oversized fireball + a big expanding shockwave ring, right now.
+  spawnFlipbookExplosion(pos, s * 1.4);
+  if (G.gfx.particleScale >= 0.5) spawnShockRing(pos, BULLET_PLANE_Y, 40 * s, 3.6, exhaustColor);
+  // Big SECONDARY detonation a beat later (the reactor going up) — brighter + yellow — with its own ring.
+  deferredBlasts.push({ t: 0.70, pos: pos.clone(), size: s * 1.2, color: exhaustColor, ring: { maxScale: 30 * s, life: 3.1 }, tint: BOSS_SECONDARY_TINT });
+  // A few small pops scattered around the wreck, staggered (doubled gaps) — the chain reaction.
+  for (let i = 0; i < 4; i++) {
+    const ang = bhash(seed, i) * Math.PI * 2;
+    const dist = (0.4 + bhash(seed + 1, i)) * 7 * s;
+    const p = pos.clone();
+    p.x += Math.cos(ang) * dist;
+    p.z += Math.sin(ang) * dist;
+    p.y += (bhash(seed + 2, i) - 0.5) * 3 * s;
+    deferredBlasts.push({ t: 0.2 + i * 0.26, pos: p, size: (0.4 + bhash(seed + 3, i) * 0.4) * s, color: exhaustColor, ring: null, tint: null });
   }
 }
+
+// Tick the deferred boss blasts; fire each when its delay elapses. Called from sim.update().
+export function updateDeferredBlasts(dt) {
+  for (let i = deferredBlasts.length - 1; i >= 0; i--) {
+    const d = deferredBlasts[i];
+    d.t -= dt;
+    if (d.t > 0) continue;
+    spawnFlipbookExplosion(d.pos, d.size, d.tint);
+    if (d.ring && G.gfx.particleScale >= 0.5) spawnShockRing(d.pos, BULLET_PLANE_Y, d.ring.maxScale, d.ring.life, d.color);
+    deferredBlasts.splice(i, 1);
+  }
+}
+
+// Drop any pending boss blasts (called from reset() so a level restart can't fire stale detonations).
+export function clearDeferredBlasts() { deferredBlasts.length = 0; }
 
 // ---------- Rocket detonation: a small, fast layered burst ----------
 // Same structure as spawnShipExplosion (fireball layers + a few sparks + a shockwave ring) but
@@ -179,18 +235,8 @@ export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050, timeScale
     sparks.push({ mesh: m, vel, life: (0.5 + Math.random() * 0.6) * T, maxLife: 1.1 * T, size });
   }
 
-  // Flat shockwave ring (tier-gated like the ship burst) — small + short-lived.
-  if (G.gfx.particleScale >= 0.5) {
-    const ringMat = new THREE.MeshBasicMaterial({
-      color: tint, transparent: true, opacity: 0.9,
-      blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
-    });
-    const ring = new THREE.Mesh(shockGeo, ringMat);
-    ring.position.copy(pos); ring.position.y = BULLET_PLANE_Y; // keep the flat ring on the combat plane
-    ring.rotation.x = -Math.PI / 2;
-    scene.add(ring);
-    shockwaves.push({ mesh: ring, life: 0.85 * T, maxLife: 0.85 * T, maxScale: R * 2.2 });
-  }
+  // Flat shockwave ring (tier-gated like the ship burst) — small + short-lived, same soft ring primitive.
+  if (G.gfx.particleScale >= 0.5) spawnShockRing(pos, BULLET_PLANE_Y, R * 2.2, 0.85 * T, tint);
 }
 
 // ---------- Engine trail (exhaust is part of the engine) ----------
