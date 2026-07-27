@@ -2726,6 +2726,56 @@ top.
 - **Sound deferred.** An absorbed hit currently shares the hull-hit audio; a distinct absorb voice would apply
   to *both* sides and is scoped in the ROADMAP backlog rather than bolted on here.
 
+## 77. The combat build FLATTENS a model's per-part materials; the hangar build keeps them
+
+**Problem.** Telemetry from a real weak phone (Samsung SM-A037F / PowerVR Rogue GE8320, `?dev` →
+`perf_samples`) showed the frame spending 42-67 ms in `js.render` — our own draw-call submit — with 45-69
+draw calls in a fight. Counting primitives per asset found the cause: the **player ship alone was 31 draw
+calls, 31 materials and 79 textures**, against **3-5 primitives** for every other ship in the game. It is a
+Sketchfab model split "part x material" (110 meshes over 36 materials): the same material kind is repeated
+per body part — `Body_Chrome`, `Gun_Chrome`, `Canopy_Chrome`, `Thrusters_Chrome` — each with its own
+base/metallic-roughness/normal/occlusion set. `gltf-transform`'s `join` can only merge primitives that
+SHARE a material, so the build collapsed 110 meshes to 31 and stopped there. This is the §23 bottleneck
+(CPU draw-call submit, not fill rate) coming from a single asset.
+
+**Decision.** The **combat** build gets a pre-pass (`scripts/assets-flatten.mjs`, opted in per model with
+`flattenMaterials` in the preset) that replaces each material with flat factors — base colour, metallic,
+roughness, emissive — **sampled from that material's own maps**. `optimize --palette` then merges the
+factor-only materials into one palette-textured material and `--join` collapses the mesh. The **hangar**
+build is untouched and keeps the full textured material set: it is one lazy-loaded model on a menu screen,
+where detail is the whole point and draw calls are free.
+
+**Why sample rather than hand-group.** The obvious approach — bucket the materials into a few visual
+families by name and hand-pick their colours — was tried first and got the ship visibly wrong (the red
+engine nacelles came out grey). Sampling each material's own average needs no judgement, generalises to any
+future model, and costs the same draw calls, because the palette merges N factor-only materials just as
+happily as 8.
+
+**Why some materials stay textured.** Averaging is only lossless for a map that is one colour with shading.
+Several of this model's maps paint SEVERAL colours onto one material: the red nacelles live inside an
+otherwise-grey `Thrusters_Material` atlas, the yellow wing chevrons inside `Wings_Material`. Flattening
+everything deletes the ship's livery — it reads grey with thin red stripes. So the sampler also records
+`spread` (how far the most-deviant 5% of a map's texels sit from its mean colour) and `keepTexturedAbove`
+leaves the base map on the few materials above the threshold. Measured on this ship, **34** is the value
+that keeps every visible marking. Even a kept material loses its normal / metallic-roughness / occlusion
+maps — each is a texture bind and a heavier shader permutation, and none of it is visible on a ~50px
+top-down ship.
+
+**Result:** player combat model **31 -> 15 draw calls in-game, 79 -> 16 textures, 371 -> 178 KB**, with the
+ship visually near-identical. The size drop matters on its own: the 371 KB model intermittently failed to
+load on the reporting device, which silently falls back to the placeholder primitive
+(`ship-factory.js` — "Ship model failed to load, keeping primitive").
+
+**Geometry is never touched** — the pre-pass rewrites only the glb's JSON chunk and passes the BIN chunk
+through — so the catalog's generated `model.hitBoxes` / `broadR` stay valid, collision is unchanged, and the
+recorded Level-0 intro still replays (guard re-run green).
+
+**Cost.** The sidecar (`assets-src/<base>.materials.json`) must be re-sampled with `npm run assets:materials`
+whenever a source model changes, and sampling drives headless Chromium (reusing `client/`'s playwright)
+because the maps are jpeg/png/webp inside the glb and we did not want an image-decoding dependency. The
+sidecar is the one thing under `assets-src/` that IS committed — it is generated numbers, not a binary, and
+the build is not reproducible without it.
+
 ## Future ideas
 
 solid asteroids with bounce ·

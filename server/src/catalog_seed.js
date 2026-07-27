@@ -248,7 +248,7 @@ const MARKER = { small: 0xf4741f, medium: 0xe53935, boss: 0x800020 };
 export const SHIPS = [
   {
     name: 'Basic player ship', type: 'player',
-    modelUrl: 'assets/ships/player_combat.f7171045.glb',
+    modelUrl: 'assets/ships/player_combat.9188c820.glb',
     modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb',
     components: { hull: 1, engine: 5, thruster: 8, grab: 29, shield: 31 }, stats: { // player starts with the base Grab (id 29) + Base shield (id 31)
       role: 'player', class: 'player', color: 0x4d8bff, nameKey: 'ship.player_basic.name',

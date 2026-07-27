@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DIR, presetFor, combatPath, hangarUrl } from './assets-config.mjs';
+import { flattenMaterials } from './assets-flatten.mjs';
 
 const GLTF = ['--yes', '@gltf-transform/cli@^4']; // npx package (downloaded on first use)
 
@@ -56,7 +57,20 @@ function main() {
     const tmpCombat = path.join(DIR.dist, `${base}_combat.tmp.glb`);
     const tmpHangar = path.join(DIR.dist, `${base}_hangar.tmp.glb`);
     console.log(`\n[build] ${src}`);
-    optimize(input, tmpCombat, presetFor(base, 'combat')); // base preset + any per-model override
+    const combatPreset = presetFor(base, 'combat'); // base preset + any per-model override
+    // Optional pre-pass: collapse the source's per-part materials to sampled flat factors so `optimize`
+    // can palette + join them into a handful of draw calls (see assets-flatten.mjs). Combat only — the
+    // hangar model keeps its full textured material set. Geometry is untouched, so the catalog's
+    // generated hitBoxes stay valid.
+    let combatInput = input;
+    if (combatPreset.flattenMaterials) {
+      combatInput = path.join(DIR.dist, `${base}_flat.tmp.glb`);
+      const r = flattenMaterials(input, combatInput, combatPreset.flattenMaterials);
+      console.log(`  flatten → ${r.materials} materials, ${r.textured} keep their base map`
+        + (r.missing.length ? `  ⚠ not in the sidecar (stale? re-run assets:materials): ${r.missing.join(', ')}` : ''));
+    }
+    optimize(combatInput, tmpCombat, combatPreset);
+    if (combatInput !== input) fs.rmSync(combatInput, { force: true });
     optimize(input, tmpHangar, presetFor(base, 'hangar'));
     const combatFile = hashRename(tmpCombat, `${base}_combat`, DIR.dist);
     const hangarFile = hashRename(tmpHangar, `${base}_hangar`, DIR.dist);

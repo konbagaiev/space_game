@@ -5,6 +5,21 @@
 
 ## 2026-07-27
 
+- **Player ship combat model: 31 -> 15 draw calls (and 371 -> 178 KB).** Weak-phone telemetry
+  (`?dev` → `perf_samples`, Samsung SM-A037F / PowerVR GE8320) showed 42-67 ms per frame in `js.render`
+  — our own draw-call submit — and the culprit was a single asset: the player ship was **31 draw calls /
+  31 materials / 79 textures**, where every other ship is 3-5 primitives. It is a Sketchfab model split
+  "part x material", so `join` could never merge it. The combat build now runs a **material-flattening
+  pre-pass** (`scripts/assets-flatten.mjs`, opted in via `flattenMaterials` in the preset): each material
+  is replaced by flat factors **sampled from its own maps** (`npm run assets:materials` →
+  `assets-src/<base>.materials.json`), so `--palette` can merge them and `--join` can collapse the mesh.
+  The few maps that paint several colours onto one material — the red engine nacelles, the yellow wing
+  chevrons — keep their base map (`keepTexturedAbove: 34`), so the ship looks the same; normal/MR/occlusion
+  maps are dropped everywhere (invisible on a ~50px top-down ship, a texture bind each). The **hangar**
+  model is untouched. Geometry is not modified, so hitboxes, collision and the recorded Level-0 intro are
+  unaffected (guard re-run green). The size drop also fixes the model intermittently failing to download on
+  that phone, which silently left the player flying the placeholder primitive. See DECISIONS §77.
+
 - **Rocket detonation unified onto the flipbook fireball; blast look is now weapon-driven.** A rocket blast
   is the **same flipbook fireball + soft shockwave ring** as a ship death (the old layered additive spheres +
   spark spray are gone), just **smaller, faster and brighter** — a white-hot `uTint` > 1 on the flipbook.

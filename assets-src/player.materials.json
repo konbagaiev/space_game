@@ -1,0 +1,382 @@
+{
+ "Body_Metal_Painted_Black": {
+  "color": [
+   0.1992,
+   0.1892,
+   0.1892
+  ],
+  "metal": 0.3478,
+  "rough": 0.243,
+  "spread": 122.9
+ },
+ "Emissive_Red": {
+  "color": [
+   0.8,
+   0.8,
+   0.8
+  ],
+  "metal": 0,
+  "rough": 1,
+  "spread": 0,
+  "emissive": [
+   1,
+   0.8439,
+   0
+  ]
+ },
+ "Outside_Lights": {
+  "color": [
+   0.8,
+   0.8,
+   0.8
+  ],
+  "metal": 0,
+  "rough": 1,
+  "spread": 0,
+  "emissive": [
+   1,
+   1,
+   1
+  ]
+ },
+ "Body_Metal_Color_2": {
+  "color": [
+   0.1465,
+   0.2101,
+   0.3009
+  ],
+  "metal": 0.0068,
+  "rough": 0.5157,
+  "spread": 22.4
+ },
+ "Body_Chrome": {
+  "color": [
+   0.5397,
+   0.5713,
+   0.6774
+  ],
+  "metal": 1,
+  "rough": 0.1656,
+  "spread": 23.4
+ },
+ "Body_Gold": {
+  "color": [
+   0.4723,
+   0.2777,
+   0.1075
+  ],
+  "metal": 0.5916,
+  "rough": 0.3105,
+  "spread": 0
+ },
+ "Vantablack": {
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "metal": 0,
+  "rough": 1,
+  "spread": 0
+ },
+ "Body_Material": {
+  "color": [
+   0.7986,
+   0.7971,
+   0.7967
+  ],
+  "metal": 0.0051,
+  "rough": 0.5164,
+  "spread": 34.8
+ },
+ "Body_Metal_Color": {
+  "color": [
+   0.7126,
+   0.1522,
+   0.1496
+  ],
+  "metal": 0.0086,
+  "rough": 0.5123,
+  "spread": 45.6
+ },
+ "Body_Metal_Faded": {
+  "color": [
+   0.353,
+   0.3268,
+   0.3259
+  ],
+  "metal": 0.3632,
+  "rough": 0.6083,
+  "spread": 97
+ },
+ "Body_Armor_Black": {
+  "color": [
+   0.3799,
+   0.4111,
+   0.4227
+  ],
+  "metal": 1,
+  "rough": 0.2891,
+  "spread": 106.3
+ },
+ "Position_Lights": {
+  "color": [
+   0.8,
+   0.8,
+   0.8
+  ],
+  "metal": 0,
+  "rough": 1,
+  "spread": 0,
+  "emissive": [
+   1,
+   0,
+   0
+  ]
+ },
+ "Canopy_Metal_Faded": {
+  "color": [
+   0.2439,
+   0.2433,
+   0.243
+  ],
+  "metal": 0.9864,
+  "rough": 0.3149,
+  "spread": 67.3
+ },
+ "Light": {
+  "color": [
+   0.8,
+   0.8,
+   0.8
+  ],
+  "metal": 0,
+  "rough": 1,
+  "spread": 0,
+  "emissive": [
+   0.6978,
+   0.0335,
+   1
+  ]
+ },
+ "Canopy_Chrome": {
+  "color": [
+   0.5271,
+   0.5597,
+   0.6623
+  ],
+  "metal": 1,
+  "rough": 0.1627,
+  "spread": 14.7
+ },
+ "Canopy_Windows": {
+  "color": [
+   0.1298,
+   0.1098,
+   0.1008
+  ],
+  "metal": 0.2863,
+  "rough": 0.5705,
+  "spread": 16.3
+ },
+ "Seat_Leather": {
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "metal": 0,
+  "rough": 0.6712,
+  "spread": 0
+ },
+ "Metal_Inside": {
+  "color": [
+   0.0828,
+   0.0828,
+   0.0828
+  ],
+  "metal": 0.9981,
+  "rough": 0.1509,
+  "spread": 0
+ },
+ "Dashboard": {
+  "color": [
+   0.0051,
+   0.0051,
+   0.0051
+  ],
+  "metal": 0,
+  "rough": 0.8211,
+  "spread": 0
+ },
+ "Gun_Metal_Painted_Black": {
+  "color": [
+   0.3023,
+   0.3091,
+   0.3245
+  ],
+  "metal": 0.8989,
+  "rough": 0.5393,
+  "spread": 123.1
+ },
+ "Gun_Chrome": {
+  "color": [
+   0.5383,
+   0.5707,
+   0.674
+  ],
+  "metal": 1,
+  "rough": 0.1646,
+  "spread": 26.7
+ },
+ "Gun_Metal_Painted_Color": {
+  "color": [
+   0.7209,
+   0.1939,
+   0.1885
+  ],
+  "metal": 0.0218,
+  "rough": 0.5084,
+  "spread": 71
+ },
+ "material": {
+  "color": [
+   0.3003,
+   0.3003,
+   0.3003
+  ],
+  "metal": 1,
+  "rough": 0.4746,
+  "spread": 76.6
+ },
+ "Gun_Metal_Painted_Color_2": {
+  "color": [
+   0.5302,
+   0.3328,
+   0.3328
+  ],
+  "metal": 1,
+  "rough": 0.3972,
+  "spread": 64.2
+ },
+ "Wings_Metal_Painted_Black": {
+  "color": [
+   0.1851,
+   0.1852,
+   0.1852
+  ],
+  "metal": 0.9899,
+  "rough": 0.3095,
+  "spread": 21.9
+ },
+ "Wings_Material": {
+  "color": [
+   0.8298,
+   0.8168,
+   0.8087
+  ],
+  "metal": 0.5381,
+  "rough": 0.3504,
+  "spread": 34.5
+ },
+ "Wings_Metal_Painted_Color_2": {
+  "color": [
+   0.1642,
+   0.2699,
+   0.2978
+  ],
+  "metal": 0.0312,
+  "rough": 0.5058,
+  "spread": 28.7
+ },
+ "Wings_Metal_Faded": {
+  "color": [
+   0.0391,
+   0.0704,
+   0.0868
+  ],
+  "metal": 0.0027,
+  "rough": 0.5442,
+  "spread": 2.7
+ },
+ "Exhaust": {
+  "color": [
+   0.1412,
+   0.1412,
+   0.1412
+  ],
+  "metal": 0,
+  "rough": 0.6448,
+  "spread": 54.9
+ },
+ "Thrusters_Material": {
+  "color": [
+   0.4841,
+   0.4831,
+   0.4831
+  ],
+  "metal": 0,
+  "rough": 0.6001,
+  "spread": 98.9
+ },
+ "Thrusters_Metal_Painted_Black": {
+  "color": [
+   0.1137,
+   0.1137,
+   0.1137
+  ],
+  "metal": 0,
+  "rough": 0.2007,
+  "spread": 0
+ },
+ "Thrusters_Chrome": {
+  "color": [
+   0.5516,
+   0.5857,
+   0.6871
+  ],
+  "metal": 1,
+  "rough": 0.1685,
+  "spread": 29.3
+ },
+ "Thrusters_Gold": {
+  "color": [
+   0.6472,
+   0.3858,
+   0.341
+  ],
+  "metal": 1,
+  "rough": 0.2257,
+  "spread": 20.1
+ },
+ "Thrusters_Metal_Painted_Color": {
+  "color": [
+   0.4661,
+   0.2327,
+   0.2438
+  ],
+  "metal": 0.5699,
+  "rough": 0.3979,
+  "spread": 82.6
+ },
+ "Thrusters_Metal_Painted_Color_2": {
+  "color": [
+   0.1288,
+   0.256,
+   0.2897
+  ],
+  "metal": 0.0096,
+  "rough": 0.511,
+  "spread": 9.8
+ },
+ "Intake_Metal_Painted_Color_2": {
+  "color": [
+   0.1412,
+   0.1535,
+   0.1621
+  ],
+  "metal": 0,
+  "rough": 0.5112,
+  "spread": 1.1
+ }
+}

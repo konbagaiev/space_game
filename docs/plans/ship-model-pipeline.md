@@ -58,6 +58,19 @@ the seed carrying the URLs); CDN binaries are already on S3.
 2. `npm run assets:build` → gltf-transform emits `_combat.glb` + `_hangar.glb`, content-hashed.
 3. `npm run assets:push` → `aws s3 cp/sync` the CDN outputs (+ source) to the bucket.
 4. The script prints the resulting URLs → paste into `catalog_seed.js` (`model_url` / `model_url_high`).
+4a. **If the source is split "part x material"** (many meshes, one material per part — typical of
+   Sketchfab exports), the combat build will otherwise be one draw call PER MATERIAL: `join` can only merge
+   primitives that share a material. Opt the model into **material flattening**: add
+   `flattenMaterials: { keepTexturedAbove: N }` to its **combat** preset in `assets-config.mjs`, then run
+   **`npm run assets:materials -- <base>`** once to write the sidecar `assets-src/<base>.materials.json`
+   (committed — it is generated numbers, not a binary, and the build is not reproducible without it).
+   `assets:build` then replaces each material with flat sampled factors so `--palette` merges them and
+   `--join` collapses the mesh. Pick `N` by looking at the sidecar's `spread` values: a material at or above
+   `N` keeps its base map, which you want for any map that paints SEVERAL colours onto one material
+   (the player ship's red nacelles and yellow wing chevrons hide in such atlases — flattening those deletes
+   the livery). The player ship uses `34`: **31 -> 15 draw calls, 79 -> 16 textures, 371 -> 178 KB**.
+   Geometry is untouched, so this does NOT invalidate the hitboxes below. Hangar builds never flatten.
+   See DECISIONS §77.
 4b. `npm run assets:pull` (if the combat glbs aren't local yet) then **`npm run assets:hitboxes`** →
    decomposes each combat glb into near-convex parts with V-HACD (`vhacd-js` — run `npm install` once; it's
    memory-safe, `voxelResolution 400000` (bounded voxel count) / `maxHulls 48` (part-count cap, cheap)) and writes one PCA oriented box per part into

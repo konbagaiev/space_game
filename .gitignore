@@ -21,7 +21,10 @@ client/assets/ships/spaceship_colaid1_50k.glb
 # Ship-model asset pipeline (docs/plans/ship-model-pipeline.md): NO binaries in git — S3 is canonical.
 # (gitignore has no inline comments — keep each pattern on its own line.)
 # high-poly source originals (scratch staging; canonical copy on S3 source/)
-assets-src/
+assets-src/*
+# ...except the sampled material sidecars: small text files the combat build needs to be reproducible
+# (see scripts/assets-flatten.mjs). Binaries stay out; these are generated numbers, not assets.
+!assets-src/*.materials.json
 # build outputs (uploaded to S3 by assets:push)
 assets-dist/
 # content-hashed combat models pulled from S3 (in-git primitives have no hash → not matched)

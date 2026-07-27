@@ -326,7 +326,7 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
      'pirate gunner', 'advanced medium pirate', 'second pirate boss', 'advanced rocket pirate'].sort());
   const player = ships.find((s) => s.name === 'Basic player ship');
   assert.equal(player.type, 'player');
-  assert.equal(player.modelUrl, 'assets/ships/player_combat.f7171045.glb'); // real "Air & Space Vessel" model (textured)
+  assert.equal(player.modelUrl, 'assets/ships/player_combat.9188c820.glb'); // real "Air & Space Vessel" model (textured)
   assert.equal(player.modelUrlHigh, 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/player_hangar.7f573bc5.glb');
   assert.deepEqual(player.components, { hull: 1, engine: 5, thruster: 8, grab: 29, shield: 31 }); // assembled from components (base grab + base shield included)
   assert.equal(player.stats.model.yaw, 0);   // model-presentation block (yaw/scale)
@@ -710,7 +710,7 @@ test('active ship: a new player gets a default active ship (empty loadout -> shi
   const active = await getJson('/api/players/ship-test-1/active-ship');
   assert.equal(active.ship.name, 'Basic player ship');
   assert.equal(active.ship.type, 'player');
-  assert.equal(active.ship.modelUrl, 'assets/ships/player_combat.f7171045.glb');
+  assert.equal(active.ship.modelUrl, 'assets/ships/player_combat.9188c820.glb');
   // empty loadout/components fall back to the ship's defaults
   assert.equal(active.loadout.mounts.length, 2);
   assert.equal(active.loadout.mounts.find((m) => m.group === 'gun').weapon, 1);    // Basic kinetic

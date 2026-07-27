@@ -46,8 +46,21 @@ export const PRESET = {
 // shrinks them hard (128px → WebP) for a ~370 KB textured combat model. See docs/plans/ship-model-pipeline.md.
 export const PRESET_OVERRIDES = {
   player: {
-    combat: { textureSize: 128, textureCompress: 'webp' }, // keep paint/decals but tiny; geometry meshopt (the default)
-    hangar: { textureSize: 512 },                          // showcase detail, ~1.7 MB on CDN
+    // The hero ship is a Sketchfab model split "part x material" — 110 meshes over 36 materials, the same
+    // material kind repeated per body part (Body_Chrome / Gun_Chrome / Canopy_Chrome / Thrusters_Chrome),
+    // each with its own texture set. `join` can only merge primitives that SHARE a material, so the built
+    // combat model was 31 DRAW CALLS and 79 textures — against 3-5 primitives for every other ship — and
+    // per-frame draw-call submit is the measured weak-phone bottleneck (DECISIONS §23).
+    // `flattenMaterials` replaces each material with its own sampled average colour/metal/rough before
+    // `optimize`, so `--palette` can merge them and `--join` can collapse the mesh. `keepTexturedAbove`
+    // leaves the base map on the few materials whose texture paints SEVERAL colours (the red engine
+    // nacelles live inside an otherwise-grey `Thrusters_Material` atlas; the yellow wing chevrons inside
+    // `Wings_Material`) — averaging those would quietly delete the ship's livery. 34 is the measured
+    // threshold that keeps every visible marking: 31 draws/79 textures -> 16 draws/16 textures, and the
+    // model halves to ~178 KB so a weak phone actually finishes downloading it. See
+    // docs/plans/ship-model-pipeline.md.
+    combat: { textureSize: 128, textureCompress: 'webp', flattenMaterials: { keepTexturedAbove: 34 } },
+    hangar: { textureSize: 512 },                          // showcase detail, ~1.7 MB on CDN — full material set, never flattened
   },
   // Shared equipment-drop model (metal box). The source (703 KB) is texture-dominated, and a drop is tiny on
   // a top-down screen → shrink textures hard (128px → WebP) for a KB-scale combat build. See
