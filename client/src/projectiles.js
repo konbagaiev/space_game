@@ -1,5 +1,5 @@
-// Projectiles & combat FX: bullets, micro-explosions, the layered ship-death burst (fireball + sparks
-// + shockwave), engine exhaust trail, homing rockets and rocket smoke. Spawners push into the shared
+// Projectiles & combat FX: bullets, micro-explosions, the flipbook ship-death burst (fireball + soft
+// shockwave ring), homing rockets and rocket smoke. Spawners push into the shared
 // pools in state.js (drained by the update loop) and add meshes to the combat scene. Particle counts
 // are gated by the live graphics tier (G.gfx) to cap fill-rate on weak phones.
 //
@@ -62,10 +62,6 @@ function spawnMuzzleFlash(pos, color) {
   spawnExplosion(pos, 1.7, 0.06, color);
 }
 
-// Scale a particle count by the current graphics tier (additive overdraw is the mobile fill-rate
-// cost). Reads the live `gfx`, so a tier switch affects subsequent spawns immediately. Min 1.
-const scaledCount = (n) => Math.max(1, Math.round(n * G.gfx.particleScale));
-
 // Live count of the high-volume additive particles (burst sparks + rocket smoke). The hard ceiling
 // `G.gfx.maxParticles` (Infinity off High/Balance) skips new emits when over budget — caps both
 // fill-rate overdraw and per-frame JS on the weakest phones. The engine exhaust is no longer a growing
@@ -95,14 +91,9 @@ export function spawnExplosion(pos, maxScale = 3, life = EXPLOSION_LIFE, color =
 // flash. Unset/kinetic → the small spark. Color stays the default 0xffb050 (see spawnExplosion).
 export const HIT_FLASH_SCALE = { kinetic: 0.8, cannon: 2 };
 
-// ---------- Ship destruction: a big, colorful burst (layered fireball + sparks + shockwave) ----------
-// Much louder than the hit-flash: stacked fireballs (white-hot core -> exhaust-colored glow ->
-// orange -> red cloud), a radial spray of sparks, and a flat shockwave ring on the arena plane.
+// ---------- Ship destruction: a flipbook fireball + a soft expanding shockwave ring (no sparks, §75) ----------
+// The fireball is the shared flipbook (flipbook-fx.js); the ring is the soft baked-texture ring below.
 // Scaled by the ship's size (sizeScale) and tinted by its engine's exhaust color.
-// sparks moved to src/state.js
-const sparkGeo = new THREE.SphereGeometry(1, 6, 6);
-// warm ember palette; a few sparks take the engine's exhaust color for variety
-const SPARK_COLORS = [0xffffff, 0xfff0a0, 0xffd040, 0xff8030, 0xff3020];
 // shockwaves moved to src/state.js
 // Soft shockwave ring: a baked ring texture (transparent core → bright thin rim → transparent edge) on a
 // flat additive quad, in the same bake-once-texture family as the flipbook fireball / glow bolt — replaces
@@ -210,36 +201,18 @@ export function clearDeferredBlasts() { deferredBlasts.length = 0; }
 // Size (R), tint and speed all come from the rocket's weapon stats (blastVisual / blastTint /
 // blastTimeScale) — see catalog_seed.js. timeScale scales every lifetime (<1 = quicker burst).
 // Reuses the same particle pools + tier gating as the ship burst (no sim.js changes needed).
-export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050, timeScale = 1) {
-  const R = blastVis;
-  const T = timeScale; // multiplies every burst lifetime; keeps the tuned relative timing, just faster/slower
-  // Layered fireball: white-hot core -> tinted glow -> orange outer cloud, each bigger, slower, dimmer.
-  spawnExplosion(pos, R * 0.5, 0.40 * T, 0xffffff);                                // white-hot core (always)
-  if (G.gfx.particleScale >= 0.7) spawnExplosion(pos, R * 0.8, 0.65 * T, tint);    // tinted glow
-  spawnExplosion(pos, R * 1.15, 0.90 * T, 0xff5a20);                               // orange outer cloud (always)
-
-  // A few warm sparks flung outward, clamped to the live-particle budget (like the ship burst).
-  const N = Math.max(0, Math.min(scaledCount(8), G.gfx.maxParticles - liveParticles()));
-  const s = R / 6; // spatial scale relative to the biggest rocket
-  for (let i = 0; i < N; i++) {
-    const col = SPARK_COLORS[i % SPARK_COLORS.length];
-    const mat = new THREE.MeshBasicMaterial({
-      color: col, transparent: true, opacity: 1,
-      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-    });
-    const m = new THREE.Mesh(sparkGeo, mat);
-    m.position.copy(pos);
-    const size = (0.2 + Math.random() * 0.3) * s;
-    m.scale.setScalar(size);
-    scene.add(m);
-    const a = (i / N) * Math.PI * 2 + Math.random() * 0.5;
-    const sp = (8 + Math.random() * 14) * s;
-    const vel = new THREE.Vector3(Math.cos(a) * sp, (Math.random() - 0.5) * 4 * s, Math.sin(a) * sp);
-    sparks.push({ mesh: m, vel, life: (0.5 + Math.random() * 0.6) * T, maxLife: 1.1 * T, size });
-  }
-
-  // Flat shockwave ring (tier-gated like the ship burst) — small + short-lived, same soft ring primitive.
-  if (G.gfx.particleScale >= 0.5) spawnShockRing(pos, BULLET_PLANE_Y, R * 2.2, 0.85 * T, tint);
+export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050, timeScale = 1, bright = 1.6) {
+  // A rocket detonation is the SAME flipbook fireball as a ship death (unified FX, DECISIONS §75) — just
+  // smaller, faster and BRIGHTER with a white-hot tint — plus the same soft expanding ring. The look is
+  // fully WEAPON-DRIVEN: size (`blastVisual`), speed (`blastTimeScale`), ring/accent color (`blastTint`)
+  // and brightness (`blastBright`) all come from the rocket weapon's stats, so a new weapon type only needs
+  // to set those keys to get its own blast — no code change here.
+  const sizeScale = blastVis / 11;              // fireball world size from the weapon's blastVisual
+  const speed = 1 / timeScale;                  // <1 timeScale (e.g. 0.8) → quicker playback than a ship death
+  // Bright, white-flecked hot core: a >1 tint reads hotter/whiter under additive blending than the baked orange.
+  const fireTint = new THREE.Vector3(bright, bright * 0.95, bright * 0.82);
+  spawnFlipbookExplosion(pos, sizeScale, fireTint, speed);
+  if (G.gfx.particleScale >= 0.5) spawnShockRing(pos, BULLET_PLANE_Y, blastVis * 2.2, 0.85 * timeScale, tint);
 }
 
 // ---------- Engine trail (exhaust is part of the engine) ----------
@@ -291,7 +264,7 @@ export function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
     target, fromPlayer,
     damage: weapon.power, detonateR: weapon.detonateRadius,
     blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
-    blastTime: weapon.blastTimeScale, blastTint: weapon.blastTint, // detonation-FX speed + tint (data-driven; undefined → spawnRocketBurst defaults)
+    blastTime: weapon.blastTimeScale, blastTint: weapon.blastTint, blastBright: weapon.blastBright, // detonation-FX speed + ring tint + fireball brightness (data-driven; undefined → spawnRocketBurst defaults)
     sfxExplode: sfxFor('weapon', weapon.class, 'explode'), // detonation sound (DB map); resolved once at spawn
     hp: weapon.health ?? 1,                              // HP: reduced by bullet damage, shot down at 0
     traveled: 0, maxRange: weapon.maxRange ?? 120,       // self-destructs at max flight range
@@ -329,7 +302,7 @@ function spawnSpiralRocket(from, fwd, weapon, accel, fromPlayer, target) {
       spiralOf: leader, spiralPhaseOffset: i * (Math.PI * 2 / 3),
       damage: weapon.power, detonateR: weapon.detonateRadius,
       blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
-      blastTime: weapon.blastTimeScale, blastTint: weapon.blastTint,
+      blastTime: weapon.blastTimeScale, blastTint: weapon.blastTint, blastBright: weapon.blastBright,
       sfxExplode, hp: weapon.health ?? 1,
       traveled: 0, maxRange: weapon.maxRange ?? 150,
     });
@@ -358,7 +331,7 @@ export function detonateRocket(r, dealDamage = true) {
       if (dr.absorbed) spawnShieldHit(r.obj.position, dr.broke);
     }
   }
-  spawnRocketBurst(r.obj.position, r.blastVis, r.blastTint, r.blastTime); // small, fast layered burst (params from the rocket's weapon stats)
+  spawnRocketBurst(r.obj.position, r.blastVis, r.blastTint, r.blastTime, r.blastBright); // flipbook fireball + ring; look is weapon-driven
   audio.sfx.explosion(0.7, r.sfxExplode, 0.3); // rocket blast — 70% quieter (sampled via the weapon-class map)
   scene.remove(r.obj);
   r.obj.children[0].material.dispose();

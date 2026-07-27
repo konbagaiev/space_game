@@ -2636,8 +2636,8 @@ wanted the whole hit/explosion family to read as one thing — the flipbook look
 
 **Decisions.**
 1. **Ship death = flipbook fireball + a soft shockwave RING only; the CPU spark spray is GONE.** The radial
-   spark particles (`sparks.push` in `spawnShipExplosion`) are deleted. The `sparks` pool itself stays —
-   the **rocket burst** still uses it (a separate, deliberately snappy effect left as-is).
+   spark particles (`sparks.push` in `spawnShipExplosion`) are deleted. (The rocket burst also dropped its
+   sparks in decision 6, so the `sparks` pool ends up producerless — see there.)
 2. **Shockwave ring → a baked soft-ring TEXTURE on an additive quad** (`ringTexture()` + `ringQuadGeo` +
    `spawnShockRing`), replacing the hard `RingGeometry`. Same bake-once-texture family as flipbook/bolt; it
    reuses the existing `shockwaves` pool (grow-scale + fade in `sim.update`). Both ship death and rocket
@@ -2655,6 +2655,17 @@ wanted the whole hit/explosion family to read as one thing — the flipbook look
    baked frame into the next by `fract(uFrame)` (`uFrames` uniform) — synthesized in-between frames make
    the blast buttery at any duration. FPS (frame-advance) sets duration only (~1.8 s); a slower blast stays
    smooth because of the blend.
+6. **Rocket detonation joins the family; the blast look is WEAPON-DRIVEN.** `spawnRocketBurst` now spawns
+   the same flipbook fireball (`spawnFlipbookExplosion` gained `tint` + `speed` args) + soft `spawnShockRing`
+   — smaller, faster (`speed = 1/blastTimeScale`) and **brighter** (a white-hot `uTint` > 1). The old layered
+   additive spheres + spark spray are dropped. Every visual knob comes from the **rocket weapon's stats** in
+   `catalog_seed.js` — `blastVisual` (size), `blastTimeScale` (speed), `blastTint` (ring color), **`blastBright`**
+   (fireball brightness) — threaded weapon → `spawnRocket` → `detonateRocket` → `spawnRocketBurst`. So a
+   NEW weapon type gets its own blast display by setting those keys, no FX-code change. `blastBright` defaults
+   to `1.6` **in code** (like `spec.exhaust`) so the look is correct even before a catalog reseed; the catalog
+   value is the per-weapon override. Net effect of §75: the **`sparks` pool now has no producers** — it's left
+   declared (empty, harmless); full removal touches `main.js`/`state.js` and is deferred behind in-flight
+   parallel work.
 
 **Replay safety (cross-ref §73).** All of this is pure render: no `simRandom`, no `Math.random` in the FX
 timing/placement (deterministic hashes), no sim/damage/collision/economy change. The intro (Level 0) has no
