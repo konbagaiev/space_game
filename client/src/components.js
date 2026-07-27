@@ -78,20 +78,36 @@ export function shieldRecharge(shieldValue, capacity, rechargeSec, dt, accum) {
   return { shieldValue, accum };
 }
 
-// Route ALL incoming player damage through the shield first (bullets + rocket blast). The shield absorbs
-// until fully depleted, spilling only the excess to the hull; once broken it stays at 0 and recharges in
-// sim.update (shieldRecharge). No shield, or already depleted → full damage hits the hull. Pure: mutates
-// only the passed-in player (no THREE/DOM), so the damage routing is state-independent and unit-testable.
+// Route ALL incoming damage — player *or* enemy — through the shield first (bullets + rocket blast). The
+// shield absorbs until fully depleted, spilling only the excess to the hull IN THE SAME TICK (lossless: no
+// rounding, no clamping, no per-hit cap), so total damage-to-kill is unchanged by giving a ship a shield.
+// Once broken the shield stays at 0 and recharges in sim.update (shieldRecharge). No shield, or already
+// depleted → full damage hits the hull. Pure: mutates only the passed-in entity (no THREE/DOM), so the
+// damage routing is state-independent and unit-testable — and one router for both sides means the lossless
+// invariant can't drift between them (DECISIONS §76).
 // Returns { absorbed, broke }: whether the shield took any of this hit (so the caller can spawn the
 // shield-ripple FX at the impact point) and whether this hit was the one that broke it (bigger flash).
-export function applyPlayerDamage(player, dmg) {
-  if (player.shield && player._shieldValue > 0) {
-    const r = absorbDamage(player._shieldValue, dmg);
-    player._shieldValue = r.shieldValue;
-    if (r.broke) player._shieldRechargeAccum = 0; // start the recharge timer fresh on the breaking hit
-    if (r.toHull > 0) player.hp -= r.toHull;
+export function applyShieldedDamage(ship, dmg) {
+  if (ship.shield && ship._shieldValue > 0) {
+    const r = absorbDamage(ship._shieldValue, dmg);
+    ship._shieldValue = r.shieldValue;
+    if (r.broke) ship._shieldRechargeAccum = 0; // start the recharge timer fresh on the breaking hit
+    if (r.toHull > 0) ship.hp -= r.toHull;
     return { absorbed: true, broke: r.broke };
   }
-  player.hp -= dmg;
+  ship.hp -= dmg;
   return { absorbed: false, broke: false };
+}
+
+// Enemy shields are DERIVED, not catalog data: a ship's hull durability is SPLIT into a shield buffer
+// (1/3, rounded) + the remaining hull, so killing it inside one shield cycle costs exactly the damage it
+// cost before shields (a refill after a break adds another shield's worth — see DECISIONS §76).
+// Integer + exact: shieldCap + hullMax === durability for every value.
+export const ENEMY_SHIELD_FRACTION = 1 / 3;
+export const ENEMY_SHIELD_RECHARGE_SEC = 10; // a BROKEN enemy shield refills to full after this long
+
+export function enemyShieldSplit(durability) {
+  if (!(durability > 0)) return { shieldCap: 0, hullMax: durability || 0 };
+  const shieldCap = Math.round(durability * ENEMY_SHIELD_FRACTION);
+  return { shieldCap, hullMax: durability - shieldCap };
 }

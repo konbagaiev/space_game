@@ -221,9 +221,27 @@ function getHpBar(i) {
   }
   return hpBarPool[i];
 }
+// Second pool, stacked ABOVE the red bar (a sibling element, not a child — 16-enemy-health-bar reads
+// `.enemy-hp > i` widths, so the DOM shape of the red bar must not change). Blue while the shield holds,
+// purple + filling with the recharge progress while it's broken.
+const shieldBarPool = [];
+function getShieldBar(i) {
+  while (shieldBarPool.length <= i) {
+    const d = document.createElement('div');
+    d.className = 'enemy-shield';
+    d.appendChild(document.createElement('i')); // the fill (width = shield fraction / recharge progress)
+    el.markers.appendChild(d);
+    shieldBarPool.push(d);
+  }
+  return shieldBarPool[i];
+}
 export function updateEnemyHealthBars() {
   // hide everything while there's no player or an overlay (game over / victory) is up
-  if (!G.player || el.overlay.style.display !== 'none') { for (const b of hpBarPool) b.style.display = 'none'; return; }
+  if (!G.player || el.overlay.style.display !== 'none') {
+    for (const b of hpBarPool) b.style.display = 'none';
+    for (const s of shieldBarPool) s.style.display = 'none';
+    return;
+  }
   const w = gameW(), h = gameH();
   // Offset the anchor along the camera's screen-up axis (not world +Y): with the near-top-down camera
   // (CAM_OFFSET 0,110,26) world "up" points almost at the camera, so a +Y bump barely moves the bar up
@@ -232,18 +250,36 @@ export function updateEnemyHealthBars() {
   _screenUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
   let used = 0;
   for (const e of enemies) {
-    if (e.hp >= e.maxHp) continue;                 // full health -> no bar
+    const sh = e.shield || null;
+    const shieldFull = !sh || e._shieldValue >= sh.capacity;
+    if (e.hp >= e.maxHp && shieldFull) continue;   // nothing damaged at all → no bars
     _hb.copy(e.mesh.position).addScaledVector(_screenUp, e.radius * 1.6 + 2); // lift up-screen, clear of the hull
     _hb.project(camera);
     if (_hb.z > 1) continue;                        // behind the camera -> skip
+    const left = ((_hb.x * 0.5 + 0.5) * w) + 'px';
+    const top = ((-_hb.y * 0.5 + 0.5) * h) + 'px';
     const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));
-    const b = getHpBar(used++);
+    const i = used++;
+    const b = getHpBar(i);
     b.style.display = 'block';
-    b.style.left = ((_hb.x * 0.5 + 0.5) * w) + 'px';
-    b.style.top = ((-_hb.y * 0.5 + 0.5) * h) + 'px';
+    b.style.left = left;
+    b.style.top = top;
     b.firstChild.style.width = (frac * 100) + '%';
+    // Shield strip: same anchor, lifted by the CSS transform. Enemies without a shield get no strip.
+    const s = getShieldBar(i);
+    if (!sh) { s.style.display = 'none'; continue; }
+    const broken = !(e._shieldValue > 0);
+    const sFrac = broken
+      ? Math.max(0, Math.min(1, (e._shieldRechargeAccum || 0) / sh.rechargeSec)) // purple: recharge progress
+      : Math.max(0, Math.min(1, e._shieldValue / sh.capacity));                  // blue: remaining absorption
+    s.classList.toggle('recharging', broken);
+    s.style.display = 'block';
+    s.style.left = left;
+    s.style.top = top;
+    s.firstChild.style.width = (sFrac * 100) + '%';
   }
   for (let i = used; i < hpBarPool.length; i++) hpBarPool[i].style.display = 'none';
+  for (let i = used; i < shieldBarPool.length; i++) shieldBarPool[i].style.display = 'none';
 }
 
 // ---------- Mini-map / radar: arena bounds, the player (with heading), and type-colored enemy dots ----------

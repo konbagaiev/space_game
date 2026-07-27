@@ -722,6 +722,17 @@
     pointer-events: none; display: none;
   }
   .enemy-hp > i { display: block; height: 100%; width: 100%; background: rgba(229, 57, 53, .72); }
+  /* Shield strip stacked above the red enemy health bar (same 40px width, 1px gap). Blue = active,
+     purple = broken & refilling (mirrors the player's #shieldbar). Anchored at the SAME projected point
+     as .enemy-hp, just lifted by (4px gap + 5px bar + 1px gap) = 10px. */
+  .enemy-shield {
+    position: absolute; transform: translate(-50%, calc(-100% - 10px)); will-change: transform;
+    width: 40px; height: 3px; border-radius: 2px; overflow: hidden;
+    background: rgba(20, 50, 110, .28); box-shadow: 0 0 3px rgba(0, 0, 0, .6);
+    pointer-events: none; display: none;
+  }
+  .enemy-shield > i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #36d1dc, #5b86e5); }
+  .enemy-shield.recharging > i { background: linear-gradient(90deg, #7b2ff7, #b06bff); }
   /* "Left the battlefield" warning + countdown (soft boundary). Centered near the top, non-interactive. */
   #oob-warn {
     position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 5;

@@ -2663,6 +2663,57 @@ boss, and the `22-intro-replay` guard asserts sim state (kills/cards/win), which
 **Perf note.** The flipbook sheet is now 2048² (one shared texture, uploaded once) — a deliberate
 quality-over-footprint call for the flagship explosion; the draw-call win (§72) is unchanged. Ring/hit are
 still one additive quad each.
+## 76. Enemy shields carve HP out of the existing pool instead of adding a new layer
+
+Every enemy ship now has a shield with the player's exact semantics, but it is **carved out of the HP it
+already had** — `shieldCap = Math.round(durability / 3)`, `hullMax = durability − shieldCap` — not stacked on
+top.
+
+- **Carve, not add.** A shield *added* on top would have raised every enemy's effective HP by a third,
+  silently re-tuning the whole campaign (time-to-kill, level pacing, the "N enemies left" beats) **and**
+  desynced the recorded Level-0 intro, which is an input replay on the real sim: if the Nth bullet no longer
+  kills on the same tick, the trace runs out of input with enemies alive. Carving keeps the **first kill
+  window** costing exactly the damage it cost before shields. The split is integer and exact
+  (`shieldCap + hullMax === durability`) and the damage router is **lossless** — the shield absorbs and the
+  excess spills to the hull **in the same tick**, no rounding, no clamping, no per-hit cap, death test still
+  `hp <= 0` — which is what makes "same hits to kill" a provable invariant (unit-tested across every enemy
+  durability × per-hit power) rather than a hope. The intro guard `22-intro-replay` still passes.
+- **The regen half of the trade-off, stated honestly.** The recharge is **player-identical**: it runs from the
+  **breaking hit** and **keeps banking under continuous fire** (hull damage never resets the timer, and a
+  *partial* shield never recharges at all). So an enemy that survives 10 s past a break gets its **whole**
+  shield back: **+183 HP per 10 s for the second boss, +103 for the first boss, +100 for the advanced medium
+  pirate, +50 for the mini boss, +10/+12 for the small pirates.** "Total effective HP is unchanged" is
+  therefore true only of the first kill window — **long fights ARE harder than before.** The maintainer was
+  shown these exact numbers and the intro-desync risk and chose this deliberately ("shields come back"), and
+  the **player's** shield semantics were deliberately left untouched (the asymmetry is accepted). Framing it
+  as "only matters if you disengage" or "sustained burst" would misdescribe the code — there is no
+  timer-reset-on-hit anywhere.
+- **Hull hitbox kept for enemies**, unlike the player's `SHIELD_RADIUS = 4` sphere interception (§68). Widening
+  every enemy's hitbox by a sphere would change aim feel across the entire game — the one thing a combat
+  change must not do incidentally. The drawn enemy bubble is therefore sized **snug to the hull**
+  (`broadRadius(enemy) × 1.05`, world units) so the "the shot stopped at the surface" mismatch stays small.
+- **Derived, not a DB component.** The shield is computed at spawn from the hull's `durability`, so there is
+  no migration, no new catalog column, and no side effects on loot drops / resale / the `Pirate hull` item.
+  One knob (`ENEMY_SHIELD_FRACTION`) governs every enemy, and the derived object deliberately has **no
+  `weight`** so `shipMass` skips it and enemy mass/accel/turn are bit-identical (another intro-desync vector,
+  closed with a unit test). Per-ship shield tuning is a future balance pass, not this change (§30).
+- **`applyPlayerDamage` is now `applyShieldedDamage`** — one router for both sides. A second copy for enemies
+  is exactly how the lossless invariant would have silently drifted; the rename makes the shared ownership
+  obvious. (§68 keeps the old name as history.)
+- **Enemy bubbles are ripple-only and tier-capped** (High 6 / Balance 3 / Performance 0, oldest slot
+  recycled): N always-on transparent spheres would be a weak-phone additive-overdraw tax for no readability
+  gain, and the always-on Fresnel rim stays a **player-exclusive** read ("that one is me"). An enemy that
+  can't get a slot still shows the HP-bar shield strip and the cyan hit flash, so the mechanic never becomes
+  invisible. The bubble pool is pure render (no sim writes, no seeded RNG) per §73. A **recycled** slot
+  retires its old impact ring on rebind, so a previous enemy's sub-second ripples can't replay on the new
+  enemy's bubble.
+- **The absorbed-hit flash reuses the unified FX family (§75) rather than a bespoke effect.** `spawnHitSprite`
+  gained an optional per-blast `tint`, and an absorbed hit is the same flipbook mini-blast at 0.7× scale with
+  `SHIELD_HIT_TINT` — one more `uTint` value on the already-shared program/texture (the same mechanism §75
+  uses for the boss secondary detonation), so it costs no new draw-call family, no new texture and no new
+  shader, while still reading unmistakably different from the orange hull spark.
+- **Sound deferred.** An absorbed hit currently shares the hull-hit audio; a distinct absorb voice would apply
+  to *both* sides and is scoped in the ROADMAP backlog rather than bolted on here.
 
 ## Future ideas
 

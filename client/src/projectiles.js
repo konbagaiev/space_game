@@ -12,13 +12,13 @@ import { scene } from './engine.js';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { pointHitsShip } from './collision.js';
-import { applyPlayerDamage } from './components.js';
-import { registerShieldImpact } from './shield-fx.js';
+import { applyShieldedDamage } from './components.js';
+import { registerShieldImpact, registerEnemyShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
 import { attachShipExhaust } from './exhaust-fx.js';
 
-// applyPlayerDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
+// applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
 
 // ---------- Shield hit → ripple on the shield bubble (variant B) ----------
@@ -28,6 +28,9 @@ import { attachShipExhaust } from './exhaust-fx.js';
 export function spawnShieldHit(pos, broke = false) {
   registerShieldImpact(pos, broke);
 }
+
+// Enemy shield ripple: same contract as spawnShieldHit, but on the enemy's own pooled bubble.
+export function spawnEnemyShieldHit(enemy, pos, broke = false) { registerEnemyShieldImpact(enemy, pos, broke); }
 
 // ---------- Projectiles ----------
 // bullets moved to src/state.js
@@ -345,10 +348,13 @@ export function detonateRocket(r, dealDamage = true) {
     if (r.fromPlayer) {
       for (const e of enemies) {
         if (e.warping) continue; // invulnerable while forming — no splash damage
-        if (pointHitsShip(e, r.obj.position, r.blastR)) e.hp -= r.damage;
+        if (pointHitsShip(e, r.obj.position, r.blastR)) {
+          const dr = applyShieldedDamage(e, r.damage); // shield first, excess spills to the hull this tick
+          if (dr.absorbed) spawnEnemyShieldHit(e, r.obj.position, dr.broke);
+        }
       }
     } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.blastR)) {
-      const dr = applyPlayerDamage(G.player, r.damage);
+      const dr = applyShieldedDamage(G.player, r.damage);
       if (dr.absorbed) spawnShieldHit(r.obj.position, dr.broke);
     }
   }

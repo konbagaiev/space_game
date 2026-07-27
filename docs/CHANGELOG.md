@@ -30,6 +30,33 @@
   (independent of hull scale). Pure render — replay-neutral (intro guard still passes); `points`↔`flame` is
   still the global `?dev` toggle. `03-exhaust-trail` + `24-freighter-exhaust` scenarios updated to the flame
   default.
+- **Enemy shields for every enemy type.** Each enemy's catalog HP is now split into a **1/3 shield + 2/3
+  hull** (30 → 10+20, 36 → 12+24, 150 → 50+100, 300 → 100+200, 310 → 103+207, 550 → 183+367), derived
+  client-side at spawn from the hull's `durability` — no DB column, no catalog change, no migration, and the
+  derived shield is weightless so enemy mass/acceleration/turn rate are untouched. Absorbed hits play the same
+  unified `spawnHitSprite` mini-blast as a hull hit but smaller and tinted **cyan** (a new `SHIELD_HIT_TINT`
+  `uTint` multiplier on the flipbook family from the same-day §75 change, rather than the orange hull spark)
+  and ripple on a snug per-enemy bubble (`shield-fx.js` pool, sized
+  `broadRadius(enemy) × 1.05`, ripple-only with **no idle rim**, tier-capped `enemyShieldBubbles` **6 / 3 / 0**
+  and cleared on `reset()`), and the floating enemy bar gained a **blue shield strip** above the red health
+  strip (purple + filling with the recharge progress while broken; shown whenever *either* pool is below full).
+  `applyPlayerDamage` became the shared `applyShieldedDamage` router — one lossless implementation for both
+  sides: the shield absorbs and the excess spills to the hull **in the same tick**, no rounding and no per-hit
+  cap. **A broken enemy shield refills to full 10 s after the break — the timer runs from the breaking hit and
+  keeps banking under continuous fire, exactly like the player's — so a kill finished inside that window costs
+  exactly the damage it did before shields, while a longer fight costs up to one extra shield per 10 s
+  (+183 HP second boss / +103 first boss / +100 advanced medium / +50 mini boss / +10-+12 small pirates):
+  long fights are deliberately harder.** Hitboxes are unchanged (enemies keep the hull OBB swept test — no
+  `SHIELD_RADIUS` sphere interception, so aim feel is identical) and warping enemies stay invulnerable.
+  Also fixes the shared FX clock in `shield-fx.js`: `updateShieldBubble` advanced `time` only *after* a player
+  bubble existed, which would have frozen an enemy ripple on screen until the player was first hit. New knobs
+  `ENEMY_SHIELD_FRACTION` / `ENEMY_SHIELD_RECHARGE_SEC` (`components.js`) + `enemyShieldBubbles`
+  (`graphics.js`), and a `G.enemyShieldRefills` diagnostic counter for replay triage. Tests: +8 unit cases in
+  `components.test.js` (the load-bearing one asserts damage-to-kill is byte-identical to `hitsToKill` across
+  every durability × per-hit combination, and that the derived shield adds no mass) and a new
+  `client/visual/scenarios/25-enemy-shield.mjs`; `11-l4-enemies` now asserts hull + shield = the catalog total
+  (and its stale `450` for the second boss was corrected to **550**). The recorded Level-0 intro still wins
+  (`22-intro-replay` green). A distinct shield-absorb **sound** is deferred → ROADMAP backlog. See DECISIONS §76.
 
 ## 2026-07-26
 
