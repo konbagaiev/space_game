@@ -6,7 +6,7 @@ import { scene } from './engine.js';
 import { arenaCenter } from './world.js';
 import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js';
 import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC } from './components.js';
-import { shipModelCfg, modelSpec, makeShip } from './ship-factory.js';
+import { shipModelCfg, modelSpec, makeShip, preloadShipModel } from './ship-factory.js';
 import { spawnBullet, spawnRocket, findTargetInSector } from './projectiles.js';
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
 import { audio, sfxFor } from './sound-routing.js';
@@ -136,6 +136,21 @@ export function spawnEnemyShip(shipDef) {
 export function spawnEnemy(role) {
   const def = CATALOG.enemyShips.find((s) => s.stats.role === role) || CATALOG.enemyShips[0];
   return def ? spawnEnemyShip(def) : null;
+}
+
+// Warm the .glb of every enemy this level can spawn, so the FIRST spawn of each type is an instant clone
+// of a cached template instead of a mid-fight fetch/parse/texture-upload (the stall that had weak phones
+// dropping to single-digit fps for the first seconds of a fight, and left enemies flying as the
+// placeholder primitive until their model finally landed). Same idea as preloadRewardModel, which already
+// warms the last-kill drop for exactly this reason. Names come from the descriptor's spawn pools; a name
+// the catalog doesn't carry is simply skipped.
+export function preloadLevelShipModels(level) {
+  const names = new Set();
+  for (const ph of level?.phases || []) for (const p of ph.spawn?.pool || []) if (p.ship) names.add(p.ship);
+  for (const name of names) {
+    const def = (CATALOG.enemyShips || []).find((s) => s.name === name);
+    if (def?.modelUrl) preloadShipModel(def.modelUrl);
+  }
 }
 
 const rightVec = (fwd) => new THREE.Vector3(fwd.z, 0, -fwd.x); // perpendicular to fwd, in the plane

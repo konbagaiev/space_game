@@ -5,6 +5,18 @@
 
 ## 2026-07-27
 
+- **Ship models are now parsed once and cloned per spawn (was: a full re-parse on EVERY spawn).**
+  `applyShipModel` called `gltfLoader.load` per spawn with no cache anywhere, so every enemy that appeared
+  rebuilt the model from scratch — new geometry, a fresh texture decode + GPU upload, one VRAM copy per
+  instance. On a weak phone that meant a **864 ms frame** and **242 ms of `js.render` in a single second**
+  during the first seconds of a fight, with `draws` climbing 12 -> 36 as the scene assembled mid-combat, and
+  enemies often flying as the untextured placeholder until their glb landed. `ship-factory.js` gained a
+  `shipModelCache` (parse once, `clone(true)` per ship — geometry and materials shared, so one GPU copy per
+  ship TYPE), and `levelRunner.start` now warms every model the level can spawn
+  (`preloadLevelShipModels`), mirroring the `preloadRewardModel` precedent. New guard
+  `client/visual/scenarios/26-ship-model-cache.mjs` (mutation-verified). The constraint this creates —
+  never mutate a live ship's material, clone it first — is recorded in DECISIONS §79.
+
 - **Content-hashed assets are now cached forever (`immutable`) instead of revalidating on every request.**
   `express.static` defaulted to `max-age=0`, i.e. a conditional GET + 304 round trip for **every** asset —
   and ship models are re-requested on **every enemy spawn**, so a player on weak mobile paid a network round

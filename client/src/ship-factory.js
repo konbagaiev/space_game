@@ -45,6 +45,47 @@ export const gltfLoader = new GLTFLoader();
 gltfLoader.setMeshoptDecoder(MeshoptDecoder); // so meshopt-compressed glbs (hangar high-poly) load; combat glbs are uncompressed
 export const SHIP_MODEL_LEN = 3.4; // auto-normalize a model's longest axis to ~ the primitive ship's footprint
 
+// ---------- Parsed-model cache: fetch + parse a ship glb ONCE, then every spawn is a clone ----------
+// `applyShipModel` used to call gltfLoader.load on EVERY spawn. The bytes came from the browser cache, but
+// three.js still re-ran the whole pipeline each time: new BufferGeometry, a fresh texture decode and GPU
+// upload, and therefore one VRAM copy per enemy instance. On a weak phone that stalled the frame at each
+// spawn (field telemetry: a single 864 ms frame and 242 ms of `js.render` inside one second, with `draws`
+// visibly climbing as the scene assembled mid-fight) and the model often arrived so late that an enemy
+// lived its whole life as the placeholder primitive. Same fix, same shape as drops.js's rewardModelCache.
+//
+// `clone(true)` shares geometry AND materials with the template, which is what we want: one GPU copy per
+// ship type. Safe because nothing mutates a live ship's materials — the two places that would (the `tint`
+// recolor and the ghost-battle darken/fade) clone the material themselves first, and a dead enemy only
+// disposes its attached exhaust plume, never the model (sim.js).
+// entry = { scene, waiters }. The template `scene` is never added to the scene graph itself.
+const shipModelCache = new Map();
+
+export function requestShipModel(url, cb) {
+  let entry = shipModelCache.get(url);
+  if (entry) {                                     // already parsed, or a load is in flight
+    if (entry.scene) { if (cb) cb(entry.scene.clone(true)); }
+    else if (cb) entry.waiters.push(cb);
+    return;
+  }
+  entry = { scene: null, waiters: cb ? [cb] : [] };
+  shipModelCache.set(url, entry);
+  gltfLoader.load(url, (gltf) => {
+    entry.scene = gltf.scene;
+    for (const w of entry.waiters) w(entry.scene.clone(true));
+    entry.waiters.length = 0;
+  }, undefined, (err) => {
+    console.warn('Ship model failed to load, keeping primitive:', url, err);
+    shipModelCache.delete(url); // drop the entry so a later spawn can retry
+    entry.waiters.length = 0;
+  });
+}
+
+// Warm a model before it is needed (level start) so the FIRST spawn of a type is a clone, not a parse.
+export const preloadShipModel = (url) => { if (url) requestShipModel(url, null); };
+
+// Diagnostic for the ?debug hooks / headless guards: how many distinct glbs have been parsed.
+export const shipModelCacheSize = () => shipModelCache.size;
+
 // Load a .glb and swap it in for the placeholder primitive, keeping the SAME group object (all
 // gameplay logic keeps referencing it). The model is auto-centered, scaled to a consistent size,
 // optionally recolored, and oriented. Falls back to the primitive on error.
@@ -52,8 +93,8 @@ function applyShipModel(group, spec, color) {
   const cfg = (typeof spec === 'string') ? { url: spec } : spec;
   const { url, yaw = 0, tint = true, scaleMul = 1, lift = 0, muzzle = null, exhaust = null,
     opacity = null, darken = 0 } = cfg; // opacity/darken: ghost-battle readability treatment (real ships pass neither)
-  gltfLoader.load(url, (gltf) => {
-    const model = gltf.scene;
+  requestShipModel(url, (model) => {
+    // `model` is a fresh clone of the cached template — safe to scale/recenter/re-parent per instance.
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
@@ -105,7 +146,7 @@ function applyShipModel(group, spec, color) {
       c.material?.dispose?.();
     }
     host.add(pivot);
-  }, undefined, (err) => console.warn('Ship model failed to load, keeping primitive:', url, err));
+  }); // a failed load logs + keeps the placeholder primitive inside requestShipModel
 }
 
 export function makeShip(color, model = null) {

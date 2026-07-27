@@ -2809,6 +2809,38 @@ one VRAM copy per instance) because there is no parsed-model cache — see the `
 precedent for the shape of that fix. Headers remove the network round trip; only an in-code cache removes the
 work.
 
+## 79. Ship models are parsed ONCE and cloned per spawn — so a live ship's materials must never be mutated
+
+**Problem.** `applyShipModel` called `gltfLoader.load(url, ...)` on **every spawn**, and nothing cached the
+result. The bytes came from the browser cache, but three.js re-ran the full pipeline each time: a new
+`BufferGeometry`, a fresh texture decode and GPU upload, and therefore **one VRAM copy per enemy instance**.
+Field telemetry from a weak phone showed the cost plainly — in the first seconds of a fight, one frame took
+**864 ms**, another second spent **242 ms inside `js.render`**, and `draws` climbed 12 -> 36 as the scene
+assembled itself *during* combat. Enemies frequently lived their whole life as the untextured placeholder
+primitive because their model had not finished loading yet. (Cache headers, DECISIONS 78, removed the
+network round trip; they cannot remove the parse.)
+
+**Decision.** `ship-factory.js` keeps a `shipModelCache` (url -> parsed template + in-flight waiters) and
+hands out `template.clone(true)` per ship, and `levelRunner.start` warms every model the level's spawn pools
+can produce (`preloadLevelShipModels`). This is the same shape as `drops.js`'s `rewardModelCache` /
+`preloadRewardModel`, which already solved exactly this for the last-kill reward drop — we simply never
+applied it to ships.
+
+**The constraint this creates.** `Object3D.clone(true)` shares **geometry and materials** with the template.
+That is the point — one GPU copy per ship *type* instead of per instance — but it means **mutating a live
+ship's material would leak to every other ship of that type**. Two existing paths deliberately mutate
+materials and must therefore keep cloning first: the `tint` recolour, and the ghost-battle `darken`/`opacity`
+readability treatment. Both already clone; do not "optimise" that away. Anything new that wants a per-ship
+visual state (a damage flash, a cloak, a team colour) must clone the material for that instance too.
+
+**Safe on teardown:** a dead enemy only disposes its attached exhaust plume (`sim.js`), never the model's
+geometry or materials, so sharing cannot leave another instance with disposed GPU resources.
+
+**Guard:** `client/visual/scenarios/26-ship-model-cache.mjs` spawns two ships of one type and one of
+another, and asserts the pair shares a geometry set and a material set while remaining distinct scene
+objects, and that a different type does not. Mutation-verified: with the cache bypassed it fails on the
+shared-geometry assertion.
+
 ## Future ideas
 
 solid asteroids with bounce ·

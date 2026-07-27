@@ -15,7 +15,7 @@ import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredB
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust, disposeShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
-import { spawnEnemyShip, updateGroups } from './ship-build.js';
+import { spawnEnemyShip, updateGroups, preloadLevelShipModels } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
 import { simRandom } from './sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
 import { isLastKillDrop } from './level-sim.js';
@@ -80,6 +80,9 @@ export const levelRunner = {
     // hitch-free — the high-poly CloudFront hangar glb is fetched/parsed here, not on the killing frame.
     const lkd = level && level.lastKillDrop;
     if (lkd && !ownsReward(lkd)) preloadRewardModel(lkd);
+    // Same reasoning for the ENEMY models: parse each type once here, so no spawn ever pays for a
+    // fetch/parse/texture-upload mid-fight (and no enemy flies as the placeholder waiting for its glb).
+    preloadLevelShipModels(level);
     this.enterPhase();
   },
   get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },
