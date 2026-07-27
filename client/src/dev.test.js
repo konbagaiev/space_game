@@ -1,58 +1,38 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { evalDev, evalDevForDevice } from './dev.js';
+import { evalDev } from './dev.js';
 
-// Map-backed fake localStorage: getItem returns null for a missing key (like the real API).
-const fake = () => { const m = new Map();
-  return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
+// `?dev` is deliberately NOT sticky (DECISIONS §81): it governs diagnostics for the current page load and
+// nothing else. These cases pin that. The flag used to persist in localStorage, which left the perf
+// overlay, the right-docked lil-gui panels and the per-second telemetry running on the LIVE SITE forever
+// after a single `?dev` visit — for the maintainer and for any playtester handed a `?dev` link.
 
-test('evalDev: bare ?dev turns on and sets the sticky flag', () => {
-  const s = fake();
-  assert.equal(evalDev('?dev', s), true);
-  assert.equal(s.getItem('devMode'), '1'); // sticky set
+test('evalDev: a truthy ?dev in the URL turns diagnostics on', () => {
+  assert.equal(evalDev('?dev'), true);           // bare flag
+  assert.equal(evalDev('?dev=true'), true);
+  assert.equal(evalDev('?dev=1'), true);
+  assert.equal(evalDev('?level=3&dev=1'), true); // alongside other params
 });
 
-test('evalDev: ?dev=true and ?dev=1 are truthy', () => {
-  assert.equal(evalDev('?dev=true', fake()), true);
-  assert.equal(evalDev('?dev=1', fake()), true);
+test('evalDev: no dev param means off', () => {
+  assert.equal(evalDev(''), false);
+  assert.equal(evalDev('?playback&id=x'), false);
 });
 
-test('evalDev: ?dev=false / ?dev=0 turn off and clear the stored flag', () => {
-  const s1 = fake(); s1.setItem('devMode', '1');
-  assert.equal(evalDev('?dev=false', s1), false);
-  assert.equal(s1.getItem('devMode'), null); // cleared
-
-  const s2 = fake(); s2.setItem('devMode', '1');
-  assert.equal(evalDev('?dev=0', s2), false);
-  assert.equal(s2.getItem('devMode'), null);
+test('evalDev: an explicit off value is off', () => {
+  assert.equal(evalDev('?dev=false'), false);
+  assert.equal(evalDev('?dev=0'), false);
 });
 
-test('evalDev: no dev param → the stored flag decides (stickiness / default off)', () => {
-  const on = fake(); on.setItem('devMode', '1');
-  assert.equal(evalDev('', on), true);
-  assert.equal(evalDev('', fake()), false); // default off
+test('evalDev: an unrecognized value is off — only the documented truthy forms count', () => {
+  assert.equal(evalDev('?dev=yes'), false);
+  assert.equal(evalDev('?dev=2'), false);
 });
 
-test('evalDev: an unrecognized value falls back to the stored flag', () => {
-  const on = fake(); on.setItem('devMode', '1');
-  assert.equal(evalDev('?dev=bogus', on), true);
-  assert.equal(evalDev('?dev=bogus', fake()), false);
-});
-
-test('evalDev: ?dev with no storage returns true without throwing (private mode)', () => {
-  assert.equal(evalDev('?dev', null), true);
-});
-
-// TOUCH is non-sticky: the stored flag is ignored and never written; only an explicit URL ?dev counts.
-test('evalDevForDevice: touch ignores a stuck sticky flag in normal mode (the FPS/tris leak)', () => {
-  const stuck = fake(); stuck.setItem('devMode', '1');
-  assert.equal(evalDevForDevice(true, '', stuck), false);        // no URL dev → OFF despite the sticky flag
-  assert.equal(evalDevForDevice(false, '', stuck), true);        // desktop still honors the sticky flag
-});
-
-test('evalDevForDevice: touch honors an explicit ?dev but does NOT persist it', () => {
-  const s = fake();
-  assert.equal(evalDevForDevice(true, '?dev', s), true);         // explicit URL dev → ON
-  assert.equal(s.getItem('devMode'), null);                      // ...but nothing written (non-sticky)
-  assert.equal(evalDevForDevice(true, '?dev=false', fake()), false);
+test('evalDev: the decision is storage-free, so nothing can make it sticky again', () => {
+  // The URL is the ONLY input. A leftover `devMode` key (or any future storage argument) must not be able
+  // to turn diagnostics on, which is the whole point of §81.
+  assert.equal(evalDev.length, 1, 'evalDev takes only the query string');
+  const stuck = { getItem: () => '1', setItem: () => { throw new Error('must never write'); } };
+  assert.equal(evalDev('', stuck), false);
 });

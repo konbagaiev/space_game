@@ -1,44 +1,32 @@
-// Dev diagnostics flag (?dev) — governs the on-screen perf/service overlay (#perf) + perf telemetry.
-// STICKY: a truthy ?dev (?dev, ?dev=true, ?dev=1) turns it ON and remembers it in localStorage;
-// an explicit ?dev=false / ?dev=0 turns it OFF and clears the stored flag; no dev param (or an
-// unrecognized value) → the stored flag decides. Evaluated ONCE per page load and cached.
-// Reuses the existing ?dev flag (perf telemetry) — no new endpoint, no new flag name.
+// Dev diagnostics flag (?dev) — governs the on-screen perf/service overlay (#perf), the lil-gui authoring
+// panels, the `window.__backdrop` hooks and the per-second perf telemetry POSTed to /api/perf.
 //
-// TOUCH is NON-STICKY: on a touch device the localStorage flag is ignored (and never written) — dev
-// diagnostics are on ONLY when an explicit truthy ?dev is in THIS load's URL. A phone/tablet has no
-// ergonomic way to clear a stuck flag, so a one-off ?dev telemetry visit must not leave the perf overlay
-// (FPS/tris) — or the tuning panels — showing in normal play. Desktop keeps the sticky flag (a dev opens
-// ?dev once and keeps the overlay across reloads). See evalDevForDevice below.
-import { Device } from './device.js'; // touch/mouse input axis (dependency-free, import-safe)
-const KEY = 'devMode';
+// NOT STICKY, ANYWHERE. A truthy `?dev` (`?dev`, `?dev=true`, `?dev=1`) turns diagnostics on for THIS PAGE
+// LOAD ONLY; anything else — including no param at all — is off. Nothing is written to or read from
+// localStorage. Evaluated once per load and cached.
+//
+// It used to persist the flag, which meant one `?dev` visit left the FPS/tris overlay, the right-docked
+// tuning panels and the telemetry running on **the live site forever** — for the maintainer and for any
+// playtester handed a `?dev` link. That is service information leaking into the game. A dev typing
+// `?dev` into the URL (or bookmarking it) is a trivially small cost next to a diagnostics overlay stuck on
+// vega.tenony.com, so the flag simply does not persist. See DECISIONS §81.
+//
+// A `devMode` key left over from the sticky era is ignored, and cleared opportunistically below so it does
+// not linger in players' storage.
+const LEGACY_KEY = 'devMode';
 
-// Pure decision + storage side effect, so it's unit-testable without a DOM. Returns the on/off boolean.
-export function evalDev(search, storage) {
-  const params = new URLSearchParams(search || '');
-  let url = null; // tri-state: true=force on, false=force off, null=no/ignored override
-  if (params.has('dev')) {
-    const v = params.get('dev');            // '' for a bare ?dev
-    if (v === '' || v === 'true' || v === '1') url = true;
-    else if (v === 'false' || v === '0') url = false;
-    // any other value → leave url null (fall back to stored flag)
-  }
-  try {
-    if (url === true) { storage && storage.setItem(KEY, '1'); return true; }
-    if (url === false) { storage && storage.removeItem(KEY); return false; }
-    return !!storage && storage.getItem(KEY) === '1';
-  } catch { return url === true; } // localStorage blocked (private mode) → honor the URL only
+// Pure + storage-free, so it is unit-testable without a DOM: the URL alone decides.
+export function evalDev(search) {
+  const v = new URLSearchParams(search || '').get('dev');
+  return v === '' || v === 'true' || v === '1'; // bare ?dev, ?dev=true, ?dev=1 — everything else is off
 }
 
-// PURE device-aware gate: touch → non-sticky (ignore & never write storage), mouse → sticky as before.
-export function evalDevForDevice(isTouch, search, storage) {
-  return evalDev(search, isTouch ? null : storage);
-}
+const DEV = evalDev(typeof location !== 'undefined' ? location.search : '');
 
-const _search = typeof location !== 'undefined' ? location.search : '';
-const _storage = typeof localStorage !== 'undefined' ? localStorage : null;
-const DEV = evalDevForDevice(Device.input === 'touch', _search, _storage);
+// Drop the retired sticky key so an old visit can't keep haunting a browser's storage.
+try { if (typeof localStorage !== 'undefined') localStorage.removeItem(LEGACY_KEY); } catch { /* private mode */ }
 
-// True when the dev diagnostics flag is on (URL this load, or sticky from a previous ?dev visit).
+// True when the dev diagnostics flag is on for this page load.
 export function isDev() { return DEV; }
 
 // Set the body.devmode gate before first paint (idempotent; #perf is display:none until this lands).

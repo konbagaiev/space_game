@@ -2888,6 +2888,39 @@ write with `setText`/`setStyle`. Writing `style.left`/`style.top` in a per-frame
 **Behaviour is unchanged** — the DOM ends in the same state, the same elements in the same places; only the
 redundant work is gone.
 
+## 81. `?dev` is not sticky — diagnostics never outlive the page load they were asked for
+
+**Problem.** The dev flag persisted in `localStorage['devMode']`: a truthy `?dev` turned diagnostics on and
+*remembered* it, so every later visit to the same origin kept them on. Convenient for a developer on
+localhost, wrong everywhere else — one `?dev` visit left the **perf overlay** (fps / frame ms / draw calls /
+triangles / backbuffer size / ship speed / JS heap), the right-docked **lil-gui authoring panels**, the
+`window.__backdrop` hooks and the **per-second telemetry POST** running on **vega.tenony.com forever**. That
+hit the maintainer on his own desktop and every playtester handed a `?dev` link — the panels visible in a
+tester's screenshots were exactly this. Service information does not belong in a live game, and the only way
+out was knowing to visit `?dev=0`.
+
+**Decision.** The flag governs the **current page load only**, on every device and every host. `evalDev`
+takes the query string and nothing else — no storage is read or written — and the retired `devMode` key is
+removed on load so an old visit stops haunting a browser. A developer keeps `?dev` in the URL (or a
+bookmark), which is a trivial cost next to diagnostics stuck on the live site.
+
+**Rejected: stickiness only on localhost.** It would have preserved the local convenience, but it makes the
+flag's behaviour depend on the host — two environments, two rules, and a bug class that only reproduces on
+prod. `?dev` meaning exactly "this load" everywhere is one rule you can hold in your head.
+
+**Consequence for measuring.** Telemetry now requires `?dev` in the URL for **each** session. A tester can
+no longer be set up once and left reporting; that is the honest trade — the previous behaviour was
+collecting from people who had long forgotten they enabled it.
+
+**Supersedes** the touch-only non-stickiness added just before this (`evalDevForDevice`): with no
+stickiness anywhere, the device axis is moot and the helper is gone. The other half of that change — never
+building the right-docked lil-gui panels on touch, since they are mouse-only tools — **stays**, and is
+independent of this flag.
+
+**Guard:** `client/src/dev.test.js` pins that only the documented truthy forms turn it on, that everything
+else (including an unknown value) is off, and that the decision is storage-free — a fake storage returning
+a set flag cannot turn diagnostics on, and `evalDev.length === 1` fails if a storage argument creeps back.
+
 ## Future ideas
 
 solid asteroids with bounce ·

@@ -5,6 +5,16 @@
 
 ## 2026-07-27
 
+- **`?dev` is no longer sticky — no more service information stuck on the live site.** The diagnostics flag
+  persisted in `localStorage`, so a single `?dev` visit left the perf overlay, the right-docked lil-gui
+  authoring panels, the `window.__backdrop` hooks and the per-second telemetry running on
+  **vega.tenony.com forever** — for the maintainer and for any playtester handed a `?dev` link (those panels
+  in a tester's screenshots were exactly this). `?dev` now governs the **current page load only**, on every
+  device and host: `evalDev` reads the query string and nothing else, and the retired `devMode` key is
+  cleared on load so an old visit stops haunting a browser. Trade-off: telemetry needs `?dev` in the URL for
+  each measuring session. Supersedes the touch-only non-stickiness added just before it (the device axis is
+  moot with no stickiness anywhere); the "never build lil-gui panels on touch" half stays. See DECISIONS §81.
+
 - **First sighting of an enemy type no longer freezes the frame.** Caching the parsed glb removed the
   re-parse, but three.js uploads geometry/textures and compiles the shader program **lazily, on the first
   frame an object is drawn** — so the first time each ship TYPE appeared in a fight still cost **215 ms
