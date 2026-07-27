@@ -2776,6 +2776,39 @@ because the maps are jpeg/png/webp inside the glb and we did not want an image-d
 sidecar is the one thing under `assets-src/` that IS committed — it is generated numbers, not a binary, and
 the build is not reproducible without it.
 
+## 78. Content-hashed assets are served `immutable` — so there is deliberately NO "reload assets" command
+
+**Problem.** `app.use(express.static(clientDir))` used express's default `Cache-Control: public, max-age=0`,
+which does not mean "don't cache" but "cache, then **revalidate every time**". Every asset request therefore
+cost a conditional GET and a 304 round trip. The worst case is not page load: ship models are re-requested
+on **every enemy spawn** (`ship-factory.js` `applyShipModel` calls `gltfLoader.load` per spawn, there is no
+model cache), so a player on a weak mobile connection paid a network round trip per spawned pirate — and
+watched enemies fly around as the untextured procedural placeholder until it came back. Reported from the
+field; confirmed with `curl -H 'If-None-Match: ...'` against prod returning `304` on `max-age=0`.
+
+**Decision.** Files matching `<name>.<hash8>.<ext>` (`.glb` / `.mp3` / `.json` — the asset pipeline's naming,
+DECISIONS 14 + docs/plans/ship-model-pipeline.md) are served `public, max-age=31536000, immutable`.
+Everything un-hashed — `index.html`, `src/*.js`, `styles.css` — keeps the revalidating default, so a deploy is
+picked up on the next load. The policy is a pure exported `staticCacheControl(filePath)`, unit-tested
+(including the near-misses: 7-char, uppercase and non-hex "hashes" must NOT be treated as hashed).
+
+**Why there is no cache-busting / "reload assets" command — and why we don't want one.** The hash IS the
+version: change a model and the pipeline emits a *new filename*, the seed points at the new URL, and clients
+fetch it because they have never seen that URL. The old file is not stale, it is simply unreferenced. So
+there is nothing to invalidate, and an invalidation channel would be a mechanism with no job (DECISIONS 30).
+The catalog itself is served from `/api` (never cached), which is what makes this work: the client learns the
+new URL on its next catalog fetch, no client-side version pinning involved.
+
+**The one thing that would change this:** if we ever precache with a **Service Worker** (durable Cache
+Storage, survives eviction — the natural next step if weak-connection players still lose assets), the SW
+script itself is un-hashed and its cached copies are ours to manage. *That* would need a version + update
+flow. Until then, don't add one.
+
+**Not fixed by this:** the client still re-PARSES the glb on every spawn (new geometry, fresh texture upload,
+one VRAM copy per instance) because there is no parsed-model cache — see the `drops.js` `rewardModelCache`
+precedent for the shape of that fix. Headers remove the network round trip; only an in-code cache removes the
+work.
+
 ## Future ideas
 
 solid asteroids with bounce ·

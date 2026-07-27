@@ -5,7 +5,7 @@ process.env.NODE_ENV = 'test'; // non-Secure cookies so local-http tests can rea
 process.env.ADMIN_USER = 'admin';       // enable the /admin dashboard for the suite (Basic Auth)
 process.env.ADMIN_PASSWORD = 'secret';
 
-const { createApp } = await import('./server.js');
+const { createApp, staticCacheControl } = await import('./server.js');
 const { outbox } = await import('./ses.js');
 const { setResetToken, consumeResetToken } = await import('./datastore.js');
 const { hashToken } = await import('./auth.js');
@@ -36,6 +36,30 @@ function sessionCookie(res) {
   return null;
 }
 const authHeader = (token) => (token ? { Cookie: `session=${token}` } : {});
+
+// Static-asset cache policy. `express.static`'s default is max-age=0, so the browser revalidates every
+// asset on every request — a 304 round trip per ship model, and ship models are re-requested on EVERY
+// enemy spawn. On a weak mobile connection that left enemies flying as the untextured placeholder while
+// their model waited on the network. Content-hashed names make `immutable` safe: a changed asset is a
+// new URL, so there is nothing to invalidate and no "reload assets" command is needed after a deploy.
+test('static cache: content-hashed assets are immutable, everything else revalidates', () => {
+  const IMMUTABLE = 'public, max-age=31536000, immutable';
+  // hashed pipeline assets → cached forever
+  assert.equal(staticCacheControl('/client/assets/ships/player_combat.9188c820.glb'), IMMUTABLE);
+  assert.equal(staticCacheControl('/client/assets/ships/enemy_1_combat.3ad179b9.glb'), IMMUTABLE);
+  assert.equal(staticCacheControl('/client/assets/sounds/music_combat_2.d9aa57d1.mp3'), IMMUTABLE);
+  assert.equal(staticCacheControl('/client/assets/recordings/level0-intro.0526e940.json'), IMMUTABLE);
+  // un-hashed files → keep the revalidating default so a deploy is picked up immediately
+  assert.equal(staticCacheControl('/client/index.html'), null);
+  assert.equal(staticCacheControl('/client/styles.css'), null);
+  assert.equal(staticCacheControl('/client/src/main.js'), null);
+  assert.equal(staticCacheControl('/client/src/credits-data.js'), null);
+  // near-misses must NOT be treated as hashed
+  assert.equal(staticCacheControl('/client/assets/ships/player.glb'), null);          // no hash segment
+  assert.equal(staticCacheControl('/client/assets/ships/player_combat.9188c82.glb'), null);  // 7 chars
+  assert.equal(staticCacheControl('/client/assets/ships/player_combat.9188C820.glb'), null); // uppercase
+  assert.equal(staticCacheControl('/client/assets/ships/player_combat.9188g820.glb'), null); // not hex
+});
 
 test('register: new player is created', async () => {
   const r = await post('/api/players/register', { playerId: 'p1' });

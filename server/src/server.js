@@ -45,6 +45,13 @@ function rateLimit({ windowMs, max }) {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDir = path.join(__dirname, '..', '..', 'client');
 
+// Content-hashed pipeline assets: `<name>.<hash8>.<ext>` (docs/plans/ship-model-pipeline.md). The hash IS
+// the version, so the bytes behind one URL can never change — safe to cache forever. Pure + exported so
+// the policy is unit-testable without booting express.
+const HASHED_ASSET = /\.[0-9a-f]{8}\.(glb|mp3|json)$/;
+export const staticCacheControl = (filePath) =>
+  (HASHED_ASSET.test(filePath) ? 'public, max-age=31536000, immutable' : null);
+
 // Build the Express app (runs migrations first). Exported so tests can mount it
 // without binding a port.
 export async function createApp() {
@@ -417,7 +424,21 @@ export async function createApp() {
   mountAdmin(app, getAdminPlayers);
 
   // Serve the game client (index.html etc.) from the same origin as the API.
-  app.use(express.static(clientDir));
+  //
+  // Content-hashed assets are cached FOREVER. `express.static`'s default is `max-age=0`, which makes the
+  // browser revalidate on every request: a conditional GET + a 304 round trip per asset. That is a real
+  // cost on a weak mobile connection, and the worst case is per ENEMY SPAWN — ship models are re-requested
+  // on every spawn (`ship-factory.js` applyShipModel), so a player on slow mobile watched enemies fly
+  // around as the untextured placeholder while their model waited on a round trip, every single time.
+  // The asset pipeline names these files `<name>.<hash8>.<ext>` (docs/plans/ship-model-pipeline.md), so a
+  // new version is always a NEW URL — there is nothing to invalidate and `immutable` is safe by
+  // construction. Everything else (index.html, src/*.js, styles.css — no hash in the name) keeps the
+  // revalidating default so a deploy is picked up immediately.
+  app.use(express.static(clientDir, {
+    setHeaders(res, filePath) {
+      if (HASHED_ASSET.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
 
   // Sentry's Express error handler — reports unhandled route errors, then falls through to ours.
   // Must come after the routes and before our own error middleware. No-op when Sentry isn't enabled.

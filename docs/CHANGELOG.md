@@ -5,6 +5,16 @@
 
 ## 2026-07-27
 
+- **Content-hashed assets are now cached forever (`immutable`) instead of revalidating on every request.**
+  `express.static` defaulted to `max-age=0`, i.e. a conditional GET + 304 round trip for **every** asset —
+  and ship models are re-requested on **every enemy spawn**, so a player on weak mobile paid a network round
+  trip per spawned pirate and watched enemies fly as the untextured placeholder until it returned. Files
+  named `<name>.<hash8>.<ext>` (`.glb`/`.mp3`/`.json`) now get `public, max-age=31536000, immutable`;
+  un-hashed files (`index.html`, `src/*.js`, `styles.css`) keep revalidating so deploys land immediately.
+  Safe by construction — the hash is the version, so a changed asset is a NEW URL and there is nothing to
+  invalidate (hence no "reload assets" command; see DECISIONS 78). Policy is a pure, unit-tested
+  `staticCacheControl()`. Does **not** remove the per-spawn glb re-parse — that needs an in-code model cache.
+
 - **Player ship combat model: 31 -> 15 draw calls (and 371 -> 178 KB).** Weak-phone telemetry
   (`?dev` → `perf_samples`, Samsung SM-A037F / PowerVR GE8320) showed 42-67 ms per frame in `js.render`
   — our own draw-call submit — and the culprit was a single asset: the player ship was **31 draw calls /
