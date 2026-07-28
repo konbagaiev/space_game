@@ -13,7 +13,7 @@ import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, app
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
-import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket, spawnEnemyShieldHit } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
+import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket, spawnEnemyShieldHit, smokePool } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples
 import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
@@ -683,7 +683,9 @@ function animate() {
 // so a scenario can seed entities and assert on state (counts, colors) instead of diffing pixels.
 if (location.search.includes('debug')) {
   window.__game = {
-    scene, camera, enemies, bullets, rockets,
+    // `skyScene` + `renderer` are here for headless PERF probes: the frame is two full passes (sky, then
+    // combat), and reasoning about fill cost needs to walk both scenes and read renderer.info.
+    scene, skyScene, renderer, camera, enemies, bullets, rockets,
     explosions, sparks, shockwaves, smoke,
     // Exhaust FX debug hooks: the GLOBAL (a)/(b) look toggle + read the current mode / live freighter plume.
     exhaust: {
@@ -697,6 +699,7 @@ if (location.search.includes('debug')) {
     get enemyShieldSlots() { return enemyShieldSlots(); }, // diagnostic: the pooled enemy bubble slots
     get enemyShieldRefills() { return G.enemyShieldRefills; }, // diagnostic: completed enemy shield refills this run (replay triage)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
+    smokePool, // diagnostic: the instanced rocket-trail pool (live count + per-instance alphas)
     drops, // the live loot-drop array (count/positions assertable in headless)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
     // with `?dev` — start a fight, run `for (let i=0;i<40;i++) __game.spawnTestDrop()`, watch the perf FPS.

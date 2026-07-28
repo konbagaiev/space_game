@@ -2921,6 +2921,47 @@ independent of this flag.
 else (including an unknown value) is off, and that the decision is storage-free — a fake storage returning
 a set flag cannot turn diagnostics on, and `evalDev.length === 1` fails if a storage argument creeps back.
 
+## 82. High-volume FX goes through an instanced pool — one draw call per particle KIND, not per particle
+
+**Problem.** Every FX primitive was its own `THREE.Mesh` with its own `MeshBasicMaterial`, so every particle
+cost a draw call. A draw call carries a fixed cost almost independent of what it draws (measured at ~0.25 ms
+on a PowerVR GE8320), so hundreds of tiny puffs cost hundreds of times the setup and nothing else. The
+maintainer spotted it in the field: **a rocket in flight added 25-30 draw calls**, the largest per-event cost
+we found. It also multiplies overdraw, which is the other half of that device's frame.
+
+This is the rendering equivalent of an **N+1 query**, and it is worth naming as a defect rather than a
+hardware-specific tuning issue. It survived not because it was invisible but because of **how it spread**:
+the first FX primitive (a single explosion) was written that way, which was reasonable for one object, and
+every later effect copied it. By the sixth, "a mesh per particle" had stopped being a decision and become
+the file's style — so a review of any one addition saw code consistent with its neighbours and passed it.
+Catching it would have required arguing against the established pattern, not against the diff.
+
+**Decision.** `client/src/particle-pool.js` provides `makeParticlePool({ geometry, color, opacity, blending,
+max })`: one `InstancedMesh` per particle KIND, filled per frame (`begin` / `push(pos, size, alpha)` / `end`).
+The rocket smoke trail — the only high-volume kind left — goes through it. **New high-volume FX must use a
+pool and must not create a mesh per particle.** One-off effects that are only ever a handful on screen (the
+warp flash, a death shockwave ring) stay plain meshes; instancing them would be machinery for no gain.
+
+**Per-instance alpha is the load-bearing detail.** Instances share one material, so `material.opacity` is a
+single value for all of them: fading it makes the entire trail blink out together instead of the tail
+dissolving while the head is still dense. Alpha therefore travels as an instanced attribute (`aAlpha`) that
+a small `onBeforeCompile` patch multiplies into the fragment alpha. The patch verifies its own anchors and
+exposes `alphaPatched`, because a three.js upgrade that renames a shader chunk would break the fade
+**silently** — the attribute would still be written, so any test that only reads the buffer back would keep
+passing.
+
+**Particle caps are now finite on every tier.** `maxParticles` was `Infinity` on High and Balance — an
+unbounded resource on the two tiers most people play. A pool has a fixed capacity, so the caps are now 640 /
+480 / 300, at or under it.
+
+**Guard:** `client/visual/scenarios/27-smoke-instancing.mjs` asserts the trail is ONE instanced mesh, that
+puffs carry distinct alphas with a real head-to-tail gradient, that the shader patch compiled, and — the
+part that actually proves it — reads the **framebuffer**: the same puff at alpha 0 draws nothing, at alpha 1
+draws a lot, and at 0.05 is far dimmer. Two earlier versions of that check were wrong in instructive ways:
+counting *changed pixels* measures coverage, which is identical at any non-zero alpha; and rendering
+`scene` alone composites on top of the previous frame, because the game manages its own clears and draws sky
+then combat.
+
 ## Future ideas
 
 solid asteroids with bounce ·

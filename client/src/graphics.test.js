@@ -26,14 +26,15 @@ test('resolveTier returns the tier knobs with its name attached', () => {
   assert.equal(p.starScale, TIERS.performance.starScale);
 });
 
-test('Performance caps live particles; High/Balance leave it off (no renderScale knob — removed)', () => {
-  // maxParticles is the hard live-particle ceiling on the weakest tier; off (Infinity) on the capable
-  // tiers. renderScale was removed (measured useless on real GPUs) — assert it's gone so it isn't re-added.
-  assert.ok(Number.isFinite(resolveTier('performance').maxParticles));
+test('every tier caps live particles, tightening as the tier weakens (no renderScale knob — removed)', () => {
+  // maxParticles is the hard live-particle ceiling. It used to be Infinity on High and Balance — an
+  // unbounded resource on the two tiers most people play — which is now finite everywhere: the particles
+  // are drawn from a fixed-capacity instanced pool (DECISIONS §82), so a cap above that capacity would
+  // silently drop pushes. renderScale was removed (measured useless on real GPUs) — assert it stays gone.
+  const caps = ['high', 'balance', 'performance'].map((t) => resolveTier(t).maxParticles);
+  for (const c of caps) assert.ok(Number.isFinite(c) && c > 0, `every tier has a finite cap (got ${c})`);
+  assert.ok(caps[0] >= caps[1] && caps[1] >= caps[2], `the cap tightens as the tier weakens (got ${caps})`);
   assert.equal(resolveTier('performance').renderScale, undefined);
-  for (const tier of ['high', 'balance']) {
-    assert.equal(resolveTier(tier).maxParticles, Infinity);
-  }
 });
 
 test('nebulaBake: High/Balance bake, Performance keeps the flat color', () => {

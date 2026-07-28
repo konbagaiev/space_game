@@ -6,6 +6,10 @@ export const GRAPHICS_DEFAULT = 'high';
 
 // Each tier's knobs. `pixelRatioCap` + `antialias` set the backbuffer resolution / AA;
 // `starScale`/`particleScale` thin the additive overdraw; `maxParticles` is a hard ceiling on live
+// particles. It was `Infinity` on High and Balance — an unbounded resource on the two tiers most people
+// play, which one long firefight could push into the hundreds. Now finite everywhere and at or under the
+// instanced pool's own capacity (`SMOKE_MAX` in projectiles.js), so the pool can never be asked to hold
+// more than it has room for.
 // additive particles (trail + sparks) — new emits skipped over budget — capping per-frame JS on the
 // weakest phones (Infinity = off). Tuned on real low-end phones (see DECISIONS §23).
 // `envMap` enables a PMREM environment so metallic ship surfaces show real reflections (premium look,
@@ -20,8 +24,8 @@ export const GRAPHICS_DEFAULT = 'high';
 // CPU draw-call submit + the GPU/compositor governor, NOT fragment fill rate), so it only blurred the
 // image for no gain. Resolution levers are a dead end here; see DECISIONS §23.
 export const TIERS = {
-  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: Infinity, enemyShieldBubbles: 6, nebulaBake: { cube: 1024, octaves: 6 } },
-  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: Infinity, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 } },
+  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: 640, enemyShieldBubbles: 6, nebulaBake: { cube: 1024, octaves: 6 } },
+  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: 480, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 } },
   performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false, maxParticles: 300,      enemyShieldBubbles: 0, nebulaBake: null },
 };
 export const TIER_ORDER = ['high', 'balance', 'performance'];

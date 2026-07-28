@@ -16,6 +16,17 @@
 
 ## 2026-07-27
 
+- **Rocket smoke is one draw call instead of 25-30.** Every FX primitive was its own mesh with its own
+  material, so each particle cost a draw call — the rendering equivalent of an N+1 query, and on a weak
+  phone (~0.25 ms per call) a single rocket in flight added **25-30 calls**, spotted in the field by the
+  maintainer. New `client/src/particle-pool.js` gives one `InstancedMesh` per particle KIND, filled per
+  frame; the rocket trail (the only high-volume kind left — the spark spray died with §75) now goes through
+  it, so the cost stops scaling with puff count. Per-puff fade rides an instanced `aAlpha` attribute so the
+  tail still dissolves while the head stays dense — a shared `material.opacity` would blink the whole trail
+  out at once. `maxParticles` is finite on every tier now (640/480/300); it was `Infinity` on High and
+  Balance. Guard: `visual/scenarios/27-smoke-instancing.mjs`, which reads the framebuffer to prove the fade
+  reaches actual pixels. New high-volume FX must use a pool — see DECISIONS §82.
+
 - **`?dev` is no longer sticky — no more service information stuck on the live site.** The diagnostics flag
   persisted in `localStorage`, so a single `?dev` visit left the perf overlay, the right-docked lil-gui
   authoring panels, the `window.__backdrop` hooks and the per-second telemetry running on

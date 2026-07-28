@@ -11,7 +11,7 @@ import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updat
 import { repairTick, shieldRecharge, applyShieldedDamage } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
+import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust, disposeShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
@@ -680,18 +680,20 @@ export function update(dt) {
   updateShipExhaust(dt);
 
   // --- rocket smoke trail: fixed-size puffs that only fade (a thin dissipating line, not a cone) ---
+  // Drawn as ONE instanced call for the whole trail (particle-pool.js), so the cost no longer scales with
+  // puff count. Each puff keeps its OWN position, size and alpha — the fade rides a per-instance attribute,
+  // which is what stops the trail from blinking out in unison. Puffs never move after birth: the trail's
+  // shape is simply the sequence of points the rocket passed through, so a curving flight curves the trail.
+  smokePool.begin();
   for (let i = smoke.length - 1; i >= 0; i--) {
     const s = smoke[i];
     s.life -= dt;
     const t = 1 - Math.max(0, s.life) / s.maxLife; // 0 → 1
-    s.mesh.material.opacity = (1 - t) * 0.4;        // fade out only
+    if (s.life <= 0) { smoke.splice(i, 1); continue; }
     // no scale change — fixed-size puffs form a thin dissipating line (baseSize set once at spawn)
-    if (s.life <= 0) {
-      scene.remove(s.mesh);
-      s.mesh.material.dispose();
-      smoke.splice(i, 1);
-    }
+    smokePool.push(s.pos, s.baseSize, 1 - t);       // fade out only (the pool's material carries the 0.4 base)
   }
+  smokePool.end();
 
   // --- ship-explosion sparks: colored debris flying outward, slowing, fading + shrinking ---
   for (let i = sparks.length - 1; i >= 0; i--) {
@@ -858,8 +860,7 @@ export function reset() {
     if (mesh?.material) mesh.material.dispose();
   }
   rockets.length = 0;
-  for (const s of smoke) { scene.remove(s.mesh); s.mesh.material.dispose(); }
-  smoke.length = 0;
+  smoke.length = 0; smokePool.clear(); // pooled: the instanced mesh + material are kept, only the live count resets
   for (const s of sparks) { scene.remove(s.mesh); s.mesh.material.dispose(); }
   sparks.length = 0;
   for (const w of shockwaves) { scene.remove(w.mesh); w.mesh.material.dispose(); }

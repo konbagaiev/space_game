@@ -16,6 +16,7 @@ import { applyShieldedDamage } from './components.js';
 import { registerShieldImpact, registerEnemyShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
+import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
@@ -371,17 +372,18 @@ export function detonateRocket(r, dealDamage = true) {
 // Rocket smoke trail: a thin, dissipating haze LINE — small fixed-size gray puffs that only fade out
 // (no expansion), emitted densely along the flight path so the trail reads as a vapor line, not a cone.
 // smoke moved to src/state.js
-const smokeGeo = new THREE.SphereGeometry(1, 6, 6);
+// A rocket trail is the highest-volume FX in the game — one puff per sim tick per rocket (times three for
+// the corkscrew), each living 0.5 s. As one mesh each that was 25-30 draw calls per rocket in flight; as
+// instances it is ONE, whatever the count. `SMOKE_MAX` is the pool's hard ceiling and sits above every
+// tier's `maxParticles`, which is what actually bounds the live count at spawn time.
+const SMOKE_MAX = 640;
+const smokeGeo = new THREE.SphereGeometry(1, 6, 6); // owned by the pool (it stores an instanced attribute)
+export const smokePool = makeParticlePool({ geometry: smokeGeo, color: 0x9aa6b4, opacity: 0.4, max: SMOKE_MAX });
+
 export function spawnSmoke(pos) {
   if (liveParticles() >= G.gfx.maxParticles) return;                 // respect the hard ceiling (weak phones)
   if (G.gfx.particleScale < 1 && Math.random() > G.gfx.particleScale) return; // thin on lower tiers
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0x9aa6b4, transparent: true, opacity: 0.4, depthWrite: false, fog: false,
-  });
-  const m = new THREE.Mesh(smokeGeo, mat);
-  m.position.copy(pos);
-  const size = 0.32 + Math.random() * 0.12; // small, fixed — no growth
-  m.scale.setScalar(size);
-  scene.add(m);
-  smoke.push({ mesh: m, life: 0.5, maxLife: 0.5, baseSize: size });
+  // No mesh, no material: a puff is just where it was born, how big it is and how long it has left. It
+  // never moves after birth (the trail's shape IS the sequence of birth points), so `pos` is copied once.
+  smoke.push({ pos: pos.clone(), life: 0.5, maxLife: 0.5, baseSize: 0.32 + Math.random() * 0.12 });
 }
