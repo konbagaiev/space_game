@@ -1772,7 +1772,11 @@ first translation). See DECISIONS §10.
     `fps`, `frameMs` (p50/p95/max), the `js` breakdown (means + `totalP95`), a `jank` count (frames >
     1.5× p50), scene `load` (enemies/particles/draws/tris), **`heap`** (JS-heap MB — `used`/`total`/`limit`
     via `performance.memory`; Chrome-only, **not** process RSS or GPU memory, `null` elsewhere), backbuffer
-    `res`, and a one-time **device
+    `res`, **`gpu`** (live three.js `programs`/`geometries`/`textures` counts — a jump inside a stalled second
+    means the freeze WAS a GPU-resource creation, i.e. a shader compile or texture upload, and is fixable by
+    warming it early), **`longTasks`** (`{n, ms}` — main-thread blocks >50 ms from the Long Tasks API in that
+    window: non-zero on a freeze frame points at OUR thread (script or GC), zero points outside it —
+    compositor, GPU process, CPU governor/thermal — which our own optimisation cannot fix), and a one-time **device
     passport** (`ua`, `dpr`, `cores`, `mem`, `screen`, real **`gpu`** via `WEBGL_debug_renderer_info`, the
     `tier` + its `knobs`). Batched to **`POST /api/perf`** (`{ playerId, sessionId, samples:[…] }`, cap
     120/batch) every ~5 s and on tab-hide (`sendBeacon`); the perf overlay shows a `●dev` marker while

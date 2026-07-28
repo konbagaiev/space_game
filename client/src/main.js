@@ -452,6 +452,29 @@ const devPerf = (() => {
     return m ? { used: Math.round(m.usedJSHeapSize / MB), total: Math.round(m.totalJSHeapSize / MB), limit: Math.round(m.jsHeapSizeLimit / MB) } : null;
   };
 
+  // --- Stall attribution (added after field freezes of 700-1100 ms that our own buckets could not explain:
+  // our JS accounted for 12-40 ms of them, the scene was byte-identical before and after, and once even the
+  // sampler itself skipped 6 s). Two cheap signals split the remaining suspects:
+  //
+  //   gpuRes — three.js's live resource counts. A shader PROGRAM, geometry or texture created during a
+  //     freeze second means the stall is GPU-resource creation (compile/upload), which is fixable by
+  //     warming it ahead of time — the same medicine that cured the first-sighting ship stall.
+  //   longTasks — main-thread blocks >50 ms, per the Long Tasks API. Freezes that show up here are OUR
+  //     thread (script or GC); freezes that DON'T are outside it (compositor, GPU process, CPU governor /
+  //     thermal), which no amount of our own optimisation will fix.
+  //
+  // Both are diagnostic only and cost nothing per frame: counters read once per sample.
+  const gpuRes = () => {
+    const m = renderer.info.memory, p = renderer.info.programs;
+    return { programs: p ? p.length : null, geometries: m.geometries, textures: m.textures };
+  };
+  let longTasks = 0, longTaskMs = 0;
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) { longTasks++; longTaskMs += e.duration; }
+    }).observe({ type: 'longtask', buffered: false });
+  } catch { /* not supported (Safari/Firefox) → the fields stay 0 and simply carry no signal */ }
+
   function flush(beacon) {
     if (!outbox.length || !G.playerId) return;
     const body = JSON.stringify({ playerId: G.playerId, sessionId, samples: outbox });
@@ -476,10 +499,15 @@ const devPerf = (() => {
         jank: frameMs.filter((m) => m > 1.5 * p50).length,
         load: { enemies: enemies.length, drops: drops.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
         heap: heapMB(), // JS heap (MB) — Chrome only; null elsewhere
+        gpu: gpuRes(),  // live three.js programs/geometries/textures — a jump here IS the stall's cause
+        // main-thread blocks >50 ms in THIS sample window: >0 on a freeze frame = our thread (script/GC);
+        // 0 on a freeze frame = the stall happened outside it (compositor / GPU process / thermal).
+        longTasks: { n: longTasks, ms: r1(longTaskMs) },
         res: `${renderer.domElement.width}x${renderer.domElement.height}`, device,
       });
     }
     bucket = []; bucketStart = now;
+    longTasks = 0; longTaskMs = 0; // per-window counters
     if (now - lastFlush >= 5000) { flush(false); lastFlush = now; }
   }
   const flushNow = () => { finalizeBucket(performance.now()); flush(true); lastFlush = performance.now(); };

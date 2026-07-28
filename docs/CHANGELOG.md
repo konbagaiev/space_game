@@ -5,6 +5,16 @@
 
 ## 2026-07-28
 
+- **`?dev` telemetry now attributes stalls.** Field freezes of 700-1100 ms stayed unexplained: our own
+  buckets accounted for 12-40 ms of them, the scene was byte-identical before and after (same enemies, draw
+  calls and triangles), music decode was ruled out (all buffers decode once at preload), and in one session
+  even the sampler skipped 6 s. Two counters now ship in every sample: **`gpu`** (three.js live
+  `programs`/`geometries`/`textures` — a jump during a stalled second means the freeze was a shader compile
+  or texture upload, curable by warming it early, as the ship-model stall was) and **`longTasks`** (`{n, ms}`
+  from the Long Tasks API — non-zero on a freeze means our own main thread (script or GC), zero means the
+  stall was outside it: compositor, GPU process, or CPU governor/thermal). Diagnostic only, `?dev`-gated,
+  read once per sample.
+
 - **Kinetic bolt + muzzle flash restyle.** Up close, machine-gun / kinetic fire read as a *mutable
   coloured oval* and the muzzle flash showed as a faceted 10-sided polygon. The bolt (`bolt-fx.js`) is no
   longer a radial gradient: its texture is now a **crisp bright capsule core** (a near-opaque rounded-rect
