@@ -56,10 +56,41 @@ export function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
   bullets.push({ mesh: m, vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power, class: weapon.class });
 }
 
-// Quick bright additive pop at the gun barrel on each kinetic shot — reuses the micro-explosion flash
-// (round, short-lived), tinted by the weapon color to match the bolt.
+// Quick bright additive pop at the gun barrel on each kinetic shot — a flat glow SPRITE (same family as
+// the bolt / shockwave ring) rather than the faceted micro-explosion sphere, tinted to match the bolt.
+// Pushed into the `explosions` pool so sim.update() grows + fades it (geometry-agnostic).
+const flashQuadGeo = new THREE.PlaneGeometry(2, 2);
+let flashTex = null;
+function flashTexture() {
+  if (flashTex) return flashTex;
+  const S = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  g.addColorStop(0.0, 'rgba(255,255,255,1.0)');  // hot white core
+  g.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.7, 'rgba(255,255,255,0.14)');
+  g.addColorStop(1.0, 'rgba(255,255,255,0.0)');  // soft round falloff (no facets)
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  flashTex = new THREE.CanvasTexture(cv);
+  flashTex.colorSpace = THREE.SRGBColorSpace;
+  flashTex.needsUpdate = true;
+  return flashTex;
+}
+
 function spawnMuzzleFlash(pos, color) {
-  spawnExplosion(pos, 1.7, 0.06, color);
+  const mat = new THREE.MeshBasicMaterial({
+    map: flashTexture(), color, transparent: true, opacity: 1,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  });
+  const m = new THREE.Mesh(flashQuadGeo, mat);
+  m.position.copy(pos);
+  m.rotation.x = -Math.PI / 2;                // flat on the combat plane, read face-on by the top-down cam
+  m.renderOrder = 2;                          // over the ship hull (additive, no depth write)
+  scene.add(m);
+  explosions.push({ mesh: m, life: 0.06, maxLife: 0.06, maxScale: 1.19 }); // 1.19 ≈ 30% smaller than the old 1.7 sphere flash
 }
 
 // Live count of the high-volume additive particles (burst sparks + rocket smoke). The hard ceiling

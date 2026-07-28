@@ -3,6 +3,17 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-28
+
+- **Kinetic bolt + muzzle flash restyle.** Up close, machine-gun / kinetic fire read as a *mutable
+  coloured oval* and the muzzle flash showed as a faceted 10-sided polygon. The bolt (`bolt-fx.js`) is no
+  longer a radial gradient: its texture is now a **crisp bright capsule core** (a near-opaque rounded-rect
+  on the shared canvas) wrapped in a **faint soft halo**, so a shot reads as a clearly-outlined body with a
+  thin fog rim. The bolt is also smaller (`BOLT_LEN` 3.4 → **2.4**, `BOLT_WID` 1.15 → **0.7**). The
+  **muzzle flash** (`projectiles.js`) became its own flat additive **glow sprite** (a round radial texture,
+  same FX family as the bolt / shockwave ring) instead of borrowing the faceted micro-explosion sphere,
+  and is **~30% smaller** (scale 1.7 → 1.19). Pure render, replay-neutral (no RNG; intro guard unaffected).
+
 ## 2026-07-27
 
 - **`?dev` is no longer sticky — no more service information stuck on the live site.** The diagnostics flag

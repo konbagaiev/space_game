@@ -6,30 +6,41 @@
 import * as THREE from 'three';
 
 // ---- Tunables (edit + reload to retune live) ----
-const BOLT_LEN = 3.4;   // world length along the travel direction
-const BOLT_WID = 1.15;  // world width across it
+const BOLT_LEN = 2.4;   // world length along the travel direction
+const BOLT_WID = 0.7;   // world width across it (narrower = tighter tracer, less "fat oval")
 
-// ---- Shared glow texture: an elongated hot-white core fading to a soft rim (tinted per bolt) ----
+// ---- Shared texture: a crisp bright capsule core with a hard-ish edge, wrapped in a faint soft halo.
+// Two layers on additive blend → a clearly outlined bolt body + a thin fog rim (tinted per bolt). ----
 let tex = null;
 function boltTexture() {
   if (tex) return tex;
-  const W = 160, H = 48;
+  const W = 200, H = 64, cx = W / 2, cy = H / 2;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, W, H);
-  ctx.translate(W / 2, H / 2);
-  ctx.scale(1, H / W);                 // squash a circular gradient into a W:H ellipse
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, W / 2);
-  g.addColorStop(0.0, 'rgba(255,255,255,1.0)'); // hot white core (kept white so tint reads as a colored glow)
-  g.addColorStop(0.16, 'rgba(255,255,255,0.95)');
-  g.addColorStop(0.42, 'rgba(230,240,255,0.55)');
-  g.addColorStop(0.75, 'rgba(200,225,255,0.16)');
-  g.addColorStop(1.0, 'rgba(255,255,255,0.0)');
-  ctx.fillStyle = g;
+
+  // 1) Soft halo — a faint wide glow squashed into an ellipse (the "fog rim" around the body).
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, H / W);
+  const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, W / 2);
+  halo.addColorStop(0.0, 'rgba(210,230,255,0.42)');
+  halo.addColorStop(0.5, 'rgba(200,225,255,0.14)');
+  halo.addColorStop(1.0, 'rgba(200,225,255,0.0)');
+  ctx.fillStyle = halo;
   ctx.beginPath();
   ctx.arc(0, 0, W / 2, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+
+  // 2) Crisp bright core — a near-opaque white capsule with rounded ends and a sharp contour.
+  const coreLen = W * 0.60, coreH = H * 0.44, r = coreH / 2;
+  ctx.fillStyle = 'rgba(255,255,255,1.0)';
+  ctx.beginPath();
+  ctx.roundRect(cx - coreLen / 2, cy - coreH / 2, coreLen, coreH, r);
+  ctx.fill();
+
   tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
