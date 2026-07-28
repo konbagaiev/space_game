@@ -60,7 +60,11 @@ export function makeParticlePool({ geometry, color, opacity = 1, blending = THRE
   const mesh = new THREE.InstancedMesh(geometry, material, max);
   mesh.count = 0;                 // nothing live yet
   mesh.frustumCulled = false;     // the bounds cover instance 0 only; particles are scattered across the arena
-  mesh.renderOrder = 2;
+  // renderOrder 0 = sort with the other transparents by depth, which is what a per-particle mesh did before
+  // pooling. Lifting it (bolts and muzzle flashes sit at 2) would draw the whole trail OVER ships and over
+  // the rocket itself, which reads as a heavier, more obtrusive plume — a look change disguised as a perf
+  // refactor. Pooling must not alter sorting.
+  mesh.renderOrder = 0;
   scene.add(mesh);
 
   let n = 0; // write cursor for the frame being built
