@@ -5,6 +5,18 @@
 
 ## 2026-07-28
 
+- **The first 15 seconds of a fight no longer build the game while you play it.** The new stall-attribution
+  telemetry found it immediately: on a weak phone the main thread was blocked **10+ seconds out of the first
+  15** (one frame 2082 ms) while live shader programs climbed **14 → 33** — THREE compiles a program and
+  uploads textures lazily, on the first frame an object is drawn, and `prewarmShaders()` ran at page
+  bootstrap, before any level exists. `sim.reset()` now raises `G.needsSceneWarm`, the render loop consumes
+  it at the top of the next frame (before that frame draws), and `world.js`'s async set-piece loaders raise
+  it again when a model lands. Separately, the FX warm rig is now **permanent**: it used to dispose its
+  materials right after compiling, and THREE frees a program when its last material goes — so every lull in
+  bullets/explosions bought a recompile, visible as the program count sawing 37↔40 with 100-300 ms blocks.
+  Guard: `visual/scenarios/28-scene-warm.mjs` (pins the wiring; the perf effect is only measurable in the
+  field). See DECISIONS §83.
+
 - **`?dev` telemetry now attributes stalls.** Field freezes of 700-1100 ms stayed unexplained: our own
   buckets accounted for 12-40 ms of them, the scene was byte-identical before and after (same enemies, draw
   calls and triangles), music decode was ruled out (all buffers decode once at preload), and in one session

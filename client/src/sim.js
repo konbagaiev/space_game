@@ -910,6 +910,10 @@ export function reset() {
   G.player.alive = true;
   G.earned = 0; G.kills = 0; G.banked = false; // new run: reset session credits + the bank-once guard (balance persists)
   G.enemyShieldRefills = 0; // diagnostic: completed enemy shield refills this run (replay triage)
+  // The level's scene is now built (set-pieces, arena, player). Ask the render loop to compile + upload it
+  // BEFORE the fight instead of during it — a weak phone otherwise spends 10+ s of the first 15 blocked on
+  // lazy shader compiles and texture uploads (see prewarmShaders in main.js).
+  G.needsSceneWarm = true;
   G.gameStartTime = performance.now(); // start timing a new game (for history)
   G.combatElapsed = 0;  // fresh run: restart the enemy hold-fire grace clock
   levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level

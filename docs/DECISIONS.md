@@ -2962,6 +2962,41 @@ counting *changed pixels* measures coverage, which is identical at any non-zero 
 `scene` alone composites on top of the previous frame, because the game manages its own clears and draws sky
 then combat.
 
+## 83. Warm a level AFTER it is built, and never let the last material of a program config be disposed
+
+**Problem.** `?dev` telemetry gained stall attribution (`gpu` resource counts + Long Tasks) and immediately
+explained the field freezes. Over the first 15 seconds of combat on a weak phone the **main thread was
+blocked for more than 10 seconds** — one frame took **2082 ms** — while the live shader-program count climbed
+**14 → 33** and geometries **15 → 43**. After ~20 s it settled to 25-35 fps. The player's words were "I don't
+even want to play after 5 seconds". A second, smaller pattern ran all session: the program count sawing
+**37 ↔ 40** with 100-300 ms blocks.
+
+Both are THREE compiling a material's program and uploading its textures **lazily, on the first frame the
+object is drawn**.
+
+**Decision, part 1 — warm when the level is built, not when the page loads.** `prewarmShaders()` ran once at
+bootstrap, before any level exists, so it warmed an empty scene and everything real compiled during play.
+`sim.reset()` now raises `G.needsSceneWarm` and the render loop consumes it at the top of the next frame,
+ahead of that frame's draw; the async set-piece loaders in `world.js` raise it again when a model lands.
+This does not remove the work, it **moves** it into the level-load moment, where a pause reads as loading
+rather than as a broken fight.
+
+**Decision, part 2 — the FX warm rig is permanent.** Effects absent from the scene between spawns (bullets,
+explosions) are warmed via throwaway meshes matching their program keys. That code then `dispose()`d those
+materials immediately — and THREE frees a program when its last material is disposed. Since every FX
+primitive disposes its material on death, the program was freed and **recompiled on the next spawn**: the
+37 ↔ 40 saw. The rig now stays in the scene for the session, parked off-camera and frustum-culled (no
+per-frame cost; `compile()` ignores culling).
+
+**The rule this sets:** if a material configuration is created and destroyed repeatedly, something must hold
+one instance of it alive for the session, or every lull in that effect buys a recompile.
+
+**Verification is field telemetry, not a headless test.** Software WebGL does not reproduce the stall and
+compiles almost everything at bootstrap, so the same probe reports "1 program compiled during play" on both
+the old and the new code. `client/visual/scenarios/28-scene-warm.mjs` therefore pins the **wiring** — reset
+raises the request, a frame consumes it, the rig stays undisposed — which is the part that can break
+silently. The effect itself is read from `perf_samples`: `gpu.programs` at combat start versus 15 s in.
+
 ## Future ideas
 
 solid asteroids with bounce ·

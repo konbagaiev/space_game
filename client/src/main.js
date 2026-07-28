@@ -523,26 +523,41 @@ const devPerf = (() => {
   };
 })();
 
-// Pre-compile shaders so the first frames don't stall. Measured on weak phones (DECISIONS §23): the first
-// combat frame spent 0.4-2.2s compiling shaders + uploading textures (THREE compiles a material's program
-// lazily on its first render). `renderer.compile()` warms every material currently in a scene; the dynamic
-// effect programs (particles/bullets — not in the scene until they spawn) are warmed with two throwaway
-// off-screen meshes matching their program keys (additive fog-off vs opaque fog-on). Idempotent — THREE
-// caches compiled programs, so repeat calls are cheap. Best-effort; must never block startup.
+// Pre-compile shaders + upload GPU resources so a fight doesn't stall while it is being played.
+//
+// THREE compiles a material's program and uploads its textures LAZILY — on the first frame the object is
+// actually drawn. Field telemetry from a weak phone measured what that costs: over the first 15 seconds of
+// combat the main thread was blocked for a total of **10+ seconds** (a single 2082 ms frame among them)
+// while the live program count climbed 14 -> 33 and geometries 15 -> 43. After ~20 s it settled to 25-35 fps.
+// The player's verdict was "I don't even want to play after 5 seconds", which is exactly right: the game is
+// unusable for as long as it is building itself.
+//
+// The fix is WHEN, not what. This used to run once at bootstrap — before a level exists, so it warmed an
+// empty scene and everything real compiled later, during play. It now runs again after each level build
+// (`G.needsSceneWarm`, set by sim.reset()), which moves that work into the level-load moment where a pause
+// reads as loading rather than as a broken fight.
+//
+// The warm rig is PERMANENT. Effects that are not in the scene between spawns (bullets, explosions) are
+// warmed through throwaway meshes matching their program keys — but this used to `dispose()` those
+// materials immediately, which hands the freshly compiled programs straight back: THREE frees a program
+// when its last material is disposed. Since every FX primitive disposes its material on death, the program
+// is then recompiled the next time one spawns — visible in telemetry as the live count sawing 37<->40 with
+// 100-300 ms main-thread blocks. Keeping one material of each config alive for the session stops that.
+// Parked far off-camera and frustum-culled, so it costs nothing per frame; `compile()` ignores culling.
+let warmRig = null;
 function prewarmShaders() {
   try {
+    if (!warmRig) {
+      warmRig = new THREE.Group();
+      const addMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }); // explosions/flashes/shockwave
+      const fogMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // bullets/rockets (opaque, scene fog on)
+      warmRig.add(new THREE.Mesh(explosionGeo, addMat), new THREE.Mesh(bulletGeo, fogMat));
+      warmRig.position.y = -100000; // off-camera; culled every frame, never disposed
+      scene.add(warmRig);
+    }
     renderer.compile(skyScene, camera);
     renderer.compile(scene, camera);
-    const warm = new THREE.Group();
-    const addMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }); // explosions/sparks/shockwave
-    const fogMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // bullets/rockets (opaque, scene fog on)
-    warm.add(new THREE.Mesh(explosionGeo, addMat), new THREE.Mesh(bulletGeo, fogMat));
-    warm.position.y = -100000; // far off-camera (compile ignores culling, but keep it invisible if a frame slips in)
-    scene.add(warm);
-    renderer.compile(scene, camera);
-    scene.remove(warm);
-    addMat.dispose(); fogMat.dispose();
-  } catch { /* best-effort — shader warmup must never break startup */ }
+  } catch { /* best-effort — shader warmup must never break startup or a level load */ }
 }
 
 // ---- In-game backdrop recorder (?dev authoring tool). Captures a live-played battle → downloads a committed
@@ -678,6 +693,9 @@ function animate() {
   updateShieldBubble(G.paused ? 0 : Math.min(rawSec, 0.05)); // advances the shared FX clock + tracks the ship (frozen while paused)
   updateEnemyShieldBubbles(); // enemy hit-ripples (pooled, tier-capped) — MUST run after updateShieldBubble (shared clock)
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays
+  // A level was just (re)built: compile its materials and upload its textures NOW, in one hit, rather than
+  // letting them trickle in over the first seconds of the fight (sim.reset sets the flag).
+  if (G.needsSceneWarm) { G.needsSceneWarm = false; prewarmShaders(); }
   // two passes: first the sky backdrop (with its own light), then combat on top
   renderer.info.reset();
   renderer.clear();
@@ -727,6 +745,7 @@ if (location.search.includes('debug')) {
     get enemyShieldSlots() { return enemyShieldSlots(); }, // diagnostic: the pooled enemy bubble slots
     get enemyShieldRefills() { return G.enemyShieldRefills; }, // diagnostic: completed enemy shield refills this run (replay triage)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
+    get needsSceneWarm() { return G.needsSceneWarm; }, // diagnostic: a level build is waiting to be compiled/uploaded
     smokePool, // diagnostic: the instanced rocket-trail pool (live count + per-instance alphas)
     drops, // the live loot-drop array (count/positions assertable in headless)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone

@@ -674,6 +674,7 @@ function makeFreighter(spec) {
     const pivot = new THREE.Group();
     pivot.rotation.y = spec.yaw ?? 0;               // orient nose to +Z (data-fixed, like ship models)
     pivot.add(model);
+    G.needsSceneWarm = true; // late async arrival: compile + upload it before the next frame draws it
     pivot.updateMatrixWorld(true);                  // measure while unparented → local == world
     const lbox = new THREE.Box3().setFromObject(pivot); // group-local bounds after scale+yaw
     // single rear-center emitter: model's tail (-Z), vertical center, spread scaled to the rear width
@@ -716,6 +717,7 @@ function makeBaseStation(spec) {
     const pivot = new THREE.Group();
     pivot.rotation.y = spec.yaw ?? 0;
     pivot.add(model);
+    G.needsSceneWarm = true; // late async arrival: compile + upload it before the next frame draws it
     g.add(pivot);
   }, undefined, (err) => console.warn('Base station model failed to load:', spec.modelUrl, err));
   const spin = spec.spin ?? 0;
