@@ -29,6 +29,20 @@ export default async function ({ page, assert }) {
   // consumed on the following frame, so the state oscillates for a moment after a level build.
   await page.waitForFunction(() => window.__game.needsSceneWarm === false, null, { timeout: 8000 });
 
+  // The veil must be RAISED while the blocking compile runs, and taken down after. Reading it right after
+  // reset (before any frame) proves the ORDER: the veil goes up first, the work happens a frame later. If
+  // the compile ran in the same frame the browser could never paint the veil and the player would just see
+  // the game frozen at 1 fps — the bug this exists to prevent.
+  await page.waitForFunction(() => !document.getElementById('levelwarm').classList.contains('on'),
+    null, { timeout: 8000 }); // settle: no warm pending
+  const veilDuring = await page.evaluate(() => new Promise((res) => {
+    window.__game.reset();
+    requestAnimationFrame(() => res(document.getElementById('levelwarm').classList.contains('on')));
+  }));
+  assert.equal(veilDuring, true, 'the frame that takes the warm request raises the veil BEFORE doing the work');
+  await page.waitForFunction(() => !document.getElementById('levelwarm').classList.contains('on'),
+    null, { timeout: 8000 });
+
   // And the warm rig is permanent: disposing its materials would hand the compiled programs straight back,
   // which is what made programs recompile mid-fight (live count sawing 37<->40).
   const rig = await page.evaluate(() => {

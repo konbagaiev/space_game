@@ -33,6 +33,7 @@ export const el = {
   // Main Window top bar: the credit balance beside the (inactive) "Ships" label — menus only
   mwCreditsVal: byId('mw-credits-val'),
   // result overlay (read by the HUD to hide markers/radar; written by the sim death/win + restart flows)
+  levelWarm: byId('levelwarm'),  // level-load veil shown around the blocking scene warm (main.js)
   overlay: byId('overlay'),
   overlayTitle: byId('overlay-title'),   // "Victory" / "Ship destroyed"
   overlaySub: byId('overlay-sub'),       // result subtitle (cleared line / kills+credits)

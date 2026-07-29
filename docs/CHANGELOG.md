@@ -3,6 +3,18 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-07-29
+
+- **Level-load veil, so the pre-fight warm reads as loading instead of a crash.** Moving the shader
+  compile/upload to level build (previous entry) worked — a cold-phone session shows the steady state fully
+  recovered (25-35 fps, `js.render` 10-13 ms) — but it concentrates the work into **one blocking render call
+  measured at 3198 ms** on that device, and the player just saw the picture sit at 1 fps for 5 seconds. A
+  full-screen veil ("Preparing the sector...") now covers it. The ordering is the whole trick: the frame
+  that takes the warm request only RAISES the veil and returns, and the next frame — with the veil already
+  painted — does the blocking work and takes it down, because the browser cannot paint anything until a
+  frame ends. The veil fades in after a 90 ms delay, so a fast machine (warm done in a frame or two) never
+  shows it at all. EN + RU strings; guard extended in `visual/scenarios/28-scene-warm.mjs`.
+
 ## 2026-07-28
 
 - **The first 15 seconds of a fight no longer build the game while you play it.** The new stall-attribution

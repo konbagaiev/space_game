@@ -545,6 +545,7 @@ const devPerf = (() => {
 // 100-300 ms main-thread blocks. Keeping one material of each config alive for the session stops that.
 // Parked far off-camera and frustum-culled, so it costs nothing per frame; `compile()` ignores culling.
 let warmRig = null;
+let warmDeferred = false; // the veil is up; do the blocking compile on the NEXT frame (see animate)
 function prewarmShaders() {
   try {
     if (!warmRig) {
@@ -695,7 +696,21 @@ function animate() {
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays
   // A level was just (re)built: compile its materials and upload its textures NOW, in one hit, rather than
   // letting them trickle in over the first seconds of the fight (sim.reset sets the flag).
-  if (G.needsSceneWarm) { G.needsSceneWarm = false; prewarmShaders(); }
+  //
+  // That work BLOCKS the main thread — measured at ~3.2 s in a single render call on a weak phone — so it
+  // runs one frame LATE, behind a veil. Showing the veil and compiling in the same frame would be useless:
+  // the browser cannot paint the veil until the frame ends, i.e. until after the block. So frame N raises
+  // the veil and returns; frame N+1 (with the veil already on screen) does the work and takes it down.
+  // Without this the player sees the game sitting at 1 fps and assumes it is broken.
+  if (G.needsSceneWarm) {
+    G.needsSceneWarm = false;
+    el.levelWarm.classList.add('on');
+    warmDeferred = true;
+  } else if (warmDeferred) {
+    warmDeferred = false;
+    prewarmShaders();
+    el.levelWarm.classList.remove('on');
+  }
   // two passes: first the sky backdrop (with its own light), then combat on top
   renderer.info.reset();
   renderer.clear();

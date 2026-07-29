@@ -196,6 +196,10 @@
 <div id="return-hint"></div>
 <button id="return-btn" data-i18n="ui.return.button">Return to base</button>
 <div id="banner"></div>
+<!-- Level-load veil: shown while the freshly built scene is compiled + uploaded to the GPU (main.js
+     prewarmShaders). That work blocks the main thread for seconds on a weak phone; without a veil the game
+     just appears frozen at 1 fps. See DECISIONS §83. -->
+<div id="levelwarm"><div id="levelwarm-text" data-i18n="ui.loading.level">Preparing the sector...</div></div>
 <canvas id="minimap" width="132" height="132"></canvas>
 <div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
 <div id="touch">

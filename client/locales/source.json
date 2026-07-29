@@ -1,201 +1,778 @@
 {
-  "ui.hud.health": { "source": "Health", "context": "HUD label above the health bar. One word, very short." },
-  "ui.hud.credits": { "source": "Credits", "context": "Label before the player's credit balance (their money). Used in the shop bay header. One word, very short." },
-  "ui.hud.credits_line": { "source": "credits {total}/{earned} earned", "context": "In-game HUD money readout. {total} = total credits owned; {earned} = credits earned this run. Lowercase 'credits' and 'earned' are labels around the two numbers." },
-  "ui.hud.destroyed": { "source": "Destroyed", "context": "HUD label above the kill count. One word, very short." },
-  "ui.log.killed": { "source": "{name} killed +{amount}", "context": "In-game event-log line when the player destroys an enemy ship. {name} = the enemy ship's name (English, from the catalog, may be left as-is if untranslated); {amount} = credits earned from the kill (integer, shown after a plus sign)." },
-  "ui.log.picked_up": { "source": "picked up {name}", "context": "In-game event-log line when the player's tractor beam collects a dropped item. {name} = the item's name (English, from the catalog)." },
-  "ui.oob.warning": { "source": "You've left the battlefield — return to the combat zone", "context": "Warning shown when the player's ship flies outside the arena boundary. Urgent but not punishing." },
-  "ui.oob.countdown": { "source": "Returning in {seconds}s", "context": "Countdown under the out-of-bounds warning; the ship is auto-warped back to center when it reaches 0. {seconds} is an integer; 's' is the seconds abbreviation." },
-  "ui.return.hint": { "source": "Sector cleared — return to base", "context": "HUD hint shown after the last enemy is destroyed, directing the player to fly back to the base station to complete the mission." },
-  "ui.return.button": { "source": "Return to base", "context": "Label on the bottom-center HUD button shown during return-to-base (after the last enemy is destroyed). Clicking it auto-flies the ship home to the base station to complete the mission — the same action as clicking the station model. Short, imperative." },
-  "ui.banner.enemies_left": { "source": "{count} enemies left", "context": "Big transient banner that flashes for a moment when the number of enemies remaining in the level drops to a milestone (10, then 5). {count} is that integer (always >1, so no singular form is needed)." },
-  "ui.banner.final_stage": { "source": "Final Stage", "context": "Big transient banner that flashes when the level's last combat phase begins (the boss or final wave). Dramatic, punchy, two words." },
-  "ui.mission.slot": { "source": "Mission {n}", "context": "Label for one of the side-mission rows in the Main Window's Missions list (under the primary campaign mission). {n} is 1, 2 or 3. Keep it short." },
-  "ui.mainwin.missions": { "source": "Missions", "context": "Left-menu item in the Main Window (the between-battles screen); expands to the campaign mission + side missions. Short." },
-  "ui.mainwin.ships": { "source": "Ships", "context": "Inactive top-right label in the Main Window (reserved for a future ship-buying screen). One word, short." },
-  "ui.mainwin.credits_unit": { "source": "cr.", "context": "Currency unit shown right after the player's credit balance in the Main Window top bar (e.g. \"1250 cr.\"). An abbreviation of \"credits\" — keep it 2-4 characters." },
-  "ui.mainwin.primary": { "source": "Main operation", "context": "Label for the primary (campaign) mission row in the Main Window's Missions list, above the optional side missions. Short." },
-  "ui.mission.est_reward": { "source": "Est. reward: {credits}", "context": "Shown in the mission description panel: the approximate credits the mission pays. {credits} is a number." },
-  "ui.help": { "source": "<b>W / ↑</b> — thrust · <b>S / ↓</b> — reverse · <b>A / D</b> or <b>← →</b> — turn · <b>Space</b> — fire · <b>F</b> — rocket", "context": "On-screen controls cheatsheet (HTML). Keep the key glyphs (W, ↑, S, Space, F, arrows) as-is; translate only the action words (thrust/reverse/turn/fire/rocket)." },
-  "ui.overlay.gameover": { "source": "Game over", "context": "Overlay title shown when the player's ship is destroyed." },
-  "ui.overlay.ship_destroyed": { "source": "Ship destroyed", "context": "Overlay title on player death (variant). Short." },
-  "ui.overlay.victory": { "source": "Victory!", "context": "Overlay title when a level is cleared. Upbeat." },
-  "ui.overlay.sector_cleared": { "source": "Sector cleared.", "context": "Fallback victory subtitle when a level has no custom victory line." },
-  "ui.button.restart": { "source": "Restart", "context": "Button on the game-over overlay (retry the level). Short." },
-  "ui.button.continue": { "source": "Continue", "context": "Button on the victory overlay — proceeds to the Hangar screen. Short." },
-  "ui.button.take_off": { "source": "Take off 🚀", "context": "Primary button on the welcome screen that starts the game. Keep the 🚀 emoji." },
-  "ui.welcome.greeting": { "source": "Welcome, Sentinel", "context": "Welcome-screen heading. 'Sentinel' is the player's in-game title — keep it." },
-  "ui.welcome.intro": { "source": "Pirates came out of nowhere, and now they're all over the home system. You've got one edge: a fast, agile ship and the nerve to fly it. Keep moving, out-fly their guns, and push them back.", "context": "Welcome-screen intro paragraph. 2–3 sentences, motivating, second person. Grounded, not chirpy — no 'good news:' tutorial tone." },
-  "ui.welcome.pick": { "source": "Pick your ship", "context": "Label above the ship-picker cards on the welcome screen." },
-  "ui.briefing.title": { "source": "Briefing", "context": "Title of the between-levels briefing overlay (shown after clearing a level, before the next). Short." },
-  "ui.hangar.title": { "source": "Hangar", "context": "Title of the Hangar screen — the between-battles screen shown after a victory (currently shows the next mission briefing). Short." },
-  "ui.hangar.default": { "source": "Stand by for new orders, Sentinel.", "context": "Hangar message shown when there is no mission briefing (e.g. after the final level). 'Sentinel' is the player's title." },
-  "ui.shop.loadout": { "source": "Loadout", "context": "Hangar shop column title — the items currently equipped on the ship. Short." },
-  "ui.shop.stash": { "source": "Stash", "context": "Hangar shop column title — items the player owns but hasn't equipped (their inventory). Short." },
-  "ui.shop.shop": { "source": "Shop", "context": "Hangar shop column title — the catalog of items the player can buy. Short." },
-  "ui.shop.slot.hull": { "source": "Hull", "context": "Equipment slot label (the ship's hull / armor). Short." },
-  "ui.shop.slot.engine": { "source": "Engine", "context": "Equipment slot label (the ship's engine → acceleration). Short." },
-  "ui.shop.slot.thruster": { "source": "Thrusters", "context": "Equipment slot label (maneuvering thrusters → turn rate). Short." },
-  "ui.shop.slot.repair": { "source": "Repair drone", "context": "Equipment slot label (passive hull-repair drone). Short." },
-  "ui.shop.slot.grab": { "source": "Grab", "context": "Equipment slot label (the tractor-beam component that pulls in loot drops). Short." },
-  "ui.shop.slot.shield": { "source": "Shield", "context": "Equipment slot label (the damage-absorbing shield component). Short." },
-  "ui.shop.slot.gun": { "source": "Gun", "context": "Weapon slot label (the primary bullet weapon, fired with Space). Short." },
-  "ui.shop.slot.rocket": { "source": "Rocket", "context": "Weapon slot label (the homing rocket, fired with F). Short." },
-  "ui.shop.empty": { "source": "— empty —", "context": "Placeholder shown in an equipment slot that has nothing installed." },
-  "ui.shop.empty_stash": { "source": "Your stash is empty.", "context": "Message in the Stash column when the player owns no unequipped items." },
-  "ui.shop.empty_shop": { "source": "Nothing for sale here.", "context": "Message in the Shop column when no buyable items match the active filter." },
-  "ui.shop.owned": { "source": "Owned ×{n}", "context": "Badge on a shop item the player already has (equipped on the ship + in the stash). {n} is the integer total count; the '×N' notation avoids plurals. Short." },
-  "ui.shop.free": { "source": "Free", "context": "Shown as an item's price when it costs 0 credits (the economy is inert until real prices are set)." },
-  "ui.shop.action.install": { "source": "Install", "context": "Button on a stash item — equip it onto the ship. Short." },
-  "ui.shop.action.unequip": { "source": "Unequip", "context": "Button on an equipped item — move it back to the stash. Short." },
-  "ui.shop.action.sell": { "source": "Sell", "context": "Button on a stash or equipped item — sell it for credits (75% of price). Short." },
-  "ui.shop.action.buy": { "source": "Buy", "context": "Button on a shop item — purchase it into the stash. Short." },
-  "ui.shop.stat.hp": { "source": "HP", "context": "Stat label — hit points (hull durability). Very short; 'HP' may stay as-is." },
-  "ui.shop.stat.accel": { "source": "Accel", "context": "Stat label — acceleration. Very short, abbreviated." },
-  "ui.shop.stat.maneuver": { "source": "Turn", "context": "Stat label — maneuverability / turn rate. Very short, abbreviated." },
-  "ui.shop.stat.weight": { "source": "Weight", "context": "Stat label — mass/weight (heavier = slower). Very short." },
-  "ui.shop.stat.dmg": { "source": "DMG", "context": "Stat label — weapon damage per hit. Very short, abbreviated." },
-  "ui.shop.stat.rof": { "source": "RoF", "context": "Stat label — rate of fire (shots per second). Very short, abbreviated." },
-  "ui.shop.stat.reload": { "source": "Reload", "context": "Stat label — rocket reload time in seconds (followed by e.g. '5s'). Short." },
-  "ui.shop.stat.speed": { "source": "Speed", "context": "Stat label — projectile (bullet) travel speed. Short." },
-  "ui.shop.stat.range": { "source": "Range", "context": "Stat label — weapon maximum range (distance). Short." },
-  "ui.shop.stat.blast": { "source": "Blast", "context": "Stat label — rocket blast/AoE radius. Short." },
-  "ui.shop.stat.maxspeed": { "source": "Top speed", "context": "Stat label — engine maximum speed cap. Short." },
-  "ui.shop.stat.heal": { "source": "Heal", "context": "Stat label — repair-drone healing, followed by e.g. '+1/1s' (HP per interval). Short." },
-  "ui.shop.stat.cap": { "source": "Cap", "context": "Stat label — repair-drone heal cap as a percentage of max HP (e.g. '80%'). Short." },
-  "ui.shop.stat.grab": { "source": "Grab", "context": "Stat label — abstract grab (tractor) strength (followed by e.g. '10'/'20'). NOT the world-unit reach: actual range is emergent from an inverse-square field. Short." },
-  "ui.shop.stat.shield": { "source": "Shield", "context": "Stat label — shield capacity (damage absorbed before it breaks), followed by e.g. '20'. Short." },
-  "ui.shop.stat.recharge": { "source": "Recharge", "context": "Stat label — shield recharge time after a full break, followed by e.g. '10s'. Short." },
-  "ui.shop.filter.all": { "source": "All", "context": "Shop filter chip — show every item type. Short." },
-  "ui.shop.filter.hull": { "source": "Hulls", "context": "Shop filter chip — show only hulls. Short." },
-  "ui.shop.filter.engine": { "source": "Engines", "context": "Shop filter chip — show only engines. Short." },
-  "ui.shop.filter.thruster": { "source": "Thrusters", "context": "Shop filter chip — show only thrusters. Short." },
-  "ui.shop.filter.repair": { "source": "Repair", "context": "Shop filter chip — show only repair drones. Short." },
-  "ui.shop.filter.weapon": { "source": "Weapons", "context": "Shop filter chip — show only weapons. Short." },
-  "ui.shop.filter.grab": { "source": "Grab", "context": "Shop filter chip — show only grab (tractor) components. Short." },
-  "ui.shop.filter.shield": { "source": "Shield", "context": "Shop filter chip — show only shield components. Short." },
-  "ui.shop.cant_launch": { "source": "Can't take off — a required slot (hull, engine, or thrusters) is empty.", "context": "Note under a disabled Take-off button when a required equipment slot is empty." },
-  "ui.shop.err_credits": { "source": "Not enough credits.", "context": "Error shown when the player tries to buy an item they can't afford." },
-  "ui.shop.err_locked": { "source": "The shop is locked.", "context": "Error shown when a shop action is attempted before the shop is unlocked." },
-  "ui.shop.err_network": { "source": "Network error — try again.", "context": "Error shown when a shop request fails to reach the server." },
-  "ui.shop.err_generic": { "source": "Action failed.", "context": "Fallback error for a shop action that the server rejected." },
-  "ui.title": { "source": "Vega Sentinels", "context": "Game wordmark / brand name. Stays Latin in every locale." },
-  "ui.touch.fire": { "source": "FIRE", "context": "Touch-control fire button label (mobile). Uppercase, short." },
-  "ui.pause.pause": { "source": "Pause", "context": "Accessible label/tooltip for the pause button (shows a ⏸ icon) at the top of the screen. Freezes the fight. Short." },
-  "ui.pause.resume": { "source": "Resume", "context": "Accessible label/tooltip for the pause button once paused (shows a ▶ play icon) — tap to continue the fight. Short." },
-  "ui.pause.paused": { "source": "Paused", "context": "Large centered label shown over the frozen battlefield while the game is paused. One word." },
-  "ui.pause.play": { "source": "▶ Play", "context": "Button under the centered 'Paused' label — resumes the fight. Keep the ▶ play glyph; translate the word." },
-  "ui.fullscreen": { "source": "Full screen", "context": "Accessible name (aria-label/title) of the floating, icon-only ⛶ button (touch menus, bottom-right) that re-enters fullscreen to hide the mobile browser chrome (URL bar, tabs). The ⛶ glyph lives in the markup — translate only the words, no glyph." },
-  "ui.a2hs.hint": { "source": "Full screen: Share → Add to Home Screen", "context": "Hint pill shown (bottom-right, touch menus) ONLY on iPhone Safari, which has no Fullscreen API — there the only true full screen is launching the site as a standalone web app. 'Share' = the iOS Safari share button (square-with-up-arrow); 'Add to Home Screen' = the iOS menu item under it. Use the exact wording iOS uses in this locale so users find the buttons." },
-  "ui.credits.doubled": { "source": "Earned ×2 = {credits}", "context": "Victory subtitle tail; {credits} is the doubled credits earned (integer). '×2' is the level-clear bonus notation." },
-  "ui.gameover.sub": { "source": "Destroyed: {kills} — Earned: {credits}", "context": "Game-over subtitle. {kills},{credits} are integers placed after labels, so no plural form is needed." },
-  "ui.gameover.back_to_hangar": { "source": "Back to Hangar", "context": "Secondary button on the death/game-over overlay (only after the hangar shop is unlocked): return to the Hangar to shop / change loadout instead of an instant retry. Short." },
-  "ui.perf": { "source": "FPS {fps} · {ms}ms · draw {calls} · tris {tris}", "context": "Performance overlay (technical). {fps},{calls},{tris} integers, {ms} a decimal. 'draw' = draw calls, 'tris' = triangles. Keep it terse." },
-  "ui.perf.idle": { "source": "FPS — · draw — · tris —", "context": "Performance overlay placeholder before the first frame. Mirror ui.perf's labels." },
-  "ui.card.hull": { "source": "Hull: {hp} HP", "context": "Ship-picker card stat line. {hp} is an integer; 'HP' = hit points (may stay 'HP')." },
-  "ui.card.weapons": { "source": "Weapons: {summary}", "context": "Ship-picker card stat line. {summary} is a pre-built list like '2× gun · 1× rocket'." },
-  "ui.mount.gun": { "source": "{n}× gun", "context": "Weapon-count chip in a ship's weapon summary. {n} is an integer; the 'N×' notation deliberately avoids grammatical plurals." },
-  "ui.mount.rocket": { "source": "{n}× rocket", "context": "Weapon-count chip in a ship's weapon summary. {n} is an integer; 'N×' notation avoids plurals." },
-  "ui.mount.unarmed": { "source": "unarmed", "context": "Weapon summary when a ship has no weapons." },
-  "ui.community.label": { "source": "💬 Feedback & community on Telegram", "context": "Link text to the game's Telegram community/feedback group. Shown on the welcome screen and the game-over/victory overlay." },
-  "ui.community.url": { "source": "https://t.me/+DZfK9rUqmVpkYTZi", "context": "URL, not prose — do not translate the text. The 'en' value is the English Telegram group; the ru locale overrides it with the Russian group link." },
-
-  "ui.account.prompt_title": { "source": "Name yourself, Sentinel", "context": "Title of the prompt shown right after clearing level 1, asking the player to pick a display name. 'Sentinel' is the player's title." },
-  "ui.account.prompt_msg": { "source": "Choose a callsign. You can keep playing as a guest, or create an account to save your progress.", "context": "Subtitle under the level-1 name prompt. Explains they can stay a guest or make an account." },
-  "ui.account.create_title": { "source": "Create your account", "context": "Title of the account-registration form." },
-  "ui.account.create_msg": { "source": "An account saves your progress and lets you play on other devices once your email is verified.", "context": "Subtitle on the registration form." },
-  "ui.account.login_title": { "source": "Log in", "context": "Title of the login form." },
-  "ui.account.login_msg": { "source": "Log in to load your saved progress on this device.", "context": "Subtitle on the login form." },
-  "ui.account.username_ph": { "source": "Your callsign", "context": "Placeholder in the username/display-name input." },
-  "ui.account.email_ph": { "source": "Email", "context": "Placeholder in the email input." },
-  "ui.account.password_ph": { "source": "Password (at least 8 characters)", "context": "Placeholder in the password input." },
-  "ui.account.continue_anon": { "source": "Continue as guest", "context": "Button that keeps the player anonymous (saves only the username) on the level-1 prompt." },
-  "ui.account.create": { "source": "Create account", "context": "Button that submits the registration form / reveals it from the guest prompt. Short." },
-  "ui.account.log_in": { "source": "Log in", "context": "Button that submits the login form. Short." },
-  "ui.account.have_account": { "source": "I already have an account", "context": "Link/button on the register form that switches to the login form." },
-  "ui.account.need_account": { "source": "Create a new account", "context": "Link/button on the login form that switches to the register form." },
-  "ui.account.close": { "source": "Close", "context": "Button that dismisses the account dialog. Short." },
-  "ui.account.signed_in_as": { "source": "Signed in as {who}", "context": "Account status line on menu screens. {who} is the username or email." },
-  "ui.account.anon": { "source": "Playing as a guest", "context": "Account status line shown when the player has no account yet." },
-  "ui.account.guest_named": { "source": "Playing as {who}", "context": "Account status line shown in the menu account bar when a guest has set a callsign at the level-1 prompt but has no account. {who} is the guest's chosen callsign. Mirrors ui.account.signed_in_as." },
-  "ui.account.sign_in": { "source": "Log in / Sign up", "context": "Button on the account status bar that opens the login/register dialog. Short." },
-  "ui.account.log_out": { "source": "Log out", "context": "Button that ends the session. Short." },
-  "ui.account.verify_nudge": { "source": "Verify your email to sync across devices.", "context": "Reminder shown until the account's email is verified." },
-  "ui.account.resend": { "source": "Resend email", "context": "Button to resend the verification email. Short." },
-  "ui.account.resent": { "source": "Email sent", "context": "Confirmation shown on the resend button after a successful resend. Short." },
-  "ui.account.verified": { "source": "Email verified — your progress now syncs across devices.", "context": "Confirmation shown after the player clicks the verification link and returns to the game." },
-  "ui.account.err_password": { "source": "Password must be at least 8 characters.", "context": "Validation error under the registration form." },
-  "ui.account.err_email_taken": { "source": "That email is already in use.", "context": "Error when registering with an email that already has an account." },
-  "ui.account.err_credentials": { "source": "Wrong email or password.", "context": "Error shown on a failed login." },
-  "ui.account.err_network": { "source": "Network error — please try again.", "context": "Error shown when an account request fails to reach the server." },
-  "ui.account.err_generic": { "source": "Something went wrong — please try again.", "context": "Fallback error for the account dialog." },
-  "ui.account.forgot_link": { "source": "Forgot password?", "context": "Link on the login form that starts password recovery." },
-  "ui.account.forgot_title": { "source": "Reset your password", "context": "Title of the forgot-password form." },
-  "ui.account.forgot_msg": { "source": "Enter your account email and we'll send you a reset link.", "context": "Subtitle on the forgot-password form." },
-  "ui.account.forgot_send": { "source": "Send reset link", "context": "Button that submits the forgot-password email. Short." },
-  "ui.account.forgot_sent": { "source": "If that email has an account, a reset link is on its way. Check your inbox.", "context": "Confirmation shown after requesting a reset; deliberately vague so it never reveals whether the email exists." },
-  "ui.account.reset_title": { "source": "Set a new password", "context": "Title of the new-password form opened from the emailed reset link." },
-  "ui.account.reset_msg": { "source": "Choose a new password for your account.", "context": "Subtitle on the new-password form." },
-  "ui.account.reset_submit": { "source": "Save new password", "context": "Button that submits the new password. Short." },
-  "ui.account.err_reset_invalid": { "source": "This reset link is invalid or has expired. Request a new one.", "context": "Error shown when a reset link is bad or older than one hour." },
-
-  "ship.player_basic.name": { "source": "Basic player ship", "context": "Display name of the starter player ship on the ship-picker card. ≤24 chars. May stay English if there's no natural local form." },
-  "level.0.victory": { "source": "Ambush broken — you're through, Sentinel. Bring it in to the station.", "context": "Victory overlay subtitle after the intro level (Level 0). The intro is an AMBUSH on approach (not a patrol) — the rookie has survived it. Spoken by mission control, terse and forward-looking, sending them on to the station. Short. 'Sentinel' is the player's in-game title — keep it." },
-  "ui.cutscene.p0_intro": { "source": "My first posting as a Vega Sentinel — fresh commission, a ship straight off the line, an easy hop out to the station. …Contact on approach. No transponder, no answer to my hails. It's swinging onto me with its guns already hot. So much for easy.", "context": "Opening card of the Level-0 intro cutscene, shown BEFORE the fight starts (the player taps to begin). First-person narration by a rookie Vega Sentinel flying to a first posting, ambushed on approach by an unidentified hostile. Grounded and a little scared, NOT a quipping hero — keep that register." },
-  "ui.cutscene.p1_first_kill": { "source": "Their fire's heavy but slow — slip aside and it sails past. First one's down on the cannon. …And he isn't alone out here. Rockets, then — bringing the pod online.", "context": "Intro-cutscene pause line ~1s after the pilot destroys the FIRST pirate with the cannon. First-person; establishes you can dodge enemy fire, then — seeing there's more than one enemy — the pilot brings the ship's own rocket launcher online. Short." },
-  "ui.cutscene.p2_second_kill": { "source": "There — second one, straight off a rocket. That's what they're for. …And they keep jumping in around me. How many are out here?", "context": "Intro-cutscene pause line ~1s after the SECOND kill, which the player makes with a ROCKET. First-person; emphasize that the second enemy was downed by the player's own rocket, then grim realization that more keep arriving. Short." },
-  "ui.cutscene.p3_rocketeer": { "source": "This one hits back with rockets. A rocket only turns so hard, though — stay off its line and it can't corner with me. Keep moving.", "context": "Intro-cutscene pause line ~1s after an ENEMY rocket pirate warps in. First-person; the enemy now fires rockets, and the pilot notes a rocket can be out-turned/outrun by staying off its line. Short." },
-  "ui.cutscene.p4_second_rocket": { "source": "Another launch. This time I don't dodge — I put a cannon round straight through it. …Okay. I've got this.", "context": "Intro-cutscene pause line ~1s after the enemy fires a SECOND rocket. First-person; this time the pilot shoots the incoming rocket down with the cannon instead of dodging — showing enemy rockets can be intercepted. End on shaky, earned confidence — no exclamation-mark bravado. Short." },
-  "ui.cutscene.skip": { "source": "Skip", "context": "Button (top-right) that skips the intro cutscene. One word, very short." },
-  "ui.cutscene.tap": { "source": "tap to continue", "context": "Small affordance under a cutscene text card telling the player to tap/click to dismiss the card and continue. Short, lowercase." },
-  "level.1.victory": { "source": "Station's clear. Sharp flying for a rookie, Sentinel — we'll take it.", "context": "Victory overlay subtitle after level 1 (defending the station). Spoken by the station dispatcher — approving, a little wry, ties to the rookie framing. No game vocabulary ('Level N cleared'). 'Sentinel' is the player's in-game title — keep it." },
-  "level.1.briefing": { "source": "You made it in — just in time, Sentinel, and in a ship like that, even better. We weren't expecting our relief to be a green cadet, but right now I'll take anything with guns in the air. Pirates are swarming the approach and my crews are pinned in the bays. Drive them off the station first — who you are and what they're after, we'll sort out once it's quiet.", "context": "Main Window briefing shown when the player reaches Level 1 (right after the Level-0 intro cutscene) — the first real mission. Spoken by a station dispatcher/officer, relieved and a little wry, to the just-arrived rookie: thanks them for arriving in time in such a ship, then asks them to drive the pirates off the station FIRST and sort out the rest later. 'Sentinel' is the player's title; the ship is fast and nimble." },
-  "level.2.briefing": { "source": "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.", "context": "Briefing before level 2 (player-facing 'Level 2'). Mission = fight through the pirate blockade and REACH the weapons factory (the factory itself is taken next level). Frames the player as now carrying the Machine Gun salvaged at the end of level 1 (primary weapon, good vs rockets), and warns of a heavier enemy — the medium mini-boss that ends this level. Keep 'Machine Gun' + 'Sentinel'." },
-  "level.2.victory": { "source": "The lane's open and the factory's in range, Sentinel — but they're dug in hard around it. Whatever's guarding that place won't come out to meet you. Rearm; we go in next.", "context": "Victory overlay subtitle after level 2. The player has broken through the blockade (beaten the medium mini-boss) and reached the factory's approach, but the factory itself is heavily defended — sets up level 3 (assault the factory + its big warship). Spoken by mission control, forward-looking. 'Sentinel' is the player's title." },
-  "level.3.victory": { "source": "That warship's scrap and the factory's yours, Sentinel. A few of them ran the moment it went down — good. Ships that run have somewhere to run to. Let's find it.", "context": "Victory overlay subtitle after level 3 (the factory taken, the first big warship boss destroyed). MID-campaign, not the finale (Level 4 follows) — some pirates fled, setting up the hunt for their base. Spoken by mission control, forward-looking. 'Sentinel' is the player's title." },
-  "level.3.briefing": { "source": "You salvaged a repair drone last push — it's fitted, patching your hull a little at a time; if you're getting torn up, break off to a quiet corner and let it work. Now the hard part, Sentinel: the factory itself. They've parked something big over it — the first real warship we've run into out here. Put it down and the factory's ours.", "context": "Briefing before level 3 (player-facing 'Level 3'). Two jobs: (1) frame the repair drone the player salvaged at the end of level 2 (now fitted, slow mid-combat hull heal, retreat to let it work); (2) set up the mission — ASSAULT the factory itself, defended by the first genuinely big enemy warship (the Sector boss that ends this level). Keep 'repair drone' + 'Sentinel'." },
-
-  "mission.mining.title": { "source": "Mining belt", "context": "Title of the 'mining station' side mission, shown in its description panel. Short." },
-  "mission.mining.desc": { "source": "The mining stations in our asteroid belt have stopped shipping metal. Go find out what's wrong — and clear out whatever's behind it.", "context": "Flavor description of the mining side mission. The objective is 'clear the field' (defeat the enemies)." },
-  "mission.research.title": { "source": "Research station", "context": "Title of the 'research station' side mission, shown in its description panel. Short." },
-  "mission.research.desc": { "source": "A pirate group has been spotted near our research station. Drive them off before they get curious.", "context": "Flavor description of the research-station side mission. Objective is to defeat the enemies." },
-  "mission.freighter.title": { "source": "Freighter distress", "context": "Title of the 'freighter distress' side mission, shown in its description panel. Short." },
-  "mission.freighter.desc": { "source": "A civilian freighter is broadcasting a distress call — pirates are closing in. Get there and clear them out.", "context": "Flavor description of the freighter-distress side mission. Objective is to defeat the enemies." },
-  "mission.victory": { "source": "Mission complete — sector secured, Sentinel!", "context": "Victory line shown after clearing any side mission. Celebratory. 'Sentinel' is the player's title." },
-
-  "level.4.briefing": { "source": "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. While you're docked, look over the upgrade gear the factory has on hand: we counted a lot of heavy ships among the ones that fled, so kit out accordingly. Good hunting, Sentinel.", "context": "Briefing shown in the Hangar after clearing level 3, before level 4 ('Find the pirate base'). Follows on from level 3 (the player took the factory; some pirates fled). Directs the player to gear up at the shop (heavy enemies ahead) and find the base. Keep 'Sentinel' (the player's title)." },
-  "level.4.victory": { "source": "Tracked. The pirate base just lit up our long-range scan — they're dug in deep. Rearm and regroup, Sentinel; next, we take it down.", "context": "Victory overlay subtitle after clearing level 4. Triumphant; sets up level 5 ('Storm the pirate base'). Keep 'Sentinel' (the player's title)." },
-
-  "ui.settings.title": { "source": "Settings", "context": "Title of the settings modal (audio settings). Short." },
-  "ui.settings.open": { "source": "Settings", "context": "Tooltip/aria-label for the gear button that opens the settings modal. Short." },
-  "ui.settings.master": { "source": "Master volume", "context": "Label for the master (overall) volume slider in the settings modal." },
-  "ui.settings.music": { "source": "Music", "context": "Label for the background-music volume slider + on/off toggle in the settings modal. Short." },
-  "ui.settings.sfx": { "source": "Sound effects", "context": "Label for the sound-effects volume slider + on/off toggle in the settings modal." },
-  "ui.settings.on": { "source": "On", "context": "Label on a settings toggle button when that audio channel is enabled. Very short." },
-  "ui.settings.off": { "source": "Off", "context": "Label on a settings toggle button when that audio channel is disabled. Very short." },
-  "ui.settings.quality": { "source": "Graphics quality", "context": "Label for the 3-way graphics quality selector (High/Balance/Performance) in the settings modal." },
-  "ui.settings.quality.high": { "source": "High", "context": "Graphics quality tier: full resolution + antialiasing + all effects (desktop default). Short, one word if possible." },
-  "ui.settings.quality.balance": { "source": "Balance", "context": "Graphics quality tier: middle ground between quality and frame rate. Short." },
-  "ui.settings.quality.performance": { "source": "Performance", "context": "Graphics quality tier: lowest resolution + fewest effects for weak phones, highest frame rate. Short." },
-  "ui.settings.quality.note": { "source": "Changing quality reloads the game.", "context": "Small hint under the graphics-quality selector: picking a different quality tier reloads the page so the whole preset applies." },
-  "ui.settings.language": { "source": "Language", "context": "Label for the EN/RU language selector row in the settings modal. One word." },
-  "ui.settings.reset.label": { "source": "Reset my progress", "context": "Label for the destructive 'reset my progress' control in the settings modal (danger zone)." },
-  "ui.settings.reset.slide": { "source": "Slide to reset →", "context": "Text inside a slide-to-confirm control; the player drags a knob left→right to arm the progress reset. Keep the arrow." },
-  "ui.settings.reset.note": { "source": "Wipes your level, credits, ships and upgrades. Your account and login stay.", "context": "Small hint under the reset slider explaining what a reset clears and what it keeps." },
-  "ui.settings.reset.confirm.title": { "source": "Reset progress?", "context": "Title of the confirm dialog shown after the player slides to reset. Short." },
-  "ui.settings.reset.confirm.body": { "source": "This wipes your level, credits, ships and upgrades and starts you over from level 1. Your account and login stay. This can't be undone.", "context": "Body of the reset confirmation dialog: what is wiped, what is kept, and that it is irreversible." },
-  "ui.settings.reset.confirm.ok": { "source": "Confirm reset", "context": "Button that performs the destructive progress reset. Short." },
-  "ui.settings.reset.cancel": { "source": "Cancel", "context": "Button that dismisses the reset confirmation without resetting. Short." },
-
-  "ui.credits.open": { "source": "Credits", "context": "Button in the settings modal that opens the credits & attributions screen. Short." },
-  "ui.credits.title": { "source": "Credits & attributions", "context": "Title of the credits screen that lists third-party assets (3D models, sound) with their authors and licenses." },
-  "ui.credits.intro": { "source": "Vega Sentinels uses third-party assets under open licenses. Thank you to their authors.", "context": "Intro line at the top of the credits screen. 'Vega Sentinels' is the game name; keep it." },
-  "ui.credits.modified_note": { "source": "All 3D models are modified — decimated, recolored and/or texture-downscaled — as permitted under CC BY 4.0.", "context": "Blanket note on the credits screen: every 3D model is a modified derivative, as CC BY 4.0 allows. Keep 'CC BY 4.0' and the em-dashes." },
-  "ui.credits.models": { "source": "3D models", "context": "Section heading on the credits screen for the 3D model assets. Short." },
-  "ui.credits.sounds": { "source": "Music & sound", "context": "Section heading on the credits screen for the audio (music + sound-effect) assets. Short." },
-  "ui.credits.by": { "source": "by {author}", "context": "Attribution prefix on a credit row; {author} is the asset author's literal name (never translated)." },
-  "ui.credits.modified": { "source": "Modified", "context": "Small chip on a credit row marking a CC-BY asset that was modified (decimated/recolored/downscaled). Short." },
-  "ui.credits.source": { "source": "Source", "context": "Link text on a credit row pointing to the asset's original source page. Short." },
-  "ui.credits.close": { "source": "Close", "context": "Button that dismisses the credits screen. Short." }
+  "ui.hud.health": {
+    "source": "Health",
+    "context": "HUD label above the health bar. One word, very short."
+  },
+  "ui.hud.credits": {
+    "source": "Credits",
+    "context": "Label before the player's credit balance (their money). Used in the shop bay header. One word, very short."
+  },
+  "ui.hud.credits_line": {
+    "source": "credits {total}/{earned} earned",
+    "context": "In-game HUD money readout. {total} = total credits owned; {earned} = credits earned this run. Lowercase 'credits' and 'earned' are labels around the two numbers."
+  },
+  "ui.hud.destroyed": {
+    "source": "Destroyed",
+    "context": "HUD label above the kill count. One word, very short."
+  },
+  "ui.log.killed": {
+    "source": "{name} killed +{amount}",
+    "context": "In-game event-log line when the player destroys an enemy ship. {name} = the enemy ship's name (English, from the catalog, may be left as-is if untranslated); {amount} = credits earned from the kill (integer, shown after a plus sign)."
+  },
+  "ui.log.picked_up": {
+    "source": "picked up {name}",
+    "context": "In-game event-log line when the player's tractor beam collects a dropped item. {name} = the item's name (English, from the catalog)."
+  },
+  "ui.oob.warning": {
+    "source": "You've left the battlefield — return to the combat zone",
+    "context": "Warning shown when the player's ship flies outside the arena boundary. Urgent but not punishing."
+  },
+  "ui.oob.countdown": {
+    "source": "Returning in {seconds}s",
+    "context": "Countdown under the out-of-bounds warning; the ship is auto-warped back to center when it reaches 0. {seconds} is an integer; 's' is the seconds abbreviation."
+  },
+  "ui.return.hint": {
+    "source": "Sector cleared — return to base",
+    "context": "HUD hint shown after the last enemy is destroyed, directing the player to fly back to the base station to complete the mission."
+  },
+  "ui.return.button": {
+    "source": "Return to base",
+    "context": "Label on the bottom-center HUD button shown during return-to-base (after the last enemy is destroyed). Clicking it auto-flies the ship home to the base station to complete the mission — the same action as clicking the station model. Short, imperative."
+  },
+  "ui.banner.enemies_left": {
+    "source": "{count} enemies left",
+    "context": "Big transient banner that flashes for a moment when the number of enemies remaining in the level drops to a milestone (10, then 5). {count} is that integer (always >1, so no singular form is needed)."
+  },
+  "ui.banner.final_stage": {
+    "source": "Final Stage",
+    "context": "Big transient banner that flashes when the level's last combat phase begins (the boss or final wave). Dramatic, punchy, two words."
+  },
+  "ui.mission.slot": {
+    "source": "Mission {n}",
+    "context": "Label for one of the side-mission rows in the Main Window's Missions list (under the primary campaign mission). {n} is 1, 2 or 3. Keep it short."
+  },
+  "ui.mainwin.missions": {
+    "source": "Missions",
+    "context": "Left-menu item in the Main Window (the between-battles screen); expands to the campaign mission + side missions. Short."
+  },
+  "ui.mainwin.ships": {
+    "source": "Ships",
+    "context": "Inactive top-right label in the Main Window (reserved for a future ship-buying screen). One word, short."
+  },
+  "ui.mainwin.credits_unit": {
+    "source": "cr.",
+    "context": "Currency unit shown right after the player's credit balance in the Main Window top bar (e.g. \"1250 cr.\"). An abbreviation of \"credits\" — keep it 2-4 characters."
+  },
+  "ui.mainwin.primary": {
+    "source": "Main operation",
+    "context": "Label for the primary (campaign) mission row in the Main Window's Missions list, above the optional side missions. Short."
+  },
+  "ui.mission.est_reward": {
+    "source": "Est. reward: {credits}",
+    "context": "Shown in the mission description panel: the approximate credits the mission pays. {credits} is a number."
+  },
+  "ui.help": {
+    "source": "<b>W / ↑</b> — thrust · <b>S / ↓</b> — reverse · <b>A / D</b> or <b>← →</b> — turn · <b>Space</b> — fire · <b>F</b> — rocket",
+    "context": "On-screen controls cheatsheet (HTML). Keep the key glyphs (W, ↑, S, Space, F, arrows) as-is; translate only the action words (thrust/reverse/turn/fire/rocket)."
+  },
+  "ui.overlay.gameover": {
+    "source": "Game over",
+    "context": "Overlay title shown when the player's ship is destroyed."
+  },
+  "ui.overlay.ship_destroyed": {
+    "source": "Ship destroyed",
+    "context": "Overlay title on player death (variant). Short."
+  },
+  "ui.overlay.victory": {
+    "source": "Victory!",
+    "context": "Overlay title when a level is cleared. Upbeat."
+  },
+  "ui.overlay.sector_cleared": {
+    "source": "Sector cleared.",
+    "context": "Fallback victory subtitle when a level has no custom victory line."
+  },
+  "ui.button.restart": {
+    "source": "Restart",
+    "context": "Button on the game-over overlay (retry the level). Short."
+  },
+  "ui.button.continue": {
+    "source": "Continue",
+    "context": "Button on the victory overlay — proceeds to the Hangar screen. Short."
+  },
+  "ui.button.take_off": {
+    "source": "Take off 🚀",
+    "context": "Primary button on the welcome screen that starts the game. Keep the 🚀 emoji."
+  },
+  "ui.welcome.greeting": {
+    "source": "Welcome, Sentinel",
+    "context": "Welcome-screen heading. 'Sentinel' is the player's in-game title — keep it."
+  },
+  "ui.welcome.intro": {
+    "source": "Pirates came out of nowhere, and now they're all over the home system. You've got one edge: a fast, agile ship and the nerve to fly it. Keep moving, out-fly their guns, and push them back.",
+    "context": "Welcome-screen intro paragraph. 2–3 sentences, motivating, second person. Grounded, not chirpy — no 'good news:' tutorial tone."
+  },
+  "ui.welcome.pick": {
+    "source": "Pick your ship",
+    "context": "Label above the ship-picker cards on the welcome screen."
+  },
+  "ui.briefing.title": {
+    "source": "Briefing",
+    "context": "Title of the between-levels briefing overlay (shown after clearing a level, before the next). Short."
+  },
+  "ui.hangar.title": {
+    "source": "Hangar",
+    "context": "Title of the Hangar screen — the between-battles screen shown after a victory (currently shows the next mission briefing). Short."
+  },
+  "ui.hangar.default": {
+    "source": "Stand by for new orders, Sentinel.",
+    "context": "Hangar message shown when there is no mission briefing (e.g. after the final level). 'Sentinel' is the player's title."
+  },
+  "ui.shop.loadout": {
+    "source": "Loadout",
+    "context": "Hangar shop column title — the items currently equipped on the ship. Short."
+  },
+  "ui.shop.stash": {
+    "source": "Stash",
+    "context": "Hangar shop column title — items the player owns but hasn't equipped (their inventory). Short."
+  },
+  "ui.shop.shop": {
+    "source": "Shop",
+    "context": "Hangar shop column title — the catalog of items the player can buy. Short."
+  },
+  "ui.shop.slot.hull": {
+    "source": "Hull",
+    "context": "Equipment slot label (the ship's hull / armor). Short."
+  },
+  "ui.shop.slot.engine": {
+    "source": "Engine",
+    "context": "Equipment slot label (the ship's engine → acceleration). Short."
+  },
+  "ui.shop.slot.thruster": {
+    "source": "Thrusters",
+    "context": "Equipment slot label (maneuvering thrusters → turn rate). Short."
+  },
+  "ui.shop.slot.repair": {
+    "source": "Repair drone",
+    "context": "Equipment slot label (passive hull-repair drone). Short."
+  },
+  "ui.shop.slot.grab": {
+    "source": "Grab",
+    "context": "Equipment slot label (the tractor-beam component that pulls in loot drops). Short."
+  },
+  "ui.shop.slot.shield": {
+    "source": "Shield",
+    "context": "Equipment slot label (the damage-absorbing shield component). Short."
+  },
+  "ui.shop.slot.gun": {
+    "source": "Gun",
+    "context": "Weapon slot label (the primary bullet weapon, fired with Space). Short."
+  },
+  "ui.shop.slot.rocket": {
+    "source": "Rocket",
+    "context": "Weapon slot label (the homing rocket, fired with F). Short."
+  },
+  "ui.shop.empty": {
+    "source": "— empty —",
+    "context": "Placeholder shown in an equipment slot that has nothing installed."
+  },
+  "ui.shop.empty_stash": {
+    "source": "Your stash is empty.",
+    "context": "Message in the Stash column when the player owns no unequipped items."
+  },
+  "ui.shop.empty_shop": {
+    "source": "Nothing for sale here.",
+    "context": "Message in the Shop column when no buyable items match the active filter."
+  },
+  "ui.shop.owned": {
+    "source": "Owned ×{n}",
+    "context": "Badge on a shop item the player already has (equipped on the ship + in the stash). {n} is the integer total count; the '×N' notation avoids plurals. Short."
+  },
+  "ui.shop.free": {
+    "source": "Free",
+    "context": "Shown as an item's price when it costs 0 credits (the economy is inert until real prices are set)."
+  },
+  "ui.shop.action.install": {
+    "source": "Install",
+    "context": "Button on a stash item — equip it onto the ship. Short."
+  },
+  "ui.shop.action.unequip": {
+    "source": "Unequip",
+    "context": "Button on an equipped item — move it back to the stash. Short."
+  },
+  "ui.shop.action.sell": {
+    "source": "Sell",
+    "context": "Button on a stash or equipped item — sell it for credits (75% of price). Short."
+  },
+  "ui.shop.action.buy": {
+    "source": "Buy",
+    "context": "Button on a shop item — purchase it into the stash. Short."
+  },
+  "ui.shop.stat.hp": {
+    "source": "HP",
+    "context": "Stat label — hit points (hull durability). Very short; 'HP' may stay as-is."
+  },
+  "ui.shop.stat.accel": {
+    "source": "Accel",
+    "context": "Stat label — acceleration. Very short, abbreviated."
+  },
+  "ui.shop.stat.maneuver": {
+    "source": "Turn",
+    "context": "Stat label — maneuverability / turn rate. Very short, abbreviated."
+  },
+  "ui.shop.stat.weight": {
+    "source": "Weight",
+    "context": "Stat label — mass/weight (heavier = slower). Very short."
+  },
+  "ui.shop.stat.dmg": {
+    "source": "DMG",
+    "context": "Stat label — weapon damage per hit. Very short, abbreviated."
+  },
+  "ui.shop.stat.rof": {
+    "source": "RoF",
+    "context": "Stat label — rate of fire (shots per second). Very short, abbreviated."
+  },
+  "ui.shop.stat.reload": {
+    "source": "Reload",
+    "context": "Stat label — rocket reload time in seconds (followed by e.g. '5s'). Short."
+  },
+  "ui.shop.stat.speed": {
+    "source": "Speed",
+    "context": "Stat label — projectile (bullet) travel speed. Short."
+  },
+  "ui.shop.stat.range": {
+    "source": "Range",
+    "context": "Stat label — weapon maximum range (distance). Short."
+  },
+  "ui.shop.stat.blast": {
+    "source": "Blast",
+    "context": "Stat label — rocket blast/AoE radius. Short."
+  },
+  "ui.shop.stat.maxspeed": {
+    "source": "Top speed",
+    "context": "Stat label — engine maximum speed cap. Short."
+  },
+  "ui.shop.stat.heal": {
+    "source": "Heal",
+    "context": "Stat label — repair-drone healing, followed by e.g. '+1/1s' (HP per interval). Short."
+  },
+  "ui.shop.stat.cap": {
+    "source": "Cap",
+    "context": "Stat label — repair-drone heal cap as a percentage of max HP (e.g. '80%'). Short."
+  },
+  "ui.shop.stat.grab": {
+    "source": "Grab",
+    "context": "Stat label — abstract grab (tractor) strength (followed by e.g. '10'/'20'). NOT the world-unit reach: actual range is emergent from an inverse-square field. Short."
+  },
+  "ui.shop.stat.shield": {
+    "source": "Shield",
+    "context": "Stat label — shield capacity (damage absorbed before it breaks), followed by e.g. '20'. Short."
+  },
+  "ui.shop.stat.recharge": {
+    "source": "Recharge",
+    "context": "Stat label — shield recharge time after a full break, followed by e.g. '10s'. Short."
+  },
+  "ui.shop.filter.all": {
+    "source": "All",
+    "context": "Shop filter chip — show every item type. Short."
+  },
+  "ui.shop.filter.hull": {
+    "source": "Hulls",
+    "context": "Shop filter chip — show only hulls. Short."
+  },
+  "ui.shop.filter.engine": {
+    "source": "Engines",
+    "context": "Shop filter chip — show only engines. Short."
+  },
+  "ui.shop.filter.thruster": {
+    "source": "Thrusters",
+    "context": "Shop filter chip — show only thrusters. Short."
+  },
+  "ui.shop.filter.repair": {
+    "source": "Repair",
+    "context": "Shop filter chip — show only repair drones. Short."
+  },
+  "ui.shop.filter.weapon": {
+    "source": "Weapons",
+    "context": "Shop filter chip — show only weapons. Short."
+  },
+  "ui.shop.filter.grab": {
+    "source": "Grab",
+    "context": "Shop filter chip — show only grab (tractor) components. Short."
+  },
+  "ui.shop.filter.shield": {
+    "source": "Shield",
+    "context": "Shop filter chip — show only shield components. Short."
+  },
+  "ui.shop.cant_launch": {
+    "source": "Can't take off — a required slot (hull, engine, or thrusters) is empty.",
+    "context": "Note under a disabled Take-off button when a required equipment slot is empty."
+  },
+  "ui.shop.err_credits": {
+    "source": "Not enough credits.",
+    "context": "Error shown when the player tries to buy an item they can't afford."
+  },
+  "ui.shop.err_locked": {
+    "source": "The shop is locked.",
+    "context": "Error shown when a shop action is attempted before the shop is unlocked."
+  },
+  "ui.shop.err_network": {
+    "source": "Network error — try again.",
+    "context": "Error shown when a shop request fails to reach the server."
+  },
+  "ui.shop.err_generic": {
+    "source": "Action failed.",
+    "context": "Fallback error for a shop action that the server rejected."
+  },
+  "ui.title": {
+    "source": "Vega Sentinels",
+    "context": "Game wordmark / brand name. Stays Latin in every locale."
+  },
+  "ui.touch.fire": {
+    "source": "FIRE",
+    "context": "Touch-control fire button label (mobile). Uppercase, short."
+  },
+  "ui.pause.pause": {
+    "source": "Pause",
+    "context": "Accessible label/tooltip for the pause button (shows a ⏸ icon) at the top of the screen. Freezes the fight. Short."
+  },
+  "ui.pause.resume": {
+    "source": "Resume",
+    "context": "Accessible label/tooltip for the pause button once paused (shows a ▶ play icon) — tap to continue the fight. Short."
+  },
+  "ui.pause.paused": {
+    "source": "Paused",
+    "context": "Large centered label shown over the frozen battlefield while the game is paused. One word."
+  },
+  "ui.pause.play": {
+    "source": "▶ Play",
+    "context": "Button under the centered 'Paused' label — resumes the fight. Keep the ▶ play glyph; translate the word."
+  },
+  "ui.fullscreen": {
+    "source": "Full screen",
+    "context": "Accessible name (aria-label/title) of the floating, icon-only ⛶ button (touch menus, bottom-right) that re-enters fullscreen to hide the mobile browser chrome (URL bar, tabs). The ⛶ glyph lives in the markup — translate only the words, no glyph."
+  },
+  "ui.a2hs.hint": {
+    "source": "Full screen: Share → Add to Home Screen",
+    "context": "Hint pill shown (bottom-right, touch menus) ONLY on iPhone Safari, which has no Fullscreen API — there the only true full screen is launching the site as a standalone web app. 'Share' = the iOS Safari share button (square-with-up-arrow); 'Add to Home Screen' = the iOS menu item under it. Use the exact wording iOS uses in this locale so users find the buttons."
+  },
+  "ui.credits.doubled": {
+    "source": "Earned ×2 = {credits}",
+    "context": "Victory subtitle tail; {credits} is the doubled credits earned (integer). '×2' is the level-clear bonus notation."
+  },
+  "ui.gameover.sub": {
+    "source": "Destroyed: {kills} — Earned: {credits}",
+    "context": "Game-over subtitle. {kills},{credits} are integers placed after labels, so no plural form is needed."
+  },
+  "ui.gameover.back_to_hangar": {
+    "source": "Back to Hangar",
+    "context": "Secondary button on the death/game-over overlay (only after the hangar shop is unlocked): return to the Hangar to shop / change loadout instead of an instant retry. Short."
+  },
+  "ui.perf": {
+    "source": "FPS {fps} · {ms}ms · draw {calls} · tris {tris}",
+    "context": "Performance overlay (technical). {fps},{calls},{tris} integers, {ms} a decimal. 'draw' = draw calls, 'tris' = triangles. Keep it terse."
+  },
+  "ui.perf.idle": {
+    "source": "FPS — · draw — · tris —",
+    "context": "Performance overlay placeholder before the first frame. Mirror ui.perf's labels."
+  },
+  "ui.card.hull": {
+    "source": "Hull: {hp} HP",
+    "context": "Ship-picker card stat line. {hp} is an integer; 'HP' = hit points (may stay 'HP')."
+  },
+  "ui.card.weapons": {
+    "source": "Weapons: {summary}",
+    "context": "Ship-picker card stat line. {summary} is a pre-built list like '2× gun · 1× rocket'."
+  },
+  "ui.mount.gun": {
+    "source": "{n}× gun",
+    "context": "Weapon-count chip in a ship's weapon summary. {n} is an integer; the 'N×' notation deliberately avoids grammatical plurals."
+  },
+  "ui.mount.rocket": {
+    "source": "{n}× rocket",
+    "context": "Weapon-count chip in a ship's weapon summary. {n} is an integer; 'N×' notation avoids plurals."
+  },
+  "ui.mount.unarmed": {
+    "source": "unarmed",
+    "context": "Weapon summary when a ship has no weapons."
+  },
+  "ui.community.label": {
+    "source": "💬 Feedback & community on Telegram",
+    "context": "Link text to the game's Telegram community/feedback group. Shown on the welcome screen and the game-over/victory overlay."
+  },
+  "ui.community.url": {
+    "source": "https://t.me/+DZfK9rUqmVpkYTZi",
+    "context": "URL, not prose — do not translate the text. The 'en' value is the English Telegram group; the ru locale overrides it with the Russian group link."
+  },
+  "ui.account.prompt_title": {
+    "source": "Name yourself, Sentinel",
+    "context": "Title of the prompt shown right after clearing level 1, asking the player to pick a display name. 'Sentinel' is the player's title."
+  },
+  "ui.account.prompt_msg": {
+    "source": "Choose a callsign. You can keep playing as a guest, or create an account to save your progress.",
+    "context": "Subtitle under the level-1 name prompt. Explains they can stay a guest or make an account."
+  },
+  "ui.account.create_title": {
+    "source": "Create your account",
+    "context": "Title of the account-registration form."
+  },
+  "ui.account.create_msg": {
+    "source": "An account saves your progress and lets you play on other devices once your email is verified.",
+    "context": "Subtitle on the registration form."
+  },
+  "ui.account.login_title": {
+    "source": "Log in",
+    "context": "Title of the login form."
+  },
+  "ui.account.login_msg": {
+    "source": "Log in to load your saved progress on this device.",
+    "context": "Subtitle on the login form."
+  },
+  "ui.account.username_ph": {
+    "source": "Your callsign",
+    "context": "Placeholder in the username/display-name input."
+  },
+  "ui.account.email_ph": {
+    "source": "Email",
+    "context": "Placeholder in the email input."
+  },
+  "ui.account.password_ph": {
+    "source": "Password (at least 8 characters)",
+    "context": "Placeholder in the password input."
+  },
+  "ui.account.continue_anon": {
+    "source": "Continue as guest",
+    "context": "Button that keeps the player anonymous (saves only the username) on the level-1 prompt."
+  },
+  "ui.account.create": {
+    "source": "Create account",
+    "context": "Button that submits the registration form / reveals it from the guest prompt. Short."
+  },
+  "ui.account.log_in": {
+    "source": "Log in",
+    "context": "Button that submits the login form. Short."
+  },
+  "ui.account.have_account": {
+    "source": "I already have an account",
+    "context": "Link/button on the register form that switches to the login form."
+  },
+  "ui.account.need_account": {
+    "source": "Create a new account",
+    "context": "Link/button on the login form that switches to the register form."
+  },
+  "ui.account.close": {
+    "source": "Close",
+    "context": "Button that dismisses the account dialog. Short."
+  },
+  "ui.account.signed_in_as": {
+    "source": "Signed in as {who}",
+    "context": "Account status line on menu screens. {who} is the username or email."
+  },
+  "ui.account.anon": {
+    "source": "Playing as a guest",
+    "context": "Account status line shown when the player has no account yet."
+  },
+  "ui.account.guest_named": {
+    "source": "Playing as {who}",
+    "context": "Account status line shown in the menu account bar when a guest has set a callsign at the level-1 prompt but has no account. {who} is the guest's chosen callsign. Mirrors ui.account.signed_in_as."
+  },
+  "ui.account.sign_in": {
+    "source": "Log in / Sign up",
+    "context": "Button on the account status bar that opens the login/register dialog. Short."
+  },
+  "ui.account.log_out": {
+    "source": "Log out",
+    "context": "Button that ends the session. Short."
+  },
+  "ui.account.verify_nudge": {
+    "source": "Verify your email to sync across devices.",
+    "context": "Reminder shown until the account's email is verified."
+  },
+  "ui.account.resend": {
+    "source": "Resend email",
+    "context": "Button to resend the verification email. Short."
+  },
+  "ui.account.resent": {
+    "source": "Email sent",
+    "context": "Confirmation shown on the resend button after a successful resend. Short."
+  },
+  "ui.account.verified": {
+    "source": "Email verified — your progress now syncs across devices.",
+    "context": "Confirmation shown after the player clicks the verification link and returns to the game."
+  },
+  "ui.account.err_password": {
+    "source": "Password must be at least 8 characters.",
+    "context": "Validation error under the registration form."
+  },
+  "ui.account.err_email_taken": {
+    "source": "That email is already in use.",
+    "context": "Error when registering with an email that already has an account."
+  },
+  "ui.account.err_credentials": {
+    "source": "Wrong email or password.",
+    "context": "Error shown on a failed login."
+  },
+  "ui.account.err_network": {
+    "source": "Network error — please try again.",
+    "context": "Error shown when an account request fails to reach the server."
+  },
+  "ui.account.err_generic": {
+    "source": "Something went wrong — please try again.",
+    "context": "Fallback error for the account dialog."
+  },
+  "ui.account.forgot_link": {
+    "source": "Forgot password?",
+    "context": "Link on the login form that starts password recovery."
+  },
+  "ui.account.forgot_title": {
+    "source": "Reset your password",
+    "context": "Title of the forgot-password form."
+  },
+  "ui.account.forgot_msg": {
+    "source": "Enter your account email and we'll send you a reset link.",
+    "context": "Subtitle on the forgot-password form."
+  },
+  "ui.account.forgot_send": {
+    "source": "Send reset link",
+    "context": "Button that submits the forgot-password email. Short."
+  },
+  "ui.account.forgot_sent": {
+    "source": "If that email has an account, a reset link is on its way. Check your inbox.",
+    "context": "Confirmation shown after requesting a reset; deliberately vague so it never reveals whether the email exists."
+  },
+  "ui.account.reset_title": {
+    "source": "Set a new password",
+    "context": "Title of the new-password form opened from the emailed reset link."
+  },
+  "ui.account.reset_msg": {
+    "source": "Choose a new password for your account.",
+    "context": "Subtitle on the new-password form."
+  },
+  "ui.account.reset_submit": {
+    "source": "Save new password",
+    "context": "Button that submits the new password. Short."
+  },
+  "ui.account.err_reset_invalid": {
+    "source": "This reset link is invalid or has expired. Request a new one.",
+    "context": "Error shown when a reset link is bad or older than one hour."
+  },
+  "ship.player_basic.name": {
+    "source": "Basic player ship",
+    "context": "Display name of the starter player ship on the ship-picker card. ≤24 chars. May stay English if there's no natural local form."
+  },
+  "level.0.victory": {
+    "source": "Ambush broken — you're through, Sentinel. Bring it in to the station.",
+    "context": "Victory overlay subtitle after the intro level (Level 0). The intro is an AMBUSH on approach (not a patrol) — the rookie has survived it. Spoken by mission control, terse and forward-looking, sending them on to the station. Short. 'Sentinel' is the player's in-game title — keep it."
+  },
+  "ui.cutscene.p0_intro": {
+    "source": "My first posting as a Vega Sentinel — fresh commission, a ship straight off the line, an easy hop out to the station. …Contact on approach. No transponder, no answer to my hails. It's swinging onto me with its guns already hot. So much for easy.",
+    "context": "Opening card of the Level-0 intro cutscene, shown BEFORE the fight starts (the player taps to begin). First-person narration by a rookie Vega Sentinel flying to a first posting, ambushed on approach by an unidentified hostile. Grounded and a little scared, NOT a quipping hero — keep that register."
+  },
+  "ui.cutscene.p1_first_kill": {
+    "source": "Their fire's heavy but slow — slip aside and it sails past. First one's down on the cannon. …And he isn't alone out here. Rockets, then — bringing the pod online.",
+    "context": "Intro-cutscene pause line ~1s after the pilot destroys the FIRST pirate with the cannon. First-person; establishes you can dodge enemy fire, then — seeing there's more than one enemy — the pilot brings the ship's own rocket launcher online. Short."
+  },
+  "ui.cutscene.p2_second_kill": {
+    "source": "There — second one, straight off a rocket. That's what they're for. …And they keep jumping in around me. How many are out here?",
+    "context": "Intro-cutscene pause line ~1s after the SECOND kill, which the player makes with a ROCKET. First-person; emphasize that the second enemy was downed by the player's own rocket, then grim realization that more keep arriving. Short."
+  },
+  "ui.cutscene.p3_rocketeer": {
+    "source": "This one hits back with rockets. A rocket only turns so hard, though — stay off its line and it can't corner with me. Keep moving.",
+    "context": "Intro-cutscene pause line ~1s after an ENEMY rocket pirate warps in. First-person; the enemy now fires rockets, and the pilot notes a rocket can be out-turned/outrun by staying off its line. Short."
+  },
+  "ui.cutscene.p4_second_rocket": {
+    "source": "Another launch. This time I don't dodge — I put a cannon round straight through it. …Okay. I've got this.",
+    "context": "Intro-cutscene pause line ~1s after the enemy fires a SECOND rocket. First-person; this time the pilot shoots the incoming rocket down with the cannon instead of dodging — showing enemy rockets can be intercepted. End on shaky, earned confidence — no exclamation-mark bravado. Short."
+  },
+  "ui.cutscene.skip": {
+    "source": "Skip",
+    "context": "Button (top-right) that skips the intro cutscene. One word, very short."
+  },
+  "ui.cutscene.tap": {
+    "source": "tap to continue",
+    "context": "Small affordance under a cutscene text card telling the player to tap/click to dismiss the card and continue. Short, lowercase."
+  },
+  "level.1.victory": {
+    "source": "Station's clear. Sharp flying for a rookie, Sentinel — we'll take it.",
+    "context": "Victory overlay subtitle after level 1 (defending the station). Spoken by the station dispatcher — approving, a little wry, ties to the rookie framing. No game vocabulary ('Level N cleared'). 'Sentinel' is the player's in-game title — keep it."
+  },
+  "level.1.briefing": {
+    "source": "You made it in — just in time, Sentinel, and in a ship like that, even better. We weren't expecting our relief to be a green cadet, but right now I'll take anything with guns in the air. Pirates are swarming the approach and my crews are pinned in the bays. Drive them off the station first — who you are and what they're after, we'll sort out once it's quiet.",
+    "context": "Main Window briefing shown when the player reaches Level 1 (right after the Level-0 intro cutscene) — the first real mission. Spoken by a station dispatcher/officer, relieved and a little wry, to the just-arrived rookie: thanks them for arriving in time in such a ship, then asks them to drive the pirates off the station FIRST and sort out the rest later. 'Sentinel' is the player's title; the ship is fast and nimble."
+  },
+  "level.2.briefing": {
+    "source": "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",
+    "context": "Briefing before level 2 (player-facing 'Level 2'). Mission = fight through the pirate blockade and REACH the weapons factory (the factory itself is taken next level). Frames the player as now carrying the Machine Gun salvaged at the end of level 1 (primary weapon, good vs rockets), and warns of a heavier enemy — the medium mini-boss that ends this level. Keep 'Machine Gun' + 'Sentinel'."
+  },
+  "level.2.victory": {
+    "source": "The lane's open and the factory's in range, Sentinel — but they're dug in hard around it. Whatever's guarding that place won't come out to meet you. Rearm; we go in next.",
+    "context": "Victory overlay subtitle after level 2. The player has broken through the blockade (beaten the medium mini-boss) and reached the factory's approach, but the factory itself is heavily defended — sets up level 3 (assault the factory + its big warship). Spoken by mission control, forward-looking. 'Sentinel' is the player's title."
+  },
+  "level.3.victory": {
+    "source": "That warship's scrap and the factory's yours, Sentinel. A few of them ran the moment it went down — good. Ships that run have somewhere to run to. Let's find it.",
+    "context": "Victory overlay subtitle after level 3 (the factory taken, the first big warship boss destroyed). MID-campaign, not the finale (Level 4 follows) — some pirates fled, setting up the hunt for their base. Spoken by mission control, forward-looking. 'Sentinel' is the player's title."
+  },
+  "level.3.briefing": {
+    "source": "You salvaged a repair drone last push — it's fitted, patching your hull a little at a time; if you're getting torn up, break off to a quiet corner and let it work. Now the hard part, Sentinel: the factory itself. They've parked something big over it — the first real warship we've run into out here. Put it down and the factory's ours.",
+    "context": "Briefing before level 3 (player-facing 'Level 3'). Two jobs: (1) frame the repair drone the player salvaged at the end of level 2 (now fitted, slow mid-combat hull heal, retreat to let it work); (2) set up the mission — ASSAULT the factory itself, defended by the first genuinely big enemy warship (the Sector boss that ends this level). Keep 'repair drone' + 'Sentinel'."
+  },
+  "mission.mining.title": {
+    "source": "Mining belt",
+    "context": "Title of the 'mining station' side mission, shown in its description panel. Short."
+  },
+  "mission.mining.desc": {
+    "source": "The mining stations in our asteroid belt have stopped shipping metal. Go find out what's wrong — and clear out whatever's behind it.",
+    "context": "Flavor description of the mining side mission. The objective is 'clear the field' (defeat the enemies)."
+  },
+  "mission.research.title": {
+    "source": "Research station",
+    "context": "Title of the 'research station' side mission, shown in its description panel. Short."
+  },
+  "mission.research.desc": {
+    "source": "A pirate group has been spotted near our research station. Drive them off before they get curious.",
+    "context": "Flavor description of the research-station side mission. Objective is to defeat the enemies."
+  },
+  "mission.freighter.title": {
+    "source": "Freighter distress",
+    "context": "Title of the 'freighter distress' side mission, shown in its description panel. Short."
+  },
+  "mission.freighter.desc": {
+    "source": "A civilian freighter is broadcasting a distress call — pirates are closing in. Get there and clear them out.",
+    "context": "Flavor description of the freighter-distress side mission. Objective is to defeat the enemies."
+  },
+  "mission.victory": {
+    "source": "Mission complete — sector secured, Sentinel!",
+    "context": "Victory line shown after clearing any side mission. Celebratory. 'Sentinel' is the player's title."
+  },
+  "level.4.briefing": {
+    "source": "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. While you're docked, look over the upgrade gear the factory has on hand: we counted a lot of heavy ships among the ones that fled, so kit out accordingly. Good hunting, Sentinel.",
+    "context": "Briefing shown in the Hangar after clearing level 3, before level 4 ('Find the pirate base'). Follows on from level 3 (the player took the factory; some pirates fled). Directs the player to gear up at the shop (heavy enemies ahead) and find the base. Keep 'Sentinel' (the player's title)."
+  },
+  "level.4.victory": {
+    "source": "Tracked. The pirate base just lit up our long-range scan — they're dug in deep. Rearm and regroup, Sentinel; next, we take it down.",
+    "context": "Victory overlay subtitle after clearing level 4. Triumphant; sets up level 5 ('Storm the pirate base'). Keep 'Sentinel' (the player's title)."
+  },
+  "ui.settings.title": {
+    "source": "Settings",
+    "context": "Title of the settings modal (audio settings). Short."
+  },
+  "ui.settings.open": {
+    "source": "Settings",
+    "context": "Tooltip/aria-label for the gear button that opens the settings modal. Short."
+  },
+  "ui.settings.master": {
+    "source": "Master volume",
+    "context": "Label for the master (overall) volume slider in the settings modal."
+  },
+  "ui.settings.music": {
+    "source": "Music",
+    "context": "Label for the background-music volume slider + on/off toggle in the settings modal. Short."
+  },
+  "ui.settings.sfx": {
+    "source": "Sound effects",
+    "context": "Label for the sound-effects volume slider + on/off toggle in the settings modal."
+  },
+  "ui.settings.on": {
+    "source": "On",
+    "context": "Label on a settings toggle button when that audio channel is enabled. Very short."
+  },
+  "ui.settings.off": {
+    "source": "Off",
+    "context": "Label on a settings toggle button when that audio channel is disabled. Very short."
+  },
+  "ui.settings.quality": {
+    "source": "Graphics quality",
+    "context": "Label for the 3-way graphics quality selector (High/Balance/Performance) in the settings modal."
+  },
+  "ui.settings.quality.high": {
+    "source": "High",
+    "context": "Graphics quality tier: full resolution + antialiasing + all effects (desktop default). Short, one word if possible."
+  },
+  "ui.settings.quality.balance": {
+    "source": "Balance",
+    "context": "Graphics quality tier: middle ground between quality and frame rate. Short."
+  },
+  "ui.settings.quality.performance": {
+    "source": "Performance",
+    "context": "Graphics quality tier: lowest resolution + fewest effects for weak phones, highest frame rate. Short."
+  },
+  "ui.settings.quality.note": {
+    "source": "Changing quality reloads the game.",
+    "context": "Small hint under the graphics-quality selector: picking a different quality tier reloads the page so the whole preset applies."
+  },
+  "ui.settings.language": {
+    "source": "Language",
+    "context": "Label for the EN/RU language selector row in the settings modal. One word."
+  },
+  "ui.settings.reset.label": {
+    "source": "Reset my progress",
+    "context": "Label for the destructive 'reset my progress' control in the settings modal (danger zone)."
+  },
+  "ui.settings.reset.slide": {
+    "source": "Slide to reset →",
+    "context": "Text inside a slide-to-confirm control; the player drags a knob left→right to arm the progress reset. Keep the arrow."
+  },
+  "ui.settings.reset.note": {
+    "source": "Wipes your level, credits, ships and upgrades. Your account and login stay.",
+    "context": "Small hint under the reset slider explaining what a reset clears and what it keeps."
+  },
+  "ui.settings.reset.confirm.title": {
+    "source": "Reset progress?",
+    "context": "Title of the confirm dialog shown after the player slides to reset. Short."
+  },
+  "ui.settings.reset.confirm.body": {
+    "source": "This wipes your level, credits, ships and upgrades and starts you over from level 1. Your account and login stay. This can't be undone.",
+    "context": "Body of the reset confirmation dialog: what is wiped, what is kept, and that it is irreversible."
+  },
+  "ui.settings.reset.confirm.ok": {
+    "source": "Confirm reset",
+    "context": "Button that performs the destructive progress reset. Short."
+  },
+  "ui.settings.reset.cancel": {
+    "source": "Cancel",
+    "context": "Button that dismisses the reset confirmation without resetting. Short."
+  },
+  "ui.credits.open": {
+    "source": "Credits",
+    "context": "Button in the settings modal that opens the credits & attributions screen. Short."
+  },
+  "ui.credits.title": {
+    "source": "Credits & attributions",
+    "context": "Title of the credits screen that lists third-party assets (3D models, sound) with their authors and licenses."
+  },
+  "ui.credits.intro": {
+    "source": "Vega Sentinels uses third-party assets under open licenses. Thank you to their authors.",
+    "context": "Intro line at the top of the credits screen. 'Vega Sentinels' is the game name; keep it."
+  },
+  "ui.credits.modified_note": {
+    "source": "All 3D models are modified — decimated, recolored and/or texture-downscaled — as permitted under CC BY 4.0.",
+    "context": "Blanket note on the credits screen: every 3D model is a modified derivative, as CC BY 4.0 allows. Keep 'CC BY 4.0' and the em-dashes."
+  },
+  "ui.credits.models": {
+    "source": "3D models",
+    "context": "Section heading on the credits screen for the 3D model assets. Short."
+  },
+  "ui.credits.sounds": {
+    "source": "Music & sound",
+    "context": "Section heading on the credits screen for the audio (music + sound-effect) assets. Short."
+  },
+  "ui.credits.by": {
+    "source": "by {author}",
+    "context": "Attribution prefix on a credit row; {author} is the asset author's literal name (never translated)."
+  },
+  "ui.credits.modified": {
+    "source": "Modified",
+    "context": "Small chip on a credit row marking a CC-BY asset that was modified (decimated/recolored/downscaled). Short."
+  },
+  "ui.credits.source": {
+    "source": "Source",
+    "context": "Link text on a credit row pointing to the asset's original source page. Short."
+  },
+  "ui.credits.close": {
+    "source": "Close",
+    "context": "Button that dismisses the credits screen. Short."
+  },
+  "ui.loading.level": {
+    "source": "Preparing the sector...",
+    "context": "Shown on a full-screen veil for a second or two while a freshly built level is compiled and uploaded to the GPU, before the fight starts. Reads as loading, not as a freeze. Short."
+  }
 }

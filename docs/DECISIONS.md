@@ -2991,6 +2991,14 @@ per-frame cost; `compile()` ignores culling).
 **The rule this sets:** if a material configuration is created and destroyed repeatedly, something must hold
 one instance of it alive for the session, or every lull in that effect buys a recompile.
 
+**The warm is hidden behind a veil, raised one frame EARLIER.** Concentrating the work at level build is
+right, but on the weak phone it is a single blocking render call of ~3.2 s, and the player reported the
+picture "just hanging at 1 fps for 5 seconds". `#levelwarm` covers the canvas while it runs. The ordering
+matters and is easy to get wrong: the browser cannot paint anything until the current frame ends, so
+showing the veil and compiling in the same frame paints nothing. The frame that takes the request therefore
+only raises the veil and returns; the next frame does the work and lowers it. The veil fades in after a
+90 ms delay, so a machine that finishes the warm in a frame or two never shows it.
+
 **Verification is field telemetry, not a headless test.** Software WebGL does not reproduce the stall and
 compiles almost everything at bootstrap, so the same probe reports "1 program compiled during play" on both
 the old and the new code. `client/visual/scenarios/28-scene-warm.mjs` therefore pins the **wiring** — reset
