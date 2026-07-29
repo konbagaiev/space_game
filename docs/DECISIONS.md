@@ -2991,6 +2991,16 @@ per-frame cost; `compile()` ignores culling).
 **The rule this sets:** if a material configuration is created and destroyed repeatedly, something must hold
 one instance of it alive for the session, or every lull in that effect buys a recompile.
 
+**The case that rule was written for, found later in the field.** The player reported a half-second lag
+whenever a ship blew up — verified three times, and initially blamed on flying *through* the blast, which
+suggested overdraw. Measurement killed that: a ship explosion covers at most **6.7% of the screen** over its
+whole life, nowhere near enough. The telemetry told the real story — freeze frames creating **7 shader
+programs in a single second** — and a local probe pinned it exactly: a ship death compiled **+3 programs on
+first use**, while a rocket, its smoke and an enemy spawn compiled none (already warmed). The death FX is
+the flipbook fireball plus the shockwave ring, and each disposes its material when it finishes, so the
+programs died with them and the *next* death recompiled. `flipbook-fx.js` and `projectiles.js` now export
+`keepAliveMaterial()` / `ringKeepAliveMaterial()`, held by the warm rig. Same probe after: **0 programs**.
+
 **The warm is hidden behind a veil, raised one frame EARLIER.** Concentrating the work at level build is
 right, but on the weak phone it is a single blocking render call of ~3.2 s, and the player reported the
 picture "just hanging at 1 fps for 5 seconds". `#levelwarm` covers the canvas while it runs. The ordering

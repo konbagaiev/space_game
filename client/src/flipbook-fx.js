@@ -170,6 +170,13 @@ export function spawnFlipbookExplosion(pos, sizeScale = 1, tint = null, speed = 
   flipbooks.push({ mesh: m, mat, frame: skew, fps: FPS * speed }); // speed > 1 → quicker (e.g. rocket blast)
 }
 
+// One material of this config, created once and NEVER disposed, so THREE can't free the compiled program.
+// Every flipbook sprite disposes its own material when it finishes, and a program dies with its last
+// material — so without this the first explosion after a lull recompiles, blocking the main thread. Field
+// telemetry caught exactly that: freeze frames with +7 programs created in the same second (DECISIONS §83).
+// The rig in main.js parks it off-camera so `renderer.compile()` reaches it.
+export const keepAliveMaterial = () => makeMaterial(BASE_SIZE, null);
+
 // Cyan tint for a hit ABSORBED BY A SHIELD (player or enemy): the same baked fire sprite pushed cold —
 // red multiplied down to near-zero, green/blue up — so an absorbed hit reads as "the field stopped it"
 // instead of an orange hull spark, without leaving the one FX family. Matches the shield-bubble /

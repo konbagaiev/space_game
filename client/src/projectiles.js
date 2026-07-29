@@ -153,6 +153,13 @@ function ringTexture() {
   return ringTex;
 }
 
+// Same keep-alive contract as the flipbook's (DECISIONS §83): the shockwave material is disposed when the
+// ring expires, and the program dies with the last one — so one instance is held for the session.
+export const ringKeepAliveMaterial = () => new THREE.MeshBasicMaterial({
+  map: ringTexture(), color: 0xffffff, transparent: true, opacity: 0.9,
+  blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
+});
+
 // Spawn one flat, expanding soft ring on the combat plane (tinted, additive), pushed into the shockwaves
 // pool so sim.update()'s shockwave loop grows its scale + fades it. Shared by ship death + rocket burst.
 function spawnShockRing(pos, y, maxScale, life, color) {

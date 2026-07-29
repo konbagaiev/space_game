@@ -51,5 +51,22 @@ export default async function ({ page, assert }) {
     return found ? { children: found.children.length, disposed: found.children.some((c) => !c.material) } : null;
   });
   assert.ok(rig && rig.children >= 2, 'the FX warm rig stays in the scene for the session');
+
+  // The load-bearing one: a ship death must not COMPILE anything. Its flipbook fireball and shockwave ring
+  // each dispose their material when they finish, and THREE frees a program with its last material — so
+  // without a held instance every explosion after a lull recompiles, blocking the main thread mid-fight.
+  // Field telemetry caught freeze frames creating 7 programs in one second; this measured +3 locally before
+  // the rig held these two materials, and 0 after.
+  const compiled = await page.evaluate(() => {
+    const g = window.__game;
+    const draw = () => { g.renderer.clear(); g.renderer.render(g.skyScene, g.camera); g.renderer.clearDepth(); g.renderer.render(g.scene, g.camera); };
+    draw();
+    const before = g.renderer.info.programs.length;
+    g.spawnShipExplosion(g.player.mesh.position.clone(), 0xff8030, 1);
+    draw();
+    return g.renderer.info.programs.length - before;
+  });
+  assert.equal(compiled, 0,
+    `a ship explosion compiles no new shader programs (got +${compiled} — an FX material config is not held alive)`);
   assert.ok(!rig.disposed, 'its materials are never disposed — a freed material frees its compiled program');
 }

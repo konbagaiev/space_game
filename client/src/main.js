@@ -13,7 +13,8 @@ import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, app
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
-import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket, spawnEnemyShieldHit, smokePool } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
+import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
+import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples
 import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
@@ -544,6 +545,7 @@ const devPerf = (() => {
 // is then recompiled the next time one spawns — visible in telemetry as the live count sawing 37<->40 with
 // 100-300 ms main-thread blocks. Keeping one material of each config alive for the session stops that.
 // Parked far off-camera and frustum-culled, so it costs nothing per frame; `compile()` ignores culling.
+const quadGeoForWarm = new THREE.PlaneGeometry(1, 1); // carrier for the held FX materials (never drawn: the rig is off-camera)
 let warmRig = null;
 let warmDeferred = false; // the veil is up; do the blocking compile on the NEXT frame (see animate)
 function prewarmShaders() {
@@ -552,7 +554,11 @@ function prewarmShaders() {
       warmRig = new THREE.Group();
       const addMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }); // explosions/flashes/shockwave
       const fogMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // bullets/rockets (opaque, scene fog on)
-      warmRig.add(new THREE.Mesh(explosionGeo, addMat), new THREE.Mesh(bulletGeo, fogMat));
+      // Ship-death FX: measured as the one effect still compiling on first use (+3 programs), and it
+      // recompiles after every lull because each sprite/ring disposes its material when it finishes.
+      warmRig.add(new THREE.Mesh(explosionGeo, addMat), new THREE.Mesh(bulletGeo, fogMat),
+        new THREE.Mesh(quadGeoForWarm, flipbookKeepAliveMaterial()),
+        new THREE.Mesh(quadGeoForWarm, ringKeepAliveMaterial()));
       warmRig.position.y = -100000; // off-camera; culled every frame, never disposed
       scene.add(warmRig);
     }

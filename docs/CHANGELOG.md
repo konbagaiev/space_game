@@ -5,6 +5,17 @@
 
 ## 2026-07-29
 
+- **A ship blowing up no longer costs a shader compile.** Reported from the field as a half-second lag on
+  every kill (verified three times). The obvious suspect — overdraw from flying through the blast — was
+  measured and cleared: an explosion covers at most **6.7% of the screen** across its whole life. The stall
+  telemetry pointed elsewhere: freeze frames creating **7 shader programs in one second**. A local probe
+  pinned it — a ship death compiled **+3 programs on first use**, while rockets, smoke and enemy spawns
+  compiled none. The death FX (flipbook fireball + shockwave ring) each dispose their material when they
+  finish, and THREE frees a program with its last material, so every death after a lull recompiled.
+  `flipbook-fx.js` and `projectiles.js` now export a `keepAliveMaterial()` held by the permanent warm rig;
+  the same probe now reports **0**. Guard: `28-scene-warm` asserts a ship explosion compiles nothing
+  (mutation-verified). See DECISIONS §83.
+
 - **Level-load veil, so the pre-fight warm reads as loading instead of a crash.** Moving the shader
   compile/upload to level build (previous entry) worked — a cold-phone session shows the steady state fully
   recovered (25-35 fps, `js.render` 10-13 ms) — but it concentrates the work into **one blocking render call
