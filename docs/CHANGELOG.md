@@ -11,7 +11,10 @@
   `.glb` files arrived. `G.pendingAssets` now counts essential model loads in flight (ship models +
   set-pieces, decremented on error as well as success) and the veil stays up until they land. Bounded by a
   9 s cap so a wedged download can never lock anyone out — it just falls back to the old
-  start-with-placeholders behaviour. On a warm cache (assets are `immutable`, §78) the wait is a frame or
+  start-with-placeholders behaviour. The cap is anchored to the FIRST raise of the wait: late arrivals
+  re-raise the warm request, and resetting the deadline each time pushed it forward forever (caught under an
+  emulated 300 kbit/s link, where the veil never came down). Verified on that same emulated link: the veil
+  lifts at the cap with the player's ship on its real model, the rest still arriving. On a warm cache (assets are `immutable`, §78) the wait is a frame or
   two. See DECISIONS §84.
 
 ## 2026-07-29

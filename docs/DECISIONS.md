@@ -3027,10 +3027,18 @@ later, with no loading screen while it happened. Reported from the field exactly
 decremented on success **and on error**. The veil stays up while the count is above zero, and only then is
 the shader warm run and the veil dropped.
 
-**A hard cap, deliberately.** `WARM_MAX_WAIT_MS` (9 s) bounds the wait. A wedged or failed download must
+**A hard cap, deliberately — anchored to the FIRST raise of the wait.** `WARM_MAX_WAIT_MS` (9 s) bounds it.
+Late arrivals re-raise the warm request, and an earlier version reset the deadline on each one, which
+pushed it forward indefinitely: verified under an emulated 300 kbit/s link, where the veil simply never came
+down. Anchoring it to the first raise keeps the promise. A wedged or failed download must
 never lock a player out of their game; when the cap trips they simply start with placeholders, which is
 exactly the old behaviour. The error paths decrement too, so one failed asset cannot leave the counter
 poisoned for every later level.
+
+**Measured under an emulated bad link** (300 kbit/s, 300 ms RTT, cache disabled — the conditions the report
+came from, which the maintainer could not reproduce on his own connection): the veil holds for the 8.5 s cap
+and then lifts with the player's ship carrying its **real model**, three loads still in flight for enemies
+and set-pieces. Exactly the intent — the thing the player looks at is there, the rest catches up.
 
 **Cheap on a warm cache.** Content-hashed assets are served `immutable` (§78), so on any load after the
 first the fetches resolve from cache and the veil is gone within a frame or two — the wait is paid once,

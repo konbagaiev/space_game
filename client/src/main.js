@@ -713,8 +713,11 @@ function animate() {
   if (G.needsSceneWarm) {
     G.needsSceneWarm = false;
     el.levelWarm.classList.add('on');
+    // Anchor the cap on the FIRST raise of this wait. Late arrivals re-raise the warm request, and resetting
+    // the deadline each time would push it forward indefinitely — on a genuinely slow link the veil then
+    // never comes down and the player is locked out, which is worse than starting with placeholders.
+    if (!warmDeferred) warmDeadline = performance.now() + WARM_MAX_WAIT_MS;
     warmDeferred = true;
-    warmDeadline = performance.now() + WARM_MAX_WAIT_MS;
   } else if (warmDeferred) {
     // Also wait out the .glb loads still in flight (ship models, set-pieces). Without this the veil drops
     // as soon as the shaders are warm and the player starts the fight looking at PROCEDURAL PLACEHOLDER
