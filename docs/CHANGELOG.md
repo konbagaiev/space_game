@@ -3,6 +3,17 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-02
+
+- **The loading veil now waits for the models, not just the shaders.** On itch (first load ≈ 20 MB) the
+  fight began with the player flying the **procedural placeholder cone** and the base station popping in
+  seconds later, with no loading screen — the veil only covered the shader warm and dropped before the
+  `.glb` files arrived. `G.pendingAssets` now counts essential model loads in flight (ship models +
+  set-pieces, decremented on error as well as success) and the veil stays up until they land. Bounded by a
+  9 s cap so a wedged download can never lock anyone out — it just falls back to the old
+  start-with-placeholders behaviour. On a warm cache (assets are `immutable`, §78) the wait is a frame or
+  two. See DECISIONS §84.
+
 ## 2026-07-29
 
 - **A ship blowing up no longer costs a shader compile.** Reported from the field as a half-second lag on

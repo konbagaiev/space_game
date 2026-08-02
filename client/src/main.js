@@ -548,6 +548,8 @@ const devPerf = (() => {
 const quadGeoForWarm = new THREE.PlaneGeometry(1, 1); // carrier for the held FX materials (never drawn: the rig is off-camera)
 let warmRig = null;
 let warmDeferred = false; // the veil is up; do the blocking compile on the NEXT frame (see animate)
+let warmDeadline = 0;
+const WARM_MAX_WAIT_MS = 9000; // cap on waiting for assets — a stuck download must not block the game
 function prewarmShaders() {
   try {
     if (!warmRig) {
@@ -712,7 +714,14 @@ function animate() {
     G.needsSceneWarm = false;
     el.levelWarm.classList.add('on');
     warmDeferred = true;
+    warmDeadline = performance.now() + WARM_MAX_WAIT_MS;
   } else if (warmDeferred) {
+    // Also wait out the .glb loads still in flight (ship models, set-pieces). Without this the veil drops
+    // as soon as the shaders are warm and the player starts the fight looking at PROCEDURAL PLACEHOLDER
+    // cones while the real models trickle in — reported on the itch build, where the first load fetches
+    // ~20 MB. `WARM_MAX_WAIT_MS` is a hard cap: a wedged or failed download must never lock anyone out of
+    // the game, it just means they start with placeholders as before.
+    if (G.pendingAssets > 0 && performance.now() < warmDeadline) return; // next frame is already scheduled (top of animate)
     warmDeferred = false;
     prewarmShaders();
     el.levelWarm.classList.remove('on');
@@ -767,6 +776,7 @@ if (location.search.includes('debug')) {
     get enemyShieldRefills() { return G.enemyShieldRefills; }, // diagnostic: completed enemy shield refills this run (replay triage)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
     get needsSceneWarm() { return G.needsSceneWarm; }, // diagnostic: a level build is waiting to be compiled/uploaded
+    get pendingAssets() { return G.pendingAssets; }, // diagnostic: essential .glb loads still in flight (veil gate)
     smokePool, // diagnostic: the instanced rocket-trail pool (live count + per-instance alphas)
     drops, // the live loot-drop array (count/positions assertable in headless)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone

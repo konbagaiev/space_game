@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { BULLET_PLANE_Y } from './state.js'; // the canonical combat plane every ship group sits on
+import { BULLET_PLANE_Y, G } from './state.js'; // the canonical combat plane every ship group sits on
 import { scene, renderer, camera } from './engine.js'; // needed to warm a freshly parsed model onto the GPU
 
 // Per-ship model-presentation config (stats.model), with back-compat for the old loose keys
@@ -100,15 +100,18 @@ export function requestShipModel(url, cb) {
   }
   entry = { scene: null, waiters: cb ? [cb] : [] };
   shipModelCache.set(url, entry);
+  G.pendingAssets++; // hold the level-load veil up until this model is here (DECISIONS §84)
   gltfLoader.load(url, (gltf) => {
     entry.scene = gltf.scene;
     warmModel(entry.scene); // compile + upload NOW, not on the first frame this ship type is drawn
     for (const w of entry.waiters) w(entry.scene.clone(true));
     entry.waiters.length = 0;
+    G.pendingAssets--;
   }, undefined, (err) => {
     console.warn('Ship model failed to load, keeping primitive:', url, err);
     shipModelCache.delete(url); // drop the entry so a later spawn can retry
     entry.waiters.length = 0;
+    G.pendingAssets--; // a failure must not wedge the veil
   });
 }
 

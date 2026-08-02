@@ -663,6 +663,7 @@ function makeFreighter(spec) {
 
   // load the .glb (exhaust-only during load and on error — no procedural fallback), then re-derive the
   // emitter from the model's real group-local rear bounds so fire streams from behind the actual engines
+  if (spec.modelUrl) G.pendingAssets++; // hold the level-load veil until the set-piece is here (DECISIONS §84)
   if (spec.modelUrl) gltfLoader.load(spec.modelUrl, (gltf) => {
     const model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
@@ -675,6 +676,7 @@ function makeFreighter(spec) {
     pivot.rotation.y = spec.yaw ?? 0;               // orient nose to +Z (data-fixed, like ship models)
     pivot.add(model);
     G.needsSceneWarm = true; // late async arrival: compile + upload it before the next frame draws it
+    G.pendingAssets--;
     pivot.updateMatrixWorld(true);                  // measure while unparented → local == world
     const lbox = new THREE.Box3().setFromObject(pivot); // group-local bounds after scale+yaw
     // single rear-center emitter: model's tail (-Z), vertical center, spread scaled to the rear width
@@ -682,7 +684,7 @@ function makeFreighter(spec) {
     spread = (lbox.max.x - lbox.min.x) * 0.2;
     fx.setOrigin(emit, spread); // push the model-derived origin/spread into the plume uniforms
     g.add(pivot);
-  }, undefined, (err) => console.warn('Freighter model failed to load, keeping exhaust only:', spec.modelUrl, err));
+  }, undefined, (err) => { G.pendingAssets--; console.warn('Freighter model failed to load, keeping exhaust only:', spec.modelUrl, err); });
 
   return { obj: g, dispose: () => fx.dispose(), update: (dt) => {
     fx.update(dt); // advance the plume's uTime (no buffer re-upload)
@@ -706,6 +708,7 @@ const BASE_STATION_LEN = 100;
 
 function makeBaseStation(spec) {
   const g = new THREE.Group();
+  if (spec.modelUrl) G.pendingAssets++; // hold the level-load veil until the set-piece is here (DECISIONS §84)
   if (spec.modelUrl) gltfLoader.load(spec.modelUrl, (gltf) => {
     const model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
@@ -718,8 +721,9 @@ function makeBaseStation(spec) {
     pivot.rotation.y = spec.yaw ?? 0;
     pivot.add(model);
     G.needsSceneWarm = true; // late async arrival: compile + upload it before the next frame draws it
+    G.pendingAssets--;
     g.add(pivot);
-  }, undefined, (err) => console.warn('Base station model failed to load:', spec.modelUrl, err));
+  }, undefined, (err) => { G.pendingAssets--; console.warn('Base station model failed to load:', spec.modelUrl, err); });
   const spin = spec.spin ?? 0;
   return { obj: g, update: (dt) => { if (spin) g.rotation.y += spin * dt; } };
 }

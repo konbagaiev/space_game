@@ -3015,6 +3015,31 @@ the old and the new code. `client/visual/scenarios/28-scene-warm.mjs` therefore 
 raises the request, a frame consumes it, the rig stays undisposed — which is the part that can break
 silently. The effect itself is read from `perf_samples`: `gpu.programs` at combat start versus 15 s in.
 
+## 84. The level-load veil waits for the ASSETS too, not just the shader warm
+
+**Problem.** The veil (§83) covered the compile/upload, then dropped — but the `.glb` files load
+asynchronously and independently. On the itch build, whose first load pulls ~20 MB, that meant the fight
+began with the player flying the **procedural placeholder cone** and the base station popping in seconds
+later, with no loading screen while it happened. Reported from the field exactly that way.
+
+**Decision.** `G.pendingAssets` counts essential `.glb` loads in flight — ship models
+(`ship-factory.js requestShipModel`) and set-pieces (`world.js`) — incremented when a fetch starts and
+decremented on success **and on error**. The veil stays up while the count is above zero, and only then is
+the shader warm run and the veil dropped.
+
+**A hard cap, deliberately.** `WARM_MAX_WAIT_MS` (9 s) bounds the wait. A wedged or failed download must
+never lock a player out of their game; when the cap trips they simply start with placeholders, which is
+exactly the old behaviour. The error paths decrement too, so one failed asset cannot leave the counter
+poisoned for every later level.
+
+**Cheap on a warm cache.** Content-hashed assets are served `immutable` (§78), so on any load after the
+first the fetches resolve from cache and the veil is gone within a frame or two — the wait is paid once,
+where it belongs.
+
+**Watch the loop's shape here.** `animate()` schedules its own next frame at the TOP, so the early return
+that holds the veil must be a bare `return` — an added `requestAnimationFrame` would double the loop every
+frame and take the tab down. Caught while writing this; noted because the shape invites the mistake.
+
 ## Future ideas
 
 solid asteroids with bounce ·

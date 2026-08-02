@@ -31,6 +31,9 @@ export const G = {
   kills: 0,                   // destroyed enemies this run (drives the level runner's thresholds + HUD)
   enemyShieldRefills: 0,      // diagnostic: enemy shields that completed a refill this run (replay-desync triage)
   needsSceneWarm: false,      // set by sim.reset(): the render loop compiles/uploads the freshly built level once
+  // Essential .glb loads still in flight (ship models + set-pieces). The level-load veil stays up while
+  // this is > 0, so a player never starts a fight looking at procedural placeholder cones (DECISIONS §84).
+  pendingAssets: 0,
   enemyTotal: 0,              // total enemies this level/mission (from descriptor.enemyTotal; 0 = unknown -> HUD hides the /total)
   earned: 0,                  // credits earned this run: each kill adds the ship's `reward`; doubled on level completion
   balance: 0,                 // persistent account balance (loaded from the server; banked at run end)

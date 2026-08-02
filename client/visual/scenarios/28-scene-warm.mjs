@@ -66,6 +66,16 @@ export default async function ({ page, assert }) {
     draw();
     return g.renderer.info.programs.length - before;
   });
+  // The veil must also outlast the .glb loads, or the fight starts on procedural placeholder cones while
+  // the real models trickle in — reported on the itch build, whose first load fetches ~20 MB. Counted in
+  // `G.pendingAssets`, with a hard cap so a wedged download can never lock the player out.
+  const assets = await page.evaluate(() => ({
+    pending: window.__game.pendingAssets,
+    veil: document.getElementById('levelwarm').classList.contains('on'),
+  }));
+  assert.equal(assets.pending, 0, 'every essential .glb load has settled (the counter returns to zero)');
+  assert.equal(assets.veil, false, 'and the veil is down once nothing is in flight');
+
   assert.equal(compiled, 0,
     `a ship explosion compiles no new shader programs (got +${compiled} — an FX material config is not held alive)`);
   assert.ok(!rig.disposed, 'its materials are never disposed — a freed material frees its compiled program');
