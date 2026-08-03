@@ -9,8 +9,15 @@
 // input snapshot/apply. main.js owns the wiring (it holds update()/reset()/keys/the render loop). Keeping the
 // pure half here makes it unit-testable and keeps the trace format in one documented place.
 
-// The trace format version. Bump on any breaking shape change so a stale recording is rejected loudly.
-export const TRACE_VERSION = 1;
+// The trace format version we WRITE. Bump on any breaking shape change so a stale recording is rejected
+// loudly. v2 stores the ticks RUN-LENGTH PACKED (`runs` + `tickCount`) instead of a flat `ticks` array —
+// input changes ~2×/second while we capture 60 ticks/second, so a real session collapses ~24× (measured on
+// a 131 s desktop session: 7867 ticks → 279 runs, 254 KB → 10.7 KB). That is what makes a whole session fit
+// in an unload beacon and keeps the live recorder's retained memory flat on a weak device.
+export const TRACE_VERSION = 2;
+// Versions we can still READ. v1 traces exist in the wild (the shipped Level-0 intro asset + every session
+// recorded before 2026-08-03), and they stay playable forever — hydrateTrace() normalizes both shapes.
+export const READABLE_TRACE_VERSIONS = new Set([1, 2]);
 
 // Map a `level` URL value to a catalog level NAME. A bare number N → the seed name `level-N` (so
 // `?record=1&level=1` records the intro four-ship fight, whose seed name is `level-1`); a non-numeric value is
@@ -46,11 +53,68 @@ export function evalPlayback(search) {
 // Snapshot the resolved input for ONE tick, exactly as the recorder captures it and the replayer re-applies it:
 // the set of held key codes + the touch-aim (heading/thrust) when the virtual stick is active. Must be taken
 // AFTER update() so a replay re-derives an identical frame (mirrors the ?bench recorder).
+//
+// The touch-aim is QUANTIZED (heading 1e-3 rad ≈ 0.06°, thrust 1e-2) before it is stored. Two reasons, both
+// load-bearing for a phone/tablet recording: a raw float serializes as ~18 characters where the rounded one
+// takes ~6, and — far more important — an analog stick moves every single tick, so unrounded values would
+// defeat the run-length packing completely (see packTicks) on exactly the devices whose sessions we keep
+// losing. The step is far below what a finger can express, so the replay is not measurably less faithful.
+const q = (v, step) => Math.round(v / step) * step;
 export function snapshotInput(keys, touchAim) {
   return {
     k: Object.keys(keys).filter((c) => keys[c]),
-    t: touchAim && touchAim.active ? [touchAim.heading, touchAim.thrust] : null,
+    t: touchAim && touchAim.active ? [q(touchAim.heading, 1e-3), q(touchAim.thrust, 1e-2)] : null,
   };
+}
+
+// Do two tick snapshots hold the SAME input? Element-wise on `k` (never a set compare): `snapshotInput`
+// derives it from `Object.keys(keys)` on one shared, never-reassigned object, so the order is stable across
+// ticks and a positional compare is both correct and cheap. Powers the run-length packing on both ends.
+export function sameInput(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ka = a.k || [], kb = b.k || [];
+  if (ka.length !== kb.length) return false;
+  for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return false;
+  const ta = a.t, tb = b.t;
+  if (!ta !== !tb) return false;
+  return !ta || (ta[0] === tb[0] && ta[1] === tb[1]);
+}
+
+// Run-length pack a flat tick array → `[[tick, repeatCount], …]`.
+export function packTicks(ticks) {
+  const runs = [];
+  for (const tick of ticks || []) {
+    const last = runs[runs.length - 1];
+    if (last && sameInput(last[0], tick)) last[1]++;
+    else runs.push([tick, 1]);
+  }
+  return runs;
+}
+
+// Expand packed runs back to a flat tick array. The SAME snapshot object is repeated across a run — safe
+// because applyInput only ever READS a tick (it mutates `keys`/`touchAim`, never the tick), and it keeps a
+// 10-minute playback at a few hundred objects instead of 36 000.
+export function unpackTicks(runs) {
+  const ticks = [];
+  for (const r of runs || []) for (let i = 0; i < r[1]; i++) ticks.push(r[0]);
+  return ticks;
+}
+
+// How many sim ticks a trace holds, whichever shape it is in (v1 flat / v2 packed).
+export function traceTickCount(t) {
+  if (!t) return 0;
+  if (Array.isArray(t.ticks)) return t.ticks.length;
+  if (Array.isArray(t.runs)) return Number.isFinite(t.tickCount) ? t.tickCount : t.runs.reduce((n, r) => n + r[1], 0);
+  return 0;
+}
+
+// Normalize ANY readable trace to one that carries a flat `.ticks` array, so every consumer (the playback
+// accumulator, the HUD counters, the bench) indexes ticks the one way it always has. v1 passes through
+// untouched; v2 is expanded once at load. Idempotent.
+export function hydrateTrace(t) {
+  if (!t || Array.isArray(t.ticks)) return t;
+  return { ...t, ticks: unpackTicks(t.runs) };
 }
 
 // Apply one recorded tick onto the shared input state before update(): clear every held key, set the recorded
@@ -80,7 +144,11 @@ export const CUTSCENE_STALL_TICKS = 900;
 // sim path). `dt` is the fixed step used both to record and to replay. `shipId` + `loadout`/`components` rebuild
 // the EXACT player ship+weapons used at record time, so a replay is independent of the current account loadout
 // (both are id-only refs — `loadout.mounts:[{weapon,group,…}]`, `components:{hull,engine,…}` — so serializable).
-export function makeTrace({ id, level, seed, dt, shipId, loadout, components, ticks }) {
+// Takes EITHER a flat `ticks` array (dev ?record, tests) or already-packed `runs` (+ `tickCount`) straight
+// from the live recorder, and always emits the packed v2 shape. The runs are copied, so a recorder that
+// keeps capturing after a provisional upload cannot mutate a trace already handed to the transport.
+export function makeTrace({ id, level, seed, dt, shipId, loadout, components, ticks, runs, tickCount }) {
+  const packed = runs ? runs.map((r) => [r[0], r[1]]) : packTicks(ticks);
   return {
     version: TRACE_VERSION,
     kind: 'input-replay',
@@ -91,7 +159,8 @@ export function makeTrace({ id, level, seed, dt, shipId, loadout, components, ti
     shipId: shipId == null ? null : shipId,
     loadout: loadout || null,       // { mounts:[{weapon,group,offset,delay}] } — null → playback uses ship defaults
     components: components || null,  // { hull,engine,thruster,repair,grab } ids — null → ship defaults
-    ticks: ticks ? ticks.slice() : [],
+    tickCount: Number.isFinite(tickCount) ? tickCount : packed.reduce((n, r) => n + r[1], 0),
+    runs: packed,                    // [[tickSnapshot, repeatCount], …] — hydrateTrace() expands it at load
   };
 }
 
@@ -139,11 +208,16 @@ export function validateTrace(t) {
   const problems = [];
   if (!t || typeof t !== 'object') return ['trace is not an object'];
   if (t.kind !== 'input-replay') problems.push(`kind is "${t.kind}", expected "input-replay"`);
-  if (t.version !== TRACE_VERSION) problems.push(`version ${t.version} != ${TRACE_VERSION}`);
+  if (!READABLE_TRACE_VERSIONS.has(t.version)) problems.push(`version ${t.version} is not readable (${[...READABLE_TRACE_VERSIONS].join('/')})`);
   if (!Number.isFinite(t.seed)) problems.push('seed missing or not a finite number');
   if (!Number.isFinite(t.dt) || t.dt <= 0) problems.push('dt missing or not a positive number');
   if (!t.level) problems.push('level missing');
-  if (!Array.isArray(t.ticks)) problems.push('ticks is not an array');
-  else if (t.ticks.length === 0) problems.push('ticks is empty');
+  // Either shape is accepted: v1's flat `ticks`, or v2's packed `runs`. Both must be non-empty.
+  if (Array.isArray(t.ticks)) { if (t.ticks.length === 0) problems.push('ticks is empty'); }
+  else if (Array.isArray(t.runs)) {
+    if (t.runs.length === 0) problems.push('runs is empty');
+    else if (!t.runs.every((r) => Array.isArray(r) && r.length === 2 && Number.isFinite(r[1]) && r[1] > 0)) problems.push('runs holds a malformed [tick, count] pair');
+    if (!Number.isFinite(t.tickCount) || t.tickCount <= 0) problems.push('tickCount missing or not a positive number');
+  } else problems.push('neither ticks nor runs is an array');
   return problems;
 }

@@ -426,6 +426,11 @@ export async function createApp() {
 
   const GAME_VERSION = process.env.SENTRY_RELEASE || null;          // the deploy commit (Dockerfile bakes GIT_SHA)
   const SESSION_OUTCOMES = new Set(['win', 'death', 'quit']);
+  // Hard server caps, above the client's own (MAX_SESSION_TICKS/MAX_SESSION_RUNS in session-record.js) so a
+  // legitimate at-the-cap session is never rejected: ~33 min of sim, and a run count that bounds the payload
+  // even when every tick differs (continuous analog touch input).
+  const MAX_SESSION_TICKS = 120000;
+  const MAX_SESSION_RUNS = 25000;
 
   // Store one gameplay session recording (docs/plans/2026-08-03-1246-record-all-sessions.md). The client
   // sends the input-replay trace; we upload it to S3 and write the metadata row. Best-effort, fire-and-forget.
@@ -433,14 +438,26 @@ export async function createApp() {
     const b = req.body || {};
     const { trace, level, outcome, durationMs, kills } = b;
     const playerId = (typeof b.playerId === 'string' && b.playerId) ? b.playerId : null;
-    if (!trace || typeof trace !== 'object' || !Array.isArray(trace.ticks) || trace.ticks.length === 0) return res.status(400).end();
-    if (trace.ticks.length > 40000) return res.status(413).end();     // hard server cap (~11 min at 60Hz)
+    if (!trace || typeof trace !== 'object') return res.status(400).end();
+    // Both trace shapes are accepted: v1's flat `ticks`, v2's run-length packed `runs` + `tickCount`.
+    const ticks = Array.isArray(trace.ticks) ? trace.ticks.length
+      : (Array.isArray(trace.runs) ? (Number.isFinite(trace.tickCount) ? trace.tickCount : 0) : 0);
+    if (ticks <= 0) return res.status(400).end();
+    if (ticks > MAX_SESSION_TICKS) return res.status(413).end();
+    if (Array.isArray(trace.runs) && trace.runs.length > MAX_SESSION_RUNS) return res.status(413).end();
     if (typeof level !== 'string' || !SESSION_OUTCOMES.has(outcome)) return res.status(400).end();
-    const id = crypto.randomUUID();
+    // The id comes from the CLIENT so the provisional upload (tab hidden) and the final one (win/death) land
+    // on the SAME row — the recorder mints a UUID per session. Anything that isn't a plausible id gets a
+    // server-side one instead. Guessing another player's UUID to overwrite their row is the same
+    // infeasible-by-unguessability trade the unauthenticated trace GET below already makes, and the upsert
+    // additionally refuses to cross player_id boundaries (see recordSession).
+    const id = (typeof b.id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(b.id)) ? b.id : crypto.randomUUID();
     const s3Key = `recordings/sessions/${id}.json`;
     try {
-      await putTrace(s3Key, JSON.stringify(trace));                    // no-op when creds absent (row still written)
-      await recordSession({ id, playerId, level, outcome, durationMs, kills, s3Key, gameVersion: GAME_VERSION });
+      // Row FIRST: its player_id guard is what decides whether this upload may claim `id` at all. Writing S3
+      // first would let a colliding id overwrite another player's trace even though their row was protected.
+      const { written } = await recordSession({ id, playerId, level, outcome, durationMs, kills, s3Key, gameVersion: GAME_VERSION });
+      if (written) await putTrace(s3Key, JSON.stringify(trace));       // no-op when creds absent (row still written)
     } catch { /* best-effort telemetry */ }
     res.status(204).end();
   }));

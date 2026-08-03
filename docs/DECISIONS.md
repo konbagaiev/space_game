@@ -3084,7 +3084,9 @@ against the wrong schema and fail every insert. So a distinct name + `idx_gsessi
 
 **Accepted v1 limits.** `sendBeacon` (unload flush) is capped ~64 KB — a long *abandoned* trace can exceed
 it and silently drop; acceptable because the funnel we care about is early drop-off, whose traces are
-small. Win/death flush via normal `fetch` (page stays open) has no size issue. `GET /api/sessions/:id/trace`
+small. *(That reasoning was wrong and is **superseded by §87** — the cap dropped every quit longer than ~34
+seconds, and on phones/tablets the unload event usually never fired at all.)* Win/death flush via normal
+`fetch` (page stays open) has no size issue. `GET /api/sessions/:id/trace`
 is **intentionally unauthenticated** — a trace is seed+input only (no PII, no screen capture), keyed by an
 unguessable UUID, a fair trade for a dead-simple playback page. **No consent UI** (input-replay on our own
 domain). No TTL/retention job, no gzip/chunked upload, no client-side version gating — all deferred (§30).
@@ -3097,6 +3099,45 @@ pg_type_typname_nsp_index") — a latent bug that surfaced once a second test fi
 (`pg_advisory_lock`) on a dedicated pool client before running its DDL and releases it in a `finally`, so
 concurrent callers serialize (the losers then find the tables already present — idempotent). Cheap, no new
 dependency, and also correct for a future multi-instance boot.
+
+## 87. Sessions upload when the tab is HIDDEN, and traces are run-length packed
+
+§85 shipped always-on recording with a single upload trigger — `pagehide` — and wrote off `sendBeacon`'s
+~64 KB body cap as harmless. Both assumptions failed in the field within a day. A tablet tester played
+Level 3 for 20+ minutes and produced **no session row and no `quit` event at all**; the maintainer's own
+hour-long Level-4 quit produced the `quit` event but **no session row**. Two independent causes:
+
+1. **`pagehide` is not a mobile event.** Phones and tablets freeze or discard a backgrounded page — locking
+   the screen or switching apps often fires nothing. `visibilitychange → hidden` is the one signal that
+   reliably lands, and the perf monitor was already using it while the session recorder was not.
+2. **~34 seconds was the real beacon ceiling.** At ~32 bytes/tick, 64 KB is ~2000 ticks. "Tab-closers' traces
+   are small" is exactly backwards: a player who plays five minutes and closes the tab is the drop-off we
+   most want to watch, and their trace is 10× over the cap. `sendBeacon` refuses it silently (no throw).
+
+**Flush on hidden, over a plain `fetch`.** `visibilitychange` fires while the page is *still alive*, so the
+upload is an ordinary request with no body cap — the beacon is demoted to a last-resort `pagehide` path.
+The flush is **provisional**: the recorder keeps running, so a player who tabs away and comes back and then
+wins re-sends the same session under the same id. The `quit` *funnel event* deliberately stays on `pagehide`
+only — firing it on every tab switch would inflate drop-off with players who simply came back.
+
+**Client-minted session id + server UPSERT.** A session is now uploaded more than once by design, so the id
+is minted client-side at `begin()` and `recordSession` upserts (`ON CONFLICT (id) DO UPDATE … WHERE
+player_id IS NOT DISTINCT FROM EXCLUDED.player_id`, so a colliding id can never rewrite another player's
+row). One session = one row that moves forward (provisional `quit` → final `win`), never duplicates.
+
+**Trace v2: run-length packed ticks.** Input changes ~2×/second while we capture 60 ticks/second, so a flat
+tick array is ~97% redundant. `runs: [[tickSnapshot, repeatCount], …]` + `tickCount` measured **23.8×**
+smaller on a real 131 s session (7867 ticks → 279 runs, 254 KB → 10.7 KB), which (a) puts a 10-minute
+session inside even the beacon cap, and (b) — the reason the recorder packs *as it captures* rather than at
+flush — keeps retained memory at a few hundred objects instead of tens of thousands on exactly the weak
+devices we are trying to observe. The touch aim is **quantized** (heading 1e-3 rad ≈ 0.06°, thrust 1e-2)
+before storage: an analog stick emits a distinct float every tick and would defeat the packing entirely on
+touch devices, and the step is far below what a finger can express. v1 traces (the shipped Level-0 intro
+asset, every session recorded before this) stay readable forever — `hydrateTrace()` normalizes both shapes
+at load, so nothing downstream knows the difference.
+
+**Caps are now on RUNS as well as ticks** (`MAX_SESSION_TICKS` 108000 ≈ 30 min, `MAX_SESSION_RUNS` 20000).
+On touch the run count, not the tick count, is what actually bounds memory and payload size.
 
 ## Future ideas
 
