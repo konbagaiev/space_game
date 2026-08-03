@@ -5,6 +5,17 @@
 
 ## 2026-08-03
 
+- **[2026-08-03-1246-record-all-sessions] Fix: win/long sessions were silently dropped (keepalive 64KB cap).**
+  Prod `gameplay_sessions` had only short `death`/`quit` rows and ZERO `win` rows despite completed levels.
+  `net.js postSession()`'s win/death flush used `fetch(… , { keepalive: true })`; Chrome caps a **keepalive**
+  request body at **~64KB**, so a completed level's trace (minutes of 60Hz ticks, ~0.1–2MB) threw synchronously
+  and the `.catch()` swallowed it — only sub-64KB death/quit traces uploaded. Win/death flushes happen while the
+  page STAYS OPEN (the overlay is up), so `keepalive` was never needed there: the non-beacon path now uses a
+  plain `fetch` (no body cap). `navigator.sendBeacon` stays for the `pagehide`/unload (`beacon:true`) path only,
+  where the ~64KB cap remains a documented v1 limit for tab-closers (their early-drop-off traces are small).
+  The transport decision was extracted to a pure, unit-tested `client/src/session-transport.js`
+  (`sendSession`) with a regression guard asserting the win/death path issues a `fetch` WITHOUT `keepalive`.
+  Effective upload ceiling is the client's 36000-tick cap (≈≤2MB), comfortably inside the route's 3MB parser.
 - **[2026-08-03-1246-record-all-sessions] Fix: intro→Level-1 dead controls after always-on recording.**
   Unifying live play onto the record/playback fixed-step accumulator introduced a freeze: the accumulator's
   inner loop was gated `while (… && !rs.done …)`, and the intro's completion set `rs.done = true` *after*
