@@ -12,14 +12,6 @@ export const pool = new pg.Pool({
 // migration story (DECISIONS §9). Safe to run on every boot: CREATE TABLE IF NOT EXISTS + guarded
 // ALTER/one-shots, then an upsert of the catalog from catalog_seed.js.
 export async function migrate() {
-  // Serialize concurrent migrate() callers (parallel test processes, or a future multi-instance boot)
-  // with a Postgres advisory lock: two overlapping `CREATE TABLE IF NOT EXISTS` on the same DB race in
-  // pg_type ("duplicate key ... pg_type_typname_nsp_index"). The lock makes only one migrate run its DDL
-  // at a time; everyone else waits, then finds the tables already present (idempotent). See CHANGELOG.
-  const MIGRATE_LOCK_KEY = 0x5e5510; // stable arbitrary advisory-lock id shared by all migrate() callers
-  const lock = await pool.connect();
-  await lock.query('SELECT pg_advisory_lock($1)', [MIGRATE_LOCK_KEY]);
-  try {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS players (
       id           TEXT PRIMARY KEY,
@@ -169,24 +161,6 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS idx_perf_time ON perf_samples(created_at);
     CREATE INDEX IF NOT EXISTS idx_perf_player ON perf_samples(player_id);
 
-    -- gameplay session recordings (docs/plans/2026-08-03-1246-record-all-sessions.md). One row per
-    -- recorded session; the trace itself lives in S3 (s3_key). player_id nullable + logical FK only
-    -- (anon players; matches perf_samples/events). game_version = the deploy commit (SENTRY_RELEASE).
-    -- NB: NOT named "sessions" — that name is the auth token store (see above). Distinct index prefix too.
-    CREATE TABLE IF NOT EXISTS gameplay_sessions (
-      id           TEXT    PRIMARY KEY,
-      player_id    TEXT,
-      level        TEXT    NOT NULL,
-      outcome      TEXT    NOT NULL,          -- win | death | quit
-      duration_ms  INTEGER NOT NULL DEFAULT 0,
-      kills        INTEGER NOT NULL DEFAULT 0,
-      s3_key       TEXT    NOT NULL,
-      game_version TEXT,
-      created_at   BIGINT  NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_gsessions_created ON gameplay_sessions(created_at);
-    CREATE INDEX IF NOT EXISTS idx_gsessions_player  ON gameplay_sessions(player_id);
-
     -- hangar shop + stash (docs/plans/hangar-shop.md). Player inventory (qty model), keyed by
     -- (player_id, kind, ref_id); kind ∈ {component, weapon} → components.id / weapons.id. The shop
     -- unlocks only after the player clears the final level → players.shop_unlocked.
@@ -303,10 +277,6 @@ export async function migrate() {
     WHERE components IS NOT NULL AND NOT (components ? 'shield')`);
 
   console.log('[migrate] postgres schema ready');
-  } finally {
-    try { await lock.query('SELECT pg_advisory_unlock($1)', [MIGRATE_LOCK_KEY]); } catch { /* best-effort */ }
-    lock.release();
-  }
 }
 
 // Give a player their starter ship if they don't own one yet (default 'player' ship, active).
@@ -506,33 +476,6 @@ export async function getPerfSamples(sessionId = null, limit = 500) {
     ? await pool.query('SELECT * FROM perf_samples WHERE session_id = $1 ORDER BY id DESC LIMIT $2', [sessionId, limit])
     : await pool.query('SELECT * FROM perf_samples ORDER BY id DESC LIMIT $1', [limit]);
   return rows; // sample is already a JS object (JSONB)
-}
-
-// Insert one recorded-session metadata row (the trace lives in S3 at s3_key). Best-effort caller.
-export async function recordSession({ id, playerId, level, outcome, durationMs, kills, s3Key, gameVersion }) {
-  await pool.query(
-    `INSERT INTO gameplay_sessions (id, player_id, level, outcome, duration_ms, kills, s3_key, game_version, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
-    [id, playerId ?? null, level, outcome, durationMs | 0, kills | 0, s3Key, gameVersion ?? null, Date.now()]);
-  return { id };
-}
-
-// Recent sessions for the /admin/sessions page (newest first).
-export async function getAdminSessions(limit = 500) {
-  const { rows } = await pool.query(
-    `SELECT id, player_id, level, outcome, duration_ms, kills, s3_key, game_version, created_at
-     FROM gameplay_sessions ORDER BY created_at DESC LIMIT $1`, [limit]);
-  return rows.map((r) => ({
-    id: r.id, playerId: r.player_id ?? null, level: r.level, outcome: r.outcome,
-    durationMs: Number(r.duration_ms), kills: Number(r.kills), s3Key: r.s3_key,
-    gameVersion: r.game_version ?? null, createdAt: Number(r.created_at),
-  }));
-}
-
-// One session's s3_key (for the trace-serving route).
-export async function getSessionS3Key(id) {
-  const { rows } = await pool.query('SELECT s3_key FROM gameplay_sessions WHERE id = $1', [id]);
-  return rows[0]?.s3_key ?? null;
 }
 
 export async function getPlayerGames(playerId, limit = 50) {

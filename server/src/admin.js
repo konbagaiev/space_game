@@ -90,51 +90,6 @@ export function deviceLabel(userAgent, model) {
   return ua.slice(0, 200);   // unparseable → raw UA (may be '')
 }
 
-const fmtDur = (ms) => { const s = Math.round((ms || 0) / 1000); return `${Math.floor(s / 60)}m ${s % 60}s`; };
-
-// The shared page shell (style + sortable table + the inline column-sort script), used by both admin
-// views. `title`/`heading` are page chrome, `ths`/`rows` the pre-rendered table HTML, `nav` optional
-// cross-link markup under the heading.
-function pageShell({ title, heading, ths, rows, nav = '' }) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${esc(title)}</title>
-    <style>
-      body { font: 14px system-ui, sans-serif; margin: 1rem; background: #0e1116; color: #e6e6e6; }
-      h1 { font-size: 1.1rem; }
-      a { color: #7fb2ff; }
-      table { border-collapse: collapse; width: 100%; }
-      th, td { border: 1px solid #2a2f3a; padding: 4px 8px; text-align: left; vertical-align: top; }
-      th { cursor: pointer; background: #171b22; position: sticky; top: 0; user-select: none; }
-      th:hover { background: #202632; }
-      td.num { text-align: right; font-variant-numeric: tabular-nums; }
-      td.ref { max-width: 320px; word-break: break-all; color: #9fb3c8; }
-      td.device { max-width: 260px; word-break: break-word; color: #cbd5e1; }
-      code { color: #cfe3ff; }
-      tr:nth-child(even) td { background: #12161d; }
-    </style></head><body>
-    <h1>${esc(heading)}</h1>
-    ${nav}
-    <table id="t"><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>
-    <script>
-      // Click a header to sort by that column (numeric when every cell parses as a number, else string).
-      const table = document.getElementById('t');
-      let sortCol = -1, asc = true;
-      const cellVal = (tr, i) => { const td = tr.children[i]; return td.dataset.sort ?? td.textContent; };
-      table.querySelectorAll('th').forEach((th, i) => th.addEventListener('click', () => {
-        asc = sortCol === i ? !asc : true; sortCol = i;
-        const rows = [...table.tBodies[0].rows];
-        const numeric = rows.every((r) => cellVal(r, i) === '' || !isNaN(parseFloat(cellVal(r, i))));
-        rows.sort((a, b) => {
-          const x = cellVal(a, i), y = cellVal(b, i);
-          const c = numeric ? (parseFloat(x || 0) - parseFloat(y || 0)) : String(x).localeCompare(String(y));
-          return asc ? c : -c;
-        });
-        rows.forEach((r) => table.tBodies[0].appendChild(r));
-      }));
-    </script></body></html>`;
-}
-
 // Render the players table page. `data-sort` on each cell holds the raw numeric/string value used by the
 // inline column-sort script (so sorting is by real value, not the formatted display text).
 function renderPage(players) {
@@ -158,57 +113,50 @@ function renderPage(players) {
   const headers = ['id', 'username', 'email', 'verified', 'created', 'last seen', 'progress', 'credits',
     'games', 'time played', 'kills', 'earned', 'referrer', 'device'];
   const ths = headers.map((h, i) => `<th data-col="${i}">${esc(h)}</th>`).join('');
-  return pageShell({
-    title: 'Vega Sentinels — admin',
-    heading: `Players — ${players.length}${players.length >= 1000 ? ' (capped)' : ''}`,
-    nav: '<p><a href="/admin/sessions">→ session recordings</a></p>',
-    ths, rows,
-  });
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vega Sentinels — admin</title>
+    <style>
+      body { font: 14px system-ui, sans-serif; margin: 1rem; background: #0e1116; color: #e6e6e6; }
+      h1 { font-size: 1.1rem; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #2a2f3a; padding: 4px 8px; text-align: left; vertical-align: top; }
+      th { cursor: pointer; background: #171b22; position: sticky; top: 0; user-select: none; }
+      th:hover { background: #202632; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      td.ref { max-width: 320px; word-break: break-all; color: #9fb3c8; }
+      td.device { max-width: 260px; word-break: break-word; color: #cbd5e1; }
+      code { color: #cfe3ff; }
+      tr:nth-child(even) td { background: #12161d; }
+    </style></head><body>
+    <h1>Players — ${players.length}${players.length >= 1000 ? ' (capped)' : ''}</h1>
+    <table id="t"><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>
+    <script>
+      // Click a header to sort by that column (numeric when every cell parses as a number, else string).
+      const table = document.getElementById('t');
+      let sortCol = -1, asc = true;
+      const cellVal = (tr, i) => { const td = tr.children[i]; return td.dataset.sort ?? td.textContent; };
+      table.querySelectorAll('th').forEach((th, i) => th.addEventListener('click', () => {
+        asc = sortCol === i ? !asc : true; sortCol = i;
+        const rows = [...table.tBodies[0].rows];
+        const numeric = rows.every((r) => cellVal(r, i) === '' || !isNaN(parseFloat(cellVal(r, i))));
+        rows.sort((a, b) => {
+          const x = cellVal(a, i), y = cellVal(b, i);
+          const c = numeric ? (parseFloat(x || 0) - parseFloat(y || 0)) : String(x).localeCompare(String(y));
+          return asc ? c : -c;
+        });
+        rows.forEach((r) => table.tBodies[0].appendChild(r));
+      }));
+    </script></body></html>`;
 }
 
-// Render the /admin/sessions page: every recorded gameplay session (newest first) with a ▶ play link
-// (/?playback&id=…) and a ✓/✗ marker on whether the recorded game_version matches the current deploy.
-function renderSessionsPage(sessions, currentVersion) {
-  const rows = sessions.map((s) => {
-    const v = s.gameVersion || '';
-    const match = v && currentVersion ? (v === currentVersion ? ' ✓' : ' ✗') : '';
-    return `
-    <tr>
-      <td data-sort="${s.createdAt}">${fmtDate(s.createdAt)}</td>
-      <td title="${esc(s.playerId || '')}"><code>${s.playerId ? esc(s.playerId.slice(0, 8)) : 'anon'}</code></td>
-      <td>${esc(s.level)}</td>
-      <td>${esc(s.outcome)}</td>
-      <td data-sort="${s.durationMs}" class="num">${fmtDur(s.durationMs)}</td>
-      <td data-sort="${s.kills}" class="num">${s.kills}</td>
-      <td title="${esc(v)}"><code>${esc(v.slice(0, 8))}</code>${match}</td>
-      <td><a href="/?playback&id=${esc(s.id)}" target="_blank" rel="noopener">▶ play</a></td>
-    </tr>`;
-  }).join('');
-  const headers = ['created', 'player', 'level', 'outcome', 'duration', 'kills', 'version', 'watch'];
-  const ths = headers.map((h, i) => `<th data-col="${i}">${esc(h)}</th>`).join('');
-  return pageShell({
-    title: 'Vega Sentinels — sessions',
-    heading: `Sessions — ${sessions.length}`,
-    nav: '<p><a href="/admin">← players</a></p>',
-    ths, rows,
-  });
-}
-
-// Mount the admin views. `getAdminPlayers`/`getAdminSessions` are injected (datastore fns) so this stays
-// testable; `currentVersion` is the deploy commit for the ✓/✗ version-match marker.
-export function mountAdmin(app, getAdminPlayers, getAdminSessions, currentVersion) {
+// Mount GET /admin on the app. `getAdminPlayers` is injected (datastore fn) so this stays testable.
+export function mountAdmin(app, getAdminPlayers) {
   app.get('/admin', async (req, res, next) => {
     try {
       if (!checkAuth(req, res)) return;
       const players = await getAdminPlayers(1000);
       res.type('html').send(renderPage(players));
-    } catch (e) { next(e); }
-  });
-  app.get('/admin/sessions', async (req, res, next) => {
-    try {
-      if (!checkAuth(req, res)) return;
-      const sessions = await getAdminSessions(500);
-      res.type('html').send(renderSessionsPage(sessions, currentVersion));
     } catch (e) { next(e); }
   });
 }

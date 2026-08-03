@@ -101,7 +101,6 @@ export const CATALOG = {
   enemyShips: [],        // DB ship rows with type 'enemy' (used by spawnEnemy(role) / tests)
   shipByName: new Map(), // name -> ship row (any type; the level's spawn pools reference these)
   level: null,           // the active level descriptor (phase/wave script)
-  levelName: null,       // the active level's SEED NAME (level-N) — the trace level for session recording
 };
 
 // --- Gameplay constants ---
