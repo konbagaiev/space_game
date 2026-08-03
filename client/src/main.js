@@ -27,7 +27,7 @@ import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, pro
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
-import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
+import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
@@ -385,7 +385,22 @@ addEventListener('pagehide', () => {
   if (G.quitSent || !G.gameStarted) return;
   G.quitSent = true;
   track('quit', { level: currentLevelLabel() });
-  flushSession('quit', { beacon: true }); // best-effort: large traces may exceed the ~64KB beacon cap (documented)
+  // Last-resort upload path only (see visibilitychange below, which already sent this session over a normal
+  // fetch). Provisional — a pagehide can be a BFCACHE freeze the player returns from, and the session must
+  // keep recording if it is.
+  flushSession('quit', { beacon: true, final: false });
+});
+// THE upload path on phones and tablets. `pagehide` routinely never fires there — backgrounding the app or
+// locking the screen freezes/discards the page instead — which is why a tablet tester's whole session left
+// no row at all. `visibilitychange → hidden` is the one event that reliably lands, and it fires while the
+// page is STILL ALIVE, so the trace goes out over a normal fetch with no ~64KB beacon body cap.
+//
+// Provisional on purpose: the recorder keeps running, so a player who tabs away and comes back and then wins
+// re-sends the SAME session id and the server updates that row in place (no duplicate, no truncated trace).
+// The `quit` FUNNEL event deliberately stays on pagehide only — firing it on every tab switch would inflate
+// drop-off with players who simply came back.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) flushSession('quit', { final: false });
 });
 
 // ---------- Sim helpers moved to src/sim.js ----------
@@ -824,7 +839,7 @@ if (location.search.includes('debug')) {
     get balance() { return G.balance; }, // persistent account balance
     get kills() { return G.kills; },
     get touchAim() { return touchAim; }, // touch steering state (active/heading/thrust) — assert tap-vs-drag in headless
-    sessionRec: () => ({ active: sr.active, flushed: sr.flushed, ticks: sr.ticks.length, level: sr.level }), // always-on live-recorder state (funnel-analytics guard)
+    sessionRec: () => ({ active: sr.active, final: sr.final, ticks: sr.tickCount, runs: sr.runs.length, level: sr.level }), // always-on live-recorder state (funnel-analytics guard)
     // Regression seam for the intro→Level-1 dead-controls bug (docs/plans/2026-08-03-1246-record-all-sessions.md).
     // The headless suites can't run the REAL auto-intro (shouldPlayIntro is gated off under ?debug), so this
     // fires the production intro-completion sequence directly: finishIntro() (async → teardown → welcome) then
@@ -986,13 +1001,15 @@ const shipByIdGlobal = (id) => { for (const s of CATALOG.shipByName.values()) if
 
 // Load a trace by id: the same-browser dev cache first (zero-friction record→playback loop), then a static
 // /recordings/{id}.json (the pulled S3 asset). Returns the parsed trace or null. `id` null → the 'last' slot.
+// Every path goes through hydrateTrace, so callers always get a trace with a flat `.ticks` array whether the
+// stored shape is v1 (flat) or v2 (run-length packed).
 async function loadTrace(id) {
   const key = id || 'last';
-  try { const s = localStorage.getItem(`replay:${key}`); if (s) return JSON.parse(s); } catch {}
+  try { const s = localStorage.getItem(`replay:${key}`); if (s) return hydrateTrace(JSON.parse(s)); } catch {}
   if (id) {
-    try { const r = await fetch(`/recordings/${id}.json`); if (r.ok) return await r.json(); } catch {}
+    try { const r = await fetch(`/recordings/${id}.json`); if (r.ok) return hydrateTrace(await r.json()); } catch {}
     // Admin playback of a recorded session (/?playback&id=<sessionId>): resolve the trace from the server.
-    try { const r = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(id)}/trace`); if (r.ok) return await r.json(); } catch {}
+    try { const r = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(id)}/trace`); if (r.ok) return hydrateTrace(await r.json()); } catch {}
   }
   return null;
 }
@@ -1059,7 +1076,7 @@ function stopRecordSession() {
     loadout: recLoadout, components: recComponents, ticks: recTicks });
   try { localStorage.setItem(`replay:${id}`, JSON.stringify(trace)); localStorage.setItem('replay:last', JSON.stringify(trace)); } catch {}
   downloadTrace(trace, `${id}.json`);
-  showRecordDone(id, trace.ticks.length);
+  showRecordDone(id, traceTickCount(trace));   // v2 traces carry packed runs, not a flat ticks array
   // The DEV ?record session clears its own seed on stop (it hands the operator back an unseeded menu). Normal
   // live play is now ALWAYS seeded per session (always-on recording): beginLiveSession reseeds before each
   // reset(), and a stale seed lingering on the post-win/death menu is harmless (menu cosmetics use Math.random).
@@ -1072,6 +1089,10 @@ function stopRecordSession() {
 // seed/loop, and a (re)played fight must never be re-recorded.
 export function beginLiveSession() {
   if (REC || rs.play || BENCH || G.replayMode) return;
+  // A session that is still open here was ABANDONED (left mid-fight, then another level launched) — win/death
+  // already closed theirs. Ship it before begin() throws the ticks away, or that drop-off never leaves a row.
+  // Runs before reset(), which is what re-stamps G.gameStartTime, so the duration is still the OLD session's.
+  flushSession('quit');
   const seed = (Date.now() >>> 0);
   seedSim(seed); // install the seeded gameplay stream for THIS session
   const shipId = (CATALOG.shipByName.get(G.currentShipName) || {}).id ?? 1;
@@ -1085,13 +1106,17 @@ export function beginLiveSession() {
   replayAcc = 0;
 }
 
-// Flush the current live recording exactly once (win/death → fetch; unload → sendBeacon). Reads live
-// duration/kills at flush time. Below-floor / already-flushed sessions send nothing (sr.end returns null).
-export function flushSession(outcome, { beacon = false } = {}) {
-  const payload = sr.end(outcome, {
+// Upload the current live recording. Reads live duration/kills at flush time. Below-floor / already-closed
+// sessions send nothing (sr.flush returns null).
+//   final:true  (win/death) — closes the session; nothing is ever sent for it again.
+//   final:false (tab hidden / unload) — provisional: the same session id may be re-sent later with more
+//                                       ticks and a real outcome, and the server upserts that one row.
+// `beacon` is the unload-only transport (sendBeacon, ~64KB body cap); every other path uses a plain fetch.
+export function flushSession(outcome, { beacon = false, final = true } = {}) {
+  const payload = sr.flush(outcome, {
     durationMs: Math.round(performance.now() - G.gameStartTime),
     kills: G.kills,
-  });
+  }, { final });
   if (payload) postSession(payload, { beacon });
 }
 G.flushSession = flushSession; // exposed on the shared bag so sim.js can flush on win/death without a main.js import cycle
@@ -1193,7 +1218,7 @@ async function startIntroCutscene() {
   const url = CATALOG.level && CATALOG.level.introTrace;
   if (!url) return false;
   let trace = null;
-  try { trace = await (await fetch(url)).json(); } catch (e) { console.error('[intro] trace fetch failed', e); }
+  try { trace = hydrateTrace(await (await fetch(url)).json()); } catch (e) { console.error('[intro] trace fetch failed', e); }
   const problems = trace ? validateTrace(trace) : ['intro trace missing/unfetchable'];
   if (problems.length) { console.error('[intro] invalid trace:', problems); return false; }
   rs.trace = trace;

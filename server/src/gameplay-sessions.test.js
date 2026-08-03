@@ -19,9 +19,16 @@ const post = (p, body, headers = {}) =>
 const get = (p, headers = {}) => fetch(base + p, { headers });
 const adminAuth = { Authorization: 'Basic ' + Buffer.from('admin:secret').toString('base64') };
 
+// v1 (flat ticks) — still accepted: traces recorded before 2026-08-03 and the shipped intro asset use it.
 const sampleTrace = (n = 200) => ({
   version: 1, kind: 'input-replay', id: null, level: 'level-1', seed: 42, dt: 1 / 60,
   shipId: 1, loadout: null, components: null, ticks: Array.from({ length: n }, () => ({ k: [], t: null })),
+});
+// v2 (run-length packed) — what the client sends now.
+const packedTrace = (n = 200, runs = 1) => ({
+  version: 2, kind: 'input-replay', id: null, level: 'level-1', seed: 42, dt: 1 / 60,
+  shipId: 1, loadout: null, components: null, tickCount: n,
+  runs: Array.from({ length: runs }, (_, i) => [{ k: i % 2 ? ['KeyW'] : [], t: null }, Math.ceil(n / runs)]),
 });
 
 test('recordSession + getAdminSessions round-trips numbers and a real playerId', async () => {
@@ -81,13 +88,71 @@ test('POST /api/sessions: valid body → 204 and a DB row (S3 no-ops without cre
   assert.match(rows[0].s3_key, /^recordings\/sessions\/.+\.json$/);
 });
 
+test('POST /api/sessions: a run-length packed (v2) trace is accepted → 204 and a row', async () => {
+  const r = await post('/api/sessions', {
+    playerId: 'p-packed', trace: packedTrace(600, 3), level: 'level-2', outcome: 'death', durationMs: 10000, kills: 2,
+  });
+  assert.equal(r.status, 204);
+  const { rows } = await pool.query("SELECT * FROM gameplay_sessions WHERE player_id = 'p-packed'");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].outcome, 'death');
+});
+
+// THE regression this route change exists for: a phone/tablet ships the session provisionally when the tab
+// goes hidden, then again (complete, with a real outcome) if the player comes back and finishes. Same
+// client-minted id → ONE row that moves forward, not two rows or a stuck 'quit'.
+test('POST /api/sessions: re-posting the same client id UPSERTS one row instead of duplicating', async () => {
+  const id = 'client-session-abc123';
+  const provisional = await post('/api/sessions', {
+    id, playerId: 'p-upsert', trace: packedTrace(300), level: 'level-4', outcome: 'quit', durationMs: 5000, kills: 0,
+  });
+  assert.equal(provisional.status, 204);
+  const final = await post('/api/sessions', {
+    id, playerId: 'p-upsert', trace: packedTrace(900), level: 'level-4', outcome: 'win', durationMs: 15000, kills: 6,
+  });
+  assert.equal(final.status, 204);
+
+  const { rows } = await pool.query("SELECT * FROM gameplay_sessions WHERE player_id = 'p-upsert'");
+  assert.equal(rows.length, 1, 'one session → one row');
+  assert.equal(rows[0].id, id);
+  assert.equal(rows[0].outcome, 'win', 'the final outcome replaces the provisional quit');
+  assert.equal(Number(rows[0].duration_ms), 15000);
+  assert.equal(Number(rows[0].kills), 6);
+});
+
+// The upsert must not let one player's re-post rewrite another player's row (client-supplied ids). The
+// `written:false` it reports is also what stops the route from overwriting that session's S3 trace.
+test('recordSession: an id owned by another player is never overwritten', async () => {
+  const mine = await recordSession({ id: 'gs-owned', playerId: 'owner', level: 'level-1', outcome: 'win',
+    durationMs: 1000, kills: 1, s3Key: 'recordings/sessions/gs-owned.json', gameVersion: null });
+  assert.equal(mine.written, true);
+  const theirs = await recordSession({ id: 'gs-owned', playerId: 'intruder', level: 'level-9', outcome: 'death',
+    durationMs: 9999, kills: 99, s3Key: 'recordings/sessions/hijack.json', gameVersion: null });
+  assert.equal(theirs.written, false, 'a rejected upsert must report it, so the route skips the S3 write too');
+  const { rows } = await pool.query("SELECT * FROM gameplay_sessions WHERE id = 'gs-owned'");
+  assert.equal(rows[0].player_id, 'owner');
+  assert.equal(rows[0].outcome, 'win');
+  assert.equal(rows[0].s3_key, 'recordings/sessions/gs-owned.json');
+});
+
 test('POST /api/sessions: junk body (no ticks) → 400', async () => {
   const r = await post('/api/sessions', { trace: { ticks: [] }, level: 'level-1', outcome: 'win' });
   assert.equal(r.status, 400);
 });
 
+test('POST /api/sessions: a packed trace with no runs → 400', async () => {
+  const r = await post('/api/sessions', { trace: { ...packedTrace(200), runs: [], tickCount: 0 }, level: 'level-1', outcome: 'win' });
+  assert.equal(r.status, 400);
+});
+
 test('POST /api/sessions: oversized ticks → 413', async () => {
-  const r = await post('/api/sessions', { trace: sampleTrace(40001), level: 'level-1', outcome: 'win' });
+  const r = await post('/api/sessions', { trace: { ...packedTrace(200), tickCount: 120001 }, level: 'level-1', outcome: 'win' });
+  assert.equal(r.status, 413);
+});
+
+test('POST /api/sessions: too many runs → 413', async () => {
+  const trace = { ...packedTrace(200), runs: Array.from({ length: 25001 }, () => [{ k: [], t: null }, 1]), tickCount: 25001 };
+  const r = await post('/api/sessions', { trace, level: 'level-1', outcome: 'win' });
   assert.equal(r.status, 413);
 });
 

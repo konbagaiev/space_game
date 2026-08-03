@@ -508,13 +508,27 @@ export async function getPerfSamples(sessionId = null, limit = 500) {
   return rows; // sample is already a JS object (JSONB)
 }
 
-// Insert one recorded-session metadata row (the trace lives in S3 at s3_key). Best-effort caller.
+// UPSERT one recorded-session metadata row (the trace lives in S3 at s3_key). Best-effort caller.
+//
+// A session is uploaded MORE THAN ONCE by design: provisionally whenever the tab goes hidden (the only
+// upload a phone/tablet reliably gets to make), then finally on win/death with the complete trace and the
+// real outcome. Same client-minted id both times, so the later upload updates the row in place — outcome,
+// duration, kills and the S3 key all move forward, `created_at` keeps the session's start.
+// The player_id guard makes a re-upload refuse to cross accounts: an id that somehow collided with another
+// player's row leaves that row untouched rather than overwriting it.
+// Returns `{ id, written }` — `written:false` means the player_id guard rejected the upsert, which the route
+// uses to skip the S3 write too (otherwise a colliding id could overwrite another player's TRACE even though
+// its row survived).
 export async function recordSession({ id, playerId, level, outcome, durationMs, kills, s3Key, gameVersion }) {
-  await pool.query(
+  const { rowCount } = await pool.query(
     `INSERT INTO gameplay_sessions (id, player_id, level, outcome, duration_ms, kills, s3_key, game_version, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT (id) DO UPDATE SET
+       level = EXCLUDED.level, outcome = EXCLUDED.outcome, duration_ms = EXCLUDED.duration_ms,
+       kills = EXCLUDED.kills, s3_key = EXCLUDED.s3_key, game_version = EXCLUDED.game_version
+     WHERE gameplay_sessions.player_id IS NOT DISTINCT FROM EXCLUDED.player_id`,
     [id, playerId ?? null, level, outcome, durationMs | 0, kills | 0, s3Key, gameVersion ?? null, Date.now()]);
-  return { id };
+  return { id, written: rowCount > 0 };
 }
 
 // Recent sessions for the /admin/sessions page (newest first).

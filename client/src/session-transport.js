@@ -6,8 +6,12 @@
 // Win/death flush → plain `fetch` while the page STAYS OPEN (the overlay is up): NO `keepalive`, so there is
 // NO ~64KB request-body cap. A `keepalive` fetch caps the body at ~64KB in Chrome, which silently threw and
 // dropped every completed-level (minutes-of-ticks) win trace — only tiny death/quit traces slipped under.
-// Unload (`beacon:true`) → `navigator.sendBeacon` (best-effort; its ~64KB cap is an accepted v1 limit for
-// tab-closers, whose early-drop-off traces are small). Returns 'beacon' | 'fetch' | null (no transport).
+// Unload (`beacon:true`) → `navigator.sendBeacon`, which has the same ~64KB body cap and silently refuses
+// anything larger. That cap was documented as harmless ("tab-closers' traces are small") and it was not: at
+// the old ~32 bytes/tick it dropped every quit longer than ~34 SECONDS, including a full hour of play. Two
+// changes demoted it to a genuine last resort — the tab-hidden flush now goes out over a plain fetch while
+// the page is still alive (main.js visibilitychange), and traces are run-length packed ~24× (replay.js), so
+// even the unload path usually fits. Returns 'beacon' | 'fetch' | null (no transport).
 export function sendSession(url, body, beacon, { fetch, sendBeacon, Blob } = {}) {
   if (beacon && sendBeacon) {
     sendBeacon(url, new Blob([body], { type: 'application/json' }));

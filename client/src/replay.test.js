@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   TRACE_VERSION, normalizeLevelName, evalRecord, evalPlayback,
   snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro,
-  CUTSCENE_STALL_TICKS,
+  CUTSCENE_STALL_TICKS, packTicks, unpackTicks, sameInput, hydrateTrace, traceTickCount,
 } from './replay.js';
 
 test('normalizeLevelName maps bare numbers to level-N and passes names through', () => {
@@ -80,7 +80,7 @@ test('makeTrace stamps version/kind and coerces the seed to uint32', () => {
   assert.equal(t.level, 'level-1');
   assert.equal(t.seed, 4294967295); // -1 >>> 0
   assert.equal(t.shipId, 2);
-  assert.equal(t.ticks.length, 1);
+  assert.equal(traceTickCount(t), 1);
 });
 
 test('validateTrace accepts a good trace and flags the broken ones', () => {
@@ -91,8 +91,69 @@ test('validateTrace accepts a good trace and flags the broken ones', () => {
   assert.ok(validateTrace({ ...good, kind: 'transform' }).some((p) => p.includes('kind')));
   assert.ok(validateTrace({ ...good, seed: NaN }).some((p) => p.includes('seed')));
   assert.ok(validateTrace({ ...good, dt: 0 }).some((p) => p.includes('dt')));
-  assert.ok(validateTrace({ ...good, ticks: [] }).some((p) => p.includes('empty')));
+  assert.ok(validateTrace({ ...good, runs: [] }).some((p) => p.includes('empty')));
+  assert.ok(validateTrace({ ...good, runs: [[{ k: [], t: null }, 0]] }).some((p) => p.includes('malformed')));
+  assert.ok(validateTrace({ ...good, tickCount: 0 }).some((p) => p.includes('tickCount')));
   assert.ok(validateTrace({ ...good, version: 99 }).some((p) => p.includes('version')));
+});
+
+// ---- Run-length packed ticks (v2) + v1 back-compat ----------------------------------------------------
+// Input changes ~2×/s while we capture 60 ticks/s, so packing is what makes a whole session fit in an
+// upload (and keeps the live recorder's retained memory flat on a weak device).
+
+test('packTicks collapses repeats; unpackTicks restores every tick in order', () => {
+  const ticks = [
+    ...Array.from({ length: 100 }, () => ({ k: [], t: null })),
+    ...Array.from({ length: 50 }, () => ({ k: ['KeyW'], t: null })),
+    ...Array.from({ length: 10 }, () => ({ k: [], t: null })),
+  ];
+  const runs = packTicks(ticks);
+  assert.equal(runs.length, 3);
+  assert.deepEqual(runs.map((r) => r[1]), [100, 50, 10]);
+  assert.deepEqual(unpackTicks(runs), ticks);
+});
+
+test('sameInput compares held keys positionally and the touch aim by value', () => {
+  assert.ok(sameInput({ k: ['KeyW', 'KeyA'], t: null }, { k: ['KeyW', 'KeyA'], t: null }));
+  assert.ok(!sameInput({ k: ['KeyW'], t: null }, { k: ['KeyW', 'KeyA'], t: null }));
+  assert.ok(!sameInput({ k: [], t: null }, { k: [], t: [0.5, 1] }));
+  assert.ok(sameInput({ k: [], t: [0.5, 1] }, { k: [], t: [0.5, 1] }));
+  assert.ok(!sameInput({ k: [], t: [0.5, 1] }, { k: [], t: [0.5, 0.9] }));
+});
+
+// The touch aim is quantized before storage — without it an analog stick emits a distinct value every tick
+// and the packing (the thing that keeps a tablet's session small enough to upload) does nothing at all.
+test('snapshotInput quantizes the touch aim, so a barely-moved stick still packs', () => {
+  const a = snapshotInput({}, { active: true, heading: 1.2345678, thrust: 0.876543 });
+  const b = snapshotInput({}, { active: true, heading: 1.2345111, thrust: 0.878000 });
+  assert.deepEqual(a.t, [1.235, 0.88]);
+  assert.ok(sameInput(a, b), 'sub-quantum stick jitter must not start a new run');
+  assert.equal(packTicks([a, b]).length, 1);
+});
+
+test('hydrateTrace expands a v2 trace and passes a v1 trace through untouched', () => {
+  const v2 = makeTrace({ id: 'r', level: 'level-1', seed: 1, dt: 1 / 60, ticks: [{ k: ['KeyW'], t: null }, { k: ['KeyW'], t: null }] });
+  assert.equal(v2.runs.length, 1);
+  const h = hydrateTrace(v2);
+  assert.equal(h.ticks.length, 2);
+  assert.equal(hydrateTrace(h), h, 'idempotent: an already-hydrated trace is returned as-is');
+
+  // A v1 trace (the shipped Level-0 intro asset + every session recorded before 2026-08-03) stays playable.
+  const v1 = { version: 1, kind: 'input-replay', id: 'old', level: 'level-1', seed: 5, dt: 1 / 60,
+    shipId: 1, loadout: null, components: null, ticks: [{ k: [], t: null }] };
+  assert.deepEqual(validateTrace(v1), []);
+  assert.equal(hydrateTrace(v1), v1);
+});
+
+// The regression this format exists for: a long session used to serialize past the ~64KB unload-beacon cap
+// after ~34 seconds of play, and was silently dropped. Packed, ten minutes fits with room to spare.
+test('a 10-minute session serializes far under the 64KB beacon cap', () => {
+  const ticks = [];
+  for (let i = 0; i < 36000; i++) ticks.push(i % 300 < 150 ? { k: ['KeyW'], t: null } : { k: ['KeyW', 'Space'], t: null });
+  const trace = makeTrace({ id: 'long', level: 'level-1', seed: 1, dt: 1 / 60, ticks });
+  const bytes = JSON.stringify(trace).length;
+  assert.equal(traceTickCount(trace), 36000);
+  assert.ok(bytes < 65536, `packed 10-minute trace should fit a beacon, got ${bytes} bytes`);
 });
 
 test('makeReplaySession: fresh session is inactive; teardown clears every field', () => {

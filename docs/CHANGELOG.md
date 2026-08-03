@@ -5,6 +5,32 @@
 
 ## 2026-08-03
 
+- **[2026-08-03-1246-record-all-sessions] Fix: sessions from phones/tablets were never uploaded at all;
+  trace format v2 (run-length packed).** A tablet tester played Level 3 for 20+ minutes and left **no
+  session row and no `quit` event**; the maintainer's own hour-long Level-4 quit produced the event but
+  **no row**. Two independent causes. (1) The session flush hung only on `pagehide`, which phones and
+  tablets routinely never fire — backgrounding the app or locking the screen freezes/discards the page
+  instead. The recorder now also flushes on **`visibilitychange → hidden`** (`main.js`), which fires while
+  the page is still alive, so the upload is a plain `fetch` with **no ~64KB body cap**; the beacon path is
+  demoted to a last resort. The flush is **provisional** — recording continues, so a player who tabs away
+  and comes back and wins still yields ONE complete row. (2) `sendBeacon`'s ~64KB cap silently dropped
+  **every quit longer than ~34 seconds** (measured 32.4 bytes/tick), not just outliers. Sessions now carry
+  a **client-minted id** and `recordSession` **UPSERTs** (`ON CONFLICT (id) DO UPDATE … WHERE player_id IS
+  NOT DISTINCT FROM EXCLUDED.player_id`, so a colliding id can't rewrite another player's row), so
+  provisional + final uploads land on one row. (3) Same loss class, fixed alongside: `beginLiveSession()`
+  now flushes any still-open session as `quit` before arming the next one, so a fight ABANDONED mid-way —
+  left, then another level launched — leaves a row instead of being thrown away.
+  Trace **v2** stores ticks **run-length packed**
+  (`runs: [[tick, count], …]` + `tickCount`) — **23.8× smaller** on a real 131 s session (7867 ticks →
+  279 runs, 254 KB → 10.7 KB) — and the live recorder packs **as it captures**, so retained memory on a
+  weak device is a few hundred objects instead of tens of thousands. The touch aim is quantized
+  (heading 1e-3 rad, thrust 1e-2) or an analog stick would defeat the packing on exactly the devices this
+  is for. v1 traces (the shipped Level-0 intro asset + all pre-existing recordings) stay playable —
+  `hydrateTrace()` normalizes both shapes at load. Caps raised/reshaped: `MAX_SESSION_TICKS` 36000 → 108000
+  (~30 min) plus a new `MAX_SESSION_RUNS` 20000 (the bound that actually binds on touch); server caps
+  120000 ticks / 25000 runs. Guards: new `client/visual/scenarios/30-session-upload-on-hide.mjs` (verified
+  fail-before: 0 uploads on hide without the listener), pack/unpack/quantize/v1-compat unit tests, a
+  provisional-then-final recorder test, and a server upsert + cross-player-overwrite test. See DECISIONS §87.
 - **[2026-08-03-1246-record-all-sessions] Fix: win/long sessions were silently dropped (keepalive 64KB cap).**
   Prod `gameplay_sessions` had only short `death`/`quit` rows and ZERO `win` rows despite completed levels.
   `net.js postSession()`'s win/death flush used `fetch(… , { keepalive: true })`; Chrome caps a **keepalive**

@@ -42,11 +42,13 @@ export function bankRun() {
 // The SERVER uploads the trace to S3 + writes the metadata row + stamps game_version (client never touches AWS).
 // Win/death flushes happen while the page STAYS OPEN (the victory/death overlay is up), so they use a PLAIN
 // fetch with NO `keepalive` — a keepalive request body is capped at ~64KB in Chrome, which silently threw and
-// dropped every completed-level (minutes-of-ticks) trace. Only the `beacon:true` page-unload/`pagehide` path
-// uses `navigator.sendBeacon` (best-effort; its ~64KB cap is a documented v1 limit for tab-closers, whose
-// early-drop-off traces are small).
-export function postSession({ trace, level, outcome, durationMs, kills }, { beacon = false } = {}) {
-  const body = JSON.stringify({ playerId: G.playerId || null, trace, level, outcome, durationMs, kills });
+// dropped every completed-level (minutes-of-ticks) trace. The tab-hidden flush is a plain fetch for the same
+// reason (the page is still alive when `visibilitychange` fires). Only the `beacon:true` page-unload path uses
+// `navigator.sendBeacon` and its ~64KB cap — now a genuine last resort rather than the main mobile path, and
+// one that run-length-packed traces mostly fit inside anyway (~24× smaller; see replay.js packTicks).
+// `id` is minted by the client so a provisional upload and the later final one UPSERT the same row.
+export function postSession({ id, trace, level, outcome, durationMs, kills }, { beacon = false } = {}) {
+  const body = JSON.stringify({ id, playerId: G.playerId || null, trace, level, outcome, durationMs, kills });
   try {
     sendSession(API_BASE + '/api/sessions', body, beacon, {
       fetch: (...a) => fetch(...a),
