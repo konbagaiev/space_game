@@ -38,6 +38,23 @@ export function inForwardSector(fwd, toTarget, halfAngle) {
   return dot >= Math.cos(halfAngle);
 }
 
+// Index of the NEAREST target within a forward cone (half-angle, radians), or -1 if none.
+// All args are plain XZ: `from` {x,z} (muzzle), `fwd` {x,z} UNIT nose direction, `targets` array of
+// {x,z} positions. Ties broken by distance (nearest wins). Deterministic — no RNG. Used by
+// projectiles.js findBulletAimTarget to pick a bullet's auto-aim target.
+export function nearestInConeIndex(from, fwd, targets, halfAngle) {
+  const cos = Math.cos(halfAngle);
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < targets.length; i++) {
+    const dx = targets[i].x - from.x, dz = targets[i].z - from.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 1e-6) continue;                       // co-located → skip (matches findTargetInSector)
+    const dot = (fwd.x * dx + fwd.z * dz) / d;    // fwd assumed unit; toTarget normalized by /d
+    if (dot >= cos && d < bestD) { best = i; bestD = d; }
+  }
+  return best;
+}
+
 // Corkscrew offset for a spiral-rocket warhead around its leader's flight axis.
 // axis = leader forward direction (UNIT {x,y,z}); phase = leader.spiralPhase + the warhead's 120° offset.
 // Returns a plain {x,y,z} offset of length `radius` in the plane perpendicular to axis. No Three.js.

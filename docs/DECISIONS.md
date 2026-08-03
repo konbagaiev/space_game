@@ -3098,6 +3098,33 @@ pg_type_typname_nsp_index") — a latent bug that surfaced once a second test fi
 concurrent callers serialize (the losers then find the tables already present — idempotent). Cheap, no new
 dependency, and also correct for a future multi-instance boot.
 
+## 87. Aim assist is a per-weapon cone that applies to whoever fires the weapon (enemies included)
+
+Bullets fly dead-straight along the shooter's nose, so hitting a moving target off-center needs manual
+lead. We added a small **auto-aim cone**: at fire time, if an opposing-side target sits within the
+shooter's forward cone, the bullet's launch direction is rotated to point straight at that target's
+**current** position instead of straight down the nose.
+
+- **What it does.** In `fireMount`'s bullet branch we look up the nearest opposing target in a cone of
+  half-angle `aimAssistDeg` off the muzzle (`findBulletAimTarget` → the pure `nearestInConeIndex`), then
+  set the launch `dir` toward its current position (planar XZ, `y=0`). Velocity inheritance is untouched —
+  `spawnBullet` still adds the shooter's velocity; only the base `dir` is rotated. Rockets are untouched
+  (they keep `findTargetInSector` homing) — `aimAssistDeg` is only on the seven `type:'bullet'` rows.
+- **Why a weapon property, not a player-only aid.** It's stored on the weapon (`aimAssistDeg` in the
+  catalog), so the rule is symmetric and lives in one place: equipping or looting a weapon changes both
+  sides' behavior consistently, and enemy kinetic/cannon guns auto-aim at the player exactly as the
+  player's guns auto-aim at enemies. No side-specific branch, no separate "player assist" toggle.
+- **Half-angle 2°, in degrees, per-weapon.** `aimAssistDeg: 2` is the **half-angle** (±2° = a 4°-wide
+  cone), deliberately narrow: it forgives near-misses without turning bullets into homing missiles. Stored
+  in degrees per-weapon so different weapons can carry different cones later; every current bullet gets 2.
+  No target leading (aim at the current position only) — the cone is tiny, so intercept math isn't worth it.
+- **Determinism / replay.** The whole selection is a pure scan of current entity positions — no
+  `Math.random`, no `simRandom` — so it's bit-deterministic and replay-safe. Because it changes bullet
+  directions inside the seeded sim, it CAN invalidate the recorded Level-0 intro (the re-sim would desync);
+  the fix for a red `22-intro-replay` guard is a maintainer **re-record**, never weakening the guard. In
+  practice the 2° cone was small enough that the recorded intro re-simmed to the same 4 kills / cards
+  p0..p4 / win unchanged, so no re-record was forced this time.
+
 ## Future ideas
 
 solid asteroids with bounce ·

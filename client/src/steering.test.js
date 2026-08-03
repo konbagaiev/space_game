@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, inForwardSector, spiralOffset } from './steering.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, inForwardSector, spiralOffset, nearestInConeIndex } from './steering.js';
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -37,6 +37,24 @@ test('inForwardSector: ahead in cone = true, behind / outside = false', () => {
   assert.equal(inForwardSector(fwd, { x: 1, z: 1 }, Math.PI / 3), true);  // 45deg, cone 60deg
   assert.equal(inForwardSector(fwd, { x: 1, z: 0 }, Math.PI / 3), false); // 90deg, outside 60deg
   assert.equal(inForwardSector(fwd, { x: 0, z: -5 }, Math.PI / 3), false); // behind
+});
+
+test('nearestInConeIndex: in-cone / outside / behind / nearest-wins / co-located', () => {
+  const from = { x: 0, z: 0 };
+  const fwd = { x: 0, z: 1 };            // nose +Z
+  const half = 2 * Math.PI / 180;        // 2° half-angle
+  // In-cone, single target dead ahead → index 0.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 0, z: 10 }], half), 0);
+  // Just outside the cone (~2.98° off-axis) → -1.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 0.52, z: 10 }], half), -1);
+  // Just inside the cone (~0.97° off-axis) → 0.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 0.17, z: 10 }], half), 0);
+  // Behind → -1.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 0, z: -10 }], half), -1);
+  // Nearest wins among two in-cone (wide cone): i=1 is the closer one.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 0, z: 20 }, { x: 0, z: 8 }], Math.PI / 6), 1);
+  // Co-located target (== from) is skipped → -1.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 0, z: 0 }], half), -1);
 });
 
 const len3 = (v) => Math.hypot(v.x, v.y, v.z);

@@ -91,15 +91,17 @@ export const COMPONENTS = [
 //   takes two 10-damage gun hits), blastRadius (AoE — can hit several), detonateRadius, blastVisual,
 //   seekHalfAngle (homing search cone), fireCooldown, weight, projectileColor.
 // Optional top-level `price` (credits, hangar shop) defaults to 0 when omitted (see COMPONENTS note).
+// aimAssistDeg = auto-aim cone HALF-angle (deg); a bullet fired with a target within ±this off the nose
+// is redirected straight at it (findBulletAimTarget). Bullet weapons only — rockets keep their homing.
 export const WEAPONS = [
   {
     id: 1, name: 'Basic kinetic', type: 'bullet', price: 800, stats: { // granted into the stash on shop unlock; sells ~600 to help fund the Heavy hull
-      power: 10, projectileSpeed: 40, maxRange: 88, fireCooldown: 0.18, weight: 6, projectileColor: 0x6fe6ff, class: 'kinetic'
+      power: 10, projectileSpeed: 40, maxRange: 88, fireCooldown: 0.18, weight: 6, projectileColor: 0x6fe6ff, class: 'kinetic', aimAssistDeg: 2
     }
   },
   {
     id: 2, name: 'Kinetic pirate', type: 'bullet', price: 120, stats: { // enemy gear: resale-only (hidden from the shop)
-      power: 4, projectileSpeed: 40, maxRange: 88, fireCooldown: 1.1, weight: 4, projectileColor: 0xff6b6b, class: 'kinetic', buyable: false
+      power: 4, projectileSpeed: 40, maxRange: 88, fireCooldown: 1.1, weight: 4, projectileColor: 0xff6b6b, class: 'kinetic', buyable: false, aimAssistDeg: 2
     }
   },
   {
@@ -122,19 +124,19 @@ export const WEAPONS = [
     id: 5, name: 'Machine Gun', type: 'bullet', price: 1500,
     modelUrlHigh: 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/machine_gun_hangar.aabc98c9.glb', // menu-only item icon
     stats: { // rapid-fire kinetic: low per-hit damage, high rate of fire — strong, so NOT cheap
-      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066, class: 'kinetic',
+      power: 7, projectileSpeed: 50, maxRange: 100, fireCooldown: 0.1, weight: 8, projectileColor: 0xffe066, class: 'kinetic', aimAssistDeg: 2,
       model: { yaw: 0, scale: 1 } // item preview presentation (yaw/scale); tune after the visual check
     }
   },
   // --- Player shop ladder weapons (docs/plans/catalog-economy.md). Trade-offs: damage ↔ fire-rate ↔ range ↔ weight.
   {
     id: 6, name: 'Heavy cannon', type: 'bullet', price: 2000, stats: { // hard-hitting, slow fire, long range
-      power: 35, projectileSpeed: 65, maxRange: 140, fireCooldown: 0.6, weight: 10, projectileColor: 0xff8a3c, class: 'cannon'
+      power: 35, projectileSpeed: 65, maxRange: 140, fireCooldown: 0.6, weight: 10, projectileColor: 0xff8a3c, class: 'cannon', aimAssistDeg: 2
     }
   },
   {
     id: 7, name: 'Heavy Machine Gun', type: 'bullet', price: 6000, stats: { // strong all-rounder: med damage, high rate of fire
-      power: 12, projectileSpeed: 48, maxRange: 100, fireCooldown: 0.12, weight: 8, projectileColor: 0xb46bff, class: 'kinetic'
+      power: 12, projectileSpeed: 48, maxRange: 100, fireCooldown: 0.12, weight: 8, projectileColor: 0xb46bff, class: 'kinetic', aimAssistDeg: 2
     }
   },
   {
@@ -149,13 +151,13 @@ export const WEAPONS = [
   // kinetic mirroring the player's Machine Gun's reach. Low per-hit damage, high RoF. Price 0 (enemy gear).
   {
     id: 9, name: 'Pirate machine gun', type: 'bullet', price: 300, stats: { // enemy gear: resale-only (hidden from the shop)
-      power: 3, projectileSpeed: 50, maxRange: 90, fireCooldown: 0.18, weight: 6, projectileColor: 0xff5a4a, class: 'kinetic', buyable: false
+      power: 3, projectileSpeed: 50, maxRange: 90, fireCooldown: 0.18, weight: 6, projectileColor: 0xff5a4a, class: 'kinetic', buyable: false, aimAssistDeg: 2
     }
   },
   // Second Boss main gun (level-4): a hard-hitting, slow, long-range cannon (one shot/sec). Enemy gear.
   {
     id: 10, name: 'Advanced pirate cannon', type: 'bullet', price: 600, stats: { // enemy gear: resale-only (hidden from the shop)
-      power: 10, projectileSpeed: 60, maxRange: 110, fireCooldown: 1.0, weight: 10, projectileColor: 0xff4a3a, class: 'cannon', buyable: false
+      power: 10, projectileSpeed: 60, maxRange: 110, fireCooldown: 1.0, weight: 10, projectileColor: 0xff4a3a, class: 'cannon', buyable: false, aimAssistDeg: 2
     }
   },
   // Player shop ladder — top of the rocket ladder (above Heavy rocket 2600). A triple-warhead homing

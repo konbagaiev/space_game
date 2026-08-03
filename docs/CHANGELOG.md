@@ -5,6 +5,19 @@
 
 ## 2026-08-03
 
+- **[2026-08-03-1907-weapon-aim-assist] Bullet weapons get aim assist.** Every non-rocket bullet weapon
+  (ids 1, 2, 5, 6, 7, 9, 10) gains a data-driven `aimAssistDeg` (2° cone **half-angle**) auto-aim cone: at
+  fire time, a shot whose shooter has an opposing-side target within ±`aimAssistDeg` of the nose is
+  redirected to fire straight at that target's **current** position (planar XZ, no leading; nearest-in-cone
+  wins; player guns skip warping enemies, enemy guns require the player alive). It's a **weapon property**,
+  so **enemy guns auto-aim at the player** exactly as player guns auto-aim at enemies. Velocity inheritance
+  and rockets are unchanged (rockets keep their homing). Shown as `Aim assist 2°` in the shop stat line.
+  Deterministic — pure `nearestInConeIndex` (`steering.js`) + `findBulletAimTarget` (`projectiles.js`), no
+  RNG → replay-safe. See DECISIONS §87. **Sim change:** aim assist alters bullet launch directions inside
+  the seeded sim, so it can invalidate the recorded Level-0 intro trace — the fix for a red
+  `22-intro-replay` guard is a **maintainer re-record** of the intro, NOT weakening the guard assertions.
+  (This time the 2° cone was small enough that the intro re-sim still won unchanged — 4 kills, cards
+  p0..p4, won — so no re-record was forced.)
 - **[2026-08-03-1246-record-all-sessions] Fix: win/long sessions were silently dropped (keepalive 64KB cap).**
   Prod `gameplay_sessions` had only short `death`/`quit` rows and ZERO `win` rows despite completed levels.
   `net.js postSession()`'s win/death flush used `fetch(… , { keepalive: true })`; Chrome caps a **keepalive**
