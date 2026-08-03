@@ -278,6 +278,7 @@ async function reloadPlayerWorld() {
       buildMap(map.descriptor);
     }
     CATALOG.level = level.descriptor;
+    CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
     const active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
     G.activeShip = active;
     if (active && typeof active.credits === 'number') G.balance = active.credits;

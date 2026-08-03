@@ -38,5 +38,9 @@ export function isBench() { return BENCH !== null; }
 // (bench.test.js, the bench tooling) keep working unchanged.
 export { mulberry32 } from './sim-random.js';
 
-// Fixed simulation step used in bench mode (60 fps). The sim already clamps dt to 0.05, so 1/60 is safe.
-export const BENCH_DT = 1 / 60;
+// The single tunable sim tick rate. ALL sim stepping — live play, ?record/?playback, ?bench, and the
+// Level-0 cutscene — advances at this fixed step so a tick maps 1:1 across record and replay. The
+// maintainer may lower this (e.g. 30) — it is not a twitch 3D shooter. Changing it changes every NEW
+// recording's dt; old traces carry their own dt and still replay at the rate they were recorded.
+export const TICK_HZ = 60;
+export const BENCH_DT = 1 / TICK_HZ;   // kept as BENCH_DT so existing importers are unchanged

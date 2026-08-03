@@ -37,6 +37,22 @@ export function bankRun() {
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
+// Upload one finished/abandoned session recording for funnel analytics (docs/plans/2026-08-03-1246-record-all-sessions.md).
+// The SERVER uploads the trace to S3 + writes the metadata row + stamps game_version (client never touches AWS).
+// `beacon` (unload path) uses sendBeacon — best-effort; large traces may exceed the ~64KB cap and drop.
+export function postSession({ trace, level, outcome, durationMs, kills }, { beacon = false } = {}) {
+  const body = JSON.stringify({ playerId: G.playerId || null, trace, level, outcome, durationMs, kills });
+  try {
+    if (beacon && navigator.sendBeacon) {
+      navigator.sendBeacon(API_BASE + '/api/sessions', new Blob([body], { type: 'application/json' }));
+    } else {
+      fetch(API_BASE + '/api/sessions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true,
+      }).catch(() => {});
+    }
+  } catch { /* recording upload must never break the game */ }
+}
+
 // Dump a mission's collected loot into the stash (victory only — see DECISIONS). Best-effort, like
 // bankRun: the Main Window re-fetches the stash when opened, so a dropped request just isn't banked.
 export function depositLoot(items) {
@@ -112,6 +128,7 @@ export async function unlockNextLevel() {
       buildMap(map.descriptor);
     }
     CATALOG.level = level.descriptor; // reset() restarts CATALOG.level → next Restart is the new level
+    CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
     // a briefing action may have changed the loadout (weapon swap) — reload the active ship + rebuild
     const refreshed = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
     if (refreshed) { G.activeShip = refreshed; if (refreshed.ship) buildPlayerFor(refreshed.ship); }

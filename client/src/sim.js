@@ -142,6 +142,7 @@ export const levelRunner = {
     if (!G.replayMode) {
       track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
       bankRun(); // bank the earned credits into the account balance
+      G.flushSession && G.flushSession('win'); // upload the recorded session (funnel analytics)
       const loot = takeLoot(); if (loot.length) depositLoot(loot); // victory only: dump the run's collected drops into the stash
       // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
       // levels advance progression as before.
@@ -791,6 +792,7 @@ export function update(dt) {
     audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
     track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
     bankRun(); // bank the earned credits into the account balance + record the game
+    G.flushSession && G.flushSession('death'); // upload the recorded session (funnel analytics)
     el.overlayTitle.textContent = t('ui.overlay.ship_destroyed');
     el.overlaySub.textContent = t('ui.gameover.sub', { kills: G.kills, credits: G.earned });
     el.restart.textContent = t('ui.button.restart'); // a loss retries the level
