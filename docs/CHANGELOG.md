@@ -5,6 +5,22 @@
 
 ## 2026-08-03
 
+- **Frame-pacing probe (`/raf-probe.html`) — measure the platform, not our renderer.** A tester's 90 Hz
+  tablet (Mali-G52 MC2) sits at a ruler-flat **22.2 ms/frame = exactly half of 90 Hz**, unmoved by enemy
+  count or particles. His 2335 `?dev` samples rule out the two obvious culprits: **not** the new
+  fixed-timestep sim (the same 22.2 ms p50 is there on **2026-06-25**, six weeks earlier; `js.update` =
+  0.7 ms) and **not** fill rate (DECISIONS §23 already measured a **5.5–7× pixel cut moving fps by
+  nothing** on this exact GPU). What is unexplained is ~11 ms/frame outside our JS, uncorrelated with our
+  load, at `longTasks` 0 — while the same device *does* reach 90 fps in combat in 36 samples. So the open
+  question is what the platform gives a browser tab, which a page running the game cannot measure. The new
+  standalone, dependency-free page runs three ~3 s phases — **blank** (rAF only), **triangle** (one WebGL
+  draw, ~no pixels), **fill** (one draw over the full backbuffer) — so the last two differ only in
+  fragments, isolating fill rate from draw-call count. Results POST to the existing `/api/perf` sink tagged
+  `probe:'raf'` (no new table/route), keyed by the game's `playerId` so a run is read with SQL instead of a
+  screenshot; it never mints a playerId (anonymous → `probe-anon`), `?dry=1` uploads nothing, and each
+  phase carries a frame-interval histogram (a half-rate lock is one spike at 22 ms; generic slowness is a
+  smear — an average cannot tell them apart). Verified end-to-end in a real browser against a live server:
+  three phases measured, row landed in `perf_samples`. See DECISIONS §88.
 - **[2026-08-03-1246-record-all-sessions] Fix: sessions from phones/tablets were never uploaded at all;
   trace format v2 (run-length packed).** A tablet tester played Level 3 for 20+ minutes and left **no
   session row and no `quit` event**; the maintainer's own hour-long Level-4 quit produced the event but

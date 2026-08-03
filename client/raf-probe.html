@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vega Sentinels — frame-rate probe</title>
+<!--
+  Standalone frame-pacing probe (docs/plans/perf-low-end-phones.md, DECISIONS §23/§88).
+
+  WHY THIS EXISTS. A tester's 90 Hz tablet (Mali-G52 MC2) sits at a ruler-flat 22.2 ms/frame = exactly
+  half of 90 Hz, and our own `?dev` telemetry cannot explain it: our JS costs a steady 9-10 ms while the
+  frame swings 11 -> 30 ms, `longTasks` is 0, and a 5.5-7x backbuffer-pixel cut was already measured to
+  move fps by NOTHING on this very GPU. So the open question is no longer "which part of OUR renderer is
+  slow" but "what does this device give a browser tab AT ALL". That needs a baseline measured WITHOUT our
+  game in the way.
+
+  Three phases, each ~3 s, cheapest first:
+    1. blank    - rAF callbacks only, nothing drawn. The platform's raw callback cadence.
+    2. triangle - one tiny WebGL triangle per frame. Adds the compositor path, ~no pixels, ~no CPU.
+    3. fill     - one full-viewport quad per frame. Same single draw call, ~2.3 Mpx of fragments:
+                  isolates FILL RATE from draw-call count (the lever the tier system pulls).
+
+  Reading it:
+    blank ~45      -> the browser simply never calls rAF faster; no optimisation of ours can matter.
+    blank 90, tri 45 -> the WebGL/compositor path itself costs the half-rate drop.
+    blank+tri 90, fill 45 -> genuinely fill-bound, and DECISIONS §23's "resolution is a dead end" needs revisiting.
+    all three 90   -> the device is fine and the missing ~11 ms is ours to find.
+
+  Deliberately dependency-free, single file, no modules, no imports: it must measure the PLATFORM, not
+  our bundle. Results POST to /api/perf (the existing diagnostic sink) tagged `probe:'raf'`, keyed by the
+  same localStorage `playerId` the game uses, so a run ties to the player row without asking anyone to
+  copy numbers out of a screenshot. `?dry=1` measures and renders but uploads nothing.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 18px; background: #0b0f14; color: #dfe8f2;
+         font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  h1 { font-size: 17px; margin: 0 0 4px; color: #4da3ff; }
+  p.sub { margin: 0 0 16px; color: #8fa3b8; font-size: 13px; }
+  button { font: inherit; cursor: pointer; color: #0b0f14; background: #4dff88;
+           border: 0; border-radius: 8px; padding: 10px 20px; }
+  button[disabled] { background: #33485c; color: #8fa3b8; cursor: default; }
+  #status { margin: 14px 0; min-height: 1.5em; color: #ffd24d; }
+  table { border-collapse: collapse; margin-top: 10px; width: 100%; max-width: 560px; }
+  th, td { text-align: right; padding: 5px 9px; border-bottom: 1px solid #1e2a36; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #8fa3b8; font-weight: normal; }
+  .fps { color: #4dff88; font-weight: bold; }
+  #passport { margin-top: 18px; color: #8fa3b8; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  #sent { margin-top: 14px; color: #4dff88; font-size: 13px; }
+  canvas { position: fixed; left: -10000px; top: 0; }  /* offscreen: never composited into the report UI */
+</style>
+</head>
+<body>
+<h1>Frame-rate probe</h1>
+<p class="sub">Measures what this device gives a browser tab — with the game out of the way. Takes about 10 seconds. Keep the screen on and don't switch away.</p>
+
+<button id="go">Run the probe</button>
+<div id="status"></div>
+<table id="out" hidden>
+  <thead><tr><th>phase</th><th>fps</th><th>p50 ms</th><th>p95 ms</th><th>frames</th></tr></thead>
+  <tbody></tbody>
+</table>
+<div id="sent"></div>
+<div id="passport"></div>
+
+<canvas id="gl" width="16" height="16"></canvas>
+
+<script>
+(function () {
+  'use strict';
+  var DRY = /[?&]dry=1\b/.test(location.search);
+  var PHASE_MS = 3000;
+  var statusEl = document.getElementById('status');
+  var outEl = document.getElementById('out');
+  var goEl = document.getElementById('go');
+
+  // Same key the game uses (state.js), so a probe run ties to this player's rows. Never CREATES one:
+  // a probe should not mint a player id for someone who has not played.
+  function playerId() {
+    try { return localStorage.getItem('playerId') || null; } catch (e) { return null; }
+  }
+
+  function pct(sorted, p) {
+    if (!sorted.length) return 0;
+    return sorted[Math.min(sorted.length - 1, Math.floor(p / 100 * sorted.length))];
+  }
+  var r1 = function (x) { return Math.round(x * 10) / 10; };
+
+  // Run rAF for PHASE_MS, recording every inter-frame interval. `draw` (optional) runs inside the callback.
+  // The FIRST interval is discarded: it spans the gap since the previous phase, not a real frame.
+  function measure(label, draw) {
+    return new Promise(function (resolve) {
+      var intervals = [], last = 0, t0 = 0;
+      function frame(now) {
+        if (!t0) { t0 = now; last = now; requestAnimationFrame(frame); return; }
+        intervals.push(now - last);
+        last = now;
+        if (draw) draw();
+        if (now - t0 < PHASE_MS) requestAnimationFrame(frame);
+        else {
+          var elapsed = (now - t0) / 1000;
+          var sorted = intervals.slice().sort(function (a, b) { return a - b; });
+          resolve({
+            phase: label,
+            fps: r1(intervals.length / elapsed),
+            p50: r1(pct(sorted, 50)), p95: r1(pct(sorted, 95)),
+            min: r1(sorted[0]), max: r1(sorted[sorted.length - 1]),
+            frames: intervals.length, seconds: r1(elapsed),
+            // Coarse histogram of frame intervals (ms buckets) — shows a half-rate LOCK (one tight spike)
+            // apart from generic slowness (a smear), which an average can never distinguish.
+            hist: histogram(sorted),
+          });
+        }
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  // Bucket intervals to whole ms, keep the 8 most populated — enough to see 11/22/33 spikes.
+  function histogram(sorted) {
+    var m = {};
+    for (var i = 0; i < sorted.length; i++) {
+      var k = Math.round(sorted[i]);
+      m[k] = (m[k] || 0) + 1;
+    }
+    return Object.keys(m).map(function (k) { return [Number(k), m[k]]; })
+      .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8);
+  }
+
+  // --- WebGL phases: ONE draw call, the only difference is how many fragments it covers. -------------
+  var gl = null, prog = null, glErr = null;
+  function initGL() {
+    var c = document.getElementById('gl');
+    // Match the real game's backbuffer so the fill phase measures the pixel count the game actually asks for.
+    c.width = Math.round(innerWidth * devicePixelRatio);
+    c.height = Math.round(innerHeight * devicePixelRatio);
+    try { gl = c.getContext('webgl') || c.getContext('experimental-webgl'); } catch (e) { glErr = String(e); }
+    if (!gl) { glErr = glErr || 'no webgl context'; return false; }
+    var vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }');
+    gl.compileShader(vs);
+    var fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, 'precision mediump float; void main(){ gl_FragColor = vec4(0.1, 0.4, 0.9, 1.0); }');
+    gl.compileShader(fs);
+    prog = gl.createProgram();
+    gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+    gl.useProgram(prog);
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    var loc = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.viewport(0, 0, c.width, c.height);
+    return true;
+  }
+  // A triangle so small it covers a handful of pixels: draw-call + compositor cost, no fill.
+  var TINY = new Float32Array([-1, -1, -0.99, -1, -1, -0.99]);
+  // A triangle that covers the whole clip volume: same one draw call, every pixel shaded.
+  var FULL = new Float32Array([-1, -1, 3, -1, -1, 3]);
+  function drawWith(verts) {
+    return function () {
+      gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+  }
+
+  function passport() {
+    var renderer = 'unknown', vendor = 'unknown';
+    try {
+      var ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      if (ext) {
+        renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+        vendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL);
+      }
+    } catch (e) { /* blocked by privacy settings — the rest of the passport still carries */ }
+    return {
+      ua: navigator.userAgent, dpr: devicePixelRatio,
+      cores: navigator.hardwareConcurrency || null, mem: navigator.deviceMemory || null,
+      screen: screen.width + 'x' + screen.height,
+      viewport: innerWidth + 'x' + innerHeight,
+      backbuffer: gl ? (gl.canvas.width + 'x' + gl.canvas.height) : null,
+      gpu: renderer, gpuVendor: vendor, glError: glErr,
+    };
+  }
+
+  function row(r) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + r.phase + '</td><td class="fps">' + r.fps + '</td><td>' + r.p50
+      + '</td><td>' + r.p95 + '</td><td>' + r.frames + '</td>';
+    outEl.querySelector('tbody').appendChild(tr);
+    outEl.hidden = false;
+  }
+
+  function upload(results, dev) {
+    var pid = playerId();
+    if (DRY) { document.getElementById('sent').textContent = '(dry run — nothing uploaded)'; return; }
+    // /api/perf demands a playerId; a probe run from a browser that never played has none, so fall back
+    // to a clearly-labelled anonymous key rather than minting a fake player id.
+    var body = JSON.stringify({
+      playerId: pid || 'probe-anon',
+      sessionId: 'raf-probe-' + Date.now().toString(36),
+      samples: [{ t: Date.now(), probe: 'raf', phases: results, device: dev, dry: false }],
+    });
+    fetch('/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+      .then(function (r) {
+        document.getElementById('sent').textContent = r.ok
+          ? '✓ results uploaded' + (pid ? '' : ' (anonymous — this browser has never played)')
+          : '✗ upload rejected (' + r.status + ') — screenshot this page instead';
+      })
+      .catch(function () {
+        document.getElementById('sent').textContent = '✗ upload failed (offline?) — screenshot this page instead';
+      });
+  }
+
+  goEl.addEventListener('click', async function () {
+    goEl.disabled = true;
+    outEl.querySelector('tbody').innerHTML = '';
+    outEl.hidden = true;
+    document.getElementById('sent').textContent = '';
+    var results = [];
+
+    statusEl.textContent = '1/3 — blank (nothing drawn)…';
+    results.push(await measure('blank', null));
+    row(results[0]);
+
+    var haveGL = initGL();
+    if (haveGL) {
+      statusEl.textContent = '2/3 — one tiny triangle…';
+      results.push(await measure('triangle', drawWith(TINY)));
+      row(results[1]);
+
+      statusEl.textContent = '3/3 — full-screen fill…';
+      results.push(await measure('fill', drawWith(FULL)));
+      row(results[2]);
+    } else {
+      statusEl.textContent = 'WebGL unavailable — blank phase only.';
+    }
+
+    var dev = passport();
+    document.getElementById('passport').textContent =
+      'GPU: ' + dev.gpu + '  (' + dev.gpuVendor + ')\n'
+      + 'dpr ' + dev.dpr + ' · viewport ' + dev.viewport + ' · backbuffer ' + dev.backbuffer + '\n'
+      + 'cores ' + dev.cores + ' · mem ' + dev.mem + '\n' + dev.ua;
+    statusEl.textContent = 'Done.';
+    goEl.disabled = false;
+    goEl.textContent = 'Run again';
+    upload(results, dev);
+  });
+})();
+</script>
+</body>
+</html>

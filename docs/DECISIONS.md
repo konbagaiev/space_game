@@ -3139,6 +3139,47 @@ at load, so nothing downstream knows the difference.
 **Caps are now on RUNS as well as ticks** (`MAX_SESSION_TICKS` 108000 ≈ 30 min, `MAX_SESSION_RUNS` 20000).
 On touch the run count, not the tick count, is what actually bounds memory and payload size.
 
+## 88. A frame-pacing probe that measures the PLATFORM, not our renderer
+
+A tester's 90 Hz tablet (Mali-G52 MC2, Chrome, desktop UA) sits at a ruler-flat **22.2 ms/frame — exactly
+half of 90 Hz** — and stays there whether one enemy is on screen or four, with 0 or 68 particles. Our own
+`?dev` telemetry cannot explain it: across 2335 of his samples our JS costs a steady 9–10 ms while the
+frame swings 11 → 30 ms (no correlation — the *worst* frames have the *cheapest* JS), and `longTasks` is 0.
+
+Two hypotheses were killed by evidence, one of them mine:
+
+- **"Our new fixed-timestep sim did it"** — no. The same 22.2 ms p50 is in his samples from **2026-06-25**,
+  six weeks before that change; `js.update` is 0.7 ms.
+- **"It's fill rate, drop the quality tier"** — no, and §23 already said so: a **5.5–7× backbuffer-pixel
+  cut moved fps by nothing** on this very GPU model. Proposing a 2.7× cut afterwards was reopening a
+  settled, measured trade-off without reading it.
+
+What is NOT explained: ~11 ms per frame that is outside our JS, independent of our load and of resolution.
+And his device demonstrably *can* run our combat at 90 fps — 36 samples at p50 10.9–11.9 ms. So "weak
+device" is not the answer either; he is balanced right on the 11.1 ms edge, and a 90 Hz panel makes that
+edge twice as unforgiving as the 60 Hz ones everyone else tests on.
+
+Every remaining hypothesis is about what the platform gives a browser tab, which cannot be measured from
+inside a page that is also running the game. Hence **`client/raf-probe.html`**: a dependency-free single
+file (no modules, no imports — it must not measure our bundle) that runs three ~3 s phases, cheapest
+first — **blank** (rAF callbacks, nothing drawn), **triangle** (one WebGL draw, ~no pixels), **fill** (one
+draw covering the full backbuffer). Same single draw call in the last two, so the only variable is
+fragments: that isolates fill rate from draw-call count without touching the game. The decision tree:
+
+| blank | triangle | fill | reading |
+|---|---|---|---|
+| ~45 | — | — | the browser never calls rAF faster; **nothing we optimise can matter** |
+| 90 | ~45 | — | the WebGL/compositor path itself costs the half-rate drop |
+| 90 | 90 | ~45 | genuinely fill-bound → §23's "resolution is a dead end" needs revisiting |
+| 90 | 90 | 90 | the device is fine and the missing ~11 ms is ours to find |
+
+Results **POST to the existing `/api/perf` sink** tagged `probe:'raf'` (no new table, no new route) keyed by
+the same localStorage `playerId` the game uses, so a run ties to the player row and is read with SQL
+instead of asking a tester to screenshot numbers. It never *creates* a `playerId` (a probe must not mint a
+player who has never played — anonymous runs land under `probe-anon`), and `?dry=1` measures without
+uploading. Each phase also carries a frame-interval **histogram**: a half-rate lock is one tight spike at
+22 ms, generic slowness is a smear, and no average can tell those apart.
+
 ## Future ideas
 
 solid asteroids with bounce ·
