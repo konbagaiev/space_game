@@ -3,6 +3,31 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-03
+
+- **[2026-08-03-1246-record-all-sessions] Record all gameplay sessions for funnel analytics.** Every live
+  **campaign** session (side missions excluded in v1) is now captured **always-on and invisibly** as a
+  deterministic input-replay (seed + per-tick input, reusing `replay.js`) and uploaded. The client POSTs
+  the trace to `POST /api/sessions`; the **server** uploads it to S3 (`server/src/s3.js` — hand-rolled
+  SigV4 PutObject, no `@aws-sdk`; no-ops without creds) and writes a metadata row to the new
+  **`gameplay_sessions`** table (distinct from the auth `sessions` token store), stamping `game_version`
+  from `process.env.SENTRY_RELEASE`. A new **`/admin/sessions`** page lists every session (created, player,
+  level, outcome, duration, kills, version + ✓/✗ deploy match) with a **▶ play** link
+  (`/?playback&id=…`) that streams the trace back from `GET /api/sessions/:id/trace` (intentionally
+  unauthenticated — seed+input only, unguessable UUID) and re-sims it. Trivial sessions (< 180 ticks ≈ 3 s)
+  are dropped; capture caps at 36000 ticks (~10 min). **Load-bearing change:** all live play is unified
+  onto the fixed-timestep seeded loop (`TICK_HZ`, default 60, `BENCH_DT = 1/TICK_HZ`) — the same
+  deterministic accumulator record/playback/bench already used; capture is per sim-tick, decoupled from
+  render frames (a frame drop → slow-motion, never a corrupted recording). A recorded trace reproduces
+  faithfully only on its recorded `game_version` (inherent to input-replay analytics; admin shows ✓/✗, no
+  old-engine restoration). **Ops prerequisite:** the server IAM key needs `s3:PutObject`+`s3:GetObject` on
+  `arn:aws:s3:::vega-sentinels-assets/recordings/sessions/*`, and the server `.env` needs `ASSETS_BUCKET`
+  (+ region) — without them uploads no-op silently and playback 404s.
+- **[2026-08-03-1246-record-all-sessions] `migrate()` now serializes behind a Postgres advisory lock.**
+  Concurrent `CREATE TABLE IF NOT EXISTS` on the same DB (parallel `node --test` processes, or a future
+  multi-instance boot) races in `pg_type` ("duplicate key … pg_type_typname_nsp_index"); the lock makes
+  only one migrate run its DDL at a time. Fixes a latent flake surfaced by the new server test file.
+
 ## 2026-08-02
 
 - **The loading veil now waits for the models, not just the shaders.** On itch (first load ≈ 20 MB) the

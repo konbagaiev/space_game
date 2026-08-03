@@ -8,11 +8,14 @@ import path from 'node:path';
 import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend, resetPlayer,
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
   setResetToken, consumeResetToken, deleteSessionsForPlayer,
-  getStash, buyItem, sellItem, equipItem, unequipItem, depositLoot, getAdminPlayers } from './datastore.js';
+  getStash, buyItem, sellItem, equipItem, unequipItem, depositLoot, getAdminPlayers,
+  recordSession, getAdminSessions, getSessionS3Key } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { generateMissions } from './missions.js';
 import { mountAdmin } from './admin.js';
 import { sendVerificationEmail, verificationUrl, sendPasswordResetEmail, passwordResetUrl } from './ses.js';
+import { putTrace, getTrace } from './s3.js';
+import crypto from 'node:crypto';
 
 const SUPPORTED_LANGUAGES = ['en', 'ru']; // mirror of client SUPPORTED (DECISIONS §10)
 // Allowlisted product-funnel event types (docs/plans/monitoring.md). Anything else is dropped.
@@ -68,7 +71,10 @@ export async function createApp() {
     next();
   });
 
-  app.use(express.json());
+  const jsonParser = express.json();                    // ~100kb default — every normal route
+  const sessionJson = express.json({ limit: '3mb' });   // replay traces are larger
+  app.use((req, res, next) =>
+    (req.path === '/api/sessions' && req.method === 'POST') ? next() : jsonParser(req, res, next));
 
   // CORS for the cross-origin itch.io build (docs/plans/2026-07-01-1824-itch-html5-export.md). We reflect
   // the request Origin and do NOT allow credentials — the itch client authenticates with a bearer token,
@@ -418,10 +424,43 @@ export async function createApp() {
     res.status(accepted ? 204 : 400).end();
   }));
 
+  const GAME_VERSION = process.env.SENTRY_RELEASE || null;          // the deploy commit (Dockerfile bakes GIT_SHA)
+  const SESSION_OUTCOMES = new Set(['win', 'death', 'quit']);
+
+  // Store one gameplay session recording (docs/plans/2026-08-03-1246-record-all-sessions.md). The client
+  // sends the input-replay trace; we upload it to S3 and write the metadata row. Best-effort, fire-and-forget.
+  app.post('/api/sessions', sessionJson, wrap(async (req, res) => {
+    const b = req.body || {};
+    const { trace, level, outcome, durationMs, kills } = b;
+    const playerId = (typeof b.playerId === 'string' && b.playerId) ? b.playerId : null;
+    if (!trace || typeof trace !== 'object' || !Array.isArray(trace.ticks) || trace.ticks.length === 0) return res.status(400).end();
+    if (trace.ticks.length > 40000) return res.status(413).end();     // hard server cap (~11 min at 60Hz)
+    if (typeof level !== 'string' || !SESSION_OUTCOMES.has(outcome)) return res.status(400).end();
+    const id = crypto.randomUUID();
+    const s3Key = `recordings/sessions/${id}.json`;
+    try {
+      await putTrace(s3Key, JSON.stringify(trace));                    // no-op when creds absent (row still written)
+      await recordSession({ id, playerId, level, outcome, durationMs, kills, s3Key, gameVersion: GAME_VERSION });
+    } catch { /* best-effort telemetry */ }
+    res.status(204).end();
+  }));
+
+  // Serve a session's trace for admin playback (/?playback&id=…). INTENTIONALLY UNAUTHENTICATED: a trace
+  // is seed + input only (no PII, no screen capture), keyed by an unguessable UUID, so an unauth GET is an
+  // acceptable trade for a dead-simple playback page (the client's loadTrace fetches it directly). 404 when
+  // unknown or S3 unavailable. (If we ever want it locked down, gate it behind the same Basic-Auth as /admin.)
+  app.get('/api/sessions/:id/trace', wrap(async (req, res) => {
+    const key = await getSessionS3Key(req.params.id);
+    if (!key) return res.status(404).end();
+    const trace = await getTrace(key);
+    if (!trace) return res.status(404).end();
+    res.json(trace);
+  }));
+
   // Admin dashboard (docs/plans/2026-07-02-1352-admin-panel-player-stats.md): server-rendered players +
   // per-player game aggregates, HTTP Basic Auth (ADMIN_USER/ADMIN_PASSWORD; 404 when unset). Mounted
   // outside /api, so the /api-scoped CORS never touches it — /admin stays same-origin only.
-  mountAdmin(app, getAdminPlayers);
+  mountAdmin(app, getAdminPlayers, getAdminSessions, process.env.SENTRY_RELEASE || null);
 
   // Serve the game client (index.html etc.) from the same origin as the API.
   //
