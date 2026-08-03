@@ -9,6 +9,7 @@ import { API_BASE, BUILD_SOURCE } from './api-base.js';
 import { updateHud } from './hud.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
+import { sendSession } from './session-transport.js'; // pure beacon-vs-fetch routing (unit-tested; the no-keepalive win/death fix)
 
 // Small JSON fetch helper: throws on a non-2xx so callers can .catch() a bad response.
 export const fetchJson = async (url) => {
@@ -39,17 +40,19 @@ export function bankRun() {
 
 // Upload one finished/abandoned session recording for funnel analytics (docs/plans/2026-08-03-1246-record-all-sessions.md).
 // The SERVER uploads the trace to S3 + writes the metadata row + stamps game_version (client never touches AWS).
-// `beacon` (unload path) uses sendBeacon — best-effort; large traces may exceed the ~64KB cap and drop.
+// Win/death flushes happen while the page STAYS OPEN (the victory/death overlay is up), so they use a PLAIN
+// fetch with NO `keepalive` — a keepalive request body is capped at ~64KB in Chrome, which silently threw and
+// dropped every completed-level (minutes-of-ticks) trace. Only the `beacon:true` page-unload/`pagehide` path
+// uses `navigator.sendBeacon` (best-effort; its ~64KB cap is a documented v1 limit for tab-closers, whose
+// early-drop-off traces are small).
 export function postSession({ trace, level, outcome, durationMs, kills }, { beacon = false } = {}) {
   const body = JSON.stringify({ playerId: G.playerId || null, trace, level, outcome, durationMs, kills });
   try {
-    if (beacon && navigator.sendBeacon) {
-      navigator.sendBeacon(API_BASE + '/api/sessions', new Blob([body], { type: 'application/json' }));
-    } else {
-      fetch(API_BASE + '/api/sessions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true,
-      }).catch(() => {});
-    }
+    sendSession(API_BASE + '/api/sessions', body, beacon, {
+      fetch: (...a) => fetch(...a),
+      sendBeacon: navigator.sendBeacon ? navigator.sendBeacon.bind(navigator) : null,
+      Blob,
+    });
   } catch { /* recording upload must never break the game */ }
 }
 
