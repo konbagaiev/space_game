@@ -21,6 +21,7 @@ import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } fr
 import { updateMenuCredits } from './hud.js';
 import { requestFullscreen, showWelcome } from './welcome.js';
 import { typeText } from './typewriter.js';
+import { beginLiveSession } from './main.js'; // arm the always-on session recorder at each campaign launch/retry (called on click; ESM cycle resolves by call time)
 
 const mainEl = document.getElementById('mainwin');
 export let mainBriefing = null; // the campaign briefing shown as the primary mission ({ textKey, text } or null)
@@ -70,6 +71,7 @@ function launchCampaign() {
   stopViewer(mwItem);                        // stop the work-zone item showcase too
   document.body.classList.remove('menu');    // restore the in-game HUD
   G.gameStarted = true;                        // first launch from the landing Main Window starts the loop
+  beginLiveSession();                          // arm the recorded live session (seeds the sim) BEFORE reset() draws the RNG
   reset();                                   // (re)start the current level
 }
 function leaveOverlay() {
@@ -84,6 +86,7 @@ function leaveOverlay() {
     if (shouldPromptAccount()) { openAccount('prompt', { after: land }); return; }
     land(); return;
   }
+  if (!G.activeMission) beginLiveSession(); // campaign-only: a side-mission retry stays unrecorded (its descriptor isn't refetchable for playback)
   reset(); // loss → straight retry
 }
 el.restart.addEventListener('click', leaveOverlay);

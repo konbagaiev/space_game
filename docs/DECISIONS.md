@@ -3048,6 +3048,56 @@ where it belongs.
 that holds the veil must be a bare `return` — an added `requestAnimationFrame` would double the loop every
 frame and take the tab down. Caught while writing this; noted because the shape invites the mistake.
 
+## 85. Deterministic tick + always-on session recording (funnel analytics)
+
+We want to see **why** players drop off ("5 tried, nobody reached level 2"), not just the aggregate. So
+**every live campaign session is now recorded, always-on and invisibly**, as a deterministic input-replay
+(seed + per-tick input, reusing `replay.js`) and uploaded for later playback in `/admin/sessions`.
+
+**Unify all live play onto the fixed-step seeded loop.** Recording faithfully requires the same
+determinism `?record`/`?playback`/`?bench` already have, so live play now runs the **fixed-timestep
+accumulator** (`TICK_HZ`, default 60; `BENCH_DT = 1/TICK_HZ`) with the sim RNG seeded at level entry
+(`beginLiveSession()`), instead of stepping one clamped real-time `dt` per frame. This is a deliberate
+strategic move toward a stable "tick" as a foundation (future multiplayer), not a reluctant cost. Priority:
+**faithful reproduction on old/slow devices over exact real-time under load** — capture is per sim-tick,
+decoupled from render frames; the accumulator caps at 6 steps/frame, so a frame drop yields brief
+slow-motion, never a corrupted recording (the ticks that ran are exactly what playback re-runs).
+
+**Server-mediated S3 upload.** The client POSTs the trace to `POST /api/sessions`; the **server** uploads
+to S3 (`s3.js`, hand-rolled SigV4 mirroring `ses.js` — no `@aws-sdk`) and writes the metadata row. No AWS
+creds on the client, no presigned URLs. `s3.js` **no-ops without creds** so `npm test`/misconfigured envs
+never crash the route (the DB row still writes with the computed `s3_key`).
+
+**`game_version` = the deploy commit, server-stamped** from `process.env.SENTRY_RELEASE`. The inherent
+constraint of input-replay analytics: a trace reproduces faithfully **only on the code version it was
+recorded on** (different physics/spawns otherwise). We store the commit and surface a ✓/✗ match in admin;
+restoring an old engine for an old commit is **deferred** (documented, not built).
+
+**New table named `gameplay_sessions`, NOT `sessions`.** `sessions` is already the auth token-session store
+(`db.js`) with `idx_sessions_player`; reusing the name would silently no-op `CREATE TABLE IF NOT EXISTS`
+against the wrong schema and fail every insert. So a distinct name + `idx_gsessions_*` index prefix.
+
+**Campaign levels only in v1.** Side missions' descriptors are generated server-side inline
+(`missions.js`, §18) and aren't refetchable via `/api/levels/:name`, so a `/?playback&id=…` bootstrap would
+404 and show nothing. Side missions are post-endgame grind, outside the early-drop-off funnel — skipped
+(persisting the generated descriptor alongside the trace is a future item).
+
+**Accepted v1 limits.** `sendBeacon` (unload flush) is capped ~64 KB — a long *abandoned* trace can exceed
+it and silently drop; acceptable because the funnel we care about is early drop-off, whose traces are
+small. Win/death flush via normal `fetch` (page stays open) has no size issue. `GET /api/sessions/:id/trace`
+is **intentionally unauthenticated** — a trace is seed+input only (no PII, no screen capture), keyed by an
+unguessable UUID, a fair trade for a dead-simple playback page. **No consent UI** (input-replay on our own
+domain). No TTL/retention job, no gzip/chunked upload, no client-side version gating — all deferred (§30).
+
+## 86. `migrate()` serializes behind a Postgres advisory lock
+
+Two overlapping `CREATE TABLE IF NOT EXISTS` on the same database race in `pg_type` ("duplicate key …
+pg_type_typname_nsp_index") — a latent bug that surfaced once a second test file started calling
+`createApp()` → `migrate()` concurrently under `node --test`. `migrate()` now takes a session advisory lock
+(`pg_advisory_lock`) on a dedicated pool client before running its DDL and releases it in a `finally`, so
+concurrent callers serialize (the losers then find the tables already present — idempotent). Cheap, no new
+dependency, and also correct for a future multi-instance boot.
+
 ## Future ideas
 
 solid asteroids with bounce ·
