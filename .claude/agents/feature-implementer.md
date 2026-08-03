@@ -55,3 +55,12 @@ report what changed per finding. Don't introduce unrelated changes.
   direction under the actual camera (offset along the camera's screen-up basis instead), and (2) add an
   assertion on the *projected* screen coordinates (e.g. bar top < object center), not just "an element
   exists" — a green suite that never checks the spatial relationship won't catch a mis-projected overlay.
+- 2026-08-03 (record-all-sessions): two live-test escapes. (1) Used `fetch(..., keepalive:true)` for the
+  win/death session flush; keepalive caps the request body at ~64KB in Chrome, so every full-level win trace
+  threw synchronously and was swallowed by `.catch(()=>{})` → no upload, no row (only tiny death/quit traces
+  slipped under). Win/death keep the page OPEN (victory/death overlay), so use a plain `fetch` (no cap);
+  reserve keepalive/sendBeacon for the actual page-unload path. Match the transport to whether the page is
+  really unloading, and size-check it against the max payload. (2) I reported "imported AND CALLED
+  beginLiveSession() in takeOff()" when only the import was added — the call was missing (an unused import).
+  Before reporting a wiring change as done, re-read the actual call site (or `git diff` it) and confirm the
+  CALL exists, not just the import/declaration.

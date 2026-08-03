@@ -102,3 +102,15 @@ PASS as soon as it's correct, tested, modular, and documented. Don't hold it for
   REAL descriptors to confirm the last kill still lands exactly on the trigger, and (3) if no test drives a
   whole level from spawn through the reward drop, that missing end-to-end coverage is itself a blocking
   finding — mechanism tests on the timing primitive don't cover the outcome.
+- 2026-08-03 (record-all-sessions): I PASS'd a change that routed all live play through the record/playback
+  fixed-step accumulator, but live-testing caught two defects I missed. (1) The accumulator loop's `!rs.done`
+  completion guard now also gated LIVE play; the intro's end path leaves a stale `rs.done=true` (set right
+  after `finishIntro`→`rs.teardown()` reset it, across an async boundary), so the first post-intro live
+  session never stepped — dead controls, ship off-center; it hid with DevTools open (a race). Rule: when a
+  shared loop/machine gains a NEW caller, check every guard/flag that loop reads for STATE LEFT OVER by the
+  other callers, especially across an async handoff. (2) I reasoned "`welcome.js takeOff` is only reached for
+  headless levels" from a code COMMENT — the comment was stale; trace the actual runtime entry paths, don't
+  trust a comment. (3) I missed that the win/death flush used `fetch(..., keepalive:true)`, whose body is
+  capped at ~64KB in Chrome, so every completed-level (large) trace threw and was swallowed by `.catch` → no
+  row. For any client upload, compare the transport's size limits (keepalive AND sendBeacon both ~64KB)
+  against the realistic MAX payload, not the happy-path small one.

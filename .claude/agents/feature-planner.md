@@ -145,3 +145,11 @@ Your final message: a point-by-point list of how each issue was resolved.
   the `level-1` descriptor; any `?playback` trace), (2) checks whether restored/changed behavior can make the
   recorded input diverge (esp. player death, timing, kill-count), and (3) adds a Stage-9 live-test: reset
   progress → play the intro end-to-end → confirm it still reaches victory + the Level 1 briefing.
+- 2026-08-03 (record-all-sessions): the plan unified all live play onto the deterministic accumulator but
+  didn't flag that live play would then INHERIT the accumulator's playback-only state (`rs.done`, left stale
+  by the intro) → dead controls after the intro. Rule: when a plan makes PRODUCTION reuse a loop/machine that
+  was previously exclusive to a special mode (?record/?playback/?bench), enumerate the state that mode leaves
+  behind and require the plan to reset or ignore it for the new caller. Second miss: the plan documented the
+  ~64KB cap for the page-UNLOAD (beacon) path but not that the win/death `keepalive` fetch carries the SAME
+  ~64KB body cap — so full-level win traces were silently dropped. Flag payload-size limits on EVERY flush
+  path (win/death/unload), not just the unload one, against the realistic maximum trace size.
