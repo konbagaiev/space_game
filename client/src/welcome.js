@@ -15,6 +15,7 @@ import { updateMenuCredits } from './hud.js';
 import { localizeSettings } from './settings.js';
 import { localizeCredits } from './credits.js';
 import { typeText } from './typewriter.js';
+import { beginLiveSession } from './main.js'; // arm the always-on session recorder on the post-intro Level-1 take-off (called on click; ESM cycle resolves by call time)
 
 const welcomeEl = document.getElementById('welcome');
 let selectedShip = null;
@@ -163,6 +164,7 @@ function takeOff() {
   welcomeEl.style.display = 'none';
   document.body.classList.remove('menu'); // restore the in-game HUD
   G.gameStarted = true;
+  beginLiveSession(); // arm the recorded live session (seeds the sim) BEFORE reset() draws the spawn RNG
   reset(); // position the player + start the level
 }
 document.getElementById('takeoff').addEventListener('click', takeOff);

@@ -372,8 +372,12 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   time → whole `BENCH_DT` steps, capped at 6 steps/frame → slow-motion under load, never a corrupted tick),
   so a fight runs at true speed on any refresh rate. `TICK_HZ` (`bench.js`, default **60**) is the single
   tunable tick rate; `BENCH_DT = 1/TICK_HZ`. Live play is **seeded at level entry** (`beginLiveSession()` in
-  `main.js`, called before each campaign launch/retry) and captured per sim tick — see **Session recordings**
-  under Backend for the always-on funnel-analytics capture built on this.
+  `main.js`, called before each campaign launch/retry — and the welcome-screen Take-off) and captured per sim
+  tick — see **Session recordings** under Backend for the always-on funnel-analytics capture built on this.
+  The accumulator's completion flag `rs.done` gates **playback/intro ONLY** (`while (… && !(rs.play && rs.done)
+  …)`): live play (`rs.play===null`) must ignore it, because the intro's end leaves a stale `rs.done=true`
+  after `finishIntro()`→`rs.teardown()` — a live session inheriting it would never step (the intro→Level-1
+  dead-controls bug; guarded by `visual/scenarios/29-intro-live-handoff.mjs`).
 - **Determinism isolation (load-bearing) — the seeded stream is OPT-IN (`client/src/sim-random.js`).**
   `simRandom()` is the sim's RNG: `seedSim(n)` installs a `mulberry32` stream (record start, playback/intro
   arm, `?bench` bootstrap + per-trace, **and every live campaign session via `beginLiveSession()`**),

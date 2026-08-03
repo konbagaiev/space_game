@@ -76,10 +76,12 @@ function launchCampaign() {
 }
 function leaveOverlay() {
   if (levelRunner.won) {
-    // Land on the now-current level after a victory. A level WITH a briefing (levels 2+) → the Main Window
-    // briefing; a level WITHOUT one (e.g. Level 1, reached right after the Level 0 intro) → the Welcome /
-    // take-off screen — same rule bootstrap + account use, so Continue matches a page reload (never the
-    // "Stand by for new orders" default that showMain(null) would render).
+    // Land on the now-current level after a victory. A level WITH a briefing → the Main Window briefing; a
+    // level WITHOUT one → the Welcome / take-off screen — same rule bootstrap + account use, so Continue
+    // matches a page reload (never the "Stand by for new orders" default that showMain(null) would render).
+    // NB with current content every campaign level 2+ HAS a briefing (level-1 is the intro/Level 0), so the
+    // post-intro Level-1 (seed `level-2`) lands on the Main Window (launchCampaign), NOT welcome; the welcome
+    // branch is a fallback for a briefing-less level.
     const brief = G.pendingBriefing || (CATALOG.level && CATALOG.level.briefing) || null;
     const land = () => { if (brief) showMain(brief); else showWelcome(getPlayerShips()); };
     // After clearing level 1, prompt once for a username + optional account (DECISIONS §11), then land.

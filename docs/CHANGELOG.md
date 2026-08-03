@@ -5,6 +5,19 @@
 
 ## 2026-08-03
 
+- **[2026-08-03-1246-record-all-sessions] Fix: intro→Level-1 dead controls after always-on recording.**
+  Unifying live play onto the record/playback fixed-step accumulator introduced a freeze: the accumulator's
+  inner loop was gated `while (… && !rs.done …)`, and the intro's completion set `rs.done = true` *after*
+  `finishIntro()`→`rs.teardown()` had already reset it — so the first live session right after the intro
+  inherited a stale `rs.done=true`, the accumulator never stepped, and the ship sat off-center with dead
+  controls until a page refresh. The accumulator now ignores `rs.done` for live play (`!(rs.play && rs.done)`
+  — `rs.done` gates PLAYBACK/intro only, where `rs.play` is truthy; freeze-on-exhaustion there is unchanged).
+  Also wired `beginLiveSession()` into the welcome-screen Take-off path (`welcome.js takeOff`) so a
+  welcome-path live-level entry is recorded too (the actual post-intro campaign path — Main Window
+  `launchCampaign` — was already armed). Added a deterministic regression guard
+  (`client/visual/scenarios/29-intro-live-handoff.mjs`): it fires the real intro-completion sequence, takes
+  off into live Level 1, and asserts the accumulator actually steps (captured ticks > 0) — it fails on the
+  unfixed engine (0 ticks) and passes after the fix.
 - **[2026-08-03-1246-record-all-sessions] Record all gameplay sessions for funnel analytics.** Every live
   **campaign** session (side missions excluded in v1) is now captured **always-on and invisibly** as a
   deterministic input-replay (seed + per-tick input, reusing `replay.js`) and uploaded. The client POSTs

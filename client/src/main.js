@@ -655,7 +655,12 @@ function animate() {
     if ((recCapturing || rs.armed || live) && !G.paused && !cutFrozen) {
       replayAcc += Math.min(rawSec, 0.1); // clamp: after a stall/tab-throttle, don't fast-forward a huge burst
       let steps = 0;
-      while (replayAcc >= BENCH_DT && steps < 6 && !rs.done && !cutFrozen) {
+      // `rs.done` (trace exhausted / intro ended) must gate PLAYBACK only, never live play. The intro's end
+      // path sets `rs.done = true` right AFTER cutsceneEnd()→finishIntro()→rs.teardown() already reset it to
+      // false + nulled rs.play, so a live session inheriting that stale `rs.done` would never step — the ship
+      // never centers and controls are dead until a refresh builds a fresh rs. Ignore rs.done when rs.play is
+      // null (live): for ?playback/intro rs.play is truthy so freeze-on-exhaustion is unchanged.
+      while (replayAcc >= BENCH_DT && steps < 6 && !(rs.play && rs.done) && !cutFrozen) {
         if (rs.cutReturning) {
           for (const c in keys) keys[c] = false; touchAim.active = false; // no recorded input → autopilot isn't cancelled (sim manual-input check)
         } else if (rs.play && rs.trace) {
@@ -819,6 +824,13 @@ if (location.search.includes('debug')) {
     get balance() { return G.balance; }, // persistent account balance
     get kills() { return G.kills; },
     get touchAim() { return touchAim; }, // touch steering state (active/heading/thrust) — assert tap-vs-drag in headless
+    sessionRec: () => ({ active: sr.active, flushed: sr.flushed, ticks: sr.ticks.length, level: sr.level }), // always-on live-recorder state (funnel-analytics guard)
+    // Regression seam for the intro→Level-1 dead-controls bug (docs/plans/2026-08-03-1246-record-all-sessions.md).
+    // The headless suites can't run the REAL auto-intro (shouldPlayIntro is gated off under ?debug), so this
+    // fires the production intro-completion sequence directly: finishIntro() (async → teardown → welcome) then
+    // leaves rs.done=true exactly as the accumulator caller does (main.js ~1256). A scenario then Takes off into
+    // live Level 1 and proves the accumulator still steps (Fix A) and the session is recorded (Fix B).
+    simulateIntroEnd() { introMode = true; cutsceneEnd(); rs.done = true; return { playDone: rs.done, playActive: !!rs.play }; },
   };
 }
 
