@@ -51,6 +51,7 @@ function statLine(kind, type, s, weight) {
     add('ui.shop.stat.speed', s.projectileSpeed);
     add('ui.shop.stat.range', s.maxRange);
     add('ui.shop.stat.blast', s.blastRadius);
+    if (s.aimAssistDeg) parts.push(`${t('ui.shop.stat.aimassist')} ${s.aimAssistDeg}°`); // bullet auto-aim cone (half-angle)
   }
   if (typeof weight === 'number') add('ui.shop.stat.weight', weight);
   return parts.join(' · ');

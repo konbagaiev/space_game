@@ -247,6 +247,10 @@
     "source": "Blast",
     "context": "Stat label — rocket blast/AoE radius. Short."
   },
+  "ui.shop.stat.aimassist": {
+    "source": "Aim assist",
+    "context": "Stat label — bullet weapon auto-aim cone; followed by a degree value like '2°'. Short."
+  },
   "ui.shop.stat.maxspeed": {
     "source": "Top speed",
     "context": "Stat label — engine maximum speed cap. Short."

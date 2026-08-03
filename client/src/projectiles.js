@@ -18,6 +18,7 @@ import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
 import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
+import { nearestInConeIndex } from './steering.js'; // pure XZ nearest-in-cone pick for bullet aim assist
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -285,6 +286,25 @@ export function findTargetInSector(pos, fwd, halfAngle) {
     if (fwd.dot(to) >= Math.cos(halfAngle) && d < bestDist) { best = e; bestDist = d; }
   }
   return best;
+}
+
+// Aim-assist target for a BULLET shot: the nearest valid OPPOSING-side target within the forward cone
+// (halfAngle, radians). Player guns pick the nearest non-warping enemy; enemy guns pick the player (if
+// alive). Returns the target ship object or null. Deterministic (pure scan; no RNG). Planar (XZ).
+// Rockets do NOT use this — they keep findTargetInSector.
+export function findBulletAimTarget(pos, fwd, halfAngle, fromPlayer) {
+  const from = { x: pos.x, z: pos.z };
+  const f = { x: fwd.x, z: fwd.z };            // fwd is horizontal (y=0) → its XZ is unit
+  if (fromPlayer) {
+    const cands = [];
+    for (const e of enemies) if (!e.warping) cands.push(e); // skip enemies still forming
+    const idx = nearestInConeIndex(from, f, cands.map((e) => ({ x: e.mesh.position.x, z: e.mesh.position.z })), halfAngle);
+    return idx >= 0 ? cands[idx] : null;
+  }
+  if (!G.player || !G.player.alive) return null;
+  const p = G.player.mesh.position;
+  const idx = nearestInConeIndex(from, f, [{ x: p.x, z: p.z }], halfAngle);
+  return idx >= 0 ? G.player : null;
 }
 
 export function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
