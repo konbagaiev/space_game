@@ -22,12 +22,13 @@ import { shipModelCacheSize } from './ship-factory.js'; // ?debug diagnostic: ho
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars)
-import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1)
+import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
+import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
 import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
@@ -61,6 +62,7 @@ const REC = evalRecord(typeof location !== 'undefined' ? location.search : ''); 
 // One session instance owns the PLAYBACK + CUTSCENE lifecycle state (extracted for a unit-tested teardown()).
 // The intro cutscene also SETS rs.play programmatically (bootstrap), reusing the ?playback machinery.
 const rs = makeReplaySession();
+const sr = makeSessionRecorder(); // always-on live-session recorder (funnel analytics)
 rs.play = evalPlayback(typeof location !== 'undefined' ? location.search : ''); // { id, cutscene } | null
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
 if (REC || rs.play) G.replayMode = true; // dev record/playback sessions are READ-ONLY: the sim must not advance progress / bank credits / deposit loot on a (re)played win
@@ -383,6 +385,7 @@ addEventListener('pagehide', () => {
   if (G.quitSent || !G.gameStarted) return;
   G.quitSent = true;
   track('quit', { level: currentLevelLabel() });
+  flushSession('quit', { beacon: true }); // best-effort: large traces may exceed the ~64KB beacon cap (documented)
 });
 
 // ---------- Sim helpers moved to src/sim.js ----------
@@ -642,16 +645,22 @@ function animate() {
   const dt = (BENCH || REC || rs.play) ? BENCH_DT : Math.min(rawSec, 0.05); // bench/record/playback: fixed step for determinism; else clamped for sim stability
   const t0 = DEV ? performance.now() : 0;
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
-  if (REC || rs.play) {
+  const live = G.gameStarted && !BENCH && !REC && !rs.play; // real player session → deterministic accumulator loop (always-on recording)
+  if (REC || rs.play || live) {
     // Fixed-timestep ACCUMULATOR: advance the sim at BENCH_DT as many WHOLE steps as real elapsed time allows,
     // so record + playback run at real-time speed on ANY display refresh (a 120 Hz screen would otherwise run
     // 2× because one fixed step ran per frame). Each tick stays a deterministic fixed dt; we capture (record)
     // or apply (playback) exactly one tick per step. Only runs once armed (record: after "Start"; playback:
     // once models loaded) — before that the ship sits idle with the real model on screen (no placeholder flash).
-    if ((recCapturing || rs.armed) && !G.paused && !cutFrozen) {
+    if ((recCapturing || rs.armed || live) && !G.paused && !cutFrozen) {
       replayAcc += Math.min(rawSec, 0.1); // clamp: after a stall/tab-throttle, don't fast-forward a huge burst
       let steps = 0;
-      while (replayAcc >= BENCH_DT && steps < 6 && !rs.done && !cutFrozen) {
+      // `rs.done` (trace exhausted / intro ended) must gate PLAYBACK only, never live play. The intro's end
+      // path sets `rs.done = true` right AFTER cutsceneEnd()→finishIntro()→rs.teardown() already reset it to
+      // false + nulled rs.play, so a live session inheriting that stale `rs.done` would never step — the ship
+      // never centers and controls are dead until a refresh builds a fresh rs. Ignore rs.done when rs.play is
+      // null (live): for ?playback/intro rs.play is truthy so freeze-on-exhaustion is unchanged.
+      while (replayAcc >= BENCH_DT && steps < 6 && !(rs.play && rs.done) && !cutFrozen) {
         if (rs.cutReturning) {
           for (const c in keys) keys[c] = false; touchAim.active = false; // no recorded input → autopilot isn't cancelled (sim manual-input check)
         } else if (rs.play && rs.trace) {
@@ -661,6 +670,7 @@ function animate() {
         update(BENCH_DT);                          // the seeded stream is opt-in inside the sim (sim-random.js)
         if (rs.play && rs.trace && !rs.cutReturning) rs.index++;
         if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
+        if (live) sr.captureTick(snapshotInput(keys, touchAim)); // always-on: capture the real operator input per sim tick
         if (rs.cut) cutsceneObserve();             // may freeze (fire a pause), engage return-to-base, or end
         // RETURN-HOME watchdog (see CUTSCENE_STALL_TICKS in replay.js): while rs.cutReturning is engaged only
         // a WIN ends the cutscene, so a run that can never dock would loop here forever. Only that path reaches
@@ -814,6 +824,13 @@ if (location.search.includes('debug')) {
     get balance() { return G.balance; }, // persistent account balance
     get kills() { return G.kills; },
     get touchAim() { return touchAim; }, // touch steering state (active/heading/thrust) — assert tap-vs-drag in headless
+    sessionRec: () => ({ active: sr.active, flushed: sr.flushed, ticks: sr.ticks.length, level: sr.level }), // always-on live-recorder state (funnel-analytics guard)
+    // Regression seam for the intro→Level-1 dead-controls bug (docs/plans/2026-08-03-1246-record-all-sessions.md).
+    // The headless suites can't run the REAL auto-intro (shouldPlayIntro is gated off under ?debug), so this
+    // fires the production intro-completion sequence directly: finishIntro() (async → teardown → welcome) then
+    // leaves rs.done=true exactly as the accumulator caller does (main.js ~1256). A scenario then Takes off into
+    // live Level 1 and proves the accumulator still steps (Fix A) and the session is recorded (Fix B).
+    simulateIntroEnd() { introMode = true; cutsceneEnd(); rs.done = true; return { playDone: rs.done, playActive: !!rs.play }; },
   };
 }
 
@@ -972,7 +989,11 @@ const shipByIdGlobal = (id) => { for (const s of CATALOG.shipByName.values()) if
 async function loadTrace(id) {
   const key = id || 'last';
   try { const s = localStorage.getItem(`replay:${key}`); if (s) return JSON.parse(s); } catch {}
-  if (id) { try { const r = await fetch(`/recordings/${id}.json`); if (r.ok) return await r.json(); } catch {} }
+  if (id) {
+    try { const r = await fetch(`/recordings/${id}.json`); if (r.ok) return await r.json(); } catch {}
+    // Admin playback of a recorded session (/?playback&id=<sessionId>): resolve the trace from the server.
+    try { const r = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(id)}/trace`); if (r.ok) return await r.json(); } catch {}
+  }
   return null;
 }
 
@@ -1039,8 +1060,41 @@ function stopRecordSession() {
   try { localStorage.setItem(`replay:${id}`, JSON.stringify(trace)); localStorage.setItem('replay:last', JSON.stringify(trace)); } catch {}
   downloadTrace(trace, `${id}.json`);
   showRecordDone(id, trace.ticks.length);
-  seedSim(null); // session over → back to the native RNG (never leave live play on a stale seeded stream)
+  // The DEV ?record session clears its own seed on stop (it hands the operator back an unseeded menu). Normal
+  // live play is now ALWAYS seeded per session (always-on recording): beginLiveSession reseeds before each
+  // reset(), and a stale seed lingering on the post-win/death menu is harmless (menu cosmetics use Math.random).
+  seedSim(null);
 }
+
+// Begin a real, recorded live session. Called by the launch/retry flows JUST BEFORE their reset() (reset()
+// draws the sim RNG for spawn timing, so the seed must be installed first — same ordering as
+// beginRecordCapture). No-op under ?record/?playback/?bench and during the intro cutscene: those own the
+// seed/loop, and a (re)played fight must never be re-recorded.
+export function beginLiveSession() {
+  if (REC || rs.play || BENCH || G.replayMode) return;
+  const seed = (Date.now() >>> 0);
+  seedSim(seed); // install the seeded gameplay stream for THIS session
+  const shipId = (CATALOG.shipByName.get(G.currentShipName) || {}).id ?? 1;
+  const activeMatches = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === G.currentShipName;
+  sr.begin({
+    seed, level: CATALOG.levelName || 'level-1', shipId,   // the SEED NAME (level-N), stashed at each CATALOG.level set (C2a)
+    loadout: activeMatches ? G.activeShip.loadout : null,
+    components: activeMatches ? G.activeShip.components : null,
+    dt: BENCH_DT,
+  });
+  replayAcc = 0;
+}
+
+// Flush the current live recording exactly once (win/death → fetch; unload → sendBeacon). Reads live
+// duration/kills at flush time. Below-floor / already-flushed sessions send nothing (sr.end returns null).
+export function flushSession(outcome, { beacon = false } = {}) {
+  const payload = sr.end(outcome, {
+    durationMs: Math.round(performance.now() - G.gameStartTime),
+    kills: G.kills,
+  });
+  if (payload) postSession(payload, { beacon });
+}
+G.flushSession = flushSession; // exposed on the shared bag so sim.js can flush on win/death without a main.js import cycle
 
 // Start the PLAYBACK session from an already-loaded, validated trace: re-seed, rebuild the recorded ship,
 // launch the recorded level. animate() then steps the trace one tick per frame (see the rs.play block there).
@@ -1400,6 +1454,7 @@ async function bootstrap() {
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);
     CATALOG.level = level.descriptor;
+    CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
 
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map
     buildMap(map.descriptor); // build the scene backdrop: planet, moons, stars, asteroids, sky light

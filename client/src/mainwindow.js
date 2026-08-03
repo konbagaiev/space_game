@@ -21,6 +21,7 @@ import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } fr
 import { updateMenuCredits } from './hud.js';
 import { requestFullscreen, showWelcome } from './welcome.js';
 import { typeText } from './typewriter.js';
+import { beginLiveSession } from './main.js'; // arm the always-on session recorder at each campaign launch/retry (called on click; ESM cycle resolves by call time)
 
 const mainEl = document.getElementById('mainwin');
 export let mainBriefing = null; // the campaign briefing shown as the primary mission ({ textKey, text } or null)
@@ -70,20 +71,24 @@ function launchCampaign() {
   stopViewer(mwItem);                        // stop the work-zone item showcase too
   document.body.classList.remove('menu');    // restore the in-game HUD
   G.gameStarted = true;                        // first launch from the landing Main Window starts the loop
+  beginLiveSession();                          // arm the recorded live session (seeds the sim) BEFORE reset() draws the RNG
   reset();                                   // (re)start the current level
 }
 function leaveOverlay() {
   if (levelRunner.won) {
-    // Land on the now-current level after a victory. A level WITH a briefing (levels 2+) → the Main Window
-    // briefing; a level WITHOUT one (e.g. Level 1, reached right after the Level 0 intro) → the Welcome /
-    // take-off screen — same rule bootstrap + account use, so Continue matches a page reload (never the
-    // "Stand by for new orders" default that showMain(null) would render).
+    // Land on the now-current level after a victory. A level WITH a briefing → the Main Window briefing; a
+    // level WITHOUT one → the Welcome / take-off screen — same rule bootstrap + account use, so Continue
+    // matches a page reload (never the "Stand by for new orders" default that showMain(null) would render).
+    // NB with current content every campaign level 2+ HAS a briefing (level-1 is the intro/Level 0), so the
+    // post-intro Level-1 (seed `level-2`) lands on the Main Window (launchCampaign), NOT welcome; the welcome
+    // branch is a fallback for a briefing-less level.
     const brief = G.pendingBriefing || (CATALOG.level && CATALOG.level.briefing) || null;
     const land = () => { if (brief) showMain(brief); else showWelcome(getPlayerShips()); };
     // After clearing level 1, prompt once for a username + optional account (DECISIONS §11), then land.
     if (shouldPromptAccount()) { openAccount('prompt', { after: land }); return; }
     land(); return;
   }
+  if (!G.activeMission) beginLiveSession(); // campaign-only: a side-mission retry stays unrecorded (its descriptor isn't refetchable for playback)
   reset(); // loss → straight retry
 }
 el.restart.addEventListener('click', leaveOverlay);
