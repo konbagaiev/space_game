@@ -5,6 +5,13 @@
 
 ## 2026-08-03
 
+- **[2026-08-03-2154-admin-progress-column] The admin `progress` column is readable.** It rendered the
+  raw `current_progress` id (a bare `3`, which actually means "Level 2" — the level ids are off by one
+  from the player-facing titles). Each cell now shows the level **title** from the `levels` table
+  `descriptor.title`, a small CSS bar, and an `n/N` fraction, with a **✔** when the player is on the
+  last level. `N` and the ordinal `n` are derived from the `levels` table at render time (new
+  `getLevels()` in `db.js`, injected into `mountAdmin`) — never hardcoded — and the column still sorts
+  by the raw numeric progress via `data-sort`. Unknown ids fall back to the bare number.
 - **Frame-pacing probe (`/raf-probe.html`) — measure the platform, not our renderer.** A tester's 90 Hz
   tablet (Mali-G52 MC2) sits at a ruler-flat **22.2 ms/frame = exactly half of 90 Hz**, unmoved by enemy
   count or particles. His 2335 `?dev` samples rule out the two obvious culprits: **not** the new
