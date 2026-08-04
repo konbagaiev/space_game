@@ -1107,6 +1107,17 @@ test('admin: aggregates sum kills/time/earned across a player\'s games', async (
   assert.ok(row.includes('data-sort="2"'), 'games_played counter = 2');
 });
 
+test('admin: progress column renders the level title + bar + n/N, still sorted by the raw id', async () => {
+  await post('/api/players/register', { playerId: 'p_prog' });   // fresh player → current_progress = 1
+  const html = await (await get('/admin', adminAuth)).text();
+  const row = html.split('<tr>').find((r) => r.includes('p_prog'));
+  assert.ok(row, 'the player row is rendered');
+  assert.match(row, /<td data-sort="1" class="prog"/, 'sortable by the raw progress id');
+  assert.ok(row.includes('Level 0'), 'shows the level title, not the raw id');
+  assert.ok(row.includes('1/5'), 'n/N derived from the 5 seeded levels');
+  assert.ok(!row.includes('level-1'), 'never shows the levels.name column');
+});
+
 test('admin: requires auth (401 + WWW-Authenticate when no credentials)', async () => {
   const r = await get('/admin');
   assert.equal(r.status, 401);

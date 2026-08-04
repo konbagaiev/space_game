@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/node';
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, backend, resetPlayer,
+import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, getLevels, backend, resetPlayer,
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
   setResetToken, consumeResetToken, deleteSessionsForPlayer,
   getStash, buyItem, sellItem, equipItem, unequipItem, depositLoot, getAdminPlayers,
@@ -477,7 +477,7 @@ export async function createApp() {
   // Admin dashboard (docs/plans/2026-07-02-1352-admin-panel-player-stats.md): server-rendered players +
   // per-player game aggregates, HTTP Basic Auth (ADMIN_USER/ADMIN_PASSWORD; 404 when unset). Mounted
   // outside /api, so the /api-scoped CORS never touches it — /admin stays same-origin only.
-  mountAdmin(app, getAdminPlayers, getAdminSessions, process.env.SENTRY_RELEASE || null);
+  mountAdmin(app, getAdminPlayers, getAdminSessions, process.env.SENTRY_RELEASE || null, getLevels);
 
   // Serve the game client (index.html etc.) from the same origin as the API.
   //

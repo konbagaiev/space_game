@@ -5,6 +5,13 @@
 
 ## 2026-08-03
 
+- **[2026-08-03-2154-admin-progress-column] The admin `progress` column is readable.** It rendered the
+  raw `current_progress` id (a bare `3`, which actually means "Level 2" — the level ids are off by one
+  from the player-facing titles). Each cell now shows the level **title** from the `levels` table
+  `descriptor.title`, a small CSS bar, and an `n/N` fraction, with a **✔** when the player is on the
+  last level. `N` and the ordinal `n` are derived from the `levels` table at render time (new
+  `getLevels()` in `db.js`, injected into `mountAdmin`) — never hardcoded — and the column still sorts
+  by the raw numeric progress via `data-sort`. Unknown ids fall back to the bare number.
 - **[2026-08-03-1246-record-all-sessions] Fix: sessions from phones/tablets were never uploaded at all;
   trace format v2 (run-length packed).** A tablet tester played Level 3 for 20+ minutes and left **no
   session row and no `quit` event**; the maintainer's own hour-long Level-4 quit produced the event but

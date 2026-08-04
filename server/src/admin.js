@@ -110,6 +110,15 @@ function pageShell({ title, heading, ths, rows, nav = '' }) {
       td.num { text-align: right; font-variant-numeric: tabular-nums; }
       td.ref { max-width: 320px; word-break: break-all; color: #9fb3c8; }
       td.device { max-width: 260px; word-break: break-word; color: #cbd5e1; }
+      /* progress cell: level title (+ ✔ on the last level) · bar · n/N. Colors reuse the dark-theme
+         palette above so the bar stays legible on #0e1116 / the #12161d even-row background. */
+      td.prog { white-space: nowrap; }
+      td.prog .lvl { display: inline-block; min-width: 5.6em; }
+      td.prog .done { color: #4ade80; }
+      td.prog .bar { display: inline-block; width: 60px; height: 8px; margin: 0 8px; vertical-align: middle;
+                     background: #2a2f3a; border-radius: 4px; overflow: hidden; }
+      td.prog .bar i { display: block; height: 100%; background: #7fb2ff; }
+      td.prog .frac { color: #9fb3c8; font-variant-numeric: tabular-nums; }
       code { color: #cfe3ff; }
       tr:nth-child(even) td { background: #12161d; }
     </style></head><body>
@@ -135,9 +144,27 @@ function pageShell({ title, heading, ths, rows, nav = '' }) {
     </script></body></html>`;
 }
 
+// The players-table "progress" cell. `current_progress` is a raw level id (an FK into the levels table)
+// and is off by one from the level's player-facing title, so render the TITLE + a bar + n/N instead.
+// `levels` is the id-ordered [{ id, title }] list from getLevels(); both N (levels.length) and the
+// ordinal n are derived from it — never hardcoded. A ✔ marks the LAST level. Exported for unit tests.
+// Unknown/unresolvable progress (id not in the list, or no levels) → the raw number, as before.
+export function progressCell(currentProgress, levels = []) {
+  const total = levels.length;
+  const idx = levels.findIndex((l) => Number(l.id) === Number(currentProgress));
+  if (idx < 0) return `<td data-sort="${esc(currentProgress)}" class="num">${esc(currentProgress)}</td>`;
+  const n = idx + 1;
+  const pct = Math.round((n / total) * 100);
+  const check = n === total ? ' <span class="done">✔</span>' : '';
+  return `<td data-sort="${esc(currentProgress)}" class="prog">` +
+    `<span class="lvl">${esc(levels[idx].title)}${check}</span>` +
+    `<span class="bar"><i style="width:${pct}%"></i></span>` +
+    `<span class="frac">${n}/${total}</span></td>`;
+}
+
 // Render the players table page. `data-sort` on each cell holds the raw numeric/string value used by the
 // inline column-sort script (so sorting is by real value, not the formatted display text).
-function renderPage(players) {
+function renderPage(players, levels) {
   const rows = players.map((p) => `
     <tr>
       <td title="${esc(p.id)}"><code>${esc(p.id.slice(0, 8))}</code></td>
@@ -146,7 +173,7 @@ function renderPage(players) {
       <td data-sort="${p.emailVerified ? 1 : 0}">${p.emailVerified ? 'yes' : ''}</td>
       <td data-sort="${p.createdAt}">${fmtDate(p.createdAt)}</td>
       <td data-sort="${p.lastSeen}">${fmtDate(p.lastSeen)}</td>
-      <td data-sort="${p.currentProgress}" class="num">${p.currentProgress}</td>
+      ${progressCell(p.currentProgress, levels)}
       <td data-sort="${p.credits}" class="num">${p.credits}</td>
       <td data-sort="${p.gamesPlayed}" class="num">${p.gamesPlayed}</td>
       <td data-sort="${p.totalTimeMs}" class="num">${fmtTime(p.totalTimeMs)}</td>
@@ -194,14 +221,14 @@ function renderSessionsPage(sessions, currentVersion) {
   });
 }
 
-// Mount the admin views. `getAdminPlayers`/`getAdminSessions` are injected (datastore fns) so this stays
-// testable; `currentVersion` is the deploy commit for the ✓/✗ version-match marker.
-export function mountAdmin(app, getAdminPlayers, getAdminSessions, currentVersion) {
+// Mount the admin views. `getAdminPlayers`/`getAdminSessions`/`getLevels` are injected (datastore fns) so
+// this stays testable; `currentVersion` is the deploy commit for the ✓/✗ version-match marker.
+export function mountAdmin(app, getAdminPlayers, getAdminSessions, currentVersion, getLevels = async () => []) {
   app.get('/admin', async (req, res, next) => {
     try {
       if (!checkAuth(req, res)) return;
-      const players = await getAdminPlayers(1000);
-      res.type('html').send(renderPage(players));
+      const [players, levels] = await Promise.all([getAdminPlayers(1000), getLevels()]);
+      res.type('html').send(renderPage(players, levels));
     } catch (e) { next(e); }
   });
   app.get('/admin/sessions', async (req, res, next) => {

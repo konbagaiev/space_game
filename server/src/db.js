@@ -623,6 +623,14 @@ export async function getLevel(name) {
   return rows[0] ? { name: rows[0].name, descriptor: rows[0].descriptor } : null;
 }
 
+// All levels, id-ordered — the admin "progress" column resolves a player's `current_progress` (an FK
+// into this table) to a readable title + n/N. `descriptor.title` is the player-facing name
+// ('Level 0'..'Level 4'); the `name` column ('level-1'..'level-5') is off by one and is NOT shown.
+export async function getLevels() {
+  const { rows } = await pool.query('SELECT id, name, descriptor FROM levels ORDER BY id');
+  return rows.map((r) => ({ id: Number(r.id), title: r.descriptor?.title || r.name }));
+}
+
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
 const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']);
