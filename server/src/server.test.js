@@ -190,12 +190,15 @@ test('briefing: Level 1 has the first-flight briefing (no weapon change), then t
   assert.equal(adv1.advanced, true);
   assert.equal(adv1.briefing.textKey, 'level.1.briefing', 'Level 1 shows the first-flight briefing');
   assert.equal((await getJson('/api/players/brief-1/active-ship')).loadout.mounts.find((m) => m.group === 'gun').weapon, 1);
+  assert.equal((await getJson('/api/players/brief-1/active-ship')).shopUnlocked, false, 'shop locked during the first flight');
 
-  // 2nd advance (id 2 → id 3): the Machine-Gun briefing (message + replaceWeapon action)
+  // 2nd advance (id 2 → id 3): the Machine-Gun briefing (message + replaceWeapon action) — and this is
+  // now where the shop unlocks (unlockShop action moved here, right after the first flight).
   const adv = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv.advanced, true);
   assert.equal(adv.briefing.textKey, 'level.2.briefing');
   assert.match(adv.briefing.text, /machine gun/i);
+  assert.equal((await getJson('/api/players/brief-1/active-ship')).shopUnlocked, true, 'reaching Level 2 (after the first flight) opens the shop');
 
   // the active ship's gun is now the Machine Gun (weapon 5); the rocket is untouched
   const after = await getJson('/api/players/brief-1/active-ship');
@@ -212,13 +215,13 @@ test('briefing: Level 1 has the first-flight briefing (no weapon change), then t
   assert.equal(l3ship.components.hull, 1);    // existing slots untouched
   assert.equal(l3ship.components.engine, 5);
 
-  // 4th advance (id 4 → id 5, the last level): text-only briefing that OPENS THE SHOP (unlockShop action)
-  const beforeShop = (await getJson('/api/players/brief-1/active-ship')).shopUnlocked;
-  assert.equal(beforeShop, false, 'shop still locked while on id 4');
+  // 4th advance (id 4 → id 5, the last level): text-only briefing. The shop was already opened back on
+  // the 2nd advance, so it stays unlocked here (unlock is idempotent) — it does NOT flip on this level.
+  assert.equal((await getJson('/api/players/brief-1/active-ship')).shopUnlocked, true, 'shop still open while on id 4');
   const adv3 = await (await post('/api/players/brief-1/advance', {})).json();
   assert.equal(adv3.advanced, true);
   assert.equal(adv3.briefing.textKey, 'level.4.briefing');
-  assert.equal((await getJson('/api/players/brief-1/active-ship')).shopUnlocked, true, 'reaching the last level unlocked the shop');
+  assert.equal((await getJson('/api/players/brief-1/active-ship')).shopUnlocked, true, 'shop stays open after reaching the last level');
 
   // 5th advance (already at the last level, id 5) → no advance, no briefing
   const adv4 = await (await post('/api/players/brief-1/advance', {})).json();
@@ -434,10 +437,13 @@ test('levels: intro Level 0 (no boss), then Level 1-4 served in order (content s
   assert.equal(l2.descriptor.phases.at(-2).spawn.pool[0].ship, 'basic rocket pirate'); // rocketeer finale
   assert.ok(!JSON.stringify(l2.descriptor).includes('pirate mini boss'), 'old level-1 has no boss');
 
-  // level-3 is now old level-2 content ("Level 2"): the medium IS the boss
+  // level-3 is now old level-2 content ("Level 2"): the medium IS the boss, and its briefing now opens the
+  // shop (unlockShop moved here — right after the first flight — alongside the Machine-Gun swap)
   const l3 = await getJson('/api/levels/level-3');
   assert.equal(l3.descriptor.title, 'Level 2');
   assert.equal(l3.descriptor.phases.at(-2).spawn.pool[0].ship, 'pirate mini boss');
+  assert.equal(l3.descriptor.briefing.textKey, 'level.2.briefing');
+  assert.ok(l3.descriptor.briefing.actions.some((a) => a.type === 'unlockShop'), '"Level 2" opens the shop (right after the first flight)');
 
   // level-4 is now old level-3 content ("Level 3"): the Sector boss
   const l4 = await getJson('/api/levels/level-4');
@@ -445,11 +451,12 @@ test('levels: intro Level 0 (no boss), then Level 1-4 served in order (content s
   assert.equal(l4.descriptor.phases.at(-2).spawn.pool[0].ship, 'first pirate boss');
 
   // level-5 is now old level-4 content ("Level 4", "Find the pirate base"): advanced-medium-pirate waves
-  // (8/16 kills), the Second Boss finale, and an unlockShop briefing (docs/plans/level-4-difficulty.md)
+  // (8/16 kills), the Second Boss finale (docs/plans/level-4-difficulty.md). Its briefing is text-only now —
+  // the shop was already opened back on reaching "Level 2", so there is no unlockShop action here.
   const l5 = await getJson('/api/levels/level-5');
   assert.equal(l5.descriptor.title, 'Level 4');
   assert.equal(l5.descriptor.briefing.textKey, 'level.4.briefing');
-  assert.ok(l5.descriptor.briefing.actions.some((a) => a.type === 'unlockShop'), 'the last level opens the shop');
+  assert.ok(!l5.descriptor.briefing.actions.some((a) => a.type === 'unlockShop'), 'the last level no longer opens the shop');
   assert.ok(l5.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'pirate gunner'), 'wave-1 has pirate gunners');
   assert.ok(l5.descriptor.phases[0].spawn.pool.some((p) => p.ship === 'advanced medium pirate'), 'waves use the advanced medium pirate');
   assert.equal(l5.descriptor.phases[0].advanceWhen.kills, 8);
@@ -743,12 +750,14 @@ test('active ship: a new player gets a default active ship (empty loadout -> shi
 });
 
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
-// Clear the campaign (advance off the last level) so the shop unlocks for `playerId`.
+// Clear the campaign (advance off the last level). The shop actually unlocks earlier now — on reaching
+// "Level 2" (id 3), right after the first flight — but a full clear still passes that point, so it also
+// leaves `playerId` with the shop unlocked.
 async function clearCampaign(playerId) {
   for (let i = 0; i < 4; i++) await post(`/api/players/${playerId}/advance`, {});
 }
 
-test('shop: locked until the final level is cleared', async () => {
+test('shop: locked for a new player (before the first flight); mutations 403', async () => {
   await getJson('/api/players/shop-lock/active-ship'); // register
   const s = await getJson('/api/players/shop-lock/stash');
   assert.equal(s.shopUnlocked, false);
@@ -758,9 +767,37 @@ test('shop: locked until the final level is cleared', async () => {
   assert.equal((await post('/api/players/shop-lock/equip', { kind: 'weapon', refId: 1 })).status, 403);
 });
 
-test('missions: locked until the campaign is cleared, then 3 same-difficulty side missions are offered', async () => {
-  await getJson('/api/players/miss-lock/active-ship'); // register
-  assert.equal((await fetch(base + '/api/players/miss-lock/missions')).status, 403); // locked until cleared
+test('shop: unlocks on reaching "Level 2" (id 3) — right after the first flight, not the final level', async () => {
+  await getJson('/api/players/shop-early/active-ship');                 // register (progress 1)
+  await post('/api/players/shop-early/advance', {});                    // → level-2 ("first flight")
+  assert.equal((await getJson('/api/players/shop-early/stash')).shopUnlocked, false, 'still locked during the first flight');
+  await post('/api/players/shop-early/advance', {});                    // → level-3 (id 3): unlockShop runs
+  const s = await getJson('/api/players/shop-early/stash');
+  assert.equal(s.shopUnlocked, true, 'shop opens right after clearing the first flight');
+  assert.ok(s.stash.some((it) => it.kind === 'weapon' && it.refId === 1), 'basic gun seeded into the stash');
+});
+
+test('migration: backfills shop_unlocked + basic gun for players past the first flight (progress >= 3)', async () => {
+  const { pool } = await import('./db.js');
+  const { migrate } = await import('./datastore.js');
+  await post('/api/players/register', { playerId: 'bf-past' });
+  await post('/api/players/register', { playerId: 'bf-early' });
+  // simulate the pre-change state: advanced past the first flight but shop still locked (old behavior)
+  await pool.query("UPDATE players SET current_progress = 3, shop_unlocked = 0 WHERE id = 'bf-past'");
+  await pool.query("UPDATE players SET current_progress = 2, shop_unlocked = 0 WHERE id = 'bf-early'");
+  await pool.query("DELETE FROM stash WHERE player_id = 'bf-past' AND kind = 'weapon' AND ref_id = 1");
+  await migrate();                                                      // idempotent re-run exercises the backfill
+  const past = await pool.query('SELECT shop_unlocked FROM players WHERE id = $1', ['bf-past']);
+  assert.equal(past.rows[0].shop_unlocked, 1, 'past-first-flight player retroactively unlocked');
+  const gun = await pool.query("SELECT qty FROM stash WHERE player_id = 'bf-past' AND kind = 'weapon' AND ref_id = 1");
+  assert.equal(gun.rows[0].qty, 1, 'basic gun backfilled into the stash');
+  const early = await pool.query('SELECT shop_unlocked FROM players WHERE id = $1', ['bf-early']);
+  assert.equal(early.rows[0].shop_unlocked, 0, 'a player still on the first flight stays locked');
+});
+
+test('missions: locked before the first flight, then 3 same-difficulty side missions are offered', async () => {
+  await getJson('/api/players/miss-lock/active-ship'); // register (progress 1, before the first flight)
+  assert.equal((await fetch(base + '/api/players/miss-lock/missions')).status, 403); // locked until the shop unlocks
 
   await clearCampaign('miss-1');
   const r = await getJson('/api/players/miss-1/missions');
@@ -840,6 +877,8 @@ test('catalog: level-4 enemies — advanced medium pirate (300 HP) + Second Boss
   assert.deepEqual(sb.stats.mounts.map((m) => m.weapon).sort((a, b) => a - b), [4, 4, 4, 10, 10]); // 3 rockets + 2 cannons
 });
 
+// The shop now unlocks earlier (on reaching "Level 2", right after the first flight); this test just
+// confirms it is still unlocked after a full campaign clear, with the basic gun in the stash.
 test('shop: unlocks on clearing the campaign and backfills the basic gun into the stash', async () => {
   await clearCampaign('shop-1');
   const s = await getJson('/api/players/shop-1/stash');

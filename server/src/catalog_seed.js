@@ -459,8 +459,8 @@ export const LEVELS = [
       lastKillDrop: { kind: 'component', refId: 12 }, // cosmetic reward drop on the last enemy (Repair drone)
       briefing: {
         textKey: 'level.2.briefing',
-        text: 'You pulled a Machine Gun out of the wreckage back there, Sentinel — lighter on the trigger and a real help for shooting down incoming rockets. Now push the pirates off our weapons factory before they arm their fleet.',
-        actions: [{ type: 'replaceWeapon', from: 1, to: 5 }], // Basic kinetic -> Machine Gun
+        text: "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. And now that you're back at the station, the hangar's open to you: the shop and a few side jobs are yours to take between missions — kit out before you push on. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",
+        actions: [{ type: 'replaceWeapon', from: 1, to: 5 }, { type: 'unlockShop' }], // MG swap + open the hangar shop + side missions
       },
       phases: [
         {
@@ -537,16 +537,17 @@ export const LEVELS = [
     }
   },
   // Level 4 — "Find the pirate base" (docs/plans/level-4-find-the-pirate-base.md). The story level after
-  // L3; reaching it (clearing L3) shows this briefing and OPENS THE HANGAR SHOP + side missions
-  // (`unlockShop` action — text-only otherwise). Clearly harder than L3: pirate gunners + more heavies,
-  // higher kill thresholds, and the upgraded boss (two pirate MGs). Sets up L5 ("Storm the pirate base").
+  // L3; reaching it (clearing L3) shows this briefing. The hangar shop + side missions were already opened
+  // back on reaching level-3 (player-facing "Level 2"), so this briefing is text-only now. Clearly harder
+  // than L3: pirate gunners + more heavies, higher kill thresholds, and the upgraded boss (two pirate MGs).
+  // Sets up L5 ("Storm the pirate base").
   {
     name: 'level-5', descriptor: {
       title: 'Level 4', map: 'home-system',
       briefing: {
         textKey: 'level.4.briefing',
-        text: "Several ships bolted from the factory just before we arrived — we tracked their heading, and your job is to find where they're hiding. While you're docked, look over the upgrade gear the factory has on hand: we counted a lot of heavy ships among the ones that fled, so kit out accordingly. Good hunting, Sentinel.",
-        actions: [{ type: 'unlockShop' }], // reaching L4 (after clearing L3) opens the shop + side missions
+        text: "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. Good hunting, Sentinel.",
+        actions: [], // text-only: the shop was opened back on reaching "Level 2"
       },
       phases: [
         {

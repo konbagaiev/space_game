@@ -3,6 +3,18 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-06
+
+- **[2026-08-06-1847-shop-unlock-after-first-mission] Shop opens after the first mission, not at the end.**
+  The hangar shop + side missions now unlock the moment a player clears "first flight" (reaching
+  player-facing "Level 2") instead of at the final level — `unlockShop` moved from the last briefing
+  (descriptor `level-5`) to the "Level 2" briefing (descriptor `level-3`, alongside the Machine-Gun swap).
+  A one-time idempotent boot backfill (in `migrate()`) opens the shop and seeds the basic gun for existing
+  players already past the first flight (`current_progress >= 3`). Briefing copy updated (EN + RU): the
+  "Level 2" briefing announces the open hangar; the "Level 4" briefing drops its now-stale "look over the
+  upgrade gear" line. No client code change (the client was already data-driven off `shopUnlocked`). See
+  DECISIONS §90.
+
 ## 2026-08-03
 
 - **[2026-08-03-2154-admin-progress-column] The admin `progress` column is readable.** It rendered the

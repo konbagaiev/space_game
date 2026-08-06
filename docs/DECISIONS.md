@@ -3207,6 +3207,37 @@ shooter's forward cone, the bullet's launch direction is rotated to point straig
   practice the 2° cone was small enough that the recorded intro re-simmed to the same 4 kills / cards
   p0..p4 / win unchanged, so no re-record was forced this time.
 
+## 90. The shop unlocks right after the first mission, not at the campaign's end
+
+**Decision.** Move the `unlockShop` briefing action from the final level (descriptor `level-5`,
+player-facing "Level 4") to the "Level 2" briefing (descriptor `level-3`), which runs on **advancing into
+level-3** — i.e. right after the player clears "first flight" (`level-2`, "Level 1"). The hangar shop **and**
+the side missions (both gated on the same `players.shop_unlocked` flag) now become available early in the
+campaign instead of only after it is finished.
+
+**Why.** With the unlock on the last level, the whole upgrade/shop economy — buying gear, selling loot,
+side-mission credit runs — was dead weight for a first-time player until the story was over, which is when
+they least need it. Opening it after the first real mission makes the economy a mid-campaign tool: land in
+the hangar after the first fight and the shop + side jobs are already there to kit out with before pushing
+on. The `unlockShop` action, its idempotent body, and the final-level `advanceProgress` fallback are reused
+verbatim — no new level, action type, or DB column.
+
+**Existing players: retroactive open via a plain idempotent boot backfill (not a `migrations_pg` ledger
+entry).** A one-time backfill in `migrate()` sets `shop_unlocked = 1` and seeds the basic gun (weapon 1)
+into the stash for every registered player with `current_progress >= 3` (already past the first flight), so
+long-time players aren't left with a shop that "should" already be open. We deliberately did **not** record
+this in the `migrations_pg` ledger: the operation is **naturally idempotent** (the `shop_unlocked = 0`
+guard + `ON CONFLICT DO NOTHING`), so it's a no-op once applied and safe to run on every boot — exactly
+like the Grab/shield backfills above it (DECISIONS §30, §40). A ledger entry is only needed for a
+non-idempotent step (e.g. the intro `current_progress + 1` shift), so adding one here would be redundant
+ceremony. `shop_unlocked` is an INTEGER column, so the backfill writes `1`, never a boolean (a mis-typed
+boolean throws on Postgres — the bug the reset test guards).
+
+**Copy.** The "Level 2" briefing (`level.2.briefing`) gains a sentence announcing the open hangar; the
+"Level 4" briefing (`level.4.briefing`) drops its now-misleading "look over the upgrade gear" line
+(the shop is no longer new there). English is the source of truth (`source.json` + the `catalog_seed.js`
+`text` fallback); the Russian layer (`ru.json`) mirrors both.
+
 ## Future ideas
 
 solid asteroids with bounce ·

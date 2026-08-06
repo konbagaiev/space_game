@@ -604,8 +604,8 @@
     "context": "Main Window briefing shown when the player reaches Level 1 (right after the Level-0 intro cutscene) — the first real mission. Spoken by a station dispatcher/officer, relieved and a little wry, to the just-arrived rookie: thanks them for arriving in time in such a ship, then asks them to drive the pirates off the station FIRST and sort out the rest later. 'Sentinel' is the player's title; the ship is fast and nimble."
   },
   "level.2.briefing": {
-    "source": "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",
-    "context": "Briefing before level 2 (player-facing 'Level 2'). Mission = fight through the pirate blockade and REACH the weapons factory (the factory itself is taken next level). Frames the player as now carrying the Machine Gun salvaged at the end of level 1 (primary weapon, good vs rockets), and warns of a heavier enemy — the medium mini-boss that ends this level. Keep 'Machine Gun' + 'Sentinel'."
+    "source": "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. And now that you're back at the station, the hangar's open to you: the shop and a few side jobs are yours to take between missions — kit out before you push on. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",
+    "context": "Briefing before level 2 (player-facing 'Level 2'). Mission = fight through the pirate blockade and REACH the weapons factory (the factory itself is taken next level). Frames the player as now carrying the Machine Gun salvaged at the end of level 1 (primary weapon, good vs rockets), announces that the hangar shop + side missions are now open (they unlock at this point, right after the first flight), and warns of a heavier enemy — the medium mini-boss that ends this level. Keep 'Machine Gun' + 'Sentinel'."
   },
   "level.2.victory": {
     "source": "The lane's open and the factory's in range, Sentinel — but they're dug in hard around it. Whatever's guarding that place won't come out to meet you. Rearm; we go in next.",
@@ -648,8 +648,8 @@
     "context": "Victory line shown after clearing any side mission. Celebratory. 'Sentinel' is the player's title."
   },
   "level.4.briefing": {
-    "source": "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. While you're docked, look over the upgrade gear the factory has on hand: we counted a lot of heavy ships among the ones that fled, so kit out accordingly. Good hunting, Sentinel.",
-    "context": "Briefing shown in the Hangar after clearing level 3, before level 4 ('Find the pirate base'). Follows on from level 3 (the player took the factory; some pirates fled). Directs the player to gear up at the shop (heavy enemies ahead) and find the base. Keep 'Sentinel' (the player's title)."
+    "source": "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. Good hunting, Sentinel.",
+    "context": "Briefing shown in the Hangar after clearing level 3, before level 4 ('Find the pirate base'). Follows on from level 3 (the player took the factory; some pirates fled). Reminds the player to rearm at the hangar (heavy enemies ahead) and find the base — the shop is not new here, it opened back at 'Level 2', so this is a gear-up reminder, not the unlock. Keep 'Sentinel' (the player's title)."
   },
   "level.4.victory": {
     "source": "Tracked. The pirate base just lit up our long-range scan — they're dug in deep. Rearm and regroup, Sentinel; next, we take it down.",
