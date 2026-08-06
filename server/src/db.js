@@ -301,6 +301,17 @@ export async function migrate() {
   // override don't. Idempotent: the `NOT (components ? 'shield')` guard skips rows already carrying it.
   await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{shield}', '31'::jsonb)
     WHERE components IS NOT NULL AND NOT (components ? 'shield')`);
+  // Backfill: the hangar shop + side missions now unlock on reaching level-3 (id 3, player-facing
+  // "Level 2" — right after clearing "first flight"/"Level 1"), not at the final level (DECISIONS §90).
+  // Retroactively open the shop for existing players who already advanced past "first flight"
+  // (current_progress >= 3) and seed the basic kinetic gun (weapon 1) into their stash, exactly as
+  // unlockShop() does. Idempotent: the `shop_unlocked = 0` guard and ON CONFLICT DO NOTHING make this a
+  // no-op once applied (and for players who reach level-3 going forward, unlockShop already did the work),
+  // so it is safe to run on every boot — matching the Grab/shield backfills above.
+  await pool.query('UPDATE players SET shop_unlocked = 1 WHERE current_progress >= 3 AND shop_unlocked = 0');
+  await pool.query(`INSERT INTO stash (player_id, kind, ref_id, qty)
+    SELECT id, 'weapon', 1, 1 FROM players WHERE current_progress >= 3
+    ON CONFLICT (player_id, kind, ref_id) DO NOTHING`);
 
   console.log('[migrate] postgres schema ready');
   } finally {
