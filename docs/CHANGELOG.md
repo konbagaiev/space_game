@@ -100,6 +100,16 @@
   + Float32 bound) + the `32-star-system` visual scenario with a post-win roam guard; `22-intro-replay` is
   unchanged (replay-neutral) and main's `31-speed-field` still passes. Replay-neutral, zero sim RNG.
   DECISIONS §98 (coordinate model + bearing backdrop; speed-field is §96). docs/plans/2026-08-09-1456-star-system-map.md.
+- **Both Grab (tractor) components are 30 % stronger.** Base Grab (id 29) `strength` 10 → **13**,
+  Advanced grab (id 30) 20 → **26** in `server/src/catalog_seed.js`. Since grab reach is emergent from
+  the inverse-square field (`range = √(strength·5/0.4)`), a +30 % stat is **≈+14 % reach**: base
+  ≈11.2 → **≈12.7 u**, Advanced ≈15.8 → **≈18.0 u** (the Advanced/base ratio stays √2). Player-visible
+  effect: loot boxes get vacuumed in from noticeably further out. Weights, prices and reel-in **speed**
+  are untouched — pull speed depends on distance + item weight only, never on strength. No migration:
+  the startup catalog upsert (`db.js`) rewrites `components.stats` for everyone on deploy. Tests
+  updated: `server.test.js` (seed assertions), `client/src/drops.test.js` (reach anchors now 13/26),
+  `client/src/components.test.js` (seed mirror).
+
 - **Missions: the mission list moved to the right column; the ship preview is gone.** The Main Window's
   25% right column no longer shows a spinning ship + characteristics strip — on **Missions** it holds the
   **mission list** (campaign + side-mission cards, restacked: title + badge, reward/XP, Take/Defer/Set

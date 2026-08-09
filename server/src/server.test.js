@@ -1057,10 +1057,10 @@ test('catalog: Grab components (29/30) seeded; enemy parts priced with buyable:f
   const comps = await getJson('/api/components');
   const grab = comps.find((c) => c.id === 29);
   assert.ok(grab && grab.name === 'Grab' && grab.type === 'grab', 'base Grab seeded as component 29');
-  assert.equal(grab.stats.strength, 10);
+  assert.equal(grab.stats.strength, 13); // +30% over the original 10 (2026-08-09 balance pass)
   assert.equal(grab.price, 500);
   const adv = comps.find((c) => c.id === 30);
-  assert.ok(adv && adv.type === 'grab' && adv.stats.strength === 20 && adv.price === 2000, 'Advanced grab seeded');
+  assert.ok(adv && adv.type === 'grab' && adv.stats.strength === 26 && adv.price === 2000, 'Advanced grab seeded'); // 20 → 26 (+30%)
   // enemy parts now carry a resale price + a buyable:false flag (hidden from the shop, sellable when looted)
   const scoutEngine = comps.find((c) => c.id === 6);
   assert.equal(scoutEngine.price, 250);
