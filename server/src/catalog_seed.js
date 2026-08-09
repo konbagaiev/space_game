@@ -687,12 +687,6 @@ export const MAPS = [
           { count: 110, size: 2.0, radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
         ],
       },
-      // DEAD KEY — one-release COMPATIBILITY SHIM, not read by this client. db.js upserts this descriptor
-      // on every server start, so the already-published itch bundle and the /v2 sandbox (older clients on
-      // the live catalog) would throw in buildMap() if it vanished. DELETE THIS LINE in the first change
-      // after the itch build has been re-published (/publish-itch) and /v2 redeployed from a main that
-      // contains `speedField`. See DECISIONS §96.
-      asteroids: { count: 2000, inner: 0, spread: 1000, color: 0x6b6f78, minSize: 0.18, maxSize: 0.5, depth: 10, depthVar: 24 },
       // Mission set-pieces live in ONE shared world at FIXED positions — they exist on every level/mission;
       // a mission only changes WHERE you fight (its `center` in missions.js spawns you over the matching
       // one; the others sit at a distance). Spread far apart so they don't overlap. Just below the plane

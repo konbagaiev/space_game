@@ -3442,13 +3442,17 @@ the system at constant cost**. No growth, no rebuild, no per-distance scaling.
 - **Live-tunable instead of argued about.** The look constants (count/size/radius/depth/opacity per layer +
   a shared colour) live in the map descriptor's **`speedField`** and are dialled in the `?dev` "Speed field"
   folder, which dumps a paste-ready block for `catalog_seed.js`. The committed numbers are a starting point.
-- **`asteroids` compatibility shim (one release, with an explicit removal condition).** The dead
-  `asteroids: {…}` block **stays in the descriptor for exactly one release**. `db.js` upserts every map
+- **`asteroids` compatibility shim — SHIPPED, THEN REMOVED 2026-08-09 (both conditions met).** The dead
+  `asteroids: {…}` block stayed in the descriptor for exactly one release. `db.js` upserts every map
   descriptor **on every server start**, so the moment this deploys, the already-published **itch** bundle and
   the **`/v2`** sandbox — older clients reading the *live* catalog — would call the removed `makeAsteroids(undefined)`
   and throw inside `buildMap` (black scene, not a graceful degrade). **Remove it** in the first change *after*
   the itch build has been re-published (`/publish-itch`) and `/v2` redeployed from a `main` containing
-  `speedField`; `server/src/maps_speedfield.test.js` pins it until then and is deleted with it.
+  `speedField`. **Both conditions were met the same day** — the itch build was re-published (butler build
+  #1868869, v52) and `/v2` was redeployed from a `main` containing `speedField` (the sandbox branch was 70
+  commits stale; `main` was merged into it, its two FX prototypes having already been promoted to `main`
+  earlier) — so the key is **gone**. `server/src/maps_speedfield.test.js` no longer pins the shim's presence;
+  it now asserts the **opposite**, so the dead key cannot creep back in via a copy-pasted descriptor.
 
 **Amendment (shipped invisible, then fixed — the part worth reading).** The field went to production
 geometrically perfect and **impossible to see**, and the only thing that caught it was a human looking at

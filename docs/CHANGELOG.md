@@ -5,6 +5,18 @@
 
 ## 2026-08-09
 
+- **[infra] Speed-field `asteroids` compatibility shim retired; itch republished and `/v2` brought back in
+  sync.** Both of the shim's removal conditions were met, so the dead `asteroids: {…}` block is **gone from
+  the map descriptor**. (1) The itch build was re-published via butler — build **#1868869, v52**, an
+  incremental push that re-used 95% of the previous build and moved 272 KB instead of 20 MB. (2) The `/v2`
+  sandbox was redeployed: it had drifted **70 commits** behind `main` while its only unique content was its
+  three deploy files (both FX experiments had been promoted to `main` back in `0e5766a`), so `main` was
+  merged into `v2` — the four conflicts were all in those already-promoted FX files, resolved in `main`'s
+  favour — and the nginx container rebuilt, so `/v2` now serves the same client as production. Verified:
+  `/v2/src/speed-field.js` returns 200 and `makeAsteroids` is gone from `/v2/src/world.js`.
+  `server/src/maps_speedfield.test.js` no longer pins the shim's presence — it now asserts the **opposite**,
+  so the dead key cannot reappear via a copy-pasted descriptor. DECISIONS §96.
+
 - **[fix] Speed field: its own crisp sprite, rock tone, near-weighted density — the look is now settled.**
   Follow-up to the contrast fix below, tuned live against the maintainer on a local build. The field no
   longer borrows the star layer's `getStarGlowTexture` (a soft glow built to bloom points into haloes,

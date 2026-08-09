@@ -1,7 +1,16 @@
 # v2 — experimental client sandbox at `vega.tenony.com/v2`
 
-**Status:** **LIVE** — the `/v2` static sandbox is deployed at https://vega.tenony.com/v2 and the
-FX-polish work happens on the `v2` git branch. **Owner:** maintainer.
+**Status:** **LIVE, and now in sync with `main`.** The `/v2` static sandbox is deployed at
+https://vega.tenony.com/v2. **Owner:** maintainer.
+
+**Refreshed 2026-08-09.** The original FX-polish experiments (flipbook ship-death explosion, kinetic
+energy bolt) were **promoted to `main`** long ago (`0e5766a`), after which the branch just drifted — it
+had fallen **70 commits** behind and its only remaining unique content was its own three deploy files.
+`main` was merged into `v2` (the four conflicts were all in those already-promoted FX files; `main`'s
+versions won) and the sandbox was redeployed, so **`/v2` now serves the same client as production**. This
+was required to retire the `speedField` compatibility shim (DECISIONS §96), which was waiting on exactly
+this. The sandbox is deliberately kept as a ready platform for the next visual experiment on a real weak
+device — so when you start one, **branch from a fresh `main` rather than from the stale `v2` tip**.
 
 **As built (2026-07-25):** a standalone `nginx:1.27-alpine` container (`docker-compose.v2.yml` +
 `deploy/v2/{Dockerfile,nginx.conf}` on the `v2` branch) serves the v2 client; Traefik routes
