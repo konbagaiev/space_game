@@ -149,7 +149,7 @@ export function mountSystemNav(host, opts = {}) {
     for (const o of objects) {
       const p = toScreen(view, frame, o.pos.x, o.pos.z);
       if (p.x < -40 || p.y < -40 || p.x > W + 40 || p.y > H + 40) continue;
-      const r = o.kind === 'star' ? 7 : (o.kind === 'planet' ? 5 : 4);
+      const r = o.kind === 'star' ? 14 : (o.kind === 'planet' ? 10 : 4);
       if (o.id === selectedId) {                        // selection ring (matches the highlighted row)
         ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(p.x, p.y, r + 5, 0, Math.PI * 2); ctx.stroke();
