@@ -5,6 +5,20 @@
 
 ## 2026-08-09
 
+- **[fix] Speed field: its own crisp sprite, rock tone, near-weighted density — the look is now settled.**
+  Follow-up to the contrast fix below, tuned live against the maintainer on a local build. The field no
+  longer borrows the star layer's `getStarGlowTexture` (a soft glow built to bloom points into haloes,
+  ~25% average alpha) — it has its **own hard-edged procedural dot** (`getSpeedDotTexture`), which is why
+  the specks can now be tiny *and* visible instead of big and white ("there are no white blobs like that in
+  space"). Final: colour `0xd2ccc1` (warm rock grey), 760/220/110 points at sizes 0.8/1.3/2.0, depths
+  10/90/220 — density deliberately **weighted to the near layer**, since those are the specks that sweep
+  past and sell speed while the deep ones barely move. `SPEED_FIELD_RANGES.depth` now reaches **−110** so a
+  foreground dust layer (above the combat plane, ~1.5–3.4× the ship's apparent speed) can be judged live in
+  the `?dev` panel; the shipped look stays below-plane. The visibility guard became a **budget**
+  (`size × contrast ≥ 5`) rather than a hard minimum size, since a small speck is fine when it is crisp and
+  bright — it was the *combination* that failed. Also fixed a test that hardcoded a tuning number
+  (`count === 420`) in an assertion that was really about copy semantics. DECISIONS §96.
+
 - **[fix] The new speed field shipped invisible — contrast pass + a guard against it happening again.**
   The player-locked backdrop landed on prod and the live check came back "I see nothing, nothing gives a
   sense of speed": dark-grey sprites (`0x6b6f78`) at 0.9–2.6 world units and opacity 0.55–0.90, drawn with a

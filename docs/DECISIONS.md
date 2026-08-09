@@ -3450,10 +3450,32 @@ the system at constant cost**. No growth, no rebuild, no per-distance scaling.
   the itch build has been re-published (`/publish-itch`) and `/v2` redeployed from a `main` containing
   `speedField`; `server/src/maps_speedfield.test.js` pins it until then and is deleted with it.
 
+**Amendment (shipped invisible, then fixed — the part worth reading).** The field went to production
+geometrically perfect and **impossible to see**, and the only thing that caught it was a human looking at
+the game. Three compounding causes, and the lesson is in the third:
+
+1. **Dark tint on a dark sky.** Grey `0x6b6f78` at opacity 0.55–0.90 over the map background `0x0a1624`
+   composites to within a few percent of the background.
+2. **The wrong sprite.** It reused the star layer's `getStarGlowTexture` — a soft radial glow *designed* to
+   bloom a point into a halo, averaging ~25% alpha across its face. The first correction (bigger + whiter)
+   made it visible and immediately wrong: *"there are no white blobs like that in space."* The real fix was
+   a **separate hard-edged dot** (`getSpeedDotTexture`), opaque across its face, which reads as a lit speck
+   at sub-1-unit size and a natural rock tone. **The two textures must stay separate** — merging them back
+   re-creates the bug. Final look: `0xd2ccc1`, sizes 0.8/1.3/2.0, density weighted to the near layer.
+3. **Nobody asked "will you see it".** The plan reasoned carefully about density, pixel counts, frustum
+   geometry, draw calls and replay-neutrality. Ten unit tests, an outcome scenario that teleports the player
+   5.6k units out, a critic round and a reviewer round — all green, because every one of them tested that the
+   field is *where it should be*, never that it is *perceptible*. **A visual feature needs an assertion about
+   perception, not only about geometry.** Hence `MIN_CONTRAST`/`contrastRatio` and the `size × contrast ≥ 5`
+   visibility budget in `speed-field.js` — deliberately calibrated from the escaped defect (which scores
+   2.39×) rather than derived, and documented as a "go look at a real frame" tripwire, not a truth.
+
 Superseded: the **backdrop half of §71** (its mission-`asteroid-field` half still stands — the `.glb` rock
 pack is still used up close, and its CC-BY attribution stays). Motivated by **§94** (inter-point travel):
 fast manual travel only *feels* fast if something sweeps past you the whole way. Warp/velocity-stretch
 streaking is deliberately **out of scope** — `updateSpeedField` is documented as the single hook for it.
+A **foreground** layer (negative `depth`, between camera and ships) is likewise not shipped, but the slider
+range reaches −110 so it can be judged live; adopting one would revisit the "below-plane only" call above.
 
 ## Future ideas
 

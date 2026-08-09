@@ -126,8 +126,11 @@ test('normalizeSpeedField(undefined) → the complete defaults (an old DB row wi
   assert.equal(s.color, SPEED_FIELD_DEFAULTS.color);
   assert.equal(s.layers.length, SPEED_FIELD_DEFAULTS.layers.length);
   assert.deepEqual(s.layers, SPEED_FIELD_DEFAULTS.layers);
-  s.layers[0].count = 1; // and it is a COPY — mutating the result must not poison the defaults
-  assert.equal(SPEED_FIELD_DEFAULTS.layers[0].count, 420);
+  // and it is a COPY — mutating the result must not poison the defaults. Snapshot rather than hardcode the
+  // number: this assertion is about copy semantics, and a tuning pass must not have to edit it.
+  const before = SPEED_FIELD_DEFAULTS.layers[0].count;
+  s.layers[0].count = before + 1;
+  assert.equal(SPEED_FIELD_DEFAULTS.layers[0].count, before);
 });
 
 test('normalizeSpeedField: a partial layer is filled per key and every number is clamped', () => {
@@ -203,12 +206,15 @@ test('contrast: the original invisible values would FAIL this guard', () => {
   assert.ok(BG_LUMA > 0, 'sanity: the background reference is set');
 });
 
-test('contrast: the shipped sizes are big enough to have a visible core, and fit the slider range', () => {
+test('visibility budget: size and contrast together clear the floor, and sizes fit the slider range', () => {
   const [lo, hi] = SPEED_FIELD_RANGES.size;
   for (const [i, l] of SPEED_FIELD_DEFAULTS.layers.entries()) {
-    // ~size * (canvasHeight/2) / distance px; the glow sprite's bright core is the inner ~25% of the radius,
-    // so a sub-3-unit near layer is what produced the sub-pixel core that vanished.
-    assert.ok(l.size >= 3, `layer ${i} size ${l.size} is too small for the soft sprite's core to survive`);
+    // NOT a hard minimum size — a small speck is fine if it is bright and CRISP, which is exactly the
+    // shipped look. What sank the first pass was the COMBINATION (small AND dim AND a soft ~25%-alpha
+    // sprite), so the guard multiplies the two axes instead of policing either alone. The known-invisible
+    // pass scores 0.9 × 2.39 ≈ 2.2; anything at or under that is the same mistake wearing new numbers.
+    const budget = l.size * contrastRatio(SPEED_FIELD_DEFAULTS.color, l.opacity);
+    assert.ok(budget >= 5, `layer ${i} visibility budget ${budget.toFixed(1)} is at/below the invisible pass`);
     assert.ok(l.size >= lo && l.size <= hi, `layer ${i} size ${l.size} must fit SPEED_FIELD_RANGES.size`);
   }
 });

@@ -1354,17 +1354,30 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   nebula supplies the dense static field, the point layer only sells depth; on the flat-color path
   (Performance/`?debug`) it keeps full count so the sky isn't empty.
 - **The parallax layer is a PLAYER-LOCKED WRAPPING SPEED FIELD** (`THREE.Points`, DECISIONS §96) — its only
-  job is to sell motion, so the ship never reads as floating in place. A **fixed pool of ~920 point sprites
-  in 3 depth layers** (420/300/200 at sizes 3.8/6.7/10.9 world units, sunk to y ≈ −18/−90/−220 with a
-  20/40/60 depth spread, opacity 1.0/0.94/0.69), **one draw call per layer**, sprite = the shared
-  **procedural** canvas dot (`getStarGlowTexture`, no image asset), tint = the descriptor's `speedField.color`
-  (`0xc8d0da`) times a per-point 0.55–1.0 brightness jitter.
-  **Those sizes/colour are a CONTRAST floor, not taste.** The first shipped pass (grey `0x6b6f78`, sizes
-  0.9/1.6/2.6, opacity 0.55–0.90) was geometrically perfect and **literally invisible** against the map
-  background — every test passed and the live check came back "I see nothing". `MIN_CONTRAST`/`contrastRatio`
-  in `speed-field.js` now assert each layer is ≥3.5× the background luminance (the known-invisible
-  combination scores 2.39), and `SPEED_FIELD_RANGES.size` was widened to 20 so the shipped sizes aren't
-  clamped away on read. A ~1px point needs **bigger + brighter + near-white** to read at all (DECISIONS §4). The points are **static in world space** and are
+  job is to sell motion, so the ship never reads as floating in place. A **fixed pool of ~1090 point sprites
+  in 3 depth layers** (760/220/110 at sizes 0.8/1.3/2.0 world units, sunk to y ≈ −10/−90/−220 with a
+  16/40/60 depth spread, opacity 1.0/0.95/0.82), **one draw call per layer**, sprite = the field's **own**
+  crisp procedural canvas dot (`getSpeedDotTexture`, no image asset), tint = the descriptor's
+  `speedField.color` (`0xd2ccc1`, a warm rock grey) times a per-point 0.55–1.0 brightness jitter.
+  The pool is **weighted toward the NEAR layer** — those specks are the ones that actually sweep past and
+  sell speed; the deep layers barely move and mostly add clutter, so they are thinned out.
+  **The sprite choice is load-bearing, not incidental.** It deliberately does NOT reuse the star layer's
+  `getStarGlowTexture`: that one is a soft radial glow built to bloom a point into a halo, averaging ~25%
+  alpha across its face, so a speck using it must be blown up and whitened to be visible — which then reads
+  as a white blob rather than a lit rock. A hard-edged dot is opaque across its whole face, so a sub-1-unit
+  speck reads clearly at a natural tone. **Do not "deduplicate" these two textures.**
+  **The sizes/colour are a CONTRAST floor, not taste.** The first shipped pass (grey `0x6b6f78`, sizes
+  0.9/1.6/2.6, opacity 0.55–0.90, on the glow sprite) was geometrically perfect and **literally invisible**
+  against the map background — every unit test, the outcome scenario and both review rounds were green, and
+  the live check came back "I see nothing". `MIN_CONTRAST`/`contrastRatio` in `speed-field.js` now assert
+  each layer is ≥3.5× the background luminance (the known-invisible combination scores 2.39), a **visibility
+  budget** (`size × contrast ≥ 5`) guards the combination rather than either axis alone, and
+  `SPEED_FIELD_RANGES.size` was widened to 20. A ~1px point needs **bigger + brighter + crisper** to read at
+  all (DECISIONS §4).
+  `SPEED_FIELD_RANGES.depth` reaches **−110**: a negative depth lifts a layer *above* the combat plane,
+  between camera and ships, where screen speed scales as `camOffset.y / (camOffset.y − y)` (≈1.5× at y=+40,
+  ≈3.4× at y=+90). The shipped look stays **below-plane**; the range exists so a foreground dust layer can
+  be judged live in the `?dev` panel. The points are **static in world space** and are
   translated by whole box spans only when they fall outside a **±`radius` (620) box centred on the player** —
   a treadmill, so parallax stays real (deeper layers sweep slower) and a stationary player uploads nothing.
   The re-centre runs **once per frame from the VIEW layer** (`updateSpeedField` called by `settleView` in

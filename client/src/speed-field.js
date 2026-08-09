@@ -28,12 +28,22 @@ export const WRAP_SAFE_RADIUS = 600;
 // dialed-in numbers are baked back into the map descriptor (server catalog_seed.js `speedField`).
 // Layers are ordered near -> far; `depth`/`depthVar` sink each layer below the combat plane
 // (point y = -(depth + rng()*depthVar)); `size` is in WORLD units (sizeAttenuation).
+// Small, CRISP, rock-coloured specks — not white blobs. Two separate lessons are baked in here:
+//  - the first pass was invisible (dark grey, soft star-glow sprite) — see the contrast floor below;
+//  - the second pass was visible but wrong: big near-white haloes, and "there are no white blobs like that
+//    in space". The fix for BOTH is the SPRITE, not the colour — the speed field now uses its own hard-edged
+//    dot (`getSpeedDotTexture` in world.js) instead of the star layer's soft radial glow. A crisp sprite is
+//    opaque across its whole face, so a 1-2 unit speck reads clearly at a natural rock tone; the glow sprite
+//    averages ~25% alpha, which is why it had to be blown up and whitened to be seen at all.
 export const SPEED_FIELD_DEFAULTS = {
-  color: 0xc8d0da,
+  color: 0xd2ccc1, // warm rock grey, lit — brighter, but deliberately NOT white
+  // Weighted toward the NEAR layer: the close specks are the ones that actually sweep past and sell speed,
+  // the deep ones barely move and mostly add clutter. So density climbs as the layers come closer and the
+  // far layers are thinned out, with every size pulled down to fine-grain.
   layers: [
-    { count: 420, size: 3.8,  radius: 620, depth: 18,  depthVar: 20, opacity: 1.00 },
-    { count: 300, size: 6.7,  radius: 620, depth: 90,  depthVar: 40, opacity: 0.94 },
-    { count: 200, size: 10.9, radius: 620, depth: 220, depthVar: 60, opacity: 0.69 },
+    { count: 760, size: 0.8, radius: 620, depth: 10,  depthVar: 16, opacity: 1.00 },
+    { count: 220, size: 1.3, radius: 620, depth: 90,  depthVar: 40, opacity: 0.95 },
+    { count: 110, size: 2.0, radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
   ],
 };
 
@@ -64,7 +74,12 @@ export function contrastRatio(colorHex, opacity) { return layerLuma(colorHex, op
 // panel labels the pop-in it causes rather than the code silently clamping it away.
 export const SPEED_FIELD_RANGES = {
   count: [0, 1200], size: [0.2, 20], radius: [200, 1200],
-  depth: [-40, 400], depthVar: [0, 160], opacity: [0.05, 1],
+  // `depth` reaches well NEGATIVE on purpose: y = -(depth + rng()*depthVar), so a negative depth lifts a
+  // layer ABOVE the combat plane, between the camera and the ships. That is the strongest "particles flying
+  // past" cue there is — screen speed scales as camOffset.y / (camOffset.y - y), so y=+40 is ~1.5x the ship's
+  // apparent speed and y=+90 is ~3.4x, where the plane-level layers sit at ~1x. The shipped look stays
+  // below-plane; this range exists so a foreground dust layer can be judged live in the ?dev panel.
+  depth: [-110, 400], depthVar: [0, 160], opacity: [0.05, 1],
 };
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));

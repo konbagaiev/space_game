@@ -65,6 +65,28 @@ function getStarGlowTexture() {
   return starGlowTexture;
 }
 
+// The speed field's own sprite: a CRISP filled dot (opaque core out to 80% of the radius, then a short
+// anti-aliasing falloff), PROCEDURAL like the star glow and cached the same way. Deliberately NOT the star
+// sprite: that one is a soft radial glow built to make a point bloom into a halo, which averages ~25% alpha
+// across its face — a speck using it has to be blown up and whitened before it is visible at all, and then
+// it reads as a white blob rather than a lit rock. A hard-edged dot is opaque across its whole face, so a
+// 1-2 unit speck at a natural rock tone reads clearly at real size. Built once and cached.
+let speedDotTexture = null;
+function getSpeedDotTexture() {
+  if (speedDotTexture) return speedDotTexture;
+  const s = 32, cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0.0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.78, 'rgba(255,255,255,1)');    // flat, fully opaque face — the whole point
+  g.addColorStop(1.0, 'rgba(255,255,255,0)');     // a 2-3px edge only, so it is round and not aliased
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  speedDotTexture = new THREE.CanvasTexture(cv);
+  return speedDotTexture;
+}
+
 // One random point on a sphere shell (radius * 0.7..1.0), written into `pos` at index i.
 function placeStar(pos, i, radius) {
   const u = Math.random() * 2 - 1;
@@ -464,7 +486,7 @@ function makeSpeedField(spec) {
     const mat = new THREE.PointsMaterial({
       size: layer.size,
       sizeAttenuation: true,       // world-unit sizes → deeper layers read smaller (real perspective parallax)
-      map: getStarGlowTexture(),   // the shared PROCEDURAL canvas dot (no image asset)
+      map: getSpeedDotTexture(),   // the field's OWN crisp procedural dot (no image asset, not the star glow)
       color: rgb,
       vertexColors: true,
       transparent: true,
