@@ -14,6 +14,13 @@ export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || 'postgres://localhost:5432/spacegame',
 });
 
+// Progress gates are compared by the level's seed NAME, never by a raw `levels.id`. `levels.id` is a
+// BIGSERIAL and the startup upsert (`INSERT ... ON CONFLICT (name) DO UPDATE`) burns a sequence value on
+// EVERY boot, so ids drift apart over time (production: 1, 6, 7, 71, 564 for level-1..level-5). A
+// hardcoded numeric threshold silently unlocks content early on a drifted DB. See DECISIONS §95.
+export const SHOP_MIN_LEVEL = 'level-3';          // hangar shop: reached after clearing "Level 1" (DECISIONS §90)
+export const SIDE_MISSIONS_MIN_LEVEL = 'level-5'; // side-mission board: reached after clearing "Level 3" (DECISIONS §91)
+
 // Idempotent schema bootstrap + the migrations_pg one-shot ledger — the single, forward-only
 // migration story (DECISIONS §9). Safe to run on every boot: CREATE TABLE IF NOT EXISTS + guarded
 // ALTER/one-shots, then an upsert of the catalog from catalog_seed.js.
@@ -122,7 +129,7 @@ export async function migrate() {
     -- player progress: the currently-available level (FK into levels). Added after the
     -- levels table exists; defaults to 1 (level-1). On an existing DB the levels rows
     -- already exist from prior startups, so the FK default validates.
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS current_progress INTEGER NOT NULL DEFAULT 1 REFERENCES levels(id);
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS current_progress INTEGER NOT NULL DEFAULT 1 REFERENCES levels(id); -- DEFAULT 1 = the first level (level-1, id 1 on every live DB); see DECISIONS §95
 
     -- authentication (DECISIONS §11): optional email/password credentials attached in place to the
     -- anonymous players row. Username is a non-unique display name; login is by email. Passwords are
@@ -292,6 +299,9 @@ export async function migrate() {
        ON CONFLICT (name) DO UPDATE SET descriptor = EXCLUDED.descriptor`,
       [m.name, JSON.stringify(m.descriptor)]);
   }
+  // NOTE: the ON CONFLICT path still consumes a `levels_id_seq` value on every boot, so ids drift apart
+  // (prod: 1, 6, 7, 71, 564). Deliberately not "fixed": nothing depends on contiguous ids — ordering uses
+  // MIN(id) and the gates resolve by name (DECISIONS §95, §30).
   for (const l of LEVELS) {
     await pool.query(
       `INSERT INTO levels (name, descriptor) VALUES ($1, $2::jsonb)
@@ -331,18 +341,19 @@ export async function migrate() {
   // override don't. Idempotent: the `NOT (components ? 'shield')` guard skips rows already carrying it.
   await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{shield}', '31'::jsonb)
     WHERE components IS NOT NULL AND NOT (components ? 'shield')`);
-  // Backfill: the hangar shop now unlocks on reaching level-3 (id 3, player-facing "Level 2" — right
-  // after clearing "first flight"/"Level 1"), not at the final level (DECISIONS §90). (Side missions
-  // are gated separately by progress >= 5, DECISIONS §91 — no backfill needed, it's derived live.)
-  // Retroactively open the shop for existing players who already advanced past "first flight"
-  // (current_progress >= 3) and seed the basic kinetic gun (weapon 1) into their stash, exactly as
-  // unlockShop() does. Idempotent: the `shop_unlocked = 0` guard and ON CONFLICT DO NOTHING make this a
-  // no-op once applied (and for players who reach level-3 going forward, unlockShop already did the work),
-  // so it is safe to run on every boot — matching the Grab/shield backfills above.
-  await pool.query('UPDATE players SET shop_unlocked = 1 WHERE current_progress >= 3 AND shop_unlocked = 0');
+  // Backfill: the hangar shop unlocks on reaching `level-3` (player-facing "Level 2" — i.e. right after
+  // clearing the first playable level, "Level 1"/`level-2`), not at the final level (DECISIONS §90).
+  // Side missions are gated separately, on reaching `level-5` (DECISIONS §91) — derived live, no backfill.
+  // Thresholds are resolved by level NAME: `levels.id` drifts (DECISIONS §95), and the old raw numeric
+  // comparison against id 3 opened the shop a level early for every drifted player.
+  // NOT ledger-guarded: this runs on EVERY boot and is merely idempotent (the `shop_unlocked = 0` guard +
+  // ON CONFLICT DO NOTHING), like the Grab/shield backfills above. Players who were granted the shop early
+  // by the old comparison KEEP it — there is deliberately no revocation.
+  await pool.query(`UPDATE players SET shop_unlocked = 1
+    WHERE shop_unlocked = 0 AND current_progress >= (SELECT id FROM levels WHERE name = $1)`, [SHOP_MIN_LEVEL]);
   await pool.query(`INSERT INTO stash (player_id, kind, ref_id, qty)
-    SELECT id, 'weapon', 1, 1 FROM players WHERE current_progress >= 3
-    ON CONFLICT (player_id, kind, ref_id) DO NOTHING`);
+    SELECT id, 'weapon', 1, 1 FROM players WHERE current_progress >= (SELECT id FROM levels WHERE name = $1)
+    ON CONFLICT (player_id, kind, ref_id) DO NOTHING`, [SHOP_MIN_LEVEL]);
 
   console.log('[migrate] postgres schema ready');
   } finally {
@@ -388,6 +399,9 @@ export async function resetPlayer(playerId) {
   if (!rows[0]) return { found: false };
   // One transaction so a failure can't leave the account half-wiped (games/ships gone, progress kept).
   // shop_unlocked is an INTEGER column (see migration) — write 0, not a boolean, or the UPDATE throws.
+  // `current_progress = 1` is a raw id: the FIRST level (`level-1`) is id 1 on every live DB, and the FK on
+  // current_progress would fail loudly (not silently) if that ever changed. Left as-is deliberately — the
+  // gates are name-based now, so id drift is harmless (DECISIONS §95, §30).
   await withTx(async (client) => {
     for (const t of ['games', 'player_ships', 'stash', 'events', 'taken_missions'])
       await client.query(`DELETE FROM ${t} WHERE player_id = $1`, [playerId]);
@@ -716,11 +730,16 @@ export async function getLevels() {
   return rows.map((r) => ({ id: Number(r.id), title: r.descriptor?.title || r.name }));
 }
 
-// Side missions unlock LATER than the shop: on reaching the "Level 4" briefing (descriptor `level-5`,
-// id 5 — i.e. after clearing "Level 3"). The shop still opens right after the first flight (level-3,
-// DECISIONS §90); the two gates are decoupled — shop keyed off `shop_unlocked`, side missions off
-// `current_progress`. See docs/plans/2026-08-08-base-menu-redesign.md (Slice 0) + DECISIONS §91.
-export const SIDE_MISSIONS_MIN_PROGRESS = 5;
+// Has the player's `current_progress` reached (or passed) the level seeded under `levelName`? The single
+// place progress is compared against a story milestone. Fail-closed: an absent level row → false (locked),
+// never "open by default". See DECISIONS §95 (why a raw id must never be a threshold). The two milestones
+// are SHOP_MIN_LEVEL ('level-3', DECISIONS §90) and SIDE_MISSIONS_MIN_LEVEL ('level-5', DECISIONS §91).
+export async function reachedLevel(currentProgress, levelName, db = pool) {
+  const { rows } = await db.query(
+    'SELECT EXISTS (SELECT 1 FROM levels WHERE name = $1 AND id <= $2) AS reached',
+    [levelName, currentProgress]);
+  return !!(rows[0] && rows[0].reached);
+}
 
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
@@ -1063,7 +1082,10 @@ export async function getActivePlayerShip(playerId) {
   const stats = row.stats, loadout = row.loadout || {};
   const components = row.ps_components ?? row.ship_components ?? {};
   const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null);
-  const progression = await getProgression(playerId); // banked XP → derived level + skill points + allocations
+  const [progression, sideMissionsUnlocked] = await Promise.all([
+    getProgression(playerId),                                     // banked XP → derived level + skill points + allocations
+    reachedLevel(reg.currentProgress, SIDE_MISSIONS_MIN_LEVEL),   // side-mission board gate (DECISIONS §91/§95)
+  ]);
   return {
     playerShipId: Number(row.player_ship_id),
     ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url, modelUrlHigh: row.model_url_high, components: row.ship_components },
@@ -1073,7 +1095,7 @@ export async function getActivePlayerShip(playerId) {
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)
     credits: reg.credits,   // the player's persistent credit balance
     shopUnlocked: reg.shopUnlocked, // hangar shop gate (opens right after the first flight, DECISIONS §90)
-    sideMissionsUnlocked: reg.currentProgress >= SIDE_MISSIONS_MIN_PROGRESS, // side-mission board gate — decoupled from the shop, opens later (after "Level 3", DECISIONS §91)
+    sideMissionsUnlocked, // board opens on reaching `level-5` ("Level 4" briefing) — by NAME, never by raw id (DECISIONS §95)
     launchable: missingRequired.length === 0,
     missingRequired,
   };

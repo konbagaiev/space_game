@@ -14,7 +14,10 @@ import { Device, applyDevice } from './device.js';
 // ---------- Base scene ----------
 export const scene = new THREE.Scene();
 scene.background = null; // background is drawn by the sky scene (first pass); combat is transparent on top
-scene.fog = new THREE.Fog(0x0a1624, 240, 600); // match the map background so distant rocks fade into the backdrop
+// Matches the map background, so the DEEP speed-field layers fade out into it. NOTE: fog is NOT what hides
+// the speed field's wrap edge — THREE.Fog works on VIEW DEPTH, not radial distance, and the shallow layers
+// never even reach fogNear; the frustum hides those (see speed-field.js WRAP_SAFE_RADIUS).
+scene.fog = new THREE.Fog(0x0a1624, 240, 600);
 
 // ---------- Mobile landscape: render the game horizontally even when the phone is held in portrait ----------
 // The browser can't make its viewport wider than the physical screen, and screen.orientation.lock is

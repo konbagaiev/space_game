@@ -2,23 +2,23 @@
 // flies the real ship toward a picked point, and — the regression this guards — entering roam AFTER a
 // mission win does NOT freeze the ship or leak enemies into roam (the two failure modes of a naive
 // `!G.roam` reset skip). Pure SIMULATION-STATE assertions (counts + positions), no pixel diffing.
-export const name = '31-star-system';
+export const name = '32-star-system';
 
 export default async function ({ page, assert, shot }) {
   // The harness already Took off into the playable Level 0. Switch to roam via the real entry point.
   await page.evaluate(async () => { await window.__game.enterRoam(null); });
   await page.waitForFunction(() => window.__game.roam === true, null, { timeout: 5000 });
 
-  // 1. The wrapping speed-field is a THREE.Points group (replaces the old origin-ring asteroids).
+  // 1. Main's player-locked wrapping speed field is live (THREE.Points layers). We reuse main's field
+  //    unchanged; this just confirms the star-system roam build still has it (via __game.speedFieldLayers).
   const field = await page.evaluate(() => {
-    const g = window.__game.speedField; if (!g) return { ok: false };
-    let pts = 0, points = 0;
-    g.traverse((o) => { if (o.isPoints) { pts++; points += o.geometry.attributes.position.count; } });
-    return { ok: true, layers: pts, points };
+    const layers = window.__game.speedFieldLayers; // a getter → the live layer array
+    let points = 0;
+    for (const L of layers) if (L.points && L.points.isPoints) points += L.points.geometry.attributes.position.count;
+    return { layers: layers.length, points };
   });
-  assert.ok(field.ok, 'G.speedField exists');
-  assert.ok(field.layers >= 2, `speed-field has ≥2 THREE.Points layers (got ${field.layers})`);
-  assert.ok(field.points >= 100, `speed-field has a real point pool (got ${field.points})`);
+  assert.ok(field.layers >= 2, `speed field has ≥2 THREE.Points layers (got ${field.layers})`);
+  assert.ok(field.points >= 100, `speed field has a real point pool (got ${field.points})`);
 
   // 2. The star + 4 planet backdrop bodies exist (≥5).
   const bodies = await page.evaluate(() => (window.__game.systemBodies || []).map((b) => b.name));

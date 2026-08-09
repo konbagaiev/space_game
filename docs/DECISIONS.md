@@ -2460,10 +2460,9 @@ exists so we don't re-attempt it.
 
 ## 71. Asteroids: real `.glb` model for the mission FIELD only — the distant backdrop stays procedural
 
-> **SUPERSEDED (backdrop half) by §95 (2026-08-09).** The distant procedural **backdrop** asteroid ring
-> (`makeAsteroids`) is gone — the far backdrop is now the player-locked wrapping **speed-field** (procedural
-> point sprites, `speed-field.js`). This entry's mission-**FIELD** decision (the up-close `.glb` rock pack)
-> still stands unchanged.
+> **Superseded for the distant BACKDROP half by §96** (the backdrop is now a player-locked wrapping
+> `THREE.Points` speed field — no rocks at all, procedural or modelled); the mission `asteroid-field` half
+> below still stands (real `.glb` rocks up close).
 
 The asteroids were procedural (noise-deformed icosahedra + `makeMoonTexture`): the parallax **backdrop**
 field (`makeAsteroids`) and the mission **`asteroid-field`** set-piece. We put a real CC-BY model pack
@@ -3243,6 +3242,10 @@ boolean throws on Postgres — the bug the reset test guards).
 (the shop is no longer new there). English is the source of truth (`source.json` + the `catalog_seed.js`
 `text` fallback); the Russian layer (`ru.json`) mirrors both.
 
+**Amendment (§95).** The backfill's threshold form was corrected to name-based
+(`SHOP_MIN_LEVEL = 'level-3'`) — the `current_progress >= 3` written above is the original, buggy form on a
+drifted DB. Semantics unchanged.
+
 ## 91. Side missions unlock after "Level 3" — decoupled from the shop
 
 **Decision.** Split the side-mission board off the shop's unlock. The shop still opens right after the
@@ -3271,6 +3274,10 @@ one-shot briefing action; a progress threshold has no such need.
 (`source.json` + the `catalog_seed.js` `text` fallback); the Russian layer (`ru.json`) mirrors both. No
 `unlockShop`-style action is added for side missions — the announcement briefing is text-only; the gate is
 the progress threshold.
+
+**Amendment (§95).** The threshold form was corrected to name-based
+(`SIDE_MISSIONS_MIN_LEVEL = 'level-5'` via `reachedLevel()`); `SIDE_MISSIONS_MIN_PROGRESS = 5` above is the
+original, buggy form on a drifted DB. Semantics unchanged.
 
 ## 92. At most ONE Main Window 3D viewer render-loop runs at a time
 
@@ -3356,11 +3363,125 @@ after all, since a to-scale system needs real point-to-point navigation.
 **Revisit if:** playtests show autopilot removes too much agency, or the manual cruise alone is enough — then
 trim one side. A "decide on feel" item, tuned from an early playable build.
 
-## 95. Star system: compact Float32-safe coordinates (no floating-origin) + bearing-projected sky backdrop
+## 95. Progress thresholds are level NAMES, never raw serial ids
+
+**Decision.** Any "has the player reached story point X" gate compares `players.current_progress` against
+`(SELECT id FROM levels WHERE name = '<seed name>')` via the single helper `reachedLevel()` in
+`server/src/db.js`, never against a hardcoded number.
+
+**Why.** `levels.id` is a `BIGSERIAL` and the idempotent startup seed's `INSERT ... ON CONFLICT (name) DO
+UPDATE` still evaluates `nextval()` before it detects the conflict, so **every deploy burns five sequence
+values** and level rows added at different times drift arbitrarily far apart (production: 1, 6, 7, 71, 564
+for `level-1`..`level-5`). A numeric threshold is therefore only correct on a freshly-seeded DB — and it
+fails **open**, silently unlocking content early: the "Level 1" briefing sits at id 6 on prod, which
+satisfied both the board's `>= 5` and the shop's `>= 3`, so 32 players who had not yet flown the first
+playable level were handed the repeatable side-job board and the hangar shop. That is the worst failure
+direction, and it was invisible in tests because `pretest` recreates the DB and always yields contiguous
+ids 1..5. Name-based comparison fails **closed** instead (a missing row → locked).
+
+**Rejected alternatives.** *Ordinal rank* (`COUNT(*) FROM levels WHERE id <= progress >= 5`) — correct
+today, but perturbed by any extra `levels` row: it would silently re-anchor the gate a level earlier the
+day a level is inserted mid-campaign. *Renumbering the ids / stopping the sequence burn* — pure churn:
+nothing depends on contiguous ids (`advanceProgress` walks `MIN(id) > current`), the FK on
+`current_progress` has no `ON UPDATE CASCADE`, and it would not fix the already-drifted production DB
+(§30). `name` is already the seed's stable identity key (`ON CONFLICT (name)`).
+
+**Consequences.** §90's shop threshold is `SHOP_MIN_LEVEL = 'level-3'` and §91's board threshold is
+`SIDE_MISSIONS_MIN_LEVEL = 'level-5'` (semantics unchanged: shop after the first playable level, board
+after "Level 3"). The boot shop backfill uses the same lookup and re-runs on every boot, so the fix reaches
+everyone on the next deploy — and the early-granted `shop_unlocked` flags are **not** revoked (no
+down-migration; those players keep the shop). The board simply re-locks for players below `level-5`, which
+is inert: a stale `players.active_mission_id` is never read while the board is locked, and Take-off falls
+back to the campaign. `resetPlayer`'s `current_progress = 1` and the column's `DEFAULT 1` stay raw ids
+deliberately — `level-1` is id 1 on every live DB and the FK would fail loudly, not silently (§30) — with
+comments recording that. Covered by `server/src/levels_drift.test.js`, which runs on **its own database**
+(`spacegame_test_drift`) because the FK on `current_progress` makes re-numbering impossible once players
+exist and mutating the shared `spacegame_test` would race the parallel test files. Cross-ref §90, §91,
+§30, §67.
+
+## 96. The parallax backdrop is a PLAYER-LOCKED WRAPPING POINT FIELD, not an origin-anchored rock ring
+
+The backdrop's only job is to sell **motion** — without something sweeping past, the ship reads as floating
+in place. The old implementation (§71's backdrop half) was an `InstancedMesh` of **2000 low-poly rocks**
+scattered **once, in an annulus around world origin** (`makeAsteroids`). Two problems, one fatal:
+
+- **It is anchored to the origin.** The moment the player roams — and §94's to-scale star system, autopilot
+  and uncapped manual cruise are exactly that direction — they fly *out* of the ring into genuinely empty
+  space, i.e. the speed
+  cue disappears precisely where it matters most (long transits). Growing the ring to cover the system is a
+  quadratic-cost non-answer.
+- **It is heavy for what it delivers.** ~40k tris and a full-disk scatter to render sub-pixel specks under a
+  near-top-down camera, where the rock silhouettes were never actually visible.
+
+**Decision:** replace it with a **fixed pool of ~920 `THREE.Points` sprites in 3 depth layers (3 draw
+calls)** that is **re-wrapped into a ±`radius` box centred on the player every frame**. Points stay static in
+world space and are translated by *whole box spans* only when they leave the box (a treadmill), so parallax
+remains true perspective — deeper layers sweep slower — and the same specks surround the player **anywhere in
+the system at constant cost**. No growth, no rebuild, no per-distance scaling.
+
+- **Points over instanced rock meshes.** At this camera the rocks were sub-pixel; the detail was pure cost.
+  A textured point sprite (the *existing procedural* canvas dot, shared with the bright-star layer — no new
+  asset) reads identically and costs one draw call per layer.
+- **Client-only render decor, driven from the VIEW layer.** The wrap runs in `settleView` (`sim.js`), never
+  in the deterministic tick; the field is in no gameplay array, is not collidable, and nothing about it is
+  sent to or read from the server. Its one-time scatter draws the **native `Math.random`** and the per-frame
+  wrap draws **no randomness at all**, so it is replay-neutral by construction (**§73**) — the recorded
+  Level-0 intro re-sims bit-identically.
+- **THE NO-POP-IN RULE, AND THE TRAP IN IT.** A recycled point must reappear where the player cannot see it.
+  It is tempting (the plan's first draft did exactly this) to derive that from `scene.fog.far` — **that is
+  wrong**. `THREE.Fog` fogs on **view depth** (`-mvPosition.z`), not radial distance, and this camera is
+  near-top-down (`CAM_OFFSET 0,110,26`, `ZOOM_MAX 3.5`): a **shallow** point 620 units out sits only ~413
+  deep in view space at max zoom-out — barely past `fogNear` (240), i.e. clearly visible. What hides the
+  shallow layers is the **frustum** (the near layer's visible patch tops out at |Δx| ≈ 459 / |Δz| ≈ 274 at
+  16:9). The **deep** layer is the opposite case: it *does* out-reach the frustum horizontally, but its view
+  depth there is ≥ 668 > `fogFar` (600), so fog finishes the job. **`radius ≥ 600` (`WRAP_SAFE_RADIUS`,
+  shipped 620) clears both ends** — and the margin is **aspect-ratio dependent** (it runs out around aspect
+  ≈ 2.4, so an ultra-wide layout must grow the *shallow* layers' radius, never the fog). This is documented
+  and unit-asserted against the shipped values rather than silently clamped, because the `?dev` panel must
+  stay free to explore a smaller box.
+- **Live-tunable instead of argued about.** The look constants (count/size/radius/depth/opacity per layer +
+  a shared colour) live in the map descriptor's **`speedField`** and are dialled in the `?dev` "Speed field"
+  folder, which dumps a paste-ready block for `catalog_seed.js`. The committed numbers are a starting point.
+- **`asteroids` compatibility shim (one release, with an explicit removal condition).** The dead
+  `asteroids: {…}` block **stays in the descriptor for exactly one release**. `db.js` upserts every map
+  descriptor **on every server start**, so the moment this deploys, the already-published **itch** bundle and
+  the **`/v2`** sandbox — older clients reading the *live* catalog — would call the removed `makeAsteroids(undefined)`
+  and throw inside `buildMap` (black scene, not a graceful degrade). **Remove it** in the first change *after*
+  the itch build has been re-published (`/publish-itch`) and `/v2` redeployed from a `main` containing
+  `speedField`; `server/src/maps_speedfield.test.js` pins it until then and is deleted with it.
+
+**Amendment (shipped invisible, then fixed — the part worth reading).** The field went to production
+geometrically perfect and **impossible to see**, and the only thing that caught it was a human looking at
+the game. Three compounding causes, and the lesson is in the third:
+
+1. **Dark tint on a dark sky.** Grey `0x6b6f78` at opacity 0.55–0.90 over the map background `0x0a1624`
+   composites to within a few percent of the background.
+2. **The wrong sprite.** It reused the star layer's `getStarGlowTexture` — a soft radial glow *designed* to
+   bloom a point into a halo, averaging ~25% alpha across its face. The first correction (bigger + whiter)
+   made it visible and immediately wrong: *"there are no white blobs like that in space."* The real fix was
+   a **separate hard-edged dot** (`getSpeedDotTexture`), opaque across its face, which reads as a lit speck
+   at sub-1-unit size and a natural rock tone. **The two textures must stay separate** — merging them back
+   re-creates the bug. Final look: `0xd2ccc1`, sizes 0.8/1.3/2.0, density weighted to the near layer.
+3. **Nobody asked "will you see it".** The plan reasoned carefully about density, pixel counts, frustum
+   geometry, draw calls and replay-neutrality. Ten unit tests, an outcome scenario that teleports the player
+   5.6k units out, a critic round and a reviewer round — all green, because every one of them tested that the
+   field is *where it should be*, never that it is *perceptible*. **A visual feature needs an assertion about
+   perception, not only about geometry.** Hence `MIN_CONTRAST`/`contrastRatio` and the `size × contrast ≥ 5`
+   visibility budget in `speed-field.js` — deliberately calibrated from the escaped defect (which scores
+   2.39×) rather than derived, and documented as a "go look at a real frame" tripwire, not a truth.
+
+Superseded: the **backdrop half of §71** (its mission-`asteroid-field` half still stands — the `.glb` rock
+pack is still used up close, and its CC-BY attribution stays). Motivated by **§94** (inter-point travel):
+fast manual travel only *feels* fast if something sweeps past you the whole way. Warp/velocity-stretch
+streaking is deliberately **out of scope** — `updateSpeedField` is documented as the single hook for it.
+A **foreground** layer (negative `depth`, between camera and ships) is likewise not shipped, but the slider
+range reaches −110 so it can be judged live; adopting one would revisit the "below-plane only" call above.
+
+## 97. Star system: compact Float32-safe coordinates (no floating-origin) + bearing-projected sky backdrop
 
 Building the flyable star system (§94) forced two model choices — how far apart the bodies really sit in
-world coordinates, and how they are rendered. (This ships §94; it also **supersedes the backdrop half of
-§71** — the distant procedural asteroid ring is replaced by the speed-field.)
+world coordinates, and how they are rendered. (The distant parallax that sells *speed* is the player-locked
+wrapping speed field of **§96**, unchanged; this entry covers only the star-system geometry + the sky bodies.)
 
 - **Coordinate model — compact, Float32-safe, no floating-origin.** Planet 2 (our base planet) is **pinned
   to the world origin**, so `arenaCenter`, the set-pieces and the `missions.js` centers stay origin-relative
@@ -3380,17 +3501,13 @@ world coordinates, and how they are rendered. (This ships §94; it also **supers
   above the horizon by `elev` for the near-top-down camera (`updateSystemBodies`, `world.js`). Fly toward a
   planet and it comes forward; pass it and its bearing flips; the star drifts across the sky — this alone
   sells "flying across a real system" for ≤5 cheap billboards. The old single planet + 2 moons fold into this
-  (planet 2 = the base planet); the standalone moons are dropped.
-- **Speed-field, not an asteroid ring.** The sense of speed comes from a **player-locked wrapping point-sprite
-  speed-field** (`speed-field.js` + `world.js`): 2-3 additive layers kept in a box around the player, each
-  point wrapped to the opposite side as the player crosses the edge (pure `wrapCoord`), procedural canvas dot
-  texture (no asset). This replaces the static origin-ring `makeAsteroids` backdrop (§71's backdrop half).
+  (planet 2 = the base planet); the standalone moons are dropped (`makeMoon`/`updateMoons` removed).
 - **All of the above is VIEW layer** (buildMap/settleView), consumes **zero sim RNG**, and roam
   (`capLifted` false whenever `G.roam` is false) is never recorded — so recorded/campaign replays stay
   byte-identical (§73).
-- **Geometry tunables** live in the client `SYSTEM`/layer constants for fast live-tuning (§30) and are
-  mirrored into the `home-system` descriptor's `system` block (data-driven, client `SYSTEM` = fallback +
-  the source of truth for body POSITIONS).
+- **Geometry tunables** live in the client `SYSTEM` constants for fast live-tuning (§30) and are mirrored
+  into the `home-system` descriptor's `system` block (data-driven, client `SYSTEM` = fallback + the source of
+  truth for body POSITIONS).
 
 ## Future ideas
 

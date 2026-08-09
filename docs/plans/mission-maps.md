@@ -13,7 +13,7 @@
 > **One giant world map** based on the current `home-system`: the planet stays; set-pieces sit at
 > different points around it, and **missions happen at different locations within this one map** (the
 > combat zone is positioned — or slowly drifts — past the relevant set-piece). Set-pieces are
-> **procedurally generated in code** for now (like the planet/moons/primitive ships), **not** sourced
+> **procedurally generated in code** for now (like the star-system bodies/primitive ships), **not** sourced
 > `.glb`. English-only. Planning window — no code here; this specs the procedural generation for the
 > work session.
 
@@ -29,8 +29,9 @@
 1. **Research station** (large) — right of the planet, at distance; combat on its backdrop, ~500 m below.
    - *Procedural recipe (starting point):* a central cylinder/hub + a ring or torus, solar-panel planes,
      a few docking arms/modules; metallic material + emissive windows. Big and readable from the arena.
-2. **Asteroid field + mining station** (below the planet) — **real irregular asteroids**, NOT the round
-   parallax ones we use for motion reference: non-spherical geometry (noise-deformed mesh), **cratered
+2. **Asteroid field + mining station** (below the planet) — **real irregular asteroids**, NOT the distant
+   backdrop specks we use for motion reference (the parallax layer was a ring of round rocks then; it is the
+   player-locked Points speed field now — DECISIONS §96): non-spherical geometry (noise-deformed mesh), **cratered
    textures** (reuse the `makeMoonTexture` crater approach), **varied sizes**. Plus a **small mining
    station** working an asteroid, shown as a **beam / stream of microparticles** from the asteroid to the
    station (reuse the existing particle system).
@@ -48,8 +49,8 @@
 - **Render layer → the combat `scene`, lit by the combat light (from above), same as the ships.** The
   mission set-pieces are the *local battle environment* — the things we fight around — so we must see them
   **the same way as the fight**: in the combat scene, lit from above by the combat sun. (Contrast,
-  DECISIONS §5: the **planet & moons** stay in `skyScene`, lit by a distant sun with a day/night
-  terminator; **stars** are unlit. Those are the far cosmic backdrop; the set-pieces are the near
+  DECISIONS §5: the **star + planets (bearing-projected)** stay in `skyScene`, lit by a distant sun with a
+  day/night terminator; **stars** are unlit. Those are the far cosmic backdrop; the set-pieces are the near
   environment.)
 - **Decoration ≠ collidable — the key point.** Being in the combat `scene` does NOT make a mesh a target:
   hit/collision and AI iterate the **gameplay entity arrays** (enemies / bullets / rockets / player), not
@@ -65,7 +66,7 @@
 - **Procedural, not sourced.** Set-pieces are **code-generated** (no CDN/`.glb`, no license) for now; swap
   to real `.glb` via the CDN (DECISIONS §14) later.
 - **Asteroids = decor meshes in the combat `scene`, not obstacles** for now (real irregular/cratered,
-  distinct from the round parallax backdrop asteroids). Collidable cover = later (register them as
+  distinct from the distant parallax backdrop — today the point-sprite speed field, DECISIONS §96). Collidable cover = later (register them as
   gameplay entities; DECISIONS §4 "solid asteroids", scope B).
 
 ## Phasing

@@ -5,27 +5,67 @@
 
 ## 2026-08-09
 
-- **[2026-08-09-1456-star-system-map] Flyable to-scale star system + autopilot navigation shipped.**
+- **[2026-08-09-1456-star-system-map] Flyable to-scale star system + autopilot navigation (on main's speed-field).**
   Out of combat the home map is now a to-scale, flyable star system. A central **star + 4 planets** render as
   a **bearing-projected sky backdrop** (`system-map.js` geometry + `world.js` `buildSystemBodies`/
   `updateSystemBodies`) at constant apparent size, re-projected each frame by their true bearing from the
-  player; a **player-locked wrapping speed-field** (`speed-field.js` pure seam + `world.js` `makeSpeedField`/
-  `updateSpeedField`, procedural canvas dots) replaces the old origin-ring backdrop asteroids. New **roam**
+  player, **replacing the single planet + moons**. The parallax **speed-field is main's already-shipped one
+  (§96)** — this feature keeps it unchanged and adds the backdrop bodies + navigation on top. New **roam**
   state (`G.roam`) — entered via the base-menu **Map** section (`enterRoam`) or the `?roam` dev sandbox — with
   the player **speed cap lifted outside activity zones** (`capLifted({roam,inZone})`, which is **false whenever
   roam is off**, so every recorded/campaign replay stays byte-identical) and OOB warp-back disabled. A
   **system-map screen** (`systemmap-ui.js`; base-menu Map + a mini-map tap **out of combat**) freezes the game
   via a raw `G.mapOpen` loop-skip (not `setPaused`) and lets you pick a destination → **autopilot-to-point**
   (`engagePointAutopilot`, a new `point` target kind that never wins by proximity); arriving at a mission
-  marker whose offer exists shows a **"Start mission?"** prompt reusing `missionOffers`/`launchMission`
+  marker whose offer exists shows a localized **"Start mission?"** prompt reusing `missionOffers`/`launchMission`
   (locked markers park, no prompt). `levelRunner.resetLevelRunnerState()` was extracted so the roam `reset()`
   clears win/return state without spawning (fixes the frozen-ship / roam-enemy failure modes). Data: the
   near-mining + research set-pieces + `missions.js` centers moved out (2× distance, four-way invariant kept),
-  and `catalog_seed.js` gained a `system` block (moons dropped). New EN+RU `ui.systemmap.*` strings. Tests:
-  pure `system-map.test.js` + `speed-field.test.js` (incl. the `capLifted` invariant, Float32 bound,
-  `wrapCoord`) + the `31-star-system` visual scenario with a post-win roam guard; the `22-intro-replay` guard
-  is unchanged (replay-neutral). Replay-neutral, zero sim RNG. DECISIONS §95 (§71 backdrop half superseded);
-  docs/plans/2026-08-09-1456-star-system-map.md.
+  and `catalog_seed.js` gained a `system` block (moons dropped; main's `speedField` + dead `asteroids` shim
+  kept). New EN+RU `ui.systemmap.*` strings. Tests: pure `system-map.test.js` (incl. the `capLifted` invariant
+  + Float32 bound) + the `32-star-system` visual scenario with a post-win roam guard; `22-intro-replay` is
+  unchanged (replay-neutral) and main's `31-speed-field` still passes. Replay-neutral, zero sim RNG.
+  DECISIONS §97 (coordinate model + bearing backdrop; speed-field is §96). docs/plans/2026-08-09-1456-star-system-map.md.
+- **[fix] Speed field: its own crisp sprite, rock tone, near-weighted density — the look is now settled.**
+  Follow-up to the contrast fix below, tuned live against the maintainer on a local build. The field no
+  longer borrows the star layer's `getStarGlowTexture` (a soft glow built to bloom points into haloes,
+  ~25% average alpha) — it has its **own hard-edged procedural dot** (`getSpeedDotTexture`), which is why
+  the specks can now be tiny *and* visible instead of big and white ("there are no white blobs like that in
+  space"). Final: colour `0xd2ccc1` (warm rock grey), 760/220/110 points at sizes 0.8/1.3/2.0, depths
+  10/90/220 — density deliberately **weighted to the near layer**, since those are the specks that sweep
+  past and sell speed while the deep ones barely move. `SPEED_FIELD_RANGES.depth` now reaches **−110** so a
+  foreground dust layer (above the combat plane, ~1.5–3.4× the ship's apparent speed) can be judged live in
+  the `?dev` panel; the shipped look stays below-plane. The visibility guard became a **budget**
+  (`size × contrast ≥ 5`) rather than a hard minimum size, since a small speck is fine when it is crisp and
+  bright — it was the *combination* that failed. Also fixed a test that hardcoded a tuning number
+  (`count === 420`) in an assertion that was really about copy semantics. DECISIONS §96.
+
+- **[fix] The new speed field shipped invisible — contrast pass + a guard against it happening again.**
+  The player-locked backdrop landed on prod and the live check came back "I see nothing, nothing gives a
+  sense of speed": dark-grey sprites (`0x6b6f78`) at 0.9–2.6 world units and opacity 0.55–0.90, drawn with a
+  soft glow sprite whose alpha is 0.25 at 55% radius, composite to within a few percent of the map
+  background (`0x0a1624`) — so the only thing on screen was the **starfield, which is glued to the camera and
+  therefore conveys no motion at all**. Every unit test, the outcome scenario and both review passes were
+  green: they checked geometry, cost and replay-neutrality, never **contrast**. Colour is now `0xc8d0da`,
+  sizes 3.8/6.7/10.9, opacity 1.0/0.94/0.69 (counts unchanged at 420/300/200), and
+  `SPEED_FIELD_RANGES.size` widened to 20 so those sizes survive `normalizeSpeedField`. New regression guard
+  `MIN_CONTRAST`/`contrastRatio` in `speed-field.js` asserts every shipped layer is ≥3.5× background
+  luminance **and** that the known-invisible combination (2.39×) is rejected — a proxy calibrated from the
+  escaped defect, not a visibility model. DECISIONS §4 already said a ~1px point needs bigger + brighter +
+  near-white; the plan reasoned about density and pixel counts instead.
+
+- **[fix] The side-mission board unlocked far too early (and the shop a level early).** Progress gates
+  compared `players.current_progress` against hardcoded level ids (`>= 5` / `>= 3`), but `levels.id` is a
+  BIGSERIAL whose sequence is burned by the startup upsert's `ON CONFLICT` path, so production ids had
+  drifted to 1, 6, 7, 71, 564 — a player still on the "Level 1" briefing (id 6) was handed **both** the
+  side-mission board and the hangar shop. Both gates now resolve the threshold by level **name**
+  (`reachedLevel(progress, 'level-5')` / `'level-3'`, via the new `SIDE_MISSIONS_MIN_LEVEL`/`SHOP_MIN_LEVEL`
+  constants in `db.js`), fail-closed if the row is missing. Ops detail: the shop backfill is **not**
+  ledger-guarded — it re-runs on every boot, so it had been re-granting the shop early on each deploy and
+  the fix likewise applies to everyone on the next deploy. Players who already got the shop early **keep
+  it** (no revocation); the side-mission board re-locks for players below `level-5`, which is inert — a
+  stale `active_mission_id` is never read while the board is locked. New `server/src/levels_drift.test.js`
+  reproduces the production id drift on its own throwaway database (`spacegame_test_drift`). DECISIONS §95.
 - **[decision] Star-system map + autopilot navigation (planned; feeds the star-system-map pipeline).**
   Recorded DECISIONS §94: the world becomes a to-scale flyable star system (star + 4 wall-clock-orbiting
   planets + an asteroid belt with 3 mining bases + a science station), sized so the outermost orbit's
@@ -35,6 +75,21 @@
   cap + full inertia. Float32 coordinates are kept safe by the deliberately compact sizing (no floating
   origin; whole system fits one server-side coordinate space for the planned one-system-per-server
   multiplayer). Freighter trade route deferred to ROADMAP. No code yet — building via /feature-pipeline.
+- **[2026-08-09-1410-player-locked-speed-field] Parallax backdrop is now a player-locked wrapping speed
+  field.** The origin-anchored 2000-rock asteroid ring is gone; a fixed pool of ~920 point sprites in 3
+  depth layers wraps around the player every frame (view-layer only, from `settleView`), so the same sense
+  of speed surrounds you everywhere in the system at constant cost — the ring left you in empty space once
+  you roamed, and it was ~40k tris to render sub-pixel specks. Points are static in world space and move
+  only by whole box spans when they leave the ±620 box, so parallax stays real and a stationary player
+  uploads nothing; the sprite is the existing procedural canvas dot (no new asset). Per-map colour/density
+  moved to the descriptor's `speedField`; the old `asteroids` key is kept for one release so the
+  already-published itch/`/v2` clients don't break (removal condition in DECISIONS §96). Also fixes a real
+  leak: `buildMap` never removed the previous backdrop on a level/map switch. New `?dev` "Speed field"
+  tuning folder (per-layer sliders + dump-to-console) inside the Backdrop panel, new pure
+  `client/src/speed-field.js` + unit tests, a `31-speed-field` headless scenario (teleport 4000 units out,
+  the field is still centred on the ship — mutation-verified against a camera-centred wrap) and a
+  `maps_speedfield` server test; intro-replay guard green. DECISIONS §96,
+  `docs/plans/2026-08-09-1410-player-locked-speed-field.md`.
 - **[gameplay] Character progression HUD — always-on XP bar, free-points badge, "Level up" toast.**
   Added three always-visible bits to the progression feature: a **free-skill-points badge** (gold count) on
   the **Character** left-menu item, shown only when there are unspent points; an **always-on XP bar** at the

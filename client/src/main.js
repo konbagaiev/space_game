@@ -12,7 +12,7 @@ import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, se
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap
 import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples
@@ -131,7 +131,7 @@ addEventListener('click', (e) => { if (e.target.closest('button')) audio.sfx.uiC
 // Arena (ARENA/OOB consts, arenaCenter, arenaBorder), the starry sky, the star-system backdrop bodies +
 // the player-locked speed-field, the mission set-pieces and buildMap()/updateSystemBodies()/updateSpeedField()/
 // buildSetPiece() are imported from world.js. The reassigned per-map handles (sky/stars/systemBodies/
-// speedField/G.skyAmbient/G.skySun/G.currentMapDescriptor/G.mapSetpieces/G.arenaDrift) live on the shared bag G.
+// G.skyAmbient/G.skySun/G.currentMapDescriptor/G.mapSetpieces/G.arenaDrift) live on the shared bag G.
 
 // ---------- Ship factory moved to src/ship-factory.js ----------
 // shipModelCfg/modelSpec/makeShip/applyShipModel + the shared gltfLoader + SHIP_MODEL_LEN are imported
@@ -865,6 +865,7 @@ if (location.search.includes('debug')) {
     get pendingAssets() { return G.pendingAssets; }, // diagnostic: essential .glb loads still in flight (veil gate)
     smokePool, // diagnostic: the instanced rocket-trail pool (live count + per-instance alphas)
     drops, // the live loot-drop array (count/positions assertable in headless)
+    get speedFieldLayers() { return speedFieldLayers(); }, // diagnostic: the wrapping backdrop layers (31-speed-field)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
     // with `?dev` — start a fight, run `for (let i=0;i<40;i++) __game.spawnTestDrop()`, watch the perf FPS.
     spawnTestDrop(item) {
@@ -914,7 +915,7 @@ if (location.search.includes('debug')) {
     // leaves rs.done=true exactly as the accumulator caller does (main.js ~1256). A scenario then Takes off into
     // live Level 1 and proves the accumulator still steps (Fix A) and the session is recorded (Fix B).
     simulateIntroEnd() { introMode = true; cutsceneEnd(); rs.done = true; return { playDone: rs.done, playActive: !!rs.play }; },
-    // --- star-system roam / navigation hooks (31-star-system scenario) ---
+    // --- star-system roam / navigation hooks (32-star-system scenario) ---
     enterRoam, engagePointAutopilot,
     // Deterministic sim stepping for headless roam tests (software-GL rAF is too slow to advance the live
     // accumulator meaningfully in a few seconds). Steps update(dt) N times at the fixed sim step — same
@@ -924,8 +925,7 @@ if (location.search.includes('debug')) {
     get roam() { return G.roam; },
     set roam(v) { G.roam = v; },
     get mapOpen() { return G.mapOpen; },
-    get speedField() { return G.speedField; },     // THREE.Group of the layered speed-field points
-    get systemBodies() { return G.systemBodies; }, // [{ mesh, name, ... }] star + 4 planets
+    get systemBodies() { return G.systemBodies; }, // [{ mesh, name, ... }] star + 4 planets (main's speedFieldLayers hook is above)
     get autopilot() { return G.autopilot; },       // { active, phase, target } — assert point-nav in headless
   };
 }

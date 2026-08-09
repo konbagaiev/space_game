@@ -22,7 +22,6 @@ export const G = {
   // --- world (built/reassigned by buildMap in world.js; read by the loop + ?tune panel + reset) ---
   sky: null,                  // THREE.Group holding the star + 4 planet backdrop billboards (sky scene)
   systemBodies: null,         // [{ mesh, name, baseSize, isStar }] — bearing-projected star-system bodies
-  speedField: null,           // THREE.Group of layered THREE.Points (player-locked wrapping speed-field)
   stars: null,                // THREE.Group starfield (follows the camera in the loop)
   skyAmbient: null,           // sky-scene ambient light (mutated live by the ?tune panel)
   skySun: null,               // sky-scene directional light (the terminator source)

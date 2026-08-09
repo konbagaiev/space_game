@@ -1,6 +1,6 @@
 // World building: the arena boundary, the starry sky, the bearing-projected star-system backdrop (a star
 // + 4 planets), the player-locked wrapping speed-field, and the procedural mission set-pieces — assembled
-// from a map descriptor by buildMap(). The reassigned per-map handles (sky/stars/systemBodies/speedField/
+// from a map descriptor by buildMap(). The reassigned per-map handles (sky/stars/systemBodies/
 // skyAmbient/skySun/arenaDrift/…) live on the shared state bag G; the arena geometry (ARENA/OOB constants,
 // arenaCenter, arenaBorder) is exported const.
 import * as THREE from 'three';
@@ -9,7 +9,9 @@ import { G, setPieces } from './state.js';
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
 import { SYSTEM, bodyWorldPos } from './system-map.js'; // pure star-system geometry (star + 4 planets, bearing math)
-import { SPEED_FIELD_LAYERS, poolSize, scatterLayer, wrapLayerPositions } from './speed-field.js'; // pure speed-field seam
+import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
+         wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
+import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -45,8 +47,9 @@ export const arenaBorder = (() => {
 })();
 
 // ---------- Starry sky ----------
-// A soft radial-gradient sprite (white core -> transparent edge), used as the point texture for the
-// bright-star layer so those stars bloom into a round halo instead of a hard square. Built once.
+// A soft radial-gradient sprite (white core -> transparent edge), PROCEDURAL (a 64px canvas, no image
+// asset). Shared by the bright-star layer — so those stars bloom into a round halo instead of a hard
+// square — and by the player-locked speed field's point sprites. Built once and cached.
 let starGlowTexture = null;
 function getStarGlowTexture() {
   if (starGlowTexture) return starGlowTexture;
@@ -62,6 +65,28 @@ function getStarGlowTexture() {
   ctx.fillRect(0, 0, s, s);
   starGlowTexture = new THREE.CanvasTexture(cv);
   return starGlowTexture;
+}
+
+// The speed field's own sprite: a CRISP filled dot (opaque core out to 80% of the radius, then a short
+// anti-aliasing falloff), PROCEDURAL like the star glow and cached the same way. Deliberately NOT the star
+// sprite: that one is a soft radial glow built to make a point bloom into a halo, which averages ~25% alpha
+// across its face — a speck using it has to be blown up and whitened before it is visible at all, and then
+// it reads as a white blob rather than a lit rock. A hard-edged dot is opaque across its whole face, so a
+// 1-2 unit speck at a natural rock tone reads clearly at real size. Built once and cached.
+let speedDotTexture = null;
+function getSpeedDotTexture() {
+  if (speedDotTexture) return speedDotTexture;
+  const s = 32, cv = document.createElement('canvas');
+  cv.width = cv.height = s;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0.0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.78, 'rgba(255,255,255,1)');    // flat, fully opaque face — the whole point
+  g.addColorStop(1.0, 'rgba(255,255,255,0)');     // a 2-3px edge only, so it is round and not aliased
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  speedDotTexture = new THREE.CanvasTexture(cv);
+  return speedDotTexture;
 }
 
 // One random point on a sphere shell (radius * 0.7..1.0), written into `pos` at index i.
@@ -366,7 +391,7 @@ function makeMoonTexture(baseHex) {
 // roughly constant on-screen size (the star ~1.2x a planet). Each frame updateSystemBodies re-projects
 // every body by its TRUE bearing from the player to the body's real world position — flying toward a
 // planet brings it forward while the previous one recedes, and the star drifts across the sky. "To-scale"
-// applies to the travel distances (world coords) only; see DECISIONS §95 + docs/plans/…star-system-map.md.
+// applies to the travel distances (world coords) only; see DECISIONS §97 + docs/plans/…star-system-map.md.
 // Pure view layer (called from settleView), consumes ZERO sim RNG → replay-neutral.
 
 // The central star: an emissive core sphere + a soft additive glow sprite (reuses the star-glow texture).
@@ -431,11 +456,11 @@ export function updateSystemBodies(dt = 0) {
 
 // ---------- Shared .glb asteroid pack ----------
 // The mission asteroid-field set-piece draws its rocks from a .glb pack of 3 rock meshes (AST_01/02/03,
-// each with its own baked texture — CC-BY, see CREDITS.md). It is the up-close mining-field rig only; the
-// far backdrop is no longer an asteroid ring at all — it is the procedural point-sprite speed-field above
-// (DECISIONS §71 superseded by §95). Load the pack ONCE per URL and hand back normalized VARIANTS: each
-// geometry re-centered on its bounding sphere and scaled to UNIT radius, so a caller sizes a rock by a
-// single scale factor.
+// each with its own baked texture — CC-BY, see CREDITS.md). This is its ONLY use: the distant backdrop is
+// the player-locked Points speed field below (cheaper still — ~920 sprites, 3 draw calls), because at that
+// range the rocks are sub-pixel specks where model detail is wasted (a full-disk instanced model field was
+// ~1.6M tris; DECISIONS §71 + §96). Load the pack ONCE per URL and hand back normalized VARIANTS: each geometry re-centered
+// on its bounding sphere and scaled to UNIT radius, so a caller sizes a rock by a single scale factor.
 const _asteroidPacks = new Map(); // url -> Promise<[{ geo, mat }]>
 function loadAsteroidPack(url) {
   let p = _asteroidPacks.get(url);
@@ -466,57 +491,130 @@ function loadAsteroidPack(url) {
 // sharing/mutating the pack's material.
 function asteroidMat(src, fog) { const m = src.clone(); m.fog = fog; return m; }
 
-// ---------- Player-locked wrapping speed-field (replaces the old origin-ring `makeAsteroids` backdrop) ----------
-// A small set of point-sprite layers kept in a box AROUND the player; each point wraps back to the opposite
-// side as the player crosses the box edge, so the field streams past and sells the sense of speed while
-// cruising across the system. The wrap arithmetic + layer config are the pure seam in speed-field.js
-// (node-tested); this is the thin THREE assembly. Additive round dots, fog off, per-map color/density from
-// the descriptor `asteroids` block. Pure VIEW layer (updated in settleView) → replay-neutral, zero sim RNG.
-let speedDotTex = null;
-function getSpeedDotTexture() {
-  if (speedDotTex) return speedDotTex;
-  const s = 32, cv = document.createElement('canvas'); cv.width = cv.height = s;
-  const ctx = cv.getContext('2d');
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0.0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.5, 'rgba(255,255,255,0.5)');
-  g.addColorStop(1.0, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
-  speedDotTex = new THREE.CanvasTexture(cv); // procedural — NO image asset (CREDITS.md untouched)
-  return speedDotTex;
+// ---------- Player-locked wrapping speed field (the parallax backdrop; DECISIONS §96) ----------
+// A FIXED pool of point sprites in 3 depth layers (~920 points, one draw call each) sunk below the combat
+// plane in WORLD coordinates, re-wrapped every frame into a ±radius box centred on the PLAYER — so the same
+// specks surround the ship everywhere in the system at constant cost, and flying anywhere reads as fast.
+// (It replaces an origin-anchored ring of 2000 instanced rocks that the player simply flew out of.)
+// Pure render decor in the COMBAT scene: never in a gameplay array, never collidable, never sent to the
+// server. The pure math/defaults/clamping live in speed-field.js.
+let speedField = null;                                 // { spec, layers: [{ points, pos, half }] }
+// The live spec the ?dev folder binds to. Mutated IN PLACE by buildMap (never replaced) so the panel's
+// sliders — built once at boot — keep pointing at the current values across level/map switches.
+const speedFieldSpec = normalizeSpeedField(undefined); // starts at SPEED_FIELD_DEFAULTS
+const SPEED_POINT_WHITE = { r: 1, g: 1, b: 1 };        // see makeSpeedField: the tint lives on the material
+
+// Copy a normalized spec into the stable panel-bound object (in place; see above).
+function applySpeedFieldSpec(src) {
+  speedFieldSpec.color = src.color;
+  if (speedFieldSpec.layers.length !== src.layers.length) speedFieldSpec.layers = src.layers.map((l) => ({ ...l }));
+  else src.layers.forEach((l, i) => Object.assign(speedFieldSpec.layers[i], l));
+  return speedFieldSpec;
 }
-// Build the layered THREE.Points speed-field from the descriptor `asteroids` (count → pool size, color → tint).
-function makeSpeedField(cfg = {}) {
-  const color = new THREE.Color(cfg.color ?? 0x6b6f78);
-  const total = poolSize(cfg);
-  const tex = getSpeedDotTexture();
-  const group = new THREE.Group();
-  group.userData.layers = [];
-  for (const spec of SPEED_FIELD_LAYERS) {
-    const n = Math.max(1, Math.round(total * spec.frac));
-    const arr = scatterLayer(spec, n);            // pure scatter (native Math.random — cosmetic, not seeded)
-    const pos = Float32Array.from(arr);
+
+// Build the field's THREE objects from a normalized spec and add them to the combat scene. The scatter is
+// centred on the ORIGIN and draws the NATIVE Math.random (never simRandom — DECISIONS §73); the first
+// settleView wraps it around the player on frame 1.
+function makeSpeedField(spec) {
+  const rgb = new THREE.Color(spec.color);
+  const layers = spec.layers.map((layer) => {
+    const pos = scatterLayer(layer, Math.random);
+    // Vertex colors carry ONLY the per-point brightness jitter (white × 0.55..1.0); the layer TINT sits on
+    // material.color, which PointsMaterial multiplies in — that keeps the ?dev colour picker a one-line live
+    // write instead of a re-scatter (and the jitter stops the field reading as a uniform stipple).
+    const col = scatterColors(layer, SPEED_POINT_WHITE, Math.random);
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const posAttr = new THREE.BufferAttribute(pos, 3);
+    posAttr.setUsage(THREE.DynamicDrawUsage); // rewritten every frame by the wrap
+    geo.setAttribute('position', posAttr);
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     const mat = new THREE.PointsMaterial({
-      color, size: spec.size, map: tex, transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false,
+      size: layer.size,
+      sizeAttenuation: true,       // world-unit sizes → deeper layers read smaller (real perspective parallax)
+      map: getSpeedDotTexture(),   // the field's OWN crisp procedural dot (no image asset, not the star glow)
+      color: rgb,
+      vertexColors: true,
+      transparent: true,
+      opacity: layer.opacity,
+      depthTest: true,             // planet/set-pieces/ships occlude the field correctly
+      depthWrite: false,           // …but the sprites must not cut into each other
+      blending: THREE.NormalBlending, // dim rocks, not stars — NOT additive
+      fog: true,                   // the deep layer fades out on the combat fog (240..600)
     });
-    const pts = new THREE.Points(geo, mat);
-    pts.frustumCulled = false; // it tracks the player; never cull it by the (stale) origin-centered bounds
-    group.add(pts);
-    group.userData.layers.push({ pts, pos, geo, R: spec.R, par: spec.par });
-  }
-  return group;
+    const points = new THREE.Points(geo, mat);
+    points.frustumCulled = false;  // the pool is re-centred on the player every frame; its bounding sphere is stale by design
+    scene.add(points);
+    return { points, pos, half: layer.radius };
+  });
+  return { spec, layers };
 }
-// Re-center + wrap every layer on the player each frame (view layer). velocity is passed for the future
-// stretch hook (unused today; see speed-field.js).
-export function updateSpeedField(field, playerPos, velocity = null) {
-  if (!field || !field.userData.layers) return;
-  for (const L of field.userData.layers) {
-    wrapLayerPositions(L.pos, playerPos.x * L.par, playerPos.z * L.par, L.R, velocity);
-    L.geo.attributes.position.needsUpdate = true;
+
+// Remove the field from the scene and free its GPU resources. buildMap re-runs on every level start / map
+// switch (main.js, account.js, net.js, the ?tune rebuild button) — the old asteroid ring was never removed
+// there, so each rebuild leaked one InstancedMesh.
+function disposeSpeedField() {
+  if (!speedField) return;
+  for (const L of speedField.layers) {
+    scene.remove(L.points);
+    L.points.geometry.dispose();
+    L.points.material.dispose();
   }
+  speedField = null;
+}
+
+// Re-centre the field on the player. VIEW-LAYER ONLY: called from settleView(), never from the tick.
+// Consumes NO randomness at all, so it is replay-neutral by construction (DECISIONS §73). Only the points
+// that actually left the box are rewritten, and the GPU upload is skipped entirely when nothing moved.
+//
+// WARP-STREAK HOOK (deliberately not built — out of scope): this is the single per-frame place that already
+// holds the player transform and every layer's material. A future velocity-stretch pass hangs off HERE (read
+// G.player.vel, feed a uStretch uniform after swapping PointsMaterial for a ShaderMaterial). Do not add it now.
+export function updateSpeedField(x, z) {
+  if (!speedField) return;
+  for (const L of speedField.layers) {
+    if (wrapField(L.pos, x, z, L.half)) L.points.geometry.attributes.position.needsUpdate = true;
+  }
+}
+
+// Headless-test hook (the 31-speed-field scenario): the live layers, [] before the first buildMap.
+export function speedFieldLayers() { return speedField ? speedField.layers : []; }
+
+// ?dev "Speed field" folder, hosted by the Backdrop panel (ghost-battle.js buildBackdropPanel). Cheap
+// look-only controls (size/opacity/colour) write straight to the live materials so a drag doesn't make the
+// field jump; the structural ones (count/radius/depth/depthVar) rebuild on release. Every change is
+// persisted to localStorage and re-applied on the next buildMap — under isDev() only.
+export function buildSpeedFieldFolder(gui) {
+  const spec = speedFieldSpec;
+  const persist = () => saveSpeedTune(window.localStorage, spec);
+  const rebuild = () => { disposeSpeedField(); speedField = makeSpeedField(spec); persist(); };
+  const live = (i) => speedField && speedField.layers[i] ? speedField.layers[i].points.material : null;
+
+  const f = gui.addFolder('Speed field');
+  f.addColor(spec, 'color').name('Colour').onChange((v) => {
+    for (const L of (speedField ? speedField.layers : [])) L.points.material.color.set(v);
+    persist();
+  });
+  const names = ['Layer 0 (near)', 'Layer 1 (mid)', 'Layer 2 (far)'];
+  spec.layers.forEach((layer, i) => {
+    const lf = f.addFolder(names[i] || `Layer ${i}`);
+    lf.add(layer, 'count', SPEED_FIELD_RANGES.count[0], SPEED_FIELD_RANGES.count[1], 10).name('Count').onFinishChange(rebuild);
+    lf.add(layer, 'size', SPEED_FIELD_RANGES.size[0], SPEED_FIELD_RANGES.size[1], 0.1).name('Point size')
+      .onChange((v) => { const m = live(i); if (m) m.size = v; persist(); });
+    lf.add(layer, 'radius', SPEED_FIELD_RANGES.radius[0], SPEED_FIELD_RANGES.radius[1], 10).name('Wrap radius R').onFinishChange(rebuild);
+    lf.add(layer, 'depth', SPEED_FIELD_RANGES.depth[0], SPEED_FIELD_RANGES.depth[1], 1).name('Depth (below plane)').onFinishChange(rebuild);
+    lf.add(layer, 'depthVar', SPEED_FIELD_RANGES.depthVar[0], SPEED_FIELD_RANGES.depthVar[1], 1).name('Depth spread').onFinishChange(rebuild);
+    lf.add(layer, 'opacity', SPEED_FIELD_RANGES.opacity[0], SPEED_FIELD_RANGES.opacity[1], 0.05).name('Opacity')
+      .onChange((v) => { const m = live(i); if (m) m.opacity = v; persist(); });
+    lf.close();
+  });
+  // Shipped floor, not a hard limit — the sliders deliberately reach lower so a tighter box can be judged
+  // live; below it the wrap edge starts entering the frustum at max zoom-out (pop-in). NOT a fog distance.
+  const hint = { note: `R < ${WRAP_SAFE_RADIUS} → wrap edge enters the frustum at max zoom-out (pop-in)` };
+  f.add(hint, 'note').name('shipped floor').disable();
+  f.add({ dump() {
+    console.log('speedField:', JSON.stringify(spec, (k, v) => (k === 'color' ? '0x' + v.toString(16) : v), 2));
+    console.log(`(paste into server/src/catalog_seed.js MAPS; keep every layer's radius >= ${WRAP_SAFE_RADIUS} — the shipped no-pop-in floor)`);
+  } }, 'dump').name('Dump speed field → console');
 }
 
 // ---------- Mission set-pieces (procedural decor in the combat scene) ----------
@@ -603,7 +701,8 @@ function makeIrregularAsteroid(radius, tex, seed) {
 // Asteroid field + mining stations: each station works a host asteroid with a beam = a stream of
 // microparticles flowing from the asteroid up to the station's collector. The rigs are TILTED off
 // vertical so the beam has horizontal extent and reads well from the top-down camera. Irregular/cratered
-// rocks (distinct from the round parallax-backdrop asteroids); decor only (not collidable).
+// rocks (real, up-close geometry — nothing like the distant point sprites of the backdrop speed field);
+// decor only (not collidable).
 function makeAsteroidField(spec) {
   const g = new THREE.Group();
   const base = spec.color ?? 0x6e6a63;
@@ -800,12 +899,14 @@ function makeBaseStation(spec) {
 
 // Dispatch a set-piece spec to its procedural builder, position it, and add it to the combat scene.
 //
-// RNG CONTRACT: decor (this builder, the asteroid scatter, stars, nebula/planet textures, the parallax ring)
-// draws the NATIVE `Math.random` on purpose — never `simRandom()`. Gameplay-affecting randomness lives in
-// `sim-random.js`; keeping decor out of the seeded stream is what makes the recorded intro/replays survive
-// decor changes (DECISIONS §73). Set-pieces are (re)built inside reset(), i.e. BEFORE tick 0, so a seeded
-// decor draw would displace the whole fight's stream — that is exactly how the .glb asteroid field broke the
-// intro. Consequence, accepted: asteroid layout differs between two playbacks of the same trace (cosmetic).
+// RNG CONTRACT: decor (this builder, the mission asteroid scatter, stars, nebula/planet textures, the speed
+// field's one-time scatter) draws the NATIVE `Math.random` on purpose — never `simRandom()`. Gameplay-affecting
+// randomness lives in `sim-random.js`; keeping decor out of the seeded stream is what makes the recorded
+// intro/replays survive decor changes (DECISIONS §73). Set-pieces are (re)built inside reset(), i.e. BEFORE
+// tick 0, so a seeded decor draw would displace the whole fight's stream — that is exactly how the .glb
+// asteroid field broke the intro. (The speed field's per-frame wrap draws NO randomness at all, and runs in
+// the view layer anyway.) Consequence, accepted: decor layout differs between two playbacks of the same
+// trace (cosmetic).
 export function buildSetPiece(spec) {
   let entry = null;
   switch (spec.type) {
@@ -869,20 +970,18 @@ export function buildMap(descriptor) {
 
   // The sky group holds the star + 4 planet backdrop billboards (positioned per-frame by
   // updateSystemBodies). It stays at the world origin — the bodies are camera-anchored by bearing, so no
-  // group parallax offset is applied (that would double-apply). See buildSystemBodies / DECISIONS §95.
+  // group parallax offset is applied (that would double-apply). See buildSystemBodies / DECISIONS §97.
   G.sky = new THREE.Group();
   G.sky.position.set(0, 0, 0);
   skyScene.add(G.sky);
   buildSystemBodies(descriptor.system ?? SYSTEM, d.planet && d.planet.ocean);
 
-  // Player-locked wrapping speed-field replaces the old static origin-ring asteroids (descriptor-driven
-  // color/density from d.asteroids). Disposed + rebuilt per map like the old `rocks` layer.
-  if (G.speedField) {
-    scene.remove(G.speedField);
-    G.speedField.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
-  }
-  G.speedField = makeSpeedField(d.asteroids);
-  scene.add(G.speedField);
+  // Player-locked wrapping speed field (was: an origin-anchored asteroid ring — DECISIONS §96). The
+  // descriptor's dead `d.asteroids` block is a one-release compatibility shim for older published clients;
+  // this client reads `d.speedField` only (and falls back to the defaults when it is missing).
+  disposeSpeedField();                       // buildMap re-runs per level/map switch — the old ring LEAKED here
+  const base = normalizeSpeedField(d.speedField);
+  speedField = makeSpeedField(applySpeedFieldSpec(isDev() ? loadSpeedTune(window.localStorage, base) : base));
 
   // mission set-pieces (decor in the combat scene), fixed in this shared world; remembered so each run
   // rebuilds them fresh (resets the cruising freighter)

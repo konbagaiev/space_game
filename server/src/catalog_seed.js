@@ -595,7 +595,7 @@ export const LEVELS = [
       briefing: {
         textKey: 'level.4.briefing',
         text: "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. And you've been out here long enough now, Sentinel — command's opening the side-job board to you: take a few between missions to bank extra credits. Good hunting.",
-        actions: [], // text-only: the shop opened back on reaching "Level 2"; the side-mission board unlocks HERE by progress gate (current_progress >= 5, DECISIONS §91), no action needed
+        actions: [], // text-only: the shop opened back on reaching "Level 2"; the side-mission board unlocks HERE by the name-based progress gate (`level-5`, DECISIONS §91/§96), no action needed
       },
       phases: [
         {
@@ -640,10 +640,10 @@ for (const l of LEVELS) l.descriptor.enemyTotal = enemyTotalFromPhases(l.descrip
 
 // --- maps: a JSON descriptor the client renders generically (buildMap). `generator` picks the code
 // generator; `params` are its inputs. The current scene (a to-scale star system — a central star + four
-// planets rendered as bearing-projected sky backdrop, a player-locked wrapping speed-field, stars + sky
+// planets rendered as bearing-projected sky backdrop, a player-locked wrapping speed field, stars + sky
 // lighting) is the 'home-system' map. No binary assets — the textures are procedural from these params.
 // The `system` block carries the star-system render params (star + 4 planets); the client falls back to
-// its own SYSTEM constant (system-map.js) when it is absent. See docs/plans/…star-system-map.md + §95.
+// its own SYSTEM constant (system-map.js) when it is absent. See docs/plans/…star-system-map.md + §96/§97.
 export const MAPS = [
   {
     name: 'home-system', descriptor: {
@@ -686,18 +686,38 @@ export const MAPS = [
           { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 17 },
         ],
       },
-      // Speed-field (player-locked wrapping point layers, replacing the old origin-ring asteroids):
-      // `count` → pool size (clamped 200–600), `color` → tint. See speed-field.js / world.js.
-      asteroids: { count: 2000, color: 0x6b6f78 },
+      // Parallax speed field: a fixed pool of point sprites that WRAPS around the player every frame, so
+      // the same specks surround you everywhere in the system at constant cost (DECISIONS §96). Layers are
+      // ordered near → far; `radius` is the wrap half-box and MUST stay >= 600 so a recycled point
+      // reappears OUTSIDE THE FRUSTUM at max zoom-out (fog only hides the deep layers — THREE.Fog works on
+      // view depth, not radial distance). Values are tuned live via the ?dev "Speed field" panel.
+      // Small, crisp, ROCK-COLOURED specks. Two corrections are baked into these numbers: the first pass
+      // (grey 0x6b6f78, soft star-glow sprite) was invisible, and the second (big near-white) read as white
+      // blobs, which space does not have. The field now has its OWN hard-edged dot sprite, so a 1-2 unit
+      // speck at a natural tone is clearly visible — see speed-field.js SPEED_FIELD_DEFAULTS.
+      speedField: {
+        color: 0xd2ccc1,
+        layers: [
+          { count: 760, size: 0.8, radius: 620, depth: 10,  depthVar: 16, opacity: 1.00 },
+          { count: 220, size: 1.3, radius: 620, depth: 90,  depthVar: 40, opacity: 0.95 },
+          { count: 110, size: 2.0, radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
+        ],
+      },
+      // DEAD KEY — one-release COMPATIBILITY SHIM, not read by this client. db.js upserts this descriptor
+      // on every server start, so the already-published itch bundle and the /v2 sandbox (older clients on
+      // the live catalog) would throw in buildMap() if it vanished. DELETE THIS LINE in the first change
+      // after the itch build has been re-published (/publish-itch) and /v2 redeployed from a main that
+      // contains `speedField`. See DECISIONS §96.
+      asteroids: { count: 2000, inner: 0, spread: 1000, color: 0x6b6f78, minSize: 0.18, maxSize: 0.5, depth: 10, depthVar: 24 },
       // Mission set-pieces live in ONE shared world at FIXED positions — they exist on every level/mission;
       // a mission only changes WHERE you fight (its `center` in missions.js spawns you over the matching
       // one; the others sit at a distance). Spread far apart so they don't overlap. Just below the plane
-      // (strong parallax like the background asteroids), static decor (not collidable). docs/plans/mission-maps.md.
+      // (strong parallax like the background speed field), static decor (not collidable). docs/plans/mission-maps.md.
       setpieces: [
         // `modelUrl` = the .glb asteroid pack (3 rock meshes); the field rocks + each mining rig's host rock
         // pick a random variant (procedural cratered icosahedra remain the ?debug / load-failure fallback).
-        // Only the up-close field uses the model — the distant backdrop `asteroids` layer stays procedural
-        // (a full-disk instanced model field was ~1.6M tris; see DECISIONS §71).
+        // Only this up-close field uses the model — the distant backdrop is now the Points speed field
+        // (a full-disk instanced model field was ~1.6M tris; see DECISIONS §71 + §96).
         // Near mining base — moved out into the belt (anti-star): 2x its old distance from planet 2. Its
         // pos MUST equal missions.js `side-mining` center + the system-map marker + the activity zone
         // (the four-way invariant; see missions.js). Same up-close .glb rig (model unchanged).

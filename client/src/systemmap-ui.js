@@ -9,6 +9,13 @@ import { SYSTEM, ANCHORS, bodyWorldPos, listDestinations } from './system-map.js
 // A mission destination is INTERACTIVE only when its offer exists (sideMissionsUnlocked + on the board).
 function offerFor(missionOffers, id) { return missionOffers.find((o) => o.id === id) || null; }
 
+// Localized mission title for a marker: prefer the offer's titleKey; fall back to the per-type key
+// (mission.<type>.title, e.g. `side-mining` → mission.mining.title) so locked markers still read as words.
+function missionTitle(offer, missionId) {
+  const key = (offer && offer.titleKey) || `mission.${String(missionId).replace(/^side-/, '')}.title`;
+  return t(key);
+}
+
 // Draw the whole map into a canvas and return the on-screen marker hit-list for click picking. The star is
 // pinned to canvas center; planets ride their orbit circles at their wall-clock angle; the base/science/
 // mining anchors + the player sit near planet 2. Returns [{ id, kind, missionId, pos, sx, sy, locked }].
@@ -151,9 +158,10 @@ export function mountBaseMenuMap(hostEl, { missionOffers = [], onLaunch, onFlyHe
   actions.appendChild(launch);
   for (const d of listDestinations()) {
     if (d.kind !== 'mission') continue;
-    const reachable = !!offerFor(missionOffers, d.missionId);
+    const offer = offerFor(missionOffers, d.missionId);
+    const reachable = !!offer;
     const b = document.createElement('button');
-    b.textContent = `${t('ui.systemmap.flyHere')} — ${d.missionId}`;
+    b.textContent = `${t('ui.systemmap.flyHere')} — ${missionTitle(offer, d.missionId)}`;
     b.disabled = !reachable;
     b.style.cssText = 'cursor:pointer;font:600 13px system-ui;color:#cfe6ff;background:rgba(120,150,200,0.18);border:1px solid rgba(120,150,200,0.4);border-radius:8px;padding:8px 14px'
       + (reachable ? '' : ';opacity:0.45;cursor:not-allowed');

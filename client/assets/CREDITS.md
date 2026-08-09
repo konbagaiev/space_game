@@ -26,7 +26,7 @@ asset page is also handy, in case the author later changes the terms).
 | ships/freighter_combat.\<hash\>.glb (Freighter set-piece — cargo transport decor) | Felipe Augusto Vera | https://skfb.ly/oPRwV | CC-BY 4.0 | 2026-07-02 |
 | ships/metal_box_combat.\<hash\>.glb (shared equipment-drop model — the loot "crate") | District24 | https://skfb.ly/JwFQ | CC-BY 4.0 | 2026-07-03 |
 | ships/base_station_combat.\<hash\>.glb (Base station set-piece — return-to-base target) | MisterH | https://skfb.ly/ozESS | CC-BY 4.0 | 2026-07-03 |
-| ships/asteroids_combat.\<hash\>.glb (asteroid pack, 3 rock meshes — the parallax backdrop field + the mission asteroid-field rocks) | ARCTIC WOLVES™ | https://skfb.ly/psECZ | CC-BY 4.0 | 2026-07-16 |
+| ships/asteroids_combat.\<hash\>.glb (asteroid pack, 3 rock meshes — the mission `asteroid-field` set-piece rocks/hosts) | ARCTIC WOLVES™ | https://skfb.ly/psECZ | CC-BY 4.0 | 2026-07-16 |
 | ships/engine_thruster_hangar.\<hash\>.glb (shared THRUSTER component item icon — menu only) | Yo.Ri | https://skfb.ly/6qEKD | CC-BY 4.0 | 2026-08-09 |
 | ships/maneuver_thruster_hangar.\<hash\>.glb (shared ENGINE component item icon, animated flame — menu only) | photon (that one larry) | https://skfb.ly/pyoLw | CC-BY 4.0 | 2026-08-09 |
 
@@ -107,8 +107,9 @@ compresses it into `base_station_combat`.
 
 The **asteroid pack** (`asteroids_combat`) is **"Wandering Asteroids Of Andromeda"** by **ARCTIC WOLVES™**
 (Sketchfab, **CC-BY 4.0** — attribution required, so this entry must stay while in use). One `.glb` of 3
-rock meshes; the client scatters random variants BOTH as the parallax backdrop field and as the mission
-asteroid-field rocks/hosts. `assets:build` (via the `asteroids` preset override) converts its legacy
+rock meshes; the client scatters random variants as the mission `asteroid-field` set-piece's rocks and host
+rocks (its only use — the distant parallax backdrop is the procedural point-sprite speed field, no asset).
+`assets:build` (via the `asteroids` preset override) converts its legacy
 spec-gloss materials to metal-rough, shrinks textures to 256px WebP, and simplifies + meshopt-compresses
 the geometry → a ~91 KB combat glb.
 
