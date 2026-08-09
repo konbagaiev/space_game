@@ -91,12 +91,14 @@
   #welcome.welcome-hide-go #takeoff { opacity: 0; visibility: hidden; }
   /* ---- Main Window (the redesigned between-battles / landing screen; was the "Hangar") ----
      A fixed landscape layout: the top bar (settings gear + auth + Vega Sentinels wordmark + inactive
-     Ships) lives in its own fixed elements; below it a 3-column grid — left menu | work zone |
-     ship-model preview. Only the work zone (mission description / shop) scrolls; the frame stays put.
+     Ships) lives in its own fixed elements; below it a grid — left menu | work zone | a PER-VIEW right
+     column (the mission list on Missions, the Loadout context panel on Loadout, absent on
+     Character/Map/Craft, where the grid drops to two columns). Only the work zone (mission description /
+     shop) and the mission list scroll; the frame stays put.
      One layout for mobile & desktop (designed against the forced mobile-landscape orientation). */
   #mainwin {
     position: fixed; inset: 0; z-index: 12; display: none;
-    grid-template-columns: minmax(160px, 18%) 1fr 25%;
+    grid-template-columns: minmax(160px, 18%) 1fr;   /* base: 2 columns — Character / Map / Craft */
     grid-template-rows: 100%;
     gap: 14px; padding: 52px 14px 14px; box-sizing: border-box;
     background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
@@ -108,7 +110,12 @@
      "guest / log in" string (RU is ~1.5× EN) — is always fully contained by it and never spills right
      into the work zone to clip the mission title. Phone keeps the narrow 160px min (screen too small to
      spare it). Pairs with #account-bar's own max-width cap below. */
-  body:not(.dev-phone) #mainwin { grid-template-columns: minmax(240px, 18%) 1fr 25%; }
+  body:not(.dev-phone) #mainwin { grid-template-columns: minmax(240px, 18%) 1fr; }
+  /* Missions adds the right column (the mission list, 25%); Loadout adds the context panel (30%). */
+  #mainwin.missions-open { grid-template-columns: minmax(160px, 18%) 1fr 25%; }
+  #mainwin.bay-open      { grid-template-columns: minmax(160px, 18%) 1fr 30%; }
+  body:not(.dev-phone) #mainwin.missions-open { grid-template-columns: minmax(240px, 18%) 1fr 25%; }
+  body:not(.dev-phone) #mainwin.bay-open      { grid-template-columns: minmax(240px, 18%) 1fr 30%; }
   /* left menu */
   /* margin-top (NOT padding) gives the menu its OWN scroll section starting BELOW the top-left auth
      (nickname / login-signup) block: the overflow viewport begins below it, so scrolled menu items are
@@ -153,22 +160,33 @@
   /* before the shop unlocks: only the Ship tab, and a hint (loadout stays read-only) */
   .bay-tabs.locked .bay-tab[data-bay="stash"], .bay-tabs.locked .bay-tab[data-bay="shop"] { display: none; }
   #mw-loadout-locked { display: none; color: #9fb3d6; font-size: 14px; margin: 0 0 8px; flex: none; }
-  /* mission board (Slice B): a list of campaign + side-mission cards above the briefing detail */
-  #mw-mission-board { display: flex; flex-direction: column; gap: 6px; flex: none; margin-bottom: 12px; max-height: 42%; overflow-y: auto; }
+  /* mission list — the right column on the Missions view (campaign + side-mission cards, scrolls) */
+  #mw-mission-board { display: none; }
+  #mainwin.missions-open #mw-mission-board {
+    display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  }
   .mission-card {
-    display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer;
+    display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 3px 8px;
+    padding: 8px 10px; cursor: pointer; flex: none;
     border: 1px solid rgba(140,175,255,.22); border-radius: 8px; background: rgba(20,30,55,.5);
   }
   .mission-card:hover { background: rgba(40,60,100,.5); }
   .mission-card.selected { border-color: #4a7dff; }
   .mission-card.active { border-color: #ffcf5a; background: rgba(90,72,24,.32); } /* active mission = gold accent */
-  .mission-card .mc-main { flex: 1; min-width: 0; }
-  .mission-card .mc-title { font-size: 16px; color: #dfe9ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mission-card .mc-sub { font-size: 12px; color: #9fb3d6; }
-  .mission-card .mc-badge { flex: none; font-size: 11px; letter-spacing: .5px; padding: 2px 8px; border-radius: 10px; }
+  .mission-card .mc-main { grid-column: 1; grid-row: 1; min-width: 0; }
+  /* the title WRAPS in the narrow column (no ellipsis) — side-mission titles are two words too long */
+  .mission-card .mc-title { font-size: 15px; line-height: 1.25; color: #dfe9ff; overflow-wrap: anywhere; }
+  .mission-card .mc-sub { font-size: 12px; color: #9fb3d6; margin-top: 2px; }
+  .mission-card .mc-badge {
+    grid-column: 2; grid-row: 1; align-self: start; flex: none;
+    font-size: 11px; letter-spacing: .5px; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+  }
   .mission-card .mc-badge.active { background: #ffcf5a; color: #1a1a1a; }
   .mission-card .mc-badge.taken { background: rgba(120,160,255,.28); color: #cfe0ff; }
-  .mission-card .mc-actions { flex: none; display: flex; gap: 6px; }
+  .mission-card .mc-actions {
+    grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px;
+  }
+  .mission-card .mc-actions:empty { display: none; }  /* active campaign card has no buttons → no empty row */
   .mission-card .mc-actions button {
     pointer-events: auto; cursor: pointer; font: inherit; font-size: 12px; color: #cfe0ff;
     background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.3); border-radius: 6px; padding: 4px 10px;
@@ -203,14 +221,11 @@
   .skill-card .ch-plus:hover { background: #5c8bff; }
   .skill-card .ch-plus:disabled { background: rgba(255,255,255,.06); border-color: rgba(160,190,255,.2); color: #6a7d9c; cursor: default; }
   /* Loadout screen (Slice C): centered ship + slot chips around it (center work zone) + a right context
-     panel that lives in the SAME right column as the missions ship preview (same width ratio, no box). The
-     grid keeps its normal three tracks; only the right column's contents swap (ship preview → panel). */
-  #mainwin.bay-open #mw-ship { display: none; }        /* Loadout centers the ship → hide the right-column preview */
+     panel in the SAME right column the Missions view uses for the mission list (no box). Loadout widens
+     that column from 25% to 30% for the shop's 3D-model card; the column's contents swap per view
+     (mission list → ship-stats strip + panel). */
   #loadout-panel { display: none; }                    /* shown only while Loadout is open */
   #mainwin.bay-open #loadout-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  /* Loadout widens the right column a touch (vs the missions 25%) so the shop's 3D-model card reads well. */
-  #mainwin.bay-open { grid-template-columns: minmax(160px, 18%) 1fr 30%; }
-  body:not(.dev-phone) #mainwin.bay-open { grid-template-columns: minmax(240px, 18%) 1fr 30%; }
   #loadout-center { position: relative; flex: 1; min-width: 0; min-height: 0; }
   #loadout-ship { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #loadout-slots { position: absolute; inset: 0; pointer-events: none; }
@@ -270,7 +285,8 @@
      panel) so it fits a phone — the 3D model viewers (#loadout-ship, .lp-model) are deliberately left full
      size. See docs/plans/2026-08-08-base-menu-redesign.md. */
   body.dev-phone #mw-menu .mw-item { font-size: 12px; padding: 6px 10px; }
-  body.dev-phone .mission-card { padding: 5px 8px; gap: 6px; }
+  /* row/column gaps match the desktop card grid (title+badge / sub / actions), just tighter */
+  body.dev-phone .mission-card { padding: 5px 8px; gap: 2px 6px; }
   body.dev-phone .mission-card .mc-title { font-size: 12px; }
   body.dev-phone .mission-card .mc-sub { font-size: 10px; }
   body.dev-phone .mission-card .mc-badge { font-size: 9px; padding: 1px 6px; }
@@ -316,16 +332,15 @@
   #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; }
   #mw-view-bay { overflow-y: auto; }
   #mw-bay-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
-  /* ship-model preview (right ~25%) */
-  #mw-ship-col { display: flex; flex-direction: column; min-width: 0; }   /* stats strip on top, model fills the rest */
-  #mw-ship { flex: 1 1 auto; width: 100%; min-height: 0; display: block; }
+  /* right column — hidden unless the open view has content for it (Missions list / Loadout panel) */
+  #mw-ship-col { display: none; flex-direction: column; min-width: 0; }
+  #mainwin.missions-open #mw-ship-col, #mainwin.bay-open #mw-ship-col { display: flex; }
   /* Staged briefing reveal (L2/L3 campaign briefing, docs/plans/2026-07-05-1641-briefing-staged-reveal.md):
-     the ship window + Take-off are hidden while the briefing text types out, then fade in (ship window at
-     typing-complete, Take-off +0.5s). visibility (not display) keeps their layout box so neither the grid
-     nor the mission view reflows when they appear. */
-  #mw-ship-col, #mw-go { transition: opacity .25s ease; }
-  #mainwin.briefing-hide-ship #mw-ship-col { opacity: 0; visibility: hidden; }
-  #mainwin.briefing-hide-go   #mw-go        { opacity: 0; visibility: hidden; }
+     Take-off is hidden while the briefing text types out, then fades in 0.5s after typing completes (the
+     mission list stays visible throughout). visibility (not display) keeps its layout box so the mission
+     view doesn't reflow when it appears. */
+  #mw-go { transition: opacity .25s ease; }
+  #mainwin.briefing-hide-go #mw-go { opacity: 0; visibility: hidden; }
   #takeoff, #mw-go {
     pointer-events: auto; cursor: pointer;
     padding: 14px 44px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
@@ -400,9 +415,11 @@
   #mw-view-bay .bay-credits { text-align: center; font-size: 20px; margin-bottom: 14px; }
   #mw-view-bay .bay-credits b { color: #ffd86b; }
   /* live ship-stats bar with deltas vs the previous config */
-  /* Ship characteristics — a compact one-line strip ABOVE the model (no boxes), half the previous fonts,
-     so HP / Accel / Turn / Weight fit on a single row under the "Ships" label. */
-  #ship-stats { display: flex; flex-wrap: nowrap; gap: 8px; justify-content: center; margin: 0 0 6px; }
+  /* Ship characteristics — a compact one-line strip at the TOP of the right column (no boxes), half the
+     previous fonts, so HP / Accel / Turn / Weight fit on a single row under the "Ships" label. Loadout
+     only: every other view either hides the column or fills it with the mission list. */
+  #ship-stats { display: none; flex-wrap: nowrap; gap: 8px; justify-content: center; margin: 0 0 6px; }
+  #mainwin.bay-open #ship-stats { display: flex; }   /* ship characteristics live in Loadout only */
   #ship-stats .stat { display: flex; align-items: baseline; gap: 2px; background: none; border: 0; padding: 0; min-width: 0; }
   #ship-stats .stat .k { font-size: 8px; letter-spacing: .5px; text-transform: uppercase; opacity: .6; }
   #ship-stats .stat .v { font-size: 10px; font-weight: 700; }
@@ -509,7 +526,7 @@
   /* Per-screen sizing: Loadout/Stash/Shop item text (incl. the hover characteristics) 2×; buttons 1.5×
      (Loadout) / 2× (Stash + Shop); the Shop type column 2×. The whole bay is then scaled DOWN ~1.5× by
      `#mw-view-bay { zoom }` (so these are the pre-zoom sizes). The ship-characteristics strip is separate
-     now — it lives above the model (#mw-ship-col), styled on #ship-stats above. */
+     now — it lives at the top of the right column, Loadout only, styled on #ship-stats above. */
   #view-loadout .name-text, #view-stash .name-text, #view-shop .name-text { font-size: 28px; }
   #view-loadout .slot-tag { font-size: 20px; }
   #view-stash .price, #view-shop .price { font-size: 26px; }

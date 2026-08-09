@@ -46,7 +46,8 @@
   </div>
 </div>
 <!-- Main Window (was the "Hangar"): top bar lives in fixed elements (gear/account-bar/wordmark/#mw-ships);
-     this grid is left menu | work zone | ship-model preview. See docs/plans/main-window-redesign.md. -->
+     this grid is left menu | work zone | per-view right column (mission list / Loadout panel).
+     See docs/plans/main-window-redesign.md. -->
 <div id="mainwin">
   <!-- Base hub menu (docs/plans/2026-08-08-base-menu-redesign.md): five sections, all always shown.
        Character / Map / Craft are stubs for now; Loadout absorbs the former Stash/Shop items as in-bay
@@ -62,9 +63,6 @@
   <section id="mw-work">
     <!-- mission view: the selected mission's description + take-off (only the description scrolls) -->
     <div class="mw-view active" id="mw-view-mission">
-      <!-- mission board (Slice B): campaign + side-mission cards with take/defer/set-active; clicking a
-           card shows its briefing below. Take-off flies the ACTIVE mission. -->
-      <div id="mw-mission-board"></div>
       <h2 id="mw-mission-title"></h2>
       <!-- mission text with the granted-item showcase floated into its bottom-right corner (text wraps it);
            strut + canvas are floats, so they precede the text span in source for the wrap to work -->
@@ -102,11 +100,15 @@
       <p id="mw-stub-text"></p>
     </div>
   </section>
+  <!-- Right column. Its contents are per-view and mutually exclusive (CSS-gated):
+       · Missions (#mainwin.missions-open) → the mission list (campaign + side-mission cards).
+       · Loadout  (#mainwin.bay-open)      → the ship-characteristics strip + the slot/shop context panel.
+       · Character / Map / Craft           → nothing: the column is hidden and the grid drops to 2 columns.
+       (The id is historical — this column used to hold the 3D ship preview, now removed everywhere but
+       Loadout, where the ship is centered in the work zone instead.) -->
   <aside id="mw-ship-col">
+    <div id="mw-mission-board"></div>
     <div id="ship-stats"></div>
-    <canvas id="mw-ship"></canvas>
-    <!-- Loadout context panel — lives in the right column (same width ratio as the missions ship preview);
-         shown only while Loadout is open (#mainwin.bay-open), when the ship preview above is hidden. -->
     <div id="loadout-panel"></div>
   </aside>
 </div>

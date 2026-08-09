@@ -5,6 +5,16 @@
 
 ## 2026-08-09
 
+- **Missions: the mission list moved to the right column; the ship preview is gone.** The Main Window's
+  25% right column no longer shows a spinning ship + characteristics strip — on **Missions** it holds the
+  **mission list** (campaign + side-mission cards, restacked: title + badge, reward/XP, Take/Defer/Set
+  active), and the center work zone holds **only** the briefing body (title, text + granted-item showcase,
+  reward, Take off). **Character / Map / Craft** now collapse to a two-column grid; **Loadout** is
+  unchanged (centered ship + 30% context panel) and is the only screen showing `#ship-stats`. The
+  `mwPreview` viewer, the `#mw-ship` canvas, the `previewTarget` debug hook and the staged reveal's
+  `.briefing-hide-ship` beat are deleted — the mission list now stays visible while a briefing types out.
+  DECISIONS §97. docs/plans/2026-08-09-1534-missions-list-right-column.md
+
 - **[infra] Speed-field `asteroids` compatibility shim retired; itch republished and `/v2` brought back in
   sync.** Both of the shim's removal conditions were met, so the dead `asteroids: {…}` block is **gone from
   the map descriptor**. (1) The itch build was re-published via butler — build **#1868869, v52**, an

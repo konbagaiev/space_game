@@ -1,13 +1,14 @@
 // Main Window (the between-battles / landing screen; was the "Hangar"): fixed landscape layout — a left
-// menu (Character / Missions / Loadout / Map / Craft) + a center work zone + a 25% ship-model preview.
-// Missions is a central board (this file); Loadout is the ship+slots screen (shop.js); the spinning-model
-// viewers live in model-viewer.js (right-column preview #mw-ship, work-zone item showcase #mw-item, and the
-// Loadout centered ship). Used on page load (current level) and after a victory. See the redesign plans.
+// menu (Character / Missions / Loadout / Map / Craft) + a center work zone + a PER-VIEW right column
+// (the mission list on Missions, the Loadout context panel on Loadout, absent elsewhere). Missions is a
+// right-column list of cards + the briefing body in the work zone (this file); Loadout is the ship+slots
+// screen (shop.js); the spinning-model viewers live in model-viewer.js (work-zone item showcase #mw-item
+// and the Loadout ship/item viewers). Used on page load (current level) and after a victory.
 //
 // Part of the between-battles UI cycle: it calls into account (renderAccountBar/openAccount/
 // shouldPromptAccount), welcome (requestFullscreen), shop and sim; account calls showMain back. ESM
 // resolves the cycle at runtime (edges fire on user actions, not at module init). `missionOffers`/
-// `mainBriefing`/`mwPreview`/`mwItem` are `export let` so the ?debug __game hook can read them live.
+// `mainBriefing`/`mwItem` are `export let` so the ?debug __game hook can read them live.
 import { G, CATALOG } from './state.js';
 import { el } from './dom.js';
 import { t } from './i18n.js';
@@ -16,10 +17,9 @@ import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
 import { SKILL_RATES } from './components.js'; // per-point skill rates → Character-card effect text (single source)
 import { reset, levelRunner, refreshMusic } from './sim.js';
-import { shipModelCfg } from './ship-factory.js';
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
-import { openBay, showBayView, updateTakeoffGate, renderShipStatsBar, deriveShipStats, resetShipStatsDelta, stopLoadoutPreview } from './shop.js';
+import { openBay, showBayView, updateTakeoffGate, resetShipStatsDelta, stopLoadoutPreview } from './shop.js';
 import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } from './account.js';
 import { updateMenuCredits } from './hud.js';
 import { requestFullscreen, showWelcome } from './welcome.js';
@@ -58,14 +58,8 @@ export function showMain(briefing) {
   selectMenu('missions');              // open the mission view (renders the campaign briefing)
   openBay();                           // load shop state + gate the Loadout/Stash/Shop menu items
   refreshMissions();                   // (re)load the side missions, then rebuild the list
-  // ship-characteristics strip above the model — always, not only when the shop is open (the shop
-  // re-renders it with ▲/▼ deltas on each change via renderBay).
-  if (G.activeShip && G.activeShip.components) {
-    resetShipStatsDelta();
-    renderShipStatsBar(deriveShipStats(G.activeShip.components, G.activeShip.loadout && G.activeShip.loadout.mounts));
-  }
-  startShipPreview();                       // spin up the right-column ship model (hidden by CSS while staging)
-  if (!stagedActive) applyPreviewTarget();  // when staging, the reveal defers the preview/showcase itself
+  if (G.activeShip && G.activeShip.components) resetShipStatsDelta(); // Loadout's ▲/▼ baseline starts clean each landing
+  if (!stagedActive) applyShowcaseTarget();  // when staging, the reveal defers the granted-item showcase itself
 }
 function launchCampaign() {
   clientLog('takeoff:campaign', { level: CATALOG.level && CATALOG.level.title, name: CATALOG.levelName }); // TEMP debug: what level reset() will play
@@ -73,7 +67,6 @@ function launchCampaign() {
   G.activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
   if (Device.hasTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
   mainEl.classList.remove('on');
-  stopShipPreview();
   stopLoadoutPreview();
   settleBriefingReveal();                    // stop a stray timer/rAF from toggling classes after close
   stopViewer(mwItem);                        // stop the work-zone item showcase too
@@ -119,13 +112,12 @@ function selectMenu(which) {
   document.getElementById('mw-view-bay').classList.toggle('active', isBay);
   document.getElementById('mw-view-character').classList.toggle('active', isCharacter);
   document.getElementById('mw-view-stub').classList.toggle('active', isStub);
-  mainEl.classList.toggle('bay-open', isBay); // Loadout centers the ship → hide the right-column preview
-  // Exactly ONE ship viewer runs per view: Loadout uses the centered-ship (+ item-model) viewers and hides
-  // the right-column preview; every other view uses the right-column preview. Stopping the OFF-view viewers
-  // is what keeps the spin smooth — otherwise the Loadout viewers keep looping in the background on the
-  // Missions view (2-3 concurrent WebGL loops competing → the preview stutters).
-  if (isBay) { stopShipPreview(); }
-  else { startShipPreview(); stopLoadoutPreview(); }
+  mainEl.classList.toggle('bay-open', isBay); // Loadout centers the ship + swaps the right column to its panel
+  mainEl.classList.toggle('missions-open', isMissions); // Missions shows the mission list in the right column
+  // Exactly ONE ship viewer runs per view (DECISIONS §92): Loadout owns the centered-ship + item-model
+  // viewers; every other view runs none (the right-column ship preview was removed). Stopping the
+  // off-view viewers is what keeps the spin smooth.
+  if (!isBay) stopLoadoutPreview();
   if (isMissions) { renderMissionsBoard(); renderMissionView(mwMission); }
   else if (isBay) { settleBriefingReveal(); showBayView('loadout'); stopViewer(mwItem); } // bay hides the mission canvas → idle the loop
   else if (isCharacter) { settleBriefingReveal(); renderCharacter(); stopViewer(mwItem); }
@@ -276,14 +268,14 @@ function clearStagedReveal() {
 // New landing (showMain): allow the staged reveal to play once.
 function resetBriefingReveal() {
   clearStagedReveal();
-  mainEl.classList.remove('briefing-hide-ship', 'briefing-hide-go');
+  mainEl.classList.remove('briefing-hide-go');
   stagedActive = false; briefingRevealDone = false;
 }
 // Leaving the mission view / launching: stop any animation, drop the hide classes, and mark the briefing
 // revealed so returning to the mission view shows the full state (no replay).
 function settleBriefingReveal() {
   clearStagedReveal();
-  mainEl.classList.remove('briefing-hide-ship', 'briefing-hide-go');
+  mainEl.classList.remove('briefing-hide-go');
   stagedActive = false; briefingRevealDone = true;
 }
 // The current campaign level number (1..N) from the descriptor title ("Level 1".."Level 4" — a stable,
@@ -301,22 +293,21 @@ function stagedBriefingActive() {
 function revealBriefingNow() {
   clearStagedReveal();
   document.getElementById('mw-mission-text').textContent = stagedFullText;
-  mainEl.classList.remove('briefing-hide-ship', 'briefing-hide-go');
-  applyPreviewTarget();          // ship preview + the granted-item showcase (if any)
+  mainEl.classList.remove('briefing-hide-go');
+  applyShowcaseTarget();         // the granted-item showcase (if any)
   stagedActive = false; briefingRevealDone = true;
 }
-// Staged sequence: typewriter (~5s) → ship window + showcase in → +0.5s Take-off in.
+// Staged sequence: typewriter (~5s) → granted-item showcase in → +0.5s Take-off in (the mission list
+// stays visible throughout).
 function startStagedReveal() {
   clearStagedReveal();
   stagedActive = true; briefingRevealDone = false;
   const textEl = document.getElementById('mw-mission-text');
-  mainEl.classList.add('briefing-hide-ship', 'briefing-hide-go'); // hide ship window + Take-off while typing
+  mainEl.classList.add('briefing-hide-go'); // hide Take-off while typing (the mission list stays visible)
   showShowcaseItem(null);        // hold the work-zone granted-item showcase during typing
-  previewShip();                 // preload the ship model behind the hidden panel (no hitch at reveal)
   stagedCtl = typeText(textEl, stagedFullText, { total: 5000, onDone: () => {
-    mainEl.classList.remove('briefing-hide-ship');  // ship window fades in…
-    applyPreviewTarget();                            // …together with the granted-item showcase (L2/L3)
-    stagedGoTimer = setTimeout(() => {               // Take-off 0.5s later
+    applyShowcaseTarget();                           // the granted item (L2/L3) fades into the work zone…
+    stagedGoTimer = setTimeout(() => {               // …Take-off 0.5s later
       stagedGoTimer = 0;
       mainEl.classList.remove('briefing-hide-go');
       stagedActive = false; briefingRevealDone = true;
@@ -336,8 +327,7 @@ function renderMissionView(m) {
     rewEl.textContent = t('ui.mission.est_reward', { credits: m.estReward })
       + (m.estXp != null ? ' · ' + t('ui.mission.est_xp', { xp: m.estXp }) : '');
     rewEl.style.display = '';
-    previewShip();            // a side mission grants nothing → show the ship, not a campaign showcase item
-    showShowcaseItem(null);   // …and hide the work-zone item showcase
+    showShowcaseItem(null);   // a side mission grants nothing → hide the work-zone item showcase
   } else {
     titleEl.textContent = t('ui.mainwin.primary');
     stagedFullText = mainBriefing
@@ -346,12 +336,12 @@ function renderMissionView(m) {
     rewEl.textContent = '';
     rewEl.style.display = 'none';
     if (stagedActive) {
-      /* a reveal is already animating this landing — leave it in control of text/preview/showcase */
+      /* a reveal is already animating this landing — leave it in control of the text/showcase */
     } else if (stagedBriefingActive() && !briefingRevealDone) {
       startStagedReveal();
     } else {
       textEl.textContent = stagedFullText;
-      applyPreviewTarget();     // primary row → the campaign briefing's showcase item (if any), else the ship
+      applyShowcaseTarget();    // primary row → the campaign briefing's showcase item (if any)
     }
   }
   updateTakeoffGate(G.activeShip);
@@ -394,7 +384,6 @@ export function launchMission(m) {
   G.pendingBriefing = null;
   if (Device.hasTouch) requestFullscreen();
   mainEl.classList.remove('on');
-  stopShipPreview();
   stopLoadoutPreview();
   settleBriefingReveal();              // stop a stray timer/rAF from toggling classes after close
   stopViewer(mwItem);                  // stop the work-zone item showcase too
@@ -404,37 +393,6 @@ export function launchMission(m) {
   reset();
 }
 
-// ---------- Main Window ship-model preview (right column) ----------
-// A small, self-contained Three.js view (its own scene/camera/renderer on #mw-ship) that shows the
-// player's active ship — the high-poly `_hangar` glb (model_url_high), falling back to the combat model.
-// Its render loop only runs while the Main Window is visible (started/stopped by showMain/launch*), so it
-// costs nothing during a fight. See docs/plans/main-window-redesign.md (§ ship preview) + DECISIONS.
-// The spinning-model viewer machinery lives in ./model-viewer.js (shared with the Loadout screen).
-
-export let mwPreview = null; // right-column ship viewer — built lazily on the first showMain
-function startShipPreview() {
-  const canvas = document.getElementById('mw-ship');
-  if (!canvas) return;
-  if (!mwPreview) mwPreview = buildModelViewer(canvas);
-  loadPreviewModel();
-  resizeViewer(mwPreview);
-  startViewer(mwPreview);
-}
-function stopShipPreview() { stopViewer(mwPreview); }
-// The right-column ship preview is the default consumer of the viewer setter.
-function setPreviewModel(url, cfg = {}) { setViewerModel(mwPreview, url, cfg); }
-// Default the preview to the player's active ship (the briefing showcase swaps in an item via setPreviewModel).
-function loadPreviewModel() {
-  if (!mwPreview || !G.activeShip || !G.activeShip.ship) return;
-  const ship = G.activeShip.ship;
-  setPreviewModel(ship.modelUrlHigh || ship.modelUrl, shipModelCfg(ship.stats));
-}
-// Point the preview at the right thing: the item a showcase briefing grants (Machine Gun on L2, Repair
-// drone on L3 — server attaches `showcase {kind,id}` to the briefing), else the active ship. The catalog
-// already carries the item model URLs (foundation brief). Falls back to the ship if the item has no model.
-function previewShip() {
-  if (G.activeShip && G.activeShip.ship) setPreviewModel(G.activeShip.ship.modelUrlHigh || G.activeShip.ship.modelUrl, shipModelCfg(G.activeShip.ship.stats));
-}
 // The showcased item for a briefing. The server attaches `showcase {kind,id}` on the /advance path (where
 // it strips `actions`); on a fresh page-load landing the client gets the raw descriptor briefing instead
 // (has `actions`, no `showcase`), so derive it from the actions as a fallback — both paths then work.
@@ -447,15 +405,14 @@ function briefingShowcase(b) {
   }
   return null;
 }
-function applyPreviewTarget() {
-  previewShip();                                    // the right-column preview ALWAYS shows the active ship
-  showShowcaseItem(briefingShowcase(mainBriefing)); // the granted item (if any) shows in the work zone instead
-}
+// Point the work-zone showcase at the item this briefing grants (Machine Gun on L2, Repair drone on L3 —
+// the server attaches `showcase {kind,id}`), or hide it when the briefing grants nothing.
+function applyShowcaseTarget() { showShowcaseItem(briefingShowcase(mainBriefing)); }
 
 // ---------- Work-zone briefing item showcase (#mw-item) ----------
-// A second viewer floated into the BOTTOM-RIGHT corner of the mission text (the text wraps around it),
-// showing the 3D model of the gear a campaign briefing grants — Machine Gun on L2, Repair drone on L3 — at
-// full size, WITHOUT replacing the ship in the right-column preview. Hidden when the briefing grants nothing.
+// A viewer floated into the BOTTOM-RIGHT corner of the mission text (the text wraps around it), showing the
+// 3D model of the gear a campaign briefing grants — Machine Gun on L2, Repair drone on L3 — at full size.
+// Hidden when the briefing grants nothing.
 const ITEM_SHOWCASE_SCALE = 1; // full size — the model fills the bottom-right showcase canvas
 export let mwItem = null; // work-zone item viewer — built lazily the first time a showcase item is shown
 // Show the granted item in the work-zone viewer, or hide it when there's none (side mission / L1 / L4).
@@ -476,7 +433,7 @@ function showShowcaseItem(sc) {
     stopViewer(mwItem);
   }
 }
-// Keep both preview canvases crisp as the layout reflows (the grid columns resize with window/rotation).
-function resizeViewers() { resizeViewer(mwPreview); resizeViewer(mwItem); }
+// Keep the showcase canvas crisp as the layout reflows (the grid columns resize with window/rotation).
+function resizeViewers() { resizeViewer(mwItem); }
 window.addEventListener('resize', resizeViewers);
 window.addEventListener('orientationchange', resizeViewers);
