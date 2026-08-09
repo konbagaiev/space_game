@@ -8,7 +8,7 @@ export default async function ({ page, assert, shot }) {
   const pid = await page.evaluate(() => localStorage.getItem('playerId'));
   assert.ok(pid, 'a player id is present');
 
-  // clear the campaign (unlocks the side-mission board — progress >= 5), then land on the Main Window
+  // clear the campaign (4 advances → `level-5`, which unlocks the side-mission board), then land on the Main Window
   await page.evaluate(async (pid) => {
     for (let i = 0; i < 4; i++) await fetch(`/api/players/${pid}/advance`, { method: 'POST' });
   }, pid);

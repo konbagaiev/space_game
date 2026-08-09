@@ -3238,6 +3238,10 @@ boolean throws on Postgres — the bug the reset test guards).
 (the shop is no longer new there). English is the source of truth (`source.json` + the `catalog_seed.js`
 `text` fallback); the Russian layer (`ru.json`) mirrors both.
 
+**Amendment (§95).** The backfill's threshold form was corrected to name-based
+(`SHOP_MIN_LEVEL = 'level-3'`) — the `current_progress >= 3` written above is the original, buggy form on a
+drifted DB. Semantics unchanged.
+
 ## 91. Side missions unlock after "Level 3" — decoupled from the shop
 
 **Decision.** Split the side-mission board off the shop's unlock. The shop still opens right after the
@@ -3266,6 +3270,10 @@ one-shot briefing action; a progress threshold has no such need.
 (`source.json` + the `catalog_seed.js` `text` fallback); the Russian layer (`ru.json`) mirrors both. No
 `unlockShop`-style action is added for side missions — the announcement briefing is text-only; the gate is
 the progress threshold.
+
+**Amendment (§95).** The threshold form was corrected to name-based
+(`SIDE_MISSIONS_MIN_LEVEL = 'level-5'` via `reachedLevel()`); `SIDE_MISSIONS_MIN_PROGRESS = 5` above is the
+original, buggy form on a drifted DB. Semantics unchanged.
 
 ## 92. At most ONE Main Window 3D viewer render-loop runs at a time
 
@@ -3343,6 +3351,42 @@ speed-field work) also makes fast manual travel *feel* good, which further reduc
 assist — then reconsider an opt-in autopilot for transits. Explicitly a "decide on feel" item; not settled
 by theory. Combat is always local to the player this iteration (activity points are anchored to the player
 until multiplayer), so this only affects the out-of-combat traversal layer.
+
+## 95. Progress thresholds are level NAMES, never raw serial ids
+
+**Decision.** Any "has the player reached story point X" gate compares `players.current_progress` against
+`(SELECT id FROM levels WHERE name = '<seed name>')` via the single helper `reachedLevel()` in
+`server/src/db.js`, never against a hardcoded number.
+
+**Why.** `levels.id` is a `BIGSERIAL` and the idempotent startup seed's `INSERT ... ON CONFLICT (name) DO
+UPDATE` still evaluates `nextval()` before it detects the conflict, so **every deploy burns five sequence
+values** and level rows added at different times drift arbitrarily far apart (production: 1, 6, 7, 71, 564
+for `level-1`..`level-5`). A numeric threshold is therefore only correct on a freshly-seeded DB — and it
+fails **open**, silently unlocking content early: the "Level 1" briefing sits at id 6 on prod, which
+satisfied both the board's `>= 5` and the shop's `>= 3`, so 32 players who had not yet flown the first
+playable level were handed the repeatable side-job board and the hangar shop. That is the worst failure
+direction, and it was invisible in tests because `pretest` recreates the DB and always yields contiguous
+ids 1..5. Name-based comparison fails **closed** instead (a missing row → locked).
+
+**Rejected alternatives.** *Ordinal rank* (`COUNT(*) FROM levels WHERE id <= progress >= 5`) — correct
+today, but perturbed by any extra `levels` row: it would silently re-anchor the gate a level earlier the
+day a level is inserted mid-campaign. *Renumbering the ids / stopping the sequence burn* — pure churn:
+nothing depends on contiguous ids (`advanceProgress` walks `MIN(id) > current`), the FK on
+`current_progress` has no `ON UPDATE CASCADE`, and it would not fix the already-drifted production DB
+(§30). `name` is already the seed's stable identity key (`ON CONFLICT (name)`).
+
+**Consequences.** §90's shop threshold is `SHOP_MIN_LEVEL = 'level-3'` and §91's board threshold is
+`SIDE_MISSIONS_MIN_LEVEL = 'level-5'` (semantics unchanged: shop after the first playable level, board
+after "Level 3"). The boot shop backfill uses the same lookup and re-runs on every boot, so the fix reaches
+everyone on the next deploy — and the early-granted `shop_unlocked` flags are **not** revoked (no
+down-migration; those players keep the shop). The board simply re-locks for players below `level-5`, which
+is inert: a stale `players.active_mission_id` is never read while the board is locked, and Take-off falls
+back to the campaign. `resetPlayer`'s `current_progress = 1` and the column's `DEFAULT 1` stay raw ids
+deliberately — `level-1` is id 1 on every live DB and the FK would fail loudly, not silently (§30) — with
+comments recording that. Covered by `server/src/levels_drift.test.js`, which runs on **its own database**
+(`spacegame_test_drift`) because the FK on `current_progress` makes re-numbering impossible once players
+exist and mutating the shared `spacegame_test` would race the parallel test files. Cross-ref §90, §91,
+§30, §67.
 
 ## Future ideas
 

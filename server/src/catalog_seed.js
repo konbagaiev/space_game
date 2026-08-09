@@ -595,7 +595,7 @@ export const LEVELS = [
       briefing: {
         textKey: 'level.4.briefing',
         text: "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. And you've been out here long enough now, Sentinel — command's opening the side-job board to you: take a few between missions to bank extra credits. Good hunting.",
-        actions: [], // text-only: the shop opened back on reaching "Level 2"; the side-mission board unlocks HERE by progress gate (current_progress >= 5, DECISIONS §91), no action needed
+        actions: [], // text-only: the shop opened back on reaching "Level 2"; the side-mission board unlocks HERE by the name-based progress gate (`level-5`, DECISIONS §91/§95), no action needed
       },
       phases: [
         {

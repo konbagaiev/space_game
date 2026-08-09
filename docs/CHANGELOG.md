@@ -5,6 +5,18 @@
 
 ## 2026-08-09
 
+- **[fix] The side-mission board unlocked far too early (and the shop a level early).** Progress gates
+  compared `players.current_progress` against hardcoded level ids (`>= 5` / `>= 3`), but `levels.id` is a
+  BIGSERIAL whose sequence is burned by the startup upsert's `ON CONFLICT` path, so production ids had
+  drifted to 1, 6, 7, 71, 564 — a player still on the "Level 1" briefing (id 6) was handed **both** the
+  side-mission board and the hangar shop. Both gates now resolve the threshold by level **name**
+  (`reachedLevel(progress, 'level-5')` / `'level-3'`, via the new `SIDE_MISSIONS_MIN_LEVEL`/`SHOP_MIN_LEVEL`
+  constants in `db.js`), fail-closed if the row is missing. Ops detail: the shop backfill is **not**
+  ledger-guarded — it re-runs on every boot, so it had been re-granting the shop early on each deploy and
+  the fix likewise applies to everyone on the next deploy. Players who already got the shop early **keep
+  it** (no revocation); the side-mission board re-locks for players below `level-5`, which is inert — a
+  stale `active_mission_id` is never read while the board is locked. New `server/src/levels_drift.test.js`
+  reproduces the production id drift on its own throwaway database (`spacegame_test_drift`). DECISIONS §95.
 - **[decision] Inter-point travel will be a "cruise assist", not a binary autopilot (planned).** Recorded
   DECISIONS §94: as the world grows into a star system, out-of-combat travel between activity points gets a
   temporary speed-cap lift + softened inertia that auto-disables on entering combat (full §2 inertia

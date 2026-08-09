@@ -815,24 +815,26 @@ test('shop: locked for a new player (before the first flight); mutations 403', a
   assert.equal((await post('/api/players/shop-lock/equip', { kind: 'weapon', refId: 1 })).status, 403);
 });
 
-test('shop: unlocks on reaching "Level 2" (id 3) — right after the first flight, not the final level', async () => {
+test('shop: unlocks on reaching the level-3 row (player-facing "Level 2") — right after the first flight, not the final level', async () => {
   await getJson('/api/players/shop-early/active-ship');                 // register (progress 1)
   await post('/api/players/shop-early/advance', {});                    // → level-2 ("first flight")
   assert.equal((await getJson('/api/players/shop-early/stash')).shopUnlocked, false, 'still locked during the first flight');
-  await post('/api/players/shop-early/advance', {});                    // → level-3 (id 3): unlockShop runs
+  await post('/api/players/shop-early/advance', {});                    // → level-3: unlockShop runs
   const s = await getJson('/api/players/shop-early/stash');
   assert.equal(s.shopUnlocked, true, 'shop opens right after clearing the first flight');
   assert.ok(s.stash.some((it) => it.kind === 'weapon' && it.refId === 1), 'basic gun seeded into the stash');
 });
 
-test('migration: backfills shop_unlocked + basic gun for players past the first flight (progress >= 3)', async () => {
+// This DB has contiguous level ids 1..5 (pretest recreates it) — the drifted-id coverage that would have
+// caught the production bug lives in levels_drift.test.js, on its own database.
+test('migration: backfills shop_unlocked + basic gun for players past the first playable level (level-3)', async () => {
   const { pool } = await import('./db.js');
   const { migrate } = await import('./datastore.js');
   await post('/api/players/register', { playerId: 'bf-past' });
   await post('/api/players/register', { playerId: 'bf-early' });
   // simulate the pre-change state: advanced past the first flight but shop still locked (old behavior)
-  await pool.query("UPDATE players SET current_progress = 3, shop_unlocked = 0 WHERE id = 'bf-past'");
-  await pool.query("UPDATE players SET current_progress = 2, shop_unlocked = 0 WHERE id = 'bf-early'");
+  await pool.query("UPDATE players SET current_progress = (SELECT id FROM levels WHERE name = 'level-3'), shop_unlocked = 0 WHERE id = 'bf-past'");
+  await pool.query("UPDATE players SET current_progress = (SELECT id FROM levels WHERE name = 'level-2'), shop_unlocked = 0 WHERE id = 'bf-early'");
   await pool.query("DELETE FROM stash WHERE player_id = 'bf-past' AND kind = 'weapon' AND ref_id = 1");
   await migrate();                                                      // idempotent re-run exercises the backfill
   const past = await pool.query('SELECT shop_unlocked FROM players WHERE id = $1', ['bf-past']);
@@ -865,14 +867,15 @@ test('missions: locked before the first flight, then 3 same-difficulty side miss
   }
 });
 
-test('missions: unlock LATER than the shop — 403 at "Level 2" (shop already open), open after "Level 3" (DECISIONS §91)', async () => {
+// Contiguous-id DB (see the backfill test above); levels_drift.test.js covers the drifted-id case.
+test('missions: unlock LATER than the shop — locked at "Level 2", open on reaching level-5 (DECISIONS §91)', async () => {
   await getJson('/api/players/miss-gate/active-ship');                          // register (progress 1)
-  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-3 (id 3, "Level 2"): shop opens
+  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-3 ("Level 2"): shop opens
   const s = await getJson('/api/players/miss-gate/stash');
   assert.equal(s.shopUnlocked, true, 'shop is open right after the first flight');
   assert.equal(s.sideMissionsUnlocked, false, 'but the side-mission board is still locked at "Level 2"');
   assert.equal((await fetch(base + '/api/players/miss-gate/missions')).status, 403, 'side-mission board 403 while only the shop is open');
-  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-5 (id 5, "Level 4"): side missions open
+  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-5 ("Level 4"): side missions open
   const s2 = await getJson('/api/players/miss-gate/stash');
   assert.equal(s2.sideMissionsUnlocked, true, 'side missions open on reaching "Level 4" (after clearing "Level 3")');
   assert.equal((await getJson('/api/players/miss-gate/missions')).missions.length, 3, 'the 3-choice board is offered');
