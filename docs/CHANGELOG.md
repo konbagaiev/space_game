@@ -5,6 +5,15 @@
 
 ## 2026-08-09
 
+- **Mission count badge on the base menu.** The **Missions** item now carries the same gold pill the
+  **Character** item uses for free skill points, showing how many side missions are on offer
+  (`#mw-missions-badge` + `updateMissionsBadge` in `mainwindow.js`, fed from `missionOffers` on every board
+  render). It counts **all offers**, so taking one doesn't decrement it, and the always-present campaign card
+  isn't counted; the badge is hidden at zero (before the board unlocks after "Level 3"). The badge CSS was
+  generalized from `#mw-char-badge` to a shared `.mw-badge` class, and the Missions label moved into a child
+  `<span data-i18n>` so the i18n `textContent` write can't wipe the badge. Asserted in the
+  `10-mission-board` visual scenario (badge shows "3", and stays "3" after taking a mission).
+
 - **[2026-08-09-1456-star-system-map] "Return to base" now flies home at full speed, and you can click the
   station while roaming.** The end-of-mission return crawled at the combat cap because the speed cap was
   gated on `roam` — a conservative proxy for the real replay invariant, which is that a replay reproduces the

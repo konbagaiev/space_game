@@ -992,8 +992,9 @@
   /* Character progression HUD (docs/plans/2026-08-09-character-progression.md):
      free-skill-points badge on the Character menu item, the always-on bottom XP bar, and the level-up toast. */
   #mw-menu .mw-item { position: relative; }
-  #mw-char-badge { display: none; }
-  #mw-char-badge.show {
+  /* shared pill for the menu-item counters: free skill points (Character) and offered missions (Missions) */
+  .mw-badge { display: none; }
+  .mw-badge.show {
     display: inline-flex; align-items: center; justify-content: center;
     position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
     min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;

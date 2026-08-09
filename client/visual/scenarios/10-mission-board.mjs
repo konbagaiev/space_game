@@ -30,6 +30,13 @@ export default async function ({ page, assert, shot }) {
   assert.deepEqual(board.offers, ['freighter', 'mining', 'research'], 'three flavored offers');
   assert.equal(board.activeInitial, null, 'the campaign is the active mission by default');
   assert.ok(board.campaignActive, 'the campaign card is flagged active');
+  // the Missions menu item carries a count badge (offers only — the campaign card isn't counted)
+  const badge = await page.evaluate(() => {
+    const b = document.getElementById('mw-missions-badge');
+    return { text: b.textContent, shown: getComputedStyle(b).display !== 'none' };
+  });
+  assert.ok(badge.shown, 'the Missions menu item shows its count badge');
+  assert.equal(badge.text, '3', 'the badge counts the three offers');
   await shot('board');
 
   // the list lives in the RIGHT column now; the work zone holds only the mission body
@@ -89,6 +96,8 @@ export default async function ({ page, assert, shot }) {
   }));
   assert.equal(took.taken, null, 'taking a mission does not change the active one');
   assert.ok(took.badge, 'the taken mission shows a "Taken" badge');
+  assert.equal(await page.evaluate(() => document.getElementById('mw-missions-badge').textContent), '3',
+    'the menu badge counts every offer, so taking one does not change it');
 
   // Set it active → it becomes the mission Take-off flies (one active at a time)
   await page.evaluate(() => document.querySelectorAll('#mw-mission-board .mission-card')[1].querySelector('[data-mact="activate"]').click());

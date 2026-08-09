@@ -56,5 +56,7 @@ export const el = {
   xpFill: byId('xp-bar-fill'),
   xpText: byId('xp-bar-text'),
   charBadge: byId('mw-char-badge'),
+  // count of offered side missions on the Missions menu item (renderMissionsBoard) — same pill as charBadge
+  missionsBadge: byId('mw-missions-badge'),
   levelupToast: byId('levelup-toast'),
 };

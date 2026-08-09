@@ -237,6 +237,7 @@ function missionCard(c) {
 }
 // Render the board: the campaign card, then each side-mission offer (present once the board unlocks).
 function renderMissionsBoard() {
+  updateMissionsBadge();                 // menu badge first — it doesn't depend on the board host existing
   const host = document.getElementById('mw-mission-board');
   if (!host) return;
   const cards = [missionCard({
@@ -248,6 +249,14 @@ function renderMissionsBoard() {
     taken: takenIds.has(m.id), active: activeMissionId === m.id, selected: mwMission === m,
   }));
   host.innerHTML = cards.join('');
+}
+// Count of side missions on offer, on the Missions menu item — the same pill as the free-skill-points badge
+// on Character. Hidden at zero (i.e. before the board unlocks, or if the server offers nothing). The campaign
+// card isn't counted: it's always there, so a "1" that never moves would say nothing.
+function updateMissionsBadge() {
+  const n = missionOffers.length;
+  el.missionsBadge.textContent = n > 0 ? String(n) : '';
+  el.missionsBadge.classList.toggle('show', n > 0);
 }
 // #mw-go LAUNCHES THE FIGHT for the ACTIVE mission — reflect which one that is on the button. (The generic
 // "Take off" is now the separate always-available #mw-takeoff, which flies into the system instead.)

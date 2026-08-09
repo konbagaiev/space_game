@@ -1042,7 +1042,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **mission list in the right column** (`#mw-mission-board`, `renderMissionsBoard`) — the **campaign**
   ("Main operation") card plus, once the side-mission board unlocks (after "Level 3" — DECISIONS §91), the
   **three side-mission** cards — each with **Take / Defer / Set active** buttons + **Active/Taken**
-  badges (the old left mission sublist + caret are gone). Each card is **stacked for the narrow column**:
+  badges (the old left mission sublist + caret are gone). The **Missions menu item carries a count badge**
+  (`#mw-missions-badge`, `updateMissionsBadge` in `mainwindow.js`, refreshed from every `renderMissionsBoard`)
+  — the number of **side missions on offer** (`missionOffers.length`, currently a fixed 3; taking one does
+  **not** decrement it, and the ever-present campaign card isn't counted), hidden at zero (i.e. before the
+  board unlocks). It reuses the **same `.mw-badge` gold pill** as the free-skill-points badge on Character.
+  Each card is **stacked for the narrow column**:
   line 1 = title (wrapping) with the badge right-aligned beside it, line 2 = the reward/XP sub-line,
   line 3 = the action buttons right-aligned (an empty action row collapses). The list is **its own
   scroller** (`overflow-y: auto`, full column height, no header). The **center work zone holds only the
@@ -1157,7 +1162,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   to previews or `?playback` overrides. The "+" cards POST `POST /api/players/:id/skills/spend`. Skills'
   *gameplay effects* are live; the numbers are first-pass and tunable via `SKILL_RATES`. **Always-on HUD**
   (`hud.js updateProgressionHud`, per frame): a gold **free-skill-points badge** on the Character menu item
-  (when > 0), and a bottom-center **XP bar** (yellow, 80% wide, on base + in battle; fills toward the next
+  (when > 0; shared `.mw-badge` pill — the Missions item uses the same one for its offer count, see the
+  mission board below), and a bottom-center **XP bar** (yellow, 80% wide, on base + in battle; fills toward the next
   level and previews the run's unbanked XP live). On banking enough XP to level up, `bankRun` fires a
   centered **"Level up"** toast that fades over 2s (`showLevelUp`). **Aim assist** targets by ship *center*
   in the cone (`findBulletAimTarget`), so it can miss large ships whose hull overlaps but whose center is
