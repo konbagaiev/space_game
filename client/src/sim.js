@@ -865,20 +865,20 @@ export function update(dt) {
   for (const sp of setPieces) sp.update?.(dt);
 }
 
-// Position the camera + sky backdrop (stars, bearing-projected star-system bodies) AND the player-locked
+// Position the camera + sky backdrop (stars, the fixed-position star-system bodies) AND the player-locked
 // speed field on the player. Called at the end of every update(), AND once right after reset() by the
 // replay/cutscene start so a FROZEN pre-fight frame (the Level-0 opening card) is already correctly framed —
 // otherwise the camera/backdrop sit at the pre-reset spot and visibly JUMP when the re-sim's first tick runs.
 //
 // This is the VIEW layer: everything here is render-only and MUST stay out of the deterministic tick. The
-// system-body bearing re-projection and the speed-field wrap both draw no randomness and touch no sim state
+// star-system backdrop placement and the speed-field wrap both draw no randomness and touch no sim state
 // (DECISIONS §73/§96/§98).
 export function settleView(dt = 0) {
   // camera: rigidly attached to the player (no lag/floating), fixed angle (does NOT rotate with the ship's turn)
   camera.position.copy(G.player.mesh.position).add(camOffset);
   camera.lookAt(G.player.mesh.position);
   G.stars.position.copy(camera.position); // stars: an infinitely distant backdrop stuck to the camera (no parallax)
-  updateSystemBodies(dt);                  // star + 4 planets: re-project each by its true bearing from the player
+  updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
   updateSpeedField(G.player.mesh.position.x, G.player.mesh.position.z); // player-locked backdrop (view-only, no RNG)
 }
 

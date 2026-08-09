@@ -5,6 +5,26 @@
 
 ## 2026-08-09
 
+- **[2026-08-09-1456-star-system-map] The star-system backdrop is now REAL fixed bodies (no more jumping
+  planets), and zooming out no longer dims the game.** The bearing-projected backdrop is gone: the star,
+  the 4 planets and the home planet's two (restored) **moons** are now real 3D spheres at **fixed positions**
+  in a sky space compressed by `SYSTEM.parallax`, so you fly *relative* to them with natural perspective and
+  **gentle differential parallax** instead of watching each one re-project from your own bearing. Visible
+  effects: flying past a planet no longer makes it **jump** across the sky (passing a body used to swing its
+  bearing ~180°); a moon can no longer slide **into** its planet (it orbits at a radius unit-asserted clear
+  of the limb); planets are **permanently distant** — the parallax saturates at `parallaxMax`, so you can
+  never close on one — and that now includes the **home planet**, which sits at its chosen 430 u backdrop
+  distance instead of looming whenever you were parked at the base (the old `HOME_NEAR` scale-up is deleted).
+  Picking a planet on the map flies you to a reachable **anchor** (`planetAnchor`, 4200 u along its true
+  bearing), never to the body. The descriptor's `system` block is now **merged into** the client `SYSTEM`
+  constant (`applySystemSpec`), so the renderer, the map screen and the `?roam` tunables can no longer
+  disagree. Separately, a real dimming bug: `THREE.Fog` measures depth **from the camera**, and zoom moves
+  the camera back, so at max zoom-out the **player ship and the station set-pieces faded into the fog**
+  (camera ~396 u vs `fogNear` 240). Fog is now re-anchored to the ship, an exact no-op at zoom 1. Guards:
+  `system-map.test.js` gains bounded/jump-free parallax, moon-clearance and anchor cases; `32-star-system`
+  now flies 12 000 u through the origin and asserts no body moves more than 0.05 NDC per step, none comes
+  within 250 u, turning the ship doesn't move the sky, and the ship stays in front of the fog at max zoom.
+  `22-intro-replay` unchanged (kills=4, cards p0..p4, won). No new assets — moons are procedural. §98, §99.
 - **[2026-08-09-1456-star-system-map] Flyable to-scale star system + autopilot navigation (on main's speed-field).**
   Out of combat the home map is now a to-scale, flyable star system. A central **star + 4 planets** render as
   a **bearing-projected sky backdrop** (`system-map.js` geometry + `world.js` `buildSystemBodies`/

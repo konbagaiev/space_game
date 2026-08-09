@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
-import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
+import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, setZoom, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap
@@ -26,7 +26,7 @@ import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, pos
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
-import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters } from './system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
+import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, skyParallax } from './system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
@@ -358,8 +358,9 @@ renderer.domElement.addEventListener('click', (e) => { engageObjectAt(e); });
 // NOT setPaused). Picking a destination re-routes the autopilot; "Return to hangar" ends roam. The toggle
 // (radar ↔ Map button) is driven per-frame in animate() by refreshMapControl().
 // ?roam dev readout (Stage 1e): speed / pos / dist-to-orbit-4-edge / in-zone, plus the backdrop tunables
-// exposed on window.__roam.SYSTEM for live console tweaking (elev/skyDist/orbit radii affect the next frame,
-// since SYSTEM is shared by reference). Gated strictly behind ?roam — never built in the shipped path.
+// exposed on window.__roam.SYSTEM for live console tweaking (elev / parallax / parallaxMax and each body's
+// dist/size all affect the NEXT frame, since SYSTEM is shared by reference and updateSystemBodies re-reads
+// it every frame). Gated strictly behind ?roam — never built in the shipped path.
 let roamReadoutEl = null;
 function buildRoamReadout() {
   roamReadoutEl = document.createElement('div');
@@ -373,12 +374,13 @@ function updateRoamReadout() {
   const zones = activityZoneCenters(); if (G.activeMission && G.activeMission.center) zones.push(G.activeMission.center);
   const inZone = inActivityZone(p.x, p.z, zones, ZONE_RADIUS);
   const orbit4 = SYSTEM.planets[SYSTEM.planets.length - 1].orbitR;
+  const par = skyParallax(p.x, p.z); // how far the fixed backdrop has slid (saturates at SYSTEM.parallaxMax)
   roamReadoutEl.textContent =
     `roam · speed ${G.player.vel.length().toFixed(1)}\n`
     + `pos  ${p.x.toFixed(0)}, ${p.z.toFixed(0)}\n`
     + `orbit-4 edge ${(orbit4 - Math.hypot(p.x, p.z)).toFixed(0)}\n`
-    + `${inZone ? 'in-zone (capped)' : 'open (uncapped)'}\n`
-    + `ELEV ${SYSTEM.elev} · SKY ${SYSTEM.skyDist}`;
+    + `${inZone ? 'in-zone' : 'open'} · ${G.autopilot && G.autopilot.active ? 'autopilot (uncapped)' : 'manual (capped)'}\n`
+    + `ELEV ${SYSTEM.elev} · PAR ${Math.hypot(par.x, par.z).toFixed(1)}/${SYSTEM.parallaxMax}`;
 }
 
 function outOfCombat() { return !!(G.roam || G.returnToBase); }
@@ -931,10 +933,16 @@ if (location.search.includes('debug')) {
     // fixed dt the live loop uses, so it exercises the real per-tick sim (autopilot, cap, arrival).
     stepSim(n = 1) { for (let i = 0; i < n; i++) update(BENCH_DT); },
     openSystemMap: openSystemMapScreen, closeSystemMap,
+    // Re-place the camera + the whole sky backdrop for the CURRENT player position without stepping the sim
+    // — lets 32-star-system teleport the ship and read the backdrop's response directly.
+    settleView,
+    // Camera zoom, for the zoom-out dimming guard: setZoom sets the target, tickZoom(dt) eases + re-anchors
+    // the fog to the ship (engine.js applyZoom).
+    zoom: { set: setZoom, tick: tickZoom },
     get roam() { return G.roam; },
     set roam(v) { G.roam = v; },
     get mapOpen() { return G.mapOpen; },
-    get systemBodies() { return G.systemBodies; }, // [{ mesh, name, ... }] star + 4 planets (main's speedFieldLayers hook is above)
+    get systemBodies() { return G.systemBodies; }, // [{ mesh, name, spec, dir, moons }] star + 4 planets + moons
     get autopilot() { return G.autopilot; },       // { active, phase, target } — assert point-nav in headless
   };
 }

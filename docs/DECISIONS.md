@@ -3533,7 +3533,7 @@ CSS box restacks (title + badge / reward sub-line / right-aligned actions) for t
 Cross-ref §27 (the preview this removes), §28 (the viewer machinery that lives on), §92 (one viewer loop
 per view). Brief: `docs/plans/2026-08-09-1534-missions-list-right-column.md`.
 
-## 98. Star system: compact Float32-safe coordinates (no floating-origin) + bearing-projected sky backdrop
+## 98. Star system: compact Float32-safe coordinates (no floating-origin) + fixed, permanently distant sky bodies
 
 Building the flyable star system (§94) forced two model choices — how far apart the bodies really sit in
 world coordinates, and how they are rendered. (The distant parallax that sells *speed* is the player-locked
@@ -3550,20 +3550,58 @@ wrapping speed field of **§96**, unchanged; this entry covers only the star-sys
   one shared coordinate space (future MP). *(These radii are Stage-1 live-tune values; the FINAL measured
   orbit-4 diameter / `max|coord|` after tuning should be recorded here — the numbers above are the shipped
   provisional set.)*
-- **Rendering — bearing-projected sky backdrop, constant apparent size.** The bodies are **not** literal
-  to-scale spheres you approach (a 20 u planet 45k away would be invisible, then fill the screen). They are
-  rendered in the sky scene at a **fixed billboard distance** (constant apparent size; star ~1.2× a planet),
-  positioned each frame by the **true bearing from the player to the body's real world position**, lifted
-  above the horizon by `elev` for the near-top-down camera (`updateSystemBodies`, `world.js`). Fly toward a
-  planet and it comes forward; pass it and its bearing flips; the star drifts across the sky — this alone
-  sells "flying across a real system" for ≤5 cheap billboards. The old single planet + 2 moons fold into this
-  (planet 2 = the base planet); the standalone moons are dropped (`makeMoon`/`updateMoons` removed).
+- **Rendering — REAL 3D bodies at FIXED positions, permanently distant.** The bodies are **not** literal
+  to-scale spheres you approach (a 20 u planet 45k away would be invisible, then fill the screen), and they
+  are **not** camera-anchored billboards either. Each is a real sphere at a **fixed position in "sky space"**
+  — the system compressed by `SYSTEM.parallax` (0.02) around the player. Its **direction is its true bearing
+  from the origin, resolved ONCE per session** (`bodySkyDir`); its **distance and radius are art-directed**
+  (`dist` / `size`, star ≈ 1.2× a planet) because the true distances are 50× the camera's 900 u far plane.
+  Per frame `updateSystemBodies` moves only the *group* they live in, to `camera − skyParallax(player)` —
+  which is exactly how that compressed system projects. Result: real perspective, real depth ordering,
+  **gentle differential parallax** (the home planet at 430 u slides faster than the star at 700 u), bodies
+  that **never jump**, and — because `skyParallax` saturates at `parallaxMax` (90 u) — bodies you can
+  **never reach or loom up to**, however far you fly. The home planet is a distant backdrop *by the base
+  too*: it sits at its chosen 430 u, as the game's original single planet did (`homeDir` art-directs where it
+  hangs, since planet 2 is pinned to the origin and so has no bearing of its own). Two **moons** orbit it at
+  sky-space radii kept clear of its limb (`moonClearance`, unit-asserted > 0 at every orbital angle).
+  - **Rejected: bearing re-projection (the first pass).** Bodies were re-projected every frame by the bearing
+    **from the player**, at a constant apparent size. Flying *past* a body swings that bearing through ~180°,
+    so the body visibly **jumped** across the sky; a moon's projected bearing could also cross its planet's
+    and it slid *into* the planet disk. Constant apparent size additionally killed all parallax. The
+    `32-star-system` scenario now pins the replacement: a 40 u flight step may move a body at most 0.05 NDC,
+    no body may ever come closer than 250 u, and turning the ship must not move the sky at all.
+  - **Known limit (accepted):** the follow camera has a fixed near-top-down orientation, so with honest
+    bearings a body whose direction points *behind* the ship falls off the bottom of the screen, and two
+    planets that happen to share a bearing that day overlap. `SYSTEM.elev` (and an optional per-body `elev`)
+    is the knob; no global value shows all 360° without crowding the play area.
+- **Autopilot flies to an ANCHOR, never to a planet.** A planet is backdrop only; picking one on the map
+  routes to `planetAnchor(name)` — a reachable transfer point at `PLANET_ANCHOR_DIST` (4200 u) along that
+  planet's true bearing (planet 2's anchor *is* the base anchor — you are already inside its orbit).
 - **All of the above is VIEW layer** (buildMap/settleView), consumes **zero sim RNG**, and roam
   (`capLifted` false whenever `G.roam` is false) is never recorded — so recorded/campaign replays stay
   byte-identical (§73).
-- **Geometry tunables** live in the client `SYSTEM` constants for fast live-tuning (§30) and are mirrored
-  into the `home-system` descriptor's `system` block (data-driven, client `SYSTEM` = fallback + the source of
-  truth for body POSITIONS).
+- **Geometry tunables** live in the client `SYSTEM` constants for fast live-tuning (§30). The `home-system`
+  descriptor's `system` block is **merged into** `SYSTEM` at build (`applySystemSpec`), so the renderer, the
+  map screen and the `?roam` tunables all read **one** object — previously the renderer read the descriptor
+  while the map UI read the constant, and the two could silently disagree.
+
+## 99. Fog is anchored to the SHIP, not to the camera (zoom-out no longer dims the game)
+
+`THREE.Fog` fades by **view depth from the camera**, but camera zoom scales `CAM_OFFSET` — at `ZOOM_MAX`
+(3.5) the camera sits ~**396 u** from the ship, far past the zoom-1 `fogNear` of **240**. So zooming out
+dragged the *player ship and the station set-pieces themselves* into the fog and visibly **dimmed** them
+(~43 % fog on the ship at max zoom); nothing was wrong with the lighting, which is distance-independent
+(a `DirectionalLight` + ambient).
+
+`applyZoom()` (engine.js) therefore slides **both** fog planes by the extra camera distance
+(`|CAM_OFFSET|·zoom − |CAM_OFFSET|`), so "how far *past the action* does fog start" is constant at every
+zoom and the change is an exact **no-op at zoom 1** (still 240..600 — no visual/replay diff at the default).
+
+Alternatives rejected: **capping zoom** (loses the wide tactical view the zoom-out is for) and **decoupling
+lighting from distance** (lighting was never the cause). `fogFar` is additionally clamped to
+`camera.far − 20` so geometry always fades to invisible *before* the far plane clips it — otherwise widening
+the zoom range would pop the speed field's deep layer at its wrap edge. Guarded by `32-star-system` (at max
+zoom the ship stays in front of `fogNear`; `fogFar` stays inside `camera.far`).
 
 ## Future ideas
 

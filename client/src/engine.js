@@ -17,7 +17,12 @@ scene.background = null; // background is drawn by the sky scene (first pass); c
 // Matches the map background, so the DEEP speed-field layers fade out into it. NOTE: fog is NOT what hides
 // the speed field's wrap edge — THREE.Fog works on VIEW DEPTH, not radial distance, and the shallow layers
 // never even reach fogNear; the frustum hides those (see speed-field.js WRAP_SAFE_RADIUS).
-scene.fog = new THREE.Fog(0x0a1624, 240, 600);
+//
+// These are the planes AT ZOOM 1. Because THREE.Fog measures depth FROM THE CAMERA and camera zoom moves
+// the camera away from the ship, both planes are pushed out by that extra distance in applyZoom() below —
+// otherwise zooming out drags the SHIP ITSELF past fogNear and the player + stations visibly dim.
+const FOG_NEAR = 240, FOG_FAR = 600;
+scene.fog = new THREE.Fog(0x0a1624, FOG_NEAR, FOG_FAR);
 
 // ---------- Mobile landscape: render the game horizontally even when the phone is held in portrait ----------
 // The browser can't make its viewport wider than the physical screen, and screen.orientation.lock is
@@ -71,6 +76,7 @@ applyOrientation(); // correct the initial portrait sizing before the first fram
 const ZOOM_MIN = 0.35, ZOOM_MAX = 3.5;  // closest / farthest multiples of CAM_OFFSET
 const ZOOM_SMOOTH = 0.2;                // seconds to (almost) reach a new zoom target
 export const camOffset = CAM_OFFSET.clone();   // effective offset used by the follow code (eased toward the target)
+const CAM_DIST0 = CAM_OFFSET.length();         // camera→ship distance at zoom 1 (~113) — the fog reference
 const clampZoom = z => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 let camZoom = 1;        // current (animated) zoom
 let camZoomTarget = 1;  // where zoom is easing toward
@@ -79,16 +85,30 @@ export function setZoom(z){
   try { localStorage.setItem('camZoom', camZoomTarget.toFixed(3)); } catch {}
 }
 export function zoomBy(f){ setZoom(camZoomTarget * f); }
-// Ease camZoom -> camZoomTarget each frame (frame-rate independent) and rebuild camOffset.
+
+// Rebuild camOffset for the current zoom AND re-anchor the fog to the SHIP rather than to the camera.
+// Zoom scales the offset, so at ZOOM_MAX the camera sits ~396 units from the ship — far past the zoom-1
+// fogNear of 240, which faded the player ship and the station set-pieces into the background the more you
+// zoomed out. Sliding both planes by the extra camera distance keeps "how far past the action does fog
+// start" constant at every zoom, and is a no-op at zoom 1 (exactly the original 240..600).
+// fogFar is held just inside camera.far so geometry always fades to invisible BEFORE the far plane clips
+// it — otherwise the speed field's deep layer would pop at its wrap edge on a wider zoom range.
+function applyZoom() {
+  camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);
+  const extra = CAM_DIST0 * camZoom - CAM_DIST0;
+  scene.fog.far = Math.min(FOG_FAR + extra, camera.far - 20);
+  scene.fog.near = Math.min(FOG_NEAR + extra, scene.fog.far - 40);
+}
+// Ease camZoom -> camZoomTarget each frame (frame-rate independent) and rebuild the offset + fog.
 export function tickZoom(dt){
   if (camZoom === camZoomTarget) return;
   const k = 1 - Math.exp(-dt / (ZOOM_SMOOTH / 4)); // ~ZOOM_SMOOTH s to land (~98%)
   camZoom += (camZoomTarget - camZoom) * k;
   if (Math.abs(camZoomTarget - camZoom) < 1e-3) camZoom = camZoomTarget; // snap when close enough
-  camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);
+  applyZoom();
 }
 camZoom = camZoomTarget = clampZoom(parseFloat(localStorage.getItem('camZoom')) || 1); // restore saved zoom
-camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);                                     // apply at once on load (no ease)
+applyZoom();                                                                            // apply at once on load (no ease)
 
 // === TWO INDEPENDENT LIGHTING SETUPS via two render passes ===
 // The sky (star + planets, stars) is drawn by a separate scene with its own light,

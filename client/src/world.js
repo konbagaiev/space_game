@@ -1,5 +1,6 @@
-// World building: the arena boundary, the starry sky, the bearing-projected star-system backdrop (a star
-// + 4 planets), the player-locked wrapping speed-field, and the procedural mission set-pieces — assembled
+// World building: the arena boundary, the starry sky, the fixed-position star-system backdrop (a star
+// + 4 planets + the home planet's moons), the player-locked wrapping speed-field, and the procedural
+// mission set-pieces — assembled
 // from a map descriptor by buildMap(). The reassigned per-map handles (sky/stars/systemBodies/
 // skyAmbient/skySun/arenaDrift/…) live on the shared state bag G; the arena geometry (ARENA/OOB constants,
 // arenaCenter, arenaBorder) is exported const.
@@ -8,7 +9,7 @@ import { scene, skyScene, renderer, camera } from './engine.js';
 import { G, setPieces } from './state.js';
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
-import { SYSTEM, bodyWorldPos } from './system-map.js'; // pure star-system geometry (star + 4 planets, bearing math)
+import { SYSTEM, bodySkyDir, skyParallax, moonAngle, applySystemSpec } from './system-map.js'; // pure star-system geometry + sky placement
 import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
@@ -386,12 +387,15 @@ function makeMoonTexture(baseHex) {
   return tex;
 }
 
-// ---------- Star-system backdrop (star + 4 planets) — bearing-projected sky billboards ----------
-// The bodies live in the sky scene at a FIXED billboard distance from the camera, so they read at a
-// roughly constant on-screen size (the star ~1.2x a planet). Each frame updateSystemBodies re-projects
-// every body by its TRUE bearing from the player to the body's real world position — flying toward a
-// planet brings it forward while the previous one recedes, and the star drifts across the sky. "To-scale"
-// applies to the travel distances (world coords) only; see DECISIONS §98 + docs/plans/…star-system-map.md.
+// ---------- Star-system backdrop (star + 4 planets + the home planet's moons) ----------
+// REAL 3D bodies at FIXED positions. Each body's sky direction is its true bearing from the origin,
+// resolved ONCE at build (system-map.js bodySkyDir); its distance and radius are art-directed (`dist`,
+// `size`) because the true 45 000-unit distances are far outside the camera's 900-unit far plane. The
+// bodies then never move relative to each other: the only thing updateSystemBodies changes per frame is
+// the ORIGIN of the group they live in, which rides at `camera − skyParallax(player)`. That is exactly how
+// a star system compressed by SYSTEM.parallax projects into this camera — real perspective, real depth
+// ordering, gentle differential parallax (the home planet slides faster than the star), and, because
+// skyParallax saturates, a body that can never be reached or loomed up to. See DECISIONS §98.
 // Pure view layer (called from settleView), consumes ZERO sim RNG → replay-neutral.
 
 // The central star: an emissive core sphere + a soft additive glow sprite (reuses the star-glow texture).
@@ -411,62 +415,72 @@ function makeStarMesh(spec) {
   return g;
 }
 
-// Build the star + 4 planet meshes into G.sky (sky scene). Planet 2 keeps the ocean look (map descriptor
-// `d.planet.ocean`); the others reuse the cratered moon texture in their palette color. Handles are stored
-// on G.systemBodies for the per-frame bearing projection. Positions are written by updateSystemBodies.
+// Build the star + 4 planet meshes (and the home planet's moons) into G.sky. Planet 2 keeps the ocean look
+// (map descriptor `d.planet.ocean`); the others reuse the cratered moon texture in their palette color. Each
+// handle caches the body's FIXED sky direction (resolved once, here) plus a reference to its live SYSTEM
+// spec, so the ?roam tunables keep working. Positions are written by updateSystemBodies.
 function buildSystemBodies(sys, oceanHex) {
   G.systemBodies = [];
-  const star = makeStarMesh(sys.star);
-  G.sky.add(star);
-  G.systemBodies.push({ mesh: star, name: 'star', baseSize: sys.star.baseSize ?? sys.star.size, isStar: true });
+  const now = Date.now();
+  const add = (mesh, spec, isStar) => {
+    G.sky.add(mesh);
+    const h = { mesh, name: spec.name, spec, builtSize: spec.size, isStar, dir: bodySkyDir(spec.name, now), moons: [] };
+    G.systemBodies.push(h);
+    return h;
+  };
+  add(makeStarMesh(sys.star), sys.star, true);
   for (const p of sys.planets) {
     const tex = p.ocean ? makePlanetTexture(oceanHex ?? p.color) : makeMoonTexture(p.color);
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(p.size, 48, 48),
       new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.0, fog: false })
     );
-    G.sky.add(mesh);
-    G.systemBodies.push({ mesh, name: p.name, baseSize: p.size, isStar: false });
+    const h = add(mesh, p, false);
+    // Moons are siblings in the same group (not children of the planet mesh) so a live `size` tweak on the
+    // planet can't scale their orbit radius with it.
+    for (const m of p.moons || []) {
+      const mm = new THREE.Mesh(
+        new THREE.SphereGeometry(m.size, 24, 24),
+        new THREE.MeshStandardMaterial({ map: makeMoonTexture(m.color), roughness: 0.95, metalness: 0.0, fog: false })
+      );
+      G.sky.add(mm);
+      h.moons.push({ mesh: mm, spec: m });
+    }
   }
 }
 
-// Within this planar distance a body is treated as "home" (you're parked next to it): its bearing is
-// meaningless, so it is pinned to the top-of-screen backdrop and loomed a little, like the old single
-// home-planet the game had before this feature. Planet 2 (== world origin == spawn) hits this at base.
-const HOME_NEAR = 900;
-
-// Re-project each body by its true bearing from the player. `dt` is unused (bodies are per-session static;
-// their wall-clock motion is imperceptible within a session, only the bearing changes as the player flies).
+// Place the fixed sky layout for this frame. Two things happen, and only the FIRST depends on the player:
 //
-// CAMERA-AWARE PLACEMENT (the F1 fix): CAM_OFFSET is (0,110,26) — the camera is high above the ship and
-// looks almost straight DOWN, so the visible "sky" band is at the TOP of the screen, in the −Z / BELOW-the-
-// camera direction. A body must therefore be placed BELOW the camera (world −Y) along its planar bearing to
-// land in the downward-looking frustum; lifting it by +Y (as the first pass did) put it behind/above the
-// camera → nothing rendered. `SYSTEM.elev` is that downward tilt (bigger = higher/more-centred on screen),
-// `SYSTEM.skyDist` the fixed billboard distance (constant apparent size). Both live-tunable via `?roam`.
-export function updateSystemBodies(dt = 0) {
-  if (!G.systemBodies || !G.player) return;
-  const now = Date.now();
+//  1. The group origin rides at `camera − skyParallax(player)`. Bodies hold their fixed local positions, so
+//     nothing re-projects and nothing can jump; the group offset alone produces the parallax of a system
+//     compressed by SYSTEM.parallax, and its saturation keeps every body permanently distant + inside the
+//     camera's far plane.
+//  2. Each body's local position is rebuilt from its cached direction and its LIVE spec (`dist`/`size`), so
+//     the ?roam console tunables (SYSTEM.elev / per-body dist/size) take effect on the next frame.
+//
+// CAMERA-AWARE PLACEMENT: CAM_OFFSET is (0,110,26) — the camera is high above the ship and looks almost
+// straight DOWN, so the visible "sky" band is BELOW the camera. `SYSTEM.elev` is that downward tilt (bigger
+// = higher/more-centred on screen); lifting bodies by +Y would put them behind the camera and render nothing.
+export function updateSystemBodies() {
+  if (!G.systemBodies || !G.player || !G.sky) return;
   const p = G.player.mesh.position;
-  const down = SYSTEM.elev, skyDist = SYSTEM.skyDist;
+  const par = skyParallax(p.x, p.z);
+  G.sky.position.set(camera.position.x - par.x, camera.position.y, camera.position.z - par.z);
+  const now = Date.now();
   for (const b of G.systemBodies) {
-    const wp = bodyWorldPos(b.name, now);
-    let dx = wp.x - p.x, dz = wp.z - p.z;
-    let len = Math.hypot(dx, dz);
-    const near = len < HOME_NEAR ? 1 - len / HOME_NEAR : 0; // 1 right on the body → 0 past HOME_NEAR
-    if (len < 1e-3) { dx = 0; dz = -1; len = 1; }           // exactly on the body → default to the top-of-screen bearing
-    dx /= len; dz /= len;
-    // Blend toward the top-of-screen bearing (0,−1 = −Z far edge) as we approach, so the home planet sits
-    // high and steady instead of whipping around the horizon when you're right next to it.
-    if (near > 0) { dz = dz * (1 - near) + (-1) * near; const n2 = Math.hypot(dx, dz) || 1; dx /= n2; dz /= n2; }
-    // Place BELOW the high camera (world −Y) so it falls in the near-top-down frustum's sky band.
-    const sl = Math.hypot(dx, down, dz) || 1;
-    b.mesh.position.set(
-      camera.position.x + (dx / sl) * skyDist,
-      camera.position.y - (down / sl) * skyDist,
-      camera.position.z + (dz / sl) * skyDist
-    );
-    b.mesh.scale.setScalar(1 + near * 0.7); // the home planet looms a little when you're parked at its base
+    const dist = b.spec.dist;
+    const elev = b.spec.elev ?? SYSTEM.elev; // per-body override, for art-directing one body up out of the way
+    const sl = Math.hypot(b.dir.x, elev, b.dir.z) || 1;
+    b.mesh.position.set((b.dir.x / sl) * dist, (-elev / sl) * dist, (b.dir.z / sl) * dist);
+    b.mesh.scale.setScalar((b.spec.size || b.builtSize) / b.builtSize); // live `size` tuning, 1 by default
+    for (const m of b.moons) {
+      const a = moonAngle(m.spec, now), r = m.spec.orbitR;
+      m.mesh.position.set(
+        b.mesh.position.x + Math.cos(a) * r,
+        b.mesh.position.y + Math.sin(a) * r * Math.sin(m.spec.tilt),
+        b.mesh.position.z + Math.sin(a) * r * Math.cos(m.spec.tilt)
+      );
+    }
   }
 }
 
@@ -984,13 +998,15 @@ export function buildMap(descriptor) {
   G.stars.renderOrder = -1; // draw stars first, before the star-system bodies
   skyScene.add(G.stars);
 
-  // The sky group holds the star + 4 planet backdrop billboards (positioned per-frame by
-  // updateSystemBodies). It stays at the world origin — the bodies are camera-anchored by bearing, so no
-  // group parallax offset is applied (that would double-apply). See buildSystemBodies / DECISIONS §98.
+  // The sky group holds the star + 4 planets + the home planet's moons at FIXED local positions; the GROUP
+  // is what moves, riding at `camera − skyParallax(player)` each frame (see updateSystemBodies / §98). The
+  // descriptor's `system` block is merged into SYSTEM first, so the renderer, the map screen and the ?roam
+  // tunables all read one object.
+  applySystemSpec(descriptor.system);
   G.sky = new THREE.Group();
   G.sky.position.set(0, 0, 0);
   skyScene.add(G.sky);
-  buildSystemBodies(descriptor.system ?? SYSTEM, d.planet && d.planet.ocean);
+  buildSystemBodies(SYSTEM, d.planet && d.planet.ocean);
 
   // Player-locked wrapping speed field (was: an origin-anchored asteroid ring — DECISIONS §96). Reads
   // `d.speedField` only (falls back to the defaults when missing); the legacy `d.asteroids` shim was retired.

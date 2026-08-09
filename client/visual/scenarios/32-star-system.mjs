@@ -1,7 +1,8 @@
-// Flyable star-system roam sandbox: the speed-field + bearing-projected backdrop bodies exist, autopilot
-// flies the real ship toward a picked point, and — the regression this guards — entering roam AFTER a
-// mission win does NOT freeze the ship or leak enemies into roam (the two failure modes of a naive
-// `!G.roam` reset skip). Pure SIMULATION-STATE assertions (counts + positions), no pixel diffing.
+// Flyable star-system roam sandbox: the speed-field + the FIXED-POSITION backdrop bodies exist, the bodies
+// stay put as you fly (no bearing re-projection, no looming), the moons keep clear of their planet, zooming
+// out does not fog the ship, autopilot flies the real ship toward a picked point, and — the regression this
+// guards — entering roam AFTER a mission win does NOT freeze the ship or leak enemies into roam (the two
+// failure modes of a naive `!G.roam` reset skip). Pure SIMULATION/VIEW-STATE assertions, no pixel diffing.
 export const name = '32-star-system';
 
 export default async function ({ page, assert, shot }) {
@@ -26,17 +27,19 @@ export default async function ({ page, assert, shot }) {
   assert.ok(bodies.includes('star') && bodies.includes('planet2'), 'the star + base planet are present');
 
   // 2b. The backdrop bodies actually PROJECT INTO THE CAMERA FRUSTUM (the F1 fix). The near-top-down camera
-  //     looks down, so a body must be placed BELOW it along its bearing; the first pass lifted them by +Y and
-  //     they rendered off-screen. The home planet (planet 2 == origin == spawn) must be visible by the base.
+  //     looks down, so a body must sit BELOW it; an early pass lifted them by +Y and they rendered off-screen.
+  //     The home planet (planet 2) must be visible by the base. NOTE: a body's `mesh.position` is LOCAL to
+  //     the sky group (which rides at camera − parallax), so everything here goes through world positions.
   const vis = await page.evaluate(() => {
     const g = window.__game;
     g.stepSim(2); // settleView positions the bodies + camera for the current (roam) frame
     g.camera.updateMatrixWorld(true);
     g.camera.matrixWorldInverse.copy(g.camera.matrixWorld).invert();
+    g.skyScene.updateMatrixWorld(true);
     const proj = (name) => {
       const b = (g.systemBodies || []).find((x) => x.name === name);
       if (!b) return null;
-      const n = b.mesh.position.clone().project(g.camera);
+      const n = b.mesh.getWorldPosition(b.mesh.position.clone()).project(g.camera);
       return { x: +n.x.toFixed(2), y: +n.y.toFixed(2), z: +n.z.toFixed(2),
                inView: Math.abs(n.x) <= 1 && Math.abs(n.y) <= 1 && n.z > -1 && n.z < 1 };
     };
@@ -49,6 +52,129 @@ export default async function ({ page, assert, shot }) {
     `the home planet projects into the camera frustum in roam (got ${JSON.stringify(vis.home)})`);
   assert.ok(vis.anyInView >= 1, `≥1 backdrop body is on-screen in roam (got ${vis.anyInView})`);
   await shot('roam-at-base'); // eyeball frame: the home planet should read as a backdrop near the base
+
+  // 2d. THE MODEL GUARD (this is what replaced the bearing-projected backdrop). Fly the ship along a long
+  //     straight line that passes THROUGH the origin — the exact path that made the old backdrop flip ~180°
+  //     and jump, because every body was re-projected each frame by its bearing FROM THE PLAYER. With fixed
+  //     bodies + a bounded parallax the on-screen motion must be small and SMOOTH at every step, and the
+  //     apparent size must never grow (a planet is permanently distant — you can't loom up to it).
+  const flight = await page.evaluate(() => {
+    const g = window.__game;
+    const sample = () => {
+      g.camera.updateMatrixWorld(true);
+      g.skyScene.updateMatrixWorld(true);
+      const out = {};
+      for (const b of g.systemBodies) {
+        const wp = b.mesh.getWorldPosition(b.mesh.position.clone());
+        const dist = wp.distanceTo(g.camera.position);
+        const n = wp.project(g.camera);
+        out[b.name] = { x: n.x, y: n.y, dist };
+      }
+      return out;
+    };
+    const step = 40, from = -6000, to = 6000;   // straight through the origin, well past every anchor
+    g.player.mesh.position.set(from, 0, 90); g.settleView(); // land the backdrop on the start point
+    let prev = sample();
+    const first = prev;
+    const worst = { step: 0, name: '' };
+    const range = {}; // per-body min/max camera distance over the whole flight
+    for (const n of Object.keys(first)) range[n] = { min: first[n].dist, max: first[n].dist };
+    for (let x = from + step; x <= to; x += step) {
+      g.player.mesh.position.set(x, 0, 90);
+      g.settleView();
+      const cur = sample();
+      for (const name of Object.keys(cur)) {
+        const d = Math.hypot(cur[name].x - prev[name].x, cur[name].y - prev[name].y);
+        if (d > worst.step) { worst.step = d; worst.name = name; }
+        range[name].min = Math.min(range[name].min, cur[name].dist);
+        range[name].max = Math.max(range[name].max, cur[name].dist);
+      }
+      prev = cur;
+    }
+    // total on-screen travel over the whole 12 000-unit flight — must be real (parallax exists) but bounded
+    const totalHome = Math.hypot(prev.planet2.x - first.planet2.x, prev.planet2.y - first.planet2.y);
+    let closest = Infinity, widest = 0;
+    for (const n of Object.keys(range)) {
+      closest = Math.min(closest, range[n].min);
+      widest = Math.max(widest, range[n].max - range[n].min);
+    }
+    return { worstStep: worst.step, worstName: worst.name, totalHome, closest, widest,
+             farthest: Math.max(...Object.values(range).map((r) => r.max)), camFar: g.camera.far };
+  });
+  // a 40-unit flight step may only slide a body a hair on screen; the old bearing model produced ~2 NDC
+  // (a full-screen flip) as the ship passed a body.
+  assert.ok(flight.worstStep < 0.05,
+    `no body JUMPS while flying through the system (worst NDC step ${flight.worstStep.toFixed(4)} by ${flight.worstName})`);
+  // …but the backdrop is not welded to the camera either: it must actually slide (that is the parallax).
+  assert.ok(flight.totalHome > 0.05,
+    `the home planet visibly parallaxes over a 12 000-unit flight (NDC travel ${flight.totalHome.toFixed(3)})`);
+  // PERMANENTLY DISTANT: flying 6 000 units at a body may only close the (bounded) parallax slack, never
+  // approach it — the closest any body ever gets stays a real backdrop distance away.
+  assert.ok(flight.closest > 250,
+    `no body is ever loomed up to — closest approach over the whole flight ${flight.closest.toFixed(0)}u`);
+  assert.ok(flight.widest < 200,
+    `and the distance to a body barely breathes (widest swing ${flight.widest.toFixed(0)}u — gentle parallax, not looming)`);
+  assert.ok(flight.farthest < flight.camFar,
+    `every body stays inside camera.far at all times (${flight.farthest.toFixed(0)} < ${flight.camFar})`);
+
+  // 2e. Turning the ship must not move the sky at all (the follow camera keeps a fixed orientation), and the
+  //     moons must stay clear of their planet's disk at every point of their orbit.
+  const turnAndMoons = await page.evaluate(() => {
+    const g = window.__game;
+    g.player.mesh.position.set(0, 0, 0); g.settleView();
+    const at = () => {
+      g.skyScene.updateMatrixWorld(true);
+      return g.systemBodies.map((b) => b.mesh.getWorldPosition(b.mesh.position.clone()));
+    };
+    const a = at();
+    g.player.heading = 2.4; g.player.mesh.rotation.y = 2.4; g.settleView();
+    const b = at();
+    let turnShift = 0;
+    for (let i = 0; i < a.length; i++) turnShift = Math.max(turnShift, a[i].distanceTo(b[i]));
+    // moons: sample the live render positions over a while and take the closest approach to the planet
+    let moons = 0, minGap = Infinity;
+    for (const body of g.systemBodies) {
+      for (const m of body.moons || []) {
+        moons++;
+        for (let i = 0; i < 24; i++) {
+          g.settleView(); // wall-clock advances the orbit between samples
+          minGap = Math.min(minGap, m.mesh.position.distanceTo(body.mesh.position) - body.spec.size - m.spec.size);
+        }
+      }
+    }
+    return { turnShift, moons, minGap };
+  });
+  assert.ok(turnAndMoons.turnShift < 1e-6,
+    `turning the ship does not move the backdrop (max shift ${turnAndMoons.turnShift})`);
+  assert.ok(turnAndMoons.moons >= 1, `the home planet has moons (got ${turnAndMoons.moons})`);
+  assert.ok(turnAndMoons.minGap > 0,
+    `every moon orbits clear of its planet's disk (closest gap ${turnAndMoons.minGap.toFixed(1)}u)`);
+
+  // 2f. ZOOM-OUT DIMMING GUARD. THREE.Fog measures VIEW DEPTH, and zoom pushes the camera away from the
+  //     ship — so a fixed fogNear swallowed the player + the station set-pieces at strong zoom-out. Fog is
+  //     now re-anchored to the ship (engine.js applyZoom), so at MAX zoom the ship is still in front of
+  //     fogNear, and fogFar stays inside camera.far so nothing pops at the clip plane.
+  const zoomFog = await page.evaluate(() => {
+    const g = window.__game;
+    g.player.mesh.position.set(0, 0, 0);
+    const read = () => {
+      g.settleView();
+      return { camDist: g.camera.position.distanceTo(g.player.mesh.position),
+               near: g.scene.fog.near, far: g.scene.fog.far, camFar: g.camera.far };
+    };
+    g.zoom.set(1); g.zoom.tick(5); const at1 = read();
+    g.zoom.set(99); g.zoom.tick(5); const out = read();   // clamped to ZOOM_MAX
+    g.zoom.set(1); g.zoom.tick(5);                        // restore for the rest of the run
+    return { at1, out };
+  });
+  assert.ok(zoomFog.at1.near === 240 && zoomFog.at1.far === 600,
+    `zoom 1 keeps the original fog planes (got ${zoomFog.at1.near}..${zoomFog.at1.far})`);
+  assert.ok(zoomFog.out.camDist > zoomFog.at1.camDist * 2,
+    `max zoom really pushes the camera back (${zoomFog.at1.camDist.toFixed(0)} → ${zoomFog.out.camDist.toFixed(0)}u)`);
+  assert.ok(zoomFog.out.near > zoomFog.out.camDist + 80,
+    `the ship stays IN FRONT of the fog at max zoom-out (camera ${zoomFog.out.camDist.toFixed(0)}u, fogNear ${zoomFog.out.near.toFixed(0)})`);
+  assert.ok(zoomFog.out.far <= zoomFog.out.camFar - 20,
+    `fog still fades geometry out before the far plane clips it (${zoomFog.out.far.toFixed(0)} <= ${zoomFog.out.camFar - 20})`);
 
   // 2c. The out-of-combat "Map" button is visible and OPENS the system-map overlay (F2). In roam the radar
   //     is hidden and this button takes its place; a live fight keeps the radar and hides the button.

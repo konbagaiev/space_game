@@ -640,10 +640,10 @@ for (const l of LEVELS) l.descriptor.enemyTotal = enemyTotalFromPhases(l.descrip
 
 // --- maps: a JSON descriptor the client renders generically (buildMap). `generator` picks the code
 // generator; `params` are its inputs. The current scene (a to-scale star system — a central star + four
-// planets rendered as bearing-projected sky backdrop, a player-locked wrapping speed field, stars + sky
-// lighting) is the 'home-system' map. No binary assets — the textures are procedural from these params.
-// The `system` block carries the star-system render params (star + 4 planets); the client falls back to
-// its own SYSTEM constant (system-map.js) when it is absent. See docs/plans/…star-system-map.md + §96/§98.
+// planets + the home planet's moons as fixed, permanently distant 3D backdrop bodies, a player-locked
+// wrapping speed field, stars + sky lighting) is the 'home-system' map. No binary assets — the textures are
+// procedural from these params. The `system` block carries the star-system params (geometry + render); the
+// client falls back to its own SYSTEM constant (system-map.js) when it is absent. See §96/§98.
 export const MAPS = [
   {
     name: 'home-system', descriptor: {
@@ -671,19 +671,30 @@ export const MAPS = [
       // to the world origin by the star-system geometry (system-map.js). `radius/pos/halo` are legacy keys
       // (the single-planet backdrop) kept only as harmless data — the backdrop now comes from `system`.
       planet: { pos: [-150, -285, -110], radius: 60, ocean: 0x5a82c0, halo: { color: 0x6fa8ff, opacity: 0.13 } },
-      // Star-system backdrop (bearing-projected sky billboards): the star + 4 planets. Orbit radii are the
-      // to-scale TRAVEL distances on the plane; `size` is the constant on-screen billboard radius. Mirrors
-      // the client SYSTEM fallback (system-map.js); the client's pure geometry (phase/period → world pos)
-      // is the source of truth for POSITIONS — this block drives render params (star + per-planet size/color).
+      // Star-system backdrop: the star + 4 planets + the home planet's moons, drawn as REAL 3D bodies at
+      // FIXED sky positions (DECISIONS §98). `orbitR/periodDays/phase0` are the to-scale TRAVEL geometry
+      // (they drive the map screen, the anchors and each body's fixed sky bearing); `dist`/`size` are the
+      // render placement — distance from the camera and sphere radius, so apparent size is size/dist. The
+      // client merges this block into its SYSTEM constant (system-map.js applySystemSpec), which is then the
+      // single source of truth for the renderer, the map UI and the ?roam tunables.
       system: {
-        elev: 1.5, skyDist: 340,
+        elev: 1.5,          // downward tilt of the layout (the camera looks near-straight-down)
+        parallax: 0.020,    // backdrop shift per unit flown — gentle parallax, no re-projection
+        parallaxMax: 90,    // and it saturates there, so a body is never reached and stays inside camera.far
         belt: { inner: 16000, outer: 24000 },
-        star: { name: 'star', color: 0xffd9a0, size: 34, baseSize: 34 },
+        star: { name: 'star', color: 0xffd9a0, size: 54, dist: 700 }, // reads ~1.2x a planet
         planets: [
-          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 24 },
-          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 30, ocean: true },
-          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 26 },
-          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 24 },
+          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 36, dist: 560 },
+          // Base planet: at the world origin, so `homeDir` art-directs where it hangs (down/left, as the old
+          // single-planet backdrop did). Its moons' `orbitR` is a SKY-space radius, clear of the planet limb.
+          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 58, dist: 430,
+            ocean: true, homeDir: { x: -0.81, z: -0.59 },
+            moons: [
+              { name: 'moon1', size: 9, orbitR: 104, periodS: 96,  phase0: 0.60, tilt: 0.28,  color: 0x9aa2ad },
+              { name: 'moon2', size: 6, orbitR: 150, periodS: 171, phase0: 3.40, tilt: -0.18, color: 0x8b8f98 },
+            ] },
+          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 34, dist: 620 },
+          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 30, dist: 680 },
         ],
       },
       // Parallax speed field: a fixed pool of point sprites that WRAPS around the player every frame, so
