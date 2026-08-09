@@ -1937,9 +1937,9 @@ first translation). See DECISIONS §10.
   fails closed if the row is missing; DECISIONS §95), **`launchable`**,
   and **`missingRequired`** (empty required slots).
 - **Maps & levels:** `maps` table holds a JSON scene `descriptor` per map (seeded as `home-system`;
-  background, sky light, planet, moons, stars, the **`speedField`** backdrop (per-layer count/size/radius/
-  depth/opacity + colour; the dead `asteroids` key is a one-release compat shim for already-published
-  clients), and an optional **`setpieces`** array of
+  background, sky light, the **`system`** block (star + 4 bearing-projected planets), stars, the
+  **`speedField`** backdrop (per-layer count/size/radius/depth/opacity + colour), and an optional
+  **`setpieces`** array of
   procedural mission decor), built by `buildMap`. `levels` table holds a JSON descriptor per level (a map + a phase/wave script,
   seeded as `level-1`/`level-2`/`level-3`), played by the client's `levelRunner`. Served via `GET /api/maps/:name` and
   `GET /api/levels/:name`.
