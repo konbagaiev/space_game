@@ -5,6 +5,20 @@
 
 ## 2026-08-09
 
+- **[fix] The new speed field shipped invisible — contrast pass + a guard against it happening again.**
+  The player-locked backdrop landed on prod and the live check came back "I see nothing, nothing gives a
+  sense of speed": dark-grey sprites (`0x6b6f78`) at 0.9–2.6 world units and opacity 0.55–0.90, drawn with a
+  soft glow sprite whose alpha is 0.25 at 55% radius, composite to within a few percent of the map
+  background (`0x0a1624`) — so the only thing on screen was the **starfield, which is glued to the camera and
+  therefore conveys no motion at all**. Every unit test, the outcome scenario and both review passes were
+  green: they checked geometry, cost and replay-neutrality, never **contrast**. Colour is now `0xc8d0da`,
+  sizes 3.8/6.7/10.9, opacity 1.0/0.94/0.69 (counts unchanged at 420/300/200), and
+  `SPEED_FIELD_RANGES.size` widened to 20 so those sizes survive `normalizeSpeedField`. New regression guard
+  `MIN_CONTRAST`/`contrastRatio` in `speed-field.js` asserts every shipped layer is ≥3.5× background
+  luminance **and** that the known-invisible combination (2.39×) is rejected — a proxy calibrated from the
+  escaped defect, not a visibility model. DECISIONS §4 already said a ~1px point needs bigger + brighter +
+  near-white; the plan reasoned about density and pixel counts instead.
+
 - **[fix] The side-mission board unlocked far too early (and the shop a level early).** Progress gates
   compared `players.current_progress` against hardcoded level ids (`>= 5` / `>= 3`), but `levels.id` is a
   BIGSERIAL whose sequence is burned by the startup upsert's `ON CONFLICT` path, so production ids had

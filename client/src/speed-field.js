@@ -29,19 +29,41 @@ export const WRAP_SAFE_RADIUS = 600;
 // Layers are ordered near -> far; `depth`/`depthVar` sink each layer below the combat plane
 // (point y = -(depth + rng()*depthVar)); `size` is in WORLD units (sizeAttenuation).
 export const SPEED_FIELD_DEFAULTS = {
-  color: 0x6b6f78,
+  color: 0xc8d0da,
   layers: [
-    { count: 420, size: 0.9, radius: 620, depth: 18,  depthVar: 20, opacity: 0.90 },
-    { count: 300, size: 1.6, radius: 620, depth: 90,  depthVar: 40, opacity: 0.75 },
-    { count: 200, size: 2.6, radius: 620, depth: 220, depthVar: 60, opacity: 0.55 },
+    { count: 420, size: 3.8,  radius: 620, depth: 18,  depthVar: 20, opacity: 1.00 },
+    { count: 300, size: 6.7,  radius: 620, depth: 90,  depthVar: 40, opacity: 0.94 },
+    { count: 200, size: 10.9, radius: 620, depth: 220, depthVar: 60, opacity: 0.69 },
   ],
 };
+
+// CONTRAST FLOOR — the first shipped values (grey 0x6b6f78, size 0.9-2.6, opacity 0.55-0.9) rendered a field
+// that was geometrically perfect and LITERALLY INVISIBLE: composited over the map background (0x0a1624) a
+// ~2.5px soft-gradient sprite in dark grey lands within a few percent of the background, and the live test
+// came back "I see nothing". DECISIONS §4 already said what makes a ~1px point read: bigger + brighter +
+// near-white. Density and pixel counts were reasoned about; CONTRAST was not. `contrastRatio` below turns
+// that lesson into an assertion so no future re-tune can quietly sink back under the floor.
+// This is a cheap PROXY, not a real visibility model — it ignores the sprite's alpha falloff and the point's
+// on-screen size, which were the other two halves of the failure. The floor is therefore CALIBRATED FROM THE
+// ESCAPED DEFECT rather than derived: the combination that shipped invisible (0x6b6f78 at opacity 0.55)
+// scores 2.39, the corrected layers score 5.6-8.1, so 3.5 sits between them with margin on both sides.
+// Treat a failure as "this will probably vanish — go look at a real frame", not as a precise threshold.
+export const BG_LUMA = 0.055;          // perceived luminance of the map background 0x0a1624
+export const MIN_CONTRAST = 3.5;       // a layer must be at least this many times brighter than the sky
+
+// Perceived luminance (Rec. 709) of a layer as the player actually sees it: the tint, knocked down by the
+// DIMMEST per-point brightness jitter (scatterColors' 0.55 floor) and by the layer's opacity.
+export function layerLuma(colorHex, opacity, jitterFloor = 0.55) {
+  const r = ((colorHex >> 16) & 255) / 255, g = ((colorHex >> 8) & 255) / 255, b = (colorHex & 255) / 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) * jitterFloor * opacity;
+}
+export function contrastRatio(colorHex, opacity) { return layerLuma(colorHex, opacity) / BG_LUMA; }
 
 // Slider bounds for the ?dev folder AND the clamp applied to every descriptor/stored value. `radius` may be
 // dialed BELOW WRAP_SAFE_RADIUS on purpose — exploring a tighter box is a legitimate live experiment; the
 // panel labels the pop-in it causes rather than the code silently clamping it away.
 export const SPEED_FIELD_RANGES = {
-  count: [0, 1200], size: [0.2, 8], radius: [200, 1200],
+  count: [0, 1200], size: [0.2, 20], radius: [200, 1200],
   depth: [-40, 400], depthVar: [0, 160], opacity: [0.05, 1],
 };
 

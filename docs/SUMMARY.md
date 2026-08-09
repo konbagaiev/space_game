@@ -1355,10 +1355,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (Performance/`?debug`) it keeps full count so the sky isn't empty.
 - **The parallax layer is a PLAYER-LOCKED WRAPPING SPEED FIELD** (`THREE.Points`, DECISIONS §96) — its only
   job is to sell motion, so the ship never reads as floating in place. A **fixed pool of ~920 point sprites
-  in 3 depth layers** (420/300/200 at sizes 0.9/1.6/2.6 world units, sunk to y ≈ −18/−90/−220 with a
-  20/40/60 depth spread, opacity 0.90/0.75/0.55), **one draw call per layer**, sprite = the shared
+  in 3 depth layers** (420/300/200 at sizes 3.8/6.7/10.9 world units, sunk to y ≈ −18/−90/−220 with a
+  20/40/60 depth spread, opacity 1.0/0.94/0.69), **one draw call per layer**, sprite = the shared
   **procedural** canvas dot (`getStarGlowTexture`, no image asset), tint = the descriptor's `speedField.color`
-  (`0x6b6f78`) times a per-point 0.55–1.0 brightness jitter. The points are **static in world space** and are
+  (`0xc8d0da`) times a per-point 0.55–1.0 brightness jitter.
+  **Those sizes/colour are a CONTRAST floor, not taste.** The first shipped pass (grey `0x6b6f78`, sizes
+  0.9/1.6/2.6, opacity 0.55–0.90) was geometrically perfect and **literally invisible** against the map
+  background — every test passed and the live check came back "I see nothing". `MIN_CONTRAST`/`contrastRatio`
+  in `speed-field.js` now assert each layer is ≥3.5× the background luminance (the known-invisible
+  combination scores 2.39), and `SPEED_FIELD_RANGES.size` was widened to 20 so the shipped sizes aren't
+  clamped away on read. A ~1px point needs **bigger + brighter + near-white** to read at all (DECISIONS §4). The points are **static in world space** and are
   translated by whole box spans only when they fall outside a **±`radius` (620) box centred on the player** —
   a treadmill, so parallax stays real (deeper layers sweep slower) and a stationary player uploads nothing.
   The re-centre runs **once per frame from the VIEW layer** (`updateSpeedField` called by `settleView` in

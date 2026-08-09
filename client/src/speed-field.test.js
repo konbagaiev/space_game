@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WRAP_SAFE_RADIUS, SPEED_FIELD_DEFAULTS, SPEED_FIELD_RANGES, SPEED_TUNE_KEY,
+  MIN_CONTRAST, BG_LUMA, layerLuma, contrastRatio,
   wrapDelta, wrapField, scatterLayer, scatterColors, normalizeSpeedField,
   loadSpeedTune, saveSpeedTune } from './speed-field.js';
 
@@ -179,4 +180,41 @@ test('loadSpeedTune: malformed JSON and a throwing store both fall back (no cras
   assert.equal(loadSpeedTune(thrower, fallback), fallback);
   assert.doesNotThrow(() => saveSpeedTune(thrower, fallback), 'a throwing store must not break the panel');
   assert.equal(loadSpeedTune(null, fallback), fallback, 'no store at all (non-browser) → the default');
+});
+
+// ---- REGRESSION GUARD (the escaped defect): the shipped field must actually be VISIBLE ----
+// The first release was geometrically perfect and invisible — dark grey sprites over a dark sky. Every unit
+// test and the outcome scenario passed; only a human looking at prod caught it. These assertions encode the
+// contrast lesson so a re-tune can't silently sink back under the floor. See speed-field.js MIN_CONTRAST.
+
+test('contrast: every shipped layer is clearly brighter than the map background', () => {
+  for (const [i, l] of SPEED_FIELD_DEFAULTS.layers.entries()) {
+    const c = contrastRatio(SPEED_FIELD_DEFAULTS.color, l.opacity);
+    assert.ok(c >= MIN_CONTRAST,
+      `layer ${i} contrast ${c.toFixed(2)}x is below the ${MIN_CONTRAST}x floor — it will read as empty sky`);
+  }
+});
+
+test('contrast: the original invisible values would FAIL this guard', () => {
+  // The exact combination that shipped and was reported as "I see nothing" on prod.
+  const c = contrastRatio(0x6b6f78, 0.55);
+  assert.ok(c < MIN_CONTRAST, `the known-invisible grey scores ${c.toFixed(2)}x — the guard must reject it`);
+  assert.ok(layerLuma(0x6b6f78, 0.55) > 0, 'sanity: luminance is still positive, just too low to see');
+  assert.ok(BG_LUMA > 0, 'sanity: the background reference is set');
+});
+
+test('contrast: the shipped sizes are big enough to have a visible core, and fit the slider range', () => {
+  const [lo, hi] = SPEED_FIELD_RANGES.size;
+  for (const [i, l] of SPEED_FIELD_DEFAULTS.layers.entries()) {
+    // ~size * (canvasHeight/2) / distance px; the glow sprite's bright core is the inner ~25% of the radius,
+    // so a sub-3-unit near layer is what produced the sub-pixel core that vanished.
+    assert.ok(l.size >= 3, `layer ${i} size ${l.size} is too small for the soft sprite's core to survive`);
+    assert.ok(l.size >= lo && l.size <= hi, `layer ${i} size ${l.size} must fit SPEED_FIELD_RANGES.size`);
+  }
+});
+
+test('normalizeSpeedField does not clamp the shipped defaults away', () => {
+  const n = normalizeSpeedField(SPEED_FIELD_DEFAULTS);
+  assert.deepEqual(n, SPEED_FIELD_DEFAULTS,
+    'a default that gets clamped on read means the ranges and the shipped look disagree');
 });

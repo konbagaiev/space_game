@@ -675,12 +675,14 @@ export const MAPS = [
       // ordered near → far; `radius` is the wrap half-box and MUST stay >= 600 so a recycled point
       // reappears OUTSIDE THE FRUSTUM at max zoom-out (fog only hides the deep layers — THREE.Fog works on
       // view depth, not radial distance). Values are tuned live via the ?dev "Speed field" panel.
+      // Sizes/colour/opacity are the CONTRAST-corrected pass: the first values (grey 0x6b6f78, size 0.9-2.6)
+      // rendered a field that was invisible against the map background — see speed-field.js MIN_CONTRAST.
       speedField: {
-        color: 0x6b6f78,
+        color: 0xc8d0da,
         layers: [
-          { count: 420, size: 0.9, radius: 620, depth: 18,  depthVar: 20, opacity: 0.90 },
-          { count: 300, size: 1.6, radius: 620, depth: 90,  depthVar: 40, opacity: 0.75 },
-          { count: 200, size: 2.6, radius: 620, depth: 220, depthVar: 60, opacity: 0.55 },
+          { count: 420, size: 3.8,  radius: 620, depth: 18,  depthVar: 20, opacity: 1.00 },
+          { count: 300, size: 6.7,  radius: 620, depth: 90,  depthVar: 40, opacity: 0.94 },
+          { count: 200, size: 10.9, radius: 620, depth: 220, depthVar: 60, opacity: 0.69 },
         ],
       },
       // DEAD KEY — one-release COMPATIBILITY SHIM, not read by this client. db.js upserts this descriptor
