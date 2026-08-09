@@ -31,7 +31,7 @@ import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
-import { showMain, launchMission, refreshMissions, missionOffers, activeMissionId, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
+import { showMain, launchMission, refreshMissions, missionOffers, activeMissionId, mainBriefing, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
 import { shopItemViewer } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel
 import { showWelcome, applyTranslations, welcomeStaged, mountLangSwitch } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
@@ -772,9 +772,9 @@ function animate() {
 // the level. Imported at the top; the take-off + overlay Restart/Continue flows call it.
 
 // ---------- Main Window + model viewers moved to src/mainwindow.js ----------
-// showMain/selectMenu/mission board/launchCampaign/launchMission/refreshMissions + the ship-preview
-// and briefing-item showcase viewers are imported at the top; __game (below) reads its live state
-// (missionOffers/mainBriefing/mwPreview/mwItem).
+// showMain/selectMenu/mission list/launchCampaign/launchMission/refreshMissions + the briefing-item
+// showcase viewer are imported at the top; __game (below) reads its live state
+// (missionOffers/mainBriefing/mwItem).
 
 // ---------- Hangar shop + stash moved to src/shop.js ----------
 // openBay/showBayView/updateTakeoffGate/renderShipStatsBar/deriveShipStats/resetShipStatsDelta are
@@ -827,7 +827,6 @@ if (location.search.includes('debug')) {
     get activeMission() { return G.activeMission; }, // the side mission being played (null = campaign)
     get missionOffers() { return missionOffers; },
     get activeMissionId() { return activeMissionId; }, // the persisted active mission id (null = campaign) — Slice B board
-    get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url in the right-column ship preview
     // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
     get itemShowcaseTarget() { const d = document.getElementById('mw-mission-desc'); return d && d.classList.contains('show-item') ? (mwItem && mwItem.url) : null; },
     // the glb url in the shop/loadout item detail panel (#shop-model), or null when nothing is shown

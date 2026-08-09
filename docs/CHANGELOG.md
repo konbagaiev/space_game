@@ -5,6 +5,15 @@
 
 ## 2026-08-09
 
+- **Missions: the mission list moved to the right column; the ship preview is gone.** The Main Window's
+  25% right column no longer shows a spinning ship + characteristics strip — on **Missions** it holds the
+  **mission list** (campaign + side-mission cards, restacked: title + badge, reward/XP, Take/Defer/Set
+  active), and the center work zone holds **only** the briefing body (title, text + granted-item showcase,
+  reward, Take off). **Character / Map / Craft** now collapse to a two-column grid; **Loadout** is
+  unchanged (centered ship + 30% context panel) and is the only screen showing `#ship-stats`. The
+  `mwPreview` viewer, the `#mw-ship` canvas, the `previewTarget` debug hook and the staged reveal's
+  `.briefing-hide-ship` beat are deleted — the mission list now stays visible while a briefing types out.
+  DECISIONS §96. docs/plans/2026-08-09-1534-missions-list-right-column.md
 - **[fix] The side-mission board unlocked far too early (and the shop a level early).** Progress gates
   compared `players.current_progress` against hardcoded level ids (`>= 5` / `>= 3`), but `levels.id` is a
   BIGSERIAL whose sequence is burned by the startup upsert's `ON CONFLICT` path, so production ids had

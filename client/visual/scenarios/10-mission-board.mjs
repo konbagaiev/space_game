@@ -1,7 +1,9 @@
 // Side-mission board (docs/plans/mission-generator.md + 2026-08-08-base-menu-redesign.md, Slice B): after
-// clearing the campaign the Main Window "Missions" view shows a central board — the campaign card plus
-// three side-mission cards with Take / Defer / Set-active. Selecting a card shows its briefing; Take-off
-// flies the ACTIVE mission (server-persisted), which is the campaign until a side mission is made active.
+// clearing the campaign the Main Window "Missions" view shows the mission list in the RIGHT column — the
+// campaign card plus three side-mission cards with Take / Defer / Set-active. Selecting a card shows its
+// briefing in the center work zone; Take-off flies the ACTIVE mission (server-persisted), which is the
+// campaign until a side mission is made active. Also asserts the right-column layout (the list is in the
+// column, no cards/ship preview/ship-stats in the work zone) and the two-column collapse on Character.
 export const name = '10-mission-board';
 
 export default async function ({ page, assert, shot }) {
@@ -29,6 +31,38 @@ export default async function ({ page, assert, shot }) {
   assert.equal(board.activeInitial, null, 'the campaign is the active mission by default');
   assert.ok(board.campaignActive, 'the campaign card is flagged active');
   await shot('board');
+
+  // the list lives in the RIGHT column now; the work zone holds only the mission body
+  const layout = await page.evaluate(() => {
+    const col = document.getElementById('mw-ship-col').getBoundingClientRect();
+    const board = document.getElementById('mw-mission-board').getBoundingClientRect();
+    const work = document.getElementById('mw-work').getBoundingClientRect();
+    return {
+      inColumn: board.left >= col.left - 1 && board.right <= col.right + 1,
+      rightOfWork: board.left >= work.right - 1,
+      cardsInWork: document.querySelectorAll('#mw-work .mission-card').length,
+      shipCanvas: !!document.getElementById('mw-ship'),
+      statsShown: getComputedStyle(document.getElementById('ship-stats')).display !== 'none',
+      workW: work.width,
+    };
+  });
+  assert.ok(layout.inColumn, 'the mission list renders inside the right column');
+  assert.ok(layout.rightOfWork, 'the mission list sits to the right of the work zone');
+  assert.equal(layout.cardsInWork, 0, 'no mission cards are left in the center work zone');
+  assert.ok(!layout.shipCanvas, 'the right-column ship preview canvas is gone');
+  assert.ok(!layout.statsShown, 'ship characteristics are hidden outside Loadout');
+
+  // Character / Map / Craft have no right-column content → the grid collapses to two columns
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="character"]').click());
+  await page.waitForTimeout(80);
+  const collapsed = await page.evaluate(() => ({
+    col: getComputedStyle(document.getElementById('mw-ship-col')).display,
+    workW: document.getElementById('mw-work').getBoundingClientRect().width,
+  }));
+  assert.equal(collapsed.col, 'none', 'Character hides the right column');
+  assert.ok(collapsed.workW > layout.workW + 50, 'the work zone takes over the freed width');
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="missions"]').click());
+  await page.waitForFunction('document.querySelectorAll("#mw-mission-board .mission-card").length === 4', null, { timeout: 4000 });
 
   // selecting the first side-mission card renders its title + description + est. reward in the detail area
   await page.evaluate(() => document.querySelectorAll('#mw-mission-board .mission-card')[1].click());
