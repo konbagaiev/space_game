@@ -29,8 +29,9 @@
 1. **Research station** (large) — right of the planet, at distance; combat on its backdrop, ~500 m below.
    - *Procedural recipe (starting point):* a central cylinder/hub + a ring or torus, solar-panel planes,
      a few docking arms/modules; metallic material + emissive windows. Big and readable from the arena.
-2. **Asteroid field + mining station** (below the planet) — **real irregular asteroids**, NOT the round
-   parallax ones we use for motion reference: non-spherical geometry (noise-deformed mesh), **cratered
+2. **Asteroid field + mining station** (below the planet) — **real irregular asteroids**, NOT the distant
+   backdrop specks we use for motion reference (the parallax layer was a ring of round rocks then; it is the
+   player-locked Points speed field now — DECISIONS §95): non-spherical geometry (noise-deformed mesh), **cratered
    textures** (reuse the `makeMoonTexture` crater approach), **varied sizes**. Plus a **small mining
    station** working an asteroid, shown as a **beam / stream of microparticles** from the asteroid to the
    station (reuse the existing particle system).
@@ -65,7 +66,7 @@
 - **Procedural, not sourced.** Set-pieces are **code-generated** (no CDN/`.glb`, no license) for now; swap
   to real `.glb` via the CDN (DECISIONS §14) later.
 - **Asteroids = decor meshes in the combat `scene`, not obstacles** for now (real irregular/cratered,
-  distinct from the round parallax backdrop asteroids). Collidable cover = later (register them as
+  distinct from the distant parallax backdrop — today the point-sprite speed field, DECISIONS §95). Collidable cover = later (register them as
   gameplay entities; DECISIONS §4 "solid asteroids", scope B).
 
 ## Phasing

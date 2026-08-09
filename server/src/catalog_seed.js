@@ -640,7 +640,7 @@ for (const l of LEVELS) l.descriptor.enemyTotal = enemyTotalFromPhases(l.descrip
 
 // --- maps: a JSON descriptor the client renders generically (buildMap). `generator` picks the code
 // generator; `params` are its inputs. The current scene (blue ocean planet + two cratered moons +
-// stars + a parallax asteroid layer + sky lighting) is the 'home-system' map. No binary assets —
+// stars + the player-locked parallax speed field + sky lighting) is the 'home-system' map. No binary assets —
 // the textures are procedural from these colors/params.
 export const MAPS = [
   {
@@ -670,19 +670,34 @@ export const MAPS = [
         { radius: 11, color: 0xb9b2a6, orbitR: 96, tilt: 0.5, speed: 0.0625 },
         { radius: 7, color: 0x8f9aa6, orbitR: 136, tilt: -0.35, speed: -0.04 },
       ],
-      // a field of small rocks filling the whole disk (inner=0) out to radius `spread`=1000 — inside
-      // the arena AND far beyond it; the far edge fades into the fog (~600), so distant rocks read as
-      // a faraway field you can fly out into
+      // Parallax speed field: a fixed pool of point sprites that WRAPS around the player every frame, so
+      // the same specks surround you everywhere in the system at constant cost (DECISIONS §95). Layers are
+      // ordered near → far; `radius` is the wrap half-box and MUST stay >= 600 so a recycled point
+      // reappears OUTSIDE THE FRUSTUM at max zoom-out (fog only hides the deep layers — THREE.Fog works on
+      // view depth, not radial distance). Values are tuned live via the ?dev "Speed field" panel.
+      speedField: {
+        color: 0x6b6f78,
+        layers: [
+          { count: 420, size: 0.9, radius: 620, depth: 18,  depthVar: 20, opacity: 0.90 },
+          { count: 300, size: 1.6, radius: 620, depth: 90,  depthVar: 40, opacity: 0.75 },
+          { count: 200, size: 2.6, radius: 620, depth: 220, depthVar: 60, opacity: 0.55 },
+        ],
+      },
+      // DEAD KEY — one-release COMPATIBILITY SHIM, not read by this client. db.js upserts this descriptor
+      // on every server start, so the already-published itch bundle and the /v2 sandbox (older clients on
+      // the live catalog) would throw in buildMap() if it vanished. DELETE THIS LINE in the first change
+      // after the itch build has been re-published (/publish-itch) and /v2 redeployed from a main that
+      // contains `speedField`. See DECISIONS §95.
       asteroids: { count: 2000, inner: 0, spread: 1000, color: 0x6b6f78, minSize: 0.18, maxSize: 0.5, depth: 10, depthVar: 24 },
       // Mission set-pieces live in ONE shared world at FIXED positions — they exist on every level/mission;
       // a mission only changes WHERE you fight (its `center` in missions.js spawns you over the matching
       // one; the others sit at a distance). Spread far apart so they don't overlap. Just below the plane
-      // (strong parallax like the background asteroids), static decor (not collidable). docs/plans/mission-maps.md.
+      // (strong parallax like the background speed field), static decor (not collidable). docs/plans/mission-maps.md.
       setpieces: [
         // `modelUrl` = the .glb asteroid pack (3 rock meshes); the field rocks + each mining rig's host rock
         // pick a random variant (procedural cratered icosahedra remain the ?debug / load-failure fallback).
-        // Only the up-close field uses the model — the distant backdrop `asteroids` layer stays procedural
-        // (a full-disk instanced model field was ~1.6M tris; see DECISIONS §71).
+        // Only this up-close field uses the model — the distant backdrop is now the Points speed field
+        // (a full-disk instanced model field was ~1.6M tris; see DECISIONS §71 + §95).
         { type: 'asteroid-field', pos: [-550, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
         { type: 'research-station', pos: [400, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
         // Freighter set-piece: the first .glb-backed set-piece. modelUrl = combat glb (served same-origin,

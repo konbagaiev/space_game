@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece } from './world.js';
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece, updateSpeedField } from './world.js';
 import { repairTick, shieldRecharge, applyShieldedDamage } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
@@ -821,16 +821,20 @@ export function update(dt) {
     el.overlay.style.display = 'flex';
   }
 
-  settleView(dt); // camera rigid-follow + sky/stars/planet parallax + moon orbit
+  settleView(dt); // camera rigid-follow + sky/stars/planet parallax + moon orbit + speed-field wrap
 
   // mission set-pieces: their own slow animation (station spin, beams, exhaust, …)
   for (const sp of setPieces) sp.update?.(dt);
 }
 
-// Position the camera + sky backdrop (stars, planet parallax, moons) on the player. Called at the end of every
-// update(), AND once right after reset() by the replay/cutscene start so a FROZEN pre-fight frame (the Level-0
-// opening card) is already correctly framed — otherwise the camera/planet/moons sit at the pre-reset spot and
-// visibly JUMP when the re-sim's first tick runs. `dt` only advances the moon orbit; pass 0 to just settle.
+// Position the camera + sky backdrop (stars, planet parallax, moons) AND the player-locked speed field on the
+// player. Called at the end of every update(), AND once right after reset() by the replay/cutscene start so a
+// FROZEN pre-fight frame (the Level-0 opening card) is already correctly framed — otherwise the camera/planet/
+// moons sit at the pre-reset spot and visibly JUMP when the re-sim's first tick runs. `dt` only advances the
+// moon orbit; pass 0 to just settle.
+//
+// This is the VIEW layer: everything here is render-only and MUST stay out of the deterministic tick. The
+// speed-field wrap in particular draws no randomness and touches no sim state (DECISIONS §73/§95).
 export function settleView(dt = 0) {
   // camera: rigidly attached to the player (no lag/floating), fixed angle (does NOT rotate with the ship's turn)
   camera.position.copy(G.player.mesh.position).add(camOffset);
@@ -839,6 +843,7 @@ export function settleView(dt = 0) {
   const PARALLAX = 0.6;                    // the planet shifts slightly as the player moves — a light parallax (depth)
   G.sky.position.copy(camera.position).addScaledVector(G.player.mesh.position, -PARALLAX);
   updateMoons(dt);                         // moons orbit the planet (they don't spin — the terminator doesn't wander)
+  updateSpeedField(G.player.mesh.position.x, G.player.mesh.position.z); // player-locked backdrop (view-only, no RNG)
 }
 
 // ---------- Pause ----------
