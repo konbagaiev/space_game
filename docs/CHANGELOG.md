@@ -5,6 +5,27 @@
 
 ## 2026-08-09
 
+- **[2026-08-09-1456-star-system-map] Flyable to-scale star system + autopilot navigation shipped.**
+  Out of combat the home map is now a to-scale, flyable star system. A central **star + 4 planets** render as
+  a **bearing-projected sky backdrop** (`system-map.js` geometry + `world.js` `buildSystemBodies`/
+  `updateSystemBodies`) at constant apparent size, re-projected each frame by their true bearing from the
+  player; a **player-locked wrapping speed-field** (`speed-field.js` pure seam + `world.js` `makeSpeedField`/
+  `updateSpeedField`, procedural canvas dots) replaces the old origin-ring backdrop asteroids. New **roam**
+  state (`G.roam`) — entered via the base-menu **Map** section (`enterRoam`) or the `?roam` dev sandbox — with
+  the player **speed cap lifted outside activity zones** (`capLifted({roam,inZone})`, which is **false whenever
+  roam is off**, so every recorded/campaign replay stays byte-identical) and OOB warp-back disabled. A
+  **system-map screen** (`systemmap-ui.js`; base-menu Map + a mini-map tap **out of combat**) freezes the game
+  via a raw `G.mapOpen` loop-skip (not `setPaused`) and lets you pick a destination → **autopilot-to-point**
+  (`engagePointAutopilot`, a new `point` target kind that never wins by proximity); arriving at a mission
+  marker whose offer exists shows a **"Start mission?"** prompt reusing `missionOffers`/`launchMission`
+  (locked markers park, no prompt). `levelRunner.resetLevelRunnerState()` was extracted so the roam `reset()`
+  clears win/return state without spawning (fixes the frozen-ship / roam-enemy failure modes). Data: the
+  near-mining + research set-pieces + `missions.js` centers moved out (2× distance, four-way invariant kept),
+  and `catalog_seed.js` gained a `system` block (moons dropped). New EN+RU `ui.systemmap.*` strings. Tests:
+  pure `system-map.test.js` + `speed-field.test.js` (incl. the `capLifted` invariant, Float32 bound,
+  `wrapCoord`) + the `31-star-system` visual scenario with a post-win roam guard; the `22-intro-replay` guard
+  is unchanged (replay-neutral). Replay-neutral, zero sim RNG. DECISIONS §95 (§71 backdrop half superseded);
+  docs/plans/2026-08-09-1456-star-system-map.md.
 - **[decision] Star-system map + autopilot navigation (planned; feeds the star-system-map pipeline).**
   Recorded DECISIONS §94: the world becomes a to-scale flyable star system (star + 4 wall-clock-orbiting
   planets + an asteroid belt with 3 mining bases + a science station), sized so the outermost orbit's

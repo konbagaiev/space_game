@@ -2460,6 +2460,11 @@ exists so we don't re-attempt it.
 
 ## 71. Asteroids: real `.glb` model for the mission FIELD only — the distant backdrop stays procedural
 
+> **SUPERSEDED (backdrop half) by §95 (2026-08-09).** The distant procedural **backdrop** asteroid ring
+> (`makeAsteroids`) is gone — the far backdrop is now the player-locked wrapping **speed-field** (procedural
+> point sprites, `speed-field.js`). This entry's mission-**FIELD** decision (the up-close `.glb` rock pack)
+> still stands unchanged.
+
 The asteroids were procedural (noise-deformed icosahedra + `makeMoonTexture`): the parallax **backdrop**
 field (`makeAsteroids`) and the mission **`asteroid-field`** set-piece. We put a real CC-BY model pack
 ("Wandering Asteroids Of Andromeda" by ARCTIC WOLVES™, **3 rock meshes** in one `.glb`) into the mission
@@ -3350,6 +3355,42 @@ after all, since a to-scale system needs real point-to-point navigation.
 
 **Revisit if:** playtests show autopilot removes too much agency, or the manual cruise alone is enough — then
 trim one side. A "decide on feel" item, tuned from an early playable build.
+
+## 95. Star system: compact Float32-safe coordinates (no floating-origin) + bearing-projected sky backdrop
+
+Building the flyable star system (§94) forced two model choices — how far apart the bodies really sit in
+world coordinates, and how they are rendered. (This ships §94; it also **supersedes the backdrop half of
+§71** — the distant procedural asteroid ring is replaced by the speed-field.)
+
+- **Coordinate model — compact, Float32-safe, no floating-origin.** Planet 2 (our base planet) is **pinned
+  to the world origin**, so `arenaCenter`, the set-pieces and the `missions.js` centers stay origin-relative
+  (no combat/mission rewrite). The star sits at `-orbitVec(planet2)` and the other planets at
+  `star + orbitVec(planetᵢ)`, from pure wall-clock angles (`bodyWorldPos`, `system-map.js`; periods 1/1.5/2/2.5
+  real days, fixed `EPOCH`). **"To-scale" means the travel distances only** — the provisional orbit radii are
+  **9k / 15k / 22k / 30k** (planet 2 = orbit 2 at 15k), so the **outermost body reaches |coord| ≈ 45,000 u**
+  (`maxBodyCoord`, unit-asserted ≤ 1e5). At 45k, Float32 relative precision `2^-23` gives ~**0.005 u** jitter
+  vs a ~2 u ship — safe with wide margin, so **no floating-origin** is needed. One star system per server =
+  one shared coordinate space (future MP). *(These radii are Stage-1 live-tune values; the FINAL measured
+  orbit-4 diameter / `max|coord|` after tuning should be recorded here — the numbers above are the shipped
+  provisional set.)*
+- **Rendering — bearing-projected sky backdrop, constant apparent size.** The bodies are **not** literal
+  to-scale spheres you approach (a 20 u planet 45k away would be invisible, then fill the screen). They are
+  rendered in the sky scene at a **fixed billboard distance** (constant apparent size; star ~1.2× a planet),
+  positioned each frame by the **true bearing from the player to the body's real world position**, lifted
+  above the horizon by `elev` for the near-top-down camera (`updateSystemBodies`, `world.js`). Fly toward a
+  planet and it comes forward; pass it and its bearing flips; the star drifts across the sky — this alone
+  sells "flying across a real system" for ≤5 cheap billboards. The old single planet + 2 moons fold into this
+  (planet 2 = the base planet); the standalone moons are dropped.
+- **Speed-field, not an asteroid ring.** The sense of speed comes from a **player-locked wrapping point-sprite
+  speed-field** (`speed-field.js` + `world.js`): 2-3 additive layers kept in a box around the player, each
+  point wrapped to the opposite side as the player crosses the edge (pure `wrapCoord`), procedural canvas dot
+  texture (no asset). This replaces the static origin-ring `makeAsteroids` backdrop (§71's backdrop half).
+- **All of the above is VIEW layer** (buildMap/settleView), consumes **zero sim RNG**, and roam
+  (`capLifted` false whenever `G.roam` is false) is never recorded — so recorded/campaign replays stay
+  byte-identical (§73).
+- **Geometry tunables** live in the client `SYSTEM`/layer constants for fast live-tuning (§30) and are
+  mirrored into the `home-system` descriptor's `system` block (data-driven, client `SYSTEM` = fallback +
+  the source of truth for body POSITIONS).
 
 ## Future ideas
 

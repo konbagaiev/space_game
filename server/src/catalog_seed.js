@@ -639,9 +639,11 @@ export const LEVELS = [
 for (const l of LEVELS) l.descriptor.enemyTotal = enemyTotalFromPhases(l.descriptor.phases);
 
 // --- maps: a JSON descriptor the client renders generically (buildMap). `generator` picks the code
-// generator; `params` are its inputs. The current scene (blue ocean planet + two cratered moons +
-// stars + a parallax asteroid layer + sky lighting) is the 'home-system' map. No binary assets —
-// the textures are procedural from these colors/params.
+// generator; `params` are its inputs. The current scene (a to-scale star system — a central star + four
+// planets rendered as bearing-projected sky backdrop, a player-locked wrapping speed-field, stars + sky
+// lighting) is the 'home-system' map. No binary assets — the textures are procedural from these params.
+// The `system` block carries the star-system render params (star + 4 planets); the client falls back to
+// its own SYSTEM constant (system-map.js) when it is absent. See docs/plans/…star-system-map.md + §95.
 export const MAPS = [
   {
     name: 'home-system', descriptor: {
@@ -665,15 +667,28 @@ export const MAPS = [
         },
       },
       stars: { count: 2500, radius: 400 },
+      // planet 2 (our base planet) is the ocean world — `ocean` tints its procedural texture; it is pinned
+      // to the world origin by the star-system geometry (system-map.js). `radius/pos/halo` are legacy keys
+      // (the single-planet backdrop) kept only as harmless data — the backdrop now comes from `system`.
       planet: { pos: [-150, -285, -110], radius: 60, ocean: 0x5a82c0, halo: { color: 0x6fa8ff, opacity: 0.13 } },
-      moons: [
-        { radius: 11, color: 0xb9b2a6, orbitR: 96, tilt: 0.5, speed: 0.0625 },
-        { radius: 7, color: 0x8f9aa6, orbitR: 136, tilt: -0.35, speed: -0.04 },
-      ],
-      // a field of small rocks filling the whole disk (inner=0) out to radius `spread`=1000 — inside
-      // the arena AND far beyond it; the far edge fades into the fog (~600), so distant rocks read as
-      // a faraway field you can fly out into
-      asteroids: { count: 2000, inner: 0, spread: 1000, color: 0x6b6f78, minSize: 0.18, maxSize: 0.5, depth: 10, depthVar: 24 },
+      // Star-system backdrop (bearing-projected sky billboards): the star + 4 planets. Orbit radii are the
+      // to-scale TRAVEL distances on the plane; `size` is the constant on-screen billboard radius. Mirrors
+      // the client SYSTEM fallback (system-map.js); the client's pure geometry (phase/period → world pos)
+      // is the source of truth for POSITIONS — this block drives render params (star + per-planet size/color).
+      system: {
+        elev: 0.6, skyDist: 380,
+        belt: { inner: 16000, outer: 24000 },
+        star: { name: 'star', color: 0xffd9a0, size: 26, baseSize: 26 },
+        planets: [
+          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 15 },
+          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 20, ocean: true },
+          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 18 },
+          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 17 },
+        ],
+      },
+      // Speed-field (player-locked wrapping point layers, replacing the old origin-ring asteroids):
+      // `count` → pool size (clamped 200–600), `color` → tint. See speed-field.js / world.js.
+      asteroids: { count: 2000, color: 0x6b6f78 },
       // Mission set-pieces live in ONE shared world at FIXED positions — they exist on every level/mission;
       // a mission only changes WHERE you fight (its `center` in missions.js spawns you over the matching
       // one; the others sit at a distance). Spread far apart so they don't overlap. Just below the plane
@@ -683,8 +698,13 @@ export const MAPS = [
         // pick a random variant (procedural cratered icosahedra remain the ?debug / load-failure fallback).
         // Only the up-close field uses the model — the distant backdrop `asteroids` layer stays procedural
         // (a full-disk instanced model field was ~1.6M tris; see DECISIONS §71).
-        { type: 'asteroid-field', pos: [-550, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
-        { type: 'research-station', pos: [400, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
+        // Near mining base — moved out into the belt (anti-star): 2x its old distance from planet 2. Its
+        // pos MUST equal missions.js `side-mining` center + the system-map marker + the activity zone
+        // (the four-way invariant; see missions.js). Same up-close .glb rig (model unchanged).
+        { type: 'asteroid-field', pos: [-988, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
+        // Science (research) station — moved star-ward: 2x its old distance from planet 2. Its pos MUST
+        // equal missions.js `side-research` center + the system-map marker + the activity zone.
+        { type: 'research-station', pos: [928, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
         // Freighter set-piece: the first .glb-backed set-piece. modelUrl = combat glb (served same-origin,
         // baked in by assets:pull at deploy). `yaw` orients the nose to +Z like a ship model (0 = this
         // model already faces +Z; its bridge/engines are aft at -Z). `exhaust` is an OPTIONAL, server-

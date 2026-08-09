@@ -899,6 +899,42 @@
     "source": "Crafting is still to be defined — it is coming later.",
     "context": "Placeholder body text for the undesigned Craft section (tbd)."
   },
+  "ui.systemmap.title": {
+    "source": "Star system",
+    "context": "Header of the star-system map screen (a top-down overview of the sector you fly across). Short."
+  },
+  "ui.systemmap.close": {
+    "source": "Close",
+    "context": "Button that closes the star-system map overlay without changing course. One word."
+  },
+  "ui.systemmap.returnHangar": {
+    "source": "Return to hangar",
+    "context": "Button on the in-flight star-system map that ends roaming and goes back to the base menu."
+  },
+  "ui.systemmap.launch": {
+    "source": "Launch into system",
+    "context": "Base-menu Map button: leave the hangar and fly freely into the star system (roam)."
+  },
+  "ui.systemmap.flyHere": {
+    "source": "Fly here",
+    "context": "Button next to a reachable destination on the star-system map: autopilot the ship to it."
+  },
+  "ui.systemmap.locked": {
+    "source": "Unlocks at Level 4",
+    "context": "Hint shown when the player picks a mission destination that is not yet available (side missions unlock at Level 4)."
+  },
+  "ui.systemmap.startMission": {
+    "source": "Start mission?",
+    "context": "Title of the confirm prompt shown when the ship arrives at a mission destination while roaming."
+  },
+  "ui.systemmap.startYes": {
+    "source": "Start",
+    "context": "Confirm button on the 'Start mission?' prompt — launches the mission fight. One word."
+  },
+  "ui.systemmap.startNo": {
+    "source": "Not yet",
+    "context": "Decline button on the 'Start mission?' prompt — stay parked and keep roaming. Short."
+  },
   "ui.mission.take": {
     "source": "Take",
     "context": "Mission-board button — accept a side mission onto your board. One word."

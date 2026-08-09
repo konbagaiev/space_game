@@ -1,12 +1,15 @@
-// World building: the arena boundary, the starry sky, the planet + moons + parallax asteroids,
-// and the procedural mission set-pieces — assembled from a map descriptor by buildMap(). The
-// reassigned per-map handles (sky/stars/skyAmbient/skySun/arenaDrift/…) live on the shared state
-// bag G; the arena geometry (ARENA/OOB constants, arenaCenter, arenaBorder) is exported const.
+// World building: the arena boundary, the starry sky, the bearing-projected star-system backdrop (a star
+// + 4 planets), the player-locked wrapping speed-field, and the procedural mission set-pieces — assembled
+// from a map descriptor by buildMap(). The reassigned per-map handles (sky/stars/systemBodies/speedField/
+// skyAmbient/skySun/arenaDrift/…) live on the shared state bag G; the arena geometry (ARENA/OOB constants,
+// arenaCenter, arenaBorder) is exported const.
 import * as THREE from 'three';
-import { scene, skyScene, renderer } from './engine.js';
-import { G, moons, setPieces } from './state.js';
+import { scene, skyScene, renderer, camera } from './engine.js';
+import { G, setPieces } from './state.js';
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
+import { SYSTEM, bodyWorldPos } from './system-map.js'; // pure star-system geometry (star + 4 planets, bearing math)
+import { SPEED_FIELD_LAYERS, poolSize, scatterLayer, wrapLayerPositions } from './speed-field.js'; // pure speed-field seam
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -99,7 +102,7 @@ function makeStars(count, radius, brightFraction = 0.02) {
     vertexColors: true,
     transparent: false,     // opaque -> drawn in the pass before the planet (so the planet occludes them)
     fog: false,             // fog must not dim the stars
-    depthTest: false,       // pure backdrop - planet/moons always occlude them
+    depthTest: false,       // pure backdrop - the star-system bodies always occlude them
     depthWrite: false,
   }));
   dim.renderOrder = -1;
@@ -252,9 +255,9 @@ function makeNebulaSky(prm, bake) {
   return rt;
 }
 
-// ---------- Planet with moons (built by buildMap from the map descriptor) ----------
+// ---------- Procedural body textures (built by buildMap for the star-system backdrop) ----------
 // The camera looks almost straight down, so the "sky" is visible only near the top edge of the
-// screen (the -Z direction). That is where the planet sits as a distant background.
+// screen (the -Z direction). That is where the backdrop bodies sit as a distant background.
 
 // Minimal procedural surface: an ocean world with depth variation and soft white clouds, tinted to
 // the map's ocean color.
@@ -358,38 +361,81 @@ function makeMoonTexture(baseHex) {
   return tex;
 }
 
-// One moon: ORBITs the planet (only its position changes). Lit by the same real sky-scene light as
-// the planet -> terminators are consistent. Added to the `sky` group; tracked in `moons`.
-function makeMoon(radius, color, orbitR, tilt, speed) {
-  const geo = new THREE.SphereGeometry(radius, 32, 32);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: makeMoonTexture(color), roughness: 1.0, metalness: 0.0, fog: false }));
-  G.sky.add(mesh);
-  const m = { mesh, orbitR, tilt, speed, angle: Math.random() * Math.PI * 2 };
-  moons.push(m);
-  return m;
+// ---------- Star-system backdrop (star + 4 planets) — bearing-projected sky billboards ----------
+// The bodies live in the sky scene at a FIXED billboard distance from the camera, so they read at a
+// roughly constant on-screen size (the star ~1.2x a planet). Each frame updateSystemBodies re-projects
+// every body by its TRUE bearing from the player to the body's real world position — flying toward a
+// planet brings it forward while the previous one recedes, and the star drifts across the sky. "To-scale"
+// applies to the travel distances (world coords) only; see DECISIONS §95 + docs/plans/…star-system-map.md.
+// Pure view layer (called from settleView), consumes ZERO sim RNG → replay-neutral.
+
+// The central star: an emissive core sphere + a soft additive glow sprite (reuses the star-glow texture).
+function makeStarMesh(spec) {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(spec.size, 32, 32),
+    new THREE.MeshBasicMaterial({ color: spec.color, fog: false })
+  );
+  g.add(core);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: getStarGlowTexture(), color: spec.color, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  }));
+  glow.scale.setScalar(spec.size * 4.5);
+  g.add(glow);
+  return g;
 }
 
-// position of a moon on a tilted orbit around the planet (the body itself does not rotate)
-export function updateMoons(dt) {
-  for (const m of moons) {
-    m.angle += m.speed * dt;
-    const px = Math.cos(m.angle) * m.orbitR;
-    const pz = Math.sin(m.angle) * m.orbitR;
-    m.mesh.position.set(
-      planetPos.x + px,
-      planetPos.y - pz * Math.sin(m.tilt),
-      planetPos.z + pz * Math.cos(m.tilt)
+// Build the star + 4 planet meshes into G.sky (sky scene). Planet 2 keeps the ocean look (map descriptor
+// `d.planet.ocean`); the others reuse the cratered moon texture in their palette color. Handles are stored
+// on G.systemBodies for the per-frame bearing projection. Positions are written by updateSystemBodies.
+function buildSystemBodies(sys, oceanHex) {
+  G.systemBodies = [];
+  const star = makeStarMesh(sys.star);
+  G.sky.add(star);
+  G.systemBodies.push({ mesh: star, name: 'star', baseSize: sys.star.baseSize ?? sys.star.size, isStar: true });
+  for (const p of sys.planets) {
+    const tex = p.ocean ? makePlanetTexture(oceanHex ?? p.color) : makeMoonTexture(p.color);
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(p.size, 48, 48),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.0, fog: false })
+    );
+    G.sky.add(mesh);
+    G.systemBodies.push({ mesh, name: p.name, baseSize: p.size, isStar: false });
+  }
+}
+
+// Re-project each body by its true bearing from the player. `dt` is unused (bodies are per-session static;
+// their wall-clock motion is imperceptible within a session, only the bearing changes as the player flies).
+export function updateSystemBodies(dt = 0) {
+  if (!G.systemBodies || !G.player) return;
+  const now = Date.now();
+  const p = G.player.mesh.position;
+  const elev = SYSTEM.elev, skyDist = SYSTEM.skyDist;
+  for (const b of G.systemBodies) {
+    const wp = bodyWorldPos(b.name, now);
+    let dx = wp.x - p.x, dz = wp.z - p.z;
+    let len = Math.hypot(dx, dz);
+    if (len < 1e-3) { dx = b._lastDx ?? 0; dz = b._lastDz ?? 1; len = Math.hypot(dx, dz) || 1; } // at the body → keep last bearing
+    b._lastDx = dx; b._lastDz = dz;
+    dx /= len; dz /= len;
+    // lift the planar bearing above the horizon so the body reads as sky under the near-top-down camera
+    const sl = Math.hypot(dx, elev, dz) || 1;
+    b.mesh.position.set(
+      camera.position.x + (dx / sl) * skyDist,
+      camera.position.y + (elev / sl) * skyDist,
+      camera.position.z + (dz / sl) * skyDist
     );
   }
 }
 
 // ---------- Shared .glb asteroid pack ----------
 // The mission asteroid-field set-piece draws its rocks from a .glb pack of 3 rock meshes (AST_01/02/03,
-// each with its own baked texture — CC-BY, see CREDITS.md). NOT used for the parallax backdrop: that stays
-// procedural, because a full-disk field of thousands of instanced model rocks is ~1.6M tris vs the ~40k of
-// the procedural icosahedra, and at that distance the rocks are sub-pixel specks where the detail is wasted
-// (DECISIONS §71). Load the pack ONCE per URL and hand back normalized VARIANTS: each geometry re-centered
-// on its bounding sphere and scaled to UNIT radius, so a caller sizes a rock by a single scale factor.
+// each with its own baked texture — CC-BY, see CREDITS.md). It is the up-close mining-field rig only; the
+// far backdrop is no longer an asteroid ring at all — it is the procedural point-sprite speed-field above
+// (DECISIONS §71 superseded by §95). Load the pack ONCE per URL and hand back normalized VARIANTS: each
+// geometry re-centered on its bounding sphere and scaled to UNIT radius, so a caller sizes a rock by a
+// single scale factor.
 const _asteroidPacks = new Map(); // url -> Promise<[{ geo, mat }]>
 function loadAsteroidPack(url) {
   let p = _asteroidPacks.get(url);
@@ -420,33 +466,57 @@ function loadAsteroidPack(url) {
 // sharing/mutating the pack's material.
 function asteroidMat(src, fog) { const m = src.clone(); m.fog = fog; return m; }
 
-// A parallax asteroid layer (one InstancedMesh = one draw call): small low-poly rocks BEHIND the combat
-// plane in WORLD coordinates (not stuck to the camera). Distributed in a RING (annulus) well OUTSIDE the
-// arena; `inner`/`spread` are the ring's inner/outer radius; `minSize`/`maxSize`/`depth`/`depthVar` size and
-// sink the rocks. Flying toward the edge brings them closer → a sense of speed. Procedural on purpose (kept
-// cheap — thousands of distant sub-pixel specks; see the pack note above / DECISIONS §71).
-function makeAsteroids({ count, spread, color, inner = 0, minSize = 0.4, maxSize = 1.3, depth = 6, depthVar = 10 }) {
-  const mesh = new THREE.InstancedMesh(
-    new THREE.IcosahedronGeometry(1, 0), // low-poly rock
-    new THREE.MeshStandardMaterial({ color, roughness: 1.0, metalness: 0.05, flatShading: true }),
-    count
-  );
-  const m4 = new THREE.Matrix4(), pos = new THREE.Vector3(), quat = new THREE.Quaternion();
-  const eul = new THREE.Euler(), scl = new THREE.Vector3();
-  for (let i = 0; i < count; i++) {
-    // area-uniform radius in [inner, spread], random angle → an even ring around the arena
-    const r = Math.sqrt(inner * inner + Math.random() * (spread * spread - inner * inner));
-    const a = Math.random() * Math.PI * 2;
-    pos.set(Math.cos(a) * r, -depth - Math.random() * depthVar, Math.sin(a) * r);
-    eul.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
-    quat.setFromEuler(eul);
-    const s = minSize + Math.random() * (maxSize - minSize);
-    scl.set(s, s, s);
-    m4.compose(pos, quat, scl);
-    mesh.setMatrixAt(i, m4);
+// ---------- Player-locked wrapping speed-field (replaces the old origin-ring `makeAsteroids` backdrop) ----------
+// A small set of point-sprite layers kept in a box AROUND the player; each point wraps back to the opposite
+// side as the player crosses the box edge, so the field streams past and sells the sense of speed while
+// cruising across the system. The wrap arithmetic + layer config are the pure seam in speed-field.js
+// (node-tested); this is the thin THREE assembly. Additive round dots, fog off, per-map color/density from
+// the descriptor `asteroids` block. Pure VIEW layer (updated in settleView) → replay-neutral, zero sim RNG.
+let speedDotTex = null;
+function getSpeedDotTexture() {
+  if (speedDotTex) return speedDotTex;
+  const s = 32, cv = document.createElement('canvas'); cv.width = cv.height = s;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0.0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+  g.addColorStop(1.0, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
+  speedDotTex = new THREE.CanvasTexture(cv); // procedural — NO image asset (CREDITS.md untouched)
+  return speedDotTex;
+}
+// Build the layered THREE.Points speed-field from the descriptor `asteroids` (count → pool size, color → tint).
+function makeSpeedField(cfg = {}) {
+  const color = new THREE.Color(cfg.color ?? 0x6b6f78);
+  const total = poolSize(cfg);
+  const tex = getSpeedDotTexture();
+  const group = new THREE.Group();
+  group.userData.layers = [];
+  for (const spec of SPEED_FIELD_LAYERS) {
+    const n = Math.max(1, Math.round(total * spec.frac));
+    const arr = scatterLayer(spec, n);            // pure scatter (native Math.random — cosmetic, not seeded)
+    const pos = Float32Array.from(arr);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+      color, size: spec.size, map: tex, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true, fog: false,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false; // it tracks the player; never cull it by the (stale) origin-centered bounds
+    group.add(pts);
+    group.userData.layers.push({ pts, pos, geo, R: spec.R, par: spec.par });
   }
-  mesh.instanceMatrix.needsUpdate = true;
-  return mesh;
+  return group;
+}
+// Re-center + wrap every layer on the player each frame (view layer). velocity is passed for the future
+// stretch hook (unused today; see speed-field.js).
+export function updateSpeedField(field, playerPos, velocity = null) {
+  if (!field || !field.userData.layers) return;
+  for (const L of field.userData.layers) {
+    wrapLayerPositions(L.pos, playerPos.x * L.par, playerPos.z * L.par, L.R, velocity);
+    L.geo.attributes.position.needsUpdate = true;
+  }
 }
 
 // ---------- Mission set-pieces (procedural decor in the combat scene) ----------
@@ -756,10 +826,9 @@ export function buildSetPiece(spec) {
 }
 
 // ---------- Build the scene from a map descriptor (see server catalog_seed.js MAPS) ----------
-// Generic generator: builds the sky backdrop (background, lights, planet, moons, stars), the asteroid
-// layer, and any mission set-pieces from `descriptor`. The combat-scene light is constant (readability).
-let rocks = null;                       // current parallax asteroid layer (rebuilt per map; not read elsewhere)
-const planetPos = new THREE.Vector3();  // planet center (moons orbit it); mutated in place by buildMap
+// Generic generator: builds the sky backdrop (background, lights, star + 4-planet system bodies, stars),
+// the player-locked speed-field, and any mission set-pieces from `descriptor`. The combat-scene light is
+// constant (readability).
 export function buildMap(descriptor) {
   const d = descriptor;
   G.currentMapDescriptor = descriptor; // remembered for the ?tune panel's rebuild button
@@ -795,32 +864,25 @@ export function buildMap(descriptor) {
   // with the quality tier (gfx.starScale). See DECISIONS §43.
   const starMul = bakeNebula ? 0.4 : 1.0;
   G.stars = makeStars(Math.round(d.stars.count * G.gfx.starScale * starMul), d.stars.radius);
-  G.stars.renderOrder = -1; // draw stars first, before the planet and moons
+  G.stars.renderOrder = -1; // draw stars first, before the star-system bodies
   skyScene.add(G.stars);
 
+  // The sky group holds the star + 4 planet backdrop billboards (positioned per-frame by
+  // updateSystemBodies). It stays at the world origin — the bodies are camera-anchored by bearing, so no
+  // group parallax offset is applied (that would double-apply). See buildSystemBodies / DECISIONS §95.
   G.sky = new THREE.Group();
+  G.sky.position.set(0, 0, 0);
   skyScene.add(G.sky);
-  planetPos.set(...d.planet.pos);
+  buildSystemBodies(descriptor.system ?? SYSTEM, d.planet && d.planet.ocean);
 
-  const planet = new THREE.Mesh(
-    new THREE.SphereGeometry(d.planet.radius, 64, 64),
-    new THREE.MeshStandardMaterial({ map: makePlanetTexture(d.planet.ocean), roughness: 0.9, metalness: 0.0, fog: false })
-  );
-  planet.position.copy(planetPos);
-  G.sky.add(planet);
-  if (d.planet.halo) { // atmospheric rim (glow along the edge)
-    const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(d.planet.radius + 4, 48, 48),
-      new THREE.MeshBasicMaterial({ color: d.planet.halo.color, transparent: true, opacity: d.planet.halo.opacity, side: THREE.BackSide, fog: false })
-    );
-    halo.position.copy(planetPos);
-    G.sky.add(halo);
+  // Player-locked wrapping speed-field replaces the old static origin-ring asteroids (descriptor-driven
+  // color/density from d.asteroids). Disposed + rebuilt per map like the old `rocks` layer.
+  if (G.speedField) {
+    scene.remove(G.speedField);
+    G.speedField.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
   }
-
-  for (const mn of d.moons) makeMoon(mn.radius, mn.color, mn.orbitR, mn.tilt, mn.speed);
-
-  rocks = makeAsteroids(d.asteroids);
-  scene.add(rocks);
+  G.speedField = makeSpeedField(d.asteroids);
+  scene.add(G.speedField);
 
   // mission set-pieces (decor in the combat scene), fixed in this shared world; remembered so each run
   // rebuilds them fresh (resets the cruising freighter)

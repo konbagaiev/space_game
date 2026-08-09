@@ -88,7 +88,7 @@ camZoom = camZoomTarget = clampZoom(parseFloat(localStorage.getItem('camZoom')) 
 camOffset.copy(CAM_OFFSET).multiplyScalar(camZoom);                                     // apply at once on load (no ease)
 
 // === TWO INDEPENDENT LIGHTING SETUPS via two render passes ===
-// The sky (planet, moons, stars) is drawn by a separate scene with its own light,
+// The sky (star + planets, stars) is drawn by a separate scene with its own light,
 // combat by the main scene with its own. Each scene sees only its own sources,
 // so lighting is real and does not "leak" between groups.
 renderer.autoClear = false;
@@ -101,5 +101,5 @@ sun.position.set(30, 60, 20);
 scene.add(sun);
 
 // SKY SCENE — its own light (real side source -> real terminator). Its contents (background,
-// lights, planet, moons, stars) are built from the map descriptor by buildMap() during bootstrap.
+// lights, star + planets, stars) are built from the map descriptor by buildMap() during bootstrap.
 export const skyScene = new THREE.Scene();

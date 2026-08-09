@@ -15,7 +15,8 @@ import { fetchJson, clientLog } from './net.js';
 import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
 import { SKILL_RATES } from './components.js'; // per-point skill rates → Character-card effect text (single source)
-import { reset, levelRunner, refreshMusic } from './sim.js';
+import { reset, levelRunner, refreshMusic, engagePointAutopilot } from './sim.js';
+import { mountBaseMenuMap, showStartMissionPrompt } from './systemmap-ui.js';
 import { shipModelCfg } from './ship-factory.js';
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
@@ -107,17 +108,19 @@ el.backHangar.addEventListener('click', () => { el.overlay.style.display = 'none
 // ---- Left-menu navigation + the work-zone views ----
 // Show one work-zone view and highlight its menu item. 'missions' → the mission view (description +
 // Take-off); 'loadout'|'stash'|'shop' → the shop bay view with that screen selected.
-const STUB_SECTIONS = ['map', 'craft']; // not-yet-built sections → a "coming soon" stub panel
+const STUB_SECTIONS = ['craft']; // not-yet-built sections → a "coming soon" stub panel (Map is now real)
 function selectMenu(which) {
   document.querySelectorAll('#mw-menu .mw-item').forEach((b) => b.classList.toggle('active', b.dataset.mw === which));
   const isMissions = which === 'missions';
   const isBay = which === 'loadout';   // Loadout absorbs the former Stash/Shop items as in-bay tabs
   const isCharacter = which === 'character';
+  const isMap = which === 'map';
   const isStub = STUB_SECTIONS.includes(which);
-  mwView = isBay ? 'bay' : (isMissions ? 'missions' : (isCharacter ? 'character' : 'stub'));
+  mwView = isBay ? 'bay' : (isMissions ? 'missions' : (isCharacter ? 'character' : (isMap ? 'map' : 'stub')));
   document.getElementById('mw-view-mission').classList.toggle('active', isMissions);
   document.getElementById('mw-view-bay').classList.toggle('active', isBay);
   document.getElementById('mw-view-character').classList.toggle('active', isCharacter);
+  document.getElementById('mw-view-map').classList.toggle('active', isMap);
   document.getElementById('mw-view-stub').classList.toggle('active', isStub);
   mainEl.classList.toggle('bay-open', isBay); // Loadout centers the ship → hide the right-column preview
   // Exactly ONE ship viewer runs per view: Loadout uses the centered-ship (+ item-model) viewers and hides
@@ -129,7 +132,17 @@ function selectMenu(which) {
   if (isMissions) { renderMissionsBoard(); renderMissionView(mwMission); }
   else if (isBay) { settleBriefingReveal(); showBayView('loadout'); stopViewer(mwItem); } // bay hides the mission canvas → idle the loop
   else if (isCharacter) { settleBriefingReveal(); renderCharacter(); stopViewer(mwItem); }
+  else if (isMap) { settleBriefingReveal(); renderMapView(); stopViewer(mwItem); }
   else { settleBriefingReveal(); renderStub(which); stopViewer(mwItem); }
+}
+// Base-menu Map: the flyable star-system overview. "Launch into system" → free roam; each reachable
+// mission destination → roam + autopilot there. Both hand off to enterRoam (the one roam entry point).
+function renderMapView() {
+  mountBaseMenuMap(document.getElementById('mw-view-map'), {
+    missionOffers,
+    onLaunch: () => enterRoam(null),
+    onFlyHere: (dest) => enterRoam(dest),
+  });
 }
 // Render a placeholder panel for a not-yet-built section (Map / Craft — see the redesign plan).
 function renderStub(which) {
@@ -402,6 +415,39 @@ export function launchMission(m) {
   G.gameStarted = true;
   reset();
 }
+
+// enterRoam(dest) — THE one entry into the interactive out-of-combat flight state (roam). Mirrors
+// launchMission's menu-teardown but starts NO level (the G.roam guard in reset() skips levelRunner + the
+// ghost battle → world up, player controllable, no enemies). dest = {pos:{x,z}, missionId} → drop in +
+// autopilot there; null → free manual cruise. beginLiveSession is intentionally NOT called (roam unrecorded).
+export async function enterRoam(dest) {
+  G.activeMission = null; G.pendingBriefing = null;
+  if (Device.hasTouch) requestFullscreen();
+  mainEl.classList.remove('on');
+  document.getElementById('welcome').style.display = 'none';
+  stopShipPreview();
+  stopLoadoutPreview();
+  settleBriefingReveal();
+  stopViewer(mwItem);
+  document.body.classList.remove('menu');
+  await refreshMissions();           // ensure missionOffers is current for arrival prompts (Stage 3)
+  G.gameStarted = true; G.roam = true;
+  reset();                           // rebuilds world + player at planet 2, NO levelRunner (G.roam guard)
+  if (dest) engagePointAutopilot(dest.pos, dest.missionId || null); // else: free manual cruise
+}
+
+// Roam arrival: the sim fires this (via G.onMissionArrival) when a point-autopilot carrying a mission id
+// comes to rest at its destination. Show "Start mission?" ONLY when the offer actually exists (unlocked +
+// on the board); a locked/stale id just parks (no prompt). Yes → clear roam and launch the real fight.
+G.onMissionArrival = (missionId) => {
+  const offer = missionOffers.find((o) => o.id === missionId);
+  if (!offer) return; // locked / not offered / stale → park, no prompt
+  showStartMissionPrompt({
+    titleText: t(offer.titleKey || 'mission.mining.title'),
+    onYes: () => { G.roam = false; launchMission(offer); }, // clearing roam first makes reset() start the levelRunner
+    onNo: () => {},                                          // park (stay in roam)
+  });
+};
 
 // ---------- Main Window ship-model preview (right column) ----------
 // A small, self-contained Three.js view (its own scene/camera/renderer on #mw-ship) that shows the
