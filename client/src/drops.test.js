@@ -35,8 +35,8 @@ test('pullSpeed: a zero/undefined weight falls back to WEIGHT_FALLBACK (never di
 
 // reach is unchanged by the speed-model swap — range() still comes from field/FIELD_CUTOFF (see range test below)
 test('reach unchanged: range() is independent of the linear speed model', () => {
-  approx(range(10), Math.sqrt(125));  // ≈ 11.18, exactly as before
-  approx(range(20), Math.sqrt(250));  // ≈ 15.81
+  approx(range(13), Math.sqrt(162.5)); // ≈ 12.75 (base grab, strength 13)
+  approx(range(26), Math.sqrt(325));   // ≈ 18.03 (advanced grab, strength 26)
 });
 
 // --- field: inverse-square; the FIELD_CUTOFF boundary is what defines the emergent range ---
@@ -50,10 +50,10 @@ test('field: falls off as 1/dist² and crosses FIELD_CUTOFF exactly at range()',
 });
 
 // --- range: EMERGENT (sqrt(strength·FIELD_K/FIELD_CUTOFF)), weight-INDEPENDENT ---
-test('range: base ≈11.18, advanced ≈15.81, advanced/base === sqrt(2)', () => {
-  approx(range(10), Math.sqrt(125));   // ≈ 11.1803
-  approx(range(20), Math.sqrt(250));   // ≈ 15.8114
-  approx(range(20) / range(10), Math.SQRT2, 1e-9); // advanced reaches √2× the base, not 2×
+test('range: base ≈12.75, advanced ≈18.03, advanced/base === sqrt(2)', () => {
+  approx(range(13), Math.sqrt(162.5));  // ≈ 12.7475 — seeded base grab (strength 13)
+  approx(range(26), Math.sqrt(325));    // ≈ 18.0278 — seeded advanced grab (strength 26)
+  approx(range(26) / range(13), Math.SQRT2, 1e-9); // advanced reaches √2× the base, not 2×
 });
 
 // --- pickLoot: uniform among the enemy's NON-HULL components + mounted weapons; hulls NEVER drop ---

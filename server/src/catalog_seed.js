@@ -116,13 +116,14 @@ export const COMPONENTS = [
   // On kill, enemies sometimes drop a piece of their gear as a metal-box in the arena; a drop within the
   // grab's RANGE is pulled toward the ship, and collected drops deposit into the stash on mission victory.
   //   Inverse-square field: FIELD = strength·5/dist²; the beam engages where FIELD ≥ 0.4, so RANGE is
-  //   EMERGENT (base strength 10 → ≈11.2 u, Advanced 20 → ≈15.8 u = √2× base) and weight-INDEPENDENT.
+  //   EMERGENT (base strength 13 → ≈12.7 u, Advanced 26 → ≈18.0 u = √2× base) and weight-INDEPENDENT.
+  //   Both strengths were raised +30% (10→13, 20→26) on 2026-08-09; reach grows √1.3 ≈ +14%.
   //   PULL SPEED (u/s) = a LINEAR ramp by distance (4 u/s at the ship → 1 u/s far, weight-10 ref) · (10/weight)
   //                       — rises linearly the closer the drop is (no near-ship jerk); light parts faster.
   //                       Speed depends on distance + weight only, NOT strength — strength sets reach, not speed.
   // The player owns the base Grab from the start; the Advanced grab is buyable (see docs/plans/2026-07-03-1412-grab-tractor-drops.md).
-  { id: 29, name: 'Grab', type: 'grab', weight: 2, price: 500, stats: { strength: 10 } },
-  { id: 30, name: 'Advanced grab', type: 'grab', weight: 3, price: 2000, stats: { strength: 20 } },
+  { id: 29, name: 'Grab', type: 'grab', weight: 2, price: 500, stats: { strength: 13 } },
+  { id: 30, name: 'Advanced grab', type: 'grab', weight: 3, price: 2000, stats: { strength: 26 } },
   // shield (new component type): absorbs incoming damage before the hull; breaks when fully depleted,
   // then recharges over `rechargeSec` and refills to full. Equipped on the starter ship; buyable. Tiers
   // (bigger capacity / faster recharge) drop in later as more `{ capacity, rechargeSec }` rows.

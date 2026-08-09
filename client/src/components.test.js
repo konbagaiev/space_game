@@ -21,7 +21,7 @@ const THR = {
   scout: { weight: 3, power: 1.6 },
 };
 const W = { gun: { weight: 6 }, rocket: { weight: 8 } };
-const GRAB = { base: { weight: 2, strength: 10 }, adv: { weight: 3, strength: 20 } }; // mirrors the DB seed (ids 29/30)
+const GRAB = { base: { weight: 2, strength: 13 }, adv: { weight: 3, strength: 26 } }; // mirrors the DB seed (ids 29/30)
 const mount = (weapon) => ({ weapon });
 // The starter loadout now includes the base Grab (weight 2), so its mass = REFERENCE_MASS (50) → accel/turn 1:1.
 const playerShip = () => ({ hull: HULL.basic, engine: ENGINE.basic, thruster: THR.basic, grab: GRAB.base, mounts: [mount(W.gun), mount(W.rocket)] });
