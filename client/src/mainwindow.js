@@ -371,7 +371,8 @@ document.getElementById('mw-mission-desc').addEventListener('click', () => {
 // Reload the side-mission board (offers + taken set + active), then re-render the board + detail.
 export async function refreshMissions() {
   // Side missions open LATER than the shop (after "Level 3" — DECISIONS §91), so gate on the dedicated
-  // `sideMissionsUnlocked` flag the server derives from progress, not on `shopUnlocked`.
+  // `sideMissionsUnlocked` flag the server derives from progress, not on `shopUnlocked`. (The server
+  // derives it by level name, not by a raw progress id — DECISIONS §95.)
   const unlocked = !!(G.playerId && G.activeShip && G.activeShip.sideMissionsUnlocked);
   if (!unlocked) { missionOffers = []; takenIds = new Set(); activeMissionId = null; renderMissionsBoard(); updateGoButton(); return; }
   try {

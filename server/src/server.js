@@ -217,9 +217,10 @@ export async function createApp() {
   }));
 
   // ---------- Side missions (docs/plans/mission-generator.md) ----------
-  // The 3-choice side-mission board. Gated separately from the shop: it opens LATER, on reaching the
-  // "Level 4" briefing (current_progress >= SIDE_MISSIONS_MIN_PROGRESS, i.e. after clearing "Level 3" —
-  // DECISIONS §91), while the shop opens right after the first flight (DECISIONS §90). Returns the
+  // The 3-choice side-mission board. Gated separately from the shop: it opens LATER, on reaching the level
+  // seeded as `level-5` (`SIDE_MISSIONS_MIN_LEVEL`, the "Level 4" briefing, i.e. after clearing "Level 3" —
+  // DECISIONS §91/§95); compared by level NAME, never by a raw id. The shop opens right after the first
+  // playable level (DECISIONS §90). Returns the
   // currently-offered missions (each with a full level-style descriptor the client plays via levelRunner).
   // Clearing one banks per-kill ×2 credits like a level and does NOT advance the story counter.
   // Stable set of offered side-mission ids (the generator is deterministic) — used to validate mutations.
