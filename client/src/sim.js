@@ -47,6 +47,11 @@ export function refreshMusic() { audio.setScene(musicForState()); }
 const BANNER_FADE = 3;              // seconds to fade from full to invisible (per the design)
 const firedBanners = new Set();     // milestone keys already shown this run (10, 5, 'final')
 function showBanner(text, dur = BANNER_FADE) { G.banner.text = text; G.banner.life = dur; G.banner.maxLife = dur; }
+// Floating "EVADE" text over the ship when a hostile shot is dodged (Maneuver skill). Reuses the
+// credit-popup pool/renderer (hud.updateCreditPopups) via a `text` field instead of a credit `amount`.
+function spawnEvadePopup(pos) {
+  creditPopups.push({ pos: pos.clone(), text: t('ui.evade'), evade: true, life: 1.2, maxLife: 1.2 });
+}
 // Draw: apply the current banner's text + fading opacity; hidden while faded out, on menus/overlays,
 // or with no player. Ages in update(dt) (so it freezes on pause), like the credit popups.
 export function updateBanner() {
@@ -129,6 +134,7 @@ export const levelRunner = {
     if (G.baseStation) G.baseStation.active = false;
     audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
     G.earned *= 2; // double the credits earned for clearing the level
+    G.earnedXp += this.level.xpReward || 0; // one-shot mission XP bonus on victory (per-kill XP is NOT doubled)
     el.overlayTitle.textContent = t('ui.overlay.victory');
     // resolve the level's victory line through i18n (key → translation → English fallback)
     const cleared = this.winTextKey ? t(this.winTextKey) : (this.winText || t('ui.overlay.sector_cleared'));
@@ -429,8 +435,10 @@ export function update(dt) {
     if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
   }
 
-  // Flat top speed: pure inertia, but the player never exceeds PLAYER_MAX_SPEED (manual + autopilot alike).
-  if (G.player.vel.length() > PLAYER_MAX_SPEED) G.player.vel.setLength(PLAYER_MAX_SPEED);
+  // Flat top speed: pure inertia, but the player never exceeds their max (manual + autopilot alike).
+  // Mobility skill raises the cap by maxSpeedMul (1 when no points / on replays).
+  const maxSpeed = PLAYER_MAX_SPEED * (G.player.maxSpeedMul || 1);
+  if (G.player.vel.length() > maxSpeed) G.player.vel.setLength(maxSpeed);
   // the ship keeps flying in its current direction, no matter where the nose points
   G.player.mesh.position.addScaledVector(G.player.vel, dt);
 
@@ -550,12 +558,22 @@ export function update(dt) {
         }
       }
     } else {
-      const res = resolveHostileBulletHit(G.player, _bulletP0, b.mesh.position, b.damage);
+      // Maneuver skill: on a geometric connect, evade with probability dodge/(100+dodge) (hit chance =
+      // 100/(100+dodge-accuracy); accuracy is 0 until that skill ships). The RNG is drawn ONLY when
+      // dodge>0, so a no-skill run — and every existing recording — consumes zero extra draws and replays
+      // bit-identically (DECISIONS §73 opt-in-per-draw contract).
+      const dodge = G.player.dodge || 0;
+      const dodgeRoll = dodge > 0 ? () => simRandom() >= 100 / (100 + dodge) : null;
+      const res = resolveHostileBulletHit(G.player, _bulletP0, b.mesh.position, b.damage, dodgeRoll);
       if (res.hit) {
         hit = true;
-        if (res.impact) b.mesh.position.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
-        if (res.damageResult.absorbed) spawnShieldHit(b.mesh.position, res.damageResult.broke); // cyan ripple where the shot connects with the shield
-        audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
+        if (res.dodged) {
+          spawnEvadePopup(G.player.mesh.position); // evaded: "EVADE" text, no damage/FX
+        } else {
+          if (res.impact) b.mesh.position.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
+          if (res.damageResult.absorbed) spawnShieldHit(b.mesh.position, res.damageResult.broke); // cyan ripple where the shot connects with the shield
+          audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
+        }
       }
     }
 
@@ -763,11 +781,13 @@ export function update(dt) {
         }
       }
       const reward = e.reward || 0;
+      const xp = e.xp || 0;
       G.earned += reward;         // credits (reward for this ship type)
+      G.earnedXp += xp;           // character experience (banked with the run at /api/games)
       if (reward > 0) {           // floating "+xx" green popup at the kill site (cosmetic feedback)
         creditPopups.push({ pos: e.mesh.position.clone(), amount: reward, life: 2.0, maxLife: 2.0 });
       }
-      logEvent(t('ui.log.killed', { name: e.name, amount: reward })); // event-log kill line
+      logEvent(t('ui.log.killed', { name: e.name, amount: reward, xp })); // event-log kill line (credits + XP)
       // reward drop: the LAST enemy of a level that carries a lastKillDrop drops the reward model (cosmetic —
       // no stash deposit; the real copy is server-installed on victory), but only if the player doesn't already
       // own it. Otherwise fall back to the usual 20% metal-box loot roll (one of the enemy's non-hull parts /
@@ -910,7 +930,7 @@ export function reset() {
   G.player._shieldRechargeAccum = 0;
   for (const g of Object.values(G.player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
   G.player.alive = true;
-  G.earned = 0; G.kills = 0; G.banked = false; // new run: reset session credits + the bank-once guard (balance persists)
+  G.earned = 0; G.earnedXp = 0; G.kills = 0; G.banked = false; // new run: reset session credits/XP + the bank-once guard (balance persists)
   G.enemyShieldRefills = 0; // diagnostic: completed enemy shield refills this run (replay triage)
   // The level's scene is now built (set-pieces, arena, player). Ask the render loop to compile + upload it
   // BEFORE the fight instead of during it — a weak phone otherwise spends 10+ s of the first 15 blocked on

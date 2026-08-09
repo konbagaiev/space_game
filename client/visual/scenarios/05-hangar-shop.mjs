@@ -1,7 +1,8 @@
-// Shop + stash (docs/plans/hangar-shop.md + economy-shop-v2.md): unlock the shop (clear the campaign),
-// reload onto the Main Window, open the bay from the left menu, and assert the bay — left-menu-switched
-// Loadout / Stash / Shop screens, a two-pane Shop (type list → items), the live ship-stats panel — then
-// exercise an install. Also catches any JS error in the shop module (the runner fails on any page error).
+// Loadout screen (docs/plans/2026-08-08-base-menu-redesign.md, Slice C): unlock the shop (clear the
+// campaign), land on the Main Window, open Loadout — the ship sits centered with its slot chips around it;
+// selecting a slot opens the right panel (equipped info + Remove + stash replacements → Install), and the
+// Shop button swaps the panel to the shop (type list → buyable items). Also catches any JS error in the
+// shop module (the runner fails on any page error).
 export const name = '05-hangar-shop';
 
 export default async function ({ page, assert, shot }) {
@@ -13,75 +14,114 @@ export default async function ({ page, assert, shot }) {
     for (let i = 0; i < 4; i++) await fetch(`/api/players/${pid}/advance`, { method: 'POST' });
   }, pid);
 
-  // reload → the client lands on the Main Window; once unlocked, the Loadout/Stash/Shop menu items show
+  // reload → the client lands on the Main Window; the Loadout item opens the centered-ship screen
   await page.goto(page.url(), { waitUntil: 'load' });
   await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
   await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
-  await page.waitForFunction('document.querySelectorAll(".mw-shop-item:not(.mw-hidden)").length === 3', null, { timeout: 5000 });
+  await page.waitForSelector('.mw-item[data-mw="loadout"]', { state: 'attached', timeout: 5000 });
 
-  // open the bay via the left-menu Loadout item
+  // open the Loadout screen
   await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());
-  await page.waitForTimeout(100);
+  await page.waitForFunction('document.querySelectorAll("#loadout-slots .slot-chip").length >= 6', null, { timeout: 5000 });
   const base = await page.evaluate(() => ({
-    shopItems: document.querySelectorAll('.mw-shop-item:not(.mw-hidden)').length,
     bayActive: document.getElementById('mw-view-bay').classList.contains('active'),
-    loadoutActive: document.getElementById('view-loadout').classList.contains('active'),
-    loadout: document.querySelectorAll('#loadout-list .bay-item').length,
-    stash: document.querySelectorAll('#stash-list .bay-item').length,
+    slots: document.querySelectorAll('#loadout-slots .slot-chip').length,
+    hasShipCanvas: !!document.getElementById('loadout-ship'),
     stats: document.querySelectorAll('#ship-stats .stat').length,
-    types: document.querySelectorAll('#shop-types button').length,
+    hasGunSlot: !!document.querySelector('.slot-chip[data-slot="gun"]'),
   }));
-  assert.equal(base.shopItems, 3, 'three bay menu items: Loadout / Stash / Shop');
-  assert.ok(base.bayActive, 'the bay work-zone view is shown');
-  assert.ok(base.loadoutActive, 'opens on the Loadout screen');
-  assert.ok(base.loadout >= 4, 'the loadout shows the equipped slots');
-  assert.ok(base.stash >= 1, 'the stash holds the backfilled basic gun');
+  assert.ok(base.bayActive, 'the Loadout screen is shown in the work zone');
+  assert.ok(base.slots >= 8, 'the ship shows its slot chips (6 components + weapon groups)');
+  assert.ok(base.hasShipCanvas, 'the centered ship canvas is present');
   assert.equal(base.stats, 4, 'four live ship-stats are shown (HP / accel / turn / weight)');
-  assert.equal(base.types, 6, 'shop type list: Hull / Engine / Thrusters / Repair / Weapon / Grab');
+  assert.ok(base.hasGunSlot, 'the gun weapon slot is present');
   await shot('loadout');
 
-  // Shop screen → Weapon type → the buyable weapon ladder shows on the right pane
-  await page.evaluate(() => document.querySelector('.mw-item[data-mw="shop"]').click());
-  await page.evaluate(() => document.querySelector('#shop-types [data-type="weapon"]').click());
-  await page.waitForTimeout(100);
-  const shop = await page.evaluate(() => ({
-    shopActive: document.getElementById('view-shop').classList.contains('active'),
-    items: document.querySelectorAll('#shop-list .bay-item').length,
-    hasPrice: !!document.querySelector('#shop-list .price'),
+  // select the gun slot → the panel shows the equipped weapon + Remove, and the backfilled basic gun as a
+  // stash replacement
+  await page.evaluate(() => document.querySelector('.slot-chip[data-slot="gun"]').click());
+  await page.waitForTimeout(80);
+  const slotPanel = await page.evaluate(() => ({
+    name: (document.querySelector('#loadout-panel .lp-item .lp-name') || {}).textContent || '',
+    hasRemove: !!document.querySelector('#loadout-panel [data-act="unequip"]'),
+    hasModel: !!document.getElementById('shop-model'),
+    stashRows: [...document.querySelectorAll('#loadout-panel .lp-row[data-act="pick-stash"]')].map((b) => b.textContent),
+    hasShopBtn: !!document.querySelector('#loadout-panel [data-act="open-shop"]'),
   }));
-  assert.ok(shop.shopActive, 'the Shop screen is active');
-  assert.ok(shop.items >= 3, 'the Weapon type lists the buyable weapon ladder');
-  assert.ok(shop.hasPrice, 'shop items show a price');
-  // the hover/(i) characteristics list every stat — incl. bullet speed + max range
-  const wstats = await page.evaluate(() =>
-    [...document.querySelectorAll('#shop-list .bay-item .stats')].map((s) => s.textContent).join(' | '));
-  assert.match(wstats, /Speed \d/, 'weapon stats include projectile speed');
-  assert.match(wstats, /Range \d/, 'weapon stats include max range');
-  // items already owned (equipped or in the stash — e.g. the backfilled Basic kinetic, the equipped
-  // Machine Gun) show an "Owned ×N" badge
-  const ownedBadges = await page.evaluate(() => [...document.querySelectorAll('#shop-list .owned-badge')].map((b) => b.textContent.trim()));
-  assert.ok(ownedBadges.some((t) => /Owned ×\d/.test(t)), 'owned weapons show an "Owned ×N" badge in the shop');
-  // characteristics are hidden until the (i) button is tapped (no hover reveal)
-  const hiddenBefore = await page.evaluate(() => document.querySelector('#shop-list .bay-item .stats').classList.contains('hidden'));
-  assert.ok(hiddenBefore, 'stats are hidden by default');
-  await page.evaluate(() => document.querySelector('#shop-list .bay-item .info-btn').click());
-  const shownAfter = await page.evaluate(() => !document.querySelector('#shop-list .bay-item .stats').classList.contains('hidden'));
-  assert.ok(shownAfter, 'tapping (i) reveals the characteristics');
-  await page.waitForTimeout(100);
-  await shot('shop-weapons');
+  assert.ok(slotPanel.name.length > 0, 'the selected slot shows the equipped item info');
+  assert.ok(slotPanel.hasModel, 'the equipped Machine Gun shows its 3D model in the slot panel');
+  assert.ok(slotPanel.hasRemove, 'the equipped item can be Removed');
+  assert.ok(slotPanel.stashRows.some((t) => /Basic kinetic/.test(t)), 'the backfilled basic gun shows as a stash replacement');
+  assert.ok(slotPanel.hasShopBtn, 'the Shop button is present in the panel');
+  await page.waitForTimeout(120);
+  await shot('slot-detail');
 
-  // Stash screen → install the basic gun → the player is rebuilt with it equipped
-  await page.evaluate(() => document.querySelector('.mw-item[data-mw="stash"]').click());
+  // pick the basic gun from storage → an Install/Replace button → install it → the player is rebuilt
   await page.evaluate(() => {
-    const btn = document.querySelector('#stash-list [data-act="equip"]');
-    if (btn) btn.click();
+    const row = [...document.querySelectorAll('#loadout-panel .lp-row[data-act="pick-stash"]')].find((b) => /Basic kinetic/.test(b.textContent));
+    row.click();
   });
+  await page.waitForFunction('!!document.querySelector("#loadout-panel [data-act=\'install\']")', null, { timeout: 3000 });
+  // the picked storage item's row has both Install/Replace and a Sell button
+  const picked = await page.evaluate(() => ({
+    install: !!document.querySelector('#loadout-panel .lp-item [data-act="install"]'),
+    sell: !!document.querySelector('#loadout-panel .lp-item [data-act="sell"]'),
+  }));
+  assert.ok(picked.install, 'the picked storage item offers Install/Replace');
+  assert.ok(picked.sell, 'the picked storage item offers Sell');
+  await shot('stash-picked');
+  await page.evaluate(() => document.querySelector('#loadout-panel [data-act="install"]').click());
   await page.waitForTimeout(400);
   const gun = await page.evaluate(() => window.__game.player.groups.gun.mounts.map((m) => m.weapon.name));
-  assert.ok(gun.includes('Basic kinetic'), 'installing the basic gun from the stash rebuilt the player');
+  assert.ok(gun.includes('Basic kinetic'), 'installing the basic gun from storage rebuilt the player');
   await shot('after-install');
 
+  // open the shop panel → Weapon type → the buyable weapon ladder shows with prices + an owned badge
+  await page.evaluate(() => document.querySelector('#loadout-panel [data-act="open-shop"]').click());
+  await page.evaluate(() => document.querySelector('#loadout-panel .lp-type[data-type="weapon"]').click());
+  await page.waitForTimeout(80);
+  const shop = await page.evaluate(() => ({
+    items: document.querySelectorAll('#loadout-panel .lp-shop-item').length,
+    hasPrice: !!document.querySelector('#loadout-panel .lp-shop-item .price'),
+    hasBuy: !!document.querySelector('#loadout-panel .lp-shop-item [data-act="buy"]'),
+    ownedBadges: [...document.querySelectorAll('#loadout-panel .owned-badge')].map((b) => b.textContent.trim()),
+  }));
+  assert.ok(shop.items >= 3, 'the Weapon type lists the buyable weapon ladder');
+  assert.ok(shop.hasPrice, 'shop items show a price');
+  assert.ok(shop.hasBuy, 'shop items have a Buy button');
+  assert.ok(shop.ownedBadges.some((t) => /Owned ×\d/.test(t)), 'an owned weapon shows an "Owned ×N" badge');
+  await shot('shop-weapons');
+
+  // click the Machine Gun entry (it has a glb) → the detail card: stats at top, the 3D model, Buy, Back
+  await page.evaluate(() => {
+    const card = [...document.querySelectorAll('#loadout-panel .lp-shop-item[data-act="shop-item"]')].find((c) => /Machine Gun/.test(c.textContent) && !/Pirate/.test(c.textContent));
+    card.click();
+  });
+  await page.waitForTimeout(120);
+  const detail = await page.evaluate(() => ({
+    model: !!document.getElementById('shop-model'),
+    stats: !!document.querySelector('#loadout-panel .lp-detail .lp-stats'),
+    buy: !!document.querySelector('#loadout-panel .lp-detail [data-act="buy"]'),
+    back: !!document.querySelector('#loadout-panel [data-act="shop-list"]'),
+  }));
+  assert.ok(detail.stats, 'the detail card shows the item stats');
+  assert.ok(detail.model, 'the detail card shows the 3D model canvas (Machine Gun has a glb)');
+  assert.ok(detail.buy, 'the detail card has a Buy button');
+  assert.ok(detail.back, 'the detail card has a Back button');
+  await shot('shop-detail');
+
+  // Back → the item list, then Back again → the slot detail
+  await page.evaluate(() => document.querySelector('#loadout-panel [data-act="shop-list"]').click());
+  await page.waitForTimeout(60);
+  assert.ok(await page.evaluate(() => !!document.querySelector('#loadout-panel .lp-shop-item')), 'Back returns to the shop item list');
+  await page.evaluate(() => document.querySelector('#loadout-panel [data-act="close-shop"]').click());
+  await page.waitForTimeout(60);
+  const backToSlot = await page.evaluate(() => !!document.querySelector('#loadout-panel [data-act="open-shop"]'));
+  assert.ok(backToSlot, 'Back returns from the shop to the slot panel');
+
   // launch the mission (the mission view's Take-off), then die → the death overlay offers "Back to Hangar"
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="missions"]').click());
+  await page.waitForTimeout(80);
   await page.evaluate(() => document.getElementById('mw-go').click());
   await page.waitForTimeout(200);
   await page.evaluate(() => { window.__game.player.hp = 0; });
@@ -94,13 +134,13 @@ export default async function ({ page, assert, shot }) {
   assert.ok(death.backBtn, 'Back to Hangar is offered on death once the shop is unlocked');
   await shot('death-back-to-hangar');
 
-  // clicking it returns to the Main Window (shop reachable from the menu), not an instant retry
+  // clicking it returns to the Main Window with the Loadout section available
   await page.evaluate(() => document.getElementById('back-hangar').click());
   await page.waitForTimeout(200);
   const backHome = await page.evaluate(() => ({
     mainOn: document.getElementById('mainwin').classList.contains('on'),
-    shopItemsVisible: document.querySelectorAll('.mw-shop-item:not(.mw-hidden)').length,
+    loadoutItem: !!document.querySelector('.mw-item[data-mw="loadout"]'),
   }));
   assert.ok(backHome.mainOn, 'Back to Hangar returns to the Main Window');
-  assert.equal(backHome.shopItemsVisible, 3, 'the shop menu items are available there');
+  assert.ok(backHome.loadoutItem, 'the Loadout section is available from the menu');
 }

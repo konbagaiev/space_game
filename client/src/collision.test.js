@@ -250,3 +250,41 @@ test('resolveHostileBulletHit: a segment that misses the hull does nothing and d
   assert.equal(p.hp, 100);
   assert.equal(r.damageResult, null);
 });
+
+// --- Maneuver skill: injected dodgeRoll gates damage on a geometric connect (RNG lives in the caller) ---
+test('resolveHostileBulletHit: dodgeRoll=true evades — connect + consume the bullet, but NO damage', () => {
+  const p = hostilePlayer();
+  const r = resolveHostileBulletHit(p, V(-3, 0, 0), V(3, 0, 0), 12, () => true);
+  assert.equal(r.hit, true);
+  assert.equal(r.dodged, true);
+  assert.equal(r.remove, true);            // dodged shot still consumes the bullet
+  assert.equal(p.hp, 100);                 // no damage on an evade
+  assert.equal(r.damageResult, null);
+});
+
+test('resolveHostileBulletHit: dodgeRoll=false takes the hit exactly as with no roll', () => {
+  const p = hostilePlayer();
+  const r = resolveHostileBulletHit(p, V(-3, 0, 0), V(3, 0, 0), 12, () => false);
+  assert.equal(r.hit, true);
+  assert.equal(r.dodged, false);
+  assert.equal(p.hp, 88);                  // damage applied
+});
+
+test('resolveHostileBulletHit: dodgeRoll is only consulted AFTER a geometric connect (a miss never rolls)', () => {
+  const p = hostilePlayer();
+  let rolls = 0;
+  const roll = () => { rolls++; return true; };
+  resolveHostileBulletHit(p, V(-3, 5, 0), V(3, 5, 0), 12, roll); // off-plane → misses
+  assert.equal(rolls, 0);                   // no connect → no RNG draw (keeps replays deterministic)
+  resolveHostileBulletHit(p, V(-3, 0, 0), V(3, 0, 0), 12, roll); // connects
+  assert.equal(rolls, 1);                   // exactly one draw per connect
+});
+
+test('resolveHostileBulletHit: with a shield up, a dodge skips shield absorption too (no ripple, no drain)', () => {
+  const p = hostilePlayer({ shield: true, _shieldValue: 20 });
+  const r = resolveHostileBulletHit(p, V(-3, 0, 0), V(3, 0, 0), 5, () => true);
+  assert.equal(r.hit, true);
+  assert.equal(r.dodged, true);
+  assert.equal(p._shieldValue, 20);        // shield untouched on an evade
+  assert.equal(r.damageResult, null);
+});

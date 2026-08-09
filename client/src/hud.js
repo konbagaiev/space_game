@@ -91,6 +91,34 @@ export function updateMenuCredits(balance = G.balance) {
   el.mwCreditsVal.textContent = balance;
 }
 
+// ---------- Character progression HUD (docs/plans/2026-08-09-character-progression.md) ----------
+// The always-on bottom XP bar (fills toward the next level; previews the current run's unbanked XP live)
+// plus the free-skill-points badge on the Character menu item. Runs every frame — setText/setStyle skip
+// unchanged writes, so it's cheap. Hidden with no player data or during a cutscene/replay.
+export function updateProgressionHud() {
+  const prog = G.activeShip && G.activeShip.progression;
+  const show = !!prog && !G.replayMode;
+  setStyle(el.xpBar, 'display', show ? 'block' : 'none');
+  if (show) {
+    const span = prog.xpForNextLevel || 1;
+    const live = prog.xpIntoLevel + (G.earnedXp || 0); // preview the run's earned-but-not-yet-banked XP
+    setStyle(el.xpFill, 'width', Math.max(0, Math.min(100, 100 * live / span)).toFixed(1) + '%');
+    setText(el.xpText, `${t('ui.character.level', { level: prog.level })} · ${t('ui.character.xp', { into: Math.round(live), span })}`);
+  }
+  const pts = prog ? prog.skillPoints : 0; // free-skill-points badge on the Character menu item
+  setText(el.charBadge, pts > 0 ? String(pts) : '');
+  el.charBadge.classList.toggle('show', pts > 0);
+}
+
+// "Level up" toast — centered white text that fades out over 2s (CSS animation). Restart the animation on
+// each call so back-to-back level-ups each play.
+export function showLevelUp() {
+  const n = el.levelupToast;
+  n.classList.remove('show');
+  void n.offsetWidth; // force reflow so re-adding the class restarts the fade
+  n.classList.add('show');
+}
+
 // ---------- Perf overlay (load) ----------
 let perfAccum = 0, perfFrames = 0, perfFps = 0;
 // Live ship-speed readout (world units/sec) for tuning a future max-speed cap: the current |velocity|
@@ -225,7 +253,9 @@ export function updateCreditPopups() {
     setStyle(p, 'display', 'block');
     place(p, x, y, ' translate(-50%,-50%)');
     setStyle(p, 'opacity', String(Math.min(1, Math.max(0, cp.life)).toFixed(2))); // hold full, then fade over the last ~1s
-    setText(p, '+' + cp.amount);
+    // Pooled div is reused: a text popup (e.g. "EVADE" on a dodge) carries `text`; otherwise it's a credit "+xx".
+    if (cp.text != null) { setText(p, cp.text); p.classList.toggle('evade', !!cp.evade); }
+    else { setText(p, '+' + cp.amount); p.classList.remove('evade'); }
   }
   for (let i = used; i < popupPool.length; i++) setStyle(popupPool[i], 'display', 'none');
 }

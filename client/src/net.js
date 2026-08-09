@@ -6,10 +6,21 @@
 // Sits HIGH in the dependency graph (the sim loop + UI flows call these); imports the leaves it needs.
 import { G, CATALOG } from './state.js';
 import { API_BASE, BUILD_SOURCE } from './api-base.js';
-import { updateHud } from './hud.js';
+import { updateHud, showLevelUp } from './hud.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
 import { sendSession } from './session-transport.js'; // pure beacon-vs-fetch routing (unit-tested; the no-keepalive win/death fix)
+
+// TEMP client → server debug log (fire-and-forget). Prints to the server console via /api/clientlog so
+// on-device flows can be diagnosed without devtools. Remove with the intro-advance debugging.
+export function clientLog(event, data = {}) {
+  try {
+    fetch(API_BASE + '/api/clientlog', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, data, ua: navigator.userAgent, t: Date.now() }),
+    }).catch(() => {});
+  } catch { /* ignore */ }
+}
 
 // Small JSON fetch helper: throws on a non-2xx so callers can .catch() a bad response.
 export const fetchJson = async (url) => {
@@ -32,9 +43,19 @@ export function bankRun() {
   if (!G.playerId) { G.balance += G.earned; updateHud(); return; } // offline: reflect locally, best-effort
   fetch(API_BASE + '/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ playerId: G.playerId, credits: G.earned, kills: G.kills, durationMs }),
+    body: JSON.stringify({ playerId: G.playerId, credits: G.earned, kills: G.kills, durationMs, xp: G.earnedXp }),
   }).then((r) => (r.ok ? r.json() : null))
-    .then((res) => { if (res && typeof res.credits === 'number') { G.balance = res.credits; updateHud(); } })
+    .then((res) => {
+      if (res && typeof res.credits === 'number') { G.balance = res.credits; updateHud(); }
+      // Keep the in-memory progression fresh (level + unspent points) so the Character screen is correct
+      // even before the hangar refetches the active ship. Newly-gained levels add that many skill points.
+      if (res && typeof res.experience === 'number' && G.activeShip && G.activeShip.progression) {
+        const p = G.activeShip.progression;
+        const gained = Math.max(0, (res.level || 0) - (p.level || 0));
+        p.experience = res.experience; p.level = res.level;
+        if (gained > 0) { p.skillPoints = (p.skillPoints || 0) + gained; showLevelUp(); } // centered "Level up" toast
+      }
+    })
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
@@ -125,9 +146,11 @@ export async function unlockNextLevel() {
   const clearedLevel = currentLevelLabel(); // before CATALOG.level is swapped to the next level
   try {
     const adv = await (await fetch(API_BASE + `/api/players/${G.playerId}/advance`, { method: 'POST' })).json();
+    clientLog('adv:resp', { advanced: adv && adv.advanced, cp: adv && adv.currentProgress, hasBriefing: !!(adv && adv.briefing) }); // TEMP debug
     if (adv && !adv.advanced) track('victory', { level: clearedLevel }); // no next level → final win
     if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) G.pendingBriefing = adv.briefing;
     const level = await fetchJson(`/api/players/${G.playerId}/level`);
+    clientLog('adv:level', { name: level && level.name, title: level && level.descriptor && level.descriptor.title, map: level && level.descriptor && level.descriptor.map }); // TEMP debug
     if (level.descriptor.map !== CATALOG.level.map) {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
@@ -137,5 +160,6 @@ export async function unlockNextLevel() {
     // a briefing action may have changed the loadout (weapon swap) — reload the active ship + rebuild
     const refreshed = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
     if (refreshed) { G.activeShip = refreshed; if (refreshed.ship) buildPlayerFor(refreshed.ship); }
-  } catch { /* progression is best-effort; on failure the same level replays */ }
+    clientLog('adv:done', { catalogLevel: CATALOG.level && CATALOG.level.title, catalogName: CATALOG.levelName }); // TEMP debug
+  } catch (e) { clientLog('adv:error', { msg: String((e && e.message) || e), stack: String((e && e.stack) || '').slice(0, 400) }); /* progression is best-effort; on failure the same level replays */ }
 }

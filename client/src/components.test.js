@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   deriveDrive, hitsToKill, shipMass, REFERENCE_MASS, repairTick, absorbDamage, shieldRecharge,
-  applyShieldedDamage, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC,
+  applyShieldedDamage, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC, skillEffects, SKILL_RATES,
 } from './components.js';
 
 // Synthetic components mirroring the DB seed: hull {weight,durability}, engine {weight,power},
@@ -268,4 +268,31 @@ test('the derived enemy shield is WEIGHTLESS: mass, acceleration and turn rate a
   assert.equal(shipMass(withShield), shipMass(without), 'a weightless shield does not add mass');
   assert.equal(withShield.acceleration, without.acceleration);
   assert.equal(withShield.turnRate, without.turnRate);
+});
+
+// --- skillEffects (character progression): point allocation -> concrete multipliers/bonuses ---
+test('skillEffects: no/empty allocation is the identity (x1, +0, no dodge)', () => {
+  for (const s of [undefined, null, {}, { kinetic: 0, rocket: 0, shields: 0, maneuver: 0, mobility: 0 }]) {
+    const fx = skillEffects(s);
+    assert.equal(fx.kineticDmgMul, 1); assert.equal(fx.aimAssistBonusDeg, 0);
+    assert.equal(fx.rocketDmgMul, 1); assert.equal(fx.rocketSpeedMul, 1);
+    assert.equal(fx.shieldMul, 1); assert.equal(fx.dodge, 0); assert.equal(fx.mobilityMul, 1);
+  }
+});
+
+test('skillEffects: each point adds one SKILL_RATES step, and skills are independent', () => {
+  const fx = skillEffects({ kinetic: 3, rocket: 2, shields: 4, maneuver: 5, mobility: 1 });
+  assert.ok(Math.abs(fx.kineticDmgMul - (1 + SKILL_RATES.kineticDmgPct * 3)) < 1e-9);
+  assert.ok(Math.abs(fx.aimAssistBonusDeg - SKILL_RATES.aimAssistDeg * 3) < 1e-9);
+  assert.ok(Math.abs(fx.rocketDmgMul - (1 + SKILL_RATES.rocketDmgPct * 2)) < 1e-9);
+  assert.ok(Math.abs(fx.rocketSpeedMul - (1 + SKILL_RATES.rocketSpeedPct * 2)) < 1e-9);
+  assert.ok(Math.abs(fx.shieldMul - (1 + SKILL_RATES.shieldPct * 4)) < 1e-9);
+  assert.equal(fx.dodge, SKILL_RATES.dodgePctPerPt * 5);
+  assert.ok(Math.abs(fx.mobilityMul - (1 + SKILL_RATES.mobilityPct * 1)) < 1e-9);
+});
+
+test('skillEffects: negative/garbage points clamp to 0 (no negative multipliers)', () => {
+  const fx = skillEffects({ kinetic: -5, rocket: NaN, shields: -1, maneuver: -2, mobility: -9 });
+  assert.equal(fx.kineticDmgMul, 1); assert.equal(fx.rocketDmgMul, 1);
+  assert.equal(fx.shieldMul, 1); assert.equal(fx.dodge, 0); assert.equal(fx.mobilityMul, 1);
 });

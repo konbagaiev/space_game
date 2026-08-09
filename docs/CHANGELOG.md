@@ -3,6 +3,154 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-09
+
+- **[gameplay] Character progression HUD — always-on XP bar, free-points badge, "Level up" toast.**
+  Added three always-visible bits to the progression feature: a **free-skill-points badge** (gold count) on
+  the **Character** left-menu item, shown only when there are unspent points; an **always-on XP bar** at the
+  bottom-center of the screen (yellow, 80% wide, on the base **and** in battle) that fills toward the next
+  level and previews the current run's earned XP live; and a centered white **"Level up"** toast that fades
+  out over 2s when a run banks enough XP to reach a new level. All in the per-frame HUD
+  (`hud.js updateProgressionHud`/`showLevelUp`, called from the render loop; level-up fires from `bankRun`).
+  New `ui.levelup` i18n (EN+RU); `11-character-progression` scenario extended to assert the badge + bar.
+  Aim-assist note: the cone was briefly tripled for a feel test then **reverted** (2° weapon / 0.5°-per-point
+  skill) — targeting still keys off the ship center, so improving it (hitbox-sphere aim, watch perf) is now a
+  ROADMAP backlog item.
+- **[shop] Selling gear now shows the price and asks to confirm — with a quantity picker.** Clicking
+  **Sell** on a stash item opens a confirmation dialog showing **You receive: N × 75% of price**; when the
+  stash holds more than one, a **slider + number field** (clamped to what you own, kept in lockstep) choose
+  how many to sell, with the total updating live. Cancel/backdrop dismisses; Sell confirms. Server:
+  `/api/players/:id/sell` gained an optional `qty` (positive integer; omitted → 1, back-compatible), and
+  `sellItem` sells `min(qty, owned)` atomically and returns `{ sold, unit, refund }`. Equipped-item sells
+  (single unit) are unchanged. New `#sell-overlay` modal + `ui.shop.sell.*` i18n (EN+RU), server qty test,
+  and the `12-sell-confirm` visual scenario. docs/plans/2026-08-09-sell-confirm-quantity.md.
+- **[shop] Fixed the Buy button in the shop detail card — it now matches the blue list button.** The
+  `.primary` button styling was scoped to `.lp-item`/`.lp-shop-item`/`.lp-foot`, so the detail card
+  (`.lp-detail`) rendered an unstyled plain "Buy"; added `.lp-detail .lp-acts button[.primary]` (incl. the
+  dev-phone sizing) so it's the same blue button as in the shop list.
+- **[gameplay] Character progression — experience, levels & five skills (Character screen now live).**
+  The base-menu **Character** section is no longer a stub: it shows the pilot's **level**, an **XP bar**,
+  unspent **skill points**, and five skill cards — **Kinetic** (+5% damage, +0.5° aim-assist cone/pt),
+  **Rocket** (+5% damage, +5% speed/pt), **Shields** (+5% capacity/pt), **Maneuverability** (+5% dodge
+  chance/pt), **Mobility** (+5% engine+thruster power AND +5% max speed/pt). **XP** is earned per enemy
+  killed (= the ship's credit reward, now shown in the kill log next to credits) plus a one-shot bonus per
+  mission cleared (Level 1 500 · Level 2 500 · Level 3 700 · Level 4 1500 · side missions 1000, shown on the
+  mission cards). Level curve is an arithmetic ramp — 1000 XP to level 1, +500 each level after (2500, 4500,
+  7000, …); each level grants one skill point, spent freely on the "Coming: choose what to level" cards.
+  **Dodge** is a real per-shot roll (hit chance `100/(100+dodge−accuracy)`, accuracy reserved for a future
+  skill) drawn from the **seeded** sim RNG **only when dodge>0**, so every existing recording still replays
+  bit-identically; a dodged shot pops an **"EVADE"** over the ship and takes no damage. Enemies carry a
+  `dodge` stat too (all current enemies = 0). Server: new `players` columns (`experience` + 5 `skill_*`);
+  `/api/games` banks `xp`; new `POST /api/players/:id/skills/spend`; level + unspent points are **derived**
+  from XP (never stored). New `progression.js` (+tests), skill-effect tests, dodge tests, server
+  banking/spend/reset tests, and a `11-character-progression` visual scenario; intro-replay guard still
+  green. DECISIONS §93; docs/plans/2026-08-09-character-progression.md.
+- **[assets] Engines and thrusters got 3D item icons — and the item viewer learned to animate.** Every
+  `engine` component (7: Basic/Scout/Boss/Solid-fuel/Ion/Pirate/Second-boss) now shows a shared **animated**
+  nozzle in the shop/loadout detail panel — laid on its side into a horizontal nacelle, flame looping — and
+  every `thruster` component (7) a shared low-poly turbine. Previously both families showed nothing. Wired hangar-only (`model_url_high`,
+  CloudFront) through two shared constants in `catalog_seed.js` — one model per family is a deliberate
+  placeholder pass, so per-tier models later mean editing one constant. Both sources are **CC-BY 4.0**
+  (Yo.Ri; photon (that one larry)) — table rows + verbatim attribution added to `client/assets/CREDITS.md`
+  and regenerated into the in-game Credits screen (`npm run credits:build`, now 10 models). Note the glb
+  file names read backwards against the families they serve — they are named after their source assets, and
+  the two were swapped between families after seeing them in the preview; `catalog_seed.js` is the truth.
+- **[client] `model-viewer.js` plays glb animation clips.** The shared spinning-model viewer (shop detail,
+  loadout, briefing showcase, hangar ship preview) had no `AnimationMixer` — an animated glb froze in its
+  bind pose. It now drives clip 0 on loop, advanced by the same clamped per-frame `dt` as the auto-rotate,
+  and clears the mixer when the model is swapped or the viewer is disposed. Models without clips are
+  untouched (`mixer` stays null). The item cfg also gained **`pitch`** (rotation about X, applied in a group
+  nested inside the yaw pivot so the spin axis stays vertical) — needed to lay the engine nozzle down, which
+  `yaw` cannot do: the preview already auto-rotates about the vertical axis, so a yaw only shifts the phase.
+- **[assets] Texture downscaling on both new sources (256px WebP).** The animated source was
+  texture-dominated — 2.3 MB of its 2.5 MB — so its hangar build went **2.51 MB → 86 KB (29×)** with the
+  skeleton and the 6 s flame clip intact. The turbine source was already tiny (3 KB of textures), but 256px
+  still cuts its texture VRAM ~2.8 MB → ~700 KB, which matters on the weak phones. The unused *combat*
+  builds of both items were deliberately **not** pushed to S3 (menu-only items never load them, and the
+  thruster's would have added 2.2 MB of dead weight to every deploy image).
+- **[test] New visual scenario `96-item-models-engine-thruster`.** Asserts all 14 engine/thruster rows
+  resolve to exactly one model url per family (catching a half-wired family), that the animated engine's
+  mixer clock actually **advances** (catching a silently frozen flame), and that a clip-less model leaves
+  the mixer null — plus that swapping back clears it. Adds `?debug` hooks `shopItemTarget` /
+  `shopItemLoaded` / `shopItemClipTime`. `shopItemLoaded` matters: the viewer sets its url synchronously
+  and loads later, so without it the mixer assertions would just race the fetch.
+
+- **[base-menu-redesign] Fix: player id broke over http://<ip> (secure-context-only `crypto.randomUUID`).**
+  On a plain-HTTP LAN IP (e.g. testing on a phone at `http://192.168.1.151:4000`) — a **non-secure
+  context** — `crypto.randomUUID()` is `undefined` and threw, so `state.js` returned a `null` player id;
+  `unlockNextLevel()` then bailed on `if (!G.playerId) return` and the campaign never advanced (the Level‑0
+  intro appeared to loop / Take‑off replayed Level 0). Pre-existing bug, surfaced by LAN‑IP testing
+  (localhost + prod HTTPS are secure contexts, so it never showed there). New `client/src/client-id.js`
+  `makeClientId()` tries `randomUUID()`, else builds a v4 UUID from `crypto.getRandomValues()` (available
+  in insecure contexts), else a `Math.random` fallback; `state.js` uses it. Regression tests in
+  `client/src/client-id.test.js` (incl. the no-randomUUID / throwing-randomUUID paths).
+- **[base-menu-redesign] Phone: base-menu chrome scaled down ~2× (`body.dev-phone`).**
+  On phone form factor (longest viewport edge < 900px) the redesigned base-menu UI — left menu items,
+  mission-board cards, Loadout slot chips, and the right context panel — render at roughly half size so they
+  fit a phone. The **centered ship viewer stays full size**; on phone the panel's **weapon/item model box
+  is short** (`.lp-model` 220→73px) while the model itself renders at full scale. The model
+  **auto-rotation is now time-based** (rad/sec, not per-frame) so it
+  stays smooth under uneven phone frame rates, and the hidden right-column ship preview is **stopped while
+  Loadout is open** so the Loadout viewers get the phone's frame budget (it spun jerkily with three
+  concurrent WebGL loops).
+
+## 2026-08-08
+
+- **[base-menu-redesign] Loadout: item 3D models in the slot panel + the shop card (Slice C, increment 2).**
+  Selecting a ship slot now shows the equipped item's **3D model** in the right panel (e.g. the Machine Gun
+  when you click the GUN slot), alongside its stats + Remove + stash replacements; picking a stash part
+  shows that part's model. Clicking a shop entry opens a **detail card** — stats at top, the item's **3D
+  model** below (rendered via `model-viewer.js` on `#shop-model`, rebuilt+disposed per item; items with no
+  glb show a "No 3D preview" placeholder), **Buy** below, and **Back** to the list. The Loadout right column widened a touch (30%) so
+  the model reads well. The equipment slot blocks were also enlarged. New i18n `ui.shop.no_model`. The
+  type navigation is still a tab row (the spec's collapsed-sections-per-type is a later refinement). See
+  docs/plans/2026-08-08-base-menu-redesign.md (Slice C).
+- **[base-menu-redesign] Loadout redesigned: ship centered, slots around it, a right context panel (Slice C, increment 1).**
+  Clicking **Loadout** now shows the player ship **centered** in the work zone with its equipment/weapon
+  **slot chips arranged around it** (`#loadout-stage`); clicking a slot opens the **right panel** with the
+  equipped item's info + **Remove**, the fitting **stash replacements** (pick one → its info + **Install/
+  Replace**), and a **Shop** button pinned bottom-right. The Shop button swaps the panel to the shop
+  (type list → buyable items with price + **Buy** + Owned badge + **Back**). The old Ship/Stash/Shop tabs
+  are gone; the redundant right-column ship preview is hidden while Loadout is open. The reusable 3D viewer
+  was extracted to `client/src/model-viewer.js` (shared by the Main Window previews + the centered ship).
+  Read-only until the shop unlocks. New i18n (EN+RU): `ui.shop.action.remove/replace`,
+  `ui.shop.select_slot/slot_empty/in_stash/no_replacement/back`. Visual `05-hangar-shop` rewritten for the
+  new screen. Increment 2 (collapsed shop sections + a stats→3D-model→Buy card) is next. Server unchanged.
+  See docs/plans/2026-08-08-base-menu-redesign.md (Slice C).
+- **[base-menu-redesign] Missions: a central board with take / defer / one-active (Slice B).**
+  The Missions section is now a central **board** of cards — the campaign ("Main operation") + the side
+  missions — each with **Take / Defer / Set active** and Active/Taken badges (the old left mission
+  sublist + caret is gone). **Take-off flies the ACTIVE mission** (shown on the button), not just the
+  selected one. Server-persisted: new `taken_missions` table + `players.active_mission_id` (NULL =
+  campaign), created idempotently in `migrate()`; endpoints `POST /api/players/:id/missions/take|defer|
+  activate` (gated on `sideMissionsUnlocked`, ids validated; activate auto-takes + enforces one-active;
+  defer of the active mission falls back to the campaign) and `GET /missions` now returns `taken` +
+  `activeMissionId`. Reset clears both. New i18n (EN + RU): `ui.mission.take/defer/set_active/active/taken`,
+  `ui.button.take_off_mission`. Server tests (take/activate/defer + one-active + reset-clears); visual
+  `10-mission-board` rewritten for the board, `97-briefing-showcase` updated. See DECISIONS §91 +
+  docs/plans/2026-08-08-base-menu-redesign.md (Slice B).
+- **[base-menu-redesign] Base menu reworked into five sections: Character · Missions · Loadout · Map · Craft.**
+  The left base-menu is now a five-item hub (all always shown). **Character / Map / Craft** are stub
+  panels ("Coming soon" — `#mw-view-stub`, routed by `selectMenu()`). **Loadout** absorbs the former
+  standalone Stash / Shop menu items as an in-bay tab row (Ship / Stash / Shop, `#mw-bay-tabs`); before
+  the shop unlocks it shows the ship **read-only** (no Unequip/Sell/prices, Stash/Shop tabs hidden, a
+  hint shown). New i18n keys (EN + RU): `ui.mainwin.character/map/craft`, `ui.shop.tab.ship`,
+  `ui.shop.loadout_locked`, `ui.stub.character/map/craft`. Visual scenario `05-hangar-shop.mjs` updated
+  to the new tab navigation (+ fixed a stale `types === 6`→`7` assertion; shield is a shop type).
+  Deferred Character/Map/Craft specs live in the plan. See docs/plans/2026-08-08-base-menu-redesign.md
+  (Slice A).
+- **[base-menu-redesign] Side missions now unlock after "Level 3" — decoupled from the shop.**
+  Kicks off the base-menu redesign (docs/plans/2026-08-08-base-menu-redesign.md). The side-mission board
+  no longer rides on the shop's unlock flag: the shop still opens right after the first flight (§90),
+  but the board now opens later — on reaching the "Level 4" briefing (descriptor `level-5`, i.e. after
+  clearing "Level 3"), gated on `current_progress >= 5` (new exported `SIDE_MISSIONS_MIN_PROGRESS` in
+  `server/src/db.js`). `getActivePlayerShip()` returns a derived `sideMissionsUnlocked`; the missions
+  endpoint and the client's `refreshMissions()` gate on it (was `shopUnlocked`). No new DB column /
+  migration / backfill — the gate is computed live from progress. Briefing copy updated (EN + RU +
+  `catalog_seed.js` fallbacks): the "Level 2" briefing drops its "side jobs" line; the "Level 4" briefing
+  announces the side-job board. New server test guards the split (403 at "Level 2" with the shop open,
+  offered after "Level 3"). See DECISIONS §91.
+
 ## 2026-08-06
 
 - **[2026-08-06-1847-shop-unlock-after-first-mission] Shop opens after the first mission, not at the end.**

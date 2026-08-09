@@ -37,6 +37,9 @@ function sideMissionPhases() {
 // average + a 2-boss finale. The actual payout is whatever the player earns; this is just a hint.
 const WAVE_KILLS = 14, WAVE_AVG = 0.37 * 40 + 0.37 * 40 + 0.26 * 100; // gunner/rocketeer/heavy mix ≈ 56
 const EST_REWARD = Math.round(((WAVE_KILLS * WAVE_AVG + 2 * 200) * 2) / 10) * 10; // ×2 victory bonus, rounded
+// One-shot XP bonus banked on clearing any side mission (character progression); plus the per-kill XP the
+// client sums from each enemy's `xp`. Flat 1000 for all three flavors (same difficulty).
+const MISSION_XP = 1000;
 
 // The three flavors — same difficulty, different framing (i18n keyed; descriptions in the client catalog).
 // `center` is the combat zone's location in the shared world (x,z); it matches the mission's set-piece
@@ -65,8 +68,9 @@ export function generateMissions() {
     titleKey: f.titleKey,
     descKey: f.descKey,
     estReward: EST_REWARD,
+    estXp: MISSION_XP,
     descriptor: {
-      title: f.type, map: 'home-system', sideMission: true,
+      title: f.type, map: 'home-system', sideMission: true, xpReward: MISSION_XP,
       center: f.center, drift: f.drift || null,
       phases,
       enemyTotal,

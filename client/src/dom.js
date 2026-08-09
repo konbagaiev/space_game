@@ -50,4 +50,11 @@ export const el = {
   returnBtn: byId('return-btn'),
   // transient centered milestone banner ("10 enemies left", "Final Stage") (updateBanner)
   banner: byId('banner'),
+  // character progression (updateProgressionHud / showLevelUp): always-on bottom XP bar, the free-skill-
+  // points badge on the Character menu item, and the centered "Level up" toast.
+  xpBar: byId('xp-bar'),
+  xpFill: byId('xp-bar-fill'),
+  xpText: byId('xp-bar-text'),
+  charBadge: byId('mw-char-badge'),
+  levelupToast: byId('levelup-toast'),
 };

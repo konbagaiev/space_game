@@ -36,6 +36,37 @@ export function deriveDrive(ship) {
   return ship;
 }
 
+// ---- Character-progression skill effects (docs/plans/2026-08-09-character-progression.md) ----
+// Per-point rates for the five skills. Each invested point adds a flat percentage (a fraction here) or
+// flat degrees (aim assist) / percentage points (dodge). Kept pure + here so BOTH the ship build
+// (ship-build.js) and the Character-screen card text derive their numbers from this single source.
+export const SKILL_RATES = {
+  kineticDmgPct: 0.05,   // +5% kinetic (non-rocket) weapon damage per point
+  aimAssistDeg: 0.5,     // +0.5° kinetic auto-aim cone per point (additive)
+  rocketDmgPct: 0.05,    // +5% rocket damage per point
+  rocketSpeedPct: 0.05,  // +5% rocket launch/flight speed per point
+  shieldPct: 0.05,       // +5% shield capacity per point
+  dodgePctPerPt: 5,      // +5 dodge percentage points per point (hit chance = 100/(100+dodge-accuracy))
+  mobilityPct: 0.05,     // +5% engine + thruster power AND max speed per point
+};
+
+// Resolve a { kinetic, rocket, shields, maneuver, mobility } point allocation into the concrete
+// multipliers/bonuses the ship build applies. A missing/empty allocation is the identity (×1, +0).
+export function skillEffects(skills) {
+  const s = skills || {};
+  const k = Math.max(0, s.kinetic | 0), r = Math.max(0, s.rocket | 0), sh = Math.max(0, s.shields | 0);
+  const mn = Math.max(0, s.maneuver | 0), mo = Math.max(0, s.mobility | 0);
+  return {
+    kineticDmgMul: 1 + SKILL_RATES.kineticDmgPct * k,
+    aimAssistBonusDeg: SKILL_RATES.aimAssistDeg * k,
+    rocketDmgMul: 1 + SKILL_RATES.rocketDmgPct * r,
+    rocketSpeedMul: 1 + SKILL_RATES.rocketSpeedPct * r,
+    shieldMul: 1 + SKILL_RATES.shieldPct * sh,
+    dodge: SKILL_RATES.dodgePctPerPt * mn, // dodge chance in percentage points (0 => never dodges)
+    mobilityMul: 1 + SKILL_RATES.mobilityPct * mo,
+  };
+}
+
 // How many hits a hull takes to destroy (derived; handy for balance/tests).
 export function hitsToKill(hullDurability, weaponPower) {
   return Math.ceil(hullDurability / weaponPower);

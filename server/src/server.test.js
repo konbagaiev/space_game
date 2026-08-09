@@ -273,6 +273,54 @@ test('record game: stored in history and credits banked into the balance', async
   assert.equal((await (await post('/api/players/register', { playerId: 'p1' })).json()).credits, 1007);
 });
 
+test('progression: XP banks into experience and derives level + skill points (active-ship read)', async () => {
+  await post('/api/players/register', { playerId: 'xp-1' });
+  // 2500 XP → level 2 (cumulative thresholds 1000 then +1500)
+  const body = await (await post('/api/games', { playerId: 'xp-1', credits: 0, kills: 0, durationMs: 100, xp: 2500 })).json();
+  assert.equal(body.experience, 2500);
+  assert.equal(body.level, 2);
+  assert.equal(body.leveledUp, true);
+  const ship = await getJson('/api/players/xp-1/active-ship');
+  assert.equal(ship.progression.experience, 2500);
+  assert.equal(ship.progression.level, 2);
+  assert.equal(ship.progression.skillPoints, 2);      // two levels, nothing spent
+  assert.equal(ship.progression.xpForNextLevel, 2000); // cost of level 2 → 3
+  // XP accumulates across runs like credits
+  const body2 = await (await post('/api/games', { playerId: 'xp-1', xp: 500 })).json();
+  assert.equal(body2.experience, 3000);
+  assert.equal(body2.level, 2);        // still level 2 (needs 4500 for level 3)
+  assert.equal(body2.leveledUp, false);
+});
+
+test('skills: spend allocates a point + decrements unspent; guards on no-points (409) and unknown skill (400)', async () => {
+  await post('/api/players/register', { playerId: 'sk-1' });
+  await post('/api/games', { playerId: 'sk-1', xp: 1000 }); // level 1 → 1 unspent point
+  let r = await post('/api/players/sk-1/skills/spend', { skill: 'kinetic' });
+  assert.equal(r.status, 200);
+  let prog = (await r.json()).progression;
+  assert.equal(prog.skills.kinetic, 1);
+  assert.equal(prog.skillPoints, 0);
+  r = await post('/api/players/sk-1/skills/spend', { skill: 'rocket' }); // out of points
+  assert.equal(r.status, 409);
+  r = await post('/api/players/sk-1/skills/spend', { skill: 'nope' });   // not a real skill
+  assert.equal(r.status, 400);
+  // the allocation survives an active-ship refetch
+  const ship = await getJson('/api/players/sk-1/active-ship');
+  assert.equal(ship.progression.skills.kinetic, 1);
+});
+
+test('reset: clears experience and skill allocations back to the new-player baseline', async () => {
+  await post('/api/players/register', { playerId: 'xr-1' });
+  await post('/api/games', { playerId: 'xr-1', xp: 3000 }); // level 2
+  await post('/api/players/xr-1/skills/spend', { skill: 'shields' });
+  await post('/api/players/xr-1/reset', {});
+  const ship = await getJson('/api/players/xr-1/active-ship');
+  assert.equal(ship.progression.experience, 0);
+  assert.equal(ship.progression.level, 0);
+  assert.equal(ship.progression.skillPoints, 0);
+  assert.equal(ship.progression.skills.shields, 0);
+});
+
 test('register: a new player starts with a 1000-credit balance', async () => {
   const j = await (await post('/api/players/register', { playerId: 'rich-1' })).json();
   assert.equal(j.credits, 1000);
@@ -797,7 +845,7 @@ test('migration: backfills shop_unlocked + basic gun for players past the first 
 
 test('missions: locked before the first flight, then 3 same-difficulty side missions are offered', async () => {
   await getJson('/api/players/miss-lock/active-ship'); // register (progress 1, before the first flight)
-  assert.equal((await fetch(base + '/api/players/miss-lock/missions')).status, 403); // locked until the shop unlocks
+  assert.equal((await fetch(base + '/api/players/miss-lock/missions')).status, 403); // locked before the side-mission board opens (after "Level 3")
 
   await clearCampaign('miss-1');
   const r = await getJson('/api/players/miss-1/missions');
@@ -815,6 +863,70 @@ test('missions: locked before the first flight, then 3 same-difficulty side miss
     assert.equal(bosses.spawn.pool[0].ship, 'first pirate boss');
     assert.equal(ph[ph.length - 1].event, 'win');
   }
+});
+
+test('missions: unlock LATER than the shop — 403 at "Level 2" (shop already open), open after "Level 3" (DECISIONS §91)', async () => {
+  await getJson('/api/players/miss-gate/active-ship');                          // register (progress 1)
+  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-3 (id 3, "Level 2"): shop opens
+  const s = await getJson('/api/players/miss-gate/stash');
+  assert.equal(s.shopUnlocked, true, 'shop is open right after the first flight');
+  assert.equal(s.sideMissionsUnlocked, false, 'but the side-mission board is still locked at "Level 2"');
+  assert.equal((await fetch(base + '/api/players/miss-gate/missions')).status, 403, 'side-mission board 403 while only the shop is open');
+  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-5 (id 5, "Level 4"): side missions open
+  const s2 = await getJson('/api/players/miss-gate/stash');
+  assert.equal(s2.sideMissionsUnlocked, true, 'side missions open on reaching "Level 4" (after clearing "Level 3")');
+  assert.equal((await getJson('/api/players/miss-gate/missions')).missions.length, 3, 'the 3-choice board is offered');
+});
+
+test('missions: take / activate / defer — server persists the taken set + one active mission (Slice B)', async () => {
+  await getJson('/api/players/mstate/active-ship');
+  await clearCampaign('mstate'); // → progress 5: the side-mission board is unlocked
+  let r = await getJson('/api/players/mstate/missions');
+  assert.deepEqual(r.taken, [], 'nothing taken initially');
+  assert.equal(r.activeMissionId, null, 'the campaign is active by default');
+
+  await post('/api/players/mstate/missions/take', { missionId: 'side-mining' });
+  let s = await (await post('/api/players/mstate/missions/take', { missionId: 'side-research' })).json();
+  assert.deepEqual(s.taken.sort(), ['side-mining', 'side-research'], 'two missions taken');
+  assert.equal(s.activeMissionId, null, 'taking does not change the active mission');
+
+  s = await (await post('/api/players/mstate/missions/activate', { missionId: 'side-mining' })).json();
+  assert.equal(s.activeMissionId, 'side-mining', 'activate sets the active mission');
+  s = await (await post('/api/players/mstate/missions/activate', { missionId: 'side-research' })).json();
+  assert.equal(s.activeMissionId, 'side-research', 'activating another replaces it (one active at a time)');
+
+  // activate a not-yet-taken mission → it is auto-taken
+  s = await (await post('/api/players/mstate/missions/activate', { missionId: 'side-freighter' })).json();
+  assert.ok(s.taken.includes('side-freighter'), 'activating auto-takes the mission');
+  assert.equal(s.activeMissionId, 'side-freighter');
+
+  s = await (await post('/api/players/mstate/missions/activate', { missionId: null })).json();
+  assert.equal(s.activeMissionId, null, 'activating null → back to the campaign');
+
+  // deferring the active mission falls back to the campaign
+  await post('/api/players/mstate/missions/activate', { missionId: 'side-mining' });
+  s = await (await post('/api/players/mstate/missions/defer', { missionId: 'side-mining' })).json();
+  assert.ok(!s.taken.includes('side-mining'), 'deferred mission removed from the board');
+  assert.equal(s.activeMissionId, null, 'deferring the active mission clears it to the campaign');
+
+  // validation: unknown id → 400; take without an id → 400
+  assert.equal((await post('/api/players/mstate/missions/take', { missionId: 'nope' })).status, 400);
+  assert.equal((await post('/api/players/mstate/missions/take', {})).status, 400);
+  // a player whose board is still locked → 403
+  await getJson('/api/players/mstate-lock/active-ship');
+  assert.equal((await post('/api/players/mstate-lock/missions/take', { missionId: 'side-mining' })).status, 403);
+});
+
+test('reset: clears the taken missions + active mission (Slice B)', async () => {
+  const { pool } = await import('./db.js');
+  await getJson('/api/players/mreset/active-ship');
+  await clearCampaign('mreset');
+  await post('/api/players/mreset/missions/activate', { missionId: 'side-mining' });
+  await post('/api/players/mreset/reset', {});
+  const tk = await pool.query("SELECT * FROM taken_missions WHERE player_id = 'mreset'");
+  assert.equal(tk.rowCount, 0, 'taken missions cleared on reset');
+  const pl = await pool.query("SELECT active_mission_id FROM players WHERE id = 'mreset'");
+  assert.equal(pl.rows[0].active_mission_id, null, 'active mission cleared on reset');
 });
 
 test('catalog: pirate gunner + Pirate machine gun (id 9) are seeded; the boss guns use the MG', async () => {
@@ -916,6 +1028,22 @@ test('shop: buy adds to the stash; sell removes it; credits move by the item pri
   const sold = await (await post('/api/players/shop-trade/sell', { kind: 'component', refId: 2 })).json();
   assert.equal(sold.credits, start - 150 + 112);
   assert.ok(!sold.stash.some((it) => it.kind === 'component' && it.refId === 2), 'sold item left the stash');
+});
+
+test('shop: sell honors a quantity, clamps to what is owned, and rejects a bad qty', async () => {
+  await clearCampaign('sell-qty');
+  for (let i = 0; i < 3; i++) await post('/api/players/sell-qty/buy', { kind: 'component', refId: 2 }); // 3× Light hull (150 each)
+  const before = (await getJson('/api/players/sell-qty/stash')).credits;
+  // sell 2 of the 3 → credit 2 × floor(150*0.75)=112 = 224; one left in the stash
+  const sold2 = await (await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 2 })).json();
+  assert.equal(sold2.credits, before + 224);
+  assert.equal(sold2.stash.find((it) => it.kind === 'component' && it.refId === 2).qty, 1, 'one remains after selling two');
+  // ask to sell 5 but only 1 remains → clamps to 1 (credit +112), row disappears
+  const sold1 = await (await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 5 })).json();
+  assert.equal(sold1.credits, before + 224 + 112);
+  assert.ok(!sold1.stash.some((it) => it.kind === 'component' && it.refId === 2), 'stash row gone after clamped sell');
+  // qty < 1 is rejected (validated before touching the stash)
+  assert.equal((await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 0 })).status, 400);
 });
 
 // ---------- Grab (tractor) component + victory loot deposit (grab-tractor-drops) ----------

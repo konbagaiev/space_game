@@ -1,15 +1,14 @@
-// Side missions (docs/plans/mission-generator.md + main-window-redesign.md): after clearing the campaign,
-// the Main Window's "Missions" list shows the campaign (primary) row plus three side-mission (secondary)
-// rows; selecting one renders its description + est. reward into the work zone; Take off launches it via
-// the levelRunner (flagged sideMission → banks credits but doesn't advance the story).
+// Side-mission board (docs/plans/mission-generator.md + 2026-08-08-base-menu-redesign.md, Slice B): after
+// clearing the campaign the Main Window "Missions" view shows a central board — the campaign card plus
+// three side-mission cards with Take / Defer / Set-active. Selecting a card shows its briefing; Take-off
+// flies the ACTIVE mission (server-persisted), which is the campaign until a side mission is made active.
 export const name = '10-mission-board';
 
 export default async function ({ page, assert, shot }) {
   const pid = await page.evaluate(() => localStorage.getItem('playerId'));
   assert.ok(pid, 'a player id is present');
 
-  // ensure the campaign is cleared (unlocks the side missions, same gate as the shop), then land on the
-  // Main Window (the mission view is the default)
+  // clear the campaign (unlocks the side-mission board — progress >= 5), then land on the Main Window
   await page.evaluate(async (pid) => {
     for (let i = 0; i < 4; i++) await fetch(`/api/players/${pid}/advance`, { method: 'POST' });
   }, pid);
@@ -17,22 +16,22 @@ export default async function ({ page, assert, shot }) {
   await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
   await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
 
-  // the Missions list = 1 primary (campaign) row + 3 secondary (side-mission) rows once /missions loads
-  await page.waitForFunction('document.querySelectorAll("#mw-mission-list .mw-sub").length === 4', null, { timeout: 6000 });
-  const board = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('#mw-mission-list .mw-sub')];
-    return {
-      labels: rows.map((b) => b.textContent),
-      offers: window.__game.missionOffers.map((m) => m.type).sort(),
-    };
-  });
+  // board = 1 campaign card + 3 side-mission cards once /missions loads; campaign active by default
+  await page.waitForFunction('document.querySelectorAll("#mw-mission-board .mission-card").length === 4', null, { timeout: 6000 });
+  const board = await page.evaluate(() => ({
+    cards: document.querySelectorAll('#mw-mission-board .mission-card').length,
+    offers: window.__game.missionOffers.map((m) => m.type).sort(),
+    activeInitial: window.__game.activeMissionId,
+    campaignActive: document.querySelectorAll('#mw-mission-board .mission-card')[0].classList.contains('active'),
+  }));
+  assert.equal(board.cards, 4, 'campaign card + 3 side-mission cards');
   assert.deepEqual(board.offers, ['freighter', 'mining', 'research'], 'three flavored offers');
-  // labels[0] = primary (campaign); labels[1..3] = "Mission 1..3"
-  assert.ok(/1/.test(board.labels[1]) && /3/.test(board.labels[3]), 'side rows are labelled Mission 1..3');
+  assert.equal(board.activeInitial, null, 'the campaign is the active mission by default');
+  assert.ok(board.campaignActive, 'the campaign card is flagged active');
   await shot('board');
 
-  // selecting a side row renders its title + description + est. reward into the work zone
-  await page.evaluate(() => document.querySelectorAll('#mw-mission-list .mw-sub')[1].click());
+  // selecting the first side-mission card renders its title + description + est. reward in the detail area
+  await page.evaluate(() => document.querySelectorAll('#mw-mission-board .mission-card')[1].click());
   await page.waitForTimeout(100);
   const panel = await page.evaluate(() => ({
     title: document.getElementById('mw-mission-title').textContent,
@@ -46,7 +45,28 @@ export default async function ({ page, assert, shot }) {
   assert.ok(/\d/.test(panel.reward), 'the work zone shows an est. reward number');
   await shot('panel');
 
-  // Take off launches the side mission via the levelRunner (sideMission flag set, not the campaign level)
+  // Take the first side mission → its card gains a "Taken" badge + a "Set active" button
+  const firstId = await page.evaluate(() => window.__game.missionOffers[0].id);
+  await page.evaluate(() => document.querySelectorAll('#mw-mission-board .mission-card')[1].querySelector('[data-mact="take"]').click());
+  await page.waitForFunction('!!document.querySelectorAll("#mw-mission-board .mission-card")[1].querySelector("[data-mact=\'activate\']")', null, { timeout: 4000 });
+  const took = await page.evaluate(() => ({
+    taken: window.__game.activeMissionId, // still null — taking doesn't activate
+    badge: !!document.querySelectorAll('#mw-mission-board .mission-card')[1].querySelector('.mc-badge.taken'),
+  }));
+  assert.equal(took.taken, null, 'taking a mission does not change the active one');
+  assert.ok(took.badge, 'the taken mission shows a "Taken" badge');
+
+  // Set it active → it becomes the mission Take-off flies (one active at a time)
+  await page.evaluate(() => document.querySelectorAll('#mw-mission-board .mission-card')[1].querySelector('[data-mact="activate"]').click());
+  await page.waitForFunction((id) => window.__game.activeMissionId === id, firstId, { timeout: 4000 });
+  const marked = await page.evaluate(() => ({
+    sideActive: document.querySelectorAll('#mw-mission-board .mission-card')[1].classList.contains('active'),
+    campaignActive: document.querySelectorAll('#mw-mission-board .mission-card')[0].classList.contains('active'),
+  }));
+  assert.ok(marked.sideActive, 'the chosen side mission is now flagged active');
+  assert.ok(!marked.campaignActive, 'the campaign is no longer active (one active at a time)');
+
+  // Take off launches the ACTIVE side mission via the levelRunner (flagged sideMission, no story advance)
   await page.evaluate(() => document.getElementById('mw-go').click());
   await page.waitForFunction('!!(window.__game.activeMission)', null, { timeout: 4000 });
   const playing = await page.evaluate(() => ({

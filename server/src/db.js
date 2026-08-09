@@ -2,6 +2,12 @@
 // Connects via DATABASE_URL; defaults to a local Postgres for zero-config dev/test.
 import pg from 'pg';
 import { SESSION_TTL_MS, VERIFY_TTL_MS, RESET_TTL_MS, RESEND_THROTTLE_MS } from './auth.js';
+import { levelFromXp, unspentSkillPoints } from './progression.js';
+
+// The five skills, mapped to their `players.skill_*` columns. The order is the card order in the
+// Character screen; the keys are the wire names used by the /skills/spend endpoint and the client.
+export const SKILLS = ['kinetic', 'rocket', 'shields', 'maneuver', 'mobility'];
+const SKILL_COL = Object.fromEntries(SKILLS.map((s) => [s, `skill_${s}`]));
 
 // DATABASE_URL in prod/CI; a local Postgres default so `npm start` / reset.js work with zero env.
 export const pool = new pg.Pool({
@@ -200,6 +206,30 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS idx_stash_player ON stash(player_id);
     ALTER TABLE players ADD COLUMN IF NOT EXISTS shop_unlocked INTEGER NOT NULL DEFAULT 0;
 
+    -- Side-mission log (docs/plans/2026-08-08-base-menu-redesign.md, Slice B): the set of side missions a
+    -- player has "taken" (accepted onto their board). players.active_mission_id is the ONE mission the
+    -- player will fly on Take-off (NULL = the campaign / "Main operation"). Mission ids are the stable
+    -- generator ids (side-mining etc.). At most one active per player (enforced in the mutations).
+    CREATE TABLE IF NOT EXISTS taken_missions (
+      player_id  TEXT   NOT NULL,
+      mission_id TEXT   NOT NULL,   -- stable side-mission id (missions.js generateMissions)
+      taken_at   BIGINT NOT NULL,
+      PRIMARY KEY (player_id, mission_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_taken_missions_player ON taken_missions(player_id);
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS active_mission_id TEXT;
+
+    -- Character progression (docs/plans/2026-08-09-character-progression.md): experience banked per
+    -- enemy kill (= the enemy's credit reward) + a one-shot bonus per mission cleared. The character
+    -- LEVEL and unspent skill points are DERIVED from experience (progression.js), never stored — the
+    -- source of truth is experience plus the per-skill allocations below (each column = points invested).
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS experience     INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_kinetic  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_rocket   INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_shields  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_maneuver INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_mobility INTEGER NOT NULL DEFAULT 0;
+
     -- SFX (docs/plans/sound-classes-and-mapping.md): sounds = asset registry (key->url+gain);
     -- sound_map = class-based routing (entity, class, event) -> sound key. Rows seeded below.
     CREATE TABLE IF NOT EXISTS sounds (
@@ -301,8 +331,9 @@ export async function migrate() {
   // override don't. Idempotent: the `NOT (components ? 'shield')` guard skips rows already carrying it.
   await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{shield}', '31'::jsonb)
     WHERE components IS NOT NULL AND NOT (components ? 'shield')`);
-  // Backfill: the hangar shop + side missions now unlock on reaching level-3 (id 3, player-facing
-  // "Level 2" — right after clearing "first flight"/"Level 1"), not at the final level (DECISIONS §90).
+  // Backfill: the hangar shop now unlocks on reaching level-3 (id 3, player-facing "Level 2" — right
+  // after clearing "first flight"/"Level 1"), not at the final level (DECISIONS §90). (Side missions
+  // are gated separately by progress >= 5, DECISIONS §91 — no backfill needed, it's derived live.)
   // Retroactively open the shop for existing players who already advanced past "first flight"
   // (current_progress >= 3) and seed the basic kinetic gun (weapon 1) into their stash, exactly as
   // unlockShop() does. Idempotent: the `shop_unlocked = 0` guard and ON CONFLICT DO NOTHING make this a
@@ -358,9 +389,9 @@ export async function resetPlayer(playerId) {
   // One transaction so a failure can't leave the account half-wiped (games/ships gone, progress kept).
   // shop_unlocked is an INTEGER column (see migration) — write 0, not a boolean, or the UPDATE throws.
   await withTx(async (client) => {
-    for (const t of ['games', 'player_ships', 'stash', 'events'])
+    for (const t of ['games', 'player_ships', 'stash', 'events', 'taken_missions'])
       await client.query(`DELETE FROM ${t} WHERE player_id = $1`, [playerId]);
-    await client.query('UPDATE players SET games_played = 0, current_progress = 1, credits = 1000, shop_unlocked = 0 WHERE id = $1', [playerId]);
+    await client.query('UPDATE players SET games_played = 0, current_progress = 1, credits = 1000, shop_unlocked = 0, active_mission_id = NULL, experience = 0, skill_kinetic = 0, skill_rocket = 0, skill_shields = 0, skill_maneuver = 0, skill_mobility = 0 WHERE id = $1', [playerId]);
     await ensureDefaultShip(playerId, client); // re-grant the starter ship so the reset account is playable
   });
   return { found: true };
@@ -370,7 +401,7 @@ export async function resetPlayer(playerId) {
 // resets the serial counters), leaving the seeded reference catalog untouched — it is re-upserted
 // idempotently on the next startup. Single atomic statement.
 export async function resetAllPlayers() {
-  await pool.query('TRUNCATE players, games, player_ships, stash, events, sessions, perf_samples RESTART IDENTITY CASCADE');
+  await pool.query('TRUNCATE players, games, player_ships, stash, events, sessions, perf_samples, taken_missions RESTART IDENTITY CASCADE');
 }
 
 // Persist a player's language preference (validated to a supported code by the caller/route).
@@ -431,7 +462,7 @@ async function applyBriefingActions(playerId, actions) {
   for (const a of (actions || [])) {
     if (a.type === 'replaceWeapon') await replaceActiveShipWeapon(playerId, a.from, a.to);
     if (a.type === 'installComponent') await installActiveShipComponent(playerId, a.slot, a.component);
-    if (a.type === 'unlockShop') await unlockShop(playerId); // e.g. reaching level-4 opens the hangar shop + side missions
+    if (a.type === 'unlockShop') await unlockShop(playerId); // reaching level-3 ("Level 2") opens the hangar shop (side missions unlock later by progress gate, DECISIONS §91)
   }
 }
 
@@ -483,20 +514,63 @@ async function unlockShop(playerId) {
   return true;
 }
 
-export async function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0 } = {}) {
+// ---- Side-mission log: the taken set + the one active mission (docs/plans/2026-08-08-base-menu-redesign.md,
+// Slice B). `activeMissionId` NULL = the campaign ("Main operation") is what Take-off flies. Mission-id
+// validity is checked by the caller (server.js, against generateMissions ids); these just persist. ----
+export async function getMissionState(playerId) {
+  await registerPlayer(playerId);
+  const [tk, pl] = await Promise.all([
+    pool.query('SELECT mission_id FROM taken_missions WHERE player_id = $1 ORDER BY taken_at', [playerId]),
+    pool.query('SELECT active_mission_id FROM players WHERE id = $1', [playerId]),
+  ]);
+  return { taken: tk.rows.map((r) => r.mission_id), activeMissionId: (pl.rows[0] && pl.rows[0].active_mission_id) || null };
+}
+// Accept a side mission onto the board (idempotent). Does not change which one is active.
+export async function takeMission(playerId, missionId) {
+  await registerPlayer(playerId);
+  await pool.query(`INSERT INTO taken_missions (player_id, mission_id, taken_at) VALUES ($1, $2, $3)
+    ON CONFLICT (player_id, mission_id) DO NOTHING`, [playerId, missionId, Date.now()]);
+  return getMissionState(playerId);
+}
+// Drop a side mission from the board; if it was the active one, fall back to the campaign (NULL).
+export async function deferMission(playerId, missionId) {
+  await registerPlayer(playerId);
+  await pool.query('DELETE FROM taken_missions WHERE player_id = $1 AND mission_id = $2', [playerId, missionId]);
+  await pool.query('UPDATE players SET active_mission_id = NULL WHERE id = $1 AND active_mission_id = $2', [playerId, missionId]);
+  return getMissionState(playerId);
+}
+// Make ONE mission active (the one Take-off flies). NULL = the campaign. A non-null id is auto-taken
+// (idempotent) so "Set active" works whether or not it was taken first. Enforces one-active by overwrite.
+export async function activateMission(playerId, missionId) {
+  await registerPlayer(playerId);
+  if (missionId == null) {
+    await pool.query('UPDATE players SET active_mission_id = NULL WHERE id = $1', [playerId]);
+  } else {
+    await pool.query(`INSERT INTO taken_missions (player_id, mission_id, taken_at) VALUES ($1, $2, $3)
+      ON CONFLICT (player_id, mission_id) DO NOTHING`, [playerId, missionId, Date.now()]);
+    await pool.query('UPDATE players SET active_mission_id = $1 WHERE id = $2', [missionId, playerId]);
+  }
+  return getMissionState(playerId);
+}
+
+export async function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0, xp = 0 } = {}) {
   const now = Date.now();
   await registerPlayer(playerId); // make sure the player exists
   const earned = credits | 0;
+  const xpEarned = Math.max(0, xp | 0);
+  const beforeLevel = levelFromXp((await getProgression(playerId)).experience).level; // for level-up detection
   const ins = await pool.query(
     'INSERT INTO games (player_id, credits, kills, duration_ms, ended_at) VALUES ($1, $2, $3, $4, $5) RETURNING id',
     [playerId, earned, kills | 0, durationMs | 0, now]
   );
-  // bank the earned credits into the player's balance and read back the new total
+  // bank the earned credits + experience into the player's balance and read back the new totals
   const upd = await pool.query(
-    'UPDATE players SET games_played = games_played + 1, credits = credits + $1, last_seen = $2 WHERE id = $3 RETURNING credits',
-    [earned, now, playerId]
+    'UPDATE players SET games_played = games_played + 1, credits = credits + $1, experience = experience + $2, last_seen = $3 WHERE id = $4 RETURNING credits, experience',
+    [earned, xpEarned, now, playerId]
   );
-  return { gameId: Number(ins.rows[0].id), credits: upd.rows[0].credits };
+  const after = levelFromXp(upd.rows[0].experience);
+  return { gameId: Number(ins.rows[0].id), credits: upd.rows[0].credits, experience: upd.rows[0].experience,
+    level: after.level, leveledUp: after.level > beforeLevel, xpEarned };
 }
 
 // Record one product-funnel event (best-effort; type allowlisted by the API). data is JSONB context.
@@ -642,6 +716,12 @@ export async function getLevels() {
   return rows.map((r) => ({ id: Number(r.id), title: r.descriptor?.title || r.name }));
 }
 
+// Side missions unlock LATER than the shop: on reaching the "Level 4" briefing (descriptor `level-5`,
+// id 5 — i.e. after clearing "Level 3"). The shop still opens right after the first flight (level-3,
+// DECISIONS §90); the two gates are decoupled — shop keyed off `shop_unlocked`, side missions off
+// `current_progress`. See docs/plans/2026-08-08-base-menu-redesign.md (Slice 0) + DECISIONS §91.
+export const SIDE_MISSIONS_MIN_PROGRESS = 5;
+
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
 const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']);
@@ -721,16 +801,21 @@ export async function buyItem(playerId, kind, refId) {
   });
 }
 
-export async function sellItem(playerId, { kind, refId, slot } = {}) {
+export async function sellItem(playerId, { kind, refId, slot, qty = 1 } = {}) {
   await registerPlayer(playerId);
-  if (slot) return sellEquipped(playerId, slot);
+  if (slot) return sellEquipped(playerId, slot); // equipped items are always a single unit
   const item = await catalogItem(kind, refId);
   if (!item) return { ok: false, status: 400, error: 'no such item' };
+  const want = Math.max(1, Math.floor(qty) || 1);
   return withTx(async (client) => {
-    if (await stashQty(playerId, kind, refId, client) <= 0) return { ok: false, status: 409, error: 'not in stash' };
-    await decStash(playerId, kind, refId, client);
-    await credit(playerId, sellPrice(item.price), client);
-    return { ok: true };
+    const have = await stashQty(playerId, kind, refId, client);
+    if (have <= 0) return { ok: false, status: 409, error: 'not in stash' };
+    const n = Math.min(want, have); // never sell more than owned (guards a stale/concurrent client count)
+    const unit = sellPrice(item.price);
+    await client.query('UPDATE stash SET qty = qty - $4 WHERE player_id = $1 AND kind = $2 AND ref_id = $3', [playerId, kind, refId, n]);
+    await client.query('DELETE FROM stash WHERE player_id = $1 AND kind = $2 AND ref_id = $3 AND qty <= 0', [playerId, kind, refId]);
+    await credit(playerId, unit * n, client);
+    return { ok: true, sold: n, unit, refund: unit * n };
   });
 }
 
@@ -834,10 +919,11 @@ function playerSummary(r) {
     emailVerified: !!r.email_verified, currentProgress: r.current_progress,
     credits: r.credits, gamesPlayed: r.games_played, language: r.language,
     createdAt: Number(r.created_at),
+    experience: r.experience ?? 0, level: levelFromXp(r.experience ?? 0).level, // character progression (derived)
     emailVerifySentAt: r.email_verify_sent_at != null ? Number(r.email_verify_sent_at) : null,
   };
 }
-const PLAYER_COLS = 'id, username, email, email_verified, current_progress, credits, games_played, language, created_at, email_verify_sent_at';
+const PLAYER_COLS = 'id, username, email, email_verified, current_progress, credits, games_played, language, created_at, experience, email_verify_sent_at';
 
 export async function getPlayerPublic(id) {
   const { rows } = await pool.query(`SELECT ${PLAYER_COLS} FROM players WHERE id = $1`, [id]);
@@ -932,6 +1018,38 @@ export async function deleteSession(tokenHash) {
   await pool.query('DELETE FROM sessions WHERE token_hash = $1', [tokenHash]);
 }
 
+// Read a player's progression: banked experience → derived character level + unspent skill points +
+// the per-skill allocations. Level and unspent points are DERIVED (progression.js), never stored.
+export async function getProgression(playerId, client = pool) {
+  const cols = SKILLS.map((s) => SKILL_COL[s]).join(', ');
+  const { rows } = await client.query(`SELECT experience, ${cols} FROM players WHERE id = $1`, [playerId]);
+  const r = rows[0] || {};
+  const experience = r.experience || 0;
+  const skills = Object.fromEntries(SKILLS.map((s) => [s, r[SKILL_COL[s]] || 0]));
+  const allocated = SKILLS.reduce((n, s) => n + skills[s], 0);
+  const { level, into, span } = levelFromXp(experience);
+  return { experience, level, xpIntoLevel: into, xpForNextLevel: span,
+    skillPoints: unspentSkillPoints(experience, allocated), skills };
+}
+
+// Spend ONE unspent skill point on a skill (whitelisted to the SKILLS keys). Atomic + row-locked so
+// two concurrent spends can't over-allocate. Throws Error{code:'BAD_SKILL'|'NO_POINTS'} on misuse.
+// Returns the fresh progression so the caller can echo it back to the client (like shop mutations).
+export async function spendSkillPoint(playerId, skill) {
+  await registerPlayer(playerId);
+  const col = SKILL_COL[skill];
+  if (!col) { const e = new Error('unknown skill'); e.code = 'BAD_SKILL'; throw e; }
+  return withTx(async (client) => {
+    const cols = SKILLS.map((s) => SKILL_COL[s]).join(', ');
+    const { rows } = await client.query(`SELECT experience, ${cols} FROM players WHERE id = $1 FOR UPDATE`, [playerId]);
+    const r = rows[0];
+    const allocated = SKILLS.reduce((n, s) => n + (r[SKILL_COL[s]] || 0), 0);
+    if (unspentSkillPoints(r.experience || 0, allocated) <= 0) { const e = new Error('no skill points'); e.code = 'NO_POINTS'; throw e; }
+    await client.query(`UPDATE players SET ${col} = ${col} + 1 WHERE id = $1`, [playerId]); // col is whitelisted above
+    return getProgression(playerId, client);
+  });
+}
+
 // The player's active ship: ship template + effective loadout (loadout falls back to ship defaults).
 export async function getActivePlayerShip(playerId) {
   const reg = await registerPlayer(playerId);
@@ -945,14 +1063,17 @@ export async function getActivePlayerShip(playerId) {
   const stats = row.stats, loadout = row.loadout || {};
   const components = row.ps_components ?? row.ship_components ?? {};
   const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null);
+  const progression = await getProgression(playerId); // banked XP → derived level + skill points + allocations
   return {
     playerShipId: Number(row.player_ship_id),
     ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url, modelUrlHigh: row.model_url_high, components: row.ship_components },
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
     components,
+    progression, // { experience, level, xpIntoLevel, xpForNextLevel, skillPoints, skills{kinetic,...} }
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)
     credits: reg.credits,   // the player's persistent credit balance
-    shopUnlocked: reg.shopUnlocked, // hangar shop gate (cleared the final level)
+    shopUnlocked: reg.shopUnlocked, // hangar shop gate (opens right after the first flight, DECISIONS §90)
+    sideMissionsUnlocked: reg.currentProgress >= SIDE_MISSIONS_MIN_PROGRESS, // side-mission board gate — decoupled from the shop, opens later (after "Level 3", DECISIONS §91)
     launchable: missingRequired.length === 0,
     missingRequired,
   };

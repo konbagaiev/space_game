@@ -219,6 +219,16 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 
 ## Backlog / parking lot
 (Ideas not yet scheduled — add freely.)
+- **Aim assist: target by hitbox spheres, not ship center.** Bullet auto-aim (`findBulletAimTarget` →
+  `nearestInConeIndex` in `steering.js`) currently picks the nearest target whose **center** falls inside the
+  forward cone, so the stream won't bend toward a large ship until its *center* enters the cone — even when
+  its hull already overlaps the line of fire (confirmed in play 2026-08-09 with a tripled cone). Rework the
+  pick to test the ship's **hitbox spheres / broad radius** (or the nearest point on the hull) against the
+  cone, not just the center point. Watch **performance**: this runs per bullet per shot, so a naive
+  all-spheres-per-bullet test could get expensive with many enemies + high rate-of-fire — budget it (broad
+  radius pre-filter, cap candidates, etc.). The Kinetic skill's aim-assist bonus feeds the same code, so
+  this improves both. (Aim-assist cone numbers were briefly ×3'd for a feel test then reverted to 2°
+  weapon / 0.5°-per-point skill — DECISIONS §89/§93.)
 - **General visual/UX live-tuning panel (with save-to-file).** A unified in-game panel to live-tune the
   look/feel knobs we currently hardcode or scatter across one-off `?dev`/`?tune` panels: background color,
   starfield, asteroid/parallax "sense of flight", lighting, camera position/offset, effects, etc. — with a

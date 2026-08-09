@@ -27,6 +27,8 @@ asset page is also handy, in case the author later changes the terms).
 | ships/metal_box_combat.\<hash\>.glb (shared equipment-drop model — the loot "crate") | District24 | https://skfb.ly/JwFQ | CC-BY 4.0 | 2026-07-03 |
 | ships/base_station_combat.\<hash\>.glb (Base station set-piece — return-to-base target) | MisterH | https://skfb.ly/ozESS | CC-BY 4.0 | 2026-07-03 |
 | ships/asteroids_combat.\<hash\>.glb (asteroid pack, 3 rock meshes — the parallax backdrop field + the mission asteroid-field rocks) | ARCTIC WOLVES™ | https://skfb.ly/psECZ | CC-BY 4.0 | 2026-07-16 |
+| ships/engine_thruster_hangar.\<hash\>.glb (shared THRUSTER component item icon — menu only) | Yo.Ri | https://skfb.ly/6qEKD | CC-BY 4.0 | 2026-08-09 |
+| ships/maneuver_thruster_hangar.\<hash\>.glb (shared ENGINE component item icon, animated flame — menu only) | photon (that one larry) | https://skfb.ly/pyoLw | CC-BY 4.0 | 2026-08-09 |
 
 <!--
 Example row:
@@ -113,6 +115,25 @@ the geometry → a ~91 KB combat glb.
 **Required attribution (use verbatim, e.g. in an in-game credits screen):**
 
 > "Wandering Asteroids Of Andromeda" (https://skfb.ly/psECZ) by ARCTIC WOLVES™ is licensed under Creative
+> Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+The **engine and thruster item icons** — `maneuver_thruster_hangar` (shown for every `engine` component)
+and `engine_thruster_hangar` (every `thruster` component) — are **menu-only** 3D models like the two above:
+one shared model per component family, spun in the shop/loadout detail panel, never rendered in combat.
+(The file names read backwards against the families they serve: they are named after their SOURCE assets,
+and the two were swapped between families after seeing them in the preview. The wiring lives in
+`catalog_seed.js`, so the names are cosmetic.) Both are **CC-BY 4.0** (attribution required, so these
+entries must stay while in use). `assets:build` shrinks both texture sets hard (256px WebP): the animated
+source is texture-dominated (2.3 MB of its 2.5 MB) → an ~86 KB hangar glb, and it keeps its skeleton + the
+looping "Flame startAction" clip, which the item viewer plays. One model per family is a deliberate placeholder pass — per-tier models are a
+future iteration, and swapping one in means replacing only the shared constant in `catalog_seed.js`.
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "LowPoly Sci-Fi Thruster" (https://skfb.ly/6qEKD) by Yo.Ri is licensed under Creative Commons
+> Attribution (http://creativecommons.org/licenses/by/4.0/).
+>
+> "Thruster animation" (https://skfb.ly/pyoLw) by photon (that one larry) is licensed under Creative
 > Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 The old in-git primitive placeholder glbs (`player.glb`, `fighter.glb`, `rocketeer.glb`, `heavy.glb`,

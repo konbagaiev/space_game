@@ -9,6 +9,7 @@ import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advancePro
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
   setResetToken, consumeResetToken, deleteSessionsForPlayer,
   getStash, buyItem, sellItem, equipItem, unequipItem, depositLoot, getAdminPlayers,
+  getMissionState, takeMission, deferMission, activateMission, spendSkillPoint,
   recordSession, getAdminSessions, getSessionS3Key } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { generateMissions } from './missions.js';
@@ -109,12 +110,13 @@ export async function createApp() {
 
   // Record one finished game and bank the credits earned into the player's balance.
   app.post('/api/games', wrap(async (req, res) => {
-    const { playerId, credits, score, kills, durationMs } = req.body || {};
+    const { playerId, credits, score, kills, durationMs, xp } = req.body || {};
     if (!playerId || typeof playerId !== 'string') {
       return res.status(400).json({ error: 'playerId (string) required' });
     }
-    // `credits` is the field name; accept legacy `score` too so older clients still bank correctly
-    res.json(await recordGame(playerId, { credits: credits ?? score, kills, durationMs }));
+    // `credits` is the field name; accept legacy `score` too so older clients still bank correctly.
+    // `xp` (character progression) is banked alongside; older clients omit it → 0, harmless.
+    res.json(await recordGame(playerId, { credits: credits ?? score, kills, durationMs, xp }));
   }));
 
   // A player's game history (handy for testing / future UI).
@@ -133,6 +135,14 @@ export async function createApp() {
     } catch (e) {
       res.status(503).json({ ok: false, status: 'error', backend, error: String((e && e.message) || e) });
     }
+  }));
+
+  // TEMP debug sink: client → server log. The client POSTs { event, data, ua, t }; we print it to the
+  // server console so on-device issues (e.g. the intro→Level-1 advance) can be diagnosed without a
+  // devtools console. Remove once the intro-advance bug is fixed. (Base-menu-redesign debugging.)
+  app.post('/api/clientlog', wrap(async (req, res) => {
+    console.log('[clientlog]', JSON.stringify(req.body).slice(0, 2000));
+    res.json({ ok: true });
   }));
 
   // Catalog: ships (player + enemies) and weapons, with their stats. Read-only.
@@ -182,7 +192,7 @@ export async function createApp() {
   // ship (loadout/components + launchable), and the credit balance. Server stays authoritative.
   const shopState = async (playerId) => {
     const [stash, activeShip] = await Promise.all([getStash(playerId), getActivePlayerShip(playerId)]);
-    return { credits: activeShip ? activeShip.credits : 0, shopUnlocked: !!(activeShip && activeShip.shopUnlocked), stash, activeShip };
+    return { credits: activeShip ? activeShip.credits : 0, shopUnlocked: !!(activeShip && activeShip.shopUnlocked), sideMissionsUnlocked: !!(activeShip && activeShip.sideMissionsUnlocked), stash, activeShip };
   };
   // Run a gated shop mutation: 403 until the shop is unlocked (cleared the final level), then dispatch
   // to `op` and translate its { ok,status,error } into an HTTP response with the refreshed state.
@@ -207,14 +217,38 @@ export async function createApp() {
   }));
 
   // ---------- Side missions (docs/plans/mission-generator.md) ----------
-  // The 3-choice side-mission board, unlocked after the campaign (same gate as the shop). Returns the
+  // The 3-choice side-mission board. Gated separately from the shop: it opens LATER, on reaching the
+  // "Level 4" briefing (current_progress >= SIDE_MISSIONS_MIN_PROGRESS, i.e. after clearing "Level 3" —
+  // DECISIONS §91), while the shop opens right after the first flight (DECISIONS §90). Returns the
   // currently-offered missions (each with a full level-style descriptor the client plays via levelRunner).
   // Clearing one banks per-kill ×2 credits like a level and does NOT advance the story counter.
+  // Stable set of offered side-mission ids (the generator is deterministic) — used to validate mutations.
+  const SIDE_MISSION_IDS = new Set(generateMissions().map((m) => m.id));
+  // A gated side-mission mutation: 403 until the board unlocks, then validate the id and run `op` (which
+  // returns the fresh mission state { taken, activeMissionId } the client re-renders from). `allowNull`
+  // lets `activate` target the campaign (missionId = null → "Main operation").
+  const missionMutation = (op, { allowNull = false } = {}) => wrap(async (req, res) => {
+    const playerId = req.params.id;
+    const active = await getActivePlayerShip(playerId);
+    if (!active || !active.sideMissionsUnlocked) return res.status(403).json({ error: 'missions locked' });
+    const missionId = (req.body && req.body.missionId) ?? null;
+    if (missionId == null) { if (!allowNull) return res.status(400).json({ error: 'missionId required' }); }
+    else if (!SIDE_MISSION_IDS.has(missionId)) return res.status(400).json({ error: 'unknown mission' });
+    res.json(await op(playerId, missionId));
+  });
+
   app.get('/api/players/:id/missions', wrap(async (req, res) => {
     const active = await getActivePlayerShip(req.params.id);
-    if (!active || !active.shopUnlocked) return res.status(403).json({ error: 'missions locked' });
-    res.json({ missions: generateMissions() });
+    if (!active || !active.sideMissionsUnlocked) return res.status(403).json({ error: 'missions locked' });
+    const state = await getMissionState(req.params.id);
+    res.json({ missions: generateMissions(), taken: state.taken, activeMissionId: state.activeMissionId });
   }));
+
+  // Take a side mission onto the board / defer (remove) it / make one the active mission (Take-off flies
+  // the active one; activate accepts null = the campaign). All return the fresh { taken, activeMissionId }.
+  app.post('/api/players/:id/missions/take', missionMutation((pid, mid) => takeMission(pid, mid)));
+  app.post('/api/players/:id/missions/defer', missionMutation((pid, mid) => deferMission(pid, mid)));
+  app.post('/api/players/:id/missions/activate', missionMutation((pid, mid) => activateMission(pid, mid), { allowNull: true }));
 
   // Buy a catalog item into the stash (credits down). Body: { kind: 'component'|'weapon', refId }.
   app.post('/api/players/:id/buy', shopMutation((playerId, body) => {
@@ -225,10 +259,11 @@ export async function createApp() {
 
   // Sell a stash item ({ kind, refId }) or an optional equipped item ({ slot }) for 75% of its price.
   app.post('/api/players/:id/sell', shopMutation((playerId, body) => {
-    const { kind, refId, slot } = body;
+    const { kind, refId, slot, qty } = body;
     if (slot) { if (typeof slot !== 'string') return { ok: false, status: 400, error: 'slot must be a string' }; return sellItem(playerId, { slot }); }
     if ((kind !== 'component' && kind !== 'weapon') || !Number.isInteger(refId)) return { ok: false, status: 400, error: 'kind and refId (or slot) required' };
-    return sellItem(playerId, { kind, refId });
+    if (qty != null && (!Number.isInteger(qty) || qty < 1)) return { ok: false, status: 400, error: 'qty must be a positive integer' };
+    return sellItem(playerId, { kind, refId, qty: qty ?? 1 });
   }));
 
   // Equip a stash item onto the active ship (the displaced item, if any, returns to the stash).
@@ -243,6 +278,20 @@ export async function createApp() {
     const { slot } = body;
     if (typeof slot !== 'string' || !slot) return { ok: false, status: 400, error: 'slot required' };
     return unequipItem(playerId, slot);
+  }));
+
+  // Spend one unspent skill point on a skill (character progression). Body: { skill: 'kinetic'|... }.
+  // Not shop-gated — progression is always available. Returns the fresh progression the client re-renders
+  // from; 400 on an unknown skill, 409 when the player has no unspent points.
+  app.post('/api/players/:id/skills/spend', wrap(async (req, res) => {
+    const skill = req.body && req.body.skill;
+    try {
+      res.json({ progression: await spendSkillPoint(req.params.id, skill) });
+    } catch (e) {
+      if (e.code === 'BAD_SKILL') return res.status(400).json({ error: 'unknown skill' });
+      if (e.code === 'NO_POINTS') return res.status(409).json({ error: 'no skill points' });
+      throw e;
+    }
   }));
 
   // A map's scene descriptor (the client renders it via buildMap). Read-only.

@@ -140,6 +140,159 @@
   }
   .mw-sub:hover { background: rgba(40,60,100,.6); }
   .mw-sub.active { background: rgba(74,125,255,.35); border-color: #4a7dff; color: #fff; }
+  /* Base hub menu: five sections, natural height + top-aligned (don't stretch to fill the column). */
+  #mw-menu .mw-item { flex: 0 0 auto; }
+  /* in-bay tabs (Ship / Stash / Shop) — replace the former left-menu Loadout/Stash/Shop items */
+  .bay-tabs { display: flex; gap: 6px; margin-bottom: 8px; flex: none; }
+  .bay-tab {
+    pointer-events: auto; cursor: pointer; font: inherit; font-size: 14px; color: #bcd0ee;
+    background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.25); border-radius: 7px; padding: 6px 14px;
+  }
+  .bay-tab:hover { background: rgba(40,60,100,.6); }
+  .bay-tab.active { background: rgba(74,125,255,.35); border-color: #4a7dff; color: #fff; }
+  /* before the shop unlocks: only the Ship tab, and a hint (loadout stays read-only) */
+  .bay-tabs.locked .bay-tab[data-bay="stash"], .bay-tabs.locked .bay-tab[data-bay="shop"] { display: none; }
+  #mw-loadout-locked { display: none; color: #9fb3d6; font-size: 14px; margin: 0 0 8px; flex: none; }
+  /* mission board (Slice B): a list of campaign + side-mission cards above the briefing detail */
+  #mw-mission-board { display: flex; flex-direction: column; gap: 6px; flex: none; margin-bottom: 12px; max-height: 42%; overflow-y: auto; }
+  .mission-card {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer;
+    border: 1px solid rgba(140,175,255,.22); border-radius: 8px; background: rgba(20,30,55,.5);
+  }
+  .mission-card:hover { background: rgba(40,60,100,.5); }
+  .mission-card.selected { border-color: #4a7dff; }
+  .mission-card.active { border-color: #ffcf5a; background: rgba(90,72,24,.32); } /* active mission = gold accent */
+  .mission-card .mc-main { flex: 1; min-width: 0; }
+  .mission-card .mc-title { font-size: 16px; color: #dfe9ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mission-card .mc-sub { font-size: 12px; color: #9fb3d6; }
+  .mission-card .mc-badge { flex: none; font-size: 11px; letter-spacing: .5px; padding: 2px 8px; border-radius: 10px; }
+  .mission-card .mc-badge.active { background: #ffcf5a; color: #1a1a1a; }
+  .mission-card .mc-badge.taken { background: rgba(120,160,255,.28); color: #cfe0ff; }
+  .mission-card .mc-actions { flex: none; display: flex; gap: 6px; }
+  .mission-card .mc-actions button {
+    pointer-events: auto; cursor: pointer; font: inherit; font-size: 12px; color: #cfe0ff;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.3); border-radius: 6px; padding: 4px 10px;
+  }
+  .mission-card .mc-actions button:hover { background: rgba(60,90,150,.5); }
+  .mission-card .mc-actions button.primary { background: #4a7dff; border-color: #4a7dff; color: #fff; }
+  /* Character screen (progression, docs/plans/2026-08-09-character-progression.md): level + XP bar header,
+     then a responsive grid of the five skill cards each with a "+" to spend an unspent point. */
+  #mw-character { display: flex; flex-direction: column; gap: 14px; padding: 6px 4px; overflow-y: auto; }
+  #ch-head { display: flex; flex-direction: column; gap: 8px; flex: none; }
+  .ch-level { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .ch-level-num { font-size: 20px; color: #dfe9ff; font-weight: 700; }
+  .ch-points { font-size: 13px; color: #9fb3d6; }
+  .ch-points.has { color: #ffcf5a; font-weight: 700; }               /* gold when the player has points to spend */
+  .ch-xpbar { position: relative; height: 18px; border-radius: 9px; overflow: hidden;
+    background: rgba(20,30,55,.6); border: 1px solid rgba(140,175,255,.22); }
+  .ch-xpfill { position: absolute; left: 0; top: 0; bottom: 0; background: #4a7dff; transition: width .3s ease; }
+  .ch-xptext { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #eaf1ff; text-shadow: 0 0 3px rgba(0,0,0,.8); }
+  #ch-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .skill-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+    border: 1px solid rgba(140,175,255,.22); border-radius: 8px; background: rgba(20,30,55,.5); }
+  .skill-card .sc-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .skill-card .sc-name { font-size: 15px; color: #dfe9ff; font-weight: 700; }
+  .skill-card .sc-pts { font-size: 14px; color: #ffcf5a; font-weight: 700; }
+  .skill-card .sc-desc { font-size: 12px; color: #9fb3d6; flex: 1; }
+  .skill-card .sc-foot { display: flex; justify-content: flex-end; }
+  .skill-card .ch-plus {
+    pointer-events: auto; cursor: pointer; font: inherit; font-size: 16px; font-weight: 700; line-height: 1;
+    width: 30px; height: 30px; border-radius: 6px; color: #fff; background: #4a7dff; border: 1px solid #4a7dff;
+  }
+  .skill-card .ch-plus:hover { background: #5c8bff; }
+  .skill-card .ch-plus:disabled { background: rgba(255,255,255,.06); border-color: rgba(160,190,255,.2); color: #6a7d9c; cursor: default; }
+  /* Loadout screen (Slice C): centered ship + slot chips around it (center work zone) + a right context
+     panel that lives in the SAME right column as the missions ship preview (same width ratio, no box). The
+     grid keeps its normal three tracks; only the right column's contents swap (ship preview → panel). */
+  #mainwin.bay-open #mw-ship { display: none; }        /* Loadout centers the ship → hide the right-column preview */
+  #loadout-panel { display: none; }                    /* shown only while Loadout is open */
+  #mainwin.bay-open #loadout-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  /* Loadout widens the right column a touch (vs the missions 25%) so the shop's 3D-model card reads well. */
+  #mainwin.bay-open { grid-template-columns: minmax(160px, 18%) 1fr 30%; }
+  body:not(.dev-phone) #mainwin.bay-open { grid-template-columns: minmax(240px, 18%) 1fr 30%; }
+  #loadout-center { position: relative; flex: 1; min-width: 0; min-height: 0; }
+  #loadout-ship { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #loadout-slots { position: absolute; inset: 0; pointer-events: none; }
+  .slot-chip {
+    position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer;
+    min-width: 260px; max-width: 320px; display: flex; flex-direction: column; gap: 6px; text-align: left;
+    padding: 18px 24px; border-radius: 14px; color: #cfe0ff;
+    background: rgba(16,24,44,.82); border: 1px solid rgba(140,175,255,.3);
+  }
+  .slot-chip:hover { background: rgba(40,60,100,.85); }
+  .slot-chip.selected { border-color: #4a7dff; box-shadow: 0 0 0 2px #4a7dff; }
+  .slot-chip.empty { border-style: dashed; color: #8fa3c6; }
+  .slot-chip.empty.required { border-color: #ff6b6b; color: #ffb3b3; }
+  .slot-chip .sc-type { font-size: 16px; letter-spacing: .5px; text-transform: uppercase; opacity: .75; }
+  .slot-chip .sc-name { font-size: 30px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lp-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .lp-hint { color: #9fb3d6; font-size: 21px; }
+  .lp-hint.sub { font-size: 18px; }
+  .lp-sub { color: #8fa3c6; font-size: 16px; text-transform: uppercase; letter-spacing: .5px; margin-top: 4px; }
+  .lp-shop-item { background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.2); border-radius: 8px; padding: 8px 10px; }
+  .lp-item { padding: 0; }  /* selected-item detail (name/stats/model/Remove) floats in the panel — no boxed frame */
+  .lp-shop-item { cursor: pointer; }
+  .lp-shop-item:hover { background: rgba(40,60,100,.55); }
+  /* shop detail card: stats → 3D model → Buy (spec) */
+  .lp-detail { display: flex; flex-direction: column; gap: 10px; }
+  .lp-model { width: 100%; height: 220px; display: block; } /* transparent — the alpha WebGL canvas lets the starfield show through, like the centered ship */
+  .lp-model-empty { display: flex; align-items: center; justify-content: center; color: #6f82a6; font-size: 13px; }
+  .lp-name { font-size: 22px; color: #dfe9ff; }
+  .lp-stats { font-size: 18px; color: #9fb3d6; margin-top: 3px; }
+  .lp-acts { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .lp-acts .price { color: #ffcf5a; font-size: 20px; margin-right: auto; }
+  .lp-acts button[data-act="sell"] { margin-left: auto; } /* Sell sits at the right of the action row */
+  .lp-list { display: flex; flex-direction: column; gap: 5px; }
+  .lp-row {
+    pointer-events: auto; cursor: pointer; text-align: left; font: inherit; font-size: 20px; color: #cfe0ff;
+    background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.22); border-radius: 6px; padding: 9px 14px;
+  }
+  .lp-row:hover { background: rgba(40,60,100,.55); }
+  .lp-row.selected { border-color: #4a7dff; }
+  .lp-types { display: flex; flex-wrap: wrap; gap: 5px; }
+  .lp-type {
+    pointer-events: auto; cursor: pointer; font: inherit; font-size: 12px; color: #bcd0ee;
+    background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.25); border-radius: 6px; padding: 4px 9px;
+  }
+  .lp-type.active { background: rgba(74,125,255,.35); border-color: #4a7dff; color: #fff; }
+  .lp-foot { flex: none; padding-top: 8px; display: flex; justify-content: flex-end; }
+  .lp-item .lp-acts button, .lp-shop-item .lp-acts button, .lp-detail .lp-acts button, .lp-foot button {
+    pointer-events: auto; cursor: pointer; font: inherit; font-size: 20px; color: #cfe0ff;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(160,190,255,.3); border-radius: 6px; padding: 8px 18px;
+  }
+  .lp-item .lp-acts button.primary, .lp-shop-item .lp-acts button.primary, .lp-detail .lp-acts button.primary, .lp-foot button.primary { background: #4a7dff; border-color: #4a7dff; color: #fff; }
+  /* stub sections (Character / Map / Craft) */
+  #mw-view-stub { padding: 6px 4px; }
+  #mw-stub-title { margin: 0 0 10px; }
+  #mw-stub-text { color: #bcd0ee; font-size: 16px; line-height: 1.5; max-width: 52ch; }
+  /* Phone (longest edge < 900px): halve the base-menu chrome (menu, mission board, slot chips, loadout
+     panel) so it fits a phone — the 3D model viewers (#loadout-ship, .lp-model) are deliberately left full
+     size. See docs/plans/2026-08-08-base-menu-redesign.md. */
+  body.dev-phone #mw-menu .mw-item { font-size: 12px; padding: 6px 10px; }
+  body.dev-phone .mission-card { padding: 5px 8px; gap: 6px; }
+  body.dev-phone .mission-card .mc-title { font-size: 12px; }
+  body.dev-phone .mission-card .mc-sub { font-size: 10px; }
+  body.dev-phone .mission-card .mc-badge { font-size: 9px; padding: 1px 6px; }
+  body.dev-phone .mission-card .mc-actions button { font-size: 10px; padding: 3px 8px; }
+  body.dev-phone .slot-chip { min-width: 130px; max-width: 165px; padding: 8px 12px; gap: 3px; border-radius: 9px; }
+  body.dev-phone .slot-chip .sc-type { font-size: 10px; }
+  body.dev-phone .slot-chip .sc-name { font-size: 15px; }
+  body.dev-phone .lp-name { font-size: 13px; }
+  body.dev-phone .lp-stats { font-size: 11px; }
+  body.dev-phone .lp-sub { font-size: 10px; }
+  body.dev-phone .lp-hint { font-size: 12px; }
+  body.dev-phone .lp-hint.sub { font-size: 10px; }
+  body.dev-phone .lp-row { font-size: 12px; padding: 5px 9px; }
+  body.dev-phone .lp-acts .price { font-size: 12px; }
+  body.dev-phone .lp-item .lp-acts button,
+  body.dev-phone .lp-shop-item .lp-acts button,
+  body.dev-phone .lp-detail .lp-acts button,
+  body.dev-phone .lp-foot button { font-size: 12px; padding: 5px 10px; }
+  body.dev-phone .lp-type { font-size: 11px; padding: 3px 8px; }
+  body.dev-phone .lp-model { height: 73px; } /* phone: short box for the weapon 3D model */
+  body.dev-phone #mw-stub-title { font-size: 18px; }
+  body.dev-phone #mw-stub-text { font-size: 12px; }
   /* work zone (center): only the active view shows; the mission description is the only scroller */
   #mw-work { min-width: 0; min-height: 0; display: flex; }
   .mw-view { display: none; flex: 1; min-width: 0; min-height: 0; }
@@ -570,6 +723,28 @@
   #reset-confirm .ghost { background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.35); }
   #reset-confirm .danger-btn { background: linear-gradient(90deg,#e53935,#b71c1c); color: #fff; border: 0; }
   #reset-confirm .danger-btn:disabled { opacity: .6; cursor: default; }
+  /* Sell confirmation modal (docs/plans/2026-08-09-sell-confirm-quantity.md): sale price + optional quantity
+     (slider + number when the stash holds more than one). Mirrors the reset-confirm box, blue accent. */
+  #sell-overlay { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(4,8,18,.6); }
+  #sell-overlay.on { display: flex; }
+  #sell-overlay .sell-box {
+    width: min(420px, 92vw); box-sizing: border-box; text-align: center;
+    background: rgba(16,22,40,.98); border: 1px solid rgba(140,175,255,.4);
+    border-radius: 14px; padding: 24px 22px; box-shadow: 0 18px 60px rgba(0,0,0,.6);
+  }
+  #sell-overlay h2 { margin: 0 0 12px; font-size: 20px; color: #dfe9ff; }
+  #sell-overlay .sell-item { font-size: 16px; color: #cfe0ff; margin: 0 0 16px; }
+  #sell-overlay .sell-qty { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
+  #sell-overlay .sell-qty-head { display: flex; justify-content: space-between; font-size: 13px; color: #9fb3d6; }
+  #sell-overlay .sell-qty input[type=range] { width: 100%; accent-color: #4a7dff; height: 18px; cursor: pointer; }
+  #sell-overlay .sell-qty input[type=number] { width: 90px; align-self: center; font: inherit; font-size: 15px; text-align: center;
+    background: rgba(20,30,55,.6); color: #eaf1ff; border: 1px solid rgba(140,175,255,.3); border-radius: 6px; padding: 5px 8px; }
+  #sell-overlay .sell-total { font-size: 16px; color: #cfe0ff; margin: 0 0 20px; }
+  #sell-overlay .sell-total b { color: #ffcf5a; font-size: 20px; }
+  #sell-overlay .sell-actions { display: flex; gap: 12px; }
+  #sell-overlay .sell-actions button { flex: 1 1 0; padding: 11px 14px; font: inherit; font-size: 15px; font-weight: 600; border-radius: 10px; cursor: pointer; }
+  #sell-overlay .ghost { background: transparent; color: #9fb6e6; border: 1px solid rgba(120,150,210,.35); }
+  #sell-overlay .primary-btn { background: #4a7dff; color: #fff; border: 0; }
   /* Credits & attributions overlay (opened from settings; z-index 21 so it sits above the settings modal).
      A scrollable list of third-party 3D models (full CC-BY attribution) + music/sound (courtesy). */
   #credits-overlay {
@@ -715,6 +890,33 @@
     letter-spacing: .3px; text-shadow: 0 0 4px rgba(0,0,0,.9); white-space: nowrap;
     pointer-events: none; display: none;
   }
+  .credit-popup.evade { color: #7fdfff; font-size: 15px; letter-spacing: 1px; } /* "EVADE" on a dodged shot (cyan) */
+  /* Character progression HUD (docs/plans/2026-08-09-character-progression.md):
+     free-skill-points badge on the Character menu item, the always-on bottom XP bar, and the level-up toast. */
+  #mw-menu .mw-item { position: relative; }
+  #mw-char-badge { display: none; }
+  #mw-char-badge.show {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+    background: #ffcf5a; color: #1a1a1a; font-size: 12px; font-weight: 700; line-height: 1;
+  }
+  #xp-bar {
+    position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%);
+    width: 80%; height: 14px; z-index: 13; pointer-events: none; display: none; overflow: hidden; /* above #mainwin (12) so it shows on the base too */
+    background: rgba(20,22,14,.5); border: 1px solid rgba(255,207,90,.35); border-radius: 8px;
+  }
+  #xp-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    background: linear-gradient(90deg,#ffcf5a,#ffb020); transition: width .25s ease; }
+  #xp-bar-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font: 700 10px system-ui, sans-serif; color: #fff; letter-spacing: .3px; text-shadow: 0 1px 2px rgba(0,0,0,.75); }
+  #levelup-toast {
+    position: fixed; left: 50%; top: 42%; transform: translate(-50%,-50%); z-index: 40; pointer-events: none;
+    opacity: 0; white-space: nowrap; font: 800 48px system-ui, sans-serif; color: #fff; letter-spacing: 2px;
+    text-shadow: 0 2px 16px rgba(0,0,0,.7);
+  }
+  #levelup-toast.show { animation: levelup-fade 2s ease-out forwards; }
+  @keyframes levelup-fade { 0% { opacity: 1; } 100% { opacity: 0; } }
   /* Enemy health bar: a small translucent red bar that sits just above a damaged enemy (bottom edge pinned
      to the projected anchor; in #markers, shown once hp < max) */
   .enemy-hp {

@@ -16,8 +16,8 @@
     "context": "HUD label above the kill count. One word, very short."
   },
   "ui.log.killed": {
-    "source": "{name} killed +{amount}",
-    "context": "In-game event-log line when the player destroys an enemy ship. {name} = the enemy ship's name (English, from the catalog, may be left as-is if untranslated); {amount} = credits earned from the kill (integer, shown after a plus sign)."
+    "source": "{name} killed +{amount} · +{xp} XP",
+    "context": "In-game event-log line when the player destroys an enemy ship. {name} = the enemy ship's name (English, from the catalog, may be left as-is if untranslated); {amount} = credits earned from the kill (integer, after a plus sign); {xp} = experience earned (integer). Keep 'XP' as-is."
   },
   "ui.log.picked_up": {
     "source": "picked up {name}",
@@ -70,6 +70,10 @@
   "ui.mission.est_reward": {
     "source": "Est. reward: {credits}",
     "context": "Shown in the mission description panel: the approximate credits the mission pays. {credits} is a number."
+  },
+  "ui.mission.est_xp": {
+    "source": "XP ≈ {xp}",
+    "context": "Shown next to the mission's estimated credit reward: the experience the mission grants. {xp} is a number. Keep 'XP' as-is."
   },
   "ui.help": {
     "source": "<b>W / ↑</b> — thrust · <b>S / ↓</b> — reverse · <b>A / D</b> or <b>← →</b> — turn · <b>Space</b> — fire · <b>F</b> — rocket",
@@ -206,6 +210,30 @@
   "ui.shop.action.buy": {
     "source": "Buy",
     "context": "Button on a shop item — purchase it into the stash. Short."
+  },
+  "ui.shop.sell.title": {
+    "source": "Sell equipment?",
+    "context": "Heading of the sell-confirmation dialog."
+  },
+  "ui.shop.sell.qty": {
+    "source": "Quantity",
+    "context": "Label above the quantity slider in the sell dialog (shown only when the stash holds more than one)."
+  },
+  "ui.shop.sell.in_stash": {
+    "source": "of {n} in stash",
+    "context": "Shown beside the sell quantity control: how many the player owns. {n} is an integer."
+  },
+  "ui.shop.sell.receive": {
+    "source": "You receive",
+    "context": "Label before the total credits the player gets for the sale in the sell dialog."
+  },
+  "ui.shop.sell.cancel": {
+    "source": "Cancel",
+    "context": "Button that dismisses the sell-confirmation dialog without selling. Short."
+  },
+  "ui.shop.sell.confirm": {
+    "source": "Sell",
+    "context": "Button that confirms the sale in the sell-confirmation dialog. Short."
   },
   "ui.shop.stat.hp": {
     "source": "HP",
@@ -604,8 +632,8 @@
     "context": "Main Window briefing shown when the player reaches Level 1 (right after the Level-0 intro cutscene) — the first real mission. Spoken by a station dispatcher/officer, relieved and a little wry, to the just-arrived rookie: thanks them for arriving in time in such a ship, then asks them to drive the pirates off the station FIRST and sort out the rest later. 'Sentinel' is the player's title; the ship is fast and nimble."
   },
   "level.2.briefing": {
-    "source": "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. And now that you're back at the station, the hangar's open to you: the shop and a few side jobs are yours to take between missions — kit out before you push on. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",
-    "context": "Briefing before level 2 (player-facing 'Level 2'). Mission = fight through the pirate blockade and REACH the weapons factory (the factory itself is taken next level). Frames the player as now carrying the Machine Gun salvaged at the end of level 1 (primary weapon, good vs rockets), announces that the hangar shop + side missions are now open (they unlock at this point, right after the first flight), and warns of a heavier enemy — the medium mini-boss that ends this level. Keep 'Machine Gun' + 'Sentinel'."
+    "source": "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. And now that you're back at the station, the hangar's open to you: the shop is yours to use between missions — kit out before you push on. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",
+    "context": "Briefing before level 2 (player-facing 'Level 2'). Mission = fight through the pirate blockade and REACH the weapons factory (the factory itself is taken next level). Frames the player as now carrying the Machine Gun salvaged at the end of level 1 (primary weapon, good vs rockets), announces that the hangar shop is now open (it unlocks at this point, right after the first flight; side missions unlock LATER, after 'Level 3' — DECISIONS §91), and warns of a heavier enemy — the medium mini-boss that ends this level. Keep 'Machine Gun' + 'Sentinel'."
   },
   "level.2.victory": {
     "source": "The lane's open and the factory's in range, Sentinel — but they're dug in hard around it. Whatever's guarding that place won't come out to meet you. Rearm; we go in next.",
@@ -648,8 +676,8 @@
     "context": "Victory line shown after clearing any side mission. Celebratory. 'Sentinel' is the player's title."
   },
   "level.4.briefing": {
-    "source": "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. Good hunting, Sentinel.",
-    "context": "Briefing shown in the Hangar after clearing level 3, before level 4 ('Find the pirate base'). Follows on from level 3 (the player took the factory; some pirates fled). Reminds the player to rearm at the hangar (heavy enemies ahead) and find the base — the shop is not new here, it opened back at 'Level 2', so this is a gear-up reminder, not the unlock. Keep 'Sentinel' (the player's title)."
+    "source": "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. And you've been out here long enough now, Sentinel — command's opening the side-job board to you: take a few between missions to bank extra credits. Good hunting.",
+    "context": "Briefing shown in the Hangar after clearing level 3, before level 4 ('Find the pirate base'). Follows on from level 3 (the player took the factory; some pirates fled). Reminds the player to rearm at the hangar (heavy enemies ahead) and find the base — the shop is not new here (it opened back at 'Level 2'), but the SIDE-MISSION board IS new — it unlocks at this point (after 'Level 3' — DECISIONS §91), so this briefing announces it. Keep 'Sentinel' (the player's title)."
   },
   "level.4.victory": {
     "source": "Tracked. The pirate base just lit up our long-range scan — they're dug in deep. Rearm and regroup, Sentinel; next, we take it down.",
@@ -778,5 +806,153 @@
   "ui.loading.level": {
     "source": "Preparing the sector...",
     "context": "Shown on a full-screen veil for a second or two while a freshly built level is compiled and uploaded to the GPU, before the fight starts. Reads as loading, not as a freeze. Short."
+  },
+  "ui.mainwin.character": {
+    "source": "Character",
+    "context": "Left base-menu item — the pilot/ship progression section (currently a stub). One word."
+  },
+  "ui.mainwin.map": {
+    "source": "Map",
+    "context": "Left base-menu item — the sector/world map section (currently a stub). One word."
+  },
+  "ui.mainwin.craft": {
+    "source": "Craft",
+    "context": "Left base-menu item — the crafting section (undesigned, \"to be defined\"). One word."
+  },
+  "ui.character.level": {
+    "source": "Level {level}",
+    "context": "Character screen header: the pilot's current character level. {level} is an integer starting at 0."
+  },
+  "ui.character.points": {
+    "source": "{points} skill points",
+    "context": "Character screen: how many unspent skill points the player can allocate. {points} is an integer (0 or more)."
+  },
+  "ui.character.xp": {
+    "source": "{into} / {span} XP",
+    "context": "Character screen XP bar label: experience into the current level out of the amount needed for the next. {into} and {span} are integers. Keep 'XP' as-is."
+  },
+  "ui.skill.kinetic.name": {
+    "source": "Kinetic Weapons",
+    "context": "Name of the kinetic-weapons skill card on the Character screen. Short."
+  },
+  "ui.skill.kinetic.desc": {
+    "source": "+{kineticDmg}% damage · +{aim}° aim assist per point",
+    "context": "Effect of one point in the Kinetic skill. {kineticDmg} and {aim} are numbers; keep the % and ° signs and 'aim assist'."
+  },
+  "ui.skill.rocket.name": {
+    "source": "Rockets",
+    "context": "Name of the rockets skill card on the Character screen. Short."
+  },
+  "ui.skill.rocket.desc": {
+    "source": "+{rocketDmg}% rocket damage · +{rocketSpeed}% rocket speed per point",
+    "context": "Effect of one point in the Rocket skill. {rocketDmg} and {rocketSpeed} are numbers; keep the % signs."
+  },
+  "ui.skill.shields.name": {
+    "source": "Shields",
+    "context": "Name of the shields skill card on the Character screen. Short."
+  },
+  "ui.skill.shields.desc": {
+    "source": "+{shield}% shield capacity per point",
+    "context": "Effect of one point in the Shields skill. {shield} is a number; keep the % sign."
+  },
+  "ui.skill.maneuver.name": {
+    "source": "Maneuverability",
+    "context": "Name of the maneuverability skill card on the Character screen. One word."
+  },
+  "ui.skill.maneuver.desc": {
+    "source": "+{dodge}% dodge chance per point",
+    "context": "Effect of one point in the Maneuverability skill (chance to evade an incoming shot). {dodge} is a number; keep the % sign."
+  },
+  "ui.skill.mobility.name": {
+    "source": "Mobility",
+    "context": "Name of the mobility skill card on the Character screen. One word."
+  },
+  "ui.skill.mobility.desc": {
+    "source": "+{mobility}% engine & thruster speed · +{mobility}% max speed per point",
+    "context": "Effect of one point in the Mobility skill. {mobility} is a number (used twice); keep the % signs."
+  },
+  "ui.evade": {
+    "source": "EVADE",
+    "context": "Brief floating text over the player's ship when it dodges an incoming shot (Maneuverability skill). Very short, uppercase."
+  },
+  "ui.levelup": {
+    "source": "Level up",
+    "context": "Centered text shown for ~2s when the player reaches a new character level. Short, celebratory."
+  },
+  "ui.shop.tab.ship": {
+    "source": "Ship",
+    "context": "In-bay tab label under Loadout — the equipped-ship screen (beside Stash / Shop). One word."
+  },
+  "ui.shop.loadout_locked": {
+    "source": "The shop unlocks after your first mission.",
+    "context": "Hint shown in the Loadout screen before the shop is unlocked (the loadout is read-only until then)."
+  },
+  "ui.stub.character": {
+    "source": "Coming soon — your pilot and ship progression will live here.",
+    "context": "Placeholder body text for the not-yet-built Character section."
+  },
+  "ui.stub.map": {
+    "source": "Coming soon — a map of the sector will live here.",
+    "context": "Placeholder body text for the not-yet-built Map section."
+  },
+  "ui.stub.craft": {
+    "source": "Crafting is still to be defined — it is coming later.",
+    "context": "Placeholder body text for the undesigned Craft section (tbd)."
+  },
+  "ui.mission.take": {
+    "source": "Take",
+    "context": "Mission-board button — accept a side mission onto your board. One word."
+  },
+  "ui.mission.defer": {
+    "source": "Defer",
+    "context": "Mission-board button — remove a taken side mission from your board. One word."
+  },
+  "ui.mission.set_active": {
+    "source": "Set active",
+    "context": "Mission-board button — make this the mission Take-off will fly. Short."
+  },
+  "ui.mission.active": {
+    "source": "Active",
+    "context": "Mission-board badge — this is the mission Take-off will fly. One word."
+  },
+  "ui.mission.taken": {
+    "source": "Taken",
+    "context": "Mission-board badge — this side mission is accepted onto the board (but not active). One word."
+  },
+  "ui.button.take_off_mission": {
+    "source": "🚀 Take off — {mission}",
+    "context": "Take-off button label when a side mission is the active one; {mission} is its title."
+  },
+  "ui.shop.action.remove": {
+    "source": "Remove",
+    "context": "Loadout panel button — take the equipped part off the ship (unequip) back to storage. One word."
+  },
+  "ui.shop.action.replace": {
+    "source": "Replace",
+    "context": "Loadout panel button — install a stash part into a slot that already has one (swaps the old one to storage). One word."
+  },
+  "ui.shop.select_slot": {
+    "source": "Select a slot around the ship to manage its gear.",
+    "context": "Loadout panel hint when no slot is selected."
+  },
+  "ui.shop.slot_empty": {
+    "source": "This slot is empty — pick a part from storage or the shop.",
+    "context": "Loadout panel hint when the selected slot has nothing equipped and no stash options shown yet."
+  },
+  "ui.shop.in_stash": {
+    "source": "In storage",
+    "context": "Loadout panel subheading above the list of stash parts that fit the selected slot."
+  },
+  "ui.shop.no_replacement": {
+    "source": "No spare part for this slot in storage.",
+    "context": "Loadout panel hint when the stash has no part fitting the selected slot."
+  },
+  "ui.shop.back": {
+    "source": "Back",
+    "context": "Loadout shop-panel button — return from the shop to the selected-slot detail. One word."
+  },
+  "ui.shop.no_model": {
+    "source": "No 3D preview",
+    "context": "Shop detail card placeholder when the item has no 3D model yet."
   }
 }

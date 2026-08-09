@@ -1,22 +1,25 @@
 // Main Window (the between-battles / landing screen; was the "Hangar"): fixed landscape layout — a left
-// menu (Missions / Loadout / Stash / Shop) + a center work zone + a 25% ship-model preview — plus the two
-// spinning-model viewers (right-column ship preview #mw-ship, work-zone briefing item showcase #mw-item).
-// Used on page load (homepage for the current level) and after a victory. See docs/plans/main-window-redesign.md.
+// menu (Character / Missions / Loadout / Map / Craft) + a center work zone + a 25% ship-model preview.
+// Missions is a central board (this file); Loadout is the ship+slots screen (shop.js); the spinning-model
+// viewers live in model-viewer.js (right-column preview #mw-ship, work-zone item showcase #mw-item, and the
+// Loadout centered ship). Used on page load (current level) and after a victory. See the redesign plans.
 //
 // Part of the between-battles UI cycle: it calls into account (renderAccountBar/openAccount/
 // shouldPromptAccount), welcome (requestFullscreen), shop and sim; account calls showMain back. ESM
 // resolves the cycle at runtime (edges fire on user actions, not at module init). `missionOffers`/
 // `mainBriefing`/`mwPreview`/`mwItem` are `export let` so the ?debug __game hook can read them live.
-import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { G, CATALOG } from './state.js';
 import { el } from './dom.js';
 import { t } from './i18n.js';
-import { fetchJson } from './net.js';
+import { fetchJson, clientLog } from './net.js';
+import { API_BASE } from './api-base.js';
+import { esc } from './format.js';
+import { SKILL_RATES } from './components.js'; // per-point skill rates → Character-card effect text (single source)
 import { reset, levelRunner, refreshMusic } from './sim.js';
-import { shipModelCfg, gltfLoader, SHIP_MODEL_LEN } from './ship-factory.js';
+import { shipModelCfg } from './ship-factory.js';
+import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
-import { openBay, showBayView, updateTakeoffGate, renderShipStatsBar, deriveShipStats, resetShipStatsDelta } from './shop.js';
+import { openBay, showBayView, updateTakeoffGate, renderShipStatsBar, deriveShipStats, resetShipStatsDelta, stopLoadoutPreview } from './shop.js';
 import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } from './account.js';
 import { updateMenuCredits } from './hud.js';
 import { requestFullscreen, showWelcome } from './welcome.js';
@@ -26,8 +29,10 @@ import { beginLiveSession } from './main.js'; // arm the always-on session recor
 const mainEl = document.getElementById('mainwin');
 export let mainBriefing = null; // the campaign briefing shown as the primary mission ({ textKey, text } or null)
 let mwView = 'missions';        // which work-zone view is active: 'missions' | 'bay'
-let mwMission = null;           // selected side-mission offer, or null = the campaign (primary) mission
-export let missionOffers = [];  // side missions from /api/players/:id/missions (unlocked after the campaign)
+let mwMission = null;           // selected side-mission offer (for the detail view), or null = the campaign
+export let missionOffers = [];  // side missions from /api/players/:id/missions (unlocked after "Level 3" — DECISIONS §91)
+let takenIds = new Set();       // ids of side missions the player has taken (accepted onto the board)
+export let activeMissionId = null; // the ONE mission Take-off flies (null = the campaign / "Main operation")
 export let stagedActive = false; // a staged campaign-briefing reveal is animating (read by ?debug __game)
 let briefingRevealDone = false;  // the current landing's campaign briefing is fully revealed (no re-animate)
 let stagedFullText = '';         // the briefing text being revealed (also used by skip-to-full)
@@ -48,7 +53,8 @@ export function showMain(briefing) {
   refreshMusic();                      // menu → calmer hangar music
   mainEl.classList.add('on');
   mwMission = null;                    // default to the primary (campaign) mission
-  buildMissionList();                  // primary row + any cached secondary rows
+  renderMissionsBoard();               // campaign card + any cached side-mission cards
+  updateGoButton();
   selectMenu('missions');              // open the mission view (renders the campaign briefing)
   openBay();                           // load shop state + gate the Loadout/Stash/Shop menu items
   refreshMissions();                   // (re)load the side missions, then rebuild the list
@@ -62,11 +68,13 @@ export function showMain(briefing) {
   if (!stagedActive) applyPreviewTarget();  // when staging, the reveal defers the preview/showcase itself
 }
 function launchCampaign() {
+  clientLog('takeoff:campaign', { level: CATALOG.level && CATALOG.level.title, name: CATALOG.levelName }); // TEMP debug: what level reset() will play
   G.pendingBriefing = null;
   G.activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
   if (Device.hasTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
   mainEl.classList.remove('on');
   stopShipPreview();
+  stopLoadoutPreview();
   settleBriefingReveal();                    // stop a stray timer/rAF from toggling classes after close
   stopViewer(mwItem);                        // stop the work-zone item showcase too
   document.body.classList.remove('menu');    // restore the in-game HUD
@@ -99,48 +107,167 @@ el.backHangar.addEventListener('click', () => { el.overlay.style.display = 'none
 // ---- Left-menu navigation + the work-zone views ----
 // Show one work-zone view and highlight its menu item. 'missions' → the mission view (description +
 // Take-off); 'loadout'|'stash'|'shop' → the shop bay view with that screen selected.
+const STUB_SECTIONS = ['map', 'craft']; // not-yet-built sections → a "coming soon" stub panel
 function selectMenu(which) {
   document.querySelectorAll('#mw-menu .mw-item').forEach((b) => b.classList.toggle('active', b.dataset.mw === which));
   const isMissions = which === 'missions';
-  mwView = isMissions ? 'missions' : 'bay';
+  const isBay = which === 'loadout';   // Loadout absorbs the former Stash/Shop items as in-bay tabs
+  const isCharacter = which === 'character';
+  const isStub = STUB_SECTIONS.includes(which);
+  mwView = isBay ? 'bay' : (isMissions ? 'missions' : (isCharacter ? 'character' : 'stub'));
   document.getElementById('mw-view-mission').classList.toggle('active', isMissions);
-  document.getElementById('mw-view-bay').classList.toggle('active', !isMissions);
-  if (isMissions) { buildMissionList(); renderMissionView(mwMission); }
-  else { settleBriefingReveal(); showBayView(which); stopViewer(mwItem); } // bay view hides the mission canvas → idle the loop
+  document.getElementById('mw-view-bay').classList.toggle('active', isBay);
+  document.getElementById('mw-view-character').classList.toggle('active', isCharacter);
+  document.getElementById('mw-view-stub').classList.toggle('active', isStub);
+  mainEl.classList.toggle('bay-open', isBay); // Loadout centers the ship → hide the right-column preview
+  // Exactly ONE ship viewer runs per view: Loadout uses the centered-ship (+ item-model) viewers and hides
+  // the right-column preview; every other view uses the right-column preview. Stopping the OFF-view viewers
+  // is what keeps the spin smooth — otherwise the Loadout viewers keep looping in the background on the
+  // Missions view (2-3 concurrent WebGL loops competing → the preview stutters).
+  if (isBay) { stopShipPreview(); }
+  else { startShipPreview(); stopLoadoutPreview(); }
+  if (isMissions) { renderMissionsBoard(); renderMissionView(mwMission); }
+  else if (isBay) { settleBriefingReveal(); showBayView('loadout'); stopViewer(mwItem); } // bay hides the mission canvas → idle the loop
+  else if (isCharacter) { settleBriefingReveal(); renderCharacter(); stopViewer(mwItem); }
+  else { settleBriefingReveal(); renderStub(which); stopViewer(mwItem); }
 }
+// Render a placeholder panel for a not-yet-built section (Map / Craft — see the redesign plan).
+function renderStub(which) {
+  document.getElementById('mw-stub-title').textContent = t(`ui.mainwin.${which}`);
+  document.getElementById('mw-stub-text').textContent = t(`ui.stub.${which}`);
+}
+
+// ---- Character screen (docs/plans/2026-08-09-character-progression.md) ----
+// Level + XP bar + unspent skill points, then the five skill cards. Effect NUMBERS come from
+// components.js SKILL_RATES (single source shared with the sim); the "+" buttons POST /skills/spend.
+const SKILL_CARDS = ['kinetic', 'rocket', 'shields', 'maneuver', 'mobility']; // card order = server SKILLS order
+// The interpolation params for the localized card descriptions (percent rates are stored as fractions).
+function skillDescParams() {
+  return {
+    kineticDmg: Math.round(SKILL_RATES.kineticDmgPct * 100), aim: SKILL_RATES.aimAssistDeg,
+    rocketDmg: Math.round(SKILL_RATES.rocketDmgPct * 100), rocketSpeed: Math.round(SKILL_RATES.rocketSpeedPct * 100),
+    shield: Math.round(SKILL_RATES.shieldPct * 100), dodge: SKILL_RATES.dodgePctPerPt,
+    mobility: Math.round(SKILL_RATES.mobilityPct * 100),
+  };
+}
+function renderCharacter() {
+  const host = document.getElementById('mw-character');
+  if (!host) return;
+  const prog = (G.activeShip && G.activeShip.progression)
+    || { level: 0, xpIntoLevel: 0, xpForNextLevel: 1000, skillPoints: 0, skills: {} };
+  const p = skillDescParams();
+  const pct = prog.xpForNextLevel > 0 ? Math.max(0, Math.min(100, Math.round(100 * prog.xpIntoLevel / prog.xpForNextLevel))) : 0;
+  const header = `<div id="ch-head">
+    <div class="ch-level"><span class="ch-level-num">${esc(t('ui.character.level', { level: prog.level }))}</span>
+      <span class="ch-points${prog.skillPoints > 0 ? ' has' : ''}">${esc(t('ui.character.points', { points: prog.skillPoints }))}</span></div>
+    <div class="ch-xpbar"><div class="ch-xpfill" style="width:${pct}%"></div>
+      <span class="ch-xptext">${esc(t('ui.character.xp', { into: prog.xpIntoLevel, span: prog.xpForNextLevel }))}</span></div>
+  </div>`;
+  const canSpend = prog.skillPoints > 0;
+  const cards = SKILL_CARDS.map((key) => {
+    const lvl = (prog.skills && prog.skills[key]) || 0;
+    const plus = `<button class="ch-plus" data-skill="${esc(key)}"${canSpend ? '' : ' disabled'}>+</button>`;
+    return `<div class="skill-card">
+      <div class="sc-top"><span class="sc-name">${esc(t('ui.skill.' + key + '.name'))}</span><span class="sc-pts">${lvl}</span></div>
+      <div class="sc-desc">${esc(t('ui.skill.' + key + '.desc', p))}</div>
+      <div class="sc-foot">${plus}</div>
+    </div>`;
+  }).join('');
+  host.innerHTML = header + `<div id="ch-cards">${cards}</div>`;
+}
+// Spend one skill point → POST, adopt the fresh progression from the response, re-render.
+async function skillSpend(skill) {
+  if (!G.playerId) return;
+  try {
+    const r = await fetch(API_BASE + `/api/players/${G.playerId}/skills/spend`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skill }) });
+    if (!r.ok) return; // no points / unknown skill → ignore
+    const j = await r.json().catch(() => ({}));
+    if (j.progression && G.activeShip) G.activeShip.progression = j.progression;
+    renderCharacter();
+  } catch { /* network hiccup → leave the panel as-is */ }
+}
+document.getElementById('mw-character').addEventListener('click', (e) => {
+  const btn = e.target.closest('.ch-plus');
+  if (btn && !btn.disabled) skillSpend(btn.dataset.skill);
+});
 document.getElementById('mw-menu').addEventListener('click', (e) => {
   const b = e.target.closest('.mw-item');
   if (b) selectMenu(b.dataset.mw);
 });
-// Collapse/expand the mission sublist (the caret left of "Missions").
-document.getElementById('mw-missions-toggle').addEventListener('click', () => {
-  const g = document.getElementById('mw-missions-group');
-  const collapsed = g.dataset.collapsed === '1';
-  g.dataset.collapsed = collapsed ? '0' : '1';
-  const tog = document.getElementById('mw-missions-toggle');
-  tog.textContent = collapsed ? '▾' : '▸';
-  tog.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
-});
-
-// Build the mission sublist: the campaign (primary) row, then the side missions (secondary, when
-// unlocked). Selecting a row renders it into the work zone via selectMenu('missions').
-function buildMissionList() {
-  const host = document.getElementById('mw-mission-list');
-  if (!host) return;
-  host.innerHTML = '';
-  const prim = document.createElement('button');
-  prim.className = 'mw-sub' + (mwMission == null ? ' active' : '');
-  prim.textContent = t('ui.mainwin.primary');
-  prim.addEventListener('click', () => { mwMission = null; selectMenu('missions'); });
-  host.appendChild(prim);
-  missionOffers.forEach((m, i) => {
-    const b = document.createElement('button');
-    b.className = 'mw-sub' + (mwMission === m ? ' active' : '');
-    b.textContent = t('ui.mission.slot', { n: i + 1 });
-    b.addEventListener('click', () => { mwMission = m; selectMenu('missions'); });
-    host.appendChild(b);
-  });
+// ---- Mission board (docs/plans/2026-08-08-base-menu-redesign.md, Slice B) ----
+// A central board of cards — the campaign ("Main operation") + the side missions — each with
+// Take / Defer / Set-active controls + status badges. Clicking a card shows its briefing in the detail
+// area below; Take-off flies the ACTIVE mission (server-persisted, one at a time).
+function mcBtn(act, id, labelKey, cls = '') {
+  return `<button data-mact="${act}"${id ? ` data-mid="${esc(id)}"` : ''} class="${cls}">${esc(t(labelKey))}</button>`;
 }
+function missionCard(c) {
+  const badge = c.active ? `<span class="mc-badge active">${esc(t('ui.mission.active'))}</span>`
+    : (c.taken && c.id != null ? `<span class="mc-badge taken">${esc(t('ui.mission.taken'))}</span>` : '');
+  const acts = [];
+  if (c.id == null) {                                   // campaign: only "Set active" when not active
+    if (!c.active) acts.push(mcBtn('activate', null, 'ui.mission.set_active', 'primary'));
+  } else if (!c.taken) {                                 // side, not taken → Take
+    acts.push(mcBtn('take', c.id, 'ui.mission.take', 'primary'));
+  } else {                                               // side, taken → Set active (if not) + Defer
+    if (!c.active) acts.push(mcBtn('activate', c.id, 'ui.mission.set_active', 'primary'));
+    acts.push(mcBtn('defer', c.id, 'ui.mission.defer'));
+  }
+  const sub = c.subtitle ? `<div class="mc-sub">${esc(c.subtitle)}</div>`
+    : (c.reward != null ? `<div class="mc-sub">${esc(t('ui.mission.est_reward', { credits: c.reward }))}${c.xp != null ? ' · ' + esc(t('ui.mission.est_xp', { xp: c.xp })) : ''}</div>` : '');
+  return `<div class="mission-card${c.active ? ' active' : ''}${c.selected ? ' selected' : ''}" data-msel="${c.id == null ? 'campaign' : esc(c.id)}">
+    <div class="mc-main"><div class="mc-title">${esc(c.title)}</div>${sub}</div>
+    ${badge}
+    <div class="mc-actions">${acts.join('')}</div>
+  </div>`;
+}
+// Render the board: the campaign card, then each side-mission offer (present once the board unlocks).
+function renderMissionsBoard() {
+  const host = document.getElementById('mw-mission-board');
+  if (!host) return;
+  const cards = [missionCard({
+    id: null, title: t('ui.mainwin.primary'), subtitle: (CATALOG.level && CATALOG.level.title) || '',
+    reward: null, taken: true, active: activeMissionId == null, selected: mwMission == null,
+  })];
+  for (const m of missionOffers) cards.push(missionCard({
+    id: m.id, title: t(m.titleKey), reward: m.estReward, xp: m.estXp,
+    taken: takenIds.has(m.id), active: activeMissionId === m.id, selected: mwMission === m,
+  }));
+  host.innerHTML = cards.join('');
+}
+// Take-off launches the ACTIVE mission — reflect which one that is on the button.
+function updateGoButton() {
+  const btn = document.getElementById('mw-go');
+  if (!btn) return;
+  const m = activeMissionId == null ? null : missionOffers.find((o) => o.id === activeMissionId);
+  btn.textContent = m ? t('ui.button.take_off_mission', { mission: t(m.titleKey) }) : t('ui.button.take_off');
+}
+// Take / defer / activate a mission → POST, then re-render the board + Take-off from the fresh state.
+async function missionAction(act, missionId) {
+  if (!G.playerId) return;
+  try {
+    const r = await fetch(API_BASE + `/api/players/${G.playerId}/missions/${act}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ missionId }) });
+    if (!r.ok) return;                                   // locked / unknown id → ignore (v1)
+    const j = await r.json().catch(() => ({}));
+    takenIds = new Set(j.taken || []);
+    activeMissionId = j.activeMissionId ?? null;
+    renderMissionsBoard();
+    updateGoButton();
+  } catch { /* network hiccup → leave the board as-is */ }
+}
+// Board clicks: an action button (take/defer/activate) or selecting a card (shows its detail).
+document.getElementById('mw-mission-board').addEventListener('click', (e) => {
+  const actBtn = e.target.closest('[data-mact]');
+  if (actBtn) { e.stopPropagation(); missionAction(actBtn.dataset.mact, actBtn.dataset.mid || null); return; }
+  const card = e.target.closest('.mission-card');
+  if (!card) return;
+  const sel = card.dataset.msel;
+  mwMission = sel === 'campaign' ? null : (missionOffers.find((m) => m.id === sel) || null);
+  renderMissionsBoard();
+  renderMissionView(mwMission);
+});
 
 function clearStagedReveal() {
   if (stagedCtl) { stagedCtl.cancel(); stagedCtl = null; }
@@ -206,7 +333,8 @@ function renderMissionView(m) {
   if (m) {
     titleEl.textContent = t(m.titleKey);
     textEl.textContent = t(m.descKey);
-    rewEl.textContent = t('ui.mission.est_reward', { credits: m.estReward });
+    rewEl.textContent = t('ui.mission.est_reward', { credits: m.estReward })
+      + (m.estXp != null ? ' · ' + t('ui.mission.est_xp', { xp: m.estXp }) : '');
     rewEl.style.display = '';
     previewShip();            // a side mission grants nothing → show the ship, not a campaign showcase item
     showShowcaseItem(null);   // …and hide the work-zone item showcase
@@ -228,26 +356,35 @@ function renderMissionView(m) {
   }
   updateTakeoffGate(G.activeShip);
 }
-// The single Take-off button in the mission view dispatches on the current selection.
+// The single Take-off button launches the ACTIVE mission (not the merely-selected one): the campaign
+// when nothing is active, else the active side mission (find its offer for the descriptor to play).
 document.getElementById('mw-go').addEventListener('click', () => {
-  if (mwMission) launchMission(mwMission);
-  else launchCampaign();
+  if (activeMissionId == null) return launchCampaign();
+  const m = missionOffers.find((o) => o.id === activeMissionId);
+  if (m) launchMission(m); else launchCampaign();       // active offer missing (stale) → safe fallback
 });
 // Tap the briefing text while it's staging → skip to full text + reveal ship window & Take-off at once.
 document.getElementById('mw-mission-desc').addEventListener('click', () => {
   if (stagedActive) revealBriefingNow();
 });
 
-// Reload the side missions (gated to the shop being unlocked), then rebuild the list + re-render if
-// the mission view is open.
+// Reload the side-mission board (offers + taken set + active), then re-render the board + detail.
 export async function refreshMissions() {
-  const unlocked = !!(G.playerId && G.activeShip && G.activeShip.shopUnlocked);
-  if (!unlocked) { missionOffers = []; buildMissionList(); return; }
+  // Side missions open LATER than the shop (after "Level 3" — DECISIONS §91), so gate on the dedicated
+  // `sideMissionsUnlocked` flag the server derives from progress, not on `shopUnlocked`.
+  const unlocked = !!(G.playerId && G.activeShip && G.activeShip.sideMissionsUnlocked);
+  if (!unlocked) { missionOffers = []; takenIds = new Set(); activeMissionId = null; renderMissionsBoard(); updateGoButton(); return; }
   try {
     const data = await fetchJson(`/api/players/${G.playerId}/missions`);
     missionOffers = data.missions || [];
-  } catch { missionOffers = []; }
-  buildMissionList();
+    takenIds = new Set(data.taken || []);
+    activeMissionId = data.activeMissionId ?? null;
+  } catch { missionOffers = []; takenIds = new Set(); activeMissionId = null; }
+  // Default the detail to the active mission (campaign if none). Side missions only exist at L≥4, where
+  // the campaign staged reveal never plays, so this can't interrupt a reveal.
+  if (activeMissionId != null) { const act = missionOffers.find((m) => m.id === activeMissionId); if (act) mwMission = act; }
+  renderMissionsBoard();
+  updateGoButton();
   if (mwView === 'missions') renderMissionView(mwMission);
 }
 // Launch a chosen side mission (mirrors launchCampaign, but plays the mission descriptor).
@@ -257,6 +394,7 @@ export function launchMission(m) {
   if (Device.hasTouch) requestFullscreen();
   mainEl.classList.remove('on');
   stopShipPreview();
+  stopLoadoutPreview();
   settleBriefingReveal();              // stop a stray timer/rAF from toggling classes after close
   stopViewer(mwItem);                  // stop the work-zone item showcase too
   document.getElementById('welcome').style.display = 'none';
@@ -270,45 +408,7 @@ export function launchMission(m) {
 // player's active ship — the high-poly `_hangar` glb (model_url_high), falling back to the combat model.
 // Its render loop only runs while the Main Window is visible (started/stopped by showMain/launch*), so it
 // costs nothing during a fight. See docs/plans/main-window-redesign.md (§ ship preview) + DECISIONS.
-// Build a self-contained spinning-model viewer on a canvas: renderer + scene + key/ambient light +
-// optional RoomEnvironment PMREM + a rotating group. Two instances exist — the right-column ship
-// preview (#mw-ship) and the work-zone briefing item showcase (#mw-item). Returns the viewer object.
-function buildModelViewer(canvas) {
-  const r = new THREE.WebGLRenderer({ canvas, antialias: G.gfx.antialias, alpha: true });
-  r.setPixelRatio(Math.min(window.devicePixelRatio, G.gfx.pixelRatioCap));
-  const sc = new THREE.Scene();
-  const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-  cam.position.set(0, 1.4, 7);
-  cam.lookAt(0, 0, 0);
-  const key = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(3, 5, 4); sc.add(key);
-  sc.add(new THREE.AmbientLight(0x4a5878, 1.4));
-  if (G.gfx.envMap) { // same RoomEnvironment reflections as the combat scene (a fresh PMREM per GL context)
-    const pm = new THREE.PMREMGenerator(r);
-    sc.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
-    pm.dispose();
-  }
-  const group = new THREE.Group(); sc.add(group);
-  return { renderer: r, scene: sc, camera: cam, group, raf: 0, url: null };
-}
-// Start a viewer's auto-rotate render loop (idempotent — no-op if already running).
-function startViewer(v) {
-  if (!v || v.raf) return;
-  const loop = () => {
-    v.raf = requestAnimationFrame(loop);
-    v.group.rotation.y += 0.01; // slow auto-rotate
-    v.renderer.render(v.scene, v.camera);
-  };
-  loop();
-}
-function stopViewer(v) { if (v && v.raf) { cancelAnimationFrame(v.raf); v.raf = 0; } }
-function resizeViewer(v) {
-  if (!v) return;
-  const canvas = v.renderer.domElement;
-  const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
-  v.renderer.setSize(w, h, false); // false: don't override the CSS-driven canvas size
-  v.camera.aspect = w / h;
-  v.camera.updateProjectionMatrix();
-}
+// The spinning-model viewer machinery lives in ./model-viewer.js (shared with the Loadout screen).
 
 export let mwPreview = null; // right-column ship viewer — built lazily on the first showMain
 function startShipPreview() {
@@ -320,36 +420,6 @@ function startShipPreview() {
   startViewer(mwPreview);
 }
 function stopShipPreview() { stopViewer(mwPreview); }
-// yaw/scale for an ITEM (weapon/component) preview; mirrors shipModelCfg's defaults. Tolerant of both
-// catalog shapes: components keep `stats.model`, the flattened weapon entry has `model` at the top level.
-const itemModelCfg = (item) => {
-  const m = (item && (item.model || (item.stats && item.stats.model))) || {};
-  return { yaw: m.yaw ?? 0, scale: m.scale ?? 1, scaleMul: m.scaleMul ?? 1 };
-};
-// Show an arbitrary glb in a viewer — a ship OR an item. Normalizes the longest axis to SHIP_MODEL_LEN,
-// recenters, applies the cfg yaw + scale; tint stays off (glbs bake their own colors). No-op if the same
-// url is already shown. cfg = { yaw, scale, scaleMul }.
-function setViewerModel(v, url, cfg = {}) {
-  if (!v || !url || url === v.url) return;
-  v.url = url;
-  const clear = () => { for (let i = v.group.children.length - 1; i >= 0; i--) v.group.remove(v.group.children[i]); };
-  clear();
-  gltfLoader.load(url, (gltf) => {
-    if (!v || v.url !== url) return; // target changed mid-load
-    const model = gltf.scene;
-    const box = new THREE.Box3().setFromObject(model);
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    const s = (SHIP_MODEL_LEN / (Math.max(size.x, size.y, size.z) || 1)) * (cfg.scale ?? 1) * (cfg.scaleMul ?? 1);
-    model.scale.setScalar(s);
-    model.position.copy(center).multiplyScalar(-s);
-    const pivot = new THREE.Group();
-    pivot.rotation.y = cfg.yaw || 0;
-    pivot.add(model);
-    clear();
-    v.group.add(pivot);
-  }, undefined, (err) => console.warn('Preview model failed to load:', url, err));
-}
 // The right-column ship preview is the default consumer of the viewer setter.
 function setPreviewModel(url, cfg = {}) { setViewerModel(mwPreview, url, cfg); }
 // Default the preview to the player's active ship (the briefing showcase swaps in an item via setPreviewModel).

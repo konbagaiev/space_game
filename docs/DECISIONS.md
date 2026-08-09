@@ -3238,6 +3238,89 @@ boolean throws on Postgres — the bug the reset test guards).
 (the shop is no longer new there). English is the source of truth (`source.json` + the `catalog_seed.js`
 `text` fallback); the Russian layer (`ru.json`) mirrors both.
 
+## 91. Side missions unlock after "Level 3" — decoupled from the shop
+
+**Decision.** Split the side-mission board off the shop's unlock. The shop still opens right after the
+first flight (§90, keyed off `players.shop_unlocked`). The **side-mission board** now opens **later** — on
+reaching the "Level 4" briefing (descriptor `level-5`, id 5), i.e. after the player clears "Level 3" —
+gated on `players.current_progress >= SIDE_MISSIONS_MIN_PROGRESS` (=5), a new exported constant in
+`server/src/db.js`. `getActivePlayerShip()` returns a `sideMissionsUnlocked` boolean derived from
+progress; `GET /api/players/:id/missions` and the client's `refreshMissions()` gate on it instead of
+`shopUnlocked`.
+
+**Why.** §90 had opened the shop *and* the side missions together, right after the first mission — but
+dropping a repeatable grind board on a brand-new player at the same moment as the shop is a lot of surface
+at once, and it competes with the campaign's momentum during the early story beats. The shop is the piece
+worth having early (kit out mid-campaign); the side jobs are better introduced once the player has some
+footing and gear — after "Level 3". Keeping the shop early but the board later needed the two gates
+separated. This is part of the base-menu redesign (docs/plans/2026-08-08-base-menu-redesign.md, Slice 0).
+
+**No new DB column / migration / backfill.** The side-mission gate is *derived live* from
+`current_progress` (a column that already exists and is always accurate), so there is nothing to persist
+or backfill — every existing player's board availability is recomputed correctly on the next request. This
+is deliberately lighter than §90's `shop_unlocked` flag, which needs to persist because it's set by a
+one-shot briefing action; a progress threshold has no such need.
+
+**Copy.** `level.2.briefing` drops its "a few side jobs" clause (only the shop opens there now);
+`level.4.briefing` gains a line announcing the side-job board. English is the source of truth
+(`source.json` + the `catalog_seed.js` `text` fallback); the Russian layer (`ru.json`) mirrors both. No
+`unlockShop`-style action is added for side missions — the announcement briefing is text-only; the gate is
+the progress threshold.
+
+## 92. At most ONE Main Window 3D viewer render-loop runs at a time
+
+**Rule.** On the Main Window (the between-missions base screen) **at most one 3D model viewer render-loop
+is active at any time**, and it belongs to the currently-open view. Switching views (`selectMenu` in
+`client/src/mainwindow.js`) MUST stop the viewers that don't belong to the new view:
+
+- **Missions / Character / Map / Craft** → only the right-column ship preview (`mwPreview`, `#mw-ship`);
+  the Loadout viewers are stopped (`stopLoadoutPreview()` → the centered ship `loadoutViewer` + the item
+  model `shopModelViewer`).
+- **Loadout** → the centered ship (`#loadout-ship`) + the selected item's model (`#shop-model`); the
+  right-column preview is stopped (`stopShipPreview()`).
+
+Model **auto-rotation is time-based** (rad/sec in `startViewer`, `model-viewer.js`), not a per-frame
+increment, so a dropped frame doesn't make the spin jerk.
+
+**Why.** Each viewer is its own `WebGLRenderer` (a separate GL context) with its own `requestAnimationFrame`
+loop. When a Loadout viewer was left running after navigating back to Missions, 2–3 loops rendered
+concurrently and the visible ship preview **stuttered on a phone** (the base-menu redesign, Slice C,
+introduced the extra Loadout viewers). Keeping exactly one loop alive per view is what keeps the spin
+smooth. The enforcement point is the `if (isBay) stopShipPreview(); else { startShipPreview();
+stopLoadoutPreview(); }` in `selectMenu`, plus `launchCampaign`/`launchMission` stopping all viewers on
+take-off. If viewer count grows, centralize this in one `activateView(view)` helper rather than scattering
+start/stop calls.
+
+## 93. Character progression: XP → derived level, 5 skills, and a determinism-safe dodge
+
+The Character section became real: experience, a character level, and five skills (Kinetic, Rocket,
+Shields, Maneuverability, Mobility; Accuracy reserved for later). Several non-obvious choices:
+
+- **Client-authoritative XP, like credits.** The server never computed per-kill rewards — the client
+  sums each enemy's `reward` and POSTs the total to `/api/games` (see §earlier reward model). XP rides the
+  exact same path: the client sums each enemy's `xp` (= its credit reward) plus a one-shot mission bonus on
+  victory, and posts `xp`; the server just banks `experience += xp`. Server-sealed rewards remain a later
+  integrity item — doing XP any other way would have been an inconsistent special case.
+- **Level & unspent points are DERIVED from XP, never stored.** The only persisted truth is `experience`
+  plus the five `skill_*` allocation columns. `level = levelFromXp(experience)`, `unspent = level −
+  Σ(allocations)` (progression.js). Storing the level too invites drift the day we retune the curve; a
+  pure function can't disagree with itself. Total points are naturally capped at `level` (no separate cap).
+- **Arithmetic curve** — cost to reach level *n* = `1000 + 500·(n−1)` (1000, 1500, 2000, … cumulatively
+  1000/2500/4500/7000). Chosen over an exponential/power curve so the *first* campaign run yields a felt
+  ~5 levels rather than 2 or 15; steepness is one constant (`XP_STEP`) away if it needs retuning.
+- **Skills are baked at ship-build time, applied only to the REAL active ship.** `buildPlayer` scales the
+  player's engine/thruster power, shield capacity, and *cloned* weapon copies (never the shared catalog
+  objects), and stamps `dodge`/`maxSpeedMul`. Previews and — critically — `?playback`/intro overrides pass
+  **no** skills, so a recording reproduces the exact ship it was made with and stays deterministic.
+- **Dodge is determinism-safe by construction.** Hit chance is `100/(100+dodge−accuracy)` (accuracy 0 for
+  now). The roll is drawn from the seeded sim RNG (sim-random.js) **only when `dodge>0`** — a no-skill run,
+  and therefore every pre-existing recording, consumes **zero** extra draws and replays bit-identically
+  (the opt-in-per-draw contract, §73). To keep collision.js pure/RNG-free, the roll is an *injected*
+  predicate `resolveHostileBulletHit(..., dodgeRoll)` the caller supplies (null when the target can't
+  dodge). Dodge is a general ship stat (enemies carry it too; all current enemies = 0) and applies to
+  hostile **bullets** this iteration — rocket blasts are not dodged yet. Aim-assist from Kinetic is
+  additive degrees onto the existing per-weapon cone (consistent with §89).
+
 ## Future ideas
 
 solid asteroids with bounce ·

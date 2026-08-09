@@ -21,8 +21,8 @@ import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; //
 import { shipModelCacheSize } from './ship-factory.js'; // ?debug diagnostic: how many ship glbs have been parsed
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
-import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars)
-import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
+import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars/XP bar+skill badge)
+import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -31,7 +31,8 @@ import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
-import { showMain, launchMission, refreshMissions, missionOffers, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
+import { showMain, launchMission, refreshMissions, missionOffers, activeMissionId, mainBriefing, mwPreview, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
+import { shopItemViewer } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel
 import { showWelcome, applyTranslations, welcomeStaged, mountLangSwitch } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
 import { recenterAndQuantize, MAX_GHOST_SHIPS, MAX_GHOST_BULLETS } from './ghost-battle-track.js'; // ?dev in-game backdrop recorder + synthetic bake
@@ -713,6 +714,7 @@ function animate() {
   if (HITBOXES_DEBUG) syncHitBoxes(scene, G.player, enemies); // dev-only hitbox wireframe overlay
   const t1 = DEV ? performance.now() : 0; // end of sim
   updateHud();
+  updateProgressionHud(); // always-on bottom XP bar + free-skill-points badge on the Character menu item
   updateMarkers();
   updateDropMarkers(); // green edge arrows toward off-screen loot drops (nearest 6)
   updateCreditPopups(); // floating "+xx" gold credit popups at kill sites
@@ -824,9 +826,18 @@ if (location.search.includes('debug')) {
     setArenaDrift(x, z) { G.arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
     get activeMission() { return G.activeMission; }, // the side mission being played (null = campaign)
     get missionOffers() { return missionOffers; },
+    get activeMissionId() { return activeMissionId; }, // the persisted active mission id (null = campaign) — Slice B board
     get previewTarget() { return mwPreview && mwPreview.url; }, // the glb url in the right-column ship preview
     // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
     get itemShowcaseTarget() { const d = document.getElementById('mw-mission-desc'); return d && d.classList.contains('show-item') ? (mwItem && mwItem.url) : null; },
+    // the glb url in the shop/loadout item detail panel (#shop-model), or null when nothing is shown
+    get shopItemTarget() { const v = shopItemViewer(); return (v && v.url) || null; },
+    // whether that glb has finished LOADING (the url is set synchronously, the model arrives later) — a
+    // scenario must gate on this before asserting anything about the mixer, or it just races the fetch
+    get shopItemLoaded() { const v = shopItemViewer(); return !!(v && v.group.children.length); },
+    // the animation clock of that item's glb (seconds), or null if the model carries no clip — a scenario
+    // asserts it ADVANCES to prove the flame is actually playing and not frozen in its bind pose
+    get shopItemClipTime() { const v = shopItemViewer(); return v && v.mixer ? v.mixer.time : null; },
     get briefingStaged() { return stagedActive; },   // Main Window staged reveal animating (L2/L3)
     get welcomeStaged() { return welcomeStaged; },   // welcome-screen staged reveal animating (L1)
 
@@ -834,6 +845,7 @@ if (location.search.includes('debug')) {
     get mainBriefing() { return mainBriefing; }, // the campaign (primary) briefing currently shown
     get oobWarnVisible() { return el.oobWarn.style.display === 'block'; },
     get player() { return G.player; },   // built asynchronously in bootstrap()
+    get activeShip() { return G.activeShip; }, // the active-ship record incl. `progression` (level/xp/skills)
     get catalog() { return CATALOG; }, // ships/weapons/level loaded from the DB
     get earned() { return G.earned; },   // credits earned this run
     get balance() { return G.balance; }, // persistent account balance
@@ -1240,7 +1252,10 @@ async function finishIntro() {
   rs.teardown();
   seedSim(null); // clear the seeded stream too — live Level-1 play must run off the native RNG
   G.replayMode = false;
-  try { await unlockNextLevel(); } catch (e) { console.error('[intro] advance failed', e); }
+  clientLog('intro:finish', { before: CATALOG.level && CATALOG.level.title }); // TEMP debug
+  try { await unlockNextLevel(); } catch (e) { console.error('[intro] advance failed', e); clientLog('intro:advanceThrew', { msg: String(e && e.message || e) }); }
+  const land = (CATALOG.level && CATALOG.level.briefing) ? 'showMain' : 'showWelcome';
+  clientLog('intro:land', { via: land, level: CATALOG.level && CATALOG.level.title, name: CATALOG.levelName }); // TEMP debug
   if (CATALOG.level && CATALOG.level.briefing) showMain(CATALOG.level.briefing);
   else showWelcome(getPlayerShips());
 }

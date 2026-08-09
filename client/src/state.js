@@ -9,6 +9,7 @@
 // state bag G below, introduced as the domains that own them are split out.)
 import { loadTier, resolveTier } from './graphics.js';
 import { Device } from './device.js';
+import { makeClientId } from './client-id.js';
 
 // Mutable state bag: scalars that get reassigned AND read across module boundaries live here
 // (an exported `let` can't be reassigned from an importing module — a property on a shared
@@ -36,6 +37,7 @@ export const G = {
   pendingAssets: 0,
   enemyTotal: 0,              // total enemies this level/mission (from descriptor.enemyTotal; 0 = unknown -> HUD hides the /total)
   earned: 0,                  // credits earned this run: each kill adds the ship's `reward`; doubled on level completion
+  earnedXp: 0,                // character experience earned this run: each kill adds the ship's `xp`; + a flat mission bonus on victory
   balance: 0,                 // persistent account balance (loaded from the server; banked at run end)
   // --- backend identity + per-session funnel guards (read across net/sim/UI; reassigned by login/reset/advance) ---
   // Anonymous player id kept in localStorage (auto-register). `let`-style reassignment (an account login
@@ -43,7 +45,7 @@ export const G = {
   playerId: (() => {
     try {
       let id = localStorage.getItem('playerId');
-      if (!id) { id = crypto.randomUUID(); localStorage.setItem('playerId', id); }
+      if (!id) { id = makeClientId(); localStorage.setItem('playerId', id); } // NOT crypto.randomUUID() — that's secure-context-only (breaks over http://<ip>)
       return id;
     } catch { return null; }
   })(),

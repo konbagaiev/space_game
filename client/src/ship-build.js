@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { arenaCenter } from './world.js';
 import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js';
-import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC } from './components.js';
+import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC, skillEffects } from './components.js';
 import { shipModelCfg, modelSpec, makeShip, preloadShipModel } from './ship-factory.js';
 import { spawnBullet, spawnRocket, findTargetInSector, findBulletAimTarget } from './projectiles.js';
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
@@ -43,6 +43,14 @@ export function buildPlayer(active) {
   const s = active.ship.stats;
   const mc = shipModelCfg(s); // per-ship model presentation (yaw/scale + optional overrides)
   const { hull, engine, thruster, repair, grab, shield } = resolveComponents(active.components); // hull + engine + thrusters + repair drone + grab + shield
+  // Character-progression skill effects. Only the player's REAL active ship carries skills; previews and
+  // ?playback overrides pass none (skills == null → identity), so recordings reproduce the exact ship they
+  // were made with and stay deterministic. resolveComponents/buildMounts return fresh objects, so scaling
+  // engine/thruster/shield/weapon copies here never mutates the shared catalog.
+  const fx = skillEffects(active.skills);
+  if (engine) engine.power *= fx.mobilityMul;     // Mobility: +5%/pt engine power (→ acceleration)
+  if (thruster) thruster.power *= fx.mobilityMul; // Mobility: +5%/pt thruster power (→ turn rate)
+  if (shield) shield.capacity = Math.round(shield.capacity * fx.shieldMul); // Shields: +5%/pt capacity
   const p = {
     mesh: makeShip(s.color, modelSpec(active.ship.modelUrl, mc)),
     vel: new THREE.Vector3(),
@@ -62,6 +70,21 @@ export function buildPlayer(active) {
     spawnScale: null,            // full target scale, captured lazily at the first warp-back
   };
   p.mesh.scale.multiplyScalar(p.sizeScale); // apply sizeScale to the player too (enemies do this at spawn)
+  // Kinetic/Rocket skills: clone each mounted weapon and scale the COPY (never the shared catalog object).
+  for (const m of p.mounts) {
+    const w = { ...m.weapon };
+    if (w.type === 'rocket') {
+      if (w.power != null) w.power *= fx.rocketDmgMul;               // Rocket: +5%/pt damage
+      if (w.launchSpeed != null) w.launchSpeed *= fx.rocketSpeedMul; // Rocket: +5%/pt launch speed
+    } else {
+      if (w.power != null) w.power *= fx.kineticDmgMul;              // Kinetic: +5%/pt damage
+      w.aimAssistDeg = (w.aimAssistDeg || 0) + fx.aimAssistBonusDeg; // Kinetic: +0.5°/pt aim-assist cone (additive)
+    }
+    m.weapon = w;
+  }
+  p.dodge = fx.dodge;                   // Maneuver: dodge % (0 = never dodges) — rolled in sim on a hostile hit
+  p.rocketSpeedMul = fx.rocketSpeedMul; // Rocket: also scales the player's in-flight rocket accel (see fireMount)
+  p.maxSpeedMul = fx.mobilityMul;       // Mobility: +5%/pt max speed (applied at the sim velocity clamp)
   p.groups = buildGroups(s.groups, p.mounts); // fire channels (gun / rocket / ...)
   deriveDrive(p); // acceleration <- engine power, turnRate <- engine turnPower, scaled by mass
   return p;
@@ -79,7 +102,10 @@ export function buildPlayerFor(ship, override = null) {
   const useActive = !override && G.activeShip && G.activeShip.ship && G.activeShip.ship.name === ship.name;
   const loadout = override ? override.loadout : (useActive ? G.activeShip.loadout : { mounts: ship.stats.mounts });
   const components = override ? override.components : (useActive ? G.activeShip.components : ship.components);
-  G.player = buildPlayer({ ship, loadout, components });
+  // Skills apply ONLY to the real active ship — never to previews or ?playback overrides (which must
+  // reproduce the exact ship a recording was made with, keeping replays deterministic).
+  const skills = (!override && useActive && G.activeShip.progression) ? G.activeShip.progression.skills : null;
+  G.player = buildPlayer({ ship, loadout, components, skills });
   G.currentShipName = ship.name;
   scene.add(G.player.mesh);
 }
@@ -92,7 +118,8 @@ export function spawnEnemyShip(shipDef) {
   const { shieldCap, hullMax } = enemyShieldSplit(hull.durability); // 1/3 shield + 2/3 hull; total unchanged
   const e = {
     name: shipDef.name, // DB ship name (English) — shown in the event-log kill line
-    role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0,
+    role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0, xp: s.xp || 0,
+    dodge: s.dodge || 0, // dodge % (all current enemies = 0 → always hit; future enemies may dodge)
     mesh: makeShip(s.color, modelSpec(shipDef.modelUrl, mc)), // model defines the look; never tint enemies by color
     vel: new THREE.Vector3(),
     heading: simRandom() * Math.PI * 2,   // GAMEPLAY: facing decides how long it turns before its first shot
@@ -165,7 +192,9 @@ function fireMount(ship, mount, fwd, isPlayer) {
   const w = mount.weapon;
   if (w.type === 'rocket') {
     const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : G.player;
-    const accel = isPlayer ? ship.acceleration : (w.accel ?? ship.acceleration);
+    // Player rocket accel rides the ship's (mobility-boosted) acceleration, then the Rocket skill's own
+    // speed multiplier on top so "+rocket speed" is felt through the whole flight, not just launch.
+    const accel = isPlayer ? ship.acceleration * (ship.rocketSpeedMul || 1) : (w.accel ?? ship.acceleration);
     spawnRocket(muzzle, fwd, w, accel, isPlayer, target);
     if (isPlayer) audio.sfx.rocket(sfxFor('weapon', w.class, 'fire')); // player rockets sampled; enemy fire is silent (rocket detonations still play)
   } else {

@@ -171,22 +171,30 @@ export function segmentHitsShip(ship, p0, p1, pad = 0) {
 // intercepted on the bubble SPHERE (radius SHIELD_RADIUS) instead of the hull, so the impact — bullet removal,
 // hit-flash and ripple — lands on the shield surface, not the ship inside it; a broken/absent shield falls
 // back to the swept hull test (bullets reach the ship as before). Returns:
-//   { hit, damageResult, remove, impact }
-//   hit          — the shot connected (with the shield sphere while up, else the hull)
-//   damageResult — the { absorbed, broke } contract from applyShieldedDamage (null when no hit), so the caller
-//                  can spawn the cyan shield ripple at the impact point
-//   remove       — whether this hit consumes the bullet (true on any hit; range culling stays in sim.update)
+//   { hit, dodged, damageResult, remove, impact }
+//   hit          — the shot connected geometrically (with the shield sphere while up, else the hull)
+//   dodged       — the connect was EVADED (Maneuver skill): no damage applied, bullet still consumed, caller
+//                  shows "EVADE" instead of a hit-flash/ripple. Always false when no dodgeRoll is supplied.
+//   damageResult — the { absorbed, broke } contract from applyShieldedDamage (null when no hit OR dodged), so
+//                  the caller can spawn the cyan shield ripple at the impact point
+//   remove       — whether this hit consumes the bullet (true on any connect, dodged or not; range culling
+//                  stays in sim.update)
 //   impact       — the world point to place the impact FX at: the sphere-entry point when the shield caught it,
 //                  else null (caller uses the bullet's own position, i.e. the hull). Reused scratch — read it
 //                  before the next call. THREE-free.
-export function resolveHostileBulletHit(player, p0, p1, damage) {
+// `dodgeRoll` is an OPTIONAL injected predicate: called at most once, only AFTER a geometric connect, and
+// returns true if the shot is evaded. RNG lives entirely in the caller (this module stays RNG-free and
+// deterministic) — and the caller passes null when the target can't dodge, so no roll is consumed then.
+export function resolveHostileBulletHit(player, p0, p1, damage, dodgeRoll = null) {
   if (player.shield && player._shieldValue > 0) {
     if (!segmentSphereHit(p0, p1, player.mesh.position, SHIELD_RADIUS, _shieldImpact))
-      return { hit: false, damageResult: null, remove: false, impact: null };
+      return { hit: false, dodged: false, damageResult: null, remove: false, impact: null };
+    if (dodgeRoll && dodgeRoll()) return { hit: true, dodged: true, damageResult: null, remove: true, impact: _shieldImpact };
     const damageResult = applyShieldedDamage(player, damage);
-    return { hit: true, damageResult, remove: true, impact: _shieldImpact };
+    return { hit: true, dodged: false, damageResult, remove: true, impact: _shieldImpact };
   }
-  if (!segmentHitsShip(player, p0, p1)) return { hit: false, damageResult: null, remove: false, impact: null };
+  if (!segmentHitsShip(player, p0, p1)) return { hit: false, dodged: false, damageResult: null, remove: false, impact: null };
+  if (dodgeRoll && dodgeRoll()) return { hit: true, dodged: true, damageResult: null, remove: true, impact: null };
   const damageResult = applyShieldedDamage(player, damage);
-  return { hit: true, damageResult, remove: true, impact: null };
+  return { hit: true, dodged: false, damageResult, remove: true, impact: null };
 }

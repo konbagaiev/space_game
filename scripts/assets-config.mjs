@@ -68,6 +68,27 @@ export const PRESET_OVERRIDES = {
   metal_box: {
     combat: { textureSize: 128, textureCompress: 'webp' },
   },
+  // Menu-only item icon shared by every THRUSTER component (ids 8/9/10/11/21/25/27). Hangar build only —
+  // components are never rendered in combat (they're part of the ship there), so only the CloudFront glb is
+  // wired into the catalog. (The base name says "engine": it is the SOURCE asset's name, and the two item
+  // models were swapped between families after a look at the preview. catalog_seed.js is the wiring truth.)
+  // The source is a genuinely tiny low-poly model (57 KB, 1.2 k verts) whose two
+  // 512² atlases are only ~3 KB on disk, so shrinking them saves almost nothing on the DOWNLOAD — the win
+  // is VRAM: two 512² RGBA atlases cost ~2.8 MB of texture memory, 256² costs ~700 KB, which matters on the
+  // weak phones that already bottleneck on this game. Kept at 256 for that reason alone.
+  engine_thruster: {
+    hangar: { textureSize: 256, textureCompress: 'webp' },
+  },
+  // Menu-only item icon shared by every ENGINE component (ids 5/6/7/15/16/23/26). Hangar build only,
+  // same reasoning as engine_thruster (and the same source-vs-family name swap). This source IS worth
+  // shrinking: 2.3 MB of its 2.5 MB is textures
+  // (a 1024² baseColor + a 1024² normal + two 512²), against ~209 KB of geometry. 256px + WebP cuts it to
+  // KB-scale. The model is SKINNED and carries one animation clip ("Flame startAction") that the item
+  // viewer plays on loop (client/src/model-viewer.js), so the build must preserve JOINTS_0/WEIGHTS_0 and
+  // the clip — verified with `gltf-transform inspect` on the built glb.
+  maneuver_thruster: {
+    hangar: { textureSize: 256, textureCompress: 'webp' },
+  },
   // Asteroid pack (3 rock meshes in one .glb) used BOTH up-close (the mission asteroid-field rocks/hosts)
   // and far away as the parallax backdrop field (hundreds of INSTANCES). Source is a 4.5 MB textured pack;
   // shrink textures hard (256px → WebP) and simplify geometry to ~half so a big instanced field stays cheap.

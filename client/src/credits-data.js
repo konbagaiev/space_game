@@ -11,6 +11,8 @@ export const CREDITS = {
     { name: "Metal box", author: "District24", url: "https://skfb.ly/JwFQ", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
     { name: "Low Poly space station.", author: "MisterH", url: "https://skfb.ly/ozESS", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
     { name: "Wandering Asteroids Of Andromeda", author: "ARCTIC WOLVES™", url: "https://skfb.ly/psECZ", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
+    { name: "LowPoly Sci-Fi Thruster", author: "Yo.Ri", url: "https://skfb.ly/6qEKD", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
+    { name: "Thruster animation", author: "photon (that one larry)", url: "https://skfb.ly/pyoLw", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
   ],
   sounds: [
     { name: "kinetic gun SFX", author: "serutonin-deprivd", url: "https://freesound.org/s/855652/", license: "CC0 1.0", licenseUrl: null, modified: false, requiresAttribution: false },

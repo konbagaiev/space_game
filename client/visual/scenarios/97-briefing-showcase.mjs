@@ -44,8 +44,8 @@ export default async function ({ page, assert, shot }) {
   // selecting a side mission (campaign cleared) hides the item showcase and keeps the ship preview
   await landOn(5);
   await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
-  await page.waitForFunction('window.__game.missionOffers.length === 3', null, { timeout: 6000 });
-  await page.evaluate(() => document.querySelectorAll('#mw-mission-list .mw-sub')[1].click()); // first side mission
+  await page.waitForFunction('document.querySelectorAll("#mw-mission-board .mission-card").length === 4', null, { timeout: 6000 });
+  await page.evaluate(() => document.querySelectorAll('#mw-mission-board .mission-card')[1].click()); // first side mission
   await page.waitForTimeout(100);
   assert.equal(await item(), null, 'selecting a side mission hides the item showcase');
   assert.ok(isShip(await ship()), 'selecting a side mission keeps the ship preview');

@@ -48,21 +48,23 @@
 <!-- Main Window (was the "Hangar"): top bar lives in fixed elements (gear/account-bar/wordmark/#mw-ships);
      this grid is left menu | work zone | ship-model preview. See docs/plans/main-window-redesign.md. -->
 <div id="mainwin">
+  <!-- Base hub menu (docs/plans/2026-08-08-base-menu-redesign.md): five sections, all always shown.
+       Character / Map / Craft are stubs for now; Loadout absorbs the former Stash/Shop items as in-bay
+       tabs and shows a read-only ship until the shop unlocks (right after the first mission). -->
   <nav id="mw-menu">
-    <div class="mw-group" id="mw-missions-group">
-      <div class="mw-row">
-        <button class="mw-collapse" id="mw-missions-toggle" aria-expanded="true" aria-label="Collapse missions">▾</button>
-        <button class="mw-item active" data-mw="missions" data-i18n="ui.mainwin.missions">Missions</button>
-      </div>
-      <div class="mw-sublist" id="mw-mission-list"></div>
-    </div>
-    <button class="mw-item mw-shop-item mw-hidden" data-mw="loadout" data-i18n="ui.shop.loadout">Loadout</button>
-    <button class="mw-item mw-shop-item mw-hidden" data-mw="stash" data-i18n="ui.shop.stash">Stash</button>
-    <button class="mw-item mw-shop-item mw-hidden" data-mw="shop" data-i18n="ui.shop.shop">Shop</button>
+    <!-- label in a child span so i18n's textContent write doesn't wipe the free-skill-points badge -->
+    <button class="mw-item" data-mw="character"><span data-i18n="ui.mainwin.character">Character</span><span id="mw-char-badge" class="mw-badge"></span></button>
+    <button class="mw-item active" data-mw="missions" data-i18n="ui.mainwin.missions">Missions</button>
+    <button class="mw-item" data-mw="loadout" data-i18n="ui.shop.loadout">Loadout</button>
+    <button class="mw-item" data-mw="map" data-i18n="ui.mainwin.map">Map</button>
+    <button class="mw-item" data-mw="craft" data-i18n="ui.mainwin.craft">Craft</button>
   </nav>
   <section id="mw-work">
     <!-- mission view: the selected mission's description + take-off (only the description scrolls) -->
     <div class="mw-view active" id="mw-view-mission">
+      <!-- mission board (Slice B): campaign + side-mission cards with take/defer/set-active; clicking a
+           card shows its briefing below. Take-off flies the ACTIVE mission. -->
+      <div id="mw-mission-board"></div>
       <h2 id="mw-mission-title"></h2>
       <!-- mission text with the granted-item showcase floated into its bottom-right corner (text wraps it);
            strut + canvas are floats, so they precede the text span in source for the wrap to work -->
@@ -75,23 +77,37 @@
       <button id="mw-go" data-i18n="ui.button.take_off">Take off 🚀</button>
       <div id="mw-go-note"></div>
     </div>
-    <!-- shop bay view: Loadout / Stash / Shop content (switched from the left menu) -->
+    <!-- Loadout screen (docs/plans/2026-08-08-base-menu-redesign.md, Slice C): the ship sits centered with
+         its equipment/weapon slots arranged around it; clicking a slot opens the right context panel
+         (equipped info + stash replacements → Install/Remove) with a Shop button pinned bottom-right; the
+         Shop button swaps the panel to the shop. Read-only until the shop unlocks. -->
     <div class="mw-view" id="mw-view-bay">
       <div class="bay-credits"><span data-i18n="ui.hud.credits">Credits</span>: <b id="bay-credits-val">0</b></div>
-      <div class="bay-view" id="view-loadout"><div id="loadout-list"></div></div>
-      <div class="bay-view" id="view-stash"><div id="stash-list"></div></div>
-      <div class="bay-view" id="view-shop">
-        <div class="shop-pane">
-          <div class="shop-types" id="shop-types"></div>
-          <div class="shop-items" id="shop-list"></div>
-        </div>
+      <div id="mw-loadout-locked" data-i18n="ui.shop.loadout_locked">The shop unlocks after your first mission.</div>
+      <div id="loadout-center">
+        <canvas id="loadout-ship"></canvas>
+        <div id="loadout-slots"></div>
       </div>
       <div id="mw-bay-note"></div>
+    </div>
+    <!-- Character view (docs/plans/2026-08-09-character-progression.md): level + XP bar + unspent skill
+         points, then the five skill cards. Content is rendered from G.activeShip.progression by
+         renderCharacter() in mainwindow.js; the "+" buttons POST /skills/spend. -->
+    <div class="mw-view" id="mw-view-character">
+      <div id="mw-character"></div>
+    </div>
+    <!-- stub view for the not-yet-built sections (Map / Craft) -->
+    <div class="mw-view" id="mw-view-stub">
+      <h2 id="mw-stub-title"></h2>
+      <p id="mw-stub-text"></p>
     </div>
   </section>
   <aside id="mw-ship-col">
     <div id="ship-stats"></div>
     <canvas id="mw-ship"></canvas>
+    <!-- Loadout context panel — lives in the right column (same width ratio as the missions ship preview);
+         shown only while Loadout is open (#mainwin.bay-open), when the ship preview above is hidden. -->
+    <div id="loadout-panel"></div>
   </aside>
 </div>
 <div id="account-bar"></div>
@@ -182,6 +198,25 @@
     </div>
   </div>
 </div>
+<!-- Sell confirmation (docs/plans/2026-08-09-sell-confirm-quantity.md): shows the sale price before selling
+     stash gear; when the stash holds more than one, a slider + number field choose how many to sell. Driven
+     by shop.js (openSellConfirm/confirmSell); reuses the reset-confirm modal styling. -->
+<div id="sell-overlay">
+  <div class="sell-box">
+    <h2 data-i18n="ui.shop.sell.title">Sell equipment?</h2>
+    <div id="sell-item-name" class="sell-item"></div>
+    <div id="sell-qty-row" class="sell-qty">
+      <div class="sell-qty-head"><span data-i18n="ui.shop.sell.qty">Quantity</span> <span id="sell-qty-max"></span></div>
+      <input type="range" id="sell-qty-range" min="1" step="1" value="1" aria-label="Quantity to sell" />
+      <input type="number" id="sell-qty-num" min="1" step="1" value="1" aria-label="Quantity to sell" />
+    </div>
+    <div class="sell-total"><span data-i18n="ui.shop.sell.receive">You receive</span> <b id="sell-total-val"></b></div>
+    <div class="sell-actions">
+      <button id="sell-cancel" class="ghost" data-i18n="ui.shop.sell.cancel">Cancel</button>
+      <button id="sell-do" class="primary-btn" data-i18n="ui.shop.sell.confirm">Sell</button>
+    </div>
+  </div>
+</div>
 <div id="credits-overlay">
   <div class="credits-box">
     <h1 data-i18n="ui.credits.title">Credits &amp; attributions</h1>
@@ -196,6 +231,11 @@
 <div id="return-hint"></div>
 <button id="return-btn" data-i18n="ui.return.button">Return to base</button>
 <div id="banner"></div>
+<!-- Character-progression XP bar: always on, bottom-center, 80% wide, yellow (docs/plans/2026-08-09-character-progression.md).
+     Fills toward the next level; during a run it previews the XP earned so far. Pointer-through. -->
+<div id="xp-bar"><div id="xp-bar-fill"></div><span id="xp-bar-text"></span></div>
+<!-- "Level up" toast: centered white text that fades out over 2s on reaching a new level (bankRun). -->
+<div id="levelup-toast" data-i18n="ui.levelup">Level up</div>
 <!-- Level-load veil: shown while the freshly built scene is compiled + uploaded to the GPU (main.js
      prewarmShaders). That work blocks the main thread for seconds on a weak phone; without a veil the game
      just appears frozen at 1 fps. See DECISIONS §83. -->
