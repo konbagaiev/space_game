@@ -5,6 +5,14 @@
 
 ## 2026-08-09
 
+- **[2026-08-09-1456-star-system-map] Fix: the base menu had a yellow-and-blue backdrop.** `buildMap` built
+  the star-system bodies but left their placement to the per-frame `updateSystemBodies`, and the hangar
+  renders the scene while the sim is **not** ticking (`G.gameStarted` false) — so every body kept its
+  default `(0,0,0)`, stacking the emissive star, its additive glow and the ocean planet exactly where the
+  camera looks. `buildSystemBodies` now places (and fades) them immediately, and `updateSystemBodies` falls
+  back to the origin — the base — when no ship exists yet. Guarded: `32-star-system` rebuilds the map with
+  no frame in between and asserts no body sits at the origin and only the home planet is drawn (the guard
+  fails with the fix reverted).
 - **[2026-08-09-1456-star-system-map] Star-system navigation UI: one map+object-list component everywhere,
   and "Take off" on every base stage.** Choosing a destination now uses a single shared component
   (`systemmap-ui.mountSystemNav`) in all three hosts — the base-menu **Map** section, the in-flight overlay

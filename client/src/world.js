@@ -20,6 +20,7 @@ import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field 
 // marker + the out-of-bounds warning/warp-back; see the OOB logic in update()). NOTHING is hard-clamped
 // to it: the player, enemies, bullets and rockets all move and fight freely beyond it. See DECISIONS §2.
 export const ARENA = 360; // half-size of the square arena (x4); 1.5x the original 240 -> a bigger combat zone
+const ORIGIN = new THREE.Vector3(0, 0, 0); // the base / spawn point — the stand-in ship position before one exists
 export const OOB_WARN_DELAY = 2.0;   // seconds continuously out of bounds before the warning shows
 export const OOB_RETURN_TIME = 30.0; // seconds continuously out of bounds before the auto warp-back
 
@@ -447,6 +448,11 @@ function buildSystemBodies(sys, oceanHex) {
       h.moons.push({ mesh: mm, spec: m });
     }
   }
+  // PLACE THEM NOW. Positions are absolute, so they must be correct the moment the map exists — not one
+  // settleView later. The base menu renders the scene while the sim is NOT ticking (G.gameStarted false),
+  // so a body left at its default (0,0,0) sat exactly where the camera looks: the emissive star and its
+  // additive glow washed the whole hangar backdrop yellow with the ocean planet stacked inside it.
+  updateSystemBodies();
 }
 
 // Refresh the bodies for this frame. Their WORLD POSITIONS are absolute and player-independent — this only
@@ -457,9 +463,11 @@ function buildSystemBodies(sys, oceanHex) {
 //     popping it into existence the moment it crosses camera.far. Fully faded-out bodies are hidden, which
 //     is also what keeps the far side of the system free (at the base you see planet 2 and nothing else).
 export function updateSystemBodies() {
-  if (!G.systemBodies || !G.player || !G.sky) return;
+  if (!G.systemBodies || !G.sky) return;
   const now = Date.now();
-  const ship = G.player.mesh.position;
+  // The player may not exist yet (buildMap runs before the ship is built) — the base sits at the origin, so
+  // that is the right stand-in: it places the hangar backdrop exactly as the player will first see it.
+  const ship = (G.player && G.player.mesh) ? G.player.mesh.position : ORIGIN;
   for (const b of G.systemBodies) {
     const rp = bodyRenderPos(b.name, now);
     b.mesh.position.set(rp.x, rp.y, rp.z);

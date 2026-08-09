@@ -53,6 +53,27 @@ export default async function ({ page, assert, shot }) {
   assert.ok(vis.anyInView >= 1, `≥1 backdrop body is on-screen in roam (got ${vis.anyInView})`);
   await shot('roam-at-base'); // eyeball frame: the home planet should read as a backdrop near the base
 
+  // 2c-bis. BUILD-TIME PLACEMENT (regression). The base menu renders the scene while the sim is NOT ticking
+  //     (G.gameStarted false), so the backdrop has to be correct the moment buildMap finishes — it cannot
+  //     wait for a settleView. It once did: every body kept its default (0,0,0), which stacked the emissive
+  //     star, its additive glow and the ocean planet exactly where the camera looks, washing the whole
+  //     hangar backdrop yellow-and-blue. Rebuild the map and assert placement WITHOUT running a frame.
+  const built = await page.evaluate(() => {
+    const g = window.__game;
+    g.rebuildMap();                       // buildMap only — no settleView, no stepSim
+    return g.systemBodies.map((b) => ({
+      name: b.name,
+      atOrigin: b.mesh.position.lengthSq() < 1e-6,
+      visible: b.mesh.visible,
+      dist: Math.round(b.mesh.position.length()),
+    }));
+  });
+  assert.ok(built.every((b) => !b.atOrigin),
+    `buildMap alone places every body — none is left at the world origin (${JSON.stringify(built)})`);
+  assert.deepEqual(built.filter((b) => b.visible).map((b) => b.name), ['planet2'],
+    `and the fade is applied at build time too, so the hangar shows only the home planet `
+    + `(got ${JSON.stringify(built.filter((b) => b.visible).map((b) => b.name))})`);
+
   // 2d. THE MODEL GUARD (this is what replaced the bearing-projected sky dome). Every body is a REAL sphere
   //     at a FIXED world position on the ecliptic, so flying can NEVER move one — the old model re-projected
   //     each body by its bearing from the player, and passing one swung that bearing ~180° so it JUMPED.

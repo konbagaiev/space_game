@@ -945,6 +945,9 @@ if (location.search.includes('debug')) {
     settleView,
     systemAnchor: planetAnchor, // the point ON THE PLANE a body is reached at (32-star-system flies to one)
     updateTakeoffGate,          // re-apply the launch gate after a test flips activeShip.launchable
+    // Rebuild the scene from the live descriptor WITHOUT running a frame — 32-star-system uses this to pin
+    // that buildMap alone places the backdrop (the hangar renders while the sim is not ticking).
+    rebuildMap() { buildMap(G.currentMapDescriptor); },
     // Camera zoom, for the zoom-out dimming guard: setZoom sets the target, tickZoom(dt) eases + re-anchors
     // the fog to the ship (engine.js applyZoom).
     zoom: { set: setZoom, tick: tickZoom },
