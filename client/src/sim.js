@@ -880,7 +880,7 @@ export function update(dt) {
 //
 // This is the VIEW layer: everything here is render-only and MUST stay out of the deterministic tick. The
 // system-body bearing re-projection and the speed-field wrap both draw no randomness and touch no sim state
-// (DECISIONS §73/§96/§97).
+// (DECISIONS §73/§96/§98).
 export function settleView(dt = 0) {
   // camera: rigidly attached to the player (no lag/floating), fixed angle (does NOT rotate with the ship's turn)
   camera.position.copy(G.player.mesh.position).add(camOffset);

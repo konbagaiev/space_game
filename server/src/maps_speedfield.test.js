@@ -28,13 +28,14 @@ test('every map descriptor ships a speedField with usable layers', () => {
   }
 });
 
-// DELETE THIS TEST TOGETHER WITH THE SHIM. The dead `asteroids` block is a deliberate one-release
-// compatibility key: db.js upserts every map descriptor on each server start, so the already-published itch
-// bundle and the /v2 sandbox (older clients reading the LIVE catalog) would throw in buildMap() without it.
-// It goes away in the first change after /publish-itch + a /v2 redeploy from a main containing `speedField`
-// — and this assertion makes that removal a conscious edit rather than an accident. See DECISIONS §96.
-test('the dead `asteroids` compatibility shim is still present (one release only)', () => {
+// The `asteroids` compatibility shim was REMOVED on 2026-08-09, once both of its conditions were met:
+// the itch build was re-published (butler build #1868869, v52) and the /v2 sandbox was redeployed from a
+// main containing `speedField`. No published client reads `descriptor.asteroids` any more. This assertion
+// replaces the old "the shim is still present" one — it now guards the opposite, so the dead key cannot
+// quietly reappear via a copy-paste of an old descriptor. See DECISIONS §96.
+test('the legacy `asteroids` key is gone from every descriptor', () => {
   for (const m of MAPS) {
-    assert.ok(m.descriptor.asteroids, `${m.name}: keeps the legacy asteroids block for older published clients`);
+    assert.equal(m.descriptor.asteroids, undefined,
+      `${m.name}: the dead asteroids block was removed with the shim — do not reintroduce it`);
   }
 });

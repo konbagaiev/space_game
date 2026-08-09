@@ -20,6 +20,9 @@ export default async function ({ page, assert, shot }) {
   await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
   await page.waitForSelector('.mw-item[data-mw="loadout"]', { state: 'attached', timeout: 5000 });
 
+  const statsOnMissions = await page.evaluate(() => getComputedStyle(document.getElementById('ship-stats')).display);
+  assert.equal(statsOnMissions, 'none', 'ship characteristics are Loadout-only (hidden on Missions)');
+
   // open the Loadout screen
   await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());
   await page.waitForFunction('document.querySelectorAll("#loadout-slots .slot-chip").length >= 6', null, { timeout: 5000 });

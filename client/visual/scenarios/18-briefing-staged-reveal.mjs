@@ -1,6 +1,7 @@
 // Staged briefing reveal (docs/plans/2026-07-05-1641-briefing-staged-reveal.md): on L1 the welcome
 // briefing types out then reveals Take-off (no ship picker); on L2/L3 the Main Window campaign briefing
-// types out then reveals the ship-preview window + granted-item showcase + Take-off. L4+ stays instant.
+// types out then reveals the granted-item showcase + Take-off (the mission list in the right column stays
+// visible throughout). L4+ stays instant.
 // The typewriter runs ~5s, so each screen is SKIPPED (tap the briefing text) for deterministic assertions.
 export const name = '18-briefing-staged-reveal';
 
@@ -13,8 +14,16 @@ export default async function ({ page, assert, shot }) {
     return el ? getComputedStyle(el)[prop] : null;
   }, { sel, prop });
   const textLen = (sel) => page.evaluate((sel) => (document.querySelector(sel)?.textContent || '').length, sel);
+  // the mission list is genuinely on screen: not display:none, and laid out with real width + cards
+  const listShown = () => page.evaluate(() => {
+    const col = document.getElementById('mw-ship-col');
+    const board = document.getElementById('mw-mission-board');
+    if (!col || !board) return false;
+    if (getComputedStyle(col).display === 'none' || getComputedStyle(board).display === 'none') return false;
+    return board.getBoundingClientRect().width > 0 && board.querySelectorAll('.mission-card').length >= 1;
+  });
 
-  // ---- L1: the welcome / ship-picker screen. landOn (below) is previewTarget-gated and never resolves on
+  // ---- L1: the welcome / ship-picker screen. landOn (below) is Main-Window-gated and never resolves on
   // the welcome screen, so drive the reset+reload directly and wait for the staged welcome reveal. ----
   const landWelcome = async () => {
     // Reset lands on the intro (id 1), which AUTO-LAUNCHES the fight (no welcome screen). Advance once to
@@ -89,7 +98,7 @@ export default async function ({ page, assert, shot }) {
   assert.ok(topPin.footBottom < topPin.h / 2,
     `L1(PC): footer top-aligned, well above the viewport bottom (footBottom ${topPin.footBottom} < ${topPin.h / 2})`);
 
-  // ---- L2/L3/L4: the Main Window. Reuse 97's previewTarget-gated landOn helper (works on these levels). ----
+  // ---- L2/L3/L4: the Main Window. Reuse 97's Main-Window-gated landOn helper (works on these levels). ----
   const landOn = async (n) => {
     await page.evaluate(async ({ pid, n }) => {
       await fetch(`/api/players/${pid}/reset`, { method: 'POST' });
@@ -97,23 +106,25 @@ export default async function ({ page, assert, shot }) {
     }, { pid, n });
     await page.goto(page.url(), { waitUntil: 'load' });
     await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
-    await page.waitForFunction('!!(window.__game.previewTarget)', null, { timeout: 4000 });
+    await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
+    await page.waitForFunction('document.querySelectorAll("#mw-mission-board .mission-card").length >= 1', null, { timeout: 4000 });
   };
 
   const stagedCase = async (n, itemRe, label) => {
     await landOn(n);
     await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
-    // mid-type: ship window + Take-off hidden, text not yet full.
+    // mid-type: Take-off hidden + the showcase held, text not yet full — but the mission list stays on screen.
     assert.equal(await page.evaluate(() => window.__game.briefingStaged), true, `${label}: briefing staged`);
-    assert.equal(await css('#mw-ship-col', 'visibility'), 'hidden', `${label}: ship window hidden while typing`);
+    assert.ok(await listShown(), `${label}: the mission list stays on screen while the briefing types`);
+    assert.equal(await page.evaluate(() => window.__game.itemShowcaseTarget), null, `${label}: the granted-item showcase is held while typing`);
     assert.equal(await css('#mw-go', 'visibility'), 'hidden', `${label}: Take-off hidden while typing`);
     const mid = await textLen('#mw-mission-text');
-    // skip → full text + ship window + showcase + Take-off revealed at once.
+    // skip → full text + showcase + Take-off revealed at once.
     await page.click('#mw-mission-desc');
     await page.waitForFunction('window.__game.briefingStaged === false', null, { timeout: 2000 });
     const full = await textLen('#mw-mission-text');
     assert.ok(mid < full, `${label}: briefing was mid-type (shorter) before the skip`);
-    assert.equal(await css('#mw-ship-col', 'visibility'), 'visible', `${label}: ship window visible after skip`);
+    assert.ok(await listShown(), `${label}: the mission list is still on screen after the skip`);
     assert.equal(await css('#mw-go', 'visibility'), 'visible', `${label}: Take-off visible after skip`);
     await page.waitForFunction('!!(window.__game.itemShowcaseTarget)', null, { timeout: 4000 });
     assert.match(await page.evaluate(() => window.__game.itemShowcaseTarget), itemRe, `${label}: showcase item model`);
@@ -123,12 +134,12 @@ export default async function ({ page, assert, shot }) {
   await stagedCase(2, /machine_gun_hangar\./, 'L2-staged-revealed'); // MG briefing (id 3) → Machine Gun
   await stagedCase(3, /repair_drone_hangar\./, 'L3-staged-revealed'); // drone briefing (id 4) → Repair drone
 
-  // 7. Negative: the unlockShop briefing (id 5) is instant — no staging, ship window + Take-off already
-  // visible, text already full.
+  // 7. Negative: the unlockShop briefing (id 5) is instant — no staging, Take-off already visible, text
+  // already full.
   await landOn(4);
   await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
   assert.equal(await page.evaluate(() => window.__game.briefingStaged), false, 'L4: not staged (instant)');
-  assert.equal(await css('#mw-ship-col', 'visibility'), 'visible', 'L4: ship window visible immediately');
+  assert.ok(await listShown(), 'L4: the mission list is on screen');
   assert.equal(await css('#mw-go', 'visibility'), 'visible', 'L4: Take-off visible immediately');
   await shot('L4-instant');
 }

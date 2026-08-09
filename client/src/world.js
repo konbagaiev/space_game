@@ -391,7 +391,7 @@ function makeMoonTexture(baseHex) {
 // roughly constant on-screen size (the star ~1.2x a planet). Each frame updateSystemBodies re-projects
 // every body by its TRUE bearing from the player to the body's real world position — flying toward a
 // planet brings it forward while the previous one recedes, and the star drifts across the sky. "To-scale"
-// applies to the travel distances (world coords) only; see DECISIONS §97 + docs/plans/…star-system-map.md.
+// applies to the travel distances (world coords) only; see DECISIONS §98 + docs/plans/…star-system-map.md.
 // Pure view layer (called from settleView), consumes ZERO sim RNG → replay-neutral.
 
 // The central star: an emissive core sphere + a soft additive glow sprite (reuses the star-glow texture).
@@ -970,15 +970,14 @@ export function buildMap(descriptor) {
 
   // The sky group holds the star + 4 planet backdrop billboards (positioned per-frame by
   // updateSystemBodies). It stays at the world origin — the bodies are camera-anchored by bearing, so no
-  // group parallax offset is applied (that would double-apply). See buildSystemBodies / DECISIONS §97.
+  // group parallax offset is applied (that would double-apply). See buildSystemBodies / DECISIONS §98.
   G.sky = new THREE.Group();
   G.sky.position.set(0, 0, 0);
   skyScene.add(G.sky);
   buildSystemBodies(descriptor.system ?? SYSTEM, d.planet && d.planet.ocean);
 
-  // Player-locked wrapping speed field (was: an origin-anchored asteroid ring — DECISIONS §96). The
-  // descriptor's dead `d.asteroids` block is a one-release compatibility shim for older published clients;
-  // this client reads `d.speedField` only (and falls back to the defaults when it is missing).
+  // Player-locked wrapping speed field (was: an origin-anchored asteroid ring — DECISIONS §96). Reads
+  // `d.speedField` only (falls back to the defaults when missing); the legacy `d.asteroids` shim was retired.
   disposeSpeedField();                       // buildMap re-runs per level/map switch — the old ring LEAKED here
   const base = normalizeSpeedField(d.speedField);
   speedField = makeSpeedField(applySpeedFieldSpec(isDev() ? loadSpeedTune(window.localStorage, base) : base));

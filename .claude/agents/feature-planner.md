@@ -153,3 +153,12 @@ Your final message: a point-by-point list of how each issue was resolved.
   ~64KB cap for the page-UNLOAD (beacon) path but not that the win/death `keepalive` fetch carries the SAME
   ~64KB body cap — so full-level win traces were silently dropped. Flag payload-size limits on EVERY flush
   path (win/death/unload), not just the unload one, against the realistic maximum trace size.
+- **2026-08-09 — A visual feature needs an acceptance criterion about PERCEPTION, not only geometry.** The
+  player-locked speed-field plan reasoned rigorously about density (points/unit²), on-screen pixel counts,
+  frustum geometry, draw calls and replay-neutrality — and shipped a backdrop that was **literally invisible**
+  (dark grey sprites on a dark sky). Everything it specified was correct; it never asked *"will the player
+  actually see this?"*. For any change whose whole purpose is to be looked at: state the **contrast against
+  the surface it sits on**, and note what the element must read AS (a lit rock vs a glowing star) — that
+  framing is what picks the right sprite/material. Also, never reuse a texture/material just because it
+  exists: `getStarGlowTexture` is a soft halo tuned for additive stars and averages ~25% alpha, which is why
+  the field had to be blown up and whitened before it could be seen. DECISIONS §96 amendment.

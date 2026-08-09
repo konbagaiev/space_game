@@ -25,7 +25,29 @@
   kept). New EN+RU `ui.systemmap.*` strings. Tests: pure `system-map.test.js` (incl. the `capLifted` invariant
   + Float32 bound) + the `32-star-system` visual scenario with a post-win roam guard; `22-intro-replay` is
   unchanged (replay-neutral) and main's `31-speed-field` still passes. Replay-neutral, zero sim RNG.
-  DECISIONS §97 (coordinate model + bearing backdrop; speed-field is §96). docs/plans/2026-08-09-1456-star-system-map.md.
+  DECISIONS §98 (coordinate model + bearing backdrop; speed-field is §96). docs/plans/2026-08-09-1456-star-system-map.md.
+- **Missions: the mission list moved to the right column; the ship preview is gone.** The Main Window's
+  25% right column no longer shows a spinning ship + characteristics strip — on **Missions** it holds the
+  **mission list** (campaign + side-mission cards, restacked: title + badge, reward/XP, Take/Defer/Set
+  active), and the center work zone holds **only** the briefing body (title, text + granted-item showcase,
+  reward, Take off). **Character / Map / Craft** now collapse to a two-column grid; **Loadout** is
+  unchanged (centered ship + 30% context panel) and is the only screen showing `#ship-stats`. The
+  `mwPreview` viewer, the `#mw-ship` canvas, the `previewTarget` debug hook and the staged reveal's
+  `.briefing-hide-ship` beat are deleted — the mission list now stays visible while a briefing types out.
+  DECISIONS §97. docs/plans/2026-08-09-1534-missions-list-right-column.md
+
+- **[infra] Speed-field `asteroids` compatibility shim retired; itch republished and `/v2` brought back in
+  sync.** Both of the shim's removal conditions were met, so the dead `asteroids: {…}` block is **gone from
+  the map descriptor**. (1) The itch build was re-published via butler — build **#1868869, v52**, an
+  incremental push that re-used 95% of the previous build and moved 272 KB instead of 20 MB. (2) The `/v2`
+  sandbox was redeployed: it had drifted **70 commits** behind `main` while its only unique content was its
+  three deploy files (both FX experiments had been promoted to `main` back in `0e5766a`), so `main` was
+  merged into `v2` — the four conflicts were all in those already-promoted FX files, resolved in `main`'s
+  favour — and the nginx container rebuilt, so `/v2` now serves the same client as production. Verified:
+  `/v2/src/speed-field.js` returns 200 and `makeAsteroids` is gone from `/v2/src/world.js`.
+  `server/src/maps_speedfield.test.js` no longer pins the shim's presence — it now asserts the **opposite**,
+  so the dead key cannot reappear via a copy-pasted descriptor. DECISIONS §96.
+
 - **[fix] Speed field: its own crisp sprite, rock tone, near-weighted density — the look is now settled.**
   Follow-up to the contrast fix below, tuned live against the maintainer on a local build. The field no
   longer borrows the star layer's `getStarGlowTexture` (a soft glow built to bloom points into haloes,

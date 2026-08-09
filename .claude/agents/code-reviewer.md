@@ -114,3 +114,11 @@ PASS as soon as it's correct, tested, modular, and documented. Don't hold it for
   capped at ~64KB in Chrome, so every completed-level (large) trace threw and was swallowed by `.catch` → no
   row. For any client upload, compare the transport's size limits (keepalive AND sendBeacon both ~64KB)
   against the realistic MAX payload, not the happy-path small one.
+
+- **2026-08-09 — A rendered frame is evidence; a passing assertion about positions is not.** The speed-field
+  diff passed review with client 245/245, an outcome scenario teleporting the player 5.6k units out, and
+  screenshots that were nominally "eyeballed" — then reached production invisible. The scenario asserted the
+  points were correctly positioned; nothing asserted they were perceptible, and the screenshot step was
+  treated as a formality. When a diff changes what the player SEES, open the actual screenshot artifact and
+  say what you observed in it (or state plainly that you could not). "Screenshots reviewed" without a concrete
+  observation is worth nothing. DECISIONS §96 amendment.

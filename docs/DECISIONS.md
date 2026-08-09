@@ -931,6 +931,10 @@ the **rocket button** mid-fight; re-entering fullscreen is a menu-time action an
 
 ## 27. Main Window redesign — drop "Hangar"; a fixed landscape layout with a dedicated ship preview
 
+**Amendment (§97, 2026-08-09).** The dedicated right-column ship preview described here was removed; the
+right column is now per-view content (mission list / Loadout panel). The viewer machinery it introduced
+lives on in the work-zone item showcase and the Loadout viewers.
+
 **Decision.** The between-battles / landing screen (formerly the **Hangar**) became the **Main Window**:
 a fixed CSS-grid landscape layout (top bar | left menu | work zone | 25% ship-model preview) instead of a
 centered, vertically-scrolling column. Two sub-decisions are worth recording:
@@ -3303,6 +3307,11 @@ stopLoadoutPreview(); }` in `selectMenu`, plus `launchCampaign`/`launchMission` 
 take-off. If viewer count grows, centralize this in one `activateView(view)` helper rather than scattering
 start/stop calls.
 
+**Amendment (§97, 2026-08-09).** The first bullet is obsolete: the right-column ship preview (`mwPreview`,
+`#mw-ship`) was deleted, so **Missions / Character / Map / Craft run NO viewer at all** — `selectMenu` only
+stops the Loadout viewers (`if (!isBay) stopLoadoutPreview();`), and the work-zone granted-item showcase
+(`mwItem`) is the sole viewer the Missions view can run. The one-loop-at-a-time rule itself stands.
+
 ## 93. Character progression: XP → derived level, 5 skills, and a determinism-safe dodge
 
 The Character section became real: experience, a character level, and five skills (Kinetic, Rocket,
@@ -3442,13 +3451,17 @@ the system at constant cost**. No growth, no rebuild, no per-distance scaling.
 - **Live-tunable instead of argued about.** The look constants (count/size/radius/depth/opacity per layer +
   a shared colour) live in the map descriptor's **`speedField`** and are dialled in the `?dev` "Speed field"
   folder, which dumps a paste-ready block for `catalog_seed.js`. The committed numbers are a starting point.
-- **`asteroids` compatibility shim (one release, with an explicit removal condition).** The dead
-  `asteroids: {…}` block **stays in the descriptor for exactly one release**. `db.js` upserts every map
+- **`asteroids` compatibility shim — SHIPPED, THEN REMOVED 2026-08-09 (both conditions met).** The dead
+  `asteroids: {…}` block stayed in the descriptor for exactly one release. `db.js` upserts every map
   descriptor **on every server start**, so the moment this deploys, the already-published **itch** bundle and
   the **`/v2`** sandbox — older clients reading the *live* catalog — would call the removed `makeAsteroids(undefined)`
   and throw inside `buildMap` (black scene, not a graceful degrade). **Remove it** in the first change *after*
   the itch build has been re-published (`/publish-itch`) and `/v2` redeployed from a `main` containing
-  `speedField`; `server/src/maps_speedfield.test.js` pins it until then and is deleted with it.
+  `speedField`. **Both conditions were met the same day** — the itch build was re-published (butler build
+  #1868869, v52) and `/v2` was redeployed from a `main` containing `speedField` (the sandbox branch was 70
+  commits stale; `main` was merged into it, its two FX prototypes having already been promoted to `main`
+  earlier) — so the key is **gone**. `server/src/maps_speedfield.test.js` no longer pins the shim's presence;
+  it now asserts the **opposite**, so the dead key cannot creep back in via a copy-pasted descriptor.
 
 **Amendment (shipped invisible, then fixed — the part worth reading).** The field went to production
 geometrically perfect and **impossible to see**, and the only thing that caught it was a human looking at
@@ -3477,7 +3490,50 @@ streaking is deliberately **out of scope** — `updateSpeedField` is documented 
 A **foreground** layer (negative `depth`, between camera and ships) is likewise not shipped, but the slider
 range reaches −110 so it can be judged live; adopting one would revisit the "below-plane only" call above.
 
-## 97. Star system: compact Float32-safe coordinates (no floating-origin) + bearing-projected sky backdrop
+## 97. The Main Window right column is per-view content, not a permanent ship preview
+
+**Decision.** The Main Window's right ~25% column (`#mw-ship-col`) stopped being a permanent **ship
+turntable + characteristics strip** and became **per-view content**: on **Missions** it holds the
+**mission list** (campaign + side-mission cards), on **Loadout** the `#ship-stats` strip + the slot/shop
+context panel (widened to 30%), and on **Character / Map / Craft** it holds **nothing** — the column is
+`display: none` and the grid drops to **two** tracks. The `#mw-ship` canvas, its viewer (`mwPreview`) and
+the `previewTarget` debug hook were deleted outright, not parked. Gated by two classes on `#mainwin`:
+`missions-open` (new) and `bay-open` (existing).
+
+**(i) Why the ship preview went.** It was decoration holding the widest, most valuable strip of the
+landing screen: the model never changed (always the player's active ship), carried no decision-relevant
+information, and competed with the briefing for attention. The ship is already inspectable **full size and
+interactive** on **Loadout**, where its stats belong too — so `#ship-stats` moved with it (Loadout-only)
+rather than floating over an unrelated view. Removing it also drops one `WebGLRenderer` context from every
+menu landing (cheap on weak phones — cross-ref §92).
+
+**(ii) Why the mission list moved there instead of a taller center stack.** The board used to sit **above**
+the briefing in the centre work zone, capped at `max-height: 42%` — so with four cards it ate nearly half
+the briefing's height, and both the list and the text were cramped and scrolling. Side by side, the list
+gets the full column height with its own scroller and the briefing gets the full centre width and height.
+Selecting a mission no longer pushes the text around, which was the worst of the old behaviour.
+
+**(iii) Why Character / Map / Craft collapse rather than keep an empty column.** Those views have nothing
+to put there. An empty 25% gutter reads as a rendering bug, and the alternative — inventing filler content
+(a ship card, a stats panel, art) — is scope we explicitly rejected (§30). Collapsing to two columns hands
+the width to the work zone, which is what those (largely stub) screens actually need.
+
+**(iv) Why the staged reveal lost its "ship window fades in" beat.** The L1-L3 campaign-briefing reveal used
+to hide the whole right column for the ~5 s the text types out, then fade it in. On L1-L3 side missions are
+still locked, so the list holds **exactly one** card (the campaign one): blanking the column for five
+seconds every landing bought no drama and now just looked like a broken list. The reveal keeps
+**typewriter → granted-item showcase → Take off +0.5 s**; `.briefing-hide-ship` (CSS + JS) is gone,
+`.briefing-hide-go` is unchanged.
+
+**Kept deliberately.** The id `#mw-ship-col` is **not** renamed — it would churn `index.html`, four CSS
+rules, a visual scenario and several SUMMARY lines for zero behaviour change; the HTML/CSS comments say
+what it really is. Mission-card *content* and the take/defer/activate API are untouched; only the card's
+CSS box restacks (title + badge / reward sub-line / right-aligned actions) for the narrow column.
+
+Cross-ref §27 (the preview this removes), §28 (the viewer machinery that lives on), §92 (one viewer loop
+per view). Brief: `docs/plans/2026-08-09-1534-missions-list-right-column.md`.
+
+## 98. Star system: compact Float32-safe coordinates (no floating-origin) + bearing-projected sky backdrop
 
 Building the flyable star system (§94) forced two model choices — how far apart the bodies really sit in
 world coordinates, and how they are rendered. (The distant parallax that sells *speed* is the player-locked
