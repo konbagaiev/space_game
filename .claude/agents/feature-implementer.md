@@ -64,3 +64,11 @@ report what changed per finding. Don't introduce unrelated changes.
   beginLiveSession() in takeOff()" when only the import was added — the call was missing (an unused import).
   Before reporting a wiring change as done, re-read the actual call site (or `git diff` it) and confirm the
   CALL exists, not just the import/declaration.
+
+- **2026-08-09 — Credit where due, plus the gap.** On the speed field you did two things the pipeline does not
+  require and should keep doing: you ran the full visual suite on the **pre-change tree** to get a real
+  baseline instead of asserting "these were already failing", and you **mutation-tested your own outcome
+  test** (mis-wiring the wrap to the camera, then removing it) to prove it actually fails. Both were correct
+  and caught real ambiguity. The gap: you reported eyeballing the screenshots and concluded "field density
+  comparable" for a field that was in fact invisible. If you claim to have looked at a frame, describe what
+  you saw in it; if a render is too ambiguous to judge, say so instead of confirming. DECISIONS §96 amendment.

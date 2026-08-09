@@ -124,3 +124,10 @@ perfection beyond that is not the bar.
   to extract a testable seam (the pure `src/*.js` modules are the reachable surface under `node --test`;
   there's no jsdom) instead of accepting the gap. A fix with only a live-test and no regression test is
   incomplete unless the plan gives a concrete, defensible reason no seam exists.
+- **2026-08-09 — For a visual feature, "is it correct?" is not the same question as "is it visible?".** On the
+  speed-field plan I correctly caught a wrong physical mechanism (fog fades on view-space depth, not radial
+  distance) and demanded a real outcome test — genuinely load-bearing catches. But the plan still shipped an
+  **invisible** field, because every one of my checks was about *where the points are*, never about whether
+  they could be seen against the background they render on. When the feature's entire purpose is perceptual,
+  add that to the rubric: what colour, at what opacity, on what background, with which sprite — and demand
+  the numbers, the way you'd demand any other absolute value. DECISIONS §96 amendment.
