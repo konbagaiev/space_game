@@ -339,6 +339,12 @@
   /* ---- Shared star-system navigation component (systemmap-ui.mountSystemNav) ---- */
   /* Map pinned LEFT (adjacent to the base's left nav), object list to its RIGHT. */
   .sysnav { display: flex; gap: 14px; flex: 1; min-height: 0; min-width: 0; }
+  /* Base-menu Map: the launch bar is hidden here, so the view (map canvas on the left, object list +
+     Take off / Autopilot row on the right — they share this bottom edge) would run under #xp-bar, which
+     floats over the base at z-index 13. Clear it by 10px: the bar's top sits 20px off the viewport bottom
+     (6px offset + 14px border-box height) and #mainwin already pads 14px → 20 + 10 − 14 = 16px.
+     The in-flight overlay map (#systemmap-overlay) keeps its own 18px padding. */
+  #mw-view-map { padding-bottom: 16px; }
   .sysnav-mapwrap { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; }
   .sysnav-canvas {
     width: 100%; height: 100%; display: block; border: 1px solid rgba(120,150,200,0.3);

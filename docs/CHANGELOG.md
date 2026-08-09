@@ -3,6 +3,15 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-10
+
+- **Base-menu Map now clears the XP bar by 10px.** The **Map** view hides the global launch bar, so the
+  map canvas and the object list's action row (**Take off** / **Autopilot to destination**) ran down
+  under `#xp-bar`, which floats over the base. `#mw-view-map` gets `padding-bottom: 16px` — the bar's top
+  edge sits 20px off the viewport bottom and `#mainwin` already pads 14px, so the view's content lands
+  exactly 10px above it (measured headless at 1280x800: canvas/buttons bottom 770, bar top 780).
+  Cosmetic only; the in-flight overlay map is unchanged.
+
 ## 2026-08-09
 
 - **Mission count badge on the base menu.** The **Missions** item now carries the same gold pill the
