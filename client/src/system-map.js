@@ -15,15 +15,18 @@ export const EPOCH = 1723000000000; // fixed reference timestamp (ms) for orbita
 // Orbit radii are TRAVEL distances on the plane (Stage-1 live-tune targets — see the plan's sizing math);
 // body `size` is the geometry radius rendered at a fixed billboard distance → constant apparent size.
 export const SYSTEM = {
-  elev: 0.6,     // lifts backdrop bodies above the horizon so they read as sky under the near-top-down cam
-  skyDist: 380,  // billboard radius in the sky scene (≈ the stars radius, 400) — live-tuned
+  // Downward tilt (world −Y) that drops each backdrop body into the near-top-down camera's sky band at the
+  // top of the screen (CAM_OFFSET (0,110,26) looks almost straight down; see updateSystemBodies). Bigger =
+  // higher/more-centred on screen, smaller = toward the horizon/edges. Live-tuned in ?roam.
+  elev: 1.5,
+  skyDist: 340,  // fixed billboard distance from the camera (constant apparent size; < the stars' 400) — live-tuned
   belt: { inner: 16000, outer: 24000 }, // asteroid belt just outside planet 2's orbit (map UI only)
-  star: { name: 'star', color: 0xffd9a0, size: 26, baseSize: 26 },
+  star: { name: 'star', color: 0xffd9a0, size: 34, baseSize: 34 },
   planets: [
-    { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 15 },
-    { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 20, ocean: true }, // base planet (origin)
-    { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 18 },
-    { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 17 },
+    { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 24 },
+    { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 30, ocean: true }, // base planet (origin)
+    { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 26 },
+    { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 24 },
   ],
 };
 
@@ -97,11 +100,14 @@ export function inActivityZone(px, pz, zones, radius) {
   return false;
 }
 
-// THE replay-protection invariant: the player speed cap is lifted ONLY in roam AND outside every activity
-// zone. It MUST be false whenever `roam` is false, regardless of position — so every recorded/campaign
-// session (roam === false) clamps exactly as today and all replays stay byte-identical.
-export function capLifted({ roam, inZone }) {
-  return !!roam && !inZone;
+// THE replay-protection invariant: the player speed cap is lifted ONLY in roam — outside every activity
+// zone OR while an autopilot is actively cruising to a destination (autopilot travel is out-of-combat
+// cruise, so it must not be zone-capped; the kinematic brake still decelerates cleanly into the target).
+// It MUST be false whenever `roam` is false, regardless of position OR autopilot state — so every
+// recorded/campaign session (roam === false, incl. the return-to-base dock autopilot) clamps exactly as
+// today and all replays stay byte-identical.
+export function capLifted({ roam, inZone, autopilot }) {
+  return !!roam && (!!autopilot || !inZone);
 }
 
 // Autopilot arrival predicate: within `radius` (planar) of the destination point. Pure.

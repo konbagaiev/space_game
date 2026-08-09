@@ -25,26 +25,70 @@ export default async function ({ page, assert, shot }) {
   assert.ok(bodies.length >= 5, `≥5 backdrop bodies exist (got ${bodies.length}: ${bodies.join(',')})`);
   assert.ok(bodies.includes('star') && bodies.includes('planet2'), 'the star + base planet are present');
 
+  // 2b. The backdrop bodies actually PROJECT INTO THE CAMERA FRUSTUM (the F1 fix). The near-top-down camera
+  //     looks down, so a body must be placed BELOW it along its bearing; the first pass lifted them by +Y and
+  //     they rendered off-screen. The home planet (planet 2 == origin == spawn) must be visible by the base.
+  const vis = await page.evaluate(() => {
+    const g = window.__game;
+    g.stepSim(2); // settleView positions the bodies + camera for the current (roam) frame
+    g.camera.updateMatrixWorld(true);
+    g.camera.matrixWorldInverse.copy(g.camera.matrixWorld).invert();
+    const proj = (name) => {
+      const b = (g.systemBodies || []).find((x) => x.name === name);
+      if (!b) return null;
+      const n = b.mesh.position.clone().project(g.camera);
+      return { x: +n.x.toFixed(2), y: +n.y.toFixed(2), z: +n.z.toFixed(2),
+               inView: Math.abs(n.x) <= 1 && Math.abs(n.y) <= 1 && n.z > -1 && n.z < 1 };
+    };
+    const bodies = (g.systemBodies || []).map((b) => b.name);
+    let anyInView = 0;
+    for (const nm of bodies) { const q = proj(nm); if (q && q.inView) anyInView++; }
+    return { home: proj('planet2'), anyInView };
+  });
+  assert.ok(vis.home && vis.home.inView,
+    `the home planet projects into the camera frustum in roam (got ${JSON.stringify(vis.home)})`);
+  assert.ok(vis.anyInView >= 1, `≥1 backdrop body is on-screen in roam (got ${vis.anyInView})`);
+  await shot('roam-at-base'); // eyeball frame: the home planet should read as a backdrop near the base
+
+  // 2c. The out-of-combat "Map" button is visible and OPENS the system-map overlay (F2). In roam the radar
+  //     is hidden and this button takes its place; a live fight keeps the radar and hides the button.
+  await page.waitForTimeout(120); // let a real animate frame run refreshMapControl (toggles the corner control)
+  const mapUi = await page.evaluate(() => {
+    const btn = document.getElementById('map-btn');
+    const mini = document.getElementById('minimap');
+    const btnShown = btn && getComputedStyle(btn).display !== 'none';
+    const miniHidden = mini && getComputedStyle(mini).display === 'none';
+    btn.click();
+    return { btnShown, miniHidden, open: window.__game.mapOpen };
+  });
+  assert.ok(mapUi.btnShown, 'the "Map" button is visible while roaming');
+  assert.ok(mapUi.miniHidden, 'the battle radar (#minimap) is hidden while roaming');
+  assert.equal(mapUi.open, true, 'pressing "Map" opens the system-map overlay (G.mapOpen)');
+  await page.evaluate(() => window.__game.closeSystemMap()); // close so the remaining steps run unfrozen
+
   // 3. No enemies in roam, and the runner is not "won" (so update() ticks the roaming ship).
   const roamState = await page.evaluate(() => ({ enemies: window.__game.enemies.length, won: window.__game.levelRunner.won }));
   assert.equal(roamState.enemies, 0, 'no enemies spawn in roam');
   assert.equal(roamState.won, false, 'the runner is not frozen (won === false) in roam');
 
-  // 4. Autopilot to a point: engage toward a destination and step the sim deterministically (software-GL
-  //    rAF is far too slow to advance the live accumulator in a few seconds), confirming it closes the gap.
+  // 4. Autopilot to a point: engage toward a FAR destination and step the sim deterministically (software-GL
+  //    rAF is far too slow to advance the live accumulator in a few seconds). Confirm it (a) closes the gap
+  //    and (b) travels UNCAPPED — its peak speed exceeds the combat cap (PLAYER_MAX_SPEED = 30), the F3 fix.
   const nav = await page.evaluate(() => {
     const g = window.__game, p = g.player.mesh.position;
-    const target = { x: p.x, z: p.z + 300 }; // 300u ahead
+    const target = { x: p.x, z: p.z + 12000 }; // far ahead → sustained uncapped cruise
     const dist0 = Math.hypot(target.x - p.x, target.z - p.z);
     g.engagePointAutopilot(target, null);
     const active = g.autopilot.active, kind = g.autopilot.target && g.autopilot.target.kind;
-    g.stepSim(360); // 6 sim-seconds of brake → rotate → cruise → brake
+    let maxV = 0;
+    for (let i = 0; i < 8; i++) { g.stepSim(60); maxV = Math.max(maxV, g.player.vel.length()); }
     const closed = Math.hypot(target.x - g.player.mesh.position.x, target.z - g.player.mesh.position.z);
-    return { active, kind, dist0, closed };
+    return { active, kind, dist0, closed, maxV };
   });
   assert.equal(nav.active, true, 'point autopilot engaged');
   assert.equal(nav.kind, 'point', 'autopilot target kind is "point"');
   assert.ok(nav.closed < nav.dist0 - 20, `autopilot flew the ship toward the point (dist ${nav.dist0.toFixed(0)} → ${nav.closed.toFixed(0)})`);
+  assert.ok(nav.maxV > 35, `autopilot travel is UNCAPPED (peak speed ${nav.maxV.toFixed(1)} > combat cap 30)`);
 
   await shot('roam');
 

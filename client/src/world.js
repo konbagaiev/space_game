@@ -406,7 +406,7 @@ function makeStarMesh(spec) {
     map: getStarGlowTexture(), color: spec.color, transparent: true,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   }));
-  glow.scale.setScalar(spec.size * 4.5);
+  glow.scale.setScalar(spec.size * 3.0);
   g.add(glow);
   return g;
 }
@@ -430,27 +430,43 @@ function buildSystemBodies(sys, oceanHex) {
   }
 }
 
+// Within this planar distance a body is treated as "home" (you're parked next to it): its bearing is
+// meaningless, so it is pinned to the top-of-screen backdrop and loomed a little, like the old single
+// home-planet the game had before this feature. Planet 2 (== world origin == spawn) hits this at base.
+const HOME_NEAR = 900;
+
 // Re-project each body by its true bearing from the player. `dt` is unused (bodies are per-session static;
 // their wall-clock motion is imperceptible within a session, only the bearing changes as the player flies).
+//
+// CAMERA-AWARE PLACEMENT (the F1 fix): CAM_OFFSET is (0,110,26) — the camera is high above the ship and
+// looks almost straight DOWN, so the visible "sky" band is at the TOP of the screen, in the −Z / BELOW-the-
+// camera direction. A body must therefore be placed BELOW the camera (world −Y) along its planar bearing to
+// land in the downward-looking frustum; lifting it by +Y (as the first pass did) put it behind/above the
+// camera → nothing rendered. `SYSTEM.elev` is that downward tilt (bigger = higher/more-centred on screen),
+// `SYSTEM.skyDist` the fixed billboard distance (constant apparent size). Both live-tunable via `?roam`.
 export function updateSystemBodies(dt = 0) {
   if (!G.systemBodies || !G.player) return;
   const now = Date.now();
   const p = G.player.mesh.position;
-  const elev = SYSTEM.elev, skyDist = SYSTEM.skyDist;
+  const down = SYSTEM.elev, skyDist = SYSTEM.skyDist;
   for (const b of G.systemBodies) {
     const wp = bodyWorldPos(b.name, now);
     let dx = wp.x - p.x, dz = wp.z - p.z;
     let len = Math.hypot(dx, dz);
-    if (len < 1e-3) { dx = b._lastDx ?? 0; dz = b._lastDz ?? 1; len = Math.hypot(dx, dz) || 1; } // at the body → keep last bearing
-    b._lastDx = dx; b._lastDz = dz;
+    const near = len < HOME_NEAR ? 1 - len / HOME_NEAR : 0; // 1 right on the body → 0 past HOME_NEAR
+    if (len < 1e-3) { dx = 0; dz = -1; len = 1; }           // exactly on the body → default to the top-of-screen bearing
     dx /= len; dz /= len;
-    // lift the planar bearing above the horizon so the body reads as sky under the near-top-down camera
-    const sl = Math.hypot(dx, elev, dz) || 1;
+    // Blend toward the top-of-screen bearing (0,−1 = −Z far edge) as we approach, so the home planet sits
+    // high and steady instead of whipping around the horizon when you're right next to it.
+    if (near > 0) { dz = dz * (1 - near) + (-1) * near; const n2 = Math.hypot(dx, dz) || 1; dx /= n2; dz /= n2; }
+    // Place BELOW the high camera (world −Y) so it falls in the near-top-down frustum's sky band.
+    const sl = Math.hypot(dx, down, dz) || 1;
     b.mesh.position.set(
       camera.position.x + (dx / sl) * skyDist,
-      camera.position.y + (elev / sl) * skyDist,
+      camera.position.y - (down / sl) * skyDist,
       camera.position.z + (dz / sl) * skyDist
     );
+    b.mesh.scale.setScalar(1 + near * 0.7); // the home planet looms a little when you're parked at its base
   }
 }
 

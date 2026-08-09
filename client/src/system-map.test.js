@@ -42,12 +42,20 @@ test('a body returns to the same position after one full period', () => {
   assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 1e-3, `same after 6 days (${a.x},${a.z} vs ${b.x},${b.z})`);
 });
 
-test('capLifted is FALSE whenever roam is false, for every inZone value (replay invariant)', () => {
-  assert.equal(capLifted({ roam: false, inZone: false }), false);
-  assert.equal(capLifted({ roam: false, inZone: true }), false);
-  // and only lifted in roam AND outside a zone
-  assert.equal(capLifted({ roam: true, inZone: false }), true);
-  assert.equal(capLifted({ roam: true, inZone: true }), false);
+test('capLifted is FALSE whenever roam is false — for EVERY inZone/autopilot combo (replay invariant)', () => {
+  for (const inZone of [false, true]) {
+    for (const autopilot of [false, true]) {
+      assert.equal(capLifted({ roam: false, inZone, autopilot }), false,
+        `roam:false must stay capped (inZone:${inZone}, autopilot:${autopilot}) — return-to-base dock stays capped`);
+    }
+  }
+});
+
+test('capLifted in roam: lifted outside a zone OR while an autopilot is traveling', () => {
+  assert.equal(capLifted({ roam: true, inZone: false, autopilot: false }), true);  // open cruise
+  assert.equal(capLifted({ roam: true, inZone: true,  autopilot: false }), false); // parked in a zone → capped
+  assert.equal(capLifted({ roam: true, inZone: true,  autopilot: true }), true);   // autopilot travel through a zone → uncapped
+  assert.equal(capLifted({ roam: true, inZone: false, autopilot: true }), true);   // autopilot in open space → uncapped
 });
 
 test('inActivityZone boundary behaviour (inclusive at the radius)', () => {

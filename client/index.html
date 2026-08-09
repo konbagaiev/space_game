@@ -245,6 +245,9 @@
      just appears frozen at 1 fps. See DECISIONS §83. -->
 <div id="levelwarm"><div id="levelwarm-text" data-i18n="ui.loading.level">Preparing the sector...</div></div>
 <canvas id="minimap" width="132" height="132"></canvas>
+<!-- Out-of-combat "Map" button: opens the system-map overlay. Shown only in roam / return-to-base (where the
+     #minimap radar is hidden, having no enemies/arena to show); hidden in a live fight. Wired in main.js. -->
+<button id="map-btn" data-i18n="ui.mainwin.map">Map</button>
 <div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
 <div id="touch">
   <div id="stick-zone"></div>

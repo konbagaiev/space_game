@@ -351,10 +351,12 @@ function engageObjectAt(e) {
 }
 renderer.domElement.addEventListener('click', (e) => { engageObjectAt(e); });
 
-// ---------- System-map screen (out-of-combat mini-map tap → freeze + pick a destination) ----------
-// Context-sensitive: during a LIVE fight the #minimap stays the battle radar (no-op here). Out of combat
-// (roam / return-to-base) a tap opens the system-map overlay, which freezes the game via G.mapOpen (a raw
-// loop-skip, NOT setPaused). Picking a destination re-routes the autopilot; "Return to hangar" ends roam.
+// ---------- System-map screen (out-of-combat "Map" button → freeze + pick a destination) ----------
+// Context-sensitive corner: during a LIVE fight the #minimap stays the battle radar. Out of combat (roam /
+// return-to-base) the radar is pointless (no enemies, no arena), so it is HIDDEN and a visible #map-btn takes
+// its place; pressing it opens the system-map overlay, which freezes the game via G.mapOpen (a raw loop-skip,
+// NOT setPaused). Picking a destination re-routes the autopilot; "Return to hangar" ends roam. The toggle
+// (radar ↔ Map button) is driven per-frame in animate() by refreshMapControl().
 // ?roam dev readout (Stage 1e): speed / pos / dist-to-orbit-4-edge / in-zone, plus the backdrop tunables
 // exposed on window.__roam.SYSTEM for live console tweaking (elev/skyDist/orbit radii affect the next frame,
 // since SYSTEM is shared by reference). Gated strictly behind ?roam — never built in the shipped path.
@@ -393,14 +395,21 @@ function openSystemMapScreen() {
   });
 }
 window.__openSystemMap = openSystemMapScreen; // test/tool hook (also reachable via __game below)
+// The out-of-combat "Map" button (replaces the hidden radar while roaming). Desktop click + touchstart (so a
+// second thumb works while a finger holds the stick, like #return-btn — DECISIONS §42). Never opens twice.
 const minimapEl = document.getElementById('minimap');
-if (minimapEl) {
-  minimapEl.addEventListener('click', () => { if (outOfCombat() && !isSystemMapOpen()) openSystemMapScreen(); });
-  // touch: a plain tap on the radar (touchend) — mirrors the click path; combat is view-only via interactive:false
-  minimapEl.addEventListener('touchend', (e) => {
-    if (!outOfCombat() || isSystemMapOpen()) return;
-    e.preventDefault(); openSystemMapScreen();
-  }, { passive: false });
+const mapBtnEl = document.getElementById('map-btn');
+if (mapBtnEl) {
+  const openMap = (e) => { if (e) e.preventDefault(); if (outOfCombat() && !isSystemMapOpen()) openSystemMapScreen(); };
+  mapBtnEl.addEventListener('click', openMap);
+  mapBtnEl.addEventListener('touchstart', openMap, { passive: false });
+}
+// Per-frame corner toggle: in a live fight show the radar; out of combat hide it and show the Map button.
+// (body.menu CSS already hides both on the base-menu screen, so this only governs the in-world states.)
+function refreshMapControl() {
+  const ooc = outOfCombat();
+  if (minimapEl) minimapEl.style.display = ooc ? 'none' : '';
+  if (mapBtnEl) mapBtnEl.style.display = ooc ? 'block' : 'none';
 }
 
 // Hover cursors (mouse only — meaningless on touch). Hovering a clickable station shows a first-party
@@ -781,6 +790,7 @@ function animate() {
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
+  refreshMapControl(); // out of combat: hide the radar, show the "Map" button (and vice-versa in a fight)
   if (ROAM) updateRoamReadout(); // ?roam dev sizing/zone/backdrop readout (never built in the shipped path)
   updateShieldBubble(G.paused ? 0 : Math.min(rawSec, 0.05)); // advances the shared FX clock + tracks the ship (frozen while paused)
   updateEnemyShieldBubbles(); // enemy hit-ripples (pooled, tier-capped) — MUST run after updateShieldBubble (shared clock)

@@ -477,12 +477,17 @@ export function update(dt) {
 
   // Flat top speed: pure inertia, but the player never exceeds their max (manual + autopilot alike).
   // Mobility skill raises the cap by maxSpeedMul (1 when no points / on replays).
-  // OUT OF COMBAT (roam) the cap is LIFTED whenever the ship is outside every activity zone, so you can
-  // cross the system; inside a zone (or in ANY non-roam fight) it clamps exactly as today. capLifted() is
-  // false whenever G.roam is false — the invariant that keeps every recorded/campaign replay byte-identical.
+  // OUT OF COMBAT (roam) the cap is LIFTED outside every activity zone OR while an autopilot is cruising to
+  // a destination (uncapped travel), so you can cross the system fast; inside a zone with no autopilot (or in
+  // ANY non-roam fight) it clamps exactly as today. capLifted() is false whenever G.roam is false — the
+  // invariant that keeps every recorded/campaign replay (incl. the return-to-base dock autopilot) byte-identical.
   const maxSpeed = PLAYER_MAX_SPEED * (G.player.maxSpeedMul || 1);
   const ppos = G.player.mesh.position;
-  const lifted = capLifted({ roam: G.roam, inZone: inActivityZone(ppos.x, ppos.z, activityZones(), ZONE_RADIUS) });
+  const lifted = capLifted({
+    roam: G.roam,
+    inZone: inActivityZone(ppos.x, ppos.z, activityZones(), ZONE_RADIUS),
+    autopilot: G.autopilot.active,
+  });
   if (!lifted && G.player.vel.length() > maxSpeed) G.player.vel.setLength(maxSpeed);
   // the ship keeps flying in its current direction, no matter where the nose points
   G.player.mesh.position.addScaledVector(G.player.vel, dt);

@@ -676,14 +676,14 @@ export const MAPS = [
       // the client SYSTEM fallback (system-map.js); the client's pure geometry (phase/period → world pos)
       // is the source of truth for POSITIONS — this block drives render params (star + per-planet size/color).
       system: {
-        elev: 0.6, skyDist: 380,
+        elev: 1.5, skyDist: 340,
         belt: { inner: 16000, outer: 24000 },
-        star: { name: 'star', color: 0xffd9a0, size: 26, baseSize: 26 },
+        star: { name: 'star', color: 0xffd9a0, size: 34, baseSize: 34 },
         planets: [
-          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 15 },
-          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 20, ocean: true },
-          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 18 },
-          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 17 },
+          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 24 },
+          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 30, ocean: true },
+          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 26 },
+          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 24 },
         ],
       },
       // Parallax speed field: a fixed pool of point sprites that WRAPS around the player every frame, so
