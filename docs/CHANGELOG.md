@@ -5,6 +5,25 @@
 
 ## 2026-08-10
 
+- **Home station moved 50 right + 50 down, to `(-10,-10)`.** `ANCHORS.base` (`client/src/system-map.js`)
+  and the `base-station` set-piece in `server/src/catalog_seed.js` `home-system` moved together from
+  `(-60,-60)`, keeping the four-way invariant (pinned by `system-map.test.js`). It now sits further from
+  the home planet's rendered sphere (planet 2 draws at `(-150,-110)` = anchor `(0,0)` + `SYSTEM.offset`)
+  and 14 u off the campaign arena center. Verified sim-neutral: the station is non-collidable below-plane
+  decor, the campaign levels and side missions key their spawns off `descriptor.center` (Level 0 / Level 1
+  at `(0,0)`, untouched), and the base activity zone still contains the `(0,0)` spawn. The intro-replay
+  guard (`node visual/run.mjs 22-intro-replay`) reports an identical run before/after — 4 kills, cards
+  `p0..p4`, `won=true`, same end tick 2213. Full client (294) + server (127) suites green.
+  Two accepted consequences: the origin-spawning ship is now framed **over** the station in Level 0 /
+  Level 1 / the intro, and the post-victory flight home from the campaign arena is inside
+  `BASE_ARRIVE_RADIUS` (45 u), so docking completes almost immediately.
+
+- **Bigger star/planet markers on the system map.** The star and the four planets are drawn at double
+  their old marker radius (star 7→14px, planets 5→10px) in `systemmap-ui.js`; stations, belt outposts
+  and the factory keep 4px. The celestial bodies now read as bodies at a glance instead of blending
+  into the man-made anchors, and they're easier to hit with a tap. Selection ring, lock ring and label
+  offsets follow the radius, so they scale with it.
+
 - **Base-menu Map now clears the XP bar by 10px.** The **Map** view hides the global launch bar, so the
   map canvas and the object list's action row (**Take off** / **Autopilot to destination**) ran down
   under `#xp-bar`, which floats over the base. `#mw-view-map` gets `padding-bottom: 16px` — the bar's top

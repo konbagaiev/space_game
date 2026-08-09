@@ -750,15 +750,17 @@ export const MAPS = [
           yaw: 0, // nose already faces +Z (bridge-aft freighter); flip to Math.PI for a -Z export
           // exhaust: { palette: { hot: 0xfff1c0, mid: 0xff7a2a, end: 0x7a1208 }, count: 90, len: 48, size: 5, speed: 1.4 },
         },
-        // Base station set-piece pushed off the arena center to (-60,-60) (screen top-left) so the
-        // player ship — which spawns/fights near the origin — is never framed against the big station and
-        // lost on its backdrop. A below-plane, NON-collidable .glb decor (like the freighter) but raised
+        // Base station set-piece, at (-10,-10) — 50 u right and 50 u down from its old (-60,-60), i.e.
+        // further from the home planet's rendered sphere (planet 2 draws at (-150,-110): its anchor (0,0)
+        // plus SYSTEM.offset). It is now nearly ON the arena center, so the origin-spawning player ship is
+        // framed against the station rather than beside it — accepted deliberately.
+        // A below-plane, NON-collidable .glb decor (like the freighter) but raised
         // closer to the combat plane so it reads clearly. It is the return-to-base target: after the last
         // kill the client lifts OOB, shows a homing arrow + hint, and makes this station clickable (autopilot
         // flies here → victory). pos.y = -42 with client BASE_STATION_LEN 100 keeps its TOP ~y=-2.9, just
         // under the plane (ships fly over it — no collision handling). See DECISIONS §39.
         {
-          type: 'base-station', pos: [-60, -42, -60], scale: 1.0, spin: 0.03, // up-left of the arena center (screen top-left = -z/-x)
+          type: 'base-station', pos: [-10, -42, -10], scale: 1.0, spin: 0.03, // just up-left of the arena center (screen top-left = -z/-x)
           modelUrl: 'assets/ships/base_station_combat.529dee5e.glb',
           yaw: 0, // a station has no "nose"; 0 reads fine top-down
         },

@@ -134,9 +134,9 @@ export function applyInput(tick, keys, touchAim) {
 // player, or a desync that leaves the ship unable to reach the station) loops forever. This bail-out ends
 // it through the normal path (cutsceneEnd → finishIntro) = "the intro stops early and you land on the
 // Level 1 briefing" instead of a dead screen.
-// The limit must clear a LEGITIMATE flight home: the station sits at [-60,-42,-60] (catalog_seed.js:656),
+// The limit must clear a LEGITIMATE flight home: the station sits at [-10,-42,-10] (catalog_seed.js),
 // BASE_ARRIVE_RADIUS = 45 (autopilot-config.js:5) and PLAYER_MAX_SPEED = 30 (sim.js), so a fight that ends
-// ~200 u out is a ~7-8 s flight — 8 s would abort real intros. 15 s is ~2× the expected worst case.
+// ~200 u out is a ~7 s flight — 8 s would abort real intros. 15 s is ~2× the expected worst case.
 export const CUTSCENE_STALL_TICKS = 900;
 
 // Assemble a trace object from the captured run. `seed` is the mulberry32 seed actually installed at record

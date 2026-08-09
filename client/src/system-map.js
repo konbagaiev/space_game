@@ -168,7 +168,7 @@ export function maxBodyCoord() {
 // map marker pos == catalog_seed.js `home-system` set-piece pos == missions.js center == activity zone —
 // all identical (x,z) per body. Changing one WITHOUT the others desyncs spawns / the zone / the map / the fight.
 export const ANCHORS = {
-  base:    { x: -60,  z: -60 }, // base station (return-to-base dock), near the origin
+  base:    { x: -10,  z: -10 }, // base station (return-to-base dock), near the origin
   science: { x: 928,  z: 0 },   // research/science station — star-ward, 2x its old distance from planet 2
   mining:  { x: -988, z: 0 },   // near mining base (asteroid field) — belt-ward (anti-star)
   // Two further mining outposts, belt-ward like the first but spread around planet 2 so the map has real
