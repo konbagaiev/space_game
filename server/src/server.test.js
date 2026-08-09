@@ -564,8 +564,11 @@ test('maps: home-system descriptor is served', async () => {
   const map = await getJson('/api/maps/home-system');
   assert.equal(map.name, 'home-system');
   assert.equal(map.descriptor.generator, 'planet-system');
-  assert.equal(map.descriptor.planet.radius, 60);
-  assert.equal(map.descriptor.moons.length, 2);
+  assert.equal(map.descriptor.planet.ocean, 0x5a82c0);
+  // the star-system backdrop block: a star + 4 planets (replaces the old single planet + 2 moons)
+  assert.equal(map.descriptor.system.planets.length, 4);
+  assert.equal(map.descriptor.system.star.name, 'star');
+  assert.equal(map.descriptor.system.planets[1].name, 'planet2'); // the base (ocean) planet
   const missing = await fetch(base + '/api/maps/nope');
   assert.equal(missing.status, 404);
 });

@@ -309,8 +309,9 @@
   body.dev-phone .lp-model { height: 73px; } /* phone: short box for the weapon 3D model */
   body.dev-phone #mw-stub-title { font-size: 18px; }
   body.dev-phone #mw-stub-text { font-size: 12px; }
-  /* work zone (center): only the active view shows; the mission description is the only scroller */
-  #mw-work { min-width: 0; min-height: 0; display: flex; }
+  /* work zone (center): only the active view shows; the mission description is the only scroller.
+     Column layout so the global launch bar (#mw-launch) can sit pinned under whichever view is open. */
+  #mw-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .mw-view { display: none; flex: 1; min-width: 0; min-height: 0; }
   .mw-view.active { display: flex; flex-direction: column; }
   #mw-view-mission { gap: 10px; --gun-h: clamp(150px, 36%, 280px); }
@@ -328,8 +329,78 @@
   #mw-item-strut { display: none; float: right; width: 0; height: calc(100% - var(--gun-h) - 8px); }
   #mw-item { display: none; float: right; clear: right; width: 46%; height: var(--gun-h); margin: 2px 0 6px 14px; }
   #mw-mission-desc.show-item #mw-item-strut, #mw-mission-desc.show-item #mw-item { display: block; }
-  #mw-go { align-self: center; }
-  #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; }
+  #mw-mission-actions { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
+  #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
+  /* Global launch bar — "Take off" on every stage. Hidden on Map, which carries its own Take off next to
+     "Autopilot to destination" inside the navigation component's action row. */
+  #mw-launch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 8px; }
+  #mainwin.map-open #mw-launch { display: none; }
+  #mw-takeoff-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
+  /* ---- Shared star-system navigation component (systemmap-ui.mountSystemNav) ---- */
+  /* Map pinned LEFT (adjacent to the base's left nav), object list to its RIGHT. */
+  .sysnav { display: flex; gap: 14px; flex: 1; min-height: 0; min-width: 0; }
+  .sysnav-mapwrap { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; }
+  .sysnav-canvas {
+    width: 100%; height: 100%; display: block; border: 1px solid rgba(120,150,200,0.3);
+    border-radius: 10px; cursor: crosshair; touch-action: none; /* we own pan/zoom gestures */
+  }
+  .sysnav-zoom { position: absolute; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .sysnav-zoom button {
+    width: 30px; height: 30px; cursor: pointer; font: 700 17px/1 system-ui, sans-serif;
+    color: #cfe6ff; background: rgba(10,16,26,0.82); border: 1px solid rgba(120,150,200,0.4); border-radius: 8px;
+  }
+  .sysnav-side { flex: 0 0 34%; max-width: 340px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+  .sysnav-title { color: #cfe6ff; font: 700 14px/1 system-ui, sans-serif; letter-spacing: .5px; }
+  .sysnav-list { flex: 1 1 auto; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+  .sysnav-row {
+    display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 8px; width: 100%;
+    padding: 7px 10px; cursor: pointer; text-align: left; border-radius: 8px;
+    color: #cfe6ff; font: 600 13px/1.2 system-ui, sans-serif;
+    background: rgba(120,150,200,0.10); border: 1px solid transparent;
+  }
+  .sysnav-row:hover { background: rgba(120,150,200,0.20); }
+  .sysnav-row.sel { border-color: #ffd24a; background: rgba(255,210,74,0.14); }
+  .sysnav-row.locked { opacity: .55; }
+  .sysnav-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .sysnav-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sysnav-kind, .sysnav-mission { font-size: 11px; font-weight: 500; opacity: .72; white-space: nowrap; }
+  .sysnav-mission { color: #7fff9a; }
+  .sysnav-row.locked .sysnav-mission { color: #c9cdd6; }
+  .sysnav-hint { color: #9fb6d0; font: 500 12px/1.35 system-ui, sans-serif; min-height: 32px; }
+  .sysnav-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sysnav-actions button {
+    cursor: pointer; font: 600 13px system-ui, sans-serif; padding: 9px 16px; border-radius: 8px;
+    color: #cfe6ff; background: rgba(120,150,200,0.18); border: 1px solid rgba(120,150,200,0.4);
+  }
+  .sysnav-actions button.primary { color: #0b0f14; background: #6fd0ff; border-color: transparent; }
+  /* Take off keeps the game's launch colour wherever it appears, so it reads as the same action as the
+     global bar's button — just sized to sit beside "Autopilot to destination". */
+  .sysnav-actions button.takeoff {
+    color: #1a0c02; background: linear-gradient(90deg,#ffb35a,#ff7a3c); border-color: transparent;
+    font-weight: 700; letter-spacing: .5px;
+  }
+  .sysnav-actions button:disabled { opacity: .45; cursor: not-allowed; }
+  /* narrow / phone: stack the list under the map instead of squeezing both. The small left inset keeps the
+     canvas clear of the fixed top-left account bar, which floats over the work zone on a phone. */
+  body.dev-phone .sysnav { flex-direction: column; gap: 6px; padding-left: 12px; }
+  /* the map keeps the lion's share of a short landscape phone screen — the list scrolls in what is left */
+  body.dev-phone .sysnav-mapwrap { flex: 1 1 auto; min-height: 132px; }
+  body.dev-phone .sysnav-side { flex: 0 0 auto; max-width: none; gap: 5px; }
+  body.dev-phone .sysnav-title { display: none; }   /* the rows are self-evident; the space is not */
+  body.dev-phone .sysnav-list { flex: 0 0 auto; max-height: 92px; }
+  body.dev-phone .sysnav-row { padding: 5px 8px; font-size: 12px; }
+  body.dev-phone .sysnav-hint { min-height: 15px; font-size: 11px; }
+  body.dev-phone .sysnav-actions button { padding: 7px 12px; font-size: 12px; }
+  /* In-flight navigation overlay: the SAME component, full-screen over the frozen game (G.mapOpen).
+     z-index 9000 clears every fixed HUD element, and it covers the viewport, so it cannot overlap the
+     bottom-center bar / corner controls / zoom pair the way a floating panel would. */
+  #systemmap-overlay {
+    position: fixed; inset: 0; z-index: 9000; display: none; flex-direction: column; gap: 12px;
+    background: rgba(4,7,12,0.88); padding: 16px 18px 18px;
+  }
+  #systemmap-overlay .sysnav-head { color: #cfe6ff; font: 700 18px/1 system-ui, sans-serif; text-align: center; }
+  #systemmap-host { flex: 1; min-height: 0; display: flex; }
+  #systemmap-host .sysnav { flex: 1; }
   #mw-view-bay { overflow-y: auto; }
   #mw-bay-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
   /* right column — hidden unless the open view has content for it (Missions list / Loadout panel) */
@@ -339,15 +410,21 @@
      Take-off is hidden while the briefing text types out, then fades in 0.5s after typing completes (the
      mission list stays visible throughout). visibility (not display) keeps its layout box so the mission
      view doesn't reflow when it appears. */
-  #mw-go { transition: opacity .25s ease; }
-  #mainwin.briefing-hide-go #mw-go { opacity: 0; visibility: hidden; }
-  #takeoff, #mw-go {
+  #mw-go, #mw-launch { transition: opacity .25s ease; }
+  #mainwin.briefing-hide-go #mw-go, #mainwin.briefing-hide-go #mw-launch { opacity: 0; visibility: hidden; }
+  #takeoff, #mw-go, #mw-takeoff {
     pointer-events: auto; cursor: pointer;
     padding: 14px 44px; font-size: 18px; font-weight: 700; border: 0; border-radius: 10px;
     background: linear-gradient(90deg,#ffb35a,#ff7a3c); color: #1a0c02; letter-spacing: 1px;
   }
-  #takeoff:hover, #mw-go:hover { filter: brightness(1.08); }
-  #mw-go:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
+  /* the mission LAUNCH is the secondary of the pair now — "Take off" is the primary way out of the base */
+  #mw-go { padding: 11px 28px; font-size: 15px; background: linear-gradient(90deg,#8fa6c8,#6f86ab); color: #0b0f14; }
+  #mw-mission-nav {
+    pointer-events: auto; cursor: pointer; padding: 11px 22px; font: 600 14px system-ui, sans-serif;
+    color: #cfe6ff; background: rgba(120,150,200,0.18); border: 1px solid rgba(120,150,200,0.4); border-radius: 8px;
+  }
+  #takeoff:hover, #mw-go:hover, #mw-takeoff:hover, #mw-mission-nav:hover { filter: brightness(1.08); }
+  #mw-go:disabled, #mw-takeoff:disabled, #mw-mission-nav:disabled { filter: grayscale(.7) brightness(.7); cursor: not-allowed; }
   /* Touch-only UI gate (e.g. the floating Full-screen button). */
   .touch-only { display: none; }
   body.touch .touch-only { display: inline-flex; }
@@ -546,6 +623,10 @@
   #overlay .community-link { margin-top: 18px; }
   /* hide the in-game HUD while the welcome screen is up */
   body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #event-log, body.menu #markers, body.menu #oob-warn, body.menu #return-hint, body.menu #return-btn, body.menu #banner, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay, body.menu #zoom { display: none; }
+  /* …and the touch flight controls (stick + FIRE). #rocket-btn/#zoom were hidden individually above but the
+     #touch layer itself was not, so on a phone the FIRE button stayed live ON TOP of the base menu — it
+     overlapped the Map view's object list and could be pressed while browsing the hangar. */
+  body.menu #touch { display: none; }
   /* Account dialog (login / register / post-level-1 name prompt) */
   #account {
     position: fixed; inset: 0; z-index: 14; display: none;
@@ -1031,3 +1112,12 @@
     width: 132px; height: 132px; pointer-events: none; opacity: .82;
     background: rgba(8,12,24,.26); border: 1px solid rgba(120,150,210,.2); border-radius: 8px;
   }
+  /* Out-of-combat Map button — occupies the (now hidden) mini-map corner while roaming; toggled by main.js. */
+  #map-btn {
+    position: fixed; left: 62px; top: 72px; z-index: 5; display: none;
+    width: 132px; height: 40px; cursor: pointer;
+    font: 700 15px/1 system-ui, sans-serif; color: #0b0f14;
+    background: linear-gradient(#8fe0ff, #4bb6ff); border: 0; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.35);
+  }
+  body.menu #map-btn { display: none !important; }

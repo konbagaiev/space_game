@@ -7,7 +7,8 @@ import * as THREE from 'three';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateMoons, buildSetPiece, updateSpeedField } from './world.js';
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
+import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './system-map.js';
 import { repairTick, shieldRecharge, applyShieldedDamage } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
@@ -21,7 +22,7 @@ import { simRandom } from './sim-random.js'; // the seeded GAMEPLAY stream (opt-
 import { isLastKillDrop } from './level-sim.js';
 import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
-import { canDock } from './autopilot-config.js';
+import { canDock, BASE_ARRIVE_RADIUS } from './autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
@@ -73,13 +74,19 @@ export const levelRunner = {
   level: null, phaseIndex: 0, killsAtPhaseStart: 0, spawnedThisPhase: 0, spawnCooldown: 0, won: false,
   winPending: 0, winText: '', returningToBase: false,
 
-  start(level) {
-    this.level = level; this.phaseIndex = 0; this.won = false; this.winPending = 0;
-    // reset the return-to-base gate + shared flags so a Restart starts clean
-    this.returningToBase = false;
+  // Reset the runner's per-run flags + the shared return-to-base/autopilot/banner state. Extracted from
+  // start() so the roam reset() (which runs NO levelRunner) clears exactly the same state — otherwise a
+  // prior mission win's `won: true` would freeze the roaming ship, or a stale `level` would spawn enemies
+  // in roam. start() calls this right after setting `this.level`; roam calls it with `this.level = null`.
+  resetLevelRunnerState() {
+    this.phaseIndex = 0; this.won = false; this.winPending = 0; this.returningToBase = false;
     G.returnToBase = false; G.autopilot.active = false; G.autopilot.target = null;
     if (G.baseStation) G.baseStation.active = false;
     firedBanners.clear(); G.banner.life = 0; // fresh run: re-arm the milestone banners + clear any lingering one
+  },
+
+  start(level) {
+    this.level = level; this.resetLevelRunnerState();
     G.enemyTotal = (level && level.enemyTotal) || 0; // total enemies for the HUD killed/total (0 if not seeded)
     // Warm the last-kill reward model NOW (only if it will actually drop) so the last-enemy spawn is
     // hitch-free — the high-poly CloudFront hangar glb is fetched/parsed here, not on the killing frame.
@@ -239,6 +246,8 @@ function autopilotTargetPos() {
   const tgt = G.autopilot.target;
   if (!tgt) return null;
   if (tgt.kind === 'station') return G.baseStation ? G.baseStation.obj.position : null;
+  // kind === 'point': a fixed world coordinate (roam navigation / system-map destination)
+  if (tgt.kind === 'point') return tgt.pos || null;
   // kind === 'drop': valid only while the drop object is still in the live drops[] array
   return (tgt.drop && drops.includes(tgt.drop)) ? tgt.drop.obj.position : null;
 }
@@ -263,7 +272,14 @@ function autopilotControl(dt, accel, turn) {
     G.player.heading = steerToward(G.player.heading, desired, turn * dt);
     const speed = G.player.vel.length();
     const stopDist = (speed * speed) / (2 * accel);
-    if (dist > stopDist + 0.5) {
+    // TERMINAL BRAKE: once inside the arrive radius, stop chasing and just kill the speed. Without this the
+    // ship keeps steering at a goal it is already on top of, overshoots, re-accelerates, and settles into a
+    // ~10 u/s orbit around it — so an arrival predicate that waits for the ship to come to rest never fires
+    // (a roam destination could never raise its prompt). Excluded for a DROP, whose own pickup radius owns
+    // that endgame and whose trajectory is combat-tuned.
+    if (ap.target.kind !== 'drop' && dist <= ARRIVE_RADIUS) {
+      brakeStep(accel, dt);
+    } else if (dist > stopDist + 0.5) {
       const fwd = forwardVec(G.player.heading);
       G.player.vel.addScaledVector(fwd, accel * dt);
       emitExhaust(G.player.mesh, fwd, G.player.vel, G.player.engine.exhaust);
@@ -273,9 +289,14 @@ function autopilotControl(dt, accel, turn) {
   }
 }
 
-// Fly to the base station to dock (return-to-base only; this is the target that can WIN the mission).
+// Fly to the base station to dock. Valid in TWO out-of-combat states, and the difference matters:
+//   • return-to-base (post-kill) — this is the target that can WIN the mission (checkArrival/canDock);
+//   • roam — you took off for a free flight and clicked home; there is no mission to win, so arriving just
+//     parks and offers to dock (checkStationArrival → G.onBaseArrival).
+// Never during a live fight.
 export function engageAutopilot() {
-  if (!G.returnToBase || !G.player || !G.player.alive || levelRunner.won) return;
+  if (!G.player || !G.player.alive || levelRunner.won) return;
+  if (!(G.returnToBase || G.roam)) return;
   engage({ kind: 'station' });
 }
 // Fly to a loot drop to grab it. Valid whenever a live drop is clicked — combat AND return-to-base.
@@ -283,8 +304,44 @@ export function engageDropAutopilot(drop) {
   if (!G.player || !G.player.alive || levelRunner.won || !drops.includes(drop)) return;
   engage({ kind: 'drop', drop });
 }
+// Fly to a fixed world POINT (roam navigation / system-map destination). Allowed OUT OF COMBAT only
+// (roam or return-to-base) — never during a live fight. `mission` is the offer id to prompt on arrival
+// (or null for a plain point). enterRoam sets G.roam = true BEFORE calling this, so the gate passes.
+export function engagePointAutopilot(pos, mission = null) {
+  if (!G.player || !G.player.alive || levelRunner.won) return;
+  if (!(G.roam || G.returnToBase)) return;
+  engage({ kind: 'point', pos: { x: pos.x, z: pos.z }, mission: mission || null });
+}
 function engage(target) {
   G.autopilot.active = true; G.autopilot.phase = 'brake0'; G.autopilot.target = target;
+}
+
+// A point autopilot never wins a mission by proximity (canDock only fires for kind:'station'). When it
+// reaches ARRIVE_RADIUS and comes to rest, park the ship; if it carries a mission id, hand off to the
+// arrival prompt (which no-ops for a locked/stale offer). Called from update() while autopilot is active.
+function checkPointArrival() {
+  const tgt = G.autopilot.target;
+  if (!tgt || tgt.kind !== 'point') return;
+  const pos = G.player.mesh.position;
+  if (!arrivedAtPoint(tgt.pos, { x: pos.x, z: pos.z }, ARRIVE_RADIUS)) return;
+  if (G.player.vel.length() > 0.6) return; // wait until the kinematic brake has settled the ship
+  const mission = tgt.mission;
+  G.autopilot.active = false; G.autopilot.target = null; // park
+  if (mission && typeof G.onMissionArrival === 'function') G.onMissionArrival(mission);
+}
+
+// Reaching the base station WHILE ROAMING. This is the free-flight counterpart of checkArrival(): there is
+// no mission to win here (levelRunner.returningToBase is false, so canDock/win never runs), so the ship
+// simply parks at the station and the host is asked whether to dock back into the hangar.
+function checkStationArrival() {
+  const tgt = G.autopilot.target;
+  if (!G.roam || !tgt || tgt.kind !== 'station' || !G.baseStation) return;
+  const s = G.baseStation.obj.position, pos = G.player.mesh.position;
+  if (Math.hypot(pos.x - s.x, pos.z - s.z) > BASE_ARRIVE_RADIUS) return;
+  if (G.player.vel.length() > 0.6) return;              // let the terminal brake settle the ship first
+  G.autopilot.active = false; G.autopilot.target = null; // park
+  G.player.vel.set(0, 0, 0);                            // and hold station while the prompt is up
+  if (typeof G.onBaseArrival === 'function') G.onBaseArrival();
 }
 
 // ---------- Homing arrow + HUD hint (world-space arrow + DOM hint) ----------
@@ -409,8 +466,10 @@ export function update(dt) {
 
   let fwd;
   if (G.autopilot.active) {
-    autopilotControl(dt, accel, turn); // sets heading + vel toward the station (brake/rotate/accelerate)
+    autopilotControl(dt, accel, turn); // sets heading + vel toward the target (brake/rotate/accelerate)
     fwd = forwardVec(G.player.heading);
+    checkPointArrival();               // roam point autopilot: park (+ maybe prompt) on arrival
+    checkStationArrival();             // roam dock autopilot: park at the base + offer to go back inside
   } else {
     // --- player: turn ---
     if (keys['KeyA'] || keys['ArrowLeft'])  G.player.heading += turn * dt;
@@ -435,10 +494,16 @@ export function update(dt) {
     if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
   }
 
-  // Flat top speed: pure inertia, but the player never exceeds their max (manual + autopilot alike).
+  // Flat top speed: pure inertia, but the player never exceeds their max whenever they are FLYING IT BY
+  // HAND — which is the whole replay invariant (see capLifted): a replay reproduces recorded INPUT, so
+  // every input-driven leg must clamp exactly as recorded. Autopilot legs are not input-driven, so two of
+  // them run uncapped: roam cruise to a destination, and the return-to-base DOCK (so "Return to base" at
+  // the end of a mission, and clicking the station while roaming, are a quick trip home rather than a slog).
   // Mobility skill raises the cap by maxSpeedMul (1 when no points / on replays).
   const maxSpeed = PLAYER_MAX_SPEED * (G.player.maxSpeedMul || 1);
-  if (G.player.vel.length() > maxSpeed) G.player.vel.setLength(maxSpeed);
+  const docking = G.autopilot.active && !!G.autopilot.target && G.autopilot.target.kind === 'station';
+  const lifted = capLifted({ roam: G.roam, autopilot: G.autopilot.active, docking });
+  if (!lifted && G.player.vel.length() > maxSpeed) G.player.vel.setLength(maxSpeed);
   // the ship keeps flying in its current direction, no matter where the nose points
   G.player.mesh.position.addScaledVector(G.player.vel, dt);
 
@@ -456,7 +521,8 @@ export function update(dt) {
   const p = G.player.mesh.position;
   const dxc = p.x - arenaCenter.x, dzc = p.z - arenaCenter.z;
   const oob = Math.abs(dxc) > ARENA || Math.abs(dzc) > ARENA;
-  if (oob) {
+  // In ROAM the arena boundary is meaningless (you fly the whole system) — never warn, never warp back.
+  if (oob && !G.roam) {
     G.player.oobTime += dt;
     // OOB warp-back is LIFTED during return-to-base (§39) so side missions fought far from (0,0) can fly home
     if (G.player.oobTime >= OOB_RETURN_TIME && !G.returnToBase) warpPlayerToCenter();
@@ -821,28 +887,26 @@ export function update(dt) {
     el.overlay.style.display = 'flex';
   }
 
-  settleView(dt); // camera rigid-follow + sky/stars/planet parallax + moon orbit + speed-field wrap
+  settleView(dt); // camera rigid-follow + stars + system-body bearings + speed-field wrap
 
   // mission set-pieces: their own slow animation (station spin, beams, exhaust, …)
   for (const sp of setPieces) sp.update?.(dt);
 }
 
-// Position the camera + sky backdrop (stars, planet parallax, moons) AND the player-locked speed field on the
-// player. Called at the end of every update(), AND once right after reset() by the replay/cutscene start so a
-// FROZEN pre-fight frame (the Level-0 opening card) is already correctly framed — otherwise the camera/planet/
-// moons sit at the pre-reset spot and visibly JUMP when the re-sim's first tick runs. `dt` only advances the
-// moon orbit; pass 0 to just settle.
+// Position the camera + sky backdrop (stars, the fixed-position star-system bodies) AND the player-locked
+// speed field on the player. Called at the end of every update(), AND once right after reset() by the
+// replay/cutscene start so a FROZEN pre-fight frame (the Level-0 opening card) is already correctly framed —
+// otherwise the camera/backdrop sit at the pre-reset spot and visibly JUMP when the re-sim's first tick runs.
 //
 // This is the VIEW layer: everything here is render-only and MUST stay out of the deterministic tick. The
-// speed-field wrap in particular draws no randomness and touches no sim state (DECISIONS §73/§96).
+// star-system backdrop placement and the speed-field wrap both draw no randomness and touch no sim state
+// (DECISIONS §73/§96/§98).
 export function settleView(dt = 0) {
   // camera: rigidly attached to the player (no lag/floating), fixed angle (does NOT rotate with the ship's turn)
   camera.position.copy(G.player.mesh.position).add(camOffset);
   camera.lookAt(G.player.mesh.position);
   G.stars.position.copy(camera.position); // stars: an infinitely distant backdrop stuck to the camera (no parallax)
-  const PARALLAX = 0.6;                    // the planet shifts slightly as the player moves — a light parallax (depth)
-  G.sky.position.copy(camera.position).addScaledVector(G.player.mesh.position, -PARALLAX);
-  updateMoons(dt);                         // moons orbit the planet (they don't spin — the terminator doesn't wander)
+  updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
   updateSpeedField(G.player.mesh.position.x, G.player.mesh.position.z); // player-locked backdrop (view-only, no RNG)
 }
 
@@ -920,8 +984,8 @@ export function reset() {
   // — a distant landmark the player flies toward. Dynamic import → off the initial bundle + avoids a static
   // sim.js↔world.js↔ghost-battle.js cycle; self-gates on tier/?debug/?bench. It adds its group to scene AND
   // pushes a setPieces entry, so the teardown loop above removes it on the next reset (universal cleanup path).
-  if (G.activeMission?.title !== 'freighter') {
-    import('./ghost-battle.js').then((m) => m.buildGhostBattle()).catch(() => {}); // async; distant decor
+  if (!G.roam && G.activeMission?.title !== 'freighter') {
+    import('./ghost-battle.js').then((m) => m.buildGhostBattle()).catch(() => {}); // async; distant decor (never in roam)
   }
   G.player.mesh.position.set(cx, BULLET_PLANE_Y, cz);
   G.player.heading = 0;                                  // forward = +Z (forwardVec(0) = (0,0,1))
@@ -943,7 +1007,16 @@ export function reset() {
   G.needsSceneWarm = true;
   G.gameStartTime = performance.now(); // start timing a new game (for history)
   G.combatElapsed = 0;  // fresh run: restart the enemy hold-fire grace clock
-  levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
+  arenaBorder.line.visible = !G.roam; // the soft-boundary edge marker is a combat cue only — hidden while roaming
+  // ROAM: no levelRunner (level = null → its update() early-returns → NO spawns), but clear the SAME shared
+  // return-to-base/win/banner state start() would (so a prior mission win's `won:true` can't freeze the
+  // roaming ship). COMBAT: start() the chosen mission / campaign level exactly as before.
+  if (G.roam) {
+    levelRunner.level = null; levelRunner.resetLevelRunnerState();
+    // …and make the home station clickable for the whole roam, the way beginReturn() does after the last
+    // kill: while flying freely you can always click home to be flown back and offered a dock.
+    if (G.baseStation) G.baseStation.active = true;
+  } else levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
   setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
   refreshMusic();   // a live fight → combat music
   el.overlay.style.display = 'none';

@@ -640,9 +640,11 @@ export const LEVELS = [
 for (const l of LEVELS) l.descriptor.enemyTotal = enemyTotalFromPhases(l.descriptor.phases);
 
 // --- maps: a JSON descriptor the client renders generically (buildMap). `generator` picks the code
-// generator; `params` are its inputs. The current scene (blue ocean planet + two cratered moons +
-// stars + the player-locked parallax speed field + sky lighting) is the 'home-system' map. No binary assets —
-// the textures are procedural from these colors/params.
+// generator; `params` are its inputs. The current scene (a to-scale star system — a central star + four
+// planets + the home planet's moons as fixed, permanently distant 3D backdrop bodies, a player-locked
+// wrapping speed field, stars + sky lighting) is the 'home-system' map. No binary assets — the textures are
+// procedural from these params. The `system` block carries the star-system params (geometry + render); the
+// client falls back to its own SYSTEM constant (system-map.js) when it is absent. See §96/§98.
 export const MAPS = [
   {
     name: 'home-system', descriptor: {
@@ -666,11 +668,38 @@ export const MAPS = [
         },
       },
       stars: { count: 2500, radius: 400 },
+      // planet 2 (our base planet) is the ocean world — `ocean` tints its procedural texture; it is pinned
+      // to the world origin by the star-system geometry (system-map.js). `radius/pos/halo` are legacy keys
+      // (the single-planet backdrop) kept only as harmless data — the backdrop now comes from `system`.
       planet: { pos: [-150, -285, -110], radius: 60, ocean: 0x5a82c0, halo: { color: 0x6fa8ff, opacity: 0.13 } },
-      moons: [
-        { radius: 11, color: 0xb9b2a6, orbitR: 96, tilt: 0.5, speed: 0.0625 },
-        { radius: 7, color: 0x8f9aa6, orbitR: 136, tilt: -0.35, speed: -0.04 },
-      ],
+      // Star system: the star + 4 planets + the home planet's moons, drawn as REAL spheres at their own true
+      // (x,z) ON the ecliptic the ship flies over, sunk `depth` below it (DECISIONS §98). So you have to FLY
+      // to a body to see it — at the base only planet 2 is in range — and you can never reach one, since the
+      // ship flies at y=0 and a body's top is `depth − size` below that. `orbitR/periodDays/phase0` are the
+      // to-scale TRAVEL geometry (map screen + anchors); `size`/`depth` are the render placement, so apparent
+      // size is size/depth. The client merges this block into its SYSTEM constant (system-map.js
+      // applySystemSpec), which is then the single source of truth for renderer, map UI and ?roam tunables.
+      system: {
+        // where a body hangs relative to the point on the plane you arrive at — the original home planet's
+        // framing ([-150,-285,-110] radius 60), now applied to every body
+        offset: { x: -150, z: -110 },
+        fade: { full: 520, out: 760 }, // fade a body in/out by distance from the SHIP instead of popping it
+        belt: { inner: 16000, outer: 24000 },
+        star: { name: 'star', color: 0xffd9a0, size: 74, depth: 300 }, // reads ~1.2x a planet
+        planets: [
+          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
+          // Base planet: pinned to the world origin, so its anchor IS the base — the one body you see without
+          // travelling. Its moons orbit it in world units, clear of the planet limb.
+          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 60, depth: 285,
+            ocean: true,
+            moons: [
+              { name: 'moon1', size: 10, orbitR: 112, periodS: 96,  phase0: 0.60, tilt: 0.28,  color: 0x9aa2ad },
+              { name: 'moon2', size: 7,  orbitR: 158, periodS: 171, phase0: 3.40, tilt: -0.18, color: 0x8b8f98 },
+            ] },
+          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 58, depth: 285 },
+          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 52, depth: 285 },
+        ],
+      },
       // Parallax speed field: a fixed pool of point sprites that WRAPS around the player every frame, so
       // the same specks surround you everywhere in the system at constant cost (DECISIONS §96). Layers are
       // ordered near → far; `radius` is the wrap half-box and MUST stay >= 600 so a recycled point
@@ -697,8 +726,19 @@ export const MAPS = [
         // pick a random variant (procedural cratered icosahedra remain the ?debug / load-failure fallback).
         // Only this up-close field uses the model — the distant backdrop is now the Points speed field
         // (a full-disk instanced model field was ~1.6M tris; see DECISIONS §71 + §96).
-        { type: 'asteroid-field', pos: [-550, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
-        { type: 'research-station', pos: [400, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
+        // Near mining base — moved out into the belt (anti-star): 2x its old distance from planet 2. Its
+        // pos MUST equal missions.js `side-mining` center + the system-map marker + the activity zone
+        // (the four-way invariant; see missions.js). Same up-close .glb rig (model unchanged).
+        { type: 'asteroid-field', pos: [-988, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
+        // Two further belt outposts — navigation destinations only (NO mission, so no four-way invariant to
+        // hold). Their (x,z) MUST match ANCHORS.mining2 / ANCHORS.mining3 in client/src/system-map.js, or the
+        // map would fly you to empty space. Slightly smaller/dimmer than the mission site so it still reads
+        // as the main one.
+        { type: 'asteroid-field', pos: [-1480, -100, -1180], scale: 0.9, color: 0x67635d, count: 18, spread: 210, hostSize: 22, beamLen: 30, beamTilt: 0.4, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
+        { type: 'asteroid-field', pos: [-760, -100, 1560], scale: 0.9, color: 0x726c62, count: 18, spread: 210, hostSize: 22, beamLen: 30, beamTilt: 0.6, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
+        // Science (research) station — moved star-ward: 2x its old distance from planet 2. Its pos MUST
+        // equal missions.js `side-research` center + the system-map marker + the activity zone.
+        { type: 'research-station', pos: [928, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },
         // Freighter set-piece: the first .glb-backed set-piece. modelUrl = combat glb (served same-origin,
         // baked in by assets:pull at deploy). `yaw` orients the nose to +Z like a ship model (0 = this
         // model already faces +Z; its bridge/engines are aft at -Z). `exhaust` is an OPTIONAL, server-

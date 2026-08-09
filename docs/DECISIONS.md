@@ -3533,6 +3533,144 @@ CSS box restacks (title + badge / reward sub-line / right-aligned actions) for t
 Cross-ref §27 (the preview this removes), §28 (the viewer machinery that lives on), §92 (one viewer loop
 per view). Brief: `docs/plans/2026-08-09-1534-missions-list-right-column.md`.
 
+## 98. Star system: compact Float32-safe coordinates (no floating-origin) + real bodies laid out on the ecliptic
+
+Building the flyable star system (§94) forced two model choices — how far apart the bodies really sit in
+world coordinates, and how they are rendered. (The distant parallax that sells *speed* is the player-locked
+wrapping speed field of **§96**, unchanged; this entry covers only the star-system geometry + the sky bodies.)
+
+- **Coordinate model — compact, Float32-safe, no floating-origin.** Planet 2 (our base planet) is **pinned
+  to the world origin**, so `arenaCenter`, the set-pieces and the `missions.js` centers stay origin-relative
+  (no combat/mission rewrite). The star sits at `-orbitVec(planet2)` and the other planets at
+  `star + orbitVec(planetᵢ)`, from pure wall-clock angles (`bodyWorldPos`, `system-map.js`; periods 1/1.5/2/2.5
+  real days, fixed `EPOCH`). **"To-scale" means the travel distances only** — the provisional orbit radii are
+  **9k / 15k / 22k / 30k** (planet 2 = orbit 2 at 15k), so the **outermost body reaches |coord| ≈ 45,000 u**
+  (`maxBodyCoord`, unit-asserted ≤ 1e5). At 45k, Float32 relative precision `2^-23` gives ~**0.005 u** jitter
+  vs a ~2 u ship — safe with wide margin, so **no floating-origin** is needed. One star system per server =
+  one shared coordinate space (future MP). *(These radii are Stage-1 live-tune values; the FINAL measured
+  orbit-4 diameter / `max|coord|` after tuning should be recorded here — the numbers above are the shipped
+  provisional set.)*
+- **Rendering — every body is a REAL sphere at its own TRUE position ON the ecliptic.** The ship flies on the
+  plane (y = 0) and the camera looks **down** at it, so a body is placed at its own true (x,z), **sunk
+  `depth` below the plane** and shifted by the shared `SYSTEM.offset` — precisely the placement the game's
+  original single home planet used (`pos [-150,-285,-110]`, radius 60), now applied per body across the whole
+  system (`bodyRenderPos`). Nothing is attached to the camera, so nothing re-projects and nothing can jump;
+  the perspective and parallax are simply what real 3D gives you as you fly over a fixed world. Three
+  properties fall straight out of this and are the whole point:
+  - **You have to travel.** At the base you see planet 2 and the station and *nothing else* — planet 1, 3, 4
+    and the star are 9k–45k units away. `planetAnchor(name)` (where autopilot actually flies) is the body's
+    own (x,z) on the plane, so reaching planet 3 is a real ~15 000 u crossing, and arriving frames it exactly
+    the way the home planet is framed at the base. Bodies **fade in/out by distance from the SHIP**
+    (`bodyFade`, 520→760 u) rather than popping at the far plane; keying the fade to the ship rather than the
+    camera is what stops zoom-out from fading the planet you are parked at.
+  - **A planet is permanently out of reach even directly overhead** — the ship flies at y = 0 and the body's
+    top is `depth − size` below it (`bodyClearance`, unit-asserted > 0 for every body). No looming, no ramming,
+    and no "home is near" special case: the home planet is a backdrop at the base like every other body.
+  - **Moons** orbit the home planet in world units at radii kept clear of its limb (`moonClearance`,
+    unit-asserted > 0 at every orbital angle).
+  - **Rejected: a camera-anchored sky dome (two earlier passes).** First bodies were re-projected every frame
+    by the bearing **from the player** at constant apparent size — flying *past* one swings that bearing
+    through ~180°, so it visibly **jumped**; a moon's projected bearing could cross its planet's and slide
+    *into* the disk; and constant size killed parallax. A second pass fixed the jumping by freezing the
+    bearings and sliding the whole dome by a saturating parallax — but that still put every body in the sky
+    at all times, which is *not* the system: with a fixed near-top-down camera you could never see a body
+    whose bearing pointed behind the ship, bodies sharing a bearing stacked into one blob, and nothing was
+    ever somewhere you could fly *to*. Both are gone. `32-star-system` pins the replacement: over a 12 000 u
+    flight no body may move (drift < 0.5 u), turning must not move one, the ship may never get within 100 u
+    of a body's surface, only `planet2` is drawn at the base, and flying to planet 3's anchor must show
+    planet 3 and hide planet 2.
+  - **Note on `camera.far`:** raised 900 → **1300**, so a body still fading at 760 u from the ship can't be
+    clipped when max zoom puts the camera another ~396 u back. Nothing else reaches that far (fog covers the
+    speed field long before), so it costs ~0.6 bits of depth precision and changes no visuals.
+- **All of the above is VIEW layer** (buildMap/settleView), consumes **zero sim RNG**, and roam
+  (`capLifted` false whenever `G.roam` is false) is never recorded — so recorded/campaign replays stay
+  byte-identical (§73).
+- **Geometry tunables** live in the client `SYSTEM` constants for fast live-tuning (§30). The `home-system`
+  descriptor's `system` block is **merged into** `SYSTEM` at build (`applySystemSpec`), so the renderer, the
+  map screen and the `?roam` tunables all read **one** object — previously the renderer read the descriptor
+  while the map UI read the constant, and the two could silently disagree.
+
+## 99. Fog is anchored to the SHIP, not to the camera (zoom-out no longer dims the game)
+
+`THREE.Fog` fades by **view depth from the camera**, but camera zoom scales `CAM_OFFSET` — at `ZOOM_MAX`
+(3.5) the camera sits ~**396 u** from the ship, far past the zoom-1 `fogNear` of **240**. So zooming out
+dragged the *player ship and the station set-pieces themselves* into the fog and visibly **dimmed** them
+(~43 % fog on the ship at max zoom); nothing was wrong with the lighting, which is distance-independent
+(a `DirectionalLight` + ambient).
+
+`applyZoom()` (engine.js) therefore slides **both** fog planes by the extra camera distance
+(`|CAM_OFFSET|·zoom − |CAM_OFFSET|`), so "how far *past the action* does fog start" is constant at every
+zoom and the change is an exact **no-op at zoom 1** (still 240..600 — no visual/replay diff at the default).
+The same "anchor it to the ship, not the camera" reasoning applies to the star-system bodies' distance fade
+(§98) — keyed to the camera, zooming out faded the planet you were parked at.
+
+Alternatives rejected: **capping zoom** (loses the wide tactical view the zoom-out is for) and **decoupling
+lighting from distance** (lighting was never the cause). `fogFar` is additionally clamped to
+`camera.far − 20` so geometry always fades to invisible *before* the far plane clips it — otherwise widening
+the zoom range would pop the speed field's deep layer at its wrap edge. Guarded by `32-star-system` (at max
+zoom the ship stays in front of `fogNear`; `fogFar` stays inside `camera.far`).
+
+## 100. One navigation component for three hosts; "Take off" and "Launch mission" are different buttons
+
+Choosing where to fly now happens in three places — the base-menu **Map** section, the in-flight **overlay**,
+and **mission activation** — and all three run the *same* `mountSystemNav` (systemmap-ui.js) over the *same*
+`listSystemObjects()` (system-map.js). Hosts differ only by the extra buttons they pass in and by what they
+do with the chosen object: from the base `enterRoam({pos, missionId})`, already flying
+`engagePointAutopilot(...)`. The alternative — a small picker per host — is what we had, and it had already
+drifted: the base menu offered "Fly here" only for missions while the overlay let you pick any marker, and
+the map UI read the client `SYSTEM` constant while the renderer read the map descriptor (§98 fixes that half).
+
+- **Celestial bodies are first-class destinations.** The star and all four planets are ordinary rows in the
+  same list as the base, the research station and the three belt outposts; picking one routes to its
+  *anchor* on the plane, since the body itself is permanently distant (§98). Objects carry an i18n
+  `nameKey`, never a raw id, so the list localizes with everything else.
+- **Pan/zoom is a pure seam** (`map-view.js`, unit-tested) rather than canvas-local state: zoom is bounded
+  and the centre is clamped inside the system disc, so a drag can never fling the map into empty space with
+  no way back — the classic failure of a naive drag-to-pan.
+- **"Take off" ≠ "Launch mission".** Take off (free flight into the system, `enterRoam(null)`) is now on
+  **every** base stage, so the hangar is never a dead end. That collided with the old `#mw-go`, which said
+  "Take off" but dropped you straight into the *fight*. Rather than overload one label, the fight button was
+  renamed **"Launch mission ⚔"** and keeps its behaviour — the campaign flow for levels 2–4 is untouched —
+  while the mission briefing gained **"Autopilot to destination"** for the fly-there-and-be-asked path.
+  *Rejected:* removing the direct launch entirely (cleaner, but it forces a transit before every campaign
+  level) and a single context-sensitive Take off (fewer buttons, but the same label doing two different
+  things). Revisit if the transit becomes the intended campaign pacing.
+- **One gate for every launch control.** `updateTakeoffGate` disables the fight launch, Take off and
+  Autopilot together from the server's `launchable` flag (a required slot — hull/armor, engine or thruster —
+  is empty): a ship that can't fight must not be able to wander off either.
+- Fixed in passing: `body.menu` hid `#rocket-btn`/`#zoom` individually but not the `#touch` layer, so on a
+  phone the **FIRE button stayed live over the base menu** and overlapped the new object list.
+
+## 101. The speed cap protects REPLAYS, not autopilots — so flying home is uncapped
+
+§98/§100 carried the rule "`capLifted` must be false whenever `roam` is false", which made the
+end-of-mission **"Return to base"** flight crawl at the combat cap (`PLAYER_MAX_SPEED` 30) across whatever
+distance the fight ended at. That rule was a **conservative proxy**. The thing replays actually reproduce is
+the recorded **INPUT stream**, so the real invariant is narrower:
+
+> **The cap is never lifted for input-driven flight.** An autopilot leg is not input-driven.
+
+The intro replayer makes this explicit: while the dock autopilot flies home it **freezes the trace index and
+zeroes the key state** (`rs.cutReturning`, main.js) precisely because that leg is not replayed from input.
+Measured before changing anything: lifting the cap for the dock leg leaves `22-intro-replay` **byte-identical**
+(kills=4, cards p0..p4, won=true, tick 2213/2730 unchanged). So two legs run uncapped and only these — roam +
+autopilot (cross the system without a chore), and the **dock** autopilot in *either* state. Manual flight
+stays capped everywhere, and a mid-combat **drop-grab** autopilot stays capped too (top speed is a balance
+parameter inside a fight). Unit tests pin each cell of that table.
+
+**Clicking the home station now works while roaming**, not just after the last kill: `engageAutopilot` accepts
+`G.roam`, `reset()` marks the station clickable for the whole roam, and arriving raises a **"Dock at the
+station?"** confirm (`G.onBaseArrival`) — the flown counterpart of the map overlay's teleporting "Return to
+hangar". It can win nothing: `levelRunner.returningToBase` is false in roam, so `canDock`/`win` never run.
+
+**Terminal brake (the bug uncapping exposed).** `autopilotControl` chased its goal until the *kinematic*
+brake distance said otherwise, so a fast arrival overshot, re-accelerated and settled into a ~10 u/s **orbit
+around the target** — an arrival predicate waiting for the ship to come to rest then never fired, and a roam
+destination could never raise its prompt. The autopilot now simply brakes once inside `ARRIVE_RADIUS`.
+Excluded for a **drop**, whose own pickup radius owns that endgame and whose trajectory is combat-tuned. The
+dock/win path is unaffected either way — `canDock` fires on the first tick inside the radius, regardless of
+speed.
+
 ## Future ideas
 
 solid asteroids with bounce ·

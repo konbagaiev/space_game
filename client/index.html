@@ -72,7 +72,14 @@
         <span id="mw-mission-text"></span>
       </div>
       <div id="mw-mission-reward"></div>
-      <button id="mw-go" data-i18n="ui.button.take_off">Take off 🚀</button>
+      <!-- Mission actions. #mw-go LAUNCHES THE FIGHT for the active mission (it is no longer the generic
+           "Take off" — that is the always-available #mw-takeoff below, which flies you into the system).
+           #mw-mission-nav autopilots to this mission's place in the system instead, where arriving raises
+           the "Start mission?" prompt; it is shown only for missions that HAVE a system object. -->
+      <div id="mw-mission-actions">
+        <button id="mw-go" data-i18n="ui.button.launch_mission">Launch mission ⚔</button>
+        <button id="mw-mission-nav" data-i18n="ui.systemmap.autopilot">Autopilot to destination</button>
+      </div>
       <div id="mw-go-note"></div>
     </div>
     <!-- Loadout screen (docs/plans/2026-08-08-base-menu-redesign.md, Slice C): the ship sits centered with
@@ -94,10 +101,20 @@
     <div class="mw-view" id="mw-view-character">
       <div id="mw-character"></div>
     </div>
-    <!-- stub view for the not-yet-built sections (Map / Craft) -->
+    <!-- stub view for the not-yet-built sections (Craft) -->
     <div class="mw-view" id="mw-view-stub">
       <h2 id="mw-stub-title"></h2>
       <p id="mw-stub-text"></p>
+    </div>
+    <!-- Map: the shared navigation component — system map pinned left, object list right
+         (populated by systemmap-ui.mountSystemNav). Its own action row carries Take off + Autopilot,
+         so the global launch bar below is hidden while this view is open (#mainwin.map-open). -->
+    <div class="mw-view" id="mw-view-map"></div>
+    <!-- Global launch bar: "Take off" is available on EVERY base-menu stage (free flight into the star
+         system — enterRoam(null)), gated by the same required-slots check as the mission launch. -->
+    <div id="mw-launch">
+      <button id="mw-takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
+      <div id="mw-takeoff-note"></div>
     </div>
   </section>
   <!-- Right column. Its contents are per-view and mutually exclusive (CSS-gated):
@@ -243,6 +260,9 @@
      just appears frozen at 1 fps. See DECISIONS §83. -->
 <div id="levelwarm"><div id="levelwarm-text" data-i18n="ui.loading.level">Preparing the sector...</div></div>
 <canvas id="minimap" width="132" height="132"></canvas>
+<!-- Out-of-combat "Map" button: opens the system-map overlay. Shown only in roam / return-to-base (where the
+     #minimap radar is hidden, having no enemies/arena to show); hidden in a live fight. Wired in main.js. -->
+<button id="map-btn" data-i18n="ui.mainwin.map">Map</button>
 <div id="perf" data-i18n="ui.perf.idle">FPS — · draw — · tris —</div>
 <div id="touch">
   <div id="stick-zone"></div>

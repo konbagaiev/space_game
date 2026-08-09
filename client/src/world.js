@@ -1,12 +1,15 @@
-// World building: the arena boundary, the starry sky, the planet + moons + the player-locked speed field,
-// and the procedural mission set-pieces — assembled from a map descriptor by buildMap(). The
-// reassigned per-map handles (sky/stars/skyAmbient/skySun/arenaDrift/…) live on the shared state
-// bag G; the arena geometry (ARENA/OOB constants, arenaCenter, arenaBorder) is exported const.
+// World building: the arena boundary, the starry sky, the fixed-position star-system backdrop (a star
+// + 4 planets + the home planet's moons), the player-locked wrapping speed-field, and the procedural
+// mission set-pieces — assembled
+// from a map descriptor by buildMap(). The reassigned per-map handles (sky/stars/systemBodies/
+// skyAmbient/skySun/arenaDrift/…) live on the shared state bag G; the arena geometry (ARENA/OOB constants,
+// arenaCenter, arenaBorder) is exported const.
 import * as THREE from 'three';
-import { scene, skyScene, renderer } from './engine.js';
-import { G, moons, setPieces } from './state.js';
+import { scene, skyScene, renderer, camera } from './engine.js';
+import { G, setPieces } from './state.js';
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
+import { SYSTEM, bodyRenderPos, bodyFade, moonAngle, applySystemSpec } from './system-map.js'; // pure star-system geometry + body placement
 import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
@@ -17,6 +20,7 @@ import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field 
 // marker + the out-of-bounds warning/warp-back; see the OOB logic in update()). NOTHING is hard-clamped
 // to it: the player, enemies, bullets and rockets all move and fight freely beyond it. See DECISIONS §2.
 export const ARENA = 360; // half-size of the square arena (x4); 1.5x the original 240 -> a bigger combat zone
+const ORIGIN = new THREE.Vector3(0, 0, 0); // the base / spawn point — the stand-in ship position before one exists
 export const OOB_WARN_DELAY = 2.0;   // seconds continuously out of bounds before the warning shows
 export const OOB_RETURN_TIME = 30.0; // seconds continuously out of bounds before the auto warp-back
 
@@ -125,7 +129,7 @@ function makeStars(count, radius, brightFraction = 0.02) {
     vertexColors: true,
     transparent: false,     // opaque -> drawn in the pass before the planet (so the planet occludes them)
     fog: false,             // fog must not dim the stars
-    depthTest: false,       // pure backdrop - planet/moons always occlude them
+    depthTest: false,       // pure backdrop - the star-system bodies always occlude them
     depthWrite: false,
   }));
   dim.renderOrder = -1;
@@ -278,9 +282,9 @@ function makeNebulaSky(prm, bake) {
   return rt;
 }
 
-// ---------- Planet with moons (built by buildMap from the map descriptor) ----------
+// ---------- Procedural body textures (built by buildMap for the star-system backdrop) ----------
 // The camera looks almost straight down, so the "sky" is visible only near the top edge of the
-// screen (the -Z direction). That is where the planet sits as a distant background.
+// screen (the -Z direction). That is where the backdrop bodies sit as a distant background.
 
 // Minimal procedural surface: an ocean world with depth variation and soft white clouds, tinted to
 // the map's ocean color.
@@ -384,28 +388,105 @@ function makeMoonTexture(baseHex) {
   return tex;
 }
 
-// One moon: ORBITs the planet (only its position changes). Lit by the same real sky-scene light as
-// the planet -> terminators are consistent. Added to the `sky` group; tracked in `moons`.
-function makeMoon(radius, color, orbitR, tilt, speed) {
-  const geo = new THREE.SphereGeometry(radius, 32, 32);
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: makeMoonTexture(color), roughness: 1.0, metalness: 0.0, fog: false }));
-  G.sky.add(mesh);
-  const m = { mesh, orbitR, tilt, speed, angle: Math.random() * Math.PI * 2 };
-  moons.push(m);
-  return m;
+// ---------- Star-system bodies (star + 4 planets + the home planet's moons) ----------
+// REAL spheres at REAL world positions on the ecliptic the ship flies over: each body sits at its own true
+// (x,z), sunk `depth` below the plane and shifted by SYSTEM.offset (system-map.js bodyRenderPos) — the same
+// placement the game's original single home planet used, now per body. Nothing is attached to the camera,
+// so nothing re-projects and nothing can jump; the perspective and parallax are just real 3D. At the base
+// only planet 2 is in range — the other bodies are thousands of units away, past the camera's far plane, and
+// are simply not drawn until you FLY to them (updateSystemBodies fades them in near that plane rather than
+// popping them). And because the ship flies at y = 0 while a body's top is `depth − size` below it, a planet
+// is permanently out of reach even directly overhead. See DECISIONS §98.
+// Pure view layer (called from settleView), consumes ZERO sim RNG → replay-neutral.
+
+// The central star: an emissive core sphere + a soft additive glow sprite (reuses the star-glow texture).
+function makeStarMesh(spec) {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(spec.size, 32, 32),
+    new THREE.MeshBasicMaterial({ color: spec.color, fog: false })
+  );
+  g.add(core);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: getStarGlowTexture(), color: spec.color, transparent: true,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  }));
+  glow.scale.setScalar(spec.size * 3.0);
+  g.add(glow);
+  return g;
 }
 
-// position of a moon on a tilted orbit around the planet (the body itself does not rotate)
-export function updateMoons(dt) {
-  for (const m of moons) {
-    m.angle += m.speed * dt;
-    const px = Math.cos(m.angle) * m.orbitR;
-    const pz = Math.sin(m.angle) * m.orbitR;
-    m.mesh.position.set(
-      planetPos.x + px,
-      planetPos.y - pz * Math.sin(m.tilt),
-      planetPos.z + pz * Math.cos(m.tilt)
-    );
+// Build the star + 4 planet meshes (and the home planet's moons) into G.sky. Planet 2 keeps the ocean look
+// (map descriptor `d.planet.ocean`); the others reuse the cratered moon texture in their palette color. Each
+// handle keeps a reference to its live SYSTEM spec (so the ?roam tunables keep working) and to the materials
+// updateSystemBodies fades. Positions come from bodyRenderPos.
+function buildSystemBodies(sys, oceanHex) {
+  G.systemBodies = [];
+  // `mats` remembers each material's ORIGINAL transparency: the fade may force transparency on, but it must
+  // never turn it off on something that was always transparent (the star's additive glow sprite).
+  const add = (mesh, spec, isStar, materials) => {
+    G.sky.add(mesh);
+    const h = { mesh, name: spec.name, spec, builtSize: spec.size, isStar, moons: [],
+                mats: materials.map((mat) => ({ mat, alwaysTransparent: mat.transparent })) };
+    G.systemBodies.push(h);
+    return h;
+  };
+  const star = makeStarMesh(sys.star);
+  add(star, sys.star, true, star.children.map((c) => c.material));
+  for (const p of sys.planets) {
+    const tex = p.ocean ? makePlanetTexture(oceanHex ?? p.color) : makeMoonTexture(p.color);
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.0, fog: false });
+    const h = add(new THREE.Mesh(new THREE.SphereGeometry(p.size, 48, 48), mat), p, false, [mat]);
+    // Moons are siblings in the same group (not children of the planet mesh) so a live `size` tweak on the
+    // planet can't scale their orbit radius with it.
+    for (const m of p.moons || []) {
+      const mm = new THREE.Mesh(
+        new THREE.SphereGeometry(m.size, 24, 24),
+        new THREE.MeshStandardMaterial({ map: makeMoonTexture(m.color), roughness: 0.95, metalness: 0.0, fog: false })
+      );
+      G.sky.add(mm);
+      h.moons.push({ mesh: mm, spec: m });
+    }
+  }
+  // PLACE THEM NOW. Positions are absolute, so they must be correct the moment the map exists — not one
+  // settleView later. The base menu renders the scene while the sim is NOT ticking (G.gameStarted false),
+  // so a body left at its default (0,0,0) sat exactly where the camera looks: the emissive star and its
+  // additive glow washed the whole hangar backdrop yellow with the ocean planet stacked inside it.
+  updateSystemBodies();
+}
+
+// Refresh the bodies for this frame. Their WORLD POSITIONS are absolute and player-independent — this only
+// re-reads them so the ?roam console tunables (offset / per-body depth+size) and the slow wall-clock orbital
+// drift take effect — then:
+//   • revolves the home planet's moons around it (wall-clock, view-only), and
+//   • fades a body in by distance from the camera, so flying toward one brings it up smoothly instead of
+//     popping it into existence the moment it crosses camera.far. Fully faded-out bodies are hidden, which
+//     is also what keeps the far side of the system free (at the base you see planet 2 and nothing else).
+export function updateSystemBodies() {
+  if (!G.systemBodies || !G.sky) return;
+  const now = Date.now();
+  // The player may not exist yet (buildMap runs before the ship is built) — the base sits at the origin, so
+  // that is the right stand-in: it places the hangar backdrop exactly as the player will first see it.
+  const ship = (G.player && G.player.mesh) ? G.player.mesh.position : ORIGIN;
+  for (const b of G.systemBodies) {
+    const rp = bodyRenderPos(b.name, now);
+    b.mesh.position.set(rp.x, rp.y, rp.z);
+    b.mesh.scale.setScalar((b.spec.size || b.builtSize) / b.builtSize); // live `size` tuning, 1 by default
+    // fade by distance from the SHIP, so camera zoom can't fade the planet you are parked at
+    const a = bodyFade(b.mesh.position.distanceTo(ship));
+    b.mesh.visible = a > 0;
+    for (const e of b.mats) { e.mat.opacity = a; e.mat.transparent = a < 1 || e.alwaysTransparent; }
+    for (const m of b.moons) {
+      const ang = moonAngle(m.spec, now), r = m.spec.orbitR;
+      m.mesh.position.set(
+        b.mesh.position.x + Math.cos(ang) * r,
+        b.mesh.position.y + Math.sin(ang) * r * Math.sin(m.spec.tilt),
+        b.mesh.position.z + Math.sin(ang) * r * Math.cos(m.spec.tilt)
+      );
+      m.mesh.visible = b.mesh.visible;
+      m.mesh.material.opacity = a;
+      m.mesh.material.transparent = a < 1;
+    }
   }
 }
 
@@ -882,9 +963,9 @@ export function buildSetPiece(spec) {
 }
 
 // ---------- Build the scene from a map descriptor (see server catalog_seed.js MAPS) ----------
-// Generic generator: builds the sky backdrop (background, lights, planet, moons, stars), the player-locked
-// speed field, and any mission set-pieces from `descriptor`. The combat-scene light is constant (readability).
-const planetPos = new THREE.Vector3();  // planet center (moons orbit it); mutated in place by buildMap
+// Generic generator: builds the sky backdrop (background, lights, star + 4-planet system bodies, stars),
+// the player-locked speed-field, and any mission set-pieces from `descriptor`. The combat-scene light is
+// constant (readability).
 export function buildMap(descriptor) {
   const d = descriptor;
   G.currentMapDescriptor = descriptor; // remembered for the ?tune panel's rebuild button
@@ -920,33 +1001,22 @@ export function buildMap(descriptor) {
   // with the quality tier (gfx.starScale). See DECISIONS §43.
   const starMul = bakeNebula ? 0.4 : 1.0;
   G.stars = makeStars(Math.round(d.stars.count * G.gfx.starScale * starMul), d.stars.radius);
-  G.stars.renderOrder = -1; // draw stars first, before the planet and moons
+  G.stars.renderOrder = -1; // draw stars first, before the star-system bodies
   skyScene.add(G.stars);
 
+  // The sky group holds the star + 4 planets + the home planet's moons. It stays at the WORLD ORIGIN and
+  // never moves: the bodies carry absolute world positions on the ecliptic (bodyRenderPos), so you fly over
+  // them with real perspective and nothing is camera-anchored (see updateSystemBodies / §98). The
+  // descriptor's `system` block is merged into SYSTEM first, so the renderer, the map screen and the ?roam
+  // tunables all read one object.
+  applySystemSpec(descriptor.system);
   G.sky = new THREE.Group();
+  G.sky.position.set(0, 0, 0);
   skyScene.add(G.sky);
-  planetPos.set(...d.planet.pos);
+  buildSystemBodies(SYSTEM, d.planet && d.planet.ocean);
 
-  const planet = new THREE.Mesh(
-    new THREE.SphereGeometry(d.planet.radius, 64, 64),
-    new THREE.MeshStandardMaterial({ map: makePlanetTexture(d.planet.ocean), roughness: 0.9, metalness: 0.0, fog: false })
-  );
-  planet.position.copy(planetPos);
-  G.sky.add(planet);
-  if (d.planet.halo) { // atmospheric rim (glow along the edge)
-    const halo = new THREE.Mesh(
-      new THREE.SphereGeometry(d.planet.radius + 4, 48, 48),
-      new THREE.MeshBasicMaterial({ color: d.planet.halo.color, transparent: true, opacity: d.planet.halo.opacity, side: THREE.BackSide, fog: false })
-    );
-    halo.position.copy(planetPos);
-    G.sky.add(halo);
-  }
-
-  for (const mn of d.moons) makeMoon(mn.radius, mn.color, mn.orbitR, mn.tilt, mn.speed);
-
-  // Player-locked wrapping speed field (was: an origin-anchored asteroid ring — DECISIONS §96). The
-  // descriptor's dead `d.asteroids` block is a one-release compatibility shim for older published clients;
-  // this client reads `d.speedField` only (and falls back to the defaults when it is missing).
+  // Player-locked wrapping speed field (was: an origin-anchored asteroid ring — DECISIONS §96). Reads
+  // `d.speedField` only (falls back to the defaults when missing); the legacy `d.asteroids` shim was retired.
   disposeSpeedField();                       // buildMap re-runs per level/map switch — the old ring LEAKED here
   const base = normalizeSpeedField(d.speedField);
   speedField = makeSpeedField(applySpeedFieldSpec(isDev() ? loadSpeedTune(window.localStorage, base) : base));

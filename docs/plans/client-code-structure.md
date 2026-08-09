@@ -209,7 +209,7 @@ So adopt this pattern (the keystone of the whole refactor):
    `renderer`, `scene`, `skyScene`, `camera`, the lights (`sun`, `combatAmbient`), `gltfLoader`.
 2. **Entity collections** → exported `const` arrays/Maps in `state.js`, mutated in place everywhere:
    `bullets`, `enemies`, `rockets`, `explosions`, `sparks`, `shockwaves`, `trail`, `smoke`,
-   `setPieces`, `moons`, `CATALOG`, `levelRunner`, `keys`, `touchAim`, `soundMap`.
+   `setPieces`, `CATALOG`, `levelRunner`, `keys`, `touchAim`, `soundMap`.
 3. **Reassigned scalars** → a single mutable **state bag** `export const G = { … }`; write `G.player = …`
    instead of `player = …`. These are the values that get reassigned and therefore *cannot* be plain
    exported `let`. From the current top-level scan they are:
@@ -276,7 +276,7 @@ client/
 
     # domains (one banner-group each)
     sound-routing.js  # tracksFor/sfxFor/musicForState/refreshMusic/tryUnlockAudio/preload glue
-    world.js          # makeStars/makePlanetTexture/makeMoon(s)/makeSpeedField+updateSpeedField/setpiece builders/buildMap/arenaBorder
+    world.js          # makeStars/makePlanetTexture/makeMoonTexture/buildSystemBodies+updateSystemBodies/makeSpeedField+updateSpeedField/setpiece builders/buildMap/arenaBorder
     ship-factory.js   # shipModelCfg/modelSpec/applyShipModel/makeShip
     ship-build.js     # resolveWeapon/Components/buildMounts/buildGroups/buildPlayer/spawnEnemy(Ship)/fireMount/updateGroups
     projectiles.js    # spawnBullet/spawnExplosion/spawnShipExplosion/spawnTrail/emitExhaust/spawnRocket/detonateRocket/spawnSmoke/findTargetInSector
@@ -349,8 +349,8 @@ This is the highest-leverage slice; once it lands, every later slice is a cheap 
 ### Slices 3–N — peel one domain per commit (leaf-first)
 Order by dependency depth (fewest inbound edges first), re-running both suites each time:
 
-3. **`world.js`** — stars/planet/moons/speed field/setpieces/`buildMap`/`arenaBorder`. Touches
-   `scene`/`skyScene` (engine) + `G.sky/stars/moons/setPieces/mapSetpieces` (state; the speed field's own
+3. **`world.js`** — stars/star-system bodies/speed field/setpieces/`buildMap`/`arenaBorder`. Touches
+   `scene`/`skyScene` (engine) + `G.sky/stars/systemBodies/setPieces/mapSetpieces` (state; the speed field's own
    handle is module-local to `world.js`). Visual check:
    `09-mission-setpieces`, `08-arena-boundaries`.
 4. **`ship-factory.js`** — `shipModelCfg`/`modelSpec`/`applyShipModel`/`makeShip`. Visual: `01-smoke`,

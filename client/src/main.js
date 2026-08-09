@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
-import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
+import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, setZoom, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap
@@ -24,15 +24,17 @@ import { el } from './dom.js'; // single fail-loud inventory of shared index.htm
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars/XP bar+skill badge)
 import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
+import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
+import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
+import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
-import { showMain, launchMission, refreshMissions, missionOffers, activeMissionId, mainBriefing, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers
-import { shopItemViewer } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel
+import { showMain, launchMission, refreshMissions, enterRoam, missionOffers, activeMissionId, mainBriefing, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers + roam entry
+import { shopItemViewer, updateTakeoffGate } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel + the launch gate (32-star-system drives it)
 import { showWelcome, applyTranslations, welcomeStaged, mountLangSwitch } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
 import { recenterAndQuantize, MAX_GHOST_SHIPS, MAX_GHOST_BULLETS } from './ghost-battle-track.js'; // ?dev in-game backdrop recorder + synthetic bake
@@ -65,6 +67,7 @@ const REC = evalRecord(typeof location !== 'undefined' ? location.search : ''); 
 const rs = makeReplaySession();
 const sr = makeSessionRecorder(); // always-on live-session recorder (funnel analytics)
 rs.play = evalPlayback(typeof location !== 'undefined' ? location.search : ''); // { id, cutscene } | null
+const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
 if (REC || rs.play) G.replayMode = true; // dev record/playback sessions are READ-ONLY: the sim must not advance progress / bank credits / deposit loot on a (re)played win
 let recSeed = 0;              // mulberry32 seed installed at record start (captured into the trace)
@@ -125,10 +128,10 @@ addEventListener('click', (e) => { if (e.target.closest('button')) audio.sfx.uiC
 // engine.applyOrientation() re-runs on resize. The floating ⛶ button + A2HS hint key off those classes.
 
 // ---------- World moved to src/world.js ----------
-// Arena (ARENA/OOB consts, arenaCenter, arenaBorder), the starry sky, planet/moons, the player-locked
-// speed field, the mission set-pieces and buildMap()/updateMoons()/buildSetPiece() come from world.js. The
-// reassigned per-map handles (sky/stars/G.skyAmbient/G.skySun/G.currentMapDescriptor/G.mapSetpieces/G.arenaDrift)
-// live on the shared state bag G.
+// Arena (ARENA/OOB consts, arenaCenter, arenaBorder), the starry sky, the star-system backdrop bodies +
+// the player-locked speed-field, the mission set-pieces and buildMap()/updateSystemBodies()/updateSpeedField()/
+// buildSetPiece() are imported from world.js. The reassigned per-map handles (sky/stars/systemBodies/
+// G.skyAmbient/G.skySun/G.currentMapDescriptor/G.mapSetpieces/G.arenaDrift) live on the shared bag G.
 
 // ---------- Ship factory moved to src/ship-factory.js ----------
 // shipModelCfg/modelSpec/makeShip/applyShipModel + the shared gltfLoader + SHIP_MODEL_LEN are imported
@@ -340,13 +343,84 @@ function engageObjectAt(e) {
   // 1) a chest under the pointer wins (works in combat AND return-to-base)
   const drop = dropUnderPointer(e);
   if (drop) { engageDropAutopilot(drop); return true; }
-  // 2) otherwise the clickable station (return-to-base only)
-  if (!G.returnToBase || !G.baseStation || !G.baseStation.active) return false;
+  // 2) otherwise the clickable station — out of combat only (post-kill return-to-base OR free roam, where
+  //    clicking home flies you back and offers to dock; see engageAutopilot)
+  if (!G.baseStation || !G.baseStation.active) return false;
   stationRay.setFromCamera(eventNdc(e), camera);
   if (stationRay.intersectObject(G.baseStation.obj, true).length) { engageAutopilot(); return true; }
   return false;
 }
 renderer.domElement.addEventListener('click', (e) => { engageObjectAt(e); });
+
+// ---------- System-map screen (out-of-combat "Map" button → freeze + pick a destination) ----------
+// Context-sensitive corner: during a LIVE fight the #minimap stays the battle radar. Out of combat (roam /
+// return-to-base) the radar is pointless (no enemies, no arena), so it is HIDDEN and a visible #map-btn takes
+// its place; pressing it opens the system-map overlay, which freezes the game via G.mapOpen (a raw loop-skip,
+// NOT setPaused). Picking a destination re-routes the autopilot; "Return to hangar" ends roam. The toggle
+// (radar ↔ Map button) is driven per-frame in animate() by refreshMapControl().
+// ?roam dev readout (Stage 1e): speed / pos / dist-to-orbit-4-edge / in-zone, plus the backdrop tunables
+// exposed on window.__roam.SYSTEM for live console tweaking (`offset`, `fade` and each body's depth/size all
+// affect the NEXT frame, since SYSTEM is shared by reference and updateSystemBodies re-reads it every
+// frame). Gated strictly behind ?roam — never built in the shipped path.
+let roamReadoutEl = null;
+function buildRoamReadout() {
+  roamReadoutEl = document.createElement('div');
+  roamReadoutEl.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9999;font:600 12px/1.5 monospace;color:#9fe6ff;background:rgba(0,0,0,.62);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre';
+  document.body.appendChild(roamReadoutEl);
+  window.__roam = { SYSTEM, enterRoam, openSystemMap: openSystemMapScreen }; // console live-tuning + shortcuts
+}
+function updateRoamReadout() {
+  if (!roamReadoutEl || !G.player) return;
+  const p = G.player.mesh.position;
+  const zones = activityZoneCenters(); if (G.activeMission && G.activeMission.center) zones.push(G.activeMission.center);
+  const inZone = inActivityZone(p.x, p.z, zones, ZONE_RADIUS);
+  const orbit4 = SYSTEM.planets[SYSTEM.planets.length - 1].orbitR;
+  // nearest body + how far its anchor still is — the readout you actually want while crossing the system
+  let near = '', nearD = Infinity;
+  for (const d of listSystemObjects()) {
+    const dist = Math.hypot(d.pos.x - p.x, d.pos.z - p.z);
+    if (dist < nearD) { nearD = dist; near = d.id; }
+  }
+  roamReadoutEl.textContent =
+    `roam · speed ${G.player.vel.length().toFixed(1)}\n`
+    + `pos  ${p.x.toFixed(0)}, ${p.z.toFixed(0)}\n`
+    + `orbit-4 edge ${(orbit4 - Math.hypot(p.x, p.z)).toFixed(0)}\n`
+    + `${inZone ? 'in-zone' : 'open'} · ${G.autopilot && G.autopilot.active ? 'autopilot (uncapped)' : 'manual (capped)'}\n`
+    + `nearest ${near} ${nearD.toFixed(0)}u · OFF ${SYSTEM.offset.x},${SYSTEM.offset.z}`;
+}
+
+function outOfCombat() { return !!(G.roam || G.returnToBase); }
+function openSystemMapScreen() {
+  openSystemMap({
+    interactive: outOfCombat(),
+    missionOffers,
+    // already flying → re-route the autopilot in place (no re-entry into roam). A mission object carries
+    // its offer id so arriving raises the "Start mission?" prompt; every other object just parks there.
+    onPick: (obj) => engagePointAutopilot(obj.pos, obj.missionId || null),
+    onReturnToHangar: () => {
+      G.roam = false; G.gameStarted = false;
+      document.body.classList.add('menu');
+      showMain(null); // back to the base menu exactly as today
+    },
+  });
+}
+window.__openSystemMap = openSystemMapScreen; // test/tool hook (also reachable via __game below)
+// The out-of-combat "Map" button (replaces the hidden radar while roaming). Desktop click + touchstart (so a
+// second thumb works while a finger holds the stick, like #return-btn — DECISIONS §42). Never opens twice.
+const minimapEl = document.getElementById('minimap');
+const mapBtnEl = document.getElementById('map-btn');
+if (mapBtnEl) {
+  const openMap = (e) => { if (e) e.preventDefault(); if (outOfCombat() && !isSystemMapOpen()) openSystemMapScreen(); };
+  mapBtnEl.addEventListener('click', openMap);
+  mapBtnEl.addEventListener('touchstart', openMap, { passive: false });
+}
+// Per-frame corner toggle: in a live fight show the radar; out of combat hide it and show the Map button.
+// (body.menu CSS already hides both on the base-menu screen, so this only governs the in-world states.)
+function refreshMapControl() {
+  const ooc = outOfCombat();
+  if (minimapEl) minimapEl.style.display = ooc ? 'none' : '';
+  if (mapBtnEl) mapBtnEl.style.display = ooc ? 'block' : 'none';
+}
 
 // Hover cursors (mouse only — meaningless on touch). Hovering a clickable station shows a first-party
 // "dock here" glyph; hovering a loot chest shows the OS grab hand. A chest hover wins over the dock hover
@@ -355,7 +429,11 @@ let dockCursorOn = false;
 let grabCursorOn = false;
 const setDockCursor = (on) => { if (on !== dockCursorOn) { dockCursorOn = on; renderer.domElement.classList.toggle('dock-cursor', on); } };
 const setGrabCursor = (on) => { if (on !== grabCursorOn) { grabCursorOn = on; renderer.domElement.classList.toggle('grab-cursor', on); } };
-const stationClickable = () => !!(G.returnToBase && G.baseStation && G.baseStation.active && G.player && G.player.alive && !levelRunner.won);
+// The station is a click target out of combat: after the last kill (return-to-base) AND while roaming.
+// `G.baseStation.active` is the flag both states set — during a live fight it is false, so the hover
+// cursor and the click stay off.
+const stationClickable = () => !!((G.returnToBase || G.roam) && G.baseStation && G.baseStation.active
+  && G.player && G.player.alive && !levelRunner.won);
 if (!Device.hasTouch) {
   let lastHoverRay = 0;
   renderer.domElement.addEventListener('pointermove', (e) => {
@@ -668,7 +746,7 @@ function animate() {
     // 2× because one fixed step ran per frame). Each tick stays a deterministic fixed dt; we capture (record)
     // or apply (playback) exactly one tick per step. Only runs once armed (record: after "Start"; playback:
     // once models loaded) — before that the ship sits idle with the real model on screen (no placeholder flash).
-    if ((recCapturing || rs.armed || live) && !G.paused && !cutFrozen) {
+    if ((recCapturing || rs.armed || live) && !G.paused && !G.mapOpen && !cutFrozen) {
       replayAcc += Math.min(rawSec, 0.1); // clamp: after a stall/tab-throttle, don't fast-forward a huge burst
       let steps = 0;
       // `rs.done` (trace exhausted / intro ended) must gate PLAYBACK only, never live play. The intro's end
@@ -704,7 +782,7 @@ function animate() {
       if (rs.play && rs.done && rs.cut && !rs.cutDone) cutsceneEnd(); // uncover the victory overlay when the fight ends
     }
   } else {
-    if (!G.paused) update(dt); // pause freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
+    if (!G.paused && !G.mapOpen) update(dt); // pause / open system map freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
     // ?bench record: snapshot the resolved input AFTER update() so the trace replays identically (see bench.js)
     if (benchRecording) benchRecord.push({ k: Object.keys(keys).filter((c) => keys[c]), t: touchAim.active ? [touchAim.heading, touchAim.thrust] : null });
   }
@@ -726,6 +804,8 @@ function animate() {
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
+  refreshMapControl(); // out of combat: hide the radar, show the "Map" button (and vice-versa in a fight)
+  if (ROAM) updateRoamReadout(); // ?roam dev sizing/zone/backdrop readout (never built in the shipped path)
   updateShieldBubble(G.paused ? 0 : Math.min(rawSec, 0.05)); // advances the shared FX clock + tracks the ship (frozen while paused)
   updateEnemyShieldBubbles(); // enemy hit-ripples (pooled, tier-capped) — MUST run after updateShieldBubble (shared clock)
   const t2 = DEV ? performance.now() : 0; // end of DOM overlays
@@ -858,6 +938,32 @@ if (location.search.includes('debug')) {
     // leaves rs.done=true exactly as the accumulator caller does (main.js ~1256). A scenario then Takes off into
     // live Level 1 and proves the accumulator still steps (Fix A) and the session is recorded (Fix B).
     simulateIntroEnd() { introMode = true; cutsceneEnd(); rs.done = true; return { playDone: rs.done, playActive: !!rs.play }; },
+    // --- star-system roam / navigation hooks (32-star-system scenario) ---
+    enterRoam, engagePointAutopilot,
+    engageAutopilot,                                // what a click on the home station does
+    get baseStation() { return G.baseStation; },    // { obj, active } — `active` = clickable right now
+    set onBaseArrival(fn) { G.onBaseArrival = fn; }, // stands in for the "Dock at the station?" prompt
+    // Deterministic sim stepping for headless roam tests (software-GL rAF is too slow to advance the live
+    // accumulator meaningfully in a few seconds). Steps update(dt) N times at the fixed sim step — same
+    // fixed dt the live loop uses, so it exercises the real per-tick sim (autopilot, cap, arrival).
+    stepSim(n = 1) { for (let i = 0; i < n; i++) update(BENCH_DT); },
+    openSystemMap: openSystemMapScreen, closeSystemMap,
+    // Re-place the camera + the whole sky backdrop for the CURRENT player position without stepping the sim
+    // — lets 32-star-system teleport the ship and read the backdrop's response directly.
+    settleView,
+    systemAnchor: planetAnchor, // the point ON THE PLANE a body is reached at (32-star-system flies to one)
+    updateTakeoffGate,          // re-apply the launch gate after a test flips activeShip.launchable
+    // Rebuild the scene from the live descriptor WITHOUT running a frame — 32-star-system uses this to pin
+    // that buildMap alone places the backdrop (the hangar renders while the sim is not ticking).
+    rebuildMap() { buildMap(G.currentMapDescriptor); },
+    // Camera zoom, for the zoom-out dimming guard: setZoom sets the target, tickZoom(dt) eases + re-anchors
+    // the fog to the ship (engine.js applyZoom).
+    zoom: { set: setZoom, tick: tickZoom },
+    get roam() { return G.roam; },
+    set roam(v) { G.roam = v; },
+    get mapOpen() { return G.mapOpen; },
+    get systemBodies() { return G.systemBodies; }, // [{ mesh, name, spec, dir, moons }] star + 4 planets + moons
+    get autopilot() { return G.autopilot; },       // { active, phase, target } — assert point-nav in headless
   };
 }
 
@@ -1497,7 +1603,7 @@ async function bootstrap() {
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
 
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map
-    buildMap(map.descriptor); // build the scene backdrop: planet, moons, stars, the speed field, sky light
+    buildMap(map.descriptor); // build the scene backdrop: star + 4 planets, stars, speed-field, sky light
 
     // the player's active ship (auto-registers) decides the default selection
     let active = null;
@@ -1524,7 +1630,15 @@ async function bootstrap() {
     // gate: drop the new player straight into the fight — ship visible + controllable at once, no welcome
     // screen, no Take-off. Everything else lands as before (Level 1 → welcome, level 2+ → Main Window
     // briefing). The default player ship was already built above (buildPlayerFor), so we just start the sim.
-    if (REC) {
+    if (ROAM) {
+      // ?roam dev sandbox: drop straight into the flyable star system (no menu, no level). Same G.roam
+      // state the real base-menu Map path (enterRoam) lands in — the player spawns at planet 2 with NO
+      // enemies (the !G.roam guard in reset() skips levelRunner). For live-tuning sizing / speed-field / feel.
+      document.body.classList.remove('menu');
+      G.gameStarted = true; G.roam = true;
+      reset();
+      buildRoamReadout();
+    } else if (REC) {
       enterRecordMode(); // idle on the real ship; "Start recording" begins capture from tick 0
     } else if (rs.play) {
       startPlaybackSession(rs.trace); // re-run the recorded fight on the real engine

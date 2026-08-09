@@ -5,6 +5,101 @@
 
 ## 2026-08-09
 
+- **[2026-08-09-1456-star-system-map] "Return to base" now flies home at full speed, and you can click the
+  station while roaming.** The end-of-mission return crawled at the combat cap because the speed cap was
+  gated on `roam` — a conservative proxy for the real replay invariant, which is that a replay reproduces the
+  recorded **INPUT** stream, and an **autopilot leg is not input-driven** (the intro replayer literally
+  freezes the trace index and zeroes input while the dock autopilot flies home). Measured first: uncapping
+  the dock leg leaves `22-intro-replay` byte-identical. So the dock autopilot is now uncapped in **both**
+  states, while manual flight stays capped everywhere and a mid-combat drop-grab autopilot stays capped too.
+  Separately, **clicking the home station now works during free flight**, not only after the last kill:
+  it engages the dock autopilot, flies you back, and raises a **"Dock at the station?"** confirm (EN+RU) that
+  ends the flight in the base menu — the flown counterpart of the map's teleporting "Return to hangar". It
+  wins nothing (there is no mission in roam). Fixed en route, exposed by the higher arrival speed: the
+  autopilot chased its goal past it, overshot and settled into a **~10 u/s orbit around the target**, so an
+  arrival predicate waiting for the ship to stop never fired — it now brakes once inside the arrive radius
+  (drops excluded; their pickup radius owns that endgame). Guards: `capLifted` unit tests pin every cell of
+  the new table; `32-star-system` flies home from 1 400 u and asserts the station is clickable in roam, the
+  trip peaks above the combat cap, the ship parks at the station, the prompt fires and nothing is won. §101.
+- **[2026-08-09-1456-star-system-map] Fix: the base menu had a yellow-and-blue backdrop.** `buildMap` built
+  the star-system bodies but left their placement to the per-frame `updateSystemBodies`, and the hangar
+  renders the scene while the sim is **not** ticking (`G.gameStarted` false) — so every body kept its
+  default `(0,0,0)`, stacking the emissive star, its additive glow and the ocean planet exactly where the
+  camera looks. `buildSystemBodies` now places (and fades) them immediately, and `updateSystemBodies` falls
+  back to the origin — the base — when no ship exists yet. Guarded: `32-star-system` rebuilds the map with
+  no frame in between and asserts no body sits at the origin and only the home planet is drawn (the guard
+  fails with the fix reverted).
+- **[2026-08-09-1456-star-system-map] Star-system navigation UI: one map+object-list component everywhere,
+  and "Take off" on every base stage.** Choosing a destination now uses a single shared component
+  (`systemmap-ui.mountSystemNav`) in all three hosts — the base-menu **Map** section, the in-flight overlay
+  and mission activation. Layout is the **map pinned left** (next to the base's nav menu) with the **object
+  list on the right**; the list and the markers are the same 10 objects (`listSystemObjects`): the **star and
+  all four planets as first-class, selectable destinations** alongside the home station, the research station
+  and **three** belt outposts (two new ones, `ANCHORS.mining2/3`, with matching asteroid-field set-pieces so
+  arriving finds rigs, not empty space). Selecting a row or a marker highlights **both**; "Autopilot to
+  destination" then flies you there — `enterRoam({pos, missionId})` from the base, `engagePointAutopilot` if
+  already flying — and a body routes to its anchor, never to the (permanently distant) planet. The map
+  **pans and zooms** (wheel + pinch, drag + one-finger drag, ± buttons) through a new pure, unit-tested
+  `map-view.js` seam whose clamps make it impossible to fling the map into empty space or zoom to a
+  degenerate scale. Objects are named through i18n (`ui.object.*`, EN + RU) — the star is **Vega**, the
+  planets **Vega I–IV** — never raw ids; locked mission sites stay greyed with the unlock hint.
+  **"Take off" is now on every stage** (Character/Missions/Loadout/Map/Craft) and means *free flight into the
+  system*; on Map it sits inside the component's action row beside Autopilot. Because the old `#mw-go` said
+  "Take off" but launched the **fight**, it was renamed **"Launch mission ⚔"** and keeps its behaviour (the
+  campaign flow is untouched); the mission briefing also gained "Autopilot to destination" for the
+  fly-there-then-"Start mission?" path. All launch controls share one gate — a missing hull/armor, engine or
+  thruster disables the fight launch, Take off and Autopilot together, with the reason shown. Fixed in
+  passing: `body.menu` never hid the `#touch` layer, so on a phone the **FIRE button stayed live on top of
+  the base menu**. Guards: new `map-view.test.js` (inverse transform, zoom + centre clamps, cursor-anchored
+  zoom, marker picking) + `system-map.test.js` object-model cases; `32-star-system` now drives the real UI
+  (overlay re-routes in place, base Map lists 10 objects, selection enables Autopilot, Take off present on
+  every stage, gate greys everything); headless rect check shows no fixed-HUD overlap on desktop or phone.
+  `22-intro-replay` byte-identical. No new assets. §100.
+- **[2026-08-09-1456-star-system-map] The star system is now REAL bodies laid out on the ecliptic — you fly
+  to a planet instead of watching a sky dome — and zooming out no longer dims the game.** The
+  bearing-projected camera-anchored backdrop is gone. The ship flies on the ecliptic plane and the camera
+  looks **down** at it, so the star, the 4 planets and the home planet's two (restored) **moons** are now
+  real spheres at **their own true (x,z) on that plane**, sunk `depth` below it at a shared framing offset —
+  exactly the placement the game's original single home planet had, applied per body. Visible effects: at the
+  base you see **only planet 2 and the station**; the other bodies are 9 000–45 000 u away and you **fly to
+  them** (`planetAnchor` = a body's own (x,z), so reaching planet 3 is a real ~15 000 u crossing, and
+  arriving frames it exactly the way the home planet is framed at base), fading in by distance from the ship
+  rather than popping in at the far plane. Nothing is camera-anchored any more, so flying past a planet no
+  longer makes it **jump** (passing one used to swing its bearing ~180°); a moon can no longer slide **into**
+  its planet (unit-asserted clear of the limb at every angle); and a body is **permanently out of reach even
+  directly overhead** — its top sits `depth − size` below the flight plane — so the "home planet looms at the
+  base" behaviour is gone with no special case. The descriptor's `system` block is now **merged into** the
+  client `SYSTEM` constant (`applySystemSpec`), so the renderer, the map screen and the `?roam` tunables can
+  no longer disagree. `camera.far` 900 → 1300 so a still-fading body can't be clipped at max zoom.
+  Separately, a real dimming bug: `THREE.Fog` measures depth **from the camera**, and zoom moves the camera
+  back, so at max zoom-out the **player ship and the station set-pieces faded into the fog** (camera ~396 u
+  vs `fogNear` 240). Fog is now re-anchored to the ship, an exact no-op at zoom 1. Guards:
+  `system-map.test.js` gains absolute-placement, unreachability, fly-there-fade, moon-clearance and anchor
+  cases; `32-star-system` flies 12 000 u through the origin asserting no body moves, the ship never gets
+  within 100 u of a body's surface, only planet 2 is drawn at the base, flying to planet 3's anchor shows
+  planet 3 and hides planet 2, and the ship stays in front of the fog at max zoom. `22-intro-replay`
+  unchanged (kills=4, cards p0..p4, won). No new assets — moons are procedural. §98, §99.
+- **[2026-08-09-1456-star-system-map] Flyable to-scale star system + autopilot navigation (on main's speed-field).**
+  Out of combat the home map is now a to-scale, flyable star system. A central **star + 4 planets** render as
+  a **bearing-projected sky backdrop** (`system-map.js` geometry + `world.js` `buildSystemBodies`/
+  `updateSystemBodies`) at constant apparent size, re-projected each frame by their true bearing from the
+  player, **replacing the single planet + moons**. The parallax **speed-field is main's already-shipped one
+  (§96)** — this feature keeps it unchanged and adds the backdrop bodies + navigation on top. New **roam**
+  state (`G.roam`) — entered via the base-menu **Map** section (`enterRoam`) or the `?roam` dev sandbox — with
+  the player **speed cap lifted outside activity zones** (`capLifted({roam,inZone})`, which is **false whenever
+  roam is off**, so every recorded/campaign replay stays byte-identical) and OOB warp-back disabled. A
+  **system-map screen** (`systemmap-ui.js`; base-menu Map + a mini-map tap **out of combat**) freezes the game
+  via a raw `G.mapOpen` loop-skip (not `setPaused`) and lets you pick a destination → **autopilot-to-point**
+  (`engagePointAutopilot`, a new `point` target kind that never wins by proximity); arriving at a mission
+  marker whose offer exists shows a localized **"Start mission?"** prompt reusing `missionOffers`/`launchMission`
+  (locked markers park, no prompt). `levelRunner.resetLevelRunnerState()` was extracted so the roam `reset()`
+  clears win/return state without spawning (fixes the frozen-ship / roam-enemy failure modes). Data: the
+  near-mining + research set-pieces + `missions.js` centers moved out (2× distance, four-way invariant kept),
+  and `catalog_seed.js` gained a `system` block (moons dropped; main's `speedField` + dead `asteroids` shim
+  kept). New EN+RU `ui.systemmap.*` strings. Tests: pure `system-map.test.js` (incl. the `capLifted` invariant
+  + Float32 bound) + the `32-star-system` visual scenario with a post-win roam guard; `22-intro-replay` is
+  unchanged (replay-neutral) and main's `31-speed-field` still passes. Replay-neutral, zero sim RNG.
+  DECISIONS §98 (coordinate model + bearing backdrop; speed-field is §96). docs/plans/2026-08-09-1456-star-system-map.md.
 - **Both Grab (tractor) components are 30 % stronger.** Base Grab (id 29) `strength` 10 → **13**,
   Advanced grab (id 30) 20 → **26** in `server/src/catalog_seed.js`. Since grab reach is emergent from
   the inverse-square field (`range = √(strength·5/0.4)`), a +30 % stat is **≈+14 % reach**: base

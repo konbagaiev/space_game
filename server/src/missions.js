@@ -45,9 +45,13 @@ const MISSION_XP = 1000;
 // `center` is the combat zone's location in the shared world (x,z); it matches the mission's set-piece
 // position in catalog_seed.js so each mission fights over its own structure, away from the campaign (0,0).
 // (left = -x, right = +x, "up"/north = -z.)
+// FOUR-WAY INVARIANT (star-system map): each center MUST equal the matching set-piece pos in
+// catalog_seed.js `home-system`, the system-map marker (system-map.js ANCHORS), AND the roam activity-zone
+// center — mining (-988,0) and research (928,0) were moved out for the flyable system (2x their old distance
+// from planet 2). Freighter is out of scope (unchanged; its render pos is +50 z ahead of the center).
 const FLAVORS = [
-  { type: 'mining',    titleKey: 'mission.mining.title',    descKey: 'mission.mining.desc',    center: { x: -550, z: 0 } },
-  { type: 'research',  titleKey: 'mission.research.title',  descKey: 'mission.research.desc',  center: { x: 400, z: 0 } },
+  { type: 'mining',    titleKey: 'mission.mining.title',    descKey: 'mission.mining.desc',    center: { x: -988, z: 0 } },
+  { type: 'research',  titleKey: 'mission.research.title',  descKey: 'mission.research.desc',  center: { x: 928, z: 0 } },
   { type: 'freighter', titleKey: 'mission.freighter.title', descKey: 'mission.freighter.desc', center: { x: -100, z: -450 } },
 ];
 

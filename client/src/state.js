@@ -20,7 +20,8 @@ export const G = {
   rotated: false,                                               // portrait-phone 90° rotation currently active
   player: null,                                                 // the active player ship (built by buildPlayer in bootstrap/takeoff)
   // --- world (built/reassigned by buildMap in world.js; read by the loop + ?tune panel + reset) ---
-  sky: null,                  // THREE.Group holding the planet + moons (sky scene)
+  sky: null,                  // THREE.Group (at the world origin) holding the star + planets + moons (sky scene)
+  systemBodies: null,         // [{ mesh, name, spec, dir, moons, isStar }] — fixed-position star-system bodies
   stars: null,                // THREE.Group starfield (follows the camera in the loop)
   skyAmbient: null,           // sky-scene ambient light (mutated live by the ?tune panel)
   skySun: null,               // sky-scene directional light (the terminator source)
@@ -64,6 +65,13 @@ export const G = {
   // --- run lifecycle (read across sim/UI; written by reset/take-off/pause) ---
   gameStarted: false,         // false on the welcome screen (backdrop renders, but the level isn't running)
   paused: false,              // client-side freeze: the sim update is skipped while true (rendering continues)
+  // --- star-system roam / navigation (docs/plans/2026-08-09-1456-star-system-map.md) ---
+  roam: false,                // interactive out-of-combat flight state: world up, no levelRunner, no enemies,
+                              //   speed cap lifted outside activity zones. NEVER true during a recorded/campaign
+                              //   fight → capLifted() is false there → replays stay byte-identical.
+  mapOpen: false,             // the system-map overlay is open → the render loop skips update() (raw freeze,
+                              //   NOT setPaused, so the "Paused" overlay doesn't stack under the map)
+  onMissionArrival: null,     // callback(missionId) set by mainwindow: show the "Start mission?" prompt on arrival
   // --- return-to-base / autopilot (set after the last kill; read across sim/HUD/input) ---
   returnToBase: false,                             // true after the last kill: OOB lifted, arrow + hint on, station clickable
   // click-to-fly autopilot. target = the base station (return-to-base dock) OR a loot drop (fly to grab it).
@@ -89,7 +97,6 @@ export const flipbooks = []; // sprite-sheet explosion quads (flipbook-fx.js) { 
 export const enemies = [];
 
 // --- Per-map decor ---
-export const moons = [];     // sky-scene moons, built by buildMap()
 export const setPieces = []; // combat-scene set-pieces { obj, update } — decor, ignored by gameplay
 
 // --- Sound routing ---

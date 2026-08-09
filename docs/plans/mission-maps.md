@@ -13,7 +13,7 @@
 > **One giant world map** based on the current `home-system`: the planet stays; set-pieces sit at
 > different points around it, and **missions happen at different locations within this one map** (the
 > combat zone is positioned — or slowly drifts — past the relevant set-piece). Set-pieces are
-> **procedurally generated in code** for now (like the planet/moons/primitive ships), **not** sourced
+> **procedurally generated in code** for now (like the star-system bodies/primitive ships), **not** sourced
 > `.glb`. English-only. Planning window — no code here; this specs the procedural generation for the
 > work session.
 
@@ -49,8 +49,8 @@
 - **Render layer → the combat `scene`, lit by the combat light (from above), same as the ships.** The
   mission set-pieces are the *local battle environment* — the things we fight around — so we must see them
   **the same way as the fight**: in the combat scene, lit from above by the combat sun. (Contrast,
-  DECISIONS §5: the **planet & moons** stay in `skyScene`, lit by a distant sun with a day/night
-  terminator; **stars** are unlit. Those are the far cosmic backdrop; the set-pieces are the near
+  DECISIONS §5: the **star + planets (bearing-projected)** stay in `skyScene`, lit by a distant sun with a
+  day/night terminator; **stars** are unlit. Those are the far cosmic backdrop; the set-pieces are the near
   environment.)
 - **Decoration ≠ collidable — the key point.** Being in the combat `scene` does NOT make a mesh a target:
   hit/collision and AI iterate the **gameplay entity arrays** (enemies / bullets / rockets / player), not
