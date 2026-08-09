@@ -911,14 +911,6 @@
     "source": "Return to hangar",
     "context": "Button on the in-flight star-system map that ends roaming and goes back to the base menu."
   },
-  "ui.systemmap.launch": {
-    "source": "Launch into system",
-    "context": "Base-menu Map button: leave the hangar and fly freely into the star system (roam)."
-  },
-  "ui.systemmap.flyHere": {
-    "source": "Fly here",
-    "context": "Button next to a reachable destination on the star-system map: autopilot the ship to it."
-  },
   "ui.systemmap.locked": {
     "source": "Unlocks at Level 4",
     "context": "Hint shown when the player picks a mission destination that is not yet available (side missions unlock at Level 4)."
@@ -958,6 +950,90 @@
   "ui.button.take_off_mission": {
     "source": "🚀 Take off — {mission}",
     "context": "Take-off button label when a side mission is the active one; {mission} is its title."
+  },
+  "ui.button.launch_mission": {
+    "source": "Launch mission ⚔",
+    "context": "Button on the mission briefing that drops the player straight into the FIGHT for the active mission. Distinct from 'Take off', which flies out into the star system instead. Keep the ⚔ emoji."
+  },
+  "ui.button.launch_mission_named": {
+    "source": "⚔ Launch — {mission}",
+    "context": "Same fight-launch button when a side mission is the active one; {mission} is its title."
+  },
+  "ui.systemmap.objects": {
+    "source": "Objects",
+    "context": "Header above the list of places you can fly to on the star-system navigation screen (star, planets, stations). Short."
+  },
+  "ui.systemmap.autopilot": {
+    "source": "Autopilot to destination",
+    "context": "Button that flies the ship to the object selected on the star-system map."
+  },
+  "ui.systemmap.pick": {
+    "source": "Pick an object on the map or in the list.",
+    "context": "Hint under the object list when nothing is selected yet on the navigation screen."
+  },
+  "ui.systemmap.selected": {
+    "source": "Selected: {object}",
+    "context": "Hint under the object list showing the current selection; {object} is its localized name."
+  },
+  "ui.object.kind.star": {
+    "source": "Star",
+    "context": "Object-type label in the navigation list — the system's central star. One word."
+  },
+  "ui.object.kind.planet": {
+    "source": "Planet",
+    "context": "Object-type label in the navigation list. One word."
+  },
+  "ui.object.kind.base": {
+    "source": "Home base",
+    "context": "Object-type label in the navigation list — the player's own station. Short."
+  },
+  "ui.object.kind.station": {
+    "source": "Station",
+    "context": "Object-type label in the navigation list — an orbital facility. One word."
+  },
+  "ui.object.kind.mining": {
+    "source": "Mining site",
+    "context": "Object-type label in the navigation list — an asteroid-mining outpost. Short."
+  },
+  "ui.object.star": {
+    "source": "Vega",
+    "context": "Proper name of the system's central star. The home system IS Vega (the game is 'Vega Sentinels'), so the star carries that name. Keep as a name."
+  },
+  "ui.object.planet1": {
+    "source": "Vega I",
+    "context": "Astronomical designation of the innermost planet. Roman numeral = orbit order from the star; keep the numeral."
+  },
+  "ui.object.planet2": {
+    "source": "Vega II",
+    "context": "Astronomical designation of the HOME planet, the one the player's station orbits. Keep the numeral."
+  },
+  "ui.object.planet3": {
+    "source": "Vega III",
+    "context": "Astronomical designation of the third planet. Keep the numeral."
+  },
+  "ui.object.planet4": {
+    "source": "Vega IV",
+    "context": "Astronomical designation of the outermost planet. Keep the numeral."
+  },
+  "ui.object.base": {
+    "source": "Home Station",
+    "context": "Name of the player's own station — canon calls it simply 'the station'. Short."
+  },
+  "ui.object.science": {
+    "source": "Research Station",
+    "context": "Name of the science/research station in the system (canon: a research station)."
+  },
+  "ui.object.mining": {
+    "source": "Mining Belt I",
+    "context": "Name of the first asteroid-belt mining outpost; the numeral distinguishes the three sites."
+  },
+  "ui.object.mining2": {
+    "source": "Mining Belt II",
+    "context": "Name of the second asteroid-belt mining outpost."
+  },
+  "ui.object.mining3": {
+    "source": "Mining Belt III",
+    "context": "Name of the third asteroid-belt mining outpost."
   },
   "ui.shop.action.remove": {
     "source": "Remove",

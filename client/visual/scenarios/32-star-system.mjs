@@ -226,4 +226,91 @@ export default async function ({ page, assert, shot }) {
   assert.equal(guard.won, false, 'entering roam after a win clears levelRunner.won (ship not frozen)');
   assert.equal(guard.enemies, 0, 'no enemies leak into roam after a win');
   assert.ok(guard.moved > 2, `the ship advances under autopilot in post-win roam (moved ${guard.moved.toFixed(1)}u)`);
+
+  // 6. THE IN-ROAM NAVIGATION OVERLAY is the SAME shared component: a full object list, and picking a
+  //    destination re-routes the autopilot IN PLACE (no re-entry into roam).
+  const overlay = await page.evaluate(() => {
+    const g = window.__game;
+    g.openSystemMap();
+    const rows = [...document.querySelectorAll('#systemmap-overlay .sysnav-row')].map((r) => r.dataset.obj);
+    const acts = [...document.querySelectorAll('#systemmap-overlay .sysnav-actions button')].map((b) => b.dataset.act);
+    // select a planet in the list, then fly to it
+    document.querySelector('#systemmap-overlay .sysnav-row[data-obj="planet3"]').click();
+    const selected = document.querySelectorAll('#systemmap-overlay .sysnav-row.sel').length;
+    document.querySelector('#systemmap-overlay .sysnav-actions [data-act="__autopilot"]').click();
+    return { rows, acts, selected, closed: !g.mapOpen, roam: g.roam,
+             active: g.autopilot.active, kind: g.autopilot.target && g.autopilot.target.kind,
+             target: g.autopilot.target && g.autopilot.target.pos };
+  });
+  assert.equal(overlay.rows.length, 10, `the overlay lists every object (got ${overlay.rows.length})`);
+  assert.ok(overlay.rows.includes('star') && overlay.rows.includes('planet1') && overlay.rows.includes('mining3'),
+    'star, planets and all three mining outposts are selectable objects');
+  assert.ok(overlay.acts.includes('return') && overlay.acts.includes('__autopilot'),
+    'the overlay carries Return to hangar + Autopilot to destination');
+  assert.equal(overlay.selected, 1, 'picking a list row highlights exactly that row');
+  assert.equal(overlay.closed, true, 'flying closes the overlay and unfreezes the game');
+  assert.equal(overlay.roam, true, 'and it re-routes IN PLACE — still roaming, no re-entry');
+  assert.equal(overlay.active, true, 'the autopilot is engaged toward the picked object');
+  assert.equal(overlay.kind, 'point', 'as a "point" target (never wins by proximity)');
+  const p3 = await page.evaluate(() => window.__game.systemAnchor('planet3'));
+  assert.ok(Math.hypot(overlay.target.x - p3.x, overlay.target.z - p3.z) < 1,
+    'and it heads for that planet\'s ANCHOR on the plane, not the (unreachable) body');
+
+  // 7. BASE-MENU NAVIGATION: the same component under the Map section, plus "Take off" on EVERY stage.
+  const base = await page.evaluate(async () => {
+    const g = window.__game;
+    g.roam = false;
+    g.showMain(null);
+    const pick = (w) => document.querySelector(`#mw-menu [data-mw="${w}"]`).click();
+    const shown = (id) => { const e = document.getElementById(id); if (!e) return false;
+      const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; };
+    // Take off is reachable from every stage, not just Missions
+    const takeoffOn = {};
+    for (const w of ['character', 'missions', 'loadout', 'craft']) { pick(w); takeoffOn[w] = shown('mw-takeoff'); }
+    // …and on Map it moves INTO the component's action row, beside "Autopilot to destination"
+    pick('map');
+    const mapHasGlobalBar = shown('mw-launch');
+    const mapActs = [...document.querySelectorAll('#mw-view-map .sysnav-actions button')].map((b) => b.dataset.act);
+    const rows = [...document.querySelectorAll('#mw-view-map .sysnav-row')].map((r) => r.dataset.obj);
+    // nothing selected yet → autopilot is disabled
+    const autoDisabledBefore = document.querySelector('#mw-view-map [data-act="__autopilot"]').disabled;
+    document.querySelector('#mw-view-map .sysnav-row[data-obj="mining2"]').click();
+    const autoDisabledAfter = document.querySelector('#mw-view-map [data-act="__autopilot"]').disabled;
+    const markedRow = document.querySelector('#mw-view-map .sysnav-row.sel').dataset.obj;
+    // the mission LAUNCH button is now distinct from Take off
+    pick('missions');
+    const goText = document.getElementById('mw-go').textContent;
+    return { takeoffOn, mapHasGlobalBar, mapActs, rows, autoDisabledBefore, autoDisabledAfter, markedRow, goText };
+  });
+  for (const [stage, ok] of Object.entries(base.takeoffOn)) {
+    assert.ok(ok, `"Take off" is available on the ${stage} stage`);
+  }
+  assert.equal(base.mapHasGlobalBar, false, 'on Map the global launch bar steps aside…');
+  assert.ok(base.mapActs.includes('takeoff') && base.mapActs.includes('__autopilot'),
+    '…because Take off sits inside the map\'s action row next to Autopilot to destination');
+  assert.equal(base.rows.length, 10, 'the base-menu Map lists the same 10 objects');
+  assert.equal(base.autoDisabledBefore, true, 'Autopilot is disabled until something is selected');
+  assert.equal(base.autoDisabledAfter, false, 'and enabled once an object is picked');
+  assert.equal(base.markedRow, 'mining2', 'the picked row is the highlighted one');
+  assert.ok(!/take off/i.test(base.goText),
+    `the mission button no longer says "Take off" — it launches the fight (got "${base.goText}")`);
+  await shot('base-map');
+
+  // 8. TAKE-OFF GATE: a ship missing a required slot (hull/armor, engine or thrusters) can neither launch a
+  //    fight NOR wander off into the system — every launch control greys out together.
+  const gate = await page.evaluate(() => {
+    const g = window.__game, ship = g.activeShip;
+    const was = ship.launchable;
+    const read = () => ({ go: document.getElementById('mw-go').disabled,
+                          takeoff: document.getElementById('mw-takeoff').disabled });
+    ship.launchable = false; g.updateTakeoffGate(ship);
+    const blocked = read();
+    const note = document.getElementById('mw-takeoff-note').textContent;
+    ship.launchable = was === undefined ? true : was; g.updateTakeoffGate(ship);
+    return { blocked, open: read(), note };
+  });
+  assert.equal(gate.blocked.go, true, 'no engine/armor → the mission launch is disabled');
+  assert.equal(gate.blocked.takeoff, true, 'no engine/armor → "Take off" is disabled too');
+  assert.ok(gate.note.length > 0, `and the player is told why (got "${gate.note}")`);
+  assert.equal(gate.open.takeoff, false, 'a launchable ship can take off again');
 }

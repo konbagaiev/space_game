@@ -729,6 +729,12 @@ export const MAPS = [
         // pos MUST equal missions.js `side-mining` center + the system-map marker + the activity zone
         // (the four-way invariant; see missions.js). Same up-close .glb rig (model unchanged).
         { type: 'asteroid-field', pos: [-988, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
+        // Two further belt outposts — navigation destinations only (NO mission, so no four-way invariant to
+        // hold). Their (x,z) MUST match ANCHORS.mining2 / ANCHORS.mining3 in client/src/system-map.js, or the
+        // map would fly you to empty space. Slightly smaller/dimmer than the mission site so it still reads
+        // as the main one.
+        { type: 'asteroid-field', pos: [-1480, -100, -1180], scale: 0.9, color: 0x67635d, count: 18, spread: 210, hostSize: 22, beamLen: 30, beamTilt: 0.4, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
+        { type: 'asteroid-field', pos: [-760, -100, 1560], scale: 0.9, color: 0x726c62, count: 18, spread: 210, hostSize: 22, beamLen: 30, beamTilt: 0.6, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
         // Science (research) station — moved star-ward: 2x its old distance from planet 2. Its pos MUST
         // equal missions.js `side-research` center + the system-map marker + the activity zone.
         { type: 'research-station', pos: [928, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },

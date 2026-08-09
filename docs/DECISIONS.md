@@ -3610,6 +3610,37 @@ lighting from distance** (lighting was never the cause). `fogFar` is additionall
 the zoom range would pop the speed field's deep layer at its wrap edge. Guarded by `32-star-system` (at max
 zoom the ship stays in front of `fogNear`; `fogFar` stays inside `camera.far`).
 
+## 100. One navigation component for three hosts; "Take off" and "Launch mission" are different buttons
+
+Choosing where to fly now happens in three places — the base-menu **Map** section, the in-flight **overlay**,
+and **mission activation** — and all three run the *same* `mountSystemNav` (systemmap-ui.js) over the *same*
+`listSystemObjects()` (system-map.js). Hosts differ only by the extra buttons they pass in and by what they
+do with the chosen object: from the base `enterRoam({pos, missionId})`, already flying
+`engagePointAutopilot(...)`. The alternative — a small picker per host — is what we had, and it had already
+drifted: the base menu offered "Fly here" only for missions while the overlay let you pick any marker, and
+the map UI read the client `SYSTEM` constant while the renderer read the map descriptor (§98 fixes that half).
+
+- **Celestial bodies are first-class destinations.** The star and all four planets are ordinary rows in the
+  same list as the base, the research station and the three belt outposts; picking one routes to its
+  *anchor* on the plane, since the body itself is permanently distant (§98). Objects carry an i18n
+  `nameKey`, never a raw id, so the list localizes with everything else.
+- **Pan/zoom is a pure seam** (`map-view.js`, unit-tested) rather than canvas-local state: zoom is bounded
+  and the centre is clamped inside the system disc, so a drag can never fling the map into empty space with
+  no way back — the classic failure of a naive drag-to-pan.
+- **"Take off" ≠ "Launch mission".** Take off (free flight into the system, `enterRoam(null)`) is now on
+  **every** base stage, so the hangar is never a dead end. That collided with the old `#mw-go`, which said
+  "Take off" but dropped you straight into the *fight*. Rather than overload one label, the fight button was
+  renamed **"Launch mission ⚔"** and keeps its behaviour — the campaign flow for levels 2–4 is untouched —
+  while the mission briefing gained **"Autopilot to destination"** for the fly-there-and-be-asked path.
+  *Rejected:* removing the direct launch entirely (cleaner, but it forces a transit before every campaign
+  level) and a single context-sensitive Take off (fewer buttons, but the same label doing two different
+  things). Revisit if the transit becomes the intended campaign pacing.
+- **One gate for every launch control.** `updateTakeoffGate` disables the fight launch, Take off and
+  Autopilot together from the server's `launchable` flag (a required slot — hull/armor, engine or thruster —
+  is empty): a ship that can't fight must not be able to wander off either.
+- Fixed in passing: `body.menu` hid `#rocket-btn`/`#zoom` individually but not the `#touch` layer, so on a
+  phone the **FIRE button stayed live over the base menu** and overlapped the new object list.
+
 ## Future ideas
 
 solid asteroids with bounce ·

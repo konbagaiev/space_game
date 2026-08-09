@@ -328,13 +328,21 @@ function renderShopPanel() {
 // The Loadout item always opens the same screen; reset to the slot panel + re-render (starts the viewer).
 export function showBayView() { panelMode = 'slot'; selectedSlot = null; selectedStashRef = null; if (shopData && shopData.activeShip) renderBay(); }
 
-// Gate the mission Take-off button: a missing required slot (sold hull/engine/thruster) blocks launch.
+// Gate EVERY launch control from one place: a missing required slot (sold hull/armor, engine or thruster)
+// blocks the mission launch (#mw-go), the always-available "Take off" into the system (#mw-takeoff) and the
+// mission's "Autopilot to destination" alike — a ship that can't fight must not be able to wander off
+// either. The Map view's own buttons read the same flag via mainwindow's canTakeOff().
 export function updateTakeoffGate(active) {
-  const btn = document.getElementById('mw-go');
-  const note = document.getElementById('mw-go-note');
   const ok = !active || active.launchable !== false;
-  btn.disabled = !ok;
-  note.textContent = ok ? '' : t('ui.shop.cant_launch');
+  const hint = ok ? '' : t('ui.shop.cant_launch');
+  for (const [btnId, noteId] of [['mw-go', 'mw-go-note'], ['mw-takeoff', 'mw-takeoff-note']]) {
+    const btn = document.getElementById(btnId);
+    const note = document.getElementById(noteId);
+    if (btn) btn.disabled = !ok;
+    if (note) note.textContent = hint;
+  }
+  const nav = document.getElementById('mw-mission-nav');
+  if (nav) nav.disabled = !ok;
 }
 
 export function renderBay() {

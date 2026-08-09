@@ -26,7 +26,7 @@ import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, pos
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
-import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listDestinations, planetAnchor } from './system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
+import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
@@ -34,7 +34,7 @@ import { makeSessionRecorder } from './session-record.js'; // always-on live-ses
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
 import { showMain, launchMission, refreshMissions, enterRoam, missionOffers, activeMissionId, mainBriefing, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers + roam entry
-import { shopItemViewer } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel
+import { shopItemViewer, updateTakeoffGate } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel + the launch gate (32-star-system drives it)
 import { showWelcome, applyTranslations, welcomeStaged, mountLangSwitch } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
 import { recenterAndQuantize, MAX_GHOST_SHIPS, MAX_GHOST_BULLETS } from './ghost-battle-track.js'; // ?dev in-game backdrop recorder + synthetic bake
@@ -376,8 +376,7 @@ function updateRoamReadout() {
   const orbit4 = SYSTEM.planets[SYSTEM.planets.length - 1].orbitR;
   // nearest body + how far its anchor still is — the readout you actually want while crossing the system
   let near = '', nearD = Infinity;
-  for (const d of listDestinations()) {
-    if (d.kind !== 'planet') continue;
+  for (const d of listSystemObjects()) {
     const dist = Math.hypot(d.pos.x - p.x, d.pos.z - p.z);
     if (dist < nearD) { nearD = dist; near = d.id; }
   }
@@ -394,7 +393,9 @@ function openSystemMapScreen() {
   openSystemMap({
     interactive: outOfCombat(),
     missionOffers,
-    onPick: (m) => engagePointAutopilot(m.pos, m.kind === 'mission' ? m.missionId : null),
+    // already flying → re-route the autopilot in place (no re-entry into roam). A mission object carries
+    // its offer id so arriving raises the "Start mission?" prompt; every other object just parks there.
+    onPick: (obj) => engagePointAutopilot(obj.pos, obj.missionId || null),
     onReturnToHangar: () => {
       G.roam = false; G.gameStarted = false;
       document.body.classList.add('menu');
@@ -943,6 +944,7 @@ if (location.search.includes('debug')) {
     // — lets 32-star-system teleport the ship and read the backdrop's response directly.
     settleView,
     systemAnchor: planetAnchor, // the point ON THE PLANE a body is reached at (32-star-system flies to one)
+    updateTakeoffGate,          // re-apply the launch gate after a test flips activeShip.launchable
     // Camera zoom, for the zoom-out dimming guard: setZoom sets the target, tickZoom(dt) eases + re-anchors
     // the fog to the ship (engine.js applyZoom).
     zoom: { set: setZoom, tick: tickZoom },

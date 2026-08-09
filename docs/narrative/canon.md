@@ -71,7 +71,13 @@ not copied.
 - **Why the pirates are raiding**, who leads them, whether there's a force behind them.
 - **Named characters:** the station dispatcher (currently an unnamed voice — a candidate for the next
   character card), any recurring ally or pirate antagonist.
-- **Place/proper names:** the station, the system, the pirate base — all currently generic.
+- **Place/proper names:** the pirate base and the player's own station are still generic. The star system's
+  bodies got *designations*, not names, when the navigation UI needed labels (2026-08-09): the star is
+  **Vega** (the system is Vega, per the corps' name) and its planets are **Vega I–IV**, with **Vega II** the
+  home ocean world the base orbits; the stations are the **Home Station**, the **Research Station** and
+  **Mining Belt I–III**. Deliberately astronomical rather than lore-bearing — real proper names (a home
+  world with a history, a named outpost) are still open, and replacing these is a pure i18n change
+  (`ui.object.*` in `client/locales/`).
 - **The protagonist's backstory** beyond "rookie, fresh commission" — deliberately thin so the
   player projects onto their callsign.
 - **The campaign's end state (Level 5).** No shipped `level.5.briefing`/`victory` yet — the finale

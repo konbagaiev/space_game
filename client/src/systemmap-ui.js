@@ -1,135 +1,309 @@
-// System-map screen: a top-down overview of the star system, used in TWO hosts —
-//   1. the base-menu Map section (interactive: pick a destination → enter roam), and
-//   2. an in-world overlay opened out of combat (re-route the autopilot / return to hangar).
-// Canvas 2D drawing only (no THREE, no binary assets). All UI strings are English, i18n-keyed.
+// Star-system NAVIGATION UI — ONE component (`mountSystemNav`) used by every host that lets the player
+// choose where to fly:
+//   1. the base-menu **Map** section (mainwindow.renderMapView),
+//   2. the in-flight **overlay** opened out of combat (main.js #map-btn / mini-map tap), and
+//   3. **mission activation** — the mission board's "Autopilot to destination" reuses the same object list
+//      + the same enterRoam/engagePointAutopilot handoff (it just skips the map).
+//
+// Layout: the map canvas is PINNED LEFT (in the base menu it sits right next to the left nav), the OBJECT
+// LIST is the panel to its right. Every object in `listSystemObjects()` — the star and all four planets as
+// first-class entries alongside the base, the science station and the three mining outposts — is both a
+// list row and a map marker; selecting either highlights both, and "Autopilot to destination" flies there.
+// Autopilot to a celestial body flies to its ANCHOR on the plane (system-map.js); the body itself stays a
+// permanently distant backdrop (DECISIONS §98).
+//
+// Canvas 2D only (no THREE, no binary assets). Pan/zoom lives in the pure `map-view.js` seam. All UI
+// strings are English source + i18n-keyed; object names come from `nameKey`, never a raw id.
 import { G } from './state.js';
 import { t } from './i18n.js';
-import { SYSTEM, ANCHORS, bodyWorldPos, listDestinations } from './system-map.js';
+import { esc } from './format.js';
+import { SYSTEM, bodyWorldPos, listSystemObjects, systemRadius, objectForMission } from './system-map.js';
+import { DEFAULT_VIEW, clampView, scaleOf, toScreen, panByScreen, zoomAtScreen, centerOn, pickAt } from './map-view.js';
+import { TAP_SLOP, exceedsSlop } from './tap-gesture.js';
 
-// A mission destination is INTERACTIVE only when its offer exists (sideMissionsUnlocked + on the board).
-function offerFor(missionOffers, id) { return missionOffers.find((o) => o.id === id) || null; }
+// A mission object is INTERACTIVE only when its offer exists (sideMissionsUnlocked + on the board).
+function offerFor(missionOffers, id) { return (missionOffers || []).find((o) => o.id === id) || null; }
 
-// Localized mission title for a marker: prefer the offer's titleKey; fall back to the per-type key
-// (mission.<type>.title, e.g. `side-mining` → mission.mining.title) so locked markers still read as words.
+// Localized mission title for an object that hosts one: prefer the offer's titleKey; fall back to the
+// per-type key (`mission.<type>.title`) so a locked site still reads as words, never a raw id.
 function missionTitle(offer, missionId) {
   const key = (offer && offer.titleKey) || `mission.${String(missionId).replace(/^side-/, '')}.title`;
   return t(key);
 }
 
-// Draw the whole map into a canvas and return the on-screen marker hit-list for click picking. The star is
-// pinned to canvas center; planets ride their orbit circles at their wall-clock angle; the base/science/
-// mining anchors + the player sit near planet 2. Returns [{ id, kind, missionId, pos, sx, sy, locked }].
-export function drawSystemMap(canvas, { missionOffers = [] } = {}) {
+// Decorate the raw objects with the per-session UI state the hosts need.
+function describeObjects(missionOffers, tNow = Date.now()) {
+  return listSystemObjects(tNow).map((o) => {
+    const offer = o.missionId ? offerFor(missionOffers, o.missionId) : null;
+    return {
+      ...o,
+      name: t(o.nameKey),
+      offer,
+      locked: !!o.missionId && !offer,                 // hosts a mission that isn't on the board yet
+      missionName: o.missionId ? missionTitle(offer, o.missionId) : '',
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The shared component
+// ---------------------------------------------------------------------------
+// mountSystemNav(host, opts) → { refresh, destroy, getSelected }
+//   opts.missionOffers      side-mission offers (drives locked rows + the arrival prompt)
+//   opts.actions            extra buttons rendered next to "Autopilot to destination":
+//                             [{ id, labelKey, primary, onClick, disabled, note }]
+//   opts.onAutopilot(obj)   fly to the selected object (host decides enterRoam vs engagePointAutopilot)
+//   opts.selectedId         initial selection
+export function mountSystemNav(host, opts = {}) {
+  const { missionOffers = [], actions = [], onAutopilot } = opts;
+  let objects = describeObjects(missionOffers);
+  let selectedId = opts.selectedId || null;
+  let view = { ...DEFAULT_VIEW };
+  let frame = { width: 520, height: 520, worldRadius: systemRadius() };
+
+  host.innerHTML =
+    `<div class="sysnav">`
+    + `<div class="sysnav-mapwrap">`
+    + `<canvas class="sysnav-canvas" width="520" height="520"></canvas>`
+    + `<div class="sysnav-zoom"><button data-zoom="in" aria-label="+">+</button><button data-zoom="out" aria-label="−">−</button></div>`
+    + `</div>`
+    + `<div class="sysnav-side">`
+    + `<div class="sysnav-title" data-i18n="ui.systemmap.objects">Objects</div>`
+    + `<div class="sysnav-list"></div>`
+    + `<div class="sysnav-hint"></div>`
+    + `<div class="sysnav-actions"></div>`
+    + `</div></div>`;
+
+  const canvas = host.querySelector('.sysnav-canvas');
+  const listEl = host.querySelector('.sysnav-list');
+  const hintEl = host.querySelector('.sysnav-hint');
+  const actionsEl = host.querySelector('.sysnav-actions');
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H / 2;
-  const outer = SYSTEM.planets[SYSTEM.planets.length - 1].orbitR;
-  const scale = (Math.min(W, H) / 2 - 26) / outer;
-  const now = Date.now();
-  const star = bodyWorldPos('star', now);
-  const map = (wx, wz) => [cx + (wx - star.x) * scale, cy + (wz - star.z) * scale]; // world → canvas (star-centered)
 
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#0a0e16'; ctx.fillRect(0, 0, W, H);
+  const selected = () => objects.find((o) => o.id === selectedId) || null;
 
-  // orbit circles
-  ctx.strokeStyle = 'rgba(120,150,200,0.22)'; ctx.lineWidth = 1;
-  for (const p of SYSTEM.planets) { ctx.beginPath(); ctx.arc(cx, cy, p.orbitR * scale, 0, Math.PI * 2); ctx.stroke(); }
-  // asteroid belt (dashed band)
-  ctx.strokeStyle = 'rgba(150,140,110,0.30)'; ctx.setLineDash([3, 4]);
-  for (const r of [SYSTEM.belt.inner, SYSTEM.belt.outer]) { ctx.beginPath(); ctx.arc(cx, cy, r * scale, 0, Math.PI * 2); ctx.stroke(); }
-  ctx.setLineDash([]);
-
-  // star
-  ctx.fillStyle = '#ffd9a0'; ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
-
-  // planets
-  for (const p of SYSTEM.planets) {
-    const [x, y] = map(bodyWorldPos(p.name, now).x, bodyWorldPos(p.name, now).z);
-    ctx.fillStyle = `#${(p.color).toString(16).padStart(6, '0')}`;
-    ctx.beginPath(); ctx.arc(x, y, p.name === 'planet2' ? 5 : 4, 0, Math.PI * 2); ctx.fill();
+  // ---- object list ----
+  function renderList() {
+    listEl.innerHTML = objects.map((o) => {
+      const cls = ['sysnav-row', `k-${o.kind}`];
+      if (o.id === selectedId) cls.push('sel');
+      if (o.locked) cls.push('locked');
+      const sub = o.missionId
+        ? `<span class="sysnav-mission">${esc(o.missionName)}${o.locked ? ' 🔒' : ''}</span>`
+        : `<span class="sysnav-kind">${esc(t('ui.object.kind.' + o.kind))}</span>`;
+      return `<button class="${cls.join(' ')}" data-obj="${esc(o.id)}">`
+        + `<span class="sysnav-dot" style="background:${esc(o.color)}"></span>`
+        + `<span class="sysnav-name">${esc(o.name)}</span>${sub}</button>`;
+    }).join('');
   }
 
-  // destination markers (base + mission structures near planet 2)
-  const activeId = G.activeMission && G.activeMission.title ? `side-${G.activeMission.title}` : null;
-  const hits = [];
-  for (const d of listDestinations()) {
-    const [x, y] = map(d.pos.x, d.pos.z);
-    const locked = d.kind === 'mission' && !offerFor(missionOffers, d.missionId);
-    const active = d.missionId && d.missionId === activeId;
-    ctx.fillStyle = locked ? 'rgba(150,150,160,0.55)' : (active ? '#ffd24a' : (d.kind === 'base' ? '#6fd0ff' : '#7fff9a'));
-    ctx.beginPath(); ctx.arc(x, y, active ? 6 : 4.5, 0, Math.PI * 2); ctx.fill();
-    if (locked) { ctx.strokeStyle = 'rgba(200,200,210,0.7)'; ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke(); }
-    hits.push({ ...d, sx: x, sy: y, locked, active });
+  // ---- actions row ----
+  function renderActions() {
+    const o = selected();
+    const canFly = !!o && !o.locked;
+    const extra = actions.map((a) => `<button data-act="${esc(a.id)}" class="${esc(a.cls || '')}"`
+      + `${a.disabled ? ' disabled' : ''}>${esc(t(a.labelKey))}</button>`).join('');
+    actionsEl.innerHTML = extra
+      + `<button data-act="__autopilot" class="primary"${canFly ? '' : ' disabled'}>`
+      + `${esc(t('ui.systemmap.autopilot'))}</button>`;
+    const noted = actions.find((a) => a.note);
+    hintEl.textContent = o && o.locked ? t('ui.systemmap.locked')
+      : (noted ? noted.note : (o ? t('ui.systemmap.selected', { object: o.name }) : t('ui.systemmap.pick')));
   }
 
-  // player + heading
-  if (G.player) {
-    const [px, py] = map(G.player.mesh.position.x, G.player.mesh.position.z);
-    ctx.save(); ctx.translate(px, py); ctx.rotate(-(G.player.heading || 0));
-    ctx.fillStyle = '#ffffff'; ctx.beginPath();
-    ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill();
-    ctx.restore();
+  function select(id) {
+    selectedId = id;
+    const o = selected();
+    if (o) view = centerOn(view, frame, o.pos.x, o.pos.z); // bring an off-screen pick into the middle
+    renderList(); renderActions(); draw();
   }
-  return hits;
+
+  // ---- canvas ----
+  function sizeCanvas() {
+    const w = Math.max(160, Math.round(canvas.clientWidth || 520));
+    const h = Math.max(160, Math.round(canvas.clientHeight || 520));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    frame = { width: w, height: h, worldRadius: systemRadius() };
+    view = clampView(view, frame);
+  }
+
+  function draw() {
+    const W = frame.width, H = frame.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0a0e16'; ctx.fillRect(0, 0, W, H);
+    const now = Date.now();
+    const star = bodyWorldPos('star', now);
+    const s = scaleOf(view, frame);
+    const sp = toScreen(view, frame, star.x, star.z);
+
+    // orbit circles + the asteroid belt band, all centred on the star
+    ctx.strokeStyle = 'rgba(120,150,200,0.22)'; ctx.lineWidth = 1;
+    for (const p of SYSTEM.planets) { ctx.beginPath(); ctx.arc(sp.x, sp.y, p.orbitR * s, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(150,140,110,0.30)'; ctx.setLineDash([3, 4]);
+    for (const r of [SYSTEM.belt.inner, SYSTEM.belt.outer]) { ctx.beginPath(); ctx.arc(sp.x, sp.y, r * s, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.setLineDash([]);
+
+    // objects — one marker each, at the SAME point the list flies to
+    for (const o of objects) {
+      const p = toScreen(view, frame, o.pos.x, o.pos.z);
+      if (p.x < -40 || p.y < -40 || p.x > W + 40 || p.y > H + 40) continue;
+      const r = o.kind === 'star' ? 7 : (o.kind === 'planet' ? 5 : 4);
+      if (o.id === selectedId) {                        // selection ring (matches the highlighted row)
+        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r + 5, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.fillStyle = o.locked ? 'rgba(150,150,160,0.55)' : o.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+      if (o.locked) {
+        ctx.strokeStyle = 'rgba(200,200,210,0.7)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(p.x, p.y, r + 3, 0, Math.PI * 2); ctx.stroke();
+      }
+      // label the selected object always, everything else once there is room to read it
+      if (o.id === selectedId || s * 900 > 26) {
+        ctx.fillStyle = o.id === selectedId ? '#ffd24a' : 'rgba(207,230,255,0.75)';
+        ctx.font = '600 11px system-ui, sans-serif'; ctx.textBaseline = 'middle';
+        ctx.fillText(o.name, p.x + r + 5, p.y);
+      }
+    }
+
+    // the player's ship + heading
+    if (G.player && G.player.mesh) {
+      const p = toScreen(view, frame, G.player.mesh.position.x, G.player.mesh.position.z);
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-(G.player.heading || 0));
+      ctx.fillStyle = '#ffffff'; ctx.beginPath();
+      ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // ---- input: wheel + pinch zoom, drag pan, tap/click select ----
+  const zoomBy = (f, sx, sy) => { view = zoomAtScreen(view, frame, f, sx, sy); draw(); };
+  const local = (e) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const p = local(e);
+    zoomBy(Math.exp(-e.deltaY * 0.0015), p.x, p.y);
+  }, { passive: false });
+
+  const pointers = new Map();   // active pointers, for pinch
+  let dragStart = null, dragged = false, pinchDist = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    const p = local(e);
+    pointers.set(e.pointerId, p);
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+    } else { dragStart = p; dragged = false; }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const p = local(e);
+    const prev = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, p);
+    if (pointers.size === 2) {                       // pinch: zoom about the midpoint
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinchDist > 0 && d > 0) zoomBy(d / pinchDist, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      pinchDist = d;
+      dragged = true;
+      return;
+    }
+    if (!dragStart) return;
+    if (!dragged && exceedsSlop(dragStart.x, dragStart.y, p.x, p.y, TAP_SLOP)) dragged = true;
+    if (dragged) { view = panByScreen(view, frame, p.x - prev.x, p.y - prev.y); draw(); }
+  });
+  const endPointer = (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const p = pointers.get(e.pointerId);
+    pointers.delete(e.pointerId);
+    if (pointers.size === 0) {
+      if (!dragged && dragStart) {                   // a tap, not a pan → pick a marker
+        const hit = pickAt(objects, view, frame, p.x, p.y);
+        if (hit) select(hit.id);
+      }
+      dragStart = null; dragged = false; pinchDist = 0;
+    }
+  };
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+
+  host.querySelector('.sysnav-zoom').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-zoom]'); if (!b) return;
+    zoomBy(b.dataset.zoom === 'in' ? 1.6 : 1 / 1.6, frame.width / 2, frame.height / 2);
+  });
+  listEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-obj]'); if (b) select(b.dataset.obj);
+  });
+  actionsEl.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+    if (b.dataset.act === '__autopilot') {
+      const o = selected();
+      if (!o) return;
+      if (o.locked) { hintEl.textContent = t('ui.systemmap.locked'); return; }
+      onAutopilot && onAutopilot(o);
+      return;
+    }
+    const a = actions.find((x) => x.id === b.dataset.act);
+    a && a.onClick && a.onClick();
+  });
+
+  const onResize = () => { sizeCanvas(); draw(); };
+  window.addEventListener('resize', onResize);
+
+  sizeCanvas(); renderList(); renderActions(); draw();
+
+  return {
+    // re-read offers / re-localize / re-draw (the host calls this when the board or language changes)
+    refresh(next = {}) {
+      objects = describeObjects(next.missionOffers || missionOffers);
+      if (next.actions) actions.splice(0, actions.length, ...next.actions);
+      sizeCanvas(); renderList(); renderActions(); draw();
+    },
+    redraw: draw,
+    getSelected: selected,
+    select,
+    destroy() { window.removeEventListener('resize', onResize); host.innerHTML = ''; },
+  };
 }
 
-// Nearest marker within `r` px of (x,y), or null.
-export function pickMarker(hits, x, y, r = 16) {
-  let best = null, bestD = r;
-  for (const h of hits) { const d = Math.hypot(h.sx - x, h.sy - y); if (d <= bestD) { bestD = d; best = h; } }
-  return best;
-}
-
-// ---------- In-world overlay (opened out of combat by a mini-map tap) ----------
-let overlayEl = null, overlayCanvas = null, overlayHits = [], overlayCtx = null;
+// ---------- In-world overlay (opened out of combat by the Map button / a mini-map tap) ----------
+let overlayEl = null, overlayNav = null;
 
 function buildOverlay() {
   if (overlayEl) return overlayEl;
   overlayEl = document.createElement('div');
   overlayEl.id = 'systemmap-overlay';
-  overlayEl.style.cssText = 'position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;'
-    + 'background:rgba(4,7,12,0.86);flex-direction:column;gap:14px';
   overlayEl.innerHTML =
-    `<div style="color:#cfe6ff;font:700 18px/1 system-ui,sans-serif" data-i18n="ui.systemmap.title">Star system</div>`
-    + `<canvas id="systemmap-canvas" width="520" height="520" style="max-width:80vmin;max-height:80vmin;border:1px solid rgba(120,150,200,0.3);border-radius:10px;cursor:crosshair"></canvas>`
-    + `<div id="systemmap-hint" style="color:#9fb6d0;font:500 13px/1.4 system-ui,sans-serif;min-height:18px"></div>`
-    + `<div style="display:flex;gap:12px">`
-    + `<button id="systemmap-return" style="cursor:pointer;font:600 14px system-ui;color:#0b0f14;background:#6fd0ff;border:0;border-radius:8px;padding:8px 16px" data-i18n="ui.systemmap.returnHangar">Return to hangar</button>`
-    + `<button id="systemmap-close" style="cursor:pointer;font:600 14px system-ui;color:#cfe6ff;background:rgba(120,150,200,0.18);border:1px solid rgba(120,150,200,0.4);border-radius:8px;padding:8px 16px" data-i18n="ui.systemmap.close">Close</button>`
-    + `</div>`;
+    `<div class="sysnav-head" data-i18n="ui.systemmap.title">Star system</div>`
+    + `<div id="systemmap-host"></div>`;
   document.body.appendChild(overlayEl);
-  overlayCanvas = overlayEl.querySelector('#systemmap-canvas');
-  overlayCtx = overlayEl.querySelector('#systemmap-hint');
   return overlayEl;
 }
 
-// Open the in-world system map. Freezes the game via G.mapOpen (raw loop-skip, NOT setPaused).
+// Open the in-world navigation screen. Freezes the game via G.mapOpen (raw loop-skip, NOT setPaused).
 //   interactive: true  (roam/return-to-base) → picking a destination re-routes the autopilot; Return shown.
 //   interactive: false (live fight)          → view-only (no re-route, no Return).
 export function openSystemMap({ interactive = true, missionOffers = [], onPick, onReturnToHangar } = {}) {
   buildOverlay();
-  applyStrings(overlayEl);
   overlayEl.style.display = 'flex';
   G.mapOpen = true;
-  const returnBtn = overlayEl.querySelector('#systemmap-return');
-  returnBtn.style.display = interactive ? '' : 'none';
-  const redraw = () => { overlayHits = drawSystemMap(overlayCanvas, { missionOffers }); };
-  redraw();
-  overlayEl._redraw = redraw;
-  overlayCanvas.onclick = (e) => {
-    if (!interactive) return;
-    const rect = overlayCanvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (overlayCanvas.width / rect.width);
-    const y = (e.clientY - rect.top) * (overlayCanvas.height / rect.height);
-    const m = pickMarker(overlayHits, x, y);
-    if (!m) return;
-    if (m.locked) { overlayCtx.textContent = t('ui.systemmap.locked'); return; }
-    onPick && onPick(m);
-    closeSystemMap();
-  };
-  returnBtn.onclick = () => { closeSystemMap(); onReturnToHangar && onReturnToHangar(); };
-  overlayEl.querySelector('#systemmap-close').onclick = () => closeSystemMap();
+  const acts = [];
+  if (interactive) {
+    acts.push({ id: 'return', labelKey: 'ui.systemmap.returnHangar',
+      onClick: () => { closeSystemMap(); onReturnToHangar && onReturnToHangar(); } });
+  }
+  acts.push({ id: 'close', labelKey: 'ui.systemmap.close', onClick: () => closeSystemMap() });
+  if (overlayNav) overlayNav.destroy();
+  overlayNav = mountSystemNav(document.getElementById('systemmap-host'), {
+    missionOffers,
+    actions: acts,
+    onAutopilot: (obj) => { if (!interactive) return; onPick && onPick(obj); closeSystemMap(); },
+  });
+  applyStrings(overlayEl);
 }
 
 export function closeSystemMap() {
@@ -137,38 +311,6 @@ export function closeSystemMap() {
   G.mapOpen = false;
 }
 export function isSystemMapOpen() { return !!(overlayEl && overlayEl.style.display !== 'none'); }
-
-// ---------- Base-menu Map section ----------
-// Mounts the map + a "Launch into system" button and, per REACHABLE mission destination, a "Fly here"
-// button. onLaunch() enters free roam; onFlyHere({pos, missionId}) enters roam + autopilots there.
-export function mountBaseMenuMap(hostEl, { missionOffers = [], onLaunch, onFlyHere } = {}) {
-  hostEl.innerHTML =
-    `<div class="mw-stub-title" data-i18n="ui.mainwin.map">Map</div>`
-    + `<canvas id="mw-systemmap" width="440" height="440" style="max-width:52vmin;max-height:52vmin;border:1px solid rgba(120,150,200,0.3);border-radius:10px;display:block;margin:10px auto"></canvas>`
-    + `<div id="mw-map-actions" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center"></div>`;
-  applyStrings(hostEl);
-  const canvas = hostEl.querySelector('#mw-systemmap');
-  drawSystemMap(canvas, { missionOffers });
-  const actions = hostEl.querySelector('#mw-map-actions');
-  const launch = document.createElement('button');
-  launch.className = 'btn';
-  launch.textContent = t('ui.systemmap.launch');
-  launch.style.cssText = 'cursor:pointer;font:600 14px system-ui;color:#0b0f14;background:#6fd0ff;border:0;border-radius:8px;padding:8px 16px';
-  launch.onclick = () => onLaunch && onLaunch();
-  actions.appendChild(launch);
-  for (const d of listDestinations()) {
-    if (d.kind !== 'mission') continue;
-    const offer = offerFor(missionOffers, d.missionId);
-    const reachable = !!offer;
-    const b = document.createElement('button');
-    b.textContent = `${t('ui.systemmap.flyHere')} — ${missionTitle(offer, d.missionId)}`;
-    b.disabled = !reachable;
-    b.style.cssText = 'cursor:pointer;font:600 13px system-ui;color:#cfe6ff;background:rgba(120,150,200,0.18);border:1px solid rgba(120,150,200,0.4);border-radius:8px;padding:8px 14px'
-      + (reachable ? '' : ';opacity:0.45;cursor:not-allowed');
-    if (reachable) b.onclick = () => onFlyHere && onFlyHere({ pos: d.pos, missionId: d.missionId });
-    actions.appendChild(b);
-  }
-}
 
 // ---------- "Start mission?" arrival prompt ----------
 let promptEl = null;
@@ -195,6 +337,10 @@ export function showStartMissionPrompt({ titleText, onYes, onNo } = {}) {
   promptEl.querySelector('#systemmap-prompt-no').onclick = () => { close(); onNo && onNo(); };
 }
 export function isStartMissionPromptOpen() { return !!(promptEl && promptEl.style.display !== 'none'); }
+
+// Re-export the mission→object lookup so the mission board can route "Autopilot to destination" without
+// importing the geometry module directly.
+export { objectForMission };
 
 // Localize any [data-i18n] nodes inside `root` (the overlays are built in JS, so applyTranslations in
 // welcome.js doesn't see them at bootstrap).

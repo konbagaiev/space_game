@@ -5,6 +5,32 @@
 
 ## 2026-08-09
 
+- **[2026-08-09-1456-star-system-map] Star-system navigation UI: one map+object-list component everywhere,
+  and "Take off" on every base stage.** Choosing a destination now uses a single shared component
+  (`systemmap-ui.mountSystemNav`) in all three hosts — the base-menu **Map** section, the in-flight overlay
+  and mission activation. Layout is the **map pinned left** (next to the base's nav menu) with the **object
+  list on the right**; the list and the markers are the same 10 objects (`listSystemObjects`): the **star and
+  all four planets as first-class, selectable destinations** alongside the home station, the research station
+  and **three** belt outposts (two new ones, `ANCHORS.mining2/3`, with matching asteroid-field set-pieces so
+  arriving finds rigs, not empty space). Selecting a row or a marker highlights **both**; "Autopilot to
+  destination" then flies you there — `enterRoam({pos, missionId})` from the base, `engagePointAutopilot` if
+  already flying — and a body routes to its anchor, never to the (permanently distant) planet. The map
+  **pans and zooms** (wheel + pinch, drag + one-finger drag, ± buttons) through a new pure, unit-tested
+  `map-view.js` seam whose clamps make it impossible to fling the map into empty space or zoom to a
+  degenerate scale. Objects are named through i18n (`ui.object.*`, EN + RU) — the star is **Vega**, the
+  planets **Vega I–IV** — never raw ids; locked mission sites stay greyed with the unlock hint.
+  **"Take off" is now on every stage** (Character/Missions/Loadout/Map/Craft) and means *free flight into the
+  system*; on Map it sits inside the component's action row beside Autopilot. Because the old `#mw-go` said
+  "Take off" but launched the **fight**, it was renamed **"Launch mission ⚔"** and keeps its behaviour (the
+  campaign flow is untouched); the mission briefing also gained "Autopilot to destination" for the
+  fly-there-then-"Start mission?" path. All launch controls share one gate — a missing hull/armor, engine or
+  thruster disables the fight launch, Take off and Autopilot together, with the reason shown. Fixed in
+  passing: `body.menu` never hid the `#touch` layer, so on a phone the **FIRE button stayed live on top of
+  the base menu**. Guards: new `map-view.test.js` (inverse transform, zoom + centre clamps, cursor-anchored
+  zoom, marker picking) + `system-map.test.js` object-model cases; `32-star-system` now drives the real UI
+  (overlay re-routes in place, base Map lists 10 objects, selection enables Autopilot, Take off present on
+  every stage, gate greys everything); headless rect check shows no fixed-HUD overlap on desktop or phone.
+  `22-intro-replay` byte-identical. No new assets. §100.
 - **[2026-08-09-1456-star-system-map] The star system is now REAL bodies laid out on the ecliptic — you fly
   to a planet instead of watching a sky dome — and zooming out no longer dims the game.** The
   bearing-projected camera-anchored backdrop is gone. The ship flies on the ecliptic plane and the camera

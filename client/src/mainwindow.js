@@ -17,7 +17,7 @@ import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
 import { SKILL_RATES } from './components.js'; // per-point skill rates → Character-card effect text (single source)
 import { reset, levelRunner, refreshMusic, engagePointAutopilot } from './sim.js';
-import { mountBaseMenuMap, showStartMissionPrompt } from './systemmap-ui.js';
+import { mountSystemNav, showStartMissionPrompt, objectForMission } from './systemmap-ui.js';
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
 import { openBay, showBayView, updateTakeoffGate, resetShipStatsDelta, stopLoadoutPreview } from './shop.js';
@@ -117,6 +117,10 @@ function selectMenu(which) {
   document.getElementById('mw-view-stub').classList.toggle('active', isStub);
   mainEl.classList.toggle('bay-open', isBay); // Loadout centers the ship + swaps the right column to its panel
   mainEl.classList.toggle('missions-open', isMissions); // Missions shows the mission list in the right column
+  // Map carries Take off INSIDE its own action row (next to "Autopilot to destination"), so the global
+  // launch bar steps aside there — everywhere else it is the only way to leave the base.
+  mainEl.classList.toggle('map-open', isMap);
+  updateTakeoffGate(G.activeShip); // the global bar must be gated correctly on every stage, not just Missions
   // Exactly ONE ship viewer runs per view (DECISIONS §92): Loadout owns the centered-ship + item-model
   // viewers; every other view runs none (the right-column ship preview was removed). Stopping the
   // off-view viewers is what keeps the spin smooth.
@@ -127,13 +131,17 @@ function selectMenu(which) {
   else if (isMap) { settleBriefingReveal(); renderMapView(); stopViewer(mwItem); }
   else { settleBriefingReveal(); renderStub(which); stopViewer(mwItem); }
 }
-// Base-menu Map: the flyable star-system overview. "Launch into system" → free roam; each reachable
-// mission destination → roam + autopilot there. Both hand off to enterRoam (the one roam entry point).
+// Base-menu Map: the shared navigation component (map left, object list right). Its action row carries
+// BOTH launch paths, side by side — "Take off" (free flight) and "Autopilot to destination" for whatever
+// object is selected. Both hand off to enterRoam, the one roam entry point.
+let mapNav = null;
 function renderMapView() {
-  mountBaseMenuMap(document.getElementById('mw-view-map'), {
+  if (mapNav) mapNav.destroy();
+  mapNav = mountSystemNav(document.getElementById('mw-view-map'), {
     missionOffers,
-    onLaunch: () => enterRoam(null),
-    onFlyHere: (dest) => enterRoam(dest),
+    actions: [{ id: 'takeoff', labelKey: 'ui.button.take_off', cls: 'takeoff', onClick: () => takeOff(),
+      disabled: !canTakeOff(), note: canTakeOff() ? '' : t('ui.shop.cant_launch') }],
+    onAutopilot: (obj) => enterRoam({ pos: obj.pos, missionId: obj.missionId || null }),
   });
 }
 // Render a placeholder panel for a not-yet-built section (Map / Craft — see the redesign plan).
@@ -241,13 +249,41 @@ function renderMissionsBoard() {
   }));
   host.innerHTML = cards.join('');
 }
-// Take-off launches the ACTIVE mission — reflect which one that is on the button.
+// #mw-go LAUNCHES THE FIGHT for the ACTIVE mission — reflect which one that is on the button. (The generic
+// "Take off" is now the separate always-available #mw-takeoff, which flies into the system instead.)
 function updateGoButton() {
   const btn = document.getElementById('mw-go');
   if (!btn) return;
   const m = activeMissionId == null ? null : missionOffers.find((o) => o.id === activeMissionId);
-  btn.textContent = m ? t('ui.button.take_off_mission', { mission: t(m.titleKey) }) : t('ui.button.take_off');
+  btn.textContent = m ? t('ui.button.launch_mission_named', { mission: t(m.titleKey) }) : t('ui.button.launch_mission');
+  // "Autopilot to destination" only makes sense for a mission that HAS a place in the system (side
+  // missions); the campaign fight has none, so the button is hidden there.
+  const nav = document.getElementById('mw-mission-nav');
+  if (nav) {
+    const obj = m ? objectForMission(m.id) : null;
+    nav.style.display = obj ? '' : 'none';
+    nav.disabled = !canTakeOff();
+  }
 }
+
+// ---- Take off (free flight into the star system) — available on EVERY base-menu stage ----
+// Gated by the SAME server-authoritative check as the mission launch: `launchable` is false when a required
+// slot (hull/armor, engine, thrusters) is empty, so a ship that can't fight can't wander off either.
+function canTakeOff() {
+  const a = G.activeShip;
+  return !a || a.launchable !== false;
+}
+function takeOff() { if (canTakeOff()) enterRoam(null); }
+// (The gate is reflected on every launch control by shop.js updateTakeoffGate — one place, so selling a
+// hull in the Loadout greys the mission launch, the global Take off and the map's autopilot together.)
+document.getElementById('mw-takeoff').addEventListener('click', takeOff);
+// Mission activation: fly to THIS mission's place in the system; arriving raises the "Start mission?"
+// prompt (G.onMissionArrival below) instead of dropping straight into the fight.
+document.getElementById('mw-mission-nav').addEventListener('click', () => {
+  const m = activeMissionId == null ? null : missionOffers.find((o) => o.id === activeMissionId);
+  const obj = m ? objectForMission(m.id) : null;
+  if (obj && canTakeOff()) enterRoam({ pos: obj.pos, missionId: m.id });
+});
 // Take / defer / activate a mission → POST, then re-render the board + Take-off from the fresh state.
 async function missionAction(act, missionId) {
   if (!G.playerId) return;

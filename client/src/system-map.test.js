@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import {
   EPOCH, SYSTEM, bodyAngle, bodyWorldPos, listBodies, maxBodyCoord,
   inActivityZone, capLifted, arrivedAtPoint, activityZoneCenters, ANCHORS,
-  bodyRenderPos, bodyClearance, bodyFade, moonAngle, moonClearance, planetAnchor, listDestinations,
-  applySystemSpec,
+  bodyRenderPos, bodyClearance, bodyFade, moonAngle, moonClearance, planetAnchor, listSystemObjects,
+  objectForMission, systemRadius, applySystemSpec,
 } from './system-map.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -188,19 +188,62 @@ test('reaching another body is a real crossing (thousands of units), not a hop',
   }
 });
 
-test('listDestinations carries the base + both side missions + one anchor per body you must fly to', () => {
+// ---------- The navigation object model (what the map UI draws + lists + flies to) ----------
+
+test('listSystemObjects carries every selectable place: star + 4 planets + base + science + 3 mining', () => {
   const t = EPOCH + 5e7;
-  const dests = listDestinations(t);
-  const byKind = (k) => dests.filter((d) => d.kind === k);
+  const objs = listSystemObjects(t);
+  const byKind = (k) => objs.filter((o) => o.kind === k);
+  assert.equal(byKind('star').length, 1, 'the star is a first-class object, not just scenery');
+  assert.equal(byKind('planet').length, SYSTEM.planets.length, 'every planet is listed, home included');
   assert.equal(byKind('base').length, 1);
-  assert.equal(byKind('mission').length, 2);
-  // the star + every planet except the home one (whose anchor is the base)
-  assert.equal(byKind('planet').length, SYSTEM.planets.length - 1 + 1);
-  assert.ok(byKind('planet').some((d) => d.id === 'star'), 'the star is a destination you can fly to');
-  assert.ok(!byKind('planet').some((d) => d.id === 'planet2'), 'the home planet is not listed twice');
-  for (const d of dests) {
-    assert.ok(Number.isFinite(d.pos.x) && Number.isFinite(d.pos.z), `${d.id} has a finite destination point`);
+  assert.equal(byKind('station').length, 1);
+  assert.equal(byKind('mining').length, 3, 'all three belt outposts');
+  assert.equal(objs.length, 10);
+  const ids = objs.map((o) => o.id);
+  assert.equal(new Set(ids).size, ids.length, 'ids are unique (they key selection + the map markers)');
+});
+
+test('every object is a valid, finite autopilot destination with a localizable name', () => {
+  for (const o of listSystemObjects(EPOCH + 5e7)) {
+    assert.ok(Number.isFinite(o.pos.x) && Number.isFinite(o.pos.z), `${o.id} has a finite destination point`);
+    assert.equal(o.marker, o.pos, `${o.id} draws its marker exactly where autopilot flies (list == map)`);
+    assert.ok(/^ui\.object\./.test(o.nameKey), `${o.id} is named by an i18n key, never a raw id`);
+    assert.ok(/^#[0-9a-f]{6}$/i.test(o.color), `${o.id} has a marker colour (got ${o.color})`);
   }
+});
+
+test('a celestial object flies to its ANCHOR — the body itself is never the destination', () => {
+  const t = EPOCH + 5e7;
+  for (const o of listSystemObjects(t)) {
+    if (o.kind !== 'star' && o.kind !== 'planet') continue;
+    const a = planetAnchor(o.id, t);
+    assert.ok(Math.abs(o.pos.x - a.x) < 1e-9 && Math.abs(o.pos.z - a.z) < 1e-9,
+      `${o.id} routes to its plane anchor`);
+  }
+});
+
+test('exactly the two mission sites carry a missionId, and each resolves back to its object', () => {
+  const t = EPOCH + 5e7;
+  const withMission = listSystemObjects(t).filter((o) => o.missionId);
+  assert.deepEqual(withMission.map((o) => o.missionId).sort(), ['side-mining', 'side-research']);
+  assert.equal(objectForMission('side-mining', t).id, 'mining');
+  assert.equal(objectForMission('side-research', t).id, 'science');
+  assert.equal(objectForMission(null, t), null);
+  assert.equal(objectForMission('nope', t), null);
+  // the two extra belt outposts are places you can fly to, with no mission attached
+  for (const id of ['mining2', 'mining3']) {
+    assert.equal(listSystemObjects(t).find((o) => o.id === id).missionId, null);
+  }
+});
+
+test('systemRadius covers every object, so the map fits them all at zoom 1', () => {
+  const t = EPOCH + 5e7;
+  const r = systemRadius(t);
+  for (const o of listSystemObjects(t)) {
+    assert.ok(Math.hypot(o.pos.x, o.pos.z) <= r + 1e-9, `${o.id} is inside the fitted radius`);
+  }
+  assert.ok(r >= SYSTEM.belt.outer, 'and the belt stays visible too');
 });
 
 test('applySystemSpec merges a descriptor block into SYSTEM by body name', () => {

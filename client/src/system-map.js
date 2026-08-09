@@ -171,6 +171,12 @@ export const ANCHORS = {
   base:    { x: -60,  z: -60 }, // base station (return-to-base dock), near the origin
   science: { x: 928,  z: 0 },   // research/science station — star-ward, 2x its old distance from planet 2
   mining:  { x: -988, z: 0 },   // near mining base (asteroid field) — belt-ward (anti-star)
+  // Two further mining outposts, belt-ward like the first but spread around planet 2 so the map has real
+  // destinations to pick between. They carry NO mission (only `mining` does) — they are places you can fly
+  // to. Each has a matching `asteroid-field` set-piece in catalog_seed.js at the SAME (x,z), so arriving
+  // finds rigs rather than empty space.
+  mining2: { x: -1480, z: -1180 },
+  mining3: { x: -760,  z: 1560 },
 };
 
 // The point ON THE PLANE that autopilot flies to for a body — its own true (x,z). Arrive there and the body
@@ -181,22 +187,54 @@ export function planetAnchor(name, tNow = Date.now()) {
   return { x: w.x, z: w.z };
 }
 
-// Map-screen destinations (markers). `missionId` is the offer id the base board would launch, or null.
-// `kind: 'planet'` entries are the per-body anchors above — a real, to-scale trip across the system (planet 2
-// is omitted: its anchor is the world origin, i.e. the base neighbourhood already listed). The star is a
-// destination too: like every other body, you have to fly to it to see it.
-export function listDestinations(tNow = Date.now()) {
+// EVERY selectable thing in the system, in map/list order — the single source the navigation UI draws
+// markers from, fills its object list from, and hands to autopilot. Celestial bodies are first-class
+// objects here: a star or planet is listed and selectable exactly like a station, and `pos` is always the
+// REACHABLE point on the plane (a body's own anchor — the body itself stays permanently distant, §98).
+//
+//   kind    'star' | 'planet' | 'base' | 'station' | 'mining'
+//   pos     where autopilot flies (world x,z on the ecliptic)
+//   marker  where the map draws it — the same point for every object, so list and map agree
+//   missionId  the side-mission offer this object hosts, or null (drives the locked/greyed state + the
+//              "Start mission?" arrival prompt; only ONE science + ONE mining site carry a mission)
+//   nameKey    i18n key for the display name — never a raw id
+export function listSystemObjects(tNow = Date.now()) {
   const out = [
-    { id: 'base',          kind: 'base',    missionId: null,             pos: ANCHORS.base },
-    { id: 'side-research', kind: 'mission', missionId: 'side-research',  pos: ANCHORS.science },
-    { id: 'side-mining',   kind: 'mission', missionId: 'side-mining',    pos: ANCHORS.mining },
-    { id: 'star',          kind: 'planet',  missionId: null,             pos: planetAnchor('star', tNow) },
+    { id: 'star', kind: 'star', nameKey: 'ui.object.star', missionId: null,
+      pos: planetAnchor('star', tNow), color: '#ffd9a0' },
   ];
   for (const p of SYSTEM.planets) {
-    if (p.name === BASE.name) continue; // planet 2 == the base neighbourhood, already listed
-    out.push({ id: p.name, kind: 'planet', missionId: null, pos: planetAnchor(p.name, tNow) });
+    out.push({ id: p.name, kind: 'planet', nameKey: `ui.object.${p.name}`, missionId: null,
+      pos: planetAnchor(p.name, tNow), color: `#${p.color.toString(16).padStart(6, '0')}` });
   }
+  out.push(
+    { id: 'base',    kind: 'base',    nameKey: 'ui.object.base',    missionId: null,
+      pos: ANCHORS.base,    color: '#6fd0ff' },
+    { id: 'science', kind: 'station', nameKey: 'ui.object.science', missionId: 'side-research',
+      pos: ANCHORS.science, color: '#7fff9a' },
+    { id: 'mining',  kind: 'mining',  nameKey: 'ui.object.mining',  missionId: 'side-mining',
+      pos: ANCHORS.mining,  color: '#e8c07a' },
+    { id: 'mining2', kind: 'mining',  nameKey: 'ui.object.mining2', missionId: null,
+      pos: ANCHORS.mining2, color: '#e8c07a' },
+    { id: 'mining3', kind: 'mining',  nameKey: 'ui.object.mining3', missionId: null,
+      pos: ANCHORS.mining3, color: '#e8c07a' },
+  );
+  for (const o of out) o.marker = o.pos;
   return out;
+}
+
+// The object hosting a given side-mission offer id (so the mission board can autopilot to "its" place), or
+// null. Pure.
+export function objectForMission(missionId, tNow = Date.now()) {
+  if (!missionId) return null;
+  return listSystemObjects(tNow).find((o) => o.missionId === missionId) || null;
+}
+
+// How far out the outermost object sits — the radius the map fits at zoom 1 (map-view.js `worldRadius`).
+export function systemRadius(tNow = Date.now()) {
+  let r = SYSTEM.belt.outer;
+  for (const o of listSystemObjects(tNow)) r = Math.max(r, Math.hypot(o.pos.x, o.pos.z));
+  return r;
 }
 
 // Activity-zone centers where the speed cap is re-applied (base + science + near-mining). The caller adds
