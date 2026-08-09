@@ -3321,6 +3321,29 @@ Shields, Maneuverability, Mobility; Accuracy reserved for later). Several non-ob
   hostile **bullets** this iteration — rocket blasts are not dodged yet. Aim-assist from Kinetic is
   additive degrees onto the existing per-weapon cone (consistent with §89).
 
+## 94. Inter-point travel: a "cruise assist", not a binary autopilot (planned)
+
+As the world grows into a star system with several activity points, the player needs a way to cover the
+empty distance between them without fighting the inertial flight model the whole way. Two obvious options
+were weighed:
+
+- **Full autopilot** (the game flies you point-to-point): removes the tedium but also removes control and
+  agency — the player becomes a passenger on the boring part.
+- **Pure manual inertial travel** (§2 model, uncapped speed out of combat): keeps control but makes long
+  empty transits a chore, since our no-friction inertia is exactly what's tiring over distance.
+
+**Decision (planned, not yet built):** go with a **cruise assist** instead of either extreme. Out of
+combat the player still steers, but gets a temporary lift of the speed cap plus softened inertia damping
+(a flight assist), and the assist **auto-disables on entering an activity zone / combat**, where the full
+inertial model (§2) returns. Rationale: control stays with the player, the tiring part (wrestling inertia
+across nothing) is removed, and combat feel is untouched. A good parallax speed-field (see the Points
+speed-field work) also makes fast manual travel *feel* good, which further reduces the need for autopilot.
+
+**Revisit if:** playtests show the inertial model is still too hard to manage over distance even with the
+assist — then reconsider an opt-in autopilot for transits. Explicitly a "decide on feel" item; not settled
+by theory. Combat is always local to the player this iteration (activity points are anchored to the player
+until multiplayer), so this only affects the out-of-combat traversal layer.
+
 ## Future ideas
 
 solid asteroids with bounce ·

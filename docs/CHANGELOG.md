@@ -5,6 +5,11 @@
 
 ## 2026-08-09
 
+- **[decision] Inter-point travel will be a "cruise assist", not a binary autopilot (planned).** Recorded
+  DECISIONS §94: as the world grows into a star system, out-of-combat travel between activity points gets a
+  temporary speed-cap lift + softened inertia that auto-disables on entering combat (full §2 inertia
+  returns), instead of a full autopilot. A "decide on feel" item; revisit if playtests show inertia is still
+  too tiring over distance. No code yet.
 - **[gameplay] Character progression HUD — always-on XP bar, free-points badge, "Level up" toast.**
   Added three always-visible bits to the progression feature: a **free-skill-points badge** (gold count) on
   the **Character** left-menu item, shown only when there are unspent points; an **always-on XP bar** at the
