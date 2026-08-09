@@ -2460,6 +2460,10 @@ exists so we don't re-attempt it.
 
 ## 71. Asteroids: real `.glb` model for the mission FIELD only — the distant backdrop stays procedural
 
+> **Superseded for the distant BACKDROP half by §96** (the backdrop is now a player-locked wrapping
+> `THREE.Points` speed field — no rocks at all, procedural or modelled); the mission `asteroid-field` half
+> below still stands (real `.glb` rocks up close).
+
 The asteroids were procedural (noise-deformed icosahedra + `makeMoonTexture`): the parallax **backdrop**
 field (`makeAsteroids`) and the mission **`asteroid-field`** set-piece. We put a real CC-BY model pack
 ("Wandering Asteroids Of Andromeda" by ARCTIC WOLVES™, **3 rock meshes** in one `.glb`) into the mission
@@ -3394,6 +3398,62 @@ comments recording that. Covered by `server/src/levels_drift.test.js`, which run
 (`spacegame_test_drift`) because the FK on `current_progress` makes re-numbering impossible once players
 exist and mutating the shared `spacegame_test` would race the parallel test files. Cross-ref §90, §91,
 §30, §67.
+
+## 96. The parallax backdrop is a PLAYER-LOCKED WRAPPING POINT FIELD, not an origin-anchored rock ring
+
+The backdrop's only job is to sell **motion** — without something sweeping past, the ship reads as floating
+in place. The old implementation (§71's backdrop half) was an `InstancedMesh` of **2000 low-poly rocks**
+scattered **once, in an annulus around world origin** (`makeAsteroids`). Two problems, one fatal:
+
+- **It is anchored to the origin.** The moment the player roams — and §94's to-scale star system, autopilot
+  and uncapped manual cruise are exactly that direction — they fly *out* of the ring into genuinely empty
+  space, i.e. the speed
+  cue disappears precisely where it matters most (long transits). Growing the ring to cover the system is a
+  quadratic-cost non-answer.
+- **It is heavy for what it delivers.** ~40k tris and a full-disk scatter to render sub-pixel specks under a
+  near-top-down camera, where the rock silhouettes were never actually visible.
+
+**Decision:** replace it with a **fixed pool of ~920 `THREE.Points` sprites in 3 depth layers (3 draw
+calls)** that is **re-wrapped into a ±`radius` box centred on the player every frame**. Points stay static in
+world space and are translated by *whole box spans* only when they leave the box (a treadmill), so parallax
+remains true perspective — deeper layers sweep slower — and the same specks surround the player **anywhere in
+the system at constant cost**. No growth, no rebuild, no per-distance scaling.
+
+- **Points over instanced rock meshes.** At this camera the rocks were sub-pixel; the detail was pure cost.
+  A textured point sprite (the *existing procedural* canvas dot, shared with the bright-star layer — no new
+  asset) reads identically and costs one draw call per layer.
+- **Client-only render decor, driven from the VIEW layer.** The wrap runs in `settleView` (`sim.js`), never
+  in the deterministic tick; the field is in no gameplay array, is not collidable, and nothing about it is
+  sent to or read from the server. Its one-time scatter draws the **native `Math.random`** and the per-frame
+  wrap draws **no randomness at all**, so it is replay-neutral by construction (**§73**) — the recorded
+  Level-0 intro re-sims bit-identically.
+- **THE NO-POP-IN RULE, AND THE TRAP IN IT.** A recycled point must reappear where the player cannot see it.
+  It is tempting (the plan's first draft did exactly this) to derive that from `scene.fog.far` — **that is
+  wrong**. `THREE.Fog` fogs on **view depth** (`-mvPosition.z`), not radial distance, and this camera is
+  near-top-down (`CAM_OFFSET 0,110,26`, `ZOOM_MAX 3.5`): a **shallow** point 620 units out sits only ~413
+  deep in view space at max zoom-out — barely past `fogNear` (240), i.e. clearly visible. What hides the
+  shallow layers is the **frustum** (the near layer's visible patch tops out at |Δx| ≈ 459 / |Δz| ≈ 274 at
+  16:9). The **deep** layer is the opposite case: it *does* out-reach the frustum horizontally, but its view
+  depth there is ≥ 668 > `fogFar` (600), so fog finishes the job. **`radius ≥ 600` (`WRAP_SAFE_RADIUS`,
+  shipped 620) clears both ends** — and the margin is **aspect-ratio dependent** (it runs out around aspect
+  ≈ 2.4, so an ultra-wide layout must grow the *shallow* layers' radius, never the fog). This is documented
+  and unit-asserted against the shipped values rather than silently clamped, because the `?dev` panel must
+  stay free to explore a smaller box.
+- **Live-tunable instead of argued about.** The look constants (count/size/radius/depth/opacity per layer +
+  a shared colour) live in the map descriptor's **`speedField`** and are dialled in the `?dev` "Speed field"
+  folder, which dumps a paste-ready block for `catalog_seed.js`. The committed numbers are a starting point.
+- **`asteroids` compatibility shim (one release, with an explicit removal condition).** The dead
+  `asteroids: {…}` block **stays in the descriptor for exactly one release**. `db.js` upserts every map
+  descriptor **on every server start**, so the moment this deploys, the already-published **itch** bundle and
+  the **`/v2`** sandbox — older clients reading the *live* catalog — would call the removed `makeAsteroids(undefined)`
+  and throw inside `buildMap` (black scene, not a graceful degrade). **Remove it** in the first change *after*
+  the itch build has been re-published (`/publish-itch`) and `/v2` redeployed from a `main` containing
+  `speedField`; `server/src/maps_speedfield.test.js` pins it until then and is deleted with it.
+
+Superseded: the **backdrop half of §71** (its mission-`asteroid-field` half still stands — the `.glb` rock
+pack is still used up close, and its CC-BY attribution stays). Motivated by **§94** (inter-point travel):
+fast manual travel only *feels* fast if something sweeps past you the whole way. Warp/velocity-stretch
+streaking is deliberately **out of scope** — `updateSpeedField` is documented as the single hook for it.
 
 ## Future ideas
 

@@ -12,7 +12,7 @@ import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, se
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap } from './world.js'; // arena + sky/planet/setpieces + buildMap
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap
 import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnRocket, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples
@@ -125,8 +125,8 @@ addEventListener('click', (e) => { if (e.target.closest('button')) audio.sfx.uiC
 // engine.applyOrientation() re-runs on resize. The floating ⛶ button + A2HS hint key off those classes.
 
 // ---------- World moved to src/world.js ----------
-// Arena (ARENA/OOB consts, arenaCenter, arenaBorder), the starry sky, planet/moons/asteroids, the
-// mission set-pieces and buildMap()/updateMoons()/buildSetPiece() are imported from world.js. The
+// Arena (ARENA/OOB consts, arenaCenter, arenaBorder), the starry sky, planet/moons, the player-locked
+// speed field, the mission set-pieces and buildMap()/updateMoons()/buildSetPiece() come from world.js. The
 // reassigned per-map handles (sky/stars/G.skyAmbient/G.skySun/G.currentMapDescriptor/G.mapSetpieces/G.arenaDrift)
 // live on the shared state bag G.
 
@@ -809,6 +809,7 @@ if (location.search.includes('debug')) {
     get pendingAssets() { return G.pendingAssets; }, // diagnostic: essential .glb loads still in flight (veil gate)
     smokePool, // diagnostic: the instanced rocket-trail pool (live count + per-instance alphas)
     drops, // the live loot-drop array (count/positions assertable in headless)
+    get speedFieldLayers() { return speedFieldLayers(); }, // diagnostic: the wrapping backdrop layers (31-speed-field)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
     // with `?dev` — start a fight, run `for (let i=0;i<40;i++) __game.spawnTestDrop()`, watch the perf FPS.
     spawnTestDrop(item) {
@@ -1497,7 +1498,7 @@ async function bootstrap() {
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
 
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map
-    buildMap(map.descriptor); // build the scene backdrop: planet, moons, stars, asteroids, sky light
+    buildMap(map.descriptor); // build the scene backdrop: planet, moons, stars, the speed field, sky light
 
     // the player's active ship (auto-registers) decides the default selection
     let active = null;

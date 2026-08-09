@@ -26,6 +26,21 @@
   cap + full inertia. Float32 coordinates are kept safe by the deliberately compact sizing (no floating
   origin; whole system fits one server-side coordinate space for the planned one-system-per-server
   multiplayer). Freighter trade route deferred to ROADMAP. No code yet — building via /feature-pipeline.
+- **[2026-08-09-1410-player-locked-speed-field] Parallax backdrop is now a player-locked wrapping speed
+  field.** The origin-anchored 2000-rock asteroid ring is gone; a fixed pool of ~920 point sprites in 3
+  depth layers wraps around the player every frame (view-layer only, from `settleView`), so the same sense
+  of speed surrounds you everywhere in the system at constant cost — the ring left you in empty space once
+  you roamed, and it was ~40k tris to render sub-pixel specks. Points are static in world space and move
+  only by whole box spans when they leave the ±620 box, so parallax stays real and a stationary player
+  uploads nothing; the sprite is the existing procedural canvas dot (no new asset). Per-map colour/density
+  moved to the descriptor's `speedField`; the old `asteroids` key is kept for one release so the
+  already-published itch/`/v2` clients don't break (removal condition in DECISIONS §96). Also fixes a real
+  leak: `buildMap` never removed the previous backdrop on a level/map switch. New `?dev` "Speed field"
+  tuning folder (per-layer sliders + dump-to-console) inside the Backdrop panel, new pure
+  `client/src/speed-field.js` + unit tests, a `31-speed-field` headless scenario (teleport 4000 units out,
+  the field is still centred on the ship — mutation-verified against a camera-centred wrap) and a
+  `maps_speedfield` server test; intro-replay guard green. DECISIONS §96,
+  `docs/plans/2026-08-09-1410-player-locked-speed-field.md`.
 - **[gameplay] Character progression HUD — always-on XP bar, free-points badge, "Level up" toast.**
   Added three always-visible bits to the progression feature: a **free-skill-points badge** (gold count) on
   the **Character** left-menu item, shown only when there are unspent points; an **always-on XP bar** at the

@@ -17,6 +17,7 @@ import { makeShip, shipModelCfg } from './ship-factory.js';
 import { spawnShipExplosion, bulletGeo } from './projectiles.js';
 import { ghostBattlePlan, sampleShip, frameIndex, MAX_GHOST_BULLETS,
          GHOST_TUNE_RANGES, loadGhostTune, saveGhostTune } from './ghost-battle-track.js'; // slotAlive used by tests only
+import { buildSpeedFieldFolder } from './world.js'; // the ?dev Backdrop panel also hosts the speed-field folder (no cycle: world.js never imports this)
 // births: waves come + go over the loop, so one mesh is built per track SLOT (≤16) and only the born-and-alive
 // ones up to plan.maxConcurrent are ever visible (hidden meshes don't draw) — see the update loop below.
 
@@ -121,10 +122,11 @@ export async function buildGhostBattle() {
   };
 }
 
-// ---- ?dev "Backdrop authoring" panel (lil-gui, mirrors the ?tune palette panel). Hosts BOTH the live
-// appearance sliders (Depth/Scale/Opacity → GHOST_TUNE, persisted) AND the record controls (Start/Stop +
-// a live REC readout that polls window.__backdrop, defined in main.js). Injected in bootstrap() under isDev(),
-// via a dynamic lil-gui import → zero cost when ?dev is off. See the plan Step 3b. ----
+// ---- ?dev "Backdrop authoring" panel (lil-gui, mirrors the ?tune palette panel). Hosts THREE groups: the
+// ghost battle's live appearance sliders (Depth/Scale/Opacity → GHOST_TUNE, persisted), the player-locked
+// **speed field** folder (per-layer sliders + dump-to-console; owned by world.js), and the record controls
+// (Start/Stop + a live REC readout that polls window.__backdrop, defined in main.js). Injected in bootstrap()
+// under isDev(), via a dynamic lil-gui import → zero cost when ?dev is off. See the plan Step 3b. ----
 export function buildBackdropPanel(GUI) {
   const gui = new GUI({ title: 'Backdrop (?dev)' });
   // -- Appearance + placement (live; only visible in a non-freighter mission where the ghost battle exists) --
@@ -143,6 +145,7 @@ export function buildBackdropPanel(GUI) {
     .onChange(() => saveGhostTune(window.localStorage, GHOST_TUNE));
   const hint = { note: '' };
   ap.add(hint, 'note').name('status').listen().disable();   // shows "no ghost battle (play a non-freighter mission)"
+  buildSpeedFieldFolder(gui); // ?dev live tuning for the player-locked speed field (world.js)
   // -- Record (drives the global window.__backdrop recorder in main.js) --
   const rc = gui.addFolder('Record');
   const st = { label: '(idle)' };

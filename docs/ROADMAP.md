@@ -239,7 +239,7 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
   weapon / 0.5°-per-point skill — DECISIONS §89/§93.)
 - **General visual/UX live-tuning panel (with save-to-file).** A unified in-game panel to live-tune the
   look/feel knobs we currently hardcode or scatter across one-off `?dev`/`?tune` panels: background color,
-  starfield, asteroid/parallax "sense of flight", lighting, camera position/offset, effects, etc. — with a
+  starfield, the speed field / parallax "sense of flight", lighting, camera position/offset, effects, etc. — with a
   **save-the-tuned-config-to-file** step so the tuned numbers become the new committed defaults (not just a
   clipboard paste). Frame as a future phase. The exhaust `?dev` panel (`exhaust-fx.js buildExhaustPanel`,
   2026-07 — global look toggle + freighter palette/shape sliders + **Copy JSON**) is the first small
