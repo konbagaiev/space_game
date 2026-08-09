@@ -8,7 +8,7 @@ import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, 
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
-import { capLifted, inActivityZone, activityZoneCenters, arrivedAtPoint, ZONE_RADIUS, ARRIVE_RADIUS } from './system-map.js';
+import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './system-map.js';
 import { repairTick, shieldRecharge, applyShieldedDamage } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
@@ -408,14 +408,6 @@ function updateBank(ship, turnRate, dt) {
   bank.rotation.z = ship.roll;
 }
 
-// The activity-zone centers that re-apply the speed cap in roam: the fixed base/science/near-mining anchors
-// (system-map.js) + the active mission center if one is set. Cheap (≤4 centers), no arrays, no RNG.
-function activityZones() {
-  const zones = activityZoneCenters();
-  if (G.activeMission && G.activeMission.center) zones.push(G.activeMission.center);
-  return zones;
-}
-
 export function update(dt) {
   if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
 
@@ -475,19 +467,14 @@ export function update(dt) {
     if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
   }
 
-  // Flat top speed: pure inertia, but the player never exceeds their max (manual + autopilot alike).
+  // Flat top speed: pure inertia, but the player never exceeds their max (manual flight, roam or combat).
   // Mobility skill raises the cap by maxSpeedMul (1 when no points / on replays).
-  // OUT OF COMBAT (roam) the cap is LIFTED outside every activity zone OR while an autopilot is cruising to
-  // a destination (uncapped travel), so you can cross the system fast; inside a zone with no autopilot (or in
-  // ANY non-roam fight) it clamps exactly as today. capLifted() is false whenever G.roam is false — the
-  // invariant that keeps every recorded/campaign replay (incl. the return-to-base dock autopilot) byte-identical.
+  // OUT OF COMBAT (roam) the cap is LIFTED ONLY while an autopilot is cruising to a destination (uncapped
+  // travel, so you cross the system fast); manual roam flight stays capped, and ANY non-roam fight clamps
+  // exactly as today. capLifted() is false whenever G.roam is false — the invariant that keeps every
+  // recorded/campaign replay (incl. the return-to-base dock autopilot) byte-identical.
   const maxSpeed = PLAYER_MAX_SPEED * (G.player.maxSpeedMul || 1);
-  const ppos = G.player.mesh.position;
-  const lifted = capLifted({
-    roam: G.roam,
-    inZone: inActivityZone(ppos.x, ppos.z, activityZones(), ZONE_RADIUS),
-    autopilot: G.autopilot.active,
-  });
+  const lifted = capLifted({ roam: G.roam, autopilot: G.autopilot.active });
   if (!lifted && G.player.vel.length() > maxSpeed) G.player.vel.setLength(maxSpeed);
   // the ship keeps flying in its current direction, no matter where the nose points
   G.player.mesh.position.addScaledVector(G.player.vel, dt);

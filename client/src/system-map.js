@@ -100,14 +100,14 @@ export function inActivityZone(px, pz, zones, radius) {
   return false;
 }
 
-// THE replay-protection invariant: the player speed cap is lifted ONLY in roam — outside every activity
-// zone OR while an autopilot is actively cruising to a destination (autopilot travel is out-of-combat
-// cruise, so it must not be zone-capped; the kinematic brake still decelerates cleanly into the target).
-// It MUST be false whenever `roam` is false, regardless of position OR autopilot state — so every
+// THE replay-protection invariant: the player speed cap is lifted ONLY in roam AND ONLY while an autopilot
+// is actively cruising to a destination (autopilot travel is out-of-combat cruise — uncapped so you can
+// cross the system fast; the kinematic brake still decelerates cleanly into the target). Manual roam flight
+// stays capped. It MUST be false whenever `roam` is false, regardless of autopilot state — so every
 // recorded/campaign session (roam === false, incl. the return-to-base dock autopilot) clamps exactly as
 // today and all replays stay byte-identical.
-export function capLifted({ roam, inZone, autopilot }) {
-  return !!roam && (!!autopilot || !inZone);
+export function capLifted({ roam, autopilot }) {
+  return !!roam && !!autopilot;
 }
 
 // Autopilot arrival predicate: within `radius` (planar) of the destination point. Pure.
