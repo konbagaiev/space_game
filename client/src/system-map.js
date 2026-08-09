@@ -249,14 +249,23 @@ export function inActivityZone(px, pz, zones, radius) {
   return false;
 }
 
-// THE replay-protection invariant: the player speed cap is lifted ONLY in roam AND ONLY while an autopilot
-// is actively cruising to a destination (autopilot travel is out-of-combat cruise — uncapped so you can
-// cross the system fast; the kinematic brake still decelerates cleanly into the target). Manual roam flight
-// stays capped. It MUST be false whenever `roam` is false, regardless of autopilot state — so every
-// recorded/campaign session (roam === false, incl. the return-to-base dock autopilot) clamps exactly as
-// today and all replays stay byte-identical.
-export function capLifted({ roam, autopilot }) {
-  return !!roam && !!autopilot;
+// THE replay-protection invariant, stated precisely: **the speed cap is never lifted for INPUT-DRIVEN
+// flight.** A replay reproduces the recorded INPUT stream, so any leg the player steers by hand must clamp
+// exactly as it did when recorded. An AUTOPILOT leg is not input-driven and is not reproduced from the
+// trace — the intro replayer literally freezes the trace index and zeroes the key state while the dock
+// autopilot flies home (`rs.cutReturning`, main.js) — so uncapping an autopilot leg cannot desync a replay.
+// Verified: lifting the cap for the dock leg leaves `22-intro-replay` byte-identical (kills=4,
+// cards=p0..p4, won=true, tick 2213/2730 unchanged). See DECISIONS §101.
+//
+// Two legs are therefore uncapped, and only these:
+//   • roam + autopilot — cruising to a system destination, so crossing the system is not a chore;
+//   • docking          — the return-to-base dock autopilot, IN or OUT of roam ("Return to base" at the end
+//                        of a mission, and clicking the station while roaming).
+// Everything else clamps: all manual flight (roam or combat), and a drop-grab autopilot during a fight
+// (that one happens mid-combat, where top speed is a balance parameter). The kinematic brake still settles
+// the ship cleanly into the target at any speed.
+export function capLifted({ roam, autopilot, docking }) {
+  return (!!roam && !!autopilot) || !!docking;
 }
 
 // Autopilot arrival predicate: within `radius` (planar) of the destination point. Pure.

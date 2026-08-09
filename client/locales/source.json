@@ -1066,5 +1066,13 @@
   "ui.shop.no_model": {
     "source": "No 3D preview",
     "context": "Shop detail card placeholder when the item has no 3D model yet."
+  },
+  "ui.systemmap.dock": {
+    "source": "Dock at the station?",
+    "context": "Title of the confirm prompt shown when the ship, flying freely, arrives back at the player's home station. Saying yes ends the flight and goes back into the base menu."
+  },
+  "ui.systemmap.dockYes": {
+    "source": "Dock",
+    "context": "Confirm button on the \"Dock at the station?\" prompt — go back inside the base. One word."
   }
 }

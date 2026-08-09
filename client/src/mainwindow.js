@@ -17,7 +17,7 @@ import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
 import { SKILL_RATES } from './components.js'; // per-point skill rates → Character-card effect text (single source)
 import { reset, levelRunner, refreshMusic, engagePointAutopilot } from './sim.js';
-import { mountSystemNav, showStartMissionPrompt, objectForMission } from './systemmap-ui.js';
+import { mountSystemNav, showStartMissionPrompt, showDockPrompt, objectForMission } from './systemmap-ui.js';
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
 import { openBay, showBayView, updateTakeoffGate, resetShipStatsDelta, stopLoadoutPreview } from './shop.js';
@@ -471,6 +471,16 @@ G.onMissionArrival = (missionId) => {
     titleText: t(offer.titleKey || 'mission.mining.title'),
     onYes: () => { G.roam = false; launchMission(offer); }, // clearing roam first makes reset() start the levelRunner
     onNo: () => {},                                          // park (stay in roam)
+  });
+};
+
+// Roam arrival at the HOME STATION: you clicked home while flying freely and the dock autopilot brought you
+// in. Offer to actually go back inside — same ending as the map overlay's "Return to hangar", just flown to
+// rather than teleported. "Not yet" parks you at the station and you keep roaming.
+G.onBaseArrival = () => {
+  showDockPrompt({
+    onYes: () => { G.roam = false; G.gameStarted = false; document.body.classList.add('menu'); showMain(null); },
+    onNo: () => {},
   });
 };
 // The showcased item for a briefing. The server attaches `showcase {kind,id}` on the /advance path (where

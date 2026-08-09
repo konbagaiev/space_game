@@ -312,9 +312,14 @@ export function closeSystemMap() {
 }
 export function isSystemMapOpen() { return !!(overlayEl && overlayEl.style.display !== 'none'); }
 
-// ---------- "Start mission?" arrival prompt ----------
+// ---------- Arrival prompts ("Start mission?" / "Dock at the station?") ----------
+// Both are the same two-button confirm; only the strings differ.
+export function showDockPrompt({ onYes, onNo } = {}) {
+  showStartMissionPrompt({ titleKey: 'ui.systemmap.dock', yesKey: 'ui.systemmap.dockYes', onYes, onNo });
+}
+
 let promptEl = null;
-export function showStartMissionPrompt({ titleText, onYes, onNo } = {}) {
+export function showStartMissionPrompt({ titleText, titleKey, yesKey, onYes, onNo } = {}) {
   if (!promptEl) {
     promptEl = document.createElement('div');
     promptEl.id = 'systemmap-prompt';
@@ -330,6 +335,9 @@ export function showStartMissionPrompt({ titleText, onYes, onNo } = {}) {
     document.body.appendChild(promptEl);
   }
   applyStrings(promptEl);
+  // applyStrings just wrote the defaults from [data-i18n]; a caller-supplied key overrides them.
+  promptEl.querySelector('#systemmap-prompt-title').textContent = t(titleKey || 'ui.systemmap.startMission');
+  promptEl.querySelector('#systemmap-prompt-yes').textContent = t(yesKey || 'ui.systemmap.startYes');
   promptEl.querySelector('#systemmap-prompt-sub').textContent = titleText || '';
   promptEl.style.display = 'flex';
   const close = () => { promptEl.style.display = 'none'; };

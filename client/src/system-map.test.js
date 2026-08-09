@@ -45,16 +45,31 @@ test('a body returns to the same position after one full period', () => {
   assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 1e-3, `same after 6 days (${a.x},${a.z} vs ${b.x},${b.z})`);
 });
 
-test('capLifted is FALSE whenever roam is false — for EVERY autopilot state (replay invariant)', () => {
-  for (const autopilot of [false, true]) {
-    assert.equal(capLifted({ roam: false, autopilot }), false,
-      `roam:false must stay capped (autopilot:${autopilot}) — combat + the return-to-base dock stay capped`);
+// THE replay invariant, precisely: the cap is never lifted for INPUT-DRIVEN flight. A replay reproduces the
+// recorded INPUT stream, so anything the player steers by hand must clamp exactly as it did when recorded.
+test('capLifted is FALSE for every manually-flown state — the replay invariant', () => {
+  for (const roam of [false, true]) {
+    assert.equal(capLifted({ roam, autopilot: false, docking: false }), false,
+      `manual flight is capped (roam:${roam}) — this is the leg a replay reproduces`);
   }
 });
 
-test('capLifted in roam: lifted ONLY while an autopilot is traveling; manual flight stays capped', () => {
+test('capLifted stays FALSE for a mid-combat autopilot (the drop grab) — top speed is a balance parameter', () => {
+  assert.equal(capLifted({ roam: false, autopilot: true, docking: false }), false);
+});
+
+test('capLifted in roam: lifted while an autopilot cruises to a destination', () => {
   assert.equal(capLifted({ roam: true, autopilot: false }), false); // manual roam flight → capped
   assert.equal(capLifted({ roam: true, autopilot: true }), true);   // autopilot travel → uncapped
+});
+
+// The dock leg is autopilot-driven and is NOT reproduced from a trace (the intro replayer freezes the trace
+// index and zeroes input while it flies home), so it may run uncapped in BOTH states without desyncing.
+test('capLifted: the return-to-base DOCK autopilot is uncapped, in or out of roam', () => {
+  assert.equal(capLifted({ roam: false, autopilot: true, docking: true }), true,
+    'end-of-mission "Return to base" flies home at full speed');
+  assert.equal(capLifted({ roam: true, autopilot: true, docking: true }), true,
+    'and so does clicking the station while roaming');
 });
 
 test('inActivityZone boundary behaviour (inclusive at the radius)', () => {

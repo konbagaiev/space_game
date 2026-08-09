@@ -343,8 +343,9 @@ function engageObjectAt(e) {
   // 1) a chest under the pointer wins (works in combat AND return-to-base)
   const drop = dropUnderPointer(e);
   if (drop) { engageDropAutopilot(drop); return true; }
-  // 2) otherwise the clickable station (return-to-base only)
-  if (!G.returnToBase || !G.baseStation || !G.baseStation.active) return false;
+  // 2) otherwise the clickable station — out of combat only (post-kill return-to-base OR free roam, where
+  //    clicking home flies you back and offers to dock; see engageAutopilot)
+  if (!G.baseStation || !G.baseStation.active) return false;
   stationRay.setFromCamera(eventNdc(e), camera);
   if (stationRay.intersectObject(G.baseStation.obj, true).length) { engageAutopilot(); return true; }
   return false;
@@ -428,7 +429,11 @@ let dockCursorOn = false;
 let grabCursorOn = false;
 const setDockCursor = (on) => { if (on !== dockCursorOn) { dockCursorOn = on; renderer.domElement.classList.toggle('dock-cursor', on); } };
 const setGrabCursor = (on) => { if (on !== grabCursorOn) { grabCursorOn = on; renderer.domElement.classList.toggle('grab-cursor', on); } };
-const stationClickable = () => !!(G.returnToBase && G.baseStation && G.baseStation.active && G.player && G.player.alive && !levelRunner.won);
+// The station is a click target out of combat: after the last kill (return-to-base) AND while roaming.
+// `G.baseStation.active` is the flag both states set — during a live fight it is false, so the hover
+// cursor and the click stay off.
+const stationClickable = () => !!((G.returnToBase || G.roam) && G.baseStation && G.baseStation.active
+  && G.player && G.player.alive && !levelRunner.won);
 if (!Device.hasTouch) {
   let lastHoverRay = 0;
   renderer.domElement.addEventListener('pointermove', (e) => {
@@ -935,6 +940,9 @@ if (location.search.includes('debug')) {
     simulateIntroEnd() { introMode = true; cutsceneEnd(); rs.done = true; return { playDone: rs.done, playActive: !!rs.play }; },
     // --- star-system roam / navigation hooks (32-star-system scenario) ---
     enterRoam, engagePointAutopilot,
+    engageAutopilot,                                // what a click on the home station does
+    get baseStation() { return G.baseStation; },    // { obj, active } — `active` = clickable right now
+    set onBaseArrival(fn) { G.onBaseArrival = fn; }, // stands in for the "Dock at the station?" prompt
     // Deterministic sim stepping for headless roam tests (software-GL rAF is too slow to advance the live
     // accumulator meaningfully in a few seconds). Steps update(dt) N times at the fixed sim step — same
     // fixed dt the live loop uses, so it exercises the real per-tick sim (autopilot, cap, arrival).

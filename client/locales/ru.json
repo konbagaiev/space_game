@@ -264,5 +264,7 @@
   "ui.shop.in_stash": "В хранилище",
   "ui.shop.no_replacement": "В хранилище нет запчасти для этого слота.",
   "ui.shop.back": "Назад",
-  "ui.shop.no_model": "Нет 3D-модели"
+  "ui.shop.no_model": "Нет 3D-модели",
+  "ui.systemmap.dock": "Пристыковаться к станции?",
+  "ui.systemmap.dockYes": "Пристыковаться"
 }

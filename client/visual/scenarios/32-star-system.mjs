@@ -317,6 +317,35 @@ export default async function ({ page, assert, shot }) {
     `the mission button no longer says "Take off" — it launches the fight (got "${base.goText}")`);
   await shot('base-map');
 
+  // 7b. CLICK HOME WHILE ROAMING → flown back, UNCAPPED, then offered a dock. Two separate fixes: the
+  //     station is a click target during roam (not just after the last kill), and the dock autopilot runs
+  //     without the combat speed cap so the trip home is quick. Arriving parks and asks — it must NOT win
+  //     anything (there is no mission in roam).
+  const home = await page.evaluate(async () => {
+    const g = window.__game;
+    await g.enterRoam(null);
+    // start far out so the cap would be clearly binding on the way home
+    g.player.mesh.position.set(1100, 0, -900);
+    g.player.vel.set(0, 0, 0);
+    const clickable = g.baseStation && g.baseStation.active;
+    g.engageAutopilot();                       // exactly what a click on the station does
+    const kind = g.autopilot.target && g.autopilot.target.kind;
+    let maxV = 0, docked = false, ticks = 0;
+    g.onBaseArrival = () => { docked = true; };  // stand in for the "Dock at the station?" prompt
+    for (let i = 0; i < 120 && !docked; i++) { g.stepSim(30); ticks += 30; maxV = Math.max(maxV, g.player.vel.length()); }
+    const s = g.baseStation.obj.position, p = g.player.mesh.position;
+    return { clickable, kind, maxV, docked, ticks, won: g.levelRunner.won, roam: g.roam,
+             dist: Math.hypot(p.x - s.x, p.z - s.z) };
+  });
+  assert.equal(home.clickable, true, 'the home station is clickable while roaming, not only after a fight');
+  assert.equal(home.kind, 'station', 'clicking it engages the DOCK autopilot');
+  assert.ok(home.maxV > 35, `the trip home is UNCAPPED (peak ${home.maxV.toFixed(1)} > the combat cap 30)`);
+  assert.equal(home.docked, true,
+    `the ship reaches the station and the dock prompt is raised (after ${home.ticks} ticks, ${home.dist.toFixed(0)}u out)`);
+  assert.ok(home.dist <= 45, `and it actually parks at the station (${home.dist.toFixed(1)}u)`);
+  assert.equal(home.won, false, 'arriving in roam wins NOTHING — there is no mission to complete');
+  assert.equal(home.roam, true, 'and it stays in roam until the player accepts the dock');
+
   // 8. TAKE-OFF GATE: a ship missing a required slot (hull/armor, engine or thrusters) can neither launch a
   //    fight NOR wander off into the system — every launch control greys out together.
   const gate = await page.evaluate(() => {

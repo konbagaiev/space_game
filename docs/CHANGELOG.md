@@ -5,6 +5,22 @@
 
 ## 2026-08-09
 
+- **[2026-08-09-1456-star-system-map] "Return to base" now flies home at full speed, and you can click the
+  station while roaming.** The end-of-mission return crawled at the combat cap because the speed cap was
+  gated on `roam` — a conservative proxy for the real replay invariant, which is that a replay reproduces the
+  recorded **INPUT** stream, and an **autopilot leg is not input-driven** (the intro replayer literally
+  freezes the trace index and zeroes input while the dock autopilot flies home). Measured first: uncapping
+  the dock leg leaves `22-intro-replay` byte-identical. So the dock autopilot is now uncapped in **both**
+  states, while manual flight stays capped everywhere and a mid-combat drop-grab autopilot stays capped too.
+  Separately, **clicking the home station now works during free flight**, not only after the last kill:
+  it engages the dock autopilot, flies you back, and raises a **"Dock at the station?"** confirm (EN+RU) that
+  ends the flight in the base menu — the flown counterpart of the map's teleporting "Return to hangar". It
+  wins nothing (there is no mission in roam). Fixed en route, exposed by the higher arrival speed: the
+  autopilot chased its goal past it, overshot and settled into a **~10 u/s orbit around the target**, so an
+  arrival predicate waiting for the ship to stop never fired — it now brakes once inside the arrive radius
+  (drops excluded; their pickup radius owns that endgame). Guards: `capLifted` unit tests pin every cell of
+  the new table; `32-star-system` flies home from 1 400 u and asserts the station is clickable in roam, the
+  trip peaks above the combat cap, the ship parks at the station, the prompt fires and nothing is won. §101.
 - **[2026-08-09-1456-star-system-map] Fix: the base menu had a yellow-and-blue backdrop.** `buildMap` built
   the star-system bodies but left their placement to the per-frame `updateSystemBodies`, and the hangar
   renders the scene while the sim is **not** ticking (`G.gameStarted` false) — so every body kept its

@@ -3641,6 +3641,36 @@ the map UI read the client `SYSTEM` constant while the renderer read the map des
 - Fixed in passing: `body.menu` hid `#rocket-btn`/`#zoom` individually but not the `#touch` layer, so on a
   phone the **FIRE button stayed live over the base menu** and overlapped the new object list.
 
+## 101. The speed cap protects REPLAYS, not autopilots — so flying home is uncapped
+
+§98/§100 carried the rule "`capLifted` must be false whenever `roam` is false", which made the
+end-of-mission **"Return to base"** flight crawl at the combat cap (`PLAYER_MAX_SPEED` 30) across whatever
+distance the fight ended at. That rule was a **conservative proxy**. The thing replays actually reproduce is
+the recorded **INPUT stream**, so the real invariant is narrower:
+
+> **The cap is never lifted for input-driven flight.** An autopilot leg is not input-driven.
+
+The intro replayer makes this explicit: while the dock autopilot flies home it **freezes the trace index and
+zeroes the key state** (`rs.cutReturning`, main.js) precisely because that leg is not replayed from input.
+Measured before changing anything: lifting the cap for the dock leg leaves `22-intro-replay` **byte-identical**
+(kills=4, cards p0..p4, won=true, tick 2213/2730 unchanged). So two legs run uncapped and only these — roam +
+autopilot (cross the system without a chore), and the **dock** autopilot in *either* state. Manual flight
+stays capped everywhere, and a mid-combat **drop-grab** autopilot stays capped too (top speed is a balance
+parameter inside a fight). Unit tests pin each cell of that table.
+
+**Clicking the home station now works while roaming**, not just after the last kill: `engageAutopilot` accepts
+`G.roam`, `reset()` marks the station clickable for the whole roam, and arriving raises a **"Dock at the
+station?"** confirm (`G.onBaseArrival`) — the flown counterpart of the map overlay's teleporting "Return to
+hangar". It can win nothing: `levelRunner.returningToBase` is false in roam, so `canDock`/`win` never run.
+
+**Terminal brake (the bug uncapping exposed).** `autopilotControl` chased its goal until the *kinematic*
+brake distance said otherwise, so a fast arrival overshot, re-accelerated and settled into a ~10 u/s **orbit
+around the target** — an arrival predicate waiting for the ship to come to rest then never fired, and a roam
+destination could never raise its prompt. The autopilot now simply brakes once inside `ARRIVE_RADIUS`.
+Excluded for a **drop**, whose own pickup radius owns that endgame and whose trajectory is combat-tuned. The
+dock/win path is unaffected either way — `canDock` fires on the first tick inside the radius, regardless of
+speed.
+
 ## Future ideas
 
 solid asteroids with bounce ·

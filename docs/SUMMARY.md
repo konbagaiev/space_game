@@ -1201,13 +1201,23 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     `levelRunner.resetLevelRunnerState()` with `level = null` → no spawns; clears a prior win's `won` so the
     ship isn't frozen) and the ghost battle; the player spawns at planet 2 (origin). **Roam is unrecorded**
     (`beginLiveSession` is not called).
-  - **Uncapped autopilot travel.** The player speed cap (`PLAYER_MAX_SPEED` 30) is **lifted in roam only
-    while an autopilot is cruising to a destination** (`capLifted({roam,autopilot})`, pure/tested), so §2
-    inertia grows speed to cross the system on a routed trip while **manual** roam flight stays capped and
-    handles exactly like combat. **`capLifted` is false whenever `G.roam` is false** — the invariant that
-    keeps every recorded/campaign replay byte-identical (including the return-to-base dock autopilot). The
+  - **Uncapped AUTOPILOT travel (`capLifted`, pure/tested — DECISIONS §101).** The player speed cap
+    (`PLAYER_MAX_SPEED` 30) is lifted for exactly two legs: **roam + autopilot** (cruising to a system
+    destination) and **docking** (the return-to-base autopilot, in OR out of roam — so end-of-mission
+    "Return to base" and clicking the station while roaming both fly home fast). Everything else clamps:
+    all **manual** flight, and a **drop-grab** autopilot during a fight. The invariant is *"never lift the
+    cap for INPUT-DRIVEN flight"* — a replay reproduces the recorded input stream, and an autopilot leg is
+    not part of it (the intro replayer freezes the trace index and zeroes input while the dock autopilot
+    flies home), which is why the dock leg can be uncapped with `22-intro-replay` byte-identical. The
+    autopilot **brakes once inside `ARRIVE_RADIUS`** instead of chasing its goal (without that, a fast
+    arrival overshoots into a ~10 u/s orbit and an arrival prompt never fires); drops are excluded. The
     OOB warn/warp-back is disabled in roam. (`ZONE_RADIUS` / `inActivityZone` / `activityZoneCenters` remain
     as pure helpers for the `?roam` readout and future zone rules; the speed cap no longer consults them.)
+  - **Clicking the home station.** Out of combat the station is a click target — after the last kill
+    (return-to-base → docking WINS the mission) **and while roaming**, where it engages the same dock
+    autopilot but wins nothing (`levelRunner.returningToBase` is false, so `canDock`/`win` never run):
+    arriving parks the ship and raises a **"Dock at the station?"** confirm (`G.onBaseArrival`) that ends the
+    flight back in the base menu — the flown counterpart of the map overlay's teleporting "Return to hangar".
   - **Navigation UI — ONE component, three hosts (`systemmap-ui.js` `mountSystemNav`, DECISIONS §100).**
     The base-menu **Map** section, the in-flight **overlay** and **mission activation** all run the same
     component over the same object list. Layout: the **map canvas is pinned LEFT** (in the base menu, right
