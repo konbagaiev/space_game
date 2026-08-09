@@ -5,11 +5,15 @@
 
 ## 2026-08-09
 
-- **[decision] Inter-point travel will be a "cruise assist", not a binary autopilot (planned).** Recorded
-  DECISIONS §94: as the world grows into a star system, out-of-combat travel between activity points gets a
-  temporary speed-cap lift + softened inertia that auto-disables on entering combat (full §2 inertia
-  returns), instead of a full autopilot. A "decide on feel" item; revisit if playtests show inertia is still
-  too tiring over distance. No code yet.
+- **[decision] Star-system map + autopilot navigation (planned; feeds the star-system-map pipeline).**
+  Recorded DECISIONS §94: the world becomes a to-scale flyable star system (star + 4 wall-clock-orbiting
+  planets + an asteroid belt with 3 mining bases + a science station), sized so the outermost orbit's
+  diameter is ~2 min of uncapped ion-engine travel (not astronomical). Out of combat the speed cap is
+  lifted; a **system-map screen** (opened from the in-battle map button and the base menu) lets the player
+  pick a destination that **autopilot** flies to, with the active mission highlighted; combat re-applies the
+  cap + full inertia. Float32 coordinates are kept safe by the deliberately compact sizing (no floating
+  origin; whole system fits one server-side coordinate space for the planned one-system-per-server
+  multiplayer). Freighter trade route deferred to ROADMAP. No code yet — building via /feature-pipeline.
 - **[gameplay] Character progression HUD — always-on XP bar, free-points badge, "Level up" toast.**
   Added three always-visible bits to the progression feature: a **free-skill-points badge** (gold count) on
   the **Character** left-menu item, shown only when there are unspent points; an **always-on XP bar** at the

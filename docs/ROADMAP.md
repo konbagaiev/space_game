@@ -219,6 +219,14 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 
 ## Backlog / parking lot
 (Ideas not yet scheduled — add freely.)
+- **Freighter trade route across the star system.** With the map becoming a real star system (star + 4
+  orbiting planets + an asteroid belt with mining bases + a science station; see the star-system-map work),
+  the freighter should stop being a fixed backdrop set-piece and instead follow a **route** through the
+  system — e.g. hauling between the mining bases / stations / planets, moving along a path over time. Design
+  the route (waypoints, speed, whether it's purely cosmetic traffic or a future escort/raid mission target)
+  once the orbital layout lands. Deferred by the maintainer during the star-system-map discussion
+  (2026-08-09) — not decided yet. Current freighter: `catalog_seed.js` `freighter` set-piece + the ambient
+  backdrop battle near it (`client/src/backdrop-battle.js`).
 - **Aim assist: target by hitbox spheres, not ship center.** Bullet auto-aim (`findBulletAimTarget` →
   `nearestInConeIndex` in `steering.js`) currently picks the nearest target whose **center** falls inside the
   forward cone, so the stream won't bend toward a large ship until its *center* enters the cone — even when

@@ -3321,28 +3321,35 @@ Shields, Maneuverability, Mobility; Accuracy reserved for later). Several non-ob
   hostile **bullets** this iteration — rocket blasts are not dodged yet. Aim-assist from Kinetic is
   additive degrees onto the existing per-weapon cone (consistent with §89).
 
-## 94. Inter-point travel: a "cruise assist", not a binary autopilot (planned)
+## 94. Inter-point travel: autopilot via a system-map route selector + uncapped manual cruise (planned)
 
-As the world grows into a star system with several activity points, the player needs a way to cover the
-empty distance between them without fighting the inertial flight model the whole way. Two obvious options
-were weighed:
+As the world becomes a to-scale, flyable star system (star + 4 orbiting planets + an asteroid belt with
+mining bases + a science station; see the star-system-map work), the player needs to cover large distances
+between activity points without fighting the inertial flight model the whole way. Two extremes were weighed
+— full autopilot (removes tedium but also control/agency) vs pure manual inertial travel (§2 model with the
+out-of-combat speed cap lifted; keeps control but makes long empty transits a chore, since our no-friction
+inertia is exactly what's tiring over distance).
 
-- **Full autopilot** (the game flies you point-to-point): removes the tedium but also removes control and
-  agency — the player becomes a passenger on the boring part.
-- **Pure manual inertial travel** (§2 model, uncapped speed out of combat): keeps control but makes long
-  empty transits a chore, since our no-friction inertia is exactly what's tiring over distance.
+**Decision (planned):** build **both** — an explicit **autopilot** driven by a **system-map screen**, on
+top of **uncapped manual cruise**:
 
-**Decision (planned, not yet built):** go with a **cruise assist** instead of either extreme. Out of
-combat the player still steers, but gets a temporary lift of the speed cap plus softened inertia damping
-(a flight assist), and the assist **auto-disables on entering an activity zone / combat**, where the full
-inertial model (§2) returns. Rationale: control stays with the player, the tiring part (wrestling inertia
-across nothing) is removed, and combat feel is untouched. A good parallax speed-field (see the Points
-speed-field work) also makes fast manual travel *feel* good, which further reduces the need for autopilot.
+- **Out of combat the speed cap is lifted** (§2 inertia, no cap) so free manual flight across the system is
+  possible; **entering an activity/combat zone re-applies the cap and full inertia**, so combat feel is
+  untouched.
+- **A system-map screen** (top-down overview of the star, the 4 planets at their wall-clock orbital
+  positions, the belt, mining bases, the science station, our base, and the player) is opened from the
+  in-battle map button AND from the base menu (same screen). The player **selects a destination on the map
+  and autopilot flies the real ship there**; the **active mission is highlighted** on the map.
 
-**Revisit if:** playtests show the inertial model is still too hard to manage over distance even with the
-assist — then reconsider an opt-in autopilot for transits. Explicitly a "decide on feel" item; not settled
-by theory. Combat is always local to the player this iteration (activity points are anchored to the player
-until multiplayer), so this only affects the out-of-combat traversal layer.
+Rationale: at to-scale distances manual inertial flight across the void is tedious, so autopilot to a chosen
+destination removes it while the map gives spatial context + mission targeting; manual uncapped cruise stays
+available for free flight, and a player-locked parallax speed-field (see the Points speed-field work) makes
+that flight *feel* fast rather than like floating. This **supersedes the earlier lean** in this section
+toward a "cruise assist instead of autopilot" — the maintainer decided (2026-08-09) to build the autopilot
+after all, since a to-scale system needs real point-to-point navigation.
+
+**Revisit if:** playtests show autopilot removes too much agency, or the manual cruise alone is enough — then
+trim one side. A "decide on feel" item, tuned from an early playable build.
 
 ## Future ideas
 
