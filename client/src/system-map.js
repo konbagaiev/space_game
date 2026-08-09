@@ -4,16 +4,26 @@
 // base neighbourhood, the mission set-pieces and the missions.js centers all stay origin-relative — no
 // combat/mission rewrite. "To-scale" means the TRAVEL distances (orbit radii).
 //
-// HOW THE BODIES ARE RENDERED (DECISIONS §98). They are REAL 3D spheres at FIXED positions in a "sky
-// space" — a copy of the system compressed by `parallax` around the player. Each body's sky direction is
-// its TRUE bearing from the origin, resolved ONCE per session (bodySkyDir); its distance/size are
-// art-directed (`dist`/`size`) because the true 45 000-unit distances are far outside the camera's far
-// plane. world.js then draws them at those fixed local positions inside a group whose origin is
-// `camera − skyParallax(player)`, which is exactly how a system compressed by `parallax` projects. So you
-// get real perspective, real depth ordering and gentle differential parallax (near bodies slide faster
-// than far ones), the bodies NEVER jump, and — because skyParallax saturates at `parallaxMax` — you can
-// never fly up to one. An earlier pass re-projected every body by its bearing FROM THE PLAYER every
-// frame: flying past a planet flipped that bearing ~180° and the planet visibly jumped. Rejected.
+// HOW THE BODIES ARE RENDERED (DECISIONS §98). The ship flies ON the ecliptic plane (y = 0) and the camera
+// looks DOWN at it from above. Every body — the star and all four planets — is a REAL sphere sitting at its
+// OWN TRUE (x,z) on that plane, sunk `depth` BELOW it and shifted by `offset` so it hangs down-and-left of
+// the point you arrive at. That is exactly the placement the game's original single home planet used
+// (pos [-150,-285,-110], radius 60) — now applied per body, across the whole system.
+//
+// The consequences are the whole point:
+//   • Nothing is attached to the camera, so nothing re-projects and nothing can jump. You simply fly over a
+//     fixed world and the perspective/parallax is whatever real 3D gives you.
+//   • You DO have to travel. At the base you see planet 2 (and the station) and nothing else; planet 1, 3, 4
+//     and the star are thousands of units away, past the camera's far plane, so they are not drawn at all
+//     until you fly to them (`fade` ramps a body in near that plane instead of popping it).
+//   • A body is PERMANENTLY out of reach even when you are right over it: the ship flies at y = 0 and the
+//     body's top is `depth − size` below that. You can never touch, ram or loom into a planet.
+//   • `planetAnchor(name)` — where autopilot actually flies — is the body's (x,z) ON the plane. Arrive there
+//     and the planet reads exactly the way the home planet reads at the base.
+// An earlier pass instead re-projected every body by its bearing FROM THE PLAYER onto a camera-anchored sky
+// dome at constant apparent size: flying past a planet flipped that bearing ~180° and the planet visibly
+// jumped, a moon's bearing could cross its planet's and slide into the disk, and constant size killed all
+// parallax. Rejected — see §98.
 //
 // EVERYTHING here is view-layer/navigation math consumed only by buildMap/settleView + the map UI — it
 // draws ZERO sim RNG and never runs inside the deterministic tick, so recorded replays stay byte-identical
@@ -22,36 +32,34 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const EPOCH = 1723000000000; // fixed reference timestamp (ms) for orbital phase — deterministic
 
-// `orbitR`/`periodDays`/`phase0` are the TRUE orbital geometry (travel distances on the plane, used by the
-// map screen, the anchors and each body's sky bearing). `dist`/`size` are the RENDER placement in sky space:
-// the fixed distance from the camera and the sphere radius. Apparent angular size is size/dist — the star is
-// ~1.2x a planet by design; the home planet is the big familiar backdrop the game had before this feature.
+// `orbitR`/`periodDays`/`phase0` are the TRUE orbital geometry — the travel distances you actually fly, and
+// what the map screen and the anchors are built from. `size`/`depth` are the render placement: sphere radius
+// and how far BELOW the ecliptic the body is sunk. Apparent size is size/depth, so the two move together —
+// the star reads ~1.2x a planet by design.
 export const SYSTEM = {
-  // Downward tilt of the sky layout: each body's local position is (dir.x, −elev, dir.z) normalized × dist.
-  // The near-top-down camera (CAM_OFFSET (0,110,26)) looks almost straight down, so bodies must sit BELOW it
-  // to land in frustum. Bigger = higher/more-centred on screen, smaller = toward the edges. Live-tuned in ?roam.
-  elev: 1.5,
-  // Sky-space compression: 1 unit of flight shifts the backdrop `parallax` units against the fixed bodies.
-  // 0.02 → crossing 1000 units slides the backdrop 20 units, ~2.7° against the home planet: gentle, visible.
-  parallax: 0.020,
-  // Saturation bound for that shift (skyParallax). Guarantees a body is NEVER reached however far you fly,
-  // and keeps every body inside the camera's 900-unit far plane (max dist 700 + 90 < 900).
-  parallaxMax: 90,
+  // Where a body hangs relative to the point on the plane you arrive at. Copied from the original single
+  // home planet ([-150, -285, -110]) so arriving at ANY body frames it the same familiar way: down and to
+  // the left, below the plane. Live-tuned in ?roam.
+  offset: { x: -150, z: -110 },
+  // Opacity ramp by distance FROM THE SHIP (not from the camera — otherwise zooming out, which moves the
+  // camera away, would fade the planet you are parked at). `full` is comfortably past the 340 u a body sits
+  // from its own anchor, so a body stays solid across its whole neighbourhood; `out` completes the ramp
+  // before the body could ever enter the frustum, so approaching one fades it in instead of popping it.
+  fade: { full: 520, out: 760 },
   belt: { inner: 16000, outer: 24000 }, // asteroid belt just outside planet 2's orbit (map UI only)
-  star: { name: 'star', color: 0xffd9a0, size: 54, dist: 700 },
+  star: { name: 'star', color: 0xffd9a0, size: 74, depth: 300 },
   planets: [
-    { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 36, dist: 560 },
-    // Base planet: pinned to the world origin, so it has no bearing of its own — `homeDir` art-directs where
-    // it hangs in the sky (matching the old single-planet backdrop, down/left of the ship). Its moons orbit
-    // it in sky space; `orbitR` there is a SKY-space radius, kept clear of the planet limb (see moonClearance).
-    { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 58, dist: 430,
-      ocean: true, homeDir: { x: -0.81, z: -0.59 },
+    { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
+    // Base planet — pinned to the world origin, so its anchor IS the base neighbourhood and it is the one
+    // body you see without travelling. Its moons orbit it in world space, clear of its limb (moonClearance).
+    { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 60, depth: 285,
+      ocean: true,
       moons: [
-        { name: 'moon1', size: 9, orbitR: 104, periodS: 96,  phase0: 0.60, tilt: 0.28,  color: 0x9aa2ad },
-        { name: 'moon2', size: 6, orbitR: 150, periodS: 171, phase0: 3.40, tilt: -0.18, color: 0x8b8f98 },
+        { name: 'moon1', size: 10, orbitR: 112, periodS: 96,  phase0: 0.60, tilt: 0.28,  color: 0x9aa2ad },
+        { name: 'moon2', size: 7,  orbitR: 158, periodS: 171, phase0: 3.40, tilt: -0.18, color: 0x8b8f98 },
       ] },
-    { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 34, dist: 620 },
-    { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 30, dist: 680 },
+    { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 58, depth: 285 },
+    { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 52, depth: 285 },
   ],
 };
 
@@ -90,34 +98,36 @@ export function listBodies(tNow = Date.now()) {
   return out;
 }
 
-// ---------- Sky placement (fixed, resolved once per session) ----------
+// ---------- Render placement (a real world position per body — nothing is camera-anchored) ----------
 
-// The unit XZ direction a body hangs in, as seen from the ORIGIN (== the base neighbourhood the player
-// roams). Resolved ONCE at build time and then never recomputed — that is what keeps a body from jumping;
-// the player's own motion is expressed by skyParallax instead. Planet 2 sits AT the origin, so it has no
-// bearing: it uses its art-directed `homeDir`.
-export function bodySkyDir(name, tNow = Date.now()) {
-  const p = name === 'star' ? null : planetByName(name);
-  if (p && p.homeDir) {
-    const l = Math.hypot(p.homeDir.x, p.homeDir.z) || 1;
-    return { x: p.homeDir.x / l, z: p.homeDir.z / l };
-  }
-  const w = bodyWorldPos(name, tNow);
-  const l = Math.hypot(w.x, w.z);
-  if (l < 1e-6) return { x: 0, z: -1 }; // degenerate → the top-of-screen direction
-  return { x: w.x / l, z: w.z / l };
+function bodySpec(name) {
+  return name === 'star' ? SYSTEM.star : planetByName(name);
 }
 
-// How far the whole (fixed) sky layout slides against the player at planar position (px,pz). Linear in the
-// player's distance from the origin for small distances — `k` units of shift per unit flown, i.e. real
-// parallax for a system compressed by `k` — then SATURATES smoothly at `max`. The saturation is what makes
-// the bodies permanently distant: no matter how far you fly the backdrop only ever slides `max` units, so
-// you never close on a body, and every body stays inside the camera's far plane. Pure, monotone, C¹.
-export function skyParallax(px, pz, k = SYSTEM.parallax, max = SYSTEM.parallaxMax) {
-  const d = Math.hypot(px, pz);
-  if (d < 1e-9 || max <= 0 || k <= 0) return { x: 0, z: 0 };
-  const len = max * Math.tanh((d * k) / max);
-  return { x: (px / d) * len, z: (pz / d) * len };
+// Where a body's SPHERE actually sits in the world: its true (x,z) on the ecliptic, sunk `depth` below the
+// plane the ship flies on, shifted by SYSTEM.offset so it frames down-and-left of the arrival point. This is
+// an absolute world position — the renderer writes it once and it never depends on where the player is,
+// which is precisely why a body can never jump.
+export function bodyRenderPos(name, tNow = Date.now()) {
+  const spec = bodySpec(name);
+  const w = bodyWorldPos(name, tNow);
+  return { x: w.x + SYSTEM.offset.x, y: -(spec ? spec.depth : 285), z: w.z + SYSTEM.offset.z };
+}
+
+// How far the ship (which flies at y = 0) clears a body's surface when it is directly over it. Positive by
+// construction — a body is sunk `depth` and its top reaches `depth − size` below the plane — so a planet is
+// permanently out of reach no matter how precisely you park on its anchor. Pinned by a test.
+export function bodyClearance(name) {
+  const spec = bodySpec(name);
+  return spec ? spec.depth - spec.size : 0;
+}
+
+// Opacity for a body `dist` from the SHIP: 1 out to `fade.full`, then a linear ramp to 0 at `fade.out`, so a
+// body you are flying toward FADES IN rather than popping into existence, and one you leave fades out.
+export function bodyFade(dist, fade = SYSTEM.fade) {
+  if (dist <= fade.full) return 1;
+  if (dist >= fade.out) return 0;
+  return (fade.out - dist) / (fade.out - fade.full);
 }
 
 // A moon's orbital angle around its planet at wall-clock tNow (view-only, seconds-scale period). Pure.
@@ -125,9 +135,9 @@ export function moonAngle(moon, tNow = Date.now()) {
   return moon.phase0 + 2 * Math.PI * (tNow / 1000) / moon.periodS;
 }
 
-// Gap (sky-space units) between a moon's orbit and the planet's surface — how much clear space the moon
-// keeps at its CLOSEST approach on screen. Must stay > 0 or the moon would clip into / overlap the planet
-// disk (the bug this replaces). Pinned by a test for every moon of every planet.
+// Gap (world units) between a moon's orbit and the planet's surface — how much clear space the moon keeps
+// at its CLOSEST approach. Must stay > 0 or the moon would clip into / overlap the planet disk (the bug
+// this replaces). Pinned by a test for every moon of every planet.
 export function moonClearance(planet, moon) {
   return moon.orbitR - planet.size - moon.size;
 }
@@ -138,9 +148,8 @@ export function moonClearance(planet, moon) {
 // ignored; absent keys keep their defaults. Returns SYSTEM.
 export function applySystemSpec(spec) {
   if (!spec) return SYSTEM;
-  for (const key of ['elev', 'parallax', 'parallaxMax']) {
-    if (typeof spec[key] === 'number') SYSTEM[key] = spec[key];
-  }
+  if (spec.offset) Object.assign(SYSTEM.offset, spec.offset);
+  if (spec.fade) Object.assign(SYSTEM.fade, spec.fade);
   if (spec.belt) Object.assign(SYSTEM.belt, spec.belt);
   if (spec.star) Object.assign(SYSTEM.star, spec.star);
   for (const p of spec.planets || []) {
@@ -164,32 +173,27 @@ export const ANCHORS = {
   mining:  { x: -988, z: 0 },   // near mining base (asteroid field) — belt-ward (anti-star)
 };
 
-// How far out a planet's ANCHOR sits — the reachable transfer point on the plane you actually fly to when
-// you pick that planet on the map. The planet itself is a permanently distant backdrop and is never a flight
-// destination; the anchor is its approach corridor, out along its true bearing. Sized so the trip reads as a
-// real crossing (~4x the science/mining anchors) while staying well inside Float32-safe coordinates.
-export const PLANET_ANCHOR_DIST = 4200;
-
-// The reachable point that stands in for a planet as a destination. Planet 2 is the base planet — you are
-// already inside its orbit — so its anchor IS the base anchor. Pure.
+// The point ON THE PLANE that autopilot flies to for a body — its own true (x,z). Arrive there and the body
+// hangs below you framed exactly the way the home planet is framed at the base (that is what SYSTEM.offset
+// buys). The body itself is never the flight target: it is `depth` below the plane and unreachable. Pure.
 export function planetAnchor(name, tNow = Date.now()) {
-  const p = planetByName(name);
-  if (!p) return { x: 0, z: 0 };
-  if (p.homeDir) return { x: ANCHORS.base.x, z: ANCHORS.base.z };
-  const d = bodySkyDir(name, tNow);
-  return { x: d.x * PLANET_ANCHOR_DIST, z: d.z * PLANET_ANCHOR_DIST };
+  const w = bodyWorldPos(name, tNow);
+  return { x: w.x, z: w.z };
 }
 
 // Map-screen destinations (markers). `missionId` is the offer id the base board would launch, or null.
-// `kind: 'planet'` entries are the per-planet anchors above (planet 2 omitted — its anchor is the base).
+// `kind: 'planet'` entries are the per-body anchors above — a real, to-scale trip across the system (planet 2
+// is omitted: its anchor is the world origin, i.e. the base neighbourhood already listed). The star is a
+// destination too: like every other body, you have to fly to it to see it.
 export function listDestinations(tNow = Date.now()) {
   const out = [
     { id: 'base',          kind: 'base',    missionId: null,             pos: ANCHORS.base },
     { id: 'side-research', kind: 'mission', missionId: 'side-research',  pos: ANCHORS.science },
     { id: 'side-mining',   kind: 'mission', missionId: 'side-mining',    pos: ANCHORS.mining },
+    { id: 'star',          kind: 'planet',  missionId: null,             pos: planetAnchor('star', tNow) },
   ];
   for (const p of SYSTEM.planets) {
-    if (p.homeDir) continue; // planet 2 == the base neighbourhood, already listed
+    if (p.name === BASE.name) continue; // planet 2 == the base neighbourhood, already listed
     out.push({ id: p.name, kind: 'planet', missionId: null, pos: planetAnchor(p.name, tNow) });
   }
   return out;

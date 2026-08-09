@@ -671,30 +671,32 @@ export const MAPS = [
       // to the world origin by the star-system geometry (system-map.js). `radius/pos/halo` are legacy keys
       // (the single-planet backdrop) kept only as harmless data — the backdrop now comes from `system`.
       planet: { pos: [-150, -285, -110], radius: 60, ocean: 0x5a82c0, halo: { color: 0x6fa8ff, opacity: 0.13 } },
-      // Star-system backdrop: the star + 4 planets + the home planet's moons, drawn as REAL 3D bodies at
-      // FIXED sky positions (DECISIONS §98). `orbitR/periodDays/phase0` are the to-scale TRAVEL geometry
-      // (they drive the map screen, the anchors and each body's fixed sky bearing); `dist`/`size` are the
-      // render placement — distance from the camera and sphere radius, so apparent size is size/dist. The
-      // client merges this block into its SYSTEM constant (system-map.js applySystemSpec), which is then the
-      // single source of truth for the renderer, the map UI and the ?roam tunables.
+      // Star system: the star + 4 planets + the home planet's moons, drawn as REAL spheres at their own true
+      // (x,z) ON the ecliptic the ship flies over, sunk `depth` below it (DECISIONS §98). So you have to FLY
+      // to a body to see it — at the base only planet 2 is in range — and you can never reach one, since the
+      // ship flies at y=0 and a body's top is `depth − size` below that. `orbitR/periodDays/phase0` are the
+      // to-scale TRAVEL geometry (map screen + anchors); `size`/`depth` are the render placement, so apparent
+      // size is size/depth. The client merges this block into its SYSTEM constant (system-map.js
+      // applySystemSpec), which is then the single source of truth for renderer, map UI and ?roam tunables.
       system: {
-        elev: 1.5,          // downward tilt of the layout (the camera looks near-straight-down)
-        parallax: 0.020,    // backdrop shift per unit flown — gentle parallax, no re-projection
-        parallaxMax: 90,    // and it saturates there, so a body is never reached and stays inside camera.far
+        // where a body hangs relative to the point on the plane you arrive at — the original home planet's
+        // framing ([-150,-285,-110] radius 60), now applied to every body
+        offset: { x: -150, z: -110 },
+        fade: { full: 520, out: 760 }, // fade a body in/out by distance from the SHIP instead of popping it
         belt: { inner: 16000, outer: 24000 },
-        star: { name: 'star', color: 0xffd9a0, size: 54, dist: 700 }, // reads ~1.2x a planet
+        star: { name: 'star', color: 0xffd9a0, size: 74, depth: 300 }, // reads ~1.2x a planet
         planets: [
-          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 36, dist: 560 },
-          // Base planet: at the world origin, so `homeDir` art-directs where it hangs (down/left, as the old
-          // single-planet backdrop did). Its moons' `orbitR` is a SKY-space radius, clear of the planet limb.
-          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 58, dist: 430,
-            ocean: true, homeDir: { x: -0.81, z: -0.59 },
+          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
+          // Base planet: pinned to the world origin, so its anchor IS the base — the one body you see without
+          // travelling. Its moons orbit it in world units, clear of the planet limb.
+          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 60, depth: 285,
+            ocean: true,
             moons: [
-              { name: 'moon1', size: 9, orbitR: 104, periodS: 96,  phase0: 0.60, tilt: 0.28,  color: 0x9aa2ad },
-              { name: 'moon2', size: 6, orbitR: 150, periodS: 171, phase0: 3.40, tilt: -0.18, color: 0x8b8f98 },
+              { name: 'moon1', size: 10, orbitR: 112, periodS: 96,  phase0: 0.60, tilt: 0.28,  color: 0x9aa2ad },
+              { name: 'moon2', size: 7,  orbitR: 158, periodS: 171, phase0: 3.40, tilt: -0.18, color: 0x8b8f98 },
             ] },
-          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 34, dist: 620 },
-          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 30, dist: 680 },
+          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 58, depth: 285 },
+          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 52, depth: 285 },
         ],
       },
       // Parallax speed field: a fixed pool of point sprites that WRAPS around the player every frame, so

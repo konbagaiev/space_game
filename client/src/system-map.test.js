@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import {
   EPOCH, SYSTEM, bodyAngle, bodyWorldPos, listBodies, maxBodyCoord,
   inActivityZone, capLifted, arrivedAtPoint, activityZoneCenters, ANCHORS,
-  bodySkyDir, skyParallax, moonAngle, moonClearance, planetAnchor, listDestinations,
-  PLANET_ANCHOR_DIST, applySystemSpec,
+  bodyRenderPos, bodyClearance, bodyFade, moonAngle, moonClearance, planetAnchor, listDestinations,
+  applySystemSpec,
 } from './system-map.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -78,57 +78,61 @@ test('arrivedAtPoint predicate', () => {
   assert.equal(arrivedAtPoint(dest, { x: 560, z: -200 }, 45), false); // outside radius
 });
 
-// ---------- Sky placement: fixed bodies + bounded, jump-free parallax ----------
+// ---------- Body placement: real world positions on the ecliptic, unreachable, arrive-by-flying ----------
 
-test('bodySkyDir is a unit XZ direction for every body, and takes NO player position', () => {
+// THE model guarantee, and the regression this replaces: the old backdrop re-projected each body by its
+// bearing FROM THE PLAYER, so flying past one swung that bearing ~180° and the body visibly JUMPED. A body's
+// render position is now an ABSOLUTE world position — bodyRenderPos does not even take a player position, so
+// no amount of flying can move it.
+test('bodyRenderPos is an absolute world position — it never depends on where the player is', () => {
   const t = EPOCH + 777;
   for (const name of BODY_NAMES) {
-    const d = bodySkyDir(name, t);
-    assert.ok(Math.abs(Math.hypot(d.x, d.z) - 1) < 1e-9, `${name} direction is unit (got ${d.x},${d.z})`);
-  }
-  // planet 2 sits AT the origin, so it has no bearing — it must fall back to its art-directed homeDir.
-  const home = SYSTEM.planets.find((p) => p.homeDir);
-  const hd = bodySkyDir(home.name, t);
-  const l = Math.hypot(home.homeDir.x, home.homeDir.z);
-  assert.ok(Math.abs(hd.x - home.homeDir.x / l) < 1e-9 && Math.abs(hd.z - home.homeDir.z / l) < 1e-9,
-    'the home planet uses homeDir, not a degenerate bearing');
-});
-
-test('skyParallax is BOUNDED by parallaxMax — a body can never be reached however far you fly', () => {
-  for (const d of [0, 1, 500, 4200, 30000, 1e6]) {
-    for (const [x, z] of [[d, 0], [0, -d], [d * 0.6, d * 0.8]]) {
-      const p = skyParallax(x, z);
-      assert.ok(Math.hypot(p.x, p.z) <= SYSTEM.parallaxMax + 1e-9,
-        `|parallax| at (${x},${z}) is ${Math.hypot(p.x, p.z)} <= ${SYSTEM.parallaxMax}`);
-    }
-  }
-  assert.deepEqual(skyParallax(0, 0), { x: 0, z: 0 }); // at the origin the layout sits exactly as built
-});
-
-test('skyParallax is linear (≈ distance × parallax) close to the base', () => {
-  for (const d of [10, 100, 400]) {
-    const p = skyParallax(d, 0);
-    const want = d * SYSTEM.parallax;
-    assert.ok(Math.abs(p.x - want) / want < 0.02, `parallax at ${d}u ≈ ${want} (got ${p.x.toFixed(3)})`);
-    assert.ok(Math.abs(p.z) < 1e-12, 'and stays on the axis it was flown along');
+    const a = bodyRenderPos(name, t);
+    const b = bodyRenderPos(name, t);
+    assert.deepEqual(a, b, `${name} render position is stable for a fixed tNow`);
+    // it is its own orbital (x,z) plus the shared framing offset, sunk below the ecliptic
+    const w = bodyWorldPos(name, t);
+    assert.ok(Math.abs(a.x - (w.x + SYSTEM.offset.x)) < 1e-9, `${name} sits at its true x + offset`);
+    assert.ok(Math.abs(a.z - (w.z + SYSTEM.offset.z)) < 1e-9, `${name} sits at its true z + offset`);
+    assert.ok(a.y < 0, `${name} is BELOW the plane the ship flies on (y ${a.y})`);
   }
 });
 
-// THE regression this model replaces: the old backdrop re-projected each body by its bearing FROM THE
-// PLAYER, so flying past a body swung that bearing ~180° in one step and the body visibly JUMPED. The new
-// layout is fixed and the only player-dependent term is skyParallax, which is Lipschitz-bounded by
-// SYSTEM.parallax — flying a 5-unit step can never move the backdrop more than 5 × parallax units, at ANY
-// position, including straight through the origin and far past every anchor.
-test('skyParallax never jumps: a small flight step moves the backdrop by at most step × parallax', () => {
-  const step = 5, zOff = 30;
-  let prev = skyParallax(-8000, zOff), worst = 0;
-  for (let x = -8000 + step; x <= 8000; x += step) {
-    const cur = skyParallax(x, zOff);
-    worst = Math.max(worst, Math.hypot(cur.x - prev.x, cur.z - prev.z));
-    prev = cur;
+test('every body is permanently out of reach — the ship flies at y=0, the body top is below it', () => {
+  for (const name of BODY_NAMES) {
+    assert.ok(bodyClearance(name) > 0,
+      `${name} keeps clearance under the flight plane (depth − size = ${bodyClearance(name)})`);
   }
-  assert.ok(worst <= step * SYSTEM.parallax * 1.001,
-    `worst backdrop step ${worst.toFixed(4)} <= ${(step * SYSTEM.parallax).toFixed(4)} (no re-projection flip)`);
+});
+
+test('you must FLY to a body: only the home planet is drawn from the base', () => {
+  const t = EPOCH + 5e7;
+  // distance from the SHIP (at the origin — the base), which is what the fade is keyed off
+  const distFromBase = (name) => { const p = bodyRenderPos(name, t); return Math.hypot(p.x, p.y, p.z); };
+  assert.ok(bodyFade(distFromBase('planet2')) === 1,
+    `the home planet is fully drawn at the base (${distFromBase('planet2').toFixed(0)}u)`);
+  for (const name of ['star', 'planet1', 'planet3', 'planet4']) {
+    assert.ok(bodyFade(distFromBase(name)) === 0,
+      `${name} is not drawn at the base — you have to fly to it (${distFromBase(name).toFixed(0)}u)`);
+  }
+  // and each body is equally solid once you arrive at ITS anchor — the framing is shared
+  for (const name of BODY_NAMES) {
+    const a = planetAnchor(name, t), p = bodyRenderPos(name, t);
+    assert.equal(bodyFade(Math.hypot(p.x - a.x, p.y, p.z - a.z)), 1, `${name} is fully drawn from its anchor`);
+  }
+});
+
+test('bodyFade ramps a body in by distance from the ship instead of popping it', () => {
+  const f = SYSTEM.fade;
+  assert.equal(bodyFade(0, f), 1);
+  assert.equal(bodyFade(f.full, f), 1);
+  assert.equal(bodyFade(f.out, f), 0);
+  assert.equal(bodyFade(f.out + 5000, f), 0);
+  const mid = bodyFade((f.full + f.out) / 2, f);
+  assert.ok(mid > 0.4 && mid < 0.6, `halfway through the ramp is ~0.5 (got ${mid})`);
+  // a body must be fully faded out before the camera's far plane could clip it, at ANY zoom (the camera
+  // trails up to |CAM_OFFSET| * ZOOM_MAX ≈ 396 u behind the ship). engine.js: far = 1300.
+  assert.ok(f.out + 396 < 1300, `the ramp completes inside camera.far even at max zoom (${f.out} + 396 < 1300)`);
 });
 
 test('every moon orbits CLEAR of its planet — at every orbital angle', () => {
@@ -159,43 +163,54 @@ test('moonAngle advances by exactly 2π over one period', () => {
 
 // ---------- Planet anchors: what autopilot actually flies to ----------
 
-test('a planet anchor is a REACHABLE point on the plane along that planet\'s bearing', () => {
+test('a body anchor is the point ON THE PLANE directly at that body — a real to-scale trip', () => {
   const t = EPOCH + 5e7;
-  for (const p of SYSTEM.planets) {
-    const a = planetAnchor(p.name, t);
-    if (p.homeDir) { // planet 2 == the base neighbourhood: you are already inside its orbit
-      assert.deepEqual(a, { x: ANCHORS.base.x, z: ANCHORS.base.z });
-      continue;
-    }
-    assert.ok(Math.abs(Math.hypot(a.x, a.z) - PLANET_ANCHOR_DIST) < 1e-6,
-      `${p.name} anchor sits at PLANET_ANCHOR_DIST (got ${Math.hypot(a.x, a.z).toFixed(1)})`);
-    const d = bodySkyDir(p.name, t);
-    assert.ok(Math.abs(a.x - d.x * PLANET_ANCHOR_DIST) < 1e-6, `${p.name} anchor is along its bearing`);
-    // and it must be far closer than the planet's own to-scale orbit — the planet stays a distant backdrop
-    assert.ok(PLANET_ANCHOR_DIST < p.orbitR / 2, `${p.name} anchor is nowhere near the body itself`);
+  for (const name of BODY_NAMES) {
+    const a = planetAnchor(name, t);
+    const w = bodyWorldPos(name, t);
+    assert.ok(Math.abs(a.x - w.x) < 1e-9 && Math.abs(a.z - w.z) < 1e-9,
+      `${name} anchor is its own (x,z) on the ecliptic`);
+    // arriving frames the body exactly the way the home planet is framed at the base
+    const rp = bodyRenderPos(name, t);
+    assert.ok(Math.abs((rp.x - a.x) - SYSTEM.offset.x) < 1e-9, `${name} hangs at the shared framing offset`);
+  }
+  // planet 2's anchor IS the world origin — the base neighbourhood, no travel needed
+  const home = planetAnchor('planet2', t);
+  assert.ok(Math.hypot(home.x, home.z) < 1e-6, 'the home planet anchor is the origin (the base)');
+});
+
+test('reaching another body is a real crossing (thousands of units), not a hop', () => {
+  const t = EPOCH + 5e7;
+  for (const name of ['star', 'planet1', 'planet3', 'planet4']) {
+    const a = planetAnchor(name, t);
+    assert.ok(Math.hypot(a.x, a.z) > 3000,
+      `${name} is a genuine trip from the base (${Math.hypot(a.x, a.z).toFixed(0)}u)`);
   }
 });
 
-test('listDestinations carries the base + both side missions + one anchor per non-home planet', () => {
+test('listDestinations carries the base + both side missions + one anchor per body you must fly to', () => {
   const t = EPOCH + 5e7;
   const dests = listDestinations(t);
   const byKind = (k) => dests.filter((d) => d.kind === k);
   assert.equal(byKind('base').length, 1);
   assert.equal(byKind('mission').length, 2);
-  assert.equal(byKind('planet').length, SYSTEM.planets.filter((p) => !p.homeDir).length);
+  // the star + every planet except the home one (whose anchor is the base)
+  assert.equal(byKind('planet').length, SYSTEM.planets.length - 1 + 1);
+  assert.ok(byKind('planet').some((d) => d.id === 'star'), 'the star is a destination you can fly to');
+  assert.ok(!byKind('planet').some((d) => d.id === 'planet2'), 'the home planet is not listed twice');
   for (const d of dests) {
     assert.ok(Number.isFinite(d.pos.x) && Number.isFinite(d.pos.z), `${d.id} has a finite destination point`);
   }
 });
 
 test('applySystemSpec merges a descriptor block into SYSTEM by body name', () => {
-  const before = { elev: SYSTEM.elev, size: SYSTEM.planets[0].size };
-  applySystemSpec({ elev: 2.25, planets: [{ name: 'planet1', size: 99 }, { name: 'nope', size: 1 }] });
-  assert.equal(SYSTEM.elev, 2.25);
+  const before = { offX: SYSTEM.offset.x, size: SYSTEM.planets[0].size };
+  applySystemSpec({ offset: { x: -222 }, planets: [{ name: 'planet1', size: 99 }, { name: 'nope', size: 1 }] });
+  assert.equal(SYSTEM.offset.x, -222);
   assert.equal(SYSTEM.planets[0].size, 99);
   assert.equal(SYSTEM.planets.length, 4, 'an unknown body is ignored, never appended');
-  applySystemSpec({ elev: before.elev, planets: [{ name: 'planet1', size: before.size }] }); // restore
-  assert.equal(SYSTEM.elev, before.elev);
+  applySystemSpec({ offset: { x: before.offX }, planets: [{ name: 'planet1', size: before.size }] }); // restore
+  assert.equal(SYSTEM.offset.x, before.offX);
   assert.equal(SYSTEM.planets[0].size, before.size);
 });
 

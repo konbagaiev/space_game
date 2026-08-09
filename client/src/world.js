@@ -9,7 +9,7 @@ import { scene, skyScene, renderer, camera } from './engine.js';
 import { G, setPieces } from './state.js';
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
-import { SYSTEM, bodySkyDir, skyParallax, moonAngle, applySystemSpec } from './system-map.js'; // pure star-system geometry + sky placement
+import { SYSTEM, bodyRenderPos, bodyFade, moonAngle, applySystemSpec } from './system-map.js'; // pure star-system geometry + body placement
 import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
@@ -387,15 +387,15 @@ function makeMoonTexture(baseHex) {
   return tex;
 }
 
-// ---------- Star-system backdrop (star + 4 planets + the home planet's moons) ----------
-// REAL 3D bodies at FIXED positions. Each body's sky direction is its true bearing from the origin,
-// resolved ONCE at build (system-map.js bodySkyDir); its distance and radius are art-directed (`dist`,
-// `size`) because the true 45 000-unit distances are far outside the camera's 900-unit far plane. The
-// bodies then never move relative to each other: the only thing updateSystemBodies changes per frame is
-// the ORIGIN of the group they live in, which rides at `camera − skyParallax(player)`. That is exactly how
-// a star system compressed by SYSTEM.parallax projects into this camera — real perspective, real depth
-// ordering, gentle differential parallax (the home planet slides faster than the star), and, because
-// skyParallax saturates, a body that can never be reached or loomed up to. See DECISIONS §98.
+// ---------- Star-system bodies (star + 4 planets + the home planet's moons) ----------
+// REAL spheres at REAL world positions on the ecliptic the ship flies over: each body sits at its own true
+// (x,z), sunk `depth` below the plane and shifted by SYSTEM.offset (system-map.js bodyRenderPos) — the same
+// placement the game's original single home planet used, now per body. Nothing is attached to the camera,
+// so nothing re-projects and nothing can jump; the perspective and parallax are just real 3D. At the base
+// only planet 2 is in range — the other bodies are thousands of units away, past the camera's far plane, and
+// are simply not drawn until you FLY to them (updateSystemBodies fades them in near that plane rather than
+// popping them). And because the ship flies at y = 0 while a body's top is `depth − size` below it, a planet
+// is permanently out of reach even directly overhead. See DECISIONS §98.
 // Pure view layer (called from settleView), consumes ZERO sim RNG → replay-neutral.
 
 // The central star: an emissive core sphere + a soft additive glow sprite (reuses the star-glow texture).
@@ -417,25 +417,25 @@ function makeStarMesh(spec) {
 
 // Build the star + 4 planet meshes (and the home planet's moons) into G.sky. Planet 2 keeps the ocean look
 // (map descriptor `d.planet.ocean`); the others reuse the cratered moon texture in their palette color. Each
-// handle caches the body's FIXED sky direction (resolved once, here) plus a reference to its live SYSTEM
-// spec, so the ?roam tunables keep working. Positions are written by updateSystemBodies.
+// handle keeps a reference to its live SYSTEM spec (so the ?roam tunables keep working) and to the materials
+// updateSystemBodies fades. Positions come from bodyRenderPos.
 function buildSystemBodies(sys, oceanHex) {
   G.systemBodies = [];
-  const now = Date.now();
-  const add = (mesh, spec, isStar) => {
+  // `mats` remembers each material's ORIGINAL transparency: the fade may force transparency on, but it must
+  // never turn it off on something that was always transparent (the star's additive glow sprite).
+  const add = (mesh, spec, isStar, materials) => {
     G.sky.add(mesh);
-    const h = { mesh, name: spec.name, spec, builtSize: spec.size, isStar, dir: bodySkyDir(spec.name, now), moons: [] };
+    const h = { mesh, name: spec.name, spec, builtSize: spec.size, isStar, moons: [],
+                mats: materials.map((mat) => ({ mat, alwaysTransparent: mat.transparent })) };
     G.systemBodies.push(h);
     return h;
   };
-  add(makeStarMesh(sys.star), sys.star, true);
+  const star = makeStarMesh(sys.star);
+  add(star, sys.star, true, star.children.map((c) => c.material));
   for (const p of sys.planets) {
     const tex = p.ocean ? makePlanetTexture(oceanHex ?? p.color) : makeMoonTexture(p.color);
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(p.size, 48, 48),
-      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.0, fog: false })
-    );
-    const h = add(mesh, p, false);
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.0, fog: false });
+    const h = add(new THREE.Mesh(new THREE.SphereGeometry(p.size, 48, 48), mat), p, false, [mat]);
     // Moons are siblings in the same group (not children of the planet mesh) so a live `size` tweak on the
     // planet can't scale their orbit radius with it.
     for (const m of p.moons || []) {
@@ -449,37 +449,35 @@ function buildSystemBodies(sys, oceanHex) {
   }
 }
 
-// Place the fixed sky layout for this frame. Two things happen, and only the FIRST depends on the player:
-//
-//  1. The group origin rides at `camera − skyParallax(player)`. Bodies hold their fixed local positions, so
-//     nothing re-projects and nothing can jump; the group offset alone produces the parallax of a system
-//     compressed by SYSTEM.parallax, and its saturation keeps every body permanently distant + inside the
-//     camera's far plane.
-//  2. Each body's local position is rebuilt from its cached direction and its LIVE spec (`dist`/`size`), so
-//     the ?roam console tunables (SYSTEM.elev / per-body dist/size) take effect on the next frame.
-//
-// CAMERA-AWARE PLACEMENT: CAM_OFFSET is (0,110,26) — the camera is high above the ship and looks almost
-// straight DOWN, so the visible "sky" band is BELOW the camera. `SYSTEM.elev` is that downward tilt (bigger
-// = higher/more-centred on screen); lifting bodies by +Y would put them behind the camera and render nothing.
+// Refresh the bodies for this frame. Their WORLD POSITIONS are absolute and player-independent — this only
+// re-reads them so the ?roam console tunables (offset / per-body depth+size) and the slow wall-clock orbital
+// drift take effect — then:
+//   • revolves the home planet's moons around it (wall-clock, view-only), and
+//   • fades a body in by distance from the camera, so flying toward one brings it up smoothly instead of
+//     popping it into existence the moment it crosses camera.far. Fully faded-out bodies are hidden, which
+//     is also what keeps the far side of the system free (at the base you see planet 2 and nothing else).
 export function updateSystemBodies() {
   if (!G.systemBodies || !G.player || !G.sky) return;
-  const p = G.player.mesh.position;
-  const par = skyParallax(p.x, p.z);
-  G.sky.position.set(camera.position.x - par.x, camera.position.y, camera.position.z - par.z);
   const now = Date.now();
+  const ship = G.player.mesh.position;
   for (const b of G.systemBodies) {
-    const dist = b.spec.dist;
-    const elev = b.spec.elev ?? SYSTEM.elev; // per-body override, for art-directing one body up out of the way
-    const sl = Math.hypot(b.dir.x, elev, b.dir.z) || 1;
-    b.mesh.position.set((b.dir.x / sl) * dist, (-elev / sl) * dist, (b.dir.z / sl) * dist);
+    const rp = bodyRenderPos(b.name, now);
+    b.mesh.position.set(rp.x, rp.y, rp.z);
     b.mesh.scale.setScalar((b.spec.size || b.builtSize) / b.builtSize); // live `size` tuning, 1 by default
+    // fade by distance from the SHIP, so camera zoom can't fade the planet you are parked at
+    const a = bodyFade(b.mesh.position.distanceTo(ship));
+    b.mesh.visible = a > 0;
+    for (const e of b.mats) { e.mat.opacity = a; e.mat.transparent = a < 1 || e.alwaysTransparent; }
     for (const m of b.moons) {
-      const a = moonAngle(m.spec, now), r = m.spec.orbitR;
+      const ang = moonAngle(m.spec, now), r = m.spec.orbitR;
       m.mesh.position.set(
-        b.mesh.position.x + Math.cos(a) * r,
-        b.mesh.position.y + Math.sin(a) * r * Math.sin(m.spec.tilt),
-        b.mesh.position.z + Math.sin(a) * r * Math.cos(m.spec.tilt)
+        b.mesh.position.x + Math.cos(ang) * r,
+        b.mesh.position.y + Math.sin(ang) * r * Math.sin(m.spec.tilt),
+        b.mesh.position.z + Math.sin(ang) * r * Math.cos(m.spec.tilt)
       );
+      m.mesh.visible = b.mesh.visible;
+      m.mesh.material.opacity = a;
+      m.mesh.material.transparent = a < 1;
     }
   }
 }
@@ -998,8 +996,9 @@ export function buildMap(descriptor) {
   G.stars.renderOrder = -1; // draw stars first, before the star-system bodies
   skyScene.add(G.stars);
 
-  // The sky group holds the star + 4 planets + the home planet's moons at FIXED local positions; the GROUP
-  // is what moves, riding at `camera − skyParallax(player)` each frame (see updateSystemBodies / §98). The
+  // The sky group holds the star + 4 planets + the home planet's moons. It stays at the WORLD ORIGIN and
+  // never moves: the bodies carry absolute world positions on the ecliptic (bodyRenderPos), so you fly over
+  // them with real perspective and nothing is camera-anchored (see updateSystemBodies / §98). The
   // descriptor's `system` block is merged into SYSTEM first, so the renderer, the map screen and the ?roam
   // tunables all read one object.
   applySystemSpec(descriptor.system);

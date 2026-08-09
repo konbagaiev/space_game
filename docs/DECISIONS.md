@@ -3533,7 +3533,7 @@ CSS box restacks (title + badge / reward sub-line / right-aligned actions) for t
 Cross-ref §27 (the preview this removes), §28 (the viewer machinery that lives on), §92 (one viewer loop
 per view). Brief: `docs/plans/2026-08-09-1534-missions-list-right-column.md`.
 
-## 98. Star system: compact Float32-safe coordinates (no floating-origin) + fixed, permanently distant sky bodies
+## 98. Star system: compact Float32-safe coordinates (no floating-origin) + real bodies laid out on the ecliptic
 
 Building the flyable star system (§94) forced two model choices — how far apart the bodies really sit in
 world coordinates, and how they are rendered. (The distant parallax that sells *speed* is the player-locked
@@ -3550,33 +3550,38 @@ wrapping speed field of **§96**, unchanged; this entry covers only the star-sys
   one shared coordinate space (future MP). *(These radii are Stage-1 live-tune values; the FINAL measured
   orbit-4 diameter / `max|coord|` after tuning should be recorded here — the numbers above are the shipped
   provisional set.)*
-- **Rendering — REAL 3D bodies at FIXED positions, permanently distant.** The bodies are **not** literal
-  to-scale spheres you approach (a 20 u planet 45k away would be invisible, then fill the screen), and they
-  are **not** camera-anchored billboards either. Each is a real sphere at a **fixed position in "sky space"**
-  — the system compressed by `SYSTEM.parallax` (0.02) around the player. Its **direction is its true bearing
-  from the origin, resolved ONCE per session** (`bodySkyDir`); its **distance and radius are art-directed**
-  (`dist` / `size`, star ≈ 1.2× a planet) because the true distances are 50× the camera's 900 u far plane.
-  Per frame `updateSystemBodies` moves only the *group* they live in, to `camera − skyParallax(player)` —
-  which is exactly how that compressed system projects. Result: real perspective, real depth ordering,
-  **gentle differential parallax** (the home planet at 430 u slides faster than the star at 700 u), bodies
-  that **never jump**, and — because `skyParallax` saturates at `parallaxMax` (90 u) — bodies you can
-  **never reach or loom up to**, however far you fly. The home planet is a distant backdrop *by the base
-  too*: it sits at its chosen 430 u, as the game's original single planet did (`homeDir` art-directs where it
-  hangs, since planet 2 is pinned to the origin and so has no bearing of its own). Two **moons** orbit it at
-  sky-space radii kept clear of its limb (`moonClearance`, unit-asserted > 0 at every orbital angle).
-  - **Rejected: bearing re-projection (the first pass).** Bodies were re-projected every frame by the bearing
-    **from the player**, at a constant apparent size. Flying *past* a body swings that bearing through ~180°,
-    so the body visibly **jumped** across the sky; a moon's projected bearing could also cross its planet's
-    and it slid *into* the planet disk. Constant apparent size additionally killed all parallax. The
-    `32-star-system` scenario now pins the replacement: a 40 u flight step may move a body at most 0.05 NDC,
-    no body may ever come closer than 250 u, and turning the ship must not move the sky at all.
-  - **Known limit (accepted):** the follow camera has a fixed near-top-down orientation, so with honest
-    bearings a body whose direction points *behind* the ship falls off the bottom of the screen, and two
-    planets that happen to share a bearing that day overlap. `SYSTEM.elev` (and an optional per-body `elev`)
-    is the knob; no global value shows all 360° without crowding the play area.
-- **Autopilot flies to an ANCHOR, never to a planet.** A planet is backdrop only; picking one on the map
-  routes to `planetAnchor(name)` — a reachable transfer point at `PLANET_ANCHOR_DIST` (4200 u) along that
-  planet's true bearing (planet 2's anchor *is* the base anchor — you are already inside its orbit).
+- **Rendering — every body is a REAL sphere at its own TRUE position ON the ecliptic.** The ship flies on the
+  plane (y = 0) and the camera looks **down** at it, so a body is placed at its own true (x,z), **sunk
+  `depth` below the plane** and shifted by the shared `SYSTEM.offset` — precisely the placement the game's
+  original single home planet used (`pos [-150,-285,-110]`, radius 60), now applied per body across the whole
+  system (`bodyRenderPos`). Nothing is attached to the camera, so nothing re-projects and nothing can jump;
+  the perspective and parallax are simply what real 3D gives you as you fly over a fixed world. Three
+  properties fall straight out of this and are the whole point:
+  - **You have to travel.** At the base you see planet 2 and the station and *nothing else* — planet 1, 3, 4
+    and the star are 9k–45k units away. `planetAnchor(name)` (where autopilot actually flies) is the body's
+    own (x,z) on the plane, so reaching planet 3 is a real ~15 000 u crossing, and arriving frames it exactly
+    the way the home planet is framed at the base. Bodies **fade in/out by distance from the SHIP**
+    (`bodyFade`, 520→760 u) rather than popping at the far plane; keying the fade to the ship rather than the
+    camera is what stops zoom-out from fading the planet you are parked at.
+  - **A planet is permanently out of reach even directly overhead** — the ship flies at y = 0 and the body's
+    top is `depth − size` below it (`bodyClearance`, unit-asserted > 0 for every body). No looming, no ramming,
+    and no "home is near" special case: the home planet is a backdrop at the base like every other body.
+  - **Moons** orbit the home planet in world units at radii kept clear of its limb (`moonClearance`,
+    unit-asserted > 0 at every orbital angle).
+  - **Rejected: a camera-anchored sky dome (two earlier passes).** First bodies were re-projected every frame
+    by the bearing **from the player** at constant apparent size — flying *past* one swings that bearing
+    through ~180°, so it visibly **jumped**; a moon's projected bearing could cross its planet's and slide
+    *into* the disk; and constant size killed parallax. A second pass fixed the jumping by freezing the
+    bearings and sliding the whole dome by a saturating parallax — but that still put every body in the sky
+    at all times, which is *not* the system: with a fixed near-top-down camera you could never see a body
+    whose bearing pointed behind the ship, bodies sharing a bearing stacked into one blob, and nothing was
+    ever somewhere you could fly *to*. Both are gone. `32-star-system` pins the replacement: over a 12 000 u
+    flight no body may move (drift < 0.5 u), turning must not move one, the ship may never get within 100 u
+    of a body's surface, only `planet2` is drawn at the base, and flying to planet 3's anchor must show
+    planet 3 and hide planet 2.
+  - **Note on `camera.far`:** raised 900 → **1300**, so a body still fading at 760 u from the ship can't be
+    clipped when max zoom puts the camera another ~396 u back. Nothing else reaches that far (fog covers the
+    speed field long before), so it costs ~0.6 bits of depth precision and changes no visuals.
 - **All of the above is VIEW layer** (buildMap/settleView), consumes **zero sim RNG**, and roam
   (`capLifted` false whenever `G.roam` is false) is never recorded — so recorded/campaign replays stay
   byte-identical (§73).
@@ -3596,6 +3601,8 @@ dragged the *player ship and the station set-pieces themselves* into the fog and
 `applyZoom()` (engine.js) therefore slides **both** fog planes by the extra camera distance
 (`|CAM_OFFSET|·zoom − |CAM_OFFSET|`), so "how far *past the action* does fog start" is constant at every
 zoom and the change is an exact **no-op at zoom 1** (still 240..600 — no visual/replay diff at the default).
+The same "anchor it to the ship, not the camera" reasoning applies to the star-system bodies' distance fade
+(§98) — keyed to the camera, zooming out faded the planet you were parked at.
 
 Alternatives rejected: **capping zoom** (loses the wide tactical view the zoom-out is for) and **decoupling
 lighting from distance** (lighting was never the cause). `fogFar` is additionally clamped to

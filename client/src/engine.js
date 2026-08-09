@@ -55,7 +55,11 @@ if (G.gfx.envMap) {
 }
 document.body.appendChild(renderer.domElement);
 
-export const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 900);
+// far = 1300 (was 900): a star-system body fades out at 760 u from the SHIP, and at max zoom the camera sits
+// another ~396 u back, so a still-visible body could otherwise be clipped by the far plane mid-fade. Nothing
+// else reaches out there — the speed field's deep layer is fully fogged long before (applyZoom clamps fogFar
+// well inside this), so the extra range costs only ~0.6 bits of depth precision and changes no visuals.
+export const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1300);
 export const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // fixed camera offset from the ship
 
 // Toggle the portrait→landscape rotation and size the renderer/camera to the logical game dimensions.

@@ -53,104 +53,91 @@ export default async function ({ page, assert, shot }) {
   assert.ok(vis.anyInView >= 1, `≥1 backdrop body is on-screen in roam (got ${vis.anyInView})`);
   await shot('roam-at-base'); // eyeball frame: the home planet should read as a backdrop near the base
 
-  // 2d. THE MODEL GUARD (this is what replaced the bearing-projected backdrop). Fly the ship along a long
-  //     straight line that passes THROUGH the origin — the exact path that made the old backdrop flip ~180°
-  //     and jump, because every body was re-projected each frame by its bearing FROM THE PLAYER. With fixed
-  //     bodies + a bounded parallax the on-screen motion must be small and SMOOTH at every step, and the
-  //     apparent size must never grow (a planet is permanently distant — you can't loom up to it).
+  // 2d. THE MODEL GUARD (this is what replaced the bearing-projected sky dome). Every body is a REAL sphere
+  //     at a FIXED world position on the ecliptic, so flying can NEVER move one — the old model re-projected
+  //     each body by its bearing from the player, and passing one swung that bearing ~180° so it JUMPED.
+  //     Fly a long line straight through the origin (the exact path that broke the old model) and assert the
+  //     world positions hold, then assert the ship can never reach a body (it flies at y=0, bodies are sunk
+  //     below the plane) and that turning does not move them either.
   const flight = await page.evaluate(() => {
     const g = window.__game;
-    const sample = () => {
-      g.camera.updateMatrixWorld(true);
-      g.skyScene.updateMatrixWorld(true);
-      const out = {};
-      for (const b of g.systemBodies) {
-        const wp = b.mesh.getWorldPosition(b.mesh.position.clone());
-        const dist = wp.distanceTo(g.camera.position);
-        const n = wp.project(g.camera);
-        out[b.name] = { x: n.x, y: n.y, dist };
-      }
-      return out;
-    };
-    const step = 40, from = -6000, to = 6000;   // straight through the origin, well past every anchor
-    g.player.mesh.position.set(from, 0, 90); g.settleView(); // land the backdrop on the start point
-    let prev = sample();
-    const first = prev;
-    const worst = { step: 0, name: '' };
-    const range = {}; // per-body min/max camera distance over the whole flight
-    for (const n of Object.keys(first)) range[n] = { min: first[n].dist, max: first[n].dist };
-    for (let x = from + step; x <= to; x += step) {
+    const at = () => g.systemBodies.map((b) => b.mesh.position.clone());
+    g.player.mesh.position.set(-6000, 0, 90); g.settleView();
+    const first = at();
+    let worstDrift = 0, closestSurface = Infinity;
+    for (let x = -6000 + 40; x <= 6000; x += 40) {
       g.player.mesh.position.set(x, 0, 90);
       g.settleView();
-      const cur = sample();
-      for (const name of Object.keys(cur)) {
-        const d = Math.hypot(cur[name].x - prev[name].x, cur[name].y - prev[name].y);
-        if (d > worst.step) { worst.step = d; worst.name = name; }
-        range[name].min = Math.min(range[name].min, cur[name].dist);
-        range[name].max = Math.max(range[name].max, cur[name].dist);
+      const cur = at();
+      for (let i = 0; i < cur.length; i++) {
+        worstDrift = Math.max(worstDrift, cur[i].distanceTo(first[i]));
+        closestSurface = Math.min(closestSurface,
+          cur[i].distanceTo(g.player.mesh.position) - g.systemBodies[i].spec.size);
       }
-      prev = cur;
     }
-    // total on-screen travel over the whole 12 000-unit flight — must be real (parallax exists) but bounded
-    const totalHome = Math.hypot(prev.planet2.x - first.planet2.x, prev.planet2.y - first.planet2.y);
-    let closest = Infinity, widest = 0;
-    for (const n of Object.keys(range)) {
-      closest = Math.min(closest, range[n].min);
-      widest = Math.max(widest, range[n].max - range[n].min);
-    }
-    return { worstStep: worst.step, worstName: worst.name, totalHome, closest, widest,
-             farthest: Math.max(...Object.values(range).map((r) => r.max)), camFar: g.camera.far };
+    // turning the ship: the follow camera holds a fixed orientation and the bodies are world-fixed anyway
+    const before = at();
+    g.player.heading = 2.4; g.player.mesh.rotation.y = 2.4; g.settleView();
+    const after = at();
+    let turnShift = 0;
+    for (let i = 0; i < before.length; i++) turnShift = Math.max(turnShift, before[i].distanceTo(after[i]));
+    return { worstDrift, closestSurface, turnShift };
   });
-  // a 40-unit flight step may only slide a body a hair on screen; the old bearing model produced ~2 NDC
-  // (a full-screen flip) as the ship passed a body.
-  assert.ok(flight.worstStep < 0.05,
-    `no body JUMPS while flying through the system (worst NDC step ${flight.worstStep.toFixed(4)} by ${flight.worstName})`);
-  // …but the backdrop is not welded to the camera either: it must actually slide (that is the parallax).
-  assert.ok(flight.totalHome > 0.05,
-    `the home planet visibly parallaxes over a 12 000-unit flight (NDC travel ${flight.totalHome.toFixed(3)})`);
-  // PERMANENTLY DISTANT: flying 6 000 units at a body may only close the (bounded) parallax slack, never
-  // approach it — the closest any body ever gets stays a real backdrop distance away.
-  assert.ok(flight.closest > 250,
-    `no body is ever loomed up to — closest approach over the whole flight ${flight.closest.toFixed(0)}u`);
-  assert.ok(flight.widest < 200,
-    `and the distance to a body barely breathes (widest swing ${flight.widest.toFixed(0)}u — gentle parallax, not looming)`);
-  assert.ok(flight.farthest < flight.camFar,
-    `every body stays inside camera.far at all times (${flight.farthest.toFixed(0)} < ${flight.camFar})`);
+  assert.ok(flight.worstDrift < 0.5,
+    `no body MOVES while flying 12 000u through the system (worst drift ${flight.worstDrift.toFixed(3)}u)`);
+  assert.ok(flight.turnShift < 1e-6,
+    `turning the ship does not move a body either (max shift ${flight.turnShift})`);
+  assert.ok(flight.closestSurface > 100,
+    `the ship can never reach a body's surface — it flies above the plane, bodies are sunk below it `
+    + `(closest approach ${flight.closestSurface.toFixed(0)}u)`);
 
-  // 2e. Turning the ship must not move the sky at all (the follow camera keeps a fixed orientation), and the
-  //     moons must stay clear of their planet's disk at every point of their orbit.
-  const turnAndMoons = await page.evaluate(() => {
+  // 2e. YOU HAVE TO FLY THERE. At the base only the home planet is drawn; the star and the outer planets are
+  //     thousands of units away and faded out entirely. Autopilot to planet 3's anchor and it becomes the
+  //     visible one while the home planet drops out — the whole point of a to-scale system.
+  const travel = await page.evaluate(() => {
+    const g = window.__game;
+    const shown = () => g.systemBodies.filter((b) => b.mesh.visible).map((b) => b.name);
+    g.player.mesh.position.set(0, 0, 0); g.settleView();
+    const atBase = shown();
+    const dest = g.systemAnchor('planet3');
+    g.player.mesh.position.set(dest.x, 0, dest.z); g.settleView();  // arrive at planet 3's anchor
+    const atPlanet3 = shown();
+    const p3 = g.systemBodies.find((b) => b.name === 'planet3');
+    g.camera.updateMatrixWorld(true);
+    g.camera.matrixWorldInverse.copy(g.camera.matrixWorld).invert();
+    const n = p3.mesh.position.clone().project(g.camera);
+    return { atBase, atPlanet3, tripLength: Math.hypot(dest.x, dest.z),
+             p3InView: Math.abs(n.x) <= 1 && Math.abs(n.y) <= 1 && n.z > -1 && n.z < 1 };
+  });
+  assert.deepEqual(travel.atBase, ['planet2'],
+    `at the base only the home planet is drawn (got ${travel.atBase.join(',') || 'nothing'})`);
+  assert.ok(travel.tripLength > 3000,
+    `planet 3 is a real crossing away (${travel.tripLength.toFixed(0)}u)`);
+  assert.ok(travel.atPlanet3.includes('planet3') && !travel.atPlanet3.includes('planet2'),
+    `arriving at planet 3's anchor shows planet 3 and not the home planet (got ${travel.atPlanet3.join(',')})`);
+  assert.ok(travel.p3InView, 'and planet 3 projects into the camera frustum from its anchor');
+  await shot('roam-at-planet3'); // eyeball frame: planet 3 below/left, framed like the home planet at base
+
+  // 2f. The home planet's moons stay clear of its disk at every point of their orbit.
+  const moons = await page.evaluate(() => {
     const g = window.__game;
     g.player.mesh.position.set(0, 0, 0); g.settleView();
-    const at = () => {
-      g.skyScene.updateMatrixWorld(true);
-      return g.systemBodies.map((b) => b.mesh.getWorldPosition(b.mesh.position.clone()));
-    };
-    const a = at();
-    g.player.heading = 2.4; g.player.mesh.rotation.y = 2.4; g.settleView();
-    const b = at();
-    let turnShift = 0;
-    for (let i = 0; i < a.length; i++) turnShift = Math.max(turnShift, a[i].distanceTo(b[i]));
-    // moons: sample the live render positions over a while and take the closest approach to the planet
-    let moons = 0, minGap = Infinity;
+    let count = 0, minGap = Infinity;
     for (const body of g.systemBodies) {
       for (const m of body.moons || []) {
-        moons++;
+        count++;
         for (let i = 0; i < 24; i++) {
           g.settleView(); // wall-clock advances the orbit between samples
           minGap = Math.min(minGap, m.mesh.position.distanceTo(body.mesh.position) - body.spec.size - m.spec.size);
         }
       }
     }
-    return { turnShift, moons, minGap };
+    return { count, minGap };
   });
-  assert.ok(turnAndMoons.turnShift < 1e-6,
-    `turning the ship does not move the backdrop (max shift ${turnAndMoons.turnShift})`);
-  assert.ok(turnAndMoons.moons >= 1, `the home planet has moons (got ${turnAndMoons.moons})`);
-  assert.ok(turnAndMoons.minGap > 0,
-    `every moon orbits clear of its planet's disk (closest gap ${turnAndMoons.minGap.toFixed(1)}u)`);
+  assert.ok(moons.count >= 1, `the home planet has moons (got ${moons.count})`);
+  assert.ok(moons.minGap > 0, `every moon orbits clear of its planet's disk (closest gap ${moons.minGap.toFixed(1)}u)`);
 
-  // 2f. ZOOM-OUT DIMMING GUARD. THREE.Fog measures VIEW DEPTH, and zoom pushes the camera away from the
+  // 2g. ZOOM-OUT DIMMING GUARD. THREE.Fog measures VIEW DEPTH, and zoom pushes the camera away from the
   //     ship — so a fixed fogNear swallowed the player + the station set-pieces at strong zoom-out. Fog is
   //     now re-anchored to the ship (engine.js applyZoom), so at MAX zoom the ship is still in front of
   //     fogNear, and fogFar stays inside camera.far so nothing pops at the clip plane.

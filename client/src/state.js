@@ -20,7 +20,7 @@ export const G = {
   rotated: false,                                               // portrait-phone 90° rotation currently active
   player: null,                                                 // the active player ship (built by buildPlayer in bootstrap/takeoff)
   // --- world (built/reassigned by buildMap in world.js; read by the loop + ?tune panel + reset) ---
-  sky: null,                  // THREE.Group holding the star + 4 planet backdrop billboards (sky scene)
+  sky: null,                  // THREE.Group (at the world origin) holding the star + planets + moons (sky scene)
   systemBodies: null,         // [{ mesh, name, spec, dir, moons, isStar }] — fixed-position star-system bodies
   stars: null,                // THREE.Group starfield (follows the camera in the loop)
   skyAmbient: null,           // sky-scene ambient light (mutated live by the ?tune panel)
