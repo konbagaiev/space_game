@@ -5,6 +5,86 @@
 
 ## 2026-08-10
 
+- **The parallax speed field now gets out of the sun's way.** Its specks are rock-grey and deliberately
+  non-additive (dust, not stars), and the field lives in the **combat** scene, which is drawn on top of the
+  sky scene — so next to the star they landed straight over its smooth bright disk and read as dirt on the
+  lens. A/B on one rendered frame (field forced on vs faded) put a number on it: **19 265 changed pixels**
+  in the sun's neighbourhood, **15 054 of them on the disk itself**, peak delta 231 — near-black specks on a
+  near-white surface. The field now fades out as you close on the star (`system.star.dust` / `dustNear` 400 /
+  `dustFar` 760, smoothstep, same shape as the backdrop lift). The ramp begins exactly where the star becomes
+  visible at all (`fade.out`), so everywhere you fly and fight it is untouched — and the "you are moving" cue
+  survives, because parallax against a huge close body sells motion better than dust did. Brightening the
+  specks or making them additive was rejected: white-on-yellow is still a blemish on a smooth gradient, and
+  additive turns them into sparks, the exact look the field's own design notes reject.
+  Guarded by `32-star-system` check 11 (gone at the star, full strength at the base — a global dimming would
+  fail the second half).
+
+- **The sky light now comes FROM the star.** The directional light that shapes the planets' and moons'
+  terminator sat at an authored fixed position (`sky.sun.pos`), which had it arriving **64° off** the star's
+  real bearing — and inverted along z, so at the base the home planet's lit limb faced *away* from Vega.
+  It is now placed at the star's world position and aimed at the ship every frame (`aimSkySunAtStar`).
+  Measured on the rendered pixels, not just the vectors: the brightest side of the home planet's disk went
+  from **89° off** the star's on-screen bearing to **16°** (one bucket of a 24-direction sweep), and the
+  light vector itself from 64° to 1.3° (the remainder is the ~1° parallax between the ship and the body it
+  lights — the light is aimed at the ship, which is what keeps it correct 22 000 u away at another planet).
+  `?tune`'s sun-position sliders are gone (they would be overwritten every frame); colour + intensity stay
+  authored. Guarded by `32-star-system` check 10, at the base *and* after flying to planet 3 — a per-body
+  constant would pass the first and fail the second.
+
+- **Fixed a sky-light leak: `buildMap` never removed the lights it replaced.** Every level start / map
+  switch created a new ambient + directional light for the sky scene and left the old pair in it, so they
+  **accumulated across a session** — the planets got brighter and their terminator flatter the longer you
+  played. Found while measuring the change above: the probe kept reading a stale light whose target never
+  moved, while the live one was aimed correctly. Same class of leak the nebula render target already
+  guarded against. Now removed on rebuild, and pinned by an assertion that exactly one of each survives.
+
+- **Vega is a real sun now — a `.glb` star with a corona, slow rotation, and a wash on the backdrop.**
+  The central star was an emissive sphere plus one glow sprite; it is now the **"Sun"** model by
+  **SebastianSosnowski** (Sketchfab, CC-BY 4.0), through the normal asset pipeline: a new `sun` preset in
+  `assets-config.mjs` (geometry kept — decimating a sphere this big on screen only buys faceting; textures
+  512 WebP), **2.1 MB → 167 KB**, pushed to S3 and wired as a content-hashed same-origin URL on the map
+  descriptor's `system.star` block. Also:
+  - **30% bigger** — `size` 74 → **96** (1.6x a planet). The model's longest axis normalizes to `size*2`, so
+    it exactly fills the sphere it replaced, and the corona scales off the same number. Still permanently out
+    of reach: its top sits `depth − size` = 204 below the flight plane.
+  - **All yellow.** The asset ships two concentric spheres — an orange emissive core inside a slightly larger
+    yellow **transmissive** shell — and the shell is see-through face-on, so drawing both gave an orange disk
+    with a yellow limb ("two halves of different oranges"). The core is now hidden (`system.star.yellowOnly`)
+    and the shell is the star. Tinting the core yellow is not possible: its colour is an orange emissive
+    TEXTURE and a material colour only multiplies it, which cannot raise the green channel.
+  - **A real corona** — two additive layers (5.0 and 11.0 star-radii wide) instead of one 3.0-wide sprite.
+    The old one was invisible for a reason: the shared glow texture's falloff sits at 0.275 of the sprite
+    width, so at 3.0 the entire glow fell BEHIND the disk and only a thin rim showed. Layer brightness rides
+    the colour, because the distance fade overwrites `material.opacity` every frame.
+  - **Slow rotation** (0.02 rad/s, ~5 min/turn) and a **backdrop wash**: closing on the star brightens the sky
+    background by up to +35% on a smoothstep from 1200 u to 300 u. Both background paths are covered — the
+    baked nebula cubemap via `backgroundIntensity`, the flat-colour fallback by multiplying in place (they
+    were verified separately; `?debug` disables the nebula bake, so testing only that path would have missed
+    what players actually see). `liftFar` sits just outside `fade.out` (760) so the wash grows as the star
+    fades in — from 3000 it brightened thousands of units of visibly empty space and read as a bug.
+  - **Perf, stated plainly:** the shell is a `MeshPhysicalMaterial` with `transmission: 1`, the priciest
+    material in the game (an extra render target per frame). It is affordable only because the distance fade
+    hides the whole star outside 760 u, so the pass never runs at the base or anywhere but the star's own
+    neighbourhood. Replacing it with an unlit material was tried and reverted — the yellow comes from the
+    transmission, not a texture, so the flat version rendered orange.
+  - Guarded on the real scene by `32-star-system` check 9 (model loaded, exactly one sphere drawn and it is
+    the transmissive one, core present-but-hidden, both corona layers, corona clears the disk, materials
+    registered for the fade). Credits: `CREDITS.md` row + verbatim CC-BY attribution + the in-game credits
+    screen via `credits:build` (12 models now).
+
+- **`assets:check` now guards models referenced from a MAP DESCRIPTOR.** The deploy guard walked ships,
+  components, weapons, SFX, the intro trace and the loot-drop model — but never the map descriptors, so the
+  `.glb` set-pieces (freighter, base station, space factory) and the new star model were in an unchecked
+  lane: a bad content hash shipped a 404, and the object silently vanished (or the star fell back to a flat
+  sphere) with nothing failing the deploy. Covers 49 assets now, 7 of them previously unchecked.
+
+- **Fixed a latent flaky assertion in `32-star-system`.** "Turning the ship does not move a body" asserted
+  `turnShift < 1e-6`, but its two samples are taken at different wall-clock times and the bodies drift along
+  their orbits between them — the star alone moves ~0.73 u/s, and `Date.now()` ticks in whole milliseconds,
+  so the floor is ~7e-4 whenever the reads straddle a millisecond. It passed by luck. Threshold is now 0.5 u,
+  which still proves the point: the bug it guards (a camera-anchored re-projection) swings bodies by hundreds
+  of units, not fractions of one.
+
 - **"Level 4" now fights at the far belt outpost, and that outpost moved further out.** The third mining
   outpost (`ANCHORS.mining3` + its `asteroid-field` set-piece) moved from `(-760,1560)` to `(-900,2800)`,
   making it the system's most distant destination (~2941 u from the base, past `mining2`'s 1893). The

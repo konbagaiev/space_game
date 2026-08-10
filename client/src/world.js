@@ -399,21 +399,100 @@ function makeMoonTexture(baseHex) {
 // is permanently out of reach even directly overhead. See DECISIONS §98.
 // Pure view layer (called from settleView), consumes ZERO sim RNG → replay-neutral.
 
-// The central star: an emissive core sphere + a soft additive glow sprite (reuses the star-glow texture).
+// The central star (Vega): a .glb sun + a two-layer additive corona. Everything is driven by the star's
+// SYSTEM spec — seeded from the map descriptor's `system.star` block and live-tunable in ?roam like every
+// other body — so the renderer, the map screen and the tuning console read ONE object. Keys used here:
+//
+//   modelUrl   the sun .glb (content-hashed, pulled to the server at deploy, served same-origin). Absent or
+//              failed → the procedural emissive sphere below stays, so the star can never be a hole.
+//   size       the VISUAL radius: the model's longest axis is normalized to size*2, so it exactly fills the
+//              sphere it replaces, and the corona scales off the same number and can never drift off the disk.
+//   yellowOnly the model ships TWO concentric spheres — an orange emissive core inside a very slightly
+//              larger YELLOW shell whose material is transmissive. The shell is see-through face-on, so the
+//              core reads through the middle while the shell's long grazing path at the limb reads yellow:
+//              an orange disk with a yellow rim. This hides the core so the star is uniformly yellow.
+//              Tinting the core yellow instead is NOT possible — its colour is an orange emissive TEXTURE
+//              and a material colour only multiplies it; multiplication cannot raise the green channel.
+//   glow/halo  the corona's two additive layers, as sprite WIDTH in star radii (0 = off): tight-and-bright
+//              over broad-and-dim. Note the shared glow texture puts its falloff at 0.275 of the sprite
+//              width from centre — a width below ~3.6 falls entirely BEHIND the disk and reads as a thin
+//              rim rather than a corona, which is exactly what the old single 3.0 sprite did.
+//   glowColor/haloColor
+//              layer brightness rides the COLOUR, not opacity: the distance fade writes material.opacity
+//              every frame, so any opacity set here would be overwritten. Darker colour = dimmer layer.
+//   spin       surface rotation, rad/s (see updateSystemBodies).
+//   lift/liftNear/liftFar
+//              the star's wash on the sky backdrop (see applyStarLift).
 function makeStarMesh(spec) {
   const g = new THREE.Group();
+  // Procedural fallback + fade anchor. Stays in the group even once the model arrives (it is only hidden),
+  // because buildSystemBodies captures its material for the distance fade.
   const core = new THREE.Mesh(
     new THREE.SphereGeometry(spec.size, 32, 32),
     new THREE.MeshBasicMaterial({ color: spec.color, fog: false })
   );
   g.add(core);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: getStarGlowTexture(), color: spec.color, transparent: true,
-    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
-  }));
-  glow.scale.setScalar(spec.size * 3.0);
-  g.add(glow);
+  // Corona: both layers are children of the star group, so buildSystemBodies picks their materials up for
+  // the distance fade and they travel with the body — nothing here is camera-anchored.
+  const coronaLayer = (widthInR, color) => {
+    if (!(widthInR > 0)) return;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: getStarGlowTexture(), color, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    }));
+    s.scale.setScalar(spec.size * widthInR);
+    g.add(s);
+  };
+  coronaLayer(spec.halo, spec.haloColor ?? spec.color); // broad outer bloom, added first (drawn behind)
+  coronaLayer(spec.glow, spec.glowColor ?? spec.color); // tight bright corona hugging the disk
+  if (spec.modelUrl) loadStarModel(g, core, spec);
   return g;
+}
+
+// Load the sun .glb into an already-built star group. The procedural core stays in the group but is HIDDEN
+// rather than removed: buildSystemBodies captured its material for the distance fade, and dropping it would
+// leave that list pointing at a disposed material. The model's own materials are appended to the same fade
+// list (found via the star handle) so the .glb fades in with everything else instead of hanging in the void
+// at full brightness. `fog: false` mirrors the procedural bodies — the sky scene must not be fogged.
+//
+// PERF NOTE. The visible shell is a MeshPhysicalMaterial with `transmission: 1`, which costs three.js an
+// extra render target per frame — the priciest material in the game. It is affordable only because the fade
+// HIDES the whole star outside `SYSTEM.fade.out` (760 u): at the base, and everywhere except the star's own
+// neighbourhood, the group is invisible and the transmission pass never runs. Swapping the shell for an
+// unlit material was tried and rejected: the yellow comes from the transmission, not from a texture (the
+// shell's emissive map is the same ORANGE image the core uses), so a flat material renders it orange again.
+function loadStarModel(g, core, spec) {
+  G.pendingAssets++; // hold the level-load veil until the sun is here (DECISIONS §84)
+  gltfLoader.load(spec.modelUrl, (gltf) => {
+    const model = gltf.scene;
+    const box = new THREE.Box3().setFromObject(model);
+    const size3 = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    // longest axis -> the visual DIAMETER, so the model exactly fills the sphere it replaces
+    const s = (spec.size * 2) / (Math.max(size3.x, size3.y, size3.z) || 1);
+    model.scale.setScalar(s);
+    model.position.copy(center).multiplyScalar(-s); // recenter on the group origin (= the body's anchor)
+    const handle = (G.systemBodies || []).find((b) => b.isStar);
+    if (handle) handle.starModel = model; // updateSystemBodies spins THIS, not the group (a sprite always
+                                          // faces the camera, so rotating the group would be a no-op)
+    model.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const isShell = mats.some((m) => (m.transmission ?? 0) > 0); // the yellow outer sphere
+      if (!isShell && spec.yellowOnly) { o.visible = false; return; } // hide the orange core
+      for (const mat of mats) {
+        mat.fog = false;
+        if (handle) handle.mats.push({ mat, alwaysTransparent: mat.transparent });
+      }
+    });
+    core.visible = false;
+    g.add(model);
+    G.needsSceneWarm = true; // late async arrival: compile + upload it before the next frame draws it
+    G.pendingAssets--;
+  }, undefined, (err) => {
+    G.pendingAssets--;
+    console.warn('star model failed to load:', spec.modelUrl, err); // keeps the procedural sphere
+  });
 }
 
 // Build the star + 4 planet meshes (and the home planet's moons) into G.sky. Planet 2 keeps the ocean look
@@ -475,6 +554,17 @@ export function updateSystemBodies() {
     // fade by distance from the SHIP, so camera zoom can't fade the planet you are parked at
     const a = bodyFade(b.mesh.position.distanceTo(ship));
     b.mesh.visible = a > 0;
+    // The sun turns slowly on its axis, and washes the backdrop as you close on it. Both are wall-clock
+    // driven view-layer effects: frame-rate independent, identical on every machine, and they draw ZERO sim
+    // RNG, so recorded replays stay byte-identical (DECISIONS §73).
+    if (b.isStar) {
+      // wrapped to one turn: the raw wall-clock product is ~3.6e7 rad, and while a double still resolves the
+      // per-frame step there, there is no reason to carry a number that large into the matrix every frame
+      if (b.starModel) b.starModel.rotation.y = ((now / 1000) * (b.spec.spin || 0)) % (Math.PI * 2);
+      applyStarLift(b.spec, b.mesh.position.distanceTo(ship));
+      aimSkySunAtStar(b.mesh.position, ship);
+      G.speedFieldDim = starDustFactor(b.spec, b.mesh.position.distanceTo(ship));
+    }
     for (const e of b.mats) { e.mat.opacity = a; e.mat.transparent = a < 1 || e.alwaysTransparent; }
     for (const m of b.moons) {
       const ang = moonAngle(m.spec, now), r = m.spec.orbitR;
@@ -487,6 +577,80 @@ export function updateSystemBodies() {
       m.mesh.material.opacity = a;
       m.mesh.material.transparent = a < 1;
     }
+  }
+}
+
+// Aim the sky scene's directional light so starlight arrives FROM the star. It used to sit at an authored
+// fixed position (`sky.sun.pos`), which put the terminator 64° off the star's true bearing — and inverted
+// along z, so at the base the home planet's lit limb faced AWAY from Vega. Since the star is a body with a
+// real world position, the light can simply be aimed by it.
+//
+// A DirectionalLight's direction is `target.position - position`, so we put the light AT the star and aim it
+// at the point being looked at. The target is the SHIP, not the lit body: only one body is ever in range at
+// a time (everything else is faded out), so "from the star toward where you are" is the correct direction
+// for whatever you are actually looking at — and it stays correct after you fly 15 000 u to another planet,
+// which a per-body constant could not. At the base the ship sits at the origin and the home planet 340 u
+// off it, an angular difference of ~1° at the star's 15 000 u range: invisible.
+//
+// Parallel rays are an approximation for a star at finite distance, but the alternative — a PointLight with
+// decay 0 — buys nothing here, because at most ONE body is lit at any moment.
+//
+// The direction drifts as the star orbits (planet 2's period is 1.5 days, so ~0.24°/minute): real, and far
+// too slow to read as movement inside a session. View layer, wall-clock driven, zero sim RNG.
+function aimSkySunAtStar(starPos, litPoint) {
+  const sun = G.skySun;
+  if (!sun) return;
+  sun.position.copy(starPos);
+  sun.target.position.copy(litPoint);
+  sun.target.updateMatrixWorld();
+}
+
+// How much of the speed field survives at `dist` from the star. 1 = untouched, 0 = gone.
+//
+// WHY THE FIELD HAS TO GO NEAR THE STAR. The speed field is the game's "you are moving" cue: small, crisp,
+// rock-grey specks, deliberately NOT additive (they are dust, not stars). It lives in the COMBAT scene,
+// which is drawn on top of the sky scene, so its specks land over the sun with no depth relationship to it.
+// Everywhere else in the game they sit on near-black space and read as dust. Over the sun's corona — a big,
+// smooth, bright wash — a grey speck has nowhere to hide and reads as dirt on the lens. Measured on the
+// rendered frame: 2.1% of the corona's pixels were specks deviating from their neighbourhood.
+//
+// Making them brighter does not fix it (white-on-yellow is still a blemish on a smooth gradient) and going
+// additive would turn them into sparks, which is the exact look the field's own notes reject.
+//
+// The cue is not lost: the star is a huge, close, real body, and parallax against IT sells motion far better
+// than dust ever did. The ramp starts at `dustFar` = the distance where the star becomes visible at all
+// (`fade.out`), so everywhere you actually fly and fight the field is at full strength.
+function starDustFactor(spec, dist) {
+  const amount = spec.dust ?? 0;
+  if (!amount) return 1;
+  const near = spec.dustNear ?? 400, far = spec.dustFar ?? 760;
+  const t = Math.min(1, Math.max(0, (far - dist) / Math.max(1, far - near)));
+  return 1 - amount * (t * t * (3 - 2 * t)); // smoothstep, same shape as the backdrop lift
+}
+
+// The star's wash on the backdrop. Space is black everywhere, which makes arriving at a SUN feel
+// like arriving at nothing — so the sky background lifts a little as the ship closes in. Ramped with a
+// smoothstep between `liftFar` and `liftNear` so there is no visible edge where the effect switches on, and
+// capped at `lift` (a fraction) because the point is a hint of proximity, not a lighting change.
+//
+// `liftFar` (1200) is deliberately just OUTSIDE `SYSTEM.fade.out` (760, where the star itself finishes
+// fading in), so the wash grows together with the star appearing. Pulled much further out — 3000 was tried —
+// the backdrop brightens across thousands of units of visibly EMPTY space, which reads as a bug, not a sun.
+//
+// Two background paths, both covered: the baked nebula CUBEMAP (normal play) rides `backgroundIntensity`
+// (three r155+), while the flat-COLOR fallback (?debug, or the low tier with nebulaBake off) is multiplied
+// in place. The untouched base colour is captured the first time each background object is seen — keyed on
+// object identity, so a map rebuild (which assigns a NEW Color) re-captures instead of compounding the lift.
+let _bgBase = null, _bgFor = null;
+function applyStarLift(spec, dist) {
+  const lift = spec.lift || 0, liftNear = spec.liftNear ?? 300, liftFar = spec.liftFar ?? 1200;
+  const t = Math.min(1, Math.max(0, (liftFar - dist) / Math.max(1, liftFar - liftNear)));
+  const f = 1 + lift * (t * t * (3 - 2 * t)); // smoothstep
+  skyScene.backgroundIntensity = f;
+  const bg = skyScene.background;
+  if (bg && bg.isColor) {
+    if (_bgFor !== bg) { _bgFor = bg; _bgBase = bg.clone(); }
+    bg.copy(_bgBase).multiplyScalar(f);
   }
 }
 
@@ -607,9 +771,17 @@ function disposeSpeedField() {
 // G.player.vel, feed a uStretch uniform after swapping PointsMaterial for a ShaderMaterial). Do not add it now.
 export function updateSpeedField(x, z) {
   if (!speedField) return;
-  for (const L of speedField.layers) {
+  // Dim (and eventually drop) the field near the star — see starDustFactor. `G.speedFieldDim` is written by
+  // updateSystemBodies, which settleView runs just before this, so it is always this frame's value. Opacity
+  // is recomputed from the SPEC each frame rather than scaled in place, so it can't drift and the ?dev
+  // opacity slider (which writes the spec too) keeps working.
+  const dim = G.speedFieldDim ?? 1;
+  speedField.layers.forEach((L, i) => {
     if (wrapField(L.pos, x, z, L.half)) L.points.geometry.attributes.position.needsUpdate = true;
-  }
+    const authored = speedField.spec.layers[i]?.opacity ?? L.points.material.opacity;
+    L.points.material.opacity = authored * dim;
+    L.points.visible = dim > 0.02; // fully faded → skip the draw call entirely
+  });
 }
 
 // Headless-test hook (the 31-speed-field scenario): the live layers, [] before the first buildMap.
@@ -1002,11 +1174,22 @@ export function buildMap(descriptor) {
   } else {
     skyScene.background = new THREE.Color(d.background);
   }
+  // Sky lights are recreated per map, so the PREVIOUS pair has to come out of the scene first. It didn't
+  // until 2026-08-10: every level start / map switch added another ambient + another directional light, so a
+  // session accumulated them — the planets got brighter and their terminator flatter the longer you played,
+  // and (once the light started being aimed from the star) the stale fixed-direction lights kept lighting the
+  // planet from the old authored angle alongside the aimed one. Same class of leak as the nebula RT above.
+  if (G.skyAmbient) skyScene.remove(G.skyAmbient);
+  if (G.skySun) { skyScene.remove(G.skySun.target); skyScene.remove(G.skySun); }
   G.skyAmbient = new THREE.AmbientLight(d.sky.ambient.color, d.sky.ambient.intensity); // night-side fill
   skyScene.add(G.skyAmbient);
-  G.skySun = new THREE.DirectionalLight(d.sky.sun.color, d.sky.sun.intensity);    // side light -> terminator
+  // The terminator source. Its POSITION is not authored: updateSystemBodies re-aims it every frame so the
+  // light arrives FROM the star (see aimSkySunAtStar). The descriptor's `sun.pos` is only the pre-first-frame
+  // placement and the fallback for a map with no star. Colour + intensity ARE authored (and ?tune-able).
+  G.skySun = new THREE.DirectionalLight(d.sky.sun.color, d.sky.sun.intensity);
   G.skySun.position.set(...d.sky.sun.pos);
   skyScene.add(G.skySun);
+  skyScene.add(G.skySun.target); // three reads the direction from target.matrixWorld — it must be in the scene
 
   // When the nebula is baked it supplies the dense STATIC star field, so thin the MOVING parallax layer
   // to ~0.4× (it now only sells depth, not density). On the flat-color path keep full count. Still scales

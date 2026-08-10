@@ -3,7 +3,18 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-10 (**"Level 4" fights at the far belt outpost** — the third mining outpost moved to
+**Updated:** 2026-08-10 (**The speed field fades out near the star** — its grey specks read as dirt over the
+sun's smooth bright disk (~15 000 speck pixels on it), so the parallax field ramps away inside 760 u.
+Previously: **The sky light comes from the star** — the terminator source is no longer an
+authored fixed position but the star's own world position, aimed every frame; it used to arrive 64° off
+Vega's real bearing, leaving the home planet lit from the wrong side. Fixing it surfaced a sky-light LEAK:
+`buildMap` never removed the lights it replaced, so every level start added another pair. Previously:
+**Vega is a real sun** — the star is now a `.glb` model (CC-BY "Sun" by
+SebastianSosnowski, 2.1 MB → 167 KB) instead of an emissive sphere: 30% bigger (`size` 96), turning slowly on
+its axis, wrapped in a two-layer additive corona, and washing the sky backdrop brighter as you close on it.
+The asset's orange core is hidden so only its yellow transmissive shell is drawn. `assets:check` now also
+guards models referenced from a MAP DESCRIPTOR (set-pieces + the star) — previously an unchecked lane.
+Previously: **"Level 4" fights at the far belt outpost** — the third mining outpost moved to
 `(-900,2800)`, the system's most distant destination, and "Level 4" now names that exact point as its
 `center`, so it is the second level you fly out to rather than fight at the origin. Previously: **The map
 marks where your mission is** — the object hosting the active mission
@@ -826,6 +837,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   can't reproduce without it) / `assets:push`
   (→ S3 `vega-sentinels-assets`: glbs to `ships-combat/`+`ships-hangar/`, **SFX mp3s to `sfx/`**, sources to
   `source/`) / `assets:pull` (S3 → `client/assets/ships/` **+ `client/assets/sounds/`**) / `assets:check`
+  — the deploy guard: every content-hashed URL referenced in code must exist on S3. It covers ship /
+  component / weapon models, SFX, the Level-0 `introTrace`, the shared loot-drop model, **and (since
+  2026-08-10) everything reached through a MAP DESCRIPTOR** — the `.glb` set-pieces (freighter, base
+  station, space factory) and the star's `system.star.modelUrl`. That last lane was a hole: a bad hash on a
+  set-piece or the sun shipped a 404 and the object silently vanished (or fell back to a flat sphere) with
+  nothing failing the deploy.
   **Material flattening (combat only, `scripts/assets-flatten.mjs`, DECISIONS §77).** A model opts in with
   `flattenMaterials: { keepTexturedAbove: N }` in its **combat** preset. Before `optimize`, every material is
   replaced by flat factors read from the `assets:materials` sidecar, so `optimize --palette` can merge the
@@ -1598,8 +1615,61 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (one prefiltered-cubemap lookup per lit fragment — spared on the weakest phones). Sky scene is unaffected.
 - The star-system bodies have minimal **procedural textures** (baked canvas maps, no asset files):
   `makePlanetTexture(ocean)` — the ocean base planet with depth variation and soft clouds; `makeMoonTexture`
-  — the other planets' cratered/maria surfaces from their base color; the star is an emissive core + a soft
-  additive glow sprite. The bodies don't rotate, so the terminator stays consistent.
+  — the other planets' cratered/maria surfaces from their base color. The planets don't rotate, so the
+  terminator stays consistent.
+- **The star (Vega) is a `.glb` sun, not a procedural sphere** (`makeStarMesh`/`loadStarModel` in
+  `world.js`; `sun_combat.<hash>.glb`, CC-BY "Sun" by SebastianSosnowski, 2.1 MB source → **167 KB** built).
+  Everything about it is driven by the descriptor's **`system.star`** block, merged into `SYSTEM.star`, so
+  renderer / map screen / `?roam` tunables read one object:
+  - **`size` 96** — the visual radius (1.6x a planet; the model's longest axis is normalized to `size*2`,
+    so it exactly fills the sphere it replaces). Clearance is unchanged in kind: the ship flies at `y=0` and
+    the star's top is `depth − size` = **204** below it, so it stays permanently out of reach.
+  - **`yellowOnly`** — the asset is TWO concentric spheres, an orange emissive core inside a slightly larger
+    **yellow transmissive shell**. The shell is see-through face-on, so with both drawn you get an orange
+    disk with a yellow limb. The core is **hidden** (not removed — the distance fade holds its material) and
+    the shell IS the star. Tinting the core yellow is impossible: its colour is an orange emissive TEXTURE
+    and a material colour only multiplies it.
+  - **`glow`/`halo` (5.0 / 11.0 star-radii wide) + `glowColor`/`haloColor`** — a two-layer additive corona,
+    tight-and-bright over broad-and-dim. Brightness rides the COLOUR, because the fade overwrites
+    `material.opacity` every frame. A layer narrower than ~3.6 radii falls entirely behind the disk (the
+    shared glow texture's falloff sits at 0.275 of the sprite width) and reads as a rim, not a corona.
+  - **`spin` 0.02 rad/s** — the sun turns on its axis, wall-clock driven (frame-rate independent, machine
+    independent, zero sim RNG → replay-neutral).
+  - **`lift` 0.35 / `liftNear` 300 / `liftFar` 1200** — the star's wash on the sky BACKDROP: closing on it
+    brightens the background by up to +35% on a smoothstep. Covers both background paths — the baked nebula
+    cubemap rides `backgroundIntensity`, the flat-colour fallback (`?debug` / Performance tier) is multiplied
+    in place. `liftFar` sits just outside `fade.out` (760) so the wash grows as the star itself fades in.
+  - **Perf**: the shell is a `MeshPhysicalMaterial` with `transmission: 1` — an extra render target per
+    frame, the priciest material in the game. Affordable only because the distance fade **hides the whole
+    star** outside `fade.out`: at the base, and everywhere but the star's own neighbourhood, the pass never
+    runs. Swapping in an unlit material was tried and rejected — the yellow comes from the transmission, not
+    a texture, so a flat material renders it orange again.
+  - A missing/404 model leaves the procedural emissive sphere (`color`), so the star can never be a hole.
+- **The sky light comes FROM the star** (`aimSkySunAtStar`, called from `updateSystemBodies`). The sky
+  scene's directional light — the one that shapes the planets' and moons' terminator — is **not** authored
+  any more: every frame it is placed AT the star's world position and aimed at the SHIP. The descriptor's
+  `sky.sun.pos` survives only as the pre-first-frame placement / the fallback for a map with no star;
+  `sky.sun.color` + `intensity` are still authored and `?tune`-able (the position sliders are gone — they
+  would be overwritten on the next frame).
+  - Aiming at the ship rather than at a body is what keeps it correct after you fly 15 000 u: only one body
+    is ever in range, so "from the star toward where you are" is right for whatever you are looking at. The
+    body hangs ~340 u off that point, ≈1° of parallax at the star's 15 000–22 000 u range.
+  - Measured before/after at the base: the light used to arrive **64°** off the star's true bearing
+    (inverted along z), and the home planet's brightest limb sat **89°** away from Vega. Now: 1.3° and 16°
+    (one bucket of the 24-direction brightness sweep).
+  - The direction drifts as the star orbits (~0.24°/minute) — real, unreadable inside a session.
+- **The speed field fades out near the star** (`starDustFactor` → `G.speedFieldDim`, applied in
+  `updateSpeedField`; `system.star.dust` 1 / `dustNear` 400 / `dustFar` 760). The parallax field's specks are
+  rock-grey and deliberately non-additive, and it lives in the **combat** scene, which draws on top of the
+  sky — so over the sun's smooth bright disk they read as dirt on the lens (A/B measured on the rendered
+  frame: **~15 000 speck pixels on the disk alone**, peak delta 231). The ramp starts at `fade.out` (760, the
+  distance the star first becomes visible), so everywhere you actually fly and fight the field is untouched;
+  the motion cue is not lost near the star, because parallax against a huge close body reads better than dust.
+  Each layer's opacity is recomputed per frame as `spec × dim`, so the `?dev` opacity slider still works.
+- **Sky lights are removed on map rebuild.** `buildMap` recreates the ambient + directional pair per map;
+  until 2026-08-10 it never removed the previous ones, so **every level start / map switch leaked another
+  pair into the sky scene** — the planets got brighter and their terminator flatter the longer a session
+  ran. Pinned by `32-star-system` check 10 (exactly one of each survives repeated builds).
 - **The whole scene is data-driven:** it's described by a JSON **map descriptor** in the DB (`maps`
   table, seeded as `home-system`) and built generically by `buildMap(descriptor)` in `bootstrap()`
   (the `system` block → star + 4 planets, `speedField` → the player-locked wrapping speed field, `planet.ocean`

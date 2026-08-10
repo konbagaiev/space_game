@@ -40,7 +40,8 @@ export const EPOCH = 1723000000000; // fixed reference timestamp (ms) for orbita
 // `orbitR`/`periodDays`/`phase0` are the TRUE orbital geometry — the travel distances you actually fly, and
 // what the map screen and the anchors are built from. `size`/`depth` are the render placement: sphere radius
 // and how far BELOW the ecliptic the body is sunk. Apparent size is size/depth, so the two move together —
-// the star reads ~1.2x a planet by design.
+// the star reads ~1.6x a planet by design (it is the one body that is a real model, and the one you make a
+// 15 000 u trip to look at).
 export const SYSTEM = {
   // Where a body hangs relative to the point on the plane you arrive at. Copied from the original single
   // home planet ([-150, -285, -110]) so arriving at ANY body frames it the same familiar way: down and to
@@ -52,7 +53,13 @@ export const SYSTEM = {
   // before the body could ever enter the frustum, so approaching one fades it in instead of popping it.
   fade: { full: 520, out: 760 },
   belt: { inner: 16000, outer: 24000 }, // asteroid belt just outside planet 2's orbit (map UI only)
-  star: { name: 'star', color: 0xffd9a0, size: 74, depth: 300 },
+  // Vega — a .glb sun (see world.js makeStarMesh; the seed's `system.star` block is merged over this).
+  // `color` is the map-marker / procedural-fallback colour; `size` is the VISUAL radius (1.6x a planet).
+  star: { name: 'star', color: 0xffd9a0, size: 96, depth: 300,
+          modelUrl: null, yellowOnly: true, spin: 0.02,
+          glow: 5.0, halo: 11.0, glowColor: 0xffd08a, haloColor: 0x7a4a12,
+          lift: 0.35, liftNear: 300, liftFar: 1200,
+          dust: 1, dustNear: 400, dustFar: 760 },
   planets: [
     { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
     // Base planet — pinned to the world origin, so its anchor IS the base neighbourhood and it is the one

@@ -3857,3 +3857,39 @@ full `MISSION_ZONE_RADIUS` (200 u) of margin instead of spending part of it on f
 - The map's dashed gold mission frame lands on the outpost automatically (§105 derives it from the centre).
 - `ANCHORS.mining3` now has three consumers that must agree: the anchor, the `asteroid-field` set-piece
   `pos`, and the level's `center`. The set-piece pairing was already test-pinned; the centre now is too.
+
+## 107. The star is a .glb, and only the YELLOW half of it is drawn
+
+**Decision.** Vega is a real model (`sun_combat.<hash>.glb`, CC-BY "Sun" by SebastianSosnowski) rather than
+the emissive sphere + glow sprite it replaced. The asset ships **two concentric spheres** — an orange
+emissive core inside a slightly larger yellow shell whose material carries `KHR_materials_transmission` —
+and the game draws **only the shell** (`system.star.yellowOnly` hides the core).
+
+**Why not draw both, as the asset intends.** The shell is see-through face-on, so the orange core reads
+through the middle while the shell's long grazing path at the limb reads yellow. The result is a disk that
+looks like two halves of different oranges, with a hard seam at the terminator of the effect. Whatever that
+is meant to look like in a turntable render, in a top-down game where you park beside it, it reads as a
+rendering bug.
+
+**Why not just tint the core yellow.** Its colour is an orange emissive **texture**, and a material colour
+only ever *multiplies* the texture. Multiplication cannot raise a channel, so no colour makes an orange map
+yellow — the green channel simply is not there to scale up. Recolouring would mean editing the texture in the
+build (a real option, see below), not a runtime knob.
+
+**Why the transmission material stays, despite being the priciest one in the game.** `transmission: 1` costs
+three.js an extra render target per frame. We tried replacing the shell with an unlit `MeshBasicMaterial`
+carrying its emissive map: it rendered **orange**, because the yellow is produced by the transmission itself,
+not by any texture (the shell's emissive map is the same orange image the core uses). Keeping it is
+affordable for one specific reason: the distance fade **hides the entire star** outside `SYSTEM.fade.out`
+(760 u), so at the base — and everywhere except the star's own neighbourhood, which is 15 000 u from
+anywhere you normally play — the pass never runs at all. If that fade ever widens, this becomes a real cost.
+
+**Left on the table.** Baking a yellow-tinted texture in `assets:build` would let the shell be an unlit
+material and delete the transmission pass. Not done because the current cost is provably zero in normal play
+and the bake is a new pipeline pre-pass; revisit if the star ever becomes visible from the base.
+
+**Also decided here.** The hidden core is **not** stripped from the asset. It is never drawn, but its texture
+is the SAME 556 KB image the shell uses as its emissive map, so removing the mesh would free only a sphere's
+worth of geometry — not worth a build pre-pass. And the core mesh is **hidden, not removed, at runtime**:
+`buildSystemBodies` captured the procedural sphere's material for the distance fade, and removing it would
+leave that list pointing at a disposed material.

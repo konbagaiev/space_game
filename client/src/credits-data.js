@@ -14,6 +14,7 @@ export const CREDITS = {
     { name: "LowPoly Sci-Fi Thruster", author: "Yo.Ri", url: "https://skfb.ly/6qEKD", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
     { name: "Thruster animation", author: "photon (that one larry)", url: "https://skfb.ly/pyoLw", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
     { name: "Sci-Fi Space Station: Rotor Nexus", author: "rivetech", url: "https://skfb.ly/oPZKM", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
+    { name: "Sun", author: "SebastianSosnowski", url: "https://skfb.ly/6yGSx", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: true, requiresAttribution: true },
   ],
   sounds: [
     { name: "kinetic gun SFX", author: "serutonin-deprivd", url: "https://freesound.org/s/855652/", license: "CC0 1.0", licenseUrl: null, modified: false, requiresAttribution: false },

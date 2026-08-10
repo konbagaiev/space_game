@@ -12,7 +12,10 @@ function dumpPalette() {
     background: H(skyScene.background),
     sky: {
       ambient: { color: H(G.skyAmbient.color), intensity: G.skyAmbient.intensity },
-      sun: { color: H(G.skySun.color), intensity: G.skySun.intensity, pos: G.skySun.position.toArray() },
+      // `pos` is NOT dumped from the live light: it is re-aimed from the star every frame, so the live
+      // value is wherever the star happens to be. The seed's `sun.pos` is only the pre-first-frame
+      // placement / the fallback for a map with no star — leave it alone unless that is what you are tuning.
+      sun: { color: H(G.skySun.color), intensity: G.skySun.intensity, pos: '(auto — aimed from the star)' },
     },
   });
   console.log('— index.html (currently hardcoded) —', {
@@ -39,9 +42,9 @@ export function buildTunePanel(GUI) {
   sl.add(G.skyAmbient, 'intensity', 0, 3).name('ambient intensity');
   sl.addColor(slC, 'sun').onChange(v => G.skySun.color.set(v));
   sl.add(G.skySun, 'intensity', 0, 8).name('sun intensity');
-  sl.add(G.skySun.position, 'x', -300, 300);
-  sl.add(G.skySun.position, 'y', -300, 300);
-  sl.add(G.skySun.position, 'z', -300, 300);
+  // No position sliders: the sky light is re-aimed FROM THE STAR every frame (world.js aimSkySunAtStar),
+  // so anything set here would be overwritten on the next one. Only colour + intensity are authored now.
+  sl.add({ from: 'the star (auto)' }, 'from').name('direction').disable();
 
   const cl = gui.addFolder('Combat light (affects ship readability)');
   const clC = { ambient: hx(combatAmbient.color), sun: hx(sun.color) };

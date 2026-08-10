@@ -106,7 +106,13 @@ export default async function ({ page, assert, shot }) {
   });
   assert.ok(flight.worstDrift < 0.5,
     `no body MOVES while flying 12 000u through the system (worst drift ${flight.worstDrift.toFixed(3)}u)`);
-  assert.ok(flight.turnShift < 1e-6,
+  // NOT 1e-6 (which this was until 2026-08-10, and which made the scenario intermittently red). The two
+  // samples are taken at different WALL-CLOCK times and the bodies also drift along their orbits between
+  // them — the star alone moves ~0.73 u/s — while Date.now() only ticks in whole milliseconds. So the floor
+  // here is ~7e-4 u whenever the two reads straddle a millisecond, i.e. the old threshold could only pass by
+  // luck. 0.5 u still proves the thing that matters: the bug this guards (a camera-anchored re-projection)
+  // swings bodies by HUNDREDS of units when the ship turns, not by fractions of one.
+  assert.ok(flight.turnShift < 0.5,
     `turning the ship does not move a body either (max shift ${flight.turnShift})`);
   assert.ok(flight.closestSurface > 100,
     `the ship can never reach a body's surface — it flies above the plane, bodies are sunk below it `
@@ -389,4 +395,109 @@ export default async function ({ page, assert, shot }) {
   assert.equal(gate.blocked.takeoff, true, 'no engine/armor → "Take off" is disabled too');
   assert.ok(gate.note.length > 0, `and the player is told why (got "${gate.note}")`);
   assert.equal(gate.open.takeoff, false, 'a launchable ship can take off again');
+
+  // 9. THE STAR IS A .glb SUN, and only its YELLOW half is drawn. The asset ships two concentric spheres —
+  //    an orange emissive core inside a slightly larger yellow transmissive shell — and the shell is
+  //    see-through face-on, so leaving the core visible gives an orange disk with a yellow rim. The whole
+  //    look therefore rests on two things a refactor can silently break: the model actually loading (a bad
+  //    hash → the procedural sphere, no error), and the core staying hidden. Both are asserted on the REAL
+  //    scene after flying out to the star, not on the spec.
+  const star = await page.evaluate(async () => {
+    const g = window.__game;
+    const b = g.systemBodies.find((x) => x.isStar);
+    g.player.mesh.position.set(b.mesh.position.x + 150, 0, b.mesh.position.z + 110); // park on its anchor
+    g.settleView();
+    await new Promise((r) => setTimeout(r, 1200));
+    g.settleView();
+    const drawn = [], hidden = [];
+    if (b.starModel) b.starModel.traverse((o) => {
+      if (o.isMesh) (o.visible ? drawn : hidden).push({ transmissive: (o.material.transmission ?? 0) > 0 });
+    });
+    const corona = [];
+    b.mesh.traverse((o) => { if (o.isSprite) corona.push(o.scale.x / b.spec.size); });
+    return { hasModel: !!b.starModel, visible: b.mesh.visible, drawn, hidden,
+             corona: corona.sort((a, c) => a - c), size: b.spec.size, fadeMats: b.mats.length };
+  });
+  assert.equal(star.hasModel, true, 'the star loaded its .glb (a bad hash would silently leave the sphere)');
+  assert.equal(star.visible, true, 'and it is drawn once you have flown to it');
+  assert.equal(star.drawn.length, 1, `exactly ONE of the model's spheres is drawn (got ${star.drawn.length})`);
+  assert.equal(star.drawn[0].transmissive, true, 'and it is the YELLOW transmissive shell, not the orange core');
+  assert.equal(star.hidden.length, 1, 'the orange core is present but hidden (never removed — the fade holds its material)');
+  assert.equal(star.corona.length, 2, 'both corona layers exist');
+  // the shared glow texture's falloff sits at 0.275 of the sprite WIDTH from centre, so a layer narrower
+  // than ~3.6 star-radii falls entirely behind the disk and reads as a rim, not a corona
+  assert.ok(star.corona[0] > 3.6,
+    `the tight corona clears the disk instead of hiding behind it (${star.corona[0].toFixed(1)} radii wide)`);
+  assert.ok(star.corona[1] > star.corona[0], 'and the outer bloom is the wider of the two');
+  assert.ok(star.fadeMats >= 3,
+    `the model's materials are registered for the distance fade (${star.fadeMats}) — else the sun stays lit in the void`);
+
+  // 10. THE LIGHT COMES FROM THE STAR. The sky light used to sit at an authored fixed position, which put
+  //     the terminator 64° off the star's real bearing (and inverted along z), so the home planet's lit limb
+  //     faced AWAY from Vega. It is now re-aimed every frame from the star's world position. Asserted at the
+  //     BASE and again after flying 15 000 u to another planet — a per-body constant would pass the first
+  //     and fail the second.
+  const lit = await page.evaluate(() => {
+    const g = window.__game;
+    const sun = g.skyScene.children.find((o) => o.isDirectionalLight);
+    const star = g.systemBodies.find((b) => b.isStar);
+    // Measured IMMEDIATELY after settleView, with no await in between: the sim keeps running in roam, so a
+    // ship parked here and read a few hundred ms later has flown off and the parallax it adds is real, not a
+    // regression. settleView re-runs updateSystemBodies synchronously, which is what aims the light.
+    const offAt = (x, z, bodyName) => {
+      g.player.mesh.position.set(x, 0, z);
+      g.settleView();
+      const body = g.systemBodies.find((b) => b.name === bodyName);
+      const travels = sun.target.position.clone().sub(sun.position).normalize();      // light's direction
+      const fromStar = body.mesh.position.clone().sub(star.mesh.position).normalize(); // star -> that body
+      const deg = (Math.acos(Math.max(-1, Math.min(1, travels.dot(fromStar)))) * 180) / Math.PI;
+      return { deg: +deg.toFixed(2), shipToBody: Math.round(g.player.mesh.position.distanceTo(body.mesh.position)) };
+    };
+    const base = offAt(0, 0, 'planet2');
+    const p3 = g.systemBodies.find((b) => b.name === 'planet3');
+    const away = offAt(p3.mesh.position.x + 150, p3.mesh.position.z + 110, 'planet3'); // park on its anchor
+    // The sky lights are recreated on every map build; a leak here is what made this very measurement read
+    // a STALE light (whose target never moved) while the live one was aimed correctly — so count them.
+    const lights = { dir: g.skyScene.children.filter((o) => o.isDirectionalLight).length,
+                     ambient: g.skyScene.children.filter((o) => o.isAmbientLight).length };
+    return { base, away, lights };
+  });
+  // not 0: the light is aimed at the SHIP, and the body it lights hangs ~340 u off that point (SYSTEM.offset
+  // + depth) — about 1° of parallax at the star's 15 000–22 000 u range. The bug this guards was 64° off.
+  assert.ok(lit.base.shipToBody < 500 && lit.away.shipToBody < 500,
+    `the probe actually parked at each body (${lit.base.shipToBody}u / ${lit.away.shipToBody}u)`);
+  assert.ok(lit.base.deg < 5,
+    `at the base, the sky light arrives from the star (${lit.base.deg}° off the star's true bearing)`);
+  assert.ok(lit.away.deg < 5,
+    `and still does 22 000u away at planet 3 (${lit.away.deg}° off) — the direction is derived, not fixed`);
+  // The scenario has rebuilt the map several times by now (2c-bis, level starts, roam entry). Until
+  // 2026-08-10 buildMap created a new ambient + directional light per build and never removed the old ones,
+  // so they accumulated: the sky got brighter the longer a session ran, and the stale fixed-direction lights
+  // kept lighting the planet from the old authored angle alongside the aimed one.
+  assert.equal(lit.lights.dir, 1, `exactly ONE sky directional light survives repeated map builds (got ${lit.lights.dir})`);
+  assert.equal(lit.lights.ambient, 1, `and exactly one ambient (got ${lit.lights.ambient})`);
+
+  // 11. THE SPEED FIELD GETS OUT OF THE SUN'S WAY. Its specks are rock-grey and deliberately non-additive,
+  //     and it lives in the COMBAT scene, which draws on top of the sky — so over the sun's smooth bright
+  //     disk they read as dirt on the lens (measured: ~15 000 speck pixels on the disk alone). It fades out
+  //     as you close on the star. Read synchronously right after settleView: updateSpeedField runs inside
+  //     it, just after updateSystemBodies computes the dim, so this is always the current frame's value.
+  const dust = await page.evaluate(() => {
+    const g = window.__game;
+    const star = g.systemBodies.find((b) => b.isStar);
+    const read = (x, z) => {
+      g.player.mesh.position.set(x, 0, z);
+      g.settleView();
+      return { dist: Math.round(star.mesh.position.distanceTo(g.player.mesh.position)),
+               visible: g.speedFieldLayers.filter((L) => L.points.visible).length,
+               maxOpacity: Math.max(...g.speedFieldLayers.map((L) => L.points.material.opacity)) };
+    };
+    return { atStar: read(star.mesh.position.x + 150, star.mesh.position.z + 110), atBase: read(0, 0) };
+  });
+  assert.equal(dust.atStar.visible, 0,
+    `parked at the star (${dust.atStar.dist}u) the speed field is gone — no specks on the disk`);
+  assert.ok(dust.atBase.visible >= 2 && dust.atBase.maxOpacity > 0.5,
+    `and it is back at full strength at the base (${dust.atBase.visible} layers, max opacity `
+    + `${dust.atBase.maxOpacity.toFixed(2)}) — the fade is local to the star, not a global dimming`);
+
 }

@@ -714,7 +714,25 @@ export const MAPS = [
         offset: { x: -150, z: -110 },
         fade: { full: 520, out: 760 }, // fade a body in/out by distance from the SHIP instead of popping it
         belt: { inner: 16000, outer: 24000 },
-        star: { name: 'star', color: 0xffd9a0, size: 74, depth: 300 }, // reads ~1.2x a planet
+        // Vega. A .glb sun (CC-BY, see client/assets/CREDITS.md) rather than the emissive sphere it
+        // replaces; `color` still drives the map marker and the procedural fallback if the model 404s.
+        // `size` 96 (was 74) is the visual radius — 1.6x a planet, a deliberate step up now that it is a
+        // real model you fly out to look at. Clearance holds: the ship flies at y=0 and the body's top is
+        // depth − size = 204 below it, so the star stays permanently out of reach.
+        // The model ships TWO concentric spheres — an orange emissive core inside a yellow transmissive
+        // shell. `yellowOnly` hides the core so the star is uniformly yellow (without it you get an orange
+        // disk with a yellow limb, since the shell is see-through face-on). See world.js makeStarMesh.
+        // `spin` rad/s; `glow`/`halo` are the two additive corona layers, as sprite width in star radii,
+        // and their colours carry their brightness (additive has no usable opacity — the distance fade
+        // overwrites material.opacity every frame). `lift*` is the star's wash on the sky backdrop.
+        star: { name: 'star', color: 0xffd9a0, size: 96, depth: 300,
+                modelUrl: 'assets/ships/sun_combat.0063317d.glb', yellowOnly: true, spin: 0.02,
+                glow: 5.0, halo: 11.0, glowColor: 0xffd08a, haloColor: 0x7a4a12,
+                lift: 0.35, liftNear: 300, liftFar: 1200,
+                // The parallax speed field's grey specks read as DIRT over the sun's smooth bright corona,
+                // so the field fades out as you close in (1 = fully). The ramp starts where the star first
+                // becomes visible (`fade.out` 760) — everywhere you fly and fight the field is untouched.
+                dust: 1, dustNear: 400, dustFar: 760 },
         planets: [
           { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
           // Base planet: pinned to the world origin, so its anchor IS the base — the one body you see without

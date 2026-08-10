@@ -8,12 +8,16 @@
 //    under sfx/.
 //  - Input-replay traces on a LEVELS descriptor (`introTrace`, the Level-0 intro cutscene) — content-hashed
 //    same-origin paths (assets/recordings/<name>.<hash>.json) under recordings/. A typo would ship a 404 intro.
+//  - MAPS descriptors — the `.glb` SET-PIECES (freighter / base station / space factory) and the star's
+//    `system.star.modelUrl`. These were an outright hole until 2026-08-10: models referenced from a map
+//    descriptor were never checked at all, so a bad hash there shipped a 404 and the object silently
+//    vanished (a set-piece) or fell back to a flat sphere (the star) with nothing failing the deploy.
 // Because the bytes live on S3 and the content-hashed URLs live in git, they can't drift — a URL only
 // resolves if that exact build was pushed. Run: `npm run assets:check`. See docs/plans/ship-model-pipeline.md
 // and docs/plans/audio-sample-pipeline.md.
 import { execFileSync } from 'node:child_process';
 import { BUCKET, awsArgs, PREFIX, CDN } from './assets-config.mjs';
-import { SHIPS, SOUNDS, COMPONENTS, WEAPONS, LEVELS } from '../server/src/catalog_seed.js';
+import { SHIPS, SOUNDS, COMPONENTS, WEAPONS, LEVELS, MAPS } from '../server/src/catalog_seed.js';
 import { DROP_MODEL_URL } from '../client/src/drops-config.js'; // shared loot-drop model (single source of truth)
 
 const HASHED_GLB = /\.[0-9a-f]{8}\.glb$/; // content-hashed → a pipeline (S3) model, not an in-git primitive
@@ -69,6 +73,18 @@ for (const s of SOUNDS) {
 for (const l of LEVELS) {
   const key = traceKey(l.descriptor && l.descriptor.introTrace);
   if (key) targets.push({ name: `intro:${l.name}`, field: 'introTrace', url: l.descriptor.introTrace, key });
+}
+// Map descriptors: the .glb set-pieces, and the star's model on the `system.star` block. Same URL shape as
+// a ship's `modelUrl`, so they go through modelKey and in-git primitives are skipped the same way.
+for (const m of MAPS) {
+  const d = m.descriptor || {};
+  for (const sp of d.setpieces || []) {
+    const key = modelKey(sp.modelUrl);
+    if (key) targets.push({ name: `map:${m.name}:${sp.type}`, field: 'modelUrl', url: sp.modelUrl, key });
+  }
+  const starUrl = d.system && d.system.star && d.system.star.modelUrl;
+  const starKey = modelKey(starUrl);
+  if (starKey) targets.push({ name: `map:${m.name}:star`, field: 'system.star.modelUrl', url: starUrl, key: starKey });
 }
 // Shared equipment-drop model (client renders it from DROP_MODEL_URL; there is no modelUrl-on-component copy).
 { const key = modelKey(DROP_MODEL_URL); if (key) targets.push({ name: 'drop:metal_box', field: 'DROP_MODEL_URL', url: DROP_MODEL_URL, key }); }

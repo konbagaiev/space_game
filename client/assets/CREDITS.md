@@ -30,6 +30,7 @@ asset page is also handy, in case the author later changes the terms).
 | ships/engine_thruster_hangar.\<hash\>.glb (shared THRUSTER component item icon — menu only) | Yo.Ri | https://skfb.ly/6qEKD | CC-BY 4.0 | 2026-08-09 |
 | ships/maneuver_thruster_hangar.\<hash\>.glb (shared ENGINE component item icon, animated flame — menu only) | photon (that one larry) | https://skfb.ly/pyoLw | CC-BY 4.0 | 2026-08-09 |
 | ships/space_factory_combat.\<hash\>.glb (Space Factory set-piece — the orbital industrial station up-left of the home planet) | rivetech | https://skfb.ly/oPZKM | CC-BY 4.0 | 2026-08-10 |
+| ships/sun_combat.\<hash\>.glb (Vega — the system's central star) | SebastianSosnowski | https://skfb.ly/6yGSx | CC-BY 4.0 | 2026-08-10 |
 
 <!--
 Example row:
@@ -152,6 +153,19 @@ also sets `pruneSolidTextures: false`: the emissive maps are mostly black with s
 
 > "Sci-Fi Space Station: Rotor Nexus" (https://skfb.ly/oPZKM) by rivetech is licensed under Creative
 > Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+The **star** (`sun_combat`) is **"Sun"** by **SebastianSosnowski** (Sketchfab, **CC-BY 4.0** —
+attribution required, so this entry must stay while in use). It replaced the procedural emissive sphere
+that stood in for Vega. The asset ships TWO concentric spheres — an orange emissive core inside a
+slightly larger yellow shell whose material uses `KHR_materials_transmission`; the game draws only the
+yellow shell (`system.star.yellowOnly`), so the build must PRESERVE that extension or the star turns
+orange. `assets:build` (the `sun` preset) keeps the geometry and shrinks the textures to 512 WebP:
+2.1 MB → 167 KB.
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "Sun" (https://skfb.ly/6yGSx) by SebastianSosnowski is licensed under Creative Commons Attribution
+> (http://creativecommons.org/licenses/by/4.0/).
 
 The old in-git primitive placeholder glbs (`player.glb`, `fighter.glb`, `rocketeer.glb`, `heavy.glb`,
 `boss.glb`, `Spaceship*.glb`, plus the pre-pipeline non-hashed `enemy_1`–`enemy_4.glb`) were **removed**

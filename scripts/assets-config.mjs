@@ -101,6 +101,25 @@ export const PRESET_OVERRIDES = {
     combat: { textureSize: 256, textureCompress: 'webp', pruneSolidTextures: false },
     hangar: { textureSize: 256, textureCompress: 'webp', pruneSolidTextures: false }, // never shown in a menu; keep it small on S3 too
   },
+  // The system's central star (Vega). TWO concentric spheres in one .glb: an orange emissive core inside a
+  // slightly larger YELLOW shell whose material is transmissive (KHR_materials_transmission) — the shell is
+  // what you see, the core is hidden at runtime (world.js `starDraft.yellowOnly`; see SUMMARY). The build
+  // must therefore PRESERVE the transmission extension: the yellow comes from it, not from a texture, so a
+  // build that drops it silently returns an orange sun. Verified on the built glb, not assumed.
+  //
+  // Sizing: this is the biggest object in the game — normalized to 192 u across it fills roughly half the
+  // frame when you park on its anchor — so textures stay at 512 (not the 256 the space factory uses):
+  // solar granulation is fine noise spread over a full sphere, and 256 turns it to mush at that size.
+  // Geometry is two spheres and already trivial, so `simplifyRatio: 1.0` — decimating a sphere this large
+  // on screen only buys faceting on the silhouette.
+  // `pruneSolidTextures: false` protects the emissive map, which is the whole look.
+  // NOT dropping the hidden core mesh from the asset, though it is never drawn: its texture is the SAME
+  // image the shell uses as its emissive map (556 KB JPEG, shared), so removing the mesh would free only a
+  // sphere's worth of geometry — not worth a build pre-pass.
+  sun: {
+    combat: { simplifyRatio: 1.0, textureSize: 512, textureCompress: 'webp', pruneSolidTextures: false },
+    hangar: { textureSize: 512, textureCompress: 'webp', pruneSolidTextures: false }, // never shown in a menu; keep S3 small too
+  },
   // Asteroid pack (3 rock meshes in one .glb) used BOTH up-close (the mission asteroid-field rocks/hosts)
   // and far away as the parallax backdrop field (hundreds of INSTANCES). Source is a 4.5 MB textured pack;
   // shrink textures hard (256px → WebP) and simplify geometry to ~half so a big instanced field stays cheap.
