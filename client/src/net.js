@@ -6,7 +6,8 @@
 // Sits HIGH in the dependency graph (the sim loop + UI flows call these); imports the leaves it needs.
 import { G, CATALOG } from './state.js';
 import { API_BASE, BUILD_SOURCE } from './api-base.js';
-import { updateHud, showLevelUp } from './hud.js';
+import { updateHud, announceLevel } from './hud.js';
+import { levelFromXp } from './progression.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
 import { sendSession } from './session-transport.js'; // pure beacon-vs-fetch routing (unit-tested; the no-keepalive win/death fix)
@@ -33,6 +34,13 @@ export const fetchJson = async (url) => {
   return r.json();
 };
 
+// The in-flight bank request, so the post-victory active-ship refetch can WAIT for it (see
+// unlockNextLevel). Both touch `activeShip.progression`, and the refetch reads the server BEFORE the bank
+// has committed if it wins the race — which would reinstate the pre-run XP and, with `G.earnedXp` still
+// set, double-count the run. Null when nothing is banking.
+let banking = null;
+export function bankingDone() { return banking || Promise.resolve(); }
+
 // Bank the credits earned this run into the account balance and record the game. Runs once per run
 // (on victory or death; G.banked guards it); closing the browser before a run ends loses the unbanked
 // session credits.
@@ -41,19 +49,26 @@ export function bankRun() {
   G.banked = true;
   const durationMs = Math.round(performance.now() - G.gameStartTime);
   if (!G.playerId) { G.balance += G.earned; updateHud(); return; } // offline: reflect locally, best-effort
-  fetch(API_BASE + '/api/games', {
+  banking = fetch(API_BASE + '/api/games', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ playerId: G.playerId, credits: G.earned, kills: G.kills, durationMs, xp: G.earnedXp }),
   }).then((r) => (r.ok ? r.json() : null))
     .then((res) => {
       if (res && typeof res.credits === 'number') { G.balance = res.credits; updateHud(); }
-      // Keep the in-memory progression fresh (level + unspent points) so the Character screen is correct
-      // even before the hangar refetches the active ship. Newly-gained levels add that many skill points.
+      // Keep the in-memory progression fresh (level + XP into it + unspent points) so the Character screen
+      // is correct even before the hangar refetches the active ship. Newly-gained levels add that many
+      // skill points. The run's XP is now BANKED into those fields, so clear `G.earnedXp` in the same
+      // breath — otherwise the HUD keeps previewing it on top of the banked total and double-counts (the
+      // level-advance refetch of the active ship made that visible as a phantom extra level).
       if (res && typeof res.experience === 'number' && G.activeShip && G.activeShip.progression) {
         const p = G.activeShip.progression;
         const gained = Math.max(0, (res.level || 0) - (p.level || 0));
+        const at = levelFromXp(res.experience);
         p.experience = res.experience; p.level = res.level;
-        if (gained > 0) { p.skillPoints = (p.skillPoints || 0) + gained; showLevelUp(); } // centered "Level up" toast
+        p.xpIntoLevel = at.into; p.xpForNextLevel = at.span;
+        if (gained > 0) p.skillPoints = (p.skillPoints || 0) + gained;
+        G.earnedXp = 0;
+        announceLevel(res.level); // no-op when the live HUD already toasted this level mid-fight
       }
     })
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
@@ -157,7 +172,10 @@ export async function unlockNextLevel() {
     }
     CATALOG.level = level.descriptor; // reset() restarts CATALOG.level → next Restart is the new level
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
-    // a briefing action may have changed the loadout (weapon swap) — reload the active ship + rebuild
+    // a briefing action may have changed the loadout (weapon swap) — reload the active ship + rebuild.
+    // Wait for the run's bank POST first: this read would otherwise return the PRE-run experience and
+    // overwrite the freshly banked progression with it (see `banking`).
+    await bankingDone();
     const refreshed = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
     if (refreshed) { G.activeShip = refreshed; if (refreshed.ship) buildPlayerFor(refreshed.ship); }
     clientLog('adv:done', { catalogLevel: CATALOG.level && CATALOG.level.title, catalogName: CATALOG.levelName }); // TEMP debug

@@ -5,6 +5,17 @@
 
 ## 2026-08-10
 
+- **Level up now happens in the fight, not back at base.** The XP bar resolves the level itself every
+  frame (`liveProgress` in the new `client/src/progression.js`, a tested mirror of the server curve —
+  DECISIONS §103): crossing a threshold mid-combat immediately bumps the displayed level, empties the bar
+  toward the next one, and fires the centered "Level up" toast. Previously the bar sat pinned at 100% for
+  the rest of the mission and the toast only appeared after `bankRun`, back at base. The toast is deduped
+  by level (`announceLevel`), so banking doesn't repeat it. `bankRun` also refreshes
+  `xpIntoLevel`/`xpForNextLevel` from the banked experience and zeroes `G.earnedXp` — fixing a
+  pre-existing double-count where the post-victory active-ship refetch left the run's XP counted twice.
+  **Seen on prod**: a player with 950 banked XP read `Level 0 · 1900/1000` on the base XP bar (950 refetched
+  + 950 still previewed). The same refetch now `await`s the bank POST (`bankingDone()` in `net.js`), so it
+  can no longer read the pre-run experience and overwrite the freshly banked progression with it.
 - **Home station moved 50 right + 50 down, to `(-10,-10)`.** `ANCHORS.base` (`client/src/system-map.js`)
   and the `base-station` set-piece in `server/src/catalog_seed.js` `home-system` moved together from
   `(-60,-60)`, keeping the four-way invariant (pinned by `system-map.test.js`). It now sits further from

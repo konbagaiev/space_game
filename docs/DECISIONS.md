@@ -3718,3 +3718,43 @@ the sequence drift (an explicit id never touches the sequence).
   A blanket alias in `normalizeLevelName` was rejected — `level-1` is a perfectly good *current* name, so
   aliasing it would break the live campaign to fix the archive. Nothing on S3 was rewritten (the intro
   asset is content-hashed; rewriting it forces a re-upload and an itch republish for no gameplay gain).
+
+## 103. Level-ups happen live in the fight, so the client mirrors the XP curve
+
+**Context.** Character level was resolved in exactly one place: `bankRun`, after a run ends. Everything
+before that was a preview — the HUD's XP bar drew `xpIntoLevel + G.earnedXp` against the *banked* level's
+span, so a player who earned enough XP to level mid-fight watched the bar sit pinned at 100% for the rest
+of the mission and only saw the "Level up" toast minutes later, back at base, next to the credits summary.
+The moment that earned the level and the feedback for it were nowhere near each other.
+
+**Decision.** The HUD resolves the level itself, every frame: `liveProgress(progression, G.earnedXp)` rolls
+the banked state forward through the curve, so the bar shows the *live* level, empties toward the next one
+the instant a threshold is crossed, and toasts right there in combat. That requires the XP curve on the
+client, and the client is served as plain static ES modules — it cannot import from `server/`. So the two
+constants and the cost function are **duplicated** in `client/src/progression.js`, with
+`client/src/progression.test.js` importing *both* implementations and asserting they agree across the
+range. The server stays the authority: it banks the XP and its returned `level`/`experience` overwrite the
+client's view at `bankRun`.
+
+**Alternatives rejected.**
+- *Serve `server/src/progression.js` to the browser (or symlink/copy it at build).* The duplication would
+  be gone, but the client's static-module layout has no shared directory today and inventing one for two
+  constants is more machinery than the parity test it replaces.
+- *Ask the server for the live level.* A network round-trip per kill, in the middle of a fight, to
+  recompute arithmetic the client already has the inputs for.
+- *Keep the toast in `bankRun` only and just reset the bar visually.* The bar is the small half of the
+  feedback; the toast is the reward. Splitting them would be worse than the status quo.
+
+**Consequences.**
+- The toast is deduped by level (`announceLevel` in `hud.js`), not by call site: whichever of the live HUD
+  and `bankRun` reaches a given level first shows it, the other is a no-op. `bankRun` still calls it, so a
+  level gained while the bar was hidden is not silently lost.
+- `bankRun` now writes `xpIntoLevel`/`xpForNextLevel` back and **zeroes `G.earnedXp`**. It has to: with the
+  run's XP banked into `experience`, the post-victory active-ship refetch would otherwise return the fresh
+  `xpIntoLevel` while `G.earnedXp` still held the same XP, and the HUD would add it twice — visible as a
+  phantom extra level-up. That double-count existed before this change and was **observed on production**
+  (950 banked XP displayed as `Level 0 · 1900/1000`); only the toast made it worth chasing. The same
+  refetch now awaits the bank POST (`bankingDone()`), because the two race for the same
+  `activeShip.progression` and a refetch that wins reinstates the pre-run experience.
+- A retune of `XP_BASE`/`XP_STEP` on the server is now a two-file change, and the parity test fails loudly
+  if only one file moves.

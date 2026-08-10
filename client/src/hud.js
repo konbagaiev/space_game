@@ -13,6 +13,7 @@ import { cssColor } from './format.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 import { isDev } from './dev.js';
+import { liveProgress } from './progression.js';
 
 const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the perf overlay (see dev.js)
 
@@ -100,14 +101,31 @@ export function updateProgressionHud() {
   const show = !!prog && !G.replayMode;
   setStyle(el.xpBar, 'display', show ? 'block' : 'none');
   if (show) {
-    const span = prog.xpForNextLevel || 1;
-    const live = prog.xpIntoLevel + (G.earnedXp || 0); // preview the run's earned-but-not-yet-banked XP
-    setStyle(el.xpFill, 'width', Math.max(0, Math.min(100, 100 * live / span)).toFixed(1) + '%');
-    setText(el.xpText, `${t('ui.character.level', { level: prog.level })} · ${t('ui.character.xp', { into: Math.round(live), span })}`);
+    // The bar shows the LIVE level, not the banked one: the run's unbanked XP is rolled through the curve
+    // here (`liveProgress`), so crossing a threshold mid-fight bumps the level, empties the bar toward the
+    // next one and toasts immediately — waiting for `bankRun` back at base would hide the moment it happened.
+    const live = liveProgress(prog, G.earnedXp);
+    setStyle(el.xpFill, 'width', Math.max(0, Math.min(100, 100 * live.into / (live.span || 1))).toFixed(1) + '%');
+    setText(el.xpText, `${t('ui.character.level', { level: live.level })} · ${t('ui.character.xp', { into: Math.round(live.into), span: live.span })}`);
+    announceLevel(live.level);
   }
   const pts = prog ? prog.skillPoints : 0; // free-skill-points badge on the Character menu item
   setText(el.charBadge, pts > 0 ? String(pts) : '');
   el.charBadge.classList.toggle('show', pts > 0);
+}
+
+// Highest character level the "Level up" toast has already been shown for. `null` until the first HUD
+// frame with player data, so loading an existing level-7 pilot doesn't toast on page load.
+let announcedLevel = null;
+
+// Toast `level` if it is genuinely NEW for this session. Two call sites race for it and only one wins:
+// the live HUD (the threshold crossed mid-fight — the normal path) and `bankRun` (the server's
+// authoritative level, which still covers a level gained while the bar was hidden). A level that went
+// DOWN — progress reset, or a refetch that disagrees — re-syncs silently, so the next real gain toasts.
+export function announceLevel(level) {
+  const n = Math.max(0, level | 0);
+  if (announcedLevel !== null && n > announcedLevel) showLevelUp();
+  announcedLevel = n;
 }
 
 // "Level up" toast — centered white text that fades out over 2s (CSS animation). Restart the animation on
