@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-10 (**The in-flight "Map" button works on phones again** — it sat at the same z-index
+**Updated:** 2026-08-10 (**Phone map layout: object list on the right, map down to the bottom** — the
+navigation component keeps its side-by-side shape on `body.dev-phone` instead of stacking into two strips,
+in both hosts, with the ⛶ fullscreen button's corner reserved in the base menu (`34-phone-map-layout`).
+Previously: **The in-flight "Map" button works on phones again** — it sat at the same z-index
 as the full-screen touch/stick layer but earlier in the document, so every tap went to the stick; now z-6,
 with a hit-test guard in `15-mobile-landscape`. Previously: **The campaign has no "Launch mission" button** — `#mw-go` is hidden whenever the
 campaign is the active mission (it had become the same call as Take off once levels started by flying to
@@ -1257,8 +1260,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **Navigation UI — ONE component, three hosts (`systemmap-ui.js` `mountSystemNav`, DECISIONS §100).**
     The base-menu **Map** section, the in-flight **overlay** and **mission activation** all run the same
     component over the same object list. Layout: the **map canvas is pinned LEFT** (in the base menu, right
-    beside the nav menu) and the **object list is the panel on the RIGHT**; on a phone the list stacks under
-    the map.
+    beside the nav menu) and the **object list is the panel on the RIGHT** — **the same side-by-side shape on
+    a phone** (`body.dev-phone`: map filling the central area down to the bottom edge, list a ~38%/260px
+    column on the right with its Take off / Autopilot buttons **stacked full-width** under it). On a phone in
+    the **base menu only**, that button column reserves 52px on the right for the floating **⛶ fullscreen
+    button** (fixed bottom-right, z-60), which would otherwise draw over the bottom button and eat its taps;
+    the in-flight overlay is z-9000 and covers the ⛶ instead, so it needs no reservation. Pinned by
+    `34-phone-map-layout` (both hosts: side-by-side, map ≥90% of the height, bottom button hit-tested).
     - **Objects (`listSystemObjects()`, 11).** The **star and all four planets are first-class, selectable
       destinations**, listed and marked exactly like the **home station**, the **research station**, the
       **three belt outposts** (`ANCHORS.mining`/`mining2`/`mining3` — the latter two are navigation-only,

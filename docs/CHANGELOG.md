@@ -5,6 +5,15 @@
 
 ## 2026-08-10
 
+- **Phone map layout: list on the right, map down to the bottom.** The star-system navigation component
+  stacked on `body.dev-phone`, which split a 390px-tall landscape phone into two strips — a 149px map above
+  a 153px list. It now keeps the desktop's side-by-side shape: the map fills the central area to the bottom
+  edge (383×308 on that screen) and the object list is a 38%/260px column on the right, its Take off /
+  Autopilot buttons stacked full-width. Applies to both hosts (base-menu Map and the in-flight overlay).
+  Also fixed a pre-existing collision the wider layout made obvious: in the base menu the bottom action
+  button ran under the floating ⛶ fullscreen button, which drew over it and took the tap — the column now
+  reserves 52px there (and takes it back when ⛶ is hidden: already fullscreen, or no fullscreen API). New
+  `34-phone-map-layout` scenario pins both hosts and hit-tests that bottom button; it fails on the old CSS.
 - **Fixed: on a phone the in-flight "Map" button did nothing.** `#map-btn` shipped at `z-index: 5` — the
   same layer as `#touch`, whose full-screen `#stick-zone` takes pointer events everywhere and comes LATER
   in the document, so it won the hit test and swallowed every tap. Desktop was unaffected (`#touch` is

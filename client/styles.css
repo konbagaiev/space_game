@@ -386,16 +386,29 @@
     font-weight: 700; letter-spacing: .5px;
   }
   .sysnav-actions button:disabled { opacity: .45; cursor: not-allowed; }
-  /* narrow / phone: stack the list under the map instead of squeezing both. The small left inset keeps the
-     canvas clear of the fixed top-left account bar, which floats over the work zone on a phone. */
-  body.dev-phone .sysnav { flex-direction: column; gap: 6px; padding-left: 12px; }
-  /* the map keeps the lion's share of a short landscape phone screen — the list scrolls in what is left */
-  body.dev-phone .sysnav-mapwrap { flex: 1 1 auto; min-height: 132px; }
-  body.dev-phone .sysnav-side { flex: 0 0 auto; max-width: none; gap: 5px; }
+  /* phone: the SAME side-by-side shape as the desktop — map filling the central area down to the bottom
+     edge, object list as a column on the right. Stacking them (what shipped first) split a 390px-tall
+     landscape phone into two strips: a 149px map above a 153px list, and the map is the whole point of
+     this screen. The small left inset keeps the canvas clear of the fixed top-left account bar, which
+     floats over the work zone on a phone. */
+  body.dev-phone .sysnav { flex-direction: row; gap: 8px; padding-left: 12px; }
+  body.dev-phone .sysnav-mapwrap { flex: 1 1 auto; min-height: 0; }
+  body.dev-phone .sysnav-side { flex: 0 0 38%; max-width: 260px; gap: 5px; }
   body.dev-phone .sysnav-title { display: none; }   /* the rows are self-evident; the space is not */
-  body.dev-phone .sysnav-list { flex: 0 0 auto; max-height: 92px; }
+  body.dev-phone .sysnav-list { flex: 1 1 auto; max-height: none; }
   body.dev-phone .sysnav-row { padding: 5px 8px; font-size: 12px; }
   body.dev-phone .sysnav-hint { min-height: 15px; font-size: 11px; }
+  /* the right column is too narrow for two buttons side by side — stack them full-width instead of
+     letting flex-wrap drop one to a ragged second line */
+  body.dev-phone .sysnav-actions { flex-direction: column; }
+  /* In the BASE MENU the bottom button now ends in the same corner as the floating ⛶ fullscreen button
+     (46px, fixed bottom-right, z-60), which draws over it and steals the taps that land there — so reserve
+     its footprint, and take the space back on the two states where ⛶ is hidden (already fullscreen, or a
+     browser with no fullscreen API). The in-flight overlay needs none of this: it is z-9000, so it covers
+     the ⛶ instead of fighting it. */
+  body.dev-phone #mw-view-map .sysnav-actions { padding-right: 52px; }
+  body.dev-phone.fs #mw-view-map .sysnav-actions,
+  body.dev-phone.no-fs-api #mw-view-map .sysnav-actions { padding-right: 0; }
   body.dev-phone .sysnav-actions button { padding: 7px 12px; font-size: 12px; }
   /* In-flight navigation overlay: the SAME component, full-screen over the frozen game (G.mapOpen).
      z-index 9000 clears every fixed HUD element, and it covers the viewport, so it cannot overlap the
