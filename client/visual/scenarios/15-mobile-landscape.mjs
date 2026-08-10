@@ -72,4 +72,29 @@ export default async function ({ page, assert, shot }) {
   assert.ok(fsBtn.fsClearedOnForeground, 'body.fs is re-synced (cleared) when the page returns to foreground');
   assert.ok(fsBtn.hiddenNoFsApi, 'no-fs-api hides the ⛶ button');
   assert.ok(fsBtn.a2hsShownInGame, 'no-fs-api shows the Add-to-Home-Screen pill in-game');
+
+  // --- In-flight touch controls must actually be TAPPABLE: #touch is a full-screen layer (its #stick-zone
+  //     takes pointer events everywhere), so any button that lives outside it has to out-stack it or the
+  //     tap never reaches the button. The out-of-combat "Map" button shipped at the same z-index as #touch
+  //     but EARLIER in the document, so on a phone tapping Map did nothing at all (desktop was fine — there
+  //     #touch is hidden). Hit-test the real corner, not just the z-index number. ---
+  const hit = await page.evaluate(() => {
+    const body = document.body;
+    body.classList.add('touch'); body.classList.remove('menu');
+    document.getElementById('touch').classList.add('on');       // in-world touch controls are live
+    const map = document.getElementById('map-btn');
+    map.style.display = 'block';                                // what refreshMapControl() does out of combat
+    const probe = (el) => {
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!top && (top === el || el.contains(top));
+    };
+    const r = { map: probe(map), rocket: probe(document.getElementById('rocket-btn')) };
+    map.style.display = '';
+    document.getElementById('touch').classList.remove('on');
+    body.classList.remove('touch');
+    return r;
+  });
+  assert.ok(hit.map, 'the out-of-combat "Map" button is tappable on touch (not covered by #stick-zone)');
+  assert.ok(hit.rocket, 'and the rocket button still is too');
 }

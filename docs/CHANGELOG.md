@@ -5,6 +5,13 @@
 
 ## 2026-08-10
 
+- **Fixed: on a phone the in-flight "Map" button did nothing.** `#map-btn` shipped at `z-index: 5` — the
+  same layer as `#touch`, whose full-screen `#stick-zone` takes pointer events everywhere and comes LATER
+  in the document, so it won the hit test and swallowed every tap. Desktop was unaffected (`#touch` is
+  hidden there), which is why it survived. The button now sits at `z-index: 6`, like `#rocket-btn` and
+  `#return-btn`, which solved the same collision. Guarded by a hit test (not a z-index number) in
+  `15-mobile-landscape`: with the touch layer live it asserts `elementFromPoint` at the button's centre is
+  the button — it fails on the old CSS.
 - **No "Launch mission" button on the campaign — "Take off" is the one launch control.** Since every
   campaign level starts by flying to its zone, `launchCampaign()` and `takeOff()` are the same call
   (`enterRoam(null)`), so the two buttons only asked the player to guess at a difference that no longer

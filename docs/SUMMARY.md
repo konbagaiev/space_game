@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-10 (**The campaign has no "Launch mission" button** — `#mw-go` is hidden whenever the
+**Updated:** 2026-08-10 (**The in-flight "Map" button works on phones again** — it sat at the same z-index
+as the full-screen touch/stick layer but earlier in the document, so every tap went to the stick; now z-6,
+with a hit-test guard in `15-mobile-landscape`. Previously: **The campaign has no "Launch mission" button** — `#mw-go` is hidden whenever the
 campaign is the active mission (it had become the same call as Take off once levels started by flying to
 their zone; DECISIONS §104); it returns only for an active side mission. Previously: **Level-ups land mid-fight** — the XP bar resolves the level live from the run's
 unbanked XP (`client/src/progression.js` `liveProgress`, a parity-tested mirror of the server curve;
@@ -1282,8 +1284,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
       the system disc, so the map can never be panned into empty space or zoomed to a degenerate scale.
     - **"Autopilot to destination"** flies to the selection — `enterRoam({pos, missionId})` from the base,
       `engagePointAutopilot(...)` when already flying (re-routes **in place**, no re-entry into roam).
-    The overlay is opened by the out-of-combat **Map** button or a **tap on the mini-map** (during a live
-    fight the mini-map stays the battle radar) and **freezes the game via a raw loop-skip on `G.mapOpen`**
+    The overlay is opened by the out-of-combat **Map** button (`#map-btn`, click + `touchstart`; it sits at
+    **z-6**, above the full-screen `#stick-zone` inside `#touch` at z-5 — at an equal z-index the later
+    element won the hit test and the button was dead to every tap on a phone) or a **tap on the mini-map**
+    (during a live fight the mini-map stays the battle radar) and **freezes the game via a raw loop-skip on `G.mapOpen`**
     (NOT `setPaused`, which would stack the Paused UI); it also carries **"Return to hangar"** and Close.
   - **Mission-arrival prompt.** Autopiloting to a mission marker parks the ship on arrival and — only when the
     matching **offer exists** (`missionOffers`, side missions unlocked at L≥4) — shows a **"Start mission?"**

@@ -1119,9 +1119,13 @@
     width: 132px; height: 132px; pointer-events: none; opacity: .82;
     background: rgba(8,12,24,.26); border: 1px solid rgba(120,150,210,.2); border-radius: 8px;
   }
-  /* Out-of-combat Map button — occupies the (now hidden) mini-map corner while roaming; toggled by main.js. */
+  /* Out-of-combat Map button — occupies the (now hidden) mini-map corner while roaming; toggled by main.js.
+     z-6 like #rocket-btn / #return-btn: the full-screen #stick-zone lives inside #touch at z-5 and comes
+     LATER in the document, so at an equal z-index it won the hit test and swallowed every tap on this
+     button — the map simply would not open on a phone (it worked on desktop only because #touch is hidden
+     there). See DECISIONS §42. */
   #map-btn {
-    position: fixed; left: 62px; top: 72px; z-index: 5; display: none;
+    position: fixed; left: 62px; top: 72px; z-index: 6; display: none;
     width: 132px; height: 40px; cursor: pointer;
     font: 700 15px/1 system-ui, sans-serif; color: #0b0f14;
     background: linear-gradient(#8fe0ff, #4bb6ff); border: 0; border-radius: 8px;
