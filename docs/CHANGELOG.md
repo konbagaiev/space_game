@@ -3,7 +3,37 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-11
+
+- **The mid-game gear tier is now earned, not just afforded: Heavy hull, Heavy Machine Gun and Triple
+  spiral rocket go on sale only after clearing "Level 3" (the weapons factory).** A catalog row can now
+  name a level gate (`stats.minLevel`, `FACTORY_GATE = 'level-4'` in `catalog_seed.js`), compared by level
+  NAME like every other progress gate (DECISIONS §95). Before the factory falls, those three rows are
+  **absent from the shop list** — no greyed-out teaser (DECISIONS §108) — and the server refuses the
+  purchase outright (`buyItem` → 403 `item locked`), so the list is presentation and the gate is real.
+  **Looted copies are unaffected**: a gated item that drops still banks into the stash and equips. The
+  client mirrors the gate from the new `activeShip.reachedLevels` (level names shipped with the active
+  ship), never from a raw id.
+
+- **Heavy Machine Gun rebalanced for its new slot at the top of the ladder: weight 8 → 15, aim assist
+  2° → 3°.** It is the heaviest gun in the game now (Heavy cannon 10, Machine Gun 8), so mounting it costs
+  real acceleration and turn — it is meant to pair with the Heavy hull that unlocks beside it, not to be a
+  free upgrade. The wider auto-aim cone is what makes its rate of fire land at speed.
+
+- **A gold "(new)" marker on the Loadout menu item when new gear unlocks.** Plain inline text in the same
+  gold as the free-skill-points pill (`#mw-loadout-new`, string `ui.mainwin.new`, EN + RU) — no count, it
+  just says "look here". It appears when a level-gated shop row becomes buyable and **clears the moment the
+  player opens Loadout**; the seen set is per-player `localStorage` and is pruned to what is unlocked now,
+  so a progress reset re-arms it. Only gated rows count, so it stays rare instead of becoming permanent
+  chrome. Covered by the `05-hangar-shop` visual scenario (marker shown → cleared on open → stays cleared)
+  plus new server tests for the gate itself (403 before the factory, 200 and in the stash after).
+
 ## 2026-08-10
+
+- **Shop owned badge reads as an aside: "(owned ×N)".** Was "Owned ×N" — now lowercase and in
+  parentheses so it sits quietly after the item name instead of competing with it ("Advanced thrusters
+  (owned ×1)"). String-only change in `client/locales/source.json` + the RU translation
+  ("(в наличии ×{n})"); the `05-hangar-shop` visual scenario asserts the new wording.
 
 - **`M` toggles the system map (desktop).** The same overlay the on-screen **Map** button opens, on a key.
   Gated exactly like that button — **out of combat only**: during a live fight the corner is the battle

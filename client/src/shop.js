@@ -140,6 +140,33 @@ function shopCatalog() {
   return items;
 }
 
+// ---------- Level-gated shop rows (catalog_seed.js `stats.minLevel`) ----------
+// A gated row is simply ABSENT from the shop until the campaign reaches its level — the maintainer's
+// call: no greyed-out teaser (DECISIONS §108). The gate is compared by level NAME against the server's
+// `reachedLevels` (DECISIONS §95 — never a raw id), and the server refuses the buy anyway, so this
+// filter is presentation, not enforcement. A looted copy of a gated item still equips normally.
+const itemUnlocked = (s) => !s || !s.minLevel ||
+  !!(G.activeShip && (G.activeShip.reachedLevels || []).includes(s.minLevel));
+// Every row the shop would list right now (the same predicate renderShopPanel filters by, minus the type).
+const buyableNow = () => shopCatalog().filter((n) => (n.price ?? 0) > 0 && n.s?.buyable !== false && itemUnlocked(n.s));
+
+// ---------- "(new)" marker on the Loadout menu item ----------
+// A GATED row that has just become buyable is "new" until the player opens Loadout once. The seen set is
+// per-player localStorage and is pruned to what is unlocked NOW on every mark, so a progress reset (or a
+// wipe) re-arms the marker instead of swallowing it forever. Only gated rows count: everything else has
+// been on the shelf since the shop opened and would make the marker permanent noise.
+const seenKey = () => `shopSeenNew:${G.playerId || 'anon'}`;
+const readSeen = () => { try { return new Set(JSON.parse(localStorage.getItem(seenKey()) || '[]')); } catch { return new Set(); } };
+const gatedRefs = () => buyableNow().filter((n) => n.s?.minLevel).map((n) => `${n.kind}:${n.refId}`);
+export function hasNewShopItems() {
+  if (!(G.activeShip && G.activeShip.shopUnlocked)) return false; // nothing to look at while the shop is shut
+  const seen = readSeen();
+  return gatedRefs().some((ref) => !seen.has(ref));
+}
+export function markShopItemsSeen() {
+  try { localStorage.setItem(seenKey(), JSON.stringify(gatedRefs())); } catch { /* private mode */ }
+}
+
 // ---------- Loadout screen (Slice C): centered ship + slots around it + a right context panel ----------
 // The 3D ship in the middle. Built lazily the first time the Loadout view is visible; runs while shown.
 function ensureLoadoutViewer(active) {
@@ -317,8 +344,7 @@ function renderShopPanel() {
   disposeViewer(shopModelViewer); shopModelViewer = null; // left the detail → free the model context
   const host = document.getElementById('loadout-panel');
   const types = SHOP_TYPES.map((tp) => `<button class="lp-type${tp === shopType ? ' active' : ''}" data-act="type" data-type="${tp}">${esc(t(`ui.shop.filter.${tp}`))}</button>`).join('');
-  const items = shopCatalog().filter((n) => (n.price ?? 0) > 0 && n.s?.buyable !== false &&
-    (shopType === 'weapon' ? n.kind === 'weapon' : n.type === shopType));
+  const items = buyableNow().filter((n) => (shopType === 'weapon' ? n.kind === 'weapon' : n.type === shopType));
   for (const n of items) n.owned = ownedCount(n.kind, n.refId);
   const list = items.length ? items.map(shopRow).join('') : `<div class="lp-hint">${esc(t('ui.shop.empty_shop'))}</div>`;
   host.innerHTML = `<div class="lp-scroll"><div class="lp-types">${types}</div><div class="lp-list shop">${list}</div></div>

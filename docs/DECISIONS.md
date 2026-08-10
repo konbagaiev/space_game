@@ -3893,3 +3893,37 @@ is the SAME 556 KB image the shell uses as its emissive map, so removing the mes
 worth of geometry — not worth a build pre-pass. And the core mesh is **hidden, not removed, at runtime**:
 `buildSystemBodies` captured the procedural sphere's material for the distance fade, and removing it would
 leave that list pointing at a disposed material.
+
+## 108. The mid-game gear tier is gated by campaign progress, and locked rows are HIDDEN, not greyed out
+
+**Decision.** Three shop rows — **Heavy hull** (component 13), **Heavy Machine Gun** (weapon 7) and
+**Triple spiral rocket** (weapon 11) — carry `stats.minLevel = 'level-4'` (`FACTORY_GATE`) and only go on
+sale once the player has **cleared "Level 3"**, the weapons factory. Until then they are **absent from the
+shop list entirely**; there is no greyed-out row, no "unlocks after Level 3" tooltip.
+
+**Why gate them at all.** Credits are earnable off the campaign — side missions unlock at the same beat and
+are repeatable — so without a gate the whole mid-game power tier was purchasable by grinding, at whatever
+point in the story the player felt like grinding. Two things go wrong: the levels tuned around the starter
+ladder get trivialised by gear from two acts later, and the factory — the first boss, the level the tier is
+*named after* — stops being the thing that earns it. The gate makes the story beat the unlock, and the
+credit balance only the second condition.
+
+**Why hidden rather than shown-and-locked.** A locked-but-visible row is the standard "teaser" pattern and it
+was the other candidate. The maintainer's call was hidden: the shop is a *list of what you can buy*, and a
+row you cannot buy makes every list scan a two-step read. The teaser job is done instead by the **"(new)"
+marker** on the Loadout menu item when the tier unlocks — which advertises the gear at the moment the player
+can actually act on it, rather than nagging for three levels beforehand.
+
+**Why the gate is on the PURCHASE, not on ownership.** A gated item that *drops* still deposits into the
+stash and equips normally. Loot is earned in the fight that dropped it; taking it away because the story
+counter is behind would punish the player for winning. The shop is the economy lever, so that is where the
+lever sits.
+
+**Why by level NAME.** Same rule as §95 — the gate is `'level-4'`, resolved against the `levels` table, never
+a raw id. Enforcement is server-side (`buyItem` → 403 `item locked`); the client filter is presentation only.
+The client mirrors it from `activeShip.reachedLevels` (a list of level *names*), so it never learns an id.
+
+**Also decided here.** The Heavy Machine Gun's stats moved with the gate: **weight 8 → 15** (the heaviest gun
+in the game, above the Heavy cannon's 10) and **aim assist 2° → 3°**. It is meant to be the endgame bullet
+weapon, and mass is the price of admission — mounting it on a light hull costs real acceleration and turn, so
+it pairs with the Heavy hull that unlocks alongside it rather than being a free upgrade.

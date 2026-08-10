@@ -36,6 +36,14 @@ const THRUSTER_MODEL = 'https://d1843uwjdjg4vs.cloudfront.net/ships-hangar/engin
 const ENGINE_MODEL_CFG = { yaw: 0, pitch: Math.PI / 2, scale: 0.75 };
 const THRUSTER_MODEL_CFG = { yaw: 0, scale: 1.15 };
 
+// --- Level-gated shop rows (`stats.minLevel`) ---
+// A row with `minLevel` is only BUYABLE once the player's `current_progress` has reached the level
+// seeded under that NAME (never a raw id — DECISIONS §95). The server refuses the purchase (`buyItem`)
+// and the client hides the row from the shop list; a LOOTED copy still equips normally, because the gate
+// is on the purchase, not on ownership. Keeps the mid-game power spike behind the story beat that earns
+// it instead of behind a credit balance the player could grind out on side missions at "Level 1".
+export const FACTORY_GATE = 'level-4'; // reached after clearing "Level 3" (the weapons-factory boss)
+
 export const COMPONENTS = [
   { id: 1, name: 'Basic hull', type: 'hull', weight: 20, price: 300, stats: { durability: 100, volume: 100 } }, // starter gear: cheap, buyable
   { id: 2, name: 'Light hull', type: 'hull', weight: 8, price: 150, stats: { durability: 30, volume: 40, buyable: false } }, // enemy gear: resale-only (hidden from the shop)
@@ -70,9 +78,10 @@ export const COMPONENTS = [
 
   // --- Player shop ladder (docs/plans/catalog-economy.md). Upgrades are mass trade-offs, not
   // power-creep; ids continue from 12. The enemy/starter parts above stay out of the shop (price 0 →
-  // hidden by the client's price>0 shop filter); only these priced rows are buyable.
+  // hidden by the client's price>0 shop filter); only these priced rows are buyable — and a row carrying
+  // `minLevel` (FACTORY_GATE) is buyable only once the campaign has reached that level.
   // Hull: "a new ship = a new hull" — 2× HP for a real mobility cost (mass 48→78: accel ~6.2, turn ~1.2).
-  { id: 13, name: 'Heavy hull', type: 'hull', weight: 50, price: 6000, stats: { durability: 200, volume: 350 } },
+  { id: 13, name: 'Heavy hull', type: 'hull', weight: 50, price: 6000, stats: { durability: 200, volume: 350, minLevel: FACTORY_GATE } }, // gated: sold only after "Level 3"
   // Engines: Racing = T2 (more power, heavier); Ion = high-accel and light (premium top-tier).
   { id: 15, name: 'Solid-fuel engine', type: 'engine', weight: 14, price: 1400,
     modelUrlHigh: ENGINE_MODEL, // menu-only item icon (shared by the family)
@@ -182,8 +191,12 @@ export const WEAPONS = [
     }
   },
   {
+    // Gated behind "Level 3" (FACTORY_GATE): the top of the bullet ladder. Its price of admission is
+    // MASS — 15 is the heaviest gun in the game (Heavy cannon 10, Machine Gun 8), so mounting it costs
+    // real acceleration/turn unless the ship has grown into it.
     id: 7, name: 'Heavy Machine Gun', type: 'bullet', price: 6000, stats: { // strong all-rounder: med damage, high rate of fire
-      power: 12, projectileSpeed: 48, maxRange: 100, fireCooldown: 0.12, weight: 8, projectileColor: 0xb46bff, class: 'kinetic', aimAssistDeg: 2
+      power: 12, projectileSpeed: 48, maxRange: 100, fireCooldown: 0.12, weight: 15, projectileColor: 0xb46bff, class: 'kinetic', aimAssistDeg: 3,
+      minLevel: FACTORY_GATE
     }
   },
   {
@@ -217,7 +230,8 @@ export const WEAPONS = [
       seekHalfAngle: 60 * Math.PI / 180, detonateRadius: 0.5, blastRadius: 5, // hull-proximity fuse (see id 3)
       blastVisual: 4.5, blastTimeScale: 0.8, blastTint: 0xffb050, blastBright: 1.6, // detonation FX (weapon-driven): size / speed / ring tint / fireball brightness
       fireCooldown: 7, weight: 13, projectileColor: 0x66ddff, class: 'rocket',
-      spiral: true // spawn as an invisible leader + 3 visible spiraling rockets (see spawnRocket)
+      spiral: true, // spawn as an invisible leader + 3 visible spiraling rockets (see spawnRocket)
+      minLevel: FACTORY_GATE // gated: sold only after "Level 3"
     }
   },
 ];

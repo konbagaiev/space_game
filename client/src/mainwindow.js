@@ -21,7 +21,7 @@ import { runCenter } from './level-sim.js'; // where the current level fights (0
 import { mountSystemNav, showStartMissionPrompt, showDockPrompt, objectForMission } from './systemmap-ui.js';
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
-import { openBay, showBayView, updateTakeoffGate, resetShipStatsDelta, stopLoadoutPreview } from './shop.js';
+import { openBay, showBayView, updateTakeoffGate, resetShipStatsDelta, stopLoadoutPreview, hasNewShopItems, markShopItemsSeen } from './shop.js';
 import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } from './account.js';
 import { updateMenuCredits } from './hud.js';
 import { requestFullscreen, showWelcome } from './welcome.js';
@@ -58,7 +58,9 @@ export function showMain(briefing) {
   renderMissionsBoard();               // campaign card + any cached side-mission cards
   updateGoButton();
   selectMenu('missions');              // open the mission view (renders the campaign briefing)
-  openBay();                           // load shop state + gate the Loadout/Stash/Shop menu items
+  // load shop state + gate the Loadout/Stash/Shop menu items; the fresh state carries `reachedLevels`,
+  // so the "(new)" marker is only trustworthy once it lands
+  void openBay().then(updateLoadoutNew);
   refreshMissions();                   // (re)load the side missions, then rebuild the list
   if (G.activeShip && G.activeShip.components) resetShipStatsDelta(); // Loadout's ▲/▼ baseline starts clean each landing
   if (!stagedActive) applyShowcaseTarget();  // when staging, the reveal defers the granted-item showcase itself
@@ -147,6 +149,7 @@ function selectMenu(which) {
   else if (isCharacter) { settleBriefingReveal(); renderCharacter(); stopViewer(mwItem); }
   else if (isMap) { settleBriefingReveal(); renderMapView(); stopViewer(mwItem); }
   else { settleBriefingReveal(); renderStub(which); stopViewer(mwItem); }
+  updateLoadoutNew(); // opening Loadout clears the "(new)" marker; leaving it must not bring it back
 }
 // Base-menu Map: the shared navigation component (map left, object list right). Its action row carries
 // BOTH launch paths, side by side — "Take off" (free flight) and "Autopilot to destination" for whatever
@@ -275,6 +278,16 @@ function updateMissionsBadge() {
   const n = missionOffers.length;
   el.missionsBadge.textContent = n > 0 ? String(n) : '';
   el.missionsBadge.classList.toggle('show', n > 0);
+}
+// The gold "(new)" beside Loadout: a shop item the player has never seen just unlocked (right now that is
+// the "Level 3" gear — Heavy hull / Heavy Machine Gun / Triple spiral rocket). Standing ON the Loadout
+// screen IS looking at them, so this marks them seen there and the marker clears; it comes back only when
+// the next gated item unlocks. Called on every landing and on every menu switch.
+function updateLoadoutNew() {
+  if (mwView === 'bay') markShopItemsSeen();
+  const show = hasNewShopItems();
+  el.loadoutNew.textContent = show ? t('ui.mainwin.new') : '';
+  el.loadoutNew.classList.toggle('show', show);
 }
 // #mw-go LAUNCHES THE FIGHT for the ACTIVE SIDE mission — reflect which one that is on the button.
 // The CAMPAIGN has NO launch button at all (DECISIONS §104): launching it became identical to "Take off"

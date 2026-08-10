@@ -812,6 +812,15 @@ export async function reachedLevel(currentProgress, levelName, db = pool) {
   return !!(rows[0] && rows[0].reached);
 }
 
+// Every level NAME the player's progress has reached, id-ordered. Shipped with the active ship so the
+// CLIENT can mirror the catalog's `minLevel` shop gates (a gated row shows only when its gate name is in
+// this list) without ever learning a raw level id. Same fail-closed rule as reachedLevel: a gate name
+// that isn't in the list stays locked.
+export async function reachedLevels(currentProgress, db = pool) {
+  const { rows } = await db.query('SELECT name FROM levels WHERE id <= $1 ORDER BY id', [currentProgress]);
+  return rows.map((r) => r.name);
+}
+
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
 const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']);
@@ -878,9 +887,13 @@ export async function getStash(playerId) {
 }
 
 export async function buyItem(playerId, kind, refId) {
-  await registerPlayer(playerId);
+  const reg = await registerPlayer(playerId);
   const item = await catalogItem(kind, refId);
   if (!item) return { ok: false, status: 400, error: 'no such item' };
+  // Level-gated row (`stats.minLevel`, catalog_seed.js FACTORY_GATE): the client hides it, the server
+  // refuses it — the shop list is not the gate, this is. Looting/equipping such an item stays allowed.
+  const gate = item.stats && item.stats.minLevel;
+  if (gate && !(await reachedLevel(reg.currentProgress, gate))) return { ok: false, status: 403, error: 'item locked' };
   const price = item.price | 0;
   return withTx(async (client) => {
     const { rows } = await client.query('SELECT credits FROM players WHERE id = $1 FOR UPDATE', [playerId]);
@@ -1153,9 +1166,10 @@ export async function getActivePlayerShip(playerId) {
   const stats = row.stats, loadout = row.loadout || {};
   const components = row.ps_components ?? row.ship_components ?? {};
   const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null);
-  const [progression, sideMissionsUnlocked] = await Promise.all([
+  const [progression, sideMissionsUnlocked, levelsReached] = await Promise.all([
     getProgression(playerId),                                     // banked XP → derived level + skill points + allocations
     reachedLevel(reg.currentProgress, SIDE_MISSIONS_MIN_LEVEL),   // side-mission board gate (DECISIONS §91/§95)
+    reachedLevels(reg.currentProgress),                           // level NAMES reached → the client's `minLevel` shop filter
   ]);
   return {
     playerShipId: Number(row.player_ship_id),
@@ -1167,6 +1181,7 @@ export async function getActivePlayerShip(playerId) {
     credits: reg.credits,   // the player's persistent credit balance
     shopUnlocked: reg.shopUnlocked, // hangar shop gate (opens right after the first flight, DECISIONS §90)
     sideMissionsUnlocked, // board opens on reaching `level-4` — by NAME, never by raw id (DECISIONS §95)
+    reachedLevels: levelsReached, // level names reached; the client hides `minLevel` shop rows not in it
     launchable: missingRequired.length === 0,
     missingRequired,
   };

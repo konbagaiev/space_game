@@ -58,5 +58,7 @@ export const el = {
   charBadge: byId('mw-char-badge'),
   // count of offered side missions on the Missions menu item (renderMissionsBoard) — same pill as charBadge
   missionsBadge: byId('mw-missions-badge'),
+  // "(new)" marker on the Loadout menu item — a newly unlocked shop item is waiting (updateLoadoutNew)
+  loadoutNew: byId('mw-loadout-new'),
   levelupToast: byId('levelup-toast'),
 };

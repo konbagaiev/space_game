@@ -23,6 +23,17 @@ export default async function ({ page, assert, shot }) {
   const statsOnMissions = await page.evaluate(() => getComputedStyle(document.getElementById('ship-stats')).display);
   assert.equal(statsOnMissions, 'none', 'ship characteristics are Loadout-only (hidden on Missions)');
 
+  // the campaign is cleared, so the "Level 3" gear (Heavy hull / Heavy Machine Gun / Triple spiral rocket)
+  // has just unlocked → the gold "(new)" marker sits beside Loadout until the player opens the screen
+  await page.waitForFunction('document.getElementById("mw-loadout-new").classList.contains("show")', null, { timeout: 5000 });
+  const marker = await page.evaluate(() => {
+    const n = document.getElementById('mw-loadout-new');
+    return { text: n.textContent.trim(), color: getComputedStyle(n).color };
+  });
+  assert.ok(/new/i.test(marker.text), 'the Loadout menu item carries a "(new)" marker');
+  assert.equal(marker.color, 'rgb(255, 207, 90)', 'the marker is the same gold as the free-skill-points badge');
+  await shot('loadout-new-marker');
+
   // open the Loadout screen
   await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());
   await page.waitForFunction('document.querySelectorAll("#loadout-slots .slot-chip").length >= 6', null, { timeout: 5000 });
@@ -38,6 +49,14 @@ export default async function ({ page, assert, shot }) {
   assert.ok(base.hasShipCanvas, 'the centered ship canvas is present');
   assert.equal(base.stats, 4, 'four live ship-stats are shown (HP / accel / turn / weight)');
   assert.ok(base.hasGunSlot, 'the gun weapon slot is present');
+  // looking at the screen IS seeing the new gear → the marker clears and does not come back on the next view
+  assert.ok(await page.evaluate(() => !document.getElementById('mw-loadout-new').classList.contains('show')),
+    'opening Loadout clears the "(new)" marker');
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="missions"]').click());
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());
+  await page.waitForFunction('document.querySelectorAll("#loadout-slots .slot-chip").length >= 6', null, { timeout: 5000 });
+  assert.ok(await page.evaluate(() => !document.getElementById('mw-loadout-new').classList.contains('show')),
+    'the marker stays cleared after leaving and re-entering Loadout');
   await shot('loadout');
 
   // select the gun slot → the panel shows the equipped weapon + Remove, and the backfilled basic gun as a
@@ -85,14 +104,18 @@ export default async function ({ page, assert, shot }) {
   await page.waitForTimeout(80);
   const shop = await page.evaluate(() => ({
     items: document.querySelectorAll('#loadout-panel .lp-shop-item').length,
+    names: [...document.querySelectorAll('#loadout-panel .lp-shop-item')].map((c) => c.textContent),
     hasPrice: !!document.querySelector('#loadout-panel .lp-shop-item .price'),
     hasBuy: !!document.querySelector('#loadout-panel .lp-shop-item [data-act="buy"]'),
     ownedBadges: [...document.querySelectorAll('#loadout-panel .owned-badge')].map((b) => b.textContent.trim()),
   }));
   assert.ok(shop.items >= 3, 'the Weapon type lists the buyable weapon ladder');
+  // the campaign is cleared, so the "Level 3"-gated weapons are on the shelf (before it they are absent)
+  assert.ok(shop.names.some((n) => /Heavy Machine Gun/.test(n)), 'the gated Heavy Machine Gun is listed once "Level 3" is cleared');
+  assert.ok(shop.names.some((n) => /Triple spiral rocket/.test(n)), 'the gated Triple spiral rocket is listed once "Level 3" is cleared');
   assert.ok(shop.hasPrice, 'shop items show a price');
   assert.ok(shop.hasBuy, 'shop items have a Buy button');
-  assert.ok(shop.ownedBadges.some((t) => /Owned ×\d/.test(t)), 'an owned weapon shows an "Owned ×N" badge');
+  assert.ok(shop.ownedBadges.some((t) => /\(owned ×\d+\)/.test(t)), 'an owned weapon shows an "(owned ×N)" badge');
   await shot('shop-weapons');
 
   // click the Machine Gun entry (it has a glb) → the detail card: stats at top, the 3D model, Buy, Back

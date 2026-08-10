@@ -188,8 +188,8 @@
     "context": "Message in the Shop column when no buyable items match the active filter."
   },
   "ui.shop.owned": {
-    "source": "Owned ×{n}",
-    "context": "Badge on a shop item the player already has (equipped on the ship + in the stash). {n} is the integer total count; the '×N' notation avoids plurals. Short."
+    "source": "(owned ×{n})",
+    "context": "Badge on a shop item the player already has (equipped on the ship + in the stash). {n} is the integer total count; the '×N' notation avoids plurals. Lowercase and parenthesised so it reads as an aside after the item name. Short."
   },
   "ui.shop.free": {
     "source": "Free",
@@ -822,6 +822,10 @@
   "ui.mainwin.craft": {
     "source": "Craft",
     "context": "Left base-menu item — the crafting section (undesigned, \"to be defined\"). One word."
+  },
+  "ui.mainwin.new": {
+    "source": "(new)",
+    "context": "Gold marker beside the Loadout base-menu item: shop items the player has never seen just became available. Lowercase and parenthesised, very short; it disappears once the player opens Loadout."
   },
   "ui.character.level": {
     "source": "Level {level}",

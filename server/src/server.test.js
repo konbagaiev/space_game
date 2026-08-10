@@ -1052,6 +1052,51 @@ test('shop: sell honors a quantity, clamps to what is owned, and rejects a bad q
   assert.equal((await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 0 })).status, 400);
 });
 
+// ---------- Level-gated shop rows (catalog_seed.js FACTORY_GATE = 'level-4') ----------
+// The "Level 3" reward tier — Heavy hull (13), Heavy Machine Gun (7), Triple spiral rocket (11) — is only
+// on sale once the campaign has cleared the weapons factory. The gate is the SERVER's, not the shop list's.
+const GATED = [['component', 13], ['weapon', 7], ['weapon', 11]];
+
+test('catalog: the "Level 3" tier carries minLevel; Heavy Machine Gun weighs 15 with aim assist 3', async () => {
+  const [comps, weapons] = await Promise.all([getJson('/api/components'), getJson('/api/weapons')]);
+  assert.equal(comps.find((c) => c.id === 13).stats.minLevel, 'level-4', 'Heavy hull gated');
+  const hmg = weapons.find((w) => w.id === 7);
+  assert.equal(hmg.stats.minLevel, 'level-4', 'Heavy Machine Gun gated');
+  assert.equal(hmg.stats.weight, 15, 'Heavy Machine Gun is the heaviest gun (mass is its price of admission)');
+  assert.equal(hmg.stats.aimAssistDeg, 3);
+  assert.equal(weapons.find((w) => w.id === 11).stats.minLevel, 'level-4', 'Triple spiral rocket gated');
+  // the rest of the ladder stays ungated — the gate is a story beat, not a blanket lock
+  assert.equal(weapons.find((w) => w.id === 6).stats.minLevel, undefined, 'Heavy cannon is not gated');
+});
+
+test('shop: the "Level 3" tier is refused before the factory is cleared and sells after', async () => {
+  const pid = 'gate-l3';
+  await getJson(`/api/players/${pid}/active-ship`);          // register (progress 0)
+  await post(`/api/players/${pid}/advance`, {});             // → level-1
+  await post(`/api/players/${pid}/advance`, {});             // → level-2: the shop opens
+  const { pool } = await import('./db.js');
+  await pool.query('UPDATE players SET credits = 50000 WHERE id = $1', [pid]); // credits must not be the reason
+  const early = await getJson(`/api/players/${pid}/stash`);
+  assert.equal(early.shopUnlocked, true, 'the shop itself is open at level-2');
+  assert.deepEqual(early.activeShip.reachedLevels, ['level-0', 'level-1', 'level-2'], 'reached level NAMES ship with the active ship');
+  for (const [kind, refId] of GATED) {
+    const r = await post(`/api/players/${pid}/buy`, { kind, refId });
+    assert.equal(r.status, 403, `${kind} ${refId} is locked before "Level 3"`);
+    assert.equal((await r.json()).error, 'item locked');
+  }
+  await post(`/api/players/${pid}/advance`, {});             // → level-3 (the factory itself)
+  assert.equal((await post(`/api/players/${pid}/buy`, { kind: 'weapon', refId: 7 })).status, 403,
+    'still locked while "Level 3" is the CURRENT level — clearing it is what unlocks');
+  await post(`/api/players/${pid}/advance`, {});             // → level-4: cleared the factory
+  for (const [kind, refId] of GATED) {
+    const r = await post(`/api/players/${pid}/buy`, { kind, refId });
+    assert.equal(r.status, 200, `${kind} ${refId} is on sale after "Level 3"`);
+    const j = await r.json();
+    assert.ok(j.stash.some((it) => it.kind === kind && it.refId === refId), 'bought item landed in the stash');
+    assert.ok(j.activeShip.reachedLevels.includes('level-4'), 'the client sees the gate open');
+  }
+});
+
 // ---------- Grab (tractor) component + victory loot deposit (grab-tractor-drops) ----------
 test('catalog: Grab components (29/30) seeded; enemy parts priced with buyable:false', async () => {
   const comps = await getJson('/api/components');

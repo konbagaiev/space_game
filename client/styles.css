@@ -1022,6 +1022,11 @@
     min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
     background: #ffcf5a; color: #1a1a1a; font-size: 12px; font-weight: 700; line-height: 1;
   }
+  /* "(new)" on the Loadout menu item: newly unlocked shop items are waiting. Same gold as the badges
+     above, but plain inline text — it says "look here", and a count would be noise. Cleared the moment
+     the player opens Loadout (mainwindow.js updateLoadoutNew → shop.js markShopItemsSeen). */
+  .mw-new { display: none; }
+  .mw-new.show { display: inline; margin-left: 6px; color: #ffcf5a; font-size: 12px; font-weight: 700; }
   #xp-bar {
     position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%);
     width: 80%; height: 14px; z-index: 13; pointer-events: none; display: none; overflow: hidden; /* above #mainwin (12) so it shows on the base too */

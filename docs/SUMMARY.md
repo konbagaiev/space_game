@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-10 (**`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
+**Updated:** 2026-08-11 (**The "Level 3" gear tier is progress-gated** — Heavy hull, Heavy Machine Gun (now weight 15 / aim assist 3°) and Triple spiral rocket are hidden from the shop and refused by the server until the weapons factory is cleared; a gold "(new)" marker on Loadout announces them when they unlock. Previously: **`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
 sun's smooth bright disk (~15 000 speck pixels on it), so the parallax field ramps away inside 760 u.
 Previously: **The sky light comes from the star** — the terminator source is no longer an
 authored fixed position but the star's own world position, aimed every frame; it used to arrive 64° off
@@ -571,6 +571,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     27, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
     **2500**), and repair tiers **Repair drone II** (id 19: 1.5 HP / 1 s / 85% / **1800**) + **Nanobot repair**
     (id 20: 2 HP / 1 s / 90% / **7000**). Upgrades are **mass trade-offs, not power-creep**.
+  - **Level-gated shop rows (`stats.minLevel`).** A catalog row may name a level the campaign must have
+    reached before it is **buyable**; the constant is `FACTORY_GATE = 'level-4'` in `catalog_seed.js`,
+    compared by level **NAME** (DECISIONS §95), i.e. *after clearing "Level 3"* (the weapons factory).
+    Three rows carry it: **Heavy hull** (13), **Heavy Machine Gun** (7) and **Triple spiral rocket** (11) —
+    the mid-game power tier. Enforced **server-side** in `buyItem` (403 `item locked`); the client simply
+    **omits** the row from the shop list — no greyed-out teaser (DECISIONS §108). The gate is on the
+    **purchase only**: a looted copy still lands in the stash and equips. The client mirrors it from
+    `activeShip.reachedLevels` (level names, shipped by `getActivePlayerShip` via `reachedLevels()` in
+    `db.js`) against `n.s.minLevel` — it never learns a raw level id.
   - **Rarity + color** (`rarity`/`color` columns on **both** `components` and `weapons`; migration 020,
     Postgres bootstrap parity; flow into the client CATALOG). Three tiers with a fixed hex each: **trash
     `#ffffff`** (white), **common `#59e0a0`** (green, the loot-glow green), **rare `#0000ff`** (blue).
@@ -899,9 +908,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   weight 8; **priced 1500** — strong, so not cheap). Rockets: **Rocket (homing)** (id 3, power 60 / health 10,
   **priced 600**), **Rocket (enemy)** (id 4, power 25). **Player shop ladder** (priced;
   `docs/plans/economy-shop-v2.md`): **Heavy cannon** (id 6: power 25, slow fire / long range / **2000**),
-  **Heavy Machine Gun** (id 7: power 12, high RoF / **6000**), **Heavy rocket** (id 8: homing, power 90, slow
+  **Heavy Machine Gun** (id 7: power 12, cooldown 0.12, high RoF, **weight 15** — the heaviest gun in the
+  game — aim assist **3°** / **6000**; **gated behind "Level 3"**), **Heavy rocket** (id 8: homing, power 90, slow
   reload, big blast / **2600**), and **Triple spiral rocket** (id 11: **4000**, top of the rocket ladder —
-  `stats.spiral:true`). The triple spiral fires an **invisible leading homing rocket** (steers via
+  `stats.spiral:true`; **gated behind "Level 3"**). The triple spiral fires an **invisible leading homing rocket** (steers via
   `findTargetInSector`, deals no damage, not shootable) that defines the flight path; **three visible
   cyan warheads** (power 40 / health 10 each; flight = Heavy-rocket-class ×1.2: launchSpeed 14, accel 12)
   spiral around its axis (radius 1.4u, 6 rad/s, 120° apart). Each warhead is a real rocket — it detonates
@@ -1100,6 +1110,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   — the number of **side missions on offer** (`missionOffers.length`, currently a fixed 3; taking one does
   **not** decrement it, and the ever-present campaign card isn't counted), hidden at zero (i.e. before the
   board unlocks). It reuses the **same `.mw-badge` gold pill** as the free-skill-points badge on Character.
+  The **Loadout menu item carries a gold "(new)" marker** (`#mw-loadout-new`, `.mw-new`, `updateLoadoutNew`
+  in `mainwindow.js`, string `ui.mainwin.new`) — plain inline text in the same gold `#ffcf5a` as those
+  pills, **no count**. It appears when a **level-gated shop row has just become buyable** (right now the
+  "Level 3" tier: Heavy hull / Heavy Machine Gun / Triple spiral rocket) and **clears the moment the
+  player opens Loadout** — standing on that screen *is* looking at them. The seen set lives in
+  `shop.js` (`hasNewShopItems` / `markShopItemsSeen`, `localStorage['shopSeenNew:<playerId>']`, per
+  player) and is **pruned to what is unlocked now** on every mark, so a progress reset re-arms the marker
+  instead of swallowing it. Only **gated** rows count — anything on the shelf since the shop opened would
+  make the marker permanent noise. Recomputed on every landing (after `openBay()` resolves, since the
+  gate names arrive with the shop state) and on every menu switch.
   Each card is **stacked for the narrow column**:
   line 1 = title (wrapping) with the badge right-aligned beside it, line 2 = the reward/XP sub-line,
   line 3 = the action buttons right-aligned (an empty action row collapses). The list is **its own
@@ -1463,13 +1483,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   a **Shop** button (Slice C — see the Main Window section above). The **stash** (owned-but-not-equipped
   inventory, a qty model) surfaces **per-slot** as the fitting replacements. The **Shop panel** lists items
   by **type** (**Hull / Engine / Thrusters / Repair / Shield / Weapon / Grab**). The Shop lists only
-  **buyable** items (`price > 0` **and** `stats.buyable !== false`); **enemy parts are priced (resale value)
-  but flagged `buyable:false` → hidden**, while
+  **buyable** items (`price > 0` **and** `stats.buyable !== false` **and** the `stats.minLevel` gate, if any,
+  is in `activeShip.reachedLevels` — one predicate, `buyableNow()` in `shop.js`); **enemy parts are priced
+  (resale value) but flagged `buyable:false` → hidden**, while
   the player's **starter gear is cheap-but-buyable** (Basic hull 300 / engine 500 / thrusters 400 / repair
   drone 500 / homing rocket 600) so each type's ladder starts low. The **Grab** tab sells the **Advanced grab**
   (2000); the base grab the player already owns. Each item's **full characteristics show
   on hover (desktop) or the (i) tap (mobile)** — for weapons: damage, RoF/reload, projectile speed, range,
-  blast, weight. A shop item the player **already owns shows an "Owned ×N" badge** (N = total equipped on
+  blast, weight. A shop item the player **already owns shows an "(owned ×N)" badge** (N = total equipped on
   the active ship **+** in the stash). **Price shown per screen:** the **Shop** shows the **full buy price**;
   **Stash + Loadout** show the **resale value** (`floor(price*0.75)` — the amount the player actually gets on
   sale, computed client-side via `sellLabel`/`SELL_RATE` to mirror the server), so the player reads "what I'd
@@ -1493,9 +1514,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   level 2 is **backfilled into the stash**. **Prices:** the player ladder has draft prices (strawman, see
   `docs/plans/economy-shop-v2.md`) anchored to the **corrected ~5800-credit first-shop budget** (the budget
   includes the ×2 victory bonus per level; a flawless run banks ~4280, retries push it toward ~5800 — so the
-  Heavy hull at 6000 is the aspirational big buy); sell = `floor(price*0.75)`, server-computed. The shop
-  lists only `price > 0` **and** `buyable !== false` items, so the curated ladder shows and enemy parts (now
-  priced for resale but `buyable:false`) don't. The **ship-with-slots-around-it** layout + the shop's
+  Heavy hull at 6000 is the aspirational big buy — and since it is now **gated behind "Level 3"**, that
+  budget is what the player has *by the time it goes on sale*); sell = `floor(price*0.75)`, server-computed.
+  The shop lists only `price > 0` **and** `buyable !== false` **and** gate-satisfied items, so the curated
+  ladder shows and enemy parts (now priced for resale but `buyable:false`) don't. The **ship-with-slots-around-it** layout + the shop's
   **stats→3D-model→Buy detail card** are built (Slice C increments 1–2); collapsed-sections-per-type (vs the
   current tab row) is a later refinement.
 - **Side missions — on the Main Window's Missions board** (`docs/plans/mission-generator.md` +
