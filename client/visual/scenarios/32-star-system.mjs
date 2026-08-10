@@ -319,6 +319,30 @@ export default async function ({ page, assert, shot }) {
     'the campaign carries NO "Launch mission" button — taking off is how you launch it');
   await shot('base-map');
 
+  // 7a. "WHERE IS MY MISSION?" — the object hosting the ACTIVE mission carries a dashed gold frame. The
+  //     campaign names a fight CENTRE rather than an object, so the mark is derived from it: the factory
+  //     level fights 131 u from the factory anchor, inside the fly-in radius, so the factory is marked.
+  const marked = await page.evaluate(async () => {
+    const g = window.__game;
+    const read = () => [...document.querySelectorAll('#mw-view-map .sysnav-row.mission-active')].map((r) => r.dataset.obj);
+    const pick = (w) => document.querySelector(`#mw-menu [data-mw="${w}"]`).click();
+    const remount = async () => { pick('missions'); pick('map'); await new Promise((r) => setTimeout(r, 150)); };
+    const before = read();                                   // the seeded level fights at the origin → home planet
+    g.catalog.level = { ...g.catalog.level, center: { x: -450, z: -435 } }; // …now at the Space Factory
+    await remount();
+    const atFactory = read();
+    g.catalog.level = { ...g.catalog.level, center: null };
+    await remount();
+    return { before, atFactory, backAtOrigin: read() };
+  });
+  assert.deepEqual(marked.atFactory, ['factory'],
+    'the campaign level fought at the factory marks the FACTORY row (and only it)');
+  assert.deepEqual(marked.before, ['planet2'],
+    'a level with no centre fights at the origin, so the home planet is what gets marked');
+  assert.deepEqual(marked.backAtOrigin, marked.before,
+    'and dropping the centre again puts the mark back on that origin landmark');
+  await shot('base-map-mission-marked');
+
   // 7b. CLICK HOME WHILE ROAMING → flown back, UNCAPPED, then offered a dock. Two separate fixes: the
   //     station is a click target during roam (not just after the last kill), and the dock autopilot runs
   //     without the combat speed cap so the trip home is quick. Arriving parks and asks — it must NOT win

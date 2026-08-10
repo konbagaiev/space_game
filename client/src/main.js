@@ -394,6 +394,7 @@ function openSystemMapScreen() {
   openSystemMap({
     interactive: outOfCombat(),
     missionOffers,
+    activeMissionId,                  // marks the object your current mission is at (campaign → its centre)
     // already flying → re-route the autopilot in place (no re-entry into roam). A mission object carries
     // its offer id so arriving raises the "Start mission?" prompt; every other object just parks there.
     onPick: (obj) => engagePointAutopilot(obj.pos, obj.missionId || null),

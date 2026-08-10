@@ -14,12 +14,13 @@
 //
 // Canvas 2D only (no THREE, no binary assets). Pan/zoom lives in the pure `map-view.js` seam. All UI
 // strings are English source + i18n-keyed; object names come from `nameKey`, never a raw id.
-import { G } from './state.js';
+import { G, CATALOG } from './state.js';
 import { t } from './i18n.js';
 import { esc } from './format.js';
-import { SYSTEM, bodyWorldPos, listSystemObjects, systemRadius, objectForMission } from './system-map.js';
+import { SYSTEM, bodyWorldPos, listSystemObjects, systemRadius, objectForMission, objectForActiveMission } from './system-map.js';
 import { DEFAULT_VIEW, clampView, scaleOf, toScreen, panByScreen, zoomAtScreen, centerOn, pickAt } from './map-view.js';
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js';
+import { runCenter } from './level-sim.js';
 
 // A mission object is INTERACTIVE only when its offer exists (sideMissionsUnlocked + on the board).
 function offerFor(missionOffers, id) { return (missionOffers || []).find((o) => o.id === id) || null; }
@@ -31,8 +32,17 @@ function missionTitle(offer, missionId) {
   return t(key);
 }
 
-// Decorate the raw objects with the per-session UI state the hosts need.
-function describeObjects(missionOffers, tNow = Date.now()) {
+// Decorate the raw objects with the per-session UI state the hosts need. `activeMissionId` is the mission
+// the player is actually ON (null = the campaign): the object hosting it is flagged `active` and gets the
+// dashed gold frame in the list + a dashed gold ring on the map, so "where is my mission?" is answered by
+// looking, not by remembering. For the campaign that object is derived from the level's fight centre
+// (objectForActiveMission) — a campaign level names a place, not an object.
+function describeObjects(missionOffers, activeMissionId = null, tNow = Date.now()) {
+  // The centre comes from `runCenter`, the same seam the fly-into-it zone uses: a campaign level that
+  // names no centre fights at the ORIGIN — the home planet's own anchor — so that level is marked there
+  // rather than nowhere, and "where is my mission?" always has an answer.
+  const activeObj = objectForActiveMission(
+    { activeMissionId, center: CATALOG.level ? runCenter(null, CATALOG.level) : null }, tNow);
   return listSystemObjects(tNow).map((o) => {
     const offer = o.missionId ? offerFor(missionOffers, o.missionId) : null;
     return {
@@ -40,6 +50,7 @@ function describeObjects(missionOffers, tNow = Date.now()) {
       name: t(o.nameKey),
       offer,
       locked: !!o.missionId && !offer,                 // hosts a mission that isn't on the board yet
+      active: !!activeObj && activeObj.id === o.id,    // your current mission is here
       missionName: o.missionId ? missionTitle(offer, o.missionId) : '',
     };
   });
@@ -54,9 +65,11 @@ function describeObjects(missionOffers, tNow = Date.now()) {
 //                             [{ id, labelKey, primary, onClick, disabled, note }]
 //   opts.onAutopilot(obj)   fly to the selected object (host decides enterRoam vs engagePointAutopilot)
 //   opts.selectedId         initial selection
+//   opts.activeMissionId    the mission the player is ON (null = the campaign) — marks its object
 export function mountSystemNav(host, opts = {}) {
   const { missionOffers = [], actions = [], onAutopilot } = opts;
-  let objects = describeObjects(missionOffers);
+  let activeMissionId = opts.activeMissionId ?? null;
+  let objects = describeObjects(missionOffers, activeMissionId);
   let selectedId = opts.selectedId || null;
   let view = { ...DEFAULT_VIEW };
   let frame = { width: 520, height: 520, worldRadius: systemRadius() };
@@ -88,6 +101,7 @@ export function mountSystemNav(host, opts = {}) {
       const cls = ['sysnav-row', `k-${o.kind}`];
       if (o.id === selectedId) cls.push('sel');
       if (o.locked) cls.push('locked');
+      if (o.active) cls.push('mission-active');   // dashed gold frame: your current mission is here
       const sub = o.missionId
         ? `<span class="sysnav-mission">${esc(o.missionName)}${o.locked ? ' 🔒' : ''}</span>`
         : `<span class="sysnav-kind">${esc(t('ui.object.kind.' + o.kind))}</span>`;
@@ -150,6 +164,12 @@ export function mountSystemNav(host, opts = {}) {
       const p = toScreen(view, frame, o.pos.x, o.pos.z);
       if (p.x < -40 || p.y < -40 || p.x > W + 40 || p.y > H + 40) continue;
       const r = o.kind === 'star' ? 14 : (o.kind === 'planet' ? 10 : 4);
+      if (o.active) {                                   // "your mission is here": dashed gold ring, drawn
+        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1.5; // OUTSIDE the selection ring so both can show at once
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.arc(p.x, p.y, r + 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
       if (o.id === selectedId) {                        // selection ring (matches the highlighted row)
         ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(p.x, p.y, r + 5, 0, Math.PI * 2); ctx.stroke();
@@ -259,7 +279,8 @@ export function mountSystemNav(host, opts = {}) {
   return {
     // re-read offers / re-localize / re-draw (the host calls this when the board or language changes)
     refresh(next = {}) {
-      objects = describeObjects(next.missionOffers || missionOffers);
+      if ('activeMissionId' in next) activeMissionId = next.activeMissionId ?? null;
+      objects = describeObjects(next.missionOffers || missionOffers, activeMissionId);
       if (next.actions) actions.splice(0, actions.length, ...next.actions);
       sizeCanvas(); renderList(); renderActions(); draw();
     },
@@ -287,7 +308,7 @@ function buildOverlay() {
 // Open the in-world navigation screen. Freezes the game via G.mapOpen (raw loop-skip, NOT setPaused).
 //   interactive: true  (roam/return-to-base) → picking a destination re-routes the autopilot; Return shown.
 //   interactive: false (live fight)          → view-only (no re-route, no Return).
-export function openSystemMap({ interactive = true, missionOffers = [], onPick, onReturnToHangar } = {}) {
+export function openSystemMap({ interactive = true, missionOffers = [], activeMissionId = null, onPick, onReturnToHangar } = {}) {
   buildOverlay();
   overlayEl.style.display = 'flex';
   G.mapOpen = true;
@@ -300,6 +321,7 @@ export function openSystemMap({ interactive = true, missionOffers = [], onPick, 
   if (overlayNav) overlayNav.destroy();
   overlayNav = mountSystemNav(document.getElementById('systemmap-host'), {
     missionOffers,
+    activeMissionId,                  // marks the object your current mission is at (see describeObjects)
     actions: acts,
     onAutopilot: (obj) => { if (!interactive) return; onPick && onPick(obj); closeSystemMap(); },
   });

@@ -3788,3 +3788,34 @@ level, so "Launch mission: <name>" and "Take off" genuinely differ.
   `updateGoButton()`.
 - The staged briefing reveal (§ the L1–L3 typewriter) is unaffected: `.briefing-hide-go` hides the global
   Take-off bar `#mw-launch` too, which is now the control being revealed after the briefing types out.
+
+## 105. The campaign mission's map object is DERIVED from its fight centre, not declared
+
+**Context.** Side missions each hang off a system object (`listSystemObjects()` carries their `missionId`),
+so "where is this mission?" is a lookup. The campaign doesn't work that way: a level names a **place** —
+`descriptor.center`, the point the fight happens at (§100, the fly-into-it trigger) — and nothing ties that
+place to an object. So the map had no way to show that the mission you are actually on is at the Space
+Factory, which is the one thing a player wants from that screen.
+
+**Decision.** Derive it. `objectForActiveMission({activeMissionId, center})` returns the object hosting the
+current mission: an active side mission by its id, otherwise the object **nearest the campaign level's
+`runCenter`, within `MISSION_ZONE_RADIUS`** — the same 200 u that starts the fight when you fly in. If a
+centre is close enough to trigger the mission, it is close enough to be "that place". The factory anchor
+sits 131 u from the factory level's centre; a level naming no centre fights at the origin, which is the home
+planet's own anchor, so that level marks the home planet rather than nothing.
+
+**Alternatives rejected.**
+- *Add an `object: 'factory'` field to the level descriptor.* One more thing to keep in sync with `center`,
+  and it can silently disagree with where the fight actually is — the number that already decides the
+  trigger is the honest source.
+- *Mark by proximity with its own radius.* A second radius would drift from the zone radius, and then the
+  map could point at an object you fly to without the mission starting (or the reverse).
+- *Only mark side missions (leave the campaign unmarked).* That is the mission most players are on.
+
+**Consequences.**
+- The mark is a **dashed gold frame** on the list row plus a dashed gold ring outside the map marker —
+  deliberately distinct from the SOLID gold selection frame/ring, so a selected mission object shows both.
+- `system-map.js` gains its only import (`MISSION_ZONE_RADIUS` from `level-sim.js`) rather than restating
+  the radius; it stays THREE-free and node-testable.
+- Both hosts pass `activeMissionId` into `mountSystemNav` — the base-menu Map and the in-flight overlay mark
+  the same object, because they are the same component.

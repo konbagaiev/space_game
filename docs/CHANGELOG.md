@@ -5,6 +5,13 @@
 
 ## 2026-08-10
 
+- **The map marks where your mission is.** The object hosting the ACTIVE mission now carries a dashed gold
+  frame in the object list and a dashed gold ring on the map — in the base-menu Map and the in-flight
+  overlay alike (one component). A side mission is matched by its id; the campaign, which names a fight
+  CENTRE rather than an object, is derived: the nearest object within `MISSION_ZONE_RADIUS` of the level's
+  `runCenter` — the same 200 u that starts the fight when you fly in (new pure `objectForActiveMission`,
+  DECISIONS §105). So the factory level marks the Space Factory; a level with no centre fights at the origin
+  and marks the home planet. Unit-tested in `system-map.test.js`, guarded end-to-end in `32-star-system`.
 - **Phone map layout: list on the right, map down to the bottom.** The star-system navigation component
   stacked on `body.dev-phone`, which split a 390px-tall landscape phone into two strips — a 149px map above
   a 153px list. It now keeps the desktop's side-by-side shape: the map fills the central area to the bottom

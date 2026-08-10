@@ -30,6 +30,11 @@
 // (see the capLifted invariant, which is the guard the tests pin).
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// The one dependency of this otherwise standalone module: "how close counts as the same place" is already
+// answered by the fly-into-it zone, and objectForActiveMission must use that same number rather than a
+// second one that could drift from it.
+import { MISSION_ZONE_RADIUS } from './level-sim.js';
+
 export const EPOCH = 1723000000000; // fixed reference timestamp (ms) for orbital phase — deterministic
 
 // `orbitR`/`periodDays`/`phase0` are the TRUE orbital geometry — the travel distances you actually fly, and
@@ -236,6 +241,26 @@ export function listSystemObjects(tNow = Date.now()) {
 export function objectForMission(missionId, tNow = Date.now()) {
   if (!missionId) return null;
   return listSystemObjects(tNow).find((o) => o.missionId === missionId) || null;
+}
+
+// WHERE THE MISSION YOU ARE ON ACTUALLY IS — the object the map marks as "your mission is here". Pure.
+//   • an active SIDE mission is hosted by an object outright (`missionId`), so that one wins;
+//   • otherwise the CAMPAIGN is active, and a campaign level names a fight `center` rather than an object —
+//     so the mission's object is simply the nearest one to that centre, and only if it is near enough to
+//     be the same place: `MISSION_ZONE_RADIUS`, the very radius that starts the fight when you fly in. The
+//     Space Factory anchor sits 131 u from the factory level's centre, comfortably inside 200.
+//   • a level with no centre fights at the origin — the base neighbourhood — so the home station is marked.
+// Returns the object, or null when nothing is close enough (or there is no level yet).
+export function objectForActiveMission({ activeMissionId = null, center = null } = {}, tNow = Date.now()) {
+  const objects = listSystemObjects(tNow);
+  if (activeMissionId != null) return objects.find((o) => o.missionId === activeMissionId) || null;
+  if (!center) return null;
+  let best = null, bestD = MISSION_ZONE_RADIUS;
+  for (const o of objects) {
+    const d = Math.hypot(o.pos.x - (center.x || 0), o.pos.z - (center.z || 0));
+    if (d <= bestD) { best = o; bestD = d; }
+  }
+  return best;
 }
 
 // How far out the outermost object sits — the radius the map fits at zoom 1 (map-view.js `worldRadius`).

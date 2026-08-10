@@ -365,7 +365,10 @@
     background: rgba(120,150,200,0.10); border: 1px solid transparent;
   }
   .sysnav-row:hover { background: rgba(120,150,200,0.20); }
-  .sysnav-row.sel { border-color: #ffd24a; background: rgba(255,210,74,0.14); }
+  /* "Your current mission is here" — a DASHED gold frame (the map draws the matching dashed ring). Kept
+     distinct from the SOLID gold selection frame below, which wins while the row is selected. */
+  .sysnav-row.mission-active { border-color: #ffd24a; border-style: dashed; }
+  .sysnav-row.sel { border-color: #ffd24a; border-style: solid; background: rgba(255,210,74,0.14); }
   .sysnav-row.locked { opacity: .55; }
   .sysnav-dot { width: 10px; height: 10px; border-radius: 50%; }
   .sysnav-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

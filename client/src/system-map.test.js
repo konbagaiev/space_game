@@ -7,7 +7,7 @@ import {
   EPOCH, SYSTEM, bodyAngle, bodyWorldPos, listBodies, maxBodyCoord,
   inActivityZone, capLifted, arrivedAtPoint, activityZoneCenters, ANCHORS,
   bodyRenderPos, bodyClearance, bodyFade, moonAngle, moonClearance, planetAnchor, listSystemObjects,
-  objectForMission, systemRadius, applySystemSpec, ZONE_RADIUS,
+  objectForMission, objectForActiveMission, systemRadius, applySystemSpec, ZONE_RADIUS,
 } from './system-map.js';
 // The seed's set-pieces are pure data (no DB import), so the anchor↔set-piece invariant is checkable here.
 import { MAPS } from '../../server/src/catalog_seed.js';
@@ -322,4 +322,34 @@ test('Float32 safety: every body stays well under the ~1e5 jitter threshold', ()
         `${b.name} |coord| under 1e5 (got ${b.pos.x},${b.pos.z})`);
     }
   }
+});
+
+// ---- objectForActiveMission: "where is the mission I am on?" (the map's dashed gold frame) ----
+test('objectForActiveMission: an active SIDE mission is its own host object', () => {
+  assert.equal(objectForActiveMission({ activeMissionId: 'side-research' }).id, 'science');
+  assert.equal(objectForActiveMission({ activeMissionId: 'side-mining' }).id, 'mining');
+  assert.equal(objectForActiveMission({ activeMissionId: 'side-nope' }), null); // unknown id marks nothing
+});
+
+test('objectForActiveMission: the campaign resolves through its fight CENTRE, not an id', () => {
+  // the factory level fights at (-450,-435); the factory anchor (-350,-350) is ~131 u away — inside the
+  // fly-in radius, so that is the object the mission is "at"
+  assert.equal(objectForActiveMission({ center: { x: -450, z: -435 } }).id, 'factory');
+  // a level with no centre fights at the ORIGIN — which is exactly the home planet's anchor, so the home
+  // planet is the landmark that gets marked (the base station, 14 u away, is the runner-up)
+  assert.equal(objectForActiveMission({ center: { x: 0, z: 0 } }).id, 'planet2');
+  // a centre out in empty space belongs to nothing — better unmarked than wrongly marked
+  assert.equal(objectForActiveMission({ center: { x: 4000, z: 4000 } }), null);
+  // no level / no centre at all
+  assert.equal(objectForActiveMission({}), null);
+});
+
+test('objectForActiveMission: the side mission wins over the campaign centre', () => {
+  const o = objectForActiveMission({ activeMissionId: 'side-mining', center: { x: -450, z: -435 } });
+  assert.equal(o.id, 'mining', 'you are on the side mission — that is the mission being marked');
+});
+
+test('objectForActiveMission: picks the NEAREST object when several are in range', () => {
+  // pulled toward the base station, it wins over the home planet's anchor at the origin
+  assert.equal(objectForActiveMission({ center: { x: -30, z: -30 } }).id, 'base');
 });

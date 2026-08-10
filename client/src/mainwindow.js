@@ -156,6 +156,7 @@ function renderMapView() {
   if (mapNav) mapNav.destroy();
   mapNav = mountSystemNav(document.getElementById('mw-view-map'), {
     missionOffers,
+    activeMissionId,                   // marks the object your current mission is at (campaign → its centre)
     actions: [{ id: 'takeoff', labelKey: 'ui.button.take_off', cls: 'takeoff', onClick: () => takeOff(),
       disabled: !canTakeOff(), note: canTakeOff() ? '' : t('ui.shop.cant_launch') }],
     onAutopilot: (obj) => enterRoam({ pos: obj.pos, missionId: obj.missionId || null }),

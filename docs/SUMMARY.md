@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-10 (**Phone map layout: object list on the right, map down to the bottom** — the
+**Updated:** 2026-08-10 (**The map marks where your mission is** — the object hosting the active mission
+carries a dashed gold frame/ring in both map hosts; the campaign's object is derived from its fight centre
+via `objectForActiveMission` (DECISIONS §105). Previously: **Phone map layout: object list on the right, map down to the bottom** — the
 navigation component keeps its side-by-side shape on `body.dev-phone` instead of stacking into two strips,
 in both hosts, with the ⛶ fullscreen button's corner reserved in the base menu (`34-phone-map-layout`).
 Previously: **The in-flight "Map" button works on phones again** — it sat at the same z-index
@@ -1284,6 +1286,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
       **star 14px**, **planets 10px**, everything else (stations, outposts, factory) **4px** — so the
       celestial bodies read as bodies against the man-made anchors; the selection ring, lock ring and
       name label all offset from that radius.
+    - **"Your mission is here" — a dashed gold frame** (DECISIONS §105). Exactly one object is marked: the
+      one hosting the **active** mission. An active **side** mission is matched by `missionId`; with the
+      **campaign** active the object is **derived** — the nearest object to the level's `runCenter` within
+      `MISSION_ZONE_RADIUS` (200 u), i.e. the same radius that starts the fight when you fly in
+      (`objectForActiveMission` in `system-map.js`, pure + unit-tested). So the factory level marks the
+      **Space Factory**, and a level naming no centre fights at the origin and marks the **home planet**.
+      The row gets a **dashed** gold border and the map marker a **dashed** gold ring *outside* the solid
+      selection ring, so a selected mission object shows both. Both hosts pass `activeMissionId` in.
     - **Selection.** Tap a list row **or** its map marker → both highlight; picking a row re-centres the map
       on it. Objects hosting a not-yet-offered mission are **greyed with a lock hint** and can't be flown to.
     - **Pan + zoom.** Wheel and pinch zoom (anchored on the cursor/midpoint), drag and one-finger-drag pan,
