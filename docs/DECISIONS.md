@@ -3819,3 +3819,41 @@ planet's own anchor, so that level marks the home planet rather than nothing.
   the radius; it stays THREE-free and node-testable.
 - Both hosts pass `activeMissionId` into `mountSystemNav` — the base-menu Map and the in-flight overlay mark
   the same object, because they are the same component.
+
+## 106. "Level 4" moves off the origin — its fight centre sits EXACTLY on the far belt outpost
+
+**Context.** Only "Level 3" had left the origin (§100: it fights 30 u up-left of the Space Factory, and you
+fly into it to start it). Every other campaign level fought at (0,0), so four levels out of five began the
+instant you took off and the flyable star system was scenery you visited between missions. "Level 4" is
+narratively the level that *should* be a trip: "Find the pirate base" — you track the ships that fled the
+factory. The third mining outpost, meanwhile, was pure navigation filler at `(-760,1560)` with nothing to do
+there.
+
+**Decision.** Move that outpost out to `(-900,2800)` — the system's most distant destination (~2941 u from
+the base, past `mining2`'s 1893) — and give "Level 4" a `center` at that **exact** point. The trail leads
+somewhere far, and the far place already has a reason to exist.
+
+**Why the centre is ON the anchor, with no framing offset.** The factory level is deliberately offset 30 u
+because a 120 u ring station centred on the arrival point swallows the ~15 u ship. An `asteroid-field` is
+the opposite kind of set-piece: 18 rocks scattered over a 210 u spread, 100 u **below** the combat plane.
+There is nothing to frame around and nothing to hide behind, so the natural read is fighting *inside* the
+field — and a 0 u offset also means autopilot parks you dead on the centre, giving the fly-in countdown the
+full `MISSION_ZONE_RADIUS` (200 u) of margin instead of spending part of it on framing.
+
+**Alternatives rejected.**
+- *Centre near the field but not on it (the first sketch: field `(-900,2800)`, centre `(-750,2650)`).*
+  212 u apart — just **outside** the 200 u fly-in zone. Autopilot would park you at the outpost and nothing
+  would happen: no countdown, no gold "your mission is here" frame, the level unreachable by the intended
+  route. This is the failure mode the new `level-sim.test.js` guard now pins for every relocated level
+  (nearest `ANCHORS` entry must be < `MISSION_ZONE_RADIUS`).
+- *Raise `MISSION_ZONE_RADIUS` to fit.* It is shared by every level and every side mission; widening it
+  everywhere to accommodate one placement makes fights start earlier system-wide.
+- *Leave the outpost where it was and fight there.* 1735 u vs 2941 u is not a meaningfully different trip
+  from `mining2`; the point of this level is that it is the long haul.
+
+**Consequences.**
+- Take off on "Level 4" launches you at the **home base**, not into the fight — same as "Level 3". The run
+  out is the longest in the game; the roam autopilot is uncapped (§ speed cap), so it is a cruise.
+- The map's dashed gold mission frame lands on the outpost automatically (§105 derives it from the centre).
+- `ANCHORS.mining3` now has three consumers that must agree: the anchor, the `asteroid-field` set-piece
+  `pos`, and the level's `center`. The set-piece pairing was already test-pinned; the centre now is too.

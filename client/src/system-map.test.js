@@ -335,6 +335,8 @@ test('objectForActiveMission: the campaign resolves through its fight CENTRE, no
   // the factory level fights at (-450,-435); the factory anchor (-350,-350) is ~131 u away — inside the
   // fly-in radius, so that is the object the mission is "at"
   assert.equal(objectForActiveMission({ center: { x: -450, z: -435 } }).id, 'factory');
+  // the Level 4 centre IS the far belt outpost's anchor — 0 u away, so that outpost is marked
+  assert.equal(objectForActiveMission({ center: { x: ANCHORS.mining3.x, z: ANCHORS.mining3.z } }).id, 'mining3');
   // a level with no centre fights at the ORIGIN — which is exactly the home planet's anchor, so the home
   // planet is the landmark that gets marked (the base station, 14 u away, is the runner-up)
   assert.equal(objectForActiveMission({ center: { x: 0, z: 0 } }).id, 'planet2');

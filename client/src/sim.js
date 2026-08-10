@@ -1032,7 +1032,8 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   for (const e of enemies) { disposeShipExhaust(e.mesh); scene.remove(e.mesh); }
   enemies.length = 0;
   // Where this run fights: a side mission's own `center`, else the campaign level's (most use the default
-  // (0,0); "Level 2" fights at the space factory). Resolved by the pure `runCenter` seam — see level-sim.js.
+  // (0,0); "Level 3" fights at the space factory, "Level 4" inside the far belt outpost). Resolved by the
+  // pure `runCenter` seam — see level-sim.js.
   const { x: cx, z: cz } = runCenter(G.activeMission, CATALOG.level);
   arenaCenter.set(cx, 0, cz);             // fresh run: center the (possibly drifting) combat zone
   arenaBorder.line.position.set(cx, 0, cz);

@@ -5,6 +5,19 @@
 
 ## 2026-08-10
 
+- **"Level 4" now fights at the far belt outpost, and that outpost moved further out.** The third mining
+  outpost (`ANCHORS.mining3` + its `asteroid-field` set-piece) moved from `(-760,1560)` to `(-900,2800)`,
+  making it the system's most distant destination (~2941 u from the base, past `mining2`'s 1893). The
+  campaign's "Level 4" — "Find the pirate base" — now names that exact point as its `center`, so it is the
+  second level (after "Level 3" at the Space Factory) that does not fight at the origin: Take off launches
+  you at the base, you fly the trail out to the outpost, and crossing into the zone starts the fight among
+  the rigs. The centre sits **exactly on** the anchor rather than offset off it (the factory is offset 30 u
+  so the station frames beside the ship; a scattered below-plane asteroid field has nothing to frame around),
+  which also gives the fly-in countdown its full 200 u margin. The map's dashed gold "your mission is here"
+  frame follows automatically, marking the outpost. New guard in `level-sim.test.js`: **every** level that
+  names a centre must park you inside its own fly-in zone (nearest `ANCHORS` entry < `MISSION_ZONE_RADIUS`)
+  — it fails for a centre dropped more than 200 u from any landmark, the silent "fly there and nothing
+  happens" bug.
 - **The map marks where your mission is.** The object hosting the ACTIVE mission now carries a dashed gold
   frame in the object list and a dashed gold ring on the map — in the base-menu Map and the in-flight
   overlay alike (one component). A side mission is matched by its id; the campaign, which names a fight

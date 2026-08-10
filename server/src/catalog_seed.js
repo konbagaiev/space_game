@@ -613,6 +613,15 @@ export const LEVELS = [
   {
     id: 4, name: 'level-4', descriptor: {
       title: 'Level 4', xpReward: 1500, map: 'home-system',
+      // THE SECOND CAMPAIGN LEVEL THAT DOES NOT FIGHT AT (0,0) — you follow the fleeing pirates' heading out
+      // to the system's FAR belt outpost and catch them there. Unlike Level 3 (which sits 30 u OFF the space
+      // factory so the station frames beside the ship), this centre is EXACTLY ANCHORS.mining3 / the
+      // `asteroid-field` set-piece: an asteroid field is scattered decor 100 u below the plane, so fighting
+      // in its middle reads right and there is no arrival gap — autopilot parks you dead on the centre, well
+      // inside MISSION_ZONE_RADIUS (200), and the fly-in countdown always arms.
+      // Consequence (same as Level 3): Take off launches you at the HOME BASE, not into the fight — you fly
+      // out and crossing into the zone starts it. This is the system's longest run, ~2941 u from the origin.
+      center: { x: -900, z: 2800 },
       briefing: {
         textKey: 'level.4.briefing',
         text: "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. And you've been out here long enough now, Sentinel — command's opening the side-job board to you: take a few between missions to bank extra credits. Good hunting.",
@@ -750,12 +759,14 @@ export const MAPS = [
         // pos MUST equal missions.js `side-mining` center + the system-map marker + the activity zone
         // (the four-way invariant; see missions.js). Same up-close .glb rig (model unchanged).
         { type: 'asteroid-field', pos: [-988, -100, 0], scale: 1.0, color: 0x6e6a63, count: 24, spread: 240, hostSize: 26, beamLen: 34, beamTilt: 0.5, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
-        // Two further belt outposts — navigation destinations only (NO mission, so no four-way invariant to
-        // hold). Their (x,z) MUST match ANCHORS.mining2 / ANCHORS.mining3 in client/src/system-map.js, or the
-        // map would fly you to empty space. Slightly smaller/dimmer than the mission site so it still reads
-        // as the main one.
+        // Two further belt outposts. `mining2` is a navigation destination only; `mining3` is the FAR field
+        // the campaign's Level 4 fights inside — its (x,z) is that level's `center` too, so the anchor, the
+        // set-piece and the fight are all the same point (no arrival gap to fall outside MISSION_ZONE_RADIUS).
+        // Both (x,z) MUST match ANCHORS.mining2 / ANCHORS.mining3 in client/src/system-map.js, or the map
+        // would fly you to empty space. Slightly smaller/dimmer than the side-mission site so that one still
+        // reads as the main rig.
         { type: 'asteroid-field', pos: [-1480, -100, -1180], scale: 0.9, color: 0x67635d, count: 18, spread: 210, hostSize: 22, beamLen: 30, beamTilt: 0.4, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
-        { type: 'asteroid-field', pos: [-760, -100, 1560], scale: 0.9, color: 0x726c62, count: 18, spread: 210, hostSize: 22, beamLen: 30, beamTilt: 0.6, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
+        { type: 'asteroid-field', pos: [-900, -100, 2800], scale: 0.9, color: 0x726c62, count: 18, spread: 210, hostSize: 22, beamLen: 30, beamTilt: 0.6, beamColor: 0xffcc66, modelUrl: 'assets/ships/asteroids_combat.e4d4a1df.glb' },
         // Science (research) station — moved star-ward: 2x its old distance from planet 2. Its pos MUST
         // equal missions.js `side-research` center + the system-map marker + the activity zone.
         { type: 'research-station', pos: [928, -125, 0], scale: 0.6, hue: 0x9aa7b5, spin: 0.05, tilt: 0.35 },

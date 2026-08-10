@@ -3,9 +3,12 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-10 (**The map marks where your mission is** — the object hosting the active mission
+**Updated:** 2026-08-10 (**"Level 4" fights at the far belt outpost** — the third mining outpost moved to
+`(-900,2800)`, the system's most distant destination, and "Level 4" now names that exact point as its
+`center`, so it is the second level you fly out to rather than fight at the origin. Previously: **The map
+marks where your mission is** — the object hosting the active mission
 carries a dashed gold frame/ring in both map hosts; the campaign's object is derived from its fight centre
-via `objectForActiveMission` (DECISIONS §105). Previously: **Phone map layout: object list on the right, map down to the bottom** — the
+via `objectForActiveMission` (DECISIONS §105, §106). Previously: **Phone map layout: object list on the right, map down to the bottom** — the
 navigation component keeps its side-by-side shape on `body.dev-phone` instead of stacking into two strips,
 in both hosts, with the ⛶ fullscreen button's corner reserved in the base menu (`34-phone-map-layout`).
 Previously: **The in-flight "Map" button works on phones again** — it sat at the same z-index
@@ -1271,8 +1274,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     `34-phone-map-layout` (both hosts: side-by-side, map ≥90% of the height, bottom button hit-tested).
     - **Objects (`listSystemObjects()`, 11).** The **star and all four planets are first-class, selectable
       destinations**, listed and marked exactly like the **home station**, the **research station**, the
-      **three belt outposts** (`ANCHORS.mining`/`mining2`/`mining3` — the latter two are navigation-only,
-      no mission, each with a matching `asteroid-field` set-piece in `catalog_seed.js` at the same (x,z))
+      **three belt outposts** (`ANCHORS.mining` at `(-988,0)` / `mining2` at `(-1480,-1180)` / `mining3` at
+      `(-900,2800)` — the latter two host no SIDE mission, but `mining3` is the system's **far** outpost
+      (~2941 u) and is where the campaign's **"Level 4"** fights: that level's `center` is that exact (x,z).
+      Each has a matching `asteroid-field` set-piece in `catalog_seed.js` at the same (x,z))
       and the **Space Factory** (`ANCHORS.factory` at `(-350,-350)`, `kind: 'factory'` — navigation-only,
       no mission, with a matching `space-factory` set-piece at the same (x,z)). The factory is the system's
       one **short hop**: ~495 u out, about two screens diagonally at zoom 1, just past the base activity
@@ -1290,8 +1295,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
       one hosting the **active** mission. An active **side** mission is matched by `missionId`; with the
       **campaign** active the object is **derived** — the nearest object to the level's `runCenter` within
       `MISSION_ZONE_RADIUS` (200 u), i.e. the same radius that starts the fight when you fly in
-      (`objectForActiveMission` in `system-map.js`, pure + unit-tested). So the factory level marks the
-      **Space Factory**, and a level naming no centre fights at the origin and marks the **home planet**.
+      (`objectForActiveMission` in `system-map.js`, pure + unit-tested). So "Level 3" marks the
+      **Space Factory** (131 u from its centre), "Level 4" marks the **far belt outpost** (0 u — its centre
+      *is* that anchor), and a level naming no centre fights at the origin and marks the **home planet**.
       The row gets a **dashed** gold border and the map marker a **dashed** gold ring *outside* the solid
       selection ring, so a selected mission object shows both. Both hosts pass `activeMissionId` in.
     - **Selection.** Tap a list row **or** its map marker → both highlight; picking a row re-centres the map
@@ -1372,9 +1378,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **`level-3` — "Level 3" (full fight):** waves of all three enemy types → after 16 kills spawning
     stops → the **Sector boss** spawns alone → on its death the game runs ~5 s (watch it explode) → Victory.
     Spawning phases cap at **3 at a time** (`maxConcurrent`). Drone-install + factory-assault briefing.
-    **The one level that does not fight at (0,0)**: it carries a `center` of `(-450,-435)`, 30 u up-left of
-    the Space Factory set-piece, so Take off launches you from the base and the fight starts when you fly
-    into the zone (see the star-system navigation section).
+    **One of the two levels that do not fight at (0,0)**: it carries a `center` of `(-450,-435)`, 30 u
+    up-left of the Space Factory set-piece, so Take off launches you from the base and the fight starts when
+    you fly into the zone (see the star-system navigation section).
   - **`level-4` — "Level 4" ("Find the pirate base"):** clearly harder — **pirate gunners + rocketeers
     + advanced medium pirates** (40/40/20 → 35/35/30, maxConcurrent 5) to 8 then 16 kills → clear-out → the
     **Second Boss** (two Advanced pirate cannons + three rockets) → Victory. Its briefing has **no grant
@@ -1382,6 +1388,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     reached the `level-4` row (matched by NAME, not by id — DECISIONS §91/§95; the hangar shop was already
     opened back at "Level 2" — see
     Between-level briefings); its victory sets up the planned L5 ("Storm the pirate base"). Currently the final level.
+    **The second level that does not fight at (0,0)**: it carries a `center` of `(-900,2800)` — exactly the
+    far belt outpost (`ANCHORS.mining3` + its `asteroid-field` set-piece), so you follow the fleeing pirates'
+    trail out to the system's most distant outpost (~2941 u from the base, its longest run) and the fight
+    starts when you fly in. Take off launches you at the base, not into the fight.
     (Balance: `docs/plans/level-4-difficulty.md`.)
   The AI keeps its distance and fires its weapon groups by range/aim. Spawn composition (ships +
   `chance` weights + max concurrent) is per-phase in the level; a `win` phase's `delay` defers the
@@ -1620,10 +1630,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   over the matching structure while the others sit at a distance. That centre is resolved by the pure
   **`runCenter(activeMission, levelDescriptor)`** seam (`level-sim.js`, unit-tested, called from `sim.js`
   `reset()`): an active **side mission**'s own `center` wins; otherwise the **campaign level**'s `center`
-  if it names one; otherwise the origin. Campaign levels omit it and fight at (0,0) — **except "Level 2"**
-  (db `level-3`, the weapons-factory briefing, the first with a `boss` phase), which fights at
-  `(-450,-435)`, 30 u up-left of the `space-factory` set-piece. (Before the seam, `sim.js` read only
-  `G.activeMission`, which is null for the campaign, so a level's `center` was silently ignored.)
+  if it names one; otherwise the origin. Campaign levels omit it and fight at (0,0) — **except two**:
+  **"Level 3"** (the weapons-factory briefing, the first with a `boss` phase) fights at `(-450,-435)`,
+  30 u up-left of the `space-factory` set-piece; **"Level 4"** ("Find the pirate base") fights at
+  `(-900,2800)` — **exactly** `ANCHORS.mining3` / the far `asteroid-field` set-piece, with **no** framing
+  offset, since a scattered below-plane field has nothing to frame around and a 0 u offset gives the fly-in
+  zone its full margin. (Before the seam, `sim.js` read only `G.activeMission`, which is null for the
+  campaign, so a level's `center` was silently ignored.)
   **A level with a `center` is also a place you can FLY INTO to start it.** While roaming, crossing within
   **`MISSION_ZONE_RADIUS` (200 u)** of that centre runs a **`MISSION_ZONE_COUNTDOWN` (3 s)** HUD countdown
   (`ui.roam.engaging`) and then starts the fight — no confirm dialog, and flying back out cancels it (it
@@ -1636,8 +1649,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   right after take-off. **`launchCampaign` never starts a fight directly**: it always lands you at the base
   and the countdown's `engage: true` return trip is what starts the level (and arms the session recorder).
   **A countdown never runs while you are on your way somewhere else** — a point autopilot targeting outside
-  the zone, or a dock autopilot heading home — or the star system would be unreachable on four levels out of
-  five and the dock prompt would be eaten by the fight starting first.
+  the zone, or a dock autopilot heading home — or the star system would be unreachable on the three levels
+  that fight at the origin and the dock prompt would be eaten by the fight starting first.
   **The ship is moved in exactly one of the three cases** (`reset()` in `sim.js`): in **roam** it spawns at
   the **origin**, the home station, whatever centre the level names — Take off is never a teleport to the
   mission; with **`keepPlayer: true`** (the engage path, i.e. you flew here) it is not moved at all, keeping
@@ -1648,9 +1661,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   rebuilding re-fetched and re-parsed all seven `.glb`s), and `checkMissionZone` spends the countdown
   calling `preloadLevelShipModels` + `preloadRewardModel`, so the frame the fight starts issues no fetch and
   parses no model. A cold start still rebuilds the set-pieces — that is what resets the cruising freighter.
-  Firing calls `G.onMissionZoneEnter` → clear roam → `launchCampaign()`. The radius must exceed the ~131 u
-  from the map's factory destination to the level centre, or arriving by autopilot would park just outside
-  it (test-pinned).
+  Firing calls `G.onMissionZoneEnter` → clear roam → `launchCampaign()`. The radius must exceed the distance
+  from the map destination autopilot parks you at to the level centre, or arriving would sit just outside the
+  zone and nothing would happen: ~131 u for the factory, 0 u for the belt outpost. A `level-sim.test.js` test
+  pins this for **every** level that names a centre (nearest `ANCHORS` entry < `MISSION_ZONE_RADIUS`), so a
+  new one can't be dropped where autopilot never reaches.
   They're rebuilt each run (so the cruising freighter resets — and every set-piece `.glb` is re-fetched,
   which a test measuring a post-`reset()` frame must wait on via `pendingAssets`). Four builders cover the
   five set-piece types (the two stations share one):

@@ -4,6 +4,9 @@ import { levelEnemyTotal, isLastKillDrop, simulateLevel, runCenter, stepMissionZ
   MISSION_ZONE_RADIUS, MISSION_ZONE_COUNTDOWN } from './level-sim.js';
 // The seed is pure data (no DB import), so the campaign level's own centre is checkable here.
 import { LEVELS } from '../../server/src/catalog_seed.js';
+// …and against the navigation anchors it must agree with (a centre that drifts off its landmark parks the
+// player outside the fly-in zone — the whole failure this file guards).
+import { ANCHORS } from './system-map.js';
 
 test('isLastKillDrop fires only when kills exactly reaches a positive enemyTotal', () => {
   assert.equal(isLastKillDrop({ kills: 13, enemyTotal: 14 }), false);
@@ -33,23 +36,53 @@ test('runCenter never yields NaN from a half-written descriptor', () => {
   }
 });
 
-test('exactly ONE campaign level names a centre: "Level 3", at the space factory', () => {
+test('exactly TWO campaign levels name a centre — the factory and the far belt outpost', () => {
   const withCenter = LEVELS.filter((l) => l.descriptor.center);
-  assert.equal(withCenter.length, 1, `only one level moves off the origin (got ${withCenter.map((l) => l.descriptor.title).join(', ')})`);
-  const lvl = withCenter[0].descriptor;
-  assert.equal(lvl.title, 'Level 3', 'it is the factory level');
+  assert.deepEqual(withCenter.map((l) => l.descriptor.title), ['Level 3', 'Level 4'],
+    `only these two move off the origin (got ${withCenter.map((l) => l.descriptor.title).join(', ')})`);
+  // and every other level still fights at the origin
+  for (const l of LEVELS) if (!l.descriptor.center) assert.equal(l.descriptor.center, undefined, `${l.descriptor.title} stays at the origin`);
+});
+
+test('"Level 3" fights at the space factory: 30 u up-left of the station', () => {
+  const lvl = LEVELS.find((l) => l.descriptor.title === 'Level 3').descriptor;
   // the campaign's own definition of which level that is: the one AFTER the level that drops the repair
   // drone, and the first to field a real boss rather than the mid-boss
   const droneLevel = LEVELS.find((l) => l.descriptor.lastKillDrop?.refId === 12
     && l.descriptor.lastKillDrop?.kind === 'component');
-  assert.equal(withCenter[0].id, droneLevel.id + 1, 'it is the level right after the repair-drone drop');
+  assert.equal(LEVELS.find((l) => l.descriptor === lvl).id, droneLevel.id + 1, 'it is the level right after the repair-drone drop');
   const bossShips = lvl.phases.flatMap((ph) => (ph.spawn?.pool || []).map((e) => e.ship)).filter((s) => /boss/.test(s));
   assert.ok(bossShips.includes('first pirate boss'), `and the one that fields the first real boss (got ${bossShips})`);
   // 30 u up-left of the space-factory set-piece — pinned so moving the station leaves the fight behind
   const factory = { x: -420, z: -405 }; // the `space-factory` set-piece in catalog_seed.js
   assert.deepEqual(lvl.center, { x: factory.x - 30, z: factory.z - 30 }, '30 u up-left of the station');
-  // and every other level still fights at the origin
-  for (const l of LEVELS) if (l.descriptor !== lvl) assert.equal(l.descriptor.center, undefined, `${l.descriptor.title} stays at the origin`);
+});
+
+test('"Level 4" fights INSIDE the far belt outpost — centre exactly on the mining3 anchor', () => {
+  const lvl = LEVELS.find((l) => l.descriptor.title === 'Level 4').descriptor;
+  // Zero offset is the point: an asteroid field is scattered decor 100 u below the plane, so there is no
+  // "swallowed by the model" problem to frame around — and autopilot parking dead on the centre means the
+  // fly-in countdown can never fail to arm. A drift here is invisible until you fly out and nothing happens.
+  assert.deepEqual(lvl.center, { x: ANCHORS.mining3.x, z: ANCHORS.mining3.z },
+    'the fight centre IS the outpost you fly to');
+  const bossShips = lvl.phases.flatMap((ph) => (ph.spawn?.pool || []).map((e) => e.ship)).filter((s) => /boss/.test(s));
+  assert.ok(bossShips.includes('second pirate boss'), `and it is the second-boss level (got ${bossShips})`);
+});
+
+// The invariant that actually keeps a relocated fight playable: fly to the level's landmark by autopilot and
+// you must come to rest INSIDE the zone that starts the fight, or you park in silence and the level is
+// unreachable. Checked for every level that names a centre, against its nearest navigation anchor.
+test('every relocated level parks you inside its own fly-in zone', () => {
+  for (const l of LEVELS.filter((x) => x.descriptor.center)) {
+    const c = l.descriptor.center;
+    let best = Infinity, at = '';
+    for (const [id, a] of Object.entries(ANCHORS)) {
+      const d = Math.hypot(a.x - c.x, a.z - c.z);
+      if (d < best) { best = d; at = id; }
+    }
+    assert.ok(best < MISSION_ZONE_RADIUS,
+      `${l.descriptor.title}: nearest anchor '${at}' is ${best.toFixed(0)}u from the centre — autopilot would park OUTSIDE the ${MISSION_ZONE_RADIUS}u fly-in zone`);
+  }
 });
 
 // ---------- stepMissionZone: fly into the active mission's neighbourhood → countdown → fight ----------

@@ -30,14 +30,18 @@ export function runCenter(activeMission, levelDescriptor) {
 }
 
 // ---------- Roam → combat: flying into a mission's neighbourhood starts the fight ----------
-// A campaign level that names a `center` (currently only "Level 2", at the Space Factory) becomes a place
-// you can FLY INTO while roaming: cross into its neighbourhood and a short countdown runs, then the fight
-// begins there. No confirm dialog — the countdown IS the confirmation, and leaving cancels it.
+// A campaign level that names a `center` ("Level 3" at the Space Factory, "Level 4" at the far belt
+// outpost) becomes a place you can FLY INTO while roaming: cross into its neighbourhood and a short
+// countdown runs, then the fight begins there. No confirm dialog — the countdown IS the confirmation, and
+// leaving cancels it.
 //
 // MISSION_ZONE_RADIUS must comfortably exceed the distance from the destination the map parks you at to the
 // level's centre, or arriving by autopilot would sit just outside the zone and nothing would happen: the
-// factory anchor (-350,-350) is ~131 u from the Level 2 centre (-450,-435), so 200 leaves real margin while
-// still keeping the station in frame when the count starts.
+// factory anchor (-350,-350) is ~131 u from the Level 3 centre (-450,-435), so 200 leaves real margin while
+// still keeping the station in frame when the count starts. Level 4's centre sits exactly ON its outpost
+// anchor (an asteroid field is below-plane decor, nothing to frame around), so its margin is the full 200.
+// The "every relocated level parks you inside its own fly-in zone" test in level-sim.test.js pins this for
+// every centre, so a new one can't be dropped somewhere autopilot never reaches.
 export const MISSION_ZONE_RADIUS = 200;
 export const MISSION_ZONE_COUNTDOWN = 3; // seconds from crossing in to the fight starting
 

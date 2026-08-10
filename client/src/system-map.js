@@ -177,11 +177,16 @@ export const ANCHORS = {
   science: { x: 928,  z: 0 },   // research/science station — star-ward, 2x its old distance from planet 2
   mining:  { x: -988, z: 0 },   // near mining base (asteroid field) — belt-ward (anti-star)
   // Two further mining outposts, belt-ward like the first but spread around planet 2 so the map has real
-  // destinations to pick between. They carry NO mission (only `mining` does) — they are places you can fly
-  // to. Each has a matching `asteroid-field` set-piece in catalog_seed.js at the SAME (x,z), so arriving
-  // finds rigs rather than empty space.
+  // destinations to pick between. Neither carries a SIDE mission (only `mining` does) — but `mining3` is
+  // where the campaign's "Level 4" fights: its descriptor names this exact (x,z) as its `center`, so flying
+  // out here starts that level (see catalog_seed.js level-4 + the runCenter seam). Each has a matching
+  // `asteroid-field` set-piece in catalog_seed.js at the SAME (x,z), so arriving finds rigs rather than
+  // empty space.
   mining2: { x: -1480, z: -1180 },
-  mining3: { x: -760,  z: 1560 },
+  // The system's FAR outpost (~2941 u out, further than anything but the celestial bodies) — the remote
+  // field the Level 4 trail leads to. Anchor == fight centre == set-piece: you drop into the fight in the
+  // middle of the rigs, so there is no arrival gap to fall outside MISSION_ZONE_RADIUS.
+  mining3: { x: -900,  z: 2800 },
   // Space Factory — an industrial ring station up-left of the home planet, ~495 u out: about two screens
   // diagonally (a screen is ~204 x 115 u at zoom 1), so it sits just past the base's activity zone
   // (ZONE_RADIUS 360) — the system's one SHORT hop, against the ~1000 u belt/science crossings. Carries no
