@@ -117,7 +117,7 @@ export default async function ({ page, assert, shot }) {
     assert.equal(await page.evaluate(() => window.__game.briefingStaged), true, `${label}: briefing staged`);
     assert.ok(await listShown(), `${label}: the mission list stays on screen while the briefing types`);
     assert.equal(await page.evaluate(() => window.__game.itemShowcaseTarget), null, `${label}: the granted-item showcase is held while typing`);
-    assert.equal(await css('#mw-go', 'visibility'), 'hidden', `${label}: Take-off hidden while typing`);
+    assert.equal(await css('#mw-takeoff', 'visibility'), 'hidden', `${label}: Take-off hidden while typing`);
     const mid = await textLen('#mw-mission-text');
     // skip → full text + showcase + Take-off revealed at once.
     await page.click('#mw-mission-desc');
@@ -125,7 +125,7 @@ export default async function ({ page, assert, shot }) {
     const full = await textLen('#mw-mission-text');
     assert.ok(mid < full, `${label}: briefing was mid-type (shorter) before the skip`);
     assert.ok(await listShown(), `${label}: the mission list is still on screen after the skip`);
-    assert.equal(await css('#mw-go', 'visibility'), 'visible', `${label}: Take-off visible after skip`);
+    assert.equal(await css('#mw-takeoff', 'visibility'), 'visible', `${label}: Take-off visible after skip`);
     await page.waitForFunction('!!(window.__game.itemShowcaseTarget)', null, { timeout: 4000 });
     assert.match(await page.evaluate(() => window.__game.itemShowcaseTarget), itemRe, `${label}: showcase item model`);
     await shot(label);
@@ -140,6 +140,6 @@ export default async function ({ page, assert, shot }) {
   await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
   assert.equal(await page.evaluate(() => window.__game.briefingStaged), false, 'L4: not staged (instant)');
   assert.ok(await listShown(), 'L4: the mission list is on screen');
-  assert.equal(await css('#mw-go', 'visibility'), 'visible', 'L4: Take-off visible immediately');
+  assert.equal(await css('#mw-takeoff', 'visibility'), 'visible', 'L4: Take-off visible immediately');
   await shot('L4-instant');
 }

@@ -26,9 +26,9 @@ export default async function ({ page, assert, shot }) {
 
   // 2. Take off into live Level 1 via the REAL post-intro menu. EMPIRICALLY (verified against the seeded DB:
   //    new player → level-0 intro → advanceProgress → level-1, which HAS a briefing) finishIntro lands the
-  //    real new player on the MAIN WINDOW (showMain → #mw-go → launchCampaign), NOT the welcome screen — every
+  //    real new player on the MAIN WINDOW (showMain → #mw-takeoff → launchCampaign), NOT the welcome screen — every
   //    campaign level 2+ carries a briefing. We click whichever menu is up (welcome #takeoff / Main Window
-  //    #mw-go — both arm beginLiveSession) and assert below that it was the real (Main Window) path.
+  //    #mw-takeoff — both arm beginLiveSession) and assert below that it was the real (Main Window) path.
   await page.waitForFunction(() => {
     const vis = (id) => { const e = document.getElementById(id); return e && getComputedStyle(e).display !== 'none'; };
     return vis('welcome') || vis('mainwin');
@@ -36,7 +36,7 @@ export default async function ({ page, assert, shot }) {
   const via = await page.evaluate(() => {
     const vis = (id) => { const e = document.getElementById(id); return e && getComputedStyle(e).display !== 'none'; };
     if (vis('welcome')) { document.getElementById('takeoff').click(); return 'welcome'; }
-    document.getElementById('mw-go').click(); return 'mainwin';
+    document.getElementById('mw-takeoff').click(); return 'mainwin';
   });
   assert.equal(via, 'mainwin', 'the real post-intro new-player take-off is the Main Window (launchCampaign) — level-1 has a briefing');
   // Take-off is a TAKE-OFF: it launches you at the base and the fight starts when you reach where the level

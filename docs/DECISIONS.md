@@ -3758,3 +3758,33 @@ client's view at `bankRun`.
   `activeShip.progression` and a refetch that wins reinstates the pre-run experience.
 - A retune of `XP_BASE`/`XP_STEP` on the server is now a two-file change, and the parity test fails loudly
   if only one file moves.
+
+## 104. The campaign has no "Launch mission" button — taking off IS launching it
+
+**Context.** §100 gave the base menu two launch controls: `#mw-go` ("Launch mission ⚔") for the active
+mission, and the always-available `#mw-takeoff` ("Take off 🚀") for free flight into the system. Then every
+campaign level moved to *fly-to-start*: `launchCampaign()` stopped dropping the player into the arena and
+started calling `enterRoam(null)` — spawn at the home base, fly to the level's centre, and the fight begins
+when you arrive (`checkMissionZone`). Which is exactly what `takeOff()` does: `enterRoam(null)`.
+
+So on the campaign the two buttons had become the same call, sitting next to each other with different
+labels — a difference the player is invited to reason about and cannot find, because there isn't one.
+
+**Decision.** `#mw-go` is hidden whenever the campaign is the active mission, on **every** level. Take off
+is the campaign's single launch control. The button (and its `#mw-go-note` hint) returns only for an active
+**side mission**, where it still means something distinct: side missions launch straight into their own
+level, so "Launch mission: <name>" and "Take off" genuinely differ.
+
+**Alternatives rejected.**
+- *Hide it only on the first few levels.* The redundancy is not level-specific — `launchCampaign` and
+  `takeOff` are the same call on Level 4 too.
+- *Drop "Take off" instead and keep "Launch mission".* Take off is available on every base-menu stage
+  (§100 — the hangar must never be a dead end); the mission button only exists inside the Missions view.
+- *Keep both and reword the campaign one.* Two controls that run the same function is the problem; better
+  copy would only describe it more accurately.
+
+**Consequences.**
+- The button starts hidden in `index.html`, so the campaign default never flashes it before the first
+  `updateGoButton()`.
+- The staged briefing reveal (§ the L1–L3 typewriter) is unaffected: `.briefing-hide-go` hides the global
+  Take-off bar `#mw-launch` too, which is now the control being revealed after the briefing types out.

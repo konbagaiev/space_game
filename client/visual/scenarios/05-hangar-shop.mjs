@@ -125,7 +125,7 @@ export default async function ({ page, assert, shot }) {
   // launch the mission (the mission view's Take-off), then die → the death overlay offers "Back to Hangar"
   await page.evaluate(() => document.querySelector('.mw-item[data-mw="missions"]').click());
   await page.waitForTimeout(80);
-  await page.evaluate(() => document.getElementById('mw-go').click());
+  await page.evaluate(() => document.getElementById('mw-takeoff').click());
   await page.waitForTimeout(200);
   await page.evaluate(() => { window.__game.player.hp = 0; });
   await page.waitForTimeout(400);

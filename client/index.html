@@ -73,15 +73,17 @@
         <span id="mw-mission-text"></span>
       </div>
       <div id="mw-mission-reward"></div>
-      <!-- Mission actions. #mw-go LAUNCHES THE FIGHT for the active mission (it is no longer the generic
-           "Take off" — that is the always-available #mw-takeoff below, which flies you into the system).
+      <!-- Mission actions. #mw-go LAUNCHES THE FIGHT for the active SIDE mission; it starts hidden and
+           updateGoButton only shows it when one is active — the CAMPAIGN has no launch button, since
+           launching it is the same act as "Take off" (the always-available #mw-takeoff below, which flies
+           you into the system and lets the mission zone start the fight). See DECISIONS §104.
            #mw-mission-nav autopilots to this mission's place in the system instead, where arriving raises
            the "Start mission?" prompt; it is shown only for missions that HAVE a system object. -->
       <div id="mw-mission-actions">
-        <button id="mw-go" data-i18n="ui.button.launch_mission">Launch mission ⚔</button>
+        <button id="mw-go" data-i18n="ui.button.launch_mission" style="display:none">Launch mission ⚔</button>
         <button id="mw-mission-nav" data-i18n="ui.systemmap.autopilot">Autopilot to destination</button>
       </div>
-      <div id="mw-go-note"></div>
+      <div id="mw-go-note" style="display:none"></div>
     </div>
     <!-- Loadout screen (docs/plans/2026-08-08-base-menu-redesign.md, Slice C): the ship sits centered with
          its equipment/weapon slots arranged around it; clicking a slot opens the right context panel

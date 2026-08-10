@@ -7,7 +7,7 @@ export const name = '20-warp-blast-immunity';
 export default async function ({ page, assert, shot }) {
   await page.evaluate(() => {
     const vis = (id) => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; };
-    if (vis('mainwin')) document.getElementById('mw-go').click();
+    if (vis('mainwin')) document.getElementById('mw-takeoff').click();
     else if (vis('welcome')) document.getElementById('takeoff').click();
   });
   await page.waitForTimeout(300);

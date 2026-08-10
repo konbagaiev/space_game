@@ -98,6 +98,8 @@ export default async function ({ page, assert, shot }) {
   assert.ok(took.badge, 'the taken mission shows a "Taken" badge');
   assert.equal(await page.evaluate(() => document.getElementById('mw-missions-badge').textContent), '3',
     'the menu badge counts every offer, so taking one does not change it');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('mw-go')).display), 'none',
+    'while the CAMPAIGN is the active mission there is no "Launch mission" button (DECISIONS §104)');
 
   // Set it active → it becomes the mission Take-off flies (one active at a time)
   await page.evaluate(() => document.querySelectorAll('#mw-mission-board .mission-card')[1].querySelector('[data-mact="activate"]').click());
@@ -105,11 +107,17 @@ export default async function ({ page, assert, shot }) {
   const marked = await page.evaluate(() => ({
     sideActive: document.querySelectorAll('#mw-mission-board .mission-card')[1].classList.contains('active'),
     campaignActive: document.querySelectorAll('#mw-mission-board .mission-card')[0].classList.contains('active'),
+    goShown: getComputedStyle(document.getElementById('mw-go')).display !== 'none',
+    goText: document.getElementById('mw-go').textContent,
   }));
   assert.ok(marked.sideActive, 'the chosen side mission is now flagged active');
   assert.ok(!marked.campaignActive, 'the campaign is no longer active (one active at a time)');
+  // The launch button exists ONLY for a side mission — the campaign is launched by taking off (DECISIONS §104).
+  assert.ok(marked.goShown, 'activating a side mission brings back the "Launch mission" button');
+  assert.ok(/\S/.test(marked.goText) && !/^Launch mission ⚔$/.test(marked.goText.trim()),
+    `and it names the mission it launches (got "${marked.goText}")`);
 
-  // Take off launches the ACTIVE side mission via the levelRunner (flagged sideMission, no story advance)
+  // Launch the ACTIVE side mission via the levelRunner (flagged sideMission, no story advance)
   await page.evaluate(() => document.getElementById('mw-go').click());
   await page.waitForFunction('!!(window.__game.activeMission)', null, { timeout: 4000 });
   const playing = await page.evaluate(() => ({

@@ -29,7 +29,7 @@ export default async function ({ page, assert, shot }) {
   await page.evaluate(() => {
     const vis = (id) => { const e = document.getElementById(id); return e && getComputedStyle(e).display !== 'none'; };
     if (vis('welcome')) document.getElementById('takeoff').click();
-    else document.getElementById('mw-go').click();
+    else document.getElementById('mw-takeoff').click();
   });
 
   // 2. Play past the trivial-session floor (MIN_SESSION_TICKS = 180 ticks = 3 s of sim). Hold thrust so the

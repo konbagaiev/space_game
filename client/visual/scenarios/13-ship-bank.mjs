@@ -17,7 +17,7 @@ export default async function ({ page, assert, shot }) {
   // not the welcome screen), then focus the canvas so keyboard turning reaches the game.
   await page.evaluate(() => {
     const vis = (id) => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; };
-    if (vis('mainwin')) document.getElementById('mw-go').click();
+    if (vis('mainwin')) document.getElementById('mw-takeoff').click();
     else if (vis('welcome')) document.getElementById('takeoff').click();
   });
   await page.waitForTimeout(200);

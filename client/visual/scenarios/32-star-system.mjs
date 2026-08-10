@@ -299,10 +299,11 @@ export default async function ({ page, assert, shot }) {
     document.querySelector('#mw-view-map .sysnav-row[data-obj="mining2"]').click();
     const autoDisabledAfter = document.querySelector('#mw-view-map [data-act="__autopilot"]').disabled;
     const markedRow = document.querySelector('#mw-view-map .sysnav-row.sel').dataset.obj;
-    // the mission LAUNCH button is now distinct from Take off
+    // on the CAMPAIGN there is no mission-launch button at all — Take off is the only launch control
+    // (DECISIONS §104); #mw-go comes back only for an active side mission.
     pick('missions');
-    const goText = document.getElementById('mw-go').textContent;
-    return { takeoffOn, mapHasGlobalBar, mapActs, rows, autoDisabledBefore, autoDisabledAfter, markedRow, goText };
+    const goShown = getComputedStyle(document.getElementById('mw-go')).display !== 'none';
+    return { takeoffOn, mapHasGlobalBar, mapActs, rows, autoDisabledBefore, autoDisabledAfter, markedRow, goShown };
   });
   for (const [stage, ok] of Object.entries(base.takeoffOn)) {
     assert.ok(ok, `"Take off" is available on the ${stage} stage`);
@@ -314,8 +315,8 @@ export default async function ({ page, assert, shot }) {
   assert.equal(base.autoDisabledBefore, true, 'Autopilot is disabled until something is selected');
   assert.equal(base.autoDisabledAfter, false, 'and enabled once an object is picked');
   assert.equal(base.markedRow, 'mining2', 'the picked row is the highlighted one');
-  assert.ok(!/take off/i.test(base.goText),
-    `the mission button no longer says "Take off" — it launches the fight (got "${base.goText}")`);
+  assert.equal(base.goShown, false,
+    'the campaign carries NO "Launch mission" button — taking off is how you launch it');
   await shot('base-map');
 
   // 7b. CLICK HOME WHILE ROAMING → flown back, UNCAPPED, then offered a dock. Two separate fixes: the

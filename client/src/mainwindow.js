@@ -275,13 +275,21 @@ function updateMissionsBadge() {
   el.missionsBadge.textContent = n > 0 ? String(n) : '';
   el.missionsBadge.classList.toggle('show', n > 0);
 }
-// #mw-go LAUNCHES THE FIGHT for the ACTIVE mission — reflect which one that is on the button. (The generic
-// "Take off" is now the separate always-available #mw-takeoff, which flies into the system instead.)
+// #mw-go LAUNCHES THE FIGHT for the ACTIVE SIDE mission — reflect which one that is on the button.
+// The CAMPAIGN has NO launch button at all (DECISIONS §104): launching it became identical to "Take off"
+// once every campaign level started by flying to its zone (§100) — both call `enterRoam(null)`, spawn you
+// at the home base and let `checkMissionZone` start the fight when you arrive — so the second button only
+// asked the player to guess at a difference that no longer existed. The always-available #mw-takeoff is
+// the one launch control on the campaign; #mw-go returns only when a side mission is active, because that
+// one really does something else (it plays the mission descriptor immediately).
 function updateGoButton() {
   const btn = document.getElementById('mw-go');
   if (!btn) return;
   const m = activeMissionId == null ? null : missionOffers.find((o) => o.id === activeMissionId);
-  btn.textContent = m ? t('ui.button.launch_mission_named', { mission: t(m.titleKey) }) : t('ui.button.launch_mission');
+  btn.style.display = m ? '' : 'none';
+  const note = document.getElementById('mw-go-note'); // its "can't launch" hint goes with it (Take off keeps its own)
+  if (note) note.style.display = m ? '' : 'none';
+  if (m) btn.textContent = t('ui.button.launch_mission_named', { mission: t(m.titleKey) });
   // "Autopilot to destination" only makes sense for a mission that HAS a place in the system (side
   // missions); the campaign fight has none, so the button is hidden there.
   const nav = document.getElementById('mw-mission-nav');

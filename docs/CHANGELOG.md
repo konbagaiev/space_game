@@ -5,6 +5,16 @@
 
 ## 2026-08-10
 
+- **No "Launch mission" button on the campaign — "Take off" is the one launch control.** Since every
+  campaign level starts by flying to its zone, `launchCampaign()` and `takeOff()` are the same call
+  (`enterRoam(null)`), so the two buttons only asked the player to guess at a difference that no longer
+  existed. `#mw-go` (and its hint note) is hidden whenever the campaign is the active mission, on every
+  level, and starts hidden in the markup; it still appears — as "Launch mission: <name>" — for an active
+  **side** mission, which really does drop straight into its own level. DECISIONS §104. The visual suite
+  followed: every scenario that started the campaign by clicking `#mw-go` now clicks `#mw-takeoff` (the
+  control a player actually has), `18-briefing-staged-reveal` asserts the reveal on `#mw-takeoff`, and
+  `10-mission-board` + `32-star-system` gained guards that the button is hidden for the campaign and comes
+  back, mission-named, for an active side mission.
 - **Level up now happens in the fight, not back at base.** The XP bar resolves the level itself every
   frame (`liveProgress` in the new `client/src/progression.js`, a tested mirror of the server curve —
   DECISIONS §103): crossing a threshold mid-combat immediately bumps the displayed level, empties the bar

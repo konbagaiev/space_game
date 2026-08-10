@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-10 (**Level-ups land mid-fight** — the XP bar resolves the level live from the run's
+**Updated:** 2026-08-10 (**The campaign has no "Launch mission" button** — `#mw-go` is hidden whenever the
+campaign is the active mission (it had become the same call as Take off once levels started by flying to
+their zone; DECISIONS §104); it returns only for an active side mission. Previously: **Level-ups land mid-fight** — the XP bar resolves the level live from the run's
 unbanked XP (`client/src/progression.js` `liveProgress`, a parity-tested mirror of the server curve;
 DECISIONS §103), so crossing a threshold in combat bumps the level, resets the bar and toasts right then;
 the toast is deduped so banking doesn't repeat it, and `bankRun` now zeroes `G.earnedXp` so the run's XP
@@ -1039,9 +1041,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **"Take off" is available on EVERY stage** — a global launch bar (`#mw-launch` / `#mw-takeoff`) pinned
   under the work zone on Character/Missions/Loadout/Craft, which flies into the star system for free flight
   (`enterRoam(null)`). On **Map** it steps aside (`#mainwin.map-open`) because the navigation component
-  carries its own Take off next to "Autopilot to destination". This is **distinct from launching a fight**:
-  the mission button (`#mw-go`) is now **"Launch mission ⚔"** and still drops straight into the active
-  mission's level, and the briefing also offers **"Autopilot to destination"** (`#mw-mission-nav`, shown only
+  carries its own Take off next to "Autopilot to destination". On the **campaign it is the ONLY launch
+  control** — the mission button (`#mw-go`) is **hidden whenever the campaign is the active mission**
+  (DECISIONS §104), because launching the campaign and taking off became the same act once every campaign
+  level started by flying to its zone. `#mw-go` appears **only for an active SIDE mission** (label
+  **"Launch mission: <name>"**), which really is different: it drops straight into that mission's level.
+  The briefing also offers **"Autopilot to destination"** (`#mw-mission-nav`, shown only
   for a mission that HAS a system object) to fly there and be asked "Start mission?" on arrival. All of them
   share ONE gate: `updateTakeoffGate` (shop.js) reads the server's `launchable` flag and disables the fight
   launch, Take off and Autopilot together — with the reason — when a required slot (hull/armor, engine,
@@ -1101,8 +1106,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **Staged campaign-briefing reveal (L2/L3)** (`docs/plans/2026-07-05-1641-briefing-staged-reveal.md`):
     when the **primary (campaign) briefing** lands on **levels 1-3** (in practice L2/L3; L1 lands on the
     welcome screen), the briefing text (`#mw-mission-text`) **types out over ~5 s** while **only** the
-    **launch controls** — the mission button (`#mw-go`) **and** the global Take-off bar (`#mw-launch`) — are
-    hidden (`.briefing-hide-go`, `visibility:hidden`, so nothing reflows)
+    **launch controls** — the global Take-off bar (`#mw-launch`), plus `#mw-go` on the rare landing where a
+    side mission is active — are hidden (`.briefing-hide-go`, `visibility:hidden`, so nothing reflows)
     — the **mission list in the right column stays visible throughout**; when typing completes the
     **granted-item showcase** (`#mw-item`, Machine Gun on L2 / Repair drone on L3) fades into the work zone,
     then the **launch controls +0.5 s**

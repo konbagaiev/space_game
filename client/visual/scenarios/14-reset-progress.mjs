@@ -9,7 +9,7 @@ export default async function ({ page, assert, shot }) {
   // launch into the game from whichever menu is up, then open settings via the gear (always visible)
   await page.evaluate(() => {
     const vis = (id) => { const el = document.getElementById(id); return el && getComputedStyle(el).display !== 'none'; };
-    if (vis('mainwin')) document.getElementById('mw-go').click();
+    if (vis('mainwin')) document.getElementById('mw-takeoff').click();
     else if (vis('welcome')) document.getElementById('takeoff').click();
   });
   await page.waitForTimeout(150);

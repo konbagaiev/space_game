@@ -19,7 +19,7 @@ export default async function ({ page, assert, shot }) {
     const menu = document.getElementById('mw-menu').getBoundingClientRect();
     const work = document.getElementById('mw-work').getBoundingClientRect();
     const side = document.getElementById('mw-ship-col').getBoundingClientRect();
-    const go = document.getElementById('mw-go').getBoundingClientRect();
+    const go = document.getElementById('mw-takeoff').getBoundingClientRect();
     return {
       isGrid: getComputedStyle(main).display === 'grid',
       ordered: menu.left < work.left && work.left < side.left,
