@@ -5,6 +5,19 @@
 
 ## 2026-08-10
 
+- **`M` toggles the system map (desktop).** The same overlay the on-screen **Map** button opens, on a key.
+  Gated exactly like that button — **out of combat only**: during a live fight the corner is the battle
+  radar, and since the overlay freezes the sim an ungated M would be a way to pause a fight. A modifier
+  passes through (**Cmd+M stays "minimise window"** on macOS) and so does an "m" typed into a text field.
+  Wired separately from the sim's global keydown, which mirrors every code into `keys` for the input
+  recorder — this is UI, not input. Discoverability: the Map button, which appears exactly when the shortcut
+  works, now names it in its tooltip (`ui.map.shortcut`, EN+RU, mouse devices only). The `#help` cheatsheet
+  is deliberately left alone: it is the combat cheatsheet, and M does nothing there.
+  Guarded by `32-star-system` checks 0 and 12 (inert in a fight; toggles out of combat; modifier and
+  typed-into-a-field both ignored; tooltip present) — driven through real key events, because the first cut
+  of this **crashed the whole client on load** with a duplicate `Device` import in `welcome.js`, which no
+  unit test sees and only loading the page catches.
+
 - **The parallax speed field now gets out of the sun's way.** Its specks are rock-grey and deliberately
   non-additive (dust, not stars), and the field lives in the **combat** scene, which is drawn on top of the
   sky scene — so next to the star they landed straight over its smooth bright disk and read as dirt on the

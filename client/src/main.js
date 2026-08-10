@@ -415,6 +415,21 @@ if (mapBtnEl) {
   mapBtnEl.addEventListener('click', openMap);
   mapBtnEl.addEventListener('touchstart', openMap, { passive: false });
 }
+// Keyboard shortcut: M toggles the same overlay. Gated on `outOfCombat()`, exactly like the button — during
+// a live fight the corner is the battle radar and there is no map to open, so M is a no-op there rather than
+// a way to freeze a fight. Not device-gated: a keydown simply cannot happen without a keyboard, so this is
+// desktop-only by construction and still works on a tablet with one attached.
+//
+// Deliberately NOT hung off the sim's global keydown (which mirrors every code into `keys` for the recorder):
+// this is UI, not input. It ignores a keypress with a MODIFIER held — Cmd+M is "minimise window" on macOS and
+// must keep working — and one typed into a field (the account screen's email/password inputs).
+addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyM' || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if (isSystemMapOpen()) { closeSystemMap(); return; }
+  if (outOfCombat()) openSystemMapScreen();
+});
 // Per-frame corner toggle: in a live fight show the radar; out of combat hide it and show the Map button.
 // (body.menu CSS already hides both on the base-menu screen, so this only governs the in-world states.)
 function refreshMapControl() {

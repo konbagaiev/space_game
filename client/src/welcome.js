@@ -79,6 +79,12 @@ export function applyTranslations(root = document) {
   root.querySelectorAll('[data-i18n-href]').forEach((el) => {
     el.setAttribute('href', t(el.getAttribute('data-i18n-href')));
   });
+  // The out-of-combat Map button carries its keyboard shortcut in the tooltip. Only on a MOUSE device: the
+  // shortcut is keyboard-only, and a tooltip is unreachable on touch anyway. The button appears exactly when
+  // the shortcut works (out of combat), which is why the hint lives here and not in the #help cheatsheet —
+  // that one is the COMBAT cheatsheet, and during a fight M does nothing.
+  const mapBtn = document.getElementById('map-btn');
+  if (mapBtn && !Device.hasTouch) mapBtn.setAttribute('title', t('ui.map.shortcut'));
   // Floating fullscreen button: icon-only in markup, so the words live in aria-label/title (not text).
   const fsBtn = document.getElementById('fullscreen-btn');
   if (fsBtn) {

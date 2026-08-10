@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-10 (**The speed field fades out near the star** — its grey specks read as dirt over the
+**Updated:** 2026-08-10 (**`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
 sun's smooth bright disk (~15 000 speck pixels on it), so the parallax field ramps away inside 760 u.
 Previously: **The sky light comes from the star** — the terminator source is no longer an
 authored fixed position but the star's own world position, aimed every frame; it used to arrive 64° off
@@ -179,6 +179,15 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `A`/`D` or `←`/`→` — turn the nose
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
+- `M` — **toggle the system-map overlay** (keyboard, so desktop by construction; works on a tablet with a
+  keyboard attached). Gated exactly like the on-screen **Map** button: only **out of combat** (`G.roam` /
+  return-to-base) — during a live fight the corner is the battle radar, there is no map to open, and since
+  the overlay freezes the sim (`G.mapOpen`) an ungated M would be a way to pause a fight. Ignored when a
+  modifier is held (**Cmd+M must stay "minimise window"** on macOS) and while typing in a field. It is
+  wired separately from the sim's global keydown — that one mirrors every code into `keys` for the input
+  recorder, and this is UI, not input. The Map button carries the shortcut in its `title` on mouse devices
+  (`ui.map.shortcut`, EN+RU); the `#help` cheatsheet deliberately does NOT list it, because that line is
+  the COMBAT cheatsheet and M does nothing there.
 - **Autopilot (station or loot chest)** — after the last enemy is destroyed the **base station** (at
   `(-10,-42,-10)`, just up-left of the arena center) becomes clickable; **clicking/tapping it** (a canvas raycast,
   ignored on HUD buttons — on touch it's a **slop-gated tap**, a single finger that moved <10px, not a

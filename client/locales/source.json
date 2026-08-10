@@ -815,6 +815,10 @@
     "source": "Map",
     "context": "Left base-menu item — the sector/world map section (currently a stub). One word."
   },
+  "ui.map.shortcut": {
+    "source": "Map (M)",
+    "context": "Tooltip on the in-flight Map button, shown on mouse devices only. Names the keyboard shortcut that opens/closes the same system-map overlay. Keep the key glyph M as-is; translate only the word."
+  },
   "ui.mainwin.craft": {
     "source": "Craft",
     "context": "Left base-menu item — the crafting section (undesigned, \"to be defined\"). One word."

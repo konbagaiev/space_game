@@ -202,6 +202,7 @@
   "ui.loading.level": "Готовим сектор...",
   "ui.mainwin.character": "Персонаж",
   "ui.mainwin.map": "Карта",
+  "ui.map.shortcut": "Карта (M)",
   "ui.mainwin.craft": "Крафт",
   "ui.character.level": "Уровень {level}",
   "ui.character.points": "Очки навыков: {points}",

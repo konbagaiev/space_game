@@ -6,6 +6,14 @@
 export const name = '32-star-system';
 
 export default async function ({ page, assert, shot }) {
+  // 0. THE M SHORTCUT IS INERT IN A LIVE FIGHT. The harness has taken off into Level 0, so this runs while a
+  //    fight is actually running — the corner is the battle radar and there is no map to open. M must not be
+  //    a way to freeze a fight (the overlay stops the sim via G.mapOpen).
+  await page.keyboard.press('KeyM');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => window.__game.mapOpen), false,
+    'M does nothing during a live fight — the map overlay would freeze the sim');
+
   // The harness already Took off into the playable Level 0. Switch to roam via the real entry point.
   await page.evaluate(async () => { await window.__game.enterRoam(null); });
   await page.waitForFunction(() => window.__game.roam === true, null, { timeout: 5000 });
@@ -500,4 +508,36 @@ export default async function ({ page, assert, shot }) {
     `and it is back at full strength at the base (${dust.atBase.visible} layers, max opacity `
     + `${dust.atBase.maxOpacity.toFixed(2)}) — the fade is local to the star, not a global dimming`);
 
+  // 12. THE M SHORTCUT, out of combat this time: it TOGGLES the same overlay the Map button opens. Driven
+  //     through real key events, because the interesting failures are all in the wiring, not the logic —
+  //     the first cut of this shortcut crashed the whole client on load (a duplicate `Device` import in
+  //     welcome.js), which no unit test sees and only loading the page catches.
+  await page.keyboard.press('KeyM');
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => window.__game.mapOpen), true, 'M opens the system map out of combat');
+  await page.keyboard.press('KeyM');
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => window.__game.mapOpen), false, 'and M again closes it');
+  // Cmd+M is "minimise window" on macOS and Ctrl+M is bound in some browsers — a modifier must pass through.
+  for (const mod of ['Meta', 'Control', 'Alt']) {
+    await page.keyboard.down(mod); await page.keyboard.press('KeyM'); await page.keyboard.up(mod);
+  }
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => window.__game.mapOpen), false,
+    'a modifier + M is NOT the shortcut (Cmd+M must stay "minimise window")');
+  // …and neither is typing an "m" into a field (the account screen has email/password inputs).
+  const typed = await page.evaluate(async () => {
+    const inp = document.createElement('input');
+    document.body.appendChild(inp);
+    inp.focus();
+    inp.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyM', key: 'm', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 150));
+    const v = window.__game.mapOpen;
+    inp.remove();
+    return v;
+  });
+  assert.equal(typed, false, 'typing "m" into a text field does not open the map');
+  // The button that appears exactly when the shortcut works advertises it (mouse devices only).
+  assert.equal(await page.evaluate(() => document.getElementById('map-btn').getAttribute('title')), 'Map (M)',
+    'the Map button names its shortcut in the tooltip');
 }
