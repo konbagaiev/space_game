@@ -18,8 +18,72 @@ export const pool = new pg.Pool({
 // BIGSERIAL and the startup upsert (`INSERT ... ON CONFLICT (name) DO UPDATE`) burns a sequence value on
 // EVERY boot, so ids drift apart over time (production: 1, 6, 7, 71, 564 for level-1..level-5). A
 // hardcoded numeric threshold silently unlocks content early on a drifted DB. See DECISIONS §95.
-export const SHOP_MIN_LEVEL = 'level-3';          // hangar shop: reached after clearing "Level 1" (DECISIONS §90)
-export const SIDE_MISSIONS_MIN_LEVEL = 'level-5'; // side-mission board: reached after clearing "Level 3" (DECISIONS §91)
+// (Since the 0-based renumbering these read plainly: the row name IS the level number. Both moved down
+// one with every other level — they gate the SAME two moments as before.)
+export const SHOP_MIN_LEVEL = 'level-2';          // hangar shop: reached after clearing "Level 1" (DECISIONS §90)
+export const SIDE_MISSIONS_MIN_LEVEL = 'level-4'; // side-mission board: reached after clearing "Level 3" (DECISIONS §91)
+
+// ONE-SHOT: make a level's id, name and title the SAME campaign number, 0-based (see LEVELS in
+// catalog_seed.js for why). Runs BEFORE the levels seed, because the seed now writes explicit ids and
+// would otherwise insert `level-3` (id 3) beside the legacy row that already holds that name.
+//
+// It maps by the OLD NAME, never by arithmetic, for two reasons: prod ids drifted years apart
+// (1, 6, 7, 71, 564 — the old name-keyed upsert burned a sequence value every boot), and the rename is a
+// shift, so `level-2` must become `level-1` while another row is still called `level-1`. Order of work:
+//   1. temp-park every id well clear of the target range, players moving in lockstep (the FK is dropped
+//      for the duration — re-added at the end, so a failure mid-way leaves it dropped and the next boot
+//      cannot silently proceed: the migration ledger row is only written on success);
+//   2. rename + assign the final id per old name;
+//   3. rewrite the level NAMES stored in gameplay_sessions so /admin/sessions still resolves them;
+//   4. re-add the FK and move the column default to 0.
+// A fresh database has no `levels` rows at all, so every statement is a no-op and the seed then writes
+// 0..4 directly. Guarded by migrations_pg, so it runs exactly once per database.
+async function renumberLevelsZeroBased() {
+  const claimed = await pool.query(
+    `INSERT INTO migrations_pg (name, applied_at) VALUES ('levels_zero_based_ids', $1)
+     ON CONFLICT (name) DO NOTHING RETURNING name`, [Date.now()]);
+  if (!claimed.rows[0]) return;                       // already applied on this database
+  // old name → [new id, new name]. The campaign shifted down one: level-1 was "Level 0".
+  const MAP = [['level-1', 0, 'level-0'], ['level-2', 1, 'level-1'], ['level-3', 2, 'level-2'],
+               ['level-4', 3, 'level-3'], ['level-5', 4, 'level-4']];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE players DROP CONSTRAINT IF EXISTS players_current_progress_fkey');
+    const PARK = 100000; // temp id range, clear of both the old drifted ids and the new 0..4
+    await client.query('UPDATE levels SET id = id + $1', [PARK]);
+    await client.query('UPDATE players SET current_progress = current_progress + $1', [PARK]);
+    for (const [oldName, newId, newName] of MAP) {
+      const r = await client.query('SELECT id FROM levels WHERE name = $1', [oldName]);
+      if (!r.rows[0]) continue;                       // level absent on this DB → nothing to move
+      const parkedId = r.rows[0].id;
+      await client.query('UPDATE players SET current_progress = $1 WHERE current_progress = $2', [newId, parkedId]);
+      await client.query('UPDATE levels SET id = $1, name = $2 WHERE id = $3', [newId, newName, parkedId]);
+      await client.query('UPDATE gameplay_sessions SET level = $1 WHERE level = $2', [newName, oldName]);
+    }
+    // Anything still parked is a level row this MAP does not know (a hand-added or long-removed level).
+    // It is LEFT parked, rows and players together: they still reference each other, so the FK re-add below
+    // holds and nobody's progress moves to different content. Deleting the row and sending its players to
+    // the intro would be silent data loss on a live database to buy a tidier table — never that trade.
+    const orphans = await client.query('SELECT id, name FROM levels WHERE id >= $1 ORDER BY id', [PARK]);
+    if (orphans.rows.length) {
+      console.warn('[migrate] levels_zero_based_ids: %d level row(s) outside the known campaign were left '
+        + 'untouched at their parked ids (players on them keep their progress): %s',
+        orphans.rows.length, orphans.rows.map((r) => `${r.name}@${r.id}`).join(', '));
+    }
+    await client.query(`ALTER TABLE players ADD CONSTRAINT players_current_progress_fkey
+                        FOREIGN KEY (current_progress) REFERENCES levels(id)`);
+    await client.query('ALTER TABLE players ALTER COLUMN current_progress SET DEFAULT 0');
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    // undo the ledger claim so a fixed deploy can retry instead of skipping the migration forever
+    await pool.query(`DELETE FROM migrations_pg WHERE name = 'levels_zero_based_ids'`);
+    throw e;
+  } finally {
+    client.release();
+  }
+}
 
 // Idempotent schema bootstrap + the migrations_pg one-shot ledger — the single, forward-only
 // migration story (DECISIONS §9). Safe to run on every boot: CREATE TABLE IF NOT EXISTS + guarded
@@ -127,9 +191,11 @@ export async function migrate() {
       descriptor JSONB NOT NULL   -- { title, map, phases:[...] }
     );
     -- player progress: the currently-available level (FK into levels). Added after the
-    -- levels table exists; defaults to 1 (level-1). On an existing DB the levels rows
-    -- already exist from prior startups, so the FK default validates.
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS current_progress INTEGER NOT NULL DEFAULT 1 REFERENCES levels(id); -- DEFAULT 1 = the first level (level-1, id 1 on every live DB); see DECISIONS §95
+    -- levels table exists. The value IS the campaign level number now (0 = the intro), because a level's
+    -- id, name and title are all the same 0-based number — see LEVELS in catalog_seed.js. On an existing
+    -- DB this ALTER is a no-op (the column exists); the levels_zero_based_ids migration moves that
+    -- database's default and values instead.
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS current_progress INTEGER NOT NULL DEFAULT 0 REFERENCES levels(id); -- DEFAULT 0 = the intro (level-0)
 
     -- authentication (DECISIONS §11): optional email/password credentials attached in place to the
     -- anonymous players row. Username is a non-unique display name; login is by email. Passwords are
@@ -299,15 +365,19 @@ export async function migrate() {
        ON CONFLICT (name) DO UPDATE SET descriptor = EXCLUDED.descriptor`,
       [m.name, JSON.stringify(m.descriptor)]);
   }
-  // NOTE: the ON CONFLICT path still consumes a `levels_id_seq` value on every boot, so ids drift apart
-  // (prod: 1, 6, 7, 71, 564). Deliberately not "fixed": nothing depends on contiguous ids — ordering uses
-  // MIN(id) and the gates resolve by name (DECISIONS §95, §30).
+  await renumberLevelsZeroBased();  // one-shot; MUST run before the levels seed (see the function)
+  // Ids are EXPLICIT and authoritative now (they ARE the campaign number — catalog_seed.js), so the upsert
+  // keys on `id`, not `name`. Two consequences, both wanted: an explicit id never touches `levels_id_seq`,
+  // so ids stop drifting on every boot; and a RENAME (level-4 → level-3) updates the existing row in place
+  // instead of inserting a second one beside it, which is exactly the trap the name-keyed upsert set.
   for (const l of LEVELS) {
     await pool.query(
-      `INSERT INTO levels (name, descriptor) VALUES ($1, $2::jsonb)
-       ON CONFLICT (name) DO UPDATE SET descriptor = EXCLUDED.descriptor`,
-      [l.name, JSON.stringify(l.descriptor)]);
+      `INSERT INTO levels (id, name, descriptor) VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, descriptor = EXCLUDED.descriptor`,
+      [l.id, l.name, JSON.stringify(l.descriptor)]);
   }
+  // keep the sequence clear of the hand-assigned ids so any future sequence-backed insert can't collide
+  await pool.query(`SELECT setval('levels_id_seq', GREATEST((SELECT MAX(id) FROM levels), 1))`);
   // One-shot: intro "Level 0" progress shift (+1). ON CONFLICT DO NOTHING
   // makes it run exactly once; RETURNING tells us whether this run is the one that claimed it. Runs AFTER
   // the levels seed so the new final level (id 5) exists and the FK on current_progress validates.
@@ -341,9 +411,9 @@ export async function migrate() {
   // override don't. Idempotent: the `NOT (components ? 'shield')` guard skips rows already carrying it.
   await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{shield}', '31'::jsonb)
     WHERE components IS NOT NULL AND NOT (components ? 'shield')`);
-  // Backfill: the hangar shop unlocks on reaching `level-3` (player-facing "Level 2" — i.e. right after
-  // clearing the first playable level, "Level 1"/`level-2`), not at the final level (DECISIONS §90).
-  // Side missions are gated separately, on reaching `level-5` (DECISIONS §91) — derived live, no backfill.
+  // Backfill: the hangar shop unlocks on reaching `level-2` (i.e. right after clearing the first playable
+  // level, `level-1`), not at the final level (DECISIONS §90). Side missions are gated separately, on
+  // reaching `level-4` (DECISIONS §91) — derived live, no backfill.
   // Thresholds are resolved by level NAME: `levels.id` drifts (DECISIONS §95), and the old raw numeric
   // comparison against id 3 opened the shop a level early for every drifted player.
   // NOT ledger-guarded: this runs on EVERY boot and is merely idempotent (the `shop_unlocked = 0` guard +
@@ -387,7 +457,7 @@ export async function registerPlayer(id, referrer = null, device = null) {
   const ref = referrer ? String(referrer).slice(0, 512) : null;
   await pool.query('INSERT INTO players (id, created_at, last_seen, referrer, user_agent, device_model) VALUES ($1, $2, $3, $4, $5, $6)', [id, now, now, ref, ua, model]);
   await ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, currentProgress: 1, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
+  return { id, isNew: true, gamesPlayed: 0, currentProgress: 0, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
 }
 
 // Reset ONE player's progress, keeping their account and active login intact.
@@ -399,13 +469,13 @@ export async function resetPlayer(playerId) {
   if (!rows[0]) return { found: false };
   // One transaction so a failure can't leave the account half-wiped (games/ships gone, progress kept).
   // shop_unlocked is an INTEGER column (see migration) — write 0, not a boolean, or the UPDATE throws.
-  // `current_progress = 1` is a raw id: the FIRST level (`level-1`) is id 1 on every live DB, and the FK on
-  // current_progress would fail loudly (not silently) if that ever changed. Left as-is deliberately — the
-  // gates are name-based now, so id drift is harmless (DECISIONS §95, §30).
+  // `current_progress = 0` is the intro, `level-0`: since the 0-based renumbering an id IS the campaign
+  // level number on every database, so this literal reads as what it means. The FK would fail loudly (not
+  // silently) if level 0 ever stopped existing. The content gates stay name-based (DECISIONS §95, §30).
   await withTx(async (client) => {
     for (const t of ['games', 'player_ships', 'stash', 'events', 'taken_missions'])
       await client.query(`DELETE FROM ${t} WHERE player_id = $1`, [playerId]);
-    await client.query('UPDATE players SET games_played = 0, current_progress = 1, credits = 1000, shop_unlocked = 0, active_mission_id = NULL, experience = 0, skill_kinetic = 0, skill_rocket = 0, skill_shields = 0, skill_maneuver = 0, skill_mobility = 0 WHERE id = $1', [playerId]);
+    await client.query('UPDATE players SET games_played = 0, current_progress = 0, credits = 1000, shop_unlocked = 0, active_mission_id = NULL, experience = 0, skill_kinetic = 0, skill_rocket = 0, skill_shields = 0, skill_maneuver = 0, skill_mobility = 0 WHERE id = $1', [playerId]);
     await ensureDefaultShip(playerId, client); // re-grant the starter ship so the reset account is playable
   });
   return { found: true };
@@ -427,7 +497,7 @@ export async function setPlayerLanguage(playerId, language) {
 
 // The level a player is currently on (their highest unlocked level).
 export async function getCurrentLevel(playerId) {
-  await registerPlayer(playerId); // make sure the player exists (new players default to level-1)
+  await registerPlayer(playerId); // make sure the player exists (new players default to level-0, the intro)
   const { rows } = await pool.query(
     'SELECT l.name, l.descriptor FROM players p JOIN levels l ON l.id = p.current_progress WHERE p.id = $1',
     [playerId]
@@ -476,7 +546,7 @@ async function applyBriefingActions(playerId, actions) {
   for (const a of (actions || [])) {
     if (a.type === 'replaceWeapon') await replaceActiveShipWeapon(playerId, a.from, a.to);
     if (a.type === 'installComponent') await installActiveShipComponent(playerId, a.slot, a.component);
-    if (a.type === 'unlockShop') await unlockShop(playerId); // reaching level-3 ("Level 2") opens the hangar shop (side missions unlock later by progress gate, DECISIONS §91)
+    if (a.type === 'unlockShop') await unlockShop(playerId); // reaching level-2 opens the hangar shop (side missions unlock later by progress gate, DECISIONS §91)
   }
 }
 
@@ -723,8 +793,9 @@ export async function getLevel(name) {
 }
 
 // All levels, id-ordered — the admin "progress" column resolves a player's `current_progress` (an FK
-// into this table) to a readable title + n/N. `descriptor.title` is the player-facing name
-// ('Level 0'..'Level 4'); the `name` column ('level-1'..'level-5') is off by one and is NOT shown.
+// into this table) to a readable title + n/N. Since the 0-based renumbering id, `name` ('level-0'..
+// 'level-4') and `descriptor.title` ('Level 0'..'Level 4') all carry the same number; the title is what
+// is shown.
 export async function getLevels() {
   const { rows } = await pool.query('SELECT id, name, descriptor FROM levels ORDER BY id');
   return rows.map((r) => ({ id: Number(r.id), title: r.descriptor?.title || r.name }));
@@ -733,7 +804,7 @@ export async function getLevels() {
 // Has the player's `current_progress` reached (or passed) the level seeded under `levelName`? The single
 // place progress is compared against a story milestone. Fail-closed: an absent level row → false (locked),
 // never "open by default". See DECISIONS §95 (why a raw id must never be a threshold). The two milestones
-// are SHOP_MIN_LEVEL ('level-3', DECISIONS §90) and SIDE_MISSIONS_MIN_LEVEL ('level-5', DECISIONS §91).
+// are SHOP_MIN_LEVEL ('level-2', DECISIONS §90) and SIDE_MISSIONS_MIN_LEVEL ('level-4', DECISIONS §91).
 export async function reachedLevel(currentProgress, levelName, db = pool) {
   const { rows } = await db.query(
     'SELECT EXISTS (SELECT 1 FROM levels WHERE name = $1 AND id <= $2) AS reached',
@@ -1095,7 +1166,7 @@ export async function getActivePlayerShip(playerId) {
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)
     credits: reg.credits,   // the player's persistent credit balance
     shopUnlocked: reg.shopUnlocked, // hangar shop gate (opens right after the first flight, DECISIONS §90)
-    sideMissionsUnlocked, // board opens on reaching `level-5` ("Level 4" briefing) — by NAME, never by raw id (DECISIONS §95)
+    sideMissionsUnlocked, // board opens on reaching `level-4` — by NAME, never by raw id (DECISIONS §95)
     launchable: missingRequired.length === 0,
     missingRequired,
   };

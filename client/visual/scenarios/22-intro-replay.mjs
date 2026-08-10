@@ -19,7 +19,7 @@ export default async function ({ page, assert, shot, baseURL }) {
   // 1. Resolve the trace the SEED points at (so a seed/asset mismatch fails here, not in prod).
   const seedSrc = fs.readFileSync(path.join(repoRoot, 'server/src/catalog_seed.js'), 'utf8');
   const m = seedSrc.match(/introTrace:\s*'([^']+)'/);
-  assert.ok(m, 'catalog_seed.js level-1 descriptor carries an introTrace');
+  assert.ok(m, 'catalog_seed.js level-0 descriptor carries an introTrace');
   const tracePath = path.join(repoRoot, 'client', m[1]);
   assert.ok(fs.existsSync(tracePath),
     `intro trace missing: ${tracePath}\n  It is a gitignored S3 asset — run \`npm run assets:pull\` from the repo root.`);

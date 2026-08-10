@@ -218,7 +218,7 @@ export async function createApp() {
 
   // ---------- Side missions (docs/plans/mission-generator.md) ----------
   // The 3-choice side-mission board. Gated separately from the shop: it opens LATER, on reaching the level
-  // seeded as `level-5` (`SIDE_MISSIONS_MIN_LEVEL`, the "Level 4" briefing, i.e. after clearing "Level 3" —
+  // seeded as `level-4` (`SIDE_MISSIONS_MIN_LEVEL`, the "Level 4" briefing, i.e. after clearing "Level 3" —
   // DECISIONS §91/§95); compared by level NAME, never by a raw id. The shop opens right after the first
   // playable level (DECISIONS §90). Returns the
   // currently-offered missions (each with a full level-style descriptor the client plays via levelRunner).

@@ -3,22 +3,24 @@ import assert from 'node:assert/strict';
 import {
   TRACE_VERSION, normalizeLevelName, evalRecord, evalPlayback,
   snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro,
-  CUTSCENE_STALL_TICKS, packTicks, unpackTicks, sameInput, hydrateTrace, traceTickCount,
+  CUTSCENE_STALL_TICKS, packTicks, unpackTicks, sameInput, hydrateTrace, traceTickCount, traceLevelName,
 } from './replay.js';
 
+// A bare number is the campaign level number itself (0 = the intro), so `3` is `level-3` — since the
+// 0-based renumbering there is no offset to apply anywhere. Empty/absent still means the intro.
 test('normalizeLevelName maps bare numbers to level-N and passes names through', () => {
   assert.equal(normalizeLevelName('1'), 'level-1');
   assert.equal(normalizeLevelName(3), 'level-3');
-  assert.equal(normalizeLevelName('level-2'), 'level-2');
+  assert.equal(normalizeLevelName('level-1'), 'level-1');
   assert.equal(normalizeLevelName('  4 '), 'level-4');
-  assert.equal(normalizeLevelName(''), 'level-1');
-  assert.equal(normalizeLevelName(null), 'level-1');
+  assert.equal(normalizeLevelName(''), 'level-0');
+  assert.equal(normalizeLevelName(null), 'level-0');
 });
 
 test('evalRecord parses ?record + level, honors the off switches', () => {
   assert.deepEqual(evalRecord('?record=1&level=1'), { level: 'level-1' });
-  assert.deepEqual(evalRecord('?record&level=level-3'), { level: 'level-3' });
-  assert.deepEqual(evalRecord('?record=1'), { level: 'level-1' }); // no level → intro default
+  assert.deepEqual(evalRecord('?record&level=level-2'), { level: 'level-2' });
+  assert.deepEqual(evalRecord('?record=1'), { level: 'level-0' }); // no level → intro default
   assert.equal(evalRecord('?record=0&level=1'), null);
   assert.equal(evalRecord('?record=false'), null);
   assert.equal(evalRecord('?playback&id=x'), null);
@@ -26,8 +28,8 @@ test('evalRecord parses ?record + level, honors the off switches', () => {
 });
 
 test('evalPlayback parses ?playback&id, the ?playback=id shorthand, and &cutscene', () => {
-  assert.deepEqual(evalPlayback('?playback&id=level-1-123'), { id: 'level-1-123', cutscene: false });
-  assert.deepEqual(evalPlayback('?playback=level-1-123'), { id: 'level-1-123', cutscene: false });
+  assert.deepEqual(evalPlayback('?playback&id=level-0-123'), { id: 'level-0-123', cutscene: false });
+  assert.deepEqual(evalPlayback('?playback=level-0-123'), { id: 'level-0-123', cutscene: false });
   assert.deepEqual(evalPlayback('?playback'), { id: null, cutscene: false });   // bare → last recording
   assert.deepEqual(evalPlayback('?playback=1'), { id: null, cutscene: false }); // ?playback=1 is the on-flag, not an id
   assert.deepEqual(evalPlayback('?playback&id=r1&cutscene'), { id: 'r1', cutscene: true });
@@ -84,7 +86,7 @@ test('makeTrace stamps version/kind and coerces the seed to uint32', () => {
 });
 
 test('validateTrace accepts a good trace and flags the broken ones', () => {
-  const good = makeTrace({ id: 'r', level: 'level-1', seed: 123, dt: 1 / 60, shipId: 1, ticks: [{ k: ['KeyW'], t: null }] });
+  const good = makeTrace({ id: 'r', level: 'level-0', seed: 123, dt: 1 / 60, shipId: 1, ticks: [{ k: ['KeyW'], t: null }] });
   assert.deepEqual(validateTrace(good), []);
 
   assert.deepEqual(validateTrace(null), ['trace is not an object']);
@@ -132,14 +134,14 @@ test('snapshotInput quantizes the touch aim, so a barely-moved stick still packs
 });
 
 test('hydrateTrace expands a v2 trace and passes a v1 trace through untouched', () => {
-  const v2 = makeTrace({ id: 'r', level: 'level-1', seed: 1, dt: 1 / 60, ticks: [{ k: ['KeyW'], t: null }, { k: ['KeyW'], t: null }] });
+  const v2 = makeTrace({ id: 'r', level: 'level-0', seed: 1, dt: 1 / 60, ticks: [{ k: ['KeyW'], t: null }, { k: ['KeyW'], t: null }] });
   assert.equal(v2.runs.length, 1);
   const h = hydrateTrace(v2);
   assert.equal(h.ticks.length, 2);
   assert.equal(hydrateTrace(h), h, 'idempotent: an already-hydrated trace is returned as-is');
 
   // A v1 trace (the shipped Level-0 intro asset + every session recorded before 2026-08-03) stays playable.
-  const v1 = { version: 1, kind: 'input-replay', id: 'old', level: 'level-1', seed: 5, dt: 1 / 60,
+  const v1 = { version: 1, kind: 'input-replay', id: 'old', level: 'level-0', seed: 5, dt: 1 / 60,
     shipId: 1, loadout: null, components: null, ticks: [{ k: [], t: null }] };
   assert.deepEqual(validateTrace(v1), []);
   assert.equal(hydrateTrace(v1), v1);
@@ -150,7 +152,7 @@ test('hydrateTrace expands a v2 trace and passes a v1 trace through untouched', 
 test('a 10-minute session serializes far under the 64KB beacon cap', () => {
   const ticks = [];
   for (let i = 0; i < 36000; i++) ticks.push(i % 300 < 150 ? { k: ['KeyW'], t: null } : { k: ['KeyW', 'Space'], t: null });
-  const trace = makeTrace({ id: 'long', level: 'level-1', seed: 1, dt: 1 / 60, ticks });
+  const trace = makeTrace({ id: 'long', level: 'level-0', seed: 1, dt: 1 / 60, ticks });
   const bytes = JSON.stringify(trace).length;
   assert.equal(traceTickCount(trace), 36000);
   assert.ok(bytes < 65536, `packed 10-minute trace should fit a beacon, got ${bytes} bytes`);
@@ -161,7 +163,7 @@ test('makeReplaySession: fresh session is inactive; teardown clears every field'
   assert.equal(s.active, false);
 
   // simulate an ACTIVE intro cutscene (the state finishIntro must fully clear)
-  s.play = { id: 'level-1-intro', cutscene: true };
+  s.play = { id: 'level-0-intro', cutscene: true };
   s.trace = { ticks: [{}, {}] };
   s.armed = true; s.index = 5; s.done = true;
   s.cut = { pauses: [] }; s.cutDone = true; s.cutReturning = true; s.stallTicks = 42;
@@ -209,4 +211,29 @@ test('shouldPlayIntro: server-authoritative gate — trace present + not headles
   assert.equal(shouldPlayIntro('?debug', true), false);       // headless visual suite → playable Level 0
   assert.equal(shouldPlayIntro('?bench=replay', true), false);// headless perf suite → playable Level 0
   assert.equal(shouldPlayIntro('?tune', true), true);         // a non-debug/bench dev flag still plays
+});
+
+// ---------- traceLevelName: replaying archives recorded before the 0-based renumbering ----------
+// A trace stores the level NAME it was recorded on. When the campaign went 0-based every level moved down
+// one, so a v1/v2 trace's stored name points at the wrong level today — replaying the shipped intro asset
+// ("level-1") would have loaded "Level 1" and re-simmed a fight its recorded input never fought. That is a
+// silent failure: the replay runs, it just runs the wrong level.
+test('traceLevelName shifts a pre-v3 trace down one, and leaves v3+ alone', () => {
+  assert.equal(traceLevelName({ version: 1, level: 'level-1' }), 'level-0', 'the shipped v1 intro asset');
+  assert.equal(traceLevelName({ version: 2, level: 'level-4' }), 'level-3', 'a v2 session recording');
+  assert.equal(traceLevelName({ version: TRACE_VERSION, level: 'level-1' }), 'level-1', 'a trace recorded today means what it says');
+  assert.equal(traceLevelName({ version: 99, level: 'level-2' }), 'level-2', 'and so does a future one');
+});
+
+test('traceLevelName never shifts below the intro, or mangles an unexpected shape', () => {
+  assert.equal(traceLevelName({ version: 1, level: 'level-0' }), 'level-0', 'no legacy trace named level-0 — pass it through');
+  assert.equal(traceLevelName({ version: 1, level: 'side-mining' }), 'side-mining', 'a non level-N name is not a campaign level');
+  assert.equal(traceLevelName({ version: 1 }), 'level-0', 'a missing level falls back to the intro');
+  assert.equal(traceLevelName(null), 'level-0');
+});
+
+test('a trace written today is v3 — the marker the shift keys off', () => {
+  const t = makeTrace({ id: 'r', level: 'level-2', seed: 1, dt: 1 / 60, ticks: [{ k: [], t: null }] });
+  assert.equal(t.version, 3, 'bumping TRACE_VERSION is what tells old recordings apart from new ones');
+  assert.equal(traceLevelName(t), 'level-2', 'so a fresh recording is never shifted');
 });

@@ -25,7 +25,7 @@ export default async function ({ page, assert, shot }) {
   assert.equal(end.playActive, false, 'precondition: playback was torn down (rs.play=null) → the session is now LIVE');
 
   // 2. Take off into live Level 1 via the REAL post-intro menu. EMPIRICALLY (verified against the seeded DB:
-  //    new player → level-1 intro → advanceProgress → level-2, which HAS a briefing) finishIntro lands the
+  //    new player → level-0 intro → advanceProgress → level-1, which HAS a briefing) finishIntro lands the
   //    real new player on the MAIN WINDOW (showMain → #mw-go → launchCampaign), NOT the welcome screen — every
   //    campaign level 2+ carries a briefing. We click whichever menu is up (welcome #takeoff / Main Window
   //    #mw-go — both arm beginLiveSession) and assert below that it was the real (Main Window) path.
@@ -38,8 +38,14 @@ export default async function ({ page, assert, shot }) {
     if (vis('welcome')) { document.getElementById('takeoff').click(); return 'welcome'; }
     document.getElementById('mw-go').click(); return 'mainwin';
   });
-  await page.waitForTimeout(200); // let take-off's reset() build the fight
-  assert.equal(via, 'mainwin', 'the real post-intro new-player take-off is the Main Window (launchCampaign) — level-2 has a briefing');
+  assert.equal(via, 'mainwin', 'the real post-intro new-player take-off is the Main Window (launchCampaign) — level-1 has a briefing');
+  // Take-off is a TAKE-OFF: it launches you at the base and the fight starts when you reach where the level
+  // fights (mainwindow.launchCampaign → enterRoam → sim.js checkMissionZone). Level 1 fights at the origin,
+  // i.e. the base you just left, so you spawn inside its zone and the countdown runs immediately — but it is
+  // still a countdown, and `beginLiveSession` is armed when the FIGHT starts, not when the menu closes. Wait
+  // it out rather than racing it; that ordering is exactly what Fix B is about.
+  await page.waitForFunction(() => window.__game && window.__game.roam === false, null, { timeout: 15000 });
+  await page.waitForTimeout(200); // let the engaged reset() build the fight
 
   // 3. Hold thrust for ~1 s of real rAF frames and read the LIVE recorder's captured-tick count. The recorder
   //    captures exactly once per accumulator step, so its tick count is a level-/physics-independent measure of

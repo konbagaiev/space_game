@@ -34,35 +34,37 @@ test('adminEnabled: true once both env vars are set', () => {
   delete process.env.ADMIN_PASSWORD;
 });
 
-// The players-table "progress" cell (pure render helper, no DB). `current_progress` is a raw level id
-// that is off by one from the player-facing title, so the cell shows the title + a bar + n/N.
+// The players-table "progress" cell (pure render helper, no DB). Since the 0-based renumbering
+// `current_progress` IS the campaign level number, so it matches the title — but the cell still shows the
+// title + a bar + n/N rather than a bare number, and `n` stays the ORDINAL position so a future id gap
+// can never render "5/3".
 const LEVELS = [
-  { id: 1, title: 'Level 0' }, { id: 2, title: 'Level 1' }, { id: 3, title: 'Level 2' },
-  { id: 4, title: 'Level 3' }, { id: 5, title: 'Level 4' },
+  { id: 0, title: 'Level 0' }, { id: 1, title: 'Level 1' }, { id: 2, title: 'Level 2' },
+  { id: 3, title: 'Level 3' }, { id: 4, title: 'Level 4' },
 ];
 
 test('progressCell: title + bar + n/N, sortable by the raw id', () => {
-  const first = progressCell(1, LEVELS);
-  assert.ok(first.includes('data-sort="1"'), 'sorts by the raw progress id');
+  const first = progressCell(0, LEVELS);
+  assert.ok(first.includes('data-sort="0"'), 'sorts by the raw progress id');
   assert.ok(first.includes('class="prog"'), 'took the bar markup path');
   assert.ok(first.includes('Level 0'), 'shows the level title');
   assert.ok(first.includes('1/5'), 'n/N fraction');
   assert.ok(first.includes('width:20%'), 'bar fill is 1/5');
   assert.ok(!first.includes('✔'), 'no check mark before the last level');
 
-  const third = progressCell(3, LEVELS);
-  assert.ok(third.includes('data-sort="3"'), 'sorts by the raw progress id');
+  const third = progressCell(2, LEVELS);
+  assert.ok(third.includes('data-sort="2"'), 'sorts by the raw progress id');
   assert.ok(third.includes('class="prog"'), 'took the bar markup path');
-  assert.ok(third.includes('Level 2'), 'id 3 is the level TITLED "Level 2"');
-  assert.ok(!third.includes('Level 3'), 'never shows the raw id as a title');
-  assert.ok(!third.includes('level-3'), 'never shows the levels.name column');
+  assert.ok(third.includes('Level 2'), 'id 2 is the level TITLED "Level 2" — one number now');
+  assert.ok(!third.includes('Level 3'), 'never shows a neighbouring title');
+  assert.ok(!third.includes('level-2'), 'never shows the levels.name column');
   assert.ok(third.includes('3/5'), 'n/N fraction');
   assert.ok(third.includes('width:60%'), 'bar fill is 3/5');
   assert.ok(!third.includes('✔'), 'no check mark before the last level');
 });
 
 test('progressCell: ✔ only on the final level', () => {
-  const last = progressCell(5, LEVELS);
+  const last = progressCell(4, LEVELS);
   assert.ok(last.includes('Level 4'), 'shows the last level title');
   assert.ok(last.includes('5/5'), 'n/N fraction');
   assert.ok(last.includes('width:100%'), 'bar is full');

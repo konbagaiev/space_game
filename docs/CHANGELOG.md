@@ -31,6 +31,132 @@
   exactly 10px above it (measured headless at 1280x800: canvas/buttons bottom 770, bar top 780).
   Cosmetic only; the in-flight overlay map is unchanged.
 
+- **Levels are 0-based now, and one number means one level (DECISIONS §102).** A level's row id, its
+  `levels.name` and its player-facing title were three numbers that disagreed — row `level-4` was titled
+  "Level 3" and a player on it had `current_progress = 4` — and `levels.id` had additionally drifted on
+  production to 1, 6, 7, 71, 564, because the old name-keyed upsert burned a sequence value on every boot.
+  That ambiguity cost two wrong answers in a single session (a feature built on the wrong level, then a
+  gate wrongly diagnosed as broken). Now **id = name number = title number**, 0-based, 0 = the intro, and
+  `current_progress` reads as the level number. Ids are explicit in `catalog_seed.js` and upserted
+  `ON CONFLICT (id)`, which pins them and ends the drift. A one-shot migration (`levels_zero_based_ids`)
+  maps **by name**, never arithmetic — the drifted prod ids are not a shift of anything — parking both `id`
+  and `name` clear of their targets before assigning (both collide mid-move, and `name` is UNIQUE), moving
+  `players.current_progress` in lockstep with the FK dropped, rewriting `gameplay_sessions.level`, then
+  restoring the FK and setting the column default to 0. `levels_drift.test.js` was rewritten around it: it
+  now builds a legacy-shaped database (old names, the real drifted ids, players and a recorded session
+  pointing at them) and migrates it, asserting nobody's progress moves to different content. Content gates
+  stay name-based (§95 unchanged); `SHOP_MIN_LEVEL`/`SIDE_MISSIONS_MIN_LEVEL` moved down one with everything
+  else and gate the same two moments.
+
+- **Recorded traces are v3 — replaying the archive after the renumbering.** A trace stores the level NAME it
+  was recorded on, so every existing recording (the shipped intro asset included) names a level one too
+  high. Caught by `22-intro-replay`, which stopped winning: playback resolved `/api/levels/level-1` and
+  re-simmed "Level 1" with input recorded on the intro (`kills=4 enemiesLeft=2 won=false`). `TRACE_VERSION`
+  went to 3 purely as a marker, and the new pure `traceLevelName()` shifts v1/v2 traces down one at the
+  single boundary where a stored name is read. A blanket alias in `normalizeLevelName` was rejected —
+  `level-1` is a perfectly good CURRENT name, so aliasing it would break the live campaign to fix the
+  archive. Nothing on S3 was rewritten. Intro guard back to byte-identical (kills=4, cards p0..p4,
+  tick 2213/2730).
+
+- **The factory fight moved to "Level 3", and Take off is a take-off again.** The combat centre sits on the
+  level AFTER the one that drops the repair drone — the first to field a real boss (`first pirate boss`;
+  Level 2's `pirate mini boss` is the mid-boss its own victory text calls it) — which is also what
+  `docs/narrative/canon.md` has always said ("Level 2 — reach the weapons factory", "Level 3 — take the
+  factory"). It had been put on Level 2 by mistake. Pressing **Take off** on a level that names a `center`
+  no longer drops you into the fight at that centre: it launches you from the **home base** and you fly out,
+  the fight starting when you cross into the zone. Levels without a `center` fight at the origin and are
+  untouched. En route: the seed's inline `text` fallback for `level.3.briefing` was a stale copy that
+  predated the canon rewrite (drone only, no factory assault) — synced to the i18n source, which is the
+  single source of truth the player actually sees.
+
+- **Take off, fly to the mission, and it starts — for EVERY campaign level.** Crossing within **200 u** of
+  the ACTIVE campaign mission's centre starts a **3-second countdown** on the HUD
+  ("Contact in 3…" / "Контакт через 3…"), and then the fight simply begins there. Flying back out **cancels**
+  it, and it can't re-fire without leaving and returning. Gated exactly as asked — it arms **only when that
+  mission is the active one**: `mainwindow.enterRoam` sets `G.missionZone` only when no side mission is
+  taken (`activeMissionId == null`). The centre comes from `runCenter`, so a level that names one is its own
+  place in the system and **every other level is the origin** — which is the base you take off from, so
+  those missions start right after take-off. That is the point: if pirates are sitting on your station you
+  fight them, you do not stroll past. Reached however you get there — autopilot cruise or hand-flown (the
+  check sits outside sim.js's autopilot/manual split). **Take off no longer starts a fight directly at all**:
+  `launchCampaign` always launches you at the base and hands over to the countdown; only the countdown's
+  `engage: true` return trip starts the level (and arms the session recorder).
+  Two things the ship does NOT do, both fixed after play-testing: **taking off never teleports you to the
+  mission** (in roam `reset()` spawns at the origin — the home station — no matter where the level names its
+  centre; before this, Take off on the factory level dropped you straight at the factory), and **arriving
+  never re-positions you** (`reset({ keepPlayer: true })` on the engage path keeps the ship's position,
+  heading and velocity, so the enemies come to you and the fight opens mid-flight instead of snapping you to
+  a standstill at the arena centre). Both are pinned in `33-space-factory`.
+  **And the handover costs nothing.** Starting the fight used to re-tear-down and rebuild the map's seven
+  set-pieces — re-fetching and re-parsing every `.glb` for a world that was already standing, identical —
+  and `levelRunner.start()` pulled in the enemy models on that same frame. Measured: **3 `.glb` loads in
+  flight on the engage frame**. Now `reset({ keepWorld: true })` keeps the existing set-pieces (a cold start
+  still rebuilds them, which is what resets the cruising freighter), and the **countdown is spent warming**
+  the enemy models + the last-kill reward model, so the frame the mission starts kicks off nothing at all.
+  The scenario asserts `pendingAssets === 0` and an unchanged parsed-model count on that exact frame; both
+  fail (3 in flight) if `keepWorld` is dropped.
+  One exception, or the star system would be unreachable on four levels out of five: **a countdown never
+  runs while you are on your way somewhere else** — an autopilot cruising to a point outside the zone (a
+  planet, a belt outpost) or a dock autopilot heading for the home station. Picking a destination is an
+  explicit "not now"; without it, every trip out died three seconds after take-off and the "Dock at the
+  station?" prompt was eaten by the fight starting first. A destination INSIDE the zone (the factory anchor
+  is ~131 u from the Level 3 centre) is not "somewhere else" — that trip is how you reach the mission. The countdown itself is the pure, unit-tested **`stepMissionZone`** seam in `level-sim.js`
+  (arm on entry / cancel on exit / fire once / NaN-safe), and the 200 u radius is pinned by a test against
+  the ~131 u gap between the map's factory destination and the level centre — too tight and arriving by
+  autopilot would park you just outside and nothing would ever happen. The `33-space-factory` visual
+  scenario drives the whole thing on the real engine: sit outside → nothing; cross in → the count runs and
+  the banner is actually **painted at full opacity** (the count is stepped in `update()` but drawn in the
+  render pass, so the test lets real frames run rather than trusting `stepSim`); leave → cancels; stay →
+  roam ends and the arena is centred at the factory.
+
+- **"Level 2" now fights AT the Space Factory — and a campaign level can finally name its own combat
+  centre.** The level whose briefing sends you to the weapons factory (and the first with a `boss` phase,
+  the `pirate mini boss`) now spawns you **30 u up-left of the factory** at `(-450,-435)` instead of the
+  origin, so you arrive with the station sprawling down-right of you. Getting there needed a real fix:
+  `sim.js` resolved the combat centre from `G.activeMission.center` alone, which is **null for the
+  campaign** — a `center` on a campaign level descriptor was accepted by the seed and **silently ignored**,
+  pinning every campaign run to (0,0). Extracted the resolution into a pure **`runCenter(activeMission,
+  levelDescriptor)`** seam in `level-sim.js` (active side mission wins → else the level's own → else the
+  origin, NaN-proofed per axis) and unit-tested it, including a guard that **exactly one** campaign level
+  names a centre, that it is the boss/factory level, and that it stays pinned to the set-piece position
+  + (-30,-30). The `33-space-factory` visual scenario drives the campaign path through the real `reset()`
+  and asserts the arena and the player spawn land there, with a frame to eyeball.
+  Note when tuning: the post-victory return-to-base flight for this level is now ~570 u instead of ~85 u
+  (the dock autopilot is uncapped, so a cruise), and any session replay of `level-3` recorded before today
+  starts from the old origin spawn. `22-intro-replay` re-verified byte-identical (Level 0 has no centre).
+
+- **New system object: the Space Factory.** An orbital industrial ring station now sits at **(-350, -350)**
+  — up-left of the home planet, ~495 u out, about **two screens diagonally** at zoom 1 (a screen is
+  ~204 x 115 u). It is a **first-class navigation destination**: `ANCHORS.factory` + a `listSystemObjects`
+  entry (new `kind: 'factory'`) in `client/src/system-map.js`, so it draws a marker on the system map, is
+  listed and selectable in the object panel, and autopilot flies to it — with a matching **`space-factory`
+  set-piece** in `catalog_seed.js`, so arriving finds the station rather than empty space.
+  It carries **no mission**. Deliberately the system's one SHORT hop: it sits just past the base activity
+  zone (`ZONE_RADIUS` 360), against the ~1000 u belt/science crossings. Names are i18n'd (EN
+  "Space Factory" / RU "Орбитальный завод", plus the `Factory` / `Завод` kind label).
+  `world.js`'s `makeBaseStation` was generalized into a shared **`makeStationModel`** (async center/scale/
+  `yaw` normalization + slow spin) that both station set-pieces use; `STATION_LEN` normalizes the factory to
+  **120 u** against the base station's 100, so it reads as the bigger facility (~85% of the frame height at
+  its depth) without overflowing the frame. The model is placed **(-70,-55) off the anchor**, not on it:
+  centred, autopilot parked the ship dead on the station's brightest point and the ~15 u ship vanished into
+  the 120 u structure — caught by looking at the rendered frame, not by any assertion. New guards: a unit
+  test pins that **every navigation anchor with a physical set-piece matches the seed position** (offset
+  included, `system-map.test.js` importing `MAPS`) — drift there is a silent bug that only shows up as
+  autopilot parking you in empty space — and a new **`33-space-factory` visual scenario** flies to the
+  anchor and asserts the station is on-screen, covers a sane fraction of the viewport (not a speck, not the
+  whole frame) and stays entirely below the flight plane. `32-star-system`'s two hard-coded object counts
+  (10 → 11) were updated with it. `22-intro-replay` re-verified byte-identical (kills=4, cards p0..p4,
+  tick 2213/2730) — a set-piece is decor and draws no seeded RNG (DECISIONS §73).
+
+- **Asset: `space_factory_combat` (CC-BY, rivetech) — 6.7 MB source → 159 KB.** The model is
+  texture-dominated (4.6 MB of it is eight 1024² PNGs, ~45 MB of VRAM, against ~2 MB of geometry), so a new
+  `space_factory` preset override in `scripts/assets-config.mjs` shrinks every texture to **256px WebP** —
+  159 KB download, **~2.8 MB VRAM** (down from 44.7 MB). It sets `pruneSolidTextures: false` because the
+  emissive maps are mostly black with small lit windows, exactly what `optimize`'s solid-texture heuristic
+  flattens — which would have made the whole hull glow. 256 rather than the metal box's 128 because the
+  station is big on screen. CREDITS.md gained its row + verbatim CC-BY attribution, and `credits-data.js`
+  was regenerated.
+
 ## 2026-08-09
 
 - **Mission count badge on the base menu.** The **Missions** item now carries the same gold pill the

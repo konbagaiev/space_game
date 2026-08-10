@@ -8,7 +8,7 @@ export default async function ({ page, assert, shot }) {
   const pid = await page.evaluate(() => localStorage.getItem('playerId'));
   assert.ok(pid, 'a player id is present');
 
-  // Advance past the intro (level-1) so the reload lands on the Main Window rather than auto-launching the
+  // Advance past the intro (level-0) so the reload lands on the Main Window rather than auto-launching the
   // intro cutscene; then bank 2500 XP → character level 2 with 2 unspent skill points (curve: 1000 to L1,
   // +1500 to L2).
   await page.evaluate(async (pid) => {

@@ -436,14 +436,23 @@ export const SHIPS = [
 //   { killsSincePhase: N }  — N kills since entering this phase
 //   { allCleared: true }    — no enemies left (and the phase's `total` has all spawned)
 // A phase with `event: 'win'` ends the level with a victory overlay.
+// ONE NUMBER PER LEVEL, EVERYWHERE. `id`, `name` and the displayed `title` all carry the SAME campaign
+// number, 0-based, with 0 = the intro: id 3 is `level-3` is "Level 3". `players.current_progress` is that
+// id, so it reads as the level number too. This used to be three numbers off by one from each other (row
+// `level-4` = "Level 3" = progress 4), which cost real debugging time twice in one session — see
+// DECISIONS. The ids are EXPLICIT here and seeded with `ON CONFLICT (id)` precisely so they stay put: the
+// old name-keyed upsert burned a sequence value every boot and let ids drift (production reached
+// 1, 6, 7, 71, 564), which is fine when nothing reads them and fatal once they mean the level number.
+// Adding a level means giving it the next id AND title; renumbering existing ones needs a migration
+// (db.js `levels_zero_based_ids` is the worked example).
 export const LEVELS = [
-  // Level 0 — the intro patrol. Gentle, non-skippable FIRST level for new players (the campaign's
-  // "Level 1"-"Level 4" moved down one id — see docs/plans/2026-07-08-2224-intro-first-level.md).
+  // Level 0 — the intro patrol. Gentle, non-skippable FIRST level for new players
+  // (see docs/plans/2026-07-08-2224-intro-first-level.md).
   // Enemies warp in ONE AT A TIME (maxConcurrent 1) so it plays as a calm, recordable opener.
   // No boss, no reward, no briefing. On first launch the client auto-launches this level straight into
   // the fight (no welcome screen / Take-off) — see the client bootstrap change (main.js) in the plan.
   {
-    name: 'level-1', descriptor: {
+    id: 0, name: 'level-0', descriptor: {
       title: 'Level 0', xpReward: 0, map: 'home-system', // intro/tutorial: no XP bonus (no reward, per below)
       // The canonical input-replay recording the intro CUTSCENE plays (a real Level-0 playthrough). Served
       // same-origin from S3 via assets:pull (content-hashed → new recording = new URL). The client bootstrap
@@ -466,7 +475,7 @@ export const LEVELS = [
   },
   // Level 1 (old content, now id 2) — beginner-friendly: gentle ramp, no boss.
   {
-    name: 'level-2', descriptor: {
+    id: 1, name: 'level-1', descriptor: {
       title: 'Level 1', xpReward: 500, map: 'home-system', // one-shot XP bonus on victory (client-summed, DECISIONS)
       lastKillDrop: { kind: 'weapon', refId: 5 },   // cosmetic reward drop on the last enemy (Machine Gun); server force-installs the real copy on victory
       // Shown in the Main Window when the player reaches Level 1 (right after the Level 0 intro cutscene) — the
@@ -501,7 +510,7 @@ export const LEVELS = [
   // `briefing` is shown when the player unlocks this level (after clearing level 1); its `actions`
   // run server-side once, on advance (see advanceProgress). Here: swap the basic gun for a Machine Gun.
   {
-    name: 'level-3', descriptor: {
+    id: 2, name: 'level-2', descriptor: {
       title: 'Level 2', xpReward: 500, map: 'home-system',
       lastKillDrop: { kind: 'component', refId: 12 }, // cosmetic reward drop on the last enemy (Repair drone)
       briefing: {
@@ -541,11 +550,22 @@ export const LEVELS = [
   // Level 3 — the full fight: waves of all three enemy types, then the Sector boss.
   // Briefing shown when the player reaches level 3 (after clearing level 2). Installs the repair drone.
   {
-    name: 'level-4', descriptor: {
+    id: 3, name: 'level-3', descriptor: {
       title: 'Level 3', xpReward: 700, map: 'home-system',
+      // THE ONE CAMPAIGN LEVEL THAT DOES NOT FIGHT AT (0,0). This is the level AFTER the one that drops the
+      // repair drone, and the first to field a real boss (`first pirate boss`; Level 2's `pirate mini boss`
+      // is the mid-boss its own victory text calls it) — so it takes place AT the Space Factory: 30 u
+      // up-left of the `space-factory` set-piece at (-420,-405). Read by the `runCenter` seam
+      // (client/src/level-sim.js) → sim.js reset(), which centres the arena, its border and the enemy
+      // spawns here. Every other level omits `center` and keeps the origin.
+      // Because it names a centre, Take off does NOT drop you into the fight: it launches you at the home
+      // base and you fly out, and crossing into the zone starts the fight (mainwindow.launchCampaign →
+      // sim.js checkMissionZone). The post-victory return-to-base flight is ~570 u instead of ~85 u — the
+      // dock autopilot is uncapped, so it is a cruise, not a crawl.
+      center: { x: -450, z: -435 },
       briefing: {
         textKey: 'level.3.briefing',
-        text: "I see you salvaged a repair drone from that last fight, Sentinel — good. It's fitted and will patch your hull mid-battle, a little at a time. If you take heavy damage, peel off to a quiet corner and let it work.",
+        text: "You salvaged a repair drone last push — it's fitted, patching your hull a little at a time; if you're getting torn up, break off to a quiet corner and let it work. Now the hard part, Sentinel: the factory itself. They've parked something big over it — the first real warship we've run into out here. Put it down and the factory's ours.",
         actions: [{ type: 'installComponent', slot: 'repair', component: 12 }],
       },
       phases: [
@@ -591,7 +611,7 @@ export const LEVELS = [
   // than L3: pirate gunners + more heavies, higher kill thresholds, and the upgraded boss (two pirate MGs).
   // Sets up L5 ("Storm the pirate base").
   {
-    name: 'level-5', descriptor: {
+    id: 4, name: 'level-4', descriptor: {
       title: 'Level 4', xpReward: 1500, map: 'home-system',
       briefing: {
         textKey: 'level.4.briefing',
@@ -762,6 +782,26 @@ export const MAPS = [
         {
           type: 'base-station', pos: [-10, -42, -10], scale: 1.0, spin: 0.03, // just up-left of the arena center (screen top-left = -z/-x)
           modelUrl: 'assets/ships/base_station_combat.529dee5e.glb',
+          yaw: 0, // a station has no "nose"; 0 reads fine top-down
+        },
+        // Space Factory — an industrial ring station roughly two screens up-left of the home planet
+        // (a screen is ~204 x 115 u at zoom 1), i.e. a short hop past the base's activity zone rather than
+        // a belt-scale crossing. A navigation destination only: NO mission, so no four-way invariant, but
+        // its (x,z) MUST match ANCHORS.factory in client/src/system-map.js or the map would fly you to empty
+        // space (pinned by client/src/system-map.test.js). Same builder as the base station (a spinning
+        // below-plane .glb) but normalized to 120 u rather than 100, so it reads as a bigger facility than
+        // the home station — ~85% of the frame height at its depth. See the sizing + vertical-extent notes
+        // in world.js for why pos.y is -28.
+        //
+        // FRAMING OFFSET. The model is NOT centred on the anchor: it is pushed (-70, -55) off it, i.e.
+        // up-left on screen (the same -x/-z framing the base station uses against the arena spawn, and the
+        // celestial bodies use via SYSTEM.offset). Centred, autopilot parks the ship dead on the station's
+        // brightest, busiest point and the ship — ~15 u against a 120 u station — simply vanishes into it.
+        // Offset, you pull up BESIDE the factory with it filling the upper-left. The offset is pinned in
+        // client/src/system-map.test.js so it can't silently drift into "autopilot lands you nowhere".
+        {
+          type: 'space-factory', pos: [-420, -28, -405], scale: 1.0, spin: 0.02,
+          modelUrl: 'assets/ships/space_factory_combat.0fc2ca0b.glb',
           yaw: 0, // a station has no "nose"; 0 reads fine top-down
         },
       ],

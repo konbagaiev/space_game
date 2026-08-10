@@ -144,8 +144,9 @@ function pageShell({ title, heading, ths, rows, nav = '' }) {
     </script></body></html>`;
 }
 
-// The players-table "progress" cell. `current_progress` is a raw level id (an FK into the levels table)
-// and is off by one from the level's player-facing title, so render the TITLE + a bar + n/N instead.
+// The players-table "progress" cell. `current_progress` is a level id (an FK into the levels table) and
+// since the 0-based renumbering it IS the campaign level number — but render the TITLE + a bar + n/N
+// anyway, so the column reads as progress rather than as a bare id.
 // `levels` is the id-ordered [{ id, title }] list from getLevels(); both N (levels.length) and the
 // ordinal n are derived from it — never hardcoded. A ✔ marks the LAST level. Exported for unit tests.
 // Unknown/unresolvable progress (id not in the list, or no levels) → the raw number, as before.

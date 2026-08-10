@@ -89,6 +89,18 @@ export const PRESET_OVERRIDES = {
   maneuver_thruster: {
     hangar: { textureSize: 256, textureCompress: 'webp' },
   },
+  // Space Factory set-piece (a wide, flat ring station). The source is 6.7 MB of which 4.6 MB is TEXTURES:
+  // eight 1024² PNGs (baseColor / metallicRoughness / emissive / normal x 2 materials) costing ~45 MB of
+  // VRAM. Geometry is trivial by comparison (23 k verts, 33 primitives, ~2 MB). So the whole win is in the
+  // texture pass: 256px + WebP cuts the download to KB-scale and VRAM to ~2.8 MB. 256 (not 128, which the
+  // metal box uses) because this thing is BIG on screen — normalized to 100 u across it fills half the
+  // frame at zoom 1, where 128px panels read as mush. `pruneSolidTextures: false` protects the emissive
+  // maps: they are mostly black with small lit windows, exactly the low-contrast shape optimize's
+  // solid-texture heuristic likes to flatten — and flattening emissive would make the whole hull glow.
+  space_factory: {
+    combat: { textureSize: 256, textureCompress: 'webp', pruneSolidTextures: false },
+    hangar: { textureSize: 256, textureCompress: 'webp', pruneSolidTextures: false }, // never shown in a menu; keep it small on S3 too
+  },
   // Asteroid pack (3 rock meshes in one .glb) used BOTH up-close (the mission asteroid-field rocks/hosts)
   // and far away as the parallax backdrop field (hundreds of INSTANCES). Source is a 4.5 MB textured pack;
   // shrink textures hard (256px → WebP) and simplify geometry to ~half so a big instanced field stays cheap.

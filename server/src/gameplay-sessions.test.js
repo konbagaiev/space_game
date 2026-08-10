@@ -21,24 +21,24 @@ const adminAuth = { Authorization: 'Basic ' + Buffer.from('admin:secret').toStri
 
 // v1 (flat ticks) — still accepted: traces recorded before 2026-08-03 and the shipped intro asset use it.
 const sampleTrace = (n = 200) => ({
-  version: 1, kind: 'input-replay', id: null, level: 'level-1', seed: 42, dt: 1 / 60,
+  version: 1, kind: 'input-replay', id: null, level: 'level-0', seed: 42, dt: 1 / 60,
   shipId: 1, loadout: null, components: null, ticks: Array.from({ length: n }, () => ({ k: [], t: null })),
 });
 // v2 (run-length packed) — what the client sends now.
 const packedTrace = (n = 200, runs = 1) => ({
-  version: 2, kind: 'input-replay', id: null, level: 'level-1', seed: 42, dt: 1 / 60,
+  version: 2, kind: 'input-replay', id: null, level: 'level-0', seed: 42, dt: 1 / 60,
   shipId: 1, loadout: null, components: null, tickCount: n,
   runs: Array.from({ length: runs }, (_, i) => [{ k: i % 2 ? ['KeyW'] : [], t: null }, Math.ceil(n / runs)]),
 });
 
 test('recordSession + getAdminSessions round-trips numbers and a real playerId', async () => {
-  await recordSession({ id: 'gs-real', playerId: 'player-abc', level: 'level-2', outcome: 'win',
+  await recordSession({ id: 'gs-real', playerId: 'player-abc', level: 'level-1', outcome: 'win',
     durationMs: 12345, kills: 7, s3Key: 'recordings/sessions/gs-real.json', gameVersion: 'testsha1234' });
   const rows = await getAdminSessions(500);
   const row = rows.find((r) => r.id === 'gs-real');
   assert.ok(row, 'row should be returned');
   assert.equal(row.playerId, 'player-abc');
-  assert.equal(row.level, 'level-2');
+  assert.equal(row.level, 'level-1');
   assert.equal(row.outcome, 'win');
   assert.strictEqual(row.durationMs, 12345);
   assert.strictEqual(row.kills, 7);
@@ -47,7 +47,7 @@ test('recordSession + getAdminSessions round-trips numbers and a real playerId',
 });
 
 test('recordSession accepts a null playerId (anon)', async () => {
-  await recordSession({ id: 'gs-anon', playerId: null, level: 'level-1', outcome: 'death',
+  await recordSession({ id: 'gs-anon', playerId: null, level: 'level-0', outcome: 'death',
     durationMs: 3000, kills: 0, s3Key: 'recordings/sessions/gs-anon.json', gameVersion: null });
   const rows = await getAdminSessions(500);
   const row = rows.find((r) => r.id === 'gs-anon');
@@ -64,7 +64,7 @@ test('getSessionS3Key returns the key, null for an unknown id', async () => {
 // Guard: gameplay_sessions must be a DISTINCT table from the auth `sessions` token store — a future
 // rename that re-collides would silently no-op the CREATE TABLE and break every insert.
 test('gameplay_sessions is separate from the auth `sessions` table', async () => {
-  await recordSession({ id: 'gs-sep', playerId: null, level: 'level-1', outcome: 'quit',
+  await recordSession({ id: 'gs-sep', playerId: null, level: 'level-0', outcome: 'quit',
     durationMs: 5000, kills: 1, s3Key: 'recordings/sessions/gs-sep.json', gameVersion: 'testsha1234' });
   // The auth sessions table has no `id` column and never holds our gameplay row.
   const { rows } = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'sessions'");
@@ -77,12 +77,12 @@ test('gameplay_sessions is separate from the auth `sessions` table', async () =>
 
 test('POST /api/sessions: valid body → 204 and a DB row (S3 no-ops without creds)', async () => {
   const r = await post('/api/sessions', {
-    playerId: 'p-route', trace: sampleTrace(200), level: 'level-3', outcome: 'win', durationMs: 8000, kills: 4,
+    playerId: 'p-route', trace: sampleTrace(200), level: 'level-2', outcome: 'win', durationMs: 8000, kills: 4,
   });
   assert.equal(r.status, 204);
   const { rows } = await pool.query("SELECT * FROM gameplay_sessions WHERE player_id = 'p-route'");
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].level, 'level-3');
+  assert.equal(rows[0].level, 'level-2');
   assert.equal(rows[0].outcome, 'win');
   assert.equal(rows[0].game_version, 'testsha1234'); // server stamps SENTRY_RELEASE
   assert.match(rows[0].s3_key, /^recordings\/sessions\/.+\.json$/);
@@ -90,7 +90,7 @@ test('POST /api/sessions: valid body → 204 and a DB row (S3 no-ops without cre
 
 test('POST /api/sessions: a run-length packed (v2) trace is accepted → 204 and a row', async () => {
   const r = await post('/api/sessions', {
-    playerId: 'p-packed', trace: packedTrace(600, 3), level: 'level-2', outcome: 'death', durationMs: 10000, kills: 2,
+    playerId: 'p-packed', trace: packedTrace(600, 3), level: 'level-1', outcome: 'death', durationMs: 10000, kills: 2,
   });
   assert.equal(r.status, 204);
   const { rows } = await pool.query("SELECT * FROM gameplay_sessions WHERE player_id = 'p-packed'");
@@ -104,11 +104,11 @@ test('POST /api/sessions: a run-length packed (v2) trace is accepted → 204 and
 test('POST /api/sessions: re-posting the same client id UPSERTS one row instead of duplicating', async () => {
   const id = 'client-session-abc123';
   const provisional = await post('/api/sessions', {
-    id, playerId: 'p-upsert', trace: packedTrace(300), level: 'level-4', outcome: 'quit', durationMs: 5000, kills: 0,
+    id, playerId: 'p-upsert', trace: packedTrace(300), level: 'level-3', outcome: 'quit', durationMs: 5000, kills: 0,
   });
   assert.equal(provisional.status, 204);
   const final = await post('/api/sessions', {
-    id, playerId: 'p-upsert', trace: packedTrace(900), level: 'level-4', outcome: 'win', durationMs: 15000, kills: 6,
+    id, playerId: 'p-upsert', trace: packedTrace(900), level: 'level-3', outcome: 'win', durationMs: 15000, kills: 6,
   });
   assert.equal(final.status, 204);
 
@@ -123,7 +123,7 @@ test('POST /api/sessions: re-posting the same client id UPSERTS one row instead 
 // The upsert must not let one player's re-post rewrite another player's row (client-supplied ids). The
 // `written:false` it reports is also what stops the route from overwriting that session's S3 trace.
 test('recordSession: an id owned by another player is never overwritten', async () => {
-  const mine = await recordSession({ id: 'gs-owned', playerId: 'owner', level: 'level-1', outcome: 'win',
+  const mine = await recordSession({ id: 'gs-owned', playerId: 'owner', level: 'level-0', outcome: 'win',
     durationMs: 1000, kills: 1, s3Key: 'recordings/sessions/gs-owned.json', gameVersion: null });
   assert.equal(mine.written, true);
   const theirs = await recordSession({ id: 'gs-owned', playerId: 'intruder', level: 'level-9', outcome: 'death',
@@ -136,28 +136,28 @@ test('recordSession: an id owned by another player is never overwritten', async 
 });
 
 test('POST /api/sessions: junk body (no ticks) → 400', async () => {
-  const r = await post('/api/sessions', { trace: { ticks: [] }, level: 'level-1', outcome: 'win' });
+  const r = await post('/api/sessions', { trace: { ticks: [] }, level: 'level-0', outcome: 'win' });
   assert.equal(r.status, 400);
 });
 
 test('POST /api/sessions: a packed trace with no runs → 400', async () => {
-  const r = await post('/api/sessions', { trace: { ...packedTrace(200), runs: [], tickCount: 0 }, level: 'level-1', outcome: 'win' });
+  const r = await post('/api/sessions', { trace: { ...packedTrace(200), runs: [], tickCount: 0 }, level: 'level-0', outcome: 'win' });
   assert.equal(r.status, 400);
 });
 
 test('POST /api/sessions: oversized ticks → 413', async () => {
-  const r = await post('/api/sessions', { trace: { ...packedTrace(200), tickCount: 120001 }, level: 'level-1', outcome: 'win' });
+  const r = await post('/api/sessions', { trace: { ...packedTrace(200), tickCount: 120001 }, level: 'level-0', outcome: 'win' });
   assert.equal(r.status, 413);
 });
 
 test('POST /api/sessions: too many runs → 413', async () => {
   const trace = { ...packedTrace(200), runs: Array.from({ length: 25001 }, () => [{ k: [], t: null }, 1]), tickCount: 25001 };
-  const r = await post('/api/sessions', { trace, level: 'level-1', outcome: 'win' });
+  const r = await post('/api/sessions', { trace, level: 'level-0', outcome: 'win' });
   assert.equal(r.status, 413);
 });
 
 test('POST /api/sessions: bad outcome → 400', async () => {
-  const r = await post('/api/sessions', { trace: sampleTrace(200), level: 'level-1', outcome: 'bogus' });
+  const r = await post('/api/sessions', { trace: sampleTrace(200), level: 'level-0', outcome: 'bogus' });
   assert.equal(r.status, 400);
 });
 

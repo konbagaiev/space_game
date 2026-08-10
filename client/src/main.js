@@ -29,7 +29,7 @@ import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.j
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
-import { evalRecord, evalPlayback, normalizeLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
+import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
@@ -906,6 +906,7 @@ if (location.search.includes('debug')) {
     setPieces, arenaCenter, // mission set-pieces + the (drifting) arena center
     setArenaDrift(x, z) { G.arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
     get activeMission() { return G.activeMission; }, // the side mission being played (null = campaign)
+    get missionZone() { return G.missionZone; },     // diagnostic: the armed fly-into-it zone + its live countdown
     get missionOffers() { return missionOffers; },
     get activeMissionId() { return activeMissionId; }, // the persisted active mission id (null = campaign) — Slice B board
     // the granted-item showcase (work zone): the glb url shown, or null when the showcase is hidden
@@ -1216,7 +1217,7 @@ export function beginLiveSession() {
   const shipId = (CATALOG.shipByName.get(G.currentShipName) || {}).id ?? 1;
   const activeMatches = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === G.currentShipName;
   sr.begin({
-    seed, level: CATALOG.levelName || 'level-1', shipId,   // the SEED NAME (level-N), stashed at each CATALOG.level set (C2a)
+    seed, level: CATALOG.levelName || 'level-0', shipId,   // the SEED NAME (level-N), stashed at each CATALOG.level set (C2a)
     loadout: activeMatches ? G.activeShip.loadout : null,
     components: activeMatches ? G.activeShip.components : null,
     dt: BENCH_DT,
@@ -1264,7 +1265,7 @@ function startPlaybackSession(trace) {
   settleView(); // frame the camera + sky on the (reset) player NOW, so the frozen P0 frame doesn't jump on play
   // ?playback&cutscene on the intro level → overlay the event-driven Level-0 pauses (freeze + localized card)
   // instead of the plain playback bar; the opening card (P0) freezes before the first tick until tapped.
-  if (rs.play.cutscene && normalizeLevelName(trace.level) === LEVEL0_CUTSCENE.level) {
+  if (rs.play.cutscene && traceLevelName(trace) === LEVEL0_CUTSCENE.level) {
     rs.cut = LEVEL0_CUTSCENE;
     cutsceneStart();
   } else {
@@ -1567,7 +1568,7 @@ async function bootstrap() {
     await registerBoot();
 
     // The level comes from the player's progress (their highest unlocked level); fall back to
-    // level-1 if the player isn't identified (e.g. localStorage blocked).
+    // level-0 if the player isn't identified (e.g. localStorage blocked).
     // ?playback: load the recorded trace up front so the recorded LEVEL drives the level fetch below.
     if (rs.play) {
       rs.trace = await loadTrace(rs.play.id);
@@ -1580,8 +1581,8 @@ async function bootstrap() {
     }
     // ?record forces the requested level; ?playback uses the recorded level; otherwise the player's progress level.
     const levelUrl = REC ? `/api/levels/${REC.level}`
-      : rs.play ? `/api/levels/${normalizeLevelName(rs.trace.level)}`
-      : G.playerId ? `/api/players/${G.playerId}/level` : '/api/levels/level-1';
+      : rs.play ? `/api/levels/${traceLevelName(rs.trace)}`  // pre-v3 traces name the pre-renumbering level
+      : G.playerId ? `/api/players/${G.playerId}/level` : '/api/levels/level-0';
     const [weapons, components, ships, level, sounds] = await Promise.all([
       fetchJson('/api/weapons'), fetchJson('/api/components'),
       fetchJson('/api/ships'), fetchJson(levelUrl), fetchJson('/api/sounds').catch(() => ({ sounds: [], map: [] })),
@@ -1626,7 +1627,7 @@ async function bootstrap() {
     camera.position.copy(G.player.mesh.position).add(camOffset);
     camera.lookAt(G.player.mesh.position);
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
-    // The intro ("Level 0", seed name 'level-1', served only while current_progress === 1) has NO menu
+    // The intro ("Level 0", seed name 'level-0', served only while current_progress === 0) has NO menu
     // gate: drop the new player straight into the fight — ship visible + controllable at once, no welcome
     // screen, no Take-off. Everything else lands as before (Level 1 → welcome, level 2+ → Main Window
     // briefing). The default player ship was already built above (buildPlayerFor), so we just start the sim.
@@ -1642,8 +1643,8 @@ async function bootstrap() {
       enterRecordMode(); // idle on the real ship; "Start recording" begins capture from tick 0
     } else if (rs.play) {
       startPlaybackSession(rs.trace); // re-run the recorded fight on the real engine
-    } else if (level.name === 'level-1') {
-      // Intro. Server-authoritative one-time gate: `introTrace` is on the level-1 descriptor the server
+    } else if (level.name === 'level-0') {
+      // Intro. Server-authoritative one-time gate: `introTrace` is on the level-0 descriptor the server
       // serves ONLY while current_progress===1 (a NEW or freshly RESET player) → WATCH the CUTSCENE, then
       // finishIntro advances to Level 1. A genuine progress reset REPLAYS the intro (no localStorage flag).
       // Headless (?debug/?bench suites) or no recording → the PLAYABLE Level 0 (the arena the harnesses

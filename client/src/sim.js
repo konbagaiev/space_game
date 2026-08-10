@@ -19,7 +19,7 @@ import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups, preloadLevelShipModels } from './ship-build.js';
 import { stepSpawnGate } from './spawn-timing.js';
 import { simRandom } from './sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
-import { isLastKillDrop } from './level-sim.js';
+import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './level-sim.js';
 import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock, BASE_ARRIVE_RADIUS } from './autopilot-config.js';
@@ -344,6 +344,58 @@ function checkStationArrival() {
   if (typeof G.onBaseArrival === 'function') G.onBaseArrival();
 }
 
+// Flying into the ACTIVE campaign mission's neighbourhood while roaming. `G.missionZone` is set by the roam
+// entry point (mainwindow.enterRoam) and is null unless the campaign is the active choice AND its level
+// names a `center` — so the gating ("only when THAT mission is active") lives where `activeMissionId` is
+// known, and this is pure geometry + a countdown. Reached however you got there: autopilot or hand-flown.
+function checkMissionZone(dt) {
+  const z = G.missionZone;
+  if (!G.roam || !z || !G.player) return;
+  // A countdown never runs while you are on your way somewhere ELSE. Picking a destination on the map is an
+  // explicit "not now", and it has to be, because a level that fights at the origin puts its zone around the
+  // base you take off from: without this, the first three seconds of every trip out into the system would
+  // drop you into that level's fight instead, and the star system would be unreachable on four levels out of
+  // five. A destination INSIDE the zone (the factory anchor is ~131 u from the Level 3 centre) is not
+  // "somewhere else" — that trip is how you get to the mission, so it counts down on arrival as it should.
+  // Docking counts too: clicking the home station asks to go INSIDE, and the station sits within the origin
+  // zone, so without this the countdown would start the fight before the "Dock at the station?" prompt.
+  const tgt = G.autopilot.active ? G.autopilot.target : null;
+  const elsewhere = tgt && (tgt.kind === 'station'
+    || (tgt.kind === 'point'
+        && Math.hypot(tgt.pos.x - z.center.x, tgt.pos.z - z.center.z) > MISSION_ZONE_RADIUS));
+  if (elsewhere) {
+    if (z.t != null) G.banner.life = 0;
+    z.t = null;
+    return;
+  }
+  const p = G.player.mesh.position;
+  const r = stepMissionZone(z, { dist: Math.hypot(p.x - z.center.x, p.z - z.center.z), dt });
+  const wasCounting = z.t != null;
+  // The countdown is three seconds of nothing happening — spend them fetching and parsing what the fight is
+  // about to need, so the moment it starts costs nothing. Without this the enemy models (and the last-kill
+  // reward model) are pulled in by levelRunner.start() on the very frame the mission engages, which is felt
+  // as a jerk. Once per arming; both preloads are idempotent caches.
+  if (!wasCounting && r.t != null && !z.warmed) {
+    z.warmed = true;
+    const lvl = CATALOG.level;
+    if (lvl) {
+      preloadLevelShipModels(lvl);
+      const lkd = lvl.lastKillDrop;
+      if (lkd && !ownsReward(lkd)) preloadRewardModel(lkd);
+    }
+  }
+  if (r.t == null) z.warmed = false; // left the zone → warm again on the next approach (cheap: cached)
+  z.t = r.t;
+  if (r.t != null && !r.fire && r.t > 0) {
+    // hold the banner at full opacity while it counts (showBanner fades over its lifetime)
+    showBanner(t('ui.roam.engaging', { n: Math.ceil(r.t) }), 1);
+    G.banner.life = G.banner.maxLife;
+  } else if (wasCounting && r.t == null) {
+    G.banner.life = 0; // left the zone → drop the countdown banner immediately
+  }
+  if (r.fire && typeof G.onMissionZoneEnter === 'function') G.onMissionZoneEnter();
+}
+
 // ---------- Homing arrow + HUD hint (world-space arrow + DOM hint) ----------
 let returnArrow = null;
 function ensureReturnArrow() {
@@ -463,6 +515,10 @@ export function update(dt) {
     || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight']
     || keys['Space'] || keys['KeyF'] || keys['_rocket']; // KeyF = keyboard rocket, _rocket = touch/mouse 🚀 button
   if (G.autopilot.active && manual) { G.autopilot.active = false; G.autopilot.target = null; }
+
+  // Outside the autopilot/manual split on purpose: flying into the active mission's zone starts it however
+  // you got there — autopilot cruise, or hand-flown after cancelling it.
+  checkMissionZone(dt);
 
   let fwd;
   if (G.autopilot.active) {
@@ -940,7 +996,15 @@ export function autoPauseOnBlur() {
 // Clear all transient entities/FX, recenter the (possibly drifting) arena, rebuild the map's set-pieces,
 // respawn the player at full health, and (re)start the level. Called by the UI flows (take-off, the
 // overlay Restart/Continue) — imported by them from here.
-export function reset() {
+// `keepPlayer` — start the level WITHOUT moving the ship. Used when a mission begins because you FLEW to
+// it: you are already at the fight, and yanking the ship to the arena centre would undo the trip you just
+// made. Everything else about the run is still fresh (enemies, drops, counters, hp, the seeded stream).
+// `keepWorld` — do not tear down and rebuild the map's set-pieces. They are shared, fixed-position decor
+// that is IDENTICAL before and after, so rebuilding them re-fetches and re-parses every `.glb` in the map
+// (7 of them here) for no visible change — which is exactly the hitch you feel when a mission starts under
+// you. Only used when the fight begins in a world that is already standing (the roam → combat handover);
+// a cold start still rebuilds, which is what resets the cruising freighter to its start.
+export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   for (const b of bullets) { scene.remove(b.mesh); b.mesh.material.dispose(); }
   bullets.length = 0;
   for (const x of explosions) { scene.remove(x.mesh); x.mesh.material.dispose(); }
@@ -967,18 +1031,20 @@ export function reset() {
 
   for (const e of enemies) { disposeShipExhaust(e.mesh); scene.remove(e.mesh); }
   enemies.length = 0;
-  // A side mission fights over its own location in the world (its set-piece); the campaign uses (0,0).
-  const cx = (G.activeMission && G.activeMission.center && G.activeMission.center.x) || 0;
-  const cz = (G.activeMission && G.activeMission.center && G.activeMission.center.z) || 0;
+  // Where this run fights: a side mission's own `center`, else the campaign level's (most use the default
+  // (0,0); "Level 2" fights at the space factory). Resolved by the pure `runCenter` seam — see level-sim.js.
+  const { x: cx, z: cz } = runCenter(G.activeMission, CATALOG.level);
   arenaCenter.set(cx, 0, cz);             // fresh run: center the (possibly drifting) combat zone
   arenaBorder.line.position.set(cx, 0, cz);
   // a mission may drift its zone (the freighter escort); the campaign and other missions stay static
   G.arenaDrift = (G.activeMission && G.activeMission.drift)
     ? new THREE.Vector3(G.activeMission.drift.x || 0, 0, G.activeMission.drift.z || 0) : null;
   // rebuild the shared world's set-pieces fresh each run (resets the cruising freighter to its start)
-  for (const sp of setPieces) { sp.dispose?.(); scene.remove(sp.obj); } // dispose() frees the freighter plume's materials (no-op for others)
-  setPieces.length = 0;
-  for (const spec of G.mapSetpieces) buildSetPiece(spec);
+  if (!keepWorld) {
+    for (const sp of setPieces) { sp.dispose?.(); scene.remove(sp.obj); } // dispose() frees the freighter plume's materials (no-op for others)
+    setPieces.length = 0;
+    for (const spec of G.mapSetpieces) buildSetPiece(spec);
+  }
   // Ambient distant ghost battle: shown in every mission EXCEPT the freighter escort (you're IN that fight
   // there). Anchored at a fixed ABSOLUTE world point (default the freighter start -100,-450; see ghost-battle.js)
   // — a distant landmark the player flies toward. Dynamic import → off the initial bundle + avoids a static
@@ -987,9 +1053,19 @@ export function reset() {
   if (!G.roam && G.activeMission?.title !== 'freighter') {
     import('./ghost-battle.js').then((m) => m.buildGhostBattle()).catch(() => {}); // async; distant decor (never in roam)
   }
-  G.player.mesh.position.set(cx, BULLET_PLANE_Y, cz);
-  G.player.heading = 0;                                  // forward = +Z (forwardVec(0) = (0,0,1))
-  G.player.vel.set(0, 0, PLAYER_MAX_SPEED * 0.1);        // open the fight already gliding forward at 10% of top speed (3 u/s)
+  // WHERE THE SHIP GOES. Three cases, and only one of them moves it:
+  //   • roam (Take off) — you launch from your HOME STATION and fly to the mission yourself, so the spawn is
+  //     the origin no matter where this level fights. Take off is never a teleport to the mission.
+  //   • `keepPlayer` — the mission just started because you ARRIVED: leave the ship exactly where it is and
+  //     let the enemies come to you. Heading and velocity are kept too, so the fight opens mid-flight
+  //     instead of snapping you to a standstill facing +Z.
+  //   • otherwise — a normal level start (retry, or a level that begins where you already are): centre it.
+  if (!keepPlayer) {
+    const spawn = G.roam ? { x: 0, z: 0 } : { x: cx, z: cz };
+    G.player.mesh.position.set(spawn.x, BULLET_PLANE_Y, spawn.z);
+    G.player.heading = 0;                                // forward = +Z (forwardVec(0) = (0,0,1))
+    G.player.vel.set(0, 0, PLAYER_MAX_SPEED * 0.1);      // open the fight already gliding forward at 10% of top speed (3 u/s)
+  }
   G.player.hp = G.player.maxHp;
   G.player.oobTime = 0;             // fresh run: clear the out-of-bounds timer
   G.player.spawnAge = SPAWN_GROW_TIME; // and any in-progress warp-back animation (back to full size)

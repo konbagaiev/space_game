@@ -7,8 +7,10 @@ import {
   EPOCH, SYSTEM, bodyAngle, bodyWorldPos, listBodies, maxBodyCoord,
   inActivityZone, capLifted, arrivedAtPoint, activityZoneCenters, ANCHORS,
   bodyRenderPos, bodyClearance, bodyFade, moonAngle, moonClearance, planetAnchor, listSystemObjects,
-  objectForMission, systemRadius, applySystemSpec,
+  objectForMission, systemRadius, applySystemSpec, ZONE_RADIUS,
 } from './system-map.js';
+// The seed's set-pieces are pure data (no DB import), so the anchor↔set-piece invariant is checkable here.
+import { MAPS } from '../../server/src/catalog_seed.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BODY_NAMES = ['star', ...SYSTEM.planets.map((p) => p.name)];
@@ -205,7 +207,7 @@ test('reaching another body is a real crossing (thousands of units), not a hop',
 
 // ---------- The navigation object model (what the map UI draws + lists + flies to) ----------
 
-test('listSystemObjects carries every selectable place: star + 4 planets + base + science + 3 mining', () => {
+test('listSystemObjects carries every selectable place: star + 4 planets + base + science + 3 mining + factory', () => {
   const t = EPOCH + 5e7;
   const objs = listSystemObjects(t);
   const byKind = (k) => objs.filter((o) => o.kind === k);
@@ -214,7 +216,8 @@ test('listSystemObjects carries every selectable place: star + 4 planets + base 
   assert.equal(byKind('base').length, 1);
   assert.equal(byKind('station').length, 1);
   assert.equal(byKind('mining').length, 3, 'all three belt outposts');
-  assert.equal(objs.length, 10);
+  assert.equal(byKind('factory').length, 1, 'the space factory');
+  assert.equal(objs.length, 11);
   const ids = objs.map((o) => o.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique (they key selection + the map markers)');
 });
@@ -246,9 +249,47 @@ test('exactly the two mission sites carry a missionId, and each resolves back to
   assert.equal(objectForMission('side-research', t).id, 'science');
   assert.equal(objectForMission(null, t), null);
   assert.equal(objectForMission('nope', t), null);
-  // the two extra belt outposts are places you can fly to, with no mission attached
-  for (const id of ['mining2', 'mining3']) {
+  // the two extra belt outposts + the factory are places you can fly to, with no mission attached
+  for (const id of ['mining2', 'mining3', 'factory']) {
     assert.equal(listSystemObjects(t).find((o) => o.id === id).missionId, null);
+  }
+});
+
+test('the space factory is the system\'s SHORT hop: past the base zone, well inside the belt run', () => {
+  const f = ANCHORS.factory;
+  const d = Math.hypot(f.x, f.z); // from the home planet, which is pinned to (0,0)
+  assert.ok(d > ZONE_RADIUS, `the factory sits outside the base activity zone (${d.toFixed(0)}u > ${ZONE_RADIUS})`);
+  assert.ok(d < Math.hypot(ANCHORS.mining.x, ANCHORS.mining.z),
+    'and is a shorter trip than the belt outposts — it is the "two screens away" destination');
+  assert.ok(f.x < 0 && f.z < 0, 'up-left of the home planet on the map (screen top-left = -x/-z)');
+});
+
+// The failure this catches is silent and only visible in play: move an ANCHOR (or the seed's `pos`) without
+// the other and the map still lists the place, autopilot still flies there — and parks you in empty space,
+// because the model is somewhere else. The four-way invariant (missions.js) pins the two MISSION sites;
+// this pins the physical set-pieces, mission or not.
+test('every navigation anchor with a physical set-piece matches the seed position exactly', () => {
+  const home = MAPS.find((m) => m.name === 'home-system');
+  assert.ok(home, 'the home-system map exists');
+  // anchor id → [set-piece type, framing offset from the anchor]. The offset is 0 for everything you park
+  // ON (the base dock, an asteroid field you fight inside); the space factory alone is pushed up-left so
+  // arriving frames it beside the ship instead of swallowing the ship in its middle (see catalog_seed.js).
+  const PHYSICAL = {
+    base:    ['base-station',     0,   0],
+    science: ['research-station', 0,   0],
+    mining:  ['asteroid-field',   0,   0],
+    mining2: ['asteroid-field',   0,   0],
+    mining3: ['asteroid-field',   0,   0],
+    factory: ['space-factory',  -70, -55],
+  };
+  for (const [id, [type, dx, dz]] of Object.entries(PHYSICAL)) {
+    const a = ANCHORS[id];
+    // a set-piece pos is [x, y, z] — y is the below-plane depth and is deliberately NOT an anchor concern
+    const hit = home.descriptor.setpieces.filter((s) => s.type === type)
+      .find((s) => s.pos[0] === a.x + dx && s.pos[2] === a.z + dz);
+    assert.ok(hit, `ANCHORS.${id} (${a.x},${a.z}) has a '${type}' set-piece at (${a.x + dx},${a.z + dz})`);
+    // whatever the framing offset, you must arrive AT the place — never in visibly empty space
+    assert.ok(Math.hypot(dx, dz) < 120, `ANCHORS.${id}'s set-piece stays within arrival framing`);
   }
 });
 

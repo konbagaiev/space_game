@@ -10,15 +10,15 @@ const thrust = () => ({ k: ['KeyW'], t: null });
 
 test('begin → 200 ticks → flush(win) returns a full payload', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 12345, level: 'level-2', shipId: 3, loadout: null, components: null, dt: 1 / 60 });
+  sr.begin({ seed: 12345, level: 'level-1', shipId: 3, loadout: null, components: null, dt: 1 / 60 });
   for (let i = 0; i < 200; i++) sr.captureTick(snap());
   const payload = sr.flush('win', { kills: 3, durationMs: 9000 });
   assert.ok(payload);
   assert.equal(traceTickCount(payload.trace), 200);
   assert.equal(payload.trace.seed, 12345);
   assert.equal(payload.trace.dt, 1 / 60);
-  assert.equal(payload.trace.level, 'level-2');
-  assert.equal(payload.level, 'level-2');
+  assert.equal(payload.trace.level, 'level-1');
+  assert.equal(payload.level, 'level-1');
   assert.equal(payload.outcome, 'win');
   assert.equal(payload.kills, 3);
   assert.equal(payload.durationMs, 9000);
@@ -28,7 +28,7 @@ test('begin → 200 ticks → flush(win) returns a full payload', () => {
 
 test('identical ticks collapse into ONE run (the packing that keeps memory + payload flat)', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 1, level: 'level-1', dt: 1 / 60 });
+  sr.begin({ seed: 1, level: 'level-0', dt: 1 / 60 });
   for (let i = 0; i < 600; i++) sr.captureTick(snap());     // 10 s idle
   for (let i = 0; i < 600; i++) sr.captureTick(thrust());   // 10 s thrust
   assert.equal(sr.tickCount, 1200);
@@ -40,14 +40,14 @@ test('identical ticks collapse into ONE run (the packing that keeps memory + pay
 
 test('below the floor is a trivial bounce → dropped (null)', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 1, level: 'level-1', dt: 1 / 60 });
+  sr.begin({ seed: 1, level: 'level-0', dt: 1 / 60 });
   for (let i = 0; i < 10; i++) sr.captureTick(snap());
   assert.equal(sr.flush('quit'), null);
 });
 
 test('double-flush guard: a second final flush returns null', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 1, level: 'level-1', dt: 1 / 60 });
+  sr.begin({ seed: 1, level: 'level-0', dt: 1 / 60 });
   for (let i = 0; i < MIN_SESSION_TICKS; i++) sr.captureTick(snap());
   assert.ok(sr.flush('win'));
   assert.equal(sr.flush('quit'), null);
@@ -57,7 +57,7 @@ test('double-flush guard: a second final flush returns null', () => {
 // player who comes back and wins ends up with ONE row (same id) holding the complete session.
 test('provisional flush ships the session but keeps recording; the final flush wins under the same id', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 7, level: 'level-3', dt: 1 / 60 });
+  sr.begin({ seed: 7, level: 'level-2', dt: 1 / 60 });
   for (let i = 0; i < 300; i++) sr.captureTick(snap());
   const provisional = sr.flush('quit', { kills: 0, durationMs: 5000 }, { final: false });
   assert.ok(provisional);
@@ -78,7 +78,7 @@ test('provisional flush ships the session but keeps recording; the final flush w
 // unchanged — re-uploading it every time would be pure waste on a metered mobile connection.
 test('a provisional flush with no new ticks since the last one sends nothing', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 1, level: 'level-1', dt: 1 / 60 });
+  sr.begin({ seed: 1, level: 'level-0', dt: 1 / 60 });
   for (let i = 0; i < 200; i++) sr.captureTick(snap());
   assert.ok(sr.flush('quit', {}, { final: false }));
   assert.equal(sr.flush('quit', {}, { final: false }), null, 'nothing changed → no second upload');
@@ -91,7 +91,7 @@ test('a provisional flush with no new ticks since the last one sends nothing', (
 // must be a copy, or the uploaded payload would grow behind the transport's back.
 test('a flushed trace is not mutated by continued recording', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 1, level: 'level-1', dt: 1 / 60 });
+  sr.begin({ seed: 1, level: 'level-0', dt: 1 / 60 });
   for (let i = 0; i < 200; i++) sr.captureTick(snap());
   const trace = sr.flush('quit', {}, { final: false }).trace;
   for (let i = 0; i < 500; i++) sr.captureTick(snap());     // same input → would extend the shared run
@@ -100,7 +100,7 @@ test('a flushed trace is not mutated by continued recording', () => {
 
 test('cap: appends stop at MAX_SESSION_TICKS', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 1, level: 'level-1', dt: 1 / 60 });
+  sr.begin({ seed: 1, level: 'level-0', dt: 1 / 60 });
   for (let i = 0; i < MAX_SESSION_TICKS + 500; i++) sr.captureTick(snap());
   assert.equal(sr.tickCount, MAX_SESSION_TICKS);
 });
@@ -109,7 +109,7 @@ test('cap: appends stop at MAX_SESSION_TICKS', () => {
 // before memory did — the run cap is what bounds it there.
 test('cap: an all-distinct input stream stops at MAX_SESSION_RUNS', () => {
   const sr = makeSessionRecorder();
-  sr.begin({ seed: 1, level: 'level-1', dt: 1 / 60 });
+  sr.begin({ seed: 1, level: 'level-0', dt: 1 / 60 });
   for (let i = 0; i < MAX_SESSION_RUNS + 500; i++) sr.captureTick({ k: [], t: [i / 1000, 1] });
   assert.equal(sr.runs.length, MAX_SESSION_RUNS);
   assert.equal(sr.tickCount, MAX_SESSION_RUNS);

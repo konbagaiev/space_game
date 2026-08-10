@@ -3676,3 +3676,45 @@ speed.
 solid asteroids with bounce ·
 bot behavior (evasion, arc flybys) · custom `.glb` models · multiplayer (WebSocket) ·
 engine trails on enemies.
+
+## 102. Levels are 0-based, and a level's id, name and title are the SAME number
+
+**Context.** A level carried three numbers that disagreed. The DB row was named `level-4`, its
+player-facing title was `Level 3`, and `players.current_progress` held `4` — because `current_progress`
+is a raw `levels.id` and the whole campaign had been shifted down one id when the intro ("Level 0") was
+inserted in front of it (§95 era). On top of that `levels.id` was a `BIGSERIAL` and the startup upsert
+(`INSERT ... ON CONFLICT (name) DO UPDATE`) burned a sequence value on **every boot**, so production ids
+had drifted to 1, 6, 7, 71, 564 — ids that meant nothing at all.
+
+That was tolerable while nothing read the numbers. It stopped being tolerable the day a level needed to be
+named in conversation: in one session the ambiguity cost two wrong answers — a feature was built on the
+wrong level, and a debugging pass concluded a gate was broken when the player was simply one level further
+along than the raw progress number suggested.
+
+**Decision.** One number per level, 0-based, with 0 = the intro. `levels.id`, `levels.name`
+(`level-0`..`level-4`) and `descriptor.title` (`Level 0`..`Level 4`) all carry it, and
+`players.current_progress` — still an FK to `levels.id` — therefore reads as the level number too. Ids are
+written **explicitly** in `catalog_seed.js` and upserted `ON CONFLICT (id)`, which both pins them and stops
+the sequence drift (an explicit id never touches the sequence).
+
+**Alternatives rejected.**
+- *Rename the rows only, leave ids alone.* Cheaper and lower-risk, but it fixes the two numbers nobody was
+  confused by and leaves the one that actually caused the confusion — the progress field.
+- *Never show raw numbers anywhere instead of renumbering.* Would have fixed the admin column, but not the
+  ambiguity in code, in a psql session, or in a conversation between maintainer and agent, which is where
+  it hurt.
+
+**Consequences.**
+- A one-shot migration (`levels_zero_based_ids`, db.js) maps by NAME, never arithmetic, because the drifted
+  prod ids are not a shift of anything. It parks both `id` and `name` clear of their targets before
+  assigning (both collide mid-move; `name` is UNIQUE), moves `players.current_progress` in lockstep with the
+  FK dropped, rewrites `gameplay_sessions.level`, then restores the FK and sets the column default to 0.
+  Pinned end-to-end by `levels_drift.test.js`, which builds a legacy-shaped database and migrates it.
+- **Content gates stay name-based** (§95 still holds). Ids are stable now, but a name is still the thing
+  that says *which content*, and fail-closed lookups by name cost nothing.
+- Recorded traces store the level NAME they were made on, so every pre-existing recording — the shipped
+  intro asset included — names a level one too high. The trace format went to **v3** purely as a marker:
+  `traceLevelName()` shifts v1/v2 traces down one at the single boundary where a stored name is read.
+  A blanket alias in `normalizeLevelName` was rejected — `level-1` is a perfectly good *current* name, so
+  aliasing it would break the live campaign to fix the archive. Nothing on S3 was rewritten (the intro
+  asset is content-hashed; rewriting it forces a re-upload and an itch republish for no gameplay gain).

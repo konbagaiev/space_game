@@ -17,6 +17,7 @@ import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
 import { SKILL_RATES } from './components.js'; // per-point skill rates → Character-card effect text (single source)
 import { reset, levelRunner, refreshMusic, engagePointAutopilot } from './sim.js';
+import { runCenter } from './level-sim.js'; // where the current level fights (0,0 unless it names a centre)
 import { mountSystemNav, showStartMissionPrompt, showDockPrompt, objectForMission } from './systemmap-ui.js';
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
@@ -62,7 +63,20 @@ export function showMain(briefing) {
   if (G.activeShip && G.activeShip.components) resetShipStatsDelta(); // Loadout's ▲/▼ baseline starts clean each landing
   if (!stagedActive) applyShowcaseTarget();  // when staging, the reveal defers the granted-item showcase itself
 }
-function launchCampaign() {
+// Take off into the campaign. TAKE-OFF IS A TAKE-OFF, NOT A TELEPORT: you always launch from the HOME
+// BASE and FLY to where the level fights, and the fight begins when you get there (sim.js checkMissionZone
+// → the countdown → `engage: true` back into here, which is the branch that actually starts the level).
+// That holds for EVERY campaign level, not only the ones that name their own `center`: a level without one
+// fights at the origin, which is the base neighbourhood, so you spawn already inside its zone and the
+// countdown runs immediately. Uniform on purpose — "take off, then the mission starts when you reach it"
+// should not quietly become "the mission is already running" depending on which level you are on.
+function launchCampaign({ engage = false } = {}) {
+  const lvl = CATALOG.level;
+  if (!engage) {
+    clientLog('takeoff:campaign-travel', { level: lvl && lvl.title, center: (lvl && lvl.center) || null });
+    enterRoam(null);                   // spawns at the base with no enemies + arms the mission zone
+    return;
+  }
   clientLog('takeoff:campaign', { level: CATALOG.level && CATALOG.level.title, name: CATALOG.levelName }); // TEMP debug: what level reset() will play
   G.pendingBriefing = null;
   G.activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
@@ -74,15 +88,18 @@ function launchCampaign() {
   document.body.classList.remove('menu');    // restore the in-game HUD
   G.gameStarted = true;                        // first launch from the landing Main Window starts the loop
   beginLiveSession();                          // arm the recorded live session (seeds the sim) BEFORE reset() draws the RNG
-  reset();                                   // (re)start the current level
+  // `engage` means you FLEW here and the countdown ran out. You are already at the fight IN a world that is
+  // already standing, so keep both: the ship where it is (enemies come to you) and the map's set-pieces as
+  // they are (rebuilding them re-fetches every .glb for an identical result — the hitch you feel).
+  reset({ keepPlayer: engage, keepWorld: engage });
 }
 function leaveOverlay() {
   if (levelRunner.won) {
     // Land on the now-current level after a victory. A level WITH a briefing → the Main Window briefing; a
     // level WITHOUT one → the Welcome / take-off screen — same rule bootstrap + account use, so Continue
     // matches a page reload (never the "Stand by for new orders" default that showMain(null) would render).
-    // NB with current content every campaign level 2+ HAS a briefing (level-1 is the intro/Level 0), so the
-    // post-intro Level-1 (seed `level-2`) lands on the Main Window (launchCampaign), NOT welcome; the welcome
+    // NB with current content every campaign level 2+ HAS a briefing (level-0 is the intro), so the
+    // post-intro "Level 1" (seed `level-1`) lands on the Main Window (launchCampaign), NOT welcome; the welcome
     // branch is a fallback for a briefing-less level.
     const brief = G.pendingBriefing || (CATALOG.level && CATALOG.level.briefing) || null;
     const land = () => { if (brief) showMain(brief); else showWelcome(getPlayerShips()); };
@@ -465,10 +482,30 @@ export async function enterRoam(dest) {
   stopViewer(mwItem);
   document.body.classList.remove('menu');
   await refreshMissions();           // ensure missionOffers is current for arrival prompts (Stage 3)
+  // Arm the fly-into-it trigger for the ACTIVE campaign mission. Gated HERE because this is where
+  // `activeMissionId` is known: the campaign must be the active choice (no side mission taken). The centre
+  // comes from `runCenter`, so a level that names one is its own place in the system and every other level
+  // is the origin — the base neighbourhood you take off into. With a SIDE mission active this stays null:
+  // that mission has its own destination + arrival prompt (G.onMissionArrival), and the campaign level you
+  // happen to be on must not start under you. `t` is the live countdown, owned by sim.js checkMissionZone.
+  const lvl = CATALOG.level;
+  G.missionZone = (activeMissionId == null && lvl)
+    ? { center: runCenter(null, lvl), title: lvl.title || '', t: null }
+    : null;
   G.gameStarted = true; G.roam = true;
   reset();                           // rebuilds world + player at planet 2, NO levelRunner (G.roam guard)
   if (dest) engagePointAutopilot(dest.pos, dest.missionId || null); // else: free manual cruise
 }
+
+// Roam → combat: the countdown that started when you flew into the active campaign mission's zone has run
+// out. Clearing roam first is what makes reset() actually start the levelRunner (same order as the side-
+// mission arrival path); `engage: true` is what stops launchCampaign bouncing straight back into the travel
+// state, and it then centres the fight on the level's own centre.
+G.onMissionZoneEnter = () => {
+  G.roam = false;
+  G.missionZone = null;   // disarm: we are leaving roam, and a fresh enterRoam re-arms it
+  launchCampaign({ engage: true });
+};
 
 // Roam arrival: the sim fires this (via G.onMissionArrival) when a point-autopilot carrying a mission id
 // comes to rest at its destination. Show "Start mission?" ONLY when the offer actually exists (unlocked +

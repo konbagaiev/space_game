@@ -14,18 +14,38 @@
 // input changes ~2×/second while we capture 60 ticks/second, so a real session collapses ~24× (measured on
 // a 131 s desktop session: 7867 ticks → 279 runs, 254 KB → 10.7 KB). That is what makes a whole session fit
 // in an unload beacon and keeps the live recorder's retained memory flat on a weak device.
-export const TRACE_VERSION = 2;
+// v3 changes no bytes — it marks the 0-BASED LEVEL RENUMBERING. A trace stores the level NAME it was
+// recorded on, and every campaign level moved down one that day (the intro went `level-1` → `level-0`), so a
+// v1/v2 trace's stored name now points at the WRONG level: replaying the shipped intro asset would have
+// loaded "Level 1" and re-simmed a fight the recorded input never fought. The version IS the marker of
+// which naming a trace speaks — see `traceLevelName`. Nothing was rewritten in place: the intro asset is
+// content-hashed on S3, and every recorded session trace in the bucket is equally affected.
+export const TRACE_VERSION = 3;
 // Versions we can still READ. v1 traces exist in the wild (the shipped Level-0 intro asset + every session
 // recorded before 2026-08-03), and they stay playable forever — hydrateTrace() normalizes both shapes.
-export const READABLE_TRACE_VERSIONS = new Set([1, 2]);
+export const READABLE_TRACE_VERSIONS = new Set([1, 2, 3]);
 
 // Map a `level` URL value to a catalog level NAME. A bare number N → the seed name `level-N` (so
-// `?record=1&level=1` records the intro four-ship fight, whose seed name is `level-1`); a non-numeric value is
-// treated as an explicit name already (`level=level-1`). Trimmed; empty → the default intro level.
+// `?record=1&level=0` records the intro four-ship fight, whose seed name is `level-0`); a non-numeric value is
+// treated as an explicit name already (`level=level-0`). Trimmed; empty → the default intro level.
+// Since the 0-based renumbering the number in the URL IS the campaign level number (0 = intro).
 export function normalizeLevelName(v) {
   const s = String(v == null ? '' : v).trim();
-  if (s === '') return 'level-1';
+  if (s === '') return 'level-0';
   return /^\d+$/.test(s) ? `level-${s}` : s;
+}
+
+// The level a TRACE should be replayed on. Not the same thing as `normalizeLevelName`: a trace carries a
+// name recorded at some point in the past, and the campaign was renumbered down one when levels went
+// 0-based. So pre-v3 traces are shifted here, at the one boundary where a stored name is read, instead of
+// aliasing globally — `level-1` is a perfectly good CURRENT name (it is "Level 1"), so a blanket alias
+// would break the live campaign to fix the archive. Anything that cannot be shifted (an unknown shape, or
+// `level-0` in a legacy trace, which never existed) is passed through untouched. Pure.
+export function traceLevelName(trace) {
+  const name = normalizeLevelName(trace && trace.level);
+  const legacy = !trace || !(Number(trace.version) >= 3);
+  const m = legacy && /^level-(\d+)$/.exec(name);
+  return m && Number(m[1]) > 0 ? `level-${Number(m[1]) - 1}` : name;
 }
 
 // ?record=1&level={id} → { level } | null. URL-only (NOT sticky like ?dev/?bench): recording is an explicit,
@@ -194,7 +214,7 @@ export function makeReplaySession() {
 }
 
 // Decide whether to auto-play the intro cutscene for this load. Server-authoritative: `introTrace` is
-// present ONLY on the level-1 descriptor served while current_progress===1 (a NEW or freshly-RESET
+// present ONLY on the level-0 descriptor served while current_progress===0 (a NEW or freshly-RESET
 // player), so hasIntroTrace is the real one-time gate — no client localStorage flag, so a genuine
 // progress reset replays the intro. Headless suites (?debug/?bench) always get the playable Level 0.
 export function shouldPlayIntro(search, hasIntroTrace) {

@@ -4,7 +4,7 @@
 // pause fires ~`delaySec` after its trigger. P0 is a pre-fight opening card (shown before the first tick).
 // Text resolves at runtime via i18n (`ui.cutscene.*`, EN source + RU). The runtime lives in main.js.
 export const LEVEL0_CUTSCENE = {
-  level: 'level-1',                 // the intro four-ship level (seed name level-1)
+  level: 'level-0',                 // the intro four-ship level (seed name level-0 — id/name/title all 0)
   rocketeerShip: 'basic rocket pirate', // enemy whose warp-in triggers P3 and whose rockets trigger P4
   delaySec: 1,                      // fire each event-driven pause ~1s after its trigger
   pauses: [

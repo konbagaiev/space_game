@@ -72,6 +72,12 @@ export const G = {
   mapOpen: false,             // the system-map overlay is open → the render loop skips update() (raw freeze,
                               //   NOT setPaused, so the "Paused" overlay doesn't stack under the map)
   onMissionArrival: null,     // callback(missionId) set by mainwindow: show the "Start mission?" prompt on arrival
+  // Fly-into-it start for the ACTIVE campaign mission while roaming: { center:{x,z}, title, t } or null.
+  // Armed by mainwindow.enterRoam ONLY when the campaign is the active choice and its level names a
+  // `center` (today: "Level 2" at the Space Factory); `t` is the live countdown, stepped by sim.js
+  // checkMissionZone, which calls onMissionZoneEnter when it runs out.
+  missionZone: null,
+  onMissionZoneEnter: null,   // callback() set by mainwindow: clear roam + launch the campaign level
   // --- return-to-base / autopilot (set after the last kill; read across sim/HUD/input) ---
   returnToBase: false,                             // true after the last kill: OOB lifted, arrow + hint on, station clickable
   // click-to-fly autopilot. target = the base station (return-to-base dock) OR a loot drop (fly to grab it).

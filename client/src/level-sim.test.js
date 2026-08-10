@@ -1,11 +1,106 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { levelEnemyTotal, isLastKillDrop, simulateLevel } from './level-sim.js';
+import { levelEnemyTotal, isLastKillDrop, simulateLevel, runCenter, stepMissionZone,
+  MISSION_ZONE_RADIUS, MISSION_ZONE_COUNTDOWN } from './level-sim.js';
+// The seed is pure data (no DB import), so the campaign level's own centre is checkable here.
+import { LEVELS } from '../../server/src/catalog_seed.js';
 
 test('isLastKillDrop fires only when kills exactly reaches a positive enemyTotal', () => {
   assert.equal(isLastKillDrop({ kills: 13, enemyTotal: 14 }), false);
   assert.equal(isLastKillDrop({ kills: 14, enemyTotal: 14 }), true);
   assert.equal(isLastKillDrop({ kills: 0, enemyTotal: 0 }), false); // no total known → never
+});
+
+// ---------- runCenter: where a run fights ----------
+// The bug this seam exists to prevent: sim.js only ever read `G.activeMission.center`, which is null for the
+// campaign — so a campaign level could carry a `center` in the seed and be silently ignored, fighting at the
+// origin while every comment claimed otherwise.
+test('runCenter: a side mission wins, then the campaign level, then the origin', () => {
+  const mission = { center: { x: -988, z: 0 } };
+  const level = { center: { x: -450, z: -435 } };
+  assert.deepEqual(runCenter(mission, level), { x: -988, z: 0 }, 'an active side mission owns the centre');
+  assert.deepEqual(runCenter(null, level), { x: -450, z: -435 }, 'else the campaign level names its own');
+  assert.deepEqual(runCenter(null, { title: 'Level 1' }), { x: 0, z: 0 }, 'a level with no centre fights at the origin');
+  assert.deepEqual(runCenter(null, null), { x: 0, z: 0 });
+  assert.deepEqual(runCenter(undefined, undefined), { x: 0, z: 0 });
+});
+
+test('runCenter never yields NaN from a half-written descriptor', () => {
+  // a NaN centre would propagate into arenaCenter/the player spawn and fling the whole run to nowhere
+  for (const bad of [{ center: {} }, { center: { x: -450 } }, { center: { x: 'nope', z: null } }]) {
+    const c = runCenter(null, bad);
+    assert.ok(Number.isFinite(c.x) && Number.isFinite(c.z), `${JSON.stringify(bad)} -> ${JSON.stringify(c)}`);
+  }
+});
+
+test('exactly ONE campaign level names a centre: "Level 3", at the space factory', () => {
+  const withCenter = LEVELS.filter((l) => l.descriptor.center);
+  assert.equal(withCenter.length, 1, `only one level moves off the origin (got ${withCenter.map((l) => l.descriptor.title).join(', ')})`);
+  const lvl = withCenter[0].descriptor;
+  assert.equal(lvl.title, 'Level 3', 'it is the factory level');
+  // the campaign's own definition of which level that is: the one AFTER the level that drops the repair
+  // drone, and the first to field a real boss rather than the mid-boss
+  const droneLevel = LEVELS.find((l) => l.descriptor.lastKillDrop?.refId === 12
+    && l.descriptor.lastKillDrop?.kind === 'component');
+  assert.equal(withCenter[0].id, droneLevel.id + 1, 'it is the level right after the repair-drone drop');
+  const bossShips = lvl.phases.flatMap((ph) => (ph.spawn?.pool || []).map((e) => e.ship)).filter((s) => /boss/.test(s));
+  assert.ok(bossShips.includes('first pirate boss'), `and the one that fields the first real boss (got ${bossShips})`);
+  // 30 u up-left of the space-factory set-piece — pinned so moving the station leaves the fight behind
+  const factory = { x: -420, z: -405 }; // the `space-factory` set-piece in catalog_seed.js
+  assert.deepEqual(lvl.center, { x: factory.x - 30, z: factory.z - 30 }, '30 u up-left of the station');
+  // and every other level still fights at the origin
+  for (const l of LEVELS) if (l.descriptor !== lvl) assert.equal(l.descriptor.center, undefined, `${l.descriptor.title} stays at the origin`);
+});
+
+// ---------- stepMissionZone: fly into the active mission's neighbourhood → countdown → fight ----------
+const DT = 1 / 60;
+// Fly a straight run of frames at a fixed distance and return every step's state.
+function run(state, dists, dt = DT) {
+  const out = [];
+  for (const dist of dists) { state = stepMissionZone(state, { dist, dt }); out.push(state); }
+  return out;
+}
+
+test('stepMissionZone: crossing in arms the countdown, and it fires exactly once at zero', () => {
+  const inside = MISSION_ZONE_RADIUS - 50;
+  const frames = Math.ceil(MISSION_ZONE_COUNTDOWN / DT) + 5;
+  const steps = run({ t: null }, Array(frames).fill(inside));
+  assert.equal(steps[0].t, MISSION_ZONE_COUNTDOWN, 'the first frame inside arms the full countdown');
+  assert.equal(steps[0].fire, false, 'and does not fire immediately');
+  const fired = steps.filter((s) => s.fire);
+  assert.equal(fired.length, 1, `fires exactly once (got ${fired.length})`);
+  const idx = steps.findIndex((s) => s.fire);
+  assert.ok(Math.abs(idx * DT - MISSION_ZONE_COUNTDOWN) < 0.05,
+    `fires after ~${MISSION_ZONE_COUNTDOWN}s (fired at ${(idx * DT).toFixed(2)}s)`);
+  // and it stays quiet afterwards rather than re-firing every frame
+  assert.equal(steps[steps.length - 1].fire, false);
+});
+
+test('stepMissionZone: leaving the zone cancels a count in progress, and re-entering restarts it', () => {
+  let s = { t: null };
+  s = run(s, Array(30).fill(MISSION_ZONE_RADIUS - 10)).pop(); // half a second inside
+  assert.ok(s.t > 0 && s.t < MISSION_ZONE_COUNTDOWN, 'counting');
+  s = stepMissionZone(s, { dist: MISSION_ZONE_RADIUS + 1, dt: DT });
+  assert.equal(s.t, null, 'one frame outside disarms it — you can fly away from the fight');
+  assert.equal(s.fire, false);
+  s = stepMissionZone(s, { dist: 0, dt: DT });
+  assert.equal(s.t, MISSION_ZONE_COUNTDOWN, 're-entering starts a fresh full countdown, not a resumed one');
+});
+
+test('stepMissionZone: the radius boundary is inclusive, and a NaN distance never arms it', () => {
+  assert.equal(stepMissionZone({ t: null }, { dist: MISSION_ZONE_RADIUS, dt: DT }).t, MISSION_ZONE_COUNTDOWN);
+  assert.equal(stepMissionZone({ t: null }, { dist: MISSION_ZONE_RADIUS + 0.001, dt: DT }).t, null);
+  // a missing/!==finite centre would make dist NaN; comparisons with NaN are false, so it must disarm
+  assert.equal(stepMissionZone({ t: 1 }, { dist: NaN, dt: DT }).t, null);
+  assert.equal(stepMissionZone({ t: 1 }, { dist: NaN, dt: DT }).fire, false);
+});
+
+test('stepMissionZone: the zone reaches the map destination the player is parked at', () => {
+  // autopilot parks at ANCHORS.factory (-350,-350); the Level 2 centre is (-450,-435). If the radius did
+  // not cover that gap, arriving by autopilot would sit just outside and nothing would ever start.
+  const parked = Math.hypot(-350 - -450, -350 - -435);
+  assert.ok(parked < MISSION_ZONE_RADIUS,
+    `parking at the factory (${parked.toFixed(0)}u from the centre) is inside the ${MISSION_ZONE_RADIUS}u zone`);
 });
 
 // Level-shaped phase scripts (mirror catalog_seed.js / missions.js; totals verified by the server test).

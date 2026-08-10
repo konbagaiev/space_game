@@ -900,26 +900,37 @@ function makeFreighter(spec) {
   } };
 }
 
-// Base station (return-to-base target): a below-plane, NON-collidable .glb set-piece offset up-left of the arena center,
-// mirroring the freighter's async center/scale/`yaw` normalization but with no exhaust. It is raised closer
-// to the combat plane than the freighter so it reads clearly from the top-down camera; after the last kill
-// the client makes it clickable → autopilot flies the player home → victory. See DECISIONS §39.
+// Shared builder for the .glb STATION set-pieces (the base station and the space factory): a below-plane,
+// NON-collidable model, mirroring the freighter's async center/scale/`yaw` normalization but with no
+// exhaust, slowly spinning on its y axis. Stations are raised closer to the combat plane than the freighter
+// so they read clearly from the top-down camera. `STATION_LEN` normalizes the model's LONGEST axis, which is
+// what makes two models of wildly different source scale sit side by side at a comparable on-screen size.
 //
-// VERTICAL-EXTENT NOTE (§17): the source model is tall (y ≈ 0.78 of its longest axis). BASE_STATION_LEN 100
-// normalizes the longest axis, so halfHeight ≈ 39; with the seed's pos.y = -42 the station's TOP sits at
-// ~y = -2.9 — safely below the combat plane (ships fly at y ≈ 0.6), so it never pokes through or occludes
-// ships. If BASE_STATION_LEN or the seed's y is changed, re-check that pos.y + halfHeight stays below ~0.6.
-const BASE_STATION_LEN = 100;
+// SIZING NOTE. The camera is near-top-down, so the axis you SEE is the model's widest one — which is the one
+// being normalized. A "flat" model therefore does NOT read smaller than a tall one at the same len; flatness
+// only costs height, which top-down barely shows. So len is a straight on-screen-footprint dial: at the
+// factory's depth the frame is ~140 u tall, so len 120 covers ~85% of it — a landmark you arrive AT, a step
+// up from the home station without overflowing the frame.
+//
+// VERTICAL-EXTENT NOTE (§17): the model must stay entirely BELOW the plane the ships fly on (y ≈ 0.6), or it
+// pokes through and occludes them. The check is `pos.y + halfHeight < 0.6`, where halfHeight comes out of
+// `STATION_LEN` and the source model's proportions — so changing either means re-checking the seed's pos.y:
+//   • base station — a TALL model (y ≈ 0.78 of its longest axis): len 100 → halfHeight ≈ 39, seed y = -42,
+//     top ≈ -2.9. ✓
+//   • space factory — a WIDE, FLAT ring (y ≈ 0.23 of its longest axis, bbox 6.49 x 1.52 x 6.49): len 120 →
+//     halfHeight ≈ 14, seed y = -28, top ≈ -14. ✓
+const STATION_LEN = { 'base-station': 100, 'space-factory': 120 };
 
-function makeBaseStation(spec) {
+function makeStationModel(spec) {
   const g = new THREE.Group();
+  const len = STATION_LEN[spec.type] ?? 100;
   if (spec.modelUrl) G.pendingAssets++; // hold the level-load veil until the set-piece is here (DECISIONS §84)
   if (spec.modelUrl) gltfLoader.load(spec.modelUrl, (gltf) => {
     const model = gltf.scene;
     const box = new THREE.Box3().setFromObject(model);
     const size3 = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
-    const s = BASE_STATION_LEN / (Math.max(size3.x, size3.y, size3.z) || 1);
+    const s = len / (Math.max(size3.x, size3.y, size3.z) || 1);
     model.scale.setScalar(s);
     model.position.copy(center).multiplyScalar(-s); // recenter at group origin
     const pivot = new THREE.Group();
@@ -928,7 +939,7 @@ function makeBaseStation(spec) {
     G.needsSceneWarm = true; // late async arrival: compile + upload it before the next frame draws it
     G.pendingAssets--;
     g.add(pivot);
-  }, undefined, (err) => { G.pendingAssets--; console.warn('Base station model failed to load:', spec.modelUrl, err); });
+  }, undefined, (err) => { G.pendingAssets--; console.warn(`${spec.type} model failed to load:`, spec.modelUrl, err); });
   const spin = spec.spin ?? 0;
   return { obj: g, update: (dt) => { if (spin) g.rotation.y += spin * dt; } };
 }
@@ -949,7 +960,8 @@ export function buildSetPiece(spec) {
     case 'research-station': entry = makeResearchStation(spec); break;
     case 'asteroid-field':   entry = makeAsteroidField(spec); break;
     case 'freighter':        entry = makeFreighter(spec); break;
-    case 'base-station':     entry = makeBaseStation(spec); break;
+    case 'base-station':     entry = makeStationModel(spec); break;
+    case 'space-factory':    entry = makeStationModel(spec); break;
     default: return; // unknown type → skip (forward-compatible with new set-pieces)
   }
   if (spec.scale && spec.scale !== 1) entry.obj.scale.setScalar(spec.scale);

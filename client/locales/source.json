@@ -995,6 +995,14 @@
     "source": "Mining site",
     "context": "Object-type label in the navigation list — an asteroid-mining outpost. Short."
   },
+  "ui.roam.engaging": {
+    "source": "Contact in {n}…",
+    "context": "Centred HUD countdown while roaming: the ship has crossed into the active mission's neighbourhood and the fight starts in {n} seconds. {n} counts 3, 2, 1. Keep it short and urgent — it sits over the ship."
+  },
+  "ui.object.kind.factory": {
+    "source": "Factory",
+    "context": "Object-type label in the navigation list — an orbital industrial plant. One word."
+  },
   "ui.object.star": {
     "source": "Vega",
     "context": "Proper name of the system's central star. The home system IS Vega (the game is 'Vega Sentinels'), so the star carries that name. Keep as a name."
@@ -1034,6 +1042,10 @@
   "ui.object.mining3": {
     "source": "Mining Belt III",
     "context": "Name of the third asteroid-belt mining outpost."
+  },
+  "ui.object.factory": {
+    "source": "Space Factory",
+    "context": "Name of the orbital industrial station near the home planet — where ore from the belt is turned into parts. Keep it plain and industrial."
   },
   "ui.shop.action.remove": {
     "source": "Remove",

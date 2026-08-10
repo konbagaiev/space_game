@@ -29,6 +29,7 @@ asset page is also handy, in case the author later changes the terms).
 | ships/asteroids_combat.\<hash\>.glb (asteroid pack, 3 rock meshes — the mission `asteroid-field` set-piece rocks/hosts) | ARCTIC WOLVES™ | https://skfb.ly/psECZ | CC-BY 4.0 | 2026-07-16 |
 | ships/engine_thruster_hangar.\<hash\>.glb (shared THRUSTER component item icon — menu only) | Yo.Ri | https://skfb.ly/6qEKD | CC-BY 4.0 | 2026-08-09 |
 | ships/maneuver_thruster_hangar.\<hash\>.glb (shared ENGINE component item icon, animated flame — menu only) | photon (that one larry) | https://skfb.ly/pyoLw | CC-BY 4.0 | 2026-08-09 |
+| ships/space_factory_combat.\<hash\>.glb (Space Factory set-piece — the orbital industrial station up-left of the home planet) | rivetech | https://skfb.ly/oPZKM | CC-BY 4.0 | 2026-08-10 |
 
 <!--
 Example row:
@@ -135,6 +136,21 @@ future iteration, and swapping one in means replacing only the shared constant i
 > Attribution (http://creativecommons.org/licenses/by/4.0/).
 >
 > "Thruster animation" (https://skfb.ly/pyoLw) by photon (that one larry) is licensed under Creative
+> Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+The **space factory** set-piece (`space_factory_combat`) is **"Sci-Fi Space Station: Rotor Nexus"** by
+**rivetech** (Sketchfab, **CC-BY 4.0** — attribution required, so this entry must stay while in use). It is
+the navigation destination two screens up-left of the home planet, built by the same below-plane spinning
+`.glb` set-piece code as the base station. The 6.7 MB source is texture-dominated — 4.6 MB of it is eight
+1024² PNGs (baseColor / metallicRoughness / emissive / normal, two materials) costing ~45 MB of VRAM against
+~2 MB of geometry — so `assets:build` (via the `space_factory` preset override) shrinks every texture to
+256px WebP and meshopt-compresses the geometry → a ~159 KB combat glb with ~2.8 MB of VRAM. The override
+also sets `pruneSolidTextures: false`: the emissive maps are mostly black with small lit windows, and
+`optimize`'s solid-texture heuristic would flatten them to a factor and make the whole hull glow.
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "Sci-Fi Space Station: Rotor Nexus" (https://skfb.ly/oPZKM) by rivetech is licensed under Creative
 > Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 The old in-git primitive placeholder glbs (`player.glb`, `fighter.glb`, `rocketeer.glb`, `heavy.glb`,

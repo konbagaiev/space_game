@@ -177,6 +177,12 @@ export const ANCHORS = {
   // finds rigs rather than empty space.
   mining2: { x: -1480, z: -1180 },
   mining3: { x: -760,  z: 1560 },
+  // Space Factory — an industrial ring station up-left of the home planet, ~495 u out: about two screens
+  // diagonally (a screen is ~204 x 115 u at zoom 1), so it sits just past the base's activity zone
+  // (ZONE_RADIUS 360) — the system's one SHORT hop, against the ~1000 u belt/science crossings. Carries no
+  // mission. This is where autopilot PARKS you; the `space-factory` set-piece itself sits (-70,-55) off it
+  // so the station frames up-left instead of swallowing the ship in its middle (both pinned by a test).
+  factory: { x: -350,  z: -350 },
 };
 
 // The point ON THE PLANE that autopilot flies to for a body — its own true (x,z). Arrive there and the body
@@ -192,7 +198,7 @@ export function planetAnchor(name, tNow = Date.now()) {
 // objects here: a star or planet is listed and selectable exactly like a station, and `pos` is always the
 // REACHABLE point on the plane (a body's own anchor — the body itself stays permanently distant, §98).
 //
-//   kind    'star' | 'planet' | 'base' | 'station' | 'mining'
+//   kind    'star' | 'planet' | 'base' | 'station' | 'mining' | 'factory'
 //   pos     where autopilot flies (world x,z on the ecliptic)
 //   marker  where the map draws it — the same point for every object, so list and map agree
 //   missionId  the side-mission offer this object hosts, or null (drives the locked/greyed state + the
@@ -218,6 +224,8 @@ export function listSystemObjects(tNow = Date.now()) {
       pos: ANCHORS.mining2, color: '#e8c07a' },
     { id: 'mining3', kind: 'mining',  nameKey: 'ui.object.mining3', missionId: null,
       pos: ANCHORS.mining3, color: '#e8c07a' },
+    { id: 'factory', kind: 'factory', nameKey: 'ui.object.factory', missionId: null,
+      pos: ANCHORS.factory, color: '#b39ddb' },
   );
   for (const o of out) o.marker = o.pos;
   return out;

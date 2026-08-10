@@ -77,7 +77,7 @@ test('register: same id again is not new', async () => {
 
 test('register: a new player starts at progress 1 (the intro / Level 0 unlocked)', async () => {
   const j = await (await post('/api/players/register', { playerId: 'prog-1' })).json();
-  assert.equal(j.currentProgress, 1);
+  assert.equal(j.currentProgress, 0);
 });
 
 test('language: defaults to en, can be set to ru, rejects unsupported, and is returned with the ship', async () => {
@@ -101,44 +101,44 @@ test('language: defaults to en, can be set to ru, rejects unsupported, and is re
   assert.equal((await post('/api/players/lang-1/language', {})).status, 400);
 });
 
-test('progress: current level is level-1 (the intro), and advancing unlocks the next levels', async () => {
-  // a fresh player is on level-1 (the intro / "Level 0")
+test('progress: current level is level-0 (the intro), and advancing unlocks the next levels', async () => {
+  // a fresh player is on level-0 (the intro / "Level 0")
   const lvl1 = await getJson('/api/players/prog-2/level');
-  assert.equal(lvl1.name, 'level-1');
+  assert.equal(lvl1.name, 'level-0');
   assert.ok(lvl1.descriptor.phases, 'returns the full descriptor');
-  // the served level-1 descriptor carries `introTrace` while progress===1 — the server-authoritative
+  // the served level-0 descriptor carries `introTrace` while progress===0 — the server-authoritative
   // one-time gate the client's shouldPlayIntro() reads (a new/reset player replays the intro cutscene).
-  assert.ok(lvl1.descriptor.introTrace, 'level-1 (progress 1) carries introTrace');
+  assert.ok(lvl1.descriptor.introTrace, 'level-0 (progress 0) carries introTrace');
 
-  // clearing the intro unlocks level-2, then level-3
+  // clearing the intro unlocks level-1, then level-2
   const a1 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a1.advanced, true);
   const lvl2 = await getJson('/api/players/prog-2/level');
-  assert.equal(lvl2.name, 'level-2');
+  assert.equal(lvl2.name, 'level-1');
   // once advanced, the served level has NO introTrace → shouldPlayIntro() is false → no intro replay.
-  assert.ok(!lvl2.descriptor.introTrace, 'level-2 (progress 2) has no introTrace');
+  assert.ok(!lvl2.descriptor.introTrace, 'level-1 (progress 2) has no introTrace');
 
   const a2 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a2.advanced, true);
-  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-3');
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-2');
 
-  // clearing level-3 advances into level-4, then level-5 (the last)
+  // clearing level-2 advances into level-3, then level-4 (the last)
   const a3 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a3.advanced, true);
-  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-4');
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-3');
 
   const a4 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a4.advanced, true);
-  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-5');
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-4');
 
-  // already at the last level (level-5) → no-op
+  // already at the last level (level-4) → no-op
   const a5 = await (await post('/api/players/prog-2/advance', {})).json();
   assert.equal(a5.advanced, false);
-  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-5');
+  assert.equal((await getJson('/api/players/prog-2/level')).name, 'level-4');
 
   // progress persists on re-register
   const reg = await (await post('/api/players/register', { playerId: 'prog-2' })).json();
-  assert.equal(reg.currentProgress, 5);
+  assert.equal(reg.currentProgress, 4);
 });
 
 test('reset: POST /reset wipes progress to the new-player baseline, keeps the account', async () => {
@@ -146,22 +146,22 @@ test('reset: POST /reset wipes progress to the new-player baseline, keeps the ac
   await post('/api/players/register', { playerId: 'reset-1' });
   await clearCampaign('reset-1'); // advance to the last level → unlocks the shop (shop_unlocked = 1)
   await post('/api/games', { playerId: 'reset-1', credits: 50, kills: 5, durationMs: 1000 }); // banks credits, games_played++
-  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-5');
+  assert.equal((await getJson('/api/players/reset-1/level')).name, 'level-4');
   assert.equal((await getJson('/api/players/reset-1/stash')).shopUnlocked, true); // shop is unlocked pre-reset
 
   const r = await post('/api/players/reset-1/reset', {});
   assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), { ok: true });
 
-  // back to baseline: level-1, 1000 credits, games_played 0 — but the account row (and id) remain
+  // back to baseline: level-0, 1000 credits, games_played 0 — but the account row (and id) remain
   const resetLvl = await getJson('/api/players/reset-1/level');
-  assert.equal(resetLvl.name, 'level-1');
+  assert.equal(resetLvl.name, 'level-0');
   // a RESET player is served an intro-capable level (introTrace present) → the client replays the intro
   // cutscene (server-side half of the "reset → intro" guard; the client gate is shouldPlayIntro()).
-  assert.ok(resetLvl.descriptor.introTrace, 'reset player is served a level-1 descriptor with introTrace');
+  assert.ok(resetLvl.descriptor.introTrace, 'reset player is served a level-0 descriptor with introTrace');
   const reg = await (await post('/api/players/register', { playerId: 'reset-1' })).json();
   assert.equal(reg.isNew, false);            // the player row was kept, not recreated
-  assert.equal(reg.currentProgress, 1);
+  assert.equal(reg.currentProgress, 0);
   assert.equal(reg.credits, 1000);
   assert.equal(reg.gamesPlayed, 0);
   // shop_unlocked is reset too. This is the assertion that catches the prod bug: on Postgres,
@@ -179,7 +179,7 @@ test('reset: unknown player -> 404', async () => {
 });
 
 test('briefing: Level 1 has the first-flight briefing (no weapon change), then the campaign chain swaps the gun for the Machine Gun', async () => {
-  // a fresh player starts on the intro (level-1) with the basic kinetic (weapon 1) as the gun
+  // a fresh player starts on the intro (level-0) with the basic kinetic (weapon 1) as the gun
   const before = await getJson('/api/players/brief-1/active-ship');
   const gunBefore = before.loadout.mounts.find((m) => m.group === 'gun');
   assert.equal(gunBefore.weapon, 1); // Basic kinetic
@@ -468,8 +468,8 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
 });
 
 test('levels: intro Level 0 (no boss), then Level 1-4 served in order (content shifted down one id)', async () => {
-  // level-1 is now the INTRO ("Level 0"): 3 basic pirates one at a time → 1 rocket-pirate finale, no boss
-  const l1 = await getJson('/api/levels/level-1');
+  // level-0 is now the INTRO ("Level 0"): 3 basic pirates one at a time → 1 rocket-pirate finale, no boss
+  const l1 = await getJson('/api/levels/level-0');
   assert.equal(l1.descriptor.map, 'home-system');
   assert.equal(l1.descriptor.title, 'Level 0');
   assert.equal(l1.descriptor.phases[0].advanceWhen.kills, 3);              // gentle: only 3 kills
@@ -479,29 +479,29 @@ test('levels: intro Level 0 (no boss), then Level 1-4 served in order (content s
   assert.equal(l1.descriptor.phases.at(-1).event, 'win');
   assert.ok(!JSON.stringify(l1.descriptor).includes('first pirate boss'), 'the intro has no boss');
 
-  // level-2 is now old level-1 content ("Level 1"): rocketeer finale, no boss
-  const l2 = await getJson('/api/levels/level-2');
+  // level-1 is now old level-0 content ("Level 1"): rocketeer finale, no boss
+  const l2 = await getJson('/api/levels/level-1');
   assert.equal(l2.descriptor.title, 'Level 1');
   assert.equal(l2.descriptor.phases.at(-2).spawn.pool[0].ship, 'basic rocket pirate'); // rocketeer finale
-  assert.ok(!JSON.stringify(l2.descriptor).includes('pirate mini boss'), 'old level-1 has no boss');
+  assert.ok(!JSON.stringify(l2.descriptor).includes('pirate mini boss'), 'old level-0 has no boss');
 
-  // level-3 is now old level-2 content ("Level 2"): the medium IS the boss, and its briefing now opens the
+  // level-2 is now old level-1 content ("Level 2"): the medium IS the boss, and its briefing now opens the
   // shop (unlockShop moved here — right after the first flight — alongside the Machine-Gun swap)
-  const l3 = await getJson('/api/levels/level-3');
+  const l3 = await getJson('/api/levels/level-2');
   assert.equal(l3.descriptor.title, 'Level 2');
   assert.equal(l3.descriptor.phases.at(-2).spawn.pool[0].ship, 'pirate mini boss');
   assert.equal(l3.descriptor.briefing.textKey, 'level.2.briefing');
   assert.ok(l3.descriptor.briefing.actions.some((a) => a.type === 'unlockShop'), '"Level 2" opens the shop (right after the first flight)');
 
-  // level-4 is now old level-3 content ("Level 3"): the Sector boss
-  const l4 = await getJson('/api/levels/level-4');
+  // level-3 is now old level-2 content ("Level 3"): the Sector boss
+  const l4 = await getJson('/api/levels/level-3');
   assert.equal(l4.descriptor.title, 'Level 3');
   assert.equal(l4.descriptor.phases.at(-2).spawn.pool[0].ship, 'first pirate boss');
 
-  // level-5 is now old level-4 content ("Level 4", "Find the pirate base"): advanced-medium-pirate waves
-  // (8/16 kills), the Second Boss finale (docs/plans/level-4-difficulty.md). Its briefing is text-only now —
+  // level-4 is now old level-3 content ("Level 4", "Find the pirate base"): advanced-medium-pirate waves
+  // (8/16 kills), the Second Boss finale (docs/plans/level-3-difficulty.md). Its briefing is text-only now —
   // the shop was already opened back on reaching "Level 2", so there is no unlockShop action here.
-  const l5 = await getJson('/api/levels/level-5');
+  const l5 = await getJson('/api/levels/level-4');
   assert.equal(l5.descriptor.title, 'Level 4');
   assert.equal(l5.descriptor.briefing.textKey, 'level.4.briefing');
   assert.ok(!l5.descriptor.briefing.actions.some((a) => a.type === 'unlockShop'), 'the last level no longer opens the shop');
@@ -591,9 +591,9 @@ test('username: empty/too-long -> 400', async () => {
 
 test('register: upgrades an anonymous player in place, preserves progress, sends a verify email, logs in', async () => {
   // build an anonymous player with some progress first
-  await post('/api/players/acc-1/advance', {}); // -> level-2
+  await post('/api/players/acc-1/advance', {}); // -> level-1
   const before = await (await post('/api/players/register', { playerId: 'acc-1' })).json();
-  assert.equal(before.currentProgress, 2);
+  assert.equal(before.currentProgress, 1);
 
   const r = await post('/api/auth/register', { playerId: 'acc-1', username: 'Neo', email: 'Neo@Example.com', password: 'hunter2hunter' });
   assert.equal(r.status, 200);
@@ -601,7 +601,7 @@ test('register: upgrades an anonymous player in place, preserves progress, sends
   assert.equal(j.email, 'neo@example.com');   // normalized lower-case
   assert.equal(j.username, 'Neo');
   assert.equal(j.emailVerified, false);
-  assert.equal(j.currentProgress, 2);          // progress preserved through the upgrade
+  assert.equal(j.currentProgress, 1);          // progress preserved through the upgrade
   assert.ok(sessionCookie(r), 'a session cookie is set on register');
   // a verification email was "sent" (no-creds dev path records it to the outbox)
   const sent = outbox.at(-1);
@@ -778,13 +778,13 @@ test('password reset: an expired token is rejected at the datastore level (1 h T
 });
 
 test('cross-device: a second client can log in and adopt the same progress', async () => {
-  await post('/api/players/sync-1/advance', {}); // sync-1 -> level-2
+  await post('/api/players/sync-1/advance', {}); // sync-1 -> level-1
   await post('/api/auth/register', { playerId: 'sync-1', email: 'sync@example.com', password: 'password123' });
   // a "fresh device" logs in by email and gets the account's player row + progress
   const login = await post('/api/auth/login', { email: 'sync@example.com', password: 'password123' });
   const j = await login.json();
   assert.equal(j.id, 'sync-1');
-  assert.equal(j.currentProgress, 2);
+  assert.equal(j.currentProgress, 1);
 });
 
 test('active ship: a new player gets a default active ship (empty loadout -> ship mounts)', async () => {
@@ -818,11 +818,11 @@ test('shop: locked for a new player (before the first flight); mutations 403', a
   assert.equal((await post('/api/players/shop-lock/equip', { kind: 'weapon', refId: 1 })).status, 403);
 });
 
-test('shop: unlocks on reaching the level-3 row (player-facing "Level 2") — right after the first flight, not the final level', async () => {
+test('shop: unlocks on reaching the level-2 row (player-facing "Level 2") — right after the first flight, not the final level', async () => {
   await getJson('/api/players/shop-early/active-ship');                 // register (progress 1)
-  await post('/api/players/shop-early/advance', {});                    // → level-2 ("first flight")
+  await post('/api/players/shop-early/advance', {});                    // → level-1 ("first flight")
   assert.equal((await getJson('/api/players/shop-early/stash')).shopUnlocked, false, 'still locked during the first flight');
-  await post('/api/players/shop-early/advance', {});                    // → level-3: unlockShop runs
+  await post('/api/players/shop-early/advance', {});                    // → level-2: unlockShop runs
   const s = await getJson('/api/players/shop-early/stash');
   assert.equal(s.shopUnlocked, true, 'shop opens right after clearing the first flight');
   assert.ok(s.stash.some((it) => it.kind === 'weapon' && it.refId === 1), 'basic gun seeded into the stash');
@@ -830,14 +830,14 @@ test('shop: unlocks on reaching the level-3 row (player-facing "Level 2") — ri
 
 // This DB has contiguous level ids 1..5 (pretest recreates it) — the drifted-id coverage that would have
 // caught the production bug lives in levels_drift.test.js, on its own database.
-test('migration: backfills shop_unlocked + basic gun for players past the first playable level (level-3)', async () => {
+test('migration: backfills shop_unlocked + basic gun for players past the first playable level (level-2)', async () => {
   const { pool } = await import('./db.js');
   const { migrate } = await import('./datastore.js');
   await post('/api/players/register', { playerId: 'bf-past' });
   await post('/api/players/register', { playerId: 'bf-early' });
   // simulate the pre-change state: advanced past the first flight but shop still locked (old behavior)
-  await pool.query("UPDATE players SET current_progress = (SELECT id FROM levels WHERE name = 'level-3'), shop_unlocked = 0 WHERE id = 'bf-past'");
-  await pool.query("UPDATE players SET current_progress = (SELECT id FROM levels WHERE name = 'level-2'), shop_unlocked = 0 WHERE id = 'bf-early'");
+  await pool.query("UPDATE players SET current_progress = (SELECT id FROM levels WHERE name = 'level-2'), shop_unlocked = 0 WHERE id = 'bf-past'");
+  await pool.query("UPDATE players SET current_progress = (SELECT id FROM levels WHERE name = 'level-1'), shop_unlocked = 0 WHERE id = 'bf-early'");
   await pool.query("DELETE FROM stash WHERE player_id = 'bf-past' AND kind = 'weapon' AND ref_id = 1");
   await migrate();                                                      // idempotent re-run exercises the backfill
   const past = await pool.query('SELECT shop_unlocked FROM players WHERE id = $1', ['bf-past']);
@@ -871,14 +871,14 @@ test('missions: locked before the first flight, then 3 same-difficulty side miss
 });
 
 // Contiguous-id DB (see the backfill test above); levels_drift.test.js covers the drifted-id case.
-test('missions: unlock LATER than the shop — locked at "Level 2", open on reaching level-5 (DECISIONS §91)', async () => {
+test('missions: unlock LATER than the shop — locked at "Level 2", open on reaching level-4 (DECISIONS §91)', async () => {
   await getJson('/api/players/miss-gate/active-ship');                          // register (progress 1)
-  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-3 ("Level 2"): shop opens
+  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-2 ("Level 2"): shop opens
   const s = await getJson('/api/players/miss-gate/stash');
   assert.equal(s.shopUnlocked, true, 'shop is open right after the first flight');
   assert.equal(s.sideMissionsUnlocked, false, 'but the side-mission board is still locked at "Level 2"');
   assert.equal((await fetch(base + '/api/players/miss-gate/missions')).status, 403, 'side-mission board 403 while only the shop is open');
-  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-5 ("Level 4"): side missions open
+  for (let i = 0; i < 2; i++) await post('/api/players/miss-gate/advance', {}); // → level-4 ("Level 4"): side missions open
   const s2 = await getJson('/api/players/miss-gate/stash');
   assert.equal(s2.sideMissionsUnlocked, true, 'side missions open on reaching "Level 4" (after clearing "Level 3")');
   assert.equal((await getJson('/api/players/miss-gate/missions')).missions.length, 3, 'the 3-choice board is offered');
@@ -974,7 +974,7 @@ test('catalog: orphaned enemy ships are pruned on re-seed (rename/removal cleanu
   assert.ok(!(await getJson('/api/ships')).some((s) => s.name === STALE), 'stale enemy pruned on re-seed');
 });
 
-test('catalog: level-4 enemies — advanced medium pirate (300 HP) + Second Boss (550 HP) + Advanced pirate cannon', async () => {
+test('catalog: level-3 enemies — advanced medium pirate (300 HP) + Second Boss (550 HP) + Advanced pirate cannon', async () => {
   const weapons = await getJson('/api/weapons');
   const cannon = weapons.find((w) => w.id === 10);
   assert.ok(cannon && cannon.name === 'Advanced pirate cannon', 'Advanced pirate cannon seeded as weapon 10');
@@ -1281,14 +1281,14 @@ test('admin: aggregates sum kills/time/earned across a player\'s games', async (
 });
 
 test('admin: progress column renders the level title + bar + n/N, still sorted by the raw id', async () => {
-  await post('/api/players/register', { playerId: 'p_prog' });   // fresh player → current_progress = 1
+  await post('/api/players/register', { playerId: 'p_prog' });   // fresh player → current_progress = 0 (the intro)
   const html = await (await get('/admin', adminAuth)).text();
   const row = html.split('<tr>').find((r) => r.includes('p_prog'));
   assert.ok(row, 'the player row is rendered');
-  assert.match(row, /<td data-sort="1" class="prog"/, 'sortable by the raw progress id');
+  assert.match(row, /<td data-sort="0" class="prog"/, 'sortable by the raw progress id');
   assert.ok(row.includes('Level 0'), 'shows the level title, not the raw id');
   assert.ok(row.includes('1/5'), 'n/N derived from the 5 seeded levels');
-  assert.ok(!row.includes('level-1'), 'never shows the levels.name column');
+  assert.ok(!row.includes('level-0'), 'never shows the levels.name column');
 });
 
 test('admin: requires auth (401 + WWW-Authenticate when no credentials)', async () => {
