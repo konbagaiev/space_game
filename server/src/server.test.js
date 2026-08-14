@@ -1097,6 +1097,129 @@ test('shop: the "Level 3" tier is refused before the factory is cleared and sell
   }
 });
 
+// ---------- Mission-gated shop rows (catalog_seed.js RESEARCH_GATE = 'side-research') ----------
+// The premium support tier — Ion engine (16) + Nanobot repair (20) — is only on sale once the player has
+// CLEARED the "Research station" side mission. Second gate KIND next to minLevel; both compose with AND.
+// (docs/plans/2026-08-14-1244-mission-gate-new-item-trail.md)
+const RESEARCH_GATED = [16, 20];
+
+test('catalog: Ion engine + Nanobot repair carry minMission "side-research"', async () => {
+  const comps = await getJson('/api/components');
+  for (const id of RESEARCH_GATED) {
+    const c = comps.find((x) => x.id === id);
+    assert.equal(c.stats.minMission, 'side-research', `component ${id} is mission-gated`);
+    assert.equal(c.stats.minLevel, undefined, `component ${id} carries ONLY the mission gate (the kinds are independent)`);
+  }
+  // the mid-ladder stays reachable — the gate is a story beat, not a blanket lock on the top tier
+  assert.equal(comps.find((c) => c.id === 15).stats.minMission, undefined, 'Solid-fuel engine is not gated');
+  assert.equal(comps.find((c) => c.id === 19).stats.minMission, undefined, 'Repair drone II is not gated');
+});
+
+test('shop: the research tier is refused until "Research station" is cleared, and sells after', async () => {
+  const pid = 'gate-research';
+  await getJson(`/api/players/${pid}/active-ship`);           // register (progress 0)
+  await clearCampaign(pid);                                   // → level-4: the side-mission board unlocks
+  const { pool } = await import('./db.js');
+  await pool.query('UPDATE players SET credits = 50000 WHERE id = $1', [pid]); // credits must not be the reason
+  const early = await getJson(`/api/players/${pid}/stash`);
+  assert.deepEqual(early.activeShip.clearedMissions, [], 'no side mission cleared yet');
+  for (const refId of RESEARCH_GATED) {
+    const r = await post(`/api/players/${pid}/buy`, { kind: 'component', refId });
+    assert.equal(r.status, 403, `component ${refId} is locked before "Research station"`);
+    assert.equal((await r.json()).error, 'item locked');
+  }
+  // the BOARD read carries `cleared` too — it is what feeds the "Cleared" badge on every landing
+  assert.deepEqual((await getJson(`/api/players/${pid}/missions`)).cleared, [], 'the board reports nothing cleared');
+
+  const cl = await post(`/api/players/${pid}/missions/clear`, { missionId: 'side-research' });
+  assert.equal(cl.status, 200);
+  assert.deepEqual((await cl.json()).cleared, ['side-research'], 'the clear response carries the cleared set');
+  assert.deepEqual((await getJson(`/api/players/${pid}/missions`)).cleared, ['side-research'],
+    'the board READ ships `cleared` (the badge is fed by this route, not by the mutation)');
+
+  for (const refId of RESEARCH_GATED) {
+    const r = await post(`/api/players/${pid}/buy`, { kind: 'component', refId });
+    assert.equal(r.status, 200, `component ${refId} is on sale after "Research station"`);
+    const j = await r.json();
+    assert.ok(j.stash.some((it) => it.kind === 'component' && it.refId === refId), 'bought item landed in the stash');
+    assert.ok(j.activeShip.clearedMissions.includes('side-research'), 'the client sees the gate open');
+  }
+});
+
+test('missions: clear is idempotent, validated and board-gated', async () => {
+  const pid = 'clear-idem';
+  await getJson(`/api/players/${pid}/active-ship`);
+  await clearCampaign(pid);
+  await post(`/api/players/${pid}/missions/clear`, { missionId: 'side-mining' });
+  const twice = await (await post(`/api/players/${pid}/missions/clear`, { missionId: 'side-mining' })).json();
+  assert.deepEqual(twice.cleared, ['side-mining'], 'clearing again is a no-op (the unlock is permanent)');
+  assert.equal((await post(`/api/players/${pid}/missions/clear`, { missionId: 'side-nope' })).status, 400, 'unknown mission id → 400');
+  assert.equal((await (await post(`/api/players/${pid}/missions/clear`, { missionId: 'side-nope' })).json()).error, 'unknown mission');
+  assert.equal((await post(`/api/players/${pid}/missions/clear`, {})).status, 400, 'a missing missionId → 400');
+  // a player who has not reached level-4 has no board at all
+  const early = 'clear-locked';
+  await getJson(`/api/players/${early}/active-ship`);
+  const r = await post(`/api/players/${early}/missions/clear`, { missionId: 'side-research' });
+  assert.equal(r.status, 403);
+  assert.equal((await r.json()).error, 'missions locked');
+});
+
+test('shop: the mission gate is on the PURCHASE only — a looted copy still deposits and equips', async () => {
+  const pid = 'gate-research-loot';
+  await getJson(`/api/players/${pid}/active-ship`);
+  await clearCampaign(pid);
+  assert.equal((await post(`/api/players/${pid}/buy`, { kind: 'component', refId: 16 })).status, 403, 'the gate is shut');
+  assert.equal((await post(`/api/players/${pid}/loot`, { items: [{ kind: 'component', refId: 16 }] })).status, 200);
+  const stash = (await getJson(`/api/players/${pid}/stash`)).stash;
+  assert.ok(stash.some((it) => it.kind === 'component' && it.refId === 16), 'a looted Ion engine lands in the stash');
+  const eq = await post(`/api/players/${pid}/equip`, { kind: 'component', refId: 16 });
+  assert.equal(eq.status, 200, 'and it equips (DECISIONS §108: the gate is on the purchase, not on ownership)');
+  assert.equal((await eq.json()).activeShip.components.engine, 16);
+});
+
+// The backfill is SET-BASED over the whole shared test database, so it also credits every other player
+// already past level-4 by this point in the file. Every assertion below is scoped to the fresh ids A/B,
+// and no later test may assume a level-4 player LACKS side-research (use a player short of level-4).
+test('migration: the grandfather backfill credits players past the board gate with side-research', async () => {
+  const { pool, backfillResearchClear } = await import('./db.js');
+  const A = 'gf-past', B = 'gf-short';
+  await getJson(`/api/players/${A}/active-ship`);
+  await clearCampaign(A);                                    // → level-4: past the board gate
+  await getJson(`/api/players/${B}/active-ship`);
+  for (let i = 0; i < 2; i++) await post(`/api/players/${B}/advance`, {}); // → level-2: short of it
+  await pool.query('UPDATE players SET credits = 50000 WHERE id = ANY($1::text[])', [[A, B]]);
+  assert.equal((await post(`/api/players/${A}/buy`, { kind: 'component', refId: 16 })).status, 403, 'locked before the backfill');
+
+  const first = await backfillResearchClear();
+  assert.ok(first >= 1, 'the backfill inserted at least the level-4 player (it is set-based over the whole DB)');
+  assert.equal((await post(`/api/players/${A}/buy`, { kind: 'component', refId: 16 })).status, 200, 'A is grandfathered');
+  assert.deepEqual((await getJson(`/api/players/${A}/stash`)).activeShip.clearedMissions, ['side-research']);
+  assert.equal((await post(`/api/players/${B}/buy`, { kind: 'component', refId: 16 })).status, 403, 'B is short of level-4');
+  assert.deepEqual((await getJson(`/api/players/${B}/stash`)).activeShip.clearedMissions, [], 'and gets nothing');
+
+  // it runs on EVERY server start (the ledger only guards the first) → re-running must change nothing
+  assert.equal(await backfillResearchClear(), 0, 'a second run inserts no rows (idempotent)');
+  assert.deepEqual((await getJson(`/api/players/${A}/stash`)).activeShip.clearedMissions, ['side-research']);
+});
+
+test('reset: wiping progress re-arms the mission gate', async () => {
+  const pid = 'gate-research-reset';
+  await getJson(`/api/players/${pid}/active-ship`);
+  await clearCampaign(pid);
+  const { pool } = await import('./db.js');
+  await pool.query('UPDATE players SET credits = 50000 WHERE id = $1', [pid]);
+  await post(`/api/players/${pid}/missions/clear`, { missionId: 'side-research' });
+  assert.equal((await post(`/api/players/${pid}/buy`, { kind: 'component', refId: 16 })).status, 200);
+  assert.equal((await post(`/api/players/${pid}/reset`, {})).status, 200);
+  assert.deepEqual((await getJson(`/api/players/${pid}/stash`)).activeShip.clearedMissions, [], 'the cleared set is wiped');
+  // re-play back up to level-4 (shop + board open again) → the row is locked once more, on the ITEM gate
+  await clearCampaign(pid);
+  await pool.query('UPDATE players SET credits = 50000 WHERE id = $1', [pid]);
+  const again = await post(`/api/players/${pid}/buy`, { kind: 'component', refId: 16 });
+  assert.equal(again.status, 403, 'the gate is shut again');
+  assert.equal((await again.json()).error, 'item locked', 'and it is the ITEM gate, not the shop lock');
+});
+
 // ---------- Grab (tractor) component + victory loot deposit (grab-tractor-drops) ----------
 test('catalog: Grab components (29/30) seeded; enemy parts priced with buyable:false', async () => {
   const comps = await getJson('/api/components');

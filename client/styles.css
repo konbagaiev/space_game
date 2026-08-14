@@ -183,6 +183,7 @@
   }
   .mission-card .mc-badge.active { background: #ffcf5a; color: #1a1a1a; }
   .mission-card .mc-badge.taken { background: rgba(120,160,255,.28); color: #cfe0ff; }
+  .mission-card .mc-badge.cleared { background: rgba(89,224,160,.28); color: #b8f0d0; } /* cleared = green, distinct from gold "active" / blue "taken" */
   .mission-card .mc-actions {
     grid-column: 1 / -1; grid-row: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px;
   }
@@ -249,6 +250,8 @@
   .lp-item { padding: 0; }  /* selected-item detail (name/stats/model/Remove) floats in the panel — no boxed frame */
   .lp-shop-item { cursor: pointer; }
   .lp-shop-item:hover { background: rgba(40,60,100,.55); }
+  /* gold "new item" frame: an unlocked row the player has never clicked (client/src/shop-markers.js) */
+  .lp-shop-item.new { border-color: #ffcf5a; box-shadow: 0 0 0 1px rgba(255,207,90,.35); }
   /* shop detail card: stats → 3D model → Buy (spec) */
   .lp-detail { display: flex; flex-direction: column; gap: 10px; }
   .lp-model { width: 100%; height: 220px; display: block; } /* transparent — the alpha WebGL canvas lets the starfield show through, like the centered ship */
@@ -271,6 +274,8 @@
     background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.25); border-radius: 6px; padding: 4px 9px;
   }
   .lp-type.active { background: rgba(74,125,255,.35); border-color: #4a7dff; color: #fff; }
+  /* a section that still holds an unclicked new item — gold instead of the usual blue, active or not */
+  .lp-type.new, .lp-type.active.new { border-color: #ffcf5a; color: #ffe1a0; box-shadow: 0 0 0 1px rgba(255,207,90,.35); }
   .lp-foot { flex: none; padding-top: 8px; display: flex; justify-content: flex-end; }
   .lp-item .lp-acts button, .lp-shop-item .lp-acts button, .lp-detail .lp-acts button, .lp-foot button {
     pointer-events: auto; cursor: pointer; font: inherit; font-size: 20px; color: #cfe0ff;
@@ -1026,8 +1031,9 @@
     background: #ffcf5a; color: #1a1a1a; font-size: 12px; font-weight: 700; line-height: 1;
   }
   /* "(new)" on the Loadout menu item: newly unlocked shop items are waiting. Same gold as the badges
-     above, but plain inline text — it says "look here", and a count would be noise. Cleared the moment
-     the player opens Loadout (mainwindow.js updateLoadoutNew → shop.js markShopItemsSeen). */
+     above, but plain inline text — it says "look here", and a count would be noise. Cleared when the player
+     OPENS THE SHOP (mainwindow.js updateLoadoutNew → shop.js markShopItemsSeen); the trail then continues
+     inside the shop as the gold .lp-type.new tab + .lp-shop-item.new row. */
   .mw-new { display: none; }
   .mw-new.show { display: inline; margin-left: 6px; color: #ffcf5a; font-size: 12px; font-weight: 700; }
   #xp-bar {

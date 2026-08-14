@@ -239,6 +239,7 @@
   "ui.mission.set_active": "Сделать активной",
   "ui.mission.active": "Активна",
   "ui.mission.taken": "Взята",
+  "ui.mission.cleared": "Пройдена",
   "ui.button.take_off_mission": "🚀 Вылет — {mission}",
   "ui.button.launch_mission": "В бой ⚔",
   "ui.button.launch_mission_named": "⚔ В бой — {mission}",

@@ -23,7 +23,7 @@ import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from 
 import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
 import { canDock, BASE_ARRIVE_RADIUS } from './autopilot-config.js';
-import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot } from './net.js';
+import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 import { logEvent, clearEventLog } from './eventlog.js';
@@ -160,6 +160,7 @@ export const levelRunner = {
       // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
       // levels advance progression as before.
       if (!this.level.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
+      else if (this.level.missionId) reportMissionCleared(this.level.missionId); // permanent side-mission clear → `minMission` shop unlocks
     }
   },
 

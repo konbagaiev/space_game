@@ -44,6 +44,14 @@ const THRUSTER_MODEL_CFG = { yaw: 0, scale: 1.15 };
 // it instead of behind a credit balance the player could grind out on side missions at "Level 1".
 export const FACTORY_GATE = 'level-4'; // reached after clearing "Level 3" (the weapons-factory boss)
 
+// --- Mission-gated shop rows (`stats.minMission`) ---
+// A row with `minMission` is only BUYABLE once the player has CLEARED the side mission with that ID
+// (a stable generator id from missions.js — never a raw row id, same discipline as DECISIONS §95).
+// Server-enforced in `buyItem`; the client hides the row (DECISIONS §108). A LOOTED copy still equips —
+// the gate is on the purchase, not on ownership. Ties the two premium support parts to actually flying
+// the research station instead of to a credit balance.
+export const RESEARCH_GATE = 'side-research'; // the "Research station" side mission (missions.js FLAVORS, type 'research')
+
 export const COMPONENTS = [
   { id: 1, name: 'Basic hull', type: 'hull', weight: 20, price: 300, stats: { durability: 100, volume: 100 } }, // starter gear: cheap, buyable
   { id: 2, name: 'Light hull', type: 'hull', weight: 8, price: 150, stats: { durability: 30, volume: 40, buyable: false } }, // enemy gear: resale-only (hidden from the shop)
@@ -79,7 +87,8 @@ export const COMPONENTS = [
   // --- Player shop ladder (docs/plans/catalog-economy.md). Upgrades are mass trade-offs, not
   // power-creep; ids continue from 12. The enemy/starter parts above stay out of the shop (price 0 →
   // hidden by the client's price>0 shop filter); only these priced rows are buyable — and a row carrying
-  // `minLevel` (FACTORY_GATE) is buyable only once the campaign has reached that level.
+  // a gate is buyable only once that gate opens: `minLevel` (FACTORY_GATE) once the campaign has reached
+  // that level, `minMission` (RESEARCH_GATE) once that side mission has been cleared. Both compose (AND).
   // Hull: "a new ship = a new hull" — 2× HP for a real mobility cost (mass 48→78: accel ~6.2, turn ~1.2).
   { id: 13, name: 'Heavy hull', type: 'hull', weight: 50, price: 6000, stats: { durability: 200, volume: 350, minLevel: FACTORY_GATE } }, // gated: sold only after "Level 3"
   // Engines: Racing = T2 (more power, heavier); Ion = high-accel and light (premium top-tier).
@@ -88,11 +97,13 @@ export const COMPONENTS = [
     stats: { power: 21, maxSpeed: 12, exhaust: { color: 0x7fb0ff, speed: 13, life: 0.55, size: 0.55, spread: 0.35 } , model: ENGINE_MODEL_CFG } },
   { id: 16, name: 'Ion engine', type: 'engine', weight: 10, price: 6400,
     modelUrlHigh: ENGINE_MODEL, // menu-only item icon (shared by the family)
-    stats: { power: 27, maxSpeed: 14, exhaust: { color: 0xffd24d, speed: 14, life: 0.45, size: 0.45, spread: 0.30 } , model: ENGINE_MODEL_CFG } },
+    stats: { power: 27, maxSpeed: 14, exhaust: { color: 0xffd24d, speed: 14, life: 0.45, size: 0.45, spread: 0.30 } , model: ENGINE_MODEL_CFG,
+             minMission: RESEARCH_GATE } }, // gated: sold only after clearing "Research station"
   // Repair drones: faster cadence + higher cap (the "future tiers" from the repair-drone spec).
   // All tick every 1 s; per-tick HP keeps each tier 3× its old healing rate and preserves the ladder.
   { id: 19, name: 'Repair drone II', type: 'repair', weight: 6, price: 1800, stats: { repairPerTick: 1.5, intervalSec: 1, maxFraction: 0.85 } },
-  { id: 20, name: 'Nanobot repair', type: 'repair', weight: 8, price: 7000, stats: { repairPerTick: 2, intervalSec: 1, maxFraction: 0.90 } },
+  { id: 20, name: 'Nanobot repair', type: 'repair', weight: 8, price: 7000,
+    stats: { repairPerTick: 2, intervalSec: 1, maxFraction: 0.90, minMission: RESEARCH_GATE } }, // gated: after "Research station"
   { id: 21, name: 'Advanced thrusters', type: 'thruster', weight: 5, price: 2500,
     modelUrlHigh: THRUSTER_MODEL, // menu-only item icon (shared by the family)
     stats: { power: 3.0 , model: THRUSTER_MODEL_CFG } },

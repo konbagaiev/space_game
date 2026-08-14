@@ -3,6 +3,10 @@
 import pg from 'pg';
 import { SESSION_TTL_MS, VERIFY_TTL_MS, RESET_TTL_MS, RESEND_THROTTLE_MS } from './auth.js';
 import { levelFromXp, unspentSkillPoints } from './progression.js';
+// The mission gate constant, at module scope: `backfillResearchClear` (below) needs it OUTSIDE migrate(),
+// where the rest of the catalog arrives through a function-local dynamic import. Safe — catalog_seed.js
+// imports only ./enemy_total.js, so there is no cycle back into this module.
+import { RESEARCH_GATE } from './catalog_seed.js';
 
 // The five skills, mapped to their `players.skill_*` columns. The order is the card order in the
 // Character screen; the keys are the wire names used by the /skills/spend endpoint and the client.
@@ -292,6 +296,18 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS idx_taken_missions_player ON taken_missions(player_id);
     ALTER TABLE players ADD COLUMN IF NOT EXISTS active_mission_id TEXT;
 
+    -- Cleared side missions (docs/plans/2026-08-14-1244-mission-gate-new-item-trail.md). taken_missions
+    -- records what the player ACCEPTED; this records what they actually CLEARED (won). It is the second
+    -- content-gate source next to current_progress: a catalog row carrying stats.minMission is buyable
+    -- only once the named mission id is in here. Permanent + idempotent — re-clearing is a no-op.
+    CREATE TABLE IF NOT EXISTS cleared_missions (
+      player_id  TEXT   NOT NULL,
+      mission_id TEXT   NOT NULL,   -- stable side-mission id (missions.js generateMissions)
+      cleared_at BIGINT NOT NULL,
+      PRIMARY KEY (player_id, mission_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_cleared_missions_player ON cleared_missions(player_id);
+
     -- Character progression (docs/plans/2026-08-09-character-progression.md): experience banked per
     -- enemy kill (= the enemy's credit reward) + a one-shot bonus per mission cleared. The character
     -- LEVEL and unspent skill points are DERIVED from experience (progression.js), never stored — the
@@ -387,6 +403,13 @@ export async function migrate() {
   if (shift.rows[0]) {
     await pool.query('UPDATE players SET current_progress = current_progress + 1');
   }
+  // One-shot: grandfather `side-research` onto everyone already past the side-mission board gate, so the
+  // rows that just became mission-gated stay on their shelf. Ledger-guarded (runs once per database) and
+  // internally idempotent anyway. MUST run after the levels seed — it resolves the gate by NAME.
+  const gf = await pool.query(
+    `INSERT INTO migrations_pg (name, applied_at) VALUES ('grandfather_research_clear', $1)
+     ON CONFLICT (name) DO NOTHING RETURNING name`, [Date.now()]);
+  if (gf.rows[0]) await backfillResearchClear();
   for (const s of (SOUNDS ?? [])) {
     await pool.query(
       `INSERT INTO sounds (key, url, gain) VALUES ($1, $2, $3)
@@ -473,7 +496,7 @@ export async function resetPlayer(playerId) {
   // level number on every database, so this literal reads as what it means. The FK would fail loudly (not
   // silently) if level 0 ever stopped existing. The content gates stay name-based (DECISIONS §95, §30).
   await withTx(async (client) => {
-    for (const t of ['games', 'player_ships', 'stash', 'events', 'taken_missions'])
+    for (const t of ['games', 'player_ships', 'stash', 'events', 'taken_missions', 'cleared_missions'])
       await client.query(`DELETE FROM ${t} WHERE player_id = $1`, [playerId]);
     await client.query('UPDATE players SET games_played = 0, current_progress = 0, credits = 1000, shop_unlocked = 0, active_mission_id = NULL, experience = 0, skill_kinetic = 0, skill_rocket = 0, skill_shields = 0, skill_maneuver = 0, skill_mobility = 0 WHERE id = $1', [playerId]);
     await ensureDefaultShip(playerId, client); // re-grant the starter ship so the reset account is playable
@@ -485,7 +508,7 @@ export async function resetPlayer(playerId) {
 // resets the serial counters), leaving the seeded reference catalog untouched — it is re-upserted
 // idempotently on the next startup. Single atomic statement.
 export async function resetAllPlayers() {
-  await pool.query('TRUNCATE players, games, player_ships, stash, events, sessions, perf_samples, taken_missions RESTART IDENTITY CASCADE');
+  await pool.query('TRUNCATE players, games, player_ships, stash, events, sessions, perf_samples, taken_missions, cleared_missions RESTART IDENTITY CASCADE');
 }
 
 // Persist a player's language preference (validated to a supported code by the caller/route).
@@ -603,11 +626,12 @@ async function unlockShop(playerId) {
 // validity is checked by the caller (server.js, against generateMissions ids); these just persist. ----
 export async function getMissionState(playerId) {
   await registerPlayer(playerId);
-  const [tk, pl] = await Promise.all([
+  const [tk, pl, cl] = await Promise.all([
     pool.query('SELECT mission_id FROM taken_missions WHERE player_id = $1 ORDER BY taken_at', [playerId]),
     pool.query('SELECT active_mission_id FROM players WHERE id = $1', [playerId]),
+    getClearedMissions(playerId),
   ]);
-  return { taken: tk.rows.map((r) => r.mission_id), activeMissionId: (pl.rows[0] && pl.rows[0].active_mission_id) || null };
+  return { taken: tk.rows.map((r) => r.mission_id), activeMissionId: (pl.rows[0] && pl.rows[0].active_mission_id) || null, cleared: cl };
 }
 // Accept a side mission onto the board (idempotent). Does not change which one is active.
 export async function takeMission(playerId, missionId) {
@@ -635,6 +659,36 @@ export async function activateMission(playerId, missionId) {
     await pool.query('UPDATE players SET active_mission_id = $1 WHERE id = $2', [missionId, playerId]);
   }
   return getMissionState(playerId);
+}
+// Every side mission this player has CLEARED (ids, oldest first). Second gate source next to
+// `reachedLevels`: shipped with the active ship so the client can mirror `stats.minMission` shop gates.
+export async function getClearedMissions(playerId, db = pool) {
+  const { rows } = await db.query(
+    'SELECT mission_id FROM cleared_missions WHERE player_id = $1 ORDER BY cleared_at, mission_id', [playerId]);
+  return rows.map((r) => r.mission_id);
+}
+// Record a side-mission clear (idempotent — the unlock is permanent; re-clearing is a no-op). Mission-id
+// validity is checked by the caller (server.js, against generateMissions ids), like take/defer/activate.
+export async function clearMission(playerId, missionId) {
+  await registerPlayer(playerId);
+  await pool.query(`INSERT INTO cleared_missions (player_id, mission_id, cleared_at) VALUES ($1, $2, $3)
+    ON CONFLICT (player_id, mission_id) DO NOTHING`, [playerId, missionId, Date.now()]);
+  return getMissionState(playerId);
+}
+// One-shot grandfather backfill (DECISIONS §110): players who were already past the side-mission board
+// gate when this feature shipped are credited with `side-research` so the two research-gated shop rows
+// (Ion engine 16, Nanobot repair 20) do not vanish off their shelf. Compared by level NAME — the same
+// EXISTS predicate `reachedLevel` uses (DECISIONS §95), set-based so it is one statement, not N queries.
+// Idempotent: safe to run any number of times (ON CONFLICT DO NOTHING). Exported for the migration guard
+// in migrate() AND for the server test that pins the backfill.
+export async function backfillResearchClear(db = pool) {
+  const { rowCount } = await db.query(
+    `INSERT INTO cleared_missions (player_id, mission_id, cleared_at)
+     SELECT p.id, $1, $2 FROM players p
+     WHERE EXISTS (SELECT 1 FROM levels l WHERE l.name = $3 AND l.id <= p.current_progress)
+     ON CONFLICT (player_id, mission_id) DO NOTHING`,
+    [RESEARCH_GATE, Date.now(), SIDE_MISSIONS_MIN_LEVEL]);
+  return rowCount;
 }
 
 export async function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0, xp = 0 } = {}) {
@@ -894,6 +948,10 @@ export async function buyItem(playerId, kind, refId) {
   // refuses it — the shop list is not the gate, this is. Looting/equipping such an item stays allowed.
   const gate = item.stats && item.stats.minLevel;
   if (gate && !(await reachedLevel(reg.currentProgress, gate))) return { ok: false, status: 403, error: 'item locked' };
+  // Mission-gated row (`stats.minMission`, catalog_seed.js RESEARCH_GATE): same rule, keyed on a CLEARED
+  // side mission instead of campaign progress. Both gates compose with AND; a looted copy still equips.
+  const mGate = item.stats && item.stats.minMission;
+  if (mGate && !(await getClearedMissions(playerId)).includes(mGate)) return { ok: false, status: 403, error: 'item locked' };
   const price = item.price | 0;
   return withTx(async (client) => {
     const { rows } = await client.query('SELECT credits FROM players WHERE id = $1 FOR UPDATE', [playerId]);
@@ -1166,10 +1224,11 @@ export async function getActivePlayerShip(playerId) {
   const stats = row.stats, loadout = row.loadout || {};
   const components = row.ps_components ?? row.ship_components ?? {};
   const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null);
-  const [progression, sideMissionsUnlocked, levelsReached] = await Promise.all([
+  const [progression, sideMissionsUnlocked, levelsReached, clearedMissions] = await Promise.all([
     getProgression(playerId),                                     // banked XP → derived level + skill points + allocations
     reachedLevel(reg.currentProgress, SIDE_MISSIONS_MIN_LEVEL),   // side-mission board gate (DECISIONS §91/§95)
     reachedLevels(reg.currentProgress),                           // level NAMES reached → the client's `minLevel` shop filter
+    getClearedMissions(playerId),                                 // cleared side-mission ids → the client's `minMission` shop filter
   ]);
   return {
     playerShipId: Number(row.player_ship_id),
@@ -1182,6 +1241,7 @@ export async function getActivePlayerShip(playerId) {
     shopUnlocked: reg.shopUnlocked, // hangar shop gate (opens right after the first flight, DECISIONS §90)
     sideMissionsUnlocked, // board opens on reaching `level-4` — by NAME, never by raw id (DECISIONS §95)
     reachedLevels: levelsReached, // level names reached; the client hides `minLevel` shop rows not in it
+    clearedMissions, // cleared side-mission ids; the client hides `minMission` shop rows not in it
     launchable: missingRequired.length === 0,
     missingRequired,
   };

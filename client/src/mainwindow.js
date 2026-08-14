@@ -35,6 +35,7 @@ let mwView = 'missions';        // which work-zone view is active: 'missions' | 
 let mwMission = null;           // selected side-mission offer (for the detail view), or null = the campaign
 export let missionOffers = [];  // side missions from /api/players/:id/missions (unlocked after "Level 3" — DECISIONS §91)
 let takenIds = new Set();       // ids of side missions the player has taken (accepted onto the board)
+let clearedIds = new Set();     // side missions this player has CLEARED (permanent) — drives the board badge
 export let activeMissionId = null; // the ONE mission Take-off flies (null = the campaign / "Main operation")
 export let stagedActive = false; // a staged campaign-briefing reveal is animating (read by ?debug __game)
 let briefingRevealDone = false;  // the current landing's campaign briefing is fully revealed (no re-animate)
@@ -238,7 +239,10 @@ function mcBtn(act, id, labelKey, cls = '') {
   return `<button data-mact="${act}"${id ? ` data-mid="${esc(id)}"` : ''} class="${cls}">${esc(t(labelKey))}</button>`;
 }
 function missionCard(c) {
-  const badge = c.active ? `<span class="mc-badge active">${esc(t('ui.mission.active'))}</span>`
+  // ONE badge per card, in this order: Cleared (permanent, no other tell on the card) > Active (the card
+  // itself also goes gold, .mission-card.active) > Taken (its action row already shows Defer).
+  const badge = c.cleared ? `<span class="mc-badge cleared">${esc(t('ui.mission.cleared'))}</span>`
+    : c.active ? `<span class="mc-badge active">${esc(t('ui.mission.active'))}</span>`
     : (c.taken && c.id != null ? `<span class="mc-badge taken">${esc(t('ui.mission.taken'))}</span>` : '');
   const acts = [];
   if (c.id == null) {                                   // campaign: only "Set active" when not active
@@ -269,6 +273,7 @@ function renderMissionsBoard() {
   for (const m of missionOffers) cards.push(missionCard({
     id: m.id, title: t(m.titleKey), reward: m.estReward, xp: m.estXp,
     taken: takenIds.has(m.id), active: activeMissionId === m.id, selected: mwMission === m,
+    cleared: clearedIds.has(m.id), // permanent "Cleared" badge (takes precedence over Active/Taken)
   }));
   host.innerHTML = cards.join('');
 }
@@ -281,7 +286,8 @@ function updateMissionsBadge() {
   el.missionsBadge.classList.toggle('show', n > 0);
 }
 // The gold "(new)" beside Loadout: a shop item the player has never seen just unlocked (right now that is
-// the "Level 3" gear — Heavy hull / Heavy Machine Gun / Triple spiral rocket). It persists through the
+// the "Level 3" gear — Heavy hull / Heavy Machine Gun / Triple spiral rocket — or the research tier, Ion
+// engine / Nanobot repair, once "Research station" is cleared). It persists through the
 // Loadout screen (whose Shop button carries the same marker) and only clears when the player OPENS THE SHOP
 // (shop.js marks the items seen and fires 'shop-items-seen', below); it comes back when the next gated item
 // unlocks. Called on every landing and on every menu switch, and on the shop-items-seen event.
@@ -344,6 +350,7 @@ async function missionAction(act, missionId) {
     if (!r.ok) return;                                   // locked / unknown id → ignore (v1)
     const j = await r.json().catch(() => ({}));
     takenIds = new Set(j.taken || []);
+    clearedIds = new Set(j.cleared || []);
     activeMissionId = j.activeMissionId ?? null;
     renderMissionsBoard();
     updateGoButton();
@@ -464,13 +471,14 @@ export async function refreshMissions() {
   // `sideMissionsUnlocked` flag the server derives from progress, not on `shopUnlocked`. (The server
   // derives it by level name, not by a raw progress id — DECISIONS §95.)
   const unlocked = !!(G.playerId && G.activeShip && G.activeShip.sideMissionsUnlocked);
-  if (!unlocked) { missionOffers = []; takenIds = new Set(); activeMissionId = null; renderMissionsBoard(); updateGoButton(); return; }
+  if (!unlocked) { missionOffers = []; takenIds = new Set(); clearedIds = new Set(); activeMissionId = null; renderMissionsBoard(); updateGoButton(); return; }
   try {
     const data = await fetchJson(`/api/players/${G.playerId}/missions`);
     missionOffers = data.missions || [];
     takenIds = new Set(data.taken || []);
+    clearedIds = new Set(data.cleared || []);
     activeMissionId = data.activeMissionId ?? null;
-  } catch { missionOffers = []; takenIds = new Set(); activeMissionId = null; }
+  } catch { missionOffers = []; takenIds = new Set(); clearedIds = new Set(); activeMissionId = null; }
   // Default the detail to the active mission (campaign if none). Side missions only exist at L≥4, where
   // the campaign staged reveal never plays, so this can't interrupt a reveal.
   if (activeMissionId != null) { const act = missionOffers.find((m) => m.id === activeMissionId); if (act) mwMission = act; }
@@ -480,7 +488,9 @@ export async function refreshMissions() {
 }
 // Launch a chosen side mission (mirrors launchCampaign, but plays the mission descriptor).
 export function launchMission(m) {
-  G.activeMission = m.descriptor;
+  // Carry the mission's stable id INTO the descriptor: the victory path needs to know WHICH side mission
+  // was cleared, and `descriptor` only knows its flavor. Copy, don't mutate the cached offer.
+  G.activeMission = { ...m.descriptor, missionId: m.id };
   G.pendingBriefing = null;
   if (Device.hasTouch) requestFullscreen();
   mainEl.classList.remove('on');

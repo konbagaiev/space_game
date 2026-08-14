@@ -5,6 +5,20 @@
 
 ## 2026-08-14
 
+- **Ion engine + Nanobot repair unlock by clearing "Research station"; the gold "(new)" trail now reaches
+  the shelf.** Second shop-gate kind (`stats.minMission`, catalog `RESEARCH_GATE`) enforced server-side in
+  `buyItem` and mirrored by the client's single `buyableNow()` predicate; side-mission **completion is now
+  persisted** (`cleared_missions` + `POST /api/players/:id/missions/clear`, reported from the victory path)
+  and shipped to the client as `activeShip.clearedMissions`. Players already past the side-mission board
+  gate are **grandfathered** by a one-shot migration (`grandfather_research_clear`) so nobody loses gear off
+  their shelf. The mission board shows a **Cleared** badge (precedence Cleared > Active > Taken). Inside the
+  shop, the type tab holding a never-clicked newly unlocked item goes **gold** instead of blue, and so does
+  the item's row — clicking the row clears it; the menu + Shop-button "(new)" keep clearing on shop-open
+  (separate localStorage keys, both first-sight baselined; the pure state machine moved to
+  `client/src/shop-markers.js`). A baseline taken **before** a gate kind existed absorbs the rows that kind
+  just gated, so grandfathered players are not told that gear they have been buying for weeks is "(new)".
+  See DECISIONS §110/§111.
+
 - **The "(new)" marker no longer greets existing players with gear they have owned for weeks.** The
   seen-set baseline is now **primed at bootstrap** (`primeShopItemsSeen()` in `shop.js`, called from
   `main.js` once `G.activeShip` lands): the first time a device sees a player, whatever is **already
