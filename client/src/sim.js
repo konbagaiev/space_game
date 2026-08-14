@@ -513,6 +513,42 @@ export function update(dt) {
 
   G.combatElapsed += dt; // unpaused combat clock (update() is skipped while paused) — drives the enemy hold-fire grace
 
+  stepPlayer(dt);            // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, exhaust, firing
+  stepEnemyAI(dt);
+  stepBullets(dt);
+  stepRockets(dt);
+  stepMicroExplosions(dt);
+  // --- flipbook (sprite-sheet) explosions: advance frame, fade + drop when finished ---
+  updateFlipbooks(dt);
+  // --- deferred boss chain-detonations: fire each staged blast when its delay elapses ---
+  updateDeferredBlasts(dt);
+
+  // --- engine exhaust: advance every ship's attached plume (uTime) + decay its thrust throttle so a ship
+  //     that stops thrusting fades out. Fixed-cost render objects, not a growing pool (exhaust-fx.js). ---
+  updateShipExhaust(dt);
+  stepSmokeTrail(dt);
+  stepSparks(dt);
+  stepShockwaves(dt);
+  stepBannerFade(dt);
+  stepCreditPopups(dt);
+  stepEnemyDeaths();
+  // pull in-range drops toward the ship (blue line while active); inside update(dt) → frozen on pause
+  updateDrops(dt);
+  // drive spawning + phase transitions from the active level
+  levelRunner.update(dt);
+  stepPlayerDeath();
+
+  settleView(dt); // camera rigid-follow + stars + system-body bearings + speed-field wrap
+
+  // mission set-pieces: their own slow animation (station spin, beams, exhaust, …)
+  for (const sp of setPieces) sp.update?.(dt);
+}
+
+// ---------- update(dt) sections ----------
+// Each function below is one section of the per-tick sim, lifted verbatim out of update() (2026-08-14
+// refactor: update() was 471 lines). Call order in update() IS the execution order — do not reorder.
+
+function stepPlayer(dt) {
   // --- repair drone: passive hull regen, capped at a fraction of max HP (no-op without a drone) ---
   if (G.player.repair) {
     const r = repairTick(G.player.hp, G.player.maxHp, G.player.repair, dt, G.player._repairAccum);
@@ -585,6 +621,7 @@ export function update(dt) {
   // the ship keeps flying in its current direction, no matter where the nose points
   G.player.mesh.position.addScaledVector(G.player.vel, dt);
 
+  // (The arena-drift block below is not player-specific — it stays here because moving it would reorder the tick.)
   // Drifting arena (e.g. freighter escort): slowly pan the combat zone's center; the boundary, warp-back
   // and mini-map all compute relative to it. Static maps (G.arenaDrift null) keep the center at (0,0).
   if (G.arenaDrift) {
@@ -629,7 +666,9 @@ export function update(dt) {
 
   // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
   updateGroups(G.player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
+}
 
+function stepEnemyAI(dt) {
   // --- enemy AI ---
   for (const e of enemies) {
     // spawn animation: grow from a dot to full size over the enemy's warp duration (ease-out). While
@@ -680,7 +719,9 @@ export function update(dt) {
     updateGroups(e, ef, false, dt,
       (g) => !e.warping && G.combatElapsed >= ENEMY_FIRE_GRACE && g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
   }
+}
 
+function stepBullets(dt) {
   // --- projectiles ---
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
@@ -747,7 +788,9 @@ export function update(dt) {
       bullets.splice(i, 1);
     }
   }
+}
 
+function stepRockets(dt) {
   // --- rockets: homing (accelerate toward target), detonate near the enemy ---
   // Spiral-rocket volley = 1 invisible leader (r.lead: homes, no damage, no smoke) + 3 visible warheads
   // (r.spiralOf: ride the leader in a corkscrew, each a real rocket). A warhead freeing its slot decrements
@@ -818,7 +861,9 @@ export function update(dt) {
     // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)
     if (det || r.traveled >= r.maxRange) { detonateRocket(r); removeRocket(i, r); }
   }
+}
 
+function stepMicroExplosions(dt) {
   // --- micro-explosions (short fiery flash) ---
   for (let i = explosions.length - 1; i >= 0; i--) {
     const x = explosions[i];
@@ -832,16 +877,9 @@ export function update(dt) {
       explosions.splice(i, 1);
     }
   }
+}
 
-  // --- flipbook (sprite-sheet) explosions: advance frame, fade + drop when finished ---
-  updateFlipbooks(dt);
-  // --- deferred boss chain-detonations: fire each staged blast when its delay elapses ---
-  updateDeferredBlasts(dt);
-
-  // --- engine exhaust: advance every ship's attached plume (uTime) + decay its thrust throttle so a ship
-  //     that stops thrusting fades out. Fixed-cost render objects, not a growing pool (exhaust-fx.js). ---
-  updateShipExhaust(dt);
-
+function stepSmokeTrail(dt) {
   // --- rocket smoke trail: fixed-size puffs that only fade (a thin dissipating line, not a cone) ---
   // Drawn as ONE instanced call for the whole trail (particle-pool.js), so the cost no longer scales with
   // puff count. Each puff keeps its OWN position, size and alpha — the fade rides a per-instance attribute,
@@ -857,7 +895,9 @@ export function update(dt) {
     smokePool.push(s.pos, s.baseSize, 1 - t);       // fade out only (the pool's material carries the 0.4 base)
   }
   smokePool.end();
+}
 
+function stepSparks(dt) {
   // --- ship-explosion sparks: colored debris flying outward, slowing, fading + shrinking ---
   for (let i = sparks.length - 1; i >= 0; i--) {
     const s = sparks[i];
@@ -873,7 +913,9 @@ export function update(dt) {
       sparks.splice(i, 1);
     }
   }
+}
 
+function stepShockwaves(dt) {
   // --- ship-explosion shockwave: a flat ring expanding outward on the plane ---
   for (let i = shockwaves.length - 1; i >= 0; i--) {
     const w = shockwaves[i];
@@ -887,16 +929,22 @@ export function update(dt) {
       shockwaves.splice(i, 1);
     }
   }
+}
 
+function stepBannerFade(dt) {
   // --- transient banner: fade the centered announcement toward invisible (drawn by updateBanner) ---
   if (G.banner.life > 0) G.banner.life = Math.max(0, G.banner.life - dt);
+}
 
+function stepCreditPopups(dt) {
   // --- credit popups: "+xx" gold text that floats up and fades over ~1s (drawn by hud.js) ---
   for (let i = creditPopups.length - 1; i >= 0; i--) {
     creditPopups[i].life -= dt;
     if (creditPopups[i].life <= 0) creditPopups.splice(i, 1);
   }
+}
 
+function stepEnemyDeaths() {
   // --- enemy deaths ---
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].hp <= 0) {
@@ -944,11 +992,9 @@ export function update(dt) {
       }
     }
   }
-  // pull in-range drops toward the ship (blue line while active); inside update(dt) → frozen on pause
-  updateDrops(dt);
-  // drive spawning + phase transitions from the active level
-  levelRunner.update(dt);
+}
 
+function stepPlayerDeath() {
   // --- player death ---
   if (G.player.hp <= 0 && G.player.alive) {
     G.player.alive = false;
@@ -964,11 +1010,6 @@ export function update(dt) {
     el.backHangar.style.display = (G.activeShip && G.activeShip.shopUnlocked) ? 'inline-block' : 'none';
     el.overlay.style.display = 'flex';
   }
-
-  settleView(dt); // camera rigid-follow + stars + system-body bearings + speed-field wrap
-
-  // mission set-pieces: their own slow animation (station spin, beams, exhaust, …)
-  for (const sp of setPieces) sp.update?.(dt);
 }
 
 // Position the camera + sky backdrop (stars, the fixed-position star-system bodies) AND the player-locked

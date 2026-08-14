@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TRACE_VERSION, normalizeLevelName, evalRecord, evalPlayback,
-  snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro,
+  snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, shouldPlayIntro,
   CUTSCENE_STALL_TICKS, packTicks, unpackTicks, sameInput, hydrateTrace, traceTickCount, traceLevelName,
 } from './replay.js';
 
@@ -203,6 +203,111 @@ test('makeReplaySession: return-home watchdog counts consecutive stalled ticks a
 
   s.teardown();
   assert.equal(s.stalled(), false);
+});
+
+// ---------- stepReplayTick: the ONE per-tick body both drivers in main.js run -------------------------
+// The fixed-timestep accumulator in animate() and the window.__replay.step(n) hook used to carry two hand-
+// written copies of this ("mirror the accumulator"), so an edit to one silently desynced replays. These are
+// the only automated guard the de-duplication can have — the accumulator itself is DOM/rAF-bound.
+// A real makeReplaySession() is used throughout so noteTick/stalled are exercised for real.
+function tickHarness(over = {}) {
+  const log = [];
+  const rs = makeReplaySession();
+  const keys = {};
+  const touchAim = { active: false, heading: 0, thrust: 0 };
+  const deps = {
+    rs, keys, touchAim, dt: 1 / 60,
+    update: (dt) => log.push(`update:${dt}`),
+    capture: () => log.push('capture'),
+    cutObserve: () => log.push('cutObserve'),
+    cutEnd: () => log.push('cutEnd'),
+    isWon: () => false,
+    ...over,
+  };
+  return { rs, keys, touchAim, deps, log, calls: (name) => log.filter((e) => e.split(':')[0] === name).length };
+}
+
+test('stepReplayTick: finished playback is a no-op (the entry guard)', () => {
+  const h = tickHarness();
+  h.rs.play = {}; h.rs.trace = { ticks: [{ k: ['KeyW'] }] }; h.rs.done = true; h.rs.index = 0;
+  assert.equal(stepReplayTick(h.deps), 'stop');
+  assert.equal(h.calls('update'), 0);
+  assert.equal(h.rs.index, 0);
+});
+
+test('stepReplayTick: an exhausted trace stops the loop and marks the session done, without stepping', () => {
+  const h = tickHarness();
+  h.rs.play = {}; h.rs.trace = { ticks: [{ k: [] }, { k: [] }] }; h.rs.index = 2;
+  assert.equal(stepReplayTick(h.deps), 'stop');
+  assert.equal(h.rs.done, true);
+  assert.equal(h.calls('update'), 0);
+});
+
+test('stepReplayTick: a normal playback tick applies the recorded input, steps once, advances the index', () => {
+  const h = tickHarness();
+  h.rs.play = {}; h.rs.trace = { ticks: [{ k: ['KeyA'], t: null }, { k: ['KeyD'], t: null }] };
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.keys.KeyA, true);       // the recorded tick reached the shared key map
+  assert.deepEqual(h.log.filter((e) => e.startsWith('update')), ['update:' + (1 / 60)]); // exactly once, with the passed dt
+  assert.equal(h.rs.index, 1);
+});
+
+test('stepReplayTick: rs.cutReturning clears the input and freezes the trace index (autopilot flies home)', () => {
+  const h = tickHarness();
+  h.rs.play = {}; h.rs.trace = { ticks: [{ k: ['KeyW'], t: null }] };
+  h.rs.cutReturning = true;
+  h.keys.KeyW = true; h.keys.Space = true; h.touchAim.active = true;
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.keys.KeyW, false);      // NOT re-applied from the trace — every held key is released
+  assert.equal(h.keys.Space, false);
+  assert.equal(h.touchAim.active, false);
+  assert.equal(h.calls('update'), 1);
+  assert.equal(h.rs.index, 0);           // the index is frozen while flying home
+});
+
+test('stepReplayTick: the per-tick order is update → capture → cutObserve', () => {
+  const h = tickHarness();
+  h.rs.cut = { pauses: [] };
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.deepEqual(h.log, ['update:' + (1 / 60), 'capture', 'cutObserve']);
+});
+
+test('stepReplayTick: live/record mode (rs.play === null) applies no trace input but still captures', () => {
+  const h = tickHarness();
+  h.rs.trace = { ticks: [{ k: ['KeyW'], t: null }] }; // a stale trace with no rs.play must not drive live play
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.keys.KeyW, undefined);
+  assert.equal(h.rs.index, 0);
+  assert.equal(h.calls('capture'), 1);
+});
+
+test('stepReplayTick: the return-home watchdog trips exactly at CUTSCENE_STALL_TICKS, and a win resets it', () => {
+  const h = tickHarness({ isWon: () => false });
+  h.rs.cut = { pauses: [] }; h.rs.cutReturning = true;
+  for (let i = 0; i < CUTSCENE_STALL_TICKS - 1; i++) assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.calls('cutEnd'), 0);
+  assert.equal(h.rs.done, false);
+  assert.equal(stepReplayTick(h.deps), 'stop');   // the limit tick
+  assert.equal(h.calls('cutEnd'), 1);
+  assert.equal(h.rs.done, true);
+
+  // while the level IS won the counter never climbs, so the watchdog can't fire on a healthy flight home
+  const w = tickHarness({ isWon: () => true });
+  w.rs.cut = { pauses: [] }; w.rs.cutReturning = true;
+  for (let i = 0; i < CUTSCENE_STALL_TICKS + 10; i++) assert.equal(stepReplayTick(w.deps), 'ok');
+  assert.equal(w.rs.stallTicks, 0);
+  assert.equal(w.calls('cutEnd'), 0);
+});
+
+// Live play after the intro (finishIntro → rs.teardown() nulled rs.play, THEN the caller set rs.done = true)
+// must keep stepping — the old bare `!rs.done` guard in the step() hook would have frozen it (the
+// intro→Level-1 dead-controls bug, guarded live by visual/scenarios/29-intro-live-handoff.mjs). This is the
+// one claim the unified entry guard rests on, so it gets a test rather than an argument.
+test('stepReplayTick: the post-intro teardown state (rs.play=null, rs.done=true) still steps', () => {
+  const h = tickHarness();
+  h.rs.play = null; h.rs.done = true;
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.calls('update'), 1);
 });
 
 test('shouldPlayIntro: server-authoritative gate — trace present + not headless', () => {

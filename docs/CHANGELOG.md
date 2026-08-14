@@ -5,6 +5,18 @@
 
 ## 2026-08-14
 
+- **Sim loop de-duplicated + `update(dt)` sectioned (pure refactor, no behaviour change).** The
+  fixed-timestep tick body was written twice in `client/src/main.js` — once in `animate()`'s accumulator,
+  once in `window.__replay.step(n)` ("mirror the accumulator") — so an edit to one could silently desync
+  replays. Both now call one shared `stepReplayTick()` in `client/src/replay.js` (dependency-injected,
+  8 new unit tests). The two copies' guards differed (`!rs.done` vs `!(rs.play && rs.done)`); they
+  disagree only in the post-intro teardown state (`rs.play` nulled by `finishIntro`, `rs.done` still
+  true), which the `?record`/`?playback`-only `step()` hook can never reach — so they are unified on the
+  accumulator's live-play-safe form, with a unit test pinning that a torn-down session keeps stepping.
+  `client/src/sim.js`'s 471-line `update(dt)` was split along its existing comment sections into 12
+  module-local `step*()` functions (all still in `sim.js`); `update()` is now a table of contents. Proven
+  behaviour-neutral by a before/after `__replay.hash()` parity run over the whole Level-0 intro re-sim
+  (43 samples, byte-identical at every milestone), plus `22-intro-replay`.
 - **Ion engine + Nanobot repair unlock by clearing "Research station"; the gold "(new)" trail now reaches
   the shelf.** Second shop-gate kind (`stats.minMission`, catalog `RESEARCH_GATE`) enforced server-side in
   `buyItem` and mirrored by the client's single `buyableNow()` predicate; side-mission **completion is now

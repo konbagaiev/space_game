@@ -3,7 +3,11 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-14 (**Mission-gated shop rows + the gold "(new)" trail inside the shop** — the Ion engine and Nanobot repair are hidden from the shop and refused by the server until the "Research station" side mission has been **cleared** (a second gate kind, `stats.minMission`; side-mission completion is persisted now in `cleared_missions`, and players already past the board gate are grandfathered by a one-shot migration); the mission board grows a **Cleared** badge, and inside the shop the type tab holding a never-clicked newly unlocked row goes **gold** — as does the row itself, until it is clicked. Previously: **Roam navigation HUD** — while roaming, a gold off-screen edge arrow points at the active mission and a bottom-center bar carries "Return to Base" + "Autopilot to Mission" (each button also cancels its own autopilot); both the pointer and the mission button hide when there is no active mission target. Previously: **The "(new)" marker now leads all the way to the shelf** — the gold "(new)" that announces newly unlocked gear rides both the Loadout menu item AND the Shop button inside the Loadout panel, and it now clears only when the player OPENS THE SHOP (merely entering Loadout no longer clears it). Previously: **The "Level 3" gear tier is progress-gated** — Heavy hull, Heavy Machine Gun (now weight 15 / aim assist 3°) and Triple spiral rocket are hidden from the shop and refused by the server until the weapons factory is cleared; a gold "(new)" marker on Loadout announces them when they unlock. Previously: **`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
+**Updated:** 2026-08-14 (**Sim-loop de-duplicated + `update(dt)` sectioned** — a pure refactor with no
+behaviour change: the fixed-timestep tick body that was written twice in `client/src/main.js` (the `animate()`
+accumulator and `window.__replay.step(n)`) is now the one shared `stepReplayTick()` in `client/src/replay.js`,
+and `sim.js`'s 471-line `update(dt)` is a table of contents over 12 module-local `step*()` functions.
+Previously: **Mission-gated shop rows + the gold "(new)" trail inside the shop** — the Ion engine and Nanobot repair are hidden from the shop and refused by the server until the "Research station" side mission has been **cleared** (a second gate kind, `stats.minMission`; side-mission completion is persisted now in `cleared_missions`, and players already past the board gate are grandfathered by a one-shot migration); the mission board grows a **Cleared** badge, and inside the shop the type tab holding a never-clicked newly unlocked row goes **gold** — as does the row itself, until it is clicked. Previously: **Roam navigation HUD** — while roaming, a gold off-screen edge arrow points at the active mission and a bottom-center bar carries "Return to Base" + "Autopilot to Mission" (each button also cancels its own autopilot); both the pointer and the mission button hide when there is no active mission target. Previously: **The "(new)" marker now leads all the way to the shelf** — the gold "(new)" that announces newly unlocked gear rides both the Loadout menu item AND the Shop button inside the Loadout panel, and it now clears only when the player OPENS THE SHOP (merely entering Loadout no longer clears it). Previously: **The "Level 3" gear tier is progress-gated** — Heavy hull, Heavy Machine Gun (now weight 15 / aim assist 3°) and Triple spiral rocket are hidden from the shop and refused by the server until the weapons factory is cleared; a gold "(new)" marker on Loadout announces them when they unlock. Previously: **`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
 sun's smooth bright disk (~15 000 speck pixels on it), so the parallax field ramps away inside 760 u.
 Previously: **The sky light comes from the star** — the terminator source is no longer an
 authored fixed position but the star's own world position, aimed every frame; it used to arrive 64° off
@@ -437,10 +441,19 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   tunable tick rate; `BENCH_DT = 1/TICK_HZ`. Live play is **seeded at level entry** (`beginLiveSession()` in
   `main.js`, called before each campaign launch/retry — and the welcome-screen Take-off) and captured per sim
   tick — see **Session recordings** under Backend for the always-on funnel-analytics capture built on this.
-  The accumulator's completion flag `rs.done` gates **playback/intro ONLY** (`while (… && !(rs.play && rs.done)
-  …)`): live play (`rs.play===null`) must ignore it, because the intro's end leaves a stale `rs.done=true`
-  after `finishIntro()`→`rs.teardown()` — a live session inheriting it would never step (the intro→Level-1
-  dead-controls bug; guarded by `visual/scenarios/29-intro-live-handoff.mjs`).
+  **One shared per-tick body:** the accumulator and the `window.__replay.step(n)` hook both call
+  **`stepReplayTick()`** (`client/src/replay.js`, dependency-injected: `rs`/`keys`/`touchAim`/`dt`/`update` +
+  `capture`/`cutObserve`/`cutEnd`/`isWon` callbacks; returns `'ok'` or `'stop'`) — it holds the recorded-input
+  apply, `update(dt)`, the index advance, the per-tick capture, the cutscene observer and the return-home
+  watchdog. `animate()` keeps only the WRAPPER around it: `replayAcc`, the 6-step cap, the `cutFrozen` check,
+  the record/playback HUDs and the post-loop `cutsceneEnd()`. (The two drivers used to carry hand-written
+  copies of that body — "mirror the accumulator" — so an edit to one silently desynced replays.)
+  The completion flag `rs.done` gates **playback/intro ONLY** — the same guard that opens `stepReplayTick`
+  (`if (rs.play && rs.done) return 'stop'`) and still heads the accumulator's `while (… && !(rs.play &&
+  rs.done) …)`: live play (`rs.play===null`) must ignore it, because the intro's end leaves a stale
+  `rs.done=true` after `finishIntro()`→`rs.teardown()` — a live session inheriting it would never step (the
+  intro→Level-1 dead-controls bug; guarded by `visual/scenarios/29-intro-live-handoff.mjs` and by a
+  `replay.test.js` case on that exact torn-down state).
 - **Determinism isolation (load-bearing) — the seeded stream is OPT-IN (`client/src/sim-random.js`).**
   `simRandom()` is the sim's RNG: `seedSim(n)` installs a `mulberry32` stream (record start, playback/intro
   arm, `?bench` bootstrap + per-trace, **and every live campaign session via `beginLiveSession()`**),
@@ -463,15 +476,16 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   Accepted cosmetic cost: backdrop/decor layout now varies between two playbacks of the same trace.
   See DECISIONS §73.
 - **Two termination guards so a desynced re-sim can never dead-end.** (a) **Trace exhausted with the fight
-  unfinished** — the accumulator sets `rs.done` and `animate()`'s post-loop
+  unfinished** — `stepReplayTick` sets `rs.done` and returns `'stop'`, and `animate()`'s post-loop
   `if (rs.play && rs.done && rs.cut && !rs.cutDone) cutsceneEnd();` ends the cutscene on that frame;
-  `__replay.step()` now **mirrors** that post-loop exit (it previously had none, so a stepped run of a
+  `__replay.step()` carries the same post-loop exit (it previously had none, so a stepped run of a
   desynced trace returned forever with `cut().done === false`). (b) **Return-home stall** — while
   `rs.cutReturning` is engaged only a WIN ends the cutscene (`rs.index` is frozen, `rs.done` never set), so a
   run that can never dock would loop forever; a per-tick watchdog on the session
   (`rs.noteTick(returningNoWin)` / `rs.stalled()` / `CUTSCENE_STALL_TICKS = 900` ≈ 15 s of sim time, in
   `replay.js`) ends it through the normal `cutsceneEnd()` → `finishIntro()` path — the player lands on the
-  Level 1 briefing instead of a dead screen. Both loops (`animate()` and `__replay.step()`) carry both exits.
+  Level 1 briefing instead of a dead screen. Both loops (`animate()` and `__replay.step()`) carry both exits
+  because they run the **same** body (`stepReplayTick`) — they can no longer drift apart.
   The watchdog masks nothing: the guard scenario asserts kills/cards/win, so a bailed-out run still fails.
 - **Guard test (`client/visual/scenarios/22-intro-replay.mjs`, in `npm run test:visual`).** Re-sims the
   canonical intro trace named by the seed's `introTrace` and asserts **4 kills, cards `p0..p4` in order, and
@@ -2736,7 +2750,14 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   victory `takeLoot`/`clearDrops`), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
   `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`), `net.js`
   (backend identity/banking/progression + funnel telemetry: `fetchJson`/`bankRun`/`track`/
-  `currentLevelLabel`/`unlockNextLevel`/`depositLoot`), `sim.js` (the per-frame `update(dt)` + `levelRunner`
+  `currentLevelLabel`/`unlockNextLevel`/`depositLoot`), `sim.js` (the per-frame `update(dt)` — now a short TABLE
+  OF CONTENTS that calls the module-local per-section steppers in execution order: `stepPlayer` (repair/
+  shield, manual-vs-autopilot control, speed cap, arena drift + soft boundary, exhaust, firing),
+  `stepEnemyAI`, `stepBullets`, `stepRockets`, the FX steppers `stepMicroExplosions`/`stepSmokeTrail`/
+  `stepSparks`/`stepShockwaves`/`stepBannerFade`/`stepCreditPopups`, then `stepEnemyDeaths` and
+  `stepPlayerDeath`; the already-one-line delegations (`updateFlipbooks`/`updateDeferredBlasts`/
+  `updateShipExhaust`/`updateDrops`/`levelRunner.update`/`settleView`/the set-piece loop) stay inline, and
+  every stepper lives in `sim.js` — the call order IS the tick order — + `levelRunner`
   (with the extracted `resetLevelRunnerState` shared by roam) + wing-bank + soft-boundary warp/OOB warning +
   the roam speed-cap gate (`capLifted`/`activityZones`) + autopilot incl. `engagePointAutopilot`/roam-point
   arrival + music routing `refreshMusic` + pause `setPaused`/`togglePause`/`autoPauseOnBlur` + the `reset`
@@ -2768,7 +2789,9 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   (`packTicks`/`unpackTicks`/`sameInput`/`hydrateTrace`/`traceTickCount`), per-tick input snapshot/apply
   (the touch aim is quantized in `snapshotInput`), validate, the
   `makeReplaySession()` lifecycle object **incl. the return-home watchdog counters +
-  `CUTSCENE_STALL_TICKS`**; unit-tested in `replay.test.js`). The seeded-RNG isolation is its own leaf module,
+  `CUTSCENE_STALL_TICKS`**, and **`stepReplayTick()`** — the ONE per-tick body both drivers in `main.js` run
+  (the `animate()` accumulator and `window.__replay.step(n)`), dependency-injected so this module stays
+  DOM/engine-free; unit-tested in `replay.test.js`). The seeded-RNG isolation is its own leaf module,
   **`sim-random.js`** (`simRandom`/`seedSim`/`isSimSeeded` + `mulberry32`, imports nothing, unit-tested in
   `sim-random.test.js`) — `main.js` only installs/clears the seed. The remaining engine wiring (accumulator
   pacing, the record/playback UI) is in `main.js`. See the record/playback subsection under Tools.
@@ -2794,7 +2817,14 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   handling, `effectiveGain` master×channel×toggle), **seeded sim RNG** (`sim-random.test.js`: same seed → same
   sequence, re-seeding rewinds, no seed installed → the native `Math.random`, and `seedSim(null)` really returns
   to live play — the teardown invariant), and the **return-home watchdog** (`replay.test.js`: `noteTick`
-  counts/resets, `stalled()` trips exactly at `CUTSCENE_STALL_TICKS`, `teardown()` clears every field), and
+  counts/resets, `stalled()` trips exactly at `CUTSCENE_STALL_TICKS`, `teardown()` clears every field), the
+  **shared per-tick body** (`replay.test.js` `stepReplayTick`: the entry guard stops a finished playback dead
+  **but the post-intro teardown state `rs.play=null && rs.done=true` keeps stepping** — the live-play gate;
+  an exhausted trace sets `rs.done` and never steps; a normal tick applies the recorded input, calls `update`
+  once with the passed `dt` and advances the index by one; `rs.cutReturning` releases every key and freezes
+  the index; the order is `update` → `capture` → `cutObserve`; live/record mode applies no trace input yet
+  still captures; and the watchdog fires `cutEnd` exactly at `CUTSCENE_STALL_TICKS`, or never while the level
+  is won), and
   **character progression** (`client/src/progression.test.js`: the client XP-curve mirror agrees with
   `server/src/progression.js` for every level/threshold checked, and `liveProgress` fills, crosses a
   threshold, rolls through several levels in one haul, and no-ops without earned XP;

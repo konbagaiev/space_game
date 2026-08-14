@@ -213,6 +213,54 @@ export function makeReplaySession() {
   };
 }
 
+// ONE tick of the deterministic replay/live loop — the single body shared by BOTH per-tick drivers in
+// main.js: the fixed-timestep accumulator inside animate() and the synchronous window.__replay.step(n)
+// hook. It used to be written out twice ("mirror the accumulator" in the step() copy), so any edit to one
+// silently desynced the other. Everything OUTSIDE one tick stays with the caller: the replayAcc bookkeeping,
+// the `steps < 6` cap, the cutFrozen check, the record/playback HUD, and the post-loop cutsceneEnd().
+//
+// Injected deps (this module stays DOM/engine-free and unit-testable):
+//   rs         — the makeReplaySession() object (play/trace/index/done/cut/cutDone/cutReturning + watchdog)
+//   keys       — the shared held-key map (mutated in place)
+//   touchAim   — the shared touch-steering state (mutated in place)
+//   dt         — the fixed step (BENCH_DT)
+//   update     — the sim step, called as update(dt)
+//   capture    — optional; called right after update() to snapshot this tick's input (record / live session)
+//   cutObserve — cutscene observer, called when rs.cut is set (may freeze, engage return-home, or end)
+//   cutEnd     — ends the cutscene (used by the return-home watchdog)
+//   isWon      — () => levelRunner.won
+// Returns 'ok' (tick ran) or 'stop' (caller must break out of its loop WITHOUT consuming time/steps).
+//
+// NOTE on the entry guard: the accumulator gated its loop with `!(rs.play && rs.done)` while step() used a
+// bare `!rs.done`. The two forms only differ in the state `rs.play === null && rs.done === true` — the
+// post-intro teardown state (finishIntro → rs.teardown() nulls rs.play, then the caller sets rs.done = true).
+// That state is UNREACHABLE from the step() hook: window.__replay only exists when ?record/?playback was on
+// the URL at load, and the intro path that produces it (introMode) is never entered on such a load. Unified
+// here on the accumulator's live-play-safe form, which is also the safe direction where they differ: a live
+// session that inherited a stale rs.done must keep stepping — the intro→Level-1 dead-controls bug, guarded by
+// visual/scenarios/29-intro-live-handoff.mjs. Pinned by a unit test (`rs.play=null, rs.done=true` → steps).
+export function stepReplayTick({ rs, keys, touchAim, dt, update, capture, cutObserve, cutEnd, isWon }) {
+  if (rs.play && rs.done) return 'stop';            // playback finished — never step, never consume time
+  if (rs.cutReturning) {
+    for (const c in keys) keys[c] = false; touchAim.active = false; // no recorded input → autopilot isn't cancelled (sim manual-input check)
+  } else if (rs.play && rs.trace) {
+    if (rs.index < rs.trace.ticks.length) applyInput(rs.trace.ticks[rs.index], keys, touchAim);
+    else { rs.done = true; return 'stop'; }         // trace exhausted with the fight unfinished
+  }
+  update(dt);                                       // the seeded stream is opt-in inside the sim (sim-random.js)
+  if (rs.play && rs.trace && !rs.cutReturning) rs.index++;
+  if (capture) capture();
+  if (rs.cut) cutObserve();                         // may freeze (fire a pause), engage return-to-base, or end
+  // RETURN-HOME watchdog (see CUTSCENE_STALL_TICKS): while rs.cutReturning is engaged only a WIN ends the
+  // cutscene, so a run that can never dock would loop forever. Only that path reaches here — an EXHAUSTED
+  // trace returns 'stop' above and is ended by the caller's post-loop cutsceneEnd().
+  if (rs.cut && !rs.cutDone) {
+    rs.noteTick(rs.cutReturning && !isWon());
+    if (rs.stalled()) { cutEnd(); rs.done = true; return 'stop'; } // ends the intro via finishIntro()
+  }
+  return 'ok';
+}
+
 // Decide whether to auto-play the intro cutscene for this load. Server-authoritative: `introTrace` is
 // present ONLY on the level-0 descriptor served while current_progress===0 (a NEW or freshly-RESET
 // player), so hasIntroTrace is the real one-time gate — no client localStorage flag, so a genuine
