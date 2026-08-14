@@ -29,7 +29,7 @@ import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.j
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
-import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
+import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
@@ -784,31 +784,26 @@ function animate() {
     if ((recCapturing || rs.armed || live) && !G.paused && !G.mapOpen && !cutFrozen) {
       replayAcc += Math.min(rawSec, 0.1); // clamp: after a stall/tab-throttle, don't fast-forward a huge burst
       let steps = 0;
+      // The per-tick body is shared with window.__replay.step(n) (replay.js stepReplayTick) so the two
+      // drivers can no longer drift apart. Built once per frame: `live`/`recCapturing` are read inside the
+      // closures, so the values stay current.
+      const tickDeps = {
+        rs, keys, touchAim, dt: BENCH_DT, update,
+        capture: () => {
+          if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
+          if (live) sr.captureTick(snapshotInput(keys, touchAim)); // always-on: capture the real operator input per sim tick
+        },
+        cutObserve: cutsceneObserve,
+        cutEnd: cutsceneEnd,
+        isWon: () => levelRunner.won,
+      };
       // `rs.done` (trace exhausted / intro ended) must gate PLAYBACK only, never live play. The intro's end
       // path sets `rs.done = true` right AFTER cutsceneEnd()→finishIntro()→rs.teardown() already reset it to
       // false + nulled rs.play, so a live session inheriting that stale `rs.done` would never step — the ship
       // never centers and controls are dead until a refresh builds a fresh rs. Ignore rs.done when rs.play is
       // null (live): for ?playback/intro rs.play is truthy so freeze-on-exhaustion is unchanged.
       while (replayAcc >= BENCH_DT && steps < 6 && !(rs.play && rs.done) && !cutFrozen) {
-        if (rs.cutReturning) {
-          for (const c in keys) keys[c] = false; touchAim.active = false; // no recorded input → autopilot isn't cancelled (sim manual-input check)
-        } else if (rs.play && rs.trace) {
-          if (rs.index < rs.trace.ticks.length) applyInput(rs.trace.ticks[rs.index], keys, touchAim);
-          else { rs.done = true; break; }
-        }
-        update(BENCH_DT);                          // the seeded stream is opt-in inside the sim (sim-random.js)
-        if (rs.play && rs.trace && !rs.cutReturning) rs.index++;
-        if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
-        if (live) sr.captureTick(snapshotInput(keys, touchAim)); // always-on: capture the real operator input per sim tick
-        if (rs.cut) cutsceneObserve();             // may freeze (fire a pause), engage return-to-base, or end
-        // RETURN-HOME watchdog (see CUTSCENE_STALL_TICKS in replay.js): while rs.cutReturning is engaged only
-        // a WIN ends the cutscene, so a run that can never dock would loop here forever. Only that path reaches
-        // this line — an EXHAUSTED trace breaks out above (`rs.done = true; break;`) and is ended by the
-        // post-loop cutsceneEnd() below instead.
-        if (rs.cut && !rs.cutDone) {
-          rs.noteTick(rs.cutReturning && !levelRunner.won);
-          if (rs.stalled()) { cutsceneEnd(); rs.done = true; break; } // ends the intro via finishIntro()
-        }
+        if (stepReplayTick(tickDeps) === 'stop') break; // exhausted trace / stalled return-home: no time consumed
         replayAcc -= BENCH_DT;
         steps++;
       }
@@ -1536,32 +1531,29 @@ if (REC || rs.play) {
       card: cutOverlayEl && cutOverlayEl.style.display === 'flex' ? cutCardEl.textContent : null }),
     advance: () => cutsceneAdvance(),  // dismiss the current cutscene card (== tapping it)
     state: { G, enemies, rockets, camera, camOffset }, // live sim refs (dev-flag only) — for forcing events + framing checks in cutscene tests
-    // Synchronous sim stepping that mirrors animate()'s sim block WITHOUT the render/rAF — for automated
-    // determinism checks and console use (a background tab throttles rAF to ~0, so live ticks stall). Uses
-    // whatever input is currently held (none under automation → a deterministic no-input run). Stops on a
-    // cutscene freeze (call advance() to continue), mirroring the accumulator.
+    // Synchronous sim stepping WITHOUT the render/rAF — for automated determinism checks and console use (a
+    // background tab throttles rAF to ~0, so live ticks stall). It no longer *mirrors* animate()'s sim block:
+    // it runs the very same per-tick body (replay.js stepReplayTick), so the two drivers cannot drift apart.
+    // Uses whatever input is currently held (none under automation → a deterministic no-input run). Stops on a
+    // cutscene freeze (call advance() to continue), like the accumulator. The one deliberate difference is the
+    // `capture` callback: there is no live session under ?record/?playback, so this hook feeds recTicks only
+    // (never sr.captureTick) — which is exactly why capture is caller-supplied.
     step(n = 1) {
       if (!isSimSeeded()) return this.status(); // record: not started yet (call begin() first); playback seeds on arm
+      const tickDeps = {
+        rs, keys, touchAim, dt: BENCH_DT, update,
+        capture: () => { if (recCapturing) recTicks.push(snapshotInput(keys, touchAim)); },
+        cutObserve: cutsceneObserve,
+        cutEnd: cutsceneEnd,
+        isWon: () => levelRunner.won,
+      };
       for (let i = 0; i < n; i++) {
-        if (cutFrozen) break;
-        if (rs.cutReturning) {                 // mirror the accumulator: no recorded input while flying home
-          for (const c in keys) keys[c] = false; touchAim.active = false;
-        } else if (rs.play && rs.trace) {
-          if (rs.index < rs.trace.ticks.length) applyInput(rs.trace.ticks[rs.index], keys, touchAim);
-          else { rs.done = true; break; }
-        }
-        if (!rs.done) update(BENCH_DT);
-        if (rs.play && rs.trace && !rs.cutReturning && !rs.done) rs.index++;
-        if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
-        if (rs.cut) cutsceneObserve();
-        if (rs.cut && !rs.cutDone) {               // mirror the accumulator's return-home watchdog
-          rs.noteTick(rs.cutReturning && !levelRunner.won);
-          if (rs.stalled()) { cutsceneEnd(); rs.done = true; break; }
-        }
+        if (cutFrozen) break;                                 // a card is up — call advance() to continue
+        if (stepReplayTick(tickDeps) === 'stop') break;
       }
       // Mirror animate()'s post-loop exit: when the trace runs out with the fight unfinished, end the cutscene
       // instead of returning a session that can never progress. Without this, a stepped run of a DESYNCED trace
-      // never terminates (the loop body is unreachable once rs.done).
+      // never terminates (the loop body is unreachable once rs.play && rs.done).
       if (rs.play && rs.done && rs.cut && !rs.cutDone) cutsceneEnd();
       return this.status();
     },
