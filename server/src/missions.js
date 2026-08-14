@@ -48,11 +48,17 @@ const MISSION_XP = 1000;
 // FOUR-WAY INVARIANT (star-system map): each center MUST equal the matching set-piece pos in
 // catalog_seed.js `home-system`, the system-map marker (system-map.js ANCHORS), AND the roam activity-zone
 // center — mining (-988,0) and research (928,0) were moved out for the flyable system (2x their old distance
-// from planet 2). Freighter is out of scope (unchanged; its render pos is +50 z ahead of the center).
+// from planet 2). The freighter was left behind by that move and so had no ANCHORS entry and no host object
+// in listSystemObjects: the mission could be taken from the board but there was nothing on the map to fly
+// to. It now honours the invariant like the other two, at (-100,-950) — a belt-ward run comparable to the
+// science/mining crossings, and clear of the space factory's short hop at (-350,-350). Its render pos stays
+// +50 z ahead of the center (so the freighter sits ahead of the player's forward-gliding spawn), which is
+// the one deliberate offset in the invariant; the center is what enemy/player spawns key off, so moving the
+// pair is balance-neutral.
 const FLAVORS = [
   { type: 'mining',    titleKey: 'mission.mining.title',    descKey: 'mission.mining.desc',    center: { x: -988, z: 0 } },
   { type: 'research',  titleKey: 'mission.research.title',  descKey: 'mission.research.desc',  center: { x: 928, z: 0 } },
-  { type: 'freighter', titleKey: 'mission.freighter.title', descKey: 'mission.freighter.desc', center: { x: -100, z: -450 } },
+  { type: 'freighter', titleKey: 'mission.freighter.title', descKey: 'mission.freighter.desc', center: { x: -100, z: -950 } },
 ];
 
 // The currently-offered side missions. Stateless for 2a (the three flavors are fixed); each carries a

@@ -200,6 +200,11 @@ export const ANCHORS = {
   // mission. This is where autopilot PARKS you; the `space-factory` set-piece itself sits (-70,-55) off it
   // so the station frames up-left instead of swallowing the ship in its middle (both pinned by a test).
   factory: { x: -350,  z: -350 },
+  // The freighter in distress — host of the `side-freighter` mission. Belt-ward and "north" of the home
+  // planet at ~955 u, a crossing comparable to science/mining and well clear of the factory's short hop.
+  // Unlike every other anchor its set-piece is NOT at the anchor: the freighter renders +50 z ahead
+  // (-100,-900) so it sits in front of the player's forward-gliding spawn (see catalog_seed.js).
+  freighter: { x: -100, z: -950 },
 };
 
 // The point ON THE PLANE that autopilot flies to for a body — its own true (x,z). Arrive there and the body
@@ -243,6 +248,8 @@ export function listSystemObjects(tNow = Date.now()) {
       pos: ANCHORS.mining3, color: '#e8c07a' },
     { id: 'factory', kind: 'factory', nameKey: 'ui.object.factory', missionId: null,
       pos: ANCHORS.factory, color: '#b39ddb' },
+    { id: 'freighter', kind: 'freighter', nameKey: 'ui.object.freighter', missionId: 'side-freighter',
+      pos: ANCHORS.freighter, color: '#ff9a8a' },
   );
   for (const o of out) o.marker = o.pos;
   return out;
@@ -282,10 +289,12 @@ export function systemRadius(tNow = Date.now()) {
   return r;
 }
 
-// Activity-zone centers where the speed cap is re-applied (base + science + near-mining). The caller adds
-// the active mission center (if any). Pure.
+// The system's permanent activity zones — the base plus every fixed side-mission site (science, mining,
+// freighter), i.e. the fourth side of the four-way invariant in server/src/missions.js. The caller adds the
+// ACTIVE mission's own center (if any) on top. Read by the ?roam dev readout; the speed cap itself is
+// decided by capLifted(), which does not consult zones. Pure.
 export function activityZoneCenters() {
-  return [ANCHORS.base, ANCHORS.science, ANCHORS.mining];
+  return [ANCHORS.base, ANCHORS.science, ANCHORS.mining, ANCHORS.freighter];
 }
 
 // True if (px,pz) is within `radius` of any zone center. Pure.

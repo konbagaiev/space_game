@@ -332,10 +332,10 @@ export default async function ({ page, assert, shot }) {
              active: g.autopilot.active, kind: g.autopilot.target && g.autopilot.target.kind,
              target: g.autopilot.target && g.autopilot.target.pos };
   });
-  assert.equal(overlay.rows.length, 11, `the overlay lists every object (got ${overlay.rows.length})`);
+  assert.equal(overlay.rows.length, 12, `the overlay lists every object (got ${overlay.rows.length})`);
   assert.ok(overlay.rows.includes('star') && overlay.rows.includes('planet1') && overlay.rows.includes('mining3')
-    && overlay.rows.includes('factory'),
-    'star, planets, all three mining outposts and the space factory are selectable objects');
+    && overlay.rows.includes('factory') && overlay.rows.includes('freighter'),
+    'star, planets, all three mining outposts, the space factory and the freighter are selectable objects');
   assert.ok(overlay.acts.includes('return') && overlay.acts.includes('__autopilot'),
     'the overlay carries Return to hangar + Autopilot to destination');
   assert.equal(overlay.selected, 1, 'picking a list row highlights exactly that row');
@@ -380,7 +380,7 @@ export default async function ({ page, assert, shot }) {
   assert.equal(base.mapHasGlobalBar, false, 'on Map the global launch bar steps aside…');
   assert.ok(base.mapActs.includes('takeoff') && base.mapActs.includes('__autopilot'),
     '…because Take off sits inside the map\'s action row next to Autopilot to destination');
-  assert.equal(base.rows.length, 11, 'the base-menu Map lists the same 11 objects');
+  assert.equal(base.rows.length, 12, 'the base-menu Map lists the same 12 objects');
   assert.equal(base.autoDisabledBefore, true, 'Autopilot is disabled until something is selected');
   assert.equal(base.autoDisabledAfter, false, 'and enabled once an object is picked');
   assert.equal(base.markedRow, 'mining2', 'the picked row is the highlighted one');

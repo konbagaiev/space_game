@@ -32,9 +32,12 @@ const GHOST_TUNE = loadGhostTune(window.localStorage);
 let activeGhost = null; // { applyOpacity } handle for the ?dev panel (best-effort; may be stale off-mission)
 
 // Build (async) and register the ghost battle as a set-piece entry anchored at a FIXED ABSOLUTE world point
-// (GHOST_TUNE.ax, y, az) — the same spot (default the freighter start -100,-450) regardless of mission, a
-// distant landmark the player flies toward. Called from sim.js reset() for every NON-freighter mission on an
-// eligible tier. Takes NO argument — placement comes from GHOST_TUNE.
+// (GHOST_TUNE.ax, y, az) — the same spot (default -100,-450) regardless of mission, a distant landmark the
+// player flies toward. That default was originally chosen as the freighter's position; the freighter has
+// since moved to (-100,-950) and this anchor deliberately did NOT follow it (it is tuned decor, and the
+// ghost battle is never built during the freighter mission anyway — see sim.js reset). Called from sim.js
+// reset() for every NON-freighter mission on an eligible tier. Takes NO argument — placement comes from
+// GHOST_TUNE.
 export async function buildGhostBattle() {
   // Skip in BOTH headless harnesses: ?debug (visual suite) AND ?bench (perf A/B) — the feature now fires in the
   // campaign (activeMission null), which the bench trace exercises, and the async glb loads would add

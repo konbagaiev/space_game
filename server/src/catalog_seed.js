@@ -819,7 +819,11 @@ export const MAPS = [
         // delivered effect config (palette + particle params) — omit to use the built-in fiery defaults;
         // this is the light extension point for future server-driven model effects (DECISIONS §38).
         {
-          type: 'freighter', pos: [-100, -48, -400], scale: 0.33, speed: 2,
+          // pos is deliberately +50 z AHEAD of the mission center (-100,-950) so the freighter and its ghost
+          // battle sit in front of the player's forward-gliding spawn rather than on top of it. Move this and
+          // missions.js `side-freighter` center + ANCHORS.freighter together (four-way invariant, pinned by
+          // client/src/system-map.test.js).
+          type: 'freighter', pos: [-100, -48, -900], scale: 0.33, speed: 2,
           modelUrl: 'assets/ships/freighter_combat.ffdacc37.glb',
           yaw: 0, // nose already faces +Z (bridge-aft freighter); flip to Math.PI for a -Z export
           // exhaust: { palette: { hot: 0xfff1c0, mid: 0xff7a2a, end: 0x7a1208 }, count: 90, len: 48, size: 5, speed: 1.4 },

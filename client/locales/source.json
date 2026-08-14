@@ -1023,6 +1023,10 @@
     "source": "Factory",
     "context": "Object-type label in the navigation list — an orbital industrial plant. One word."
   },
+  "ui.object.kind.freighter": {
+    "source": "Freighter",
+    "context": "Object-type label in the navigation list — a civilian cargo ship, not a station. One word."
+  },
   "ui.object.star": {
     "source": "Vega",
     "context": "Proper name of the system's central star. The home system IS Vega (the game is 'Vega Sentinels'), so the star carries that name. Keep as a name."
@@ -1066,6 +1070,10 @@
   "ui.object.factory": {
     "source": "Space Factory",
     "context": "Name of the orbital industrial station near the home planet — where ore from the belt is turned into parts. Keep it plain and industrial."
+  },
+  "ui.object.freighter": {
+    "source": "Distress Signal",
+    "context": "Map/navigation name of the civilian freighter under pirate attack that hosts the 'side-freighter' mission. It is a distress call, not a place — name it for the signal, matching mission.freighter.title. Short."
   },
   "ui.shop.action.remove": {
     "source": "Remove",

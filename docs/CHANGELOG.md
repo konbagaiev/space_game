@@ -5,6 +5,19 @@
 
 ## 2026-08-14
 
+- **The freighter side mission is reachable again — moved to `(-100,-950)`.** When the flyable star system
+  moved the mining and research sites out to their new distances, the freighter was left behind and never
+  got an `ANCHORS` entry or a host object in `listSystemObjects()`. The result was a mission you could take
+  from the board and then had no way to reach: `objectForMission('side-freighter')` returned `null`, so the
+  gold off-screen pointer and the "Autopilot to Mission" button both hid, and no zone was ever armed. Its
+  centre now sits at `(-100,-950)` (~955 u belt-ward and "north", a crossing comparable to science/mining
+  and clear of the space factory's short hop), with a matching `freighter` map object — `kind: 'freighter'`,
+  a new navigation-list label, and a coral marker. The set-piece moved with it to `(-100,-900)`, keeping the
+  deliberate +50 z offset that puts the freighter ahead of the player's forward-gliding spawn. Server tests
+  already covered offering and activating the mission, which is why this passed unnoticed — the gap was
+  reachability, so a test now pins that **exactly the three side missions carry a host object** and each
+  resolves back to it. `SUMMARY.md`'s mission-centre line was also stale for mining and research (still the
+  pre-star-system `(-550,0)` / `(400,0)`) and is corrected.
 - **Sim loop de-duplicated + `update(dt)` sectioned (pure refactor, no behaviour change).** The
   fixed-timestep tick body was written twice in `client/src/main.js` — once in `animate()`'s accumulator,
   once in `window.__replay.step(n)` ("mirror the accumulator") — so an edit to one could silently desync

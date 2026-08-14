@@ -59,8 +59,10 @@ export const frameIndex = (t, fps, frames) => { let i = Math.floor(t * fps) % fr
 // (opacity 0.35 × darken 0.45 × scale 0.5 × y −48); the new defaults make it a watchable distant battle. ----
 export const GHOST_TUNE_KEY = 'ghostTune';
 // y = depth (below the 0.6 combat plane); ax/az = the ABSOLUTE world coordinate of the anchor — the same fixed
-// world spot regardless of which mission is active (NOT arenaCenter-relative, NOT following anything). Default
-// = the freighter mission center (-100,-450), a distant landmark the player flies toward.
+// world spot regardless of which mission is active (NOT arenaCenter-relative, NOT following anything). The
+// (-100,-450) default was originally the freighter mission center; the freighter moved to (-100,-950) and this
+// anchor stayed put on purpose — it is tuned decor (a distant landmark the player flies toward), and the ghost
+// battle is never built during the freighter mission, so the two no longer need to coincide.
 export const GHOST_TUNE_DEFAULTS = { y: -60, scale: 0.8, opacity: 0.9, ax: -100, az: -450 };
 export const GHOST_TUNE_RANGES = { y: [-80, 0], scale: [0.3, 1.5], opacity: [0.1, 1.0], ax: [-600, 600], az: [-600, 600] };
 const _clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));

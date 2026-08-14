@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-14 (**Sim-loop de-duplicated + `update(dt)` sectioned** — a pure refactor with no
+**Updated:** 2026-08-14 (**The freighter side mission is reachable again** — it had no `ANCHORS` entry and no
+host object in `listSystemObjects()`, so it could be taken from the board and then had nothing on the map to
+fly to; it now sits at `(-100,-950)` with a map object, an autopilot destination and a test pinning that every
+side mission has a host. Previously: **Sim-loop de-duplicated + `update(dt)` sectioned** — a pure refactor with no
 behaviour change: the fixed-timestep tick body that was written twice in `client/src/main.js` (the `animate()`
 accumulator and `window.__replay.step(n)`) is now the one shared `stepReplayTick()` in `client/src/replay.js`,
 and `sim.js`'s 471-line `update(dt)` is a table of contents over 12 module-local `step*()` functions.
@@ -1403,7 +1406,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     button** (fixed bottom-right, z-60), which would otherwise draw over the bottom button and eat its taps;
     the in-flight overlay is z-9000 and covers the ⛶ instead, so it needs no reservation. Pinned by
     `34-phone-map-layout` (both hosts: side-by-side, map ≥90% of the height, bottom button hit-tested).
-    - **Objects (`listSystemObjects()`, 11).** The **star and all four planets are first-class, selectable
+    - **Objects (`listSystemObjects()`, 12).** The **star and all four planets are first-class, selectable
       destinations**, listed and marked exactly like the **home station**, the **research station**, the
       **three belt outposts** (`ANCHORS.mining` at `(-988,0)` / `mining2` at `(-1480,-1180)` / `mining3` at
       `(-900,2800)` — the latter two host no SIDE mission, but `mining3` is the system's **far** outpost
@@ -1413,8 +1416,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
       no mission, with a matching `space-factory` set-piece at the same (x,z)). The factory is the system's
       one **short hop**: ~495 u out, about two screens diagonally at zoom 1, just past the base activity
       zone (`ZONE_RADIUS` 360) against the ~1000 u belt/science crossings.
+      Finally the **freighter in distress** (`ANCHORS.freighter` at `(-100,-950)`, `kind: 'freighter'`) —
+      host of the `side-freighter` mission, ~955 u belt-ward and "north" of the home planet. It is the one
+      anchor whose set-piece is deliberately **not** at the anchor: the `freighter` set-piece renders +50 z
+      ahead at `(-100,-900)` so it sits in front of the player's forward-gliding spawn.
       A test pins that **every anchor with a physical set-piece matches the seed `pos` exactly**
-      (`system-map.test.js` importing `MAPS`) — moving one without the other flies autopilot into empty space.
+      (`system-map.test.js` importing `MAPS`, freighter carrying that +50 z framing offset) — moving one
+      without the other flies autopilot into empty space. A second test pins that **exactly the three side
+      missions carry a host object** and each resolves back to it: a mission with no host can be taken from
+      the board and then has no marker, no autopilot target and no zone to fly into.
       Each object carries `pos` (where autopilot flies — a body's own **anchor** on the plane, never the
       permanently distant body itself), `marker` (the same point, so list and map can't disagree),
       `missionId` and an i18n **`nameKey`** — names are localized (`ui.object.*`, EN+RU; the star is
@@ -1622,7 +1632,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   then a **2-boss finale** (two buffed `first pirate boss`). A mission is just a level-style descriptor played by
   the existing `levelRunner`; clearing it **banks per-kill ×2 credits like a level but does NOT advance the
   story counter** (repeatable grind to fund the shop). **Each mission fights at its own location in the
-  world** (`descriptor.center` — mining at `(-550, 0)`, research at `(400, 0)`, freighter at `(-100, -450)`),
+  world** (`descriptor.center` — mining at `(-988, 0)`, research at `(928, 0)`, freighter at `(-100, -950)`),
   away from the campaign center `(0,0)`. The map is **one shared world** — all set-pieces (the three mission
   structures + the base station at `(-10,-10)`) exist at fixed positions on every level/mission; the mission only
   moves the combat there (you spawn over the matching structure, the others — and the base station you return

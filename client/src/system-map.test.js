@@ -207,7 +207,7 @@ test('reaching another body is a real crossing (thousands of units), not a hop',
 
 // ---------- The navigation object model (what the map UI draws + lists + flies to) ----------
 
-test('listSystemObjects carries every selectable place: star + 4 planets + base + science + 3 mining + factory', () => {
+test('listSystemObjects carries every selectable place: star + 4 planets + base + science + 3 mining + factory + freighter', () => {
   const t = EPOCH + 5e7;
   const objs = listSystemObjects(t);
   const byKind = (k) => objs.filter((o) => o.kind === k);
@@ -217,7 +217,8 @@ test('listSystemObjects carries every selectable place: star + 4 planets + base 
   assert.equal(byKind('station').length, 1);
   assert.equal(byKind('mining').length, 3, 'all three belt outposts');
   assert.equal(byKind('factory').length, 1, 'the space factory');
-  assert.equal(objs.length, 11);
+  assert.equal(byKind('freighter').length, 1, 'the freighter in distress (side-freighter mission site)');
+  assert.equal(objs.length, 12);
   const ids = objs.map((o) => o.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique (they key selection + the map markers)');
 });
@@ -241,12 +242,16 @@ test('a celestial object flies to its ANCHOR — the body itself is never the de
   }
 });
 
-test('exactly the two mission sites carry a missionId, and each resolves back to its object', () => {
+// Every side mission the server offers MUST have a host object here, or the mission is unreachable: the
+// board takes it, then roam finds no marker, no autopilot target and no zone (this is exactly how
+// `side-freighter` was stranded when the flyable star system moved the other two sites and left it behind).
+test('exactly the three mission sites carry a missionId, and each resolves back to its object', () => {
   const t = EPOCH + 5e7;
   const withMission = listSystemObjects(t).filter((o) => o.missionId);
-  assert.deepEqual(withMission.map((o) => o.missionId).sort(), ['side-mining', 'side-research']);
+  assert.deepEqual(withMission.map((o) => o.missionId).sort(), ['side-freighter', 'side-mining', 'side-research']);
   assert.equal(objectForMission('side-mining', t).id, 'mining');
   assert.equal(objectForMission('side-research', t).id, 'science');
+  assert.equal(objectForMission('side-freighter', t).id, 'freighter');
   assert.equal(objectForMission(null, t), null);
   assert.equal(objectForMission('nope', t), null);
   // the two extra belt outposts + the factory are places you can fly to, with no mission attached
@@ -275,12 +280,14 @@ test('every navigation anchor with a physical set-piece matches the seed positio
   // ON (the base dock, an asteroid field you fight inside); the space factory alone is pushed up-left so
   // arriving frames it beside the ship instead of swallowing the ship in its middle (see catalog_seed.js).
   const PHYSICAL = {
-    base:    ['base-station',     0,   0],
-    science: ['research-station', 0,   0],
-    mining:  ['asteroid-field',   0,   0],
-    mining2: ['asteroid-field',   0,   0],
-    mining3: ['asteroid-field',   0,   0],
-    factory: ['space-factory',  -70, -55],
+    base:      ['base-station',     0,   0],
+    science:   ['research-station', 0,   0],
+    mining:    ['asteroid-field',   0,   0],
+    mining2:   ['asteroid-field',   0,   0],
+    mining3:   ['asteroid-field',   0,   0],
+    factory:   ['space-factory',  -70, -55],
+    // the freighter renders +50 z AHEAD of its anchor so it sits in front of the forward-gliding spawn
+    freighter: ['freighter',        0,  50],
   };
   for (const [id, [type, dx, dz]] of Object.entries(PHYSICAL)) {
     const a = ANCHORS[id];
