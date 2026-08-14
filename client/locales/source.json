@@ -963,6 +963,10 @@
     "source": "Taken",
     "context": "Mission-board badge — this side mission is accepted onto the board (but not active). One word."
   },
+  "ui.mission.cleared": {
+    "source": "Cleared",
+    "context": "Mission-board badge — this side mission has already been won at least once. One word."
+  },
   "ui.button.take_off_mission": {
     "source": "🚀 Take off — {mission}",
     "context": "Take-off button label when a side mission is the active one; {mission} is its title."

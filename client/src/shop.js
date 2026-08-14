@@ -8,11 +8,12 @@ import { G, CATALOG } from './state.js';
 import { shipMass, deriveDrive } from './components.js';
 import { resolveComponents, buildPlayerFor } from './ship-build.js';
 import { updateHud, updateMenuCredits } from './hud.js';
-import { fetchJson } from './net.js';
+import { fetchJson, missionClearDone } from './net.js';
 import { API_BASE } from './api-base.js';
 import { t } from './i18n.js';
 import { shipModelCfg } from './ship-factory.js';
 import { buildModelViewer, setViewerModel, startViewer, stopViewer, resizeViewer, disposeViewer, itemModelCfg, setTopDownView, enableOrbit } from './model-viewer.js';
+import { gatedRefs, hasNew, prune, primeSets, unseenSections, unseenItems, refOf, absorbRefs, GATE_KINDS, LEGACY_GATE_KINDS } from './shop-markers.js';
 
 let shopData = null;       // { credits, shopUnlocked, stash, activeShip } — last server state
 let panelMode = 'slot';   // right context panel: 'slot' (selected-slot detail) | 'shop' (the shop)
@@ -140,48 +141,93 @@ function shopCatalog() {
   return items;
 }
 
-// ---------- Level-gated shop rows (catalog_seed.js `stats.minLevel`) ----------
-// A gated row is simply ABSENT from the shop until the campaign reaches its level — the maintainer's
-// call: no greyed-out teaser (DECISIONS §108). The gate is compared by level NAME against the server's
-// `reachedLevels` (DECISIONS §95 — never a raw id), and the server refuses the buy anyway, so this
-// filter is presentation, not enforcement. A looted copy of a gated item still equips normally.
-const itemUnlocked = (s) => !s || !s.minLevel ||
-  !!(G.activeShip && (G.activeShip.reachedLevels || []).includes(s.minLevel));
+// ---------- Gated shop rows (`stats.minLevel` / `stats.minMission`) ----------
+// A gated row is simply ABSENT from the shop until its gate opens — the maintainer's call: no greyed-out
+// teaser (DECISIONS §108). Two gate kinds, both compared by NAME/ID STRING against what the server ships
+// with the active ship (DECISIONS §95 — the client never learns a raw level or mission row id):
+//   `minLevel`   → campaign progress   → `activeShip.reachedLevels`   (FACTORY_GATE, "Level 3" cleared)
+//   `minMission` → a cleared side mission → `activeShip.clearedMissions` (RESEARCH_GATE, "Research station")
+// Both must pass. The server refuses the buy anyway (`buyItem`), so this filter is presentation, not
+// enforcement, and a LOOTED copy of a gated item still deposits and equips.
+const itemUnlocked = (s) => {
+  if (!s) return true;
+  if (s.minLevel && !((G.activeShip && G.activeShip.reachedLevels) || []).includes(s.minLevel)) return false;
+  if (s.minMission && !((G.activeShip && G.activeShip.clearedMissions) || []).includes(s.minMission)) return false;
+  return true;
+};
 // Every row the shop would list right now (the same predicate renderShopPanel filters by, minus the type).
 const buyableNow = () => shopCatalog().filter((n) => (n.price ?? 0) > 0 && n.s?.buyable !== false && itemUnlocked(n.s));
 
-// ---------- "(new)" marker on the Loadout menu item ----------
-// A GATED row that has just become buyable is "new" until the player opens Loadout once. The seen set is
-// per-player localStorage and is pruned to what is unlocked NOW on every mark, so a progress reset (or a
-// wipe) re-arms the marker instead of swallowing it forever. Only gated rows count: everything else has
-// been on the shelf since the shop opened and would make the marker permanent noise.
+// ---------- The gold "(new)" trail (client/src/shop-markers.js holds the pure logic) ----------
+// TWO marker keys, on purpose (DECISIONS §111), plus one housekeeping key:
+//   shopSeenNew:<id>      "the shop has been OPENED since these rows unlocked" → the Loadout menu "(new)"
+//                         + the Shop-button "(new)"; written by markShopItemsSeen() on `open-shop`.
+//   shopItemsClicked:<id> "this specific ROW has been clicked in the shop list" → the gold type-tab + the
+//                         gold row; written by markShopItemClicked() on `shop-item`.
+// One key could not serve both: opening the shop would mark everything seen and kill every gold frame
+// before it could render. A third, non-marker key records which GATE KINDS those baselines were taken
+// under (shopMarkerKinds), so a release that introduces a gate kind doesn't announce gear the player
+// already owns — see primeShopItemsSeen.
 const seenKey = () => `shopSeenNew:${G.playerId || 'anon'}`;
+const clickedKey = () => `shopItemsClicked:${G.playerId || 'anon'}`;
+const kindsKey = () => `shopMarkerKinds:${G.playerId || 'anon'}`; // the gate kinds this device's baselines were taken under
 // null = this device has NO baseline yet (never primed). A corrupt value reads as null too, which
-// re-primes rather than re-arming — a storage hiccup must not invent a "(new)" that isn't.
-const readSeen = () => {
-  try { const raw = localStorage.getItem(seenKey()); return raw == null ? null : new Set(JSON.parse(raw)); }
+// re-primes rather than re-arming — a storage hiccup must not invent a marker that isn't.
+const readSet = (key) => {
+  try { const raw = localStorage.getItem(key); return raw == null ? null : new Set(JSON.parse(raw)); }
   catch { return null; }
 };
-const gatedRefs = () => buyableNow().filter((n) => n.s?.minLevel).map((n) => `${n.kind}:${n.refId}`);
+const writeSet = (key, refs) => { try { localStorage.setItem(key, JSON.stringify(refs)); } catch { /* private mode */ } };
+const gatedRefsNow = () => gatedRefs(buyableNow());
+
 export function hasNewShopItems() {
   if (!(G.activeShip && G.activeShip.shopUnlocked)) return false; // nothing to look at while the shop is shut
-  const seen = readSeen();
-  return !!seen && gatedRefs().some((ref) => !seen.has(ref)); // no baseline ⇒ nothing is "new" (see primeShopItemsSeen)
+  return hasNew(gatedRefsNow(), readSet(seenKey()));
 }
-export function markShopItemsSeen() {
-  try { localStorage.setItem(seenKey(), JSON.stringify(gatedRefs())); } catch { /* private mode */ }
+export function markShopItemsSeen() { writeSet(seenKey(), gatedRefsNow()); }   // prune-to-unlocked on every write
+// Clicking a row in the shop list IS seeing that item (not buying it, not merely opening its detail card).
+function markShopItemClicked(kind, refId) {
+  const gated = gatedRefsNow();
+  const clicked = readSet(clickedKey()) || new Set();
+  clicked.add(`${kind}:${refId}`);
+  writeSet(clickedKey(), prune(gated, clicked));
 }
-// Establish the baseline ONCE per device+player, at bootstrap: whatever is already unlocked the first
-// time we look counts as ALREADY SEEN, not as new. Without it, the gate shipping to a live game would
-// tell every player who had long since cleared "Level 3" that their long-owned gear is "(new)" — the
-// marker is for the moment gear UNLOCKS, and for those players that moment is in the past. A player who
-// has not reached a gate baselines to the empty set, so clearing the factory still lights the marker.
-// Runs before the shop is ever rendered; a device that already has a baseline is left untouched.
+// Establish the baseline at bootstrap for BOTH keys: whatever is already unlocked the first time we look
+// counts as ALREADY SEEN. Without it, shipping a gate to a live game would tell every player who cleared it
+// months ago that their long-owned gear is new — and would light gold frames all over a shop they have
+// shopped in for weeks. A player short of a gate baselines to the empty set, so clearing it later still
+// lights the trail.
+//
+// THREE cases, all handled here:
+//  (a) NO baseline on this device → adopt everything unlocked right now (the original first-sight rule).
+//  (b) An EXISTING baseline taken under FEWER gate kinds than the catalog has today → absorb the rows that
+//      just became gated and are already unlocked. Without (b), this very release would fire "(new)" on
+//      every grandfathered device: their gated set jumps from 3 rows to 5 (Ion engine + Nanobot repair
+//      become gated-and-unlocked), and the stored `shopSeenNew` set only holds the 3. Keyed off gate KINDS,
+//      not item ids, so it works for the next gate kind too — and it leaves a pending marker for an
+//      already-known kind alone.
+//  (c) An EXISTING baseline holding refs that are no longer unlocked (a progress reset / wipe relocked
+//      them) → PRUNE both, every prime. `markShopItemsSeen` prunes `seen` on every shop-open, but nothing
+//      prunes `clicked` unless a row is clicked — so a reset player who reopens the shop without clicking
+//      anything kept a stale `clicked` set, and on re-earning the tier the menu "(new)" fired with no
+//      matching gold in the shop. Same dead-end the `clicked`-from-`seen` seeding exists to prevent, for a
+//      different cohort. Pruning is idempotent and cannot resurrect or swallow a marker: it only drops
+//      refs the shop does not list right now.
 export function primeShopItemsSeen() {
-  // The gate names must have arrived, or `gatedRefs()` fails closed to [] and would bake in a baseline
-  // that says "nothing was unlocked" for a player who is in fact past the gate.
-  if (!(G.activeShip && Array.isArray(G.activeShip.reachedLevels))) return;
-  if (readSeen() === null) markShopItemsSeen();
+  // The gate sources must have arrived, or gatedRefsNow() fails closed to [] and bakes in a baseline that
+  // says "nothing was unlocked" for a player who is in fact past the gates.
+  if (!(G.activeShip && Array.isArray(G.activeShip.reachedLevels) && Array.isArray(G.activeShip.clearedMissions))) return;
+  const unlocked = buyableNow();
+  const refs = gatedRefs(unlocked);
+  const known = readSet(kindsKey()); // null = a device from before this key existed
+  const absorb = absorbRefs(unlocked, known ? [...known] : LEGACY_GATE_KINDS);
+  // The decision itself is pure and unit-tested (shop-markers.js primeSets): first sight adopts what is
+  // unlocked, a device with a `seen` but no `clicked` seeds `clicked` from `seen`, and every existing
+  // baseline is absorbed + PRUNED. This function only does the I/O.
+  const next = primeSets({ refs, absorb, seen: readSet(seenKey()), clicked: readSet(clickedKey()) });
+  writeSet(seenKey(), next.seen);
+  writeSet(clickedKey(), next.clicked);
+  writeSet(kindsKey(), GATE_KINDS); // the baselines now know every gate kind the catalog can carry
 }
 
 // ---------- Loadout screen (Slice C): centered ship + slots around it + a right context panel ----------
@@ -326,10 +372,10 @@ function renderPanel(active, unlocked) {
 }
 
 // A shop list row — clickable (opens the detail card) with an inline Buy.
-function shopRow(n) {
+function shopRow(n, gold = false) {
   const stats = statLine(n.kind, n.type, n.s, n.weight);
   const owned = n.owned > 0 ? ` <span class="owned-badge">${esc(t('ui.shop.owned', { n: n.owned }))}</span>` : '';
-  return `<div class="lp-shop-item" data-act="shop-item" data-kind="${n.kind}" data-ref-id="${n.refId}">
+  return `<div class="lp-shop-item${gold ? ' new' : ''}" data-act="shop-item" data-kind="${n.kind}" data-ref-id="${n.refId}">
     <div class="lp-name">${esc(n.name)}${owned}</div>
     ${stats ? `<div class="lp-stats">${esc(stats)}</div>` : ''}
     <div class="lp-acts"><span class="price">${esc(priceLabel(n.price))}</span><button class="primary" data-act="buy" data-kind="${n.kind}" data-ref-id="${n.refId}">${esc(t('ui.shop.action.buy'))}</button></div>
@@ -363,10 +409,16 @@ function renderShopPanel() {
   if (selectedShopItem) return renderShopDetail();
   disposeViewer(shopModelViewer); shopModelViewer = null; // left the detail → free the model context
   const host = document.getElementById('loadout-panel');
-  const types = SHOP_TYPES.map((tp) => `<button class="lp-type${tp === shopType ? ' active' : ''}" data-act="type" data-type="${tp}">${esc(t(`ui.shop.filter.${tp}`))}</button>`).join('');
-  const items = buyableNow().filter((n) => (shopType === 'weapon' ? n.kind === 'weapon' : n.type === shopType));
+  const all = buyableNow();
+  // The gold trail's last leg: a type tab is gold while its section still holds a row the player has never
+  // clicked (DERIVED — the tab has no state of its own), and that row is gold inside the section.
+  const clicked = readSet(clickedKey());
+  const goldSections = unseenSections(all, clicked);
+  const goldRefs = new Set(unseenItems(all, clicked).map(refOf));
+  const types = SHOP_TYPES.map((tp) => `<button class="lp-type${tp === shopType ? ' active' : ''}${goldSections.has(tp) ? ' new' : ''}" data-act="type" data-type="${tp}">${esc(t(`ui.shop.filter.${tp}`))}</button>`).join('');
+  const items = all.filter((n) => (shopType === 'weapon' ? n.kind === 'weapon' : n.type === shopType));
   for (const n of items) n.owned = ownedCount(n.kind, n.refId);
-  const list = items.length ? items.map(shopRow).join('') : `<div class="lp-hint">${esc(t('ui.shop.empty_shop'))}</div>`;
+  const list = items.length ? items.map((n) => shopRow(n, goldRefs.has(refOf(n)))).join('') : `<div class="lp-hint">${esc(t('ui.shop.empty_shop'))}</div>`;
   host.innerHTML = `<div class="lp-scroll"><div class="lp-types">${types}</div><div class="lp-list shop">${list}</div></div>
     <div class="lp-foot"><button data-act="close-shop">${esc(t('ui.shop.back'))}</button></div>`;
 }
@@ -493,7 +545,13 @@ function onLoadoutClick(e) {
   }
   if (act === 'close-shop') { panelMode = 'slot'; selectedShopItem = null; renderPanel(active, unlocked); return; }
   if (act === 'type') { shopType = el.dataset.type; selectedShopItem = null; renderShopPanel(); return; }
-  if (act === 'shop-item') { selectedShopItem = { kind: el.dataset.kind, refId: Number(el.dataset.refId) }; renderShopPanel(); return; } // open the detail card (stats + 3D model)
+  if (act === 'shop-item') {
+    // Clicking the ROW is what marks the item seen (the maintainer's call: not buying it, not the detail
+    // card) — do it before rendering so returning to the list shows the gold already gone.
+    markShopItemClicked(el.dataset.kind, Number(el.dataset.refId));
+    selectedShopItem = { kind: el.dataset.kind, refId: Number(el.dataset.refId) };
+    renderShopPanel(); return;                                   // open the detail card (stats + 3D model)
+  }
   if (act === 'shop-list') { selectedShopItem = null; renderShopPanel(); return; } // Back → the item list
   const kind = el.dataset.kind, slot = el.dataset.slot;
   const refId = el.dataset.refId != null ? Number(el.dataset.refId) : null;
@@ -518,6 +576,8 @@ export async function openBay() {
     return;
   }
   try {
+    await missionClearDone(); // a just-cleared side mission must be committed before this read, or its
+                              // gated rows stay hidden (and the "(new)" trail stays dark) until next landing
     const j = await fetchJson(`/api/players/${G.playerId}/stash`);
     shopData = j;
     if (j.activeShip) G.activeShip = j.activeShip;

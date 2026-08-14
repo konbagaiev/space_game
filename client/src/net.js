@@ -41,6 +41,23 @@ export const fetchJson = async (url) => {
 let banking = null;
 export function bankingDone() { return banking || Promise.resolve(); }
 
+// The in-flight side-mission "cleared" POST, so the hangar's shop refetch can WAIT for it (see openBay):
+// the unlock it grants must be visible in the very first /stash read after the victory, or the gated rows
+// stay hidden until the next landing. Never reset to null — an already-settled promise awaits instantly,
+// so keeping the last one costs nothing and saves a null dance.
+let clearing = null;
+export function missionClearDone() { return clearing || Promise.resolve(); }
+// Record that a side mission was CLEARED (won). Permanent + idempotent server-side; unlocks any catalog
+// row gated on it (`stats.minMission`). Best-effort like bankRun — a dropped request just means the player
+// clears it again. Never called under replay/playback (the caller gates on !G.replayMode).
+export function reportMissionCleared(missionId) {
+  if (!G.playerId || !missionId) return;
+  clearing = fetch(API_BASE + `/api/players/${G.playerId}/missions/clear`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ missionId }),
+  }).catch(() => {});
+}
+
 // Bank the credits earned this run into the account balance and record the game. Runs once per run
 // (on victory or death; G.banked guards it); closing the browser before a run ends loses the unbanked
 // session credits.

@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-14 (**Roam navigation HUD** — while roaming, a gold off-screen edge arrow points at the active mission and a bottom-center bar carries "Return to Base" + "Autopilot to Mission" (each button also cancels its own autopilot); both the pointer and the mission button hide when there is no active mission target. Previously: **The "(new)" marker now leads all the way to the shelf** — the gold "(new)" that announces newly unlocked gear rides both the Loadout menu item AND the Shop button inside the Loadout panel, and it now clears only when the player OPENS THE SHOP (merely entering Loadout no longer clears it). Previously: **The "Level 3" gear tier is progress-gated** — Heavy hull, Heavy Machine Gun (now weight 15 / aim assist 3°) and Triple spiral rocket are hidden from the shop and refused by the server until the weapons factory is cleared; a gold "(new)" marker on Loadout announces them when they unlock. Previously: **`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
+**Updated:** 2026-08-14 (**Mission-gated shop rows + the gold "(new)" trail inside the shop** — the Ion engine and Nanobot repair are hidden from the shop and refused by the server until the "Research station" side mission has been **cleared** (a second gate kind, `stats.minMission`; side-mission completion is persisted now in `cleared_missions`, and players already past the board gate are grandfathered by a one-shot migration); the mission board grows a **Cleared** badge, and inside the shop the type tab holding a never-clicked newly unlocked row goes **gold** — as does the row itself, until it is clicked. Previously: **Roam navigation HUD** — while roaming, a gold off-screen edge arrow points at the active mission and a bottom-center bar carries "Return to Base" + "Autopilot to Mission" (each button also cancels its own autopilot); both the pointer and the mission button hide when there is no active mission target. Previously: **The "(new)" marker now leads all the way to the shelf** — the gold "(new)" that announces newly unlocked gear rides both the Loadout menu item AND the Shop button inside the Loadout panel, and it now clears only when the player OPENS THE SHOP (merely entering Loadout no longer clears it). Previously: **The "Level 3" gear tier is progress-gated** — Heavy hull, Heavy Machine Gun (now weight 15 / aim assist 3°) and Triple spiral rocket are hidden from the shop and refused by the server until the weapons factory is cleared; a gold "(new)" marker on Loadout announces them when they unlock. Previously: **`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
 sun's smooth bright disk (~15 000 speck pixels on it), so the parallax field ramps away inside 760 u.
 Previously: **The sky light comes from the star** — the terminator source is no longer an
 authored fixed position but the star's own world position, aimed every frame; it used to arrive 64° off
@@ -568,18 +568,25 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **Player shop ladder** (priced; `docs/plans/economy-shop-v2.md`) adds buyable upgrades beyond the
     enemy/starter parts: **Heavy hull** (id 13: 200 hp / weight 50 / **6000** — the upgrade "ship": 2× HP for
     accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 21 / **1400**) + **Ion engine** (id 16: power
-    27, light / **6400** — the premium top-tier engine), **Advanced thrusters** (id 21: power 3.0 / weight 5 /
-    **2500**), and repair tiers **Repair drone II** (id 19: 1.5 HP / 1 s / 85% / **1800**) + **Nanobot repair**
-    (id 20: 2 HP / 1 s / 90% / **7000**). Upgrades are **mass trade-offs, not power-creep**.
-  - **Level-gated shop rows (`stats.minLevel`).** A catalog row may name a level the campaign must have
-    reached before it is **buyable**; the constant is `FACTORY_GATE = 'level-4'` in `catalog_seed.js`,
-    compared by level **NAME** (DECISIONS §95), i.e. *after clearing "Level 3"* (the weapons factory).
-    Three rows carry it: **Heavy hull** (13), **Heavy Machine Gun** (7) and **Triple spiral rocket** (11) —
-    the mid-game power tier. Enforced **server-side** in `buyItem` (403 `item locked`); the client simply
-    **omits** the row from the shop list — no greyed-out teaser (DECISIONS §108). The gate is on the
-    **purchase only**: a looted copy still lands in the stash and equips. The client mirrors it from
-    `activeShip.reachedLevels` (level names, shipped by `getActivePlayerShip` via `reachedLevels()` in
-    `db.js`) against `n.s.minLevel` — it never learns a raw level id.
+    27, light / **6400** — the premium top-tier engine, **mission-gated**), **Advanced thrusters** (id 21:
+    power 3.0 / weight 5 / **2500**), and repair tiers **Repair drone II** (id 19: 1.5 HP / 1 s / 85% /
+    **1800**) + **Nanobot repair** (id 20: 2 HP / 1 s / 90% / **7000**, **mission-gated**). Upgrades are
+    **mass trade-offs, not power-creep**.
+  - **Gated shop rows — TWO gate kinds (`stats.minLevel`, `stats.minMission`), composed with AND.** A
+    catalog row may name a campaign level and/or a side mission that must be behind the player before it is
+    **buyable**. Both are compared by **NAME / id string**, never by a raw row id (DECISIONS §95):
+    - **`minLevel`** — constant `FACTORY_GATE = 'level-4'` in `catalog_seed.js`, i.e. *after clearing
+      "Level 3"* (the weapons factory). Three rows carry it: **Heavy hull** (13), **Heavy Machine Gun** (7)
+      and **Triple spiral rocket** (11) — the mid-game power tier. Client source: `activeShip.reachedLevels`
+      (level names, from `reachedLevels()` in `db.js`).
+    - **`minMission`** — constant `RESEARCH_GATE = 'side-research'`, the **"Research station" side mission**,
+      which must have been **cleared** at least once. Two rows carry it: **Ion engine** (16) and **Nanobot
+      repair** (20) — the premium support tier, tied to flying the station instead of to a credit balance.
+      Client source: `activeShip.clearedMissions` (cleared side-mission ids, from `getClearedMissions()`).
+    Both kinds are enforced **server-side** in `buyItem` (403 `item locked`) — every gate present on a row
+    must pass; the client simply **omits** the row from the shop list — no greyed-out teaser (DECISIONS
+    §108). The gate is on the **purchase only**: a looted copy still lands in the stash and equips. The
+    client mirror is one predicate, `itemUnlocked()` → `buyableNow()` in `client/src/shop.js`.
   - **Rarity + color** (`rarity`/`color` columns on **both** `components` and `weapons`; migration 020,
     Postgres bootstrap parity; flow into the client CATALOG). Three tiers with a fixed hex each: **trash
     `#ffffff`** (white), **common `#59e0a0`** (green, the loot-glow green), **rare `#0000ff`** (blue).
@@ -1104,32 +1111,28 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   is also `max-width: 200px`, wrapping rather than overflowing). The **Missions** item shows the
   **mission list in the right column** (`#mw-mission-board`, `renderMissionsBoard`) — the **campaign**
   ("Main operation") card plus, once the side-mission board unlocks (after "Level 3" — DECISIONS §91), the
-  **three side-mission** cards — each with **Take / Defer / Set active** buttons + **Active/Taken**
-  badges (the old left mission sublist + caret are gone). The **Missions menu item carries a count badge**
+  **three side-mission** cards — each with **Take / Defer / Set active** buttons + a status badge (the old
+  left mission sublist + caret are gone). A card shows **at most ONE badge**, in the precedence
+  **Cleared > Active > Taken**: **Cleared** (green `.mc-badge.cleared`, `ui.mission.cleared`) means the
+  mission has been **won at least once** (permanent, from `cleared` on `GET /api/players/:id/missions` →
+  `clearedIds` in `mainwindow.js`) and is first because cleared-ness has no other tell on the card, whereas
+  Active also tints the whole card gold and Taken also shows **Defer**. The **Missions menu item carries a count badge**
   (`#mw-missions-badge`, `updateMissionsBadge` in `mainwindow.js`, refreshed from every `renderMissionsBoard`)
   — the number of **side missions on offer** (`missionOffers.length`, currently a fixed 3; taking one does
   **not** decrement it, and the ever-present campaign card isn't counted), hidden at zero (i.e. before the
   board unlocks). It reuses the **same `.mw-badge` gold pill** as the free-skill-points badge on Character.
   The **Loadout menu item carries a gold "(new)" marker** (`#mw-loadout-new`, `.mw-new`, `updateLoadoutNew`
   in `mainwindow.js`, string `ui.mainwin.new`) — plain inline text in the same gold `#ffcf5a` as those
-  pills, **no count**. It appears when a **level-gated shop row has just become buyable** (right now the
-  "Level 3" tier: Heavy hull / Heavy Machine Gun / Triple spiral rocket). The **same "(new)" (reusing
+  pills, **no count**. It appears when a **gated shop row has just become buyable** (the "Level 3" tier:
+  Heavy hull / Heavy Machine Gun / Triple spiral rocket; the research tier: Ion engine / Nanobot repair).
+  The **same "(new)" (reusing
   `.mw-new`) also rides the Shop button inside the Loadout panel** (`shop.js` `renderPanel` → `.lp-foot`
-  `data-act="open-shop"`), so the marker leads the player from the menu, through Loadout, to the shelf.
+  `data-act="open-shop"`), so the marker leads the player from the menu, through Loadout, to the shelf —
+  **and the trail continues onto the shelf itself** (see the gold tab/row below).
   Both **clear only when the player OPENS THE SHOP** — the `open-shop` action calls `markShopItemsSeen()`
   and fires a `shop-items-seen` DOM event that `updateLoadoutNew` listens for (merely entering Loadout no
-  longer clears it). The seen set lives in `shop.js` (`hasNewShopItems` / `markShopItemsSeen`,
-  `localStorage['shopSeenNew:<playerId>']`, per player) and is **pruned to what is unlocked now** on every
-  mark, so a progress reset re-arms the marker instead of swallowing it. Only **gated** rows count —
-  anything on the shelf since the shop opened would make the marker permanent noise. **The baseline is
-  primed at bootstrap** (`primeShopItemsSeen()`, called from `main.js` right after `G.activeShip` lands):
-  the first time a device sees a player, whatever is **already unlocked counts as already seen**. So
-  "(new)" fires only on an unlock the player **lived through** — shipping the gate to a live game does not
-  tell everyone who cleared "Level 3" months ago that their long-owned gear is new. A player short of the
-  gate baselines to the empty set, so clearing the factory still lights it. **No baseline ⇒ nothing is
-  new** (a corrupt/unreadable store re-primes rather than re-arming). Recomputed on every
-  landing (after `openBay()` resolves, since the gate names arrive with the shop state), on every menu
-  switch, and on the shop-items-seen event.
+  longer clears it). Recomputed on every landing (after `openBay()` resolves, since the gate names arrive
+  with the shop state), on every menu switch, and on the shop-items-seen event.
   Each card is **stacked for the narrow column**:
   line 1 = title (wrapping) with the badge right-aligned beside it, line 2 = the reward/XP sub-line,
   line 3 = the action buttons right-aligned (an empty action row collapses). The list is **its own
@@ -1191,6 +1194,48 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     uses ×2 fonts** (k 16 / v 20 / d 12px) and **fits on one line** (measured at 1440×900, scrollWidth == clientWidth
     → the borderless 2×2 grid fallback stays unused); and **Take-off follows the content** (`#mw-mission-desc`
     `flex: 0 1 auto`, still scrolling when the text is genuinely long). Mobile/touch layout is unchanged.
+- **The gold "(new)" trail — state model (DECISIONS §111).** The pure logic lives in
+  **`client/src/shop-markers.js`** (unit-tested by `shop-markers.test.js`); `shop.js` keeps all
+  `localStorage`/DOM I/O. **Two independent marker keys, per player, plus one housekeeping key:**
+  - `shopSeenNew:<playerId>` — *"the shop has been OPENED since these rows unlocked"* → the Loadout menu
+    "(new)" + the Shop-button "(new)" (`hasNewShopItems` / `markShopItemsSeen`).
+  - `shopItemsClicked:<playerId>` — *"this specific ROW has been clicked in the shop list"* → the gold
+    type-tab + the gold row (`markShopItemClicked`, called from the `shop-item` action). One key could not
+    serve both: opening the shop would mark everything seen and kill every gold frame before it rendered.
+  - `shopMarkerKinds:<playerId>` — not a marker: which **gate kinds** (`GATE_KINDS = ['minLevel',
+    'minMission']`) the two baselines above were taken under. On prime, any row that is gated+unlocked now
+    but carries **none** of the previously-known kinds is folded into the baselines as **already seen**
+    (`absorbRefs`), so a release that introduces a gate kind does not announce gear the player has been
+    buying for weeks — while a genuinely pending marker for an already-known kind is left alone. This key
+    is deliberately **NOT cleared by a progress reset or a marker re-arm**, and a corrupt read of it errs
+    toward *swallowing* (it re-runs `absorbRefs` under `LEGACY_GATE_KINDS = ['minLevel']`) rather than
+    re-arming — clearing it would silently swallow a legitimately pending `minMission` marker. That is the
+    opposite of the two marker keys, on purpose.
+  Both marker sets are **pruned to what is unlocked now** on every write **and on every bootstrap prime**,
+  so a progress reset re-arms the markers instead of swallowing them. The prime is what makes that true for
+  **both** keys: `seen` is also pruned whenever the shop is opened (`markShopItemsSeen`), but `clicked` is
+  otherwise only rewritten when a row is actually clicked — so without pruning at prime, a reset player who
+  reopened the shop without clicking anything would keep a stale `clicked` set and, on re-earning the tier,
+  get the menu "(new)" with no gold behind it. Only **gated** rows count — anything on the shelf since the
+  shop opened would make them permanent noise. **Both baselines are primed at bootstrap**
+  (`primeShopItemsSeen()`, called from `main.js` right after `G.activeShip` lands; it waits for both
+  `reachedLevels` and `clearedMissions` to be arrays, or it would fail closed to an empty baseline; the
+  decision itself is the pure, unit-tested `primeSets()` in `shop-markers.js` — `shop.js` only does the
+  storage I/O): the
+  first time a device sees a player, whatever is **already unlocked counts as already seen**. A device that
+  has a `seen` baseline but no `clicked` one seeds `clicked` **from `seen`**, so a pending menu marker
+  always has matching gold in the shop instead of dead-ending on its first step. A player short of a gate
+  baselines to the empty set, so clearing it later still lights the whole trail. **No baseline ⇒ nothing is
+  new** (a corrupt/unreadable marker store re-primes rather than re-arming).
+- **The gold inside the shop.** In the shop list, a **type tab** (`.lp-type.new`) is gold `#ffcf5a` instead
+  of the usual blue while its section still holds an unlocked gated row the player has never clicked, and
+  that **row** (`.lp-shop-item.new`) carries the same gold frame. The tab's gold is **derived**
+  (`unseenSections`), not its own state: it clears when the last unseen row inside it is clicked, so
+  visiting a tab without clicking the row leaves it gold (the trail keeps pointing at unfinished business),
+  and a row in the section that is already active when the shop opens (the shop opens on `hull`) simply
+  shows its gold with no tab click to wait for. Several sections can be gold at once — the "Level 3" tier
+  spans hull + weapon, the research tier engine + repair. **Clicking the ROW** is what marks an item seen
+  (not buying it, not merely opening its detail card).
 - **Model viewers** (`client/src/model-viewer.js`) — a **small self-contained Three.js view** (own
   `WebGLRenderer` + scene + camera + a directional light + the same RoomEnvironment PMREM reflections as the
   combat scene) that **slowly auto-rotates** a glb. The viewer machinery is reusable helpers
@@ -1509,8 +1554,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   a **Shop** button (Slice C — see the Main Window section above). The **stash** (owned-but-not-equipped
   inventory, a qty model) surfaces **per-slot** as the fitting replacements. The **Shop panel** lists items
   by **type** (**Hull / Engine / Thrusters / Repair / Shield / Weapon / Grab**). The Shop lists only
-  **buyable** items (`price > 0` **and** `stats.buyable !== false` **and** the `stats.minLevel` gate, if any,
-  is in `activeShip.reachedLevels` — one predicate, `buyableNow()` in `shop.js`); **enemy parts are priced
+  **buyable** items (`price > 0` **and** `stats.buyable !== false` **and** every gate the row carries is
+  open — `stats.minLevel` in `activeShip.reachedLevels`, `stats.minMission` in `activeShip.clearedMissions`
+  — one predicate, `buyableNow()` in `shop.js`); **enemy parts are priced
   (resale value) but flagged `buyable:false` → hidden**, while
   the player's **starter gear is cheap-but-buyable** (Basic hull 300 / engine 500 / thrusters 400 / repair
   drone 500 / homing rocket 600) so each type's ladder starts low. The **Grab** tab sells the **Advanced grab**
@@ -1554,7 +1600,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   description + est. reward, and **Take-off flies the ACTIVE** one (`renderMissionsBoard` /
   `renderMissionView`). The **taken set + active mission are server-persisted** (`taken_missions` table +
   `players.active_mission_id`; endpoints `POST /api/players/:id/missions/take|defer|activate`, `GET
-  /missions` returns `taken` + `activeMissionId`; one active at a time, defer-of-active → campaign).
+  /missions` returns `taken` + `activeMissionId` + `cleared`; one active at a time, defer-of-active →
+  campaign). **Clearing one is persisted too** (`cleared_missions`, `POST .../missions/clear`, reported
+  from the victory path) — it drives the **Cleared** card badge and the `stats.minMission` shop gate.
   The three flavors — **mining / research / freighter** (i18n flavor text only) —
   are all the **same difficulty**: waves of **pirate gunner / rocketeer / heavy** (40/40/20 → 35/35/30),
   then a **2-boss finale** (two buffed `first pirate boss`). A mission is just a level-style descriptor played by
@@ -2202,7 +2250,10 @@ first translation). See DECISIONS §10.
   `SIDE_MISSIONS_MIN_LEVEL = 'level-4'`.
   **Migrations** are guarded one-shots in `db.js migrate()` — a `migrations_pg (name, applied_at)` ledger +
   `INSERT ... ON CONFLICT (name) DO NOTHING RETURNING name`, applied only when the INSERT claims the
-  sentinel. Two matter here:
+  sentinel. A third, `grandfather_research_clear`, credits every player already past
+  `SIDE_MISSIONS_MIN_LEVEL` with `side-research` (`backfillResearchClear()` — one set-based INSERT that
+  resolves the level by NAME, `ON CONFLICT DO NOTHING`, safe to re-run) so the rows that just became
+  mission-gated stay on their shelf; it runs **after** the levels seed. Two others matter here:
   `intro_level0_progress_shift` (when "Level 0" was prepended, every existing player was bumped
   `current_progress += 1` once so they stayed on the same content), and **`levels_zero_based_ids`**, which
   runs **before** the levels seed and maps **by name, never arithmetic** (the drifted ids are not a shift of
@@ -2281,9 +2332,19 @@ first translation). See DECISIONS §10.
   `players.active_mission_id` (NULL = campaign), with `getMissionState`/`takeMission`/`deferMission`/
   `activateMission` (activate auto-takes + enforces one-active; defer-of-active → campaign) behind
   `POST /api/players/:id/missions/take|defer|activate` (gated on `sideMissionsUnlocked`, ids validated
-  against `generateMissions()`). Reset clears both. (Server-sealed rewards = still a later integrity item.)
+  against `generateMissions()`). Reset clears both. **Mission COMPLETION is persisted too**:
+  `cleared_missions (player_id, mission_id, cleared_at)` (PK on the pair → permanent + idempotent) with
+  `getClearedMissions`/`clearMission` behind `POST /api/players/:id/missions/clear`, reported by the client
+  from the victory path (`sim.js win()` → `reportMissionCleared`, suppressed under replay) —
+  **client-authoritative like `/api/games` + `/loot`**. `getMissionState` (and therefore **every** mission
+  route, including the `GET /missions` board read) returns `cleared`; `getActivePlayerShip` ships
+  `clearedMissions`. It is the second content-gate source next to `current_progress`: catalog rows carrying
+  `stats.minMission` (Ion engine 16, Nanobot repair 20) are buyable only once the named mission is in it.
+  Reset (`resetPlayer`/`resetAllPlayers`) clears it, re-arming the gate.
+  (Server-sealed rewards = still a later integrity item.)
 - API: `POST /api/players/register`, `POST /api/games`, `GET /api/players/:id/games`,
-  `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
+  `POST /api/players/:id/missions/clear` (record a side mission as cleared — permanent, idempotent;
+  unlocks `stats.minMission` shop rows), `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
   `POST /api/players/:id/reset` (player-initiated progress reset → new-player baseline; 404 if unknown),
   `GET /api/players/:id/stash`, `POST /api/players/:id/buy`, `.../sell` (optional `qty`), `.../equip`, `.../unequip`
@@ -2685,7 +2746,10 @@ by the importmap). See `docs/plans/client-code-structure.md` and DECISIONS for t
   `simulateLevel`, unit-tested — proves the killed/total counter reaches `enemyTotal` and the drop fires on
   the last kill), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
 - **Between-battles UI:** `shop.js` (hangar shop + stash + live ship-stats bar; a leaf the Main Window
-  calls into), `settings.js` (audio-settings gear modal + graphics-quality picker + slide-to-confirm
+  calls into), `shop-markers.js` (pure state logic for the gold "(new)" trail — gated refs, the whole
+  bootstrap decision `primeSets` (first-sight baselines, the newly-gated-kind absorb, the prune that
+  re-arms after a reset), the derived unseen sections; no DOM/storage, unit-tested by
+  `shop-markers.test.js`), `settings.js` (audio-settings gear modal + graphics-quality picker + slide-to-confirm
   progress reset; a leaf whose only outward export is `localizeSettings`), `mainwindow.js` (the Main Window
   — `showMain`/`selectMenu`/the right-column mission list/`launchCampaign`/`launchMission`/`refreshMissions`/
   `enterRoam` (the one roam entry) + the real Map section + the mission-arrival `G.onMissionArrival` handler

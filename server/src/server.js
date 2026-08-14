@@ -9,7 +9,7 @@ import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advancePro
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
   setResetToken, consumeResetToken, deleteSessionsForPlayer,
   getStash, buyItem, sellItem, equipItem, unequipItem, depositLoot, getAdminPlayers,
-  getMissionState, takeMission, deferMission, activateMission, spendSkillPoint,
+  getMissionState, takeMission, deferMission, activateMission, clearMission, spendSkillPoint,
   recordSession, getAdminSessions, getSessionS3Key } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { generateMissions } from './missions.js';
@@ -226,7 +226,7 @@ export async function createApp() {
   // Stable set of offered side-mission ids (the generator is deterministic) — used to validate mutations.
   const SIDE_MISSION_IDS = new Set(generateMissions().map((m) => m.id));
   // A gated side-mission mutation: 403 until the board unlocks, then validate the id and run `op` (which
-  // returns the fresh mission state { taken, activeMissionId } the client re-renders from). `allowNull`
+  // returns the fresh mission state { taken, activeMissionId, cleared } the client re-renders from). `allowNull`
   // lets `activate` target the campaign (missionId = null → "Main operation").
   const missionMutation = (op, { allowNull = false } = {}) => wrap(async (req, res) => {
     const playerId = req.params.id;
@@ -242,14 +242,20 @@ export async function createApp() {
     const active = await getActivePlayerShip(req.params.id);
     if (!active || !active.sideMissionsUnlocked) return res.status(403).json({ error: 'missions locked' });
     const state = await getMissionState(req.params.id);
-    res.json({ missions: generateMissions(), taken: state.taken, activeMissionId: state.activeMissionId });
+    // `cleared` feeds the board's "Cleared" badge on every landing — clearing happens at the victory
+    // overlay, not on this board, so a mutation-only field would be undefined here. Ship it explicitly.
+    res.json({ missions: generateMissions(), taken: state.taken, activeMissionId: state.activeMissionId, cleared: state.cleared });
   }));
 
   // Take a side mission onto the board / defer (remove) it / make one the active mission (Take-off flies
-  // the active one; activate accepts null = the campaign). All return the fresh { taken, activeMissionId }.
+  // the active one; activate accepts null = the campaign). All return the fresh
+  // { taken, activeMissionId, cleared }.
   app.post('/api/players/:id/missions/take', missionMutation((pid, mid) => takeMission(pid, mid)));
   app.post('/api/players/:id/missions/defer', missionMutation((pid, mid) => deferMission(pid, mid)));
   app.post('/api/players/:id/missions/activate', missionMutation((pid, mid) => activateMission(pid, mid), { allowNull: true }));
+  // Report a side mission CLEARED (won). Client-authoritative like /api/games + /loot — the client tells us
+  // it won; the server records it permanently and idempotently. Unlocks `stats.minMission` shop rows.
+  app.post('/api/players/:id/missions/clear', missionMutation((pid, mid) => clearMission(pid, mid)));
 
   // Buy a catalog item into the stash (credits down). Body: { kind: 'component'|'weapon', refId }.
   app.post('/api/players/:id/buy', shopMutation((playerId, body) => {

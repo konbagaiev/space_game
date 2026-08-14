@@ -3948,3 +3948,92 @@ slot, which is safe because `G.roam` and `G.returnToBase` are never both true.
 in the game, above the Heavy cannon's 10) and **aim assist 2° → 3°**. It is meant to be the endgame bullet
 weapon, and mass is the price of admission — mounting it on a light hull costs real acceleration and turn, so
 it pairs with the Heavy hull that unlocks alongside it rather than being a free upgrade.
+
+---
+
+## 110. A cleared SIDE MISSION is a content gate, and existing players are grandfathered into it
+
+§108 tied the mid-game power tier to campaign progress. This adds a **second gate kind**: the Ion engine (16)
+and Nanobot repair (20) are sold only after the player has **cleared the "Research station" side mission**
+(`stats.minMission`, `RESEARCH_GATE = 'side-research'`). Why a second kind rather than just another
+`minLevel`: the reasoning of §108 (a story beat should be what earns a power spike, not a credit balance)
+applies, but the beat here is **optional content the player chooses to fly**. A `minLevel` can only say "keep
+going down the main road"; `minMission` can say "go do that thing over there", which is what makes the two
+premium support parts feel earned rather than bought. Both kinds compose with **AND** through one predicate on
+each side (`itemUnlocked()` → `buyableNow()` on the client, `buyItem()` on the server), so a row may carry
+either, both or neither.
+
+**Compared by the mission's stable id string, never a row id** — the same discipline as §95. The catalog names
+`'side-research'`, the generator names `'side-research'`, and nothing anywhere learns a `cleared_missions`
+row id.
+
+**Completion needed new persistence.** `taken_missions` records what the player **accepted** and
+`players.active_mission_id` what is **active**; clearing a side mission banked credits/XP through
+`POST /api/games` and left no trace. So the feature adds `cleared_missions (player_id, mission_id,
+cleared_at)` with a PK on the pair — permanent and idempotent, since re-clearing must be a no-op (the unlock
+cannot be "used up", and the offers are repeatable grind).
+
+**The clear report is client-authoritative**, posted from the victory path to
+`POST /api/players/:id/missions/clear` next to `bankRun()`/`depositLoot()` and suppressed under
+replay/playback. That is parity with every other run reward, not a new hole: the server already takes the
+client's word for credits, XP and looted items. Server-sealed mission results remain a separate, later
+integrity item (`docs/plans/mission-generator.md`) — doing it for this one endpoint alone would buy nothing.
+
+**Existing players are grandfathered, and the rule is deliberately fuzzy.** A one-shot ledger-guarded
+migration (`grandfather_research_clear` → `backfillResearchClear()`) credits `side-research` to every player
+whose `current_progress` has reached `SIDE_MISSIONS_MIN_LEVEL` (`level-4`, resolved by NAME via the same
+`EXISTS` predicate `reachedLevel` uses). That grants the unlock to players who reached Level 4 but may never
+actually have flown Research Station. Accepted knowingly as the **kinder error**: the alternative is silently
+pulling a 6400- and a 7000-credit item off the shelf of players who could already buy them, which is a
+regression they would experience as the shop breaking. Over-granting affects only the small set of accounts
+that predate this release; every player after it earns the unlock properly. The backfill is one set-based
+statement with `ON CONFLICT DO NOTHING`, so it is safe to re-run — which matters, because the whole schema
+bootstrap runs on **every** server start.
+
+---
+
+## 111. The "(new)" trail needs TWO pieces of state, a tab's gold is DERIVED, and a new GATE KIND must never announce itself on gear you already own
+
+The gold "(new)" led the player *Loadout menu item → Shop button* and stopped. It now continues onto the
+shelf: the shop **type tab** whose section still holds an unseen unlocked row is gold instead of blue, and so
+is that row.
+
+**Two localStorage keys, not one.** `shopSeenNew:<playerId>` keeps its meaning — *"the shop has been opened
+since these rows unlocked"* — and still drives the menu + Shop-button markers. The gold frames need a second,
+finer fact: *"this specific row has been clicked"* (`shopItemsClicked:<playerId>`). One key cannot serve both,
+because `markShopItemsSeen()` fires on `open-shop` and would write the whole gated set — killing every gold
+frame before it could render. Both keep the first-sight baseline semantics and are pruned to what is unlocked
+now on every write, so a progress reset re-arms them.
+
+**The clear trigger is the ROW CLICK**, not the purchase and not merely opening the detail card. The trail is
+about *noticing* new gear, not about spending: a player who looks at an item and decides against it has
+still seen it, and leaving it gold until they buy it would turn the marker into a nag.
+
+**A tab's gold is derived, not stored.** A tab is gold **iff** its section still holds an unseen row
+(`unseenSections`), so there is no third piece of persisted state to keep in sync, and the case where the
+unseen row sits in the section that is *already active* when the shop opens (it opens on `hull`) needs no
+special handling — there is no tab click to wait for, the row just shows its gold. Accepted consequence:
+visiting a gold tab without clicking the row leaves it gold. That is wanted — the trail keeps pointing at
+unfinished business.
+
+**`shopMarkerKinds`: a new gate KIND must not fire the markers on gear you already own.** This is the second
+time this symptom had to be designed out. The first-sight baseline (`primeShopItemsSeen`) fixed it for a
+device that had never been primed, but it does nothing for a device whose baseline was taken **before a gate
+kind existed**: on the first load after this release a grandfathered player's gated set jumps 3 → 5 (Ion
+engine + Nanobot repair become gated-and-unlocked) and the stored set holds only the 3, so both "(new)"
+markers would fire for items that had been purchasable all along. The fix records which **gate kinds** the
+baselines were taken under, and at prime time folds any row that is gated+unlocked now but carries **none** of
+those kinds into the baselines as already-seen (`absorbRefs`).
+
+Keyed on gate **KINDS**, not on this release's item ids, for two reasons: it works for the next gate kind with
+no edit (adding to `GATE_KINDS` *is* the version bump — there is no separate epoch number to remember), and it
+is narrow enough to leave a genuine pending marker alone (a row gated by an already-known kind is untouched,
+so a player who unlocked the "Level 3" tier but never looked at it keeps their marker). Consequently
+`shopMarkerKinds` is **not** cleared by a progress reset or a marker re-arm, and a corrupt read of it errs
+toward swallowing (it re-runs the absorb under `LEGACY_GATE_KINDS`) — the opposite of the two marker keys,
+which err toward silence. Clearing it would make the next prime swallow a legitimately pending `minMission`
+marker.
+
+The whole state machine lives in a pure module (`client/src/shop-markers.js`) with `shop.js` holding the
+`localStorage`/DOM I/O, precisely because its last bug was a state-machine bug that `node --test` could not
+reach through DOM-bound code.
