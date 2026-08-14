@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-11 (**The "Level 3" gear tier is progress-gated** — Heavy hull, Heavy Machine Gun (now weight 15 / aim assist 3°) and Triple spiral rocket are hidden from the shop and refused by the server until the weapons factory is cleared; a gold "(new)" marker on Loadout announces them when they unlock. Previously: **`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
+**Updated:** 2026-08-14 (**Roam navigation HUD** — while roaming, a gold off-screen edge arrow points at the active mission and a bottom-center bar carries "Return to Base" + "Autopilot to Mission" (each button also cancels its own autopilot); both the pointer and the mission button hide when there is no active mission target. Previously: **The "(new)" marker now leads all the way to the shelf** — the gold "(new)" that announces newly unlocked gear rides both the Loadout menu item AND the Shop button inside the Loadout panel, and it now clears only when the player OPENS THE SHOP (merely entering Loadout no longer clears it). Previously: **The "Level 3" gear tier is progress-gated** — Heavy hull, Heavy Machine Gun (now weight 15 / aim assist 3°) and Triple spiral rocket are hidden from the shop and refused by the server until the weapons factory is cleared; a gold "(new)" marker on Loadout announces them when they unlock. Previously: **`M` toggles the system map on desktop** — out of combat only, so it can't be used to freeze a fight. Previously: **The speed field fades out near the star** — its grey specks read as dirt over the
 sun's smooth bright disk (~15 000 speck pixels on it), so the parallax field ramps away inside 760 u.
 Previously: **The sky light comes from the star** — the terminator source is no longer an
 authored fixed position but the star's own world position, aimed every frame; it used to arrive 64° off
@@ -1113,13 +1113,23 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   The **Loadout menu item carries a gold "(new)" marker** (`#mw-loadout-new`, `.mw-new`, `updateLoadoutNew`
   in `mainwindow.js`, string `ui.mainwin.new`) — plain inline text in the same gold `#ffcf5a` as those
   pills, **no count**. It appears when a **level-gated shop row has just become buyable** (right now the
-  "Level 3" tier: Heavy hull / Heavy Machine Gun / Triple spiral rocket) and **clears the moment the
-  player opens Loadout** — standing on that screen *is* looking at them. The seen set lives in
-  `shop.js` (`hasNewShopItems` / `markShopItemsSeen`, `localStorage['shopSeenNew:<playerId>']`, per
-  player) and is **pruned to what is unlocked now** on every mark, so a progress reset re-arms the marker
-  instead of swallowing it. Only **gated** rows count — anything on the shelf since the shop opened would
-  make the marker permanent noise. Recomputed on every landing (after `openBay()` resolves, since the
-  gate names arrive with the shop state) and on every menu switch.
+  "Level 3" tier: Heavy hull / Heavy Machine Gun / Triple spiral rocket). The **same "(new)" (reusing
+  `.mw-new`) also rides the Shop button inside the Loadout panel** (`shop.js` `renderPanel` → `.lp-foot`
+  `data-act="open-shop"`), so the marker leads the player from the menu, through Loadout, to the shelf.
+  Both **clear only when the player OPENS THE SHOP** — the `open-shop` action calls `markShopItemsSeen()`
+  and fires a `shop-items-seen` DOM event that `updateLoadoutNew` listens for (merely entering Loadout no
+  longer clears it). The seen set lives in `shop.js` (`hasNewShopItems` / `markShopItemsSeen`,
+  `localStorage['shopSeenNew:<playerId>']`, per player) and is **pruned to what is unlocked now** on every
+  mark, so a progress reset re-arms the marker instead of swallowing it. Only **gated** rows count —
+  anything on the shelf since the shop opened would make the marker permanent noise. **The baseline is
+  primed at bootstrap** (`primeShopItemsSeen()`, called from `main.js` right after `G.activeShip` lands):
+  the first time a device sees a player, whatever is **already unlocked counts as already seen**. So
+  "(new)" fires only on an unlock the player **lived through** — shipping the gate to a live game does not
+  tell everyone who cleared "Level 3" months ago that their long-owned gear is new. A player short of the
+  gate baselines to the empty set, so clearing the factory still lights it. **No baseline ⇒ nothing is
+  new** (a corrupt/unreadable store re-primes rather than re-arming). Recomputed on every
+  landing (after `openBay()` resolves, since the gate names arrive with the shop state), on every menu
+  switch, and on the shop-items-seen event.
   Each card is **stacked for the narrow column**:
   line 1 = title (wrapping) with the badge right-aligned beside it, line 2 = the reward/XP sub-line,
   line 3 = the action buttons right-aligned (an empty action row collapses). The list is **its own
@@ -1283,6 +1293,22 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **styled to match the Take-off button** (orange gradient `#ffb35a→#ff7a3c`, dark text) so it reads as the
   primary "go" action, and on **touch** the zoom `＋/−` pair lives top-right (not bottom-center) so the two
   never overlap.
+- **Roam navigation HUD — a gold mission pointer + two nav buttons.** While roaming (`G.roam`), a **gold
+  off-screen edge arrow** points toward the active mission (`updateMissionMarker` in `hud.js`, class
+  `marker mission-marker`, its own single pooled div; same off-screen-only edge-clamp math as the loot/enemy
+  arrows, hidden when the mission projects on-screen), and a **bottom-center two-button bar** (`#roam-nav`,
+  `updateRoamNav` in `sim.js`) carries **"Return to Base"** (`#roam-return`, `ui.roam.return`, orange —
+  engages the dock autopilot, `engageAutopilot`) and **"Autopilot to Mission"** (`#roam-autopilot`,
+  `ui.roam.autopilot`, gold to match the pointer — engages `engagePointAutopilot(pos, missionId)` toward the
+  mission). **Each button is its own cancel** (switch/cancel): clicking the destination you are already
+  flying to drops the autopilot back to manual (`cancelAutopilot`), clicking the other re-routes in place, and
+  the live one carries an `.engaged` outline. The **mission target is snapshotted at `enterRoam`** into
+  `G.roamMission = { pos, missionId }` via `objectForActiveMission` (side mission → its host object; campaign
+  → the object nearest its fight centre; mission hosts are fixed anchors so a snapshot never goes stale); when
+  it is **null** (no active mission target) both the gold pointer and the "Autopilot to Mission" button hide,
+  leaving just "Return to Base". Same touch/click wiring split as `#return-btn` (DECISIONS §42), hidden on
+  menus/cutscene, EN + RU. The bar sits in the same bottom-center slot as `#return-btn`, which is safe because
+  roam (`G.roam`) and return-to-base (`G.returnToBase`) are never both true. Covered by `32-star-system`.
 - **Star system / navigation (roam).** Out of combat the game world is a **to-scale, flyable star system**
   you cross with an autopilot driven by a **system-map screen** (docs/plans/2026-08-09-1456-star-system-map.md).
   - **Roam (`G.roam`)** is the interactive out-of-combat flight state: world up, player controllable, **no

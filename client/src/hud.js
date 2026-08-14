@@ -244,6 +244,36 @@ export function updateDropMarkers() {
   for (let i = n; i < dropMarkerPool.length; i++) { setStyle(dropMarkerPool[i], 'display', 'none'); dropMarkerPool[i].classList.remove('special'); }
 }
 
+// ---------- Roam mission pointer: a single GOLD edge arrow toward the active mission when it's off-screen ----------
+// Only while roaming and only when there IS an active mission target (G.roamMission, snapshotted by
+// enterRoam). Hides when the mission projects on-screen — the same off-screen-only rule as the loot/enemy
+// arrows. The target sits on the flight plane, so we project (x, 0, z).
+let missionMarker = null;
+const _mm = new THREE.Vector3();
+export function updateMissionMarker() {
+  const target = G.roam && G.roamMission ? G.roamMission.pos : null;
+  if (!target || !G.player || el.overlay.style.display !== 'none') {
+    if (missionMarker) setStyle(missionMarker, 'display', 'none');
+    return;
+  }
+  if (!missionMarker) {
+    missionMarker = document.createElement('div');
+    missionMarker.className = 'marker mission-marker'; // reuse the .marker arrow shape; .mission-marker sets the gold
+    el.markers.appendChild(missionMarker);
+  }
+  _mm.set(target.x, 0, target.z).project(camera);
+  const behind = _mm.z > 1;
+  let x = _mm.x, y = _mm.y;
+  if (behind) { x = -x; y = -y; }
+  if (!behind && x >= -1 && x <= 1 && y >= -1 && y <= 1) { setStyle(missionMarker, 'display', 'none'); return; } // on screen → no arrow
+  const w = gameW(), h = gameH(), margin = 0.92;
+  const k = margin / Math.max(Math.abs(x), Math.abs(y), 1e-4);
+  const cx = x * k, cy = y * k;
+  setStyle(missionMarker, 'display', 'block');
+  place(missionMarker, (cx * 0.5 + 0.5) * w, (-cy * 0.5 + 0.5) * h,
+    ` translate(-50%,-50%) rotate(${(Math.atan2(-cy, cx) * 180 / Math.PI).toFixed(1)}deg)`);
+}
+
 // ---------- Credit popups: "+xx" green text floating up from each kill, holding then fading over ~2s ----------
 const popupPool = [];
 const _pp = new THREE.Vector3();

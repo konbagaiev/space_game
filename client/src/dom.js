@@ -48,6 +48,10 @@ export const el = {
   returnHint: byId('return-hint'),
   // bottom-center "Return to base" tap button: engages the dock autopilot (updateReturnHint show/hide)
   returnBtn: byId('return-btn'),
+  // roam bottom-center nav bar + its two buttons (updateRoamNav; clicks wired in main.js)
+  roamNav: byId('roam-nav'),
+  roamReturn: byId('roam-return'),
+  roamAutopilot: byId('roam-autopilot'),
   // transient centered milestone banner ("10 enemies left", "Final Stage") (updateBanner)
   banner: byId('banner'),
   // character progression (updateProgressionHud / showLevelUp): always-on bottom XP bar, the free-skill-

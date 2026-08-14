@@ -156,15 +156,32 @@ const buyableNow = () => shopCatalog().filter((n) => (n.price ?? 0) > 0 && n.s?.
 // wipe) re-arms the marker instead of swallowing it forever. Only gated rows count: everything else has
 // been on the shelf since the shop opened and would make the marker permanent noise.
 const seenKey = () => `shopSeenNew:${G.playerId || 'anon'}`;
-const readSeen = () => { try { return new Set(JSON.parse(localStorage.getItem(seenKey()) || '[]')); } catch { return new Set(); } };
+// null = this device has NO baseline yet (never primed). A corrupt value reads as null too, which
+// re-primes rather than re-arming — a storage hiccup must not invent a "(new)" that isn't.
+const readSeen = () => {
+  try { const raw = localStorage.getItem(seenKey()); return raw == null ? null : new Set(JSON.parse(raw)); }
+  catch { return null; }
+};
 const gatedRefs = () => buyableNow().filter((n) => n.s?.minLevel).map((n) => `${n.kind}:${n.refId}`);
 export function hasNewShopItems() {
   if (!(G.activeShip && G.activeShip.shopUnlocked)) return false; // nothing to look at while the shop is shut
   const seen = readSeen();
-  return gatedRefs().some((ref) => !seen.has(ref));
+  return !!seen && gatedRefs().some((ref) => !seen.has(ref)); // no baseline ⇒ nothing is "new" (see primeShopItemsSeen)
 }
 export function markShopItemsSeen() {
   try { localStorage.setItem(seenKey(), JSON.stringify(gatedRefs())); } catch { /* private mode */ }
+}
+// Establish the baseline ONCE per device+player, at bootstrap: whatever is already unlocked the first
+// time we look counts as ALREADY SEEN, not as new. Without it, the gate shipping to a live game would
+// tell every player who had long since cleared "Level 3" that their long-owned gear is "(new)" — the
+// marker is for the moment gear UNLOCKS, and for those players that moment is in the past. A player who
+// has not reached a gate baselines to the empty set, so clearing the factory still lights the marker.
+// Runs before the shop is ever rendered; a device that already has a baseline is left untouched.
+export function primeShopItemsSeen() {
+  // The gate names must have arrived, or `gatedRefs()` fails closed to [] and would bake in a baseline
+  // that says "nothing was unlocked" for a player who is in fact past the gate.
+  if (!(G.activeShip && Array.isArray(G.activeShip.reachedLevels))) return;
+  if (readSeen() === null) markShopItemsSeen();
 }
 
 // ---------- Loadout screen (Slice C): centered ship + slots around it + a right context panel ----------
@@ -299,7 +316,10 @@ function renderPanel(active, unlocked) {
       }
     }
   }
-  const foot = unlocked ? `<div class="lp-foot"><button class="primary" data-act="open-shop">${esc(t('ui.shop.shop'))}</button></div>` : '';
+  // The Shop button carries the same gold "(new)" as the Loadout menu item when a newly unlocked item is
+  // still waiting — the marker leads the player from the menu, through Loadout, all the way to the shelf.
+  const shopNew = hasNewShopItems() ? `<span class="mw-new show">${esc(t('ui.mainwin.new'))}</span>` : '';
+  const foot = unlocked ? `<div class="lp-foot"><button class="primary" data-act="open-shop">${esc(t('ui.shop.shop'))}${shopNew}</button></div>` : '';
   host.innerHTML = `<div class="lp-scroll">${parts.join('')}</div>${foot}`;
   if (focus) showItemModel(focus.kind, focus.refId);           // spin the focused item's model
   else { disposeViewer(shopModelViewer); shopModelViewer = null; } // nothing focused → free the context
@@ -464,7 +484,13 @@ function onLoadoutClick(e) {
   const unlocked = !!(shopData && shopData.shopUnlocked);
   if (act === 'slot') { selectedSlot = el.dataset.slot; selectedStashRef = null; panelMode = 'slot'; renderSlots(active); renderPanel(active, unlocked); return; }
   if (act === 'pick-stash') { selectedStashRef = { kind: el.dataset.kind, refId: Number(el.dataset.refId) }; renderPanel(active, unlocked); return; }
-  if (act === 'open-shop') { panelMode = 'shop'; selectedShopItem = null; renderPanel(active, unlocked); return; }
+  if (act === 'open-shop') {
+    // Opening the shop IS seeing the new gear (not merely opening Loadout): mark it seen, then clear both
+    // the Shop-button "(new)" (gone once the panel switches to shop mode) and the Loadout menu "(new)".
+    markShopItemsSeen();
+    document.dispatchEvent(new CustomEvent('shop-items-seen'));
+    panelMode = 'shop'; selectedShopItem = null; renderPanel(active, unlocked); return;
+  }
   if (act === 'close-shop') { panelMode = 'slot'; selectedShopItem = null; renderPanel(active, unlocked); return; }
   if (act === 'type') { shopType = el.dataset.type; selectedShopItem = null; renderShopPanel(); return; }
   if (act === 'shop-item') { selectedShopItem = { kind: el.dataset.kind, refId: Number(el.dataset.refId) }; renderShopPanel(); return; } // open the detail card (stats + 3D model)

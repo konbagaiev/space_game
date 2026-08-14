@@ -78,6 +78,10 @@ export const G = {
   // checkMissionZone, which calls onMissionZoneEnter when it runs out.
   missionZone: null,
   onMissionZoneEnter: null,   // callback() set by mainwindow: clear roam + launch the campaign level
+  // The active mission's place in the system while roaming: { pos:{x,z}, missionId } or null. Set by
+  // enterRoam (objectForActiveMission). Drives the roam HUD — the gold off-screen mission pointer and the
+  // bottom-center "Autopilot to Mission" button; both hide when it is null (no active mission target).
+  roamMission: null,
   // --- return-to-base / autopilot (set after the last kill; read across sim/HUD/input) ---
   returnToBase: false,                             // true after the last kill: OOB lifted, arrow + hint on, station clickable
   // click-to-fly autopilot. target = the base station (return-to-base dock) OR a loot drop (fly to grab it).

@@ -315,6 +315,8 @@ export function engagePointAutopilot(pos, mission = null) {
 function engage(target) {
   G.autopilot.active = true; G.autopilot.phase = 'brake0'; G.autopilot.target = target;
 }
+// Drop back to manual flight (roam nav buttons: clicking the destination you are already flying to cancels).
+export function cancelAutopilot() { G.autopilot.active = false; G.autopilot.target = null; }
 
 // A point autopilot never wins a mission by proximity (canDock only fires for kind:'station'). When it
 // reaches ARRIVE_RADIUS and comes to rest, park the ship; if it carries a mission id, hand off to the
@@ -430,6 +432,25 @@ export function updateReturnHint() {
   // it re-appears if the player cancels the autopilot mid-flight — accepted). Mirrors stationClickable().
   const btnShow = show && G.baseStation && G.baseStation.active && !G.autopilot.active;
   el.returnBtn.style.display = btnShow ? 'block' : 'none';
+}
+// Roam bottom-center navigation: "Return to Base" (dock autopilot) + "Autopilot to Mission" (fly to the
+// active mission). Shown only while roaming. Each button doubles as its OWN cancel — clicking the
+// destination you are already flying to drops the autopilot back to manual (main.js), and the `.engaged`
+// class marks which one is live so the switch/cancel state reads at a glance. The mission button hides when
+// there is no active mission target (G.roamMission null), leaving just "Return to Base".
+export function updateRoamNav() {
+  const show = G.roam && G.player && G.player.alive && !levelRunner.won && el.overlay.style.display === 'none';
+  el.roamNav.style.display = show ? 'flex' : 'none';
+  if (!show) return;
+  const ap = G.autopilot;
+  el.roamReturn.textContent = t('ui.roam.return');
+  el.roamReturn.classList.toggle('engaged', ap.active && ap.target?.kind === 'station');
+  const hasMission = !!G.roamMission;
+  el.roamAutopilot.style.display = hasMission ? 'block' : 'none';
+  if (hasMission) {
+    el.roamAutopilot.textContent = t('ui.roam.autopilot');
+    el.roamAutopilot.classList.toggle('engaged', ap.active && ap.target?.kind === 'point');
+  }
 }
 
 // Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,

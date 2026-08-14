@@ -19,9 +19,10 @@ import { SKILL_RATES } from './components.js'; // per-point skill rates → Char
 import { reset, levelRunner, refreshMusic, engagePointAutopilot } from './sim.js';
 import { runCenter } from './level-sim.js'; // where the current level fights (0,0 unless it names a centre)
 import { mountSystemNav, showStartMissionPrompt, showDockPrompt, objectForMission } from './systemmap-ui.js';
+import { objectForActiveMission } from './system-map.js'; // where the active mission sits → roam HUD pointer + autopilot target
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
-import { openBay, showBayView, updateTakeoffGate, resetShipStatsDelta, stopLoadoutPreview, hasNewShopItems, markShopItemsSeen } from './shop.js';
+import { openBay, showBayView, updateTakeoffGate, resetShipStatsDelta, stopLoadoutPreview, hasNewShopItems } from './shop.js';
 import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } from './account.js';
 import { updateMenuCredits } from './hud.js';
 import { requestFullscreen, showWelcome } from './welcome.js';
@@ -149,7 +150,7 @@ function selectMenu(which) {
   else if (isCharacter) { settleBriefingReveal(); renderCharacter(); stopViewer(mwItem); }
   else if (isMap) { settleBriefingReveal(); renderMapView(); stopViewer(mwItem); }
   else { settleBriefingReveal(); renderStub(which); stopViewer(mwItem); }
-  updateLoadoutNew(); // opening Loadout clears the "(new)" marker; leaving it must not bring it back
+  updateLoadoutNew(); // keep the "(new)" marker in sync on every view switch (it clears only on opening the shop)
 }
 // Base-menu Map: the shared navigation component (map left, object list right). Its action row carries
 // BOTH launch paths, side by side — "Take off" (free flight) and "Autopilot to destination" for whatever
@@ -280,15 +281,17 @@ function updateMissionsBadge() {
   el.missionsBadge.classList.toggle('show', n > 0);
 }
 // The gold "(new)" beside Loadout: a shop item the player has never seen just unlocked (right now that is
-// the "Level 3" gear — Heavy hull / Heavy Machine Gun / Triple spiral rocket). Standing ON the Loadout
-// screen IS looking at them, so this marks them seen there and the marker clears; it comes back only when
-// the next gated item unlocks. Called on every landing and on every menu switch.
+// the "Level 3" gear — Heavy hull / Heavy Machine Gun / Triple spiral rocket). It persists through the
+// Loadout screen (whose Shop button carries the same marker) and only clears when the player OPENS THE SHOP
+// (shop.js marks the items seen and fires 'shop-items-seen', below); it comes back when the next gated item
+// unlocks. Called on every landing and on every menu switch, and on the shop-items-seen event.
 function updateLoadoutNew() {
-  if (mwView === 'bay') markShopItemsSeen();
   const show = hasNewShopItems();
   el.loadoutNew.textContent = show ? t('ui.mainwin.new') : '';
   el.loadoutNew.classList.toggle('show', show);
 }
+// Opening the shop clears the "(new)" state — refresh the menu marker so it drops with the Shop-button one.
+document.addEventListener('shop-items-seen', updateLoadoutNew);
 // #mw-go LAUNCHES THE FIGHT for the ACTIVE SIDE mission — reflect which one that is on the button.
 // The CAMPAIGN has NO launch button at all (DECISIONS §104): launching it became identical to "Take off"
 // once every campaign level started by flying to its zone (§100) — both call `enterRoam(null)`, spawn you
@@ -514,6 +517,11 @@ export async function enterRoam(dest) {
   G.missionZone = (activeMissionId == null && lvl)
     ? { center: runCenter(null, lvl), title: lvl.title || '', t: null }
     : null;
+  // Snapshot WHERE the active mission is for the roam HUD (gold off-screen pointer + "Autopilot to Mission"
+  // button). Side mission → its host object; campaign → the object nearest its fight centre (mission hosts
+  // are fixed anchors, never orbit, so a snapshot never goes stale). null → no active target → both hide.
+  const missionObj = objectForActiveMission({ activeMissionId, center: lvl ? runCenter(null, lvl) : null });
+  G.roamMission = missionObj ? { pos: { x: missionObj.pos.x, z: missionObj.pos.z }, missionId: activeMissionId } : null;
   G.gameStarted = true; G.roam = true;
   reset();                           // rebuilds world + player at planet 2, NO levelRunner (G.roam guard)
   if (dest) engagePointAutopilot(dest.pos, dest.missionId || null); // else: free manual cruise

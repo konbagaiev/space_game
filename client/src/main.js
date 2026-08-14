@@ -21,10 +21,10 @@ import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; //
 import { shipModelCacheSize } from './ship-factory.js'; // ?debug diagnostic: how many ship glbs have been parsed
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
-import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/enemy health bars/XP bar+skill badge)
+import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateMissionMarker, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/gold mission pointer/enemy health bars/XP bar+skill badge)
 import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, updateReturnArrow, updateReturnHint, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + milestone banner + camera/sky settle
+import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -34,7 +34,7 @@ import { makeSessionRecorder } from './session-record.js'; // always-on live-ses
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
 import { showMain, launchMission, refreshMissions, enterRoam, missionOffers, activeMissionId, mainBriefing, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers + roam entry
-import { shopItemViewer, updateTakeoffGate } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel + the launch gate (32-star-system drives it)
+import { shopItemViewer, updateTakeoffGate, primeShopItemsSeen } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel + the launch gate (32-star-system drives it) + the "(new)"-marker baseline
 import { showWelcome, applyTranslations, welcomeStaged, mountLangSwitch } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
 import { recenterAndQuantize, MAX_GHOST_SHIPS, MAX_GHOST_BULLETS } from './ghost-battle-track.js'; // ?dev in-game backdrop recorder + synthetic bake
@@ -313,6 +313,25 @@ if (!Device.hasTouch) {
 // Mouse-only: on touch the "Return to base" button fires on `touchstart` (in the touch block above).
 if (!Device.hasTouch) {
   el.returnBtn.addEventListener('click', () => { engageAutopilot(); });
+}
+
+// Roam bottom-center nav buttons (Return to Base / Autopilot to Mission). Each doubles as its OWN cancel:
+// clicking the destination you are already flying to drops the autopilot back to manual; clicking the other
+// re-routes in place. Same touch/click split as #return-btn (touchstart + preventDefault on touch, else click).
+function roamReturnTap() {
+  if (G.autopilot.active && G.autopilot.target?.kind === 'station') cancelAutopilot();
+  else engageAutopilot();
+}
+function roamAutopilotTap() {
+  if (G.autopilot.active && G.autopilot.target?.kind === 'point') cancelAutopilot();
+  else if (G.roamMission) engagePointAutopilot(G.roamMission.pos, G.roamMission.missionId);
+}
+if (Device.hasTouch) {
+  el.roamReturn.addEventListener('touchstart', e => { roamReturnTap(); audio.sfx.uiClick(); e.preventDefault(); }, { passive: false });
+  el.roamAutopilot.addEventListener('touchstart', e => { roamAutopilotTap(); audio.sfx.uiClick(); e.preventDefault(); }, { passive: false });
+} else {
+  el.roamReturn.addEventListener('click', () => { roamReturnTap(); });
+  el.roamAutopilot.addEventListener('click', () => { roamAutopilotTap(); });
 }
 
 // ---------- Click-to-fly: tap/click a loot chest OR (return-to-base) the base station ----------
@@ -811,11 +830,13 @@ function animate() {
   updateProgressionHud(); // always-on bottom XP bar + free-skill-points badge on the Character menu item
   updateMarkers();
   updateDropMarkers(); // green edge arrows toward off-screen loot drops (nearest 6)
+  updateMissionMarker(); // gold edge arrow toward the active mission while roaming (off-screen only)
   updateCreditPopups(); // floating "+xx" gold credit popups at kill sites
   updateEnemyHealthBars(); // translucent red health bars above damaged enemies
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
   updateReturnArrow();  // world-space blue homing arrow toward the base station (return-to-base)
   updateReturnHint();   // centered "return to base" HUD hint
+  updateRoamNav();      // roam bottom-center nav: Return to Base + Autopilot to Mission
   updateBanner();       // transient centered milestone banner ("10 enemies left", "Final Stage")
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
@@ -958,6 +979,10 @@ if (location.search.includes('debug')) {
     // --- star-system roam / navigation hooks (32-star-system scenario) ---
     enterRoam, engagePointAutopilot,
     engageAutopilot,                                // what a click on the home station does
+    cancelAutopilot,                                // roam nav buttons cancel their own autopilot
+    get roamMission() { return G.roamMission; },     // { pos, missionId } | null — the roam HUD's mission target
+    set roamMission(v) { G.roamMission = v; },
+    updateRoamNav, updateMissionMarker,              // drive the roam HUD deterministically in headless tests
     get baseStation() { return G.baseStation; },    // { obj, active } — `active` = clickable right now
     set onBaseArrival(fn) { G.onBaseArrival = fn; }, // stands in for the "Dock at the station?" prompt
     // Deterministic sim stepping for headless roam tests (software-GL rAF is too slow to advance the live
@@ -1008,8 +1033,8 @@ if (isBench()) {
     const t0 = performance.now();
     update(dt);
     const t1 = performance.now();
-    updateHud(); updateMarkers(); updateDropMarkers(); updateCreditPopups();
-    updateEnemyHealthBars(); updateOobWarning(); updateReturnArrow(); updateReturnHint(); updateMiniMap();
+    updateHud(); updateMarkers(); updateDropMarkers(); updateMissionMarker(); updateCreditPopups();
+    updateEnemyHealthBars(); updateOobWarning(); updateReturnArrow(); updateReturnHint(); updateRoamNav(); updateMiniMap();
     const t2 = performance.now();
     renderer.info.reset();
     renderer.clear();
@@ -1452,7 +1477,7 @@ function cutsceneHideCard() { if (cutOverlayEl) cutOverlayEl.style.display = 'no
 function buildCutsceneOverlay() {
   const style = document.createElement('style');
   style.textContent = `
-    body.cutscene #hud, body.cutscene #help, body.cutscene #perf, body.cutscene #rocket-btn, body.cutscene #event-log, body.cutscene #markers, body.cutscene #oob-warn, body.cutscene #return-hint, body.cutscene #return-btn, body.cutscene #banner, body.cutscene #minimap, body.cutscene #pause-btn, body.cutscene #zoom { display: none !important; }
+    body.cutscene #hud, body.cutscene #help, body.cutscene #perf, body.cutscene #rocket-btn, body.cutscene #event-log, body.cutscene #markers, body.cutscene #oob-warn, body.cutscene #return-hint, body.cutscene #return-btn, body.cutscene #roam-nav, body.cutscene #banner, body.cutscene #minimap, body.cutscene #pause-btn, body.cutscene #zoom { display: none !important; }
     #cutscene-overlay { position: fixed; inset: 0; z-index: 99998; display: none; align-items: flex-end; justify-content: center; pointer-events: auto; }
     #cutscene-card { max-width: min(760px, 88vw); margin: 0 0 12vh; padding: 20px 26px; background: rgba(6,10,16,.82); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; color: #eaf2ff; font: 500 clamp(15px,2.4vw,21px)/1.5 system-ui, sans-serif; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
     #cutscene-tap { margin-top: 12px; font-size: 13px; opacity: .55; letter-spacing: .4px; }
@@ -1626,6 +1651,7 @@ async function bootstrap() {
     let active = null;
     if (G.playerId) active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
     G.activeShip = active; // drives the persisted loadout in buildPlayerFor (weapon swaps, etc.)
+    primeShopItemsSeen();  // first sight on this device = the baseline, so already-unlocked gear isn't "(new)"
     if (active && typeof active.credits === 'number') G.balance = active.credits; // account balance for the HUD
     const playerShips = ships.filter((s) => s.type === 'player');
     setPlayerShipsCache(playerShips); // remembered so a login can re-render the welcome screen

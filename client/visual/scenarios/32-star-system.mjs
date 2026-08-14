@@ -240,6 +240,61 @@ export default async function ({ page, assert, shot }) {
 
   await shot('roam');
 
+  // 4b. THE ROAM NAVIGATION HUD: a gold off-screen pointer toward the active mission + two bottom-center
+  //     buttons (Return to Base / Autopilot to Mission). Each button doubles as its OWN cancel (switch/cancel),
+  //     and with no active mission the pointer + Autopilot button drop out, leaving just Return to Base.
+  const roamHud = await page.evaluate(() => {
+    const g = window.__game;
+    const shown = (e) => !!e && getComputedStyle(e).display !== 'none';
+    const $ = (id) => document.getElementById(id);
+    // a known mission target far from the ship, so the pointer is off-screen and the arrow shows
+    g.player.mesh.position.set(0, 0, 0); g.settleView();
+    g.roamMission = { pos: { x: 4000, z: 0 }, missionId: null };
+    g.cancelAutopilot();
+    g.updateRoamNav(); g.updateMissionMarker();
+    const nav = $('roam-nav'), ret = $('roam-return'), auto = $('roam-autopilot');
+    const before = { navShown: shown(nav), retShown: shown(ret), autoShown: shown(auto),
+                     markerShown: shown(document.querySelector('#markers .mission-marker')),
+                     retText: ret.textContent.trim(), autoText: auto.textContent.trim() };
+    // click Autopilot to Mission → a point autopilot toward the target; the button reads engaged
+    auto.click(); g.updateRoamNav();
+    const engaged = { active: g.autopilot.active, kind: g.autopilot.target && g.autopilot.target.kind,
+                      tx: g.autopilot.target && g.autopilot.target.pos.x,
+                      autoEngaged: auto.classList.contains('engaged') };
+    // click it again → cancels back to manual (switch/cancel)
+    auto.click(); g.updateRoamNav();
+    const cancelled = { active: g.autopilot.active, autoEngaged: auto.classList.contains('engaged') };
+    // Return to Base → the DOCK autopilot; its button reads engaged
+    ret.click(); g.updateRoamNav();
+    const home = { active: g.autopilot.active, kind: g.autopilot.target && g.autopilot.target.kind,
+                   retEngaged: ret.classList.contains('engaged') };
+    g.cancelAutopilot();
+    // with NO active mission, the pointer + Autopilot button hide; Return to Base stays
+    g.roamMission = null; g.updateRoamNav(); g.updateMissionMarker();
+    const noMission = { autoShown: shown($('roam-autopilot')), retShown: shown($('roam-return')),
+                        markerShown: shown(document.querySelector('#markers .mission-marker')) };
+    return { before, engaged, cancelled, home, noMission };
+  });
+  assert.ok(roamHud.before.navShown, 'the roam nav bar is shown while roaming');
+  assert.ok(roamHud.before.retShown && roamHud.before.autoShown,
+    'both Return to Base and Autopilot to Mission are shown in roam');
+  assert.ok(/base/i.test(roamHud.before.retText) && /mission/i.test(roamHud.before.autoText),
+    `the two roam buttons are labelled (got "${roamHud.before.retText}" / "${roamHud.before.autoText}")`);
+  assert.ok(roamHud.before.markerShown, 'the gold off-screen mission pointer shows while the mission is off-screen');
+  assert.ok(roamHud.engaged.active && roamHud.engaged.kind === 'point',
+    'clicking Autopilot to Mission engages a point autopilot');
+  assert.ok(Math.abs(roamHud.engaged.tx - 4000) < 1, 'and it heads for the active mission target');
+  assert.ok(roamHud.engaged.autoEngaged, 'the engaged mission button is marked .engaged');
+  assert.equal(roamHud.cancelled.active, false,
+    'clicking Autopilot to Mission again cancels it (each button is its own cancel)');
+  assert.ok(!roamHud.cancelled.autoEngaged, 'and the .engaged mark clears on cancel');
+  assert.ok(roamHud.home.active && roamHud.home.kind === 'station',
+    'Return to Base engages the DOCK autopilot');
+  assert.ok(roamHud.home.retEngaged, 'and the Return button reads engaged while flying home');
+  assert.ok(!roamHud.noMission.autoShown && !roamHud.noMission.markerShown,
+    'with no active mission the Autopilot button + gold pointer hide');
+  assert.ok(roamHud.noMission.retShown, 'and Return to Base stays available');
+
   // 5. POST-WIN ROAM GUARD (the regression): simulate a mission win + return-to-base state, THEN enter roam
   //    with a destination. The roam reset() must clear `won` (so the ship isn't frozen) and start NO
   //    levelRunner (so no enemies leak in), and the point-autopilot must advance the ship.

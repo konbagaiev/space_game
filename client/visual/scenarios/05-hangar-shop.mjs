@@ -49,14 +49,22 @@ export default async function ({ page, assert, shot }) {
   assert.ok(base.hasShipCanvas, 'the centered ship canvas is present');
   assert.equal(base.stats, 4, 'four live ship-stats are shown (HP / accel / turn / weight)');
   assert.ok(base.hasGunSlot, 'the gun weapon slot is present');
-  // looking at the screen IS seeing the new gear → the marker clears and does not come back on the next view
-  assert.ok(await page.evaluate(() => !document.getElementById('mw-loadout-new').classList.contains('show')),
-    'opening Loadout clears the "(new)" marker');
+  // opening Loadout no longer clears the marker — it leads the player on to the Shop button, which carries
+  // the same gold "(new)". Both persist through the Loadout screen until the shop is actually opened.
+  assert.ok(await page.evaluate(() => document.getElementById('mw-loadout-new').classList.contains('show')),
+    'the Loadout menu "(new)" persists after opening Loadout');
+  const shopBtnNew = await page.evaluate(() => {
+    const n = document.querySelector('#loadout-panel [data-act="open-shop"] .mw-new');
+    return n ? { text: n.textContent.trim(), color: getComputedStyle(n).color } : null;
+  });
+  assert.ok(shopBtnNew && /new/i.test(shopBtnNew.text), 'the Shop button inside Loadout carries a "(new)" marker');
+  assert.equal(shopBtnNew.color, 'rgb(255, 207, 90)', 'the Shop-button marker is the same gold as the menu marker');
+  // it survives leaving and re-entering Loadout (the shop is still unopened)
   await page.evaluate(() => document.querySelector('.mw-item[data-mw="missions"]').click());
   await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());
   await page.waitForFunction('document.querySelectorAll("#loadout-slots .slot-chip").length >= 6', null, { timeout: 5000 });
-  assert.ok(await page.evaluate(() => !document.getElementById('mw-loadout-new').classList.contains('show')),
-    'the marker stays cleared after leaving and re-entering Loadout');
+  assert.ok(await page.evaluate(() => document.getElementById('mw-loadout-new').classList.contains('show')),
+    'the marker stays lit after leaving and re-entering Loadout (shop still unopened)');
   await shot('loadout');
 
   // select the gun slot → the panel shows the equipped weapon + Remove, and the backfilled basic gun as a
@@ -100,6 +108,9 @@ export default async function ({ page, assert, shot }) {
 
   // open the shop panel → Weapon type → the buyable weapon ladder shows with prices + an owned badge
   await page.evaluate(() => document.querySelector('#loadout-panel [data-act="open-shop"]').click());
+  // opening the shop IS seeing the new gear → the Loadout menu "(new)" clears now (not on entering Loadout)
+  assert.ok(await page.evaluate(() => !document.getElementById('mw-loadout-new').classList.contains('show')),
+    'opening the shop clears the Loadout menu "(new)" marker');
   await page.evaluate(() => document.querySelector('#loadout-panel .lp-type[data-type="weapon"]').click());
   await page.waitForTimeout(80);
   const shop = await page.evaluate(() => ({
@@ -144,6 +155,9 @@ export default async function ({ page, assert, shot }) {
   await page.waitForTimeout(60);
   const backToSlot = await page.evaluate(() => !!document.querySelector('#loadout-panel [data-act="open-shop"]'));
   assert.ok(backToSlot, 'Back returns from the shop to the slot panel');
+  // the shop has been opened → the Shop button no longer carries the "(new)" marker
+  assert.ok(await page.evaluate(() => !document.querySelector('#loadout-panel [data-act="open-shop"] .mw-new')),
+    'the Shop-button "(new)" is gone once the shop has been opened');
 
   // launch the mission (the mission view's Take-off), then die → the death overlay offers "Back to Hangar"
   await page.evaluate(() => document.querySelector('.mw-item[data-mw="missions"]').click());
@@ -169,4 +183,25 @@ export default async function ({ page, assert, shot }) {
   }));
   assert.ok(backHome.mainOn, 'Back to Hangar returns to the Main Window');
   assert.ok(backHome.loadoutItem, 'the Loadout section is available from the menu');
+
+  // Regression: a player who was ALREADY past the gate the first time this device saw them must NOT be
+  // told their long-owned gear is "(new)" — that is what a live rollout of the gate looks like for every
+  // existing save. `primeShopItemsSeen` adopts what is unlocked at bootstrap as the baseline instead.
+  // Simulated with a fresh player id advanced past the factory BEFORE its first page load.
+  const pastGate = 'visual-past-gate';
+  await page.evaluate(async (pid) => {
+    await fetch(`/api/players/${pid}/active-ship`);                                  // register
+    for (let i = 0; i < 4; i++) await fetch(`/api/players/${pid}/advance`, { method: 'POST' });
+    localStorage.setItem('playerId', pid);
+  }, pastGate);
+  await page.goto(page.url(), { waitUntil: 'load' });
+  await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
+  await page.waitForSelector('#mainwin.on', { state: 'attached', timeout: 5000 });
+  const primed = await page.evaluate((pid) => ({
+    baseline: JSON.parse(localStorage.getItem(`shopSeenNew:${pid}`) || 'null'),
+    markerShown: document.getElementById('mw-loadout-new').classList.contains('show'),
+  }), pastGate);
+  assert.ok(Array.isArray(primed.baseline) && primed.baseline.length === 3,
+    'bootstrap baselines the three already-unlocked gated items as seen');
+  assert.ok(!primed.markerShown, 'a player already past the gate on first sight gets no "(new)" marker');
 }

@@ -3,6 +3,41 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-14
+
+- **The "(new)" marker no longer greets existing players with gear they have owned for weeks.** The
+  seen-set baseline is now **primed at bootstrap** (`primeShopItemsSeen()` in `shop.js`, called from
+  `main.js` once `G.activeShip` lands): the first time a device sees a player, whatever is **already
+  unlocked counts as already seen**. Before this, an empty store read as "nothing seen", so shipping the
+  "Level 3" gate to the live game flagged the Heavy hull / Heavy Machine Gun / Triple spiral rocket as
+  new to every player who had cleared the factory long ago. The marker now fires only on an unlock the
+  player **lived through** — someone short of the gate baselines to the empty set, so clearing the factory
+  still lights it. A corrupt or unreadable store re-primes rather than re-arming, so a storage hiccup can
+  never invent a marker. Guarded in the `05-hangar-shop` visual scenario by a player advanced past the
+  gate **before** their first page load: baseline holds the three gated items, marker stays dark.
+
+- **Roam navigation HUD: a gold mission pointer + two nav buttons.** While roaming the star system, a **gold
+  off-screen edge arrow** now points toward your active mission (hidden once the mission is on-screen), and a
+  **bottom-center bar** carries two buttons: **"Return to Base"** (flies the dock autopilot home) and
+  **"Autopilot to Mission"** (flies to where your mission is). Each button doubles as its own cancel —
+  clicking the destination you're already flying to drops back to manual, and the live one is outlined so you
+  can tell which autopilot is running. When there's no active mission target both the pointer and the mission
+  button disappear, leaving just Return to Base. The mission's place is snapshotted on entering roam via the
+  existing `objectForActiveMission` (side mission → its object, campaign → the object nearest its fight
+  centre). New: `updateMissionMarker` (`hud.js`), `updateRoamNav` + `cancelAutopilot` (`sim.js`), `#roam-nav`
+  markup + CSS, `ui.roam.return` / `ui.roam.autopilot` strings (EN + RU). Guarded by the `32-star-system`
+  visual scenario (pointer shows off-screen, both buttons engage/cancel the right autopilot, both hide with no
+  mission).
+
+- **The "(new)" marker now leads all the way to the shelf.** The same gold "(new)" that announces newly
+  unlocked gear rides not just the Loadout menu item but also the **Shop button inside the Loadout panel**
+  (reusing `.mw-new`), so it draws the player from the menu, through Loadout, to the actual shelf. And it
+  now **clears only when the player opens the shop** — previously it cleared the instant you entered
+  Loadout, which would have hidden the Shop-button marker before it could show. The `open-shop` action marks
+  the items seen and fires a `shop-items-seen` event that refreshes the menu marker (`shop.js` /
+  `mainwindow.js`). The `05-hangar-shop` visual scenario now asserts the marker persists through Loadout,
+  sits on the Shop button, and clears on opening the shop.
+
 ## 2026-08-11
 
 - **The mid-game gear tier is now earned, not just afforded: Heavy hull, Heavy Machine Gun and Triple

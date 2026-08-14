@@ -39,6 +39,14 @@
     "source": "Return to base",
     "context": "Label on the bottom-center HUD button shown during return-to-base (after the last enemy is destroyed). Clicking it auto-flies the ship home to the base station to complete the mission — the same action as clicking the station model. Short, imperative."
   },
+  "ui.roam.return": {
+    "source": "Return to Base",
+    "context": "Label on a bottom-center HUD button shown while roaming (free flight in the star system, out of combat). Clicking it auto-flies the ship home to the base station; clicking it again while already flying home cancels the autopilot. Short, imperative."
+  },
+  "ui.roam.autopilot": {
+    "source": "Autopilot to Mission",
+    "context": "Label on a bottom-center HUD button shown while roaming, next to 'Return to Base'. Clicking it auto-flies the ship to where the player's active mission is; clicking it again while already flying there cancels the autopilot. Short, imperative."
+  },
   "ui.banner.enemies_left": {
     "source": "{count} enemies left",
     "context": "Big transient banner that flashes for a moment when the number of enemies remaining in the level drops to a milestone (10, then 5). {count} is that integer (always >1, so no singular form is needed)."

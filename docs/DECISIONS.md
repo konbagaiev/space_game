@@ -3923,6 +3923,27 @@ lever sits.
 a raw id. Enforcement is server-side (`buyItem` → 403 `item locked`); the client filter is presentation only.
 The client mirrors it from `activeShip.reachedLevels` (a list of level *names*), so it never learns an id.
 
+## 109. The roam nav buttons STAY visible during autopilot (switch/cancel), unlike #return-btn
+
+**Decision.** The roam bottom-center bar (`#roam-nav`: "Return to Base" + "Autopilot to Mission") keeps **both
+buttons on screen while an autopilot is flying**. Clicking the destination you are already flying to **cancels**
+the autopilot back to manual; clicking the other **re-routes** in place. The live one carries an `.engaged`
+outline. This is the **opposite** of the return-to-base `#return-btn` (§ / return-to-base section), which
+**hides the moment its autopilot engages**.
+
+**Why the divergence is deliberate.** `#return-btn` has exactly one destination (home), so once it's engaged
+there is nothing left to offer — hiding it is correct. Roam has **two** destinations, so the bar's job is not
+just "go" but "which of the two, and stop": with both always present the player can switch targets or bail out
+of an autopilot with one tap, and the `.engaged` outline shows which trip is currently running. Hiding the
+engaged button here would strand the player mid-flight with no visible cancel. A future refactor tempted to
+"unify" the two bars should not — they answer different questions.
+
+**Pointer + button share one source.** Both the gold off-screen mission pointer and the "Autopilot to Mission"
+button read `G.roamMission`, snapshotted at `enterRoam` via `objectForActiveMission` (§105's resolver: side
+mission → its object, campaign → the object nearest its fight centre). When it is null both hide, so the HUD
+never points at or offers travel to a mission that isn't there. The bar reuses `#return-btn`'s bottom-center
+slot, which is safe because `G.roam` and `G.returnToBase` are never both true.
+
 **Also decided here.** The Heavy Machine Gun's stats moved with the gate: **weight 8 → 15** (the heaviest gun
 in the game, above the Heavy cannon's 10) and **aim assist 2° → 3°**. It is meant to be the endgame bullet
 weapon, and mass is the price of admission — mounting it on a light hull costs real acceleration and turn, so

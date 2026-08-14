@@ -253,6 +253,12 @@
 <div id="oob-warn"></div>
 <div id="return-hint"></div>
 <button id="return-btn" data-i18n="ui.return.button">Return to base</button>
+<!-- Roam bottom-center navigation: "Return to Base" (dock autopilot) + "Autopilot to Mission" (fly to the
+     active mission). Shown only while roaming (updateRoamNav); each button also cancels its own autopilot. -->
+<div id="roam-nav">
+  <button id="roam-return" data-i18n="ui.roam.return">Return to Base</button>
+  <button id="roam-autopilot" data-i18n="ui.roam.autopilot">Autopilot to Mission</button>
+</div>
 <div id="banner"></div>
 <!-- Character-progression XP bar: always on, bottom-center, 80% wide, yellow (docs/plans/2026-08-09-character-progression.md).
      Fills toward the next level; during a run it previews the XP earned so far. Pointer-through. -->
