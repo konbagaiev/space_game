@@ -10,9 +10,11 @@
   desynced — it re-simmed to 3/4 kills with the fight unfinished. The new recording re-sims to 4 kills, all
   five cards (`p0|p1|p2|p3|p4`) and a win at tick 2503, so `22-intro-replay` is green again. Uploaded to
   `s3://vega-sentinels-assets/recordings/` (immutable, content-hashed) and wired into the level-0
-  descriptor's `introTrace`; the superseded `level0-intro.0526e940.json` is **left on S3 until this deploys**
-  — prod still serves it. Because the cutscene's pauses are triggered by SIM EVENTS rather than fixed ticks,
-  the script needed no changes to survive the re-record.
+  descriptor's `introTrace`. Because the cutscene's pauses are triggered by SIM EVENTS rather than fixed
+  ticks, the script needed no changes to survive the re-record. Shipped to prod (CI/CD) and **re-published to
+  itch** (butler build #1885217 / version 61) in the same pass — the itch bundle carries the trace file but
+  reads the catalog live from prod, so a hash change there breaks the cutscene into a 404 until it is
+  re-pushed. The superseded `level0-intro.0526e940.json` was deleted from S3 afterwards.
 - **`record-playback` skill: the record URL is `?record=1&level=0`, not `level=1`.** It had gone stale when
   the campaign went 0-based (DECISIONS §102) — following it would have captured the wrong fight. Noted why
   old traces still carry `level: 'level-1'` (shifted at load by `traceLevelName`).
