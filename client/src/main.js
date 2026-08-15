@@ -1383,7 +1383,7 @@ async function startIntroCutscene() {
   startPlaybackSession(trace);
   return true;
 }
-// The intro cutscene finished (won or Skip) → advance the player 1→2 (server-authoritative, so the intro is
+// The intro cutscene finished (won or Skip) → advance the player 0→1 (server-authoritative, so the intro is
 // one-time + cross-device) and land on the Level 1 Main Window briefing (shop stays gated until unlocked).
 async function finishIntro() {
   if (!introMode) return;
@@ -1465,7 +1465,7 @@ function cutsceneEnd() { // tear down the overlay so the normal HUD / victory ov
   document.body.classList.remove('cutscene');
   if (cutSkipEl) { cutSkipEl.remove(); cutSkipEl = null; }
   if (cutLangEl) { cutLangEl.remove(); cutLangEl = null; }
-  if (introMode) finishIntro(); // real intro: advance 1→2 + land on the Level 1 briefing
+  if (introMode) finishIntro(); // real intro: advance 0→1 + land on the Level 1 briefing
 }
 function cutsceneShowCard(textKey) { if (cutOverlayEl) { cutCardEl.setAttribute('data-i18n', textKey); cutCardEl.textContent = t(textKey); cutOverlayEl.style.display = 'flex'; } }
 function cutsceneHideCard() { if (cutOverlayEl) cutOverlayEl.style.display = 'none'; }

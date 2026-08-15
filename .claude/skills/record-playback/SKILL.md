@@ -42,8 +42,11 @@ worktree: `npm run assets:pull` → `cd server && PORT=4000 node src/server.js`.
 (In a fresh git worktree, symlink `node_modules` + `server/node_modules` from the main checkout, or `npm i`.)
 
 ### 2. Record (maintainer plays)
-Open **`http://localhost:4000/?record=1&level=1`** (hard-refresh). `level=1` = the intro four-ship level
-(seed name `level-1`); a bare number `N` maps to `level-N`, or pass a full name.
+Open **`http://localhost:4000/?record=1&level=0`** (hard-refresh). `level=0` = the intro four-ship level
+(seed name `level-0` — 3 × `Basic pirate ship` then 1 × `basic rocket pirate`); a bare number `N` maps to
+`level-N`, or pass a full name. **It was `level=1` before the campaign went 0-based** (DECISIONS §102);
+traces recorded back then still carry `level: 'level-1'` and are shifted down at load by `traceLevelName`,
+but a NEW recording must be made on `level=0` or it will capture the wrong fight.
 - The level loads with the **real ship idle**. A top bar shows **"Loading model…"** → it flips to **"Start
   recording"** once the ship `.glb` has loaded. **Wait for that**, then click **Start recording**.
 - Fly and fight the level. The bar shows a live tick counter.

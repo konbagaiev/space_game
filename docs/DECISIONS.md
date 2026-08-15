@@ -4037,3 +4037,46 @@ marker.
 The whole state machine lives in a pure module (`client/src/shop-markers.js`) with `shop.js` holding the
 `localStorage`/DOM I/O, precisely because its last bug was a state-machine bug that `node --test` could not
 reach through DOM-bound code.
+
+## 112. Aim assist tests the HULL SPHERE, not 48 box centres — and picks the best-AIMED target, not the nearest
+
+The auto-aim cone modelled every ship as a point at `mesh.position`. With `aimAssistDeg: 2` that cone is
+0.35 u wide at 10 u — narrower than a wing. Flying head-on at a pirate, the player's bullets streamed past
+its wing with the launch angle never changing; hits happened only when the wing wandered into the line of
+fire. The assist looked broken because, for anything but a dead-centre target, it never fired at all.
+
+**Why not the per-part hitboxes.** The obvious fix — test the cone against the parts we already register hits
+on — was considered and rejected on both counts. Ships carry **48 OBBs** each (`assets:hitboxes` budget), not
+"a few spheres"; the single sphere in the `?hitboxes` view is the broad-phase one. Testing them means
+`updateMatrixWorld` plus 48 affine transforms **per candidate, per spawned bullet** — `findBulletAimTarget`
+runs on every bullet of every mount, and an HMG group fires several every 0.12 s. That is ~100× the work of
+the point test for a result that is also *worse*: box centres sit **inside** the hull, so the union of them
+**under**-covers the silhouette (the wingtip box's centre is inboard of the wingtip), and aiming at the
+nearest box centre would put the shot on a wingtip and graze. The enclosing sphere covers the silhouette by
+construction, is one number, and is already maintained by the collision broad-phase.
+
+**Exact sphere-vs-cone, no trig in the loop.** Widening the cone by `asin(r/d)` blows up at point-blank and
+costs a trig call per candidate. Instead: at axial distance `along` the cone's radius is `along·tan(half)`
+and a sphere of radius `r` reaches `r/cos(half)` further out laterally, so the hull overlaps iff the centre's
+lateral offset is within their sum. `tan`/`cos` hoist out of the loop, making this **cheaper** than the old
+normalize-and-dot — and it needs no arbitrary close-range cap, because the near-range term is a constant
+lateral padding, not an exploding angle. The condition stays geometrically honest at every range: *the hull
+overlaps the cone*.
+
+**Best-aimed beats nearest.** Ranking by distance was safe while the cone was a needle at most one ship could
+occupy. With hull radii several ships qualify at once, and nearest-wins would hand the shot to a closer
+bystander clipping the cone edge — the assist would bend the player's fire **off** the ship they chose, which
+is worse than no assist. The winner is now the lowest `(perp − r/cos(half)) / along`: the angle from the aim
+axis to the hull's near edge, negative once the axis is inside the hull. Distance breaks a score tie only.
+
+**The aim point is still the hull CENTRE.** The radius decides *whether* the assist engages; it must not
+decide *where* it shoots. Aiming at the near edge that let the target in would convert every marginal
+engagement into a graze — the exact failure being fixed.
+
+**Accepted cost: the recorded intro trace desynced and was re-recorded.** Any change to bullet direction
+shifts the seeded gameplay stream, so `22-intro-replay` (the Level-0 cutscene input replay) dropped to 3/4
+kills with the trace running out and one pirate alive. Verified as caused by this change: the same guard
+passed 4/4 with the three files stashed. That is the standing price of a sim change, not a defect in this one
+— the guard exists to make it visible (see §73 and the guard's own header). Re-recorded as
+`level0-intro.6674d840.json` (green: 4 kills, `p0..p4`, win at tick 2503/3490). Cheap to redo precisely
+because the cutscene's pauses fire on SIM EVENTS, not fixed ticks — that design choice paid for itself here.

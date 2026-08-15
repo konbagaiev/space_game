@@ -38,19 +38,44 @@ export function inForwardSector(fwd, toTarget, halfAngle) {
   return dot >= Math.cos(halfAngle);
 }
 
-// Index of the NEAREST target within a forward cone (half-angle, radians), or -1 if none.
+// Index of the BEST-AIMED target whose HULL overlaps a forward cone (half-angle, radians), or -1 if none.
 // All args are plain XZ: `from` {x,z} (muzzle), `fwd` {x,z} UNIT nose direction, `targets` array of
-// {x,z} positions. Ties broken by distance (nearest wins). Deterministic — no RNG. Used by
-// projectiles.js findBulletAimTarget to pick a bullet's auto-aim target.
+// {x,z,r} — `r` is the target's world hull radius (its enclosing sphere; omitted/0 = a bare point).
+//
+// Targets are SPHERES, not points: a target counts as in-cone when any part of its hull is, so a wing
+// clipping the cone edge engages the assist even though the ship's CENTRE sits outside it. The old
+// centre-only test treated every ship as a zero-size dot, which is why shots could graze a wing with no
+// correction at all — the bullet only ever hit because the wing wandered into the line of fire.
+//
+// Exact sphere-vs-cone, trig-free in the loop: at axial distance `along` the cone's radius is
+// `along·tan(half)`, and a sphere of radius r reaches `r/cos(half)` further out laterally, so the hull
+// overlaps iff the centre's lateral offset is within their sum. tan/cos are hoisted out of the loop, so
+// this costs LESS per candidate than the old normalize-and-dot. Half-angle is clamped below 90° (every
+// real caller passes a few degrees) to keep tan finite.
+//
+// The winner is the BEST-AIMED candidate, not the nearest: `score` is the angular gap between the aim axis
+// and the hull's near EDGE (negative once the axis is inside the hull), so a ship you are pointing straight
+// at outranks a nearer one that merely clips the cone with a wingtip. Distance only breaks a score tie.
+// Nearest-wins was safe while the cone was a 2° needle that at most one ship could occupy; with hull radii
+// several ships qualify at once, and ranking by distance would let a closer bystander STEAL fire from the
+// ship the player is actually aiming at.
+//
+// Deterministic — no RNG. Used by projectiles.js findBulletAimTarget to pick a bullet's auto-aim target.
 export function nearestInConeIndex(from, fwd, targets, halfAngle) {
-  const cos = Math.cos(halfAngle);
-  let best = -1, bestD = Infinity;
+  const half = Math.min(halfAngle, Math.PI / 2 - 1e-3);
+  const tan = Math.tan(half), invCos = 1 / Math.cos(half);
+  let best = -1, bestScore = Infinity, bestD = Infinity;
   for (let i = 0; i < targets.length; i++) {
     const dx = targets[i].x - from.x, dz = targets[i].z - from.z;
     const d = Math.hypot(dx, dz);
     if (d < 1e-6) continue;                       // co-located → skip (matches findTargetInSector)
-    const dot = (fwd.x * dx + fwd.z * dz) / d;    // fwd assumed unit; toTarget normalized by /d
-    if (dot >= cos && d < bestD) { best = i; bestD = d; }
+    const along = fwd.x * dx + fwd.z * dz;        // axial distance (fwd assumed unit)
+    if (along <= 0) continue;                     // hull centre sits beside or behind the muzzle
+    const perp = Math.sqrt(Math.max(0, d * d - along * along)); // lateral offset from the cone axis
+    const reach = (targets[i].r || 0) * invCos;   // how far the hull sphere reaches off its own centre
+    if (perp > along * tan + reach) continue;     // hull clears the cone entirely
+    const score = (perp - reach) / along;         // ≈ angle from the axis to the hull's near edge
+    if (score < bestScore || (score === bestScore && d < bestD)) { best = i; bestScore = score; bestD = d; }
   }
   return best;
 }

@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-14 (**The freighter side mission is reachable again** — it had no `ANCHORS` entry and no
+**Updated:** 2026-08-15 (**Aim assist now tests the target's HULL, not its centre** — a ship whose wing was in
+the line of fire never engaged the assist, so bullets grazed it with no correction; each candidate now carries
+its collision `broadRadius` into the cone test and the best-AIMED target wins, not the nearest. Previously:
+**The freighter side mission is reachable again** — it had no `ANCHORS` entry and no
 host object in `listSystemObjects()`, so it could be taken from the board and then had nothing on the map to
 fly to; it now sits at `(-100,-950)` with a map object, an autopilot destination and a test pinning that every
 side mission has a host. Previously: **Sim-loop de-duplicated + `update(dt)` sectioned** — a pure refactor with no
@@ -539,11 +542,11 @@ bubble to the whole-overlay click→advance listener) and each button also `stop
 `buildCutsceneOverlay()` and removed in `cutsceneEnd()`, so it exists only while the cutscene overlay is up (never
 on the playable-Level-0 fallback nor after take-off into live Level 1). On clearing the fight it **simulates the "Return to base"
 button** (`engageAutopilot` — a click, absent from the key trace) and flies home to the victory overlay. This
-is the mechanism the **real new-player intro** rides: bootstrap (`startIntroCutscene`) fetches the canonical recording named on the `level-0` descriptor's **`introTrace`** (an S3 asset, `assets/recordings/level0-intro.<hash>.json`, pulled same-origin by `assets:pull` + bundled into the itch build) and plays it as the cutscene; on finish/Skip **`finishIntro`** **tears down the playback/cutscene session** (`rs.teardown()` + clears `G.replayMode`) so `animate()` leaves the inert `if (REC || rs.play)` branch and returns to live `update(dt)` — then advances `current_progress` 1→2 (`unlockNextLevel`) and lands on the **Level 1 Main Window briefing** (`level.1.briefing`), where the subsequent **Take-off** runs the real Level-1 sim. The trigger is **server-authoritative** (`shouldPlayIntro(location.search, CATALOG.level.introTrace)`): the intro plays iff the served `level-1` descriptor carries `introTrace` — present ONLY while `current_progress===1` — and the load isn't headless (`?debug`/`?bench`). There is **no client localStorage flag**, so a genuine progress reset (server sets progress→1) **replays** the intro; the server progress advance is the sole one-time gate. Headless / no trace → the playable Level 0. Read-only (`G.replayMode`) — the advance is explicit, not via `win()`.
+is the mechanism the **real new-player intro** rides: bootstrap (`startIntroCutscene`) fetches the canonical recording named on the `level-0` descriptor's **`introTrace`** (an S3 asset, `assets/recordings/level0-intro.<hash>.json`, pulled same-origin by `assets:pull` + bundled into the itch build) and plays it as the cutscene; on finish/Skip **`finishIntro`** **tears down the playback/cutscene session** (`rs.teardown()` + clears `G.replayMode`) so `animate()` leaves the inert `if (REC || rs.play)` branch and returns to live `update(dt)` — then advances `current_progress` 1→2 (`unlockNextLevel`) and lands on the **Level 1 Main Window briefing** (`level.1.briefing`), where the subsequent **Take-off** runs the real Level-1 sim. The trigger is **server-authoritative** (`shouldPlayIntro(location.search, CATALOG.level.introTrace)`): the intro plays iff the served `level-0` descriptor carries `introTrace` — present ONLY while `current_progress===0` — and the load isn't headless (`?debug`/`?bench`). There is **no client localStorage flag**, so a genuine progress reset (server sets progress→0) **replays** the intro; the server progress advance is the sole one-time gate. Headless / no trace → the playable Level 0. Read-only (`G.replayMode`) — the advance is explicit, not via `win()`.
 **Failure fallback:** a re-sim that goes wrong never hangs — if the trace runs out with the fight unfinished the
 post-loop `cutsceneEnd()` fires that frame, and if the "return to base" flight can never dock the return-home
 watchdog (`CUTSCENE_STALL_TICKS` ≈ 15 s of sim time) ends it; both route through the normal
-`cutsceneEnd()` → `finishIntro()` path, so the player still advances 1→2 and lands on the Level 1 briefing
+`cutsceneEnd()` → `finishIntro()` path, so the player still advances 0→1 and lands on the Level 1 briefing
 (the intro just stops early). The committed guard scenario `22-intro-replay` is what keeps that from happening
 silently.
 
@@ -914,8 +917,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `maxRange`, `fireCooldown`, `aimAssistDeg` (auto-aim cone **half-angle** in degrees; `2` for every
   current bullet weapon). **Aim assist:** at fire time a bullet whose shooter has an opposing-side target
   within ±`aimAssistDeg` of the nose is redirected to fire straight at that target's **current** position
-  (planar XZ, no target leading; nearest-in-cone wins; player guns skip warping enemies, enemy guns
-  require `G.player.alive`). It's symmetric — **enemy kinetic/cannon guns auto-aim at the player** just as
+  (planar XZ, no target leading; player guns skip warping enemies, enemy guns
+  require `G.player.alive`). The cone tests the target's **HULL, not its centre** — each candidate carries
+  its `broadRadius(ship)` enclosing sphere (the same one the collision broad-phase uses) and counts as
+  in-cone when any part of that sphere overlaps, so a ship whose **wing** is in the line of fire engages the
+  assist even though its centre sits outside the cone. Exact sphere-vs-cone, trig-free in the loop (at axial
+  distance `along` the hull overlaps iff its lateral offset ≤ `along·tan(half) + r/cos(half)`). The winner is
+  the **best-aimed** candidate — lowest `(perp − r/cos(half)) / along`, i.e. the smallest angle from the aim
+  axis to the hull's near edge — with distance only breaking a tie, so a nearer bystander clipping the cone
+  edge can't steal fire from the ship the player is pointing at. The aim point stays the hull **centre**.
+  It's symmetric — **enemy kinetic/cannon guns auto-aim at the player** just as
   player guns auto-aim at enemies. Velocity inheritance (`spawnBullet` adds the shooter's velocity) is
   unchanged; only the base launch `dir` is rotated. Pure/deterministic (`nearestInConeIndex` in
   `steering.js` + `findBulletAimTarget` in `projectiles.js`, no RNG → replay-safe). **Rockets are

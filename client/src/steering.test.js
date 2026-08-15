@@ -57,6 +57,39 @@ test('nearestInConeIndex: in-cone / outside / behind / nearest-wins / co-located
   assert.equal(nearestInConeIndex(from, fwd, [{ x: 0, z: 0 }], half), -1);
 });
 
+test('nearestInConeIndex: a hull radius engages a target whose CENTRE is outside the cone', () => {
+  const from = { x: 0, z: 0 };
+  const fwd = { x: 0, z: 1 };            // nose +Z
+  const half = 2 * Math.PI / 180;        // 2° half-angle → cone radius 0.349 at z=10
+  // The bug this guards: at 10 u a 2° cone is only 0.35 u wide, so a ship 2 u off-axis never engaged the
+  // assist even with its wing squarely in the line of fire — shots grazed the hull with no correction.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 2, z: 10 }], half), -1);            // r=0: the old dot
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 2, z: 10, r: 3.8 }], half), 0);     // hull overlaps → engaged
+  // ...but the radius is not a blank cheque: a hull that genuinely clears the cone stays unengaged.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 8, z: 10, r: 3.8 }], half), -1);
+  // A hull-sized target directly behind is still rejected (radius must not wrap around the muzzle).
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 0, z: -10, r: 3.8 }], half), -1);
+  // Nearest still wins when BOTH are engaged only thanks to their hulls: i=1 is the closer one.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 2, z: 10, r: 3.8 }, { x: 1.5, z: 6, r: 3.8 }], half), 1);
+  // A nearer target OUT of the cone must not shadow a farther one that is in it.
+  assert.equal(nearestInConeIndex(from, fwd, [{ x: 20, z: 5, r: 3.8 }, { x: 0, z: 30, r: 3.8 }], half), 1);
+});
+
+test('nearestInConeIndex: a closer bystander cannot steal fire from the ship being aimed at', () => {
+  const from = { x: 0, z: 0 };
+  const fwd = { x: 0, z: 1 };
+  const half = 2 * Math.PI / 180;
+  // i=0 is dead on the aim axis at 30 u; i=1 is nearer (10 u) but only clips the cone with a wingtip.
+  // Hull radii let BOTH qualify — which they could not when the cone was a 2° needle — so ranking by
+  // distance would hand the shot to the bystander and bend the player's fire off the ship they chose.
+  const aimedAt = { x: 0, z: 30, r: 3.8 };
+  const bystander = { x: 3.7, z: 10, r: 3.8 };
+  assert.equal(nearestInConeIndex(from, fwd, [aimedAt, bystander], half), 0);
+  assert.equal(nearestInConeIndex(from, fwd, [bystander, aimedAt], half), 1); // order must not matter
+  // With the bystander alone in the cone it is still a valid target (the rule is preference, not exclusion).
+  assert.equal(nearestInConeIndex(from, fwd, [bystander], half), 0);
+});
+
 const len3 = (v) => Math.hypot(v.x, v.y, v.z);
 const dot3 = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
 

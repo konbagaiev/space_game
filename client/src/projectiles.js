@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { pointHitsShip } from './collision.js';
+import { pointHitsShip, broadRadius } from './collision.js';
 import { applyShieldedDamage } from './components.js';
 import { registerShieldImpact, registerEnemyShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
@@ -288,22 +288,29 @@ export function findTargetInSector(pos, fwd, halfAngle) {
   return best;
 }
 
-// Aim-assist target for a BULLET shot: the nearest valid OPPOSING-side target within the forward cone
-// (halfAngle, radians). Player guns pick the nearest non-warping enemy; enemy guns pick the player (if
-// alive). Returns the target ship object or null. Deterministic (pure scan; no RNG). Planar (XZ).
+// Aim-assist target for a BULLET shot: the best-aimed valid OPPOSING-side target whose HULL overlaps the
+// forward cone (halfAngle, radians). Player guns consider every non-warping enemy; enemy guns pick the
+// player (if alive). Returns the target ship object or null. Deterministic (pure scan; no RNG). Planar (XZ).
 // Rockets do NOT use this — they keep findTargetInSector.
+//
+// Each candidate carries its `broadRadius` — the same enclosing sphere the collision broad-phase uses — so
+// the cone test knows how big the ship actually is. Without it a target only counted when its CENTRE fell
+// inside the cone, so a ship whose wing was in the line of fire got no correction and the assist appeared
+// dead: bullets flew past the wing, and any hit was the wing drifting into them rather than the shot
+// bending. The aim point is still the hull CENTRE (see fireMount) — the meaty part, not the wingtip that
+// let the target in.
 export function findBulletAimTarget(pos, fwd, halfAngle, fromPlayer) {
   const from = { x: pos.x, z: pos.z };
   const f = { x: fwd.x, z: fwd.z };            // fwd is horizontal (y=0) → its XZ is unit
   if (fromPlayer) {
     const cands = [];
     for (const e of enemies) if (!e.warping) cands.push(e); // skip enemies still forming
-    const idx = nearestInConeIndex(from, f, cands.map((e) => ({ x: e.mesh.position.x, z: e.mesh.position.z })), halfAngle);
+    const idx = nearestInConeIndex(from, f, cands.map((e) => ({ x: e.mesh.position.x, z: e.mesh.position.z, r: broadRadius(e) })), halfAngle);
     return idx >= 0 ? cands[idx] : null;
   }
   if (!G.player || !G.player.alive) return null;
   const p = G.player.mesh.position;
-  const idx = nearestInConeIndex(from, f, [{ x: p.x, z: p.z }], halfAngle);
+  const idx = nearestInConeIndex(from, f, [{ x: p.x, z: p.z, r: broadRadius(G.player) }], halfAngle);
   return idx >= 0 ? G.player : null;
 }
 
