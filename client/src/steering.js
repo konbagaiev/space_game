@@ -23,6 +23,21 @@ export function steerToward(current, target, maxStep) {
   return current + Math.sign(d) * Math.min(Math.abs(d), maxStep);
 }
 
+// Keyboard thrust resolution for the PLAYER: forward-only. Returns
+//   { thrust, brake } — `thrust` a NON-NEGATIVE multiplier of the ship's acceleration, `brake` a flag
+// asking for the kinematic decel that bleeds speed toward 0.
+//
+// There is deliberately no reverse (DECISIONS §113): touch steering can only push forward
+// (`touchAim.thrust` is 0..1), so a keyboard reverse thruster was a platform-exclusive ability — and it let
+// a player kite backwards while firing forward, which is the combat balance it broke. S/↓ brakes instead.
+//
+// Forward wins over brake when both are held, so W+S is a plain accelerate rather than a self-cancelling
+// tug-of-war whose outcome depends on the tick order.
+export function keyboardThrust(keys) {
+  const forward = !!(keys['KeyW'] || keys['ArrowUp']);
+  return { thrust: forward ? 1 : 0, brake: !forward && !!(keys['KeyS'] || keys['ArrowDown']) };
+}
+
 // Enemy thrust factor by distance to the player: approach from afar, hold a band,
 // back off if too close. Returns a multiplier for thrust (1 / 0.15 / -0.6).
 export function enemyThrustFactor(dist, near = 14, far = 22) {

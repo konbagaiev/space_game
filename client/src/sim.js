@@ -10,7 +10,7 @@ import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
 import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './system-map.js';
 import { repairTick, shieldRecharge, applyShieldedDamage } from './components.js';
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset } from './steering.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset, keyboardThrust } from './steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
@@ -230,6 +230,8 @@ function forwardVec(heading) {
 // ---------- Autopilot (return-to-base click-to-fly) ----------
 // Kinematic symmetric-decel brake: bleed the velocity toward 0 at a constant rate equal to the ship's
 // thrust `accel` (Decision 2 — the passive IDLE_DRAG is exponential and can't stop cleanly).
+// Shared with the player's manual brake (S/↓ in stepPlayer) — it stops at 0 and never flips the
+// direction, which is exactly the "no flying backwards" rule.
 function brakeStep(accel, dt) {
   const v = G.player.vel, sp = v.length();
   if (sp <= 1e-4) { v.set(0, 0, 0); return; }
@@ -594,10 +596,11 @@ function stepPlayer(dt) {
       G.player.heading = steerToward(G.player.heading, touchAim.heading, turn * dt);
     }
 
-    // --- player: thrust ---
+    // --- player: thrust (forward only — S/↓ is a brake, never a reverse; DECISIONS §113) ---
     fwd = forwardVec(G.player.heading);
-    if (keys['KeyW'] || keys['ArrowUp'])   G.player.vel.addScaledVector(fwd, accel * dt);
-    if (keys['KeyS'] || keys['ArrowDown']) G.player.vel.addScaledVector(fwd, -accel * dt);
+    const kb = keyboardThrust(keys);
+    if (kb.thrust) G.player.vel.addScaledVector(fwd, accel * kb.thrust * dt);
+    if (kb.brake)  brakeStep(accel, dt); // same kinematic decel the autopilot uses: bleeds to 0, no overshoot
     if (touchAim.active) G.player.vel.addScaledVector(fwd, accel * touchAim.thrust * dt); // touch thrust
 
     // passive braking when no control button is pressed

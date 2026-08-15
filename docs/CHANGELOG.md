@@ -5,6 +5,14 @@
 
 ## 2026-08-15
 
+- **The ship can no longer fly backwards — `S`/`↓` is now a brake.** The reverse thruster was a
+  keyboard-only ability (touch steering can only push forward, `touchAim.thrust` is 0..1) and it let a
+  player retreat while keeping the guns on an enemy, which is a kite rather than a dogfight. `S`/`↓` now
+  runs the same kinematic decel the autopilot uses: speed bleeds to 0 at the ship's own acceleration and
+  stops there. `W`+`S` thrusts (forward wins), and `S` still cancels the autopilot. The on-screen controls
+  cheatsheet (EN + RU) reads "brake". Rule extracted as the pure `keyboardThrust()` seam in `steering.js`
+  with a test asserting no key combination can produce negative thrust. DECISIONS §113.
+
 - **Replaying your own recording no longer plays synthesized sfx instead of the real sounds.** Sample
   preloading fired only from the gesture handler (or from bootstrap if a gesture had already happened), but
   `?playback` is reached by NAVIGATION — the record page's "Play it ▶" link — so no gesture ever landed on

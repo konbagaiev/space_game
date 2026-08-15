@@ -20,7 +20,7 @@ For now Three.js isn't holding us back.
 ## 2. Ship controls and physics (inertia)
 
 An "Asteroids-like" model:
-- `W/S` (or `↑/↓`) — thrust forward/backward along the nose.
+- `W` (or `↑`) — thrust forward along the nose; `S` (or `↓`) — brake to a stop (no reverse, see §113).
 - `A/D` (or `←/→`) — turn only the nose, without touching the movement vector.
 - `Space` — fire.
 
@@ -4080,3 +4080,40 @@ passed 4/4 with the three files stashed. That is the standing price of a sim cha
 — the guard exists to make it visible (see §73 and the guard's own header). Re-recorded as
 `level0-intro.6674d840.json` (green: 4 kills, `p0..p4`, win at tick 2503/3490). Cheap to redo precisely
 because the cutscene's pauses fire on SIM EVENTS, not fixed ticks — that design choice paid for itself here.
+
+---
+
+## 113. No reverse thruster: `S`/`↓` brakes, and the ship can never fly backwards
+
+`S`/`↓` used to apply `-accel` along the nose (`stepPlayer`), the mirror image of `W`. It is gone. The key
+now runs the same kinematic `brakeStep` the autopilot uses: the velocity bleeds toward 0 at the ship's own
+acceleration and stops there — it never crosses zero into reverse.
+
+**Why.** Two reasons, and the first is the one that settles it:
+
+- **It was a keyboard-only ability.** Touch steering has no reverse and cannot get one: the virtual stick
+  turns the nose toward the finger and thrusts along it, and `touchAim.thrust` is a magnitude in `0..1`
+  (`main.js`, `state.js`). The phone player's only way to kill speed is to turn around — so every fight was
+  balanced twice, once for a ship that can back off and once for a ship that can't.
+- **It broke combat balance.** Enemies close in and hold a band (`enemyThrustFactor`), while the player's
+  weapons all fire forward. Reverse let the player retreat with the nose — and the guns — still on the
+  target, holding an enemy at its worst range indefinitely. That is a kite, not a dogfight, and it is
+  precisely the pressure the enemy AI's approach is supposed to create.
+
+**Why a brake and not simply a dead key.** Strict touch parity argues for ignoring `S` entirely, and the
+choice was made deliberately the other way: killing inertia is a real manoeuvre a keyboard should express,
+and a brake grants no positioning the ship couldn't already reach — it only removes speed. It also keeps
+`S` cancelling the autopilot as before (any control input hands control back, §39). The residual asymmetry
+is that a phone player must turn around to stop; that is far smaller than the one being removed.
+
+**`W`+`S` thrusts forward.** Whichever way the two were composed, the outcome would depend on the order they
+land in the tick. Forward simply wins (`keyboardThrust`), so the combination is a plain accelerate.
+
+**The rule lives in a pure seam.** `keyboardThrust(keys)` in `steering.js` returns a **non-negative** thrust
+multiplier plus a brake flag; `sim.js` is DOM/Three-bound and untestable in Node, so the invariant is guarded
+there instead — a test asserts no combination of movement keys can yield `thrust < 0`.
+
+**Replays are unaffected.** A trace stores held key codes, so a change to what a key MEANS would desync any
+recording containing it. The shipped Level-0 intro trace (`level0-intro.6674d840.json`) contains no `KeyS` /
+`ArrowDown` — checked before the change, and `22-intro-replay` stays green. Archived *session* recordings
+that used reverse will replay differently in `/admin/sessions`; accepted, they are diagnostic material.

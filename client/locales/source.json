@@ -84,8 +84,8 @@
     "context": "Shown next to the mission's estimated credit reward: the experience the mission grants. {xp} is a number. Keep 'XP' as-is."
   },
   "ui.help": {
-    "source": "<b>W / ↑</b> — thrust · <b>S / ↓</b> — reverse · <b>A / D</b> or <b>← →</b> — turn · <b>Space</b> — fire · <b>F</b> — rocket",
-    "context": "On-screen controls cheatsheet (HTML). Keep the key glyphs (W, ↑, S, Space, F, arrows) as-is; translate only the action words (thrust/reverse/turn/fire/rocket)."
+    "source": "<b>W / ↑</b> — thrust · <b>S / ↓</b> — brake · <b>A / D</b> or <b>← →</b> — turn · <b>Space</b> — fire · <b>F</b> — rocket",
+    "context": "On-screen controls cheatsheet (HTML). Keep the key glyphs (W, ↑, S, Space, F, arrows) as-is; translate only the action words (thrust/brake/turn/fire/rocket). 'brake' slows the ship to a stop — the ship cannot fly backwards."
   },
   "ui.overlay.gameover": {
     "source": "Game over",

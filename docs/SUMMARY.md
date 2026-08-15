@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-15 (**Sampled sfx load without waiting for a gesture** — `?playback` is reached by
+**Updated:** 2026-08-15 (**No reverse: `S`/`↓` is a brake** — the ship can no longer be thrust backwards along
+its nose (a keyboard-only ability touch can't have, and a kite the enemy AI can't answer); the key now bleeds
+speed to 0 with the autopilot's kinematic decel, `W`+`S` thrusts, DECISIONS §113. Previously: **Sampled sfx
+load without waiting for a gesture** — `?playback` is reached by
 navigation, so no gesture ever landed on it and a replayed recording ran entirely on synth voices; the intro
 cutscene's tap-to-begin card had been hiding it. Previously: **Aim assist now tests the target's HULL, not its
 centre** — a ship whose wing was in
@@ -188,7 +191,10 @@ consolidated into a documented `stats.model` block — yaw/scale + optional muzz
 fighting on a plane. Opens in a browser with no installation (Three.js from a CDN).
 
 ## Controls
-- `W`/`↑` — thrust forward, `S`/`↓` — backward
+- `W`/`↑` — thrust forward, `S`/`↓` — **brake** (bleeds the velocity to a stop at the ship's own `accel`,
+  the same kinematic decel the autopilot uses). **There is no reverse** — the ship can never be pushed
+  backwards along its nose (DECISIONS §113). Holding `W`+`S` thrusts (forward wins); the pure seam is
+  `keyboardThrust(keys)` in `client/src/steering.js`, consumed by `stepPlayer` in `client/src/sim.js`
 - `A`/`D` or `←`/`→` — turn the nose
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)

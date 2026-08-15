@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, inForwardSector, spiralOffset, nearestInConeIndex } from './steering.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, inForwardSector, spiralOffset, nearestInConeIndex, keyboardThrust } from './steering.js';
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
@@ -24,6 +24,26 @@ test('steerToward clamps the step and does not overshoot', () => {
 
 test('steerToward turns the short way across the +-PI wrap', () => {
   assert.ok(close(steerToward(3.0, -3.0, 0.1), 3.1)); // increases past PI, not back through 0
+});
+
+test('keyboardThrust: W thrusts, S brakes, both = thrust, and thrust is NEVER negative', () => {
+  assert.deepEqual(keyboardThrust({}), { thrust: 0, brake: false });
+  assert.deepEqual(keyboardThrust({ KeyW: true }), { thrust: 1, brake: false });
+  assert.deepEqual(keyboardThrust({ ArrowUp: true }), { thrust: 1, brake: false });
+  assert.deepEqual(keyboardThrust({ KeyS: true }), { thrust: 0, brake: true });
+  assert.deepEqual(keyboardThrust({ ArrowDown: true }), { thrust: 0, brake: true });
+  assert.deepEqual(keyboardThrust({ KeyW: true, KeyS: true }), { thrust: 1, brake: false }); // forward wins
+});
+
+// The regression guard for "no flying backwards" (DECISIONS §113): S/↓ used to apply -accel, which is the
+// one thing touch controls can't do (touchAim.thrust is 0..1). No key combination may yield thrust < 0.
+test('keyboardThrust: no key combination can produce reverse thrust', () => {
+  const codes = ['KeyW', 'KeyS', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'Space'];
+  for (let mask = 0; mask < (1 << codes.length); mask++) {
+    const keys = {};
+    codes.forEach((c, i) => { if (mask & (1 << i)) keys[c] = true; });
+    assert.ok(keyboardThrust(keys).thrust >= 0, `reverse thrust for ${JSON.stringify(keys)}`);
+  }
 });
 
 test('enemyThrustFactor: approach far, hold band, back off close', () => {
