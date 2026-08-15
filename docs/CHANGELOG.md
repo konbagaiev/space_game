@@ -3,6 +3,35 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-15
+
+- **Level-0 intro cutscene re-recorded** (`level0-intro.6674d840.json`, 3490 ticks / 58 s, seed 78672849,
+  trace v3 on `level-0`). The aim-assist change below shifts the seeded gameplay stream, so the old trace
+  desynced — it re-simmed to 3/4 kills with the fight unfinished. The new recording re-sims to 4 kills, all
+  five cards (`p0|p1|p2|p3|p4`) and a win at tick 2503, so `22-intro-replay` is green again. Uploaded to
+  `s3://vega-sentinels-assets/recordings/` (immutable, content-hashed) and wired into the level-0
+  descriptor's `introTrace`; the superseded `level0-intro.0526e940.json` is **left on S3 until this deploys**
+  — prod still serves it. Because the cutscene's pauses are triggered by SIM EVENTS rather than fixed ticks,
+  the script needed no changes to survive the re-record.
+- **`record-playback` skill: the record URL is `?record=1&level=0`, not `level=1`.** It had gone stale when
+  the campaign went 0-based (DECISIONS §102) — following it would have captured the wrong fight. Noted why
+  old traces still carry `level: 'level-1'` (shifted at load by `traceLevelName`).
+- **Aim assist now aims at the target's HULL, not a dot at its centre.** The auto-aim cone treated every
+  ship as a zero-size point, so a target only engaged the assist when its **centre** fell inside the
+  `aimAssistDeg` cone — a needle 0.35 u wide at 10 u. Fly head-on at a ship and your bullets would stream
+  past its wing with the launch angle never changing; the hits that did land were the wing drifting into
+  the line of fire, not the assist correcting for you. Each candidate now carries its `broadRadius(ship)`
+  enclosing sphere (the same one the collision broad-phase uses) into an exact sphere-vs-cone test, so any
+  part of the hull overlapping the cone engages the assist and the shot bends onto the hull centre. The
+  winner also changed from **nearest** to **best-aimed** (smallest angle from the aim axis to the hull's
+  near edge): with hull radii several ships can qualify at once, and picking by distance would let a closer
+  bystander steal fire from the ship the player is actually pointing at. Symmetric as before — enemy guns
+  get the same treatment against the player. Trig-free in the loop (tan/cos hoisted), so it costs slightly
+  **less** per candidate than the old normalize-and-dot. `nearestInConeIndex` (`client/src/steering.js`) +
+  `findBulletAimTarget` (`client/src/projectiles.js`); guarded by new cases in `steering.test.js` covering
+  the wing engagement, the bystander-steal, and behind/outside rejection. Still pure and RNG-free.
+  **Target leading is unchanged** (still none) — that's a separate change.
+
 ## 2026-08-14
 
 - **The freighter side mission is reachable again — moved to `(-100,-950)`.** When the flyable star system
