@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-15 (**Aim assist now tests the target's HULL, not its centre** — a ship whose wing was in
+**Updated:** 2026-08-15 (**Sampled sfx load without waiting for a gesture** — `?playback` is reached by
+navigation, so no gesture ever landed on it and a replayed recording ran entirely on synth voices; the intro
+cutscene's tap-to-begin card had been hiding it. Previously: **Aim assist now tests the target's HULL, not its
+centre** — a ship whose wing was in
 the line of fire never engaged the assist, so bullets grazed it with no correction; each candidate now carries
 its collision `broadRadius` into the cone test and the best-AIMED target wins, not the nearest. Previously:
 **The freighter side mission is reachable again** — it had no `ANCHORS` entry and no
@@ -501,6 +504,11 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   on `__replay.status().armed` (the ship `.glb` sets `noseZ`/`tailZ` = where bullets spawn, so stepping
   earlier would change the sim), then fast-steps via `step()`/`advance()`. Needs `npm run assets:pull` (the
   trace is a gitignored S3 asset) and hard-fails with that instruction when it is absent.
+- **Second guard (`client/visual/scenarios/35-playback-loads-samples.mjs`).** Opens the BARE `?playback` page
+  (no `&cutscene=1`) and touches nothing, then asserts the `kinetic`/`cannon`/`rocket` mp3s were actually
+  fetched — pinning that a replay reached by navigation still gets SAMPLED sfx rather than the synth
+  fallback. Asserted at the network layer because headless Chromium has no audio out and the buffer cache is
+  module-private. Deliberately gesture-free: adding a click re-hides the bug it exists for.
 - **Storage:** currently the trace is cached in `localStorage` (`replay:{id}` + `replay:last`) for the
   same-browser record→playback loop, and downloaded as `{id}.json`. Planned: promote recordings to an **S3
   asset** (like the ship `.glb`s — `assets:pull`/S3, referenced from seed on prod) so they sync prod↔local.
@@ -2107,7 +2115,13 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
 - **Sampled SFX layer — DB-driven routing** (`docs/plans/sound-classes-and-mapping.md`). `audio.preloadSamples(map)`
   fetches + decodes content-hashed mp3s into a buffer cache; `audio.sfx.shoot/rocket/hit/explosion(kind)`
   plays the named sample as a `BufferSource` on `sfxGain` (subtle per-shot pitch jitter), **falling back to
-  the synth** if the buffer/key is missing. **Routing lives in the DB, not the client:** two tables —
+  the synth** if the buffer/key is missing. **The preload runs in bootstrap as soon as the sound catalog
+  lands — it is NOT gated on a user gesture** (decoding needs an `AudioContext`, not a *running* one, and
+  `preloadSamples` calls `ensure()` itself). Gating it on a gesture used to silently mean all-synth audio on
+  any page that starts playing without one — `?playback`, which is reached by navigation from the record
+  page's "Play it ▶" link. Guarded by `35-playback-loads-samples`. The gesture handler still calls it (free —
+  already-decoded names are skipped); `audio.unlock()` remains gesture-bound, since *resuming* the context
+  genuinely needs one. **Routing lives in the DB, not the client:** two tables —
   **`sounds`** (`key → url + gain`, the asset registry) and **`sound_map`** (`(entity, class, event) → sound
   key`) — seeded from `SOUNDS`/`SOUND_MAP` in `catalog_seed.js`. Each **ship**/**weapon** carries a
   **`stats.class`** (ship `fighter`/`capital`/`player`; weapon `kinetic`/`cannon`/`rocket`). The per-sound

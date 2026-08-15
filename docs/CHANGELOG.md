@@ -5,6 +5,20 @@
 
 ## 2026-08-15
 
+- **Replaying your own recording no longer plays synthesized sfx instead of the real sounds.** Sample
+  preloading fired only from the gesture handler (or from bootstrap if a gesture had already happened), but
+  `?playback` is reached by NAVIGATION — the record page's "Play it ▶" link — so no gesture ever landed on
+  it, the replay auto-started with zero decoded buffers, and every shot fell back to its synth voice. The
+  shipped intro cutscene hid this completely: it opens on a "tap to begin" card, and that tap loaded the
+  samples before the first tick — so the sounds were right in production and wrong the moment you replayed a
+  fight you had just recorded, which is how it was reported. Bootstrap now preloads as soon as the sound
+  catalog lands, ungated: decoding needs an `AudioContext`, not a *running* one. `audio.unlock()` stays
+  gesture-bound (resuming the context really does need one). Consequence worth knowing: the sample set
+  (~3.2 MB, dominated by `music_combat_2` at 2.5 MB) is now fetched on page load rather than on the first
+  click — in practice the same bytes a few hundred ms earlier, since any real session clicks within seconds.
+  New guard `client/visual/scenarios/35-playback-loads-samples.mjs` opens the bare `?playback` page, touches
+  nothing, and asserts the `kinetic`/`cannon`/`rocket` mp3s were fetched; verified to fail on the pre-fix
+  code and pass after.
 - **Level-0 intro cutscene re-recorded** (`level0-intro.6674d840.json`, 3490 ticks / 58 s, seed 78672849,
   trace v3 on `level-0`). The aim-assist change below shifts the seeded gameplay stream, so the old trace
   desynced — it re-simmed to 3/4 kills with the fight unfinished. The new recording re-sims to 4 kills, all

@@ -1625,7 +1625,16 @@ async function bootstrap() {
     audio.setSampleGains(Object.fromEntries((sounds.sounds || []).map((s) => [s.key, s.gain ?? 1]))); // per-sound playback gain (DB sounds.gain)
     for (const m of (sounds.map || [])) { const k = `${m.entity}|${m.class}|${m.event}`; (soundMap.get(k) || soundMap.set(k, []).get(k)).push(m.sound); }
     audio.setMusicTracks({ hangar: tracksFor('scene', 'hangar', 'music'), combat: tracksFor('scene', 'combat', 'music') }); // looping bg music per scene
-    if (samplesLoaded) audio.preloadSamples(soundUrls); // a gesture already unlocked the ctx before bootstrap finished
+    // Load the samples as soon as we know their URLs — NOT only when a gesture already happened. Decoding
+    // needs an AudioContext but not a RUNNING one (preloadSamples calls ensure(), and a suspended ctx
+    // decodes fine), so gating this on a gesture bought nothing and cost us every sound on any page that
+    // starts playing without one. That is exactly `?playback`: it is reached by NAVIGATION from the record
+    // page's "Play it ▶" link, so no gesture ever lands on it, the replay auto-starts, and every shot fell
+    // back to its synth voice. The real intro cutscene hid the bug — its opening "tap to begin" card is a
+    // gesture before the first tick. Idempotent (already-decoded names are skipped), so the gesture handler
+    // re-calling it is free.
+    samplesLoaded = true;
+    audio.preloadSamples(soundUrls);
     // Weapons are flattened (stats spread to top level); keep the model URLs too (the `...w.stats` spread
     // also lifts `stats.model` to a top-level `model` key — read by itemModelCfg). Components are stored
     // whole, so their `modelUrlHigh` + nested `stats.model` flow through as-is.
