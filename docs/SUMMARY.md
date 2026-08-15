@@ -2054,16 +2054,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (default the intense **flame**; **point-glow** is a `?dev`-only legacy option). The old `trail` particle pool (`state.js`) and `spawnTrail` are **removed**;
   `liveParticles()` no longer counts exhaust (only sparks + rocket smoke). Plumes are disposed on ship
   **death/reset** (`disposeShipExhaust`) and on **player ship-swap** (`ship-build.js buildPlayerFor`).
-- **Kinetic fire visual** (`bolt-fx.js`): kinetic bullets render as a **travel-aligned additive bolt**
+- **Gun fire visual** (`bolt-fx.js`): kinetic **and cannon** bullets render as a **travel-aligned additive bolt**
   laid flat on the combat plane, instead of the old flat opaque sphere. The bolt texture is a **crisp
   bright capsule core** (a near-opaque rounded-rect drawn on the shared, once-uploaded canvas) wrapped in
   a **faint soft halo** — a clearly-outlined body + thin fog rim, rather than the earlier radial gradient
-  that read as a mutable oval up close. Body size `BOLT_LEN` 2.4 × `BOLT_WID` 0.7 world units. Each shot
+  that read as a mutable oval up close. Base body size `BOLT_LEN` 2.4 × `BOLT_WID` 0.7 world units,
+  multiplied by the weapon class's `BOLT_SCALE` (`projectiles.js`) — **kinetic 1, cannon 1.7**, so a
+  Heavy cannon slug is the same bolt with more heft (matching its 2× `HIT_FLASH_SCALE`). Each shot
   also pops a quick **muzzle flash** at the barrel — now its own flat additive **glow sprite** (round
   radial texture, same FX family as the bolt/shockwave ring, ~30% smaller than the old sphere flash it
-  replaced), pushed into the `explosions` pool so `sim.update()` grows + fades it. One draw call per shot;
-  other weapon classes keep the plain sphere. Replay-safe (bolt orientation is derived from the constant
-  bullet velocity — no RNG). `spawnBullet` branches on `weapon.class`.
+  replaced), scaled by the same `BOLT_SCALE` and pushed into the `explosions` pool so `sim.update()`
+  grows + fades it. One draw call per shot; a class with no `BOLT_SCALE` entry keeps the plain sphere.
+  Purely cosmetic (a bullet's hit test is a point) and replay-safe (bolt orientation is derived from the
+  constant bullet velocity — no RNG). `spawnBullet` looks the scale up by `weapon.class`.
 - **Muzzle / exhaust spawn from the model's real bounds.** Bullets/rockets leave the **nose** and the
   exhaust plume streams from the **engines** because `applyShipModel` caches each glb's forward/back extent
   (`mesh.userData.noseZ` / `tailZ`, group-local); `fireMount` fires from `noseZ` × the mesh's current world

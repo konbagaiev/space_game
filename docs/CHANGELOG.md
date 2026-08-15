@@ -5,6 +5,12 @@
 
 ## 2026-08-15
 
+- **Cannon shells are glowing bolts now, sized to the class.** The Heavy cannon (and the enemy cannon)
+  fired the old flat opaque sphere while every kinetic gun already fired the travel-aligned additive bolt;
+  both cannon classes now use the same `bolt-fx.js` bolt + muzzle flash, scaled **1.7×** via the new
+  `BOLT_SCALE` map in `projectiles.js` (kinetic stays 1). A cannon slug reads as a visibly heavier tracer,
+  matching the bigger hit flash it already had. Cosmetic only — the bullet's hit test is still a point,
+  and there is no RNG, so recorded replays are unaffected.
 - **The ship can no longer fly backwards — `S`/`↓` is now a brake.** The reverse thruster was a
   keyboard-only ability (touch steering can only push forward, `touchAim.thrust` is 0..1) and it let a
   player retreat while keeping the guns on an enemy, which is a kite rather than a dogfight. `S`/`↓` now

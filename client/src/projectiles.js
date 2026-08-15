@@ -38,17 +38,25 @@ export function spawnEnemyShieldHit(enemy, pos, broke = false) { registerEnemySh
 // bullets moved to src/state.js
 export const bulletGeo = new THREE.SphereGeometry(0.28, 8, 8);
 
+// Bolt size by weapon class: the glowing tracer look is shared, the heft is not — a Heavy cannon slug
+// reads as a chunkier version of the kinetic bolt (same texture, same tint rules, 1.7x the world size,
+// matching its 2x hit flash in HIT_FLASH_SCALE). A class with no entry here falls back to bulletGeo.
+export const BOLT_SCALE = { kinetic: 1, cannon: 1.7 };
+
 export function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
   // velocity = projectile speed along the nose + ship velocity (inherited)
   const vel = dir.clone().normalize().multiplyScalar(weapon.projectileSpeed);
   if (shooterVel) vel.add(shooterVel);
-  // Kinetic fire = a glowing, travel-aligned energy bolt + a quick muzzle flash at the barrel; other
-  // classes keep the plain sphere. Both are a single Mesh with one material (disposed on despawn in
-  // sim.js). No Math.random → replay-safe (bolt orientation is derived from the constant velocity).
+  // Gun fire = a glowing, travel-aligned energy bolt + a quick muzzle flash at the barrel, sized by the
+  // weapon class (see BOLT_SCALE — a cannon fires the same bolt, just bigger); classes with no entry
+  // (rockets aside, none today) keep the plain sphere. Both are a single Mesh with one material
+  // (disposed on despawn in sim.js). No Math.random → replay-safe (bolt orientation is derived from the
+  // constant velocity, and the bullet's hit test is a point, so size is purely cosmetic).
   let m;
-  if (weapon.class === 'kinetic') {
-    m = makeBolt(weapon.projectileColor, vel);
-    spawnMuzzleFlash(from, weapon.projectileColor);
+  const boltScale = BOLT_SCALE[weapon.class];
+  if (boltScale) {
+    m = makeBolt(weapon.projectileColor, vel, boltScale);
+    spawnMuzzleFlash(from, weapon.projectileColor, boltScale);
   } else {
     m = new THREE.Mesh(bulletGeo, new THREE.MeshBasicMaterial({ color: weapon.projectileColor }));
   }
@@ -58,7 +66,7 @@ export function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
   bullets.push({ mesh: m, vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power, class: weapon.class });
 }
 
-// Quick bright additive pop at the gun barrel on each kinetic shot — a flat glow SPRITE (same family as
+// Quick bright additive pop at the gun barrel on each gun shot — a flat glow SPRITE (same family as
 // the bolt / shockwave ring) rather than the faceted micro-explosion sphere, tinted to match the bolt.
 // Pushed into the `explosions` pool so sim.update() grows + fades it (geometry-agnostic).
 const flashQuadGeo = new THREE.PlaneGeometry(2, 2);
@@ -82,7 +90,7 @@ function flashTexture() {
   return flashTex;
 }
 
-function spawnMuzzleFlash(pos, color) {
+function spawnMuzzleFlash(pos, color, scale = 1) {
   const mat = new THREE.MeshBasicMaterial({
     map: flashTexture(), color, transparent: true, opacity: 1,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
@@ -92,7 +100,7 @@ function spawnMuzzleFlash(pos, color) {
   m.rotation.x = -Math.PI / 2;                // flat on the combat plane, read face-on by the top-down cam
   m.renderOrder = 2;                          // over the ship hull (additive, no depth write)
   scene.add(m);
-  explosions.push({ mesh: m, life: 0.06, maxLife: 0.06, maxScale: 1.19 }); // 1.19 ≈ 30% smaller than the old 1.7 sphere flash
+  explosions.push({ mesh: m, life: 0.06, maxLife: 0.06, maxScale: 1.19 * scale }); // 1.19 ≈ 30% smaller than the old 1.7 sphere flash; scaled by the weapon's bolt size
 }
 
 // Live count of the high-volume additive particles (burst sparks + rocket smoke). The hard ceiling

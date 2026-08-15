@@ -50,9 +50,10 @@ function boltTexture() {
 const boltGeo = new THREE.PlaneGeometry(1, 1);
 const _dir = new THREE.Vector3(), _side = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _basis = new THREE.Matrix4();
 
-// Build a kinetic bolt mesh tinted by `color`, laid flat on the combat plane with its long axis along
-// `vel`. Caller sets position + adds to the scene; velocity is constant so orientation is set once.
-export function makeBolt(color, vel) {
+// Build a bolt mesh tinted by `color`, laid flat on the combat plane with its long axis along `vel`.
+// `scale` multiplies both dimensions, so a heavier weapon class (cannon) fires the SAME bolt, just
+// bigger. Caller sets position + adds to the scene; velocity is constant so orientation is set once.
+export function makeBolt(color, vel, scale = 1) {
   const mat = new THREE.MeshBasicMaterial({
     map: boltTexture(), color, transparent: true,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
@@ -64,7 +65,7 @@ export function makeBolt(color, vel) {
   _side.crossVectors(_up, _dir);                 // in-plane perpendicular
   _basis.makeBasis(_dir, _side, _up);            // X=travel, Y=across, Z=up (quad faces the camera)
   m.quaternion.setFromRotationMatrix(_basis);
-  m.scale.set(BOLT_LEN, BOLT_WID, 1);
+  m.scale.set(BOLT_LEN * scale, BOLT_WID * scale, 1);
   m.renderOrder = 2;                             // draw over opaque ships/hull (additive, no depth write)
   return m;
 }
