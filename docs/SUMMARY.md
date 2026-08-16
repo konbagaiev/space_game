@@ -3,7 +3,9 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-15 (**No reverse: `S`/`↓` is a brake** — the ship can no longer be thrust backwards along
+**Updated:** 2026-08-16 (**Large/foldable phones keep phone chrome in fullscreen** — the device `form` axis now
+classifies `phone` by the viewport's shortest edge, so a Galaxy Fold cover no longer flips to tablet sizing when
+fullscreen hides the browser chrome; see the device-model paragraph below and DECISIONS §114.) Prior: (**No reverse: `S`/`↓` is a brake** — the ship can no longer be thrust backwards along
 its nose (a keyboard-only ability touch can't have, and a kite the enemy AI can't answer); the key now bleeds
 speed to 0 with the autopilot's kinematic decel, `W`+`S` thrusts, DECISIONS §113. Previously: **Sampled sfx
 load without waiting for a gesture** — `?playback` is reached by
@@ -175,8 +177,11 @@ Basic Auth [`ADMIN_USER`/`ADMIN_PASSWORD`, 404 when unset]; a new write-once `pl
 only under the `?dev` flag via the new `client/src/dev.js`/`isDev()`; see the Perf overlay bullet below.
 Prior: device-support architecture [iteration 1] + desktop Main Window polish — a two-axis
 device model in `client/src/device.js` replaces the old `isTouch` boolean: an **input** axis [`touch`/`mouse`,
-~constant per session] and a **form** axis [`phone`/`tablet`/`desktop`/`desktop-lg`, recomputed on resize from
-the viewport's longest edge], projected onto `input-touch|input-mouse` + `dev-phone|dev-tablet|dev-desktop|
+~constant per session] and a **form** axis [`phone`/`tablet`/`desktop`/`desktop-lg`, recomputed on resize;
+`phone` is decided by the viewport's **shortest** edge [`< 600` CSS px], the larger tiers by the **longest**
+edge [`< 1280` tablet, `< 1920` desktop, else desktop-lg] — both orientation-invariant, and the short-edge
+phone test keeps large/foldable phones [Galaxy Fold cover ≈ 369×905, iPhone Pro Max] on phone chrome even
+after fullscreen hides the browser chrome and grows the long edge past 900], projected onto `input-touch|input-mouse` + `dev-phone|dev-tablet|dev-desktop|
 dev-desktop-lg` body classes [`body.touch` kept as a compat alias]; the desktop [`dev-desktop(-lg)`] Main Window
 now reads bigger/cleaner [32px title, 26px text, ×2 ship-stats on one line (a Loadout-only strip today), granted item centered below the text,
 fixed-height Loadout/Stash/Shop, Take-off following the content]; mobile/touch unchanged; itch.io HTML5 export — `npm run build:itch` assembles a static ZIP that runs on itch.io and talks to the live backend; client `/api` calls go through a baked `API_BASE` [`client/src/api-base.js`: empty same-origin, prod origin on the itch build]; server gained `/api` CORS [reflect Origin, no credentials] + dual-path bearer-token auth [login/register/reset return the token in the body, `Authorization: Bearer` accepted alongside the cookie]; self-service password reset — forgot-password → emailed `/?reset=TOKEN` link → new-password modal; enumeration-safe endpoint [always 200], 1 h token TTL, all sessions invalidated + email auto-verified on reset, auto-login after; migration 017 + Postgres parity; EN+RU strings; hangar no longer crashes when a required slot [hull/engine/thruster] is unequipped — `buildPlayer`/`deriveDrive` are null-safe and the Take-off gate blocks launch; briefing-showcase strut height now subtracts the gun's 8px margin so the Main Window briefing no longer grows a phantom scrollbar; component/weapon 3D models — items now carry an optional hangar `model_url_high` like ships [migration 016], shown as a spinning menu icon via the generalized ship-or-item preview; first two item models = Repair drone + Machine Gun; mission briefings showcase the granted item [MG on L2, repair drone on L3] spinning at full size in a viewer floated into the BOTTOM-RIGHT CORNER of the mission text (the text wraps around it via the classic strut+float trick) via a server-derived `showcase {kind,id}`; fixed a Postgres auth-session race [await the session insert]; Main Window redesign — the between-battles screen dropped the "Hangar" name for a fixed landscape layout: top bar (gear + nickname/auth + enlarged Vega Sentinels wordmark + inactive Ships), left menu (Missions/Loadout/Stash/Shop), center work zone, and a 25% right column [then a live ship-model preview, since replaced by the mission list]; the side-mission board + modal moved into the left menu's collapsible Missions list (campaign primary + side secondary), the shop bay opens in the work zone, code/DOM/i18n renamed hangar→main/mw; machine-gun/kinetic fire SFX trimmed −30% via DB per-sound gain; enemies renamed enemy→pirate; advanced tier uses orange ship models; low-end-phone perf: measured on two GPUs that the weak-device bottleneck is **CPU

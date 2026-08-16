@@ -3,6 +3,18 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-16
+
+- **Loadout no longer balloons on large/foldable phones after entering fullscreen.** The device **form**
+  axis classified `phone` off the viewport's **longest** edge (`< 900` CSS px). On a Galaxy Fold cover
+  screen (≈ 369×905 CSS px) hiding the browser chrome on fullscreen grew the long edge past 900, flipping
+  `phone→tablet` mid-session — the `dev-phone` shrink rules dropped and the loadout slots + right-panel
+  fonts jumped to tablet sizes. `classifyForm` now decides `phone` by the **shortest** edge (`< 600`) and
+  the larger tiers by the longest edge; both stay orientation-invariant and the short edge barely moves
+  when chrome hides, so the class is stable across fullscreen. Also fixes large phones (e.g. iPhone Pro
+  Max, long edge 932) that were already misclassified as tablet. `client/src/device.js` +
+  `device.test.js`; DECISIONS §114.
+
 ## 2026-08-15
 
 - **Cannon shells are glowing bolts now, sized to the class.** The Heavy cannon (and the enemy cannon)

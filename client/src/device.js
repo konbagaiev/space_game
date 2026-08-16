@@ -20,18 +20,27 @@ const FS_API = hasWindow && !!(document.documentElement.requestFullscreen
 const STANDALONE = hasWindow && (window.navigator.standalone === true
   || mm('(display-mode: standalone)'));
 
-// PURE: form factor from the viewport's LONGEST edge (so orientation never flips the form). Unit-tested.
-export function classifyForm(longest) {
-  if (longest < 900) return 'phone';
+// PURE: form factor from the viewport dimensions. `phone` is decided by the SHORTEST edge, the larger
+// tiers by the LONGEST edge — both are orientation-invariant (min/max are symmetric). The short-edge phone
+// test is the fix for the fullscreen flip on large/foldable phones (e.g. Galaxy Fold cover ≈ 369×905 CSS px):
+// hiding the browser chrome grows the LONGEST edge past the old 900 threshold and used to flip phone→tablet,
+// ballooning the loadout chrome. A handheld's short edge (≤ ~450) never approaches a tablet's (iPad mini 744),
+// and chrome-hiding barely moves it, so the classification stays stable across fullscreen. Unit-tested.
+// `shortest` defaults to `longest` so single-arg callers/tests still describe a square-ish viewport.
+export function classifyForm(longest, shortest = longest) {
+  if (shortest < 600) return 'phone';
   if (longest < 1280) return 'tablet';
   if (longest < 1920) return 'desktop';
   return 'desktop-lg';
 }
 
+// Classify the current window (longest + shortest edge). Small helper so Device.form and applyDevice agree.
+const formOf = (w, h) => classifyForm(Math.max(w, h), Math.min(w, h));
+
 export const Device = {
   hasTouch, canHover, FS_API, STANDALONE,
   input: hasTouch ? 'touch' : 'mouse',  // ~constant per session
-  form: hasWindow ? classifyForm(Math.max(window.innerWidth, window.innerHeight)) : 'desktop',
+  form: hasWindow ? formOf(window.innerWidth, window.innerHeight) : 'desktop',
 };
 
 const FORM_CLASSES = ['dev-phone', 'dev-tablet', 'dev-desktop', 'dev-desktop-lg'];
@@ -42,7 +51,7 @@ const FORM_CLASSES = ['dev-phone', 'dev-tablet', 'dev-desktop', 'dev-desktop-lg'
 // sets the classes on a form change — acting on layout beyond CSS is deferred to iteration 2.
 export function applyDevice() {
   if (!hasWindow || !document.body) return;
-  Device.form = classifyForm(Math.max(window.innerWidth, window.innerHeight));
+  Device.form = formOf(window.innerWidth, window.innerHeight);
   const b = document.body, touch = Device.input === 'touch';
   b.classList.toggle('input-touch', touch);
   b.classList.toggle('input-mouse', !touch);

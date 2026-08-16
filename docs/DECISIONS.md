@@ -4117,3 +4117,33 @@ there instead — a test asserts no combination of movement keys can yield `thru
 recording containing it. The shipped Level-0 intro trace (`level0-intro.6674d840.json`) contains no `KeyS` /
 `ArrowDown` — checked before the change, and `22-intro-replay` stays green. Archived *session* recordings
 that used reverse will replay differently in `/admin/sessions`; accepted, they are diagnostic material.
+
+## 114. The `phone` form factor is decided by the SHORTEST edge, not the longest
+
+`classifyForm` used to key every tier off the viewport's **longest** edge, with `phone` below 900 CSS px —
+chosen so orientation never flips the form (`max(w,h)` is symmetric, §34). It has one failure the maintainer
+hit on a Galaxy Fold: the cover screen is ≈ 369×905 CSS px, so its **long** edge sits right at the 900
+boundary. Entering fullscreen hides the browser chrome, the long edge grows past 900, and the form flips
+`phone→tablet` mid-session — the whole `dev-phone` shrink pass (slot chips, right-panel fonts) drops and the
+loadout balloons. The S21 (360×800) never crosses 900 in either state, so it never showed the bug.
+
+**The fix: classify `phone` by `min(w,h) < 600`; the larger tiers keep the longest edge.** The short edge is
+the honest discriminator — a handheld's shorter dimension is ≤ ~450 CSS px (S21 360, iPhone Pro Max 430, Fold
+cover 369) while a tablet's is ≥ ~740 (iPad mini 744), a gap no phone approaches. It is still
+orientation-invariant (`min` is symmetric), and — unlike the long edge — it barely moves when the browser
+chrome hides, so the classification is stable across the fullscreen toggle. As a bonus it corrects large
+phones (iPhone Pro Max, long edge 932) that the old rule already mislabelled tablet.
+
+**Why not aspect ratio or User-Agent** (both raised and rejected). *Aspect ratio* fails on desktop: a 16:9
+browser window (1.78) is indistinguishable from a phone in landscape (~2.2), and an iPad in landscape (1.33)
+from a narrow desktop window — it needs a size gate anyway, which is what the short edge already gives.
+*User-Agent sniffing* is brittle (spoofed UAs, desktop-mode on phones, unknown new devices) and redundant: the
+capability signal we actually need — "is this a handheld touch device" — is already the separate `input`
+axis (`pointer: coarse`), not something to re-derive from a UA string.
+
+**Scope.** `classifyForm(longest, shortest)` (two-arg; `shortest` defaults to `longest` for the square-ish
+single-arg test cases). A local `formOf(w, h)` feeds it `max`/`min` at both call sites (`Device.form`,
+`applyDevice`). CSS and the `dev-phone|dev-tablet|…` classes are unchanged — only *which* devices land in
+`dev-phone`. The only side effect is that a small desktop *window* (short edge ≥ 600 but long edge < 900,
+e.g. 800×700) is now `tablet` rather than `phone`; that layout is roomier, not smaller, so it is a
+non-issue. Guarded by `device.test.js` (Fold-cover both chrome states, Pro Max, iPad mini).
