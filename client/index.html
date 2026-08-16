@@ -301,6 +301,48 @@
 }
 </script>
 
+<!-- TEMP viewport diagnostic (?diag): cache-proof inline readout for the fullscreen loadout-scale bug.
+     Remove once the root cause is pinned. Shows real viewport dims + the actual resolved .sc-name font. -->
+<script>
+if (location.search.includes('diag')) {
+  var box = document.createElement('div');
+  box.style.cssText = 'position:fixed;top:6px;left:6px;z-index:99999;background:rgba(0,0,0,.85);color:#0f0;'
+    + 'font:12px/1.35 monospace;padding:8px 10px;border:1px solid #0a0;border-radius:6px;white-space:pre;'
+    + 'pointer-events:none;max-width:70vw';
+  document.body.appendChild(box);
+  // Offscreen probe with the real classes, so we read what CSS resolves to even when Loadout is closed.
+  var probe = document.createElement('div');
+  probe.className = 'slot-chip';
+  probe.innerHTML = '<div class="sc-name">probe</div>';
+  probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;visibility:hidden';
+  document.body.appendChild(probe);
+  var probeName = probe.querySelector('.sc-name');
+  var n = 0;
+  function render(ev) {
+    if (ev) n++;
+    var w = innerWidth, h = innerHeight, vv = window.visualViewport;
+    var f = Math.min(w, h) < 600 ? 'phone' : (Math.max(w, h) < 1280 ? 'tablet'
+      : (Math.max(w, h) < 1920 ? 'desktop' : 'desktop-lg'));
+    box.textContent =
+      'inner   ' + w + ' x ' + h + '\n' +
+      'dpr     ' + devicePixelRatio + '\n' +
+      'min/max ' + Math.min(w, h) + ' / ' + Math.max(w, h) + '\n' +
+      'visualVP ' + (vv ? Math.round(vv.width) + ' x ' + Math.round(vv.height) + ' @' + vv.scale.toFixed(2) : 'n/a') + '\n' +
+      'form(calc) ' + f + '\n' +
+      'fullscreen ' + !!document.fullscreenElement + '\n' +
+      'sc-name px ' + getComputedStyle(probeName).fontSize + '\n' +
+      'slot-chip w ' + getComputedStyle(probe).minWidth + '\n' +
+      'body.class ' + document.body.className + '\n' +
+      'resize#  ' + n;
+  }
+  addEventListener('resize', render);
+  addEventListener('orientationchange', render);
+  document.addEventListener('fullscreenchange', render);
+  document.addEventListener('webkitfullscreenchange', render);
+  setTimeout(render, 300); setTimeout(render, 1200); // after modules apply body classes
+}
+</script>
+
 <script type="module">
 import './src/main.js';
 </script>
