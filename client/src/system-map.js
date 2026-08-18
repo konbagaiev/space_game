@@ -52,7 +52,7 @@ export const SYSTEM = {
   // from its own anchor, so a body stays solid across its whole neighbourhood; `out` completes the ramp
   // before the body could ever enter the frustum, so approaching one fades it in instead of popping it.
   fade: { full: 520, out: 760 },
-  belt: { inner: 16000, outer: 24000 }, // asteroid belt just outside planet 2's orbit (map UI only)
+  belt: { inner: 11200, outer: 16800 }, // asteroid belt just outside planet 2's orbit (map UI only)
   // Vega — a .glb sun (see world.js makeStarMesh; the seed's `system.star` block is merged over this).
   // `color` is the map-marker / procedural-fallback colour; `size` is the VISUAL radius (1.6x a planet).
   star: { name: 'star', color: 0xffd9a0, size: 96, depth: 300,
@@ -61,17 +61,17 @@ export const SYSTEM = {
           lift: 0.35, liftNear: 300, liftFar: 1200,
           dust: 1, dustNear: 400, dustFar: 760 },
   planets: [
-    { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
+    { name: 'planet1', orbitR: 6300,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
     // Base planet — pinned to the world origin, so its anchor IS the base neighbourhood and it is the one
     // body you see without travelling. Its moons orbit it in world space, clear of its limb (moonClearance).
-    { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 60, depth: 285,
+    { name: 'planet2', orbitR: 10500, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 60, depth: 285,
       ocean: true,
       moons: [
         { name: 'moon1', size: 10, orbitR: 112, periodS: 96,  phase0: 0.60, tilt: 0.28,  color: 0x9aa2ad },
         { name: 'moon2', size: 7,  orbitR: 158, periodS: 171, phase0: 3.40, tilt: -0.18, color: 0x8b8f98 },
       ] },
-    { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 58, depth: 285 },
-    { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 52, depth: 285 },
+    { name: 'planet3', orbitR: 15400, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 58, depth: 285 },
+    { name: 'planet4', orbitR: 21000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 52, depth: 285 },
   ],
 };
 
@@ -101,6 +101,50 @@ export function bodyWorldPos(name, tNow) {
   if (!p) return { x: 0, z: 0 };
   const a = bodyAngle(p.periodDays, p.phase0, tNow);
   return { x: sx + Math.cos(a) * p.orbitR, z: sz + Math.sin(a) * p.orbitR };
+}
+
+// ---------- Star-centered (canonical) frame + the local⇄world transform (see docs/plans/heliocentric-coordinate-frame.md) ----------
+// The CANONICAL frame puts the STAR at the origin. `bodyWorldPos` above returns LOCAL coordinates (planet 2
+// pinned to (0,0)) — the frame ALL gameplay still runs in, numerically unchanged. These helpers expose the
+// underlying star frame and the pure transform between the two, so objects can be authored either "attached
+// to planet 2" (local, as today) or "fixed in space" (star frame, converted to local for placement).
+//
+// A "zone" is simply an ORIGIN POINT in the star frame; the transform takes that origin as a PARAMETER (not a
+// hardcoded "planet 2") so isolated combat zones can reuse it later without a rewrite. Today the only origin
+// is planet 2's base neighbourhood — `planetOriginOffset(tNow)`. All pure (Date.now-free — pass tNow).
+//
+// NOTE ON DRIFT: the base's orbit is angularly slow (~0.17°/min) but LINEAR speed at orbitR 10500 is
+// ~0.51 u/s, so a space-fixed point drifts ~31 u/min relative to the base — visible over minutes of roam,
+// and it laps the whole orbit every ~1.5 days. So "fixed in space" is a real, moving relationship, not a
+// rounding-error nicety.
+
+// A body's own orbit vector {x,z} around the star at wall-clock tNow — the planet's position IN THE STAR FRAME.
+export function orbitVec(spec, tNow) {
+  const a = bodyAngle(spec.periodDays, spec.phase0, tNow);
+  return { x: Math.cos(a) * spec.orbitR, z: Math.sin(a) * spec.orbitR };
+}
+
+// Star-centered position {x,z} of a body: the star is the origin, each planet sits at its own orbit vector.
+// This is `bodyWorldPos` WITHOUT the planet-2 shift: bodyWorldPos(n,t) === worldToLocal(starWorldPos(n,t), planetOriginOffset(t)).
+export function starWorldPos(name, tNow) {
+  if (name === 'star') return { x: 0, z: 0 };
+  const p = planetByName(name);
+  if (!p) return { x: 0, z: 0 };
+  return orbitVec(p, tNow);
+}
+
+// Planet 2's star-frame position at tNow — the world-frame ORIGIN of today's only zone (the base neighbourhood).
+export function planetOriginOffset(tNow) {
+  return orbitVec(BASE, tNow);
+}
+
+// Convert a star-frame point into a zone's local frame (subtract the zone origin), and back. `originWorld` is
+// any star-frame origin — `planetOriginOffset(tNow)` for the base zone today. Pure inverses of each other.
+export function worldToLocal(pt, originWorld) {
+  return { x: pt.x - originWorld.x, z: pt.z - originWorld.z };
+}
+export function localToWorld(pt, originWorld) {
+  return { x: pt.x + originWorld.x, z: pt.z + originWorld.z };
 }
 
 // All backdrop bodies (star + planets) with their render params + live world position (for build/bearing).

@@ -8,6 +8,7 @@ import {
   inActivityZone, capLifted, arrivedAtPoint, activityZoneCenters, ANCHORS,
   bodyRenderPos, bodyClearance, bodyFade, moonAngle, moonClearance, planetAnchor, listSystemObjects,
   objectForMission, objectForActiveMission, systemRadius, applySystemSpec, ZONE_RADIUS,
+  orbitVec, starWorldPos, planetOriginOffset, worldToLocal, localToWorld,
 } from './system-map.js';
 // The seed's set-pieces are pure data (no DB import), so the anchor↔set-piece invariant is checkable here.
 import { MAPS } from '../../server/src/catalog_seed.js';
@@ -45,6 +46,46 @@ test('a body returns to the same position after one full period', () => {
   const a = bodyWorldPos('planet3', t0);
   const b = bodyWorldPos('planet3', t0 + sixDays);
   assert.ok(Math.hypot(a.x - b.x, a.z - b.z) < 1e-3, `same after 6 days (${a.x},${a.z} vs ${b.x},${b.z})`);
+});
+
+// ---------- Star-centered frame + the local⇄world transform (docs/plans/heliocentric-coordinate-frame.md) ----------
+
+test('bodyWorldPos == worldToLocal(starWorldPos, planetOriginOffset) for every body — the LOCAL frame IS the star frame shifted by planet 2', () => {
+  for (const t of [EPOCH, EPOCH + 7654321, EPOCH + 3e10]) {
+    const off = planetOriginOffset(t);
+    for (const name of BODY_NAMES) {
+      const viaStar = worldToLocal(starWorldPos(name, t), off);
+      const local = bodyWorldPos(name, t);
+      assert.ok(Math.hypot(viaStar.x - local.x, viaStar.z - local.z) < 1e-6,
+        `${name}@${t}: ${viaStar.x},${viaStar.z} vs ${local.x},${local.z}`);
+    }
+  }
+});
+
+test('worldToLocal / localToWorld are exact inverses about any origin', () => {
+  const pt = { x: 6971, z: -13949 }, origin = { x: 6350.6, z: -13589.3 };
+  const back = localToWorld(worldToLocal(pt, origin), origin);
+  assert.equal(back.x, pt.x);
+  assert.equal(back.z, pt.z);
+});
+
+test('the star is the origin of the star frame; planet 2 sits at planetOriginOffset', () => {
+  const t = EPOCH + 123456;
+  assert.deepEqual(starWorldPos('star', t), { x: 0, z: 0 });
+  const p2 = starWorldPos('planet2', t), off = planetOriginOffset(t);
+  assert.ok(Math.hypot(p2.x - off.x, p2.z - off.z) < 1e-9);
+  // orbitVec is the planet's own star-frame position, so planet 2's is exactly the origin offset.
+  assert.deepEqual(planetOriginOffset(t), orbitVec(SYSTEM.planets[1], t));
+});
+
+test('a SPACE-FIXED point stays put in the star frame while its LOCAL position drifts as the base orbits', () => {
+  const world = { x: 0, z: 1000 };                 // the demo beacon: 1000 u south of the star
+  const t0 = EPOCH, t1 = EPOCH + 60_000;           // one minute later
+  const l0 = worldToLocal(world, planetOriginOffset(t0));
+  const l1 = worldToLocal(world, planetOriginOffset(t1));
+  const drift = Math.hypot(l1.x - l0.x, l1.z - l0.z);
+  // ~0.51 u/s ⇒ ~31 u over a minute (base linear speed at orbitR 10500); assert it actually moves, on that order.
+  assert.ok(drift > 15 && drift < 60, `one-minute local drift of a fixed point ≈ 31 u, got ${drift.toFixed(1)}`);
 });
 
 // THE replay invariant, precisely: the cap is never lifted for INPUT-DRIVEN flight. A replay reproduces the

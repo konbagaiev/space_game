@@ -9,7 +9,7 @@ import { scene, skyScene, renderer, camera } from './engine.js';
 import { G, setPieces } from './state.js';
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
-import { SYSTEM, bodyRenderPos, bodyFade, moonAngle, applySystemSpec } from './system-map.js'; // pure star-system geometry + body placement
+import { SYSTEM, bodyRenderPos, bodyFade, moonAngle, applySystemSpec, planetOriginOffset, worldToLocal } from './system-map.js'; // pure star-system geometry + body placement
 import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
@@ -1137,7 +1137,23 @@ export function buildSetPiece(spec) {
     default: return; // unknown type → skip (forward-compatible with new set-pieces)
   }
   if (spec.scale && spec.scale !== 1) entry.obj.scale.setScalar(spec.scale);
-  entry.obj.position.set(...spec.pos);
+  // FRAME (see docs/plans/heliocentric-coordinate-frame.md). Default `frame:"planet:2"` — pos is a LOCAL
+  // offset in the base zone, placed verbatim (byte-identical to before). `frame:"world"` — pos is a STAR-frame
+  // (space-fixed) coordinate: convert to the base zone's local frame each frame so the object stays put in
+  // space while the base orbits past it. Placement only (never read by the sim → replay-neutral like the sky
+  // bodies; the [x,z] convert, y stays a literal depth).
+  if (spec.frame === 'world') {
+    const wx = spec.pos[0], wy = spec.pos[1], wz = spec.pos[2];
+    const place = () => {
+      const l = worldToLocal({ x: wx, z: wz }, planetOriginOffset(Date.now()));
+      entry.obj.position.set(l.x, wy, l.z);
+    };
+    place();
+    const inner = entry.update;
+    entry.update = (dt) => { if (inner) inner(dt); place(); };
+  } else {
+    entry.obj.position.set(...spec.pos);
+  }
   scene.add(entry.obj);
   setPieces.push(entry);
   // Stash the base station on G so the sim/HUD/click code can find it (the return-to-base target).

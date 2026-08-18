@@ -4147,3 +4147,46 @@ single-arg test cases). A local `formOf(w, h)` feeds it `max`/`min` at both call
 `dev-phone`. The only side effect is that a small desktop *window* (short edge ≥ 600 but long edge < 900,
 e.g. 800×700) is now `tablet` rather than `phone`; that layout is roomier, not smaller, so it is a
 non-issue. Guarded by `device.test.js` (Fold-cover both chrome states, Pro Max, iPad mini).
+
+## 115. Canonical star frame, but combat runs in a planet-2 FLOATING ORIGIN; objects tag a `frame`
+
+The world was authored with **planet 2 pinned to `(0,0)`** — the base, all set-pieces, mission centers and
+the four-way invariant (§98) live in that one origin-pinned frame, and `system-map.js`'s `bodyWorldPos`
+achieves it by placing the star at `−orbitVec(planet2)`. The maintainer wants the **star** to be the
+coordinate origin, planets orbiting it, and objects that are either *attached to a planet* or *fixed in
+space* — as a first stepping-stone toward the roadmap's Phase-5 multiplayer (a server-authoritative
+persistent overworld + isolated combat instances). See `docs/plans/heliocentric-coordinate-frame.md`.
+
+**Decision: make the CANONICAL frame star-centered, but keep the runtime working frame a planet-2 FLOATING
+ORIGIN.** The heliocentric math already existed, just inverted; we expose it (`starWorldPos`,
+`planetOriginOffset`, `worldToLocal`/`localToWorld`) and keep `bodyWorldPos` returning **local** coords, so
+`bodyWorldPos(n,t) === worldToLocal(starWorldPos(n,t), planetOriginOffset(t))` and every gameplay consumer is
+numerically unchanged.
+
+**Why not run combat in raw star coords** (the literal reading of "everything in the star frame"). The base
+sits ~10 500 u from the star, so combat would run far from the numeric origin — Float32 precision loss on the
+GPU, and a pile of code that assumes "the fight is near 0". A floating origin gives the maintainer what they
+actually asked (the base *does* drift within the star frame — space-fixed objects move relative to it at
+~0.51 u/s, lapping the orbit every ~1.5 days) while combat stays near 0. The base's linear drift is real and
+visible over minutes of roam; only the *angular* rate is slow (~0.17°/min) — an easy thing to misjudge.
+(orbitR here is 10 500 after the 2026-08-18 0.7× orbit compaction; it was 15 000 / ~0.73 u/s when first written.)
+
+**Why not keep planet 2 as the canonical origin** (the safe non-change). Then a "fixed in space" object is
+physically indistinguishable from a planet-attached one — they never move relative to each other — so the
+maintainer's core requirement (interactive objects the planet drifts past) is impossible. The distinction
+*requires* two frames that move relative to each other.
+
+**A "zone" is just an origin point, kept a parameter.** `worldToLocal(pt, origin)` takes the zone origin as
+an argument rather than hardcoding planet 2. Today the only origin is `planetOriginOffset(t)` (the base); an
+isolated combat instance later passes its own zone center. **No `Zone` type, registry, networking or server
+sim is built** — that generalization is the whole Phase-5 concession taken now, and it is authority-agnostic
+(the transform is identical whether client or server owns the sim), so this change does not commit us to
+client-vs-server authority. (Ethos §30: don't pre-build for scale — the parameter is free, the machinery is not.)
+
+**Determinism.** Space-fixed set-pieces are **decor not read by the sim**, so re-deriving their local
+position from `Date.now()` each frame is replay-neutral exactly like the sky bodies (§73) — the
+`22-intro-replay` guard stays byte-identical. The moment a `frame:"world"` object becomes **sim-facing**
+(collidable / a fight center), it must instead **snapshot `planetOriginOffset` at level entry** and hold it
+constant through the deterministic tick, or wall-clock would leak into the seeded stream and desync replays.
+That snapshot rule is specified in the plan and is a prerequisite for any future interactive world-fixed
+combat object — the current demo object is decor and deliberately does not need it.

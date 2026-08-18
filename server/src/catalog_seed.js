@@ -738,7 +738,7 @@ export const MAPS = [
         // framing ([-150,-285,-110] radius 60), now applied to every body
         offset: { x: -150, z: -110 },
         fade: { full: 520, out: 760 }, // fade a body in/out by distance from the SHIP instead of popping it
-        belt: { inner: 16000, outer: 24000 },
+        belt: { inner: 11200, outer: 16800 },
         // Vega. A .glb sun (CC-BY, see client/assets/CREDITS.md) rather than the emissive sphere it
         // replaces; `color` still drives the map marker and the procedural fallback if the model 404s.
         // `size` 96 (was 74) is the visual radius — 1.6x a planet, a deliberate step up now that it is a
@@ -759,17 +759,17 @@ export const MAPS = [
                 // becomes visible (`fade.out` 760) — everywhere you fly and fight the field is untouched.
                 dust: 1, dustNear: 400, dustFar: 760 },
         planets: [
-          { name: 'planet1', orbitR: 9000,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
+          { name: 'planet1', orbitR: 6300,  periodDays: 1.0, phase0: 0.40, color: 0xb08050, size: 54, depth: 285 },
           // Base planet: pinned to the world origin, so its anchor IS the base — the one body you see without
           // travelling. Its moons orbit it in world units, clear of the planet limb.
-          { name: 'planet2', orbitR: 15000, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 60, depth: 285,
+          { name: 'planet2', orbitR: 10500, periodDays: 1.5, phase0: 1.90, color: 0x5a82c0, size: 60, depth: 285,
             ocean: true,
             moons: [
               { name: 'moon1', size: 10, orbitR: 112, periodS: 96,  phase0: 0.60, tilt: 0.28,  color: 0x9aa2ad },
               { name: 'moon2', size: 7,  orbitR: 158, periodS: 171, phase0: 3.40, tilt: -0.18, color: 0x8b8f98 },
             ] },
-          { name: 'planet3', orbitR: 22000, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 58, depth: 285 },
-          { name: 'planet4', orbitR: 30000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 52, depth: 285 },
+          { name: 'planet3', orbitR: 15400, periodDays: 2.0, phase0: 3.30, color: 0x7fae86, size: 58, depth: 285 },
+          { name: 'planet4', orbitR: 21000, periodDays: 2.5, phase0: 5.10, color: 0xc0b0a0, size: 52, depth: 285 },
         ],
       },
       // Parallax speed field: a fixed pool of point sprites that WRAPS around the player every frame, so
@@ -861,6 +861,18 @@ export const MAPS = [
           type: 'space-factory', pos: [-420, -28, -405], scale: 1.0, spin: 0.02,
           modelUrl: 'assets/ships/space_factory_combat.0fc2ca0b.glb',
           yaw: 0, // a station has no "nose"; 0 reads fine top-down
+        },
+        // SPACE-FIXED demo (docs/plans/heliocentric-coordinate-frame.md, slice 3). Unlike every set-piece
+        // above (all `frame:"planet:2"` implicitly — attached to the base planet), this one is `frame:"world"`:
+        // its `pos` is a STAR-frame coordinate, so the client re-derives its LOCAL position every frame as the
+        // base orbits past it (world.js buildSetPiece). Placed 1000 u due SOUTH of the star (+z; screen-down),
+        // i.e. right by the star — so in the base's LOCAL frame it sits ~10 000 u away (the star is a real
+        // ~10 500 u trip) and you meet it on the run out to the star, not near the base. Its local position
+        // circles the base once per ~1.5-day orbit — the "fixed in space" relationship made literal.
+        // Procedural (no .glb → no CREDITS entry), non-collidable decor, so it is replay-neutral (DECISIONS §73).
+        {
+          type: 'research-station', frame: 'world', pos: [0, -125, 1000],
+          scale: 0.5, hue: 0x8a9bb5, spin: 0.06, tilt: 0.4,
         },
       ],
     }

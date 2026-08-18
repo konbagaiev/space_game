@@ -3,6 +3,30 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-18
+
+- **Star-centered canonical coordinate frame + per-object `frame` tag (foundation for multiplayer zones).**
+  The game's *canonical* world frame is now **heliocentric** — the star is the origin, planets sit at their
+  own orbit vectors — while all gameplay still runs in a **planet-2 floating origin** (numerically unchanged,
+  so combat/missions/replays are byte-identical). `client/src/system-map.js` gains a pure, node-tested seam:
+  `orbitVec`, `starWorldPos(name,t)`, `planetOriginOffset(t)` (planet 2's star-frame position = the base
+  zone's world origin), and `worldToLocal(pt,origin)` / `localToWorld` (exact inverses; a "zone" is just an
+  origin point, kept a parameter so instanced combat zones can reuse it later). Set-pieces carry an optional
+  **`frame`**: `"planet:2"` (default — pos is a local offset, placed verbatim as before) or `"world"` (pos is
+  a space-fixed STAR coordinate, re-derived to local **every frame** in `world.js` `buildSetPiece` so the
+  object holds its place while the base orbits past it at ~0.51 u/s). Added one demo `frame:"world"` object —
+  a procedural research-station **1000 u due south of the star** (star coord `(0,1000)`), so in the base's
+  local frame it sits ~10 000 u away, met on the run out to the star.
+- **Star system compacted — planet orbits scaled to 0.7× (30% closer).** Orbit radii dropped p1 9000→6300,
+  p2 (base) 15000→10500, p3 22000→15400, p4 30000→21000, and the asteroid belt 16000–24000→11200–16800, in
+  both the client `SYSTEM` (`system-map.js`) and the seed `system` block (`catalog_seed.js`). Shorter trips
+  between bodies; base-local gameplay (set-pieces, mission centers, anchors — all planet-2-local) is
+  unchanged, and the base's linear orbital drift drops to ~0.51 u/s. Moons (planet-relative) untouched.
+  New unit tests pin the frame identity, the inverse round-trip, and the space-fixed drift; the
+  `22-intro-replay` guard stays byte-identical (kills=4, p0..p4, won). Plan:
+  `docs/plans/heliocentric-coordinate-frame.md`; rationale DECISIONS §115. **No multiplayer machinery was
+  built** — this is coordinates only.
+
 ## 2026-08-16
 
 - **Loadout no longer balloons on large/foldable phones after entering fullscreen.** The device **form**

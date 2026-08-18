@@ -3,7 +3,12 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-16 (**Large/foldable phones keep phone chrome in fullscreen** — the device `form` axis now
+**Updated:** 2026-08-18 (**Star-centered canonical coordinate frame + per-object `frame` tag** — the canonical
+frame is now heliocentric (star at origin) with a planet-2 floating origin for gameplay; `system-map.js` gains a
+pure `starWorldPos`/`planetOriginOffset`/`worldToLocal`/`localToWorld` seam, set-pieces carry `frame:"planet:2"`
+(default, unchanged) vs `"world"` (space-fixed, re-derived to local each frame), with one demo world-fixed
+object near the base. Foundation toward instanced multiplayer zones; no gameplay/replay change. DECISIONS §115,
+see the star-system paragraph below.) Prior: (**Large/foldable phones keep phone chrome in fullscreen** — the device `form` axis now
 classifies `phone` by the viewport's shortest edge, so a Galaxy Fold cover no longer flips to tablet sizing when
 fullscreen hides the browser chrome; see the device-model paragraph below and DECISIONS §114.) Prior: (**No reverse: `S`/`↓` is a brake** — the ship can no longer be thrust backwards along
 its nose (a keyboard-only ability touch can't have, and a kite the enemy AI can't answer); the key now bleeds
@@ -1745,8 +1750,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Nothing is camera-anchored, so nothing re-projects and **nothing can jump**; perspective and parallax are
   just real 3D. Consequences:
   - **You have to fly there.** At the base you see planet 2 + the station and nothing else — the other bodies
-    are 9k–45k u away. `planetAnchor(name)` (the autopilot destination) is a body's own (x,z), so reaching
-    planet 3 is a real ~15 000 u crossing, and arriving frames it just like the home planet at the base.
+    are ~6k–32k u away (orbits compacted to 0.7× on 2026-08-18). `planetAnchor(name)` (the autopilot
+    destination) is a body's own (x,z), so reaching planet 3 is a real ~10 000 u crossing, and arriving frames
+    it just like the home planet at the base.
     Bodies **fade in/out by distance from the SHIP** (`bodyFade`, 520 → 760 u) instead of popping; keying the
     fade to the ship (not the camera) is what keeps zoom-out from fading the planet you're parked at.
   - **Permanently out of reach**, even directly overhead: a body's top is `depth − size` below the flight
@@ -1758,6 +1764,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   anchor *is* the base. The descriptor's `system` block is **merged into** the client `SYSTEM` at build
   (`applySystemSpec`), so renderer / map screen / `?roam` tunables share one object. Pure view layer →
   replay-neutral.
+  **Coordinate frames (docs/plans/heliocentric-coordinate-frame.md).** The *canonical* frame is
+  **star-centered** (star at origin); the frame everything runs in is a **planet-2 floating origin** — a
+  "zone" is just an origin point in the star frame, and today the only one is the base. `system-map.js`
+  exports the pure seam: `starWorldPos(name,t)` (heliocentric position), `planetOriginOffset(t)` (planet 2's
+  star-frame position = the base zone's world origin, drifting ~0.51 u/s along its orbit), and
+  `worldToLocal(pt,origin)` / `localToWorld` (exact inverses). Identity: `bodyWorldPos(n,t) ===
+  worldToLocal(starWorldPos(n,t), planetOriginOffset(t))`. Set-pieces carry an optional **`frame`**: default
+  `"planet:2"` (pos is a local offset, placed verbatim — every existing object) or `"world"` (pos is a
+  space-fixed STAR coordinate, re-derived to local **every frame** in `buildSetPiece` so the object holds its
+  place while the base orbits past it). One demo `frame:"world"` object exists — a procedural research-station
+  **1000 u due south of the star** (star coord `(0,1000)`), i.e. right by the star, so in the base's local
+  frame it sits ~10 000 u away and is met on the run out to the star; non-collidable decor → replay-neutral
+  (DECISIONS §115).
 - Lighting: **two render passes** — combat (its own scene/light) and sky (its own scene/light with a
   real day/night terminator on the star-system bodies).
 - **Shader pre-warm (`prewarmShaders`).** THREE compiles a material's GL program lazily on its first
