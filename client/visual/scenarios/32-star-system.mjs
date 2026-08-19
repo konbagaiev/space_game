@@ -428,7 +428,7 @@ export default async function ({ page, assert, shot }) {
     let maxV = 0, docked = false, ticks = 0;
     g.onBaseArrival = () => { docked = true; };  // stand in for the "Dock at the station?" prompt
     for (let i = 0; i < 120 && !docked; i++) { g.stepSim(30); ticks += 30; maxV = Math.max(maxV, g.player.vel.length()); }
-    const s = g.baseStation.obj.position, p = g.player.pos;
+    const s = g.baseStation.pos, p = g.player.pos;
     return { clickable, kind, maxV, docked, ticks, won: g.levelRunner.won, roam: g.roam,
              dist: Math.hypot(p.x - s.x, p.z - s.z) };
   });

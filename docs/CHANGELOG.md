@@ -5,6 +5,19 @@
 
 ## 2026-08-20
 
+- **The World now holds everything a fight is made of.** The last simulation data still living in client
+  modules moved onto `world`, each reachable under its historical name so no call site changed: the **home
+  station** (`world.station`, carrying a `pos` captured once because it never moves — docking distance
+  decides the mission win, so it is simulation input), **input** (`world.input = { keys, touchAim }`,
+  pointing at this tab's live objects in the shape `replay.js` already records; a server swaps in the
+  snapshot its client sent), and **run state** — `kills`, `enemyTotal`, `earned`, `earnedXp`, `banked`,
+  `combatElapsed`, `enemyShieldRefills`, `activeMission`, `roam`, `returnToBase`, `replayMode`,
+  `missionZone`, `autopilot` — which left `G` for the World, with `state.js` defining getter/setter proxies
+  for all thirteen in one loop so `G.kills++` and `G.autopilot.active = false` still work against a single
+  copy. What remains on `G` is genuinely the client's: graphics tier, scene handles, account, UI callbacks,
+  `paused`/`gameStarted`/`mapOpen`, the HUD banner. No gameplay change: intro trace still `tick=2503/3490`.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3c, part 2).
+
 - **Firing and target selection leave the renderer; the last mid-tick audio calls become an event.** Slice
   B2 swept `sim.js` and so missed `fireMount` in `ship-build.js`, which was still calling
   `audio.sfx.shoot(...)` / `audio.sfx.rocket(...)` during the tick — simulation code reaching into the audio

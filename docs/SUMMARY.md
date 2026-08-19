@@ -2856,6 +2856,16 @@ reads `enemies`/`bullets` is unchanged. The reason it exists: `state.js` cannot 
 `window.localStorage` at import), so the simulation can never reach module singletons — collections have to
 arrive as an argument, and one process can then hold many Worlds.
 
+**What the World holds.** Besides the entities and the event queue: `arenaCenter`/`arenaDrift`, the home
+`station` (`{ pos, active, obj }` — `pos` is captured once at build because it never moves, and docking
+distance decides the mission win), `catalog`, `input` (`{ keys, touchAim }`, the shape `replay.js` records),
+and the run state — `kills`, `enemyTotal`, `earned`, `earnedXp`, `banked`, `combatElapsed`,
+`enemyShieldRefills`, `activeMission`, `roam`, `returnToBase`, `replayMode`, `missionZone`, `autopilot`.
+**All of it is still reachable as `G.<name>`**: `state.js` defines getter/setter proxies (`G.player`,
+`G.baseStation`, and the thirteen run-state fields in one loop), so there is one copy and no call site had
+to change. What stays genuinely on `G` is the client's own: graphics tier, scene handles, the account, UI
+callbacks, `paused`/`gameStarted`/`mapOpen`, and the HUD banner.
+
 **Firing is simulation, sound is not.** `fireMount`/`updateGroups` live in `sim-core/ship-entity.js` and
 emit a `fire` event ({ weaponClass, isRocket, fromPlayer }) instead of playing anything; the adapter in
 `sim.js` decides that only the player's own shots are audible (enemy fire is deliberately silent — rocket

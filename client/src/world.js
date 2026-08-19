@@ -10,6 +10,7 @@ import { G, setPieces, world as simWorld } from './state.js'; // simWorld: the r
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
 import { SYSTEM, bodyRenderPos, bodyFade, moonAngle, applySystemSpec, planetOriginOffset, worldToLocal } from './system-map.js'; // pure star-system geometry + body placement
+import { Vec3 } from './sim-core/vec.js';
 import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
@@ -1161,7 +1162,12 @@ export function buildSetPiece(spec) {
   scene.add(entry.obj);
   setPieces.push(entry);
   // Stash the base station on G so the sim/HUD/click code can find it (the return-to-base target).
-  if (spec.type === 'base-station') G.baseStation = { obj: entry.obj, active: false };
+  // `pos` is captured here because the station never moves and the SIMULATION needs it (docking distance);
+  // `obj` is the body, which a headless host would not have. See sim-core/world.js `station`.
+  if (spec.type === 'base-station') {
+    const o = entry.obj.position;
+    G.baseStation = { obj: entry.obj, pos: new Vec3(o.x, o.y, o.z), active: false };
+  }
   // (The ambient ghost battle is NOT built here — it's a fixed-world-anchor decor built in sim.js reset() for
   // every NON-freighter mission, not tied to the freighter set-piece. See DECISIONS §59.)
 }

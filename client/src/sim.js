@@ -131,7 +131,7 @@ export const levelRunner = {
     // cancels the dock (clears G.autopilot.active) so a cancelled approach doesn't complete — the player
     // re-taps to resume.
     if (!G.baseStation || !G.player || !G.player.alive) return;
-    const s = G.baseStation.obj.position;
+    const s = G.baseStation.pos;
     const dx = G.player.pos.x - s.x, dz = G.player.pos.z - s.z;
     if (canDock(G.autopilot, Math.hypot(dx, dz))) this.win();
   },
@@ -231,7 +231,7 @@ function brakeStep(accel, dt) {
 function autopilotTargetPos() {
   const tgt = G.autopilot.target;
   if (!tgt) return null;
-  if (tgt.kind === 'station') return G.baseStation ? G.baseStation.obj.position : null;
+  if (tgt.kind === 'station') return G.baseStation ? G.baseStation.pos : null;
   // kind === 'point': a fixed world coordinate (roam navigation / system-map destination)
   if (tgt.kind === 'point') return tgt.pos || null;
   // kind === 'drop': valid only while the drop object is still in the live drops[] array
@@ -324,7 +324,7 @@ function checkPointArrival() {
 function checkStationArrival() {
   const tgt = G.autopilot.target;
   if (!G.roam || !tgt || tgt.kind !== 'station' || !G.baseStation) return;
-  const s = G.baseStation.obj.position, pos = G.player.pos;
+  const s = G.baseStation.pos, pos = G.player.pos;
   if (Math.hypot(pos.x - s.x, pos.z - s.z) > BASE_ARRIVE_RADIUS) return;
   if (G.player.vel.length() > 0.6) return;              // let the terminal brake settle the ship first
   G.autopilot.active = false; G.autopilot.target = null; // park
@@ -403,7 +403,7 @@ export function updateReturnArrow() {
   const on = G.returnToBase && G.player && G.player.alive && !levelRunner.won && G.baseStation;
   if (!on) { if (returnArrow) returnArrow.visible = false; return; }
   const a = ensureReturnArrow();
-  const st = G.baseStation.obj.position, pos = G.player.pos;
+  const st = G.baseStation.pos, pos = G.player.pos;
   a.position.set(pos.x, 2.5, pos.z);                        // anchored to the ship, just above the plane
   a.rotation.y = Math.atan2(st.x - pos.x, st.z - pos.z);    // point at the station (heading convention)
   a.visible = true;

@@ -245,6 +245,31 @@ Two things this surfaced:
 Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
 `17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
 
+#### B3c part 2 outcome — the World now holds everything a fight is made of
+
+The last data the simulation was reading out of client modules moved onto the World, each reachable under
+its historical name so no call site changed:
+
+- **The home station** (`world.station`) carries `pos` — captured once, because it never moves — alongside
+  `active` and the host's `obj`. Docking distance decides the mission win, so its position is simulation
+  input; `G.baseStation` proxies it.
+- **Input** (`world.input = { keys, touchAim }`) points at this tab's live objects, in the shape
+  `replay.js` already records. A server swaps in the per-tick snapshot its client sent; the simulation only
+  ever reads it.
+- **Run state** — `kills`, `enemyTotal`, `earned`, `earnedXp`, `banked`, `combatElapsed`,
+  `enemyShieldRefills`, `activeMission`, `roam`, `returnToBase`, `replayMode`, `missionZone`, `autopilot`
+  — moved off `G`. `state.js` defines getter/setter proxies for all thirteen in one loop, so `G.kills++`
+  and `G.autopilot.active = false` keep working while there is only one copy.
+
+What is left on `G` is genuinely the client's: the graphics tier, the scene handles, the account, the
+callbacks into the UI, `paused`/`gameStarted`/`mapOpen`, and the HUD banner.
+
+**Still to do for B3c:** physically move `stepPlayer` / `stepEnemyAI` / `stepBullets` / `stepRockets` /
+`levelRunner` into `sim-core` taking `world`; give `drops` the same data/body split the projectiles and
+ships got; route `levelRunner`'s asset preloads through the host; lift `settleView`, the arena-border
+opacity and the banner ageing out of `update()`; and split `reset()` into "reset the world" and "rebuild
+the scene".
+
 #### B3c part 1 outcome — and a gap B2 left behind
 
 **B2 missed two outbound calls, because I swept `sim.js` and firing lives in `ship-build.js`.**

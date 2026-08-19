@@ -35,15 +35,10 @@ export const G = {
   mapSetpieces: [],           // the current map's set-piece specs (reset() rebuilds them fresh each run)
   // (arenaDrift moved onto the World — it is simulation state; see sim-core/world.js)
   // --- run/account scalars (read by the HUD; written by the loop, level runner, bank + account flows) ---
-  kills: 0,                   // destroyed enemies this run (drives the level runner's thresholds + HUD)
-  enemyShieldRefills: 0,      // diagnostic: enemy shields that completed a refill this run (replay-desync triage)
   needsSceneWarm: false,      // set by sim.reset(): the render loop compiles/uploads the freshly built level once
   // Essential .glb loads still in flight (ship models + set-pieces). The level-load veil stays up while
   // this is > 0, so a player never starts a fight looking at procedural placeholder cones (DECISIONS §84).
   pendingAssets: 0,
-  enemyTotal: 0,              // total enemies this level/mission (from descriptor.enemyTotal; 0 = unknown -> HUD hides the /total)
-  earned: 0,                  // credits earned this run: each kill adds the ship's `reward`; doubled on level completion
-  earnedXp: 0,                // character experience earned this run: each kill adds the ship's `xp`; + a flat mission bonus on victory
   balance: 0,                 // persistent account balance (loaded from the server; banked at run end)
   // --- backend identity + per-session funnel guards (read across net/sim/UI; reassigned by login/reset/advance) ---
   // Anonymous player id kept in localStorage (auto-register). `let`-style reassignment (an account login
@@ -55,44 +50,32 @@ export const G = {
       return id;
     } catch { return null; }
   })(),
-  replayMode: false,          // true during ?record/?playback dev sessions → the sim must NOT mutate the server
                               //   (no unlockNextLevel/bankRun/depositLoot/funnel on a replayed win). Set in main.js.
-  banked: false,              // guard so a run banks its credits exactly once
   gameStartTime: performance.now(), // run start (for the recorded game duration)
-  combatElapsed: 0,           // seconds of UNPAUSED combat since run start; gates the enemy hold-fire grace (see sim.js)
   gameStartSent: false,       // game_start funnel event fires once per page-load session (the funnel's top)
   quitSent: false,            // quit funnel event fires once per session when the player leaves
   pendingBriefing: null,      // a level briefing to show before the next Restart (set on advance)
   // --- player ship selection / loadout (read across welcome/shop/account/net/sim) ---
   activeShip: null,           // the player's active-ship record { ship, loadout, components, ... }
   currentShipName: null,      // name of the ship currently built into the scene
-  activeMission: null,        // the side mission being played (null = the campaign level)
   // --- run lifecycle (read across sim/UI; written by reset/take-off/pause) ---
   gameStarted: false,         // false on the welcome screen (backdrop renders, but the level isn't running)
   paused: false,              // client-side freeze: the sim update is skipped while true (rendering continues)
   // --- star-system roam / navigation (docs/plans/2026-08-09-1456-star-system-map.md) ---
-  roam: false,                // interactive out-of-combat flight state: world up, no levelRunner, no enemies,
-                              //   speed cap lifted outside activity zones. NEVER true during a recorded/campaign
-                              //   fight → capLifted() is false there → replays stay byte-identical.
   mapOpen: false,             // the system-map overlay is open → the render loop skips update() (raw freeze,
                               //   NOT setPaused, so the "Paused" overlay doesn't stack under the map)
   onMissionArrival: null,     // callback(missionId) set by mainwindow: show the "Start mission?" prompt on arrival
-  // Fly-into-it start for the ACTIVE campaign mission while roaming: { center:{x,z}, title, t } or null.
-  // Armed by mainwindow.enterRoam ONLY when the campaign is the active choice and its level names a
-  // `center` (today: "Level 2" at the Space Factory); `t` is the live countdown, stepped by sim.js
-  // checkMissionZone, which calls onMissionZoneEnter when it runs out.
-  missionZone: null,
   onMissionZoneEnter: null,   // callback() set by mainwindow: clear roam + launch the campaign level
   // The active mission's place in the system while roaming: { pos:{x,z}, missionId } or null. Set by
   // enterRoam (objectForActiveMission). Drives the roam HUD — the gold off-screen mission pointer and the
   // bottom-center "Autopilot to Mission" button; both hide when it is null (no active mission target).
   roamMission: null,
   // --- return-to-base / autopilot (set after the last kill; read across sim/HUD/input) ---
-  returnToBase: false,                             // true after the last kill: OOB lifted, arrow + hint on, station clickable
   // click-to-fly autopilot. target = the base station (return-to-base dock) OR a loot drop (fly to grab it).
   // active + target.kind==='station' is the mandatory "dock" gate (only the station target can win the mission).
-  autopilot: { active: false, phase: 'brake0', target: null },
-  baseStation: null,                               // { obj, active } — set by buildSetPiece; .active = clickable this run
+  // The home station — lives on the World (docking decides the mission win), reached under its old name.
+  get baseStation() { return world.station; },
+  set baseStation(s) { world.station = s; },
   // transient centered HUD announcement ("10 enemies left", "Final Stage"): appears at full opacity and
   // fades to 0 over `maxLife` seconds. opacity = life/maxLife; hidden once life hits 0 (see updateBanner).
   banner: { text: '', life: 0, maxLife: 0 },
@@ -155,3 +138,27 @@ export { SPAWN_GROW_TIME, BULLET_PLANE_Y };
 // --- Input state ---
 export const keys = {};                                          // KeyboardEvent.code -> bool
 export const touchAim = { active: false, heading: 0, thrust: 0 }; // touch stick: nose heading + thrust magnitude
+
+// The World reads its input through here rather than importing this file (it cannot, in Node). Same
+// objects, so every existing writer — the keydown handlers, the touch stick, replay playback — is
+// unchanged; a server would instead swap in the per-tick snapshot a client sent it.
+world.input = { keys, touchAim };
+
+// RUN STATE lives on the World — the simulation owns it and cannot reach this file in Node — but every
+// call site in the client says `G.kills`, `G.roam`, `G.autopilot`… so reach it under those names instead of
+// keeping a second copy in sync. Notes worth carrying over from where these used to be declared:
+//   roam        — free flight; NEVER true during a recorded/campaign fight, so capLifted() is false there
+//                 and replays stay byte-identical.
+//   missionZone — the fly-into-it start for the ACTIVE campaign mission while roaming:
+//                 { center:{x,z}, title, t } or null. Armed by mainwindow.enterRoam only when the campaign
+//                 is the active choice and its level names a `center`; `t` is the live countdown, stepped by
+//                 sim.js checkMissionZone, which calls onMissionZoneEnter when it runs out.
+for (const k of ['kills', 'enemyTotal', 'earned', 'earnedXp', 'banked', 'combatElapsed', 'enemyShieldRefills',
+                 'activeMission', 'roam', 'returnToBase', 'replayMode', 'missionZone', 'autopilot']) {
+  Object.defineProperty(G, k, {
+    get: () => world[k],
+    set: (v) => { world[k] = v; },
+    enumerable: true,
+    configurable: true,
+  });
+}

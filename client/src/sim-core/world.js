@@ -43,5 +43,33 @@ export function createWorld({ host = noopHost } = {}) {
     // warp-back and mini-map are all measured from it — so it is simulation state, not scenery.
     arenaCenter: new Vec3(),
     arenaDrift: null,  // { x, z } world units per second, or null for a static map
+
+    // The home station: { pos, active, obj? }. `pos` is what the simulation needs (docking distance
+    // decides the mission win); `active` is whether it can be clicked right now, which the sim also owns
+    // because it turns on with the return-to-base gate. `obj` is the host's mesh and is simply absent on a
+    // server. Static — set once when the map's base-station set-piece is built.
+    station: null,
+
+    // --- run state: what this fight has done so far ---
+    kills: 0,               // destroyed enemies this run (drives the level runner's thresholds + HUD)
+    enemyTotal: 0,          // total enemies this level/mission (0 = unknown → the HUD hides the /total)
+    earned: 0,              // credits earned this run: each kill adds the ship's `reward`; doubled on victory
+    earnedXp: 0,            // character experience this run: each kill adds the ship's `xp`; + a mission bonus on victory
+    banked: false,          // guard so a run banks its credits exactly once
+    combatElapsed: 0,       // seconds of UNPAUSED combat since run start; gates the enemy hold-fire grace
+    enemyShieldRefills: 0,  // diagnostic: enemy shields that completed a refill this run (replay-desync triage)
+
+    // --- what kind of run this is ---
+    activeMission: null,    // the side mission being played (null = the campaign level)
+    roam: false,            // free flight: world up, no levelRunner, no enemies
+    returnToBase: false,    // true after the last kill: OOB lifted, arrow + hint on, station clickable
+    replayMode: false,      // ?record/?playback dev session → the run must NOT mutate the server
+    missionZone: null,      // the armed fly-into-it zone + its live countdown (roam → campaign handover)
+    autopilot: { active: false, phase: 'brake0', target: null },
+
+    // Input for THIS tick: { keys, touchAim } in the shape replay.js already records and replays. The
+    // browser points this at its live keyboard/touch objects; a server replaces it per tick with what the
+    // client sent. Either way the simulation only ever reads it.
+    input: { keys: {}, touchAim: { active: false, heading: 0, thrust: 0 } },
   };
 }
