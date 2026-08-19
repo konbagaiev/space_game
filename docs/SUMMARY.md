@@ -2856,6 +2856,20 @@ reads `enemies`/`bullets` is unchanged. The reason it exists: `state.js` cannot 
 `window.localStorage` at import), so the simulation can never reach module singletons — collections have to
 arrive as an argument, and one process can then hold many Worlds.
 
+**Ships are built as data too.** `sim-core/ship-entity.js` resolves a catalog ship row into a fighting
+entity — `resolveWeapon`, `resolveComponents`, `buildMounts`, `buildGroups`, `makeEnemy`, `spawnEnemy` —
+reading the catalog off `world.catalog` rather than a module singleton. `ship-build.js` keeps thin wrappers
+bound to this tab's World (so `resolveComponents(refs)` / `spawnEnemyShip(def)` are unchanged for callers)
+plus `attachEnemyBody`/`detachEnemyBody` for the host. **`makeEnemy` draws from the seeded stream exactly
+three times — facing, spawn angle, spawn distance, in that order.** Every recorded trace replays against
+that sequence, so new draws are appended, never inserted (DECISIONS §73). Gameplay constants
+`BULLET_PLANE_Y` and `SPAWN_GROW_TIME` live in `sim-core/consts.js`; `state.js` re-exports them.
+
+**"Has this entity left the World?" is a fact the entity carries.** `despawnAt` sets `alive = false` on
+whatever it removes. Nothing should test the scene graph for it — `shield-fx.js` used to check
+`enemy.mesh.parent` to decide a pooled bubble's ship was gone, which broke the moment the host started
+releasing meshes (and would be meaningless on a server, where no mesh exists).
+
 **The host gives an entity its body.** A bullet in the browser needs a mesh; on a server it needs nothing.
 So the sim announces lifecycle — `world.host.onSpawn(kind, entity)` and `onDespawn(kind, entity)`, where
 `kind` is `'enemy' | 'bullet' | 'rocket' | 'drop'` — and the browser host (installed by `sim.js` at module

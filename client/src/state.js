@@ -11,6 +11,7 @@ import { loadTier, resolveTier } from './graphics.js';
 import { Device } from './device.js';
 import { makeClientId } from './client-id.js';
 import { createWorld } from './sim-core/world.js';
+import { SPAWN_GROW_TIME, BULLET_PLANE_Y } from './sim-core/consts.js';
 
 // Mutable state bag: scalars that get reassigned AND read across module boundaries live here
 // (an exported `let` can't be reassigned from an importing module — a property on a shared
@@ -29,7 +30,7 @@ export const G = {
   currentMapDescriptor: null, // last descriptor passed to buildMap() (?tune "Rebuild" button)
   nebulaRT: null,             // WebGLCubeRenderTarget of the baked nebula sky (disposed + rebuilt by buildMap); null on the flat-color (Performance/?debug) path
   mapSetpieces: [],           // the current map's set-piece specs (reset() rebuilds them fresh each run)
-  arenaDrift: null,           // THREE.Vector3 (units/sec on x,z) when the current map drifts, else null
+  // (arenaDrift moved onto the World — it is simulation state; see sim-core/world.js)
   // --- run/account scalars (read by the HUD; written by the loop, level runner, bank + account flows) ---
   kills: 0,                   // destroyed enemies this run (drives the level runner's thresholds + HUD)
   enemyShieldRefills: 0,      // diagnostic: enemy shields that completed a refill this run (replay-desync triage)
@@ -131,15 +132,22 @@ export const CATALOG = {
   levelName: null,       // the active level's SEED NAME (level-N) — the trace level for session recording
 };
 
+// The World resolves ship/weapon/component rows through this same catalog object — sim-core cannot import
+// `state.js` (Node), so the data has to hang off the World rather than be reached for.
+world.catalog = CATALOG;
+
 // --- Gameplay constants ---
-export const SPAWN_GROW_TIME = 1.0; // ships grow from a dot to full size over this many seconds (warp-in)
-// The single canonical combat plane. INVARIANT: every ship's group sits at this world Y, and because
-// muzzle/exhaust spawn from `mesh.position` + a PLANAR (y=0) forward/right vector, ALL bullets — player
-// and enemy, every model — fly in exactly this horizontal plane. Ships are top-down, so gameplay is 2D at
-// this height; a model whose hull sits off this plane is corrected with `stats.model.lift` (raises the
-// visual mesh AND its hitboxes onto the plane — see ship-factory.js), NOT by moving the bullets. Anything
-// that must line up with combat (ship spawn/recenter Y, hit-ring FX) references THIS, never a bare 0.6.
-export const BULLET_PLANE_Y = 0.6;
+// These decide gameplay, so they live in sim-core (the authority needs them and cannot import this file);
+// re-exported here under their historical names so existing importers are unchanged.
+//
+// BULLET_PLANE_Y is the single canonical combat plane. INVARIANT: every ship's group sits at this world Y,
+// and because muzzle/exhaust spawn from the ship's position + a PLANAR (y=0) forward/right vector, ALL
+// bullets — player and enemy, every model — fly in exactly this horizontal plane. Ships are top-down, so
+// gameplay is 2D at this height; a model whose hull sits off this plane is corrected with
+// `stats.model.lift` (raises the visual mesh AND its hitboxes onto the plane — see sim-core/ship-config.js),
+// NOT by moving the bullets. Anything that must line up with combat (ship spawn/recenter Y, hit-ring FX)
+// references THIS, never a bare 0.6.
+export { SPAWN_GROW_TIME, BULLET_PLANE_Y };
 
 // --- Input state ---
 export const keys = {};                                          // KeyboardEvent.code -> bool

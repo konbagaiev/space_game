@@ -126,8 +126,13 @@ export function spawnRocket(world, from, fwd, weapon, accel, fromPlayer, target)
 }
 
 // Remove `list[index]` and release its body. `kind` tells the host what it is disposing.
+//
+// `alive = false` is set for every kind, so "has this entity left the World?" is a fact the entity itself
+// carries. Anything holding a reference to it — a pooled shield bubble bound to a ship, say — can ask it
+// directly instead of probing the scene graph for a mesh that a headless host never created.
 export function despawnAt(world, kind, list, index) {
   const e = list[index];
+  e.alive = false;
   world.host.onDespawn(kind, e);
   list.splice(index, 1);
   return e;

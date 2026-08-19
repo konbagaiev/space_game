@@ -940,7 +940,7 @@ if (location.search.includes('debug')) {
     audio, // procedural audio engine (settings + scene); SFX/music are inaudible in headless but state is assertable
     warpPlayerToCenter, arenaBorder, ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME,
     setPieces, arenaCenter, // mission set-pieces + the (drifting) arena center
-    setArenaDrift(x, z) { G.arenaDrift = new THREE.Vector3(x, 0, z); }, // test/tool: enable a drifting zone
+    setArenaDrift(x, z) { world.arenaDrift = { x, z }; }, // test/tool: enable a drifting zone
     get activeMission() { return G.activeMission; }, // the side mission being played (null = campaign)
     get missionZone() { return G.missionZone; },     // diagnostic: the armed fly-into-it zone + its live countdown
     get missionOffers() { return missionOffers; },

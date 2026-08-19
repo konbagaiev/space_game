@@ -14,9 +14,9 @@ import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spira
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
-import { updateShipExhaust, disposeShipExhaust } from './exhaust-fx.js';
+import { updateShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
-import { spawnEnemyShip, updateGroups, preloadLevelShipModels } from './ship-build.js';
+import { spawnEnemyShip, updateGroups, preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
 import { stepSpawnGate } from './sim-core/spawn-timing.js';
 import { simRandom } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
 import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
@@ -624,10 +624,12 @@ world.host = {
   onSpawn(kind, e) {
     if (kind === 'bullet') attachBulletBody(e);
     else if (kind === 'rocket') attachRocketBody(e);
+    else if (kind === 'enemy') attachEnemyBody(e);
   },
   onDespawn(kind, e) {
     if (kind === 'bullet') detachBulletBody(e);
     else if (kind === 'rocket') detachRocketBody(e);
+    else if (kind === 'enemy') detachEnemyBody(e);
   },
 };
 
@@ -760,10 +762,10 @@ function stepPlayer(dt) {
 
   // (The arena-drift block below is not player-specific — it stays here because moving it would reorder the tick.)
   // Drifting arena (e.g. freighter escort): slowly pan the combat zone's center; the boundary, warp-back
-  // and mini-map all compute relative to it. Static maps (G.arenaDrift null) keep the center at (0,0).
-  if (G.arenaDrift) {
-    arenaCenter.x += G.arenaDrift.x * dt;
-    arenaCenter.z += G.arenaDrift.z * dt;
+  // and mini-map all compute relative to it. Static maps (world.arenaDrift null) keep the center at (0,0).
+  if (world.arenaDrift) {
+    arenaCenter.x += world.arenaDrift.x * dt;
+    arenaCenter.z += world.arenaDrift.z * dt;
     arenaBorder.line.position.set(arenaCenter.x, 0, arenaCenter.z);
   }
 
@@ -1092,9 +1094,7 @@ function stepEnemyDeaths() {
         sizeScale: e.sizeScale || 1, role: e.role, shipClass: e.class, reward, xp, name: e.name,
       });
 
-      disposeShipExhaust(enemies[i].mesh); // free the dead ship's attached exhaust plume (ShaderMaterials)
-      scene.remove(enemies[i].mesh);
-      enemies.splice(i, 1);
+      despawnAt(world, 'enemy', enemies, i);
       G.kills++;                  // count (drives level thresholds + HUD)
       // "N enemies left" banner at the 10- and 5-remaining milestones (once each, only when the level's
       // total is known). kills increments by 1, so `left` lands on each value exactly once.
@@ -1210,7 +1210,7 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   simEvents.clear(); // and no events left over from an aborted tick (e.g. a win drained into a teardown)
   G.autopilot.active = false; G.autopilot.target = null; // defensive: no dangling drop-target autopilot into the new run
 
-  for (const e of enemies) { disposeShipExhaust(e.mesh); scene.remove(e.mesh); }
+  for (const e of enemies) world.host.onDespawn('enemy', e);
   enemies.length = 0;
   // Where this run fights: a side mission's own `center`, else the campaign level's (most use the default
   // (0,0); "Level 3" fights at the space factory, "Level 4" inside the far belt outpost). Resolved by the
@@ -1219,8 +1219,8 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   arenaCenter.set(cx, 0, cz);             // fresh run: center the (possibly drifting) combat zone
   arenaBorder.line.position.set(cx, 0, cz);
   // a mission may drift its zone (the freighter escort); the campaign and other missions stay static
-  G.arenaDrift = (G.activeMission && G.activeMission.drift)
-    ? new THREE.Vector3(G.activeMission.drift.x || 0, 0, G.activeMission.drift.z || 0) : null;
+  world.arenaDrift = (G.activeMission && G.activeMission.drift)
+    ? { x: G.activeMission.drift.x || 0, z: G.activeMission.drift.z || 0 } : null;
   // rebuild the shared world's set-pieces fresh each run (resets the cruising freighter to its start)
   if (!keepWorld) {
     for (const sp of setPieces) { sp.dispose?.(); scene.remove(sp.obj); } // dispose() frees the freighter plume's materials (no-op for others)

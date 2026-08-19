@@ -212,7 +212,7 @@ at the moment they actually move. So Slice B runs:
   `createWorld()` once and re-exports its collections, so client code that reads `enemies`/`bullets`
   is untouched while Node gets N worlds in one process. Runs in three parts:
   - **B3a — the World, plus the projectile lifecycle seam.** ✅ DONE 2026-08-19.
-  - **B3b — the enemy lifecycle seam** (blocked on model-derived sim data, see below).
+  - **B3b — the enemy lifecycle seam.** ✅ DONE 2026-08-20.
   - **B3c — physically move the steps into `sim-core/`**, with `arenaCenter`, the station position and the
     input snapshot arriving as World data.
 
@@ -243,6 +243,37 @@ Two things this surfaced:
 
 Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
 `17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
+
+#### B3b outcome
+
+`sim-core/ship-entity.js` owns turning a catalog ship row into a fighting entity: `resolveWeapon`,
+`resolveComponents`, `buildMounts`, `buildGroups`, `makeEnemy` and `spawnEnemy`. `ship-build.js` keeps thin
+wrappers that bind this tab's World, so `resolveComponents(refs)` and `spawnEnemyShip(def)` read the same
+to every existing caller, and it gained `attachEnemyBody`/`detachEnemyBody` for the host.
+
+Three shared dependencies had to move first:
+- `BULLET_PLANE_Y` and `SPAWN_GROW_TIME` are gameplay, so they moved to `sim-core/consts.js` (re-exported
+  from `state.js` under their old names). `SPAWN_GROW_TIME` in particular is not decoration — a growing
+  ship is invulnerable, cannot fire and cannot be homed on.
+- `arenaCenter` moved onto the World. The renderer's export is now literally the World's `Vec3`, so the sim
+  and the mini-map cannot disagree about where the fight is; `arenaDrift` moved with it, off `G` and out of
+  `THREE.Vector3` into a plain `{x, z}`.
+- The catalog hangs off the World (`world.catalog`), because sim-core cannot import `state.js`.
+
+**The RNG draw order is now documented as a contract** at the top of `ship-entity.js`: facing, then spawn
+angle, then spawn distance. Every recorded trace replays against that exact sequence, so new draws go at the
+END (DECISIONS §73).
+
+**One real bug, and it is the interesting part.** `shield-fx.js` decided whether a pooled bubble's enemy was
+gone by testing **`enemy.mesh.parent`** — using the scene graph as a proxy for a simulation fact. That
+worked only because a dead enemy kept its mesh; now the host releases it, so the check threw
+`Cannot read properties of null (reading 'parent')` every frame. `despawnAt` now sets `alive = false` on
+every entity it removes — "has this left the World?" is a fact the entity carries — and `shield-fx` asks the
+entity. Note how it surfaced: the intro scenario printed a *correct* `tick=2503/3490` line and still failed,
+on the harness's **page-error** check. Simulation assertions cannot see this class of bug; the zero-errors
+check is what does.
+
+Verified: client tests 380 → **382**, intro trace `tick=2503/3490`, guard scenarios green.
 
 #### B3-catalog — model-derived simulation input is now baked ✅ DONE 2026-08-20
 

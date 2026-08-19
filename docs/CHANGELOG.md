@@ -5,6 +5,24 @@
 
 ## 2026-08-20
 
+- **Enemies are built as data; the scene graph is no longer anyone's source of truth.**
+  `client/src/sim-core/ship-entity.js` now turns a catalog ship row into a fighting entity
+  (`resolveWeapon`/`resolveComponents`/`buildMounts`/`buildGroups`/`makeEnemy`/`spawnEnemy`); `ship-build.js`
+  keeps World-bound wrappers so `resolveComponents(refs)` and `spawnEnemyShip(def)` are unchanged for every
+  caller, plus `attachEnemyBody`/`detachEnemyBody` for the host. Three shared dependencies moved to make it
+  possible: `BULLET_PLANE_Y` and `SPAWN_GROW_TIME` are gameplay and now live in `sim-core/consts.js`
+  (re-exported from `state.js`); **`arenaCenter` moved onto the World** — the renderer's export IS the
+  World's `Vec3` now, so the simulation and the mini-map cannot disagree about where the fight is, and
+  `arenaDrift` came with it, off `G` and out of `THREE.Vector3` into a plain `{x, z}`; and the catalog hangs
+  off `world.catalog`. The enemy spawn's three seeded RNG draws (facing, angle, distance) are documented as
+  a replay contract — new draws go at the end. **Bug found and fixed:** `shield-fx.js` tested
+  `enemy.mesh.parent` to decide whether a bubble's ship was gone — the scene graph standing in for a
+  simulation fact — which threw once the host started releasing meshes. `despawnAt` now sets `alive = false`
+  on every entity it removes, and `shield-fx` asks the entity. It surfaced through the harness's page-error
+  check while the intro scenario was printing a perfectly correct `tick=2503/3490`, which is precisely the
+  class of failure simulation assertions cannot see. Client tests 380 → 382; guard scenarios green.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3b).
+
 - **Where a bullet is born is now catalog data, not a runtime measurement.** `ship-build.fireMount` spawns
   a projectile at `noseZ × the ship's world scale`, so that number decides what a shot can hit — and it was
   *measured* off the `.glb` by `ship-factory.applyShipModel` once the model finished downloading. A piece of

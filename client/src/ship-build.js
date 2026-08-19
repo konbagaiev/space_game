@@ -3,45 +3,26 @@
 // catalog (state.CATALOG) + the pure derivation (components.js) + the ship factory + projectiles.
 import * as THREE from 'three';
 import { scene } from './engine.js';
-import { arenaCenter } from './world.js';
 import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js';
-import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC, skillEffects } from './sim-core/components.js';
+import { deriveDrive, skillEffects } from './sim-core/components.js';
 import { shipModelCfg, modelSpec, makeShip, preloadShipModel } from './ship-factory.js';
 import { findTargetInSector, findBulletAimTarget } from './projectiles.js';
 import { spawnBullet, spawnRocket } from './sim-core/spawn.js'; // entity data + host-attached body
+import { resolveWeapon as resolveWeaponIn, resolveComponents as resolveComponentsIn,
+         buildMounts as buildMountsIn, buildGroups, spawnEnemy as spawnEnemyIn } from './sim-core/ship-entity.js';
 import { world } from './state.js';                             // the World these shots are fired into
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
 import { audio, sfxFor } from './sound-routing.js';
-import { simRandom } from './sim-core/sim-random.js'; // seeded GAMEPLAY stream: enemy spawn placement/facing + reload jitter
+import { simRandom } from './sim-core/sim-random.js'; // seeded GAMEPLAY stream: the enemy reload jitter below
 import { Vec3 } from './sim-core/vec.js';                 // sim transforms are plain vectors, not THREE.Vector3
 import { SHIP_GROUP_SCALE } from './sim-core/consts.js';  // ship world scale = SHIP_GROUP_SCALE × sizeScale
 
-export const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
-// Resolve a ship's component refs ({ hull, engine, thruster, repair, grab, shield }) to objects (id + stats + weight).
-// `id` is carried through so the loot-drop picker can name the exact looted item (reads hull.id/engine.id/…).
-export function resolveComponents(refs) {
-  const r = refs || {};
-  const get = (id) => { const c = CATALOG.components.get(id); return c ? { id: c.id, name: c.name, weight: c.weight, ...c.stats } : null; };
-  return { hull: get(r.hull), engine: get(r.engine), thruster: get(r.thruster), repair: get(r.repair), grab: get(r.grab), shield: get(r.shield) };
-}
-
-// Resolve a ship's mounts (weapon ids -> weapon objects).
-function buildMounts(mountDefs) {
-  return (mountDefs || [])
-    .map((m) => ({ weapon: resolveWeapon(m.weapon), group: m.group, offset: m.offset || 0, delay: m.delay || 0 }))
-    .filter((m) => m.weapon);
-}
-// Group a ship's mounts into fire channels. A group has a player key and/or an enemy AI rule, its
-// own cooldown (= the slowest mounted weapon's reload), and a `pending` queue for staggered volleys.
-function buildGroups(groupDefs, mounts) {
-  const groups = {};
-  for (const [name, def] of Object.entries(groupDefs || {})) {
-    const gm = mounts.filter((m) => m.group === name);
-    const reload = gm.reduce((mx, m) => Math.max(mx, m.weapon.fireCooldown || 0), 0);
-    groups[name] = { name, key: def.key, ai: def.ai || null, mounts: gm, reload, cooldown: 0, pending: [] };
-  }
-  return groups;
-}
+// Catalog resolution lives in sim-core/ship-entity.js (a server has to do it too). These wrappers bind
+// THIS tab's World so the long-standing call signatures — `resolveComponents(refs)` and friends — keep
+// working for the shop and the player builder.
+const resolveWeapon = (id) => resolveWeaponIn(world.catalog, id);
+export const resolveComponents = (refs) => resolveComponentsIn(world.catalog, refs);
+const buildMounts = (defs) => buildMountsIn(world.catalog, defs);
 
 export function buildPlayer(active) {
   const s = active.ship.stats;
@@ -119,60 +100,31 @@ export function buildPlayerFor(ship, override = null) {
   scene.add(G.player.mesh);
 }
 
-// Build one enemy from a DB ship row (type 'enemy'); weapons + fire groups come from its stats.
+// Build one enemy from a DB ship row (type 'enemy') into this tab's World. The entity's numbers come from
+// sim-core; its Three.js body is attached by the host (see sim.js). Kept here under its historical name so
+// the debug hooks and visual scenarios that call it are unchanged.
 export function spawnEnemyShip(shipDef) {
-  const s = shipDef.stats;
-  const mc = shipModelCfg(s); // per-ship model presentation (yaw/scale + optional overrides)
-  const { hull, engine, thruster } = resolveComponents(shipDef.components);
-  const { shieldCap, hullMax } = enemyShieldSplit(hull.durability); // 1/3 shield + 2/3 hull; total unchanged
-  const e = {
-    name: shipDef.name, // DB ship name (English) — shown in the event-log kill line
-    role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0, xp: s.xp || 0,
-    dodge: s.dodge || 0, // dodge % (all current enemies = 0 → always hit; future enemies may dodge)
-    mesh: makeShip(s.color, modelSpec(shipDef.modelUrl, mc)), // model defines the look; never tint enemies by color
-    // --- SIM TRANSFORM (the authority; the mesh is a copy of it — see sim.js syncMeshes) ---
-    pos: new Vec3(0, BULLET_PLANE_Y, 0),  // placed in the spawn ring below
-    vel: new Vec3(),
-    heading: simRandom() * Math.PI * 2,   // GAMEPLAY: facing decides how long it turns before its first shot
-    noseZ: mc.muzzle ?? 1.6,              // group-local muzzle offset from the catalog (1.6 = the primitive's cone nose)
-    hull, engine, thruster,
-    mounts: buildMounts(s.mounts),
-    hp: hullMax,
-    maxHp: hullMax, // HULL max only (the shield is a separate pool) — drives the floating health bar
-    // Derived shield (NOT a DB component): same shape as the player's resolved shield component, minus
-    // `weight` — so shipMass() skips it and enemy mass/accel/turn are bit-identical to before.
-    shield: shieldCap > 0 ? { capacity: shieldCap, rechargeSec: ENEMY_SHIELD_RECHARGE_SEC } : null,
-    _shieldValue: shieldCap,   // starts full & active
-    _shieldRechargeAccum: 0,   // seconds banked while broken → drives recharge + the purple bar fill
-    radius: 2.6 * mc.scale,  // health-bar/marker anchor only (collision now uses hitBoxes/broadR)
-    hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
-    alive: true,
-  };
-  e.groups = buildGroups(s.groups, e.mounts);
-  // "warp in": grow from a dot to full size over SPAWN_GROW_TIME (see the enemy update loop)
-  e.fullScale = SHIP_GROUP_SCALE * mc.scale; // full world scale to grow into (bigger model for heavy enemies)
-  e.spawnAge = 0;
-  e.spawnDur = SPAWN_GROW_TIME; // warp-in duration; the level runner overrides this to the stagger delay
-  e.warping = true;             // invulnerable + can't fire + not homing-targetable until fully formed
-  e.scale = e.fullScale * 0.001; // start as a dot
-  deriveDrive(e);
-  // spawn in a ring around the MISSION ZONE center (arenaCenter), not the hero — waves originate at the
-  // arena/set-piece even after the player wanders. No arena clamp (enemies fight fine out of bounds).
-  const ang = simRandom() * Math.PI * 2;   // GAMEPLAY: where the enemy appears
-  const d = 70 + simRandom() * 60; // 70..130 from the zone center
-  e.pos.set(
-    arenaCenter.x + Math.cos(ang) * d,
-    BULLET_PLANE_Y, // sit on the canonical combat plane so enemy hull + fire line up with the player's
-    arenaCenter.z + Math.sin(ang) * d
-  );
-  // seed the render copy so the ship is drawn in the right place on the frame it appears (an enemy can
-  // spawn AFTER syncMeshes has already run this tick — levelRunner.update() is late in update()).
+  return spawnEnemyIn(world, shipDef);
+}
+
+// Give an enemy entity its Three.js body — the browser half of world.host.onSpawn('enemy', e). The entity
+// already carries everything needed: which model, how it is oriented and scaled, and where it is. The mesh
+// transform is seeded here rather than left to syncMeshes because an enemy can spawn AFTER syncMeshes has
+// already run this tick (levelRunner.update() is late in update()), and it must be drawn in the right place
+// on the very frame it appears.
+export function attachEnemyBody(e) {
+  e.mesh = makeShip(e.color, modelSpec(e.modelUrl, e.modelCfg));
   e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z);
   e.mesh.rotation.y = e.heading;
   e.mesh.scale.setScalar(e.scale);
   scene.add(e.mesh);
-  enemies.push(e);
-  return e;
+}
+
+export function detachEnemyBody(e) {
+  if (!e.mesh) return;
+  disposeShipExhaust(e.mesh); // free the dead ship's attached exhaust plume (ShaderMaterials)
+  scene.remove(e.mesh);
+  e.mesh = null;
 }
 
 // Spawn a specific enemy by role name (used by tests/tools), falling back to the first kind.

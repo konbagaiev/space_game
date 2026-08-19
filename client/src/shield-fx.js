@@ -193,8 +193,10 @@ export function registerEnemyShieldImpact(enemy, worldPos, broke = false) {
 export function updateEnemyShieldBubbles() {
   for (const s of enemySlots) {
     if (time >= s.until) { s.mesh.visible = false; s.enemy = null; continue; }
-    // The enemy died mid-ripple (sim.js removes its mesh from the scene): let the ripple fade in place.
-    if (s.enemy && !s.enemy.mesh.parent) s.enemy = null;
+    // The enemy died mid-ripple: unbind so the ripple fades in place instead of following a corpse.
+    // The enemy left the World (killed, or cleared by a reset). Ask the ENTITY, not the scene: the mesh
+    // is released by the host on despawn and is null afterwards, and on a server there is no mesh at all.
+    if (s.enemy && !s.enemy.alive) s.enemy = null;
     if (s.enemy) s.mesh.position.copy(s.enemy.pos);
     s.mat.uniforms.uTime.value = time;
     s.mat.uniforms.uBase.value = 0;   // enemies never get the idle Fresnel rim (player-exclusive read)

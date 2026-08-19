@@ -6,7 +6,7 @@
 // arenaCenter, arenaBorder) is exported const.
 import * as THREE from 'three';
 import { scene, skyScene, renderer, camera } from './engine.js';
-import { G, setPieces } from './state.js';
+import { G, setPieces, world as simWorld } from './state.js'; // simWorld: the running fight (sim-core/world.js)
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
 import { SYSTEM, bodyRenderPos, bodyFade, moonAngle, applySystemSpec, planetOriginOffset, worldToLocal } from './system-map.js'; // pure star-system geometry + body placement
@@ -27,7 +27,11 @@ export const OOB_RETURN_TIME = 30.0; // seconds continuously out of bounds befor
 // The combat zone's CENTER. Usually (0,0), but for a drifting mission (e.g. escort a freighter) the map
 // descriptor's `drift` slowly moves it; the soft boundary, warp-back and mini-map all compute relative to
 // THIS, not world (0,0). The synced freighter set-piece follows it. See docs/plans/mission-maps.md.
-export const arenaCenter = new THREE.Vector3(0, 0, 0);
+// The combat zone's centre is SIMULATION state — the soft boundary, the warp-back and the mini-map all
+// measure from it, and a mission can drift it. It lives on the World; this is the same object under the
+// name the renderer has always used, so there is exactly one of it. (A Vec3, not a THREE.Vector3: every
+// consumer only reads .x/.z or calls .set(x, 0, z).)
+export const arenaCenter = simWorld.arenaCenter;
 
 // A faint glowing square at the arena edge (±ARENA) so the player can SEE where the battlefield
 // ends. It sits just above the combat plane; its opacity ramps up as the player nears/crosses it
@@ -1068,7 +1072,7 @@ function makeFreighter(spec) {
     // a transport in transit: it slowly cruises forward (along its nose, +z) at `speed` units/sec
     if (spec.speed) g.position.z += spec.speed * dt;
     // (escort drift) ride the zone center while the arena is drifting — off unless a mission turns it on
-    if (spec.sync && G.arenaDrift) { g.position.x = arenaCenter.x; g.position.z = arenaCenter.z; }
+    if (spec.sync && simWorld.arenaDrift) { g.position.x = arenaCenter.x; g.position.z = arenaCenter.z; }
   } };
 }
 
@@ -1173,7 +1177,7 @@ export function buildMap(descriptor) {
   for (const sp of setPieces) scene.remove(sp.obj);
   setPieces.length = 0;
   // arena drift: maps with a `drift` (units/sec on x,z) slowly pan the combat zone; default = static
-  G.arenaDrift = d.drift ? new THREE.Vector3(d.drift.x || 0, 0, d.drift.z || 0) : null;
+  simWorld.arenaDrift = d.drift ? { x: d.drift.x || 0, z: d.drift.z || 0 } : null;
   G.baseStation = null; // rebuilt by buildSetPiece below when the map has a base-station set-piece
   arenaCenter.set(0, 0, 0);
   arenaBorder.line.position.set(0, 0, 0);

@@ -8,3 +8,12 @@
 // SHIP_GROUP_SCALE × its per-model `sizeScale`, and the warp-in animation multiplies that by its growth
 // factor (entity.scale carries the current value).
 export const SHIP_GROUP_SCALE = 1.8;
+
+// The canonical combat plane. Every ship group sits on it and every bullet flies in it, which is what makes
+// the fight effectively 2-D for collision purposes even though the models are 3-D.
+export const BULLET_PLANE_Y = 0.6;
+
+// How long a ship takes to grow from a dot to full size on arrival. This is gameplay, not decoration: while
+// it is growing a ship is invulnerable, cannot fire and cannot be homed on (DECISIONS §54). The level runner
+// overrides it per spawn with that enemy's stagger interval — "the delay IS the arrival animation".
+export const SPAWN_GROW_TIME = 1.0;
