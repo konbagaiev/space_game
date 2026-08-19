@@ -2838,6 +2838,26 @@ Consequences that matter:
   parse (and a shot fired before the model lands uses the `1.6` primitive default). `syncMeshes` copies it
   back each tick as an explicit stopgap until it becomes catalog data.
 
+**A fight is a `World`.** `sim-core/world.js` `createWorld({ host })` owns one running fight: `player`,
+`enemies`, `bullets`, `rockets`, `drops`, the event queue, and `arenaCenter`/`arenaDrift` (the combat zone's
+centre is simulation state — the soft boundary, warp-back and mini-map all measure from it). `state.js`
+creates this tab's World and re-exports its collections under their historical names, so client code that
+reads `enemies`/`bullets` is unchanged. The reason it exists: `state.js` cannot load in Node (it reads
+`window.localStorage` at import), so the simulation can never reach module singletons — collections have to
+arrive as an argument, and one process can then hold many Worlds.
+
+**The host gives an entity its body.** A bullet in the browser needs a mesh; on a server it needs nothing.
+So the sim announces lifecycle — `world.host.onSpawn(kind, entity)` and `onDespawn(kind, entity)`, where
+`kind` is `'enemy' | 'bullet' | 'rocket' | 'drop'` — and the browser host (installed by `sim.js` at module
+load) attaches/disposes Three.js objects while `noopHost` does nothing. This is **not** the event queue:
+events describe what happened, carry copies and drain in a batch at end of tick, whereas the host must run
+at the exact moment an entity appears or disappears. `sim-core/spawn.js` owns the data half of firing
+(`makeBullet`/`makeRocket`/`makeSpiralVolley` + `spawnBullet`/`spawnRocket`/`despawnAt`); `projectiles.js`
+keeps `attachBulletBody`/`detachBulletBody`/`attachRocketBody`/`detachRocketBody`. Note a rocket carries
+`weaponClass`, not a resolved sound — the client looks the sound up when it detonates — and disposal
+belongs to `despawnAt`, never to `detonateRocket` (a rocket that reaches `maxRange` leaves the world
+without ever exploding).
+
 **The simulation talks through an event queue.** `sim-core/events.js` (`createEventQueue()`; this world's
 instance is `simEvents` on `state.js`) is the sim's only outbound channel. Instead of playing a sound or
 writing the DOM mid-tick, the sim appends one of twelve events — `hit`, `bulletImpact`, `shieldHit`,

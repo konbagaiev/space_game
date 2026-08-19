@@ -12,7 +12,7 @@ import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './system-map.js';
 import { repairTick, shieldRecharge, applyShieldedDamage } from './sim-core/components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset, keyboardThrust } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
+import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust, disposeShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
@@ -20,7 +20,8 @@ import { spawnEnemyShip, updateGroups, preloadLevelShipModels } from './ship-bui
 import { stepSpawnGate } from './sim-core/spawn-timing.js';
 import { simRandom } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
 import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
-import { simEvents } from './state.js'; // the sim's outbound channel — see the adapter at the bottom of this file
+import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
+import { despawnAt } from './sim-core/spawn.js';
 import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
 import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './sim-core/collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
@@ -620,6 +621,22 @@ function applySimEvent(ev) {
   }
 }
 
+// ---------- The browser's host: what a World entity's body IS here ----------
+// sim-core creates entities as data and asks its host to give them a body (sim-core/world.js). In this tab
+// that means a Three.js object in the scene; in Node it means nothing at all, which is the entire point —
+// the same spawn code runs in both places and only this object differs. Installed at module load, before
+// any gameplay can start (main.js imports this file during bootstrap).
+world.host = {
+  onSpawn(kind, e) {
+    if (kind === 'bullet') attachBulletBody(e);
+    else if (kind === 'rocket') attachRocketBody(e);
+  },
+  onDespawn(kind, e) {
+    if (kind === 'bullet') detachBulletBody(e);
+    else if (kind === 'rocket') detachRocketBody(e);
+  },
+};
+
 export function update(dt) {
   if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
 
@@ -891,7 +908,7 @@ function stepBullets(dt) {
         if (r.fromPlayer === b.fromPlayer) continue; // only rockets of the opposite side
         if (b.pos.distanceTo(r.pos) < 2.4) {
           r.hp -= b.damage;
-          if (r.hp <= 0) { detonateRocket(r, false); if (r.spiralOf) r.spiralOf.children--; rockets.splice(j, 1); } // destroyed (a spiral warhead frees its leader slot)
+          if (r.hp <= 0) { detonateRocket(r, false); if (r.spiralOf) r.spiralOf.children--; despawnAt(world, 'rocket', rockets, j); } // destroyed (a spiral warhead frees its leader slot)
           hit = true; break;                                                 // else it survives, takes another
         }
       }
@@ -904,9 +921,7 @@ function stepBullets(dt) {
       // field stopped it" reads differently from an orange hull hit while staying in the one FX family
       // (DECISIONS §75). spawnHitSprite draws no RNG → replay-safe either way.
       if (hit) simEvents.emit({ type: 'bulletImpact', pos: b.pos.clone(), weaponClass: b.class, absorbed });
-      scene.remove(b.mesh);
-      b.mesh.material.dispose();
-      bullets.splice(i, 1);
+      despawnAt(world, 'bullet', bullets, i);
     }
   }
 }
@@ -916,7 +931,7 @@ function stepRockets(dt) {
   // Spiral-rocket volley = 1 invisible leader (r.lead: homes, no damage, no smoke) + 3 visible warheads
   // (r.spiralOf: ride the leader in a corkscrew, each a real rocket). A warhead freeing its slot decrements
   // the leader's `children`; the leader self-removes when the last is gone (or it hits maxRange).
-  const removeRocket = (idx, r) => { if (r.spiralOf) r.spiralOf.children--; rockets.splice(idx, 1); };
+  const removeRocket = (idx, r) => { if (r.spiralOf) r.spiralOf.children--; despawnAt(world, 'rocket', rockets, idx); };
   for (let i = rockets.length - 1; i >= 0; i--) {
     const r = rockets[i];
 
@@ -934,7 +949,7 @@ function stepRockets(dt) {
       r.pos.addScaledVector(r.vel, dt);
       r.spiralPhase += SPIRAL_ANGULAR * dt;
       // Expire when out of range OR all children gone (children decremented on each warhead removal).
-      if (r.traveled >= r.maxRange || r.children <= 0) { scene.remove(r.obj); rockets.splice(i, 1); }
+      if (r.traveled >= r.maxRange || r.children <= 0) despawnAt(world, 'rocket', rockets, i);
       continue;
     }
 
@@ -1180,15 +1195,11 @@ export function autoPauseOnBlur() {
 // you. Only used when the fight begins in a world that is already standing (the roam → combat handover);
 // a cold start still rebuilds, which is what resets the cruising freighter to its start.
 export function reset({ keepPlayer = false, keepWorld = false } = {}) {
-  for (const b of bullets) { scene.remove(b.mesh); b.mesh.material.dispose(); }
+  for (const b of bullets) world.host.onDespawn('bullet', b);
   bullets.length = 0;
   for (const x of explosions) { scene.remove(x.mesh); x.mesh.material.dispose(); }
   explosions.length = 0;
-  for (const r of rockets) {
-    scene.remove(r.obj);
-    const mesh = r.obj.children[0]; // the spiral leader is an empty Group (invisible) → no mesh child
-    if (mesh?.material) mesh.material.dispose();
-  }
+  for (const r of rockets) world.host.onDespawn('rocket', r);
   rockets.length = 0;
   smoke.length = 0; smokePool.clear(); // pooled: the instanced mesh + material are kept, only the live count resets
   for (const s of sparks) { scene.remove(s.mesh); s.mesh.material.dispose(); }

@@ -10,7 +10,7 @@
 import { loadTier, resolveTier } from './graphics.js';
 import { Device } from './device.js';
 import { makeClientId } from './client-id.js';
-import { createEventQueue } from './sim-core/events.js';
+import { createWorld } from './sim-core/world.js';
 
 // Mutable state bag: scalars that get reassigned AND read across module boundaries live here
 // (an exported `let` can't be reassigned from an importing module — a property on a shared
@@ -95,17 +95,24 @@ export const G = {
 };
 
 // --- Projectiles & FX pools (filled/drained by the spawn + update code) ---
-export const bullets = [];
+// THE World for this browser tab: one running fight, owning its entities and its event queue
+// (sim-core/world.js). It exists because the simulation can no longer reach module singletons — sim-core
+// must load in Node, where this file cannot. Its collections are re-exported below under their historical
+// names, so every client module that reads `enemies`/`bullets`/`rockets`/`drops` is unchanged; the browser
+// host (which gives entities their Three.js bodies) is installed by sim.js at boot.
+export const world = createWorld();
+export const { enemies, bullets, rockets, drops } = world;
+// The sim's outbound channel for this world — see sim-core/events.js and the adapter in sim.js.
+export const simEvents = world.events;
+
 export const explosions = [];
 export const sparks = [];
 export const shockwaves = [];
 export const creditPopups = []; // floating "+xx" credit-gain popups at enemy death { pos, amount, life, maxLife }
-export const rockets = [];
 export const smoke = [];    // rocket smoke trails
 export const flipbooks = []; // sprite-sheet explosion quads (flipbook-fx.js) { mesh, mat, frame, fps }
 
 // --- Combatants ---
-export const enemies = [];
 
 // --- Per-map decor ---
 export const setPieces = []; // combat-scene set-pieces { obj, update } — decor, ignored by gameplay
@@ -135,10 +142,5 @@ export const SPAWN_GROW_TIME = 1.0; // ships grow from a dot to full size over t
 export const BULLET_PLANE_Y = 0.6;
 
 // --- Input state ---
-// The simulation's outbound event queue for THIS world (sim-core/events.js). The sim appends; the adapter
-// in sim.js drains it once per tick and turns each event into FX / audio / HUD / backend work. Lives here
-// with the other world singletons for now; it moves onto the World object when the step functions do.
-export const simEvents = createEventQueue();
-
 export const keys = {};                                          // KeyboardEvent.code -> bool
 export const touchAim = { active: false, heading: 0, thrust: 0 }; // touch stick: nose heading + thrust magnitude

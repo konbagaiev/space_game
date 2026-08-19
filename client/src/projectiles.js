@@ -44,28 +44,31 @@ export const bulletGeo = new THREE.SphereGeometry(0.28, 8, 8);
 // matching its 2x hit flash in HIT_FLASH_SCALE). A class with no entry here falls back to bulletGeo.
 export const BOLT_SCALE = { kinetic: 1, cannon: 1.7 };
 
-export function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
-  // velocity = projectile speed along the nose + ship velocity (inherited)
-  const vel = dir.clone().normalize().multiplyScalar(weapon.projectileSpeed);
-  if (shooterVel) vel.add(shooterVel);
-  // Gun fire = a glowing, travel-aligned energy bolt + a quick muzzle flash at the barrel, sized by the
-  // weapon class (see BOLT_SCALE — a cannon fires the same bolt, just bigger); classes with no entry
-  // (rockets aside, none today) keep the plain sphere. Both are a single Mesh with one material
-  // (disposed on despawn in sim.js). No Math.random → replay-safe (bolt orientation is derived from the
-  // constant velocity, and the bullet's hit test is a point, so size is purely cosmetic).
+// Give a bullet a body. The entity already exists in the World with its position, velocity and class —
+// this is purely what it looks like. Gun fire reads as a glowing, travel-aligned energy bolt plus a quick
+// muzzle flash at the barrel, sized by weapon class (BOLT_SCALE — a cannon fires the same bolt, just
+// bigger); a class with no entry keeps the plain sphere. No Math.random → replay-safe (the bolt's
+// orientation is derived from its constant velocity, and a bullet's hit test is a point, so size is
+// purely cosmetic).
+export function attachBulletBody(b) {
   let m;
-  const boltScale = BOLT_SCALE[weapon.class];
+  const boltScale = BOLT_SCALE[b.class];
   if (boltScale) {
-    m = makeBolt(weapon.projectileColor, vel, boltScale);
-    spawnMuzzleFlash(from, weapon.projectileColor, boltScale);
+    m = makeBolt(b.projectileColor, b.vel, boltScale);
+    spawnMuzzleFlash(b.pos, b.projectileColor, boltScale);
   } else {
-    m = new THREE.Mesh(bulletGeo, new THREE.MeshBasicMaterial({ color: weapon.projectileColor }));
+    m = new THREE.Mesh(bulletGeo, new THREE.MeshBasicMaterial({ color: b.projectileColor }));
   }
-  m.position.copy(from);
+  m.position.set(b.pos.x, b.pos.y, b.pos.z);
   scene.add(m);
-  // despawn by distance traveled (maxRange), not time. `pos` is the SIM position (the mesh copies it in
-  // syncMeshes); the bolt's orientation is baked at spawn from the constant velocity, so it never needs one.
-  bullets.push({ mesh: m, pos: new Vec3(from.x, from.y, from.z), vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power, class: weapon.class });
+  b.mesh = m;
+}
+
+export function detachBulletBody(b) {
+  if (!b.mesh) return;
+  scene.remove(b.mesh);
+  b.mesh.material.dispose();
+  b.mesh = null;
 }
 
 // Quick bright additive pop at the gun barrel on each gun shot — a flat glow SPRITE (same family as
@@ -324,65 +327,29 @@ export function findBulletAimTarget(pos, fwd, halfAngle, fromPlayer) {
   return idx >= 0 ? G.player : null;
 }
 
-export function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
-  if (weapon.spiral) return spawnSpiralRocket(from, fwd, weapon, accel, fromPlayer, target);
-  const mat = new THREE.MeshBasicMaterial({ color: weapon.projectileColor });
-  const m = new THREE.Mesh(rocketGeo, mat);
-  m.rotation.x = Math.PI / 2; // cone points along +Z
-  const holder = new THREE.Group(); // to steer by heading around Y
-  holder.add(m);
-  holder.position.copy(from);
+// Give a rocket a body. Three shapes share the pool: the spiral volley's LEADER is an empty group (it
+// homes and steers but is never seen or shot), a spiral warhead is a slimmer, sharper cone, and a normal
+// rocket is the standard cone. All of them ride a holder group so the sim can steer them by heading.
+export function attachRocketBody(r) {
+  const holder = new THREE.Group();
+  if (!r.lead) {
+    const mat = new THREE.MeshBasicMaterial({ color: r.projectileColor });
+    const m = new THREE.Mesh(r.spiralOf ? spiralRocketGeo : rocketGeo, mat);
+    m.rotation.x = Math.PI / 2; // cone points along +Z
+    holder.add(m);
+  }
+  holder.position.set(r.pos.x, r.pos.y, r.pos.z);
+  holder.rotation.y = r.heading;
   scene.add(holder);
-  // start direction - strictly along the ship's nose (without the ship's inertia)
-  const vel = fwd.clone().multiplyScalar(weapon.launchSpeed);
-  rockets.push({
-    obj: holder, pos: new Vec3(from.x, from.y, from.z), heading: Math.atan2(vel.x, vel.z), vel, accel, turnRate: weapon.turnRate,
-    target, fromPlayer,
-    damage: weapon.power, detonateR: weapon.detonateRadius,
-    blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
-    blastTime: weapon.blastTimeScale, blastTint: weapon.blastTint, blastBright: weapon.blastBright, // detonation-FX speed + ring tint + fireball brightness (data-driven; undefined → spawnRocketBurst defaults)
-    sfxExplode: sfxFor('weapon', weapon.class, 'explode'), // detonation sound (DB map); resolved once at spawn
-    hp: weapon.health ?? 1,                              // HP: reduced by bullet damage, shot down at 0
-    traveled: 0, maxRange: weapon.maxRange ?? 120,       // self-destructs at max flight range
-  });
+  r.obj = holder;
 }
 
-// Triple spiral rocket: an invisible leader (homing, no damage, not shootable) + 3 visible rockets that
-// orbit its flight axis in a corkscrew. Each visible rocket deals damage, has HP, detonates on its own
-// proximity, and can be shot down. All entries share the `rockets` pool.
-function spawnSpiralRocket(from, fwd, weapon, accel, fromPlayer, target) {
-  // Leader: invisible frame. Reuses the rocket steering fields; `lead:true` marks it non-damaging /
-  // non-shootable; `children` counts live orbiters so the leader expires when the last one is gone.
-  const leadObj = new THREE.Group();
-  leadObj.position.copy(from);
-  scene.add(leadObj); // no mesh child → invisible; still moved/steered by sim.js
-  const leadVel = fwd.clone().multiplyScalar(weapon.launchSpeed);
-  const leader = {
-    obj: leadObj, pos: new Vec3(from.x, from.y, from.z), heading: Math.atan2(leadVel.x, leadVel.z), vel: leadVel, accel, turnRate: weapon.turnRate,
-    target, fromPlayer, lead: true, children: 3, spiralPhase: 0,
-    traveled: 0, maxRange: weapon.maxRange ?? 150,
-  };
-  rockets.push(leader);
-  // Three visible rockets, 120° apart, each a real rocket that rides the leader.
-  const sfxExplode = sfxFor('weapon', weapon.class, 'explode');
-  for (let i = 0; i < 3; i++) {
-    const mat = new THREE.MeshBasicMaterial({ color: weapon.projectileColor });
-    const m = new THREE.Mesh(spiralRocketGeo, mat);
-    m.rotation.x = Math.PI / 2; // cone points +Z
-    const holder = new THREE.Group();
-    holder.add(m);
-    holder.position.copy(from);
-    scene.add(holder);
-    rockets.push({
-      obj: holder, pos: new Vec3(from.x, from.y, from.z), heading: Math.atan2(leadVel.x, leadVel.z), vel: leadVel.clone(), fromPlayer,
-      spiralOf: leader, spiralPhaseOffset: i * (Math.PI * 2 / 3),
-      damage: weapon.power, detonateR: weapon.detonateRadius,
-      blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
-      blastTime: weapon.blastTimeScale, blastTint: weapon.blastTint, blastBright: weapon.blastBright,
-      sfxExplode, hp: weapon.health ?? 1,
-      traveled: 0, maxRange: weapon.maxRange ?? 150,
-    });
-  }
+export function detachRocketBody(r) {
+  if (!r.obj) return;
+  scene.remove(r.obj);
+  const mesh = r.obj.children[0]; // the spiral leader is an empty Group (invisible) → no mesh child
+  if (mesh?.material) mesh.material.dispose();
+  r.obj = null;
 }
 
 // dealDamage=false - the rocket was shot down by gunfire (explosion without damage)
@@ -408,9 +375,10 @@ export function detonateRocket(r, dealDamage = true) {
     }
   }
   spawnRocketBurst(r.pos, r.blastVis, r.blastTint, r.blastTime, r.blastBright); // flipbook fireball + ring; look is weapon-driven
-  audio.sfx.explosion(0.7, r.sfxExplode, 0.3); // rocket blast — 70% quieter (sampled via the weapon-class map)
-  scene.remove(r.obj);
-  r.obj.children[0].material.dispose();
+  audio.sfx.explosion(0.7, sfxFor('weapon', r.weaponClass, 'explode'), 0.3); // rocket blast — 70% quieter (sampled via the weapon-class map)
+  // The body is NOT released here: every rocket leaves the world through despawnAt(), which asks the
+  // host to let it go. Detonating and despawning are two different things (a rocket that reaches its
+  // maxRange despawns without ever detonating), and only one of them should own disposal.
 }
 
 // Rocket smoke trail: a thin, dissipating haze LINE — small fixed-size gray puffs that only fade out

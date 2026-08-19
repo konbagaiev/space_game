@@ -5,6 +5,25 @@
 
 ## 2026-08-19
 
+- **A fight is now a `World` object, and entities get their body from a host.** `client/src/sim-core/world.js`
+  adds `createWorld({ host })` — one running fight, owning its entities, its event queue and its arena
+  centre. `state.js` creates this tab's World and re-exports `enemies`/`bullets`/`rockets`/`drops` under
+  their historical names, so no client module changed; `drops.js` takes its array from the World instead of
+  owning one. The point is that a Node process can hold many Worlds, which `state.js` (it reads
+  `window.localStorage` at import) can never provide. **The host** is how an entity gets a body: the sim
+  calls `world.host.onSpawn(kind, entity)` / `onDespawn(...)`, the browser host attaches and disposes
+  Three.js objects, and `noopHost` — the server, the referee, every unit test — does nothing.
+  `sim-core/spawn.js` now owns the data half of firing (`makeBullet`, `makeRocket`, `makeSpiralVolley`,
+  plus World-aware `spawnBullet`/`spawnRocket`/`despawnAt`) while `projectiles.js` keeps only
+  `attach*Body`/`detach*Body`. Two bits of hidden coupling fell out: a rocket used to carry `sfxExplode`,
+  a **client sound-map lookup baked into simulation state** (it now carries `weaponClass` and the client
+  resolves the sound at detonation), and `detonateRocket` used to dispose the body, conflating "exploded"
+  with "left the world" — a rocket that reaches `maxRange` does the latter without the former, so disposal
+  moved to `despawnAt` and every rocket now leaves through one door. No gameplay change: intro trace still
+  `tick=2503/3490`; client tests 374 → 378; `17-triple-spiral-rocket`, intermittently failing on both
+  branches before, is now stably green.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3a).
+
 - **The simulation stopped calling out: it emits events, the client acts on them.** Mid-tick the sim used
   to play audio, spawn FX, write the DOM through i18n and call the backend — `levelRunner.win()` alone did
   the victory sting, the overlay, `bankRun`, `depositLoot`, `unlockNextLevel` and `reportMissionCleared`.

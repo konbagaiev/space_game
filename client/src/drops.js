@@ -8,7 +8,7 @@
 // Pure math (pullSpeed, pickLoot) lives here / in drops-config.js so it's node-testable without THREE.
 import * as THREE from 'three';
 import { scene } from './engine.js';
-import { G, CATALOG } from './state.js';
+import { G, CATALOG, drops } from './state.js';
 import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLoader
 import { audio } from './sound-routing.js';
 import { DROP_MODEL_URL, DROP_CHANCE, MAX_DROPS, ARM_DELAY, ROTATE_PERIOD, COLLECT_DIST, WEIGHT_FALLBACK,
@@ -17,7 +17,10 @@ import { logEvent } from './eventlog.js';
 import { t } from './i18n.js';
 import { Vec3 } from './sim-core/vec.js'; // a drop's world position is sim state (the Grab pulls it)
 
-export const drops = [];            // { obj, pos, item:{kind,refId}, weight, inRange (sec), special? }
+// The live drops of the current World, re-exported under the name every caller already uses. The array
+// itself belongs to the World (sim-core/world.js) so the simulation can reach it in Node too; drops.js
+// stays the module that gives a drop its body and its pull behaviour.
+export { drops };            // { obj, pos, item:{kind,refId}, weight, inRange (sec), special? }
 export const pendingLoot = [];      // { kind, refId } collected this run — deposited on VICTORY only
 export { DROP_CHANCE, pickLoot };   // re-export so sim.js/main.js read one source (pickLoot is pure, in drops-config.js)
 

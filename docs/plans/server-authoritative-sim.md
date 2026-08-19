@@ -210,7 +210,48 @@ at the moment they actually move. So Slice B runs:
   instead; `sim.js` becomes the client-side adapter that drains them. ✅ DONE 2026-08-19.
 - **B3 — move the step functions in**, taking a `World` as their first argument. `state.js` calls
   `createWorld()` once and re-exports its collections, so client code that reads `enemies`/`bullets`
-  is untouched while Node gets N worlds in one process.
+  is untouched while Node gets N worlds in one process. Runs in three parts:
+  - **B3a — the World, plus the projectile lifecycle seam.** ✅ DONE 2026-08-19.
+  - **B3b — the enemy lifecycle seam** (blocked on model-derived sim data, see below).
+  - **B3c — physically move the steps into `sim-core/`**, with `arenaCenter`, the station position and the
+    input snapshot arriving as World data.
+
+#### B3a outcome
+
+`sim-core/world.js` provides `createWorld({ host })`; `state.js` creates this tab's World and re-exports
+`enemies`/`bullets`/`rockets`/`drops` under their historical names, so no client module noticed. `drops.js`
+now takes its array from the World rather than owning one.
+
+**The host is the new idea.** A bullet in the browser needs a mesh; the same bullet on a server needs
+nothing. So the sim announces lifecycle — `world.host.onSpawn(kind, entity)` / `onDespawn(kind, entity)` —
+and the browser host (installed in `sim.js`) attaches and disposes Three.js objects while `noopHost` does
+nothing at all. This is deliberately *not* the event queue: events describe what happened, are copied, and
+drain in a batch at end of tick; the host must run at the exact instant an entity appears or disappears,
+because a mesh has to exist before the next render and be disposed before the reference is dropped.
+
+`sim-core/spawn.js` now owns the DATA half of firing — `makeBullet`, `makeRocket`, `makeSpiralVolley`, and
+the World-aware `spawnBullet`/`spawnRocket`/`despawnAt`. `projectiles.js` keeps only
+`attachBulletBody`/`detachBulletBody`/`attachRocketBody`/`detachRocketBody`.
+
+Two things this surfaced:
+- **`sfxExplode` was simulation state.** A rocket resolved `sfxFor('weapon', class, 'explode')` at spawn and
+  carried the result — a client sound-map lookup baked into an entity. Rockets now carry `weaponClass` and
+  the client resolves the sound at detonation.
+- **`detonateRocket` owned disposal**, which meant "exploded" and "left the world" were the same event. They
+  are not: a rocket that reaches `maxRange` despawns without detonating. Disposal moved to `despawnAt`, so
+  every rocket now leaves through one door.
+
+Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
+`17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
+
+#### B3b is blocked on catalog data, and it is the same debt Slice A flagged
+
+Splitting `spawnEnemyShip` into data + body needs `hitBoxes`, `broadR` and `sizeScale`, which come from
+`shipModelCfg()` in the Three.js-importing `ship-factory.js` — plus `noseZ`, which is *measured off the
+loaded `.glb`*. All four are simulation input (they decide what a shot hits and where it is born) derived
+from presentation code a headless authority cannot run. The fix is the one already named in Slice A: bake
+them into the catalog next to the rest of the ship's stats, which the model pipeline already computes.
+**Do that before B3b**, not after.
 
 #### B2 outcome
 
