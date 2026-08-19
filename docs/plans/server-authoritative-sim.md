@@ -244,7 +244,38 @@ Two things this surfaced:
 Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
 `17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
 
-#### B3b is blocked on catalog data, and it is the same debt Slice A flagged
+#### B3-catalog — model-derived simulation input is now baked ✅ DONE 2026-08-20
+
+The blocker below is cleared. `npm run assets:muzzle` (`scripts/assets-muzzle.mjs`) bakes each ship's
+group-local nose/tail offsets into its `model:{}` block as `muzzle`/`exhaust`, and `shipModelCfg` moved to
+`sim-core/ship-config.js` — it was always a pure read of catalog data, it just lived next to the Three.js
+loader. `entity.noseZ` now comes from the catalog at build time, and the render→sim copy in `syncMeshes`
+that stood in for it is gone.
+
+Findings worth keeping:
+
+- **The runtime "measurement" was mostly a constant.** Models are normalized so their longest axis spans
+  `SHIP_MODEL_LEN` (3.4) and are recentred, so any ship whose longest axis is its length measures exactly
+  ±1.7 — which is all eight pirates. The player's ship is *not* one of those: it measures **1.104**, so this
+  was never a value we could have hard-coded.
+- **Precision matters more than tidiness.** Rounding the baked value to a "clean" 1e-6 shifts every player
+  bullet by 3.6e-7 world units; emitting the raw double leaves a **1 ULP** (~2e-16) gap against the runtime
+  measurement, the irreducible cost of a Float64 offline pass versus Float32 attributes × Matrix4 in the
+  browser. The script rounds nothing, and says so.
+- **The script deliberately does not re-run the hitbox fit.** It reuses `assets-hitboxes.mjs`'s exported
+  `gatherMesh`/`normalize` (the same group-local frame the boxes live in) and owns a separate
+  `muzzle:auto:*` marker span. Re-fitting would risk moving every collision box in the game to bake two
+  numbers; verified byte-identical `hitBoxes`/`broadR` afterwards.
+- **The change made an unguarded failure mode worse, so it is guarded.** A missing `muzzle` used to mean
+  "measure it" and worked; now it means the entity falls back to `1.6` — the *primitive cone's* nose — while
+  the visible hull's nose is elsewhere, silently. `server/src/catalog_muzzle.test.js` fails per ship with the
+  fix in the message (10 new tests, negative-tested by stripping a span).
+
+Oracle held at every step: `tick=2503/3490` after baking, and again after `noseZ` switched to the catalog —
+so the latent wobble Slice A flagged (shots fired before the `.glb` lands using the 1.6 default) never
+manifested in this trace, because `preloadLevelShipModels` warms the models first.
+
+#### B3b was blocked on catalog data — this was the same debt Slice A flagged
 
 Splitting `spawnEnemyShip` into data + body needs `hitBoxes`, `broadR` and `sizeScale`, which come from
 `shipModelCfg()` in the Three.js-importing `ship-factory.js` — plus `noseZ`, which is *measured off the

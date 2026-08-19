@@ -3,6 +3,27 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-20
+
+- **Where a bullet is born is now catalog data, not a runtime measurement.** `ship-build.fireMount` spawns
+  a projectile at `noseZ × the ship's world scale`, so that number decides what a shot can hit — and it was
+  *measured* off the `.glb` by `ship-factory.applyShipModel` once the model finished downloading. A piece of
+  the game's rules was therefore produced by code that needs a WebGL scene graph, and a shot fired before
+  the model landed silently used the `1.6` primitive default. New `npm run assets:muzzle`
+  (`scripts/assets-muzzle.mjs`) bakes each ship's group-local nose/tail into its `model:{}` block as
+  `muzzle`/`exhaust`; `shipModelCfg` moved to `client/src/sim-core/ship-config.js` (it was always a pure
+  read of catalog data — `hitBoxes`, `broadR` and `muzzle` are all simulation input); `entity.noseZ` comes
+  from the catalog at build time and the render→sim copy in `syncMeshes` is gone. The script reuses
+  `assets-hitboxes.mjs`'s normalization and owns a separate marker span, so `hitBoxes`/`broadR` are
+  byte-identical — verified. It rounds nothing on purpose: a "tidy" 1e-6 would shift every player bullet by
+  3.6e-7 world units, whereas the raw double sits 1 ULP (~2e-16) from the runtime value. New
+  `server/src/catalog_muzzle.test.js` (10 tests) fails per ship if a model ship has no baked muzzle —
+  necessary, because the fallback is now silently wrong rather than merely non-portable. Turns out the old
+  measurement was ±1.7 for all eight pirates (a consequence of normalizing the longest axis to 3.4) but
+  **1.104 for the player's ship**, so it could never have been hard-coded. No gameplay change: intro trace
+  still `tick=2503/3490`, before and after. Server tests 137 → 147, client 378 → 380.
+  Plan: `docs/plans/server-authoritative-sim.md`.
+
 ## 2026-08-19
 
 - **A fight is now a `World` object, and entities get their body from a host.** `client/src/sim-core/world.js`

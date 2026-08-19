@@ -63,7 +63,7 @@ export function buildPlayer(active) {
     heading: 0,                       // rotation angle around Y
     scale: SHIP_GROUP_SCALE * mc.scale, // CURRENT uniform world scale (warp-in shrinks it); drives hitboxes + muzzle
     fullScale: SHIP_GROUP_SCALE * mc.scale, // the full-size scale to grow back into after a warp
-    noseZ: 1.6,                       // group-local muzzle offset; replaced by the glb's real nose bounds on load
+    noseZ: mc.muzzle ?? 1.6,          // group-local muzzle offset from the catalog (1.6 = the primitive's cone nose)
     sizeScale: mc.scale,
     hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
     class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
@@ -134,7 +134,7 @@ export function spawnEnemyShip(shipDef) {
     pos: new Vec3(0, BULLET_PLANE_Y, 0),  // placed in the spawn ring below
     vel: new Vec3(),
     heading: simRandom() * Math.PI * 2,   // GAMEPLAY: facing decides how long it turns before its first shot
-    noseZ: 1.6,                           // group-local muzzle offset; replaced by the glb's real nose bounds on load
+    noseZ: mc.muzzle ?? 1.6,              // group-local muzzle offset from the catalog (1.6 = the primitive's cone nose)
     hull, engine, thruster,
     mounts: buildMounts(s.mounts),
     hp: hullMax,

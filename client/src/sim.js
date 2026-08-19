@@ -512,12 +512,6 @@ function syncShipMesh(ship, dt) {
   // (It used to call emitExhaust mid-step, which meant the simulation reached into the FX layer to say
   // "still burning" — the same coupling the event queue exists to remove.)
   if (ship.thrusting && ship.engine && ship.engine.exhaust) emitExhaust(ship.mesh, null, ship.vel, ship.engine.exhaust);
-  // TEMPORARY render→sim coupling. `noseZ` (where bullets are born) is MEASURED off the loaded .glb by
-  // ship-factory.applyShipModel, which means a piece of simulation input is derived from an asset the
-  // server will never parse — and a shot fired before the model lands uses the 1.6 primitive default.
-  // Copy it back each tick until it becomes catalog data (see the plan's §D5 note on model-derived sim input).
-  const nz = ship.mesh.userData.noseZ;
-  if (nz != null) ship.noseZ = nz;
 }
 
 export function syncMeshes(dt = 0) {

@@ -2838,6 +2838,16 @@ Consequences that matter:
   parse (and a shot fired before the model lands uses the `1.6` primitive default). `syncMeshes` copies it
   back each tick as an explicit stopgap until it becomes catalog data.
 
+**Model-derived simulation input is baked into the catalog.** A ship's `hitBoxes`, `broadR` and `muzzle`
+all decide gameplay — what a shot connects with, and where it is born — so `shipModelCfg` lives in
+`sim-core/ship-config.js`, not next to the Three.js loader. `muzzle`/`exhaust` (the group-local nose/tail
+offsets) used to be *measured* off the `.glb` at load time; they are now baked into each ship's `model:{}`
+block by **`npm run assets:muzzle`** (`scripts/assets-muzzle.mjs`), which reuses `assets-hitboxes.mjs`'s
+normalization and owns its own `muzzle:auto:*` marker span so the hitbox fit is never re-run. `entity.noseZ`
+is read from the catalog at build time. **Adding a ship model means running `assets:muzzle`** — without it
+the entity falls back to `1.6` (the primitive cone's nose) while the hull's nose is elsewhere, silently;
+`server/src/catalog_muzzle.test.js` fails per ship to catch exactly that.
+
 **A fight is a `World`.** `sim-core/world.js` `createWorld({ host })` owns one running fight: `player`,
 `enemies`, `bullets`, `rockets`, `drops`, the event queue, and `arenaCenter`/`arenaDrift` (the combat zone's
 centre is simulation state — the soft boundary, warp-back and mini-map all measure from it). `state.js`

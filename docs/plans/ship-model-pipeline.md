@@ -71,6 +71,14 @@ the seed carrying the URLs); CDN binaries are already on S3.
    the livery). The player ship uses `34`: **31 -> 15 draw calls, 79 -> 16 textures, 371 -> 178 KB**.
    Geometry is untouched, so this does NOT invalidate the hitboxes below. Hangar builds never flatten.
    See DECISIONS §77.
+4a-bis. **`npm run assets:muzzle`** (after `assets:pull`) → writes each ship's group-local nose/tail into
+   `model.muzzle` / `model.exhaust` in `catalog_seed.js`, in its own marker span. **This is not optional for
+   a modelled ship.** Where a bullet is born is simulation input (`fireMount` spawns at `noseZ × world
+   scale`), and it used to be measured off the loaded `.glb` at runtime — impossible for a headless server,
+   and wrong for any shot fired before the model landed. If you skip it, the ship silently fires from `1.6`
+   (the primitive cone's nose) while its real nose is elsewhere; `server/src/catalog_muzzle.test.js` fails
+   and names the ship. Re-run whenever a model, `yaw` or `scaleMul` changes — same trigger as the hitboxes
+   below. It reuses the hitbox normalization but never re-fits the boxes.
 4b. `npm run assets:pull` (if the combat glbs aren't local yet) then **`npm run assets:hitboxes`** →
    decomposes each combat glb into near-convex parts with V-HACD (`vhacd-js` — run `npm install` once; it's
    memory-safe, `voxelResolution 400000` (bounded voxel count) / `maxHulls 48` (part-count cap, cheap)) and writes one PCA oriented box per part into

@@ -10,6 +10,7 @@
     "assets:check": "node scripts/assets-check.mjs",
     "assets:materials": "node scripts/assets-sample-materials.mjs",
     "assets:hitboxes": "node scripts/assets-hitboxes.mjs",
+    "assets:muzzle": "node scripts/assets-muzzle.mjs",
     "build:itch": "node scripts/build-itch.mjs",
     "credits:build": "node scripts/credits-build.mjs"
   },

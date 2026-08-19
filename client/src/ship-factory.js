@@ -11,32 +11,8 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { BULLET_PLANE_Y, G } from './state.js'; // the canonical combat plane every ship group sits on
 import { scene, renderer, camera } from './engine.js'; // needed to warm a freshly parsed model onto the GPU
 import { SHIP_GROUP_SCALE } from './sim-core/consts.js'; // the group's uniform world scale is SIM state (hitboxes + muzzle scale with it)
-
-// Per-ship model-presentation config (stats.model), with back-compat for the old loose keys
-// (stats.modelYaw / stats.sizeScale) so a stale player_ships row or cache can't break.
-export const shipModelCfg = (s) => {
-  const m = s.model || {};
-  // `lift` (group-local +Y, pre-scale) raises BOTH the visual model (applyShipModel) and the hitboxes
-  // together. Bullets fly in the fixed BULLET_PLANE_Y plane, which is the group origin (group-local y=0).
-  // A model whose bounding-box center sits above its hull leaves the nose/deck below that plane, so shots
-  // pass over it (see enemy_3). We fix this by moving the MODEL onto the plane, never the bullets: lift
-  // slides the hull up into the bullet plane, and visual + hitboxes stay in lockstep by sharing this value.
-  const lift = m.lift ?? 0;
-  const raw = m.hitBoxes ?? null;
-  const hitBoxes = (raw && lift)
-    ? raw.map((b) => ({ ...b, c: { x: b.c.x, y: b.c.y + lift, z: b.c.z } }))
-    : raw;
-  return {
-    yaw: m.yaw ?? s.modelYaw ?? 0,
-    scale: m.scale ?? s.sizeScale ?? 1,
-    scaleMul: m.scaleMul ?? 1,
-    lift,                       // group-local +Y offset applied to the visual model + hitboxes (top-down aim fix)
-    muzzle: m.muzzle ?? null,   // group-local +Z override for the projectile spawn (null → auto from glb bounds)
-    exhaust: m.exhaust ?? null, // group-local −Z override for the exhaust spawn (null → auto from glb bounds)
-    hitBoxes,                   // per-part OBB hitbox (group-local noseZ frame, lift-adjusted); null → single-sphere fallback
-    broadR: m.broadR == null ? null : m.broadR + Math.abs(lift), // grow the broad sphere so lifted boxes stay enclosed
-  };
-};
+import { shipModelCfg } from './sim-core/ship-config.js';
+export { shipModelCfg }; // moved to sim-core (it is catalog data, not rendering); re-exported for existing importers
 
 // Build the spec applyShipModel/makeShip consume from a resolved shipModelCfg (mc). null url → primitive.
 export const modelSpec = (url, mc = {}) => (url
