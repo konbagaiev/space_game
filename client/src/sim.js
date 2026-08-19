@@ -549,6 +549,14 @@ function applySimEvent(ev) {
     case 'shieldHit':      spawnShieldHit(ev.pos, ev.broke); break;
     case 'enemyShieldHit': spawnEnemyShieldHit(ev.enemy, ev.pos, ev.broke); break;
     case 'shieldReady':    spawnShieldReady(); break;
+    case 'fire':
+      // Enemy fire makes no sound at all — intentional, only your own shots are audible. The weapon's
+      // class picks the sample through the DB map; unset falls back to a synthesized zap.
+      if (ev.fromPlayer) {
+        const sample = sfxFor('weapon', ev.weaponClass, 'fire');
+        if (ev.isRocket) audio.sfx.rocket(sample); else audio.sfx.shoot(sample);
+      }
+      break;
     case 'smoke':          spawnSmoke(ev.pos); break;
     case 'warpFlash':      spawnExplosion(ev.pos); break;
     case 'evade':

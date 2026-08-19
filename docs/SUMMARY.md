@@ -2856,6 +2856,14 @@ reads `enemies`/`bullets` is unchanged. The reason it exists: `state.js` cannot 
 `window.localStorage` at import), so the simulation can never reach module singletons — collections have to
 arrive as an argument, and one process can then hold many Worlds.
 
+**Firing is simulation, sound is not.** `fireMount`/`updateGroups` live in `sim-core/ship-entity.js` and
+emit a `fire` event ({ weaponClass, isRocket, fromPlayer }) instead of playing anything; the adapter in
+`sim.js` decides that only the player's own shots are audible (enemy fire is deliberately silent — rocket
+detonations still sound). Target selection is `sim-core/targeting.js`: `findTargetInSector` for the rocket
+seeker, `findBulletAimTarget` for the aim-assist cone, both pure scans over the World's combatants.
+`ship-build.js` keeps a World-bound `updateGroups` wrapper. **`G.player` is a getter/setter onto
+`world.player`** — one object, two names, no duplicated state.
+
 **Ships are built as data too.** `sim-core/ship-entity.js` resolves a catalog ship row into a fighting
 entity — `resolveWeapon`, `resolveComponents`, `buildMounts`, `buildGroups`, `makeEnemy`, `spawnEnemy` —
 reading the catalog off `world.catalog` rather than a module singleton. `ship-build.js` keeps thin wrappers

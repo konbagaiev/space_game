@@ -6,14 +6,16 @@ import { scene } from './engine.js';
 import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js';
 import { deriveDrive, skillEffects } from './sim-core/components.js';
 import { shipModelCfg, modelSpec, makeShip, preloadShipModel } from './ship-factory.js';
-import { findTargetInSector, findBulletAimTarget } from './projectiles.js';
-import { spawnBullet, spawnRocket } from './sim-core/spawn.js'; // entity data + host-attached body
 import { resolveWeapon as resolveWeaponIn, resolveComponents as resolveComponentsIn,
-         buildMounts as buildMountsIn, buildGroups, spawnEnemy as spawnEnemyIn } from './sim-core/ship-entity.js';
+         buildMounts as buildMountsIn, buildGroups, spawnEnemy as spawnEnemyIn,
+         updateGroups as updateGroupsIn } from './sim-core/ship-entity.js';
+
+// Advance a ship's fire groups in THIS tab's World. The firing logic itself is sim-core's (it decides what
+// is spawned and emits `fire`); this only binds the World so the two call sites in sim.js are unchanged.
+export const updateGroups = (ship, fwd, isPlayer, dt, wantsFire) =>
+  updateGroupsIn(world, ship, fwd, isPlayer, dt, wantsFire);
 import { world } from './state.js';                             // the World these shots are fired into
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
-import { audio, sfxFor } from './sound-routing.js';
-import { simRandom } from './sim-core/sim-random.js'; // seeded GAMEPLAY stream: the enemy reload jitter below
 import { Vec3 } from './sim-core/vec.js';                 // sim transforms are plain vectors, not THREE.Vector3
 import { SHIP_GROUP_SCALE } from './sim-core/consts.js';  // ship world scale = SHIP_GROUP_SCALE × sizeScale
 
@@ -147,55 +149,3 @@ export function preloadLevelShipModels(level) {
     if (def?.modelUrl) preloadShipModel(def.modelUrl);
   }
 }
-
-const rightVec = (fwd) => new Vec3(fwd.z, 0, -fwd.x); // perpendicular to fwd, in the plane
-
-// Fire one mount: spawn its projectile at the muzzle + lateral offset (side-by-side fire).
-function fireMount(ship, mount, fwd, isPlayer) {
-  const sc = ship.scale || 1;                              // current world scale (incl. spawn-grow + sizeScale)
-  const noseZ = (ship.noseZ ?? 1.6) * sc;                  // spawn at the model's actual nose, not a fixed offset
-  const muzzle = ship.pos.clone()
-    .addScaledVector(fwd, noseZ)
-    .addScaledVector(rightVec(fwd), mount.offset * (ship.sizeScale || 1));
-  const w = mount.weapon;
-  if (w.type === 'rocket') {
-    const target = isPlayer ? findTargetInSector(muzzle, fwd, w.seekHalfAngle ?? Math.PI) : G.player;
-    // Player rocket accel rides the ship's (mobility-boosted) acceleration, then the Rocket skill's own
-    // speed multiplier on top so "+rocket speed" is felt through the whole flight, not just launch.
-    const accel = isPlayer ? ship.acceleration * (ship.rocketSpeedMul || 1) : (w.accel ?? ship.acceleration);
-    spawnRocket(world, muzzle, fwd, w, accel, isPlayer, target);
-    if (isPlayer) audio.sfx.rocket(sfxFor('weapon', w.class, 'fire')); // player rockets sampled; enemy fire is silent (rocket detonations still play)
-  } else {
-    let dir = fwd; // default: straight along the nose (spawnBullet clones+normalizes, so fwd is not mutated)
-    if (w.aimAssistDeg) {
-      const target = findBulletAimTarget(muzzle, fwd, w.aimAssistDeg * Math.PI / 180, isPlayer);
-      if (target) {
-        const aim = target.pos.clone().sub(muzzle); // toward the target's CURRENT position (no leading)
-        aim.y = 0;                                            // keep the shot on the combat plane
-        if (aim.lengthSq() > 1e-6) dir = aim.normalize();     // unit; spawnBullet re-normalizes anyway
-      }
-    }
-    spawnBullet(world, muzzle, dir, w, isPlayer, ship.vel);
-    // The weapon's class → its 'fire' sound via the DB map (sfxFor); unset → synthesized zap.
-    // Enemy fire makes no sound at all (intentional — only the player's own shots are audible).
-    if (isPlayer) audio.sfx.shoot(sfxFor('weapon', w.class, 'fire'));
-  }
-}
-
-// Advance a ship's fire groups: drain queued (staggered) volleys, and start a new volley when
-// `wantsFire(group)` is true and the group is off cooldown. One trigger fires ALL the group's
-// mounts, each after its own `delay` (so two launchers fire one after the other).
-export function updateGroups(ship, fwd, isPlayer, dt, wantsFire) {
-  for (const g of Object.values(ship.groups)) {
-    g.cooldown -= dt;
-    for (let i = g.pending.length - 1; i >= 0; i--) {
-      g.pending[i].t -= dt;
-      if (g.pending[i].t <= 0) { fireMount(ship, g.pending[i].mount, fwd, isPlayer); g.pending.splice(i, 1); }
-    }
-    if (g.mounts.length && g.cooldown <= 0 && wantsFire(g)) {
-      g.cooldown = g.reload + (isPlayer ? 0 : simRandom() * 0.5); // enemies stagger their reloads a bit (GAMEPLAY: shifts when their bullets exist)
-      for (const m of g.mounts) g.pending.push({ mount: m, t: m.delay });
-    }
-  }
-}
-

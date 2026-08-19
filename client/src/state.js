@@ -20,7 +20,10 @@ import { SPAWN_GROW_TIME, BULLET_PLANE_Y } from './sim-core/consts.js';
 export const G = {
   gfx: resolveTier(loadTier(window.localStorage, Device.hasTouch)), // current graphics quality knobs (tier switch reloads the page)
   rotated: false,                                               // portrait-phone 90° rotation currently active
-  player: null,                                                 // the active player ship (built by buildPlayer in bootstrap/takeoff)
+  // The active player ship. It LIVES on the World (sim-core/world.js) — the simulation needs it and cannot
+  // reach this file in Node — but every call site says `G.player`, so this proxies rather than duplicates.
+  get player() { return world.player; },
+  set player(p) { world.player = p; },
   // --- world (built/reassigned by buildMap in world.js; read by the loop + ?tune panel + reset) ---
   sky: null,                  // THREE.Group (at the world origin) holding the star + planets + moons (sky scene)
   systemBodies: null,         // [{ mesh, name, spec, dir, moons, isStar }] — fixed-position star-system bodies

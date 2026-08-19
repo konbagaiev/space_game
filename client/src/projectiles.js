@@ -11,15 +11,13 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { pointHitsShip, broadRadius } from './sim-core/collision.js';
+import { pointHitsShip } from './sim-core/collision.js';
 import { applyShieldedDamage } from './sim-core/components.js';
 import { registerShieldImpact, registerEnemyShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
 import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
-import { nearestInConeIndex } from './sim-core/steering.js'; // pure XZ nearest-in-cone pick for bullet aim assist
-import { Vec3 } from './sim-core/vec.js'; // projectile transforms are sim state, not mesh state
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -286,46 +284,6 @@ const rocketGeo = new THREE.ConeGeometry(0.6, 2.4, 8); // nose in +Z (like the s
 // Spiral-rocket warhead: slimmer + sharper than the standard rocket, brighter emissive tint so the
 // three visible rockets read as a distinct weapon. Built procedurally (no .glb).
 const spiralRocketGeo = new THREE.ConeGeometry(0.34, 2.0, 6);
-
-// Find the nearest enemy in the front sector [fwd +/- halfAngle].
-export function findTargetInSector(pos, fwd, halfAngle) {
-  let best = null, bestDist = Infinity;
-  for (const e of enemies) {
-    if (e.warping) continue; // not a valid homing target until fully formed
-    const to = new Vec3(e.pos.x, e.pos.y, e.pos.z).sub(pos);
-    const d = to.length();
-    if (d < 0.001) continue;
-    to.divideScalar(d);
-    if (fwd.dot(to) >= Math.cos(halfAngle) && d < bestDist) { best = e; bestDist = d; }
-  }
-  return best;
-}
-
-// Aim-assist target for a BULLET shot: the best-aimed valid OPPOSING-side target whose HULL overlaps the
-// forward cone (halfAngle, radians). Player guns consider every non-warping enemy; enemy guns pick the
-// player (if alive). Returns the target ship object or null. Deterministic (pure scan; no RNG). Planar (XZ).
-// Rockets do NOT use this — they keep findTargetInSector.
-//
-// Each candidate carries its `broadRadius` — the same enclosing sphere the collision broad-phase uses — so
-// the cone test knows how big the ship actually is. Without it a target only counted when its CENTRE fell
-// inside the cone, so a ship whose wing was in the line of fire got no correction and the assist appeared
-// dead: bullets flew past the wing, and any hit was the wing drifting into them rather than the shot
-// bending. The aim point is still the hull CENTRE (see fireMount) — the meaty part, not the wingtip that
-// let the target in.
-export function findBulletAimTarget(pos, fwd, halfAngle, fromPlayer) {
-  const from = { x: pos.x, z: pos.z };
-  const f = { x: fwd.x, z: fwd.z };            // fwd is horizontal (y=0) → its XZ is unit
-  if (fromPlayer) {
-    const cands = [];
-    for (const e of enemies) if (!e.warping) cands.push(e); // skip enemies still forming
-    const idx = nearestInConeIndex(from, f, cands.map((e) => ({ x: e.pos.x, z: e.pos.z, r: broadRadius(e) })), halfAngle);
-    return idx >= 0 ? cands[idx] : null;
-  }
-  if (!G.player || !G.player.alive) return null;
-  const p = G.player.pos;
-  const idx = nearestInConeIndex(from, f, [{ x: p.x, z: p.z, r: broadRadius(G.player) }], halfAngle);
-  return idx >= 0 ? G.player : null;
-}
 
 // Give a rocket a body. Three shapes share the pool: the spiral volley's LEADER is an empty group (it
 // homes and steers but is never seen or shot), a spiral warhead is a slimmer, sharper cone, and a normal

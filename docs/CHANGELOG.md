@@ -5,6 +5,22 @@
 
 ## 2026-08-20
 
+- **Firing and target selection leave the renderer; the last mid-tick audio calls become an event.** Slice
+  B2 swept `sim.js` and so missed `fireMount` in `ship-build.js`, which was still calling
+  `audio.sfx.shoot(...)` / `audio.sfx.rocket(...)` during the tick — simulation code reaching into the audio
+  layer. A thirteenth event type, `fire { weaponClass, isRocket, fromPlayer }`, closes it, and the adapter
+  owns the judgement that only the player's own shots are audible. `findTargetInSector` (rocket seeker) and
+  `findBulletAimTarget` (aim-assist cone) moved to the new `client/src/sim-core/targeting.js` — pure scans
+  over the World's combatants, previously in `projectiles.js` only because that is where the meshes were —
+  and `fireMount`/`updateGroups` moved into `sim-core/ship-entity.js`, with a World-bound `updateGroups`
+  wrapper left in `ship-build.js` so `sim.js`'s call sites are unchanged. **`G.player` is now a
+  getter/setter onto `world.player`**, so there is one source of truth and no call site had to change.
+  Verified the fire path with a direct browser probe rather than trusting `12-audio`, which fails on a
+  music-clip assertion (identically on `main`) *before* reaching any weapon sound: 13 gun sounds and 1
+  rocket sound against 8 bullets and 1 rocket in flight. No gameplay change: intro trace still
+  `tick=2503/3490`; client tests 382 → 384.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3c, part 1).
+
 - **Enemies are built as data; the scene graph is no longer anyone's source of truth.**
   `client/src/sim-core/ship-entity.js` now turns a catalog ship row into a fighting entity
   (`resolveWeapon`/`resolveComponents`/`buildMounts`/`buildGroups`/`makeEnemy`/`spawnEnemy`); `ship-build.js`

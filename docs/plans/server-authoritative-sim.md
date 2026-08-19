@@ -213,8 +213,9 @@ at the moment they actually move. So Slice B runs:
   is untouched while Node gets N worlds in one process. Runs in three parts:
   - **B3a — the World, plus the projectile lifecycle seam.** ✅ DONE 2026-08-19.
   - **B3b — the enemy lifecycle seam.** ✅ DONE 2026-08-20.
-  - **B3c — physically move the steps into `sim-core/`**, with `arenaCenter`, the station position and the
-    input snapshot arriving as World data.
+  - **B3c — physically move the steps into `sim-core/`**, with the station position and the input snapshot
+    arriving as World data. Part 1 (firing + targeting) ✅ DONE 2026-08-20; the step functions themselves,
+    the station position, the input snapshot and the `reset()` split remain.
 
 #### B3a outcome
 
@@ -243,6 +244,28 @@ Two things this surfaced:
 
 Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
 `17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
+
+#### B3c part 1 outcome — and a gap B2 left behind
+
+**B2 missed two outbound calls, because I swept `sim.js` and firing lives in `ship-build.js`.**
+`fireMount` was still calling `audio.sfx.rocket(...)` / `audio.sfx.shoot(...)` mid-tick, driven by
+`updateGroups` from `stepPlayer`/`stepEnemyAI` — simulation code reaching into the audio layer. A thirteenth
+event type, `fire { weaponClass, isRocket, fromPlayer }`, closes it; the adapter decides that only the
+player's own shots are audible, which was always a client judgement rather than a rule of the game.
+
+Moved to sim-core with it:
+- `sim-core/targeting.js` — `findTargetInSector` (the rocket seeker) and `findBulletAimTarget` (the
+  aim-assist cone). Pure scans over the World's combatants; they were in `projectiles.js` only because that
+  is where the meshes were.
+- `fireMount` / `updateGroups` → `sim-core/ship-entity.js`. `ship-build.js` keeps a World-bound
+  `updateGroups` wrapper so the two call sites in `sim.js` are untouched.
+- **`G.player` is now a getter/setter onto `world.player`** — one source of truth, and every existing
+  `G.player` call site works unchanged.
+
+**Verified the fire path directly, because the obvious test does not cover it.** `12-audio` fails on a
+music-clip length assertion — identically on `main` — *before* it reaches any weapon sound, so it would have
+passed a broken fire event silently. A browser probe holding the fire keys counted 13 gun sounds and 1
+rocket sound against 8 bullets and 1 rocket in flight.
 
 #### B3b outcome
 

@@ -19,6 +19,8 @@ import { shipModelCfg } from './ship-config.js';
 import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC } from './components.js';
 import { simRandom } from './sim-random.js';
 import { SHIP_GROUP_SCALE, BULLET_PLANE_Y, SPAWN_GROW_TIME } from './consts.js';
+import { spawnBullet, spawnRocket } from './spawn.js';
+import { findTargetInSector, findBulletAimTarget } from './targeting.js';
 
 export const resolveWeapon = (catalog, id) => (id != null ? catalog.weapons.get(id) || null : null);
 
@@ -108,4 +110,56 @@ export function spawnEnemy(world, shipDef) {
   world.enemies.push(e);
   world.host.onSpawn('enemy', e);
   return e;
+}
+
+// ---------- Firing ----------
+const rightVec = (fwd) => new Vec3(fwd.z, 0, -fwd.x); // perpendicular to fwd, in the plane
+
+// Fire one mount: spawn its projectile at the muzzle + lateral offset (side-by-side fire).
+// Emits `fire` rather than playing a sound: only the player's own shots are audible, and deciding that is
+// the client's business, not the simulation's.
+function fireMount(world, ship, mount, fwd, isPlayer) {
+  const sc = ship.scale || 1;                              // current world scale (incl. spawn-grow + sizeScale)
+  const noseZ = (ship.noseZ ?? 1.6) * sc;                  // spawn at the model's actual nose, not a fixed offset
+  const muzzle = ship.pos.clone()
+    .addScaledVector(fwd, noseZ)
+    .addScaledVector(rightVec(fwd), mount.offset * (ship.sizeScale || 1));
+  const w = mount.weapon;
+  if (w.type === 'rocket') {
+    const target = isPlayer ? findTargetInSector(world, muzzle, fwd, w.seekHalfAngle ?? Math.PI) : world.player;
+    // Player rocket accel rides the ship's (mobility-boosted) acceleration, then the Rocket skill's own
+    // speed multiplier on top so "+rocket speed" is felt through the whole flight, not just launch.
+    const accel = isPlayer ? ship.acceleration * (ship.rocketSpeedMul || 1) : (w.accel ?? ship.acceleration);
+    spawnRocket(world, muzzle, fwd, w, accel, isPlayer, target);
+    world.events.emit({ type: 'fire', weaponClass: w.class, isRocket: true, fromPlayer: isPlayer });
+  } else {
+    let dir = fwd; // default: straight along the nose (spawnBullet clones+normalizes, so fwd is not mutated)
+    if (w.aimAssistDeg) {
+      const target = findBulletAimTarget(world, muzzle, fwd, w.aimAssistDeg * Math.PI / 180, isPlayer);
+      if (target) {
+        const aim = target.pos.clone().sub(muzzle); // toward the target's CURRENT position (no leading)
+        aim.y = 0;                                            // keep the shot on the combat plane
+        if (aim.lengthSq() > 1e-6) dir = aim.normalize();     // unit; spawnBullet re-normalizes anyway
+      }
+    }
+    spawnBullet(world, muzzle, dir, w, isPlayer, ship.vel);
+    world.events.emit({ type: 'fire', weaponClass: w.class, isRocket: false, fromPlayer: isPlayer });
+  }
+}
+
+// Advance a ship's fire groups: drain queued (staggered) volleys, and start a new volley when
+// `wantsFire(group)` is true and the group is off cooldown. One trigger fires ALL the group's
+// mounts, each after its own `delay` (so two launchers fire one after the other).
+export function updateGroups(world, ship, fwd, isPlayer, dt, wantsFire) {
+  for (const g of Object.values(ship.groups)) {
+    g.cooldown -= dt;
+    for (let i = g.pending.length - 1; i >= 0; i--) {
+      g.pending[i].t -= dt;
+      if (g.pending[i].t <= 0) { fireMount(world, ship, g.pending[i].mount, fwd, isPlayer); g.pending.splice(i, 1); }
+    }
+    if (g.mounts.length && g.cooldown <= 0 && wantsFire(g)) {
+      g.cooldown = g.reload + (isPlayer ? 0 : simRandom() * 0.5); // enemies stagger their reloads a bit (GAMEPLAY: shifts when their bullets exist)
+      for (const m of g.mounts) g.pending.push({ mount: m, t: m.delay });
+    }
+  }
 }
