@@ -2838,7 +2838,21 @@ Consequences that matter:
   parse (and a shot fired before the model lands uses the `1.6` primitive default). `syncMeshes` copies it
   back each tick as an explicit stopgap until it becomes catalog data.
 
-**What lives in `sim-core/`:** `vec.js` and `consts.js` (Slice A) plus the game's pure rules —
+**The simulation talks through an event queue.** `sim-core/events.js` (`createEventQueue()`; this world's
+instance is `simEvents` on `state.js`) is the sim's only outbound channel. Instead of playing a sound or
+writing the DOM mid-tick, the sim appends one of twelve events — `hit`, `bulletImpact`, `shieldHit`,
+`enemyShieldHit`, `shieldReady`, `evade`, `smoke`, `kill`, `warpFlash`, `banner`, `win`, `death` — and the
+adapter at the bottom of `sim.js` drains them once per tick into FX, audio, HUD and `net.js`. The catalogue
+is documented in `events.js`. Two rules hold: events carry **copied** values (the drain happens after the
+tick, when a bullet has moved on and a killed enemy is already spliced out), and anything player-facing
+carries an **i18n key plus params**, never translated text. `levelRunner.win()` keeps the rules (the ×2
+credit double, the XP bonus) and emits `win`; the overlay and the `bankRun`/`depositLoot`/`unlockNextLevel`/
+`reportMissionCleared` block belong to the adapter, still gated on `!G.replayMode`. Engine exhaust is
+**state**, not an event: the sim sets `ship.thrusting` and `syncMeshes` drives the plume. Note
+`stepSmokeTrail` runs *after* the drain — it rebuilds the instanced puff pool from `smoke[]`, so it must
+see this tick's puffs.
+
+**What lives in `sim-core/`:** `vec.js`, `consts.js` and `events.js` plus the game's pure rules —
 `components.js` (`deriveDrive`/`shipMass`/`repairTick`/`shieldRecharge`/`applyShieldedDamage`),
 `steering.js`, `spawn-timing.js`, `collision.js`, `level-sim.js`, `drops-config.js`, `autopilot-config.js`
 and `sim-random.js` (the seeded gameplay stream, DECISIONS §73). Their unit tests moved with them.

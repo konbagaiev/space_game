@@ -207,10 +207,42 @@ at the moment they actually move. So Slice B runs:
 
 - **B1 — move the already-pure modules into `sim-core/` + enforce the boundary.** ✅ DONE 2026-08-19.
 - **B2 — the event queue**: the sim stops calling audio / FX / DOM / i18n / `net.js` and appends events
-  instead; `sim.js` becomes the client-side adapter that drains them. ~40–50 real call sites.
+  instead; `sim.js` becomes the client-side adapter that drains them. ✅ DONE 2026-08-19.
 - **B3 — move the step functions in**, taking a `World` as their first argument. `state.js` calls
   `createWorld()` once and re-exports its collections, so client code that reads `enemies`/`bullets`
   is untouched while Node gets N worlds in one process.
+
+#### B2 outcome
+
+`sim-core/events.js` provides `createEventQueue()`; `state.js` holds the one instance for this world
+(`simEvents`) until it moves onto the World in B3. Twelve event types cover everything the tick used to do
+to the outside: `hit`, `bulletImpact`, `shieldHit`, `enemyShieldHit`, `shieldReady`, `evade`, `smoke`,
+`kill`, `warpFlash`, `banner`, `win`, `death`. The catalogue is documented at the top of `events.js` — the
+server will answer to the same list.
+
+Three things worth knowing:
+
+- **Events carry copied values.** The queue drains at the end of the tick, by which time a bullet's `pos`
+  has moved and a killed enemy is already spliced out of `enemies`. Positions are cloned at emit time and
+  the `kill` event carries reward/xp/name/colour outright. The one deliberate reference is
+  `enemyShieldHit.enemy`, which binds a pooled bubble to a specific ship — identity, not a value.
+- **`banner` carries an i18n KEY plus params, never translated text.** `t()` is a client concern; a
+  headless authority must not need it. Same reasoning moved `levelRunner.win()`'s overlay and its
+  `bankRun`/`depositLoot`/`unlockNextLevel`/`reportMissionCleared` block into the adapter, leaving the
+  rules (`won`, the ×2 credit double, the XP bonus) in the sim.
+- **Engine exhaust became state, not an event.** `emitExhaust` was called every tick while thrusting —
+  that is not an event, it is a condition. The sim sets `ship.thrusting`; `syncMeshes` draws the plume.
+
+**The one real regression this caused, and why it is instructive.** `stepSmokeTrail` rebuilds the instanced
+puff pool from `smoke[]`, and it ran *before* the drain — so puffs created by the adapter reached the pool a
+frame late and `27-smoke-instancing` failed on `poolCount !== puffs`. Moving that one flush after the drain
+restores the original spawn → age → flush order exactly. **The lesson for B3: a pool that a step function
+flushes must be written before that flush runs**, and moving work into the queue silently changes when it is
+written. The intro replay caught none of this — `tick=2503/3490` throughout.
+
+Verified: client tests 367 → **374**, intro trace `tick=2503/3490`, guard scenarios green.
+`19-hud-log` and `17-triple-spiral-rocket` fail identically on `main` (pre-existing / flaky), checked
+individually on both.
 
 #### B1 outcome
 

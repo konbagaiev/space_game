@@ -10,6 +10,7 @@
 import { loadTier, resolveTier } from './graphics.js';
 import { Device } from './device.js';
 import { makeClientId } from './client-id.js';
+import { createEventQueue } from './sim-core/events.js';
 
 // Mutable state bag: scalars that get reassigned AND read across module boundaries live here
 // (an exported `let` can't be reassigned from an importing module — a property on a shared
@@ -134,5 +135,10 @@ export const SPAWN_GROW_TIME = 1.0; // ships grow from a dot to full size over t
 export const BULLET_PLANE_Y = 0.6;
 
 // --- Input state ---
+// The simulation's outbound event queue for THIS world (sim-core/events.js). The sim appends; the adapter
+// in sim.js drains it once per tick and turns each event into FX / audio / HUD / backend work. Lives here
+// with the other world singletons for now; it moves onto the World object when the step functions do.
+export const simEvents = createEventQueue();
+
 export const keys = {};                                          // KeyboardEvent.code -> bool
 export const touchAim = { active: false, heading: 0, thrust: 0 }; // touch stick: nose heading + thrust magnitude

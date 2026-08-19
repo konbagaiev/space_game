@@ -5,6 +5,22 @@
 
 ## 2026-08-19
 
+- **The simulation stopped calling out: it emits events, the client acts on them.** Mid-tick the sim used
+  to play audio, spawn FX, write the DOM through i18n and call the backend — `levelRunner.win()` alone did
+  the victory sting, the overlay, `bankRun`, `depositLoot`, `unlockNextLevel` and `reportMissionCleared`.
+  It now appends to a queue (`client/src/sim-core/events.js`, `createEventQueue()`; the instance lives on
+  `state.js` as `simEvents`) and an adapter in `sim.js` turns each event into sight, sound, HUD and
+  network. Twelve types: `hit`, `bulletImpact`, `shieldHit`, `enemyShieldHit`, `shieldReady`, `evade`,
+  `smoke`, `kill`, `warpFlash`, `banner`, `win`, `death`. Events carry **copied** values (the queue drains
+  at end of tick, by which point a bullet has moved and a dead enemy is spliced out), and `banner`/`win`
+  carry i18n **keys**, never translated text — `t()` must not be reachable from a headless authority. Game
+  rules stayed in the sim (the ×2 victory credit double, the XP bonus, `won`). Engine exhaust became
+  **state** rather than a call: the sim sets `ship.thrusting`, `syncMeshes` draws the plume. One ordering
+  fix fell out — `stepSmokeTrail` rebuilds the instanced puff pool from `smoke[]`, so it now runs after the
+  drain, restoring the original spawn → age → flush order. No gameplay change: intro trace still
+  `tick=2503/3490`; client tests 367 → 374.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B2).
+
 - **The game's pure rules now live in `client/src/sim-core/`, and a test keeps them pure.**
   `components.js`, `steering.js`, `spawn-timing.js`, `collision.js`, `level-sim.js`, `drops-config.js`,
   `autopilot-config.js` and `sim-random.js` moved into the folder (via `git mv`, history preserved) next to

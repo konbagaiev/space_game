@@ -20,6 +20,7 @@ import { spawnEnemyShip, updateGroups, preloadLevelShipModels } from './ship-bui
 import { stepSpawnGate } from './sim-core/spawn-timing.js';
 import { simRandom } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
 import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
+import { simEvents } from './state.js'; // the sim's outbound channel — see the adapter at the bottom of this file
 import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
 import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './sim-core/collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
@@ -48,12 +49,11 @@ export function refreshMusic() { audio.setScene(musicForState()); }
 // the current one. `firedBanners` guards each milestone so it shows once per run (reset in reset()).
 const BANNER_FADE = 3;              // seconds to fade from full to invisible (per the design)
 const firedBanners = new Set();     // milestone keys already shown this run (10, 5, 'final')
-function showBanner(text, dur = BANNER_FADE) { G.banner.text = text; G.banner.life = dur; G.banner.maxLife = dur; }
+// The sim never translates: it names the string and lets the adapter resolve it through i18n.
+function showBanner(key, params = null, dur = BANNER_FADE) { simEvents.emit({ type: 'banner', key, params, dur }); }
 // Floating "EVADE" text over the ship when a hostile shot is dodged (Maneuver skill). Reuses the
 // credit-popup pool/renderer (hud.updateCreditPopups) via a `text` field instead of a credit `amount`.
-function spawnEvadePopup(pos) {
-  creditPopups.push({ pos: pos.clone(), text: t('ui.evade'), evade: true, life: 1.2, maxLife: 1.2 });
-}
+function spawnEvadePopup(pos) { simEvents.emit({ type: 'evade', pos: pos.clone() }); }
 // Draw: apply the current banner's text + fading opacity; hidden while faded out, on menus/overlays,
 // or with no player. Ages in update(dt) (so it freezes on pause), like the credit popups.
 export function updateBanner() {
@@ -108,7 +108,7 @@ export const levelRunner = {
     const next = this.level && this.level.phases[this.phaseIndex + 1];
     if (ph && !ph.event && next && next.event === 'win' && !firedBanners.has('final')) {
       firedBanners.add('final');
-      showBanner(t('ui.banner.final_stage'));
+      showBanner('ui.banner.final_stage');
     }
     if (ph && ph.event === 'win') {
       // defer the overlay by `delay` seconds so the boss explosion can play out first
@@ -140,29 +140,10 @@ export const levelRunner = {
     this.returningToBase = false;
     G.returnToBase = false; G.autopilot.active = false; G.autopilot.target = null;
     if (G.baseStation) G.baseStation.active = false;
-    audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
+    // Rules stay here; the sting, the overlay and every backend side effect are the adapter's job.
     G.earned *= 2; // double the credits earned for clearing the level
     G.earnedXp += this.level.xpReward || 0; // one-shot mission XP bonus on victory (per-kill XP is NOT doubled)
-    el.overlayTitle.textContent = t('ui.overlay.victory');
-    // resolve the level's victory line through i18n (key → translation → English fallback)
-    const cleared = this.winTextKey ? t(this.winTextKey) : (this.winText || t('ui.overlay.sector_cleared'));
-    el.overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: G.earned })}`;
-    el.restart.textContent = t('ui.button.continue'); // a win continues to the Hangar
-    el.backHangar.style.display = 'none'; // Continue already goes to the Hangar — no separate button on a win
-    el.overlay.style.display = 'flex';
-    // A ?record/?playback dev session is READ-ONLY: show the victory overlay but do NOT mutate the server —
-    // otherwise a (re)played win banks credits, deposits loot AND advances current_progress, silently skipping
-    // the level for the real player. All server side effects below are gated on !G.replayMode.
-    if (!G.replayMode) {
-      track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
-      bankRun(); // bank the earned credits into the account balance
-      G.flushSession && G.flushSession('win'); // upload the recorded session (funnel analytics)
-      const loot = takeLoot(); if (loot.length) depositLoot(loot); // victory only: dump the run's collected drops into the stash
-      // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
-      // levels advance progression as before.
-      if (!this.level.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
-      else if (this.level.missionId) reportMissionCleared(this.level.missionId); // permanent side-mission clear → `minMission` shop unlocks
-    }
+    simEvents.emit({ type: 'win', textKey: this.winTextKey, text: this.winText });
   },
 
   pickShip(pool) {
@@ -286,7 +267,7 @@ function autopilotControl(dt, accel, turn) {
     } else if (dist > stopDist + 0.5) {
       const fwd = forwardVec(G.player.heading);
       G.player.vel.addScaledVector(fwd, accel * dt);
-      emitExhaust(G.player.mesh, fwd, G.player.vel, G.player.engine.exhaust);
+      G.player.thrusting = true; // render consequence: syncMeshes drives the plume
     } else {
       brakeStep(accel, dt);
     }
@@ -393,9 +374,11 @@ function checkMissionZone(dt) {
   if (r.t == null) z.warmed = false; // left the zone → warm again on the next approach (cheap: cached)
   z.t = r.t;
   if (r.t != null && !r.fire && r.t > 0) {
-    // hold the banner at full opacity while it counts (showBanner fades over its lifetime)
-    showBanner(t('ui.roam.engaging', { n: Math.ceil(r.t) }), 1);
-    G.banner.life = G.banner.maxLife;
+    // Re-armed every tick while the countdown runs, so it holds at full opacity instead of fading.
+    // (The old `G.banner.life = G.banner.maxLife` nudge that used to follow is gone: showBanner only
+    // EMITS now, so the nudge read the PREVIOUS banner's values — and the adapter sets life == maxLife
+    // on arrival anyway, which is the invariant that line was reaching for.)
+    showBanner('ui.roam.engaging', { n: Math.ceil(r.t) }, 1);
   } else if (wasCounting && r.t == null) {
     G.banner.life = 0; // left the zone → drop the countdown banner immediately
   }
@@ -465,7 +448,7 @@ export function warpPlayerToCenter() {
   G.player.oobTime = 0;
   G.player.spawnAge = 0;                  // (re)start the grow-from-a-dot animation
   G.player.scale = G.player.fullScale * 0.001; // shrink to a dot; stepPlayer grows it back
-  spawnExplosion(G.player.pos.clone()); // a small flash at the arrival point
+  simEvents.emit({ type: 'warpFlash', pos: G.player.pos.clone() }); // a small flash at the arrival point
 }
 
 // "You've left the battlefield" HUD warning + countdown. Shown only after OOB_WARN_DELAY seconds
@@ -524,6 +507,10 @@ function syncShipMesh(ship, dt) {
   ship.mesh.rotation.y = ship.heading;
   ship.mesh.scale.setScalar(ship.scale);
   updateBank(ship, ship.turnRate, dt); // cosmetic wing-bank: a render consequence of how hard it turned
+  // Engine plume: the sim flags `thrusting` for this tick, the renderer decides what that looks like.
+  // (It used to call emitExhaust mid-step, which meant the simulation reached into the FX layer to say
+  // "still burning" — the same coupling the event queue exists to remove.)
+  if (ship.thrusting && ship.engine && ship.engine.exhaust) emitExhaust(ship.mesh, null, ship.vel, ship.engine.exhaust);
   // TEMPORARY render→sim coupling. `noseZ` (where bullets are born) is MEASURED off the loaded .glb by
   // ship-factory.applyShipModel, which means a piece of simulation input is derived from an asset the
   // server will never parse — and a shot fired before the model lands uses the 1.6 primitive default.
@@ -542,11 +529,108 @@ export function syncMeshes(dt = 0) {
   }
 }
 
+
+// ---------- Client adapter: simulation events → presentation ----------
+// The sim describes what happened (sim-core/events.js); everything that ACTS on that description lives
+// here — FX, audio, the HUD, i18n and the backend. This is the half a headless server replaces with
+// "broadcast it to the room", which is why the sim must never do any of it inline.
+//
+// Drained once per tick at the end of update(). Events therefore land AFTER this tick's FX-ageing steps,
+// so a hit flash spawned now is first aged next tick — one frame (~16 ms) later than before, which is
+// below anything perceivable and buys a single, predictable ordering point.
+//
+// Moves to its own `sim-view.js` in Slice B3, once levelRunner's state lives on the World and this file's
+// simulation half can leave for sim-core/ without dragging a circular import along.
+function applySimEvent(ev) {
+  switch (ev.type) {
+    case 'hit':
+      // enemy struck → the generic zap; our own hull struck → the ship-class sampled impact
+      audio.sfx.hit(ev.target === 'player' ? sfxFor('ship', ev.shipClass, 'hit') : undefined);
+      break;
+    case 'bulletImpact':
+      spawnHitSprite(ev.pos, (HIT_FLASH_SCALE[ev.weaponClass] ?? 0.8) * (ev.absorbed ? 0.7 : 1),
+        ev.absorbed ? SHIELD_HIT_TINT : null);
+      break;
+    case 'shieldHit':      spawnShieldHit(ev.pos, ev.broke); break;
+    case 'enemyShieldHit': spawnEnemyShieldHit(ev.enemy, ev.pos, ev.broke); break;
+    case 'shieldReady':    spawnShieldReady(); break;
+    case 'smoke':          spawnSmoke(ev.pos); break;
+    case 'warpFlash':      spawnExplosion(ev.pos); break;
+    case 'evade':
+      creditPopups.push({ pos: ev.pos, text: t('ui.evade'), evade: true, life: 1.2, maxLife: 1.2 });
+      break;
+    case 'banner': {
+      const dur = ev.dur ?? BANNER_FADE;
+      G.banner.text = ev.params ? t(ev.key, ev.params) : t(ev.key);
+      G.banner.life = dur; G.banner.maxLife = dur;
+      break;
+    }
+    case 'kill': {
+      if (ev.isBoss) spawnBossExplosion(ev.pos, ev.exhaustColor, ev.sizeScale);
+      else spawnShipExplosion(ev.pos, ev.exhaustColor, ev.sizeScale);
+      // Per-size loudness: medium ships + bosses +50% louder; small ships 70% quieter.
+      const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(ev.role);
+      audio.sfx.explosion(ev.sizeScale, sfxFor('ship', ev.shipClass, 'explode'), louderBoom ? 1.5 : 0.3);
+      if (ev.reward > 0) { // floating "+xx" green popup at the kill site (cosmetic feedback)
+        creditPopups.push({ pos: ev.pos, amount: ev.reward, life: 2.0, maxLife: 2.0 });
+      }
+      logEvent(t('ui.log.killed', { name: ev.name, amount: ev.reward, xp: ev.xp })); // event-log kill line
+      break;
+    }
+    case 'win': {
+      audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
+      el.overlayTitle.textContent = t('ui.overlay.victory');
+      // resolve the level's victory line through i18n (key → translation → English fallback)
+      const cleared = ev.textKey ? t(ev.textKey) : (ev.text || t('ui.overlay.sector_cleared'));
+      el.overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: G.earned })}`;
+      el.restart.textContent = t('ui.button.continue'); // a win continues to the Hangar
+      el.backHangar.style.display = 'none'; // Continue already goes to the Hangar — no separate button on a win
+      el.overlay.style.display = 'flex';
+      // A ?record/?playback dev session is READ-ONLY: show the victory overlay but do NOT mutate the server —
+      // otherwise a (re)played win banks credits, deposits loot AND advances current_progress, silently skipping
+      // the level for the real player. All server side effects below are gated on !G.replayMode.
+      if (!G.replayMode) {
+        track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
+        bankRun(); // bank the earned credits into the account balance
+        G.flushSession && G.flushSession('win'); // upload the recorded session (funnel analytics)
+        const loot = takeLoot(); if (loot.length) depositLoot(loot); // victory only: dump the run's collected drops into the stash
+        // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
+        // levels advance progression as before.
+        const lvl = levelRunner.level;
+        if (lvl && !lvl.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
+        else if (lvl && lvl.missionId) reportMissionCleared(lvl.missionId); // permanent side-mission clear → `minMission` shop unlocks
+      }
+      break;
+    }
+    case 'death': {
+      spawnShipExplosion(G.player.pos, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
+      audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
+      track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
+      bankRun(); // bank the earned credits into the account balance + record the game
+      G.flushSession && G.flushSession('death'); // upload the recorded session (funnel analytics)
+      el.overlayTitle.textContent = t('ui.overlay.ship_destroyed');
+      el.overlaySub.textContent = t('ui.gameover.sub', { kills: G.kills, credits: G.earned });
+      el.restart.textContent = t('ui.button.restart'); // a loss retries the level
+      // once the shop is unlocked, offer returning to the hangar (shop/loadout) instead of an instant retry
+      el.backHangar.style.display = (G.activeShip && G.activeShip.shopUnlocked) ? 'inline-block' : 'none';
+      el.overlay.style.display = 'flex';
+      break;
+    }
+    default: break; // an unknown event is not worth crashing a frame over
+  }
+}
+
 export function update(dt) {
   if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
 
   G.combatElapsed += dt; // unpaused combat clock (update() is skipped while paused) — drives the enemy hold-fire grace
 
+  // NOTE on the order below. Simulation steps and presentation steps are still INTERLEAVED here — the
+  // FX-ageing steps sit in the middle, with stepEnemyDeaths / updateDrops / levelRunner / stepPlayerDeath
+  // after them. That is the historical order, preserved on purpose: reordering it is a behaviour change
+  // dressed up as tidying, and this file's oracle (the recorded intro trace) is the only thing standing
+  // between us and a silent one. Slice B3 separates the two halves for real, when the simulation steps
+  // move into sim-core/ and the presentation stays behind.
   stepPlayer(dt);            // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, exhaust, firing
   stepEnemyAI(dt);
   stepBullets(dt);
@@ -561,7 +645,6 @@ export function update(dt) {
   // --- engine exhaust: advance every ship's attached plume (uTime) + decay its thrust throttle so a ship
   //     that stops thrusting fades out. Fixed-cost render objects, not a growing pool (exhaust-fx.js). ---
   updateShipExhaust(dt);
-  stepSmokeTrail(dt);
   stepSparks(dt);
   stepShockwaves(dt);
   stepBannerFade(dt);
@@ -572,6 +655,12 @@ export function update(dt) {
   // drive spawning + phase transitions from the active level
   levelRunner.update(dt);
   stepPlayerDeath();
+  simEvents.drain(applySimEvent); // everything the sim decided this tick, turned into sight and sound
+  // AFTER the drain, deliberately. stepSmokeTrail rebuilds the instanced puff pool from `smoke[]`, so it
+  // has to run once the adapter has actually created this tick's puffs — otherwise the pool trails the
+  // list by a frame and the newest puff is never drawn. This restores the original spawn → age → flush
+  // order that held when the sim called spawnSmoke() inline.
+  stepSmokeTrail(dt);
 
   settleView(dt); // camera rigid-follow + stars + system-body bearings + speed-field wrap
 
@@ -584,6 +673,7 @@ export function update(dt) {
 // refactor: update() was 471 lines). Call order in update() IS the execution order — do not reorder.
 
 function stepPlayer(dt) {
+  G.player.thrusting = false; // re-armed below by whichever control path actually thrusts this tick
   // --- repair drone: passive hull regen, capped at a fraction of max HP (no-op without a drone) ---
   if (G.player.repair) {
     const r = repairTick(G.player.hp, G.player.maxHp, G.player.repair, dt, G.player._repairAccum);
@@ -595,7 +685,7 @@ function stepPlayer(dt) {
     const wasBroken = G.player._shieldValue <= 0;
     const s = shieldRecharge(G.player._shieldValue, G.player.shield.capacity, G.player.shield.rechargeSec, dt, G.player._shieldRechargeAccum);
     G.player._shieldValue = s.shieldValue; G.player._shieldRechargeAccum = s.accum;
-    if (wasBroken && s.shieldValue > 0) spawnShieldReady(); // recharge just completed → whole sphere flashes once
+    if (wasBroken && s.shieldValue > 0) simEvents.emit({ type: 'shieldReady' }); // recharge just completed → whole sphere flashes once
   }
 
   const eng = G.player.engine;         // main engine (for exhaust)
@@ -692,9 +782,9 @@ function stepPlayer(dt) {
     G.player.scale = G.player.fullScale * Math.max(0.001, k);
   }
 
-  // --- engine trail (when thrusting forward) ---
+  // --- engine trail (when thrusting forward) --- flagged here, drawn in syncMeshes
   if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
-    emitExhaust(G.player.mesh, fwd, G.player.vel, eng.exhaust);
+    G.player.thrusting = true;
   }
 
   // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
@@ -744,7 +834,7 @@ function stepEnemyAI(dt) {
     e.pos.addScaledVector(e.vel, dt); // no arena clamp: enemies chase the player out of bounds
 
     // engine trail: same exhaust behavior as the player, when thrusting forward
-    if (thrust > 0.1) emitExhaust(e.mesh, ef, e.vel, e.engine.exhaust);
+    e.thrusting = thrust > 0.1;
 
     // fire each group whose AI rule (range + aim tolerance) is satisfied — and only after the opening grace
     updateGroups(e, ef, false, dt,
@@ -769,8 +859,8 @@ function stepBullets(dt) {
         if (e.warping) continue; // invulnerable while forming — bullets pass through
         if (segmentHitsShip(e, _bulletP0, b.pos)) {
           const dr = applyShieldedDamage(e, b.damage); // shield first, excess spills to the hull this tick
-          if (dr.absorbed) { absorbed = true; spawnEnemyShieldHit(e, b.pos, dr.broke); }
-          hit = true; audio.sfx.hit(); break;
+          if (dr.absorbed) { absorbed = true; simEvents.emit({ type: 'enemyShieldHit', enemy: e, pos: b.pos.clone(), broke: dr.broke }); }
+          hit = true; simEvents.emit({ type: 'hit', target: 'enemy' }); break;
         }
       }
     } else {
@@ -787,8 +877,8 @@ function stepBullets(dt) {
           spawnEvadePopup(G.player.pos); // evaded: "EVADE" text, no damage/FX
         } else {
           if (res.impact) b.pos.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
-          if (res.damageResult.absorbed) spawnShieldHit(b.pos, res.damageResult.broke); // cyan ripple where the shot connects with the shield
-          audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
+          if (res.damageResult.absorbed) simEvents.emit({ type: 'shieldHit', pos: b.pos.clone(), broke: res.damageResult.broke }); // cyan ripple where the shot connects with the shield
+          simEvents.emit({ type: 'hit', target: 'player', shipClass: G.player.class }); // sampled impact when OUR ship is struck
         }
       }
     }
@@ -813,7 +903,7 @@ function stepBullets(dt) {
       // by a shield instead plays the same mini-blast smaller and tinted CYAN (SHIELD_HIT_TINT), so "the
       // field stopped it" reads differently from an orange hull hit while staying in the one FX family
       // (DECISIONS §75). spawnHitSprite draws no RNG → replay-safe either way.
-      if (hit) spawnHitSprite(b.pos, (HIT_FLASH_SCALE[b.class] ?? 0.8) * (absorbed ? 0.7 : 1), absorbed ? SHIELD_HIT_TINT : null);
+      if (hit) simEvents.emit({ type: 'bulletImpact', pos: b.pos.clone(), weaponClass: b.class, absorbed });
       scene.remove(b.mesh);
       b.mesh.material.dispose();
       bullets.splice(i, 1);
@@ -860,7 +950,7 @@ function stepRockets(dt) {
       r.vel.copy(moved).multiplyScalar(1 / Math.max(dt, 1e-4)); // for orientation + smoke direction
       r.traveled = L.traveled; // share the leader's range accounting
       if (r.vel.lengthSq() > 0.01) r.heading = Math.atan2(r.vel.x, r.vel.z);
-      spawnSmoke(r.pos); // corkscrew trail: three offset helices (same fading-line puffs)
+      simEvents.emit({ type: 'smoke', pos: r.pos.clone() }); // corkscrew trail: three offset helices (same fading-line puffs)
       // detonation/shoot-down handled by the shared block below (uses removeRocket → child-count decrement)
     } else {
       // Normal rocket: existing homing + move.
@@ -877,7 +967,7 @@ function stepRockets(dt) {
       r.traveled += r.vel.length() * dt;
       r.pos.addScaledVector(r.vel, dt);
       if (r.vel.lengthSq() > 0.01) r.heading = Math.atan2(r.vel.x, r.vel.z);
-      spawnSmoke(r.pos); // light smoke trail
+      simEvents.emit({ type: 'smoke', pos: r.pos.clone() }); // light smoke trail
     }
 
     let det = false;
@@ -984,11 +1074,14 @@ function stepEnemyDeaths() {
       // Bosses go up bigger + in stages (secondary detonation + expanding rings); everyone else = the
       // standard flipbook fireball + one ring.
       const isBoss = e.role === 'boss' || e.role === 'boss2';
-      if (isBoss) spawnBossExplosion(e.pos, e.engine.exhaust.color, e.sizeScale || 1);
-      else spawnShipExplosion(e.pos, e.engine.exhaust.color, e.sizeScale || 1);
-      // Per-size loudness: medium ships + bosses +50% louder; small ships 70% quieter.
-      const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(e.role);
-      audio.sfx.explosion(e.sizeScale || 1, sfxFor('ship', e.class, 'explode'), louderBoom ? 1.5 : 0.3); // ship-class map; vol by size
+      const reward = e.reward || 0;
+      const xp = e.xp || 0;
+      // ONE event carries everything the presentation needs — every value copied, because by the time the
+      // adapter runs this entity is already spliced out of `enemies`.
+      simEvents.emit({
+        type: 'kill', pos: e.pos.clone(), isBoss, exhaustColor: e.engine.exhaust.color,
+        sizeScale: e.sizeScale || 1, role: e.role, shipClass: e.class, reward, xp, name: e.name,
+      });
 
       disposeShipExhaust(enemies[i].mesh); // free the dead ship's attached exhaust plume (ShaderMaterials)
       scene.remove(enemies[i].mesh);
@@ -1000,17 +1093,11 @@ function stepEnemyDeaths() {
         const left = G.enemyTotal - G.kills;
         if ((left === 10 || left === 5) && !firedBanners.has(left)) {
           firedBanners.add(left);
-          showBanner(t('ui.banner.enemies_left', { count: left }));
+          showBanner('ui.banner.enemies_left', { count: left });
         }
       }
-      const reward = e.reward || 0;
-      const xp = e.xp || 0;
       G.earned += reward;         // credits (reward for this ship type)
       G.earnedXp += xp;           // character experience (banked with the run at /api/games)
-      if (reward > 0) {           // floating "+xx" green popup at the kill site (cosmetic feedback)
-        creditPopups.push({ pos: e.pos.clone(), amount: reward, life: 2.0, maxLife: 2.0 });
-      }
-      logEvent(t('ui.log.killed', { name: e.name, amount: reward, xp })); // event-log kill line (credits + XP)
       // reward drop: the LAST enemy of a level that carries a lastKillDrop drops the reward model (cosmetic —
       // no stash deposit; the real copy is server-installed on victory), but only if the player doesn't already
       // own it. Otherwise fall back to the usual 20% metal-box loot roll (one of the enemy's non-hull parts /
@@ -1029,17 +1116,7 @@ function stepPlayerDeath() {
   // --- player death ---
   if (G.player.hp <= 0 && G.player.alive) {
     G.player.alive = false;
-    spawnShipExplosion(G.player.pos, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
-    audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
-    track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
-    bankRun(); // bank the earned credits into the account balance + record the game
-    G.flushSession && G.flushSession('death'); // upload the recorded session (funnel analytics)
-    el.overlayTitle.textContent = t('ui.overlay.ship_destroyed');
-    el.overlaySub.textContent = t('ui.gameover.sub', { kills: G.kills, credits: G.earned });
-    el.restart.textContent = t('ui.button.restart'); // a loss retries the level
-    // once the shop is unlocked, offer returning to the hangar (shop/loadout) instead of an instant retry
-    el.backHangar.style.display = (G.activeShip && G.activeShip.shopUnlocked) ? 'inline-block' : 'none';
-    el.overlay.style.display = 'flex';
+    simEvents.emit({ type: 'death' }); // the adapter owns the boom, the sting, the overlay and the banking
   }
 }
 
@@ -1125,6 +1202,7 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   clearEnemyShieldBubbles(); // hide + unbind pooled enemy shield bubbles (no cross-run leaks)
   clearDrops(); // remove drop meshes + the pull line; DISCARD any uncollected/un-deposited loot on a fresh run
   clearEventLog(); // start a fresh run with an empty event log
+  simEvents.clear(); // and no events left over from an aborted tick (e.g. a win drained into a teardown)
   G.autopilot.active = false; G.autopilot.target = null; // defensive: no dangling drop-target autopilot into the new run
 
   for (const e of enemies) { disposeShipExhaust(e.mesh); scene.remove(e.mesh); }
