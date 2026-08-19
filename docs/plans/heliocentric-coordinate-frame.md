@@ -104,7 +104,7 @@ replays desync (would break the `22-intro-replay` guard — see memory *sim-chan
 fight.** Concretely:
 
 - On entering a mission/level (fight start), compute `P2(tEntry)` once and store it on run state (e.g.
-  alongside `runCenter` in `client/src/level-sim.js` / wherever the run is seeded).
+  alongside `runCenter` in `client/src/sim-core/level-sim.js` / wherever the run is seeded).
 - Every space-fixed object's **local** position for that fight is `worldToLocal(w, tEntry)` — computed once,
   then **constant** during the tick. The deterministic sim therefore never reads wall-clock; replays stay
   byte-identical.
@@ -128,7 +128,7 @@ Give position-bearing authored objects an optional `frame` field, defaulting to 
   `frame:"world"` → local via `worldToLocal(pos, tEntry)` before placing; `frame:"planet:2"` places `pos`
   directly as today. (Note the existing `spec.sync`/`G.arenaDrift` follow-arenaCenter path at
   `world.js:1071` — keep it for planet-attached; it does not apply to world-fixed.)
-- **Missions / fight centers** — `runCenter` (`client/src/level-sim.js:26-30`) and the campaign/side
+- **Missions / fight centers** — `runCenter` (`client/src/sim-core/level-sim.js:26-30`) and the campaign/side
   `center` fields (`catalog_seed.js:590`, `:649`, etc.) stay `planet:2`. A future space-fixed mission would
   set `frame:"world"` on its center and be converted at entry (§4).
 - **Anchors** (`system-map.js:182-208`, `ANCHORS`) — all stay `planet:2` (they *are* the base
@@ -175,7 +175,7 @@ happens.
 - `server/src/catalog_seed.js` — `setpieces` (`:796-865`) `frame` field; system block unchanged (`:736`).
 - `client/src/world.js` — `buildSetPiece` (`:1129-1144`) world→local conversion; leave `updateSystemBodies`
   (`:544-581`) numerically as-is.
-- `client/src/level-sim.js` — `runCenter` (`:26-30`) + store the per-level `P2(tEntry)` snapshot on run
+- `client/src/sim-core/level-sim.js` — `runCenter` (`:26-30`) + store the per-level `P2(tEntry)` snapshot on run
   state; feed it to set-piece build.
 - `client/src/sim.js` — only if a space-fixed object needs a local-position refresh in roam (cosmetic).
 - `client/src/state.js` — a field to hold the per-run `P2` snapshot if not already carried with `runCenter`.

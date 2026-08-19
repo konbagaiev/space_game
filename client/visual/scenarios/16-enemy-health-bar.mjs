@@ -16,8 +16,8 @@ export default async function ({ page, assert, shot }) {
     g.enemies.slice().forEach((e) => g.scene.remove(e.mesh));
     g.enemies.length = 0;
     const e = g.spawnEnemy('fighter');
-    e.mesh.position.set(0, 0.6, 6); // just ahead of the player/camera
-    e.mesh.scale.copy(e.spawnScale); // skip the warp-in grow so it's full size this frame
+    e.pos.set(0, 0.6, 6); // just ahead of the player/camera
+    e.scale = e.fullScale; // skip the warp-in grow so it's full size this frame
   });
   await page.waitForTimeout(120); // one HUD frame at full HP
 
@@ -48,7 +48,9 @@ export default async function ({ page, assert, shot }) {
   // these via a compositor-only `transform`, so `style.top` is deliberately never written.
   const pos = await page.evaluate(() => {
     const g = window.__game; const e = g.enemies[0];
-    const v = e.mesh.position.clone().project(g.camera);
+    // `e.pos` is a sim-core Vec3, which has no .project() — that is a renderer concern. Borrow a real
+    // THREE.Vector3 off the camera to do the NDC projection.
+    const v = g.camera.position.clone().set(e.pos.x, e.pos.y, e.pos.z).project(g.camera);
     const enemyCenterPx = (-v.y * 0.5 + 0.5) * window.innerHeight;
     const bar = [...document.querySelectorAll('#markers .enemy-hp')].find((b) => b.style.display !== 'none');
     return { enemyCenterPx, barTopPx: bar.getBoundingClientRect().top };

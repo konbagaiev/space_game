@@ -21,7 +21,7 @@ frame rates (frames ≠ ticks), so if any cosmetic per-frame code (stars/FX/HUD/
 seeded stream, the run would desync — and any later change to that cosmetic code would desync every existing
 recording. It did, three times, back when the stream was a global `Math.random` swap.
 
-The stream is therefore **OPT-IN** (`client/src/sim-random.js`, DECISIONS §73):
+The stream is therefore **OPT-IN** (`client/src/sim-core/sim-random.js`, DECISIONS §73):
 
 - **Gameplay** draw (positions, timing, damage, loot) → `simRandom()`. Today's sites: `sim.js` (which enemy
   spawns, the drop roll, `stepSpawnGate(..., simRandom)`), `ship-build.js` (spawn angle/distance, initial
@@ -82,7 +82,7 @@ keys you created, restore `replay:last` to the maintainer's recording). This bit
 ## Files / reference
 
 - `client/src/replay.js` — pure core (trace shape, URL parsing, snapshot/apply/validate; `replay.test.js`).
-- `client/src/sim-random.js` — the opt-in seeded sim RNG (`simRandom`/`seedSim`/`isSimSeeded`/`mulberry32`;
+- `client/src/sim-core/sim-random.js` — the opt-in seeded sim RNG (`simRandom`/`seedSim`/`isSimSeeded`/`mulberry32`;
   `sim-random.test.js`).
 - `client/src/main.js` — engine wiring (accumulator pacing, seed install/clear, record/playback UI,
   `window.__replay`).

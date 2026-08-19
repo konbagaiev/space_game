@@ -5,12 +5,14 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { arenaCenter } from './world.js';
 import { G, CATALOG, enemies, SPAWN_GROW_TIME, BULLET_PLANE_Y } from './state.js';
-import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC, skillEffects } from './components.js';
+import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC, skillEffects } from './sim-core/components.js';
 import { shipModelCfg, modelSpec, makeShip, preloadShipModel } from './ship-factory.js';
 import { spawnBullet, spawnRocket, findTargetInSector, findBulletAimTarget } from './projectiles.js';
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
 import { audio, sfxFor } from './sound-routing.js';
-import { simRandom } from './sim-random.js'; // seeded GAMEPLAY stream: enemy spawn placement/facing + reload jitter
+import { simRandom } from './sim-core/sim-random.js'; // seeded GAMEPLAY stream: enemy spawn placement/facing + reload jitter
+import { Vec3 } from './sim-core/vec.js';                 // sim transforms are plain vectors, not THREE.Vector3
+import { SHIP_GROUP_SCALE } from './sim-core/consts.js';  // ship world scale = SHIP_GROUP_SCALE × sizeScale
 
 export const resolveWeapon = (id) => (id != null ? CATALOG.weapons.get(id) || null : null);
 // Resolve a ship's component refs ({ hull, engine, thruster, repair, grab, shield }) to objects (id + stats + weight).
@@ -53,8 +55,13 @@ export function buildPlayer(active) {
   if (shield) shield.capacity = Math.round(shield.capacity * fx.shieldMul); // Shields: +5%/pt capacity
   const p = {
     mesh: makeShip(s.color, modelSpec(active.ship.modelUrl, mc)),
-    vel: new THREE.Vector3(),
+    // --- SIM TRANSFORM (the authority; the mesh is a copy of it — see sim.js syncMeshes) ---
+    pos: new Vec3(0, BULLET_PLANE_Y, 0), // world position on the canonical combat plane
+    vel: new Vec3(),
     heading: 0,                       // rotation angle around Y
+    scale: SHIP_GROUP_SCALE * mc.scale, // CURRENT uniform world scale (warp-in shrinks it); drives hitboxes + muzzle
+    fullScale: SHIP_GROUP_SCALE * mc.scale, // the full-size scale to grow back into after a warp
+    noseZ: 1.6,                       // group-local muzzle offset; replaced by the glb's real nose bounds on load
     sizeScale: mc.scale,
     hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
     class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
@@ -67,9 +74,9 @@ export function buildPlayer(active) {
     alive: true,
     oobTime: 0,                  // seconds the ship has been continuously out of bounds (soft boundary)
     spawnAge: SPAWN_GROW_TIME,   // == full size: no warp-in animation on a fresh build (set to 0 to play it)
-    spawnScale: null,            // full target scale, captured lazily at the first warp-back
+    spawnDur: SPAWN_GROW_TIME,   // warp-back duration
   };
-  p.mesh.scale.multiplyScalar(p.sizeScale); // apply sizeScale to the player too (enemies do this at spawn)
+  p.mesh.scale.setScalar(p.scale); // seed the render copy so the first frame is right (syncMeshes owns it after)
   // Kinetic/Rocket skills: clone each mounted weapon and scale the COPY (never the shared catalog object).
   for (const m of p.mounts) {
     const w = { ...m.weapon };
@@ -121,8 +128,11 @@ export function spawnEnemyShip(shipDef) {
     role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0, xp: s.xp || 0,
     dodge: s.dodge || 0, // dodge % (all current enemies = 0 → always hit; future enemies may dodge)
     mesh: makeShip(s.color, modelSpec(shipDef.modelUrl, mc)), // model defines the look; never tint enemies by color
-    vel: new THREE.Vector3(),
+    // --- SIM TRANSFORM (the authority; the mesh is a copy of it — see sim.js syncMeshes) ---
+    pos: new Vec3(0, BULLET_PLANE_Y, 0),  // placed in the spawn ring below
+    vel: new Vec3(),
     heading: simRandom() * Math.PI * 2,   // GAMEPLAY: facing decides how long it turns before its first shot
+    noseZ: 1.6,                           // group-local muzzle offset; replaced by the glb's real nose bounds on load
     hull, engine, thruster,
     mounts: buildMounts(s.mounts),
     hp: hullMax,
@@ -137,23 +147,27 @@ export function spawnEnemyShip(shipDef) {
     alive: true,
   };
   e.groups = buildGroups(s.groups, e.mounts);
-  e.mesh.scale.multiplyScalar(mc.scale); // bigger model for heavy enemies
   // "warp in": grow from a dot to full size over SPAWN_GROW_TIME (see the enemy update loop)
-  e.spawnScale = e.mesh.scale.clone(); // the full target scale to grow into
+  e.fullScale = SHIP_GROUP_SCALE * mc.scale; // full world scale to grow into (bigger model for heavy enemies)
   e.spawnAge = 0;
   e.spawnDur = SPAWN_GROW_TIME; // warp-in duration; the level runner overrides this to the stagger delay
   e.warping = true;             // invulnerable + can't fire + not homing-targetable until fully formed
-  e.mesh.scale.setScalar(0.001); // start as a dot
+  e.scale = e.fullScale * 0.001; // start as a dot
   deriveDrive(e);
   // spawn in a ring around the MISSION ZONE center (arenaCenter), not the hero — waves originate at the
   // arena/set-piece even after the player wanders. No arena clamp (enemies fight fine out of bounds).
   const ang = simRandom() * Math.PI * 2;   // GAMEPLAY: where the enemy appears
   const d = 70 + simRandom() * 60; // 70..130 from the zone center
-  e.mesh.position.set(
+  e.pos.set(
     arenaCenter.x + Math.cos(ang) * d,
     BULLET_PLANE_Y, // sit on the canonical combat plane so enemy hull + fire line up with the player's
     arenaCenter.z + Math.sin(ang) * d
   );
+  // seed the render copy so the ship is drawn in the right place on the frame it appears (an enemy can
+  // spawn AFTER syncMeshes has already run this tick — levelRunner.update() is late in update()).
+  e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z);
+  e.mesh.rotation.y = e.heading;
+  e.mesh.scale.setScalar(e.scale);
   scene.add(e.mesh);
   enemies.push(e);
   return e;
@@ -180,13 +194,13 @@ export function preloadLevelShipModels(level) {
   }
 }
 
-const rightVec = (fwd) => new THREE.Vector3(fwd.z, 0, -fwd.x); // perpendicular to fwd, in the plane
+const rightVec = (fwd) => new Vec3(fwd.z, 0, -fwd.x); // perpendicular to fwd, in the plane
 
 // Fire one mount: spawn its projectile at the muzzle + lateral offset (side-by-side fire).
 function fireMount(ship, mount, fwd, isPlayer) {
-  const sc = ship.mesh.scale.x || 1;                       // current world scale (incl. spawn-grow + sizeScale)
-  const noseZ = (ship.mesh.userData.noseZ ?? 1.6) * sc;    // spawn at the model's actual nose, not a fixed offset
-  const muzzle = ship.mesh.position.clone()
+  const sc = ship.scale || 1;                              // current world scale (incl. spawn-grow + sizeScale)
+  const noseZ = (ship.noseZ ?? 1.6) * sc;                  // spawn at the model's actual nose, not a fixed offset
+  const muzzle = ship.pos.clone()
     .addScaledVector(fwd, noseZ)
     .addScaledVector(rightVec(fwd), mount.offset * (ship.sizeScale || 1));
   const w = mount.weapon;
@@ -202,7 +216,7 @@ function fireMount(ship, mount, fwd, isPlayer) {
     if (w.aimAssistDeg) {
       const target = findBulletAimTarget(muzzle, fwd, w.aimAssistDeg * Math.PI / 180, isPlayer);
       if (target) {
-        const aim = target.mesh.position.clone().sub(muzzle); // toward the target's CURRENT position (no leading)
+        const aim = target.pos.clone().sub(muzzle); // toward the target's CURRENT position (no leading)
         aim.y = 0;                                            // keep the shot on the combat plane
         if (aim.lengthSq() > 1e-6) dir = aim.normalize();     // unit; spawnBullet re-normalizes anyway
       }

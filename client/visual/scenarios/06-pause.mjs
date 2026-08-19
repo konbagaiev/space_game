@@ -6,7 +6,7 @@ export const name = '06-pause';
 // Sum of enemy positions + projectile counts — changes only when the simulation advances.
 const worldSig = (page) => page.evaluate(() => {
   const g = window.__game;
-  const pos = g.enemies.reduce((a, e) => a + e.mesh.position.x + e.mesh.position.z, 0);
+  const pos = g.enemies.reduce((a, e) => a + e.pos.x + e.pos.z, 0);
   return pos + g.bullets.length * 1000 + g.rockets.length * 100;
 });
 

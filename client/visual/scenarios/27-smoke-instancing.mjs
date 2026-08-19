@@ -18,14 +18,14 @@ export default async function ({ page, assert, shot }) {
 
   // Fire a rocket at a lone, un-killable enemy straight ahead so it flies (and smokes) for the whole window.
   await page.evaluate(() => {
-    const g = window.__game, V = g.player.mesh.position.constructor;
+    const g = window.__game, V = g.player.pos.constructor; // sim-core Vec3
     g.enemies.slice().forEach((e) => g.scene.remove(e.mesh));
     g.enemies.length = 0;
     g.smoke.length = 0;
-    const base = g.player.mesh.position.clone();
+    const base = g.player.pos.clone();
     const fwd = new V(0, 0, 1);
     const enemy = g.spawnEnemy('fighter');
-    enemy.mesh.position.copy(base).add(new V(0, 0, 90)); // far enough that the rocket flies a while
+    enemy.pos.copy(base).add(new V(0, 0, 90)); // far enough that the rocket flies a while
     enemy.warping = false; enemy.spawnAge = enemy.spawnDur;
     enemy.hp = enemy.maxHp = 9999;
     const w = g.catalog.weapons.get(10) || g.catalog.weapons.get(11); // any rocket weapon
@@ -75,9 +75,9 @@ export default async function ({ page, assert, shot }) {
   // the first metric tried here and it reported them as identical. Intensity is what alpha actually drives.
   const px = await page.evaluate(() => {
     const g = window.__game, pool = g.smokePool;
-    const V = g.player.mesh.position.constructor;
+    const V = g.player.pos.constructor;
     g.smoke.length = 0;                                    // stop the sim loop refilling the pool
-    const pos = g.player.mesh.position.clone().add(new V(14, 0, 0));
+    const pos = g.player.pos.clone().add(new V(14, 0, 0));
     const gl = g.renderer.getContext();
     const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
     const frame = (a) => {

@@ -5,7 +5,7 @@
 // updateTakeoffGate/renderShipStatsBar/deriveShipStats); nothing here calls back out into the UI.
 import { esc, slotLabel, priceLabel, SELL_RATE } from './format.js';
 import { G, CATALOG } from './state.js';
-import { shipMass, deriveDrive } from './components.js';
+import { shipMass, deriveDrive } from './sim-core/components.js';
 import { resolveComponents, buildPlayerFor } from './ship-build.js';
 import { updateHud, updateMenuCredits } from './hud.js';
 import { fetchJson, missionClearDone } from './net.js';

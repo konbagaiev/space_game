@@ -581,7 +581,7 @@ export const LEVELS = [
       // repair drone, and the first to field a real boss (`first pirate boss`; Level 2's `pirate mini boss`
       // is the mid-boss its own victory text calls it) — so it takes place AT the Space Factory: 30 u
       // up-left of the `space-factory` set-piece at (-420,-405). Read by the `runCenter` seam
-      // (client/src/level-sim.js) → sim.js reset(), which centres the arena, its border and the enemy
+      // (client/src/sim-core/level-sim.js) → sim.js reset(), which centres the arena, its border and the enemy
       // spawns here. Every other level omits `center` and keeps the origin.
       // Because it names a centre, Take off does NOT drop you into the fight: it launches you at the home
       // base and you fly out, and crossing into the zone starts the fight (mainwindow.launchCampaign →

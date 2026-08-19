@@ -42,7 +42,7 @@ export default async function ({ page, assert, shot }) {
   //    small and it reads as a speck you would fly straight past; too large and it swallows the frame.
   const seen = await page.evaluate((F) => {
     const g = window.__game;
-    g.player.mesh.position.set(F.a.x, 0, F.a.z); // arrive at the ANCHOR — the point the map flies you to
+    g.player.pos.set(F.a.x, 0, F.a.z); // arrive at the ANCHOR — the point the map flies you to
     g.settleView();
     g.camera.updateMatrixWorld(true);
     g.camera.matrixWorldInverse.copy(g.camera.matrixWorld).invert();
@@ -109,7 +109,7 @@ export default async function ({ page, assert, shot }) {
     g.settleView();
     return {
       arena: { x: g.arenaCenter.x, z: g.arenaCenter.z },
-      player: { x: g.player.mesh.position.x, z: g.player.mesh.position.z },
+      player: { x: g.player.pos.x, z: g.player.pos.z },
       mission: g.activeMission, // still the campaign — this is NOT the side-mission path
     };
   });
@@ -131,7 +131,7 @@ export default async function ({ page, assert, shot }) {
     const g = window.__game;
     g.catalog.level.center = { x: C.x, z: C.z }; // stand in for the factory level's descriptor
     await g.enterRoam(null);                     // the real entry point — this is what Take off does
-    const p = g.player.mesh.position;
+    const p = g.player.pos;
     return { zone: g.missionZone && { center: g.missionZone.center, t: g.missionZone.t },
              ship: { x: p.x, z: p.z } };
   }, LEVEL2_CENTER);
@@ -148,7 +148,7 @@ export default async function ({ page, assert, shot }) {
   // Park just OUTSIDE the zone: nothing happens, however long you sit there.
   const outside = await page.evaluate((C) => {
     const g = window.__game;
-    g.player.mesh.position.set(C.x + 260, 0, C.z); // > MISSION_ZONE_RADIUS away
+    g.player.pos.set(C.x + 260, 0, C.z); // > MISSION_ZONE_RADIUS away
     g.player.vel.set(0, 0, 0);
     g.stepSim(240); // four seconds — longer than the countdown
     return { t: g.missionZone && g.missionZone.t, roam: g.roam };
@@ -161,7 +161,7 @@ export default async function ({ page, assert, shot }) {
   // frames run for a moment and read the DOM the player looks at.
   await page.evaluate((C) => {
     const g = window.__game;
-    g.player.mesh.position.set(C.x + 100, 0, C.z);
+    g.player.pos.set(C.x + 100, 0, C.z);
     g.player.vel.set(0, 0, 0);
     g.stepSim(30); // half a second inside, then hand back to the live loop
   }, LEVEL2_CENTER);
@@ -182,7 +182,7 @@ export default async function ({ page, assert, shot }) {
   // Fly back out mid-count: it cancels rather than dragging you into a fight you left.
   const bailed = await page.evaluate((C) => {
     const g = window.__game;
-    g.player.mesh.position.set(C.x + 400, 0, C.z);
+    g.player.pos.set(C.x + 400, 0, C.z);
     g.stepSim(2);
     return { t: g.missionZone && g.missionZone.t, roam: g.roam };
   }, LEVEL2_CENTER);
@@ -193,22 +193,22 @@ export default async function ({ page, assert, shot }) {
   const engaged = await page.evaluate((C) => {
     const g = window.__game;
     // park OFF the exact centre: if the engage re-centred the ship, `moved` would jump by this offset
-    g.player.mesh.position.set(C.x + 120, 0, C.z + 60);
+    g.player.pos.set(C.x + 120, 0, C.z + 60);
     g.player.vel.set(0, 0, 0);
     const setPiecesBefore = g.setPieces.length;
     let before = null, moved = 0, assetsAtEngage = -1, parsedAtEngage = -1, parsedBefore = -1;
     for (let i = 0; i < 260; i++) {
       const wasRoam = g.roam;
-      const p0 = g.player.mesh.position.clone();
+      const p0 = g.player.pos.clone();
       g.stepSim(1);
       if (wasRoam) { parsedBefore = g.shipModelsParsed; }
       if (wasRoam && !g.roam) {                       // the engage step
-        before = p0; moved = g.player.mesh.position.distanceTo(p0);
+        before = p0; moved = g.player.pos.distanceTo(p0);
         assetsAtEngage = g.pendingAssets;             // >0 ⇒ the handover kicked off .glb fetches
         parsedAtEngage = g.shipModelsParsed;
       }
     }
-    const p = g.player.mesh.position;
+    const p = g.player.pos;
     return { roam: g.roam, won: g.levelRunner.won, arena: { x: g.arenaCenter.x, z: g.arenaCenter.z },
              engaged: !!before, moved, assetsAtEngage, parsedAtEngage, parsedBefore,
              setPiecesBefore, setPiecesAfter: g.setPieces.length,
@@ -241,7 +241,7 @@ export default async function ({ page, assert, shot }) {
     delete g.catalog.level.center;      // an ordinary campaign level
     await g.enterRoam(null);            // ← what the "Take off" button does
     const armed = g.missionZone && { ...g.missionZone.center };
-    const start = { x: g.player.mesh.position.x, z: g.player.mesh.position.z };
+    const start = { x: g.player.pos.x, z: g.player.pos.z };
     g.stepSim(260);                     // past the countdown
     return { armed, start, roam: g.roam, arena: { x: g.arenaCenter.x, z: g.arenaCenter.z } };
   });

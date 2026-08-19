@@ -20,7 +20,7 @@ import { esc } from './format.js';
 import { SYSTEM, bodyWorldPos, listSystemObjects, systemRadius, objectForMission, objectForActiveMission } from './system-map.js';
 import { DEFAULT_VIEW, clampView, scaleOf, toScreen, panByScreen, zoomAtScreen, centerOn, pickAt } from './map-view.js';
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js';
-import { runCenter } from './level-sim.js';
+import { runCenter } from './sim-core/level-sim.js';
 
 // A mission object is INTERACTIVE only when its offer exists (sideMissionsUnlocked + on the board).
 function offerFor(missionOffers, id) { return (missionOffers || []).find((o) => o.id === id) || null; }
@@ -190,7 +190,7 @@ export function mountSystemNav(host, opts = {}) {
 
     // the player's ship + heading
     if (G.player && G.player.mesh) {
-      const p = toScreen(view, frame, G.player.mesh.position.x, G.player.mesh.position.z);
+      const p = toScreen(view, frame, G.player.pos.x, G.player.pos.z);
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(-(G.player.heading || 0));
       ctx.fillStyle = '#ffffff'; ctx.beginPath();
       ctx.moveTo(0, -6); ctx.lineTo(4, 5); ctx.lineTo(-4, 5); ctx.closePath(); ctx.fill();

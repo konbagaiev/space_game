@@ -3,6 +3,45 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-19
+
+- **The game's pure rules now live in `client/src/sim-core/`, and a test keeps them pure.**
+  `components.js`, `steering.js`, `spawn-timing.js`, `collision.js`, `level-sim.js`, `drops-config.js`,
+  `autopilot-config.js` and `sim-random.js` moved into the folder (via `git mv`, history preserved) next to
+  Slice A's `vec.js`/`consts.js`; importers across `client/src`, `client/visual`, `client/bench` and
+  `scripts/assets-check.mjs` follow, as do the path references in CLAUDE.md, SUMMARY, DECISIONS, the
+  `record-playback` skill and a `catalog_seed.js` comment. The point is the new
+  **`sim-core/boundary.test.js`**: it fails if any module in the folder imports `three`, imports anything
+  outside the folder, touches `window`/`document`/`localStorage`/`sessionStorage`/`navigator`/`location`/
+  `alert`, or calls `fetch()` — the properties the multiplayer authority and the headless referee depend
+  on, enforced rather than remembered (negative-tested by breaking a module on purpose). Behaviour-neutral:
+  client tests 346 → 367, guard scenarios green, intro trace still `tick=2503/3490`.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B1).
+
+- **Simulation state moved out of Three.js (Slice A of the server-authoritative sim).** Entity transforms
+  used to live *inside* Three.js objects — position was `entity.mesh.position`, velocity a `THREE.Vector3`,
+  and `mesh.scale` was gameplay (the warp-in grow drove `e.warping` = invulnerable / can't fire / not
+  homing-targetable). Nothing could step the fight without a WebGL scene graph. Now every simulated entity
+  (player, enemies, bullets, rockets, loot drops) owns plain `pos` / `vel` / `heading` / `scale` data backed
+  by a new ~40-line `client/src/sim-core/vec.js` `Vec3`, `warping`/`spawnAge`/`spawnDur` are simulation
+  fields, and the new **one-way `sim.js syncMeshes(dt)`** is the single place that state reaches the scene
+  graph (also called at the end of `reset()` so a frozen pre-fight cutscene card is framed correctly).
+  `collision.js` composes the ship's world matrix itself (`shipMatrix`, translate × rotateY × uniform scale)
+  instead of reading `mesh.matrixWorld` + `updateMatrixWorld()`, so hit tests no longer touch Three.js at
+  all; the `1.8` ship-group scale is now the shared `sim-core/consts.js SHIP_GROUP_SCALE`. **No gameplay
+  change:** the recorded Level-0 intro trace replays bit-identically — same 4 kills, cards p0..p4,
+  `won=true`, and the same `tick=2503/3490` signature. Client unit tests 342 → 346 (4 new: the hand-written
+  rotation matrix that Three.js used to supply, incl. a yawed hull's hitboxes and swept hits). 17 visual
+  scenarios that poked `mesh.position`/`mesh.scale` to place or full-size an entity were migrated to the
+  sim fields. Known stopgap: `noseZ` (where bullets are born) is still *measured* off the loaded `.glb`, so
+  `syncMeshes` copies it back sim-ward each tick until it becomes catalog data.
+  Caught during the slice: passing a `Vec3` to `camera.lookAt()` NaN'd the camera's quaternion (THREE's
+  `lookAt` branches on `isVector3` rather than reading `x/y/z`), so **the game rendered nothing while every
+  simulation assertion — the whole intro replay included — stayed green**. Fixed by passing components;
+  `01-smoke` now guards a finite camera position + orientation, and the guard was negative-tested by
+  reintroducing the bug. Full visual suite: 14 failures at `24849f7` baseline, unchanged by this slice.
+  Plan: `docs/plans/server-authoritative-sim.md`.
+
 ## 2026-08-18
 
 - **Star-centered canonical coordinate frame + per-object `frame` tag (foundation for multiplayer zones).**

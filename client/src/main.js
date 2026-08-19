@@ -4,7 +4,7 @@
 // paths, no `src/` segment) and `three` via the index.html importmap. Slices are peeling cohesive UI
 // modules out of here next; for now it is the single composition root.
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
-import { seedSim, isSimSeeded } from './sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
+import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
@@ -390,7 +390,7 @@ function buildRoamReadout() {
 }
 function updateRoamReadout() {
   if (!roamReadoutEl || !G.player) return;
-  const p = G.player.mesh.position;
+  const p = G.player.pos;
   const zones = activityZoneCenters(); if (G.activeMission && G.activeMission.center) zones.push(G.activeMission.center);
   const inZone = inActivityZone(p.x, p.z, zones, ZONE_RADIUS);
   const orbit4 = SYSTEM.planets[SYSTEM.planets.length - 1].orbitR;
@@ -717,7 +717,7 @@ function backdropCapture(dt) {            // called from animate() after update(
   for (const e of enemies) {
     if (e._bdSlot === undefined && bdRec.ships.length < MAX_GHOST_SHIPS) {
       const slot = bdRec.ships.length; e._bdSlot = slot;
-      const bx = e.mesh.position.x, bz = e.mesh.position.z, by = e.heading;
+      const bx = e.pos.x, bz = e.pos.z, by = e.heading;
       const S = { shipName: e.name, scale: e.sizeScale || 1, birth: kf, death: -1, x: [], z: [], yaw: [] };
       for (let i = 0; i < kf; i++) { S.x.push(bx); S.z.push(bz); S.yaw.push(by); } // pre-birth placeholders (hidden + not re-centered)
       bdRec.ships.push(S); bdRec.cast[slot] = e; bdRec.last[slot] = { x: bx, z: bz, yaw: by };
@@ -728,14 +728,14 @@ function backdropCapture(dt) {            // called from animate() after update(
   // everything, so the player's real free-flight motion is preserved (it visibly flies) and the cloud centers
   // near the anchor. AUTHORING NOTE: don't OOB-warp / return-to-base mid-record — a teleport skews the player's
   // mean and shifts the whole cloud off the anchor (nudge it back with the ?dev Anchor X/Z sliders). Fly normally.
-  if (G.player && G.player.alive) rec(0, G.player.mesh.position.x, G.player.mesh.position.z, G.player.heading);
+  if (G.player && G.player.alive) rec(0, G.player.pos.x, G.player.pos.z, G.player.heading);
   else rec(0, bdRec.last[0].x, bdRec.last[0].z, bdRec.last[0].yaw);       // player always recorded, birth:0/death:-1
   for (let s = 1; s < bdRec.ships.length; s++) {
     const e = bdRec.cast[s];              // cast[s] aligned to slot s (cast[0] = null, the player)
-    if (enemies.includes(e)) rec(s, e.mesh.position.x, e.mesh.position.z, e.heading);
+    if (enemies.includes(e)) rec(s, e.pos.x, e.pos.z, e.heading);
     else { if (bdRec.ships[s].death < 0) bdRec.ships[s].death = kf; rec(s, bdRec.last[s].x, bdRec.last[s].z, bdRec.last[s].yaw); }
   }
-  let bc = 0; for (const b of bullets) { if (bc >= MAX_GHOST_BULLETS) break; bdRec.bullets.x.push(b.mesh.position.x); bdRec.bullets.z.push(b.mesh.position.z); bc++; }
+  let bc = 0; for (const b of bullets) { if (bc >= MAX_GHOST_BULLETS) break; bdRec.bullets.x.push(b.pos.x); bdRec.bullets.z.push(b.pos.z); bc++; }
   bdRec.bullets.counts.push(bc);
   if (bdRec.elapsed >= bdRec.maxSeconds) window.__backdrop.stop();       // auto-stop
 }
@@ -928,7 +928,7 @@ if (location.search.includes('debug')) {
       const p = G.player; if (!p) return null;
       const items = [{ kind: 'component', refId: 6 }, { kind: 'component', refId: 9 }, { kind: 'weapon', refId: 9 }, { kind: 'weapon', refId: 4 }];
       const chosen = item || items[(Math.random() * items.length) | 0]; // optional explicit item → deterministic (tests)
-      const pos = p.mesh.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 30, 0, (Math.random() - 0.5) * 30));
+      const pos = p.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 30, 0, (Math.random() - 0.5) * 30));
       spawnDrop(pos, chosen);
       return chosen;
     },
@@ -1017,8 +1017,8 @@ if (isBench()) {
   const stateHash = () => {
     let h = 2166136261 >>> 0;
     const mix = (n) => { h = Math.imul(h ^ (Math.round(n * 100) | 0), 16777619) >>> 0; };
-    for (const e of enemies) { mix(e.mesh.position.x); mix(e.mesh.position.z); }
-    if (G.player) { mix(G.player.mesh.position.x); mix(G.player.mesh.position.z); mix(G.player.heading); }
+    for (const e of enemies) { mix(e.pos.x); mix(e.pos.z); }
+    if (G.player) { mix(G.player.pos.x); mix(G.player.pos.z); mix(G.player.heading); }
     mix(enemies.length);
     return h >>> 0;
   };
@@ -1137,11 +1137,11 @@ if (isBench()) {
         update(BENCH_DT);
         if (tick % step) continue;
         const kf = ships[0].x.length;
-        if (G.player) rec(0, G.player.mesh.position.x, G.player.mesh.position.z, G.player.heading); else rec(0, last[0].x, last[0].z, last[0].yaw);
+        if (G.player) rec(0, G.player.pos.x, G.player.pos.z, G.player.heading); else rec(0, last[0].x, last[0].z, last[0].yaw);
         for (let s = 1; s < ships.length; s++) { const e = cast[s - 1];
-          if (enemies.includes(e)) rec(s, e.mesh.position.x, e.mesh.position.z, e.heading);
+          if (enemies.includes(e)) rec(s, e.pos.x, e.pos.z, e.heading);
           else { if (ships[s].death < 0) ships[s].death = kf; rec(s, last[s].x, last[s].z, last[s].yaw); } }
-        let bc = 0; for (const b of bullets) { if (bc >= MAX_GHOST_BULLETS) break; bul.x.push(b.mesh.position.x); bul.z.push(b.mesh.position.z); bc++; } bul.counts.push(bc);
+        let bc = 0; for (const b of bullets) { if (bc >= MAX_GHOST_BULLETS) break; bul.x.push(b.pos.x); bul.z.push(b.pos.z); bc++; } bul.counts.push(bc);
       }
       return { seed: BENCH_SEED, fps, frames: ships[0].x.length, ships, bullets: bul };  // RAW floats
     },
@@ -1512,8 +1512,8 @@ if (REC || rs.play) {
   const stateHash = () => {
     let h = 2166136261 >>> 0;
     const mix = (n) => { h = Math.imul(h ^ (Math.round(n * 100) | 0), 16777619) >>> 0; };
-    for (const e of enemies) { mix(e.mesh.position.x); mix(e.mesh.position.z); }
-    if (G.player) { mix(G.player.mesh.position.x); mix(G.player.mesh.position.z); mix(G.player.heading); }
+    for (const e of enemies) { mix(e.pos.x); mix(e.pos.z); }
+    if (G.player) { mix(G.player.pos.x); mix(G.player.pos.z); mix(G.player.heading); }
     mix(enemies.length);
     return h >>> 0;
   };
@@ -1667,8 +1667,8 @@ async function bootstrap() {
     }
 
     // position the camera once (update() doesn't run until take-off), then show the landing screen
-    camera.position.copy(G.player.mesh.position).add(camOffset);
-    camera.lookAt(G.player.mesh.position);
+    camera.position.copy(G.player.pos).add(camOffset);
+    camera.lookAt(G.player.pos.x, G.player.pos.y, G.player.pos.z); // components — see settleView in sim.js
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
     // The intro ("Level 0", seed name 'level-0', served only while current_progress === 0) has NO menu
     // gate: drop the new player straight into the fight — ship visible + controllable at once, no welcome

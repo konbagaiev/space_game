@@ -22,18 +22,18 @@ export default async function ({ page, assert, shot }) {
     const spot = { x: 0, y: 0.6, z: 6 };
     const formed = g.spawnEnemy('fighter');
     formed.warping = false; formed.spawnAge = formed.spawnDur; // fully formed → normal combatant
-    formed.mesh.scale.copy(formed.spawnScale);
-    formed.mesh.position.set(spot.x, spot.y, spot.z);
+    formed.scale = formed.fullScale;
+    formed.pos.set(spot.x, spot.y, spot.z);
 
     const warp = g.spawnEnemy('fighter');
     warp.warping = true; warp.spawnDur = 999; warp.spawnAge = 0;  // frozen mid-warp (never finishes here)
-    warp.mesh.position.set(spot.x, spot.y, spot.z);
+    warp.pos.set(spot.x, spot.y, spot.z);
     window.__warpMaxHp = warp.maxHp;
 
     // Fire a player homing rocket from just behind the pair, aimed at them. Params mirror the starter
     // "Rocket (homing)" weapon (catalog id 3) so it's the real projectile path.
-    const from = warp.mesh.position.clone(); from.z -= 5; // 5 units behind, on the combat plane
-    const fwd = warp.mesh.position.clone().sub(from); fwd.y = 0; fwd.normalize();
+    const from = warp.pos.clone(); from.z -= 5; // 5 units behind, on the combat plane
+    const fwd = warp.pos.clone().sub(from); fwd.y = 0; fwd.normalize();
     const weapon = {
       type: 'rocket', power: 60, accel: 10, turnRate: 1.0, launchSpeed: 12, maxRange: 150, health: 10,
       detonateRadius: 0.5, blastRadius: 5, projectileColor: 0xffaa33, class: 'rocket',

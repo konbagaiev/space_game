@@ -47,7 +47,7 @@ export default async function ({ page, assert, shot }) {
   // out here the player flew through empty space).
   await page.evaluate(([x, z]) => {
     const g = window.__game;
-    g.player.mesh.position.set(x, 0.6, z);
+    g.player.pos.set(x, 0.6, z);
     g.player.vel.set(0, 0, 0);
   }, [FAR_X, FAR_Z]);
   // Wait for the VIEW to settle on the new position instead of a fixed sleep: the camera follow and the
@@ -60,7 +60,7 @@ export default async function ({ page, assert, shot }) {
 
   const after = await page.evaluate(() => {
     const g = window.__game;
-    const px = g.player.mesh.position.x, pz = g.player.mesh.position.z;
+    const px = g.player.pos.x, pz = g.player.pos.z;
     return {
       px, pz,
       layers: g.speedFieldLayers.map((l) => {

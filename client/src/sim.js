@@ -9,26 +9,27 @@ import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
 import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './system-map.js';
-import { repairTick, shieldRecharge, applyShieldedDamage } from './components.js';
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset, keyboardThrust } from './steering.js';
+import { repairTick, shieldRecharge, applyShieldedDamage } from './sim-core/components.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset, keyboardThrust } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust, disposeShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups, preloadLevelShipModels } from './ship-build.js';
-import { stepSpawnGate } from './spawn-timing.js';
-import { simRandom } from './sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
-import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './level-sim.js';
-import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './collision.js';
+import { stepSpawnGate } from './sim-core/spawn-timing.js';
+import { simRandom } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
+import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
+import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
+import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './sim-core/collision.js';
 import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
-import { canDock, BASE_ARRIVE_RADIUS } from './autopilot-config.js';
+import { canDock, BASE_ARRIVE_RADIUS } from './sim-core/autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 import { logEvent, clearEventLog } from './eventlog.js';
 
-const _bulletP0 = new THREE.Vector3(); // reused: a bullet's pre-move position for the swept collision test
+const _bulletP0 = new Vec3(); // reused: a bullet's pre-move position for the swept collision test
 // Triple spiral rocket: warhead corkscrew around the leader's flight axis.
 const SPIRAL_RADIUS = 1.4;  // orbit radius around the leader axis (world units)
 const SPIRAL_ANGULAR = 6;   // rad/s — how fast the warheads corkscrew
@@ -130,7 +131,7 @@ export const levelRunner = {
     // re-taps to resume.
     if (!G.baseStation || !G.player || !G.player.alive) return;
     const s = G.baseStation.obj.position;
-    const dx = G.player.mesh.position.x - s.x, dz = G.player.mesh.position.z - s.z;
+    const dx = G.player.pos.x - s.x, dz = G.player.pos.z - s.z;
     if (canDock(G.autopilot, Math.hypot(dx, dz))) this.win();
   },
   win() {
@@ -224,7 +225,7 @@ export const levelRunner = {
 function forwardVec(heading) {
   // nose points in +Z when heading=0 (math lives in steering.js)
   const d = headingToDir(heading);
-  return new THREE.Vector3(d.x, 0, d.z);
+  return new Vec3(d.x, 0, d.z);
 }
 
 // ---------- Autopilot (return-to-base click-to-fly) ----------
@@ -252,13 +253,13 @@ function autopilotTargetPos() {
   // kind === 'point': a fixed world coordinate (roam navigation / system-map destination)
   if (tgt.kind === 'point') return tgt.pos || null;
   // kind === 'drop': valid only while the drop object is still in the live drops[] array
-  return (tgt.drop && drops.includes(tgt.drop)) ? tgt.drop.obj.position : null;
+  return (tgt.drop && drops.includes(tgt.drop)) ? tgt.drop.pos : null;
 }
 
 function autopilotControl(dt, accel, turn) {
   const goal = autopilotTargetPos();
   if (!goal) { G.autopilot.active = false; G.autopilot.target = null; return; }
-  const pos = G.player.mesh.position;
+  const pos = G.player.pos;
   const dx = goal.x - pos.x, dz = goal.z - pos.z;
   const dist = Math.hypot(dx, dz);
   const desired = Math.atan2(dx, dz);
@@ -327,7 +328,7 @@ export function cancelAutopilot() { G.autopilot.active = false; G.autopilot.targ
 function checkPointArrival() {
   const tgt = G.autopilot.target;
   if (!tgt || tgt.kind !== 'point') return;
-  const pos = G.player.mesh.position;
+  const pos = G.player.pos;
   if (!arrivedAtPoint(tgt.pos, { x: pos.x, z: pos.z }, ARRIVE_RADIUS)) return;
   if (G.player.vel.length() > 0.6) return; // wait until the kinematic brake has settled the ship
   const mission = tgt.mission;
@@ -341,7 +342,7 @@ function checkPointArrival() {
 function checkStationArrival() {
   const tgt = G.autopilot.target;
   if (!G.roam || !tgt || tgt.kind !== 'station' || !G.baseStation) return;
-  const s = G.baseStation.obj.position, pos = G.player.mesh.position;
+  const s = G.baseStation.obj.position, pos = G.player.pos;
   if (Math.hypot(pos.x - s.x, pos.z - s.z) > BASE_ARRIVE_RADIUS) return;
   if (G.player.vel.length() > 0.6) return;              // let the terminal brake settle the ship first
   G.autopilot.active = false; G.autopilot.target = null; // park
@@ -373,7 +374,7 @@ function checkMissionZone(dt) {
     z.t = null;
     return;
   }
-  const p = G.player.mesh.position;
+  const p = G.player.pos;
   const r = stepMissionZone(z, { dist: Math.hypot(p.x - z.center.x, p.z - z.center.z), dt });
   const wasCounting = z.t != null;
   // The countdown is three seconds of nothing happening — spend them fetching and parsing what the fight is
@@ -418,7 +419,7 @@ export function updateReturnArrow() {
   const on = G.returnToBase && G.player && G.player.alive && !levelRunner.won && G.baseStation;
   if (!on) { if (returnArrow) returnArrow.visible = false; return; }
   const a = ensureReturnArrow();
-  const st = G.baseStation.obj.position, pos = G.player.mesh.position;
+  const st = G.baseStation.obj.position, pos = G.player.pos;
   a.position.set(pos.x, 2.5, pos.z);                        // anchored to the ship, just above the plane
   a.rotation.y = Math.atan2(st.x - pos.x, st.z - pos.z);    // point at the station (heading convention)
   a.visible = true;
@@ -459,13 +460,12 @@ export function updateRoamNav() {
 // Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,
 // and replay the warp-in animation so the return reads as intentional (not a glitch).
 export function warpPlayerToCenter() {
-  G.player.mesh.position.set(arenaCenter.x, BULLET_PLANE_Y, arenaCenter.z); // back to the (possibly drifted) arena center
+  G.player.pos.set(arenaCenter.x, BULLET_PLANE_Y, arenaCenter.z); // back to the (possibly drifted) arena center
   G.player.vel.set(0, 0, 0);
   G.player.oobTime = 0;
-  if (!G.player.spawnScale) G.player.spawnScale = G.player.mesh.scale.clone(); // capture full size (model is loaded by now)
   G.player.spawnAge = 0;                  // (re)start the grow-from-a-dot animation
-  G.player.mesh.scale.setScalar(0.001);
-  spawnExplosion(G.player.mesh.position.clone()); // a small flash at the arrival point
+  G.player.scale = G.player.fullScale * 0.001; // shrink to a dot; stepPlayer grows it back
+  spawnExplosion(G.player.pos.clone()); // a small flash at the arrival point
 }
 
 // "You've left the battlefield" HUD warning + countdown. Shown only after OOB_WARN_DELAY seconds
@@ -510,6 +510,38 @@ function updateBank(ship, turnRate, dt) {
   bank.rotation.z = ship.roll;
 }
 
+// ---------- Sim state → scene graph ----------
+// The ONE place the simulation's transforms are copied into Three.js. Everything above this line owns
+// `pos` / `heading` / `scale` as plain data; everything below (renderer, HUD, FX, camera) reads the meshes.
+// The copy is strictly one-way: nothing in the sim reads a mesh back, which is what lets sim-core run
+// headless in Node. See docs/plans/server-authoritative-sim.md (Slice A).
+//
+// Called once per tick from update(), right after the movement steps and BEFORE anything render-side
+// (exhaust plumes, FX, the camera) samples a hull pose — so no consumer ever sees a stale transform.
+// Entities spawned LATER in the tick (levelRunner enemies, drops) seed their own mesh at spawn.
+function syncShipMesh(ship, dt) {
+  ship.mesh.position.set(ship.pos.x, ship.pos.y, ship.pos.z);
+  ship.mesh.rotation.y = ship.heading;
+  ship.mesh.scale.setScalar(ship.scale);
+  updateBank(ship, ship.turnRate, dt); // cosmetic wing-bank: a render consequence of how hard it turned
+  // TEMPORARY render→sim coupling. `noseZ` (where bullets are born) is MEASURED off the loaded .glb by
+  // ship-factory.applyShipModel, which means a piece of simulation input is derived from an asset the
+  // server will never parse — and a shot fired before the model lands uses the 1.6 primitive default.
+  // Copy it back each tick until it becomes catalog data (see the plan's §D5 note on model-derived sim input).
+  const nz = ship.mesh.userData.noseZ;
+  if (nz != null) ship.noseZ = nz;
+}
+
+export function syncMeshes(dt = 0) {
+  if (G.player) syncShipMesh(G.player, dt);
+  for (const e of enemies) syncShipMesh(e, dt);
+  for (const b of bullets) b.mesh.position.set(b.pos.x, b.pos.y, b.pos.z); // bolt orientation is baked at spawn
+  for (const r of rockets) {
+    r.obj.position.set(r.pos.x, r.pos.y, r.pos.z);
+    r.obj.rotation.y = r.heading;
+  }
+}
+
 export function update(dt) {
   if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
 
@@ -519,6 +551,7 @@ export function update(dt) {
   stepEnemyAI(dt);
   stepBullets(dt);
   stepRockets(dt);
+  syncMeshes(dt);            // sim transforms → scene graph; everything below here is render-side
   stepMicroExplosions(dt);
   // --- flipbook (sprite-sheet) explosions: advance frame, fade + drop when finished ---
   updateFlipbooks(dt);
@@ -622,7 +655,7 @@ function stepPlayer(dt) {
   const lifted = capLifted({ roam: G.roam, autopilot: G.autopilot.active, docking });
   if (!lifted && G.player.vel.length() > maxSpeed) G.player.vel.setLength(maxSpeed);
   // the ship keeps flying in its current direction, no matter where the nose points
-  G.player.mesh.position.addScaledVector(G.player.vel, dt);
+  G.player.pos.addScaledVector(G.player.vel, dt);
 
   // (The arena-drift block below is not player-specific — it stays here because moving it would reorder the tick.)
   // Drifting arena (e.g. freighter escort): slowly pan the combat zone's center; the boundary, warp-back
@@ -636,7 +669,7 @@ function stepPlayer(dt) {
   // Soft boundary (DECISIONS §2): the player can fly past ±ARENA freely (measured from the arena center).
   // Track how long it's been continuously outside; after a grace delay we warn (HUD), and after
   // OOB_RETURN_TIME we warp it back to the center. Re-entering resets the timer and clears the warning.
-  const p = G.player.mesh.position;
+  const p = G.player.pos;
   const dxc = p.x - arenaCenter.x, dzc = p.z - arenaCenter.z;
   const oob = Math.abs(dxc) > ARENA || Math.abs(dzc) > ARENA;
   // In ROAM the arena boundary is meaningless (you fly the whole system) — never warn, never warp back.
@@ -656,11 +689,8 @@ function stepPlayer(dt) {
   if (G.player.spawnAge < SPAWN_GROW_TIME) {
     G.player.spawnAge = Math.min(SPAWN_GROW_TIME, G.player.spawnAge + dt);
     const k = 1 - Math.pow(1 - G.player.spawnAge / SPAWN_GROW_TIME, 3); // ease-out cubic
-    G.player.mesh.scale.copy(G.player.spawnScale).multiplyScalar(Math.max(0.001, k));
+    G.player.scale = G.player.fullScale * Math.max(0.001, k);
   }
-
-  G.player.mesh.rotation.y = G.player.heading;
-  updateBank(G.player, turn, dt); // cosmetic wing-bank; `turn` = player.turnRate, in scope above
 
   // --- engine trail (when thrusting forward) ---
   if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
@@ -681,7 +711,7 @@ function stepEnemyAI(dt) {
       e.spawnAge = Math.min(e.spawnDur, e.spawnAge + dt);
       const t = e.spawnAge / e.spawnDur;
       const k = 1 - Math.pow(1 - t, 3); // ease-out cubic
-      e.mesh.scale.copy(e.spawnScale).multiplyScalar(Math.max(0.001, k));
+      e.scale = e.fullScale * Math.max(0.001, k);
       if (e.spawnAge >= e.spawnDur) e.warping = false; // fully formed: now a normal combatant
     }
 
@@ -695,7 +725,7 @@ function stepEnemyAI(dt) {
       if (wasBroken && s.shieldValue > 0) G.enemyShieldRefills++; // diagnostic counter (replay triage)
     }
 
-    const toPlayer = G.player.mesh.position.clone().sub(e.mesh.position);
+    const toPlayer = G.player.pos.clone().sub(e.pos);
     const dist = toPlayer.length();
     toPlayer.normalize();
 
@@ -711,9 +741,7 @@ function stepEnemyAI(dt) {
     e.vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
     if (e.engine.maxSpeed && e.vel.length() > e.engine.maxSpeed) e.vel.setLength(e.engine.maxSpeed);
 
-    e.mesh.position.addScaledVector(e.vel, dt); // no arena clamp: enemies chase the player out of bounds
-    e.mesh.rotation.y = e.heading;
-    updateBank(e, e.turnRate, dt); // cosmetic wing-bank for enemies
+    e.pos.addScaledVector(e.vel, dt); // no arena clamp: enemies chase the player out of bounds
 
     // engine trail: same exhaust behavior as the player, when thrusting forward
     if (thrust > 0.1) emitExhaust(e.mesh, ef, e.vel, e.engine.exhaust);
@@ -730,18 +758,18 @@ function stepBullets(dt) {
     const b = bullets[i];
     // SWEPT test: capture the pre-move position, then test the whole movement segment [p0→p1] vs the hull
     // so a fast bullet (~1-3 world units/frame) can't tunnel through a thin box between frames.
-    _bulletP0.copy(b.mesh.position);
+    _bulletP0.copy(b.pos);
     b.traveled += b.vel.length() * dt;
-    b.mesh.position.addScaledVector(b.vel, dt);
+    b.pos.addScaledVector(b.vel, dt);
 
     let hit = false;
     let absorbed = false;                 // this hit landed on a SHIELD → cyan flash instead of the orange spark
     if (b.fromPlayer) {
       for (const e of enemies) {
         if (e.warping) continue; // invulnerable while forming — bullets pass through
-        if (segmentHitsShip(e, _bulletP0, b.mesh.position)) {
+        if (segmentHitsShip(e, _bulletP0, b.pos)) {
           const dr = applyShieldedDamage(e, b.damage); // shield first, excess spills to the hull this tick
-          if (dr.absorbed) { absorbed = true; spawnEnemyShieldHit(e, b.mesh.position, dr.broke); }
+          if (dr.absorbed) { absorbed = true; spawnEnemyShieldHit(e, b.pos, dr.broke); }
           hit = true; audio.sfx.hit(); break;
         }
       }
@@ -752,14 +780,14 @@ function stepBullets(dt) {
       // bit-identically (DECISIONS §73 opt-in-per-draw contract).
       const dodge = G.player.dodge || 0;
       const dodgeRoll = dodge > 0 ? () => simRandom() >= 100 / (100 + dodge) : null;
-      const res = resolveHostileBulletHit(G.player, _bulletP0, b.mesh.position, b.damage, dodgeRoll);
+      const res = resolveHostileBulletHit(G.player, _bulletP0, b.pos, b.damage, dodgeRoll);
       if (res.hit) {
         hit = true;
         if (res.dodged) {
-          spawnEvadePopup(G.player.mesh.position); // evaded: "EVADE" text, no damage/FX
+          spawnEvadePopup(G.player.pos); // evaded: "EVADE" text, no damage/FX
         } else {
-          if (res.impact) b.mesh.position.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
-          if (res.damageResult.absorbed) spawnShieldHit(b.mesh.position, res.damageResult.broke); // cyan ripple where the shot connects with the shield
+          if (res.impact) b.pos.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
+          if (res.damageResult.absorbed) spawnShieldHit(b.pos, res.damageResult.broke); // cyan ripple where the shot connects with the shield
           audio.sfx.hit(sfxFor('ship', G.player.class, 'hit')); // sampled impact when OUR ship is struck
         }
       }
@@ -771,7 +799,7 @@ function stepBullets(dt) {
         const r = rockets[j];
         if (r.lead) continue;                        // the invisible spiral leader has no hp — not shootable
         if (r.fromPlayer === b.fromPlayer) continue; // only rockets of the opposite side
-        if (b.mesh.position.distanceTo(r.obj.position) < 2.4) {
+        if (b.pos.distanceTo(r.pos) < 2.4) {
           r.hp -= b.damage;
           if (r.hp <= 0) { detonateRocket(r, false); if (r.spiralOf) r.spiralOf.children--; rockets.splice(j, 1); } // destroyed (a spiral warhead frees its leader slot)
           hit = true; break;                                                 // else it survives, takes another
@@ -785,7 +813,7 @@ function stepBullets(dt) {
       // by a shield instead plays the same mini-blast smaller and tinted CYAN (SHIELD_HIT_TINT), so "the
       // field stopped it" reads differently from an orange hull hit while staying in the one FX family
       // (DECISIONS §75). spawnHitSprite draws no RNG → replay-safe either way.
-      if (hit) spawnHitSprite(b.mesh.position, (HIT_FLASH_SCALE[b.class] ?? 0.8) * (absorbed ? 0.7 : 1), absorbed ? SHIELD_HIT_TINT : null);
+      if (hit) spawnHitSprite(b.pos, (HIT_FLASH_SCALE[b.class] ?? 0.8) * (absorbed ? 0.7 : 1), absorbed ? SHIELD_HIT_TINT : null);
       scene.remove(b.mesh);
       b.mesh.material.dispose();
       bullets.splice(i, 1);
@@ -806,14 +834,14 @@ function stepRockets(dt) {
       // Invisible leader: home + move exactly like a normal rocket, but no smoke, no detonation.
       if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
       if (r.target) {
-        const to = r.target.mesh.position.clone().sub(r.obj.position);
+        const to = r.target.pos.clone().sub(r.pos);
         const desired = Math.atan2(to.x, to.z);
         const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
         const speed = r.vel.length() + r.accel * dt;
         r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
       }
       r.traveled += r.vel.length() * dt;
-      r.obj.position.addScaledVector(r.vel, dt);
+      r.pos.addScaledVector(r.vel, dt);
       r.spiralPhase += SPIRAL_ANGULAR * dt;
       // Expire when out of range OR all children gone (children decremented on each warhead removal).
       if (r.traveled >= r.maxRange || r.children <= 0) { scene.remove(r.obj); rockets.splice(i, 1); }
@@ -823,16 +851,16 @@ function stepRockets(dt) {
     if (r.spiralOf) {
       // Visible warhead: position = leader.pos + corkscrew offset; velocity tracked for orientation + smoke.
       const L = r.spiralOf;
-      const axisV = L.vel.lengthSq() > 1e-4 ? L.vel.clone().normalize() : new THREE.Vector3(0, 0, 1);
+      const axisV = L.vel.lengthSq() > 1e-4 ? L.vel.clone().normalize() : new Vec3(0, 0, 1);
       const o = spiralOffset({ x: axisV.x, y: axisV.y, z: axisV.z }, L.spiralPhase + r.spiralPhaseOffset, SPIRAL_RADIUS);
-      const off = new THREE.Vector3(o.x, o.y, o.z);
-      const prev = r.obj.position.clone();
-      r.obj.position.copy(L.obj.position).add(off);
-      const moved = r.obj.position.clone().sub(prev);
+      const off = new Vec3(o.x, o.y, o.z);
+      const prev = r.pos.clone();
+      r.pos.copy(L.pos).add(off);
+      const moved = r.pos.clone().sub(prev);
       r.vel.copy(moved).multiplyScalar(1 / Math.max(dt, 1e-4)); // for orientation + smoke direction
       r.traveled = L.traveled; // share the leader's range accounting
-      if (r.vel.lengthSq() > 0.01) r.obj.rotation.y = Math.atan2(r.vel.x, r.vel.z);
-      spawnSmoke(r.obj.position); // corkscrew trail: three offset helices (same fading-line puffs)
+      if (r.vel.lengthSq() > 0.01) r.heading = Math.atan2(r.vel.x, r.vel.z);
+      spawnSmoke(r.pos); // corkscrew trail: three offset helices (same fading-line puffs)
       // detonation/shoot-down handled by the shared block below (uses removeRocket → child-count decrement)
     } else {
       // Normal rocket: existing homing + move.
@@ -840,25 +868,25 @@ function stepRockets(dt) {
       if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
       if (r.target) {
         // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
-        const to = r.target.mesh.position.clone().sub(r.obj.position);
+        const to = r.target.pos.clone().sub(r.pos);
         const desired = Math.atan2(to.x, to.z);
         const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
         const speed = r.vel.length() + r.accel * dt;
         r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
       }
       r.traveled += r.vel.length() * dt;
-      r.obj.position.addScaledVector(r.vel, dt);
-      if (r.vel.lengthSq() > 0.01) r.obj.rotation.y = Math.atan2(r.vel.x, r.vel.z);
-      spawnSmoke(r.obj.position); // light smoke trail
+      r.pos.addScaledVector(r.vel, dt);
+      if (r.vel.lengthSq() > 0.01) r.heading = Math.atan2(r.vel.x, r.vel.z);
+      spawnSmoke(r.pos); // light smoke trail
     }
 
     let det = false;
     if (r.fromPlayer) {
       for (const e of enemies) {
         if (e.warping) continue; // no detonation on a forming enemy
-        if (pointHitsShip(e, r.obj.position, r.detonateR)) { det = true; break; }
+        if (pointHitsShip(e, r.pos, r.detonateR)) { det = true; break; }
       }
-    } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.detonateR)) {
+    } else if (G.player.alive && pointHitsShip(G.player, r.pos, r.detonateR)) {
       det = true;
     }
     // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)
@@ -956,8 +984,8 @@ function stepEnemyDeaths() {
       // Bosses go up bigger + in stages (secondary detonation + expanding rings); everyone else = the
       // standard flipbook fireball + one ring.
       const isBoss = e.role === 'boss' || e.role === 'boss2';
-      if (isBoss) spawnBossExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
-      else spawnShipExplosion(e.mesh.position, e.engine.exhaust.color, e.sizeScale || 1);
+      if (isBoss) spawnBossExplosion(e.pos, e.engine.exhaust.color, e.sizeScale || 1);
+      else spawnShipExplosion(e.pos, e.engine.exhaust.color, e.sizeScale || 1);
       // Per-size loudness: medium ships + bosses +50% louder; small ships 70% quieter.
       const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(e.role);
       audio.sfx.explosion(e.sizeScale || 1, sfxFor('ship', e.class, 'explode'), louderBoom ? 1.5 : 0.3); // ship-class map; vol by size
@@ -980,7 +1008,7 @@ function stepEnemyDeaths() {
       G.earned += reward;         // credits (reward for this ship type)
       G.earnedXp += xp;           // character experience (banked with the run at /api/games)
       if (reward > 0) {           // floating "+xx" green popup at the kill site (cosmetic feedback)
-        creditPopups.push({ pos: e.mesh.position.clone(), amount: reward, life: 2.0, maxLife: 2.0 });
+        creditPopups.push({ pos: e.pos.clone(), amount: reward, life: 2.0, maxLife: 2.0 });
       }
       logEvent(t('ui.log.killed', { name: e.name, amount: reward, xp })); // event-log kill line (credits + XP)
       // reward drop: the LAST enemy of a level that carries a lastKillDrop drops the reward model (cosmetic —
@@ -989,9 +1017,9 @@ function stepEnemyDeaths() {
       // mounted weapons the grab can pull in — deposited on victory; hulls never drop).
       const lkd = levelRunner.level && levelRunner.level.lastKillDrop;
       if (lkd && isLastKillDrop({ kills: G.kills, enemyTotal: G.enemyTotal }) && !ownsReward(lkd)) {
-        spawnSpecialDrop(e.mesh.position, lkd);
+        spawnSpecialDrop(e.pos, lkd);
       } else if (simRandom() < DROP_CHANCE) {   // GAMEPLAY draw (does this kill drop loot?)
-        const loot = pickLoot(e); if (loot) spawnDrop(e.mesh.position, loot);
+        const loot = pickLoot(e); if (loot) spawnDrop(e.pos, loot);
       }
     }
   }
@@ -1001,7 +1029,7 @@ function stepPlayerDeath() {
   // --- player death ---
   if (G.player.hp <= 0 && G.player.alive) {
     G.player.alive = false;
-    spawnShipExplosion(G.player.mesh.position, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
+    spawnShipExplosion(G.player.pos, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
     audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
     track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
     bankRun(); // bank the earned credits into the account balance + record the game
@@ -1025,11 +1053,15 @@ function stepPlayerDeath() {
 // (DECISIONS §73/§96/§98).
 export function settleView(dt = 0) {
   // camera: rigidly attached to the player (no lag/floating), fixed angle (does NOT rotate with the ship's turn)
-  camera.position.copy(G.player.mesh.position).add(camOffset);
-  camera.lookAt(G.player.mesh.position);
+  camera.position.copy(G.player.pos).add(camOffset);
+  // Components, NOT the vector: THREE's Object3D.lookAt branches on `x.isVector3` and silently falls
+  // through to `set(x, undefined, undefined)` for anything else — which NaNs the camera's quaternion and
+  // renders nothing, with no error thrown. A sim-core Vec3 is duck-compatible with everything that merely
+  // READS x/y/z (`copy`, `Matrix4.compose`, …) but not with THREE APIs that type-test. See vec.js.
+  camera.lookAt(G.player.pos.x, G.player.pos.y, G.player.pos.z);
   G.stars.position.copy(camera.position); // stars: an infinitely distant backdrop stuck to the camera (no parallax)
   updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
-  updateSpeedField(G.player.mesh.position.x, G.player.mesh.position.z); // player-locked backdrop (view-only, no RNG)
+  updateSpeedField(G.player.pos.x, G.player.pos.z); // player-locked backdrop (view-only, no RNG)
 }
 
 // ---------- Pause ----------
@@ -1129,14 +1161,14 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   //   • otherwise — a normal level start (retry, or a level that begins where you already are): centre it.
   if (!keepPlayer) {
     const spawn = G.roam ? { x: 0, z: 0 } : { x: cx, z: cz };
-    G.player.mesh.position.set(spawn.x, BULLET_PLANE_Y, spawn.z);
+    G.player.pos.set(spawn.x, BULLET_PLANE_Y, spawn.z);
     G.player.heading = 0;                                // forward = +Z (forwardVec(0) = (0,0,1))
     G.player.vel.set(0, 0, PLAYER_MAX_SPEED * 0.1);      // open the fight already gliding forward at 10% of top speed (3 u/s)
   }
   G.player.hp = G.player.maxHp;
   G.player.oobTime = 0;             // fresh run: clear the out-of-bounds timer
   G.player.spawnAge = SPAWN_GROW_TIME; // and any in-progress warp-back animation (back to full size)
-  if (G.player.spawnScale) G.player.mesh.scale.copy(G.player.spawnScale);
+  G.player.scale = G.player.fullScale;  // and any in-progress warp shrink
   G.player._repairAccum = 0; // fresh run: clear banked repair-drone time
   G.player._shieldValue = G.player.shield ? G.player.shield.capacity : 0; // fresh run: shield full & active
   G.player._shieldRechargeAccum = 0;
@@ -1160,6 +1192,12 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
     // kill: while flying freely you can always click home to be flown back and offered a dock.
     if (G.baseStation) G.baseStation.active = true;
   } else levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
+  // Push the fresh sim state into the scene graph NOW, before a single frame is drawn. reset() teleports
+  // the ship (and restores its full scale), and the very next thing a replay/cutscene start does is call
+  // settleView() to frame a FROZEN pre-fight card — with no sync the camera would sit at the new position
+  // while the hull was still drawn at the old one. No test asserts on that frame, so it has to be reasoned
+  // about rather than caught. dt=0 → the cosmetic bank is re-based without rolling the ship.
+  syncMeshes(0);
   setPaused(false); // a fresh run always starts unpaused (and resets the button to ⏸)
   refreshMusic();   // a live fight → combat music
   el.overlay.style.display = 'none';

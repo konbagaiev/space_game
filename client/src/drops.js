@@ -12,11 +12,12 @@ import { G, CATALOG } from './state.js';
 import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLoader
 import { audio } from './sound-routing.js';
 import { DROP_MODEL_URL, DROP_CHANCE, MAX_DROPS, ARM_DELAY, ROTATE_PERIOD, COLLECT_DIST, WEIGHT_FALLBACK,
-         REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pullSpeed, field, FIELD_CUTOFF, pickLoot, shouldDeposit, rewardOwned } from './drops-config.js';
+         REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pullSpeed, field, FIELD_CUTOFF, pickLoot, shouldDeposit, rewardOwned } from './sim-core/drops-config.js';
 import { logEvent } from './eventlog.js';
 import { t } from './i18n.js';
+import { Vec3 } from './sim-core/vec.js'; // a drop's world position is sim state (the Grab pulls it)
 
-export const drops = [];            // { obj, item:{kind,refId}, weight, inRange (sec), special? }
+export const drops = [];            // { obj, pos, item:{kind,refId}, weight, inRange (sec), special? }
 export const pendingLoot = [];      // { kind, refId } collected this run — deposited on VICTORY only
 export { DROP_CHANCE, pickLoot };   // re-export so sim.js/main.js read one source (pickLoot is pure, in drops-config.js)
 
@@ -78,11 +79,11 @@ export function spawnDrop(pos, item) {
   const cat = item.kind === 'component' ? CATALOG.components.get(item.refId) : CATALOG.weapons.get(item.refId);
   const weight = (cat && cat.weight) || (warnMissing(), WEIGHT_FALLBACK);
   const obj = template ? template.clone(true) : fallbackBox();
-  obj.position.copy(pos); obj.position.y = 0.8;
+  obj.position.copy(pos); obj.position.y = 0.8;   // seed the render copy; `pos` below is the authority
   scene.add(obj);
   const colorInt = cat && cat.color ? new THREE.Color(cat.color).getHex() : 0xffffff;
   addHalo(obj, colorInt, DROP_HALO_SIZE); // soft glow tinted by the item's rarity color
-  drops.push({ obj, item, weight, inRange: 0 });
+  drops.push({ obj, pos: new Vec3(pos.x, 0.8, pos.z), item, weight, inRange: 0 });
 }
 
 // ---------- Special (L1/L2 reward) drops: green model + halo, cosmetic (no stash deposit) ----------
@@ -192,7 +193,7 @@ export function spawnSpecialDrop(pos, reward) {
   const weight = spec.cat.weight || WEIGHT_FALLBACK;
   const wrap = new THREE.Group();
   addHalo(wrap);                         // additive green halo sprite behind the model
-  wrap.position.copy(pos); wrap.position.y = 0.8;
+  wrap.position.copy(pos); wrap.position.y = 0.8; // seed the render copy; `pos` below is the authority
   scene.add(wrap);
   const cached = spec.url && rewardModelCache.get(spec.url);
   if (cached && cached.model) {
@@ -205,7 +206,7 @@ export function spawnSpecialDrop(pos, reward) {
       wrap.add(model);
     });
   }
-  drops.push({ obj: wrap, item: reward, weight, inRange: 0, special: true });
+  drops.push({ obj: wrap, pos: new Vec3(pos.x, 0.8, pos.z), item: reward, weight, inRange: 0, special: true });
 }
 
 // Ownership gate off G.activeShip: has the player already got this reward? Delegates to the pure
@@ -218,12 +219,12 @@ export function updateDrops(dt) {
   const p = G.player, grab = p && p.grab;
   // feature inert with no grab / dead player: hide the line and stop pulling
   if (!p || !p.alive || !grab) { hideLine(); return; }
-  const ppos = p.mesh.position;
+  const ppos = p.pos;
   // 2) arm timers + find the nearest ARMED, field-eligible drop. Eligibility is the inverse-square
   //    field crossing FIELD_CUTOFF (weight-independent) — the reach is emergent, not a stored radius.
   let target = null, best = Infinity;
   for (const d of drops) {
-    const dist = tmp.copy(d.obj.position).sub(ppos).length();
+    const dist = tmp.copy(d.pos).sub(ppos).length();
     if (field(grab.strength, dist) >= FIELD_CUTOFF) {
       d.inRange += dt;
       if (d.inRange >= ARM_DELAY && dist < best) { best = dist; target = d; }
@@ -231,11 +232,12 @@ export function updateDrops(dt) {
   }
   if (!target) { hideLine(); return; }
   // 3) pull the target toward the ship at the linear-ramp, weight-scaled speed (faster the closer it is)
-  tmp.copy(ppos).sub(target.obj.position); const d = tmp.length();
+  tmp.copy(ppos).sub(target.pos); const d = tmp.length();
   if (d <= COLLECT_DIST) return collect(target);         // arrived → collect + re-target next frame
   const speed = pullSpeed(target.weight, d);
-  target.obj.position.addScaledVector(tmp.normalize(), Math.min(speed * dt, d));
-  drawLine(ppos, target.obj.position);                   // thin blue activity indicator
+  target.pos.addScaledVector(tmp.normalize(), Math.min(speed * dt, d));
+  target.obj.position.set(target.pos.x, target.pos.y, target.pos.z); // sim → render (see sim.js syncMeshes)
+  drawLine(ppos, target.pos);                            // thin blue activity indicator
 }
 
 function collect(d) {

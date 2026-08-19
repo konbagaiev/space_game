@@ -1,11 +1,17 @@
 // Ship hitbox tests. Broad-phase (one enclosing sphere) → narrow-phase (per-part oriented bounding boxes).
-// hitBoxes/broadR live in the group-local noseZ frame (see ship-factory.js); mesh.matrixWorld folds in
-// position + heading + 1.8×sizeScale but NOT the cosmetic bank roll (a child group). Half-extents scale by
-// mesh.scale.x (uniform world scale).
+// hitBoxes/broadR live in the group-local noseZ frame (see ship-factory.js).
 //
-// Deliberately THREE-free: each box center is transformed by mesh.matrixWorld.elements with plain math (an
-// affine transform, w=1) and each axis is rotated by the matrix's upper-3×3 then renormalized, so the point
-// is projected onto the box's world axes inline. That keeps this module importable under `node --test` (the
+// The ship's world transform is built HERE from its simulation state — `ship.pos`, `ship.heading` and
+// `ship.scale` (the uniform world scale, SHIP_GROUP_SCALE × sizeScale × warp-in growth) — by shipMatrix().
+// It used to be read off `mesh.matrixWorld`, which made every hit test require a live Three.js scene graph;
+// the sim now owns the transform and the renderer merely copies it out (see sim.js syncMeshes and
+// docs/plans/server-authoritative-sim.md Slice A). The matrix is exactly what Three.js produced for the
+// ship GROUP — translate × rotateY × uniform scale — and it deliberately still excludes the cosmetic bank
+// roll, which lives on a CHILD group and never affected hits.
+//
+// Deliberately THREE-free: each box center is transformed by the matrix with plain math (an affine
+// transform, w=1) and each axis is rotated by the matrix's upper-3×3 then renormalized, so the point is
+// projected onto the box's world axes inline. That keeps this module importable under `node --test` (the
 // client has no `three` install for node), so collision.test.js can exercise it. See DECISIONS §45.
 
 import { applyShieldedDamage } from './components.js';
@@ -18,7 +24,7 @@ export const SHIELD_RADIUS = 4.0;
 
 // World broad-phase radius. Modeled ships → broadR (group-local) × world scale; primitives → legacy 2.6×sizeScale.
 export function broadRadius(ship) {
-  const sc = ship.mesh.scale.x || 1;
+  const sc = ship.scale || 1;
   if (ship.hitBoxes && ship.broadR) return ship.broadR * sc;
   return LEGACY_R * (ship.sizeScale || 1);
 }
@@ -102,8 +108,24 @@ function segmentSphereHit(p0, p1, c, R, out) {
   return true;
 }
 
+// The ship's world matrix, column-major, exactly as Three.js composed it for the ship group:
+// translate(pos) × rotateY(heading) × uniformScale(sc). Written into the reused `out` array (no allocation
+// in the hot projectile loop). Pure math — this is the seam that freed the hit tests from the scene graph.
+export function shipMatrix(ship, out) {
+  const sc = ship.scale || 1;
+  const h = ship.heading || 0;
+  const c = Math.cos(h), s = Math.sin(h);
+  const p = ship.pos;
+  out[0] = c * sc;  out[1] = 0;   out[2] = -s * sc; out[3] = 0;
+  out[4] = 0;       out[5] = sc;  out[6] = 0;       out[7] = 0;
+  out[8] = s * sc;  out[9] = 0;   out[10] = c * sc; out[11] = 0;
+  out[12] = p.x;    out[13] = p.y; out[14] = p.z;   out[15] = 1;
+  return out;
+}
+
 // reused scratch buffers (single-threaded; avoids per-call allocation in the hot projectile loop)
 const _tmp = [0, 0, 0];
+const _mat = new Array(16).fill(0); // shipMatrix output, reused per hit test
 const _shieldImpact = { x: 0, y: 0, z: 0 }; // segmentSphereHit entry point, read by the caller before reuse
 const _wu0 = [0, 0, 0], _wu1 = [0, 0, 0], _wu2 = [0, 0, 0];
 const _a0 = [0, 0, 0], _a1 = [0, 0, 0], _H = [0, 0, 0];
@@ -111,13 +133,12 @@ const _a0 = [0, 0, 0], _a1 = [0, 0, 0], _H = [0, 0, 0];
 // True if world `point` is within `pad` world units of the ship's hull. Broad-phase first; ships without
 // hitBoxes fall back to the single broad sphere (unchanged behavior for primitive/cone ships).
 export function pointHitsShip(ship, point, pad = 0) {
-  const p = ship.mesh.position;
+  const p = ship.pos;
   const br = broadRadius(ship) + pad;
   if (distSq(point, p.x, p.y, p.z) > br * br) return false;
   if (!ship.hitBoxes) return true;                 // broad sphere IS the hitbox for primitives
-  const sc = ship.mesh.scale.x || 1;
-  ship.mesh.updateMatrixWorld();                   // sim mutates position mid-frame; refresh before transforming
-  const e = ship.mesh.matrixWorld.elements;        // column-major 4x4 (folds position + heading + world scale)
+  const sc = ship.scale || 1;
+  const e = shipMatrix(ship, _mat);                // column-major 4x4 (folds position + heading + world scale)
   for (const b of ship.hitBoxes) {
     const cx = e[0] * b.c.x + e[4] * b.c.y + e[8] * b.c.z + e[12];
     const cy = e[1] * b.c.x + e[5] * b.c.y + e[9] * b.c.z + e[13];
@@ -136,13 +157,12 @@ export function pointHitsShip(ship, point, pad = 0) {
 // segment-vs-OBB (transform both endpoints into each box's local frame, then a slab test). When p0==p1 it is
 // exactly `pointHitsShip`, so it's a strict superset. THREE-free.
 export function segmentHitsShip(ship, p0, p1, pad = 0) {
-  const c = ship.mesh.position;
+  const c = ship.pos;
   const br = broadRadius(ship) + pad;
   if (segDistSq(p0, p1, c) > br * br) return false;
   if (!ship.hitBoxes) return true;                 // broad sphere IS the hitbox for primitives
-  const sc = ship.mesh.scale.x || 1;
-  ship.mesh.updateMatrixWorld();
-  const e = ship.mesh.matrixWorld.elements;
+  const sc = ship.scale || 1;
+  const e = shipMatrix(ship, _mat);
   for (const b of ship.hitBoxes) {
     const cx = e[0] * b.c.x + e[4] * b.c.y + e[8] * b.c.z + e[12];
     const cy = e[1] * b.c.x + e[5] * b.c.y + e[9] * b.c.z + e[13];
@@ -187,7 +207,7 @@ export function segmentHitsShip(ship, p0, p1, pad = 0) {
 // deterministic) — and the caller passes null when the target can't dodge, so no roll is consumed then.
 export function resolveHostileBulletHit(player, p0, p1, damage, dodgeRoll = null) {
   if (player.shield && player._shieldValue > 0) {
-    if (!segmentSphereHit(p0, p1, player.mesh.position, SHIELD_RADIUS, _shieldImpact))
+    if (!segmentSphereHit(p0, p1, player.pos, SHIELD_RADIUS, _shieldImpact))
       return { hit: false, dodged: false, damageResult: null, remove: false, impact: null };
     if (dodgeRoll && dodgeRoll()) return { hit: true, dodged: true, damageResult: null, remove: true, impact: _shieldImpact };
     const damageResult = applyShieldedDamage(player, damage);

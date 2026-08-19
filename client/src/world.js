@@ -546,7 +546,7 @@ export function updateSystemBodies() {
   const now = Date.now();
   // The player may not exist yet (buildMap runs before the ship is built) — the base sits at the origin, so
   // that is the right stand-in: it places the hangar backdrop exactly as the player will first see it.
-  const ship = (G.player && G.player.mesh) ? G.player.mesh.position : ORIGIN;
+  const ship = (G.player && G.player.pos) ? G.player.pos : ORIGIN;
   for (const b of G.systemBodies) {
     const rp = bodyRenderPos(b.name, now);
     b.mesh.position.set(rp.x, rp.y, rp.z);

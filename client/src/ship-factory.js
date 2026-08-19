@@ -10,6 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { BULLET_PLANE_Y, G } from './state.js'; // the canonical combat plane every ship group sits on
 import { scene, renderer, camera } from './engine.js'; // needed to warm a freshly parsed model onto the GPU
+import { SHIP_GROUP_SCALE } from './sim-core/consts.js'; // the group's uniform world scale is SIM state (hitboxes + muzzle scale with it)
 
 // Per-ship model-presentation config (stats.model), with back-compat for the old loose keys
 // (stats.modelYaw / stats.sizeScale) so a stale player_ships row or cache can't break.
@@ -206,7 +207,7 @@ export function makeShip(color, model = null) {
   glow.position.z = -1.6;
   bank.add(glow);
   g.position.y = BULLET_PLANE_Y; // sit the group on the canonical combat plane (bullets fly here)
-  g.scale.setScalar(1.8); // larger - the arena is far away, otherwise ships look tiny
+  g.scale.setScalar(SHIP_GROUP_SCALE); // larger - the arena is far away, otherwise ships look tiny
   g.userData.noseZ = 1.6;  // muzzle/forward spawn (group-local: primitive cone nose) — replaced by the
   g.userData.tailZ = -1.6; // exhaust/rear spawn (primitive engine glow) — real glb bounds in applyShipModel
   if (model) applyShipModel(g, model, color); // optionally replace the primitive with a .glb

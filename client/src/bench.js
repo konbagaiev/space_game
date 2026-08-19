@@ -36,7 +36,7 @@ export function isBench() { return BENCH !== null; }
 
 // mulberry32 lives in sim-random.js (the seeded-stream owner); re-exported here so long-standing importers
 // (bench.test.js, the bench tooling) keep working unchanged.
-export { mulberry32 } from './sim-random.js';
+export { mulberry32 } from './sim-core/sim-random.js';
 
 // The single tunable sim tick rate. ALL sim stepping — live play, ?record/?playback, ?bench, and the
 // Level-0 cutscene — advances at this fixed step so a tick maps 1:1 across record and replay. The

@@ -23,8 +23,8 @@ export default async function ({ page, assert, shot }) {
     g.enemies.slice().forEach((e) => g.scene.remove(e.mesh));
     g.enemies.length = 0;
     const e = g.spawnEnemy('fighter');
-    e.mesh.position.set(0, 0.6, 6);   // just ahead of the player/camera
-    e.mesh.scale.copy(e.spawnScale);  // skip the warp-in grow so it's full size (and stable) from here on
+    e.pos.set(0, 0.6, 6);   // just ahead of the player/camera
+    e.scale = e.fullScale;  // skip the warp-in grow so it's full size (and stable) from here on
     e.spawnAge = e.spawnDur; e.warping = false;
     return { cap: e.shield && e.shield.capacity, rechargeSec: e.shield && e.shield.rechargeSec, hp: e.hp, maxHp: e.maxHp };
   });
@@ -72,9 +72,9 @@ export default async function ({ page, assert, shot }) {
   // --- 6. the ripple appears AND expires, with the player never having been hit ---
   const live = await page.evaluate(() => {
     const g = window.__game; const e = g.enemies[0];
-    g.spawnEnemyShieldHit(e, e.mesh.position, false);
+    g.spawnEnemyShieldHit(e, e.pos, false);
     const slot = g.enemyShieldSlots.find((s) => s.enemy === e);
-    return { scale: slot ? slot.mesh.scale.x : 0, expected: e.broadR * e.mesh.scale.x * 1.05 };
+    return { scale: slot ? slot.mesh.scale.x : 0, expected: e.broadR * e.scale * 1.05 };
   });
   await page.waitForTimeout(100);
   await shot('shield-bubble');
@@ -87,12 +87,12 @@ export default async function ({ page, assert, shot }) {
   const boss = await page.evaluate(() => {
     const g = window.__game;
     const b = g.spawnEnemy('boss2');
-    b.mesh.position.set(24, 0.6, 6);
-    b.mesh.scale.copy(b.spawnScale); // skip the warp-in grow so the bubble is sized at full scale
+    b.pos.set(24, 0.6, 6);
+    b.scale = b.fullScale; // skip the warp-in grow so the bubble is sized at full scale
     b.spawnAge = b.spawnDur; b.warping = false;
-    g.spawnEnemyShieldHit(b, b.mesh.position, false);
+    g.spawnEnemyShieldHit(b, b.pos, false);
     const slot = g.enemyShieldSlots.find((s) => s.enemy === b);
-    return { scale: slot ? slot.mesh.scale.x : 0, expected: b.broadR * b.mesh.scale.x * 1.05 };
+    return { scale: slot ? slot.mesh.scale.x : 0, expected: b.broadR * b.scale * 1.05 };
   });
   assert.ok(boss.expected > 6, `the second boss bubble is boss-sized (expected ≈ ${boss.expected.toFixed(2)} world units)`);
   assert.ok(
@@ -113,9 +113,9 @@ export default async function ({ page, assert, shot }) {
     // within one FX-clock instant, so the last few registrations MUST recycle an oldest, still-live slot.
     for (let i = 0; i < 10; i++) {
       const e = g.spawnEnemy('fighter');
-      e.mesh.position.set(-40 + i * 8, 0.6, 20);
-      e.mesh.scale.copy(e.spawnScale); e.spawnAge = e.spawnDur; e.warping = false;
-      g.spawnEnemyShieldHit(e, e.mesh.position, false);
+      e.pos.set(-40 + i * 8, 0.6, 20);
+      e.scale = e.fullScale; e.spawnAge = e.spawnDur; e.warping = false;
+      g.spawnEnemyShieldHit(e, e.pos, false);
     }
     const slots = g.enemyShieldSlots;
     return {

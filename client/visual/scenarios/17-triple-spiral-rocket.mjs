@@ -20,12 +20,12 @@ export default async function ({ page, assert, shot }) {
     const g = window.__game;
     g.enemies.slice().forEach((e) => g.scene.remove(e.mesh));
     g.enemies.length = 0;
-    const V = g.player.mesh.position.constructor; // THREE.Vector3
-    const base = g.player.mesh.position.clone();
+    const V = g.player.pos.constructor; // sim-core Vec3
+    const base = g.player.pos.clone();
     const fwd = new V(0, 0, 1);
     const enemy = g.spawnEnemyShip(g.catalog.enemyShips.find((s) => s.stats.role === 'fighter'));
-    enemy.mesh.position.set(base.x, 0.6, base.z + 24); // ~24u ahead, within the seek cone & reachable
-    enemy.mesh.scale.copy(enemy.spawnScale);          // skip the warp-in grow so it's full size / full hit radius
+    enemy.pos.set(base.x, 0.6, base.z + 24); // ~24u ahead, within the seek cone & reachable
+    enemy.scale = enemy.fullScale;          // skip the warp-in grow so it's full size / full hit radius
     enemy.hp = enemy.maxHp = 9999; // survive all three 40-dmg warheads so the WHOLE volley connects &
     // detonates (a 30-HP fighter would die to the first hit, orphaning the other two → they'd only expire
     // at maxRange, past this 4s window). 'fighter' has a gun only (no rocket mount → clean `rockets` pool).

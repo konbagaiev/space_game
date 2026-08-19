@@ -7,8 +7,8 @@ export const name = '02-ship-explosion';
 export default async function ({ page, assert, shot }) {
   const data = await page.evaluate(() => {
     const g = window.__game;
-    const V = g.player.mesh.position.constructor; // THREE.Vector3
-    const base = g.player.mesh.position;
+    const V = g.player.pos.constructor; // sim-core Vec3
+    const base = g.player.pos;
     const before = { sp: g.sparks.length, sw: g.shockwaves.length };
     const playerExhaust = g.player.engine.exhaust.color;
     const medium = g.catalog.enemyShips.find((s) => s.stats.role === 'medium');

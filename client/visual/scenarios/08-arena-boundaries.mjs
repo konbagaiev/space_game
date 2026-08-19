@@ -29,11 +29,11 @@ export default async function ({ page, assert, shot }) {
   // Fly the ship far out of bounds; it does NOT get clamped (the hard wall is gone).
   await page.evaluate(() => {
     const g = window.__game;
-    g.player.mesh.position.set(g.ARENA + 120, 0.6, 0); // well past the east edge
+    g.player.pos.set(g.ARENA + 120, 0.6, 0); // well past the east edge
     g.player.vel.set(0, 0, 0);
   });
   await page.waitForTimeout(150);
-  const stillOut = await page.evaluate(() => Math.abs(window.__game.player.mesh.position.x));
+  const stillOut = await page.evaluate(() => Math.abs(window.__game.player.pos.x));
   assert.ok(stillOut > present.arena, 'the ship is NOT clamped at the boundary (it flew past freely)');
 
   // Enemies and weapons keep working out of bounds: a freshly spawned enemy appears next to the
@@ -41,14 +41,14 @@ export default async function ({ page, assert, shot }) {
   const oob = await page.evaluate(() => {
     const g = window.__game;
     const e = g.spawnEnemy('fighter');
-    const spawnOut = Math.max(Math.abs(e.mesh.position.x), Math.abs(e.mesh.position.z));
+    const spawnOut = Math.max(Math.abs(e.pos.x), Math.abs(e.pos.z));
     return { spawnOut, arena: g.ARENA, id: g.enemies.indexOf(e) };
   });
   assert.ok(oob.spawnOut > oob.arena, 'a new enemy spawns around the out-of-bounds player (beyond the arena), not clamped to the edge');
   await page.waitForTimeout(300); // let the enemy move under AI
   const stayedOut = await page.evaluate((id) => {
     const e = window.__game.enemies[id];
-    return e ? Math.max(Math.abs(e.mesh.position.x), Math.abs(e.mesh.position.z)) : 0;
+    return e ? Math.max(Math.abs(e.pos.x), Math.abs(e.pos.z)) : 0;
   }, oob.id);
   assert.ok(stayedOut > oob.arena, 'the enemy is not clamped back inside the arena (it can fight out of bounds)');
 
@@ -70,7 +70,7 @@ export default async function ({ page, assert, shot }) {
   await page.waitForTimeout(100);
   const after = await page.evaluate(() => {
     const p = window.__game.player;
-    return { dist: Math.hypot(p.mesh.position.x, p.mesh.position.z), speed: p.vel.length(), warn: window.__game.oobWarnVisible };
+    return { dist: Math.hypot(p.pos.x, p.pos.z), speed: p.vel.length(), warn: window.__game.oobWarnVisible };
   });
   assert.ok(after.dist < 1, 'warp-back returns the ship to the center');
   assert.equal(after.speed, 0, 'warp-back zeroes the velocity');

@@ -14,7 +14,7 @@ export default async function ({ page, assert }) {
     const changed = (a,b) => { let n=0; for (let i=0;i<W*H;i++) if (Math.abs(a[i*4]-b[i*4])+Math.abs(a[i*4+1]-b[i*4+1])+Math.abs(a[i*4+2]-b[i*4+2])>8) n++; return n; };
     let base = null, out = [], f = 0;
     const tick = () => {
-      if (base === null) { base = grab(); g.spawnShipExplosion(g.player.mesh.position.clone(), 0xff8030, 1); }
+      if (base === null) { base = grab(); g.spawnShipExplosion(g.player.pos.clone(), 0xff8030, 1); }
       else { out.push(+(100*changed(base, grab())/(W*H)).toFixed(1)); }
       if (++f > 14) return resolve({ W, H, cover: out });
       requestAnimationFrame(tick);

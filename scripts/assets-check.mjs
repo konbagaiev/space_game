@@ -18,7 +18,7 @@
 import { execFileSync } from 'node:child_process';
 import { BUCKET, awsArgs, PREFIX, CDN } from './assets-config.mjs';
 import { SHIPS, SOUNDS, COMPONENTS, WEAPONS, LEVELS, MAPS } from '../server/src/catalog_seed.js';
-import { DROP_MODEL_URL } from '../client/src/drops-config.js'; // shared loot-drop model (single source of truth)
+import { DROP_MODEL_URL } from '../client/src/sim-core/drops-config.js'; // shared loot-drop model (single source of truth)
 
 const HASHED_GLB = /\.[0-9a-f]{8}\.glb$/; // content-hashed → a pipeline (S3) model, not an in-git primitive
 const HASHED_MP3 = /\.[0-9a-f]{8}\.mp3$/; // content-hashed SFX → must be on S3

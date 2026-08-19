@@ -1,20 +1,15 @@
-// Unit tests for the OBB hitbox (broad-phase → narrow-phase). collision.js is deliberately THREE-free, so
-// we hand-build a minimal mesh stub (column-major matrixWorld + position/scale) instead of depending on a
-// `three` install the node test harness doesn't have. Boxes are stored { c, h, u0, u1, u2 } in the
+// Unit tests for the OBB hitbox (broad-phase → narrow-phase). collision.js is deliberately THREE-free and
+// now reads the ship's SIMULATION transform (pos/heading/scale) rather than a Three.js mesh, so a fixture
+// is just plain data — no `three` install, no scene graph. Boxes are stored { c, h, u0, u1, u2 } in the
 // group-local frame; the narrow phase is a point-vs-OBB projection test.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pointHitsShip, broadRadius, segmentHitsShip, resolveHostileBulletHit } from './collision.js';
+import { pointHitsShip, broadRadius, segmentHitsShip, resolveHostileBulletHit, shipMatrix } from './collision.js';
 
-// mesh stub: uniform scale `s`, translation `(px,py,pz)`; matrixWorld is column-major with scale on the
-// diagonal and translation in the last column — exactly what THREE.Object3D.updateMatrixWorld produces.
-function mesh(px, py, pz, s = 1) {
-  return {
-    position: { x: px, y: py, z: pz },
-    scale: { x: s },
-    updateMatrixWorld() {},
-    matrixWorld: { elements: [s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, px, py, pz, 1] },
-  };
+// Ship transform fixture: world position (px,py,pz), uniform world scale `s`, optional yaw `h` (radians).
+// Spread into a ship literal — `{ ...at(10, 0, 0), hitBoxes: BOXES, … }`.
+function at(px, py, pz, s = 1, h = 0) {
+  return { pos: { x: px, y: py, z: pz }, scale: s, heading: h };
 }
 const V = (x, y, z) => ({ x, y, z });
 const AX = V(1, 0, 0), AY = V(0, 1, 0), AZ = V(0, 0, 1);
@@ -26,13 +21,13 @@ const BOXES = [
 const BROAD = 1.6; // encloses both boxes (corner ~ hypot(0.4,0.3,1.6)≈1.68 → round up)
 
 test('(a) a point inside a box hits', () => {
-  const ship = { mesh: mesh(10, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  const ship = { ...at(10, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
   assert.equal(pointHitsShip(ship, V(10, 0, 1)), true);   // dead-center of the nose box
   assert.equal(pointHitsShip(ship, V(10.3, 0.2, 1.4)), true); // inside all three half-extents
 });
 
 test('(b) a point inside the broad radius but outside every box misses (narrow-phase runs)', () => {
-  const ship = { mesh: mesh(10, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  const ship = { ...at(10, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
   // (10,0,0): between the two boxes (|z|=1 > 0.6 half-extent from each center) but well within broadR
   assert.equal(pointHitsShip(ship, V(10, 0, 0)), false);
   // (10,0.5,1): over the nose box in Z but 0.5 > 0.3 half-extent in Y → miss
@@ -40,27 +35,27 @@ test('(b) a point inside the broad radius but outside every box misses (narrow-p
 });
 
 test('(c) a point beyond the broad radius misses (broad-phase reject)', () => {
-  const ship = { mesh: mesh(10, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  const ship = { ...at(10, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
   assert.equal(pointHitsShip(ship, V(10, 0, 3)), false);
 });
 
 test('(d) pad expands the hit', () => {
-  const ship = { mesh: mesh(10, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  const ship = { ...at(10, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
   // (10,0,1.7): 0.1 beyond the nose box's +Z face (face at z=1.6) → miss at pad 0; pad 0.2 reaches it
   assert.equal(pointHitsShip(ship, V(10, 0, 1.7)), false);
   assert.equal(pointHitsShip(ship, V(10, 0, 1.7), 0.2), true);
 });
 
 test('(e) hitBoxes null falls back to 2.6×sizeScale broad behavior', () => {
-  const ship = { mesh: mesh(0, 0, 0, 1), sizeScale: 1, hitBoxes: null, broadR: null };
+  const ship = { ...at(0, 0, 0, 1), sizeScale: 1, hitBoxes: null, broadR: null };
   assert.equal(broadRadius(ship), 2.6);
   assert.equal(pointHitsShip(ship, V(2.0, 0, 0)), true);  // inside 2.6
   assert.equal(pointHitsShip(ship, V(3.0, 0, 0)), false); // outside 2.6
 });
 
-test('(f) mesh.scale scales both center and half-extents (a near-miss flips to a hit)', () => {
-  const s1 = { mesh: mesh(0, 0, 0, 1), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
-  const s2 = { mesh: mesh(0, 0, 0, 2), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+test('(f) scale scales both center and half-extents (a near-miss flips to a hit)', () => {
+  const s1 = { ...at(0, 0, 0, 1), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  const s2 = { ...at(0, 0, 0, 2), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
   // clear hit at scale 1 stays a hit at scale 2
   assert.equal(pointHitsShip(s1, V(0, 0, 1)), true);
   assert.equal(pointHitsShip(s2, V(0, 0, 2)), true);
@@ -74,7 +69,7 @@ test('(f) mesh.scale scales both center and half-extents (a near-miss flips to a
 test('(g) a rotated box actually applies its orientation', () => {
   const c = Math.SQRT1_2; // cos/sin 45°
   const box = { c: V(0, 0, 0), h: V(1.0, 0.3, 0.2), u0: V(c, 0, c), u1: V(0, 1, 0), u2: V(-c, 0, c) };
-  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: [box], broadR: 2 };
+  const ship = { ...at(0, 0, 0), sizeScale: 1, hitBoxes: [box], broadR: 2 };
   // (0.9,0,0): inside an axis-aligned h.x=1.0 box, but the long axis is the diagonal — project onto u0/u2:
   //   u0·p = 0.9·c ≈ 0.636 (≤1.0), u2·p = -0.9·c ≈ -0.636 (>0.2 half-extent) → OUTSIDE the rotated box
   assert.equal(pointHitsShip(ship, V(0.9, 0, 0)), false);
@@ -88,7 +83,7 @@ test('(g) a rotated box actually applies its orientation', () => {
 test('(outcome) bullet hits the hull, misses in the gap beyond a wing', () => {
   const fuselage = { c: V(0, 0, 0), h: V(0.25, 0.3, 1.4), u0: AX, u1: AY, u2: AZ }; // narrow in X, long in Z
   const wing = { c: V(1.2, 0, 0), h: V(0.3, 0.1, 0.4), u0: AX, u1: AY, u2: AZ };    // pod out at +X (X∈[0.9,1.5])
-  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: [fuselage, wing], broadR: 2.2 };
+  const ship = { ...at(0, 0, 0), sizeScale: 1, hitBoxes: [fuselage, wing], broadR: 2.2 };
   assert.equal(pointHitsShip(ship, V(0, 0, 0.5)), true);   // on the fuselage → hit
   assert.equal(pointHitsShip(ship, V(1.2, 0, 0)), true);   // on the wing pod → hit
   // empty lateral gap between fuselage (X≤0.25) and wing (0.9≤X≤1.5): X=0.55 is within broadR but no box
@@ -108,7 +103,7 @@ test('(outcome) a bullet aimed at a thin wing / nose slab registers a hit (not t
   const wing = { c: V(1.1, 0, 0), h: V(0.6, FLOOR, 0.35), u0: AX, u1: AY, u2: AZ };
   // thin pointed-nose slab at +Z, only FLOOR thick laterally (X)
   const nose = { c: V(0, 0, 1.4), h: V(FLOOR, 0.12, 0.35), u0: AX, u1: AY, u2: AZ };
-  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: [wing, nose], broadR: 2.0 };
+  const ship = { ...at(0, 0, 0), sizeScale: 1, hitBoxes: [wing, nose], broadR: 2.0 };
   assert.equal(pointHitsShip(ship, V(1.1, 0, 0)), true);      // dead-center of the thin wing → hit
   assert.equal(pointHitsShip(ship, V(1.6, 0.05, 0.2)), true); // near the wingtip, inside the thin slab → hit
   assert.equal(pointHitsShip(ship, V(0, 0, 1.4)), true);      // on the thin nose → hit
@@ -120,7 +115,7 @@ test('(outcome) a bullet aimed at a thin wing / nose slab registers a hit (not t
 // center-distance test. The detonation point sits on a nose box but > blastR from the CENTER, so the old
 // `distanceTo(center) <= blastR` check missed everybody. Covers player→enemy and enemy→player.
 test('(outcome) rocket blast applies damage on a hull hit even past blastR of the center (player→enemy)', () => {
-  const enemy = { hp: 100, mesh: mesh(20, 0, 0, 1), sizeScale: 1, hitBoxes: [{ c: V(0, 0, 1.5), h: V(0.4, 0.3, 0.5), u0: AX, u1: AY, u2: AZ }], broadR: 2.1 };
+  const enemy = { hp: 100, ...at(20, 0, 0, 1), sizeScale: 1, hitBoxes: [{ c: V(0, 0, 1.5), h: V(0.4, 0.3, 0.5), u0: AX, u1: AY, u2: AZ }], broadR: 2.1 };
   const rocket = { fromPlayer: true, damage: 40, blastR: 5, obj: { position: V(20, 0, 6.9) } };
   assert.ok(Math.hypot(6.9) > rocket.blastR, 'setup: point is beyond blastR of center');
   // hull-relative: the point is ~4.9 from the nose box's +Z face → within blastR(5)
@@ -129,14 +124,14 @@ test('(outcome) rocket blast applies damage on a hull hit even past blastR of th
 });
 
 test('(outcome) rocket blast applies damage to the player (enemy→player)', () => {
-  const player = { hp: 100, alive: true, mesh: mesh(0, 0, 0, 1), sizeScale: 1, hitBoxes: [{ c: V(0, 0, 1.5), h: V(0.4, 0.3, 0.5), u0: AX, u1: AY, u2: AZ }], broadR: 2.1 };
+  const player = { hp: 100, alive: true, ...at(0, 0, 0, 1), sizeScale: 1, hitBoxes: [{ c: V(0, 0, 1.5), h: V(0.4, 0.3, 0.5), u0: AX, u1: AY, u2: AZ }], broadR: 2.1 };
   const rocket = { fromPlayer: false, damage: 25, blastR: 5, obj: { position: V(0, 0, 6.9) } };
   if (player.alive && pointHitsShip(player, rocket.obj.position, rocket.blastR)) player.hp -= rocket.damage;
   assert.equal(player.hp, 75, 'player hp dropped by the enemy rocket damage');
 });
 
 test('(outcome) rocket direct-hit (detonation point right on the hull) also applies damage', () => {
-  const enemy = { hp: 50, mesh: mesh(0, 0, 0, 1), sizeScale: 1, hitBoxes: [{ c: V(0, 0, 1), h: V(0.4, 0.3, 0.5), u0: AX, u1: AY, u2: AZ }], broadR: 1.6 };
+  const enemy = { hp: 50, ...at(0, 0, 0, 1), sizeScale: 1, hitBoxes: [{ c: V(0, 0, 1), h: V(0.4, 0.3, 0.5), u0: AX, u1: AY, u2: AZ }], broadR: 1.6 };
   const rocket = { fromPlayer: true, damage: 30, blastR: 5, obj: { position: V(0, 0, 1) } }; // dead-center on the nose box
   if (pointHitsShip(enemy, rocket.obj.position, rocket.blastR)) enemy.hp -= rocket.damage;
   assert.equal(enemy.hp, 20);
@@ -146,7 +141,7 @@ test('(outcome) rocket direct-hit (detonation point right on the hull) also appl
 
 // segmentHitsShip == pointHitsShip when the segment is degenerate (p0==p1) — a strict superset.
 test('(swept) a degenerate segment (p0==p1) equals the point test', () => {
-  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  const ship = { ...at(0, 0, 0), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
   assert.equal(segmentHitsShip(ship, V(0, 0, 1), V(0, 0, 1)), true);   // inside the nose box
   assert.equal(segmentHitsShip(ship, V(0, 0, 0), V(0, 0, 0)), false);  // between the boxes (miss)
 });
@@ -157,7 +152,7 @@ test('(swept) a degenerate segment (p0==p1) equals the point test', () => {
 // only ~0.2 world thick along the travel axis, a bullet stepping ~1 unit/frame.
 test('(swept) a fast bullet straddling a thin box registers a hit (no tunneling)', () => {
   const thinNose = { c: V(0, 0, 1), h: V(0.4, 0.3, 0.1), u0: AX, u1: AY, u2: AZ }; // 0.1 half-extent along Z (travel)
-  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: [thinNose], broadR: 1.5 };
+  const ship = { ...at(0, 0, 0), sizeScale: 1, hitBoxes: [thinNose], broadR: 1.5 };
   const p0 = V(0, 0, 0.5), p1 = V(0, 0, 1.5); // one frame's move in +Z, stepping clean over the box (z∈[0.9,1.1])
   // the OLD point test misses at BOTH endpoints — this is exactly why bullets went transparent
   assert.equal(pointHitsShip(ship, p0), false, 'pre-move point is outside the box');
@@ -171,7 +166,7 @@ test('(swept) a fast bullet straddling a thin box registers a hit (no tunneling)
 test('(swept) a segment through the empty gap beyond a wing still misses', () => {
   const fuselage = { c: V(0, 0, 0), h: V(0.25, 0.3, 1.4), u0: AX, u1: AY, u2: AZ };
   const wing = { c: V(1.2, 0, 0), h: V(0.3, 0.1, 0.4), u0: AX, u1: AY, u2: AZ }; // X∈[0.9,1.5]
-  const ship = { mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: [fuselage, wing], broadR: 2.2 };
+  const ship = { ...at(0, 0, 0), sizeScale: 1, hitBoxes: [fuselage, wing], broadR: 2.2 };
   // a bullet flying in +Z at X=0.55 (the empty lateral gap between fuselage and wing) crosses no box
   assert.equal(segmentHitsShip(ship, V(0.55, 0, -1.6), V(0.55, 0, 1.6)), false, 'gap → miss even swept');
   // but the same swept flight at X=1.2 (through the wing) hits
@@ -181,9 +176,9 @@ test('(swept) a segment through the empty gap beyond a wing still misses', () =>
 });
 
 // scale + pad behave under the swept test (rotated/scaled hull still swept-correct).
-test('(swept) mesh.scale and pad expand the swept hit', () => {
+test('(swept) scale and pad expand the swept hit', () => {
   const box = { c: V(0, 0, 1), h: V(0.4, 0.3, 0.1), u0: AX, u1: AY, u2: AZ };
-  const s2 = { mesh: mesh(0, 0, 0, 2), sizeScale: 1, hitBoxes: [box], broadR: 1.5 };
+  const s2 = { ...at(0, 0, 0, 2), sizeScale: 1, hitBoxes: [box], broadR: 1.5 };
   // at scale 2 the box center is z=2, half-extent 0.2 → z∈[1.8,2.2]; a segment crossing z=2 hits
   assert.equal(segmentHitsShip(s2, V(0, 0, 1), V(0, 0, 3)), true);
   // a segment that stops short of the (scaled) box misses without pad, hits with pad
@@ -194,7 +189,7 @@ test('(swept) mesh.scale and pad expand the swept hit', () => {
 // --- resolveHostileBulletHit: the enemy-bullet → player damage+cull path (regression for the missing
 // applyShieldedDamage import in sim.js, commit 51eec94). ---
 const hostilePlayer = (over = {}) => ({
-  mesh: mesh(0, 0, 0), sizeScale: 1, hitBoxes: null, broadR: null,
+  ...at(0, 0, 0), sizeScale: 1, hitBoxes: null, broadR: null,
   hp: 100, shield: false, _shieldValue: 0, _shieldRechargeAccum: 0, ...over,
 });
 
@@ -287,4 +282,42 @@ test('resolveHostileBulletHit: with a shield up, a dodge skips shield absorption
   assert.equal(r.dodged, true);
   assert.equal(p._shieldValue, 20);        // shield untouched on an evade
   assert.equal(r.damageResult, null);
+});
+
+// --- shipMatrix: the transform collision.js now builds ITSELF from sim state (pos/heading/scale) instead
+// of reading THREE's mesh.matrixWorld. Heading was previously folded in by Three.js, so these are the
+// tests that guard the hand-written replacement. The convention must agree with steering.headingToDir:
+// the nose (+Z group-local) points at (sin h, 0, cos h). ---
+test('(m) shipMatrix at heading 0 is translate × uniform scale', () => {
+  const m = shipMatrix({ ...at(3, 1, -2, 2) }, new Array(16));
+  const want = [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 3, 1, -2, 1];
+  // element-wise, not deepEqual: cos/sin(0) makes some cells −0, which is numerically the value we want
+  // but not deepStrictEqual to 0.
+  for (let i = 0; i < 16; i++) assert.ok(Math.abs(m[i] - want[i]) < 1e-12, `element ${i}: ${m[i]} != ${want[i]}`);
+});
+
+test('(m) shipMatrix rotates the nose the same way headingToDir does', () => {
+  const h = Math.PI / 2;
+  const m = shipMatrix({ ...at(0, 0, 0, 1, h) }, new Array(16));
+  // group-local +Z (the nose) through the upper-3×3 → (sin h, 0, cos h) = (1, 0, 0)
+  const nx = m[8], ny = m[9], nz = m[10];
+  assert.ok(Math.abs(nx - Math.sin(h)) < 1e-12);
+  assert.ok(Math.abs(ny - 0) < 1e-12);
+  assert.ok(Math.abs(nz - Math.cos(h)) < 1e-12);
+});
+
+test('(m) a yawed hull moves its hitboxes with the nose', () => {
+  const yawed = { ...at(0, 0, 0, 1, Math.PI / 2), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  // nose box sits at group-local +Z=1 → world +X=1 after a 90° yaw
+  assert.equal(pointHitsShip(yawed, V(1, 0, 0)), true);
+  assert.equal(pointHitsShip(yawed, V(-1, 0, 0)), true);   // tail box, world −X
+  // and is NO LONGER where it was at heading 0 (the broad sphere still admits it, the OBBs reject it)
+  assert.equal(pointHitsShip(yawed, V(0, 0, 1)), false);
+  assert.equal(pointHitsShip({ ...yawed, heading: 0 }, V(0, 0, 1)), true); // same ship unyawed: hit
+});
+
+test('(m) a yawed hull is swept-hit along its new axis', () => {
+  const yawed = { ...at(0, 0, 0, 1, Math.PI / 2), sizeScale: 1, hitBoxes: BOXES, broadR: BROAD };
+  assert.equal(segmentHitsShip(yawed, V(1, 0, -2), V(1, 0, 2)), true);  // crosses the nose box at world +X
+  assert.equal(segmentHitsShip(yawed, V(0, 0.9, -2), V(0, 0.9, 2)), false); // passes over the hull entirely
 });

@@ -47,13 +47,13 @@ export function syncHitBoxes(sc, player, enemies) {
 
   let ni = 0, bi = 0;
   for (const ship of ships) {
-    const s = ship.mesh.scale.x || 1;
+    const s = ship.scale || 1;
     ship.mesh.updateMatrixWorld();
     const mw = ship.mesh.matrixWorld;
     // broad-phase enclosing sphere (faint)
     const bR = (ship.broadR && ship.hitBoxes) ? ship.broadR * s : 2.6 * (ship.sizeScale || 1);
     const bm = broadMesh(bi++);
-    bm.position.copy(ship.mesh.position);
+    bm.position.copy(ship.pos);
     bm.scale.setScalar(bR);
     bm.visible = true;
     // narrow-phase oriented boxes (bright) — primitives have none, only the broad sphere shows

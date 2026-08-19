@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G } from './state.js';
-import { SHIELD_RADIUS, broadRadius } from './collision.js';
+import { SHIELD_RADIUS, broadRadius } from './sim-core/collision.js';
 
 const MAX_IMPACTS = 6;                          // concurrent ripples (round-robin ring buffer)
 const RADIUS = SHIELD_RADIUS;                   // bubble radius — the same sphere shots are intercepted on (collision.js); encloses the ship (SHIP_MODEL_LEN ≈ 3.4)
@@ -94,7 +94,7 @@ function ensureBubble() {
 // the ripple center is the direction from the ship center to that point. No RNG → replay-safe.
 export function registerShieldImpact(worldPos, broke = false) {
   ensureBubble();
-  const p = G.player && G.player.mesh && G.player.mesh.position;
+  const p = G.player && G.player.pos;
   if (!p) return;
   const dir = impactDir[writeIdx];
   dir.set(worldPos.x - p.x, worldPos.y - p.y, worldPos.z - p.z);
@@ -121,7 +121,7 @@ export function updateShieldBubble(dtSec) {
   const show = !!(pl && pl.alive && pl.shield);
   bubble.visible = show;
   if (!show) return;
-  bubble.position.copy(pl.mesh.position);
+  bubble.position.copy(pl.pos);
   mat.uniforms.uTime.value = time;
   mat.uniforms.uBase.value = pl._shieldValue > 0 ? 0.12 : 0.0; // faint rim only while the shield holds
   mat.uniforms.uReady.value = Math.max(0, 1 - (time - readyStart) / 0.6); // "back online" flash decays over 0.6s
@@ -171,7 +171,7 @@ export function registerEnemyShieldImpact(enemy, worldPos, broke = false) {
   // impact ring still holds that enemy's hits, which are < IMPACT_LIFE old and would therefore replay on
   // the new enemy's bubble as phantom ripples. Retire them before writing the new impact.
   if (slot.enemy !== enemy) { slot.start.fill(-999); slot.writeIdx = 0; }
-  const p = enemy.mesh.position;
+  const p = enemy.pos;
   const d = slot.dir[slot.writeIdx];
   d.set(worldPos.x - p.x, worldPos.y - p.y, worldPos.z - p.z);
   if (d.lengthSq() < 1e-6) d.set(0, 0, 1); else d.normalize();
@@ -195,7 +195,7 @@ export function updateEnemyShieldBubbles() {
     if (time >= s.until) { s.mesh.visible = false; s.enemy = null; continue; }
     // The enemy died mid-ripple (sim.js removes its mesh from the scene): let the ripple fade in place.
     if (s.enemy && !s.enemy.mesh.parent) s.enemy = null;
-    if (s.enemy) s.mesh.position.copy(s.enemy.mesh.position);
+    if (s.enemy) s.mesh.position.copy(s.enemy.pos);
     s.mat.uniforms.uTime.value = time;
     s.mat.uniforms.uBase.value = 0;   // enemies never get the idle Fresnel rim (player-exclusive read)
     s.mat.uniforms.uReady.value = 0;  // and no "back online" whole-sphere flash

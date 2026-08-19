@@ -20,10 +20,10 @@ export default async function ({ page, assert, shot }) {
     g.launchMission(g.missionOffers.find((o) => o.type === 'freighter'));
     // seed an enemy near the player + flag thrust so a SHIP plume attaches too (the global toggle must flip
     // it). emitExhaust attaches + caches the plume deterministically (no reliance on the AI / frame rate).
-    const base = g.player.mesh.position;
+    const base = g.player.pos;
     g.spawnEnemy('fighter');
     const e = g.enemies[g.enemies.length - 1];
-    e.mesh.position.set(base.x + 30, 0.6, base.z - 30);
+    e.pos.set(base.x + 30, 0.6, base.z - 30);
     e.vel.set(0, 0, 0);
     g.emitExhaust(e.mesh, e.vel, e.vel, e.engine.exhaust);
   });

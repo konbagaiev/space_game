@@ -11,14 +11,15 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { pointHitsShip, broadRadius } from './collision.js';
-import { applyShieldedDamage } from './components.js';
+import { pointHitsShip, broadRadius } from './sim-core/collision.js';
+import { applyShieldedDamage } from './sim-core/components.js';
 import { registerShieldImpact, registerEnemyShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
 import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
-import { nearestInConeIndex } from './steering.js'; // pure XZ nearest-in-cone pick for bullet aim assist
+import { nearestInConeIndex } from './sim-core/steering.js'; // pure XZ nearest-in-cone pick for bullet aim assist
+import { Vec3 } from './sim-core/vec.js'; // projectile transforms are sim state, not mesh state
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -62,8 +63,9 @@ export function spawnBullet(from, dir, weapon, fromPlayer, shooterVel) {
   }
   m.position.copy(from);
   scene.add(m);
-  // despawn by distance traveled (maxRange), not time
-  bullets.push({ mesh: m, vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power, class: weapon.class });
+  // despawn by distance traveled (maxRange), not time. `pos` is the SIM position (the mesh copies it in
+  // syncMeshes); the bolt's orientation is baked at spawn from the constant velocity, so it never needs one.
+  bullets.push({ mesh: m, pos: new Vec3(from.x, from.y, from.z), vel, traveled: 0, maxRange: weapon.maxRange ?? 88, fromPlayer, damage: weapon.power, class: weapon.class });
 }
 
 // Quick bright additive pop at the gun barrel on each gun shot — a flat glow SPRITE (same family as
@@ -287,7 +289,7 @@ export function findTargetInSector(pos, fwd, halfAngle) {
   let best = null, bestDist = Infinity;
   for (const e of enemies) {
     if (e.warping) continue; // not a valid homing target until fully formed
-    const to = e.mesh.position.clone().sub(pos);
+    const to = new Vec3(e.pos.x, e.pos.y, e.pos.z).sub(pos);
     const d = to.length();
     if (d < 0.001) continue;
     to.divideScalar(d);
@@ -313,11 +315,11 @@ export function findBulletAimTarget(pos, fwd, halfAngle, fromPlayer) {
   if (fromPlayer) {
     const cands = [];
     for (const e of enemies) if (!e.warping) cands.push(e); // skip enemies still forming
-    const idx = nearestInConeIndex(from, f, cands.map((e) => ({ x: e.mesh.position.x, z: e.mesh.position.z, r: broadRadius(e) })), halfAngle);
+    const idx = nearestInConeIndex(from, f, cands.map((e) => ({ x: e.pos.x, z: e.pos.z, r: broadRadius(e) })), halfAngle);
     return idx >= 0 ? cands[idx] : null;
   }
   if (!G.player || !G.player.alive) return null;
-  const p = G.player.mesh.position;
+  const p = G.player.pos;
   const idx = nearestInConeIndex(from, f, [{ x: p.x, z: p.z, r: broadRadius(G.player) }], halfAngle);
   return idx >= 0 ? G.player : null;
 }
@@ -334,7 +336,7 @@ export function spawnRocket(from, fwd, weapon, accel, fromPlayer, target) {
   // start direction - strictly along the ship's nose (without the ship's inertia)
   const vel = fwd.clone().multiplyScalar(weapon.launchSpeed);
   rockets.push({
-    obj: holder, vel, accel, turnRate: weapon.turnRate,
+    obj: holder, pos: new Vec3(from.x, from.y, from.z), heading: Math.atan2(vel.x, vel.z), vel, accel, turnRate: weapon.turnRate,
     target, fromPlayer,
     damage: weapon.power, detonateR: weapon.detonateRadius,
     blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
@@ -356,7 +358,7 @@ function spawnSpiralRocket(from, fwd, weapon, accel, fromPlayer, target) {
   scene.add(leadObj); // no mesh child → invisible; still moved/steered by sim.js
   const leadVel = fwd.clone().multiplyScalar(weapon.launchSpeed);
   const leader = {
-    obj: leadObj, vel: leadVel, accel, turnRate: weapon.turnRate,
+    obj: leadObj, pos: new Vec3(from.x, from.y, from.z), heading: Math.atan2(leadVel.x, leadVel.z), vel: leadVel, accel, turnRate: weapon.turnRate,
     target, fromPlayer, lead: true, children: 3, spiralPhase: 0,
     traveled: 0, maxRange: weapon.maxRange ?? 150,
   };
@@ -372,7 +374,7 @@ function spawnSpiralRocket(from, fwd, weapon, accel, fromPlayer, target) {
     holder.position.copy(from);
     scene.add(holder);
     rockets.push({
-      obj: holder, vel: leadVel.clone(), fromPlayer,
+      obj: holder, pos: new Vec3(from.x, from.y, from.z), heading: Math.atan2(leadVel.x, leadVel.z), vel: leadVel.clone(), fromPlayer,
       spiralOf: leader, spiralPhaseOffset: i * (Math.PI * 2 / 3),
       damage: weapon.power, detonateR: weapon.detonateRadius,
       blastR: weapon.blastRadius, blastVis: weapon.blastVisual,
@@ -395,17 +397,17 @@ export function detonateRocket(r, dealDamage = true) {
     if (r.fromPlayer) {
       for (const e of enemies) {
         if (e.warping) continue; // invulnerable while forming — no splash damage
-        if (pointHitsShip(e, r.obj.position, r.blastR)) {
+        if (pointHitsShip(e, r.pos, r.blastR)) {
           const dr = applyShieldedDamage(e, r.damage); // shield first, excess spills to the hull this tick
-          if (dr.absorbed) spawnEnemyShieldHit(e, r.obj.position, dr.broke);
+          if (dr.absorbed) spawnEnemyShieldHit(e, r.pos, dr.broke);
         }
       }
-    } else if (G.player.alive && pointHitsShip(G.player, r.obj.position, r.blastR)) {
+    } else if (G.player.alive && pointHitsShip(G.player, r.pos, r.blastR)) {
       const dr = applyShieldedDamage(G.player, r.damage);
-      if (dr.absorbed) spawnShieldHit(r.obj.position, dr.broke);
+      if (dr.absorbed) spawnShieldHit(r.pos, dr.broke);
     }
   }
-  spawnRocketBurst(r.obj.position, r.blastVis, r.blastTint, r.blastTime, r.blastBright); // flipbook fireball + ring; look is weapon-driven
+  spawnRocketBurst(r.pos, r.blastVis, r.blastTint, r.blastTime, r.blastBright); // flipbook fireball + ring; look is weapon-driven
   audio.sfx.explosion(0.7, r.sfxExplode, 0.3); // rocket blast — 70% quieter (sampled via the weapon-class map)
   scene.remove(r.obj);
   r.obj.children[0].material.dispose();

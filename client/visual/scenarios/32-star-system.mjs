@@ -91,17 +91,17 @@ export default async function ({ page, assert, shot }) {
   const flight = await page.evaluate(() => {
     const g = window.__game;
     const at = () => g.systemBodies.map((b) => b.mesh.position.clone());
-    g.player.mesh.position.set(-6000, 0, 90); g.settleView();
+    g.player.pos.set(-6000, 0, 90); g.settleView();
     const first = at();
     let worstDrift = 0, closestSurface = Infinity;
     for (let x = -6000 + 40; x <= 6000; x += 40) {
-      g.player.mesh.position.set(x, 0, 90);
+      g.player.pos.set(x, 0, 90);
       g.settleView();
       const cur = at();
       for (let i = 0; i < cur.length; i++) {
         worstDrift = Math.max(worstDrift, cur[i].distanceTo(first[i]));
         closestSurface = Math.min(closestSurface,
-          cur[i].distanceTo(g.player.mesh.position) - g.systemBodies[i].spec.size);
+          cur[i].distanceTo(g.player.pos) - g.systemBodies[i].spec.size);
       }
     }
     // turning the ship: the follow camera holds a fixed orientation and the bodies are world-fixed anyway
@@ -132,10 +132,10 @@ export default async function ({ page, assert, shot }) {
   const travel = await page.evaluate(() => {
     const g = window.__game;
     const shown = () => g.systemBodies.filter((b) => b.mesh.visible).map((b) => b.name);
-    g.player.mesh.position.set(0, 0, 0); g.settleView();
+    g.player.pos.set(0, 0, 0); g.settleView();
     const atBase = shown();
     const dest = g.systemAnchor('planet3');
-    g.player.mesh.position.set(dest.x, 0, dest.z); g.settleView();  // arrive at planet 3's anchor
+    g.player.pos.set(dest.x, 0, dest.z); g.settleView();  // arrive at planet 3's anchor
     const atPlanet3 = shown();
     const p3 = g.systemBodies.find((b) => b.name === 'planet3');
     g.camera.updateMatrixWorld(true);
@@ -156,7 +156,7 @@ export default async function ({ page, assert, shot }) {
   // 2f. The home planet's moons stay clear of its disk at every point of their orbit.
   const moons = await page.evaluate(() => {
     const g = window.__game;
-    g.player.mesh.position.set(0, 0, 0); g.settleView();
+    g.player.pos.set(0, 0, 0); g.settleView();
     let count = 0, minGap = Infinity;
     for (const body of g.systemBodies) {
       for (const m of body.moons || []) {
@@ -178,10 +178,10 @@ export default async function ({ page, assert, shot }) {
   //     fogNear, and fogFar stays inside camera.far so nothing pops at the clip plane.
   const zoomFog = await page.evaluate(() => {
     const g = window.__game;
-    g.player.mesh.position.set(0, 0, 0);
+    g.player.pos.set(0, 0, 0);
     const read = () => {
       g.settleView();
-      return { camDist: g.camera.position.distanceTo(g.player.mesh.position),
+      return { camDist: g.camera.position.distanceTo(g.player.pos),
                near: g.scene.fog.near, far: g.scene.fog.far, camFar: g.camera.far };
     };
     g.zoom.set(1); g.zoom.tick(5); const at1 = read();
@@ -223,14 +223,14 @@ export default async function ({ page, assert, shot }) {
   //    rAF is far too slow to advance the live accumulator in a few seconds). Confirm it (a) closes the gap
   //    and (b) travels UNCAPPED — its peak speed exceeds the combat cap (PLAYER_MAX_SPEED = 30), the F3 fix.
   const nav = await page.evaluate(() => {
-    const g = window.__game, p = g.player.mesh.position;
+    const g = window.__game, p = g.player.pos;
     const target = { x: p.x, z: p.z + 12000 }; // far ahead → sustained uncapped cruise
     const dist0 = Math.hypot(target.x - p.x, target.z - p.z);
     g.engagePointAutopilot(target, null);
     const active = g.autopilot.active, kind = g.autopilot.target && g.autopilot.target.kind;
     let maxV = 0;
     for (let i = 0; i < 8; i++) { g.stepSim(60); maxV = Math.max(maxV, g.player.vel.length()); }
-    const closed = Math.hypot(target.x - g.player.mesh.position.x, target.z - g.player.mesh.position.z);
+    const closed = Math.hypot(target.x - g.player.pos.x, target.z - g.player.pos.z);
     return { active, kind, dist0, closed, maxV };
   });
   assert.equal(nav.active, true, 'point autopilot engaged');
@@ -248,7 +248,7 @@ export default async function ({ page, assert, shot }) {
     const shown = (e) => !!e && getComputedStyle(e).display !== 'none';
     const $ = (id) => document.getElementById(id);
     // a known mission target far from the ship, so the pointer is off-screen and the arrow shows
-    g.player.mesh.position.set(0, 0, 0); g.settleView();
+    g.player.pos.set(0, 0, 0); g.settleView();
     g.roamMission = { pos: { x: 4000, z: 0 }, missionId: null };
     g.cancelAutopilot();
     g.updateRoamNav(); g.updateMissionMarker();
@@ -304,9 +304,9 @@ export default async function ({ page, assert, shot }) {
     g.levelRunner.won = true; g.levelRunner.returningToBase = true;
     // enter roam toward a point AHEAD (+Z, aligned with the fresh heading so it cruises quickly)
     await g.enterRoam({ pos: { x: 0, z: 300 }, missionId: null });
-    const p0 = { x: g.player.mesh.position.x, z: g.player.mesh.position.z };
+    const p0 = { x: g.player.pos.x, z: g.player.pos.z };
     g.stepSim(180); // 3 sim-seconds under autopilot
-    const p1 = { x: g.player.mesh.position.x, z: g.player.mesh.position.z };
+    const p1 = { x: g.player.pos.x, z: g.player.pos.z };
     return {
       won: g.levelRunner.won,
       enemies: g.enemies.length,
@@ -420,7 +420,7 @@ export default async function ({ page, assert, shot }) {
     const g = window.__game;
     await g.enterRoam(null);
     // start far out so the cap would be clearly binding on the way home
-    g.player.mesh.position.set(1100, 0, -900);
+    g.player.pos.set(1100, 0, -900);
     g.player.vel.set(0, 0, 0);
     const clickable = g.baseStation && g.baseStation.active;
     g.engageAutopilot();                       // exactly what a click on the station does
@@ -428,7 +428,7 @@ export default async function ({ page, assert, shot }) {
     let maxV = 0, docked = false, ticks = 0;
     g.onBaseArrival = () => { docked = true; };  // stand in for the "Dock at the station?" prompt
     for (let i = 0; i < 120 && !docked; i++) { g.stepSim(30); ticks += 30; maxV = Math.max(maxV, g.player.vel.length()); }
-    const s = g.baseStation.obj.position, p = g.player.mesh.position;
+    const s = g.baseStation.obj.position, p = g.player.pos;
     return { clickable, kind, maxV, docked, ticks, won: g.levelRunner.won, roam: g.roam,
              dist: Math.hypot(p.x - s.x, p.z - s.z) };
   });
@@ -468,7 +468,7 @@ export default async function ({ page, assert, shot }) {
   const star = await page.evaluate(async () => {
     const g = window.__game;
     const b = g.systemBodies.find((x) => x.isStar);
-    g.player.mesh.position.set(b.mesh.position.x + 150, 0, b.mesh.position.z + 110); // park on its anchor
+    g.player.pos.set(b.mesh.position.x + 150, 0, b.mesh.position.z + 110); // park on its anchor
     g.settleView();
     await new Promise((r) => setTimeout(r, 1200));
     g.settleView();
@@ -508,13 +508,13 @@ export default async function ({ page, assert, shot }) {
     // ship parked here and read a few hundred ms later has flown off and the parallax it adds is real, not a
     // regression. settleView re-runs updateSystemBodies synchronously, which is what aims the light.
     const offAt = (x, z, bodyName) => {
-      g.player.mesh.position.set(x, 0, z);
+      g.player.pos.set(x, 0, z);
       g.settleView();
       const body = g.systemBodies.find((b) => b.name === bodyName);
       const travels = sun.target.position.clone().sub(sun.position).normalize();      // light's direction
       const fromStar = body.mesh.position.clone().sub(star.mesh.position).normalize(); // star -> that body
       const deg = (Math.acos(Math.max(-1, Math.min(1, travels.dot(fromStar)))) * 180) / Math.PI;
-      return { deg: +deg.toFixed(2), shipToBody: Math.round(g.player.mesh.position.distanceTo(body.mesh.position)) };
+      return { deg: +deg.toFixed(2), shipToBody: Math.round(g.player.pos.distanceTo(body.mesh.position)) };
     };
     const base = offAt(0, 0, 'planet2');
     const p3 = g.systemBodies.find((b) => b.name === 'planet3');
@@ -549,9 +549,9 @@ export default async function ({ page, assert, shot }) {
     const g = window.__game;
     const star = g.systemBodies.find((b) => b.isStar);
     const read = (x, z) => {
-      g.player.mesh.position.set(x, 0, z);
+      g.player.pos.set(x, 0, z);
       g.settleView();
-      return { dist: Math.round(star.mesh.position.distanceTo(g.player.mesh.position)),
+      return { dist: Math.round(star.mesh.position.distanceTo(g.player.pos)),
                visible: g.speedFieldLayers.filter((L) => L.points.visible).length,
                maxOpacity: Math.max(...g.speedFieldLayers.map((L) => L.points.material.opacity)) };
     };

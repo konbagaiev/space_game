@@ -62,7 +62,7 @@ export default async function ({ page, assert }) {
     const draw = () => { g.renderer.clear(); g.renderer.render(g.skyScene, g.camera); g.renderer.clearDepth(); g.renderer.render(g.scene, g.camera); };
     draw();
     const before = g.renderer.info.programs.length;
-    g.spawnShipExplosion(g.player.mesh.position.clone(), 0xff8030, 1);
+    g.spawnShipExplosion(g.player.pos.clone(), 0xff8030, 1);
     draw();
     return g.renderer.info.programs.length - before;
   });

@@ -33,7 +33,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // The one dependency of this otherwise standalone module: "how close counts as the same place" is already
 // answered by the fly-into-it zone, and objectForActiveMission must use that same number rather than a
 // second one that could drift from it.
-import { MISSION_ZONE_RADIUS } from './level-sim.js';
+import { MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
 
 export const EPOCH = 1723000000000; // fixed reference timestamp (ms) for orbital phase — deterministic
 

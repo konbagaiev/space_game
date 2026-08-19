@@ -53,12 +53,12 @@ export default async function ({ page, assert, shot }) {
   //    rs.done, unfixed) never steps → 0 ticks (verified fail-before). Player movement is logged as corroboration
   //    but not asserted on (travel distance varies by level/frame timing across the suite).
   await page.mouse.click(640, 400); // focus the canvas so key input reaches the game
-  const p0 = await page.evaluate(() => { const p = window.__game.player.mesh.position; return { x: p.x, z: p.z }; });
+  const p0 = await page.evaluate(() => { const p = window.__game.player.pos; return { x: p.x, z: p.z }; });
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(1200);
   await page.keyboard.up('KeyW');
   const live = await page.evaluate((prev) => {
-    const p = window.__game.player.mesh.position;
+    const p = window.__game.player.pos;
     const rec = window.__game.sessionRec();
     return { moved: Math.hypot(p.x - prev.x, p.z - prev.z), recTicks: rec.ticks, recActive: rec.active, recLevel: rec.level };
   }, p0);

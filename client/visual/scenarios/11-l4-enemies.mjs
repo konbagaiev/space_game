@@ -20,8 +20,8 @@ export default async function ({ page, assert, shot }) {
     g.enemies.length = 0;
     const amp = g.spawnEnemy('advanced_medium_pirate');
     const sb = g.spawnEnemy('boss2');
-    if (amp) amp.mesh.position.set(-14, 0.6, 6);
-    if (sb) sb.mesh.position.set(16, 0.6, 6);
+    if (amp) amp.pos.set(-14, 0.6, 6);
+    if (sb) sb.pos.set(16, 0.6, 6);
     const stat = (e) => e && ({
       hp: e.hp, shield: e.shield ? e.shield.capacity : 0, color: e.color,
       accel: Number.isFinite(e.acceleration) && e.acceleration > 0,

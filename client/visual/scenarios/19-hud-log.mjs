@@ -44,7 +44,7 @@ export default async function ({ page, assert, shot }) {
     window.__game.spawnTestDrop({ kind: 'weapon', refId: 5 }); // deterministic common/green item
     const d = window.__game.drops[window.__game.drops.length - 1];
     const p = window.__game.player;
-    d.obj.position.set(p.mesh.position.x + 5, 0.8, p.mesh.position.z); // in grab range so it gets pulled
+    d.pos.set(p.pos.x + 5, 0.8, p.pos.z); // in grab range so it gets pulled
     // find the additive halo sprite child and read its tint
     let hex = null;
     d.obj.traverse((o) => { if (o.isSprite && o.material && o.material.color) hex = o.material.color.getHexString(); });

@@ -15,9 +15,9 @@ import { t } from './i18n.js';
 import { fetchJson, clientLog } from './net.js';
 import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
-import { SKILL_RATES } from './components.js'; // per-point skill rates → Character-card effect text (single source)
+import { SKILL_RATES } from './sim-core/components.js'; // per-point skill rates → Character-card effect text (single source)
 import { reset, levelRunner, refreshMusic, engagePointAutopilot } from './sim.js';
-import { runCenter } from './level-sim.js'; // where the current level fights (0,0 unless it names a centre)
+import { runCenter } from './sim-core/level-sim.js'; // where the current level fights (0,0 unless it names a centre)
 import { mountSystemNav, showStartMissionPrompt, showDockPrompt, objectForMission } from './systemmap-ui.js';
 import { objectForActiveMission } from './system-map.js'; // where the active mission sits → roam HUD pointer + autopilot target
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';

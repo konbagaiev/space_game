@@ -51,7 +51,7 @@ row; removing the last use of an asset → offer to drop its (now-stale) row; a 
 Before searching the codebase or fanning out an Explore/grep for *where a feature lives*, **read
 `docs/SUMMARY.md` first** — it is the map. It describes every system as it is now and points at the
 exact files (e.g. repair drone → `catalog_seed.js` component id 12 + `repairTick` in
-`client/src/components.js`; player data reset → `server/src/reset.js`). Most "where is X?" questions
+`client/src/sim-core/components.js`; player data reset → `server/src/reset.js`). Most "where is X?" questions
 are answered there in one read. Only fall back to broad code search when SUMMARY (and the relevant
 `docs/plans/*.md` brief) doesn't pin it down — and when it doesn't, that's a SUMMARY gap to fix as
 part of your change. Skip this only for a one-off lookup where you already know the file/symbol.

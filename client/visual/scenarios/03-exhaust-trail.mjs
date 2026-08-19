@@ -14,11 +14,11 @@ export default async function ({ page, assert, shot }) {
     const g = window.__game;
     g.enemies.forEach((e) => g.scene.remove(e.mesh));
     g.enemies.length = 0; // clear the default ring (mostly off-screen)
-    const base = g.player.mesh.position;
+    const base = g.player.pos;
     ['fighter', 'medium'].forEach((k, i) => {
       g.spawnEnemy(k);
       const e = g.enemies[g.enemies.length - 1];
-      e.mesh.position.set(base.x + (i ? 34 : -34), 0.6, base.z - 34);
+      e.pos.set(base.x + (i ? 34 : -34), 0.6, base.z - 34);
       e.vel.set(0, 0, 0);
       g.emitExhaust(e.mesh, e.vel, e.vel, e.engine.exhaust); // attach + cache the plume; throttleTarget = 1
     });

@@ -1401,7 +1401,7 @@ target vanishes (collected by the Grab, or cleared on reset — the `drops.inclu
    at any distance. Rejected: a second, separate "grab autopilot" variable — more state to keep in sync, same
    brake/rotate/cruise code duplicated.
 2. **Pure, unit-tested predicate module.** `BASE_ARRIVE_RADIUS` + `canDock` moved out of `sim.js` (not
-   node-loadable — it imports THREE/engine) into an import-free **`client/src/autopilot-config.js`** (mirrors
+   node-loadable — it imports THREE/engine) into an import-free **`client/src/sim-core/autopilot-config.js`** (mirrors
    `drops-config.js`), covered by `autopilot-config.test.js` — the "a drop never docks" invariant is the one
    correctness-critical piece and now has a test, without needing a headless sim harness.
 3. **A collected/removed drop cancels the autopilot** (ship coasts to a stop, control returns) — no
@@ -1579,7 +1579,7 @@ the combat glbs locally (`npm run assets:pull`) and skips cleanly without them (
 precondition as the fitter). This also validates **placement**: if the fitter's frame ever drifts from
 ship-factory's, coverage collapses and the test fails.
 
-**Runtime point-vs-OBB test.** At runtime (`client/src/collision.js`) collision is **broad-phase** (one
+**Runtime point-vs-OBB test.** At runtime (`client/src/sim-core/collision.js`) collision is **broad-phase** (one
 enclosing `broadR × mesh.scale.x` sphere at `mesh.position`) → **narrow-phase** (point-vs-OBB): each box
 center is transformed by `mesh.matrixWorld` (affine), each axis `uᵢ` is rotated by the matrix's upper-3×3 and
 **renormalized** (world scale is uniform `sc = mesh.scale.x`), and the point is inside iff
@@ -1865,7 +1865,7 @@ a kill frees a slot the remaining 2–4 s must still elapse — a kill never tri
 deliberate (a future reader must not "fix" it back to a per-frame top-up); the unit test pins it down.
 
 **Scope/shape.** Simplest form per §30: an inline `2 + rand()*2` in one tiny pure helper
-(`client/src/spawn-timing.js` — `stepSpawnGate`/`nextSpawnDelay`), unit-tested by injecting a stub RNG. **No**
+(`client/src/sim-core/spawn-timing.js` — `stepSpawnGate`/`nextSpawnDelay`), unit-tested by injecting a stub RNG. **No**
 seeded-RNG system, **no** per-phase/per-level tuning of the window. The helper is a separate leaf (not inline
 in `sim.js`) because `sim.js` imports `engine.js`, which builds a `WebGLRenderer` at import and can't load
 headless — mirroring why `server/src/enemy_total.js` exists as a testable oracle. **No server/`enemyTotal`
@@ -1896,7 +1896,7 @@ the counter reaches N/N, and the drop fires on the true last kill. Per-level tot
 **L1 intentionally drops 16→14** (two fewer finale rocketeers): L1=14, L2=17, L3=21, L4=22, side=20. **No
 second/structural drop trigger** (§30) — the one deterministic condition stays, extracted into a pure
 `isLastKillDrop({kills, enemyTotal})` and guarded by a new headless full-level replay
-(`client/src/level-sim.js` + test) that proves the counter reaches `enemyTotal` and the drop fires on the
+(`client/src/sim-core/level-sim.js` + test) that proves the counter reaches `enemyTotal` and the drop fires on the
 last kill. That missing coverage is what let the regression ship.
 
 **Warp-in becomes the arrival animation.** Rather than an empty 2–4 s gap then a separate 1 s pop, a spawned
@@ -2554,7 +2554,7 @@ bit-for-bit — did not.
   tier (`G.gfx.particleScale`/`maxParticles`), so the same trace consumed a *different* number of seeded
   values on a Performance-tier phone than on a High-tier desktop — the intro could desync on a weak device
   with no code change at all. Opt-in removes that class of bug too.
-- **The decision.** The stream lives in `client/src/sim-random.js` (`simRandom()`/`seedSim()`/`isSimSeeded()`
+- **The decision.** The stream lives in `client/src/sim-core/sim-random.js` (`simRandom()`/`seedSim()`/`isSimSeeded()`
   + `mulberry32`, imports nothing). Roughly **8 gameplay draw sites** opt in explicitly (which enemy spawns,
   the spawn cooldown injected into `stepSpawnGate`, spawn angle/distance, initial enemy heading, enemy reload
   stagger, the drop roll, `pickLoot`); everything cosmetic keeps the native `Math.random` and is
@@ -4190,3 +4190,88 @@ position from `Date.now()` each frame is replay-neutral exactly like the sky bod
 constant through the deterministic tick, or wall-clock would leak into the seeded stream and desync replays.
 That snapshot rule is specified in the plan and is a prerequisite for any future interactive world-fixed
 combat object — the current demo object is decor and deliberately does not need it.
+
+## 116. Single-player keeps simulating in the browser; the server authority is for multiplayer only
+
+**Context.** Moving combat to a server-authoritative simulation raises the obvious question of whether
+single-player should also run through it — it would be one code path, and it would close the
+client-authoritative economy hole (`POST /api/games {credits, kills}`).
+
+**Decision.** Single-player continues to run the simulation locally in the browser. The server-run instance
+is opt-in and additive (`?netsim=1` in the first cut).
+
+**Why.**
+- The failure mode changes in kind, not degree. Today a network blip costs an unbanked run; a socket-bound
+  fight dies with the blip. The game already needs the backend to *boot* (the catalog fetches in `main.js`
+  have no fallback), but after boot the fight is entirely local, and that is worth keeping.
+- itch is served worldwide from rotating CDN subdomains; the VPS is one box in one datacentre. 200–300 ms
+  RTT is a loading delay today and would become the feel of the controls.
+- Server load shifts from "tens of requests per session" to "N concurrent worlds at 60 Hz" on the box that
+  also runs Postgres and the static client.
+- **The decisive reason is engineering.** With single-player on the browser host and multiplayer on the Node
+  host, one shared `sim-core` running in two places gives a permanent divergence oracle: the same input
+  trace must produce the same outcome on both, as a test. Route single-player through the server and the
+  browser path atrophies, the two implementations drift, and "one simulation" becomes a slogan.
+
+**The economy hole is closed differently, and better.** Every session is already recorded as an input trace,
+so the server can re-simulate a submitted trace headless with the same `sim-core` and seal the reward — exact
+anti-cheat with no socket attached to the fight. Deferred to its own slice.
+
+## 117. The sim owns `pos`/`heading`/`scale`; `syncMeshes()` is the only bridge to Three.js
+
+**Context.** Simulation state lived inside Three.js objects: position was `entity.mesh.position`, velocity a
+`THREE.Vector3`, and `mesh.scale` *was* gameplay — the warp-in grow drove `e.warping` (invulnerable, can't
+fire, not homing-targetable). `collision.js` was deliberately THREE-free (§45) but still read
+`mesh.matrixWorld.elements`, so even hit tests needed a live scene graph.
+
+**Decision.** Entities carry plain `pos` / `vel` / `heading` / `scale` (`sim-core/vec.js`), warp-in is
+simulation state (`warping`/`spawnAge`/`spawnDur`), and a single one-way `sim.js syncMeshes(dt)` copies that
+into the scene graph once per tick. Nothing in the simulation reads a mesh back. `collision.js` composes the
+ship matrix itself from the entity's own state.
+
+**Why decouple the player too, not just enemies.** Half-decoupled is the worst state: with enemies on `pos`
+and the player on `mesh.position`, every interaction (enemy aiming, `resolveHostileBulletHit`, autopilot,
+docking) needs a bridge that is written and then deleted. `stepPlayer` is also exactly what client-side
+prediction will re-run, so leaving it entangled means doing the work twice.
+
+**Alternative rejected: keep the Three objects and mirror into plain data.** Two representations of one
+truth, with an ordering rule nobody can enforce. The whole point is that there is one authority.
+
+**Cost accepted.** `Vec3` duplicates a slice of `THREE.Vector3`'s API. That is deliberate: identical method
+names keep the sim code readable after the move, and since both sides only ever read `.x/.y/.z`, a `Vec3`
+and a `THREE.Vector3` can be handed to each other freely.
+
+**Where that duck-typing ends — learned the hard way.** `THREE.Object3D.lookAt(v)` does not read `v.x`; it
+branches on `v.isVector3` and otherwise falls through to `set(v, undefined, undefined)`. Passing a `Vec3`
+therefore NaN'd the camera's quaternion — **nothing rendered, nothing threw**, and every simulation-state
+assertion still passed, including the intro replay down to its exact tick count. Call sites now pass
+components (`camera.lookAt(p.x, p.y, p.z)`).
+
+We deliberately do **not** set `isVector3 = true` on `Vec3`. It would fix `lookAt` in one line and claim the
+entire `Vector3` API — turning a loud, greppable boundary into a silent one that fails further out, at
+`.project()` or `.applyMatrix4()`. The boundary is documented at the top of `vec.js`, and `01-smoke` now
+asserts the camera has a finite position and orientation: the cheapest guard for the whole class, verified
+by reintroducing the bug and watching it fail.
+
+**Known stopgap.** `noseZ` — where bullets are born — is measured off the loaded `.glb` at runtime, so a
+piece of *simulation input* is derived from an asset a headless server would never parse (and a shot fired
+before the model lands uses the `1.6` primitive default — a latent replay wobble that predates this change,
+mitigated today by `preloadLevelShipModels`). `syncMeshes` copies it back sim-ward each tick as an explicit,
+labelled stopgap; the real fix is to bake it into the catalog alongside `hitBoxes`/`broadR`.
+
+## 118. The server tick stays 60 Hz; only the snapshot rate drops to 15–20 Hz
+
+**Context.** The natural instinct for a server-authoritative sim is a 30 Hz tick — it halves server CPU and
+is plenty for a game that is not a twitch shooter.
+
+**Decision.** Both hosts step at `TICK_HZ = 60` (`client/src/bench.js`). The *snapshot* rate to clients is a
+separate knob, starting at 15–20 Hz.
+
+**Why.** Integration is dt-dependent (`vel *= 1 - DRAG*dt`, thrust accumulation, `spawnAge`), so 30 Hz in
+Node against 60 Hz in the browser produces **different outcomes for the same input trace** — which destroys
+the cross-host divergence oracle that §116 is built on, and makes client-side reconciliation worse for no
+gain. Upstream cost is negligible (`{tick, keys}` is a handful of bytes, batchable), and simulating ~10
+enemies and ~50 bullets at 60 Hz is microseconds per tick.
+
+If per-room CPU ever becomes real, the tick drops **on both hosts at once** — it is one constant — by
+measurement, and lowering it re-derives every timing-tuned count, so it is a change with its own test pass.

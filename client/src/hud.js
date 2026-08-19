@@ -188,7 +188,7 @@ export function updateMarkers() {
   const w = gameW(), h = gameH(), margin = 0.92; // game (rotated) screen size, not the raw viewport
   let used = 0;
   for (const e of enemies) {
-    _ndc.copy(e.mesh.position).project(camera);
+    _ndc.copy(e.pos).project(camera);
     const behind = _ndc.z > 1;            // point is behind the camera -> NDC is mirrored
     let x = _ndc.x, y = _ndc.y;
     if (behind) { x = -x; y = -y; }
@@ -220,15 +220,15 @@ export function updateDropMarkers() {
   if (!G.player || el.overlay.style.display !== 'none') { for (const m of dropMarkerPool) setStyle(m, 'display', 'none'); return; }
   const w = gameW(), h = gameH(), margin = 0.92;
   // collect off-screen drops with their edge position + squared distance, keep the nearest DROP_MARKER_MAX
-  const ppos = G.player.mesh.position, offs = [];
+  const ppos = G.player.pos, offs = [];
   for (const d of drops) {
-    _ndc.copy(d.obj.position).project(camera);
+    _ndc.copy(d.pos).project(camera);
     const behind = _ndc.z > 1;
     let x = _ndc.x, y = _ndc.y;
     if (behind) { x = -x; y = -y; }
     if (!behind && x >= -1 && x <= 1 && y >= -1 && y <= 1) continue; // on screen → no marker
     const k = margin / Math.max(Math.abs(x), Math.abs(y), 1e-4);
-    const dx = d.obj.position.x - ppos.x, dz = d.obj.position.z - ppos.z;
+    const dx = d.pos.x - ppos.x, dz = d.pos.z - ppos.z;
     offs.push({ cx: x * k, cy: y * k, d2: dx * dx + dz * dz, special: !!d.special });
   }
   offs.sort((a, b) => a.d2 - b.d2);
@@ -354,7 +354,7 @@ export function updateEnemyHealthBars() {
     const sh = e.shield || null;
     const shieldFull = !sh || e._shieldValue >= sh.capacity;
     if (e.hp >= e.maxHp && shieldFull) continue;   // nothing damaged at all → no bars
-    _hb.copy(e.mesh.position).addScaledVector(_screenUp, e.radius * 1.6 + 2); // lift up-screen, clear of the hull
+    _hb.copy(e.pos).addScaledVector(_screenUp, e.radius * 1.6 + 2); // lift up-screen, clear of the hull
     _hb.project(camera);
     if (_hb.z > 1) continue;                        // behind the camera -> skip
     const px = (_hb.x * 0.5 + 0.5) * w, py = (-_hb.y * 0.5 + 0.5) * h;
@@ -411,7 +411,7 @@ export function updateMiniMap() {
 
   // enemies as dots, tinted by type color (same palette as the edge arrows)
   for (const e of enemies) {
-    const ex = toX(e.mesh.position.x), ey = toY(e.mesh.position.z);
+    const ex = toX(e.pos.x), ey = toY(e.pos.z);
     if (ex < 1 || ex > S - 1 || ey < 1 || ey > S - 1) continue; // off the radar
     miniCtx.fillStyle = cssColor(e.color ?? 0xffffff);
     miniCtx.beginPath();
@@ -421,8 +421,8 @@ export function updateMiniMap() {
 
   // player as a heading triangle (red while out of bounds), clamped to the radar edge so it stays
   // visible even when the ship flies far outside the boundary
-  const px = Math.max(6, Math.min(S - 6, toX(G.player.mesh.position.x)));
-  const py = Math.max(6, Math.min(S - 6, toY(G.player.mesh.position.z)));
+  const px = Math.max(6, Math.min(S - 6, toX(G.player.pos.x)));
+  const py = Math.max(6, Math.min(S - 6, toY(G.player.pos.z)));
   const fx = Math.sin(G.player.heading), fz = Math.cos(G.player.heading); // forward dir (headingToDir)
   miniCtx.fillStyle = G.player.oobTime > 0 ? '#ff7a5a' : '#9fe8ff';
   miniCtx.beginPath();
