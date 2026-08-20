@@ -3123,10 +3123,20 @@ locally** rather than leaving a ship that will not answer.
 
 **You can SEE which simulation is running.** With `?netsim` on, a small badge sits under the wordmark:
 green `NETSIM ● room · level-N` while a room is driving, amber `NETSIM ○ local · <reason>` otherwise
-(`replay`, `side-mission`, `failed`, `no room`, `connecting…`). It exists because the flag is URL-only and
+(`replay`, `side-mission`, `disconnected`, `no room`, `connecting…`). It exists because the flag is URL-only and
 not sticky, so it is easy to be on the local path without noticing — three playtests in a row reported
 "netsim feels great" while actually local, which is the report that cannot be acted on. Never shown without
 the flag.
+
+**Losing the room is not fatal, and never permanent.** A DELIBERATE teardown (a replay taking over, a side
+mission, a level change) detaches the socket's handlers before closing, so it cannot be mistaken for the
+socket dying — it used to be, and every planned hand-off to the local sim therefore disabled netsim until a
+page reload. An UNEXPECTED close (server restarted, network gone) hands the **current run** to the local
+simulation, which simply carries on from the World the room left populated, and the **next run reconnects
+by itself**. There is no permanent failure state: retrying mid-fight would swap the simulation out from
+under the player, and retrying every frame would hammer the endpoint, so the retry waits for a new
+`G.gameStartTime`. Verified by killing the server mid-fight: the badge turns amber, thrust still flies the
+ship, and a fresh run comes back green on its own.
 
 **Diagnosing it.** `window.__netsim` is attached whenever the flag is on — `?debug` or not, because the
 first question about a server-run fight is always "am I connected". It reports `connected`, `tick`, `ack`,

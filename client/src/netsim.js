@@ -183,6 +183,15 @@ export async function connectNetsim({ playerId, level, seed, origin = location.o
     // long pause would silently end the session and drop the player back to the local simulation. Called
     // every frame while paused; rate-limits itself.
     keepAlive(now = Date.now()) { if (now - lastPing > 5000) { lastPing = now; send({ type: 'ping' }); } },
-    close() { uplink.flush(); send({ type: 'bye' }); try { ws.close(); } catch {} },
+    // A DELIBERATE teardown is silent: the close/error handlers are detached first, so leaving a room on
+    // purpose (a replay taking over the tick, a side mission, a level change) cannot be mistaken for the
+    // socket dying. It was — `close()` fired `onclose`, the caller treated that as a failure and disabled
+    // netsim for the whole tab, so every planned hand-off to the local sim was permanent.
+    close() {
+      uplink.flush();
+      send({ type: 'bye' });
+      ws.onclose = null; ws.onerror = null;
+      try { ws.close(); } catch {}
+    },
   };
 }

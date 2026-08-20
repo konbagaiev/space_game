@@ -77,7 +77,7 @@ rs.play = evalPlayback(typeof location !== 'undefined' ? location.search : ''); 
 // Slice D has no client-side prediction, so the local ship answers the controls about 100 ms late — that is
 // expected, and it is the baseline Slice E is measured against.
 const NETSIM = evalNetsim(typeof location !== 'undefined' ? location.search : ''); // { level, seed } | null
-let netsimActive = !!NETSIM;  // cleared if the handshake fails, so the tab falls back to simulating locally
+const netsimActive = !!NETSIM; // the flag is on. NEVER cleared — an unavailable room is per-run (netDown), not forever
 let netLink = null;           // the socket + uplink, once connected
 let netConnecting = false;
 let netsimPaused = false;   // __netsim.pause(): stop pumping/applying, freeze on the last known state
@@ -86,6 +86,8 @@ let netStarted = false;     // the room has been told to begin (take-off), as op
 let netRunAt = null;        // G.gameStartTime of the run the room is playing (a new one means restart it)
 let netLevel = null;        // the level the current room was created for (a change means reconnect)
 let netDeferredBy = null;   // 'replay' | 'side-mission' | null — why netsim is standing aside this frame
+let netDown = false;        // the socket died under us: local for THIS run, retry on the next one
+let netDownRunAt = null;    // the run it died in (G.gameStartTime), so the retry waits for a different one
 const netState = createNetState();
 const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
@@ -794,6 +796,18 @@ if (isDev()) window.__backdrop = {
 // Leave the room and forget its ghosts, WITHOUT giving up on netsim: `netsimActive` stays true, so the
 // next frame that is not owned by a replay reconnects. Used when the intro cutscene arms after the socket
 // has already opened.
+// Netsim became unavailable — the handshake failed, or the socket went away under us. There is NO permanent
+// failure state: this run continues on the local simulation and the next run tries again. A tab that
+// disabled itself until a page reload was strictly worse, and it is what a server restart used to do.
+function goLocal(why) {
+  if (netDown) return;
+  console.warn(`[netsim] ${why} — this run continues on the local simulation, will retry on the next one`);
+  netDown = true; netDownRunAt = G.gameStartTime;
+  netLink = null; netStarted = false; netRoomPaused = false; netRunAt = null; netLevel = null;
+  clearNet(world, netState);
+  netState.welcome = null; netState.ack = null;
+}
+
 function dropNetsim() {
   try { netLink.close(); } catch {}
   netLink = null; netStarted = false; netRoomPaused = false; netRunAt = null; netLevel = null;
@@ -803,11 +817,7 @@ function dropNetsim() {
 
 async function startNetsim() {
   netConnecting = true;
-  const bail = (err) => {
-    console.warn('[netsim] falling back to the local simulation:', err && err.message || err);
-    clearNet(world, netState);
-    netLink = null; netsimActive = false;
-  };
+  const bail = (err) => goLocal(String((err && err.message) || err));
   try {
     // The room must fight the level this tab has already BUILT — same map, same set-pieces, same arena
     // centre — or the two disagree about where the world is. `CATALOG.levelName` is the seed name the
@@ -823,7 +833,12 @@ async function startNetsim() {
         if (w.level !== level) console.warn(`[netsim] the room is fighting ${w.level}, this tab built ${level}`);
       },
       onSnapshot: (snap) => { netState.ack = snap.ack; if (!netsimPaused) applySnapshot(world, netState, snap, performance.now()); },
-      onClose: (ev) => { if (netsimActive) bail(new Error(`socket closed (${ev && ev.code})`)); },
+      // An UNEXPECTED close (server restarted, network died) is not a permanent verdict on netsim. Fall
+      // back to the local simulation so the fight carries on rather than freezing — the World is already
+      // populated and `simTick` can just continue it — and try again at the next run. Reconnect proper is
+      // a documented non-goal for this cut; silently dying until a page reload is worse than the non-goal.
+      onClose: (ev) => goLocal(`socket closed (${ev && ev.code})`),
+      // Before the handle exists this is a handshake failure; after, a dying socket. Same answer either way.
       onError: bail,
     });
     if (!netLink) bail(new Error('no socket'));
@@ -847,7 +862,10 @@ function animate() {
   netDeferredBy = netsimDeferReason({
     record: REC, playback: rs.play, sideMission: !!G.activeMission && !NETSIM.level,
   });
-  const netsimDriving = netsimActive && !netDeferredBy;
+  // A dropped socket is local until a NEW run starts — retrying mid-fight would swap the simulation out
+  // from under the player, and retrying every frame would hammer the endpoint.
+  if (netDown && G.gameStarted && G.gameStartTime !== netDownRunAt) netDown = false;
+  const netsimDriving = netsimActive && !netDeferredBy && !netDown;
   if (netsimActive && netLink && netDeferredBy) dropNetsim();
   const live = G.gameStarted && !BENCH && !REC && !rs.play && !netsimDriving; // real player session → deterministic accumulator loop (always-on recording)
   if (netsimDriving) {
@@ -1028,7 +1046,7 @@ function updateNetBadge() {
   // Green ONLY while a room is actually driving this tab; amber for every flavour of "you are local".
   const driving = netsimActive && !netDeferredBy && !!netLink && netStarted;
   const reason = netDeferredBy ? `local · ${netDeferredBy}`
-    : !netsimActive ? 'local · failed'
+    : netDown ? 'local · disconnected'
     : !netLink ? (netConnecting ? 'connecting…' : 'local · no room')
     : !netStarted ? 'room joined' : `room · ${netState.welcome ? netState.welcome.level : '?'}`;
   const colour = driving ? '#4dff88' : '#ffb454';
@@ -1046,6 +1064,7 @@ if (NETSIM) {
     get connected() { return !!netLink; },
     get started() { return netStarted; },
     get deferredBy() { return netDeferredBy; }, // why we are on the LOCAL sim right now (null = we are not)
+    get down() { return netDown; },             // the socket died; local until the next run
     get tick() { return netState.lastTick; },
     get level() { return (netState.welcome && netState.welcome.level) || NETSIM.level; },
     get welcome() { return netState.welcome; }, // what the room said about this fight when we joined

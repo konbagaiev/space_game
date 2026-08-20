@@ -5,6 +5,17 @@
 
 ## 2026-08-20
 
+- **Leaving a room on purpose used to kill netsim for the whole tab.** `dropNetsim()` called the link's
+  `close()`, which fired `onclose`, which the caller read as the socket dying and used to disable netsim
+  permanently — so every planned hand-off to the local sim (a replay taking over, a side mission, a level
+  change) was a one-way trip, and the badge sat on amber `failed` until a page reload. Resetting progress
+  hit it via the intro; so did every one of my server restarts, to any tab that was open. A deliberate
+  teardown now detaches the socket's handlers before closing, and **there is no permanent failure state at
+  all**: an unexpected close hands the CURRENT run to the local simulation — which carries on from the World
+  the room left populated, rather than freezing — and the next run reconnects by itself. Verified by killing
+  the server mid-fight: badge turns amber `local · disconnected`, the ship still flies under thrust, the
+  server comes back, and a fresh run returns to green without touching anything.
+
 - **`?netsim` now shows which simulation is running.** A small badge under the wordmark: green
   `NETSIM ● room · level-N` while a server room drives the fight, amber `NETSIM ○ local · <reason>`
   otherwise (`replay`, `side-mission`, `failed`, `no room`, `connecting…`). The flag is URL-only and

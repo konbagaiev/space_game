@@ -136,3 +136,42 @@ test('netsim stands aside for a side mission, and says so', () => {
   assert.equal(netsimDeferReason({ playback: { id: 'x' }, sideMission: true }), 'replay');
   assert.equal(netsimDefersTo({ sideMission: true }), true, 'the boolean shorthand agrees');
 });
+
+test('a deliberate close does not look like the socket dying', async () => {
+  // THE BUG: leaving a room on purpose (a replay taking over, a side mission, a level change) called
+  // close(), which fired onclose, which the caller read as a failure and used to disable netsim for the
+  // whole tab. So every planned hand-off to the local sim was permanent — the badge sat on "failed" and
+  // only a page reload brought it back.
+  const events = {};
+  class FakeWS {
+    constructor() { this.readyState = 0; setTimeout(() => { this.readyState = 1; events.open?.(); }, 5); }
+    addEventListener(type, fn) { events[type] = fn; }
+    send() {}
+    close() { this.closed = true; this.onclose?.({ code: 1000 }); }
+  }
+  const fetchFn = async () => ({ ok: true, json: async () => ({ ticket: 't' }) });
+  let closes = 0, errors = 0;
+  const link = await connectNetsim({ playerId: 'p', origin: 'http://x', fetchFn, WebSocketImpl: FakeWS,
+                                     onClose: () => closes++, onError: () => errors++ });
+  assert.ok(link);
+  link.close();
+  assert.equal(link.ws.closed, true, 'the socket really was closed');
+  assert.equal(closes, 0, 'but nobody was told it "died" — this teardown was on purpose');
+  assert.equal(errors, 0);
+});
+
+test('a socket that dies on its own DOES notify', async () => {
+  // The other half: an unexpected death has to reach the caller, or the tab sits on a dead room.
+  const events = {};
+  class FakeWS {
+    constructor() { this.readyState = 0; setTimeout(() => { this.readyState = 1; events.open?.(); }, 5); }
+    addEventListener(type, fn) { events[type] = fn; }
+    send() {} close() {}
+  }
+  const fetchFn = async () => ({ ok: true, json: async () => ({ ticket: 't' }) });
+  let closes = 0;
+  const link = await connectNetsim({ playerId: 'p', origin: 'http://x', fetchFn, WebSocketImpl: FakeWS,
+                                     onClose: () => closes++ });
+  link.ws.onclose({ code: 1006 });   // the server went away
+  assert.equal(closes, 1);
+});
