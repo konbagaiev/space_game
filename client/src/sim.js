@@ -4,29 +4,28 @@
 // imports the leaves (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported
 // only by the composition root (the inline script / main). It never imports the loop's callers.
 import * as THREE from 'three';
-import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, keys, touchAim, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
-import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './sim-core/system-map.js';
-import { repairTick, shieldRecharge } from './sim-core/components.js';
-import { headingToDir, shortestAngleDelta, steerToward, keyboardThrust } from './sim-core/steering.js';
+import { shortestAngleDelta } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, spawnRocketBurst, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
-import { updateGroups, preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
-import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
+import { preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
 import { BANNER_FADE, showBanner as showBannerIn, clearBanner } from './sim-core/events.js';
 import { stepBullets, stepRockets } from './sim-core/step-projectiles.js';
 import { stepEnemyAI, stepEnemyDeaths, stepPlayerDeath } from './sim-core/step-enemies.js';
-import { runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
+import { stepPlayer, PLAYER_MAX_SPEED, warpPlayerToCenter as warpPlayerToCenterIn,
+         engageAutopilot as engageAutopilotIn, engageDropAutopilot as engageDropAutopilotIn,
+         engagePointAutopilot as engagePointAutopilotIn, cancelAutopilot as cancelAutopilotIn } from './sim-core/step-player.js';
+import { runCenter } from './sim-core/level-sim.js';
 import { startLevel, updateLevelRunner, winLevel, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
-import { drawDrops, preloadRewardModel, ownsReward, clearDrops, takeLoot, drops, attachDropBody, detachDropBody } from './drops.js';
+import { drawDrops, preloadRewardModel, ownsReward, clearDrops, takeLoot, attachDropBody, detachDropBody } from './drops.js';
 import { stepDrops } from './sim-core/drops-sim.js';
-import { BASE_ARRIVE_RADIUS } from './sim-core/autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
@@ -84,186 +83,15 @@ for (const k of LEVEL_RUNNER_FIELDS) {
   });
 }
 
-// ---------- Helpers ----------
-function forwardVec(heading) {
-  // nose points in +Z when heading=0 (math lives in steering.js)
-  const d = headingToDir(heading);
-  return new Vec3(d.x, 0, d.z);
-}
-
-// ---------- Autopilot (return-to-base click-to-fly) ----------
-// Kinematic symmetric-decel brake: bleed the velocity toward 0 at a constant rate equal to the ship's
-// thrust `accel` (Decision 2 — the passive IDLE_DRAG is exponential and can't stop cleanly).
-// Shared with the player's manual brake (S/↓ in stepPlayer) — it stops at 0 and never flips the
-// direction, which is exactly the "no flying backwards" rule.
-function brakeStep(accel, dt) {
-  const v = G.player.vel, sp = v.length();
-  if (sp <= 1e-4) { v.set(0, 0, 0); return; }
-  const dec = Math.min(sp, accel * dt); // symmetric decel == thrust accel
-  v.addScaledVector(v.clone().normalize(), -dec);
-}
-
-// Click-to-fly: brake to a stop → rotate to face the station → accelerate at max → kinematic brake so the
-// ship coasts to ~0 right at the station. `heading` convention matches forwardVec/touchAim: desired = atan2(dx, dz).
-// Arrival isn't handled here — levelRunner.checkArrival() fires the win ONLY while autopilot is engaged, so a
-// manual/cancelled approach never completes the mission; autopilot just stalls at the station until arrival.
-// Resolve the autopilot's current world-space goal. Returns null if the target vanished (drop collected
-// by the passive Grab, drops cleared on reset) → the caller cancels the autopilot.
-function autopilotTargetPos() {
-  const tgt = G.autopilot.target;
-  if (!tgt) return null;
-  if (tgt.kind === 'station') return G.baseStation ? G.baseStation.pos : null;
-  // kind === 'point': a fixed world coordinate (roam navigation / system-map destination)
-  if (tgt.kind === 'point') return tgt.pos || null;
-  // kind === 'drop': valid only while the drop object is still in the live drops[] array
-  return (tgt.drop && drops.includes(tgt.drop)) ? tgt.drop.pos : null;
-}
-
-function autopilotControl(dt, accel, turn) {
-  const goal = autopilotTargetPos();
-  if (!goal) { G.autopilot.active = false; G.autopilot.target = null; return; }
-  const pos = G.player.pos;
-  const dx = goal.x - pos.x, dz = goal.z - pos.z;
-  const dist = Math.hypot(dx, dz);
-  const desired = Math.atan2(dx, dz);
-  const ap = G.autopilot;
-
-  if (ap.phase === 'brake0') {                    // 1) full stop first
-    brakeStep(accel, dt);
-    if (G.player.vel.length() < 0.5) ap.phase = 'rotate';
-  } else if (ap.phase === 'rotate') {             // 2) rotate the nose to face the station
-    G.player.heading = steerToward(G.player.heading, desired, turn * dt);
-    brakeStep(accel, dt);                         // bleed any residual drift while turning
-    if (Math.abs(shortestAngleDelta(G.player.heading, desired)) < 0.05) ap.phase = 'cruise';
-  } else {                                        // 3/4) accelerate, then kinematic brake
-    G.player.heading = steerToward(G.player.heading, desired, turn * dt);
-    const speed = G.player.vel.length();
-    const stopDist = (speed * speed) / (2 * accel);
-    // TERMINAL BRAKE: once inside the arrive radius, stop chasing and just kill the speed. Without this the
-    // ship keeps steering at a goal it is already on top of, overshoots, re-accelerates, and settles into a
-    // ~10 u/s orbit around it — so an arrival predicate that waits for the ship to come to rest never fires
-    // (a roam destination could never raise its prompt). Excluded for a DROP, whose own pickup radius owns
-    // that endgame and whose trajectory is combat-tuned.
-    if (ap.target.kind !== 'drop' && dist <= ARRIVE_RADIUS) {
-      brakeStep(accel, dt);
-    } else if (dist > stopDist + 0.5) {
-      const fwd = forwardVec(G.player.heading);
-      G.player.vel.addScaledVector(fwd, accel * dt);
-      G.player.thrusting = true; // render consequence: syncMeshes drives the plume
-    } else {
-      brakeStep(accel, dt);
-    }
-  }
-}
-
-// Fly to the base station to dock. Valid in TWO out-of-combat states, and the difference matters:
-//   • return-to-base (post-kill) — this is the target that can WIN the mission (checkArrival/canDock);
-//   • roam — you took off for a free flight and clicked home; there is no mission to win, so arriving just
-//     parks and offers to dock (checkStationArrival → G.onBaseArrival).
-// Never during a live fight.
-export function engageAutopilot() {
-  if (!G.player || !G.player.alive || levelRunner.won) return;
-  if (!(G.returnToBase || G.roam)) return;
-  engage({ kind: 'station' });
-}
-// Fly to a loot drop to grab it. Valid whenever a live drop is clicked — combat AND return-to-base.
-export function engageDropAutopilot(drop) {
-  if (!G.player || !G.player.alive || levelRunner.won || !drops.includes(drop)) return;
-  engage({ kind: 'drop', drop });
-}
-// Fly to a fixed world POINT (roam navigation / system-map destination). Allowed OUT OF COMBAT only
-// (roam or return-to-base) — never during a live fight. `mission` is the offer id to prompt on arrival
-// (or null for a plain point). enterRoam sets G.roam = true BEFORE calling this, so the gate passes.
-export function engagePointAutopilot(pos, mission = null) {
-  if (!G.player || !G.player.alive || levelRunner.won) return;
-  if (!(G.roam || G.returnToBase)) return;
-  engage({ kind: 'point', pos: { x: pos.x, z: pos.z }, mission: mission || null });
-}
-function engage(target) {
-  G.autopilot.active = true; G.autopilot.phase = 'brake0'; G.autopilot.target = target;
-}
-// Drop back to manual flight (roam nav buttons: clicking the destination you are already flying to cancels).
-export function cancelAutopilot() { G.autopilot.active = false; G.autopilot.target = null; }
-
-// A point autopilot never wins a mission by proximity (canDock only fires for kind:'station'). When it
-// reaches ARRIVE_RADIUS and comes to rest, park the ship; if it carries a mission id, hand off to the
-// arrival prompt (which no-ops for a locked/stale offer). Called from update() while autopilot is active.
-function checkPointArrival() {
-  const tgt = G.autopilot.target;
-  if (!tgt || tgt.kind !== 'point') return;
-  const pos = G.player.pos;
-  if (!arrivedAtPoint(tgt.pos, { x: pos.x, z: pos.z }, ARRIVE_RADIUS)) return;
-  if (G.player.vel.length() > 0.6) return; // wait until the kinematic brake has settled the ship
-  const mission = tgt.mission;
-  G.autopilot.active = false; G.autopilot.target = null; // park
-  if (mission) simEvents.emit({ type: 'missionArrival', missionId: mission });
-}
-
-// Reaching the base station WHILE ROAMING. This is the free-flight counterpart of checkArrival(): there is
-// no mission to win here (levelRunner.returningToBase is false, so canDock/win never runs), so the ship
-// simply parks at the station and the host is asked whether to dock back into the hangar.
-function checkStationArrival() {
-  const tgt = G.autopilot.target;
-  if (!G.roam || !tgt || tgt.kind !== 'station' || !G.baseStation) return;
-  const s = G.baseStation.pos, pos = G.player.pos;
-  if (Math.hypot(pos.x - s.x, pos.z - s.z) > BASE_ARRIVE_RADIUS) return;
-  if (G.player.vel.length() > 0.6) return;              // let the terminal brake settle the ship first
-  G.autopilot.active = false; G.autopilot.target = null; // park
-  G.player.vel.set(0, 0, 0);                            // and hold station while the prompt is up
-  simEvents.emit({ type: 'baseArrival' });
-}
-
-// Flying into the ACTIVE campaign mission's neighbourhood while roaming. `G.missionZone` is set by the roam
-// entry point (mainwindow.enterRoam) and is null unless the campaign is the active choice AND its level
-// names a `center` — so the gating ("only when THAT mission is active") lives where `activeMissionId` is
-// known, and this is pure geometry + a countdown. Reached however you got there: autopilot or hand-flown.
-function checkMissionZone(dt) {
-  const z = G.missionZone;
-  if (!G.roam || !z || !G.player) return;
-  // A countdown never runs while you are on your way somewhere ELSE. Picking a destination on the map is an
-  // explicit "not now", and it has to be, because a level that fights at the origin puts its zone around the
-  // base you take off from: without this, the first three seconds of every trip out into the system would
-  // drop you into that level's fight instead, and the star system would be unreachable on four levels out of
-  // five. A destination INSIDE the zone (the factory anchor is ~131 u from the Level 3 centre) is not
-  // "somewhere else" — that trip is how you get to the mission, so it counts down on arrival as it should.
-  // Docking counts too: clicking the home station asks to go INSIDE, and the station sits within the origin
-  // zone, so without this the countdown would start the fight before the "Dock at the station?" prompt.
-  const tgt = G.autopilot.active ? G.autopilot.target : null;
-  const elsewhere = tgt && (tgt.kind === 'station'
-    || (tgt.kind === 'point'
-        && Math.hypot(tgt.pos.x - z.center.x, tgt.pos.z - z.center.z) > MISSION_ZONE_RADIUS));
-  if (elsewhere) {
-    if (z.t != null) clearBanner(world);
-    z.t = null;
-    return;
-  }
-  const p = G.player.pos;
-  const r = stepMissionZone(z, { dist: Math.hypot(p.x - z.center.x, p.z - z.center.z), dt });
-  const wasCounting = z.t != null;
-  // The countdown is three seconds of nothing happening — spend them fetching and parsing what the fight is
-  // about to need, so the moment it starts costs nothing. Without this the enemy models (and the last-kill
-  // reward model) are pulled in by levelRunner.start() on the very frame the mission engages, which is felt
-  // as a jerk. Once per arming; both preloads are idempotent caches.
-  if (!wasCounting && r.t != null && !z.warmed) {
-    z.warmed = true;
-    const lvl = CATALOG.level;
-    if (lvl) {
-      world.host.onWarmLevel(lvl);
-    }
-  }
-  if (r.t == null) z.warmed = false; // left the zone → warm again on the next approach (cheap: cached)
-  z.t = r.t;
-  if (r.t != null && !r.fire && r.t > 0) {
-    // Re-armed every tick while the countdown runs, so it holds at full opacity instead of fading.
-    // (The old `G.banner.life = G.banner.maxLife` nudge that used to follow is gone: showBanner only
-    // EMITS now, so the nudge read the PREVIOUS banner's values — and the adapter sets life == maxLife
-    // on arrival anyway, which is the invariant that line was reaching for.)
-    showBanner('ui.roam.engaging', { n: Math.ceil(r.t) }, 1);
-  } else if (wasCounting && r.t == null) {
-    clearBanner(world); // left the zone → drop the countdown banner immediately
-  }
-  if (r.fire) simEvents.emit({ type: 'missionZoneEnter' });
-}
+// ---------- The player step + the autopilot: entry points into sim-core/step-player.js ----------
+// The rules moved to sim-core (they must run in Node); these bind THIS tab's World so main.js and
+// mainwindow.js keep calling them by their historical names and signatures.
+export { PLAYER_MAX_SPEED };
+export const warpPlayerToCenter = () => warpPlayerToCenterIn(world);
+export const engageAutopilot = () => engageAutopilotIn(world);
+export const engageDropAutopilot = (drop) => engageDropAutopilotIn(world, drop);
+export const engagePointAutopilot = (pos, mission = null) => engagePointAutopilotIn(world, pos, mission);
+export const cancelAutopilot = () => cancelAutopilotIn(world);
 
 // ---------- Homing arrow + HUD hint (world-space arrow + DOM hint) ----------
 let returnArrow = null;
@@ -320,17 +148,6 @@ export function updateRoamNav() {
   }
 }
 
-// Soft-boundary auto-return: warp the player back to the center, zero velocity, clear the OOB timer,
-// and replay the warp-in animation so the return reads as intentional (not a glitch).
-export function warpPlayerToCenter() {
-  G.player.pos.set(arenaCenter.x, BULLET_PLANE_Y, arenaCenter.z); // back to the (possibly drifted) arena center
-  G.player.vel.set(0, 0, 0);
-  G.player.oobTime = 0;
-  G.player.spawnAge = 0;                  // (re)start the grow-from-a-dot animation
-  G.player.scale = G.player.fullScale * 0.001; // shrink to a dot; stepPlayer grows it back
-  simEvents.emit({ type: 'warpFlash', pos: G.player.pos.clone() }); // a small flash at the arrival point
-}
-
 // "You've left the battlefield" HUD warning + countdown. Shown only after OOB_WARN_DELAY seconds
 // continuously out of bounds; hidden while in bounds, on menus, or when a result overlay is up.
 export function updateOobWarning() {
@@ -345,13 +162,6 @@ export function updateOobWarning() {
 }
 
 // ---------- Game loop ----------
-// Thrust/turn/speed/weapon are taken from the ship's components (engine/weapon).
-const DRAG = 1.8;        // friction (enemies)
-const IDLE_DRAG = 0.8;   // soft braking for the player when controls are released
-// Flat top speed for the PLAYER only (world units/s). Enemies use their per-engine `maxSpeed` instead.
-// Applied after thrust, before position integration, on BOTH the manual and autopilot paths.
-export const PLAYER_MAX_SPEED = 30;
-const ENEMY_FIRE_GRACE = 5; // seconds at run start during which enemies move/aim but hold fire
 const BANK_MAX  = 20 * Math.PI / 180; // max wing bank, radians (~0.349) — hard cap, "20 degrees, no more"
 const BANK_TAU  = 0.15;               // smoothing time-constant (s); smaller = snappier, larger = lazier
 
@@ -562,7 +372,7 @@ world.host = {
 export function simTick(dt) {
   world.combatElapsed += dt; // unpaused combat clock (skipped while paused) — drives the enemy hold-fire grace
 
-  stepPlayer(dt);   // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
+  stepPlayer(world, dt);   // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
   stepEnemyAI(world, dt);
   stepBullets(world, dt);
   stepRockets(world, dt);
@@ -618,124 +428,6 @@ export function update(dt) {
   if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
   simTick(dt);
   renderTick(dt);
-}
-
-// ---------- update(dt) sections ----------
-// Each function below is one section of the per-tick sim, lifted verbatim out of update() (2026-08-14
-// refactor: update() was 471 lines). Call order in update() IS the execution order — do not reorder.
-
-function stepPlayer(dt) {
-  G.player.thrusting = false; // re-armed below by whichever control path actually thrusts this tick
-  // --- repair drone: passive hull regen, capped at a fraction of max HP (no-op without a drone) ---
-  if (G.player.repair) {
-    const r = repairTick(G.player.hp, G.player.maxHp, G.player.repair, dt, G.player._repairAccum);
-    G.player.hp = r.hp; G.player._repairAccum = r.accum;
-  }
-
-  // --- shield: recharge only once fully depleted, then refill to full (no-op without a shield) ---
-  if (G.player.shield) {
-    const wasBroken = G.player._shieldValue <= 0;
-    const s = shieldRecharge(G.player._shieldValue, G.player.shield.capacity, G.player.shield.rechargeSec, dt, G.player._shieldRechargeAccum);
-    G.player._shieldValue = s.shieldValue; G.player._shieldRechargeAccum = s.accum;
-    if (wasBroken && s.shieldValue > 0) simEvents.emit({ type: 'shieldReady' }); // recharge just completed → whole sphere flashes once
-  }
-
-  const eng = G.player.engine;         // main engine (for exhaust)
-  const accel = G.player.acceleration; // derived: acceleration <- main engine power
-  const turn = G.player.turnRate;      // derived: maneuverability <- thruster power
-
-  // Autopilot (return-to-base): ANY control input cancels it and hands control back immediately (DECISIONS §39).
-  const manual = touchAim.active
-    || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
-    || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight']
-    || keys['Space'] || keys['KeyF'] || keys['_rocket']; // KeyF = keyboard rocket, _rocket = touch/mouse 🚀 button
-  if (G.autopilot.active && manual) { G.autopilot.active = false; G.autopilot.target = null; }
-
-  // Outside the autopilot/manual split on purpose: flying into the active mission's zone starts it however
-  // you got there — autopilot cruise, or hand-flown after cancelling it.
-  checkMissionZone(dt);
-
-  let fwd;
-  if (G.autopilot.active) {
-    autopilotControl(dt, accel, turn); // sets heading + vel toward the target (brake/rotate/accelerate)
-    fwd = forwardVec(G.player.heading);
-    checkPointArrival();               // roam point autopilot: park (+ maybe prompt) on arrival
-    checkStationArrival();             // roam dock autopilot: park at the base + offer to go back inside
-  } else {
-    // --- player: turn ---
-    if (keys['KeyA'] || keys['ArrowLeft'])  G.player.heading += turn * dt;
-    if (keys['KeyD'] || keys['ArrowRight']) G.player.heading -= turn * dt;
-
-    // touch: turn the nose toward the touch direction (directional steering)
-    if (touchAim.active) {
-      G.player.heading = steerToward(G.player.heading, touchAim.heading, turn * dt);
-    }
-
-    // --- player: thrust (forward only — S/↓ is a brake, never a reverse; DECISIONS §113) ---
-    fwd = forwardVec(G.player.heading);
-    const kb = keyboardThrust(keys);
-    if (kb.thrust) G.player.vel.addScaledVector(fwd, accel * kb.thrust * dt);
-    if (kb.brake)  brakeStep(accel, dt); // same kinematic decel the autopilot uses: bleeds to 0, no overshoot
-    if (touchAim.active) G.player.vel.addScaledVector(fwd, accel * touchAim.thrust * dt); // touch thrust
-
-    // passive braking when no control button is pressed
-    // (hold the turn to aim while drifting - inertia is preserved)
-    const controlling = touchAim.active
-                     || keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']
-                     || keys['KeyA'] || keys['ArrowLeft'] || keys['KeyD'] || keys['ArrowRight'];
-    if (!controlling) G.player.vel.multiplyScalar(Math.max(0, 1 - IDLE_DRAG * dt));
-  }
-
-  // Flat top speed: pure inertia, but the player never exceeds their max whenever they are FLYING IT BY
-  // HAND — which is the whole replay invariant (see capLifted): a replay reproduces recorded INPUT, so
-  // every input-driven leg must clamp exactly as recorded. Autopilot legs are not input-driven, so two of
-  // them run uncapped: roam cruise to a destination, and the return-to-base DOCK (so "Return to base" at
-  // the end of a mission, and clicking the station while roaming, are a quick trip home rather than a slog).
-  // Mobility skill raises the cap by maxSpeedMul (1 when no points / on replays).
-  const maxSpeed = PLAYER_MAX_SPEED * (G.player.maxSpeedMul || 1);
-  const docking = G.autopilot.active && !!G.autopilot.target && G.autopilot.target.kind === 'station';
-  const lifted = capLifted({ roam: G.roam, autopilot: G.autopilot.active, docking });
-  if (!lifted && G.player.vel.length() > maxSpeed) G.player.vel.setLength(maxSpeed);
-  // the ship keeps flying in its current direction, no matter where the nose points
-  G.player.pos.addScaledVector(G.player.vel, dt);
-
-  // (The arena-drift block below is not player-specific — it stays here because moving it would reorder the tick.)
-  // Drifting arena (e.g. freighter escort): slowly pan the combat zone's center; the boundary, warp-back
-  // and mini-map all compute relative to it. Static maps (world.arenaDrift null) keep the center at (0,0).
-  if (world.arenaDrift) {
-    arenaCenter.x += world.arenaDrift.x * dt;
-    arenaCenter.z += world.arenaDrift.z * dt;
-  }
-
-  // Soft boundary (DECISIONS §2): the player can fly past ±ARENA freely (measured from the arena center).
-  // Track how long it's been continuously outside; after a grace delay we warn (HUD), and after
-  // OOB_RETURN_TIME we warp it back to the center. Re-entering resets the timer and clears the warning.
-  const p = G.player.pos;
-  const dxc = p.x - arenaCenter.x, dzc = p.z - arenaCenter.z;
-  const oob = Math.abs(dxc) > ARENA || Math.abs(dzc) > ARENA;
-  // In ROAM the arena boundary is meaningless (you fly the whole system) — never warn, never warp back.
-  if (oob && !G.roam) {
-    G.player.oobTime += dt;
-    // OOB warp-back is LIFTED during return-to-base (§39) so side missions fought far from (0,0) can fly home
-    if (G.player.oobTime >= OOB_RETURN_TIME && !G.returnToBase) warpPlayerToCenter();
-  } else {
-    G.player.oobTime = 0;
-  }
-
-  // warp-back animation: grow from a dot back to full size (reuses the enemy "warp in")
-  if (G.player.spawnAge < SPAWN_GROW_TIME) {
-    G.player.spawnAge = Math.min(SPAWN_GROW_TIME, G.player.spawnAge + dt);
-    const k = 1 - Math.pow(1 - G.player.spawnAge / SPAWN_GROW_TIME, 3); // ease-out cubic
-    G.player.scale = G.player.fullScale * Math.max(0.001, k);
-  }
-
-  // --- engine trail (when thrusting forward) --- flagged here, drawn in syncMeshes
-  if (keys['KeyW'] || keys['ArrowUp'] || (touchAim.active && touchAim.thrust > 0.1)) {
-    G.player.thrusting = true;
-  }
-
-  // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
-  updateGroups(G.player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
 }
 
 function stepMicroExplosions(dt) {
