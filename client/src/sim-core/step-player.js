@@ -338,3 +338,13 @@ export function stepPlayer(world, dt) {
   // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
   updateGroups(world, player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
 }
+
+// The last thing a tick does: notice the ship died. Deliberately separate from the damage that killed it —
+// several steps can bring hp to 0 and only one death may be announced, so the check runs once, at the end.
+export function stepPlayerDeath(world) {
+  const p = world.player;
+  if (p.hp <= 0 && p.alive) {
+    p.alive = false;
+    world.events.emit({ type: 'death' }); // the adapter owns the boom, the sting, the overlay and the banking
+  }
+}

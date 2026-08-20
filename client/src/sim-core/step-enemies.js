@@ -150,11 +150,3 @@ export function stepEnemyDeaths(world) {
     }
   }
 }
-
-export function stepPlayerDeath(world) {
-  const p = world.player;
-  if (p.hp <= 0 && p.alive) {
-    p.alive = false;
-    world.events.emit({ type: 'death' }); // the adapter owns the boom, the sting, the overlay and the banking
-  }
-}

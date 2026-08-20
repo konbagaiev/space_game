@@ -29,15 +29,13 @@ import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
 import { BANNER_FADE, showBanner as showBannerIn } from './sim-core/events.js';
-import { stepBullets, stepRockets } from './sim-core/step-projectiles.js';
-import { stepEnemyAI, stepEnemyDeaths, stepPlayerDeath } from './sim-core/step-enemies.js';
-import { stepPlayer, PLAYER_MAX_SPEED, warpPlayerToCenter as warpPlayerToCenterIn,
+import { PLAYER_MAX_SPEED, warpPlayerToCenter as warpPlayerToCenterIn,
          engageAutopilot as engageAutopilotIn, engageDropAutopilot as engageDropAutopilotIn,
          engagePointAutopilot as engagePointAutopilotIn, cancelAutopilot as cancelAutopilotIn } from './sim-core/step-player.js';
 import { startLevel, updateLevelRunner, winLevel, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
 import { clearAndPlaceRun, startRun } from './sim-core/reset-world.js';
+import { simTick as simTickIn } from './sim-core/tick.js';
 import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
-import { stepDrops } from './sim-core/drops-sim.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
@@ -377,22 +375,14 @@ world.host = {
 //
 // The two used to be INTERLEAVED — FX ageing sat between the movement steps and the deaths — and that
 // order was preserved through Slices A–B3b on purpose, because reordering is a behaviour change dressed up
-// as tidying. It is reordered here deliberately, and the reason it is safe is that no presentation step
-// reads or writes simulation state: the FX pools only age themselves. What DOES shift is when FX created
-// during this tick first age — by one tick, ~16 ms, on effects that live 0.06–2 s. The recorded intro
-// trace is the check that the simulation itself did not move.
-export function simTick(dt) {
-  world.combatElapsed += dt; // unpaused combat clock (skipped while paused) — drives the enemy hold-fire grace
-
-  stepPlayer(world, dt);   // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
-  stepEnemyAI(world, dt);
-  stepBullets(world, dt);
-  stepRockets(world, dt);
-  stepEnemyDeaths(world);
-  grabTarget = stepDrops(world, dt); // the Grab: arm, pull, collect (drawn in renderTick)
-  levelRunner.update(dt);            // spawning + phase transitions from the active level
-  stepPlayerDeath(world);
-}
+// as tidying. It was reordered deliberately, and the reason it is safe is that no presentation step reads
+// or writes simulation state: the FX pools only age themselves. What DOES shift is when FX created during
+// this tick first age — by one tick, ~16 ms, on effects that live 0.06–2 s. The recorded intro trace is
+// the check that the simulation itself did not move.
+//
+// The game half is `sim-core/tick.js` now and takes the World; this binds it to THIS tab's fight and keeps
+// the grab target for renderTick. Kept exported under its own name — the ?debug hooks step it directly.
+export function simTick(dt) { grabTarget = simTickIn(world, dt); }
 
 // Whatever the Grab is currently pulling, handed from simTick to renderTick. Presentation only.
 let grabTarget = null;

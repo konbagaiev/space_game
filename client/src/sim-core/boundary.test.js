@@ -53,3 +53,16 @@ for (const file of modules) {
     assert.ok(!/\bfetch\s*\(/.test(code), `${file} calls fetch() — sim-core decides, it never talks to a backend`);
   });
 }
+
+// Every module actually LOADS in Node — the contract is worthless if it only holds on paper.
+//
+// This also catches the mistake the folder is most prone to while it is being assembled: importing a name
+// from the wrong sibling. ESM resolves named imports at LINK time, so `import { stepPlayerDeath } from
+// './step-player.js'` when the function lives in step-enemies.js is a SyntaxError the moment the module is
+// loaded — and nothing else in `node --test` loads these modules end to end, so the first sign of it was
+// the game booting to a blank page. One dynamic import per module turns that into a unit-test failure.
+for (const file of modules) {
+  test(`${file} loads in Node (imports resolve, no browser-only global at module scope)`, async () => {
+    await import(`./${file}`);
+  });
+}
