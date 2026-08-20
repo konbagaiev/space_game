@@ -24,7 +24,9 @@ before(async () => {
   app.post('/api/ws-ticket', (req, res) => res.json(tickets.issue(String(req.body.playerId))));
   server = http.createServer(app);
   await new Promise((r) => server.listen(0, r));
-  netsim = attachNetsim(server, { tickets, log: {} });
+  // A real `warn` here on purpose: a join that throws is otherwise a silent close, and this suite spent a
+  // run reporting eight mystery timeouts for a one-line ReferenceError.
+  netsim = attachNetsim(server, { tickets, log: { warn: (m) => console.error(m) } });
   base = `http://localhost:${server.address().port}`;
   wsBase = `ws://localhost:${server.address().port}${WS_PATH}`;
 });

@@ -42,6 +42,7 @@ export function createNetState() {
     kinds: new Map(),  // network id → 'enemy' | 'bullet' | 'rocket' | 'drop'
     samples: new Map(),// network id → [{ at, x, z, h, sc, extra }] — newest last
     playerSamples: [], // the same, for the local ship
+    grabTarget: null,  // the crate the room's Grab is pulling, so renderTick can draw its beam
     history: [],       // [{ at, tick }] — arrival times, for choosing the render moment
     lastTick: -1,      // newest server tick applied (an out-of-order snapshot is dropped)
     welcome: null,
@@ -146,6 +147,9 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
   }
 
   if (snap.arena) world.arenaCenter.set(snap.arena.x, 0, snap.arena.z);
+  // Which crate the Grab is pulling — presentation only, but the client cannot know it (the room owns the
+  // Grab), so without this the blue pull beam never drew at all.
+  state.grabTarget = snap.grab != null ? (state.byId.get(snap.grab) || null) : null;
   // The room owns the autopilot, so the HUD has to read the room's copy: the roam nav buttons show which
   // destination is engaged, and the return-to-base hint hides once the ship is on its way.
   if (snap.autopilot) {
@@ -251,14 +255,24 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
     if (br.b.warping !== undefined) e.warping = br.b.warping;
   }
 
+  // THE LOCAL SHIP IS DEAD-RECKONED TOO, and it has to be for the same reason bullets are: they must share
+  // one clock. Drawing the ship 100 ms in the past while its bullets were in the present put the muzzle in
+  // the wrong place — with the ship drifting right, shots appeared to leave from its right flank instead of
+  // its nose, because the bullet was born where the ship WAS going to be. It also happens to make the ship
+  // feel less remote, which is a down payment on proper prediction.
+  //
+  // Position extrapolates along the reported velocity; heading takes the newest value rather than a guess,
+  // since turning is not linear and there is no angular velocity on the wire.
   const me = world.player;
-  const pb = bracket(state.playerSamples, t);
-  if (me && pb) {
-    me.pos.x = lerp(pb.a.x, pb.b.x, pb.k);
-    me.pos.z = lerp(pb.a.z, pb.b.z, pb.k);
+  const ps = state.playerSamples;
+  const last = ps[ps.length - 1];
+  if (me && last) {
+    const dtms = Math.min(now - last.at, MAX_EXTRAPOLATION_MS);
+    me.pos.x = last.x + (last.vx || 0) * (dtms / 1000);
+    me.pos.z = last.z + (last.vz || 0) * (dtms / 1000);
     me.pos.y = BULLET_PLANE_Y;
-    me.heading = lerpAngle(pb.a.h, pb.b.h, pb.k);
-    me.scale = lerp(pb.a.sc, pb.b.sc, pb.k);
+    me.heading = last.h;
+    me.scale = last.sc;
   }
 }
 

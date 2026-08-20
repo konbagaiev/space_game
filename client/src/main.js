@@ -28,7 +28,7 @@ import { el } from './dom.js'; // single fail-loud inventory of shared index.htm
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateMissionMarker, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/gold mission pointer/enemy health bars/XP bar+skill badge)
 import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, renderTick, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
+import { update, renderTick, setGrabTarget, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './sim-core/system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -872,7 +872,7 @@ function animate() {
   // Why a room is not driving this frame (null = it is). Re-decided every frame on purpose — see
   // netsimDeferReason; both reasons arrive AFTER the socket is already open.
   netDeferredBy = netsimDeferReason({
-    record: REC, playback: rs.play, sideMission: !!G.activeMission && !NETSIM.level,
+    record: REC, playback: rs.play, roam: G.roam, sideMission: !!G.activeMission && !NETSIM.level,
   });
   // A dropped socket is local until a NEW run starts — retrying mid-fight would swap the simulation out
   // from under the player, and retrying every frame would hammer the endpoint.
@@ -915,6 +915,7 @@ function animate() {
     if (netLink && netStarted && !wantPaused && !netsimPaused) {
       netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
       renderNet(world, netState, performance.now());
+      setGrabTarget(netState.grabTarget); // the room owns the Grab; this is only its beam
       renderTick(dt);
     }
   } else if (REC || rs.play || live) {

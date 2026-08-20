@@ -192,9 +192,17 @@ export function ownsReward(reward) { return rewardOwned(G.activeShip, reward); }
 // (sim-core/drops-sim.js) — null when nothing is being pulled. The spin, the beam and the crate positions
 // are presentation; arming, pulling and collecting are not.
 export function drawDrops(target, dt) {
-  for (const d of drops) if (d.obj) d.obj.rotation.y += dt * (Math.PI * 2 / ROTATE_PERIOD); // cosmetic spin
+  // EVERY crate follows its own position, not just the one being pulled. Locally a crate never moves until
+  // the Grab takes it, so positioning only the target was enough; over the network a crate's position
+  // arrives in snapshots and changes constantly, and the mesh sat wherever it was first attached — at the
+  // world origin, metres from the crate the room actually had. Clicking one then flew the ship "somewhere
+  // else", which is precisely where the crate was.
+  for (const d of drops) {
+    if (!d.obj) continue;
+    d.obj.position.set(d.pos.x, d.pos.y, d.pos.z);
+    d.obj.rotation.y += dt * (Math.PI * 2 / ROTATE_PERIOD); // cosmetic spin
+  }
   if (!target) { hideLine(); return; }
-  if (target.obj) target.obj.position.set(target.pos.x, target.pos.y, target.pos.z);
   drawLine(world.player.pos, target.pos); // thin blue activity indicator
 }
 

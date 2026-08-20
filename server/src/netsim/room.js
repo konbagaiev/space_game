@@ -76,6 +76,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
   let pendingEvents = [];      // drained since the last snapshot
   let dropped = 0;             // inputs discarded by the queue cap (a diagnostic, reported in the snapshot)
   let caughtUp = 0;            // inputs fast-forwarded to keep the queue shallow (a diagnostic)
+  let grabTarget = null;       // the crate the Grab is pulling this tick, so the client can draw its beam
 
   const idOf = (e) => ids.get(e) ?? null;
 
@@ -104,7 +105,10 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
                fromPlayer: e.fromPlayer, lead: !!e.lead, spiralOf: !!e.spiralOf,
                x: e.pos.x, z: e.pos.z, h: e.heading };
     }
-    if (kind === 'drop') return { id, kind, item: e.item, special: !!e.special };
+    // WITH its position: a crate described without one is born at the world origin and, since drops only
+    // move while being pulled, the client drew it there — metres from where the room actually had it. That
+    // is why clicking a crate sent the ship somewhere else entirely.
+    if (kind === 'drop') return { id, kind, item: e.item, special: !!e.special, x: e.pos.x, z: e.pos.z };
     return { id, kind };
   }
 
@@ -136,7 +140,8 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       if (next) { lastInput = next; ack = next.t; }
       // `applyInput` takes the recorded tick shape: `{ k, t }` where `t` is the touch aim.
       applyInput({ k: lastInput.k, t: lastInput.a }, world.input.keys, world.input.touchAim);
-      simTick(world, SIM_DT);
+      // simTick hands back whatever the Grab is pulling — presentation only, but only the room knows it.
+      grabTarget = simTick(world, SIM_DT);
       world.events.drain((ev) => { const w = wireEvent(ev, idOf); if (w) pendingEvents.push(w); });
       tick++;
       return tick;
@@ -149,6 +154,9 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     takeSnapshot() {
       const p = world.player;
       const spawns = spawnQueue.splice(0, spawnQueue.length);
+      // What the Grab is currently pulling. Only the room knows — the client never runs stepDrops — and
+      // without it the blue pull beam simply never drew.
+      const grabId = grabTarget ? (ids.get(grabTarget) ?? null) : null;
       const events = pendingEvents; pendingEvents = [];
       const lr = world.levelRunner;
       return {
@@ -166,6 +174,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         rockets: world.rockets.map((r) => [idOf(r), r.pos.x, r.pos.z, r.heading]),
         drops:   world.drops.map((d) => [idOf(d), d.pos.x, d.pos.z]),
         arena: { x: world.arenaCenter.x, z: world.arenaCenter.z },
+        grab: grabId,
         run: {
           kills: world.kills, enemyTotal: world.enemyTotal,
           earned: world.earned, earnedXp: world.earnedXp,

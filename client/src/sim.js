@@ -390,8 +390,10 @@ world.host = {
 // the grab target for renderTick. Kept exported under its own name — the ?debug hooks step it directly.
 export function simTick(dt) { grabTarget = simTickIn(world, dt); }
 
-// Whatever the Grab is currently pulling, handed from simTick to renderTick. Presentation only.
+// Whatever the Grab is currently pulling, handed from simTick to renderTick. Presentation only. Under
+// `?netsim` the Grab runs in the room, so the target arrives in a snapshot instead — main.js sets it.
 let grabTarget = null;
+export function setGrabTarget(t) { grabTarget = t; }
 
 // The soft-boundary edge marker: it sits at the (possibly drifting) arena centre and brightens as the ship
 // approaches the wall, brightest while outside. Pure presentation derived from where the ship IS — it used

@@ -57,10 +57,17 @@ export function evalNetsim(search) {
 //                   the MENU, when `activeMission` is still null, and the player picks the mission after —
 //                   so checking only at connect let the room start the CAMPAIGN level while the tab flew a
 //                   side mission, which is the "enemy in the wrong place" failure all over again.
+//   'roam'        — free flight is not a room fight. A room only knows how to run a LEVEL, and it starts one
+//                   the moment it is told to, so a tab that took off into roam had the campaign level being
+//                   fought on the server while the player was still cruising the star system: the fight
+//                   began with no fly-in countdown, and the roam nav bar stayed up over the combat HUD
+//                   because the client never left roam. Shared roam is an explicit non-goal for this cut
+//                   (plan §6), so netsim simply stands aside until the mission actually engages.
 //
 // Deferring is not disabling: the link is dropped and netsim reconnects once the reason clears.
-export function netsimDeferReason({ record, playback, sideMission }) {
+export function netsimDeferReason({ record, playback, sideMission, roam }) {
   if (record || playback) return 'replay';
+  if (roam) return 'roam';
   if (sideMission) return 'side-mission';
   return null;
 }

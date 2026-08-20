@@ -124,6 +124,17 @@ test('netsim defers to any record/playback session, the intro cutscene included'
   assert.equal(netsimDefersTo({ record: { level: 'level-0' }, playback: null }), true, '?record owns it too');
 });
 
+test('netsim stands aside for ROAM — free flight is not a room fight', () => {
+  // A room only knows how to run a LEVEL and starts one as soon as it is told to. A tab that took off into
+  // roam therefore had the campaign level being fought on the server while the player was still cruising:
+  // the fight began with no fly-in countdown, and the roam nav bar sat on top of the combat HUD because the
+  // client never left roam. Shared roam is a non-goal for this cut, so netsim waits for the mission.
+  assert.equal(netsimDeferReason({ roam: true }), 'roam');
+  assert.equal(netsimDeferReason({ roam: false }), null, 'and drives again the moment the mission engages');
+  // A replay still outranks it — that conflict is the more fundamental one.
+  assert.equal(netsimDeferReason({ roam: true, playback: { id: 'x' } }), 'replay');
+});
+
 test('netsim stands aside for a side mission, and says so', () => {
   // A side mission's descriptor is generated per player and is in no room's level table. The socket opens
   // during the MENU, when activeMission is still null, and the mission is picked AFTER — so deciding this

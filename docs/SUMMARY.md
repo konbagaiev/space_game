@@ -3053,6 +3053,9 @@ reconnects once the reason clears, rather than disabling netsim for the tab.
 - **`'replay'`** — `?record`, `?playback` and the Level-0 intro cutscene (which rides the same machinery,
   armed programmatically at bootstrap) replay the local simulation deterministically and own the tick.
   Without this the intro's frozen card sat over a server fight that kept running.
+- **`'roam'`** — free flight is not a room fight. A room only knows how to run a level and starts one when
+  told, so roaming with a room live meant the campaign level was being fought on the server while the player
+  cruised: no fly-in countdown, and the roam nav bar over the combat HUD. Shared roam is a non-goal (plan §6).
 - **`'side-mission'`** — a side mission's descriptor is generated per player by `missions.js` and appears in
   no room's level table, so a room has nothing to fight.
 **Both reasons arrive AFTER the socket is open**, which is why the check cannot live at connect time: the
@@ -3141,8 +3144,7 @@ last-kill reward deposits nothing by design (the real copy is installed server-s
 **What it does not do yet.** No client-side prediction (Slice E), so the local ship answers about 100 ms
 late, plus ~50 ms of input queueing. No lag compensation (D5), so aim-assist selection resolves against the
 server's present rather than what the client saw. No reconnect, no second player, no delta encoding, and
-the economy is still banked by the client's own `POST /api/games`. The Grab's pull BEAM does not draw — the room owns the Grab and the client never runs `stepDrops`, so
-nothing hands `drawDrops` a target; the crate still flies in and is collected, there is just no line. A failed handshake **falls back to simulating
+the economy is still banked by the client's own `POST /api/games`. The Grab's pull beam draws from the target id the room reports (only the room knows what is being pulled). A failed handshake **falls back to simulating
 locally** rather than leaving a ship that will not answer.
 
 **You can SEE which simulation is running.** With `?netsim` on, a small badge sits under the wordmark:

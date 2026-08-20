@@ -81,6 +81,25 @@ test('an out-of-order snapshot is dropped whole', () => {
   assert.equal(world.kills, 3, 'the older snapshot did not roll the run backwards');
 });
 
+test('the ship and its bullets share one clock, so the muzzle lines up', () => {
+  // The regression this guards: bullets were dead-reckoned into the present while the ship was still drawn
+  // 100 ms in the past, so a ship drifting sideways trailed its own muzzle — shots appeared to leave from
+  // its flank. Both are extrapolated from the same moment now.
+  const { world } = clientWorld();
+  const st = createNetState();
+  const p = { ...snapOf().player, x: 0, z: 0, vx: 20, vz: 0 };
+  applySnapshot(world, st, snapOf({
+    player: p,
+    spawns: [{ id: 9, kind: 'bullet', projectileColor: 1, class: 'kinetic', fromPlayer: true, x: 0, z: 0, vx: 20, vz: 0 }],
+    bullets: [[9, 0, 0]],
+  }), 1000);
+  renderNet(world, st, 1100, INTERP_DELAY_MS);
+  // Both advanced by the same 100 ms at the same 20 u/s, so they are still co-located — the muzzle holds.
+  assert.ok(Math.abs(world.player.pos.x - 2) < 1e-6, `ship advanced (got ${world.player.pos.x})`);
+  assert.ok(Math.abs(world.bullets[0].pos.x - world.player.pos.x) < 1e-6,
+    'the bullet did not run ahead of the ship that fired it');
+});
+
 test('positions interpolate between snapshots; health does not', () => {
   const { world } = clientWorld();
   const st = createNetState();

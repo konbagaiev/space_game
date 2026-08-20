@@ -5,6 +5,28 @@
 
 ## 2026-08-20
 
+- **Crates were drawn at the world origin.** A drop's spawn description carried no position, so the ghost was
+  born at (0,0,0) — and `drawDrops` only ever positioned the crate being PULLED, which is fine locally
+  (a crate does not move until the Grab takes it) and wrong over a network, where its position arrives in
+  every snapshot. So the crate was drawn metres from where the room had it: clicking it flew the ship
+  "somewhere else", which is exactly where the crate really was, and the level-1 machine-gun reward looked
+  like it never dropped at all. It does drop — verified across all three ownership states. Every crate's
+  mesh follows its own position now.
+- **The Grab's pull beam draws again.** Only the room knows what the Grab is pulling, so it reports the
+  target's network id and the client resolves it back to the crate.
+- **Shots left from the ship's flank while drifting.** Self-inflicted: bullets were dead-reckoned into the
+  present while the ship was still drawn 100 ms in the past, so a moving ship trailed its own muzzle. The
+  local ship is extrapolated from the same moment now — one clock for both — which also makes it feel less
+  remote, a down payment on prediction.
+- **netsim now stands aside during ROAM.** A room only knows how to run a LEVEL and starts one as soon as it
+  is told to, so taking off into free flight had the campaign level being fought on the server while the
+  player was still cruising: the fight began with no fly-in countdown, and the roam nav bar sat over the
+  combat HUD (the "three buttons") because the client never left roam. Shared roam is a non-goal for this
+  cut, so `netsimDeferReason` returns `'roam'` and the room waits for the mission to actually engage.
+- **A stray line broke every socket test.** Adding the grab id to the snapshot also matched the identical
+  `arena:` line in `welcome()`, so joining threw `grabId is not defined` and closed — 8 failures reported as
+  mystery timeouts. The suite now logs a failed join instead of swallowing it.
+
 - **Loot collected in a room was silently lost.** The Grab and the crates worked — a room spawns drops,
   pulls them in and collects them — but the ROOM held the collected items while the client banks a victory
   from its OWN `world.pendingLoot`, which nothing filled. So every crate picked up in netsim vanished at the
