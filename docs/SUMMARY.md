@@ -3030,8 +3030,22 @@ path; this one guards the simulation.
 
 **Opt-in and additive.** Open the game with `?netsim=1` and the level is simulated by a server ROOM: this
 tab sends input and draws what comes back, and calls `simTick` never. Without the flag nothing below runs
-and single-player is exactly what it was — that is DECISIONS §116, not an accident. `?netsim=level-2` picks
-a level, `&seed=N` pins the room's RNG so a session is reproducible.
+and single-player is exactly what it was — that is DECISIONS §116, not an accident. `&seed=N` pins the
+room's RNG so a session is reproducible.
+
+**Which level the room fights.** A bare `?netsim=1` means **the level this tab is already on**
+(`CATALOG.levelName`). It must: the client builds the map, the set-pieces and the arena centre at take-off,
+so a room running a different level spawns its enemies around a different centre, in a world the player is
+not looking at. `?netsim=level-2` overrides it deliberately. A **side mission** is refused — its descriptor
+is generated per player by `missions.js` and appears in no room's level table — and the tab falls back to
+simulating locally with a console warning, rather than quietly fighting the campaign level instead.
+
+**Joining and starting are separate.** The socket is established as soon as the catalog names a level —
+during the menu — and the room does **not** step until the client sends `start` at take-off. Connecting
+lazily at take-off cost ~2.6 s of a ship that did not answer, and connecting-and-starting early would spawn
+enemies into an empty hangar. `connectNetsim` also waits for the socket to be OPEN before returning a
+handle: a `WebSocket` is constructed in CONNECTING, where `send()` is a silent no-op, so an early handle
+swallowed the first message sent through it.
 
 **Server side — `server/src/netsim/`:**
 - `room.js` — one World, one player. Deliberately **clock-free**: `stepOnce()` advances one tick,
@@ -3041,6 +3055,12 @@ a level, `&seed=N` pins the room's RNG so a session is reproducible.
   entity), holds a bounded input queue (240 ticks; overflow drops the OLDEST and is reported in the
   snapshot), and repeats the last input when the client goes quiet — a network gap holds the controls
   rather than releasing them.
+  **Input catch-up:** the room retires an extra input on a tick while the queue is deeper than
+  `INPUT_QUEUE_TARGET` (3). It consumes one per tick and a client produces ~60/s, so the two balance only on
+  average — a single bursty client frame (up to six ticks at once) otherwise leaves a backlog that never
+  drains and shows up as 130–180 ms of standing input lag. The skipped input's `dt` is never simulated, so
+  a live room is intentionally NOT bit-identical to a trace replay when the client is bursty; the
+  determinism test feeds at the natural rate and asserts nothing was fast-forwarded.
 - `driver.js` — the 60 Hz clock, with the browser's same bounded catch-up (6 steps) so a stalled event loop
   cannot spiral into fast-forwarding the fight.
 - `protocol.js` — the wire shapes and an **explicit event allowlist**. It exists because `enemyShieldHit`
@@ -3077,12 +3097,17 @@ extrapolating: a wrong guess that has to be taken back looks worse than a tenth 
 Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost
 "despawn" message would leak a mesh.
 
+**Pause is real here.** The pause button and the system map both stop the ROOM (`pause` / `resume` messages
+stop and restart its driver), because a room holds one player and a local-only pause would be a lie — the
+overlay saying "Paused" while the fight ran on and the ship kept taking hits. A paused client sends no
+input, so it heartbeats every 5 s; otherwise the 30 s idle reaper would end the session. See DECISIONS §123.
+
 **What it does not do yet.** No client-side prediction (Slice E), so the local ship answers about 100 ms
-late. No lag compensation (D5), so aim-assist selection resolves against the server's present rather than
-what the client saw. No reconnect, no second player, no delta encoding, and the economy is still banked by
-the client's own `POST /api/games`. The Grab's pull beam does not draw (the room owns the Grab and the
-client never runs `stepDrops`). A failed handshake **falls back to simulating locally** rather than leaving
-a ship that will not answer.
+late, plus ~50 ms of input queueing. No lag compensation (D5), so aim-assist selection resolves against the
+server's present rather than what the client saw. No reconnect, no second player, no delta encoding, and
+the economy is still banked by the client's own `POST /api/games`. The Grab's pull beam does not draw (the
+room owns the Grab and the client never runs `stepDrops`). A failed handshake **falls back to simulating
+locally** rather than leaving a ship that will not answer.
 
 **Diagnosing it.** `window.__netsim` is attached whenever the flag is on — `?debug` or not, because the
 first question about a server-run fight is always "am I connected". It reports `connected`, `tick`, `ack`,

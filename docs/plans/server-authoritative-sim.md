@@ -71,11 +71,13 @@ digest and the identical seeded-RNG draw count.
 
 ### What is left (in order)
 
-**1. Play it and bring back feel notes.** `?netsim=1` on the local server is playable now and the local ship
-answers about 100 ms late — no prediction yet. That mush is the measurable baseline Slice E is judged
-against, so it wants a human verdict before more is built on top of it. Things to notice: how bad the input
-delay actually is, whether enemy motion reads as smooth at 15 Hz snapshots + 100 ms interpolation, and
-whether shooting feels like it connects.
+**1. Play it again and bring back FEEL notes.** The first playtest (2026-08-20) found five outright
+defects, all now fixed — see the Slice D outcome below; none of them were about feel, so the feel question
+is still open. `?netsim=1` is playable and the local ship answers ~100 ms late (interpolation) plus ~50 ms
+(input queueing). That mush is the measurable baseline Slice E is judged against, so it wants a human
+verdict before more is built on top of it. Things to notice: how bad the input delay actually is, whether
+enemy motion reads as smooth at 15 Hz snapshots + 100 ms interpolation, and whether shooting feels like it
+connects.
 
 **2. D5 — lag compensation.** The one part of Slice D not built. The server keeps a ring buffer of per-tick
 entity transforms (~1 s) and resolves **aim-assist target selection** and **player-bullet hit tests** against
@@ -800,9 +802,38 @@ how a local sim secretly running underneath would be caught, the failure where e
 the two worlds have quietly forked. It also pixel-diffs the screen centre with the hull hidden, because
 every other assertion in it can pass while the player sees nothing (the Slice A lesson, again).
 
-Measured: client tests 427 → **445**, server 153 → **175**, intro oracle `tick=2503/3490` unchanged,
+Measured: client tests 427 → **447**, server 153 → **180**, intro oracle `tick=2503/3490` unchanged,
 divergence oracle `hash=0x9d2050b0 draws=38` unchanged. Both paths verified live on `localhost:4010` with
 zero page errors.
+
+#### What the first playtest found (2026-08-20) — and what it says about the tests
+
+Five defects, none of which the guard set caught. Worth reading as a list of what a green suite did not
+mean:
+
+1. **A rocket froze the game, with its sound looping.** Wire events carry `pos` as plain JSON; the FX layer
+   calls `pos.clone()` on it. A rocket emits a smoke puff ~30×/s, so the frame threw, the loop died, and
+   the last sound played forever. *The scenario had never fired a rocket* — it only ever held `Space`.
+2. **The enemy appeared in the wrong place.** `?netsim=1` hardcoded `level-0` while the client had built
+   the map, set-pieces and arena centre for the player's CURRENT level. *The test account happened to be
+   on level 0*, so client and room agreed by coincidence. A side mission is now refused outright for the
+   same reason (no room can resolve a per-player generated descriptor).
+3. **No control for the first seconds.** `connectNetsim` returned a handle while the socket was still
+   CONNECTING, where `send()` is a silent no-op — the `start` message was swallowed. *Nothing asserted that
+   a handle was usable.*
+4. **Pause did not pause.** The netsim branch never read `G.paused`, so the overlay said "Paused" while the
+   fight ran on. *No test pressed the button.*
+5. **Bullets drew as plain dots.** Projectiles crossed the wire without `projectileColor`/`class`, so the
+   host fell through to an untinted mesh instead of the weapon's bolt. *Every assertion was about counts
+   and positions; none was about what a thing LOOKS like.*
+
+The pattern is the same one Slice A taught and this slice re-learned: the scenario asserted the mechanism
+it was written alongside, and nothing about the paths a player actually exercises in the first minute.
+`37-netsim` now fires both weapons, presses pause, and compares the room's level to the client's.
+
+A sixth issue surfaced from a longer session rather than the report: **input queueing grew without bound**
+(8–11 ticks, 130–180 ms) because the room retires exactly one input per tick while a bursty client can emit
+six at once. `INPUT_QUEUE_TARGET` caps it at ~3 ticks.
 
 ### Slice E — client-side prediction + reconciliation of the local ship
 

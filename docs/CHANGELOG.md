@@ -5,6 +5,41 @@
 
 ## 2026-08-20
 
+- **First netsim playtest: five defects found and fixed.** The maintainer played `?netsim=1` and reported
+  the enemy appearing in the wrong place, no control at first, a rocket freezing the game with its sound
+  looping, pause not pausing, and bullets drawn as plain dots. Causes, in the order they hurt:
+  **(1) The freeze** — wire events carry `pos` as plain JSON, but the FX layer calls `pos.clone()` on it,
+  and a rocket emits a smoke puff ~30×/s: the frame threw, the loop died, and the last sound played
+  forever. Positional fields are rehydrated into a real `Vec3` before the adapter sees them.
+  **(2) The wrong place** — `?netsim=1` hardcoded `level-0` while the client had built the map, set-pieces
+  and arena centre for the player's CURRENT level, so the room spawned enemies around a different centre in
+  a world the player was not looking at. A bare flag now means "the level this tab is on"; a **side
+  mission** is refused outright (its descriptor is generated per player and no room can resolve it) rather
+  than silently fighting the campaign level instead.
+  **(3) No control at first** — `connectNetsim` handed back a handle while the socket was still CONNECTING,
+  where `send()` is a silent no-op, so the `start` message was swallowed and the room never stepped. A
+  handle now means USABLE. The handshake also happens during the menu rather than after take-off (2.6 s of
+  dead ship), and the room waits for `start` so it does not spawn into an empty hangar.
+  **(4) Pause** — it never reached the room: the overlay said "Paused" while the fight ran on and the ship
+  kept taking hits. Pause/resume stop and restart the room's driver now, which is legitimate because a room
+  holds ONE player (DECISIONS §123). A paused client also heartbeats, or the 30 s idle reaper would end the
+  session and drop the player back to local play.
+  **(5) Plain dots** — projectiles crossed the wire without `projectileColor`/`class`, so the host fell
+  through to an untinted dot instead of the weapon's bolt; rockets were missing `lead`/`spiralOf`. The birth
+  position rides along now too, since a bullet lives well under a second.
+  `37-netsim` covers all five: it requires room and client to agree on the level, fires the gun AND a
+  rocket, checks the bolt's colour and class, and requires the room's tick to stop while paused.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice D).
+
+- **Input-queue latency is bounded.** The room consumes one input per tick and the client produces ~60/s,
+  so they balance only on average: any burst (a slow client frame emits up to six ticks at once) left a
+  backlog that never drained — measured 8–11 ticks, 130–180 ms of queueing on top of the interpolation
+  delay, and growing. A tick now retires an extra input while the queue is deeper than `INPUT_QUEUE_TARGET`
+  (measured 4–8 after, most of it the client's own 3-tick send batch). The skipped input's `dt` is never
+  simulated — that is what a fast-forward is — so a live room is deliberately not bit-identical to a trace
+  replay when the client is bursty; the determinism test feeds at the natural rate and now asserts that
+  nothing was fast-forwarded, which is a sharper claim than it made before.
+
 - **A level can now be played in a server-run room: `?netsim=1`.** The server holds the World and steps it
   at 60 Hz; the browser sends input and draws snapshots at 15 Hz, running no local simulation at all.
   Server side: `server/src/netsim/` — a clock-free `room.js` (so it is testable by a for-loop, and the

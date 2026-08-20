@@ -4384,3 +4384,25 @@ because the leak arrived by copying a field list, which is how it will arrive ag
 a live entity reference (deliberately — it binds a pooled bubble to a ship), so events cannot be serialized
 naively. A test parses the catalogue at the top of `sim-core/events.js` and fails when a new event type has
 no wire entry, because the alternative failure is an event that is silently dropped on the way to a client.
+
+## 123. Pause stays real in a netsim room — because a room holds exactly one player
+
+**Context.** §16 rules out a client-side pause once multiplayer lands: a client cannot freeze a shared
+world, so the button has to go. Slice D put a real server-run room behind `?netsim`, and the first instinct
+was to treat that as the multiplayer case and drop pause.
+
+**Decision.** Pause (and opening the system map) sends `pause` / `resume` to the room, which stops and
+restarts its driver. The fight genuinely stops: no spawns, no enemy fire, no cooldowns ticking.
+
+**Why.** §16's objection is about a SHARED world, and a Slice D room holds one player. Nothing is being
+frozen out from under anyone. The alternative shipped and was immediately reported as a bug: the overlay
+said "Paused" while the fight ran on and the ship kept taking hits — a button that lies is worse than a
+button that is absent, and *absent* was also wrong, since a solo player has every right to stop.
+
+**When this must change.** The moment a room can hold more than one player. At that point pause becomes a
+local menu that does not stop the world (the plan's original first cut), and the ship stays vulnerable —
+which needs its own hands-on evaluation, because it changes what stepping away from the keyboard costs.
+
+**A consequence that is easy to miss.** A paused client sends no input, and the room drops a socket that has
+been silent for 30 s. Pausing therefore has to keep talking: the client heartbeats every 5 s while paused,
+or a long pause silently ends the session and drops the player back to the local simulation.
