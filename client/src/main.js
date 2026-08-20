@@ -6,6 +6,8 @@
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
 import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
+import { evalNetsim, connectNetsim } from './netsim.js';               // ?netsim: play a level in a SERVER-run room
+import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
@@ -26,7 +28,7 @@ import { el } from './dom.js'; // single fail-loud inventory of shared index.htm
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateMissionMarker, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/gold mission pointer/enemy health bars/XP bar+skill badge)
 import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
+import { update, renderTick, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './sim-core/system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -69,6 +71,17 @@ const REC = evalRecord(typeof location !== 'undefined' ? location.search : ''); 
 const rs = makeReplaySession();
 const sr = makeSessionRecorder(); // always-on live-session recorder (funnel analytics)
 rs.play = evalPlayback(typeof location !== 'undefined' ? location.search : ''); // { id, cutscene } | null
+// ---------- Server-run fight (?netsim) ----------
+// Opt-in and additive: with the flag the level is simulated by a server ROOM and this tab only sends input
+// and draws what comes back; without it nothing below runs and single-player is untouched (plan D1).
+// Slice D has no client-side prediction, so the local ship answers the controls about 100 ms late — that is
+// expected, and it is the baseline Slice E is measured against.
+const NETSIM = evalNetsim(typeof location !== 'undefined' ? location.search : ''); // { level, seed } | null
+let netsimActive = !!NETSIM;  // cleared if the handshake fails, so the tab falls back to simulating locally
+let netLink = null;           // the socket + uplink, once connected
+let netConnecting = false;
+let netsimPaused = false;   // __netsim.pause(): stop pumping/applying, freeze on the last known state
+const netState = createNetState();
 const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
 if (REC || rs.play) G.replayMode = true; // dev record/playback sessions are READ-ONLY: the sim must not advance progress / bank credits / deposit loot on a (re)played win
@@ -767,6 +780,35 @@ if (isDev()) window.__backdrop = {
   status() { return { recording: !!bdRec, elapsed: bdRec ? bdRec.elapsed : 0, maxSeconds: bdRec ? bdRec.maxSeconds : 60 }; },
 };
 
+// Join a server-run room for this level. Called once, lazily, on the first frame after the fight starts —
+// so the ordinary boot (catalog, ship, take-off) is unchanged and the socket only exists while playing.
+//
+// A failed handshake FALLS BACK to simulating locally rather than leaving the player staring at a ship that
+// does not answer. That is the friendly behaviour and it is nearly free: `netsimActive` is the only thing
+// that routes the loop, so clearing it hands the fight back to the local sim mid-frame.
+async function startNetsim() {
+  netConnecting = true;
+  const bail = (err) => {
+    console.warn('[netsim] falling back to the local simulation:', err && err.message || err);
+    clearNet(world, netState);
+    netLink = null; netsimActive = false;
+  };
+  try {
+    netLink = await connectNetsim({
+      playerId: G.playerId, level: NETSIM.level, seed: NETSIM.seed,
+      onWelcome: (w) => {
+        netState.welcome = w;
+        console.info(`[netsim] room joined: level=${w.level} seed=${w.seed} dt=${w.dt} snapshotEvery=${w.snapshotEvery}`);
+      },
+      onSnapshot: (snap) => { netState.ack = snap.ack; if (!netsimPaused) applySnapshot(world, netState, snap, performance.now()); },
+      onClose: (ev) => { if (netsimActive) bail(new Error(`socket closed (${ev && ev.code})`)); },
+      onError: bail,
+    });
+    if (!netLink) bail(new Error('no socket'));
+  } catch (err) { bail(err); }
+  netConnecting = false;
+}
+
 function animate() {
   // ?bench=replay drives its own timed tick loop (window.__bench.replay). Keep the rAF loop idle so leftover
   // combat state can't churn/render (under software GL) between measurements and stall the next navigation.
@@ -776,8 +818,19 @@ function animate() {
   const dt = (BENCH || REC || rs.play) ? BENCH_DT : Math.min(rawSec, 0.05); // bench/record/playback: fixed step for determinism; else clamped for sim stability
   const t0 = DEV ? performance.now() : 0;
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
-  const live = G.gameStarted && !BENCH && !REC && !rs.play; // real player session → deterministic accumulator loop (always-on recording)
-  if (REC || rs.play || live) {
+  const live = G.gameStarted && !BENCH && !REC && !rs.play && !netsimActive; // real player session → deterministic accumulator loop (always-on recording)
+  if (netsimActive) {
+    // The server owns the fight: no local sim step at all. Send this frame's input, draw the world as the
+    // room described it ~100 ms ago (netsim-world.js interpolates between snapshots), and run the ordinary
+    // render half — which drains the wire events through the SAME adapter local events go through, so FX,
+    // audio, the HUD and the overlays all work without knowing where the fight is being decided.
+    if (G.gameStarted && !netConnecting && !netLink) startNetsim();
+    if (netLink && G.gameStarted && !G.mapOpen && !netsimPaused) {
+      netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
+      renderNet(world, netState, performance.now());
+      renderTick(dt);
+    }
+  } else if (REC || rs.play || live) {
     // Fixed-timestep ACCUMULATOR: advance the sim at BENCH_DT as many WHOLE steps as real elapsed time allows,
     // so record + playback run at real-time speed on ANY display refresh (a 120 Hz screen would otherwise run
     // 2× because one fixed step ran per frame). Each tick stays a deterministic fixed dt; we capture (record)
@@ -897,6 +950,30 @@ function animate() {
 // ---------- Dev color/lighting tuning panel moved to src/tune.js ----------
 // buildTunePanel(GUI) is imported at the top; bootstrap dynamically imports lil-gui under ?tune and
 // calls it (so players never fetch the GUI lib).
+
+// Netsim inspection handle. Unlike `__game` this is attached whenever the flag is on, `?debug` or not: the
+// first question about a server-run fight is always "am I actually connected", and it should be answerable
+// from the console during a real playtest, not only under a test flag.
+if (NETSIM) {
+  window.__netsim = {
+    get active() { return netsimActive; },
+    get connected() { return !!netLink; },
+    get tick() { return netState.lastTick; },
+    get level() { return NETSIM.level; },
+    get welcome() { return netState.welcome; }, // what the room said about this fight when we joined
+    get uplinkTick() { return netLink ? netLink.uplink.tick : -1; },
+    // Round-trip health at a glance: how far the room's acknowledgement trails the input we have sent.
+    get ack() { return netState.ack; },
+    get behind() { return netState.ack == null ? null : (netLink ? netLink.uplink.tick - netState.ack : null); },
+    get lastSent() { return netLink ? netLink.uplink.lastSent : null; },
+    // Stop talking to the room WITHOUT tearing anything down: the world freezes on its last known state.
+    // A test uses it to prove nothing is being simulated locally underneath; a human uses it to look at a
+    // still frame. `resume()` puts it back.
+    pause() { netsimPaused = true; },
+    resume() { netsimPaused = false; },
+    get paused() { return netsimPaused; },
+  };
+}
 
 // Test/inspection hook for the headless visual tests (client/visual/). Inert during normal
 // play — only attached when the page is opened with `?debug`. It exposes simulation internals

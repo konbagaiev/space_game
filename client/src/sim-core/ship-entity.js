@@ -116,9 +116,18 @@ export function makePlayer(catalog, active) {
   return p;
 }
 
-export function makeEnemy(world, shipDef) {
+// An enemy's NUMBERS, with no randomness and no position — everything a hostile ship is except where it
+// happens to be and which way it happens to face.
+//
+// Split out for the netsim client: a room owns the fight, so the browser's copy of an enemy is a ghost it
+// draws rather than a combatant it simulates, and it must build that ghost WITHOUT drawing from the seeded
+// stream (a client that consumed gameplay randomness would desync from the authority immediately). Sharing
+// the construction rather than writing a second, thinner "render-only enemy" is the point: one place
+// decides what an enemy's shield split, mass, hitboxes and full scale are.
+//
+// Takes the catalog directly, not the World, because a ghost is built from a name off the wire.
+export function makeEnemyShell(catalog, shipDef) {
   const s = shipDef.stats;
-  const catalog = world.catalog;
   const mc = shipModelCfg(s); // per-ship model config (yaw/scale + hitboxes + the baked muzzle offset)
   const { hull, engine, thruster } = resolveComponents(catalog, shipDef.components);
   const { shieldCap, hullMax } = enemyShieldSplit(hull.durability); // 1/3 shield + 2/3 hull; total unchanged
@@ -129,9 +138,9 @@ export function makeEnemy(world, shipDef) {
     modelUrl: shipDef.modelUrl, // the host builds the body from this + `mc`
     modelCfg: mc,
     // --- SIM TRANSFORM (the authority; any mesh is a copy of it — see sim.js syncMeshes) ---
-    pos: new Vec3(0, BULLET_PLANE_Y, 0),  // placed in the spawn ring below
+    pos: new Vec3(0, BULLET_PLANE_Y, 0),  // placed by the caller
     vel: new Vec3(),
-    heading: simRandom() * Math.PI * 2,   // GAMEPLAY draw 1: facing decides how long it turns before its first shot
+    heading: 0,                           // set by the caller (a random facing in makeEnemy; the wire in netsim)
     noseZ: mc.muzzle ?? 1.6,              // group-local muzzle offset from the catalog (1.6 = the primitive's cone nose)
     hull, engine, thruster,
     mounts: buildMounts(catalog, s.mounts),
@@ -154,6 +163,15 @@ export function makeEnemy(world, shipDef) {
   e.warping = true;             // invulnerable + can't fire + not homing-targetable until fully formed
   e.scale = e.fullScale * 0.001; // start as a dot
   deriveDrive(e);
+  return e;
+}
+
+export function makeEnemy(world, shipDef) {
+  const e = makeEnemyShell(world.catalog, shipDef);
+  // THE THREE DRAWS, in their contract order. They stay HERE, after the shell, and the shell takes none —
+  // so factoring it out left the sequence facing → angle → distance exactly as every recorded trace expects
+  // (DECISIONS §73). The intro oracle's unchanged tick count is the proof.
+  e.heading = simRandom() * Math.PI * 2;   // GAMEPLAY draw 1: facing decides how long it turns before its first shot
   // spawn in a ring around the MISSION ZONE centre, not the hero — waves originate at the arena/set-piece
   // even after the player wanders. No arena clamp (enemies fight fine out of bounds).
   const ang = simRandom() * Math.PI * 2;   // GAMEPLAY draw 2: where the enemy appears
