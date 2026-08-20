@@ -114,6 +114,7 @@ export function createNetState() {
     eventQueue: [],    // [{ due, ev }] — wire events waiting for their moment (see PLAYER_EVENT_BUFFER_MS)
     lastTick: -1,      // newest server tick applied (an out-of-order snapshot is dropped)
     welcome: null,
+    jerk: null,        // ?netjerk diagnostic probe (netsim-jerk.js) — null unless the flag is on
   };
 }
 
@@ -261,6 +262,7 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
   for (const ev of snap.events || []) scheduleEvent(state, snap, ev, at);
 
   pushSample(state.history, { at, tick: snap.tick });
+  if (state.jerk) state.jerk.snapshot(snap, at); // ?netjerk: the delivery fingerprint of this packet
   return true;
 }
 
@@ -456,6 +458,10 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
     me.heading = v.h;
     me.scale = last.sc;
   }
+
+  // LAST: the ?netjerk probe reads the poses that were just written, so it measures exactly what the
+  // player sees rather than what the network delivered.
+  if (state.jerk) state.jerk.frame(world, state, now);
 }
 
 // Drop every ghost and forget the history — leaving netsim, or the socket died.

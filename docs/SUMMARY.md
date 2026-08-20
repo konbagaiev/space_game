@@ -3157,6 +3157,14 @@ in the present, enemies in the past, and a ghost despawns the instant the room s
 queue is capped at `MAX_EVENT_QUEUE`; past it the oldest are released at once — an event may be late, never
 lost.
 
+**`?netjerk` — the drawn-motion probe** (`client/src/netsim-jerk.js`). A diagnostic, off unless the flag is
+on. It reads the poses `renderNet` writes and records every discontinuity together with the delivery
+fingerprint at that instant: whether a packet was applied on that frame, the arrival gap, the tick gap, and
+the time/tick span between the two samples the object is drawn from. `__netsim.jerk.report()` returns the
+tally (`byKind`, `byCause`, the nose-step and step-change percentiles, and the ten worst events); it also
+warns once a second while playing. `byCause` is the point: a break on a frame that applied **no** packet is
+the client drawing a curve as a straight line, not a network fault.
+
 **Two separate questions: does the ROOM step, and does the TAB draw.** Conflating them froze the game on
 the death screen — the explosion, the overlay and the banking all happen in `renderTick`, draining the
 events the room sent, so a tab that stopped rendering because the room had nothing left to step died at the

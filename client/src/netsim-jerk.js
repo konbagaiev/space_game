@@ -1,0 +1,119 @@
+// A jerk probe for a netsim room: catch every moment the DRAWN motion of a networked object breaks, and
+// record what the network was doing at that instant.
+//
+// Why this exists rather than more reasoning. A stutter has several possible authors and they are not
+// distinguishable by eye: a late or bursty snapshot (the delivery), a snapshot that carries more sim time
+// than the last one (the room fell behind and caught up), an object whose extrapolation was corrected when
+// the truth arrived, or simply linear interpolation cutting a corner on a curved path — which is not a
+// delivery fault at all and no amount of network work would fix. Each leaves a different fingerprint, so
+// the probe records the fingerprint alongside the break.
+//
+// Off unless `?netjerk` is on the URL: it walks every drawn entity once per frame, which is cheap but not
+// free, and it is a diagnostic, not a feature.
+//
+// THREE-free and stateless about the scene — it reads the poses `renderNet` has already written, so it
+// measures exactly what the player sees, and it is unit-testable under `node --test`.
+
+// A break is judged against the object's OWN recent motion, not an absolute number: 0.2 units of change in
+// one frame is nothing for a bullet and a lurch for a drifting crate.
+export const STEP_BREAK = 0.5;      // |Δ step| over the object's mean step — 0.5 = "half its cruise speed, in one frame"
+export const TURN_BREAK_DEG = 0.6;  // |Δ turn| per frame, absolute: the nose stepping the eye actually catches
+export const MAX_EVENTS = 400;      // ring buffer; a long session must not grow without bound
+
+const wrap = (d) => { let x = d; while (x > Math.PI) x -= Math.PI * 2; while (x < -Math.PI) x += Math.PI * 2; return x; };
+const DEG = 180 / Math.PI;
+
+export function createJerkProbe({ maxEvents = MAX_EVENTS, onBreak = null } = {}) {
+  const prev = new Map();   // entity → { x, z, h, step, turn, meanStep, n }
+  const events = [];
+  // What the last applied snapshot told us, so a break can be attributed to it.
+  let last = { at: 0, tick: -1, arrivalGapMs: 0, tickGap: 0, appliedThisFrame: false };
+  const counts = { total: 0, onSnapshotFrame: 0, byKind: {} };
+
+  return {
+    events,
+
+    // Called by applySnapshot: the delivery fingerprint of THIS packet.
+    snapshot(snap, at) {
+      const arrivalGapMs = last.tick >= 0 ? at - last.at : 0;
+      const tickGap = last.tick >= 0 ? snap.tick - last.tick : 0;
+      last = { at, tick: snap.tick, arrivalGapMs, tickGap, appliedThisFrame: true };
+    },
+
+    // Called at the END of renderNet, once the drawn poses are written.
+    frame(world, state, now) {
+      const seen = new Set();
+      for (const list of [world.enemies, world.rockets, world.bullets, world.drops]) {
+        for (const e of list) {
+          if (!e || !e.pos) continue;
+          seen.add(e);
+          const p = prev.get(e);
+          const step = p ? Math.hypot(e.pos.x - p.x, e.pos.z - p.z) : null;
+          const turn = p && e.heading != null && p.h != null ? wrap(e.heading - p.h) : null;
+          if (p && p.step != null && step != null) {
+            const mean = p.meanStep || step || 1e-6;
+            const dStep = Math.abs(step - p.step);
+            const dTurn = p.turn != null && turn != null ? Math.abs(turn - p.turn) : 0;
+            const stepBroke = dStep > STEP_BREAK * Math.max(mean, 1e-3);
+            const turnBroke = dTurn * DEG > TURN_BREAK_DEG;
+            if (stepBroke || turnBroke) {
+              const id = state.idOf.get(e) ?? null;
+              const kind = id != null ? state.kinds.get(id) : 'unknown';
+              const samples = id != null ? state.samples.get(id) : null;
+              const n = samples ? samples.length : 0;
+              const a = n > 1 ? samples[n - 2] : null, b = n > 0 ? samples[n - 1] : null;
+              const ev = {
+                t: Math.round(now), kind, id,
+                dStep: +dStep.toFixed(4), stepMean: +mean.toFixed(4),
+                dTurnDeg: +(dTurn * DEG).toFixed(3),
+                // DELIVERY at this instant. `sampleSpanMs` is the gap between the two samples this entity is
+                // being drawn from — a collapsed span (two packets stamped at the same millisecond) and a
+                // stretched one (a packet lost or late) are different faults with the same symptom.
+                onSnapshotFrame: last.appliedThisFrame,
+                arrivalGapMs: Math.round(last.arrivalGapMs),
+                tickGap: last.tickGap,
+                sampleSpanMs: a && b ? Math.round(b.at - a.at) : null,
+                sampleTickGap: a && b ? b.tick - a.tick : null,
+                samples: n,
+              };
+              events.push(ev);
+              if (events.length > maxEvents) events.shift();
+              counts.total++;
+              if (ev.onSnapshotFrame) counts.onSnapshotFrame++;
+              counts.byKind[kind] = (counts.byKind[kind] || 0) + 1;
+              if (onBreak) onBreak(ev);
+            }
+          }
+          const nn = p ? p.n + 1 : 1;
+          const meanStep = step == null ? (p ? p.meanStep : null)
+            : p && p.meanStep != null ? p.meanStep + (step - p.meanStep) / Math.min(nn, 30) : step;
+          prev.set(e, { x: e.pos.x, z: e.pos.z, h: e.heading, step, turn, meanStep, n: nn });
+        }
+      }
+      for (const e of prev.keys()) if (!seen.has(e)) prev.delete(e); // despawned
+      last.appliedThisFrame = false;
+    },
+
+    // What the session saw. The headline is the ATTRIBUTION: a break that lands on a frame where no packet
+    // was applied cannot be the packet's fault — it is the client drawing a curve as a straight line.
+    report() {
+      const byCause = { onPacket: 0, betweenPackets: 0, collapsedSpan: 0, stretchedTicks: 0 };
+      for (const e of events) {
+        if (e.onSnapshotFrame) byCause.onPacket++; else byCause.betweenPackets++;
+        if (e.sampleSpanMs != null && e.sampleSpanMs <= 2) byCause.collapsedSpan++;
+        if (e.sampleTickGap != null && e.sampleTickGap > 4) byCause.stretchedTicks++;
+      }
+      const turns = events.map((e) => e.dTurnDeg).sort((a, b) => a - b);
+      const steps = events.map((e) => e.dStep).sort((a, b) => a - b);
+      const pick = (a, q) => (a.length ? a[Math.floor((a.length - 1) * q)] : 0);
+      return {
+        total: counts.total, kept: events.length, byKind: { ...counts.byKind }, byCause,
+        turnDeg: { p50: pick(turns, 0.5), p95: pick(turns, 0.95), max: pick(turns, 1) },
+        step: { p50: pick(steps, 0.5), p95: pick(steps, 0.95), max: pick(steps, 1) },
+        worst: [...events].sort((a, b) => b.dTurnDeg - a.dTurnDeg).slice(0, 10),
+      };
+    },
+
+    clear() { events.length = 0; counts.total = 0; counts.onSnapshotFrame = 0; counts.byKind = {}; },
+  };
+}

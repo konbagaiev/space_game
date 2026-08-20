@@ -8,6 +8,7 @@ import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded G
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
 import { evalNetsim, connectNetsim, netsimDeferReason } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
+import { createJerkProbe } from './netsim-jerk.js'; // ?netjerk: catch every break in the DRAWN motion
 import { createPredictor } from './netsim-predict.js';
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
@@ -79,6 +80,10 @@ rs.play = evalPlayback(typeof location !== 'undefined' ? location.search : ''); 
 // expected, and it is the baseline Slice E is measured against.
 const NETSIM = evalNetsim(typeof location !== 'undefined' ? location.search : ''); // { level, seed } | null
 const netsimActive = !!NETSIM; // the flag is on. NEVER cleared — an unavailable room is per-run (netDown), not forever
+// `?netjerk` — a diagnostic that watches the poses renderNet writes and reports every break in them, with
+// the delivery fingerprint at that instant. Read it from the console: `__netsim.jerk.report()`. Off by
+// default: it walks every drawn entity per frame, and it answers a question, it is not a feature.
+const NETJERK = typeof location !== 'undefined' && new URLSearchParams(location.search).has('netjerk');
 let netLink = null;           // the socket + uplink, once connected
 let netConnecting = false;
 let netsimPaused = false;   // __netsim.pause(): stop pumping/applying, freeze on the last known state
@@ -93,6 +98,21 @@ let netDrawing = true;      // this tab is still RENDERING — true even on the 
 let netDown = false;        // the socket died under us: local for THIS run, retry on the next one
 let netDownRunAt = null;    // the run it died in (G.gameStartTime), so the retry waits for a different one
 const netState = createNetState();
+if (NETJERK) {
+  // Live line while you play, throttled to one a second so a burst does not bury the console. The full
+  // list, with the delivery context of each break, is `__netsim.jerk.report()`.
+  let lastLog = 0;
+  netState.jerk = createJerkProbe({
+    onBreak: (ev) => {
+      if (ev.t - lastLog < 1000) return;
+      lastLog = ev.t;
+      console.warn(`[netjerk] ${ev.kind}#${ev.id} nose ${ev.dTurnDeg}°/frame  step Δ${ev.dStep} (mean ${ev.stepMean})`
+        + `  ${ev.onSnapshotFrame ? 'ON a packet' : 'between packets'}`
+        + `  arrivalGap ${ev.arrivalGapMs}ms tickGap ${ev.tickGap} sampleSpan ${ev.sampleSpanMs}ms/${ev.sampleTickGap}t`);
+    },
+  });
+  console.info('[netjerk] probe armed — play, then run __netsim.jerk.report()');
+}
 const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
 if (REC || rs.play) G.replayMode = true; // dev record/playback sessions are READ-ONLY: the sim must not advance progress / bank credits / deposit loot on a (re)played win
@@ -1144,6 +1164,9 @@ if (NETSIM) {
     pause() { netsimPaused = true; },
     resume() { netsimPaused = false; },
     get paused() { return netsimPaused; },
+    // ?netjerk only. `.report()` is the summary — the headline is `byCause`: a break on a frame where no
+    // packet was applied is not the network's fault, it is the client drawing a curve as a straight line.
+    get jerk() { return netState.jerk; },
   };
 }
 

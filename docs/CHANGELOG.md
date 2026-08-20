@@ -5,6 +5,18 @@
 
 ## 2026-08-20
 
+- **`?netjerk` — a probe that catches every break in the drawn motion and names its author.** Chasing a
+  reported stutter by reasoning produced one wrong theory already, so this measures instead: it reads the
+  poses `renderNet` has just written — exactly what the player sees — and on every discontinuity records the
+  delivery fingerprint at that instant (was a packet applied this frame, the gap since the last one, the tick
+  gap, and how far apart in time and ticks the two samples the object is being drawn from were). Off unless
+  the flag is on; read it with `__netsim.jerk.report()`, and it warns once a second while you play. The
+  headline is `byCause`: **a break on a frame that applied no packet cannot be the network's fault.** First
+  run, 30 s of headless fight with perfect delivery: 4 breaks, all on enemies, **all between packets**, all
+  with a textbook 67 ms / 4-tick sample span — worst 3.6° of nose rotation in a single frame. That is linear
+  interpolation drawing a curve as a straight line at 15 Hz, not a delivery problem, and it is why small
+  enemies stutter exactly when they swing their nose to track you.
+
 - **Your own rockets hitched at the muzzle.** A rocket is drawn by finite difference over its last two
   samples, so until the SECOND snapshot arrived it had no velocity at all: it appeared, sat still for a
   whole snapshot interval, then jumped ~0.8 units to catch up — against a 0.20-unit cruise step, measured.
