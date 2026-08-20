@@ -185,6 +185,7 @@ export default async function ({ page, assert, shot, baseURL }) {
              enemyDrift: e0.length && e1.length === e0.length
                ? Math.max(...e0.map((a, i) => Math.hypot(e1[i][0] - a[0], e1[i][1] - a[1]))) : 0 };
   });
+  await page.evaluate(() => window.__netsim.resume()); // …and give the tab back, or every check after this one is measuring a frozen page
   console.log(`      with the room paused: player drifted ${still.playerDrift.toFixed(3)} u, enemies ${still.enemyDrift.toFixed(3)} u`);
   assert.ok(still.playerDrift < 0.01, `no local sim underneath — the ship froze when the room did (drifted ${still.playerDrift})`);
   assert.ok(still.enemyDrift < 0.01, `enemies froze too (drifted ${still.enemyDrift})`);
@@ -201,6 +202,36 @@ export default async function ({ page, assert, shot, baseURL }) {
   await page.evaluate(() => { window.__game.player.mesh.visible = true; });
   assert.ok(Buffer.compare(withShip, withoutShip) !== 0,
     'the player ship is DRAWN at the centre of the screen — hiding it changed no pixels, so nothing was there');
+
+  // --- A ROOM GOING IDLE MUST NOT STOP THE TAB DRAWING ---
+  //
+  // These were briefly ONE flag, and the game froze the instant you died: the frame after a death is when
+  // the explosion plays, the "Ship Destroyed" overlay opens and the run is banked — all of it in
+  // `renderTick`, draining the events the room sent. Stopping the render because the ROOM had nothing left
+  // to step killed the game at the moment it had the most to say.
+  // A HIDDEN TAB is the stable way to make the room idle for a reason that is NOT a pause — poking
+  // `player.alive` does not hold, because the next snapshot puts it straight back (which is itself
+  // reassuring). The distinction under test is the same one either way.
+  const idleStates = await page.evaluate(async () => {
+    const n = window.__netsim;
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const live = { roomIdle: n.roomIdle, drawing: n.drawing };
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await frame();
+    const away = { roomIdle: n.roomIdle, drawing: n.drawing };
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await frame();
+    return { live, away, back: { roomIdle: n.roomIdle, drawing: n.drawing } };
+  });
+  console.log(`      fighting ${JSON.stringify(idleStates.live)} | hidden ${JSON.stringify(idleStates.away)} | back ${JSON.stringify(idleStates.back)}`);
+  assert.equal(idleStates.live.roomIdle, false, 'a live, visible fight steps the room');
+  assert.equal(idleStates.away.roomIdle, true, 'a hidden tab idles it — the fight must not run unwatched');
+  assert.equal(idleStates.away.drawing, true,
+    'but the tab keeps DRAWING: gating the render on "is the room stepping" froze the game the instant you died, '
+    + 'because the explosion, the overlay and the banking all happen in renderTick');
+  assert.equal(idleStates.back.roomIdle, false, 'and coming back resumes it');
 
   // --- NETSIM MUST STAND ASIDE FOR A REPLAY ---
   //

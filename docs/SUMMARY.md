@@ -3140,6 +3140,12 @@ extrapolating: a wrong guess that has to be taken back looks worse than a tenth 
 Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost
 "despawn" message would leak a mesh.
 
+**Two separate questions: does the ROOM step, and does the TAB draw.** Conflating them froze the game on
+the death screen — the explosion, the overlay and the banking all happen in `renderTick`, draining the
+events the room sent, so a tab that stopped rendering because the room had nothing left to step died at the
+moment it had the most to say. Only an explicit pause or the system map freezes the picture. Both flags are
+on `window.__netsim` (`roomIdle`, `drawing`).
+
 **A room only steps while a fight is actually running.** It is paused whenever the player is not in one —
 a death or victory overlay, a menu, the system map, an explicit pause, or a **hidden tab** (a background tab
 draws nothing and samples no input, so a room that kept fighting would kill a player who could neither see

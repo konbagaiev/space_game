@@ -88,6 +88,8 @@ let netRunAt = null;        // G.gameStartTime of the run the room is playing (a
 let netLevel = null;        // the level the current room was created for (a change means reconnect)
 let netDeferredBy = null;   // 'replay' | 'side-mission' | null — why netsim is standing aside this frame
 let netPredictor = null;    // client-side prediction of the local ship (netsim-predict.js)
+let netRoomIdle = false;    // the ROOM is not stepping (no live fight, a pause, a menu, a hidden tab)
+let netDrawing = true;      // this tab is still RENDERING — true even on the death screen
 let netDown = false;        // the socket died under us: local for THIS run, retry on the next one
 let netDownRunAt = null;    // the run it died in (G.gameStartTime), so the retry waits for a different one
 const netState = createNetState();
@@ -931,11 +933,24 @@ function animate() {
     // audible symptom is the reverse: the sounds stop, because the tab does, while the fight does not.)
     // Single-player has the same instinct — `autoPauseOnBlur` — and one player per room makes it honest.
     const hidden = typeof document !== 'undefined' && document.hidden;
-    const wantPaused = G.paused || G.mapOpen || hidden || !fightLive;
-    if (netLink && wantPaused !== netRoomPaused) { netRoomPaused = wantPaused; netLink.setPaused(wantPaused); }
-    if (netLink && wantPaused) netLink.keepAlive(); // a paused client sends no input; don't look abandoned
-    if (netLink && netStarted && !wantPaused && !netsimPaused) {
-      netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
+    // TWO SEPARATE QUESTIONS, and conflating them froze the game on the death screen.
+    //
+    //   `roomIdle`   — should the ROOM step? No, whenever there is no live fight to step.
+    //   `drawing`    — should this tab still RENDER? Almost always yes. The frame after you die is when the
+    //                  explosion plays, the "Ship Destroyed" overlay opens and the run is banked — all of
+    //                  which happen in `renderTick`, draining the events the room sent. Gating rendering on
+    //                  "is a fight running" therefore stopped the game dead at the exact moment it had the
+    //                  most to say. Only an explicit pause (or the system map) freezes the picture, which
+    //                  is what a pause IS and what single-player does too.
+    const roomIdle = !fightLive || G.paused || G.mapOpen || hidden;
+    const drawing = !G.paused && !G.mapOpen && !netsimPaused;
+    netRoomIdle = roomIdle; netDrawing = drawing; // exposed on __netsim: these two must never be one flag
+    if (netLink && roomIdle !== netRoomPaused) { netRoomPaused = roomIdle; netLink.setPaused(roomIdle); }
+    if (netLink && roomIdle) netLink.keepAlive(); // a paused client sends no input; don't look abandoned
+    if (netLink && netStarted && drawing) {
+      // Input only while there is something to fly. A dead ship must not be able to fire a held key, and a
+      // paused room would only queue the input up to apply on resume.
+      if (!roomIdle) netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
       // Prediction needs the account record the ROOM built its ship from; built lazily because
       // `G.activeShip` arrives with the bootstrap fetch, after the socket may already be open.
       if (!netPredictor && G.activeShip && G.activeShip.ship) {
@@ -1113,6 +1128,8 @@ if (NETSIM) {
     get deferredBy() { return netDeferredBy; }, // why we are on the LOCAL sim right now (null = we are not)
     get down() { return netDown; },             // the socket died; local until the next run
     get predicting() { return !!netPredictor; },
+    get roomIdle() { return netRoomIdle; },
+    get drawing() { return netDrawing; },
     get tick() { return netState.lastTick; },
     get level() { return (netState.welcome && netState.welcome.level) || NETSIM.level; },
     get welcome() { return netState.welcome; }, // what the room said about this fight when we joined

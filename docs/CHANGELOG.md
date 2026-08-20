@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **…and idling the room froze the game on death — fixed in the same hour it shipped.** Making a room stop
+  when there is no fight, I gated the tab's RENDERING on the same flag. But the frame after you die is when
+  the explosion plays, the "Ship Destroyed" overlay opens and the run is banked — all of it inside
+  `renderTick`, draining the events the room just sent. Stopping the render because the ROOM had nothing
+  left to step killed the game at the moment it had the most to say. They are two separate questions now
+  (`roomIdle` vs `drawing`), and only an explicit pause or the system map freezes the picture — which is
+  what a pause is, and what single-player does. `37-netsim` asserts the distinction by hiding the tab: the
+  room idles, the tab keeps drawing.
+
 - **Enemies kept shooting the wreck.** After the player died the room went on simulating: the enemies held
   station over the corpse and kept firing, so the "Ship Destroyed" screen came with the sound of hits still
   landing. `sim-core/tick.js` now reads `alive` once at the top of the tick — the tick you die on completes
