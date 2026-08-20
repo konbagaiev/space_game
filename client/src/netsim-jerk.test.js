@@ -88,3 +88,46 @@ test('a despawned entity is forgotten, not measured against its replacement', ()
   for (let i = 0; i < 5; i++) { other.pos.x += 0.2; probe.frame(world, state, 220 + i * 16.7); }
   assert.equal(probe.events.length, 0, 'the 999-unit gap between two different ships is not a jerk');
 });
+
+test('the dump carries the raw record, not just the summary', () => {
+  // The summary is for reading; the raw lists are for diagnosing. An arrival timeline is the only thing
+  // that can tell a clock estimator whether it would have survived, and a lifecycle mark is the only thing
+  // that can explain a one-off "the whole world jumped".
+  const { e, world, state } = rig();
+  const probe = createJerkProbe();
+  probe.snapshot({ tick: 4 }, 0);
+  probe.snapshot({ tick: 8 }, 66);
+  probe.snapshot({ tick: 12 }, 133);
+  probe.mark('go-local', { why: 'socket closed' }, 140);
+  probe.snapshot({ tick: 16 }, 1400);         // a long silence: the stall must be marked by itself
+  for (let i = 0; i < 5; i++) { e.pos.x += 0.2; probe.frame(world, state, 1400 + i * 16.7); }
+
+  const d = probe.dump({ reason: 'death', level: 'level-0' });
+  assert.equal(d.kind, 'netjerk');
+  assert.equal(d.reason, 'death');
+  assert.equal(d.level, 'level-0');
+  assert.equal(d.arrivals.length, 4, 'every packet is in the file, not only the ones that hurt');
+  assert.deepEqual(d.arrivals[1], { tick: 8, at: 66, gap: 66, tickGap: 4 });
+  assert.ok(d.marks.some((m) => m.label === 'go-local'), 'the lifecycle is in the file');
+  assert.ok(d.marks.some((m) => m.label === 'delivery-stall' && m.data.gapMs > 1000),
+    'a 1.3 s silence marks itself — this is what a "the whole world jumped" report looks like in the data');
+  assert.equal(d.report.arrival.stalls, 1);
+  assert.equal(d.report.arrival.p50 > 0, true);
+});
+
+test('a frame the TAB lost is recorded apart from the room\'s faults', () => {
+  // "It lagged" is ambiguous: the renderer stalling and the room stalling look identical to a player, and
+  // only one of them is netcode. Frame time is therefore its own column.
+  const { e, world, state } = rig();
+  const probe = createJerkProbe();
+  let t = 0;
+  for (let i = 0; i < 10; i++) { t += 16.7; e.pos.x += 0.2; probe.frame(world, state, t); }
+  t += 250;                                   // the tab went away for a quarter of a second
+  e.pos.x += 0.2; probe.frame(world, state, t);
+  for (let i = 0; i < 5; i++) { t += 16.7; e.pos.x += 0.2; probe.frame(world, state, t); }
+
+  const r = probe.report();
+  assert.equal(r.frames.slow, 1, 'one frame the tab lost');
+  assert.ok(r.frames.worstDtMs >= 250);
+  assert.ok(r.frames.meanDtMs > 16 && r.frames.meanDtMs < 40);
+});

@@ -84,6 +84,7 @@ const netsimActive = !!NETSIM; // the flag is on. NEVER cleared — an unavailab
 // the delivery fingerprint at that instant. Read it from the console: `__netsim.jerk.report()`. Off by
 // default: it walks every drawn entity per frame, and it answers a question, it is not a feature.
 const NETJERK = typeof location !== 'undefined' && new URLSearchParams(location.search).has('netjerk');
+const perfNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 let netLink = null;           // the socket + uplink, once connected
 let netConnecting = false;
 let netsimPaused = false;   // __netsim.pause(): stop pumping/applying, freeze on the last known state
@@ -92,12 +93,40 @@ let netStarted = false;     // the room has been told to begin (take-off), as op
 let netRunAt = null;        // G.gameStartTime of the run the room is playing (a new one means restart it)
 let netLevel = null;        // the level the current room was created for (a change means reconnect)
 let netDeferredBy = null;   // 'replay' | 'side-mission' | null — why netsim is standing aside this frame
+let netJerkAlive = false;   // ?netjerk: previous frame's alive flag, so death can trigger the dump once
 let netPredictor = null;    // client-side prediction of the local ship (netsim-predict.js)
 let netRoomIdle = false;    // the ROOM is not stepping (no live fight, a pause, a menu, a hidden tab)
 let netDrawing = true;      // this tab is still RENDERING — true even on the death screen
 let netDown = false;        // the socket died under us: local for THIS run, retry on the next one
 let netDownRunAt = null;    // the run it died in (G.gameStartTime), so the retry waits for a different one
 const netState = createNetState();
+// Write the whole probe record to a file the maintainer can send on. Called automatically the moment the
+// ship dies — "when it lags badly, let it kill me" is a far better trigger than remembering to type
+// something, because by the time you have typed it the interesting seconds have scrolled out of the ring
+// buffers. Also on `__netsim.jerk.save()` for when you would rather not die.
+function saveJerkDump(reason = 'manual') {
+  const probe = netState.jerk;
+  if (!probe) return null;
+  const data = probe.dump({
+    reason,
+    savedAt: new Date().toISOString(),
+    level: (netState.welcome && netState.welcome.level) || (NETSIM && NETSIM.level) || null,
+    ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    screen: typeof window !== 'undefined' ? { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio } : null,
+    gfx: G.gfx ? { tier: G.gfx.tier } : null,
+  });
+  try {
+    const name = `netjerk-${data.level || 'room'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    const b = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    console.info(`[netjerk] saved ${name} — ${data.events.length} breaks, ${data.arrivals.length} packets, `
+      + `${data.slowFrames.length} slow frames, ${data.marks.length} lifecycle marks`);
+    return name;
+  } catch (err) { console.warn('[netjerk] could not save the dump', err); return null; }
+}
+
 if (NETJERK) {
   // Live line while you play, throttled to one a second so a burst does not bury the console. The full
   // list, with the delivery context of each break, is `__netsim.jerk.report()`.
@@ -826,6 +855,9 @@ if (isDev()) window.__backdrop = {
 function goLocal(why) {
   if (netDown) return;
   console.warn(`[netsim] ${why} — this run continues on the local simulation, will retry on the next one`);
+  // This is the loudest thing that can happen to a fight: every ghost is despawned and the LOCAL sim picks
+  // the world up mid-flight, which the player sees as the whole battle jumping. It has to be in the record.
+  netState.jerk?.mark('go-local', { why }, perfNow());
   netDown = true; netDownRunAt = G.gameStartTime;
   netLink = null; netStarted = false; netRoomPaused = false; netRunAt = null; netLevel = null;
   clearNet(world, netState);
@@ -845,6 +877,7 @@ function sendNetCommand(cmd) {
 }
 
 function dropNetsim() {
+  netState.jerk?.mark('drop-link', null, perfNow());
   try { netLink.close(); } catch {}
   // `netRunAt` deliberately SURVIVES: it records which run a room was last told to play. Clearing it made
   // a reconnect look like a brand-new run, so winning a level — which advances `CATALOG.levelName` and
@@ -869,6 +902,7 @@ async function startNetsim() {
       playerId: G.playerId, level, seed: NETSIM.seed,
       onWelcome: (w) => {
         netState.welcome = w;
+        netState.jerk?.mark('welcome', { tick: w.tick, level: w.level, snapshotEvery: w.snapshotEvery }, perfNow());
         console.info(`[netsim] room joined: level=${w.level} seed=${w.seed} dt=${w.dt} snapshotEvery=${w.snapshotEvery}`);
         if (w.level !== level) console.warn(`[netsim] the room is fighting ${w.level}, this tab built ${level}`);
       },
@@ -936,6 +970,7 @@ function animate() {
         x: world.player.pos.x, z: world.player.pos.z, h: world.player.heading,
         vx: world.player.vel.x, vz: world.player.vel.z,
       } : null;
+      netState.jerk?.mark(netStarted ? 'run-restart' : 'run-start', { level: netLevel }, perfNow());
       if (!netStarted) { netStarted = true; netLink.start(pose); } else netLink.restart(pose);
       netRoomPaused = false; // both messages start the driver server-side
     }
@@ -947,6 +982,13 @@ function animate() {
     // the room went on simulating, so the badge still read green in the hangar and the server kept a 60 Hz
     // world alive for nobody. Same predicate the game uses everywhere else for "a fight is running".
     const fightLive = G.gameStarted && G.player && G.player.alive && !levelRunner.won;
+    // ?netjerk: dying is the save button. The record covers the seconds that just went wrong, which is
+    // exactly what a ring buffer loses if you go and type a command instead.
+    if (NETJERK && netState.jerk) {
+      const aliveNow = !!(G.gameStarted && G.player && G.player.alive);
+      if (netJerkAlive && !aliveNow) { netState.jerk.mark('death', null, perfNow()); saveJerkDump('death'); }
+      netJerkAlive = aliveNow;
+    }
     // A HIDDEN TAB pauses the room too. The browser throttles rAF to nothing in a background tab, so the
     // client stops sampling input and stops drawing — but the room kept stepping at 60 Hz, which means
     // coming back to a ship that had been shot at by an enemy you could neither see nor answer. (The
@@ -965,7 +1007,10 @@ function animate() {
     const roomIdle = !fightLive || G.paused || G.mapOpen || hidden;
     const drawing = !G.paused && !G.mapOpen && !netsimPaused;
     netRoomIdle = roomIdle; netDrawing = drawing; // exposed on __netsim: these two must never be one flag
-    if (netLink && roomIdle !== netRoomPaused) { netRoomPaused = roomIdle; netLink.setPaused(roomIdle); }
+    if (netLink && roomIdle !== netRoomPaused) {
+      netRoomPaused = roomIdle; netLink.setPaused(roomIdle);
+      netState.jerk?.mark('room-idle', { on: roomIdle }, perfNow());
+    }
     if (netLink && roomIdle) netLink.keepAlive(); // a paused client sends no input; don't look abandoned
     if (netLink && netStarted && drawing) {
       // Input only while there is something to fly. A dead ship must not be able to fire a held key, and a
@@ -1167,6 +1212,8 @@ if (NETSIM) {
     // ?netjerk only. `.report()` is the summary — the headline is `byCause`: a break on a frame where no
     // packet was applied is not the network's fault, it is the client drawing a curve as a straight line.
     get jerk() { return netState.jerk; },
+    // `?netjerk` only: write the record to a file. Happens by itself when the ship dies.
+    saveJerk: (reason = 'manual') => saveJerkDump(reason),
   };
 }
 

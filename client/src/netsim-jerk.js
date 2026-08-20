@@ -19,29 +19,64 @@
 export const STEP_BREAK = 0.5;      // |Δ step| over the object's mean step — 0.5 = "half its cruise speed, in one frame"
 export const TURN_BREAK_DEG = 0.6;  // |Δ turn| per frame, absolute: the nose stepping the eye actually catches
 export const MAX_EVENTS = 400;      // ring buffer; a long session must not grow without bound
+export const MAX_ARRIVALS = 4000;  // every packet's arrival, so the jitter DISTRIBUTION can be read offline
+export const SLOW_FRAME_MS = 30;   // ~2 frames at 60 Hz: past this the tab itself hitched, and a "lag" the
+                                   // player saw may be the renderer, not the room. Recorded separately so
+                                   // the two are never confused.
 
 const wrap = (d) => { let x = d; while (x > Math.PI) x -= Math.PI * 2; while (x < -Math.PI) x += Math.PI * 2; return x; };
 const DEG = 180 / Math.PI;
 
-export function createJerkProbe({ maxEvents = MAX_EVENTS, onBreak = null } = {}) {
+export function createJerkProbe({ maxEvents = MAX_EVENTS, maxArrivals = MAX_ARRIVALS, onBreak = null } = {}) {
   const prev = new Map();   // entity → { x, z, h, step, turn, meanStep, n }
   const events = [];
+  const arrivals = [];      // { tick, at, gap } for EVERY packet — the jitter distribution, not just its victims
+  const slowFrames = [];    // { t, dt } for frames the tab itself lost
+  // Lifecycle: sockets dropping, runs restarting, the room going idle. A one-off "the whole world jumped"
+  // is never explained by per-frame numbers — it is explained by what happened to the LINK at that second.
+  const marks = [];
+  let lastFrameAt = null;
+  let frameCount = 0, frameDtSum = 0;
   // What the last applied snapshot told us, so a break can be attributed to it.
   let last = { at: 0, tick: -1, arrivalGapMs: 0, tickGap: 0, appliedThisFrame: false };
   const counts = { total: 0, onSnapshotFrame: 0, byKind: {} };
 
   return {
-    events,
+    events, arrivals, slowFrames, marks,
+
+    // A lifecycle moment, stamped on the same clock as everything else so it can be lined up with a break.
+    mark(label, data = null, now = 0) {
+      marks.push({ t: Math.round(now), label, ...(data ? { data } : {}) });
+      if (marks.length > 500) marks.shift();
+    },
 
     // Called by applySnapshot: the delivery fingerprint of THIS packet.
     snapshot(snap, at) {
       const arrivalGapMs = last.tick >= 0 ? at - last.at : 0;
       const tickGap = last.tick >= 0 ? snap.tick - last.tick : 0;
       last = { at, tick: snap.tick, arrivalGapMs, tickGap, appliedThisFrame: true };
+      arrivals.push({ tick: snap.tick, at: Math.round(at), gap: Math.round(arrivalGapMs), tickGap });
+      if (arrivals.length > maxArrivals) arrivals.shift();
+      // A packet carrying much more than one interval of sim time, or arriving after a long silence, is the
+      // fingerprint of a stall — on the server, on the link, or in this tab. Marked so it is findable.
+      if (last.tick >= 0 && (tickGap > 8 || arrivalGapMs > 200)) {
+        this.mark('delivery-stall', { tick: snap.tick, tickGap, gapMs: Math.round(arrivalGapMs) }, at);
+      }
     },
 
     // Called at the END of renderNet, once the drawn poses are written.
     frame(world, state, now) {
+      // The tab's own frame time first. A player who reports "a big lag" may have seen the renderer stall,
+      // which no netcode change would touch — so it is recorded, and recorded apart.
+      if (lastFrameAt != null) {
+        const dt = now - lastFrameAt;
+        frameCount++; frameDtSum += dt;
+        if (dt > SLOW_FRAME_MS) {
+          slowFrames.push({ t: Math.round(now), dt: Math.round(dt) });
+          if (slowFrames.length > maxArrivals) slowFrames.shift();
+        }
+      }
+      lastFrameAt = now;
       const seen = new Set();
       for (const list of [world.enemies, world.rockets, world.bullets, world.drops]) {
         for (const e of list) {
@@ -97,12 +132,16 @@ export function createJerkProbe({ maxEvents = MAX_EVENTS, onBreak = null } = {})
     // What the session saw. The headline is the ATTRIBUTION: a break that lands on a frame where no packet
     // was applied cannot be the packet's fault — it is the client drawing a curve as a straight line.
     report() {
+      const stalls = marks.filter((m) => m.label === 'delivery-stall').length;
       const byCause = { onPacket: 0, betweenPackets: 0, collapsedSpan: 0, stretchedTicks: 0 };
       for (const e of events) {
         if (e.onSnapshotFrame) byCause.onPacket++; else byCause.betweenPackets++;
         if (e.sampleSpanMs != null && e.sampleSpanMs <= 2) byCause.collapsedSpan++;
         if (e.sampleTickGap != null && e.sampleTickGap > 4) byCause.stretchedTicks++;
       }
+      // Arrival jitter, which is what an extrapolated object turns into position error.
+      const gaps = arrivals.slice(1).map((a) => a.gap).sort((x, y) => x - y);
+      const gp = (q) => (gaps.length ? gaps[Math.floor((gaps.length - 1) * q)] : 0);
       const turns = events.map((e) => e.dTurnDeg).sort((a, b) => a - b);
       const steps = events.map((e) => e.dStep).sort((a, b) => a - b);
       const pick = (a, q) => (a.length ? a[Math.floor((a.length - 1) * q)] : 0);
@@ -110,10 +149,31 @@ export function createJerkProbe({ maxEvents = MAX_EVENTS, onBreak = null } = {})
         total: counts.total, kept: events.length, byKind: { ...counts.byKind }, byCause,
         turnDeg: { p50: pick(turns, 0.5), p95: pick(turns, 0.95), max: pick(turns, 1) },
         step: { p50: pick(steps, 0.5), p95: pick(steps, 0.95), max: pick(steps, 1) },
+        // Delivery: the nominal gap is one snapshot interval, so the SPREAD here is the jitter an
+        // extrapolated object multiplies by its own speed.
+        arrival: { count: arrivals.length, p05: gp(0.05), p50: gp(0.5), p95: gp(0.95), max: gp(1), stalls },
+        // The tab: if these are many, the "lag" was the renderer and not the room.
+        frames: { count: frameCount, meanDtMs: frameCount ? +(frameDtSum / frameCount).toFixed(2) : 0,
+                  slow: slowFrames.length, worstDtMs: slowFrames.reduce((m, f) => Math.max(m, f.dt), 0) },
+        // Relative size is what the eye judges: a step change against the object's own cruise step.
+        worstRelative: [...events].sort((a, b) => (b.dStep / (b.stepMean || 1)) - (a.dStep / (a.stepMean || 1)))
+          .slice(0, 10).map((e) => ({ ...e, ofCruise: +(e.dStep / (e.stepMean || 1)).toFixed(2) })),
         worst: [...events].sort((a, b) => b.dTurnDeg - a.dTurnDeg).slice(0, 10),
       };
     },
 
-    clear() { events.length = 0; counts.total = 0; counts.onSnapshotFrame = 0; counts.byKind = {}; },
+    // Everything, ready to be written to a file and read offline. The raw lists matter as much as the
+    // summary: the arrival timeline is what a clock estimator would have to survive.
+    dump(extra = {}) {
+      return { kind: 'netjerk', version: 1, ...extra,
+               report: this.report(), marks: [...marks],
+               events: [...events], arrivals: [...arrivals], slowFrames: [...slowFrames] };
+    },
+
+    clear() {
+      events.length = 0; arrivals.length = 0; slowFrames.length = 0; marks.length = 0;
+      counts.total = 0; counts.onSnapshotFrame = 0; counts.byKind = {};
+      frameCount = 0; frameDtSum = 0; lastFrameAt = null;
+    },
   };
 }

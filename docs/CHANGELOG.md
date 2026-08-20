@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **`?netjerk` now writes a file when you die.** Dying is the save button: by the time you have alt-tabbed
+  to type a command the interesting seconds have scrolled out of the ring buffers, so the probe dumps
+  itself the moment the ship dies (`__netsim.saveJerk()` if you would rather not). The file carries the raw
+  record, not just the summary — **every packet's arrival** (tick, timestamp, gap), **every frame the TAB
+  itself lost** (so "it lagged" can be told apart from netcode), and a **lifecycle timeline**: the socket
+  dropping, a run restarting, the room going idle, and any delivery stall over 200 ms or 8 ticks. That last
+  list exists because a one-off "the whole world jumped a second back" is never explained by per-frame
+  numbers — it is explained by what happened to the link at that second.
+
 - **`?netjerk` — a probe that catches every break in the drawn motion and names its author.** Chasing a
   reported stutter by reasoning produced one wrong theory already, so this measures instead: it reads the
   poses `renderNet` has just written — exactly what the player sees — and on every discontinuity records the
