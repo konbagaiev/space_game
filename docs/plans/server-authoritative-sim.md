@@ -1,8 +1,9 @@
 # Server-authoritative combat simulation
 
-> **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), 11 commits, all green.
-> Started 2026-08-19; last worked 2026-08-20. **Local testing only — nothing ships to prod or itch, and
-> nothing is pushed, until the maintainer says so.**
+> **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), 18 commits, all green.
+> **Slices A, B and C are done — the simulation runs headless in Node and a test proves it agrees with the
+> browser.** Slice D (the socket) is next. Started 2026-08-19; last worked 2026-08-20. **Local testing only
+> — nothing ships to prod or itch, and nothing is pushed, until the maintainer says so.**
 >
 > **Resuming? Read §0 first** — it is a self-contained pick-up brief: current state, the exact next steps
 > with file anchors, how to verify, and the seven traps this project has already sprung.
@@ -21,7 +22,7 @@ Read it first. Nothing here needs a prior conversation.
 
 ### Where the work lives
 
-- Worktree **`../ag-wt/server-sim`**, branch **`feature/server-sim`**, 11 commits ahead of `main`.
+- Worktree **`../ag-wt/server-sim`**, branch **`feature/server-sim`**, 18 commits ahead of `main`.
   `main` is untouched at `24849f7` with a clean tree, and **nothing has been deployed or pushed** — the
   branch is local only. Do not merge or deploy without asking.
 - Local server for playtesting: **`PORT=4010 node src/server.js`** from `server/`. Port 4000 is the
@@ -32,66 +33,71 @@ Read it first. Nothing here needs a prior conversation.
 
 ### What is already true
 
-`client/src/sim-core/` is now the game's rules, and the boundary is enforced by `boundary.test.js`
-(no `three`, no import outside the folder, no `window`/`document`/`fetch`). It contains: `vec.js`,
-`consts.js`, `events.js`, `world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`,
-`drops-sim.js`, `step-projectiles.js`, `system-map.js`, plus the older pure modules (`components`,
-`steering`, `spawn-timing`, `collision`, `level-sim`, `drops-config`, `autopilot-config`, `sim-random`).
+**Slices A, B and C are done. The game's rules run in Node.** `node server/tools/sim-replay.mjs
+client/assets/recordings/level0-intro.6674d840.json` replays the canonical Level-0 trace headlessly —
+3490/3490 ticks, 4 kills, 125 credits, arena cleared — with no browser and no renderer anywhere, and
+`36-sim-divergence` asserts that a real browser replaying the same trace lands on the identical world
+digest and the identical seeded-RNG draw count.
 
+- `client/src/sim-core/` is the game's rules, and the boundary is enforced by `boundary.test.js`: no
+  `three`, no import outside the folder, no `window`/`document`/`fetch`, **and every module must actually
+  load in Node** (that last guard exists because ESM only rejects a wrong-sibling named import at link
+  time — 424 unit tests stayed green while the game booted to a blank page).
+- **`sim-core/tick.js` is the module a server runs.** `simTick(world, dt)` advances a whole fight: player,
+  enemies, projectiles, deaths, the Grab, the level script. It draws nothing, plays nothing, fetches
+  nothing; everything it decided is on `world.events` for the host to drain.
 - A fight is a **`World`** (`createWorld({ host })`): entities, event queue, `arenaCenter`/`arenaDrift`,
-  `station`, `catalog`, `input`, `activeShip`, `firedBanners`, `pendingLoot` and the run counters.
-  `state.js` creates this tab's World and proxies all of it back onto `G` with getters, so **no client
-  call site had to change** — `G.kills++`, `G.player`, `G.autopilot.active` all still work.
-- Entities are data; the **host** gives them a body (`world.host.onSpawn/onDespawn(kind, entity)`,
-  plus `onWarmLevel(level)` for asset preloading). `noopHost` is the server's.
+  `station`, `catalog`, `input`, `activeShip`, `levelRunner`, `firedBanners`, `pendingLoot` and the run
+  counters. `state.js` creates this tab's World and proxies all of it back onto `G` with getters, so **no
+  client call site had to change** — `G.kills++`, `G.player`, `G.autopilot.active` all still work.
+- Entities are data, player included (`ship-entity.makePlayer`); the **host** gives them a body
+  (`world.host.onSpawn/onDespawn(kind, entity)`, plus `onWarmLevel(level)`). `noopHost` is the server's.
 - The simulation never calls out: it appends one of **19 events**, catalogued at the top of `events.js`,
   and the adapter at the bottom of `sim.js` turns them into FX, audio, HUD and `net.js`.
-- `update(dt)` = **`simTick(dt)` + `renderTick(dt)`**, and keeps its name because the accumulator, the
-  replay stepper and the `?debug` hooks all call it.
+- `sim.js` is down from 1202 to ~630 lines and is now the PICTURE: the browser host, the event adapter,
+  `syncMeshes`, the FX-ageing steps, the DOM readouts, music/pause, the scene half of `reset()`, and thin
+  binds of the sim-core entry points other modules import by name (`levelRunner`, `warpPlayerToCenter`,
+  the four autopilot verbs).
+- Starting a run is **two sim-core calls with the host's scenery rebuild between them** —
+  `clearAndPlaceRun(world)` → the client rebuilds its set-pieces → `startRun(world, { keepPlayer })`.
+  That order is not negotiable in either direction; `reset-world.js` explains why (the home station is a
+  set-piece, so `world.station` is a different object after the rebuild).
 
 ### What is left (in order)
 
-**1. Move the remaining steps into `sim-core`.** `simTick` (`client/src/sim.js:676`) now contains exactly
-the functions to move. Two are already done (`stepBullets`/`stepRockets` → `step-projectiles.js`) — copy
-that pattern: cut the function, take `world` as the first argument, rebind `bullets`/`enemies`/`rockets`/
-`G.player`/`simEvents` to `world.*`, then delete the now-dead imports from `sim.js`.
+**Slice D — the socket.** A WebSocket carrying input up and world snapshots down, one server-run mission
+instance, no client-side prediction yet. See §4 Slice D. Nothing in the simulation blocks it: the authority
+already exists, it just has nobody to talk to.
 
-| what | where it is now | suggested home |
-|---|---|---|
-| `stepEnemyAI` | `sim.js:855` | `sim-core/step-enemies.js` |
-| `stepEnemyDeaths` | `sim.js:989` | same |
-| `stepPlayer` + `forwardVec`/`brakeStep`/autopilot/`checkMissionZone`/`warpPlayerToCenter` | `sim.js:741`, `:202`–`:382`, `:439` | `sim-core/step-player.js` |
-| `stepPlayerDeath` | `sim.js:1034` | same |
-| `levelRunner` | `sim.js:76` | `sim-core/level-runner.js` |
+Two smaller things worth doing first, both cheap:
 
-`levelRunner` needs one extra move: its mutable fields (`level`, `phaseIndex`, `killsAtPhaseStart`,
-`spawnedThisPhase`, `spawnCooldown`, `won`, `winPending`, `winText`, `winTextKey`, `returningToBase`) go
-onto `world.levelRunner` as data, and the functions take `world`. **Keep the exported `levelRunner` object
-in `sim.js`** with getter/setter proxies onto those fields plus `start`/`update`/`win` delegating — outside
-`sim.js` only FIELDS are read (`main.js`, `mainwindow.js`, `settings.js`, `account.js`, `replay.js` and
-three visual scenarios), so proxying keeps every one of them working.
-
-**2. Split `reset()`** (`sim.js:1101`) into "reset the world" (sim-core: clear entities through the host,
-recentre `arenaCenter`, reset the run counters, start the level) and "rebuild the scene" (client:
-set-pieces, FX pools, the overlay, `arenaBorder`, telemetry). It is the last function mixing the two.
-
-**3. Then Slice C becomes possible:** run a level to completion in Node and assert the browser and Node
-agree on the same trace — outcome, a hash of the final world, and the number of `simRandom()` draws.
+1. **A `node --test` unit test around the headless referee.** `36-sim-divergence` needs a browser, so the
+   Node half only runs inside the visual suite today. A plain unit test that replays the trace and asserts
+   the outcome (4 kills, arena cleared, a stable digest) would catch a Node-side regression in 300 ms.
+2. **Seal the economy** (the payoff D1 promised): `POST /api/games` is client-authoritative, the client
+   already uploads every session as an input trace, and `runTrace()` can now re-simulate one server-side
+   and decide the reward itself. This is a separate slice, not part of Slice D.
 
 ### How to verify (do not skip, do not assume)
 
 ```
-cd client && node --test                      # 390 pass — but see the trap below
+cd client && node --test                      # 427 pass
 cd server && npm test                         # 147 pass (needs local Postgres)
 cd client && node visual/run.mjs 22-intro-replay
+cd client && node visual/run.mjs 36-sim-divergence
+node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json
 ```
 
-**The intro oracle is the contract**: it must print
-`kills=4 enemiesLeft=0 cards=p0|p1|p2|p3|p4 won=true ended=true playDone=true tick=2503/3490`.
-**The tick count matters as much as the outcome** — it has not moved once across eleven commits, and a
-change in it means the simulation diverged even if `won=true`.
+**Two oracles, and they check different things.**
+- `22-intro-replay` must print
+  `kills=4 enemiesLeft=0 cards=p0|p1|p2|p3|p4 won=true ended=true playDone=true tick=2503/3490`.
+  **The tick count matters as much as the outcome** — it has not moved once across eighteen commits, and a
+  change in it means the simulation diverged even if `won=true`.
+- `36-sim-divergence` must print the same hash and the same draw count on both lines
+  (`hash=0x9d2050b0 … draws=38`). A *hash* mismatch means the two hosts simulate different fights; a *draw
+  count* mismatch means something drew from the seeded gameplay stream on one host only (DECISIONS §73).
 
-Full suite for a real delta: `cd client && node visual/run.mjs` (~25 min). Compare against the
+Full suite for a real delta: `cd client && node visual/run.mjs` (~20 min). Compare against the
 **`main` baseline of 14 failures** listed in §7.1 — not against zero. Run any candidate failure
 individually on both branches before believing it; the suite is noisier than individual runs.
 
@@ -103,19 +109,24 @@ individually on both branches before believing it; the suite is noisier than ind
 2. **`node --test` cannot load any module that imports `three`.** Deleting `const SMOKE_MAX` from
    `projectiles.js` left all 386 unit tests green and broke the game. After touching `sim.js`,
    `projectiles.js`, `ship-build.js`, `world.js`, `drops.js`, `hud.js` or `ship-factory.js`, **boot the
-   game** (`node visual/run.mjs 01-smoke`).
+   game** (`node visual/run.mjs 01-smoke`). Inside `sim-core/` the new load guard in `boundary.test.js`
+   covers this; outside it, nothing does.
 3. **A scenario that fails early does not test what its name says.** `12-audio` dies on a music-clip
    assertion before reaching any weapon sound; `19-hud-log` dies on the kill line before the pickup line.
    Both would have passed a broken `fire`/`pickup` event in silence — verify such paths with a browser
    probe instead.
 4. **A scenario that waits on wall clock is testing the CPU.** `17-triple-spiral-rocket` failed ~half the
-   time for that reason; it now steps the sim with `__game.stepSim`. Prefer fixed steps in new assertions.
+   time for that reason; it now steps the sim with `__game.stepSim`. `13-ship-bank` still waits on the
+   clock and still flakes ~50% — rerun it before believing it.
 5. **Do not reorder the tick casually.** It was reordered exactly once, deliberately, and only because no
    presentation step reads or writes simulation state.
 6. **RNG draw ORDER is a replay contract** (DECISIONS §73). `makeEnemy` draws three times — facing, spawn
    angle, spawn distance. New draws go at the END, never inserted.
 7. **Text-range slicing eats neighbours.** Prefer surgical edits; when cutting, read `git diff <file> |
    grep '^-'` and check what actually went.
+8. **Ordering between the sim and the host's scenery is real coupling.** Folding `reset()`'s two sim-core
+   calls into one looked like tidying and silently left the home station unclickable for a whole roam,
+   because the set-piece rebuild replaces `world.station`. `32-star-system` caught it.
 
 ## 1. Goal
 
@@ -321,8 +332,7 @@ at the moment they actually move. So Slice B runs:
   - **B3a — the World, plus the projectile lifecycle seam.** ✅ DONE 2026-08-19.
   - **B3b — the enemy lifecycle seam.** ✅ DONE 2026-08-20.
   - **B3c — physically move the steps into `sim-core/`**, with the station position and the input snapshot
-    arriving as World data. Part 1 (firing + targeting) ✅ DONE 2026-08-20; the step functions themselves,
-    the station position, the input snapshot and the `reset()` split remain.
+    arriving as World data. ✅ DONE 2026-08-20.
 
 #### B3a outcome
 
@@ -630,7 +640,37 @@ and the intro trace still `tick=2503/3490`.
 *Dividend:* a whole level runs to completion under `node --test`.
 *Acceptance:* guard set green; a new unit test drives a level headless from a recorded trace.
 
-### Slice C — headless referee in Node + determinism test
+#### B3c final outcome — the whole tick is sim-core's, and `reset()` is two jobs
+
+The last four step functions moved, in four commits, each verified against the intro oracle
+(`tick=2503/3490`, unchanged throughout):
+
+- **`sim-core/level-runner.js`** — the phase/wave script's mutable fields live on `world.levelRunner` and
+  its rules are functions of the World. `sim.js` keeps an object called `levelRunner` whose properties
+  proxy onto those fields, because eight modules and three visual scenarios read them (and
+  `32-star-system` writes one). `BANNER_FADE` and the two banner emit helpers moved to `events.js`: three
+  separate steps raise banners and the authority has to raise them too.
+- **`sim-core/step-enemies.js`** — enemy AI and enemy deaths. The death step resolves a drop's catalog row
+  itself now (the World carries the catalog) instead of borrowing `drops.js` for the lookup, which retired
+  the client-side `spawnSpecialDrop`: the reward drop is spawned by the simulation through the same
+  sim-core `spawnDrop`, and `drops.js` keeps only its BODY.
+- **`sim-core/step-player.js`** — the player step, the click-to-fly autopilot (engage/cancel, the
+  brake/rotate/cruise controller, the three arrival checks), the mission-zone countdown, the soft-boundary
+  warp-back, and `stepPlayerDeath`. `sim.js` keeps the exported names as one-line binds, so `main.js` and
+  `mainwindow.js` are untouched.
+- **`sim-core/tick.js`** — `simTick(world, dt)`. This is the module a server runs.
+
+**`reset()` split, and the ordering is real coupling.** `sim-core/reset-world.js` owns emptying the world,
+choosing where the run is fought, putting the ship on the line, zeroing the counters and starting the level
+script; `sim.js` keeps the FX pools, the set-piece rebuild, the overlay and the telemetry. It is
+deliberately TWO calls — `clearAndPlaceRun` → the host's scenery → `startRun` — because the rebuild READS
+`arenaCenter`/`arenaDrift` and REPLACES `world.station` (the home station is a set-piece). Folding them
+into one call looked like tidying and left the home station unclickable for a whole roam; `32-star-system`
+caught it. A headless authority has the same shape: it too must place its station between the two.
+
+`sim.js` went from **1202 to ~630 lines** and stopped being the simulation.
+
+### Slice C — headless referee in Node + determinism test — ✅ DONE 2026-08-20
 
 1. `server/tools/sim-replay.mjs` imports `sim-core` via `clientDir` and runs an input trace to completion,
    printing kills / credits / outcome.
@@ -640,6 +680,49 @@ and the intro trace still `tick=2503/3490`.
 
 *Playable:* unchanged.
 *Deferred payoff (separate slice, not now):* seal the economy by re-simulating the submitted trace.
+
+#### Slice C outcome
+
+`node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json` prints
+
+```
+trace level-0-1au8cx · level level-0 · seed 78672849 · dt 0.016666666666666666
+ticks 3490/3490  kills 4  credits 125  xp 125  hp 100
+enemies 0  bullets 0  rockets 0  drops 0  loot 1
+phase 2  won false  returning true
+hash 0x9d2050b0  rng draws 38
+```
+
+with no browser, no renderer and no DOM in the process. It builds the catalog straight from
+`catalog_seed.js` (the same rows the server would serve, with `enemyTotal` stamped on by `enemy_total.js`),
+places the home station from the map descriptor — the station is simulation state, since docking is how a
+mission is won — builds the exact ship the trace was recorded with, and steps `sim-core/tick.js`.
+
+`won false / returning true` is correct, not a desync: winning needs the docking autopilot, and a trace
+records keys and touch, never a mouse click. In the browser the cutscene machinery fakes that click; a
+headless referee has no business reproducing it. `22-intro-replay` guards the cutscene path, this guards
+the simulation.
+
+Three supporting pieces made it possible:
+- **`ship-entity.makePlayer`** builds the player as data. `buildPlayer` in `ship-build.js` is now
+  `makePlayer` plus a mesh — the split every other entity already had.
+- **`sim-random.js` counts its draws**, reset by `seedSim`. This is the §73 oracle: two hosts replaying one
+  trace must consume the stream the same number of times.
+- **`sim-core/digest.js`** reduces a World to one full-precision FNV-1a hash plus a readable summary.
+  Positions are hashed unrounded on purpose — both hosts run the same code over IEEE doubles in the same
+  order, so bit-identical is the correct expectation, and rounding would hide an early divergence.
+
+**`36-sim-divergence`** is the standing guard: same trace, both hosts, and the digest, the summary AND the
+draw count must all match. They do — `hash=0x9d2050b0`, `draws=38`, 3490 ticks on each side. It was
+negative-tested by adding a single `simRandom()` call to the browser's `simTick`; it fails with
+`seeded RNG draws differ (browser 3525, node 38)`, which names the cause instead of just reporting a
+different hash.
+
+**The bug this slice shipped and caught.** Moving `simTick` into `sim-core/tick.js` imported
+`stepPlayerDeath` from the wrong sibling. ESM resolves named imports at LINK time, so nothing in
+`node --test` noticed — 424 unit tests green — and the game booted to a blank page. `boundary.test.js` now
+dynamically imports every `sim-core` module, which turns that whole class of mistake into a unit-test
+failure in 300 ms. Verified by breaking an import on purpose.
 
 ### Slice D — WebSocket + one server-run mission instance, no prediction
 
@@ -687,12 +770,14 @@ socket draining across the blue-green deploy swap, binary/delta snapshot encodin
 
 ## 7. Guard suites (run them, do not assume)
 
-| Gate | Command | Baseline @ `24849f7` |
-|---|---|---|
-| Client units | `cd client && node --test` | 342 pass / 0 fail |
-| Server units | `cd server && npm test` (needs local Postgres) | 137 pass / 0 fail |
-| **Intro oracle** | `cd client && node visual/run.mjs 22-intro-replay` | 4 kills, cards p0..p4, `won=true` |
-| Visual guards | `node visual/run.mjs {01-smoke,04-combat,20-warp-blast-immunity,25-enemy-shield}` | see §7.1 |
+| Gate | Command | Baseline @ `24849f7` | On the branch |
+|---|---|---|---|
+| Client units | `cd client && node --test` | 342 pass / 0 fail | 427 pass / 0 fail |
+| Server units | `cd server && npm test` (needs local Postgres) | 137 pass / 0 fail | 147 pass / 0 fail |
+| **Intro oracle** | `cd client && node visual/run.mjs 22-intro-replay` | 4 kills, cards p0..p4, `won=true` | unchanged, `tick=2503/3490` |
+| **Divergence oracle** | `cd client && node visual/run.mjs 36-sim-divergence` | (did not exist) | `hash=0x9d2050b0 draws=38`, both hosts |
+| Headless referee | `node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json` | (did not exist) | 3490/3490 ticks, 4 kills |
+| Visual guards | `node visual/run.mjs {01-smoke,04-combat,20-warp-blast-immunity,25-enemy-shield}` | see §7.1 | green |
 
 The visual suite drops ~6 scenarios at baseline — judge by the reliably-green set and zero page errors.
 The `?bench` A/B perf gate takes 25–40 min: **ask before running**, default skip. It is worth proposing
@@ -714,6 +799,11 @@ Captured on `feature/server-sim` @ `24849f7` (worktree `../ag-wt/server-sim`), 2
 
 `tick=2503/3490` is the exact intro-replay signature to compare against after every slice: a change in the
 tick count means the sim diverged even if the outcome still reads `won=true`.
+
+**Branch full-suite result after Slice C (2026-08-20): 29 passed / 12 failed of 41.** The failing set is a
+strict SUBSET of `main`'s — the same twelve, minus `16-enemy-health-bar` and `25-enemy-shield`, which the
+note below already flags as suite-only flakes. `22-intro-replay` and the new `36-sim-divergence` both pass
+inside the full run, not just individually. No new failures were introduced by Slices B3c or C.
 
 **Full visual suite baseline on `main` @ `24849f7`: 26 passed / 14 failed.** The failing set is
 `06-pause`, `08-arena-boundaries`, `09-mission-setpieces`, `12-audio`, `15-mobile-landscape`,

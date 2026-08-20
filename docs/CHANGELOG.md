@@ -5,6 +5,49 @@
 
 ## 2026-08-20
 
+- **The game's rules now run in Node, and a test proves the two hosts agree.**
+  `node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json` replays the
+  canonical Level-0 input trace headlessly — 3490/3490 ticks, 4 kills, 125 credits, arena cleared — with no
+  browser, no renderer and no DOM in the process. It builds the catalog straight from `catalog_seed.js`,
+  places the home station from the map descriptor (docking decides a mission win, so the station is
+  simulation state), builds the exact ship the trace was recorded with, and steps `sim-core/tick.js`.
+  The new visual scenario **`36-sim-divergence`** is the standing guard: the same trace replayed in a real
+  browser and in Node must agree on a full-precision digest of the final world (`sim-core/digest.js`), on
+  the run summary, **and on how many seeded `simRandom()` draws each consumed** — `hash=0x9d2050b0`,
+  `draws=38` on both sides. The draw count is the half that names a culprit: a cosmetic path reaching into
+  the gameplay stream (DECISIONS §73) shifts one host's stream and not the other's, and the test says so
+  instead of just reporting a different hash. Negative-tested by adding one `simRandom()` call to the
+  browser's tick. Supporting: `ship-entity.makePlayer` builds the player as data (`buildPlayer` is now
+  `makePlayer` plus a mesh), and `sim-random.js` counts its draws, reset by `seedSim`.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice C).
+
+- **The whole tick moved into `sim-core`; `sim.js` is the picture now.** `sim-core/tick.js` owns
+  `simTick(world, dt)` — the module a server runs. Under it: `level-runner.js` (the phase/wave script's
+  state lives on `world.levelRunner`; `sim.js` keeps a proxy object of the same name so the eight modules
+  and three scenarios that read its fields are untouched), `step-enemies.js` (enemy AI + deaths, now
+  resolving a drop's catalog row itself, which retired the client-side `spawnSpecialDrop`) and
+  `step-player.js` (the player step, the click-to-fly autopilot and its arrival checks, the mission-zone
+  countdown, the soft-boundary warp-back). `BANNER_FADE` and the banner emit helpers moved to `events.js`.
+  `sim.js` went from 1202 to ~630 lines and keeps the browser host, the event adapter, `syncMeshes`, the
+  FX-ageing steps, the DOM readouts, music/pause and the scene half of `reset()`. No gameplay change: intro
+  trace still `tick=2503/3490`; client tests 390 → 427.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3c).
+
+- **`reset()` split into the run's simulation and the tab's picture.** `sim-core/reset-world.js` empties the
+  world, chooses where the run is fought, puts the ship on the line, zeroes the counters and starts the
+  level script; `sim.js` keeps the FX pools, the set-piece rebuild, the overlay and the telemetry. It is
+  two calls with the host's scenery rebuild between them, and that order is load-bearing in both
+  directions: the rebuild reads `arenaCenter`/`arenaDrift`, and it REPLACES `world.station` because the
+  home station is a set-piece. Folding them into one call left the home station unclickable for a whole
+  roam — caught by `32-star-system`.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3c).
+
+- **`sim-core/boundary.test.js` now checks that every module actually loads in Node.** The `tick.js` move
+  imported `stepPlayerDeath` from the wrong sibling; ESM only rejects a bad named import at LINK time, so
+  424 unit tests stayed green while the game booted to a blank page. One dynamic import per module turns
+  that class of mistake into a 300 ms unit-test failure. Negative-tested by breaking an import on purpose.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice C).
+
 - **The projectile steps now run from `sim-core`, and the suite's worst flake is fixed.** `stepBullets` and
   `stepRockets` moved to `client/src/sim-core/step-projectiles.js` taking the World explicitly — the swept
   bullet test, the warping-enemy immunity, the opt-in dodge roll and the spiral volley's child accounting

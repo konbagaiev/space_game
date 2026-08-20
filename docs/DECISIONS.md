@@ -4275,3 +4275,61 @@ enemies and ~50 bullets at 60 Hz is microseconds per tick.
 
 If per-room CPU ever becomes real, the tick drops **on both hosts at once** — it is one constant — by
 measurement, and lowering it re-derives every timing-tuned count, so it is a change with its own test pass.
+
+## 119. The World is threaded through the sim as an argument, and `sim.js` keeps proxies rather than moving call sites
+
+**Context.** Extracting the simulation meant every step function had to stop reading the module singletons
+in `client/src/state.js`. There were two ways to pay for that: rewrite the ~200 call sites across the client
+that say `G.kills`, `enemies`, `levelRunner.won`, `engageAutopilot()`, or thread the World in and keep the
+old names pointing at it.
+
+**Decision.** The World arrives as the **first argument** of every sim-core function, and the client keeps
+its historical names as thin bindings onto this tab's World:
+- `state.js` defines getter/setter proxies so `G.player`, `G.kills`, `G.autopilot`, `G.baseStation` and the
+  rest read and write `world.*` — one copy, two names;
+- `sim.js` exports `levelRunner` as an object whose ten fields proxy onto `world.levelRunner` and whose
+  `start`/`update`/`win` delegate to `sim-core/level-runner.js`;
+- `sim.js` exports `warpPlayerToCenter`, `engageAutopilot`, `engageDropAutopilot`, `engagePointAutopilot`
+  and `cancelAutopilot` as one-line binds;
+- `ship-build.js` keeps `updateGroups`, `resolveComponents`, `spawnEnemyShip` bound to the same World.
+
+**Why.** There is no real alternative to the argument itself: `state.js` runs `window.localStorage` at
+import time, so sim-core can never reach it in Node — the collections *have* to arrive as a parameter, and
+one process then holds many Worlds, which is what a server needs (§116).
+
+The proxies are the deliberate part. Rewriting every call site would have made a 6000-line diff out of a
+behaviour-neutral refactor, and behaviour-neutral is the only property that made the intro-replay oracle
+(`tick=2503/3490`, unmoved across eighteen commits) meaningful evidence. Every call site changed is a place
+the oracle cannot see. The cost is one indirection and a small amount of "this looks like a singleton but
+isn't" — paid once, in two files, both of which say so at the top.
+
+**Consequence worth knowing.** A proxy is not free of ordering: `world.station` is a *set-piece*, so the
+client's scenery rebuild replaces the object the sim holds. That is why starting a run is two sim-core calls
+with the rebuild between them (`clearAndPlaceRun` → scenery → `startRun`) rather than one.
+
+## 120. The browser↔Node divergence oracle compares a world digest AND the seeded-RNG draw count
+
+**Context.** §116 keeps single-player simulating in the browser precisely so that two hosts running one
+module give a permanent, free divergence oracle. An oracle nobody runs is a slogan, so it had to become a
+test — and the test had to decide what "the same fight" means.
+
+**Decision.** `36-sim-divergence` replays the canonical Level-0 input trace in a real browser and headlessly
+in Node (`server/tools/sim-replay.mjs`) and asserts three things: the same **world digest**
+(`sim-core/digest.js`, FNV-1a over the full-precision state), the same **run summary**, and the same
+**number of `simRandom()` draws** consumed (`sim-random.js` counts them; `seedSim` resets the counter).
+
+**Why the draw count, separately from the hash.** The hash answers "did they diverge"; the draw count
+answers "why". The failure this project actually keeps having is a §73 violation — a cosmetic path reaching
+into the seeded gameplay stream. That shifts one host's stream and not the other's, and a bare hash
+difference gives no clue where to look, whereas `seeded RNG draws differ (browser 3525, node 38)` names the
+class of bug in the message. Verified by injecting exactly that bug.
+
+**Why full precision.** Both hosts run the same code over IEEE doubles in the same order, so bit-identical
+is the correct expectation, not an optimistic one. Rounding first would hide a real divergence during the
+window where it is still small — which is the window where it is cheap to find.
+
+**What it deliberately does not cover.** The browser side runs plain `?playback`, never the intro cutscene:
+the cutscene freezes on cards and fakes a "Return to base" click, and a trace records keys and touch, never
+a mouse. That is browser-only machinery a headless referee has no business reproducing. `22-intro-replay`
+guards the cutscene path; this guards the simulation. Neither sees the *picture* — a NaN camera passes both
+(§117's lesson), which is what the full visual suite is for.

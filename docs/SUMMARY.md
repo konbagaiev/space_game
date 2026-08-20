@@ -3,12 +3,18 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-19 (**Simulation state moved out of Three.js** — every simulated entity now owns plain
+**Updated:** 2026-08-20 (**The simulation runs in Node, and a test proves it agrees with the browser** — the
+whole tick lives in `client/src/sim-core/` behind `tick.js simTick(world, dt)`, `sim.js` is down to ~630
+lines of picture, and `server/tools/sim-replay.mjs` replays the canonical Level-0 input trace headlessly
+(3490 ticks, 4 kills, arena cleared) with no browser anywhere. The new `36-sim-divergence` scenario requires
+the browser and Node to land on the same world digest AND the same seeded-RNG draw count. Slices A–C of
+`docs/plans/server-authoritative-sim.md`; see "Simulation state is Three.js-free" and "The headless referee
+and the divergence oracle" below.) Prior: (**Simulation state moved out of Three.js** — every simulated entity now owns plain
 `pos`/`vel`/`heading`/`scale` data (`sim-core/vec.js`), `collision.js` composes the ship's world matrix itself
 from that state instead of reading `mesh.matrixWorld`, and the new one-way `sim.js syncMeshes()` is the only
 place the simulation reaches the scene graph. Warp-in is sim state, not an animation. A pure refactor: the
 Level-0 intro trace replays bit-identically (`tick=2503/3490`). Slice A of
-`docs/plans/server-authoritative-sim.md`, see "Simulation state is Three.js-free" below.) Prior: (**Star-centered canonical coordinate frame + per-object `frame` tag** — the canonical
+`docs/plans/server-authoritative-sim.md`.) Prior: (**Star-centered canonical coordinate frame + per-object `frame` tag** — the canonical
 frame is now heliocentric (star at origin) with a planet-2 floating origin for gameplay; `system-map.js` gains a
 pure `starWorldPos`/`planetOriginOffset`/`worldToLocal`/`localToWorld` seam, set-pieces carry `frame:"planet:2"`
 (default, unchanged) vs `"world"` (space-fixed, re-derived to local each frame), with one demo world-fixed
@@ -2687,6 +2693,13 @@ first translation). See DECISIONS §10.
   **`reset-progress`** skill (`.claude/skills/reset-progress/`). The **per-player**
   reset is also reachable by players themselves via **`POST /api/players/:id/reset`** (the settings
   "Reset my progress" control) — same `resetPlayer` op. See DECISIONS §19.
+- **Headless simulation replay (`server/tools/sim-replay.mjs`):** a CLI that replays an input trace through
+  `client/src/sim-core/` in Node — no browser, no renderer, no DOM.
+  `node server/tools/sim-replay.mjs <trace.json> [--ticks N] [--json]` prints kills / credits / outcome, a
+  world digest and the seeded-RNG draw count. It is the machinery for sealing the economy later (re-simulate
+  a submitted session trace server-side instead of trusting `POST /api/games`), and its exported
+  `runTrace()` is one half of the `36-sim-divergence` guard. See "The headless referee and the divergence
+  oracle" below.
 - Run locally: `cd server && npm install && npm start` → open **http://localhost:4000**.
 - The client now **requires the API to start** (it fetches the ship/weapon catalog + active ship in
   `bootstrap()`). Since the game is always served same-origin by this server, the API is available.
@@ -2833,10 +2846,6 @@ Consequences that matter:
   now it is THREE-free *input* too.
 - The **warp-in animation is simulation state**, not an animation: `warping` / `spawnAge` / `spawnDur` decide
   invulnerability, fire-hold and homing eligibility, and `mesh.scale` is merely their visible consequence.
-- **One remaining render→sim coupling:** `noseZ` is *measured* off the loaded `.glb` by
-  `ship-factory.applyShipModel`, so a piece of simulation input is derived from an asset a server would never
-  parse (and a shot fired before the model lands uses the `1.6` primitive default). `syncMeshes` copies it
-  back each tick as an explicit stopgap until it becomes catalog data.
 
 **Model-derived simulation input is baked into the catalog.** A ship's `hitBoxes`, `broadR` and `muzzle`
 all decide gameplay — what a shot connects with, and where it is born — so `shipModelCfg` lives in
@@ -2866,12 +2875,19 @@ and the run state — `kills`, `enemyTotal`, `earned`, `earnedXp`, `banked`, `co
 to change. What stays genuinely on `G` is the client's own: graphics tier, scene handles, the account, UI
 callbacks, `paused`/`gameStarted`/`mapOpen`, and the HUD banner.
 
-**The tick has two halves.** `sim.js` `update(dt)` = `simTick(dt)` then `renderTick(dt)`, and it keeps that
-name and signature because the fixed-step accumulator, the replay stepper and the `?debug` hooks all call
-it. `simTick` is the game: `stepPlayer`, `stepEnemyAI`, `stepBullets`, `stepRockets`, `stepEnemyDeaths`,
-`stepDrops`, `levelRunner.update`, `stepPlayerDeath`. `renderTick` is the picture: `syncMeshes`, the event
-drain, the drop beam, the FX-pool ageing, `settleView`, the set-piece animations. Only the first half will
-exist on a server. **A rocket's detonation is likewise split**: `sim-core/spawn.js detonateRocket` applies
+**The tick has two halves, and the first one lives in `sim-core`.** `sim.js` `update(dt)` = `simTick(dt)`
+then `renderTick(dt)`, and it keeps that name and signature because the fixed-step accumulator, the replay
+stepper and the `?debug` hooks all call it. `simTick` is a one-line bind of **`sim-core/tick.js`
+`simTick(world, dt)`** — the module a server runs — which advances the combat clock and then calls, in this
+order: `stepPlayer`, `stepEnemyAI`, `stepBullets`, `stepRockets`, `stepEnemyDeaths`, `stepDrops`,
+`updateLevelRunner`, `stepPlayerDeath`. It draws nothing, plays nothing and fetches nothing; it returns the
+Grab's current target, the one thing the host wants back (the pull beam is drawn around it). **Call order is
+execution order** — deaths after the projectiles that caused them, spawning after the deaths that free its
+slots, the player's death check last. `renderTick` is the picture: `syncMeshes`, the event drain, the drop
+beam, the FX-pool ageing, `settleView`, the set-piece animations. `sim.js` is ~630 lines and holds no rules:
+the browser host, the event adapter, `syncMeshes` + the cosmetic wing-bank, the FX ageing, the DOM readouts
+(banner, OOB warning, return arrow/hint, roam nav), music, pause, the scene half of `reset()`, and thin binds
+of the sim-core entry points other modules import by name from it. **A rocket's detonation is likewise split**: `sim-core/spawn.js detonateRocket` applies
 the hull-relative blast damage (within `blastR`) and emits `detonate`; the adapter draws the fireball and
 plays the bang. Disposal is `despawnAt`'s job either way — a rocket that reaches `maxRange` leaves the world
 without ever detonating.
@@ -2891,11 +2907,13 @@ seeker, `findBulletAimTarget` for the aim-assist cone, both pure scans over the 
 `ship-build.js` keeps a World-bound `updateGroups` wrapper. **`G.player` is a getter/setter onto
 `world.player`** — one object, two names, no duplicated state.
 
-**Ships are built as data too.** `sim-core/ship-entity.js` resolves a catalog ship row into a fighting
-entity — `resolveWeapon`, `resolveComponents`, `buildMounts`, `buildGroups`, `makeEnemy`, `spawnEnemy` —
-reading the catalog off `world.catalog` rather than a module singleton. `ship-build.js` keeps thin wrappers
-bound to this tab's World (so `resolveComponents(refs)` / `spawnEnemyShip(def)` are unchanged for callers)
-plus `attachEnemyBody`/`detachEnemyBody` for the host. **`makeEnemy` draws from the seeded stream exactly
+**Ships are built as data too — the player included.** `sim-core/ship-entity.js` resolves a catalog ship
+row into a fighting entity — `resolveWeapon`, `resolveComponents`, `buildMounts`, `buildGroups`,
+**`makePlayer`**, `makeEnemy`, `spawnEnemy` — reading the catalog off `world.catalog` rather than a module
+singleton. `buildPlayer` in `ship-build.js` is now `makePlayer(world.catalog, active)` plus a mesh, the same
+split every other entity already had, which is what lets a headless referee build the exact ship a recording
+was made with. `ship-build.js` keeps thin wrappers bound to this tab's World (so `resolveComponents(refs)` /
+`spawnEnemyShip(def)` are unchanged for callers) plus `attachEnemyBody`/`detachEnemyBody` for the host. **`makeEnemy` draws from the seeded stream exactly
 three times — facing, spawn angle, spawn distance, in that order.** Every recorded trace replays against
 that sequence, so new draws are appended, never inserted (DECISIONS §73). Gameplay constants
 `BULLET_PLANE_Y` and `SPAWN_GROW_TIME` live in `sim-core/consts.js`; `state.js` re-exports them.
@@ -2936,8 +2954,8 @@ see this tick's puffs.
 **What lives in `sim-core/`:** `vec.js`, `consts.js` (including `SHIP_GROUP_SCALE`, `BULLET_PLANE_Y`,
 `SPAWN_GROW_TIME` and the soft boundary's `ARENA`/`OOB_WARN_DELAY`/`OOB_RETURN_TIME`), `events.js`,
 `world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`, `drops-sim.js`,
-`system-map.js`, `step-projectiles.js` (`stepBullets`/`stepRockets`, taking the World) — plus the game's
-pure rules —
+`system-map.js`, `digest.js`, and the whole tick — `tick.js`, `step-player.js`, `step-enemies.js`,
+`step-projectiles.js`, `level-runner.js`, `reset-world.js` — plus the game's pure rules —
 `components.js` (`deriveDrive`/`shipMass`/`repairTick`/`shieldRecharge`/`applyShieldedDamage`),
 `steering.js`, `spawn-timing.js`, `collision.js`, `level-sim.js`, `drops-config.js`, `autopilot-config.js`
 and `sim-random.js` (the seeded gameplay stream, DECISIONS §73). Their unit tests moved with them.
@@ -2945,12 +2963,65 @@ and `sim-random.js` (the seeded gameplay stream, DECISIONS §73). Their unit tes
 **`sim-core/boundary.test.js` enforces the folder's contract** rather than trusting it: every non-test
 module in here is scanned and the suite fails if it imports `three`, imports anything outside the folder,
 references `window`/`document`/`localStorage`/`sessionStorage`/`navigator`/`location`/`alert`, or calls
-`fetch()`. Those are exactly the properties that let the same file run as the Node authority and as the
-headless referee; one stray import would break that silently and surface weeks later.
+`fetch()`. It then **dynamically imports each module**, so it also fails on a named import that does not
+resolve — ESM only rejects those at link time, which is how a wrong-sibling import once left 424 unit tests
+green and the game booting to a blank page. Those are exactly the properties that let the same file run as
+the Node authority and as the headless referee; one stray import would break that silently and surface weeks
+later.
 
-This is Slice A + B1 of `docs/plans/server-authoritative-sim.md` — the groundwork for running one
-simulation in two hosts (browser for single-player, Node for multiplayer). Nothing about gameplay changed:
-the recorded Level-0 intro trace replays bit-identically (same 4 kills, same `tick=2503/3490`).
+**Starting a run is two sim-core calls with the host's scenery rebuild between them.** `reset()` in `sim.js`
+clears the FX pools, then calls `sim-core/reset-world.js` `clearAndPlaceRun(world)` (empty the entities
+through the host, discard uncollected loot, drain the event queue, resolve the run's centre via `runCenter`
+and set `arenaCenter`/`arenaDrift`), then rebuilds the map's set-pieces and the ghost battle, then calls
+`startRun(world, { keepPlayer })` (place the ship, restore hull/shield/fire-groups, zero the run counters,
+start the level script or arm the roam). **That order is load-bearing in both directions:** the rebuild
+READS `arenaCenter`/`arenaDrift` (drifting maps pin their decor to the zone centre) and it REPLACES
+`world.station`, because the home station is a set-piece — so the roam gate that makes the station clickable
+has to arm the new object. A headless authority has the same shape.
+
+**The level runner runs on the World.** `sim-core/level-runner.js` holds the phase/wave script's rules
+(`startLevel`, `updateLevelRunner`, `enterPhase`, `shouldAdvance`, `beginReturn`, `checkArrival`,
+`winLevel`) and its state lives on `world.levelRunner` (`level`, `phaseIndex`, `killsAtPhaseStart`,
+`spawnedThisPhase`, `spawnCooldown`, `won`, `winPending`, `winText`, `winTextKey`, `returningToBase`).
+`sim.js` still exports an object called `levelRunner` whose properties proxy onto those fields and whose
+`start`/`update`/`win` delegate, because `main.js`, `mainwindow.js`, `settings.js`, `account.js`,
+`replay.js` and three visual scenarios read them by name.
+
+### The headless referee and the divergence oracle
+
+**The game's rules run in Node.** `server/tools/sim-replay.mjs` replays an input trace through `sim-core`
+with no browser, no renderer and no DOM:
+
+```
+node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json
+```
+
+replays the canonical Level-0 trace 3490/3490 ticks — 4 kills, 125 credits, arena cleared. It builds the
+catalog straight from `server/src/catalog_seed.js` (with `enemyTotal` stamped on by `enemy_total.js`, as the
+server does before serving it), places the home station from the map descriptor (docking decides a mission
+win, so the station is simulation state), builds the exact ship the trace recorded, and steps
+`sim-core/tick.js`. It reports `won false / returning true`, which is correct: winning needs the docking
+autopilot, and a trace records keys and touch, never a mouse click — in the browser the intro cutscene fakes
+that click, which is browser-only machinery a referee has no business reproducing. `runTrace(trace, …)` is
+exported, which is also the machinery for sealing the economy later (re-simulate a submitted session trace
+server-side and decide the reward there, instead of trusting `POST /api/games`).
+
+**`sim-core/digest.js`** reduces a World to one FNV-1a hash over its full-precision state plus a readable
+summary. Positions are hashed unrounded on purpose: both hosts run the same code over IEEE doubles in the
+same order, so bit-identical is the correct expectation and rounding would hide an early divergence.
+`sim-random.js` counts its draws (`simRandomDraws()`, reset by `seedSim`).
+
+**`36-sim-divergence` is the standing guard.** It replays the same trace in a real browser (plain
+`?playback`, no cutscene) and in Node, and requires the digest, the summary AND the draw count to match —
+`hash=0x9d2050b0`, `draws=38`, 3490 ticks each. The draw count is the half that names a culprit: a cosmetic
+path reaching into the seeded gameplay stream (DECISIONS §73) shifts one host's stream and not the other's,
+and the test says so rather than reporting an opaque hash difference. `22-intro-replay` guards the cutscene
+path; this one guards the simulation.
+
+This is Slices A–C of `docs/plans/server-authoritative-sim.md` — one simulation, two hosts (browser for
+single-player, Node for multiplayer and for the headless referee). Nothing about gameplay changed at any
+point: the recorded Level-0 intro trace replays bit-identically throughout (same 4 kills, same
+`tick=2503/3490`). Slice D — the WebSocket and a server-run mission instance — is not built.
 - **Pure, Three.js-free logic (unit-tested):** the rules-bearing ones now live in `sim-core/` (see above);
   the rest stay in `src/`. `components.js` (catalogs + `deriveDrive` + `shipMass` +
   `hitsToKill` + `repairTick`), `drops-config.js` (the loot-drop constants incl. the single `DROP_MODEL_URL`,
@@ -3163,6 +3234,13 @@ the recorded Level-0 intro trace replays bit-identically (same 4 kills, same `ti
   z**, with the y column untouched and the pool size unchanged — the guard that the backdrop is
   player-locked, not camera-locked or origin-anchored; mutation-verified: wrapping on the camera position
   instead fails the z bound by the camera's +26 z offset).
+  and **sim-divergence** (`36-sim-divergence.mjs`: replays the canonical Level-0 trace in a real browser on a
+  plain `?playback&debug` url **and** headlessly in Node via `server/tools/sim-replay.mjs`, then asserts the
+  two hosts agree on the world digest (`sim-core/digest.js`), on the run summary and on the seeded-RNG draw
+  count — `hash=0x9d2050b0`, `draws=38`, 3490 ticks each. This is the standing proof that "one simulation,
+  two hosts" is true and not aspirational; the draw count is the half that names the culprit when a cosmetic
+  path reaches into the gameplay stream. Negative-verified by adding one `simRandom()` call to the browser's
+  tick, which fails it with the draw mismatch. Needs `npm run assets:pull`, like 22-intro-replay).
   Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`; a single scenario:
