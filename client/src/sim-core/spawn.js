@@ -13,6 +13,8 @@
 //
 // See docs/plans/server-authoritative-sim.md (Slice B3).
 import { Vec3 } from './vec.js';
+import { pointHitsShip } from './collision.js';
+import { applyShieldedDamage } from './components.js';
 
 // A bullet: straight flight, no steering, culled by distance travelled rather than time.
 // `shooterVel` is the firing ship's velocity — bullets inherit it (rockets deliberately do not, §70).
@@ -136,4 +138,35 @@ export function despawnAt(world, kind, list, index) {
   world.host.onDespawn(kind, e);
   list.splice(index, 1);
   return e;
+}
+
+// A rocket goes off: deal its blast damage, then say so. `dealDamage = false` is a rocket SHOT DOWN by
+// gunfire — it still makes the bang, it just does not hurt anyone.
+//
+// Blast damage is HULL-relative (within blastR of the multi-sphere hitbox), matching the hull-relative
+// detonation trigger in the rocket step. A centre-distance test used to miss, because the detonation point
+// sits off the ship's centre — on a nose/tail/wing sphere — so a rocket could go off and damage nobody.
+// blastR (>= detonateR) means a rocket that reaches a hull always deals its damage. See DECISIONS §45.
+//
+// This does NOT release the rocket's body: every rocket leaves the world through despawnAt(). Detonating
+// and despawning are different things — a rocket that reaches its maxRange despawns without detonating.
+export function detonateRocket(world, r, dealDamage = true) {
+  if (dealDamage) {
+    if (r.fromPlayer) {
+      for (const e of world.enemies) {
+        if (e.warping) continue; // invulnerable while forming — no splash damage
+        if (pointHitsShip(e, r.pos, r.blastR)) {
+          const dr = applyShieldedDamage(e, r.damage); // shield first, excess spills to the hull this tick
+          if (dr.absorbed) world.events.emit({ type: 'enemyShieldHit', enemy: e, pos: r.pos.clone(), broke: dr.broke });
+        }
+      }
+    } else if (world.player && world.player.alive && pointHitsShip(world.player, r.pos, r.blastR)) {
+      const dr = applyShieldedDamage(world.player, r.damage);
+      if (dr.absorbed) world.events.emit({ type: 'shieldHit', pos: r.pos.clone(), broke: dr.broke });
+    }
+  }
+  world.events.emit({
+    type: 'detonate', pos: r.pos.clone(), weaponClass: r.weaponClass,
+    blastVis: r.blastVis, blastTint: r.blastTint, blastTime: r.blastTime, blastBright: r.blastBright,
+  });
 }

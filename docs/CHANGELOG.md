@@ -5,6 +5,19 @@
 
 ## 2026-08-20
 
+- **The tick has two halves now: `simTick` and `renderTick`.** `update(dt)` keeps its name and signature —
+  the accumulator, the replay stepper and every `?debug` hook call it — but internally it is the game
+  (movement, deaths, the Grab, the level runner) followed by the picture (`syncMeshes`, the event drain,
+  the drop beam, FX ageing, camera, set-pieces). The two used to be interleaved, and Slices A–B3b refused
+  to reorder them; it is safe here for a statable reason — no presentation step reads or writes simulation
+  state, the FX pools only age themselves — and what shifts is when FX created during a tick first age, by
+  one tick (~16 ms) on effects living 0.06–2 s. **`detonateRocket` also split**: it was doing blast damage,
+  the fireball and the bang in one function. The damage half moved to `sim-core/spawn.js` (hull-relative
+  within `blastR`, unchanged) and emits a new **`detonate`** event that the adapter turns into the burst and
+  the sound; disposal stays with `despawnAt`, because detonating and leaving the world are different things.
+  No gameplay change: intro trace still `tick=2503/3490`.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3c, part 4).
+
 - **Loot drops split into simulation and body, like the projectiles and ships before them.**
   `client/src/sim-core/drops-sim.js` owns the Grab — arming, the inverse-square pull, the collect — plus
   `world.pendingLoot`; `drops.js` keeps the crate model, halo, cosmetic spin, blue beam and the catalog

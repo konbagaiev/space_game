@@ -26,6 +26,8 @@
 //   { type: 'evade',           pos }                                   a shot was dodged (Maneuver skill)
 //   { type: 'pickup',          item }                                  the Grab collected a loot drop
 //   { type: 'smoke',           pos }                                   one rocket-trail puff
+//   { type: 'detonate',        pos, weaponClass, blastVis, blastTint, blastTime, blastBright }
+//                                                                       a rocket went off (damage already applied)
 //   { type: 'kill',            pos, isBoss, exhaustColor, sizeScale, role, shipClass, reward, xp, name }
 //   { type: 'warpFlash',       pos }                                   the soft-boundary warp-back arrival
 //   { type: 'banner',          key, params, dur }                      transient centred announcement (i18n KEY, not text)

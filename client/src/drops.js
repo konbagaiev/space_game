@@ -13,7 +13,7 @@ import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLo
 import { DROP_MODEL_URL, DROP_CHANCE, ROTATE_PERIOD, WEIGHT_FALLBACK,
          REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pickLoot, rewardOwned } from './sim-core/drops-config.js';
 import { t } from './i18n.js';
-import { spawnDrop as spawnDropIn, stepDrops, clearDrops as clearDropsIn,
+import { spawnDrop as spawnDropIn, clearDrops as clearDropsIn,
          takeLoot as takeLootIn } from './sim-core/drops-sim.js';
 
 // The live drops of the current World, re-exported under the name every caller already uses. The array
@@ -197,11 +197,11 @@ export function spawnSpecialDrop(pos, reward) {
 // rewardOwned() (drops-config.js) so the logic stays node-testable; here we just supply G.activeShip.
 export function ownsReward(reward) { return rewardOwned(G.activeShip, reward); }
 
-// Host half of the Grab: advance the simulation, then show what it did. The spin, the beam and the crate
-// positions are presentation; arming, pulling and collecting belong to sim-core/drops-sim.js.
-export function updateDrops(dt) {
-  for (const d of drops) d.obj && (d.obj.rotation.y += dt * (Math.PI * 2 / ROTATE_PERIOD)); // cosmetic spin
-  const target = stepDrops(world, dt);
+// Render half of the Grab: show what the simulation did this tick. `target` is whatever stepDrops picked
+// (sim-core/drops-sim.js) — null when nothing is being pulled. The spin, the beam and the crate positions
+// are presentation; arming, pulling and collecting are not.
+export function drawDrops(target, dt) {
+  for (const d of drops) if (d.obj) d.obj.rotation.y += dt * (Math.PI * 2 / ROTATE_PERIOD); // cosmetic spin
   if (!target) { hideLine(); return; }
   if (target.obj) target.obj.position.set(target.pos.x, target.pos.y, target.pos.z);
   drawLine(world.player.pos, target.pos); // thin blue activity indicator

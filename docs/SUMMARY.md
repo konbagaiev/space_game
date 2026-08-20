@@ -2866,6 +2866,16 @@ and the run state — `kills`, `enemyTotal`, `earned`, `earnedXp`, `banked`, `co
 to change. What stays genuinely on `G` is the client's own: graphics tier, scene handles, the account, UI
 callbacks, `paused`/`gameStarted`/`mapOpen`, and the HUD banner.
 
+**The tick has two halves.** `sim.js` `update(dt)` = `simTick(dt)` then `renderTick(dt)`, and it keeps that
+name and signature because the fixed-step accumulator, the replay stepper and the `?debug` hooks all call
+it. `simTick` is the game: `stepPlayer`, `stepEnemyAI`, `stepBullets`, `stepRockets`, `stepEnemyDeaths`,
+`stepDrops`, `levelRunner.update`, `stepPlayerDeath`. `renderTick` is the picture: `syncMeshes`, the event
+drain, the drop beam, the FX-pool ageing, `settleView`, the set-piece animations. Only the first half will
+exist on a server. **A rocket's detonation is likewise split**: `sim-core/spawn.js detonateRocket` applies
+the hull-relative blast damage (within `blastR`) and emits `detonate`; the adapter draws the fireball and
+plays the bang. Disposal is `despawnAt`'s job either way — a rocket that reaches `maxRange` leaves the world
+without ever detonating.
+
 **Loot drops are split the same way.** `sim-core/drops-sim.js` owns the Grab — arming (`ARM_DELAY` in the
 field), the weight-scaled pull, the collect at `COLLECT_DIST` — and fills `world.pendingLoot`, which the
 victory path drains. Reach is **emergent**: a drop is eligible while the inverse-square field crosses

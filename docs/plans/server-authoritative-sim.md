@@ -245,6 +245,31 @@ Two things this surfaced:
 Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
 `17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
 
+#### B3c part 4 outcome — the tick has two halves, and detonation stops mixing them
+
+**`update(dt)` is now `simTick(dt)` + `renderTick(dt)`.** The first is the game — movement, deaths, the
+Grab, the level runner. The second is the picture — `syncMeshes`, the event drain, the drop beam, the FX
+ageing, the camera, the set-piece animations. `update()` keeps its name and signature, so the accumulator,
+the replay stepper and the `?debug` hooks are untouched.
+
+This required **reordering**, which Slices A–B3b deliberately refused to do. It is safe here for a reason
+that can be stated: no presentation step reads or writes simulation state — the FX pools only age
+themselves. What genuinely shifts is when FX created *during* a tick first age, by one tick (~16 ms) on
+effects that live 0.06–2 s. The intro trace is the check that the simulation did not move, and it did not:
+`tick=2503/3490`.
+
+**`detonateRocket` split.** It was doing three jobs at once: blast damage (simulation), the fireball and
+ring (presentation), and the bang (audio). The damage half moved to `sim-core/spawn.js` — hull-relative
+within `blastR`, exactly as before — and it now emits **`detonate`**, which the adapter turns into
+`spawnRocketBurst` plus the sound. Disposal stays with `despawnAt`, since detonating and leaving the world
+are still different things.
+
+**A slice bug worth remembering.** Cutting `detonateRocket` out of `projectiles.js` by text range also took
+`const SMOKE_MAX = 640` with it, and **the 386 unit tests did not notice** — they never load
+`projectiles.js`, which imports `three`. The whole visual suite timed out instead, with
+`SMOKE_MAX is not defined` on page load. For any module that imports `three`, *booting the game* is the
+only test there is; run one scenario, not the unit suite, after editing one.
+
 #### B3c part 3 outcome — loot drops split
 
 `sim-core/drops-sim.js` owns the Grab: `makeDrop`, `spawnDrop`, `stepDrops` (arm → pick the nearest

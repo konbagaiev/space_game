@@ -12,7 +12,7 @@ import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './system-map.js';
 import { repairTick, shieldRecharge, applyShieldedDamage } from './sim-core/components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset, keyboardThrust } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
-import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, detonateRocket, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
+import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, spawnRocketBurst, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
@@ -21,10 +21,11 @@ import { stepSpawnGate } from './sim-core/spawn-timing.js';
 import { simRandom } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
 import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
-import { despawnAt } from './sim-core/spawn.js';
+import { despawnAt, detonateRocket } from './sim-core/spawn.js';
 import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
 import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './sim-core/collision.js';
-import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops, attachDropBody, detachDropBody } from './drops.js';
+import { drawDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops, attachDropBody, detachDropBody } from './drops.js';
+import { stepDrops } from './sim-core/drops-sim.js';
 import { canDock, BASE_ARRIVE_RADIUS } from './sim-core/autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
@@ -565,6 +566,10 @@ function applySimEvent(ev) {
       }
       break;
     case 'smoke':          spawnSmoke(ev.pos); break;
+    case 'detonate':
+      spawnRocketBurst(ev.pos, ev.blastVis, ev.blastTint, ev.blastTime, ev.blastBright); // flipbook fireball + ring
+      audio.sfx.explosion(0.7, sfxFor('weapon', ev.weaponClass, 'explode'), 0.3); // 70% quieter than a ship
+      break;
     case 'warpFlash':      spawnExplosion(ev.pos); break;
     case 'evade':
       creditPopups.push({ pos: ev.pos, text: t('ui.evade'), evade: true, life: 1.2, maxLife: 1.2 });
@@ -650,52 +655,63 @@ world.host = {
   },
 };
 
-export function update(dt) {
-  if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
+// The tick, in two halves.
+//
+// `simTick` is the game: everything that decides what happened. `renderTick` is the picture: the scene
+// graph copy, the queued events turned into sight and sound, the FX ageing, the camera. Only the first
+// half will exist on a server, which is the whole point of separating them.
+//
+// The two used to be INTERLEAVED — FX ageing sat between the movement steps and the deaths — and that
+// order was preserved through Slices A–B3b on purpose, because reordering is a behaviour change dressed up
+// as tidying. It is reordered here deliberately, and the reason it is safe is that no presentation step
+// reads or writes simulation state: the FX pools only age themselves. What DOES shift is when FX created
+// during this tick first age — by one tick, ~16 ms, on effects that live 0.06–2 s. The recorded intro
+// trace is the check that the simulation itself did not move.
+export function simTick(dt) {
+  world.combatElapsed += dt; // unpaused combat clock (skipped while paused) — drives the enemy hold-fire grace
 
-  G.combatElapsed += dt; // unpaused combat clock (update() is skipped while paused) — drives the enemy hold-fire grace
-
-  // NOTE on the order below. Simulation steps and presentation steps are still INTERLEAVED here — the
-  // FX-ageing steps sit in the middle, with stepEnemyDeaths / updateDrops / levelRunner / stepPlayerDeath
-  // after them. That is the historical order, preserved on purpose: reordering it is a behaviour change
-  // dressed up as tidying, and this file's oracle (the recorded intro trace) is the only thing standing
-  // between us and a silent one. Slice B3 separates the two halves for real, when the simulation steps
-  // move into sim-core/ and the presentation stays behind.
-  stepPlayer(dt);            // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, exhaust, firing
+  stepPlayer(dt);   // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
   stepEnemyAI(dt);
   stepBullets(dt);
   stepRockets(dt);
-  syncMeshes(dt);            // sim transforms → scene graph; everything below here is render-side
-  stepMicroExplosions(dt);
-  // --- flipbook (sprite-sheet) explosions: advance frame, fade + drop when finished ---
-  updateFlipbooks(dt);
-  // --- deferred boss chain-detonations: fire each staged blast when its delay elapses ---
-  updateDeferredBlasts(dt);
+  stepEnemyDeaths();
+  grabTarget = stepDrops(world, dt); // the Grab: arm, pull, collect (drawn in renderTick)
+  levelRunner.update(dt);            // spawning + phase transitions from the active level
+  stepPlayerDeath();
+}
 
-  // --- engine exhaust: advance every ship's attached plume (uTime) + decay its thrust throttle so a ship
-  //     that stops thrusting fades out. Fixed-cost render objects, not a growing pool (exhaust-fx.js). ---
+// Whatever the Grab is currently pulling, handed from simTick to renderTick. Presentation only.
+let grabTarget = null;
+
+export function renderTick(dt) {
+  syncMeshes(dt);                 // sim transforms → scene graph
+  simEvents.drain(applySimEvent); // everything the sim decided this tick, turned into sight and sound
+  drawDrops(grabTarget, dt);      // crate spin + the blue pull beam
+
+  stepMicroExplosions(dt);
+  updateFlipbooks(dt);            // sprite-sheet explosions: advance frame, fade + drop when finished
+  updateDeferredBlasts(dt);       // boss chain-detonations: fire each staged blast when its delay elapses
+  // engine exhaust: advance every ship's attached plume (uTime) + decay its thrust throttle so a ship that
+  // stops thrusting fades out. Fixed-cost render objects, not a growing pool (exhaust-fx.js).
   updateShipExhaust(dt);
   stepSparks(dt);
   stepShockwaves(dt);
   stepBannerFade(dt);
   stepCreditPopups(dt);
-  stepEnemyDeaths();
-  // pull in-range drops toward the ship (blue line while active); inside update(dt) → frozen on pause
-  updateDrops(dt);
-  // drive spawning + phase transitions from the active level
-  levelRunner.update(dt);
-  stepPlayerDeath();
-  simEvents.drain(applySimEvent); // everything the sim decided this tick, turned into sight and sound
-  // AFTER the drain, deliberately. stepSmokeTrail rebuilds the instanced puff pool from `smoke[]`, so it
-  // has to run once the adapter has actually created this tick's puffs — otherwise the pool trails the
-  // list by a frame and the newest puff is never drawn. This restores the original spawn → age → flush
-  // order that held when the sim called spawnSmoke() inline.
+  // AFTER the drain, deliberately: stepSmokeTrail rebuilds the instanced puff pool from `smoke[]`, so it
+  // has to run once the adapter has actually created this tick's puffs, or the newest puff is never drawn.
   stepSmokeTrail(dt);
 
   settleView(dt); // camera rigid-follow + stars + system-body bearings + speed-field wrap
+  for (const sp of setPieces) sp.update?.(dt); // set-pieces animate themselves (station spin, beams, …)
+}
 
-  // mission set-pieces: their own slow animation (station spin, beams, exhaust, …)
-  for (const sp of setPieces) sp.update?.(dt);
+// One tick of the live game. Kept under its historical name and signature — main.js's accumulator, the
+// replay stepper and every ?debug hook call this.
+export function update(dt) {
+  if (!G.gameStarted || !G.player.alive || levelRunner.won) return; // idle on the welcome screen / frozen on death/victory
+  simTick(dt);
+  renderTick(dt);
 }
 
 // ---------- update(dt) sections ----------
@@ -921,7 +937,7 @@ function stepBullets(dt) {
         if (r.fromPlayer === b.fromPlayer) continue; // only rockets of the opposite side
         if (b.pos.distanceTo(r.pos) < 2.4) {
           r.hp -= b.damage;
-          if (r.hp <= 0) { detonateRocket(r, false); if (r.spiralOf) r.spiralOf.children--; despawnAt(world, 'rocket', rockets, j); } // destroyed (a spiral warhead frees its leader slot)
+          if (r.hp <= 0) { detonateRocket(world, r, false); if (r.spiralOf) r.spiralOf.children--; despawnAt(world, 'rocket', rockets, j); } // destroyed (a spiral warhead frees its leader slot)
           hit = true; break;                                                 // else it survives, takes another
         }
       }
@@ -1008,7 +1024,7 @@ function stepRockets(dt) {
       det = true;
     }
     // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)
-    if (det || r.traveled >= r.maxRange) { detonateRocket(r); removeRocket(i, r); }
+    if (det || r.traveled >= r.maxRange) { detonateRocket(world, r); removeRocket(i, r); }
   }
 }
 

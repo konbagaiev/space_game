@@ -9,9 +9,7 @@
 // the graphics tier, so seeding them would make a trace device-dependent as well.
 import * as THREE from 'three';
 import { scene } from './engine.js';
-import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, BULLET_PLANE_Y } from './state.js';
-import { audio, sfxFor } from './sound-routing.js';
-import { pointHitsShip } from './sim-core/collision.js';
+import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, BULLET_PLANE_Y } from './state.js';
 import { applyShieldedDamage } from './sim-core/components.js';
 import { registerShieldImpact, registerEnemyShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
@@ -308,35 +306,6 @@ export function detachRocketBody(r) {
   const mesh = r.obj.children[0]; // the spiral leader is an empty Group (invisible) → no mesh child
   if (mesh?.material) mesh.material.dispose();
   r.obj = null;
-}
-
-// dealDamage=false - the rocket was shot down by gunfire (explosion without damage)
-// INVARIANT: only ever called on VISIBLE rockets (normal rockets + spiral warheads). The spiral leader
-// (r.lead) carries no mesh child / blast fields and self-removes in sim.js — it is never passed here.
-export function detonateRocket(r, dealDamage = true) {
-  if (dealDamage) {
-    // Blast damage is HULL-relative (within blastR of the multi-sphere hitbox), matching the hull-relative
-    // detonation trigger in sim.js — a center-distance test used to miss because the detonation point sits
-    // off the ship's center (on a nose/tail/wing sphere), so a rocket could detonate yet damage nobody.
-    // blastR (≥ detonateR) means a rocket that reaches a hull always deals its damage. See DECISIONS §45.
-    if (r.fromPlayer) {
-      for (const e of enemies) {
-        if (e.warping) continue; // invulnerable while forming — no splash damage
-        if (pointHitsShip(e, r.pos, r.blastR)) {
-          const dr = applyShieldedDamage(e, r.damage); // shield first, excess spills to the hull this tick
-          if (dr.absorbed) spawnEnemyShieldHit(e, r.pos, dr.broke);
-        }
-      }
-    } else if (G.player.alive && pointHitsShip(G.player, r.pos, r.blastR)) {
-      const dr = applyShieldedDamage(G.player, r.damage);
-      if (dr.absorbed) spawnShieldHit(r.pos, dr.broke);
-    }
-  }
-  spawnRocketBurst(r.pos, r.blastVis, r.blastTint, r.blastTime, r.blastBright); // flipbook fireball + ring; look is weapon-driven
-  audio.sfx.explosion(0.7, sfxFor('weapon', r.weaponClass, 'explode'), 0.3); // rocket blast — 70% quieter (sampled via the weapon-class map)
-  // The body is NOT released here: every rocket leaves the world through despawnAt(), which asks the
-  // host to let it go. Detonating and despawning are two different things (a rocket that reaches its
-  // maxRange despawns without ever detonating), and only one of them should own disposal.
 }
 
 // Rocket smoke trail: a thin, dissipating haze LINE — small fixed-size gray puffs that only fade out
