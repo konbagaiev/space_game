@@ -171,6 +171,11 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
           shr: p._shieldRechargeAccum,
           thrust: !!p.thrusting, oob: p.oobTime,
           vx: p.vel.x, vz: p.vel.z, // the client extrapolates between snapshots; velocity is what it needs
+          // Fire-group cooldowns, keyed by group name. The ROOM owns them — the client never advances its
+          // own ship's groups in a room — so without this the HUD's rocket dial sat at 0 and the button
+          // read "ready" the whole fight. Clamped at 0 because `updateGroups` keeps subtracting past zero,
+          // and an unbounded negative on the wire says nothing the HUD does not already read as ready.
+          cd: Object.fromEntries(Object.entries(p.groups).map(([k, g]) => [k, Math.max(0, g.cooldown)])),
         },
         // …plus the shield pools. Neither was sent, so an enemy's blue strip sat at full for its whole life
         // and its purple recharge fill never moved: the client's ghost kept the values it was BORN with.

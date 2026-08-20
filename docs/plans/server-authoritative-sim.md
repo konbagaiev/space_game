@@ -73,25 +73,23 @@ digest and the identical seeded-RNG draw count.
 
 **Where this stopped (2026-08-20, end of session).** A room is playable end to end and was signed off by
 playtest: the campaign runs, missions complete, loot banks, progression advances, and the ship is predicted
-locally. There is exactly ONE known defect, item 0; everything after it is optional or next.
+locally. **No known defects** — the last one (the rocket cooldown readout) was fixed on 2026-08-20;
+everything below is optional or next.
 
-**0. KNOWN DEFECT — the rocket cooldown readout is dead in a room.** The 🚀 button's radial fill reads
-`G.player.groups.rocket.cooldown` / `.reload` (`client/src/hud.js:77-79`), and fire-group cooldowns are
-owned by the ROOM and never sent — so the client's copy sits at 0 and the button always reads "ready".
+**0. FIXED 2026-08-20 — the rocket cooldown readout.** The 🚀 dial read
+`G.player.groups.rocket.cooldown` (`client/src/hud.js:77-79`) off a copy nothing in the client advances, so
+it sat at 0 and the button always read "ready". The snapshot's player block now carries `cd` (group name →
+cooldown, clamped at 0) and `applySnapshot` writes it back outright, never interpolated. Guarded by two
+tests in `netsim-world.test.js`, one of them driving a real room; both were negative-tested against the
+unpatched client.
 
-This is the netsim bug class in its purest form: *anything the client reads must be on the wire*. The fix is
-the same shape as the shield pools were — put the player's group cooldowns in the snapshot's player block
-and apply them in `applySnapshot`, taken outright rather than interpolated (a cooldown is a countdown).
-Roughly:
-  • `server/src/netsim/room.js` `takeSnapshot()` → add e.g. `cd: Object.fromEntries(Object.entries(world.player.groups).map(([k, g]) => [k, g.cooldown]))`;
-  • `client/src/netsim-world.js` `applySnapshot` → write each back onto `world.player.groups[k].cooldown`;
-  • a test in `netsim-world.test.js` alongside the shield-pool one.
-Note the predictor already runs the real `stepPlayer`, so a later slice could predict the cooldown instead
-of shipping it — but shipping it is right today, since the room is the authority on when you actually fired.
-
-**Look for siblings while you are there.** The same question ("is this field on the wire at all?") has found
-six bugs so far; other client-read, room-owned state worth auditing: the repair drone's accumulator, the
-warp-in `spawnAge` of the player, and anything else `hud.js` reads off `G.player` that is not already sent.
+**The sibling sweep that came with it found nothing left.** Every field `hud.js` reads off the player —
+`hp`, `maxHp`, `_shieldValue`, `_shieldRechargeAccum`, `alive`, `oobTime`, `pos`, `heading`, `vel`, and now
+`groups[*].cooldown` — is on the wire; the rest (`class`, `engine`, `shield`, `dodge`) is the ship
+definition, identical on both sides. The two suspects named earlier are non-issues: the player's warp-in
+`spawnAge` and the repair drone's accumulator are never read outside `sim-core`, and their only visible
+effects (`scale`, `hp`) already travel. **Keep asking the question anyway on every new HUD readout** — "is
+this field on the wire at all?" has now found seven bugs on this branch.
 
 **1. Local BULLETS — the last piece of Slice E, and the biggest remaining feel item.** A shot appears when
 the snapshot carrying it does rather than on the keypress. The roadmap's "don't stream bullets": the client

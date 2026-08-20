@@ -3133,9 +3133,12 @@ taken over the **server tick** span, never over arrival times: snapshots arrive 
 that gap once inferred hundreds of rad/s. For everything else, positions lerp and
 headings take the short way around the circle; **bullets are not interpolated at all** — a bullet flies
 straight at a constant speed, so it is anchored on its newest sample and dead-reckoned into the present
-(capped at `MAX_EXTRAPOLATION_MS`, or a stalled connection would fly it off the map). **Health and both shield pools do not
+(capped at `MAX_EXTRAPOLATION_MS`, or a stalled connection would fly it off the map). **Health, both shield pools and the fire-group
+cooldowns do not
 interpolate** either — a bar sliding down over
-100 ms reads as a bug rather than as smoothing. Past the newest sample the world holds still rather than
+100 ms reads as a bug rather than as smoothing, and a cooldown is a countdown that would run backwards if a
+late snapshot were blended into it. (The cooldowns are the ROOM's: nothing on the client advances the local
+ship's fire groups, so the HUD's 🚀 dial reads `player.cd` off the wire.) Past the newest sample the world holds still rather than
 extrapolating: a wrong guess that has to be taken back looks worse than a tenth of a second of stillness.
 Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost
 "despawn" message would leak a mesh.

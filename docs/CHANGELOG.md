@@ -5,6 +5,17 @@
 
 ## 2026-08-20
 
+- **The rocket dial in a room was always green.** The 🚀 button's radial fill is
+  `player.groups.rocket.cooldown` over its reload, and fire-group cooldowns are advanced by whoever runs the
+  tick — which in a room is the SERVER. The client's own copy therefore sat at 0 for the whole fight: the
+  button read "ready" with a rocket still in flight, and there was no way to see when the next one was due.
+  The snapshot's player block now carries the group cooldowns (`cd`, keyed by group name, clamped at 0) and
+  `applySnapshot` takes them outright rather than interpolating — a blended countdown would tick backwards
+  whenever a snapshot arrived late. Two tests guard it, one driving a real room through a real client World.
+  This is the netsim bug class in its purest form — *anything the client reads has to be on the wire* — and
+  the sweep that came with it found no siblings left: everything `hud.js` reads off the player is now sent,
+  and the spawn-in animation and the repair drone are only ever read through `sc` and `hp`, which are.
+
 - **…and idling the room froze the game on death — fixed in the same hour it shipped.** Making a room stop
   when there is no fight, I gated the tab's RENDERING on the same flag. But the frame after you die is when
   the explosion plays, the "Ship Destroyed" overlay opens and the run is banked — all of it inside

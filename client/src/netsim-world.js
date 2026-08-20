@@ -177,6 +177,11 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
       me.hp = p.hp; me.maxHp = p.maxHp; me._shieldValue = p.sh; me._shieldRechargeAccum = p.shr || 0;
       me.alive = p.alive; me.thrusting = !!p.thrust; me.oobTime = p.oob || 0;
       me.vel.set(p.vx || 0, 0, p.vz || 0);
+      // Fire-group cooldowns, taken outright rather than interpolated — a cooldown is a countdown, and
+      // interpolating one would run it backwards whenever a snapshot arrived late. Nothing on the client
+      // advances the local ship's groups in a room, so this is the only thing that ever moves the HUD's
+      // rocket dial off "ready".
+      if (p.cd && me.groups) for (const k in p.cd) { const g = me.groups[k]; if (g) g.cooldown = p.cd[k]; }
     }
   }
 

@@ -324,6 +324,53 @@ test('both shield pools travel — the bar and its purple recharge fill', () => 
   assert.equal(world.enemies[0]._shieldRechargeAccum, 0);
 });
 
+test('the rocket cooldown travels — the HUD dial is the ROOM\'s countdown', () => {
+  // `hud.js:77-79` draws the 🚀 radial from `G.player.groups.rocket.cooldown`, and only the room ever
+  // advances the local ship's fire groups (the predictor steps a shadow player, not this one). Unsent, the
+  // client's copy sat at 0 and the button read "ready" for the whole fight, rocket in flight or not.
+  const room = createRoom({ levelName: 'level-0', seed: 4242 });
+  const { world } = clientWorld();
+  // The fake player of `clientWorld` with the one thing this test is about.
+  world.player.groups = { gun: { name: 'gun', reload: 0.5, cooldown: 0 },
+                          rocket: { name: 'rocket', reload: 5, cooldown: 0 } };
+  const st = createNetState();
+  let at = 1000;
+  let sent = null;   // the cooldown carried by the newest snapshot the client applied
+  const step = (keys) => {
+    room.pushInput([{ t: at, k: keys, a: null }]);
+    room.stepOnce();
+    if (room.dueForSnapshot()) {
+      const snap = room.takeSnapshot();
+      sent = snap.player.cd.rocket;
+      applySnapshot(world, st, snap, at); at += 67;
+    }
+  };
+
+  for (let i = 0; i < 30; i++) step(['KeyF']);   // hold the rocket key: one volley, then the reload
+  assert.ok(room.world.player.groups.rocket.cooldown > 0, 'the room really did fire a rocket (guard against an empty assertion)');
+  const fired = world.player.groups.rocket.cooldown;
+  assert.equal(fired, sent, 'the HUD reads the room\'s countdown, not 0');
+  assert.ok(fired > 4, `and it is the real reload, mid-countdown (got ${fired})`);
+
+  // …and it keeps counting DOWN. Taken outright, never blended: a lerped countdown is a countdown that lies.
+  for (let i = 0; i < 60; i++) step([]);
+  assert.ok(world.player.groups.rocket.cooldown < fired, 'the dial fills as the room reloads');
+  assert.equal(world.player.groups.rocket.cooldown, sent);
+});
+
+test('a snapshot of cooldowns is harmless to a World that has no fire groups', () => {
+  // The wire names groups the receiver may not have — a ship swapped between snapshots, or (as in most of
+  // this file) a stub player with no `groups` at all. Neither may throw in the middle of applySnapshot.
+  const { world } = clientWorld();
+  const st = createNetState();
+  applySnapshot(world, st, snapOf({ player: { ...snapOf().player, cd: { gun: 0.2, rocket: 4 } } }));
+  assert.equal(world.player.hp, 100, 'the rest of the block still applied');
+
+  world.player.groups = { gun: { name: 'gun', reload: 0.5, cooldown: 0 } };
+  applySnapshot(world, st, snapOf({ tick: 9, player: { ...snapOf().player, cd: { gun: 0.2, rocket: 4 } } }));
+  assert.equal(world.player.groups.gun.cooldown, 0.2);
+});
+
 test('PREDICTION: the ship answers input the server has not acknowledged yet', async () => {
   // The whole point, stated as a test: hold a key, and the drawn ship turns NOW — not a round trip later.
   const { createPredictor } = await import('./netsim-predict.js');
