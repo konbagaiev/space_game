@@ -17,16 +17,17 @@ import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.
 import { updateShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { spawnEnemyShip, updateGroups, preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
-import { stepSpawnGate } from './sim-core/spawn-timing.js';
 import { simRandom } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
 import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
+import { BANNER_FADE, showBanner as showBannerIn, clearBanner } from './sim-core/events.js';
 import { despawnAt } from './sim-core/spawn.js';
 import { stepBullets, stepRockets } from './sim-core/step-projectiles.js';
 import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
+import { startLevel, updateLevelRunner, winLevel, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
 import { drawDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops, attachDropBody, detachDropBody } from './drops.js';
 import { stepDrops } from './sim-core/drops-sim.js';
-import { canDock, BASE_ARRIVE_RADIUS } from './sim-core/autopilot-config.js';
+import { BASE_ARRIVE_RADIUS } from './sim-core/autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
@@ -49,10 +50,10 @@ export function refreshMusic() { audio.setScene(musicForState()); }
 // A big, semi-transparent line centered on screen that appears at full opacity and fades to 0 over
 // `dur` seconds (opacity = life/maxLife, drawn by updateBanner). One slot: a newer banner overrides
 // the current one. `firedBanners` guards each milestone so it shows once per run (reset in reset()).
-const BANNER_FADE = 3;              // seconds to fade from full to invisible (per the design)
-const firedBanners = () => world.firedBanners; // milestone keys already shown this run (10, 5, 'final')
-// The sim never translates: it names the string and lets the adapter resolve it through i18n.
-function showBanner(key, params = null, dur = BANNER_FADE) { simEvents.emit({ type: 'banner', key, params, dur }); }
+// BANNER_FADE + the two emit helpers live in sim-core/events.js — three different steps raise banners and
+// the server has to be able to raise them too. The sim never translates: it names the string and lets the
+// adapter resolve it through i18n.
+const showBanner = (key, params = null, dur = BANNER_FADE) => showBannerIn(world, key, params, dur);
 // Floating "EVADE" text over the ship when a hostile shot is dodged (Maneuver skill). Reuses the
 // credit-popup pool/renderer (hud.updateCreditPopups) via a `text` field instead of a credit `amount`.
 function spawnEvadePopup(pos) { simEvents.emit({ type: 'evade', pos: pos.clone() }); }
@@ -67,136 +68,27 @@ export function updateBanner() {
   el.banner.style.opacity = String(b.life / b.maxLife);
 }
 
-// ---------- Level runner: plays a DB level descriptor (an ordered phase/wave script) ----------
-// Each phase optionally spawns a weighted pool up to `maxConcurrent` (with an optional `total` cap),
-// and advances when its condition is met: { kills } (cumulative), { killsSincePhase }, or
-// { allCleared } (map empty AND the phase's total fully spawned). A phase with `event: 'win'` ends
-// the level with a victory overlay. The boss phase pool is the boss only, after clear-out empties
-// the arena -> the boss always appears alone.
+// ---------- Level runner (the object is a proxy; the runner itself is sim-core/level-runner.js) ----------
+// The phase/wave script's state lives on the World and its rules are pure functions of it. This object
+// exists because eight modules and three visual scenarios read (and one writes) `levelRunner.<field>` —
+// so the historical shape is kept and every property forwards to `world.levelRunner`.
+const LEVEL_RUNNER_FIELDS = ['level', 'phaseIndex', 'killsAtPhaseStart', 'spawnedThisPhase', 'spawnCooldown',
+  'won', 'winPending', 'winText', 'winTextKey', 'returningToBase'];
 export const levelRunner = {
-  level: null, phaseIndex: 0, killsAtPhaseStart: 0, spawnedThisPhase: 0, spawnCooldown: 0, won: false,
-  winPending: 0, winText: '', returningToBase: false,
-
-  // Reset the runner's per-run flags + the shared return-to-base/autopilot/banner state. Extracted from
-  // start() so the roam reset() (which runs NO levelRunner) clears exactly the same state — otherwise a
-  // prior mission win's `won: true` would freeze the roaming ship, or a stale `level` would spawn enemies
-  // in roam. start() calls this right after setting `this.level`; roam calls it with `this.level = null`.
-  resetLevelRunnerState() {
-    this.phaseIndex = 0; this.won = false; this.winPending = 0; this.returningToBase = false;
-    G.returnToBase = false; G.autopilot.active = false; G.autopilot.target = null;
-    if (G.baseStation) G.baseStation.active = false;
-    firedBanners().clear(); simEvents.emit({ type: 'bannerClear' }); // fresh run: re-arm the milestones, drop any lingering banner
-  },
-
-  start(level) {
-    this.level = level; this.resetLevelRunnerState();
-    G.enemyTotal = (level && level.enemyTotal) || 0; // total enemies for the HUD killed/total (0 if not seeded)
-    world.host.onWarmLevel(level); // fetch/parse this level's models before the fight, not during it
-    this.enterPhase();
-  },
-  get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },
-
-  enterPhase() {
-    this.killsAtPhaseStart = G.kills; this.spawnedThisPhase = 0; this.spawnCooldown = 0;
-    const ph = this.phase;
-    // "Final Stage" banner: fire when entering the last combat phase — the one right before the
-    // `event: 'win'` phase (the boss/finale on every level). Once per run.
-    const next = this.level && this.level.phases[this.phaseIndex + 1];
-    if (ph && !ph.event && next && next.event === 'win' && !firedBanners().has('final')) {
-      firedBanners().add('final');
-      showBanner('ui.banner.final_stage');
-    }
-    if (ph && ph.event === 'win') {
-      // defer the overlay by `delay` seconds so the boss explosion can play out first
-      this.winTextKey = ph.textKey; this.winText = ph.text; // i18n key (+ English fallback)
-      this.winPending = ph.delay ?? 0;
-      if (this.winPending <= 0) this.beginReturn();
-    }
-  },
-  // Return-to-base gate (replaces the immediate win): the last kill lifts OOB, shows the homing arrow +
-  // hint, and makes the station clickable. Victory fires only once the player docks (see checkArrival).
-  beginReturn() {
-    this.returningToBase = true;
-    G.returnToBase = true;                          // lifts OOB warp, shows arrow + hint (read by sim + HUD)
-    if (G.baseStation) G.baseStation.active = true; // station becomes clickable
-  },
-  checkArrival() {
-    // Victory requires an ENGAGED autopilot whose target is the STATION (a chest-aimed autopilot must never
-    // win). canDock() encodes that + the arrive-radius; proximity alone never wins; any control input
-    // cancels the dock (clears G.autopilot.active) so a cancelled approach doesn't complete — the player
-    // re-taps to resume.
-    if (!G.baseStation || !G.player || !G.player.alive) return;
-    const s = G.baseStation.pos;
-    const dx = G.player.pos.x - s.x, dz = G.player.pos.z - s.z;
-    if (canDock(G.autopilot, Math.hypot(dx, dz))) this.win();
-  },
-  win() {
-    this.won = true;
-    // tear down the return-to-base state so the overlay/arrow/hint clear
-    this.returningToBase = false;
-    G.returnToBase = false; G.autopilot.active = false; G.autopilot.target = null;
-    if (G.baseStation) G.baseStation.active = false;
-    // Rules stay here; the sting, the overlay and every backend side effect are the adapter's job.
-    G.earned *= 2; // double the credits earned for clearing the level
-    G.earnedXp += this.level.xpReward || 0; // one-shot mission XP bonus on victory (per-kill XP is NOT doubled)
-    simEvents.emit({ type: 'win', textKey: this.winTextKey, text: this.winText });
-  },
-
-  pickShip(pool) {
-    const total = pool.reduce((s, p) => s + (p.chance || 1), 0); // `chance` = spawn frequency
-    let r = simRandom() * total;   // GAMEPLAY draw (which enemy spawns) → the seeded stream
-    for (const p of pool) { r -= (p.chance || 1); if (r < 0) return p.ship; }
-    return pool[0].ship;
-  },
-
-  update(dt) {
-    const ph = this.phase;
-    if (!ph || this.won) return;
-    // victory pending: keep the game running (so the boss explosion animates) until the delay ends,
-    // then open the return-to-base gate (arrow + hint + clickable station) instead of winning outright
-    if (this.winPending > 0) {
-      this.winPending -= dt;
-      if (this.winPending <= 0) this.beginReturn();
-      return;
-    }
-    // returning to base: no more spawning; just wait for the player to fly home and dock
-    if (this.returningToBase) { this.checkArrival(); return; }
-    // Staggered spawn: one enemy at a time on a randomized 2–4 s cooldown (see spawn-timing.js). The
-    // first enemy of a phase is immediate (cooldown reset to 0 in enterPhase); every spawn re-arms 2–4 s.
-    // A full arena freezes the timer, so a kill's replacement still waits 2–4 s (never instant).
-    if (ph.spawn) {
-      const cap = ph.spawn.total;
-      const capRemaining = cap == null ? null : cap - this.spawnedThisPhase;
-      const gate = stepSpawnGate({
-        cooldown: this.spawnCooldown, dt,
-        alive: enemies.length, maxConcurrent: ph.spawn.maxConcurrent, capRemaining,
-      }, simRandom);   // the spawn cooldown is a GAMEPLAY draw — inject the seeded stream explicitly
-      this.spawnCooldown = gate.cooldown;
-      if (gate.spawn) {
-        const def = CATALOG.shipByName.get(this.pickShip(ph.spawn.pool));
-        // The enemy materializes over its armed stagger delay: "the delay IS the arrival animation"
-        // (DECISIONS §54). spawnEnemyShip already set e.warping = true; override the 1 s default here.
-        if (def) { const e = spawnEnemyShip(def); e.spawnDur = gate.cooldown; this.spawnedThisPhase++; }
-      }
-    }
-    // advance to the next phase when this one's condition is met
-    if (this.shouldAdvance(ph) && this.phaseIndex < this.level.phases.length - 1) {
-      this.phaseIndex++;
-      this.enterPhase();
-    }
-  },
-  shouldAdvance(ph) {
-    const c = ph.advanceWhen;
-    if (!c) return false;
-    if (c.kills != null) return G.kills >= c.kills;
-    if (c.killsSincePhase != null) return (G.kills - this.killsAtPhaseStart) >= c.killsSincePhase;
-    if (c.allCleared) {
-      const spawnDone = !ph.spawn || (ph.spawn.total != null && this.spawnedThisPhase >= ph.spawn.total);
-      return enemies.length === 0 && spawnDone;
-    }
-    return false;
-  },
+  start(level) { startLevel(world, level); },
+  update(dt) { updateLevelRunner(world, dt); },
+  win() { winLevel(world); },
+  resetLevelRunnerState() { resetLevelRunnerState(world); },
+  get phase() { return currentPhase(world); },
 };
+for (const k of LEVEL_RUNNER_FIELDS) {
+  Object.defineProperty(levelRunner, k, {
+    get: () => world.levelRunner[k],
+    set: (v) => { world.levelRunner[k] = v; },
+    enumerable: true,
+    configurable: true,
+  });
+}
 
 // ---------- Helpers ----------
 function forwardVec(heading) {
@@ -347,7 +239,7 @@ function checkMissionZone(dt) {
     || (tgt.kind === 'point'
         && Math.hypot(tgt.pos.x - z.center.x, tgt.pos.z - z.center.z) > MISSION_ZONE_RADIUS));
   if (elsewhere) {
-    if (z.t != null) simEvents.emit({ type: 'bannerClear' });
+    if (z.t != null) clearBanner(world);
     z.t = null;
     return;
   }
@@ -374,7 +266,7 @@ function checkMissionZone(dt) {
     // on arrival anyway, which is the invariant that line was reaching for.)
     showBanner('ui.roam.engaging', { n: Math.ceil(r.t) }, 1);
   } else if (wasCounting && r.t == null) {
-    simEvents.emit({ type: 'bannerClear' }); // left the zone → drop the countdown banner immediately
+    clearBanner(world); // left the zone → drop the countdown banner immediately
   }
   if (r.fire) simEvents.emit({ type: 'missionZoneEnter' });
 }
@@ -1010,8 +902,8 @@ function stepEnemyDeaths() {
       // total is known). kills increments by 1, so `left` lands on each value exactly once.
       if (G.enemyTotal > 0) {
         const left = G.enemyTotal - G.kills;
-        if ((left === 10 || left === 5) && !firedBanners().has(left)) {
-          firedBanners().add(left);
+        if ((left === 10 || left === 5) && !world.firedBanners.has(left)) {
+          world.firedBanners.add(left);
           showBanner('ui.banner.enemies_left', { count: left });
         }
       }

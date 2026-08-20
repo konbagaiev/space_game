@@ -21,6 +21,7 @@
 // the entity appears or disappears, because a mesh must exist before the next render and must be disposed
 // before the entity reference is dropped.
 import { createEventQueue } from './events.js';
+import { createLevelRunnerState } from './level-runner.js';
 import { Vec3 } from './vec.js';
 
 // A host that gives entities no body — the authority, the headless referee, and every unit test.
@@ -76,6 +77,10 @@ export function createWorld({ host = noopHost } = {}) {
     activeShip: null,
     // Milestone banners already shown this run ('final', 10, 5) — each fires once. Cleared on reset.
     firedBanners: new Set(),
+
+    // The level script's position in its own run: which phase, what it has spawned, whether it is won.
+    // The functions that read and advance it live in level-runner.js.
+    levelRunner: createLevelRunnerState(),
 
     // Input for THIS tick: { keys, touchAim } in the shape replay.js already records and replays. The
     // browser points this at its live keyboard/touch objects; a server replaces it per tick with what the

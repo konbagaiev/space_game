@@ -55,3 +55,13 @@ export function createEventQueue() {
     get length() { return q.length; },
   };
 }
+
+// ---------- Banner helpers ----------
+// The transient centred announcement ("10 enemies left", "Final Stage", the roam countdown) is emitted
+// from three different steps, so its two event shapes live here beside the catalogue rather than being
+// re-typed in each. BANNER_FADE is the default lifetime; the adapter reads it back as its own fallback.
+export const BANNER_FADE = 3; // seconds a banner takes to fade from full opacity to invisible
+export function showBanner(world, key, params = null, dur = BANNER_FADE) {
+  world.events.emit({ type: 'banner', key, params, dur });
+}
+export function clearBanner(world) { world.events.emit({ type: 'bannerClear' }); }
