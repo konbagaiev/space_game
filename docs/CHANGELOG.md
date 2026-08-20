@@ -10,13 +10,19 @@
   not divide the snapshot interval came out on the wrong beat: `Basic kinetic` reloads in 0.18 s (10.8 ticks
   → the sim fires every 11) while snapshots go out every 4, and the rounding error walked 1→2→3→0 until
   every fourth shot arrived a whole 67 ms early. Measured gaps: **200, 133, 200, 200 ms**. Every wire event
-  now carries the tick it happened on (`tk`) and the client holds it for `budget − (how late it already is)`,
-  which puts each one back on its own clock — the delivered rhythm is now the simulated one, to within a
-  rounding error. **The same change fixes sound and FX running ahead of the picture:** the room's world is
-  drawn 100 ms in the past, so its events now wait that long too and a hit spark lands on the frame that
-  shows the hit. Your own ship is the exception — it is predicted and drawn in the present, so its `fire`
-  waits only one snapshot interval, the minimum that undoes the batching. Rationale and the rejected
-  alternatives in DECISIONS §126; three tests guard it, one driving a real room and measuring the gaps.
+  now carries the tick it happened on (`tk`), and the player's own shot is held for
+  `one snapshot interval − (how late it already is)`, which puts it back on its own tick: the delivered
+  rhythm is now the simulated one to within a rounding error.
+
+- **…and the first, wider version of that fix made rockets stutter — caught in playtest and narrowed the
+  same hour.** It also held the ROOM's events for the 100 ms the world is drawn behind, meaning to fix sound
+  and FX running ahead of the picture. But bullets and rockets are drawn in the *present*, so their smoke and
+  blasts fell 100 ms behind the object laying them, and a ghost despawns the instant the room stops listing
+  it — so a rocket vanished and its explosion went off a tenth of a second later in empty space. The rule
+  that came out of it, now written down: **an event anchored to something on screen may not be moved in
+  time** — the client draws enemies, projectiles, your own ship and despawns on four different clocks, and no
+  single budget is right for all of them. Only `fire` is re-timed, because it is a sound with no position.
+  Rationale, the rejected alternatives, and what is still open in DECISIONS §126.
 
 - **The rocket dial in a room was always green.** The 🚀 button's radial fill is
   `player.groups.rocket.cooldown` over its reload, and fire-group cooldowns are advanced by whoever runs the

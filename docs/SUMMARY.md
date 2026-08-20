@@ -3143,17 +3143,18 @@ extrapolating: a wrong guess that has to be taken back looks worse than a tenth 
 Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost
 "despawn" message would leak a mesh.
 
-**Events are SCHEDULED, not played on arrival** (DECISIONS §126). Every wire event carries `tk`, the tick it
-happened on, and `applySnapshot` queues it; `renderNet` releases it when its moment comes (`releaseNetEvents`,
-called before the frame's own drain so FX and audio see it the same frame). Each event waits
-`budget − (how late it already is)`, on one of **two clocks**: the room's events use `INTERP_DELAY_MS`, the
-delay their subjects are drawn with, so a hit spark lands on the frame that shows the hit; the local ship's
-own events (`fire` with `fromPlayer`) use one snapshot interval (`PLAYER_EVENT_BUFFER_MS`, ~67 ms), the
-minimum that undoes the batching — the local ship is predicted and drawn in the present. Played on arrival
-instead, a weapon whose reload does not divide the snapshot interval comes out on the snapshot's beat rather
-than its own (the starter gun measured 200/133/200/200 ms instead of a flat 183). The queue is capped at
-`MAX_EVENT_QUEUE`; past it the oldest are released at once — an event may be late, never lost. Run state
-(`kills`, `won`, hp) still applies on arrival, so the kill counter leads its explosion by ~100 ms.
+**The player's own `fire` is SCHEDULED; every other event plays on arrival** (DECISIONS §126). Every wire
+event carries `tk`, the tick it happened on. A `fire` from the local player is queued by `applySnapshot` and
+released by `renderNet` (`releaseNetEvents`, called before the frame's own drain so audio sees it the same
+frame) after `budget − (how late it already is)`, where the budget is one snapshot interval
+(`PLAYER_EVENT_BUFFER_MS`, ~67 ms) — that puts the shot back on its own tick, because events ride snapshots
+and a weapon whose reload does not divide the snapshot interval otherwise comes out on the snapshot's beat
+(the starter gun measured 200/133/200/200 ms instead of a flat 183). Everything else is emitted on arrival:
+**an event anchored to something on screen may not be moved in time**, since bullets and rockets are drawn
+in the present, enemies in the past, and a ghost despawns the instant the room stops listing it — holding
+`smoke`/`detonate` detached a rocket from its trail and put its blast 100 ms after the rocket vanished. The
+queue is capped at `MAX_EVENT_QUEUE`; past it the oldest are released at once — an event may be late, never
+lost.
 
 **Two separate questions: does the ROOM step, and does the TAB draw.** Conflating them froze the game on
 the death screen — the explosion, the overlay and the banking all happen in `renderTick`, draining the

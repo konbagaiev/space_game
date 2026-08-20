@@ -186,13 +186,9 @@ test('wire events reach the World event queue, with entity ids rehydrated', () =
              { type: 'kill', pos: { x: 3, y: 0.6, z: 4 }, reward: 25 }],
   }));
   const drained = [];
+  releaseNetEvents(world, st, Date.now());
   world.events.drain((e) => drained.push(e));
-  assert.equal(drained.length, 0, 'nothing plays on arrival — an event waits for the moment it belongs to');
-
-  // Released once the picture has caught up with them (these are the room's, so they ride INTERP_DELAY_MS).
-  releaseNetEvents(world, st, Date.now() + INTERP_DELAY_MS);
-  world.events.drain((e) => drained.push(e));
-  assert.equal(drained.length, 2);
+  assert.equal(drained.length, 2, 'an anchored event still plays on arrival — see eventBudgetMs');
   assert.equal(drained[0].enemy, world.enemies[0], 'the id became the entity again, so the bubble binds');
   assert.equal(drained[1].type, 'kill');
 });
@@ -404,26 +400,32 @@ test('EVENT TIMING: the gun keeps its own rhythm, not the snapshot grid', () => 
     `the delivered rate is the simulated one (got ${gaps[0].toFixed(1)} ms, want ${(11 * MS).toFixed(1)})`);
 });
 
-test('EVENT TIMING: the room\'s own events wait for the picture; the local ship\'s do not', () => {
-  // Two clocks. Enemies and their FX are drawn INTERP_DELAY_MS in the past, so an event about them played
-  // on arrival flashes before the ship reaches the pose it describes. The local ship is predicted and drawn
-  // in the PRESENT, so its own `fire` waits only long enough to undo the batching.
+test('EVENT TIMING: only the sound is re-timed — anchored events still play on arrival', () => {
+  // The rule, and it was learned by breaking it: an event tied to something on screen may NOT be moved in
+  // time. Holding the room's events for INTERP_DELAY_MS made rockets stutter — `smoke` and `detonate` fell
+  // 100 ms behind a rocket that is drawn in the PRESENT, and a ghost despawns on the arrival clock, so the
+  // rocket vanished and its blast went off a tenth of a second later in empty space. `fire` is the one
+  // event with neither a position nor an entity.
   const { world } = clientWorld();
   const st = createNetState();
   applySnapshot(world, st, snapOf({
     tick: 8,
     events: [{ type: 'fire', weaponClass: 'kinetic', isRocket: false, fromPlayer: true, tk: 8 },
-             { type: 'warpFlash', pos: { x: 1, y: 0.6, z: 2 }, tk: 8 }],
+             { type: 'smoke', pos: { x: 1, y: 0.6, z: 2 }, tk: 8 },
+             { type: 'detonate', pos: { x: 1, y: 0.6, z: 2 }, tk: 8 },
+             { type: 'warpFlash', pos: { x: 3, y: 0.6, z: 4 }, tk: 8 }],
   }), 1000);
 
   const drained = [];
+  releaseNetEvents(world, st, 1000);
+  world.events.drain((e) => drained.push(e));
+  assert.deepEqual(drained.map((e) => e.type), ['smoke', 'detonate', 'warpFlash'],
+    'everything with a position goes out at once, exactly as it did before the scheduler existed');
+
   releaseNetEvents(world, st, 1000 + PLAYER_EVENT_BUFFER_MS);
   world.events.drain((e) => drained.push(e));
-  assert.deepEqual(drained.map((e) => e.type), ['fire'], 'your own shot does not wait for the interpolation buffer');
-
-  releaseNetEvents(world, st, 1000 + INTERP_DELAY_MS);
-  world.events.drain((e) => drained.push(e));
-  assert.deepEqual(drained.map((e) => e.type), ['fire', 'warpFlash'], 'the room\'s event lands with the picture');
+  assert.deepEqual(drained.map((e) => e.type), ['smoke', 'detonate', 'warpFlash', 'fire'],
+    'the shot alone waits, and only long enough to undo the batching');
 });
 
 test('EVENT TIMING: an event is released late rather than lost', () => {
@@ -432,13 +434,14 @@ test('EVENT TIMING: an event is released late rather than lost', () => {
   const { world } = clientWorld();
   const st = createNetState();
   for (let i = 0; i < MAX_EVENT_QUEUE + 20; i++) {
-    applySnapshot(world, st, snapOf({ tick: i + 1, events: [{ type: 'warpFlash', pos: { x: 0, y: 0, z: 0 }, tk: i + 1 }] }), 1000);
+    applySnapshot(world, st, snapOf({ tick: i + 1,
+      events: [{ type: 'fire', weaponClass: 'kinetic', isRocket: false, fromPlayer: true, tk: i + 1 }] }), 1000);
   }
   const drained = [];
   releaseNetEvents(world, st, 1000); // nothing is "due" yet at the arrival instant…
   world.events.drain((e) => drained.push(e));
   assert.equal(drained.length, 20, '…except the overflow, which goes out at once');
-  releaseNetEvents(world, st, 1000 + INTERP_DELAY_MS);
+  releaseNetEvents(world, st, 1000 + PLAYER_EVENT_BUFFER_MS);
   world.events.drain((e) => drained.push(e));
   assert.equal(drained.length, MAX_EVENT_QUEUE + 20, 'and every single one is eventually played');
 });

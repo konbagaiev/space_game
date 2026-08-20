@@ -78,11 +78,13 @@ everything below is optional or next.
 
 **0b. FIXED 2026-08-20 — event TIMING: the gun's rhythm was the snapshot grid's.** Events were played when
 their snapshot landed, so a weapon whose reload does not divide the snapshot interval came out on the wrong
-beat (measured 200/133/200/200 ms for the starter gun, heard as every fourth shot doubled), and every
-event ran ~100 ms ahead of the interpolated picture it described. Events now carry `tk` and are scheduled:
-`scheduleEvent`/`releaseNetEvents` in `netsim-world.js`, released from the top of `renderNet`. Two clocks —
-the room's events on `INTERP_DELAY_MS`, the local ship's own `fire` on one snapshot interval, because the
-local ship is predicted and drawn in the present. DECISIONS §126; three tests, negative-tested.
+beat (measured 200/133/200/200 ms for the starter gun, heard as every fourth shot doubled). Events now carry
+`tk` and the player's own `fire` is scheduled off it — `scheduleEvent`/`releaseNetEvents` in
+`netsim-world.js`, released from the top of `renderNet`. **Only `fire`:** the wider version of this, which
+also held the room's events for `INTERP_DELAY_MS`, shipped and made rockets stutter (trail detached, blast
+after the rocket had already despawned) and was narrowed the same hour. The rule that came out of it —
+*an event anchored to something on screen may not be moved in time* — and what it leaves open are in
+DECISIONS §126. Four tests, all negative-tested.
 
 **0. FIXED 2026-08-20 — the rocket cooldown readout.** The 🚀 dial read
 `G.player.groups.rocket.cooldown` (`client/src/hud.js:77-79`) off a copy nothing in the client advances, so

@@ -55,33 +55,42 @@ export const MAX_HISTORY = 12;
 // ---------- When an event is PLAYED ----------
 //
 // Events are batched into snapshots, so they arrive on the snapshot grid rather than at the tick they
-// happened on. Playing them on arrival therefore puts the SNAPSHOT RATE into the game: the starter gun
-// reloads in 0.18 s — 10.8 ticks, so the sim fires every 11, dead even — while snapshots go out every 4.
-// The rounding error walks 1→2→3→0, and every fourth shot lands a whole snapshot early. Measured gaps
-// between delivered shots: **200, 133, 200, 200 ms**, which the ear reads as a stutter, or as one shot in
-// four being doubled. Each event carries the tick it happened on (`tk`, stamped by the room), so the fix is
-// to hold it for `budget − (how late it already is)`: every event then waits exactly `budget` from ITS OWN
-// tick and the original rhythm comes back.
+// happened on. Played on arrival that puts the SNAPSHOT RATE into the game: the starter gun reloads in
+// 0.18 s — 10.8 ticks, so the sim fires every 11, dead even — while snapshots go out every 4. The rounding
+// error walks 1→2→3→0, and every fourth shot lands a whole snapshot early. Measured gaps between delivered
+// shots: **200, 133, 200, 200 ms**, which the ear reads as one shot in four being doubled.
 //
-// TWO BUDGETS, because the world is drawn on two clocks:
-//
-//   • Everything the ROOM owns is rendered `INTERP_DELAY_MS` in the past, so its events belong there too.
-//     Played on arrival they run AHEAD of the picture they describe — a hit spark a tenth of a second
-//     before the ship reaches the pose where it was hit. (The rocket trail was this same bug, patched once
-//     by drawing rockets in the present; this is the general fix.)
-//   • The LOCAL ship is predicted and drawn in the PRESENT, so its own events (`fire`, from the player)
-//     want the smallest buffer that still does the de-quantising above: one snapshot interval, no more.
-//     Anything longer is latency added to the sound of your own gun.
-//
-// The player's buffer must cover a full snapshot interval or the tail of each batch is still early; the
-// room tells us that interval in the `welcome` (`snapshotEvery`), and this is the fallback for before it
+// Each event carries the tick it happened on (`tk`, stamped by the room), so the fix is to hold it for
+// `budget − (how late it already is)`: it then waits exactly `budget` from its OWN tick and the rhythm
+// comes back. The buffer must cover a full snapshot interval or the tail of each batch is still early; the
+// room states that interval in the `welcome` (`snapshotEvery`), and this is the fallback for before it
 // arrives — 4 ticks at 60 Hz, the room's own default.
 export const PLAYER_EVENT_BUFFER_MS = 4 * SIM_DT * 1000;
 
+// ONLY the player's own `fire` is re-timed, and the reason is a rule worth keeping:
+//
+//   **an event that is ANCHORED to something on screen may not be moved in time, because the client draws
+//   different things on different clocks and none of them is the event's.**
+//
+// This was learned the expensive way. The first cut of this scheduler also held the room's events for
+// `INTERP_DELAY_MS`, reasoning that enemies are drawn a tenth of a second in the past so their events
+// belong there too. It made rockets stutter, because:
+//   • bullets and rockets are drawn in the PRESENT (dead-reckoned), so their `smoke`, `bulletImpact` and
+//     `detonate` were suddenly 100 ms behind the object laying them — the trail detached from its rocket;
+//   • worse, a ghost DESPAWNS on the arrival clock (`applySnapshot` removes it the moment the room stops
+//     listing it) while its farewell FX was being held: the rocket vanished, and a tenth of a second later
+//     its blast went off in the empty space it used to be. Same for a killed enemy and its explosion.
+// `fire` is the one event with neither a position nor an entity — it is a sound — so moving it in time
+// costs nothing and buys back the weapon's rhythm. Everything else plays on arrival, as it always did.
+export const eventBudgetMs = (state, ev) => {
+  if (ev.type !== 'fire' || !ev.fromPlayer) return 0;
+  const every = state.welcome && state.welcome.snapshotEvery;
+  return every ? every * SIM_DT * 1000 : PLAYER_EVENT_BUFFER_MS;
+};
+
 // A ceiling on the pending queue. A tab that is not rendering — paused, hidden, in a menu — never drains
-// it, and an event is worth releasing late but never worth losing (a banner, a pickup, a kill line). Past
-// the cap the oldest are marked due and go out in the next drain, which is exactly what used to happen to
-// every event, always.
+// it, and an event is worth releasing late but never worth losing. Past the cap the oldest are marked due
+// and go out in the next drain, which is exactly what used to happen to every event, always.
 export const MAX_EVENT_QUEUE = 512;
 
 export function createNetState() {
@@ -244,9 +253,9 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
     if (world.station) world.station.active = !!run.stationActive;
   }
 
-  // The network is just another producer of the event stream the client already drains every tick — but
-  // NOT on arrival. Each event is scheduled onto the clock the thing it describes is drawn on; `renderNet`
-  // releases it when its moment comes. See PLAYER_EVENT_BUFFER_MS for why.
+  // The network is just another producer of the event stream the client already drains every tick. Almost
+  // all of them go straight through; the player's own `fire` is held briefly so the gun keeps its own
+  // rhythm instead of the snapshot grid's. See PLAYER_EVENT_BUFFER_MS.
   for (const ev of snap.events || []) scheduleEvent(state, snap, ev, at);
 
   pushSample(state.history, { at, tick: snap.tick });
@@ -257,8 +266,7 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
 // from the first tick of a batch is three ticks old by the time its snapshot is built, one from the last
 // tick is brand new, and paying the difference back is the whole trick.
 function scheduleEvent(state, snap, ev, at) {
-  const every = state.welcome && state.welcome.snapshotEvery;
-  const budget = ev.fromPlayer ? (every ? every * SIM_DT * 1000 : PLAYER_EVENT_BUFFER_MS) : INTERP_DELAY_MS;
+  const budget = eventBudgetMs(state, ev);
   const late = Math.max(0, snap.tick - (ev.tk ?? snap.tick)) * SIM_DT * 1000;
   state.eventQueue.push({ due: at + Math.max(0, budget - late), ev });
   // Never grow without bound: release the excess at once rather than lose it.
