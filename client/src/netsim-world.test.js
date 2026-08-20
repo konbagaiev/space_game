@@ -7,10 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, noopHost } from './sim-core/world.js';
-import { createNetState, applySnapshot, renderNet, releaseNetEvents, clearNet, INTERP_DELAY_MS, MAX_EXTRAPOLATION_MS,
-         PLAYER_EVENT_BUFFER_MS, MAX_EVENT_QUEUE } from './netsim-world.js';
+import { createNetState, applySnapshot, renderNet, clearNet, INTERP_DELAY_MS, MAX_EXTRAPOLATION_MS } from './netsim-world.js';
 import { createRoom } from '../../server/src/netsim/room.js';
-import { SIM_DT } from './sim-core/consts.js';
 import { buildCatalog } from '../../server/src/sim-host.js';
 
 // A client World with no renderer: the catalog it would have fetched at boot, a host that only counts.
@@ -186,9 +184,8 @@ test('wire events reach the World event queue, with entity ids rehydrated', () =
              { type: 'kill', pos: { x: 3, y: 0.6, z: 4 }, reward: 25 }],
   }));
   const drained = [];
-  releaseNetEvents(world, st, Date.now());
   world.events.drain((e) => drained.push(e));
-  assert.equal(drained.length, 2, 'an anchored event still plays on arrival — see eventBudgetMs');
+  assert.equal(drained.length, 2);
   assert.equal(drained[0].enemy, world.enemies[0], 'the id became the entity again, so the bubble binds');
   assert.equal(drained[1].type, 'kill');
 });
@@ -359,129 +356,6 @@ test('the rocket cooldown travels — the HUD dial is the ROOM\'s countdown', ()
   for (let i = 0; i < 60; i++) step([]);
   assert.ok(world.player.groups.rocket.cooldown < fired, 'the dial fills as the room reloads');
   assert.equal(world.player.groups.rocket.cooldown, sent);
-});
-
-test('a rocket flies from the muzzle, not from its second snapshot', () => {
-  // A rocket is drawn by finite difference over its last TWO samples, so until the second one arrived it
-  // had no velocity: it appeared at the muzzle, sat still for a whole snapshot interval, then jumped ~0.8
-  // units to catch up. Once per rocket, at the muzzle, which is exactly where the player is looking when
-  // they pull the trigger — the "my rockets stutter" report. Bullets never had it: their launch velocity
-  // has always been in the spawn descriptor.
-  const room = createRoom({ levelName: 'level-0', seed: 4242 });
-  const { world } = clientWorld();
-  const st = createNetState();
-  st.welcome = { snapshotEvery: 4 };
-  const MS = SIM_DT * 1000;
-
-  // Follow ONE rocket for its whole life, one render frame per tick, with a jitter-free network: whatever
-  // unevenness is left in the drawn path is the client's own.
-  const track = new Map();
-  for (let i = 0; i < 400; i++) {
-    room.pushInput([{ t: i, k: ['KeyW', 'KeyF'], a: null }]);
-    room.stepOnce();
-    if (room.dueForSnapshot()) applySnapshot(world, st, room.takeSnapshot(), room.tick * MS);
-    renderNet(world, st, room.tick * MS, INTERP_DELAY_MS);
-    for (const r of world.rockets) {
-      if (!track.has(r)) track.set(r, []);
-      track.get(r).push({ x: r.pos.x, z: r.pos.z });
-    }
-  }
-
-  const lives = [...track.values()].filter((pts) => pts.length > 10);
-  assert.ok(lives.length > 0, 'a rocket really did fly (guard against an empty assertion)');
-  for (const pts of lives) {
-    const steps = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.z - pts[i].z));
-    const jumps = steps.slice(1).map((v, i) => Math.abs(v - steps[i]));
-    const worst = Math.max(...jumps);
-    // The birth hitch measured 0.80 units in one frame against a 0.20 cruise step. Anything of that order
-    // is the freeze-then-jump coming back.
-    assert.ok(worst < 0.05, `the drawn path has no step change worth seeing (worst ${worst.toFixed(3)})`);
-  }
-});
-
-test('EVENT TIMING: the gun keeps its own rhythm, not the snapshot grid', () => {
-  // The bug, in one line: events ride snapshots, so they used to be PLAYED when their snapshot landed. The
-  // starter gun reloads in 0.18 s — 10.8 ticks, so the sim fires every 11, dead even — while snapshots go
-  // out every 4. The rounding walked 1->2->3->0 and every fourth shot arrived a whole snapshot early:
-  // measured gaps of 200, 133, 200, 200 ms, which the ear reads as one shot in four being doubled.
-  const room = createRoom({ levelName: 'level-0', seed: 4242 });
-  const { world } = clientWorld();
-  const st = createNetState();
-  st.welcome = { snapshotEvery: 4 };
-  const MS = SIM_DT * 1000;
-
-  // A jitter-free network: a snapshot for tick T is applied at exactly T's own moment. Any rhythm left in
-  // the output is therefore ours, not the transport's. The clock is read at sub-tick resolution, because
-  // the thing under test is WHEN a sound plays and a whole tick of slop would hide a third of the defect.
-  const SUB = 8, played = [];
-  for (let i = 0; i < 240; i++) {
-    room.pushInput([{ t: i, k: ['Space'], a: null }]);
-    room.stepOnce();
-    if (room.dueForSnapshot()) applySnapshot(world, st, room.takeSnapshot(), room.tick * MS);
-    for (let k = 1; k <= SUB; k++) {
-      const now = (room.tick - 1 + k / SUB) * MS;
-      releaseNetEvents(world, st, now);
-      world.events.drain((e) => { if (e.type === 'fire') played.push(now); });
-    }
-  }
-
-  assert.ok(played.length > 15, `the gun really did fire a burst (got ${played.length})`);
-  const gaps = played.slice(1).map((v, i) => v - played[i]);
-  const spread = Math.max(...gaps) - Math.min(...gaps);
-  // Slack for the sampling clock itself: each release instant is read to within one sub-step, so a GAP —
-  // two instants — can be off by two. That is 4.2 ms against a defect that spread the gaps by 67.
-  const SLOP = 2 * MS / SUB + 1e-6;
-  assert.ok(spread <= SLOP,
-    `every gap the same length — the weapon's rhythm, not the snapshot grid (spread ${spread.toFixed(1)} ms)`);
-  // …and it is the RIGHT rhythm: 0.18 s of reload is 10.8 ticks, so the sim fires every 11.
-  assert.ok(Math.abs(gaps[0] - 11 * MS) <= SLOP,
-    `the delivered rate is the simulated one (got ${gaps[0].toFixed(1)} ms, want ${(11 * MS).toFixed(1)})`);
-});
-
-test('EVENT TIMING: only the sound is re-timed — anchored events still play on arrival', () => {
-  // The rule, and it was learned by breaking it: an event tied to something on screen may NOT be moved in
-  // time. Holding the room's events for INTERP_DELAY_MS made rockets stutter — `smoke` and `detonate` fell
-  // 100 ms behind a rocket that is drawn in the PRESENT, and a ghost despawns on the arrival clock, so the
-  // rocket vanished and its blast went off a tenth of a second later in empty space. `fire` is the one
-  // event with neither a position nor an entity.
-  const { world } = clientWorld();
-  const st = createNetState();
-  applySnapshot(world, st, snapOf({
-    tick: 8,
-    events: [{ type: 'fire', weaponClass: 'kinetic', isRocket: false, fromPlayer: true, tk: 8 },
-             { type: 'smoke', pos: { x: 1, y: 0.6, z: 2 }, tk: 8 },
-             { type: 'detonate', pos: { x: 1, y: 0.6, z: 2 }, tk: 8 },
-             { type: 'warpFlash', pos: { x: 3, y: 0.6, z: 4 }, tk: 8 }],
-  }), 1000);
-
-  const drained = [];
-  releaseNetEvents(world, st, 1000);
-  world.events.drain((e) => drained.push(e));
-  assert.deepEqual(drained.map((e) => e.type), ['smoke', 'detonate', 'warpFlash'],
-    'everything with a position goes out at once, exactly as it did before the scheduler existed');
-
-  releaseNetEvents(world, st, 1000 + PLAYER_EVENT_BUFFER_MS);
-  world.events.drain((e) => drained.push(e));
-  assert.deepEqual(drained.map((e) => e.type), ['smoke', 'detonate', 'warpFlash', 'fire'],
-    'the shot alone waits, and only long enough to undo the batching');
-});
-
-test('EVENT TIMING: an event is released late rather than lost', () => {
-  // A tab that is not rendering never drains the queue. Bound it — but by RELEASING the excess, never by
-  // dropping it: a lost event is a banner that never showed or a pickup that never logged.
-  const { world } = clientWorld();
-  const st = createNetState();
-  for (let i = 0; i < MAX_EVENT_QUEUE + 20; i++) {
-    applySnapshot(world, st, snapOf({ tick: i + 1,
-      events: [{ type: 'fire', weaponClass: 'kinetic', isRocket: false, fromPlayer: true, tk: i + 1 }] }), 1000);
-  }
-  const drained = [];
-  releaseNetEvents(world, st, 1000); // nothing is "due" yet at the arrival instant…
-  world.events.drain((e) => drained.push(e));
-  assert.equal(drained.length, 20, '…except the overflow, which goes out at once');
-  releaseNetEvents(world, st, 1000 + PLAYER_EVENT_BUFFER_MS);
-  world.events.drain((e) => drained.push(e));
-  assert.equal(drained.length, MAX_EVENT_QUEUE + 20, 'and every single one is eventually played');
 });
 
 test('a snapshot of cooldowns is harmless to a World that has no fire groups', () => {

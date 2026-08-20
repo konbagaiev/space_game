@@ -100,14 +100,10 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       return { id, kind, projectileColor: e.projectileColor, class: e.class, fromPlayer: e.fromPlayer,
                x: e.pos.x, z: e.pos.z, vx: e.vel.x, vz: e.vel.z };
     }
-    // A rocket carries its LAUNCH VELOCITY for the same reason a bullet does, and it needs it more. A
-    // rocket is drawn by finite difference over its last two samples, so until the SECOND one arrives it
-    // has no velocity at all: it appeared, sat still for a snapshot interval and then jumped 0.8 units to
-    // catch up. That hitch is at the muzzle of every rocket you fire, which is exactly where you are looking.
     if (kind === 'rocket') {
       return { id, kind, projectileColor: e.projectileColor, weaponClass: e.weaponClass,
                fromPlayer: e.fromPlayer, lead: !!e.lead, spiralOf: !!e.spiralOf,
-               x: e.pos.x, z: e.pos.z, h: e.heading, vx: e.vel.x, vz: e.vel.z };
+               x: e.pos.x, z: e.pos.z, h: e.heading };
     }
     // WITH its position: a crate described without one is born at the world origin and, since drops only
     // move while being pulled, the client drew it there — metres from where the room actually had it. That
@@ -146,12 +142,8 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       applyInput({ k: lastInput.k, t: lastInput.a }, world.input.keys, world.input.touchAim);
       // simTick hands back whatever the Grab is pulling — presentation only, but only the room knows it.
       grabTarget = simTick(world, SIM_DT);
+      world.events.drain((ev) => { const w = wireEvent(ev, idOf); if (w) pendingEvents.push(w); });
       tick++;
-      // Every event is stamped with the tick it happened on (`tk`). It costs one number and it buys the
-      // client the ability to play the event on its own clock instead of on the snapshot grid: events are
-      // batched, so without a stamp a shot fired on tick 11 and one fired on tick 12 are indistinguishable
-      // and both land when tick 12's snapshot does. See `scheduleEvent` in netsim-world.js.
-      world.events.drain((ev) => { const w = wireEvent(ev, idOf); if (w) { w.tk = tick; pendingEvents.push(w); } });
       return tick;
     },
 

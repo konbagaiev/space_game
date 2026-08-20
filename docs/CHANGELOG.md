@@ -5,6 +5,22 @@
 
 ## 2026-08-20
 
+- **REVERTED: the netsim rendering is back to where it stood before the gun-sound work.** The maintainer's
+  reading is the one that decides it — before any of it, no stutter was visible on enemies, rockets or the
+  nose of a ship; after it, stutter was visible everywhere. Whether the microscope created the symptom or
+  the changes did, the honest move is to put the picture back and re-check from a known point. Reverted:
+  the event scheduling (so the gun's doubled-sounding fourth shot returns) and the rocket's launch velocity.
+  Kept: the rocket cooldown on the wire (a dead HUD readout, unrelated to motion) and `?netjerk`, which is
+  inert unless its flag is on and only ever reads.
+
+  The root cause the session did establish stands, and it is worth more than any of the individual fixes:
+  **the client draws on four different clocks at once** — enemies interpolated 100 ms in the past, bullets
+  dead-reckoned into the present, rockets extrapolated into the present, the local ship predicted ahead of
+  the server, and despawns applied the instant they arrive. Every artifact chased today came from a seam
+  between two of them. That complexity buys latency the maintainer has now said outright they do not need,
+  which points at one clock and snapshot interpolation for everything — a design that DELETES most of this
+  code rather than adding to it. To be decided from a clean baseline, not mid-session.
+
 - **…and `?netjerk` now survives being retyped.** Two playtest rounds produced no data at all because the
   URL had picked up a trailing comma — `&netjerk,` — and `URLSearchParams.has('netjerk')` is false for that,
   so the probe never armed and `saveJerk()` returned a bare `null` into the console. The flag is matched

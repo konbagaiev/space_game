@@ -52,47 +52,6 @@ const sampleSpan = (a, b) => (b.tick > a.tick ? (b.tick - a.tick) * SIM_DT : 0);
 // exhaust it; small enough that it is a handful of objects.
 export const MAX_HISTORY = 12;
 
-// ---------- When an event is PLAYED ----------
-//
-// Events are batched into snapshots, so they arrive on the snapshot grid rather than at the tick they
-// happened on. Played on arrival that puts the SNAPSHOT RATE into the game: the starter gun reloads in
-// 0.18 s — 10.8 ticks, so the sim fires every 11, dead even — while snapshots go out every 4. The rounding
-// error walks 1→2→3→0, and every fourth shot lands a whole snapshot early. Measured gaps between delivered
-// shots: **200, 133, 200, 200 ms**, which the ear reads as one shot in four being doubled.
-//
-// Each event carries the tick it happened on (`tk`, stamped by the room), so the fix is to hold it for
-// `budget − (how late it already is)`: it then waits exactly `budget` from its OWN tick and the rhythm
-// comes back. The buffer must cover a full snapshot interval or the tail of each batch is still early; the
-// room states that interval in the `welcome` (`snapshotEvery`), and this is the fallback for before it
-// arrives — 4 ticks at 60 Hz, the room's own default.
-export const PLAYER_EVENT_BUFFER_MS = 4 * SIM_DT * 1000;
-
-// ONLY the player's own `fire` is re-timed, and the reason is a rule worth keeping:
-//
-//   **an event that is ANCHORED to something on screen may not be moved in time, because the client draws
-//   different things on different clocks and none of them is the event's.**
-//
-// This was learned the expensive way. The first cut of this scheduler also held the room's events for
-// `INTERP_DELAY_MS`, reasoning that enemies are drawn a tenth of a second in the past so their events
-// belong there too. It made rockets stutter, because:
-//   • bullets and rockets are drawn in the PRESENT (dead-reckoned), so their `smoke`, `bulletImpact` and
-//     `detonate` were suddenly 100 ms behind the object laying them — the trail detached from its rocket;
-//   • worse, a ghost DESPAWNS on the arrival clock (`applySnapshot` removes it the moment the room stops
-//     listing it) while its farewell FX was being held: the rocket vanished, and a tenth of a second later
-//     its blast went off in the empty space it used to be. Same for a killed enemy and its explosion.
-// `fire` is the one event with neither a position nor an entity — it is a sound — so moving it in time
-// costs nothing and buys back the weapon's rhythm. Everything else plays on arrival, as it always did.
-export const eventBudgetMs = (state, ev) => {
-  if (ev.type !== 'fire' || !ev.fromPlayer) return 0;
-  const every = state.welcome && state.welcome.snapshotEvery;
-  return every ? every * SIM_DT * 1000 : PLAYER_EVENT_BUFFER_MS;
-};
-
-// A ceiling on the pending queue. A tab that is not rendering — paused, hidden, in a menu — never drains
-// it, and an event is worth releasing late but never worth losing. Past the cap the oldest are marked due
-// and go out in the next drain, which is exactly what used to happen to every event, always.
-export const MAX_EVENT_QUEUE = 512;
-
 export function createNetState() {
   return {
     byId: new Map(),   // network id → the World entity it drives
@@ -111,10 +70,10 @@ export function createNetState() {
     ack: null,
     arena: { x: 0, z: 0 },
     history: [],       // [{ at, tick }] — arrival times, for choosing the render moment
-    eventQueue: [],    // [{ due, ev }] — wire events waiting for their moment (see PLAYER_EVENT_BUFFER_MS)
     lastTick: -1,      // newest server tick applied (an out-of-order snapshot is dropped)
     welcome: null,
-    jerk: null,        // ?netjerk diagnostic probe (netsim-jerk.js) — null unless the flag is on
+    jerk: null,        // ?netjerk diagnostic probe (netsim-jerk.js) — null unless the flag is on, and it
+                       // only ever READS: nothing about the picture depends on whether it is armed.
   };
 }
 
@@ -141,9 +100,7 @@ function spawnGhost(world, desc) {
   } else if (desc.kind === 'rocket') {
     // `lead` marks the invisible leader of a spiral volley (no mesh at all) and `spiralOf` picks the
     // warhead geometry — both decide what `attachRocketBody` builds, so both have to survive the wire.
-    // The launch velocity is what carries it through its first snapshot interval — see below.
-    e = { pos: new Vec3(desc.x ?? 0, BULLET_PLANE_Y, desc.z ?? 0),
-          vel: new Vec3(desc.vx || 0, 0, desc.vz || 0), heading: desc.h || 0,
+    e = { pos: new Vec3(desc.x ?? 0, BULLET_PLANE_Y, desc.z ?? 0), vel: new Vec3(), heading: desc.h || 0,
           projectileColor: desc.projectileColor, weaponClass: desc.weaponClass,
           lead: !!desc.lead, spiralOf: desc.spiralOf ? true : undefined,
           fromPlayer: !!desc.fromPlayer, alive: true };
@@ -256,40 +213,12 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
     if (world.station) world.station.active = !!run.stationActive;
   }
 
-  // The network is just another producer of the event stream the client already drains every tick. Almost
-  // all of them go straight through; the player's own `fire` is held briefly so the gun keeps its own
-  // rhythm instead of the snapshot grid's. See PLAYER_EVENT_BUFFER_MS.
-  for (const ev of snap.events || []) scheduleEvent(state, snap, ev, at);
+  // The network is just another producer of the event stream the client already drains every tick.
+  for (const ev of snap.events || []) world.events.emit(hydrateEvent(state, ev));
 
   pushSample(state.history, { at, tick: snap.tick });
   if (state.jerk) state.jerk.snapshot(snap, at); // ?netjerk: the delivery fingerprint of this packet
   return true;
-}
-
-// Hold one wire event until its moment. `late` is how much of its budget the trip already spent: an event
-// from the first tick of a batch is three ticks old by the time its snapshot is built, one from the last
-// tick is brand new, and paying the difference back is the whole trick.
-function scheduleEvent(state, snap, ev, at) {
-  const budget = eventBudgetMs(state, ev);
-  const late = Math.max(0, snap.tick - (ev.tk ?? snap.tick)) * SIM_DT * 1000;
-  state.eventQueue.push({ due: at + Math.max(0, budget - late), ev });
-  // Never grow without bound: release the excess at once rather than lose it.
-  for (let i = 0, over = state.eventQueue.length - MAX_EVENT_QUEUE; i < over; i++) state.eventQueue[i].due = 0;
-}
-
-// Release every event whose moment has come, in the order the room produced them. Called from `renderNet`,
-// which runs before the frame's event drain, so a released event reaches FX and audio in the same frame.
-//
-// Entity ids are resolved HERE rather than on arrival: a ghost can despawn during the wait, and a shield
-// ripple bound to a ship that is already gone would paint a bubble on a corpse. `null` simply draws nothing.
-export function releaseNetEvents(world, state, now) {
-  if (!state.eventQueue.length) return;
-  const held = [];
-  for (const q of state.eventQueue) {
-    if (q.due <= now) world.events.emit(hydrateEvent(state, q.ev));
-    else held.push(q);
-  }
-  state.eventQueue = held;
 }
 
 // Turn a wire event back into what the adapter expects.
@@ -343,9 +272,6 @@ function bracket(samples, t) {
 export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY_MS,
                           predictor = null, unacked = () => []) {
   const t = now - delayMs;
-  // First: hand the frame the events whose moment has come. Before anything is drawn, because the adapter
-  // that turns them into FX and audio runs after this call and must see them in the same frame.
-  releaseNetEvents(world, state, now);
 
   for (const [id, e] of state.byId) {
     // BULLETS ARE DEAD-RECKONED, not interpolated. A bullet flies in a straight line at a constant speed —
@@ -371,12 +297,7 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
         e.pos.z = last.z + ((last.z - prev.z) / span) * el;
         e.heading = last.h + (shortestAngleDelta(prev.h, last.h) / span) * el;
       } else {
-        // ONE sample so far: no finite difference to take, so fly it on the velocity it was launched with.
-        // Holding it still instead is a freeze at the muzzle followed by a jump — the whole first snapshot
-        // interval of every rocket's life, right where the player is looking when they pull the trigger.
-        e.pos.x = last.x + e.vel.x * el;
-        e.pos.z = last.z + e.vel.z * el;
-        e.heading = last.h;
+        e.pos.x = last.x; e.pos.z = last.z; e.heading = last.h;
       }
       continue;
     }
@@ -470,6 +391,5 @@ export function clearNet(world, state) {
   state.byId.clear(); state.kinds.clear(); state.samples.clear();
   state.playerSamples.length = 0; state.history.length = 0;
   state.view = null; state.viewAt = 0;
-  state.eventQueue.length = 0; // a new run does not want the last one's pending FX
   state.lastTick = -1;
 }
