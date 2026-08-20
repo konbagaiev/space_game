@@ -16,7 +16,7 @@
 // See docs/plans/server-authoritative-sim.md (Slice B3b).
 import { Vec3 } from './vec.js';
 import { shipModelCfg } from './ship-config.js';
-import { deriveDrive, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC } from './components.js';
+import { deriveDrive, skillEffects, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC } from './components.js';
 import { simRandom } from './sim-random.js';
 import { SHIP_GROUP_SCALE, BULLET_PLANE_Y, SPAWN_GROW_TIME } from './consts.js';
 import { spawnBullet, spawnRocket } from './spawn.js';
@@ -54,6 +54,68 @@ export function buildGroups(groupDefs, mounts) {
 
 // Build one enemy from a DB ship row (type 'enemy'); weapons + fire groups come from its stats.
 // Draws three times from the seeded stream — see the header note before touching the order.
+// The PLAYER ship as data — the same pile of resolved numbers an enemy is, built from the account's
+// active-ship record `{ ship, loadout, components, skills }`. The browser hangs a mesh off it afterwards
+// (ship-build.buildPlayer); a headless referee re-simulating a submitted trace does not, and that is the
+// only difference between the two.
+//
+// Skills apply ONLY to a real active ship. Previews and ?playback overrides pass `skills: null` (→ the
+// identity multipliers), which is what lets a recording reproduce the exact ship it was made with no matter
+// what the account has equipped now.
+export function makePlayer(catalog, active) {
+  const s = active.ship.stats;
+  const mc = shipModelCfg(s); // per-ship model presentation (yaw/scale + optional overrides)
+  const { hull, engine, thruster, repair, grab, shield } = resolveComponents(catalog, active.components);
+  // resolveComponents/buildMounts return fresh objects, so scaling engine/thruster/shield/weapon copies
+  // here never mutates the shared catalog.
+  const fx = skillEffects(active.skills);
+  if (engine) engine.power *= fx.mobilityMul;     // Mobility: +5%/pt engine power (→ acceleration)
+  if (thruster) thruster.power *= fx.mobilityMul; // Mobility: +5%/pt thruster power (→ turn rate)
+  if (shield) shield.capacity = Math.round(shield.capacity * fx.shieldMul); // Shields: +5%/pt capacity
+  const p = {
+    // --- SIM TRANSFORM (the authority; a mesh, where there is one, is a copy of it — see sim.js syncMeshes) ---
+    pos: new Vec3(0, BULLET_PLANE_Y, 0), // world position on the canonical combat plane
+    vel: new Vec3(),
+    heading: 0,                       // rotation angle around Y
+    scale: SHIP_GROUP_SCALE * mc.scale, // CURRENT uniform world scale (warp-in shrinks it); drives hitboxes + muzzle
+    fullScale: SHIP_GROUP_SCALE * mc.scale, // the full-size scale to grow back into after a warp
+    noseZ: mc.muzzle ?? 1.6,          // group-local muzzle offset from the catalog (1.6 = the primitive's cone nose)
+    sizeScale: mc.scale,
+    modelUrl: active.ship.modelUrl, modelCfg: mc, // what the host needs to give this ship a body
+    color: s.color,
+    hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
+    class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
+    hull, engine, thruster, repair, grab, shield, // `repair` = repair-drone stats (or null); `grab` = tractor stats (or null); `shield` = base-shield stats { capacity, rechargeSec } or null — all feed mass
+    _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
+    _shieldValue: shield ? shield.capacity : 0, // current absorption remaining (starts full & active)
+    _shieldRechargeAccum: 0,          // seconds banked while broken → drives recharge + HUD purple fill
+    mounts: buildMounts(catalog, active.loadout.mounts), // resolved weapons; also feeds ship mass
+    hp: hull ? hull.durability : 0, maxHp: hull ? hull.durability : 0, // hull may be unequipped in the hangar; the launchable gate blocks take-off
+    alive: true,
+    oobTime: 0,                  // seconds the ship has been continuously out of bounds (soft boundary)
+    spawnAge: SPAWN_GROW_TIME,   // == full size: no warp-in animation on a fresh build (set to 0 to play it)
+    spawnDur: SPAWN_GROW_TIME,   // warp-back duration
+  };
+  // Kinetic/Rocket skills: clone each mounted weapon and scale the COPY (never the shared catalog object).
+  for (const m of p.mounts) {
+    const w = { ...m.weapon };
+    if (w.type === 'rocket') {
+      if (w.power != null) w.power *= fx.rocketDmgMul;               // Rocket: +5%/pt damage
+      if (w.launchSpeed != null) w.launchSpeed *= fx.rocketSpeedMul; // Rocket: +5%/pt launch speed
+    } else {
+      if (w.power != null) w.power *= fx.kineticDmgMul;              // Kinetic: +5%/pt damage
+      w.aimAssistDeg = (w.aimAssistDeg || 0) + fx.aimAssistBonusDeg; // Kinetic: +0.5°/pt aim-assist cone (additive)
+    }
+    m.weapon = w;
+  }
+  p.dodge = fx.dodge;                   // Maneuver: dodge % (0 = never dodges) — rolled in sim on a hostile hit
+  p.rocketSpeedMul = fx.rocketSpeedMul; // Rocket: also scales the player's in-flight rocket accel (see fireMount)
+  p.maxSpeedMul = fx.mobilityMul;       // Mobility: +5%/pt max speed (applied at the sim velocity clamp)
+  p.groups = buildGroups(s.groups, p.mounts); // fire channels (gun / rocket / ...)
+  deriveDrive(p); // acceleration <- engine power, turnRate <- engine turnPower, scaled by mass
+  return p;
+}
+
 export function makeEnemy(world, shipDef) {
   const s = shipDef.stats;
   const catalog = world.catalog;

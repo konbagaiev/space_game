@@ -27,13 +27,21 @@ export function mulberry32(seed) {
 }
 
 let rand = null; // null = live play (native Math.random); a function = a seeded record/playback/bench run.
+// How many draws this run has taken. It is not a diagnostic curiosity: it is how a §73 violation is caught.
+// Two hosts replaying the same trace must consume the seeded stream the SAME NUMBER OF TIMES; a cosmetic
+// path that reached into simRandom() shows up here as a count mismatch long before it shows up as a desync
+// somebody has to debug. Reset by seedSim, which is called exactly once per deterministic run.
+let draws = 0;
 
 // Install (or clear) the seeded stream. seedSim(n) → deterministic; seedSim(null) → back to native.
 // Called at record start, at playback/intro arm, by the ?bench replayer, and cleared on teardown.
-export function seedSim(seed) { rand = (seed == null) ? null : mulberry32(seed >>> 0); }
+export function seedSim(seed) { rand = (seed == null) ? null : mulberry32(seed >>> 0); draws = 0; }
 
 // One gameplay random in [0,1). Falls back to Math.random when no seed is installed (normal play).
-export function simRandom() { return rand ? rand() : Math.random(); }
+export function simRandom() { draws++; return rand ? rand() : Math.random(); }
+
+// Draws taken since the last seedSim(). Part of the browser↔Node divergence oracle (see sim-core/digest.js).
+export function simRandomDraws() { return draws; }
 
 // True while a seeded stream is installed (diagnostics / tests).
 export function isSimSeeded() { return rand !== null; }

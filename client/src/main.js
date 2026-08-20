@@ -5,6 +5,7 @@
 // modules out of here next; for now it is the single composition root.
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
 import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
+import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
@@ -1526,6 +1527,10 @@ if (REC || rs.play) {
     begin: () => beginRecordCapture(),  // record: seed + reset + start capturing (what the Start button does)
     stop: () => stopRecordSession(),
     hash: stateHash,
+    // The browser half of the browser↔Node divergence oracle (sim-core/digest.js): the whole World reduced
+    // to one number, plus how many seeded RNG draws this run consumed. server/tools/sim-replay.mjs computes
+    // the same thing headlessly from the same trace, and 36-sim-divergence asserts the two agree.
+    digest: () => worldDigest(world),
     // `armed` is the models-ready gate: the ship .glb sets mesh.userData.noseZ/tailZ (where bullets spawn), so
     // stepping before it resolves changes the sim — automated stepping MUST wait on it.
     status: () => ({ recording: recCapturing, armed: rs.armed, ticks: recTicks.length, playIndex: rs.index, playDone: rs.done, total: rs.trace ? rs.trace.ticks.length : 0 }),
