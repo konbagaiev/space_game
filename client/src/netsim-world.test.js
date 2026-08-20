@@ -361,6 +361,44 @@ test('the rocket cooldown travels — the HUD dial is the ROOM\'s countdown', ()
   assert.equal(world.player.groups.rocket.cooldown, sent);
 });
 
+test('a rocket flies from the muzzle, not from its second snapshot', () => {
+  // A rocket is drawn by finite difference over its last TWO samples, so until the second one arrived it
+  // had no velocity: it appeared at the muzzle, sat still for a whole snapshot interval, then jumped ~0.8
+  // units to catch up. Once per rocket, at the muzzle, which is exactly where the player is looking when
+  // they pull the trigger — the "my rockets stutter" report. Bullets never had it: their launch velocity
+  // has always been in the spawn descriptor.
+  const room = createRoom({ levelName: 'level-0', seed: 4242 });
+  const { world } = clientWorld();
+  const st = createNetState();
+  st.welcome = { snapshotEvery: 4 };
+  const MS = SIM_DT * 1000;
+
+  // Follow ONE rocket for its whole life, one render frame per tick, with a jitter-free network: whatever
+  // unevenness is left in the drawn path is the client's own.
+  const track = new Map();
+  for (let i = 0; i < 400; i++) {
+    room.pushInput([{ t: i, k: ['KeyW', 'KeyF'], a: null }]);
+    room.stepOnce();
+    if (room.dueForSnapshot()) applySnapshot(world, st, room.takeSnapshot(), room.tick * MS);
+    renderNet(world, st, room.tick * MS, INTERP_DELAY_MS);
+    for (const r of world.rockets) {
+      if (!track.has(r)) track.set(r, []);
+      track.get(r).push({ x: r.pos.x, z: r.pos.z });
+    }
+  }
+
+  const lives = [...track.values()].filter((pts) => pts.length > 10);
+  assert.ok(lives.length > 0, 'a rocket really did fly (guard against an empty assertion)');
+  for (const pts of lives) {
+    const steps = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.z - pts[i].z));
+    const jumps = steps.slice(1).map((v, i) => Math.abs(v - steps[i]));
+    const worst = Math.max(...jumps);
+    // The birth hitch measured 0.80 units in one frame against a 0.20 cruise step. Anything of that order
+    // is the freeze-then-jump coming back.
+    assert.ok(worst < 0.05, `the drawn path has no step change worth seeing (worst ${worst.toFixed(3)})`);
+  }
+});
+
 test('EVENT TIMING: the gun keeps its own rhythm, not the snapshot grid', () => {
   // The bug, in one line: events ride snapshots, so they used to be PLAYED when their snapshot landed. The
   // starter gun reloads in 0.18 s — 10.8 ticks, so the sim fires every 11, dead even — while snapshots go

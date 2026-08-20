@@ -100,10 +100,14 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       return { id, kind, projectileColor: e.projectileColor, class: e.class, fromPlayer: e.fromPlayer,
                x: e.pos.x, z: e.pos.z, vx: e.vel.x, vz: e.vel.z };
     }
+    // A rocket carries its LAUNCH VELOCITY for the same reason a bullet does, and it needs it more. A
+    // rocket is drawn by finite difference over its last two samples, so until the SECOND one arrives it
+    // has no velocity at all: it appeared, sat still for a snapshot interval and then jumped 0.8 units to
+    // catch up. That hitch is at the muzzle of every rocket you fire, which is exactly where you are looking.
     if (kind === 'rocket') {
       return { id, kind, projectileColor: e.projectileColor, weaponClass: e.weaponClass,
                fromPlayer: e.fromPlayer, lead: !!e.lead, spiralOf: !!e.spiralOf,
-               x: e.pos.x, z: e.pos.z, h: e.heading };
+               x: e.pos.x, z: e.pos.z, h: e.heading, vx: e.vel.x, vz: e.vel.z };
     }
     // WITH its position: a crate described without one is born at the world origin and, since drops only
     // move while being pulled, the client drew it there — metres from where the room actually had it. That

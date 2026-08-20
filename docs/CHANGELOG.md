@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **Your own rockets hitched at the muzzle.** A rocket is drawn by finite difference over its last two
+  samples, so until the SECOND snapshot arrived it had no velocity at all: it appeared, sat still for a
+  whole snapshot interval, then jumped ~0.8 units to catch up — against a 0.20-unit cruise step, measured.
+  Once per rocket, at the muzzle, which is exactly where the player is looking when they pull the trigger,
+  and why it read as "only MY rockets stutter". Bullets never had it — their launch velocity has always
+  ridden in the spawn descriptor; rockets were simply missed. Now they carry `vx`/`vz` too and fly on that
+  until a second sample exists. Measured worst frame-to-frame step change over a rocket's life on a
+  jitter-free link: **0.80 → 0.00**. Guarded by a test that follows one rocket through a real room.
+
 - **The machine gun sounded doubled on every fourth shot in a room — the ear was hearing the snapshot
   rate.** Events ride snapshots and were played the moment their batch landed, so a weapon whose reload does
   not divide the snapshot interval came out on the wrong beat: `Basic kinetic` reloads in 0.18 s (10.8 ticks

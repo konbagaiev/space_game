@@ -140,7 +140,9 @@ function spawnGhost(world, desc) {
   } else if (desc.kind === 'rocket') {
     // `lead` marks the invisible leader of a spiral volley (no mesh at all) and `spiralOf` picks the
     // warhead geometry — both decide what `attachRocketBody` builds, so both have to survive the wire.
-    e = { pos: new Vec3(desc.x ?? 0, BULLET_PLANE_Y, desc.z ?? 0), vel: new Vec3(), heading: desc.h || 0,
+    // The launch velocity is what carries it through its first snapshot interval — see below.
+    e = { pos: new Vec3(desc.x ?? 0, BULLET_PLANE_Y, desc.z ?? 0),
+          vel: new Vec3(desc.vx || 0, 0, desc.vz || 0), heading: desc.h || 0,
           projectileColor: desc.projectileColor, weaponClass: desc.weaponClass,
           lead: !!desc.lead, spiralOf: desc.spiralOf ? true : undefined,
           fromPlayer: !!desc.fromPlayer, alive: true };
@@ -367,7 +369,12 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
         e.pos.z = last.z + ((last.z - prev.z) / span) * el;
         e.heading = last.h + (shortestAngleDelta(prev.h, last.h) / span) * el;
       } else {
-        e.pos.x = last.x; e.pos.z = last.z; e.heading = last.h;
+        // ONE sample so far: no finite difference to take, so fly it on the velocity it was launched with.
+        // Holding it still instead is a freeze at the muzzle followed by a jump — the whole first snapshot
+        // interval of every rocket's life, right where the player is looking when they pull the trigger.
+        e.pos.x = last.x + e.vel.x * el;
+        e.pos.z = last.z + e.vel.z * el;
+        e.heading = last.h;
       }
       continue;
     }
