@@ -71,28 +71,24 @@ digest and the identical seeded-RNG draw count.
 
 ### What is left (in order)
 
-**1. AIM ASSIST — the one thing the playthrough asked for.** The intro and the first three campaign levels
-were played end to end in a room on 2026-08-20 and reported as fine, **except the auto-aim**, which needs
-rework. That is D5's exact subject and the plan predicted it: the assist is the only mechanic that depends
-on *where the client saw the enemy*. `findBulletAimTarget` / `findTargetInSector` pick from LIVE enemy
-positions, which in a room are the server's present, while the screen shows the world ~100 ms in the past
-(plus ~50 ms of input queueing) — so the assist corrects toward somewhere the player is not looking.
+**1. Play a level or two and judge the FEEL.** The intro and the first three campaign levels were played
+end to end in a room on 2026-08-20 and reported as fine; the one complaint was the auto-aim, which has since
+been REMOVED from the game entirely (DECISIONS §124) rather than lag-compensated. So the open question is
+what is left: the general input delay drew no complaint, which is evidence against Slice E (prediction)
+being urgent, but it has not been judged since the assist went away and shooting now depends purely on
+where the player points.
 
-Note what this reorders: the general input delay drew **no complaint**, which is evidence against the
-assumption that Slice E (prediction) is the urgent next step. Prediction shrinks the error but cannot
-remove it, since remote enemies stay interpolated; **D5 is the fix aimed at this symptom.** Also tracked in
-`docs/ROADMAP.md` under Phase 5.
+**2. D5 — lag compensation.** The one part of Slice D not built. **Its main consumer is gone**: aim-assist
+target selection was the thing that needed rewinding, and auto-aim no longer exists (§124). What remains is
+player-bullet hit tests resolved against the server's present rather than the client's view — worth doing
+only if hits start feeling wrong now that aiming is entirely manual. Judge it by feel first.
 
-**Feel, for the record:** intro + levels 0–2 completed in a room with no complaints about delay or
-smoothness. Retries, level advance, wins, banking and the briefing hand-offs all worked over the socket.
-
-**2. D5 — lag compensation.** The one part of Slice D not built, and now the highest-value item (see 1). The server keeps a ring buffer of per-tick
-entity transforms (~1 s) and resolves **aim-assist target selection** and **player-bullet hit tests** against
-the rewound state at `clientTick − (interpDelay + RTT/2)`. Our shape mutes the classic version of this
-problem — the client sends keys, not a crosshair, and fire direction comes from the ship's nose, which the
-server simulates itself — so the only things that genuinely depend on where the client SAW the enemies are
-`findBulletAimTarget` / `findTargetInSector` and `touchAim`. Worth doing after the feel notes, because those
-notes decide how much of it is needed.
+If it is wanted, the shape is unchanged from the original spec: the server keeps a ring buffer of per-tick
+entity transforms (~1 s) and resolves player-bullet hit tests against the rewound state at
+`clientTick − (interpDelay + RTT/2)`. Our shape mutes the classic version of the problem anyway — the client
+sends keys, not a crosshair, and fire direction comes from the ship's nose, which the server simulates
+itself. With auto-aim gone, `touchAim` is the only remaining input whose meaning depends on what the client
+saw, and it is a heading, not a target.
 
 **3. Slice E — client-side prediction.** The client keeps its unacked inputs, reseeds its World from each
 snapshot and re-runs them through the same `sim-core`. That is exactly what `replay.js` already does
@@ -121,9 +117,11 @@ level). `window.__netsim` reports `connected` / `tick` / `ack` / `behind` from t
 
 **Two oracles, and they check different things.**
 - `22-intro-replay` must print
-  `kills=4 enemiesLeft=0 cards=p0|p1|p2|p3|p4 won=true ended=true playDone=true tick=2503/3490`.
-  **The tick count matters as much as the outcome** — it has not moved once across the whole branch, and a
-  change in it means the simulation diverged even if `won=true`.
+  `kills=4 enemiesLeft=0 cards=p0|p1|p2|p3|p4 won=true ended=true playDone=true tick=2474/3490`.
+  **The tick count matters as much as the outcome** — a change in it means the simulation diverged even if
+  `won=true`. It held at **2503** across the whole sim-core refactor, which is what made that refactor
+  provably behaviour-neutral; removing auto-aim (DECISIONS §124) moved it to **2474** deliberately, because
+  bullet direction changed. The trace still clears the level, so no re-recording was needed.
 - `36-sim-divergence` must print the same hash and the same draw count on both lines
   (`hash=0x9d2050b0 … draws=38`). A *hash* mismatch means the two hosts simulate different fights; a *draw
   count* mismatch means something drew from the seeded gameplay stream on one host only (DECISIONS §73).
@@ -886,7 +884,7 @@ socket draining across the blue-green deploy swap, binary/delta snapshot encodin
 |---|---|---|---|
 | Client units | `cd client && node --test` | 342 pass / 0 fail | 427 pass / 0 fail |
 | Server units | `cd server && npm test` (needs local Postgres) | 137 pass / 0 fail | 147 pass / 0 fail |
-| **Intro oracle** | `cd client && node visual/run.mjs 22-intro-replay` | 4 kills, cards p0..p4, `won=true` | unchanged, `tick=2503/3490` |
+| **Intro oracle** | `cd client && node visual/run.mjs 22-intro-replay` | 4 kills, cards p0..p4, `won=true` | 4 kills, `tick=2474/3490` (was 2503 before §124) |
 | **Divergence oracle** | `cd client && node visual/run.mjs 36-sim-divergence` | (did not exist) | `hash=0x9d2050b0 draws=38`, both hosts |
 | Headless referee | `node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json` | (did not exist) | 3490/3490 ticks, 4 kills |
 | Visual guards | `node visual/run.mjs {01-smoke,04-combat,20-warp-blast-immunity,25-enemy-shield}` | see §7.1 | green |
@@ -909,8 +907,10 @@ Captured on `feature/server-sim` @ `24849f7` (worktree `../ag-wt/server-sim`), 2
 | `20-warp-blast-immunity` | pass |
 | `25-enemy-shield` | pass |
 
-`tick=2503/3490` is the exact intro-replay signature to compare against after every slice: a change in the
-tick count means the sim diverged even if the outcome still reads `won=true`.
+`tick=2503/3490` was the exact intro-replay signature to compare against through the refactor slices: a
+change in the tick count means the sim diverged even if the outcome still reads `won=true`. **It is
+`tick=2474/3490` from 2026-08-20 onward** — removing auto-aim (DECISIONS §124) changed bullet direction and
+so moved it, deliberately and once.
 
 **Branch full-suite result after Slice C (2026-08-20): 29 passed / 12 failed of 41.** The failing set is a
 strict SUBSET of `main`'s — the same twelve, minus `16-enemy-health-bar` and `25-enemy-shield`, which the

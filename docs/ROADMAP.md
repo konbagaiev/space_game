@@ -157,22 +157,14 @@ through the intro and the first three campaign levels end to end. See
 `docs/plans/server-authoritative-sim.md` (§0 is a self-contained pick-up brief) — nothing is pushed or
 deployed.
 
-- [ ] **AIM ASSIST NEEDS REWORK FOR NETSIM — flagged from the first full playthrough (2026-08-20).**
-  Everything else played fine; the assist is the part that reads wrong. It is the one mechanic that
-  genuinely depends on *where the player saw the enemy*: `findBulletAimTarget` / `findTargetInSector`
-  pick a target inside a cone from LIVE enemy positions, and in a room those are the server's present,
-  while the screen is showing the world ~100 ms in the past (plus ~50 ms of input queueing). So the
-  assist corrects toward a position the player is not looking at. Two candidate fixes, and they are not
-  exclusive:
-  - **D5, lag compensation (already specified in the plan, not yet built):** the room keeps a ring buffer
-    of per-tick entity transforms (~1 s) and resolves aim-assist selection *and* player-bullet hit tests
-    against the rewound state at `clientTick − (interpDelay + RTT/2)`. This is the principled fix — it
-    makes the server judge what the player actually saw.
-  - **Slice E, client-side prediction:** removes the local ship's share of the delay, which shrinks the
-    error but does not remove it, since remote enemies stay interpolated.
-  Worth deciding by feel which the assist actually needs; D5 is the one aimed at this symptom.
-  Single-player is unaffected — it simulates locally, so the assist already resolves against what is on
-  screen.
+- [x] **AIM ASSIST — flagged from the first full playthrough, then REMOVED (2026-08-20).** The auto-aim cone
+  was the one mechanic that depended on *where the player saw the enemy*, so in a room it corrected toward a
+  position the screen was not showing. Rather than lag-compensate it (the plan's D5), the mechanic was
+  deleted for player and enemies alike — it decided where a shot went from information the shooter does not
+  have, and the player could not see it working. DECISIONS §124. Measured first: the shipped intro cutscene
+  still clears (oracle moved 2503 → 2474 ticks, no re-recording), and enemies lose ~0.2% lethality because
+  their AI already aims itself. **D5 (lag compensation) is no longer needed for this**; it comes back into
+  scope only if auto-aim, or any other see-what-the-client-saw mechanic, returns.
 
 ### Netcode notes (parked — far future, from design discussion)
 - **Prereq work, not perf:** the bottleneck to *getting* server-authoritative MP is decoupling the sim

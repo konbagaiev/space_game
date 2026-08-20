@@ -956,23 +956,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   is the drift guard (wired into `client/src/credits-data.test.js`), and **`build:itch` regenerates the
   staged `credits-data.js`** from `CREDITS.md` so the itch export can never ship stale attributions.
 - **Weapons** (DB `weapons`, type `bullet`/`rocket`): bullets — `power` (damage), `projectileSpeed`,
-  `maxRange`, `fireCooldown`, `aimAssistDeg` (auto-aim cone **half-angle** in degrees; `2` for every
-  current bullet weapon). **Aim assist:** at fire time a bullet whose shooter has an opposing-side target
-  within ±`aimAssistDeg` of the nose is redirected to fire straight at that target's **current** position
-  (planar XZ, no target leading; player guns skip warping enemies, enemy guns
-  require `G.player.alive`). The cone tests the target's **HULL, not its centre** — each candidate carries
-  its `broadRadius(ship)` enclosing sphere (the same one the collision broad-phase uses) and counts as
-  in-cone when any part of that sphere overlaps, so a ship whose **wing** is in the line of fire engages the
-  assist even though its centre sits outside the cone. Exact sphere-vs-cone, trig-free in the loop (at axial
-  distance `along` the hull overlaps iff its lateral offset ≤ `along·tan(half) + r/cos(half)`). The winner is
-  the **best-aimed** candidate — lowest `(perp − r/cos(half)) / along`, i.e. the smallest angle from the aim
-  axis to the hull's near edge — with distance only breaking a tie, so a nearer bystander clipping the cone
-  edge can't steal fire from the ship the player is pointing at. The aim point stays the hull **centre**.
-  It's symmetric — **enemy kinetic/cannon guns auto-aim at the player** just as
-  player guns auto-aim at enemies. Velocity inheritance (`spawnBullet` adds the shooter's velocity) is
-  unchanged; only the base launch `dir` is rotated. Pure/deterministic (`nearestInConeIndex` in
-  `steering.js` + `findBulletAimTarget` in `projectiles.js`, no RNG → replay-safe). **Rockets are
-  unaffected** (they keep their homing via `findTargetInSector`). rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
+  `maxRange`, `fireCooldown`. **There is no auto-aim: a bullet always leaves along the ship's nose.** Guns
+  used to carry an `aimAssistDeg` cone that silently redirected a shot at any opposing-side target inside
+  it — removed 2026-08-20 (DECISIONS §124), stat and code together, for the player *and* for enemies.
+  Removing it from enemies changed almost nothing (measured: ~0.2% slower to kill a circling parked player),
+  because the enemy AI already turns to face you before it fires; the cone was doing the player's aiming.
+  Velocity inheritance (`spawnBullet` adds the shooter's velocity) is unchanged. rockets — `power`, `accel`, `turnRate`, `launchSpeed`, `maxRange`,
   `health` (HP it can absorb from gunfire), `seekHalfAngle`, `detonateRadius`, `blastRadius` (AoE), plus
   **detonation-FX stats** `blastVisual` (burst size), `blastTimeScale` (burst speed — `0.8` = 20% quicker),
   `blastTint` (burst color) read by `spawnRocketBurst`. The
@@ -986,7 +975,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **priced 600**), **Rocket (enemy)** (id 4, power 25). **Player shop ladder** (priced;
   `docs/plans/economy-shop-v2.md`): **Heavy cannon** (id 6: power 25, slow fire / long range / **2000**),
   **Heavy Machine Gun** (id 7: power 12, cooldown 0.12, high RoF, **weight 15** — the heaviest gun in the
-  game — aim assist **3°** / **6000**; **gated behind "Level 3"**), **Heavy rocket** (id 8: homing, power 90, slow
+  game; **6000** credits, **gated behind "Level 3"**), **Heavy rocket** (id 8: homing, power 90, slow
   reload, big blast / **2600**), and **Triple spiral rocket** (id 11: **4000**, top of the rocket ladder —
   `stats.spiral:true`; **gated behind "Level 3"**). The triple spiral fires an **invisible leading homing rocket** (steers via
   `findTargetInSector`, deals no damage, not shootable) that defines the flight path; **three visible
@@ -995,8 +984,6 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   on its own proximity and can be individually shot down (all three connecting = 3× = 120 damage);
   fireCooldown 7. Its shop/loadout stat line shows damage as **40×3** (`statLine` special-cases
   `stats.spiral` — per-warhead × warhead count — so a 3-warhead weapon isn't misread as a single 40).
-  A bullet weapon's stat line also shows its auto-aim cone as **`Aim assist 2°`** (`statLine` appends it
-  after Range, guarded by `s.aimAssistDeg` — so rockets/components never show it; key `ui.shop.stat.aimassist`).
   Enemy weapons: **Pirate machine gun** (id 9 — long-range 90, rapid fire 0.18,
   low damage 3; pirate gunner + buffed boss) and **Advanced pirate cannon** (id 10 — power 10, slow 1 shot/sec,
   long range 110; the Second Boss's main gun).
@@ -1373,9 +1360,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   from the banked `experience` and **zeroes `G.earnedXp`**, so the post-run active-ship refetch can't
   double-count the run's XP on top of the banked total; that refetch (in `unlockNextLevel`) also
   **`await`s the bank POST** via `bankingDone()`, so it can't read the pre-run experience and overwrite the
-  banked progression with it. **Aim assist** targets by ship *center*
-  in the cone (`findBulletAimTarget`), so it can miss large ships whose hull overlaps but whose center is
-  outside the cone — improving it (hitbox-sphere aim, mind per-bullet perf) is a ROADMAP backlog item.
+  banked progression with it. (Aim assist used to live here too; it is gone — DECISIONS §124.)
 - **Return-to-base mission end (all missions).** Killing the last enemy **no longer wins immediately**. A single
   `levelRunner` intercept (`sim.js`) replaces the `win` phase's `this.win()` with `beginReturn()`, so **every**
   mission — campaign L1–4 **and** the three side missions — ends the same way, with no per-descriptor edits (the
@@ -3136,8 +3121,9 @@ hull hidden proves the ship is actually on screen.
 
 This is Slices A–D of `docs/plans/server-authoritative-sim.md` — one simulation, two hosts (browser for
 single-player, Node for multiplayer, the headless referee and now a live room). Nothing about single-player
-gameplay changed at any point: the recorded Level-0 intro trace replays bit-identically throughout (same 4
-kills, same `tick=2503/3490`).
+gameplay changed across the whole refactor: the recorded Level-0 intro trace replayed bit-identically at
+`tick=2503/3490` through every commit of it. The oracle reads **`tick=2474/3490`** now — moved once, on
+purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
 - **Pure, Three.js-free logic (unit-tested):** the rules-bearing ones now live in `sim-core/` (see above);
   the rest stay in `src/`. `components.js` (catalogs + `deriveDrive` + `shipMass` +
   `hitsToKill` + `repairTick`), `drops-config.js` (the loot-drop constants incl. the single `DROP_MODEL_URL`,

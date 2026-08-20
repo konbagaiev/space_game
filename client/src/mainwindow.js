@@ -180,7 +180,7 @@ const SKILL_CARDS = ['kinetic', 'rocket', 'shields', 'maneuver', 'mobility']; //
 // The interpolation params for the localized card descriptions (percent rates are stored as fractions).
 function skillDescParams() {
   return {
-    kineticDmg: Math.round(SKILL_RATES.kineticDmgPct * 100), aim: SKILL_RATES.aimAssistDeg,
+    kineticDmg: Math.round(SKILL_RATES.kineticDmgPct * 100),
     rocketDmg: Math.round(SKILL_RATES.rocketDmgPct * 100), rocketSpeed: Math.round(SKILL_RATES.rocketSpeedPct * 100),
     shield: Math.round(SKILL_RATES.shieldPct * 100), dodge: SKILL_RATES.dodgePctPerPt,
     mobility: Math.round(SKILL_RATES.mobilityPct * 100),

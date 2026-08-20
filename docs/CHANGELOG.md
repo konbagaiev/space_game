@@ -5,6 +5,32 @@
 
 ## 2026-08-20
 
+- **Auto-aim removed from the game.** Bullet weapons carried an `aimAssistDeg` cone that silently redirected
+  a shot at any opposing-side target inside it — symmetric, so enemy guns did it too, and the Kinetic skill
+  widened the player's by +0.5°/point. It is gone: the stat from every weapon, the branch from `fireMount`,
+  `findBulletAimTarget` from `targeting.js`, the aim-assist half of the Kinetic skill, its Character-card
+  text (EN + RU) and the shop's `Aim assist 2°` stat line. A bullet now always leaves along the ship's nose.
+  Rockets keep their homing — that one is visible and bought deliberately. DECISIONS §124, superseding §89
+  and §112.
+  It surfaced in a server-run room, where the assist resolves against the server's present while the screen
+  shows the world ~100 ms back, so it corrected toward somewhere the player was not being shown — but the
+  decision is a design one, not a networking one: the assist decided where a shot went from information the
+  shooter did not have.
+  **Two things measured before committing to it.** The shipped intro cutscene still clears — the recorded
+  Level-0 replay moved from `tick=2503/3490` to **`tick=2474/3490`** and still ends 4 kills / `p0..p4` /
+  `won=true`, so no re-recording was needed. And enemies barely notice: a circling player under fire dies in
+  a mean 8570 ticks with the assist and 8551 without (0.2%), because the AI already turns to face you before
+  it fires. The Kinetic skill is left damage-only and deliberately un-rebalanced — padding its damage rate
+  to hide the loss would be a balance change smuggled inside a mechanic removal.
+  **The intro oracle's expected value changes with this:** `22-intro-replay` reads `tick=2474/3490` from now
+  on. It held at 2503 across every commit of the sim-core refactor, which is what made that refactor
+  provably behaviour-neutral; this moves it once, on purpose.
+
+- **`37-netsim` waits are much longer now.** It is the one scenario that cannot step the simulation — the
+  room advances on a 60 Hz wall clock and the client feeds it only as fast as it renders — so under
+  full-suite load it timed out while passing every run on its own. Waiting longer is the honest fix; the
+  assertions are all on simulation state, not on elapsed time.
+
 - **netsim playtested end to end: the intro and the first three campaign levels, all server-run.** Retries,
   level advance, wins, banking and the briefing hand-offs all worked over the socket. **One thing needs
   rework: the aim assist** — it is the only mechanic that depends on *where the client saw the enemy*

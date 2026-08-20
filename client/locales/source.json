@@ -283,10 +283,6 @@
     "source": "Blast",
     "context": "Stat label — rocket blast/AoE radius. Short."
   },
-  "ui.shop.stat.aimassist": {
-    "source": "Aim assist",
-    "context": "Stat label — bullet weapon auto-aim cone; followed by a degree value like '2°'. Short."
-  },
   "ui.shop.stat.maxspeed": {
     "source": "Top speed",
     "context": "Stat label — engine maximum speed cap. Short."
@@ -852,8 +848,8 @@
     "context": "Name of the kinetic-weapons skill card on the Character screen. Short."
   },
   "ui.skill.kinetic.desc": {
-    "source": "+{kineticDmg}% damage · +{aim}° aim assist per point",
-    "context": "Effect of one point in the Kinetic skill. {kineticDmg} and {aim} are numbers; keep the % and ° signs and 'aim assist'."
+    "source": "+{kineticDmg}% damage per point",
+    "context": "Effect of one point in the Kinetic skill. {kineticDmg} is a number; keep the % sign."
   },
   "ui.skill.rocket.name": {
     "source": "Rockets",

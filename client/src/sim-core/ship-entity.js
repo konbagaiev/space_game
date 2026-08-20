@@ -20,7 +20,7 @@ import { deriveDrive, skillEffects, enemyShieldSplit, ENEMY_SHIELD_RECHARGE_SEC 
 import { simRandom } from './sim-random.js';
 import { SHIP_GROUP_SCALE, BULLET_PLANE_Y, SPAWN_GROW_TIME } from './consts.js';
 import { spawnBullet, spawnRocket } from './spawn.js';
-import { findTargetInSector, findBulletAimTarget } from './targeting.js';
+import { findTargetInSector } from './targeting.js';
 
 export const resolveWeapon = (catalog, id) => (id != null ? catalog.weapons.get(id) || null : null);
 
@@ -104,7 +104,6 @@ export function makePlayer(catalog, active) {
       if (w.launchSpeed != null) w.launchSpeed *= fx.rocketSpeedMul; // Rocket: +5%/pt launch speed
     } else {
       if (w.power != null) w.power *= fx.kineticDmgMul;              // Kinetic: +5%/pt damage
-      w.aimAssistDeg = (w.aimAssistDeg || 0) + fx.aimAssistBonusDeg; // Kinetic: +0.5°/pt aim-assist cone (additive)
     }
     m.weapon = w;
   }
@@ -213,16 +212,11 @@ function fireMount(world, ship, mount, fwd, isPlayer) {
     spawnRocket(world, muzzle, fwd, w, accel, isPlayer, target);
     world.events.emit({ type: 'fire', weaponClass: w.class, isRocket: true, fromPlayer: isPlayer });
   } else {
-    let dir = fwd; // default: straight along the nose (spawnBullet clones+normalizes, so fwd is not mutated)
-    if (w.aimAssistDeg) {
-      const target = findBulletAimTarget(world, muzzle, fwd, w.aimAssistDeg * Math.PI / 180, isPlayer);
-      if (target) {
-        const aim = target.pos.clone().sub(muzzle); // toward the target's CURRENT position (no leading)
-        aim.y = 0;                                            // keep the shot on the combat plane
-        if (aim.lengthSq() > 1e-6) dir = aim.normalize();     // unit; spawnBullet re-normalizes anyway
-      }
-    }
-    spawnBullet(world, muzzle, dir, w, isPlayer, ship.vel);
+    // Straight along the nose, always. There used to be an auto-aim cone here (DECISIONS §89/§112) that
+    // silently redirected a bullet at any target within ±aimAssistDeg — removed in §124: it decides where a
+    // shot goes from information the shooter does not have, which reads as the game aiming for you, and in
+    // a server-run room it aimed at a position the player was not even being shown.
+    spawnBullet(world, muzzle, fwd, w, isPlayer, ship.vel);
     world.events.emit({ type: 'fire', weaponClass: w.class, isRocket: false, fromPlayer: isPlayer });
   }
 }

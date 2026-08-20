@@ -15,6 +15,13 @@ import { fileURLToPath } from 'node:url';
 
 export const name = 'netsim';
 
+// Timeouts here are generous on purpose. Unlike every other scenario this one cannot step the simulation:
+// the ROOM advances on a 60 Hz wall clock and the client can only feed it as fast as it renders frames.
+// Under full-suite load headless software WebGL drops to a couple of frames a second, so a wait that takes
+// two seconds alone can take thirty in the suite — it timed out there while passing every single run on its
+// own. Waiting longer is the honest fix; the assertions are all on simulation state, not on elapsed time.
+const SLOW = 60000;
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 // The canonical Level-0 trace, resolved from the seed so an asset rename fails here rather than in prod.
 function tracePath() {
@@ -61,7 +68,7 @@ export default async function ({ page, assert, shot, baseURL }) {
 
   // The socket has to connect and the first snapshots have to arrive.
   await page.waitForFunction('!!(window.__netsim && window.__netsim.connected && window.__netsim.tick > 0)',
-    null, { timeout: 20000 });
+    null, { timeout: SLOW });
   const joined = await status(page);
   assert.equal(joined.netsim, true, 'the tab is in netsim mode');
   console.log(`      joined a room: tick=${joined.tick} enemyTotal=${joined.enemyTotal} level=${joined.roomLevel}/${joined.clientLevel}`);
@@ -83,7 +90,7 @@ export default async function ({ page, assert, shot, baseURL }) {
   await page.keyboard.down('KeyW');
   await page.waitForFunction(
     () => Math.hypot(window.__game.player.vel.x, window.__game.player.vel.z) > 15,
-    null, { timeout: 30000 });
+    null, { timeout: SLOW });
   await page.keyboard.up('KeyW');
   const after = await status(page);
   const moved = Math.hypot(after.px - before.px, after.pz - before.pz);
@@ -99,7 +106,7 @@ export default async function ({ page, assert, shot, baseURL }) {
   assert.ok(after.ack > before.ack || before.ack == null, 'the room is acknowledging our input');
 
   // The room spawns the level's enemies; each must arrive with a real body, built from the catalog by name.
-  await page.waitForFunction('window.__game.enemies.length > 0', null, { timeout: 20000 });
+  await page.waitForFunction('window.__game.enemies.length > 0', null, { timeout: SLOW });
   await page.waitForTimeout(1200); // let the model resolve
   const withEnemy = await status(page);
   await shot('netsim-fight');
@@ -113,7 +120,7 @@ export default async function ({ page, assert, shot, baseURL }) {
   // and `class` the host falls through to an untinted dot instead of the weapon's bolt — which is what a
   // netsim fight looked like when the wire carried neither.
   await page.keyboard.down('Space');
-  await page.waitForFunction('window.__game.bullets.length > 0', null, { timeout: 20000 });
+  await page.waitForFunction('window.__game.bullets.length > 0', null, { timeout: SLOW });
   const shooting = await status(page);
   await page.keyboard.up('Space');
   console.log(`      bullets=${shooting.bullets} look=${JSON.stringify(shooting.bulletLook[0])}`);
@@ -129,7 +136,7 @@ export default async function ({ page, assert, shot, baseURL }) {
   // HELD, not pressed. The uplink samples input once per rendered frame, and headless renders a handful a
   // second — a 10 ms keypress can fall entirely between two samples and never reach the room at all.
   await page.keyboard.down('KeyF');
-  await page.waitForFunction('window.__game.smoke.length > 0', null, { timeout: 25000 });
+  await page.waitForFunction('window.__game.smoke.length > 0', null, { timeout: SLOW });
   await page.keyboard.up('KeyF');
   const flying = await status(page);
   console.log(`      rocket: bodies=${flying.rocketBodies}/${flying.rockets} smokePuffs=${flying.smoke}`);
@@ -147,7 +154,7 @@ export default async function ({ page, assert, shot, baseURL }) {
   console.log(`      paused: ticks ${p1.tick} -> ${p2.tick}`);
   assert.equal(p2.tick, p1.tick, 'the ROOM stopped stepping while paused, not just the drawing');
   await page.evaluate(() => document.getElementById('pause-btn').click());
-  await page.waitForFunction((t) => window.__netsim.tick > t, p2.tick, { timeout: 20000 });
+  await page.waitForFunction((t) => window.__netsim.tick > t, p2.tick, { timeout: SLOW });
 
   // Nothing is being simulated locally: freeze the uplink and the socket, and the world must go STILL.
   // If a local sim were secretly running, positions would keep changing — the quiet fork this guards.
@@ -190,7 +197,7 @@ export default async function ({ page, assert, shot, baseURL }) {
   const trace = JSON.parse(fs.readFileSync(tracePath(), 'utf8'));
   await page.evaluate(([id, json]) => localStorage.setItem(`replay:${id}`, json), [trace.id, JSON.stringify(trace)]);
   await page.goto(`${origin}/?playback&id=${encodeURIComponent(trace.id)}&cutscene=1&netsim=1&debug`, { waitUntil: 'load' });
-  await page.waitForFunction('!!(window.__replay && window.__replay.status().armed)', null, { timeout: 30000 });
+  await page.waitForFunction('!!(window.__replay && window.__replay.status().armed)', null, { timeout: SLOW });
   await page.waitForTimeout(1500);
   const deferred = await page.evaluate(() => ({
     netsimOn: !!window.__netsim,

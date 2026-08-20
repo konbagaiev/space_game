@@ -211,7 +211,7 @@
   "ui.character.points": "Очки навыков: {points}",
   "ui.character.xp": "{into} / {span} XP",
   "ui.skill.kinetic.name": "Кинетическое оружие",
-  "ui.skill.kinetic.desc": "+{kineticDmg}% урон · +{aim}° наводка за очко",
+  "ui.skill.kinetic.desc": "+{kineticDmg}% урона за очко",
   "ui.skill.rocket.name": "Ракеты",
   "ui.skill.rocket.desc": "+{rocketDmg}% урон ракет · +{rocketSpeed}% скорость ракет за очко",
   "ui.skill.shields.name": "Щиты",

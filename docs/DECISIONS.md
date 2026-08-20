@@ -4299,7 +4299,7 @@ one process then holds many Worlds, which is what a server needs (§116).
 
 The proxies are the deliberate part. Rewriting every call site would have made a 6000-line diff out of a
 behaviour-neutral refactor, and behaviour-neutral is the only property that made the intro-replay oracle
-(`tick=2503/3490`, unmoved across the whole branch) meaningful evidence. Every call site changed is a place
+(`tick=2503/3490`, unmoved across every refactor commit) meaningful evidence. Every call site changed is a place
 the oracle cannot see. The cost is one indirection and a small amount of "this looks like a singleton but
 isn't" — paid once, in two files, both of which say so at the top.
 
@@ -4406,3 +4406,38 @@ which needs its own hands-on evaluation, because it changes what stepping away f
 **A consequence that is easy to miss.** A paused client sends no input, and the room drops a socket that has
 been silent for 30 s. Pausing therefore has to keep talking: the client heartbeats every 5 s while paused,
 or a long pause silently ends the session and drops the player back to the local simulation.
+
+## 124. Auto-aim is removed — the player aims, and so does the enemy AI
+
+**Supersedes §89 (per-weapon cone, applies to whoever fires) and §112 (cone tests the hull sphere, picks the
+best-aimed target).** Both remain accurate descriptions of the mechanic that existed; the mechanic does not.
+
+**Context.** Bullet weapons carried `aimAssistDeg`, a cone half-angle: a shot fired with an opposing-side
+target within ±that of the nose was silently redirected straight at it. It was symmetric — enemy guns
+auto-aimed at the player too — and the Kinetic skill widened the player's cone by +0.5°/point. It surfaced
+as a problem in a server-run room (`?netsim`), where the assist resolves against the server's *present*
+while the screen shows the world ~100 ms in the past, so it corrected toward a position the player was not
+being shown.
+
+**Decision.** Remove it: the stat from every weapon, the branch from `fireMount`, `findBulletAimTarget` from
+`targeting.js`, and the aim-assist half of the Kinetic skill (with its Character-card text, EN and RU).
+A bullet now always leaves along the ship's nose. Rockets are untouched — they keep their homing, which is
+a *visible* mechanic the player buys deliberately.
+
+**Why remove rather than lag-compensate.** Lag compensation (the plan's D5) would have made the assist
+correct in a room, and it is still the right fix if the mechanic ever comes back. But netsim only exposed
+something that was already true: the assist decides where a shot goes using information the shooter does not
+have, and the player cannot see it working or not working. "The game quietly aims for you" is a design
+choice, not a networking detail — and once it was visible as one, it was not the one we wanted.
+
+**Measured before committing to it,** because two things could have made this expensive and neither did:
+- **The shipped intro cutscene still clears.** Changing bullet direction changes the recorded Level-0
+  replay: it moved from `tick=2503/3490` to `tick=2474/3490` but still ends 4 kills / `p0..p4` / `won=true`,
+  so no re-recording was needed (contrast §112, where a similar change *did* force one).
+- **Enemies barely notice.** A parked player circling under fire dies in a mean 8570 ticks with the assist
+  and 8551 without — 0.2%. The enemy AI already steers to face the player before firing, so its cone was
+  almost never the thing that landed a shot. There is no enemy rebalance to do.
+
+**Left deliberately un-rebalanced:** the Kinetic skill is now damage-only and is straightforwardly worth
+less per point. Padding `kineticDmgPct` to hide that would be a balance change smuggled inside a mechanic
+removal; if the skill needs to be worth more, that is its own decision with its own playtest.

@@ -274,7 +274,7 @@ test('the derived enemy shield is WEIGHTLESS: mass, acceleration and turn rate a
 test('skillEffects: no/empty allocation is the identity (x1, +0, no dodge)', () => {
   for (const s of [undefined, null, {}, { kinetic: 0, rocket: 0, shields: 0, maneuver: 0, mobility: 0 }]) {
     const fx = skillEffects(s);
-    assert.equal(fx.kineticDmgMul, 1); assert.equal(fx.aimAssistBonusDeg, 0);
+    assert.equal(fx.kineticDmgMul, 1);
     assert.equal(fx.rocketDmgMul, 1); assert.equal(fx.rocketSpeedMul, 1);
     assert.equal(fx.shieldMul, 1); assert.equal(fx.dodge, 0); assert.equal(fx.mobilityMul, 1);
   }
@@ -283,7 +283,7 @@ test('skillEffects: no/empty allocation is the identity (x1, +0, no dodge)', () 
 test('skillEffects: each point adds one SKILL_RATES step, and skills are independent', () => {
   const fx = skillEffects({ kinetic: 3, rocket: 2, shields: 4, maneuver: 5, mobility: 1 });
   assert.ok(Math.abs(fx.kineticDmgMul - (1 + SKILL_RATES.kineticDmgPct * 3)) < 1e-9);
-  assert.ok(Math.abs(fx.aimAssistBonusDeg - SKILL_RATES.aimAssistDeg * 3) < 1e-9);
+  assert.equal(fx.aimAssistBonusDeg, undefined, 'the Kinetic skill no longer grants aim assist (DECISIONS §124)');
   assert.ok(Math.abs(fx.rocketDmgMul - (1 + SKILL_RATES.rocketDmgPct * 2)) < 1e-9);
   assert.ok(Math.abs(fx.rocketSpeedMul - (1 + SKILL_RATES.rocketSpeedPct * 2)) < 1e-9);
   assert.ok(Math.abs(fx.shieldMul - (1 + SKILL_RATES.shieldPct * 4)) < 1e-9);

@@ -38,11 +38,14 @@ export function deriveDrive(ship) {
 
 // ---- Character-progression skill effects (docs/plans/2026-08-09-character-progression.md) ----
 // Per-point rates for the five skills. Each invested point adds a flat percentage (a fraction here) or
-// flat degrees (aim assist) / percentage points (dodge). Kept pure + here so BOTH the ship build
-// (ship-build.js) and the Character-screen card text derive their numbers from this single source.
+// percentage points (dodge). Kept pure + here so BOTH the ship build (ship-build.js) and the
+// Character-screen card text derive their numbers from this single source.
+//
+// Kinetic used to grant `aimAssistDeg` too (+0.5°/pt of auto-aim cone). The auto-aim mechanic is gone
+// (DECISIONS §124), so the skill is damage only — a straight nerf to it, left un-rebalanced deliberately
+// rather than quietly padding kineticDmgPct to hide the change.
 export const SKILL_RATES = {
   kineticDmgPct: 0.05,   // +5% kinetic (non-rocket) weapon damage per point
-  aimAssistDeg: 0.5,     // +0.5° kinetic auto-aim cone per point (additive)
   rocketDmgPct: 0.05,    // +5% rocket damage per point
   rocketSpeedPct: 0.05,  // +5% rocket launch/flight speed per point
   shieldPct: 0.05,       // +5% shield capacity per point
@@ -58,7 +61,6 @@ export function skillEffects(skills) {
   const mn = Math.max(0, s.maneuver | 0), mo = Math.max(0, s.mobility | 0);
   return {
     kineticDmgMul: 1 + SKILL_RATES.kineticDmgPct * k,
-    aimAssistBonusDeg: SKILL_RATES.aimAssistDeg * k,
     rocketDmgMul: 1 + SKILL_RATES.rocketDmgPct * r,
     rocketSpeedMul: 1 + SKILL_RATES.rocketSpeedPct * r,
     shieldMul: 1 + SKILL_RATES.shieldPct * sh,

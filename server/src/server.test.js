@@ -1057,13 +1057,15 @@ test('shop: sell honors a quantity, clamps to what is owned, and rejects a bad q
 // on sale once the campaign has cleared the weapons factory. The gate is the SERVER's, not the shop list's.
 const GATED = [['component', 13], ['weapon', 7], ['weapon', 11]];
 
-test('catalog: the "Level 3" tier carries minLevel; Heavy Machine Gun weighs 15 with aim assist 3', async () => {
+test('catalog: the "Level 3" tier carries minLevel; Heavy Machine Gun weighs 15 and no gun carries aim assist', async () => {
   const [comps, weapons] = await Promise.all([getJson('/api/components'), getJson('/api/weapons')]);
   assert.equal(comps.find((c) => c.id === 13).stats.minLevel, 'level-4', 'Heavy hull gated');
   const hmg = weapons.find((w) => w.id === 7);
   assert.equal(hmg.stats.minLevel, 'level-4', 'Heavy Machine Gun gated');
   assert.equal(hmg.stats.weight, 15, 'Heavy Machine Gun is the heaviest gun (mass is its price of admission)');
-  assert.equal(hmg.stats.aimAssistDeg, 3);
+  // Auto-aim was removed from the game (DECISIONS §124), so NO weapon may carry the stat — a stray one
+  // would be silently inert and would reappear in the shop's stat line if the mechanic ever came back.
+  for (const w of weapons) assert.equal(w.stats.aimAssistDeg, undefined, `${w.name} still carries aimAssistDeg`);
   assert.equal(weapons.find((w) => w.id === 11).stats.minLevel, 'level-4', 'Triple spiral rocket gated');
   // the rest of the ladder stays ungated — the gate is a story beat, not a blanket lock
   assert.equal(weapons.find((w) => w.id === 6).stats.minLevel, undefined, 'Heavy cannon is not gated');
