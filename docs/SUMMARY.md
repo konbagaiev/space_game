@@ -2918,10 +2918,12 @@ belongs to `despawnAt`, never to `detonateRocket` (a rocket that reaches `maxRan
 without ever exploding).
 
 **The simulation talks through an event queue.** `sim-core/events.js` (`createEventQueue()`; this world's
-instance is `simEvents` on `state.js`) is the sim's only outbound channel. Instead of playing a sound or
-writing the DOM mid-tick, the sim appends one of twelve events — `hit`, `bulletImpact`, `shieldHit`,
-`enemyShieldHit`, `shieldReady`, `evade`, `smoke`, `kill`, `warpFlash`, `banner`, `win`, `death` — and the
-adapter at the bottom of `sim.js` drains them once per tick into FX, audio, HUD and `net.js`. The catalogue
+instance is `world.events`, re-exported as `simEvents` from `state.js`) is the sim's only outbound channel.
+Instead of playing a sound or writing the DOM mid-tick, the sim appends an event and the adapter at the
+bottom of `sim.js` drains them once per tick into FX, audio, HUD and `net.js`. **Nineteen types**, all
+catalogued at the top of `events.js`: `hit`, `bulletImpact`, `shieldHit`, `enemyShieldHit`, `shieldReady`,
+`fire`, `evade`, `pickup`, `smoke`, `detonate`, `kill`, `warpFlash`, `banner`, `bannerClear`,
+`missionArrival`, `baseArrival`, `missionZoneEnter`, `win`, `death`. The catalogue
 is documented in `events.js`. Two rules hold: events carry **copied** values (the drain happens after the
 tick, when a bullet has moved on and a killed enemy is already spliced out), and anything player-facing
 carries an **i18n key plus params**, never translated text. `levelRunner.win()` keeps the rules (the ×2
@@ -2934,7 +2936,8 @@ see this tick's puffs.
 **What lives in `sim-core/`:** `vec.js`, `consts.js` (including `SHIP_GROUP_SCALE`, `BULLET_PLANE_Y`,
 `SPAWN_GROW_TIME` and the soft boundary's `ARENA`/`OOB_WARN_DELAY`/`OOB_RETURN_TIME`), `events.js`,
 `world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`, `drops-sim.js`,
-`system-map.js` — plus the game's pure rules —
+`system-map.js`, `step-projectiles.js` (`stepBullets`/`stepRockets`, taking the World) — plus the game's
+pure rules —
 `components.js` (`deriveDrive`/`shipMass`/`repairTick`/`shieldRecharge`/`applyShieldedDamage`),
 `steering.js`, `spawn-timing.js`, `collision.js`, `level-sim.js`, `drops-config.js`, `autopilot-config.js`
 and `sim-random.js` (the seeded gameplay stream, DECISIONS §73). Their unit tests moved with them.

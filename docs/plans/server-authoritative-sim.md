@@ -1,7 +1,11 @@
 # Server-authoritative combat simulation
 
-> **Status:** agreed slicing, in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`).
-> Started 2026-08-19. **Local testing only — nothing ships to prod or itch until the maintainer says so.**
+> **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), 11 commits, all green.
+> Started 2026-08-19; last worked 2026-08-20. **Local testing only — nothing ships to prod or itch, and
+> nothing is pushed, until the maintainer says so.**
+>
+> **Resuming? Read §0 first** — it is a self-contained pick-up brief: current state, the exact next steps
+> with file anchors, how to verify, and the seven traps this project has already sprung.
 >
 > Supersedes the netcode sequencing in `docs/plans/multiplayer-architecture.md` (2026-07-25). That brief's
 > audit is still accurate; its Phase 1–4 ordering is replaced by Slices A–E below, and three of its "open
@@ -9,6 +13,109 @@
 >
 > Read first: `docs/DECISIONS.md` §16 (pause), §30 (keep processes simple), §45 (why `collision.js` is
 > THREE-free), §73 (seeded sim-RNG contract). `docs/ROADMAP.md` Phase 5.
+
+## 0. RESUME HERE — pick-up brief for a fresh session
+
+Everything below §1 is the design; this section is the state of play on **2026-08-20** and what to do next.
+Read it first. Nothing here needs a prior conversation.
+
+### Where the work lives
+
+- Worktree **`../ag-wt/server-sim`**, branch **`feature/server-sim`**, 11 commits ahead of `main`.
+  `main` is untouched at `24849f7` with a clean tree, and **nothing has been deployed or pushed** — the
+  branch is local only. Do not merge or deploy without asking.
+- Local server for playtesting: **`PORT=4010 node src/server.js`** from `server/`. Port 4000 is the
+  maintainer's own server from the main checkout — never kill it. Launch detached
+  (`nohup … & disown`) or the harness will stop it between turns.
+- Setup already done in the worktree: assets copied from the main checkout, `npm install` in the repo
+  root, `client/` and `server/`. A different machine would need `npm run assets:pull` instead.
+
+### What is already true
+
+`client/src/sim-core/` is now the game's rules, and the boundary is enforced by `boundary.test.js`
+(no `three`, no import outside the folder, no `window`/`document`/`fetch`). It contains: `vec.js`,
+`consts.js`, `events.js`, `world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`,
+`drops-sim.js`, `step-projectiles.js`, `system-map.js`, plus the older pure modules (`components`,
+`steering`, `spawn-timing`, `collision`, `level-sim`, `drops-config`, `autopilot-config`, `sim-random`).
+
+- A fight is a **`World`** (`createWorld({ host })`): entities, event queue, `arenaCenter`/`arenaDrift`,
+  `station`, `catalog`, `input`, `activeShip`, `firedBanners`, `pendingLoot` and the run counters.
+  `state.js` creates this tab's World and proxies all of it back onto `G` with getters, so **no client
+  call site had to change** — `G.kills++`, `G.player`, `G.autopilot.active` all still work.
+- Entities are data; the **host** gives them a body (`world.host.onSpawn/onDespawn(kind, entity)`,
+  plus `onWarmLevel(level)` for asset preloading). `noopHost` is the server's.
+- The simulation never calls out: it appends one of **19 events**, catalogued at the top of `events.js`,
+  and the adapter at the bottom of `sim.js` turns them into FX, audio, HUD and `net.js`.
+- `update(dt)` = **`simTick(dt)` + `renderTick(dt)`**, and keeps its name because the accumulator, the
+  replay stepper and the `?debug` hooks all call it.
+
+### What is left (in order)
+
+**1. Move the remaining steps into `sim-core`.** `simTick` (`client/src/sim.js:676`) now contains exactly
+the functions to move. Two are already done (`stepBullets`/`stepRockets` → `step-projectiles.js`) — copy
+that pattern: cut the function, take `world` as the first argument, rebind `bullets`/`enemies`/`rockets`/
+`G.player`/`simEvents` to `world.*`, then delete the now-dead imports from `sim.js`.
+
+| what | where it is now | suggested home |
+|---|---|---|
+| `stepEnemyAI` | `sim.js:855` | `sim-core/step-enemies.js` |
+| `stepEnemyDeaths` | `sim.js:989` | same |
+| `stepPlayer` + `forwardVec`/`brakeStep`/autopilot/`checkMissionZone`/`warpPlayerToCenter` | `sim.js:741`, `:202`–`:382`, `:439` | `sim-core/step-player.js` |
+| `stepPlayerDeath` | `sim.js:1034` | same |
+| `levelRunner` | `sim.js:76` | `sim-core/level-runner.js` |
+
+`levelRunner` needs one extra move: its mutable fields (`level`, `phaseIndex`, `killsAtPhaseStart`,
+`spawnedThisPhase`, `spawnCooldown`, `won`, `winPending`, `winText`, `winTextKey`, `returningToBase`) go
+onto `world.levelRunner` as data, and the functions take `world`. **Keep the exported `levelRunner` object
+in `sim.js`** with getter/setter proxies onto those fields plus `start`/`update`/`win` delegating — outside
+`sim.js` only FIELDS are read (`main.js`, `mainwindow.js`, `settings.js`, `account.js`, `replay.js` and
+three visual scenarios), so proxying keeps every one of them working.
+
+**2. Split `reset()`** (`sim.js:1101`) into "reset the world" (sim-core: clear entities through the host,
+recentre `arenaCenter`, reset the run counters, start the level) and "rebuild the scene" (client:
+set-pieces, FX pools, the overlay, `arenaBorder`, telemetry). It is the last function mixing the two.
+
+**3. Then Slice C becomes possible:** run a level to completion in Node and assert the browser and Node
+agree on the same trace — outcome, a hash of the final world, and the number of `simRandom()` draws.
+
+### How to verify (do not skip, do not assume)
+
+```
+cd client && node --test                      # 390 pass — but see the trap below
+cd server && npm test                         # 147 pass (needs local Postgres)
+cd client && node visual/run.mjs 22-intro-replay
+```
+
+**The intro oracle is the contract**: it must print
+`kills=4 enemiesLeft=0 cards=p0|p1|p2|p3|p4 won=true ended=true playDone=true tick=2503/3490`.
+**The tick count matters as much as the outcome** — it has not moved once across eleven commits, and a
+change in it means the simulation diverged even if `won=true`.
+
+Full suite for a real delta: `cd client && node visual/run.mjs` (~25 min). Compare against the
+**`main` baseline of 14 failures** listed in §7.1 — not against zero. Run any candidate failure
+individually on both branches before believing it; the suite is noisier than individual runs.
+
+### Traps this project has already sprung — all of them cost real time
+
+1. **The intro oracle is blind to the picture.** A `Vec3` handed to `camera.lookAt()` NaN'd the camera —
+   the game rendered nothing — while the replay stayed bit-identical and every guard scenario passed.
+   `THREE.Object3D.lookAt` branches on `isVector3`; pass components. `01-smoke` now guards a finite camera.
+2. **`node --test` cannot load any module that imports `three`.** Deleting `const SMOKE_MAX` from
+   `projectiles.js` left all 386 unit tests green and broke the game. After touching `sim.js`,
+   `projectiles.js`, `ship-build.js`, `world.js`, `drops.js`, `hud.js` or `ship-factory.js`, **boot the
+   game** (`node visual/run.mjs 01-smoke`).
+3. **A scenario that fails early does not test what its name says.** `12-audio` dies on a music-clip
+   assertion before reaching any weapon sound; `19-hud-log` dies on the kill line before the pickup line.
+   Both would have passed a broken `fire`/`pickup` event in silence — verify such paths with a browser
+   probe instead.
+4. **A scenario that waits on wall clock is testing the CPU.** `17-triple-spiral-rocket` failed ~half the
+   time for that reason; it now steps the sim with `__game.stepSim`. Prefer fixed steps in new assertions.
+5. **Do not reorder the tick casually.** It was reordered exactly once, deliberately, and only because no
+   presentation step reads or writes simulation state.
+6. **RNG draw ORDER is a replay contract** (DECISIONS §73). `makeEnemy` draws three times — facing, spawn
+   angle, spawn distance. New draws go at the END, never inserted.
+7. **Text-range slicing eats neighbours.** Prefer surgical edits; when cutting, read `git diff <file> |
+   grep '^-'` and check what actually went.
 
 ## 1. Goal
 
