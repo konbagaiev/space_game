@@ -98,10 +98,16 @@ for (const k of LEVEL_RUNNER_FIELDS) {
 // mainwindow.js keep calling them by their historical names and signatures.
 export { PLAYER_MAX_SPEED };
 export const warpPlayerToCenter = () => warpPlayerToCenterIn(world);
-export const engageAutopilot = () => engageAutopilotIn(world);
-export const engageDropAutopilot = (drop) => engageDropAutopilotIn(world, drop);
-export const engagePointAutopilot = (pos, mission = null) => engagePointAutopilotIn(world, pos, mission);
-export const cancelAutopilot = () => cancelAutopilotIn(world);
+// Click-to-fly goes to whoever is simulating. In single-player that is this World; under `?netsim` the room
+// owns the autopilot and `world.onCommand` forwards the intent to it — engaging it locally would set a flag
+// on a World nobody steps, which is exactly why clicking the station did nothing in a room.
+const command = (cmd) => { world.onCommand(cmd); return true; };
+export const engageAutopilot = () => (world.onCommand ? command({ kind: 'station' }) : engageAutopilotIn(world));
+export const engageDropAutopilot = (drop) => (world.onCommand ? command({ kind: 'drop', drop }) : engageDropAutopilotIn(world, drop));
+export const engagePointAutopilot = (pos, mission = null) => (world.onCommand
+  ? command({ kind: 'point', pos: { x: pos.x, z: pos.z }, mission: mission || null })
+  : engagePointAutopilotIn(world, pos, mission));
+export const cancelAutopilot = () => (world.onCommand ? command({ cancel: true }) : cancelAutopilotIn(world));
 
 // ---------- Homing arrow + HUD hint (world-space arrow + DOM hint) ----------
 let returnArrow = null;

@@ -24,6 +24,10 @@ import { Vec3 } from './sim-core/vec.js';
 import { makeEnemyShell } from './sim-core/ship-entity.js';
 import { BULLET_PLANE_Y } from './sim-core/consts.js';
 
+// How far a dead-reckoned projectile may be advanced past its newest sample before it is left alone. If
+// snapshots stall, a bullet extrapolated indefinitely flies off across the map and then snaps back.
+export const MAX_EXTRAPOLATION_MS = 250;
+
 // How far behind the newest snapshot we render. One snapshot interval (at 15 Hz, ~67 ms) is the minimum
 // that can bracket; 100 ms leaves headroom for one late or reordered packet before we run dry.
 export const INTERP_DELAY_MS = 100;
@@ -34,6 +38,7 @@ export const MAX_HISTORY = 12;
 export function createNetState() {
   return {
     byId: new Map(),   // network id → the World entity it drives
+    idOf: new WeakMap(),// the reverse: a clicked entity → the id the room knows it by
     kinds: new Map(),  // network id → 'enemy' | 'bullet' | 'rocket' | 'drop'
     samples: new Map(),// network id → [{ at, x, z, h, sc, extra }] — newest last
     playerSamples: [], // the same, for the local ship
@@ -107,6 +112,7 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
     const e = spawnGhost(world, desc);
     if (!e) continue;
     state.byId.set(desc.id, e);
+    state.idOf.set(e, desc.id);
     state.kinds.set(desc.id, desc.kind);
     state.samples.set(desc.id, []);
   }
@@ -140,6 +146,14 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
   }
 
   if (snap.arena) world.arenaCenter.set(snap.arena.x, 0, snap.arena.z);
+  // The room owns the autopilot, so the HUD has to read the room's copy: the roam nav buttons show which
+  // destination is engaged, and the return-to-base hint hides once the ship is on its way.
+  if (snap.autopilot) {
+    world.autopilot.active = snap.autopilot.active;
+    world.autopilot.phase = snap.autopilot.phase;
+    // A `kind` is all the HUD needs; the client has no server entity to point `target` at.
+    world.autopilot.target = snap.autopilot.kind ? { kind: snap.autopilot.kind } : null;
+  }
   const run = snap.run;
   if (run) {
     world.kills = run.kills; world.enemyTotal = run.enemyTotal;
@@ -208,6 +222,20 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
   const t = now - delayMs;
 
   for (const [id, e] of state.byId) {
+    // BULLETS ARE DEAD-RECKONED, not interpolated. A bullet flies in a straight line at a constant speed —
+    // it is the one entity whose future is exactly known — so there is no reason to show it a tenth of a
+    // second in the past like everything else. Anchored on its newest sample and advanced by its own
+    // velocity, it is drawn where it actually IS, which is also where the hit flash will happen.
+    // (Rockets home, so their future is not known; they keep the interpolation buffer.)
+    if (state.kinds.get(id) === 'bullet') {
+      const ss = state.samples.get(id);
+      const last = ss && ss[ss.length - 1];
+      if (!last) continue;
+      const dtms = Math.min(now - last.at, MAX_EXTRAPOLATION_MS);
+      e.pos.x = last.x + e.vel.x * (dtms / 1000);
+      e.pos.z = last.z + e.vel.z * (dtms / 1000);
+      continue;
+    }
     const br = bracket(state.samples.get(id), t);
     if (!br) continue;
     e.pos.x = lerp(br.a.x, br.b.x, br.k);

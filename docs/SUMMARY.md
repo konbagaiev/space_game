@@ -3101,9 +3101,24 @@ downstream knows or cares where the fight is being decided. A **ship is named, n
 holds the same catalog and resolves the model, yaw, lift and scale from the name, which also keeps dozens of
 collision OBBs per hull off the wire.
 
+**Click-to-fly is a command, not local state.** The room owns the autopilot, so `engageAutopilot` and its
+siblings forward the intent through **`world.onCommand`** (a sink alongside `world.host`; null in
+single-player, where the same verbs act locally). A clicked DROP travels as its network id. The snapshot
+returns the room's autopilot state so the HUD can show what the ship is doing. Without this the client set
+a flag on a World nobody steps: the station could not be clicked, drops could not be collected, and since
+winning requires docking under an engaged station autopilot, **no mission was completable**.
+
+**A room flies the player's REAL ship**, read from the account server-side by the ticket's `playerId` —
+loadout, components and skills included. It used to build the catalog default for everyone, so a netsim run
+ignored everything the player owned. Reading it from the DB rather than from the client also means a client
+cannot claim a better ship than it has.
+
 **Interpolation.** Snapshots arrive at 15 Hz and frames render at 60, so the world is drawn as it was
 `INTERP_DELAY_MS` (100 ms) ago, between the two snapshots bracketing that moment. Positions lerp and
-headings take the short way around the circle; **health does not interpolate** — a bar sliding down over
+headings take the short way around the circle; **bullets are not interpolated at all** — a bullet flies
+straight at a constant speed, so it is anchored on its newest sample and dead-reckoned into the present
+(capped at `MAX_EXTRAPOLATION_MS`, or a stalled connection would fly it off the map). **Health does not
+interpolate** either — a bar sliding down over
 100 ms reads as a bug rather than as smoothing. Past the newest sample the world holds still rather than
 extrapolating: a wrong guess that has to be taken back looks worse than a tenth of a second of stillness.
 Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost

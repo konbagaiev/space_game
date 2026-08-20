@@ -24,6 +24,8 @@ import { simTick } from '../../../client/src/sim-core/tick.js';
 import { worldDigest } from '../../../client/src/sim-core/digest.js';
 import { SIM_DT } from '../../../client/src/sim-core/consts.js';
 import { applyInput } from '../../../client/src/replay.js';
+import { engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot }
+  from '../../../client/src/sim-core/step-player.js';
 import { wireEvent } from './protocol.js';
 
 // Ticks between snapshots. 4 → 15 Hz at TICK_HZ 60. The SIM rate is not negotiable across hosts
@@ -170,8 +172,30 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
           won: lr.won, returning: lr.returningToBase, phase: lr.phaseIndex,
           stationActive: !!(world.station && world.station.active),
         },
+        // What the ship is being flown to, if anything — the roam nav buttons and the return-to-base HUD
+        // read it, and only the room knows.
+        autopilot: { active: world.autopilot.active, phase: world.autopilot.phase,
+                     kind: world.autopilot.target ? world.autopilot.target.kind : null },
         events,
       };
+    },
+
+    // Click-to-fly is a COMMAND, not input: the player clicks the station, a loot crate, or a point on the
+    // map, and the ship flies there. It reaches the room as its own message because the room owns the
+    // autopilot — a client that set its own `world.autopilot` was talking to a World nobody simulates, which
+    // is why the station could not be clicked, drops could not be collected, and a mission could not be
+    // FINISHED at all (winning requires docking under an engaged station autopilot).
+    //
+    // A drop is named by its network id, since that is the only handle the client has on a server entity.
+    command(cmd) {
+      if (!cmd || typeof cmd !== 'object') return;
+      if (cmd.cancel) return cancelAutopilot(world);
+      if (cmd.kind === 'station') return engageAutopilot(world);
+      if (cmd.kind === 'point' && cmd.pos) return engagePointAutopilot(world, cmd.pos, cmd.mission || null);
+      if (cmd.kind === 'drop') {
+        // Resolve the id back to the live entity; a crate collected in the meantime simply no-ops.
+        for (const d of world.drops) if (ids.get(d) === cmd.id) return engageDropAutopilot(world, d);
+      }
     },
 
     // Start the run over in the SAME World — a retry, or the next level's fight after an advance. Cheaper

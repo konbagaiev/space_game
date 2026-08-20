@@ -176,6 +176,9 @@ export async function connectNetsim({ playerId, level, seed, origin = location.o
     start() { send({ type: 'start' }); },
     // Begin a FRESH run in the same room — a retry, or the next level after an advance.
     restart() { uplink.flush(); send({ type: 'restart' }); },
+    // Click-to-fly. Flushed alongside the pending input so the room applies it in the right order relative
+    // to the keys the player was holding when they clicked.
+    command(cmd) { uplink.flush(); send({ type: 'autopilot', cmd }); },
     // Ask the room to stop / resume stepping. A room holds one player, so this is a true freeze rather
     // than the lie a pause button in a shared world would be (DECISIONS §16).
     setPaused(paused) { uplink.flush(); send({ type: paused ? 'pause' : 'resume' }); },

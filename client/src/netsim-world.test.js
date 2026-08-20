@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, noopHost } from './sim-core/world.js';
-import { createNetState, applySnapshot, renderNet, clearNet, INTERP_DELAY_MS } from './netsim-world.js';
+import { createNetState, applySnapshot, renderNet, clearNet, INTERP_DELAY_MS, MAX_EXTRAPOLATION_MS } from './netsim-world.js';
 import { createRoom } from '../../server/src/netsim/room.js';
 import { buildCatalog } from '../../server/src/sim-host.js';
 
@@ -180,4 +180,26 @@ test('END TO END: a real room drives a real client World', () => {
     assert.ok(near, 'each drawn enemy sits where the room says it is');
   }
   assert.ok(room.world.enemies.length > 0, 'the fight actually happened (guard against an empty assertion)');
+});
+
+test('a bullet is dead-reckoned into the present, not shown a tenth of a second late', () => {
+  const { world } = clientWorld();
+  const st = createNetState();
+  // Born at x=0 flying +x at 40 u/s — the one entity whose future is exactly known.
+  applySnapshot(world, st, snapOf({
+    spawns: [{ id: 9, kind: 'bullet', projectileColor: 1, class: 'kinetic', fromPlayer: true, x: 0, z: 0, vx: 40, vz: 0 }],
+    bullets: [[9, 0, 0]],
+  }), 1000);
+
+  // 50 ms after that sample, with the usual 100 ms interpolation delay in force. An interpolated bullet
+  // would still be sitting at the muzzle (the render moment is BEFORE its only sample); a dead-reckoned one
+  // has travelled 40 × 0.05 = 2 units.
+  renderNet(world, st, 1050, INTERP_DELAY_MS);
+  assert.ok(Math.abs(world.bullets[0].pos.x - 2) < 1e-6,
+    `flew with its own velocity (got ${world.bullets[0].pos.x})`);
+
+  // …and it is not extrapolated forever if snapshots stop arriving.
+  renderNet(world, st, 1000 + 60_000, INTERP_DELAY_MS);
+  assert.ok(world.bullets[0].pos.x <= 40 * (MAX_EXTRAPOLATION_MS / 1000) + 1e-6,
+    'capped rather than flying off the map on a stall');
 });

@@ -182,3 +182,43 @@ test('restart begins a fresh run in the same room', () => {
   room.stepOnce();
   assert.equal(room.tick, tickBefore + 1);
 });
+
+test('a mission can be FINISHED in a room — cleared, then docked by command', () => {
+  // The gap this closes: click-to-fly was applied to the CLIENT's World, which nobody steps in netsim, so
+  // the station could not be clicked, drops could not be collected and no mission could ever be completed
+  // (winning requires docking under an engaged station autopilot). The room takes the command now.
+  const room = createRoom({ levelName: 'level-0', seed: 99 });
+  const w = room.world;
+  let t = 0;
+  const step = () => { room.pushInput([{ t: t++, k: [], a: null }]); room.stepOnce(); };
+
+  for (let i = 0; i < 20000 && !w.levelRunner.returningToBase; i++) {
+    for (const e of w.enemies) if (!e.warping) e.hp = 0; // clear the level without simulating marksmanship
+    step();
+  }
+  assert.equal(w.kills, 4, 'the level was cleared');
+  assert.equal(w.levelRunner.returningToBase, true, 'which opens the return-to-base gate');
+  assert.ok(w.station.active, 'and makes the station clickable');
+
+  room.command({ kind: 'station' });
+  assert.equal(w.autopilot.active, true, 'the click reached the room');
+  assert.equal(w.autopilot.target.kind, 'station');
+
+  for (let i = 0; i < 40000 && !w.levelRunner.won; i++) step();
+  assert.equal(w.levelRunner.won, true, 'the ship flew home and docked — the mission is COMPLETABLE');
+  assert.equal(w.earned, 250, 'and the victory doubling was applied');
+
+  // The state the HUD reads has to come back too, or the player cannot see what the ship is doing.
+  assert.ok('autopilot' in room.takeSnapshot(), 'the snapshot reports the autopilot');
+});
+
+test('a drop is claimed by its network id, and a stale id is harmless', () => {
+  const room = createRoom({ levelName: 'level-0', seed: 5 });
+  room.command({ kind: 'drop', id: 999999 });      // nothing by that id
+  assert.equal(room.world.autopilot.active, false, 'an unknown drop id does nothing rather than throwing');
+  room.command({ cancel: true });
+  assert.equal(room.world.autopilot.active, false);
+  room.command(null);                               // malformed
+  room.command({ kind: 'nonsense' });
+  assert.equal(room.world.autopilot.active, false, 'and neither does a malformed command');
+});

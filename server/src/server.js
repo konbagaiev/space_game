@@ -593,7 +593,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // The netsim WebSocket rides the same listener (a socket arrives as an `upgrade` on the raw server, not
   // through Express). Nothing changes for a client that never asks for a ticket — single-player stays local.
   const { attachNetsim } = await import('./netsim/socket.js');
-  const netsim = attachNetsim(server, { tickets: app.get('wsTickets') });
+  const netsim = attachNetsim(server, {
+    tickets: app.get('wsTickets'),
+    loadShip: getActivePlayerShip, // the room flies the player's REAL ship, read from the account, not the client
+  });
   // Graceful shutdown: on stop, stop accepting new connections and let in-flight
   // requests finish before exiting -> no dropped requests when the old container is
   // removed during a zero-downtime rollout.

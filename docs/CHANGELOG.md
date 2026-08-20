@@ -5,6 +5,33 @@
 
 ## 2026-08-20
 
+- **A netsim mission could not be FINISHED — click-to-fly never reached the room.** First real playthrough
+  in a room: the machine gun (the level-1 reward drop) could not be picked up, autopilots did not engage,
+  and clicking the base did nothing. One cause for all three — `engageAutopilot` / `engageDropAutopilot` /
+  `engagePointAutopilot` mutated the CLIENT's `world.autopilot`, a World nobody steps in netsim, so the room
+  never learned the player had clicked anything. Since winning requires docking under an engaged station
+  autopilot, no mission was completable at all. Click-to-fly is a COMMAND now: `world.onCommand` (a sink
+  alongside `world.host`) forwards it to the room, which applies it through the same sim-core verbs, and a
+  clicked drop travels as the network id the room knows it by. The snapshot carries the room's autopilot
+  state back so the HUD shows what the ship is doing. Guarded by a room test that clears a level and docks.
+
+- **A room was flying the STARTER ship for everyone.** `createRoom` never received the player's ship, so
+  every netsim run used the catalog default — Basic kinetic, hull 1, no skills — no matter what the account
+  owned. The room now reads the active ship from the DB by the ticket's `playerId`, which is also the right
+  place for it: a client cannot claim a better ship than it has.
+
+- **…and loading it silently broke joining.** Making `open()` async to await that lookup meant the message
+  listener was attached after the await, so the client's `start` — sent the moment `welcome` arrives — fell
+  into the gap and the room never stepped a tick (`ticks=0` in the server log). Messages are buffered from
+  the first instant now and drained once the room exists. Same shape as the earlier "handle returned before
+  the socket opened" bug; caught by reading the log rather than by a test.
+
+- **Bullets are dead-reckoned instead of interpolated.** A bullet flies straight at a constant speed — the
+  one entity whose future is exactly known — so drawing it 100 ms in the past was pure loss. It is anchored
+  on its newest sample and advanced by its own velocity (capped, so a stalled connection cannot fly it off
+  the map). This fixes where a shot IS; it does not fix when it APPEARS, which needs the client to fire
+  locally (see the plan).
+
 - **Leaving a room on purpose used to kill netsim for the whole tab.** `dropNetsim()` called the link's
   `close()`, which fired `onclose`, which the caller read as the socket dying and used to disable netsim
   permanently — so every planned hand-off to the local sim (a replay taking over, a side mission, a level

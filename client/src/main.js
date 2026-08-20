@@ -808,6 +808,18 @@ function goLocal(why) {
   netState.welcome = null; netState.ack = null;
 }
 
+// A click-to-fly intent on its way to the room. A clicked DROP is a server entity, so it travels as the
+// network id the room knows it by — the local object means nothing over there.
+function sendNetCommand(cmd) {
+  if (!netLink) return;
+  if (cmd.kind === 'drop') {
+    const id = netState.idOf.get(cmd.drop);
+    if (id == null) return; // already collected, or never ours to click
+    return netLink.command({ kind: 'drop', id });
+  }
+  netLink.command(cmd);
+}
+
 function dropNetsim() {
   try { netLink.close(); } catch {}
   netLink = null; netStarted = false; netRoomPaused = false; netRunAt = null; netLevel = null;
@@ -867,6 +879,9 @@ function animate() {
   if (netDown && G.gameStarted && G.gameStartTime !== netDownRunAt) netDown = false;
   const netsimDriving = netsimActive && !netDeferredBy && !netDown;
   if (netsimActive && netLink && netDeferredBy) dropNetsim();
+  // Route click-to-fly to whoever is simulating. Installed only while a room actually drives the fight, so
+  // the moment netsim defers or drops, clicking the station goes back to engaging the LOCAL autopilot.
+  world.onCommand = (netsimDriving && netLink && netStarted) ? sendNetCommand : null;
   const live = G.gameStarted && !BENCH && !REC && !rs.play && !netsimDriving; // real player session → deterministic accumulator loop (always-on recording)
   if (netsimDriving) {
     // The server owns the fight: no local sim step at all. Send this frame's input, draw the world as the
