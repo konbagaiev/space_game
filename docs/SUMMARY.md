@@ -3041,11 +3041,23 @@ is generated per player by `missions.js` and appears in no room's level table �
 simulating locally with a console warning, rather than quietly fighting the campaign level instead.
 
 **Joining and starting are separate.** The socket is established as soon as the catalog names a level —
-during the menu — and the room does **not** step until the client sends `start` at take-off. Connecting
-lazily at take-off cost ~2.6 s of a ship that did not answer, and connecting-and-starting early would spawn
-enemies into an empty hangar. `connectNetsim` also waits for the socket to be OPEN before returning a
-handle: a `WebSocket` is constructed in CONNECTING, where `send()` is a silent no-op, so an early handle
-swallowed the first message sent through it.
+during the menu — and the room does **not** step until the client sends `start`. Connecting lazily at
+take-off cost ~2.6 s of a ship that did not answer, and connecting-and-starting early would spawn enemies
+into an empty hangar. `connectNetsim` also waits for the socket to be OPEN before returning a handle: a
+`WebSocket` is constructed in CONNECTING, where `send()` is a silent no-op, so an early handle swallowed
+the first message sent through it.
+
+**The room follows the run, in level and in freshness.** `start` is keyed to `G.gameStartTime` — the
+per-run stamp `reset()` sets — not to `G.gameStarted`, which stays true between fights and used to make a
+room begin while the player was reading a briefing. A new run sends **`restart`**: the room empties its
+world and starts the level script again inside the same socket, with the tick counter still climbing (the
+client drops any snapshot not newer than the last one applied, so rewinding it would make the next run
+invisible). A change of LEVEL reconnects instead, since the room is built around one.
+
+**netsim defers to any replay.** `?record`, `?playback` and the Level-0 intro cutscene — which rides the
+same machinery, armed programmatically at bootstrap — replay the local simulation deterministically and own
+the tick. While one is running netsim joins no room and drops any it has (`netsimDefersTo`), then connects
+once it ends. Without this the intro's frozen card sat over a server fight that kept running.
 
 **Server side — `server/src/netsim/`:**
 - `room.js` — one World, one player. Deliberately **clock-free**: `stepOnce()` advances one tick,

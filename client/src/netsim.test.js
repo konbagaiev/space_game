@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalNetsim, wsUrl, createUplink, connectNetsim, INPUT_BATCH } from './netsim.js';
+import { evalNetsim, wsUrl, createUplink, connectNetsim, netsimDefersTo, INPUT_BATCH } from './netsim.js';
 import { SIM_DT } from './sim-core/consts.js';
 import { snapshotInput } from './replay.js';
 
@@ -113,4 +113,13 @@ test('a socket that dies during the handshake reports an error instead of a half
                                      onError: (e) => errors.push(e) });
   assert.equal(link, null);
   assert.equal(errors.length, 1);
+});
+
+test('netsim defers to any record/playback session, the intro cutscene included', () => {
+  // The intro rides the ?playback machinery, armed programmatically at bootstrap — so `playback` is truthy
+  // without the flag ever appearing in the URL. Running a room alongside it stepped a second fight behind
+  // the frozen cutscene card, which is how it was found.
+  assert.equal(netsimDefersTo({ record: null, playback: null }), false, 'a plain session is netsim\'s to drive');
+  assert.equal(netsimDefersTo({ record: null, playback: { id: 'x' } }), true, '?playback / the intro owns the tick');
+  assert.equal(netsimDefersTo({ record: { level: 'level-0' }, playback: null }), true, '?record owns it too');
 });

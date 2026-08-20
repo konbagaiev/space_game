@@ -19,6 +19,7 @@
 // Non-goals for this cut (docs/plans/server-authoritative-sim.md §6): several players, reconnect, delta
 // encoding, and the sealed economy — a netsim run still banks through the client's own `POST /api/games`.
 import { createSimWorld } from '../sim-host.js';
+import { clearAndPlaceRun, startRun } from '../../../client/src/sim-core/reset-world.js';
 import { simTick } from '../../../client/src/sim-core/tick.js';
 import { worldDigest } from '../../../client/src/sim-core/digest.js';
 import { SIM_DT } from '../../../client/src/sim-core/consts.js';
@@ -171,6 +172,20 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         },
         events,
       };
+    },
+
+    // Start the run over in the SAME World — a retry, or the next level's fight after an advance. Cheaper
+    // and less disruptive than a reconnect: the socket, the ids and the tick counter all keep going, and
+    // the client's reconciliation heals itself because every old entity simply stops being listed.
+    //
+    // The seeded stream is deliberately NOT re-seeded: it carries on, which is what live play does (an
+    // unseeded run draws from Math.random). Re-seeding would make every retry identical.
+    restart() {
+      clearAndPlaceRun(world);
+      startRun(world);
+      queue.length = 0; lastInput = EMPTY_INPUT; ack = null;
+      pendingEvents = [];
+      return tick;
     },
 
     // Sent once on join: everything static about this fight.

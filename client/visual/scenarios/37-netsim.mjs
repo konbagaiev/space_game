@@ -9,7 +9,19 @@
 // step), enemies the room spawned must appear with real bodies, and the HUD must follow the room's score.
 // The last assertion is the important one — that no local simulation is running underneath, which is the
 // failure mode where everything looks fine and the two worlds have quietly forked.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 export const name = 'netsim';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+// The canonical Level-0 trace, resolved from the seed so an asset rename fails here rather than in prod.
+function tracePath() {
+  const seedSrc = fs.readFileSync(path.join(repoRoot, 'server/src/catalog_seed.js'), 'utf8');
+  const m = seedSrc.match(/introTrace:\s*'([^']+)'/);
+  return path.join(repoRoot, 'client', m[1]);
+}
 
 const status = (page) => page.evaluate(() => {
   const g = window.__game, p = g.player;
@@ -167,4 +179,27 @@ export default async function ({ page, assert, shot, baseURL }) {
   await page.evaluate(() => { window.__game.player.mesh.visible = true; });
   assert.ok(Buffer.compare(withShip, withoutShip) !== 0,
     'the player ship is DRAWN at the centre of the screen — hiding it changed no pixels, so nothing was there');
+
+  // --- NETSIM MUST STAND ASIDE FOR A REPLAY ---
+  //
+  // `?record`, `?playback` and the Level-0 intro cutscene (which rides the same machinery, armed at
+  // bootstrap without the flag ever appearing in the URL) all replay the LOCAL sim deterministically and
+  // own the tick. Running a room alongside one stepped a second fight behind the frozen cutscene card:
+  // the text came up, and the game underneath it did not stop. Asserted here with `?playback`, which is
+  // the reachable form of the same collision.
+  const trace = JSON.parse(fs.readFileSync(tracePath(), 'utf8'));
+  await page.evaluate(([id, json]) => localStorage.setItem(`replay:${id}`, json), [trace.id, JSON.stringify(trace)]);
+  await page.goto(`${origin}/?playback&id=${encodeURIComponent(trace.id)}&cutscene=1&netsim=1&debug`, { waitUntil: 'load' });
+  await page.waitForFunction('!!(window.__replay && window.__replay.status().armed)', null, { timeout: 30000 });
+  await page.waitForTimeout(1500);
+  const deferred = await page.evaluate(() => ({
+    netsimOn: !!window.__netsim,
+    connected: !!(window.__netsim && window.__netsim.connected),
+    playbackArmed: window.__replay.status().armed,
+  }));
+  console.log(`      with ?playback also on: netsim present=${deferred.netsimOn} connected=${deferred.connected}`);
+  assert.equal(deferred.netsimOn, true, 'the flag was on, so the handle exists');
+  assert.equal(deferred.connected, false,
+    'but no room was joined — a replay owns the tick, and a room stepping behind it is a second fight');
+  await page.evaluate((id) => localStorage.removeItem(`replay:${id}`), trace.id);
 }

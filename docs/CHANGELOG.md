@@ -5,6 +5,23 @@
 
 ## 2026-08-20
 
+- **netsim now stands aside for a replay, and its room follows the run.** Three related defects, all found
+  by refreshing on a fresh profile:
+  **The intro cutscene ran with a room stepping behind it** — the card came up and froze the replay while
+  the server kept simulating a second fight underneath, which reads as "the text appeared but the intro is
+  not paused". `?record`, `?playback` and the intro (which rides the same machinery, armed at bootstrap
+  without the flag ever being in the URL) replay the LOCAL sim deterministically and own the tick, so
+  netsim defers to them: no socket while one is running, any existing one dropped, and a reconnect once it
+  ends.
+  **The room could be on the wrong level** — advancing after a win changes `CATALOG.levelName` under a room
+  that was already joined. A level change now reconnects.
+  **A retry replayed inside the previous fight's leftovers** — the room is told to `restart` when
+  `G.gameStartTime` marks a new run: its world is emptied and the level script starts over, in the same
+  socket, with the tick counter deliberately still climbing (the client drops any snapshot not newer than
+  the last one it applied, so rewinding it would make the whole next run invisible). Starting is also keyed
+  to the run rather than to `G.gameStarted`, which stays true between fights — a room used to begin
+  spawning while the player was reading a briefing.
+
 - **First netsim playtest: five defects found and fixed.** The maintainer played `?netsim=1` and reported
   the enemy appearing in the wrong place, no control at first, a rocket freezing the game with its sound
   looping, pause not pausing, and bullets drawn as plain dots. Causes, in the order they hurt:

@@ -42,6 +42,17 @@ export function evalNetsim(search) {
   return { level, seed };
 }
 
+// Does a record/playback session own the tick right now?
+//
+// `?record`, `?playback` AND the Level-0 intro cutscene (which rides the same machinery, armed
+// programmatically at bootstrap) all replay the LOCAL simulation deterministically from a seed and a list
+// of inputs. A server room has no part in that: it would step its own fight behind the cutscene, which is
+// exactly what shipped — the card froze the replay while the room kept running underneath it.
+//
+// So netsim DEFERS rather than disables: no socket while a replay owns the loop, and any existing one is
+// dropped. When the intro finishes and `rs.play` clears, netsim connects for the real fight.
+export function netsimDefersTo({ record, playback }) { return !!(record || playback); }
+
 // Build the socket URL from the page's origin (or the configured API base), swapping the scheme. Kept pure
 // so the mapping http→ws / https→wss is testable; getting it wrong on the itch build would be a silent
 // mixed-content failure with no error worth reading.
@@ -148,6 +159,8 @@ export async function connectNetsim({ playerId, level, seed, origin = location.o
     // Begin the fight. Connecting and starting are separate so the handshake can happen while the player
     // is still on a menu — paying it after take-off is two seconds of a ship that does not answer.
     start() { send({ type: 'start' }); },
+    // Begin a FRESH run in the same room — a retry, or the next level after an advance.
+    restart() { uplink.flush(); send({ type: 'restart' }); },
     // Ask the room to stop / resume stepping. A room holds one player, so this is a true freeze rather
     // than the lie a pause button in a shared world would be (DECISIONS §16).
     setPaused(paused) { uplink.flush(); send({ type: paused ? 'pause' : 'resume' }); },

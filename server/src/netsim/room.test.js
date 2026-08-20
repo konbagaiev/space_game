@@ -157,3 +157,28 @@ test('a client feeding at the natural rate is never fast-forwarded', () => {
   assert.equal(room.caughtUpInputs, 0, 'no catch-up when there is nothing to catch up on');
   assert.equal(room.queued, 0);
 });
+
+test('restart begins a fresh run in the same room', () => {
+  const room = createRoom({ seed: 21 });
+  for (let i = 0; i < 900; i++) { room.pushInput([{ t: i, k: ['KeyW'], a: null }]); room.stepOnce(); }
+  const mid = room.digest().summary;
+  assert.ok(mid.enemies > 0 || mid.kills > 0, 'the fight actually got going (guard against an empty assertion)');
+  const tickBefore = room.tick;
+  const p = room.world.player;
+  p.hp = 5; // pretend the run went badly
+
+  room.restart();
+
+  const after = room.digest().summary;
+  assert.equal(after.enemies, 0, 'the arena was emptied');
+  assert.equal(after.kills, 0, 'and the score reset');
+  assert.equal(after.earned, 0);
+  assert.equal(room.world.player.hp, room.world.player.maxHp, 'the ship is repaired for the retry');
+  assert.equal(room.world.levelRunner.phaseIndex, 0, 'the level script starts over');
+  assert.equal(room.queued, 0, 'the old run\'s queued input was dropped');
+  // The tick counter deliberately keeps climbing: the client drops any snapshot whose tick is not newer
+  // than the last one it applied, so a restart that rewound it would make the whole next run invisible.
+  assert.equal(room.tick, tickBefore, 'the tick counter is not rewound');
+  room.stepOnce();
+  assert.equal(room.tick, tickBefore + 1);
+});

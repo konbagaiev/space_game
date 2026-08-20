@@ -835,6 +835,16 @@ A sixth issue surfaced from a longer session rather than the report: **input que
 (8–11 ticks, 130–180 ms) because the room retires exactly one input per tick while a bursty client can emit
 six at once. `INPUT_QUEUE_TARGET` caps it at ~3 ticks.
 
+**A second report, from simply refreshing on a fresh profile,** found three more of the same shape — netsim
+running alongside something that already owns the fight:
+7. **The intro cutscene played with a room stepping behind it.** The card froze the replay; the server kept
+   simulating. netsim now defers to `?record` / `?playback` / the intro (`netsimDefersTo`) and connects
+   after. *Every scenario used `?debug`, which gates the auto-intro off — so the collision was unreachable
+   from the test suite.* The guard uses the reachable form: `?playback&netsim=1` must join no room.
+8. **The room could be on the wrong level** after an advance changed `CATALOG.levelName` under it.
+9. **A retry ran inside the previous fight's leftovers**, because `start` was keyed to `G.gameStarted`
+   (true between fights) rather than to the per-run `G.gameStartTime`. A new run now sends `restart`.
+
 ### Slice E — client-side prediction + reconciliation of the local ship
 
 The client keeps a buffer of unacked inputs; on each snapshot it reseeds its `World` from the authoritative

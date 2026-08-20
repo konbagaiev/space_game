@@ -6,7 +6,7 @@
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
 import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
-import { evalNetsim, connectNetsim } from './netsim.js';               // ?netsim: play a level in a SERVER-run room
+import { evalNetsim, connectNetsim, netsimDefersTo } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
@@ -83,6 +83,8 @@ let netConnecting = false;
 let netsimPaused = false;   // __netsim.pause(): stop pumping/applying, freeze on the last known state
 let netRoomPaused = false;  // last pause state pushed to the room (so we send only on a change)
 let netStarted = false;     // the room has been told to begin (take-off), as opposed to merely joined
+let netRunAt = null;        // G.gameStartTime of the run the room is playing (a new one means restart it)
+let netLevel = null;        // the level the current room was created for (a change means reconnect)
 const netState = createNetState();
 const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
@@ -788,6 +790,16 @@ if (isDev()) window.__backdrop = {
 // A failed handshake FALLS BACK to simulating locally rather than leaving the player staring at a ship that
 // does not answer. That is the friendly behaviour and it is nearly free: `netsimActive` is the only thing
 // that routes the loop, so clearing it hands the fight back to the local sim mid-frame.
+// Leave the room and forget its ghosts, WITHOUT giving up on netsim: `netsimActive` stays true, so the
+// next frame that is not owned by a replay reconnects. Used when the intro cutscene arms after the socket
+// has already opened.
+function dropNetsim() {
+  try { netLink.close(); } catch {}
+  netLink = null; netStarted = false; netRoomPaused = false; netRunAt = null; netLevel = null;
+  clearNet(world, netState);
+  netState.welcome = null; netState.ack = null;
+}
+
 async function startNetsim() {
   netConnecting = true;
   const bail = (err) => {
@@ -811,6 +823,7 @@ async function startNetsim() {
       return;
     }
     const level = NETSIM.level || CATALOG.levelName;
+    netLevel = level;
     netLink = await connectNetsim({
       playerId: G.playerId, level, seed: NETSIM.seed,
       onWelcome: (w) => {
@@ -836,16 +849,35 @@ function animate() {
   const dt = (BENCH || REC || rs.play) ? BENCH_DT : Math.min(rawSec, 0.05); // bench/record/playback: fixed step for determinism; else clamped for sim stability
   const t0 = DEV ? performance.now() : 0;
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
-  const live = G.gameStarted && !BENCH && !REC && !rs.play && !netsimActive; // real player session → deterministic accumulator loop (always-on recording)
-  if (netsimActive) {
+  // A record/playback session — the intro cutscene included — replays the LOCAL sim and owns the tick, so
+  // netsim stands aside for as long as one is running (see netsimDefersTo).
+  const replayOwnsLoop = netsimDefersTo({ record: REC, playback: rs.play });
+  if (netsimActive && replayOwnsLoop && netLink) dropNetsim();
+  const netsimDriving = netsimActive && !replayOwnsLoop;
+  const live = G.gameStarted && !BENCH && !REC && !rs.play && !netsimDriving; // real player session → deterministic accumulator loop (always-on recording)
+  if (netsimDriving) {
     // The server owns the fight: no local sim step at all. Send this frame's input, draw the world as the
     // room described it ~100 ms ago (netsim-world.js interpolates between snapshots), and run the ordinary
     // render half — which drains the wire events through the SAME adapter local events go through, so FX,
     // audio, the HUD and the overlays all work without knowing where the fight is being decided.
-    // Connect as soon as the catalog names a level — during the menu, not at take-off.
-    if (!netConnecting && !netLink && CATALOG.levelName) startNetsim();
-    // …and tell the room to begin only when the player actually launches.
-    if (netLink && G.gameStarted && !netStarted) { netStarted = true; netLink.start(); }
+    // THE ROOM MUST MATCH THE RUN THIS TAB IS ABOUT TO PLAY, in both level and freshness.
+    //   • Level: the client builds the map, set-pieces and arena centre per level, so a room on another one
+    //     fights somewhere the player is not looking. Advancing after a win changes it under us.
+    //   • Freshness: `reset()` stamps `G.gameStartTime` per run. A retry needs the room's world emptied and
+    //     the level script restarted, or the second fight plays out in the first one's leftovers.
+    // Connecting happens during the MENU so take-off does not pay the handshake (it cost ~2.6 s of a ship
+    // that would not answer); a level change is the one case that has to reconnect and eat it.
+    const wantLevel = NETSIM.level || CATALOG.levelName;
+    if (netLink && netLevel !== wantLevel) dropNetsim();
+    if (!netConnecting && !netLink && wantLevel) startNetsim();
+    // Begin — or begin AGAIN — only when a run actually starts, so a room does not spawn into an empty
+    // hangar while the player reads a briefing.
+    if (netLink && G.gameStarted && netRunAt !== G.gameStartTime) {
+      const first = netRunAt === null;
+      netRunAt = G.gameStartTime;
+      netStarted = true;
+      if (first) netLink.start(); else netLink.restart();
+    }
     // Pause and the system map both have to reach the ROOM, or the button lies: the local overlay would say
     // "Paused" while the fight kept running and the ship kept taking hits. One player per room makes a real
     // freeze legitimate (DECISIONS §16).

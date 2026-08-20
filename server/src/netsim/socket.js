@@ -66,6 +66,7 @@ export function attachNetsim(httpServer, { tickets, log = console } = {}) {
       try { msg = JSON.parse(data); } catch { return; } // a malformed frame is dropped, never fatal
       if (msg && msg.type === 'input') room.pushInput(msg.ticks);
       else if (msg && msg.type === 'start') driver.start();
+      else if (msg && msg.type === 'restart') { room.restart(); driver.start(); }
       // Pause is a REAL freeze here, and it is legitimate precisely because a room holds one player
       // (DECISIONS §16 forbids it for a SHARED world — when rooms hold more than one, this must go).
       // Stopping the driver stops the fight: no spawns, no enemy fire, no cooldowns ticking.
