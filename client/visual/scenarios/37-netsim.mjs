@@ -80,6 +80,21 @@ export default async function ({ page, assert, shot, baseURL }) {
   assert.equal(joined.roomLevel, joined.clientLevel,
     `the room is fighting ${joined.roomLevel} but this tab built ${joined.clientLevel}`);
 
+  // THE BADGE. Three playtests in a row reported "netsim feels great" while actually on the local
+  // simulation — the flag is URL-only and nothing on screen said which one was running, so the reports
+  // could not be acted on. A room has to be something you can SEE you are in.
+  const badge = await page.evaluate(() => {
+    const el = document.getElementById('netsim-badge');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const title = document.getElementById('gametitle')?.getBoundingClientRect();
+    return { text: el.textContent, colour: getComputedStyle(el).color,
+             overlapsTitle: !!title && r.top < title.bottom && r.bottom > title.top && r.left < title.right && r.right > title.left };
+  });
+  assert.ok(badge, 'the mode badge is on screen whenever ?netsim is on');
+  assert.match(badge.text, /^NETSIM ● room/, `it says a room is driving, got "${badge.text}"`);
+  assert.equal(badge.overlapsTitle, false, 'and it does not sit on top of the wordmark');
+
   // Fly. There is NO local sim step in this mode, so any movement at all had to come back over the wire.
   //
   // The wait is on the SIMULATION, never on the clock. Headless software WebGL renders a few frames a
@@ -208,5 +223,8 @@ export default async function ({ page, assert, shot, baseURL }) {
   assert.equal(deferred.netsimOn, true, 'the flag was on, so the handle exists');
   assert.equal(deferred.connected, false,
     'but no room was joined — a replay owns the tick, and a room stepping behind it is a second fight');
+  // …and the badge says so rather than leaving the player to guess which simulation they are watching.
+  const deferBadge = await page.evaluate(() => document.getElementById('netsim-badge')?.textContent);
+  assert.match(deferBadge, /^NETSIM ○ local · replay/, `the badge names the reason, got "${deferBadge}"`);
   await page.evaluate((id) => localStorage.removeItem(`replay:${id}`), trace.id);
 }

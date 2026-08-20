@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **`?netsim` now shows which simulation is running.** A small badge under the wordmark: green
+  `NETSIM ● room · level-N` while a server room drives the fight, amber `NETSIM ○ local · <reason>`
+  otherwise (`replay`, `side-mission`, `failed`, `no room`, `connecting…`). The flag is URL-only and
+  deliberately not sticky, and nothing on screen said which path was live — so three playtests in a row
+  reported netsim feeling great while the `gameplay_sessions` rows show they were all on the LOCAL
+  simulation (a netsim run records no session; the recorder lives on the local path). Those are exactly the
+  reports that cannot be acted on. Placed below the wordmark, not at top-centre where the record HUD and the
+  pause button live; `37-netsim` asserts both the text and that it does not overlap the title.
+
 - **netsim's side-mission guard was decided too early, so a room could fight the wrong level.** The refusal
   ran once inside `startNetsim()` — but the socket opens during the MENU, when `activeMission` is still
   null, and the player picks the mission afterwards. A room therefore started the CAMPAIGN level while the

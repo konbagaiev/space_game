@@ -3121,6 +3121,13 @@ the economy is still banked by the client's own `POST /api/games`. The Grab's pu
 room owns the Grab and the client never runs `stepDrops`). A failed handshake **falls back to simulating
 locally** rather than leaving a ship that will not answer.
 
+**You can SEE which simulation is running.** With `?netsim` on, a small badge sits under the wordmark:
+green `NETSIM ● room · level-N` while a room is driving, amber `NETSIM ○ local · <reason>` otherwise
+(`replay`, `side-mission`, `failed`, `no room`, `connecting…`). It exists because the flag is URL-only and
+not sticky, so it is easy to be on the local path without noticing — three playtests in a row reported
+"netsim feels great" while actually local, which is the report that cannot be acted on. Never shown without
+the flag.
+
 **Diagnosing it.** `window.__netsim` is attached whenever the flag is on — `?debug` or not, because the
 first question about a server-run fight is always "am I connected". It reports `connected`, `tick`, `ack`,
 `behind` (how far the room's acknowledgement trails the input sent), `welcome` and `lastSent`, and

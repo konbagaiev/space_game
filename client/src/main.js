@@ -931,6 +931,7 @@ function animate() {
   if (HITBOXES_DEBUG) syncHitBoxes(scene, G.player, enemies); // dev-only hitbox wireframe overlay
   const t1 = DEV ? performance.now() : 0; // end of sim
   updateHud();
+  if (NETSIM) updateNetBadge(); // which simulation is actually running this fight
   updateProgressionHud(); // always-on bottom XP bar + free-skill-points badge on the Character menu item
   updateMarkers();
   updateDropMarkers(); // green edge arrows toward off-screen loot drops (nearest 6)
@@ -1004,6 +1005,37 @@ function animate() {
 // ---------- Dev color/lighting tuning panel moved to src/tune.js ----------
 // buildTunePanel(GUI) is imported at the top; bootstrap dynamically imports lil-gui under ?tune and
 // calls it (so players never fetch the GUI lib).
+
+// A VISIBLE mode badge, shown whenever `?netsim` is on. It exists because the flag is URL-only and not
+// sticky (deliberately — a flag surviving a reload would silently keep a player on the socket path), so it
+// is easy to end up on the local simulation without noticing. That happened three playtests running: every
+// "netsim feels great" report turned out to be the local path, which is exactly the report that cannot be
+// acted on. A room is now something you can SEE you are in.
+//
+// Placed below the wordmark rather than at top-centre, where the record HUD lives — that spot already holds
+// "VEGA SENTINELS" and the pause button.
+let netBadgeEl = null;
+function updateNetBadge() {
+  if (!NETSIM) return;
+  if (!netBadgeEl) {
+    netBadgeEl = document.createElement('div');
+    netBadgeEl.id = 'netsim-badge';
+    netBadgeEl.style.cssText = 'position:fixed;top:40px;left:50%;transform:translateX(-50%);z-index:99998;'
+      + 'font:600 11px/1.4 system-ui,sans-serif;letter-spacing:.06em;background:rgba(0,0,0,.72);'
+      + 'padding:3px 10px;border-radius:7px;pointer-events:none;user-select:none;white-space:nowrap';
+    document.body.appendChild(netBadgeEl);
+  }
+  // Green ONLY while a room is actually driving this tab; amber for every flavour of "you are local".
+  const driving = netsimActive && !netDeferredBy && !!netLink && netStarted;
+  const reason = netDeferredBy ? `local · ${netDeferredBy}`
+    : !netsimActive ? 'local · failed'
+    : !netLink ? (netConnecting ? 'connecting…' : 'local · no room')
+    : !netStarted ? 'room joined' : `room · ${netState.welcome ? netState.welcome.level : '?'}`;
+  const colour = driving ? '#4dff88' : '#ffb454';
+  netBadgeEl.style.color = colour;
+  netBadgeEl.style.border = `1px solid ${colour}`;
+  netBadgeEl.textContent = `NETSIM ${driving ? '●' : '○'} ${reason}`;
+}
 
 // Netsim inspection handle. Unlike `__game` this is attached whenever the flag is on, `?debug` or not: the
 // first question about a server-run fight is always "am I actually connected", and it should be answerable
