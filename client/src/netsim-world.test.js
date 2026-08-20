@@ -53,6 +53,35 @@ test('a described entity is spawned through the host, the same path a local spaw
   assert.ok(world.enemies[0].engine, 'and its engine, so the exhaust plume works');
 });
 
+test('a crate is born where the room has it, not at the world origin', () => {
+  // The bug: a drop's spawn description carried no position, so the ghost started at (0,0,0) — and since a
+  // crate only moves while being pulled, the client drew it there. Clicking one flew the ship to its REAL
+  // position "somewhere else", and the level-1 reward looked like it never dropped.
+  const { world } = clientWorld();
+  const st = createNetState();
+  applySnapshot(world, st, snapOf({
+    spawns: [{ id: 4, kind: 'drop', item: { kind: 'weapon', refId: 5 }, special: true, x: -120.5, z: 33.25 }],
+    drops: [[4, -120.5, 33.25]],
+  }));
+  assert.equal(world.drops.length, 1);
+  assert.equal(world.drops[0].pos.x, -120.5);
+  assert.equal(world.drops[0].pos.z, 33.25);
+  assert.equal(world.drops[0].special, true, 'and it knows it is the reward crate, so it gets the green body');
+});
+
+test('the room tells the client which crate the Grab is pulling', () => {
+  // The client never runs stepDrops, so without this the blue pull beam had no target and never drew.
+  const { world } = clientWorld();
+  const st = createNetState();
+  applySnapshot(world, st, snapOf({
+    spawns: [{ id: 4, kind: 'drop', item: { kind: 'weapon', refId: 5 }, x: 1, z: 2 }],
+    drops: [[4, 1, 2]], grab: 4,
+  }));
+  assert.equal(st.grabTarget, world.drops[0]);
+  applySnapshot(world, st, snapOf({ tick: 2, drops: [[4, 1, 2]], grab: null }));
+  assert.equal(st.grabTarget, null, 'and when nothing is being pulled, the beam has no target');
+});
+
 test('an unknown ship name draws nothing rather than crashing the frame', () => {
   const { world } = clientWorld();
   const st = createNetState();

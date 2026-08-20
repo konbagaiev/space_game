@@ -78,7 +78,10 @@ function spawnGhost(world, desc) {
           fromPlayer: !!desc.fromPlayer, alive: true };
     world.rockets.push(e);
   } else if (desc.kind === 'drop') {
-    e = { pos: new Vec3(0, 0.8, 0), item: desc.item, special: !!desc.special, inRange: 0, alive: true };
+    // Born where the room has it. A crate only moves while the Grab is pulling it, so one placed at the
+    // origin stayed there — drawn metres from the crate the room actually had.
+    e = { pos: new Vec3(desc.x ?? 0, 0.8, desc.z ?? 0), item: desc.item, special: !!desc.special,
+          inRange: 0, alive: true };
     world.drops.push(e);
   } else {
     return null;
