@@ -4534,3 +4534,71 @@ local-bullets slice.
 **Still open, and now understood.** Sound and FX for the room's own entities do run ahead of the interpolated
 picture, and that is real. Fixing it means making the DESPAWN clock agree with the render clock first —
 holding a ghost until the moment it is drawn dying — not holding the events on their own.
+
+## 127. One clock: the netsim client interpolates everything, and buys smoothness with latency
+
+**Context.** A day of playtesting `?netsim=1` produced a stream of stutter reports — a doubled gun sound, a
+rocket hitching at the muzzle, projectiles jerking, a small enemy's nose stepping as it tracked the player —
+and each got its own plausible local fix. The reports kept coming. A full revert settled it: on the original
+code the picture stuttered exactly as much, so none of the fixes was the cause and none was the cure.
+
+**Cause.** The client drew on **four clocks at once**: enemies and drops interpolated `INTERP_DELAY_MS` in
+the past, bullets dead-reckoned into the present, rockets extrapolated into the present, the local ship
+client-side predicted *ahead* of the server, and spawns and despawns applied the instant a packet arrived.
+Every artifact lived on a seam between two of them:
+
+| symptom | seam |
+|---|---|
+| the gun sounded doubled on one shot in four | events played on the packet clock, not the weapon's |
+| rocket trails detached, blasts fired after the rocket vanished | events moved to the past clock while their subjects lived in the present (the previous entry, §126) |
+| a rocket froze at the muzzle for a snapshot interval | extrapolation with no velocity to extrapolate from |
+| projectiles jerked on every packet | extrapolation measured from ARRIVAL times, and packets a room emits 4 ticks apart arrive 50–79 ms apart |
+| a small enemy's nose stepped up to 3.5°/frame | linear interpolation of a curve at 15 Hz |
+
+Measured with the `?netjerk` probe over 60 s of fight at the delivery jitter captured from real play:
+**7476 discontinuities in the drawn motion, half of them landing on the frame a packet was applied.**
+
+**Decision.** One timeline, made of server ticks. Everything is interpolated at `renderTick − delay`;
+nothing is extrapolated; spawns and despawns are events on that same timeline; client-side prediction is
+deleted. The snapshot rate doubles to 30 Hz, which halves the curve error and makes the 100 ms buffer three
+snapshot intervals instead of one and a half.
+
+Result on the same harness: **6 breaks, none on a packet frame.**
+
+**What it costs, and why that is the right trade *for this game*.** The ship answers the controls about
+100 ms later, because it is drawn where the server had it rather than where the client predicts it will be.
+The maintainer stated the requirement directly — a smooth picture matters, reaction time does not, and this
+is neither a shooter against humans nor a driving sim. Prediction is the machinery you build when the feel
+depends on the millisecond; it is not what keeps cheating out. **Server authority does that, and it is
+untouched**: the room owns the simulation and the client sends key presses.
+
+**This is the reversible half.** If the ship ever reads as too heavy, the way back is NOT extrapolation but a
+second, explicit timeline for the local ship with its own despawn rule — the two-timeline model Unity NetCode
+documents (interpolated ghosts despawn on the interpolation tick, predicted ones on the server tick). It
+should be re-opened only once the picture is smooth, and never at the same time.
+
+**Where the numbers come from.** Every system that prefers a smooth picture to a fast one converges on this
+shape, and three of our numbers were wrong against theirs:
+
+- **Delay ≥ 2 snapshot intervals.** Valve's `cl_interp 0.1` at 20 Hz, reasoned as "even if one snapshot is
+  lost, there are always two valid snapshots to interpolate between"; Mirror's `bufferTimeMultiplier = 2`;
+  Colyseus's "1–2 server tick intervals". Ours was 1.5. Fiedler's margin for losing two in a row is 3×, which
+  is what we now take.
+- **No extrapolation on the normal path.** Colyseus's own implementation comment: "On underrun or warmup,
+  hold at the newest sample — don't extrapolate. Extrapolation here is what produced the 'flickery' feel."
+  Valve extrapolates only as a ≤250 ms emergency. Their teaching lab grades `extrapolate` as "overshoots on
+  every turn".
+- **Despawn on the render clock is a rule, not a preference.** Unity Netcode for Entities: "the client must
+  wait until the `InterpolationTick` is greater or equal the despawning tick"; lightyear shipped the same as
+  a fix; nengi does it structurally in both major versions.
+
+**Alternative rejected: adopt a framework** (Colyseus, nengi, Geckos). Our transport, protocol, room and
+referee already work and are covered by tests, and none of these libraries would have prevented any of the
+artifacts above — they all live in the rendering layer, which the libraries leave to you. What they actually
+offer is the doctrine, and the doctrine is what this entry copies. Worth revisiting only if we need
+something they solve and we have not built: matchmaking, reconnection, or delta-encoded state.
+
+**Alternative rejected: spline interpolation** (Hermite / Catmull-Rom) for the curve error. It is the
+textbook next step and Fiedler reports it removes the artifact entirely — but it needs velocity on the wire,
+no comparable JS library ships it, and doubling the snapshot rate to 30 Hz cost nothing at one player per
+room and cut the nose step from 3.5°/frame to 2.1°. Revisit only if a real fight still shows it.

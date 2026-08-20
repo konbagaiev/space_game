@@ -28,9 +28,17 @@ import { engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutop
   from '../../../client/src/sim-core/step-player.js';
 import { wireEvent } from './protocol.js';
 
-// Ticks between snapshots. 4 → 15 Hz at TICK_HZ 60. The SIM rate is not negotiable across hosts
+// Ticks between snapshots. 2 → 30 Hz at TICK_HZ 60. The SIM rate is not negotiable across hosts
 // (DECISIONS §118); the SNAPSHOT rate is the knob that actually costs bandwidth and is tuned on its own.
-export const SNAPSHOT_EVERY = 4;
+//
+// It was 4 (15 Hz), and that is too coarse for the one thing linear interpolation is bad at: a curve. A
+// small enemy swinging its nose to track the player had its rotation drawn as fifteen straight segments a
+// second, each ending in a step of up to 3.5° in a single frame, which is exactly what the maintainer
+// reported seeing. The error scales with the interval, so halving it halves the step — and it buys back the
+// delay too, since three snapshot intervals of buffer is 100 ms at 30 Hz where it would be 200 at 15.
+// Bandwidth is not the constraint at one player per room; the alternative (splining the samples) needs
+// velocity on the wire and is not shipped by any comparable library.
+export const SNAPSHOT_EVERY = 2;
 
 // How many unconsumed inputs a room will hold — 4 s at 60 Hz. Past this the OLDEST are dropped: a client
 // that floods must not be able to grow the server's memory, and stale input is the least useful input.

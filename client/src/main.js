@@ -9,7 +9,6 @@ import { worldDigest } from './sim-core/digest.js'; // the World as one comparab
 import { evalNetsim, connectNetsim, netsimDeferReason } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
 import { createJerkProbe } from './netsim-jerk.js'; // ?netjerk: catch every break in the DRAWN motion
-import { createPredictor } from './netsim-predict.js';
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
@@ -98,7 +97,6 @@ let netRunAt = null;        // G.gameStartTime of the run the room is playing (a
 let netLevel = null;        // the level the current room was created for (a change means reconnect)
 let netDeferredBy = null;   // 'replay' | 'side-mission' | null — why netsim is standing aside this frame
 let netJerkAlive = false;   // ?netjerk: previous frame's alive flag, so death can trigger the dump once
-let netPredictor = null;    // client-side prediction of the local ship (netsim-predict.js)
 let netRoomIdle = false;    // the ROOM is not stepping (no live fight, a pause, a menu, a hidden tab)
 let netDrawing = true;      // this tab is still RENDERING — true even on the death screen
 let netDown = false;        // the socket died under us: local for THIS run, retry on the next one
@@ -1041,14 +1039,7 @@ function animate() {
       // Input only while there is something to fly. A dead ship must not be able to fire a held key, and a
       // paused room would only queue the input up to apply on resume.
       if (!roomIdle) netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
-      // Prediction needs the account record the ROOM built its ship from; built lazily because
-      // `G.activeShip` arrives with the bootstrap fetch, after the socket may already be open.
-      if (!netPredictor && G.activeShip && G.activeShip.ship) {
-        netPredictor = createPredictor(CATALOG, G.activeShip);
-        if (!netPredictor) console.warn('[netsim] no prediction: the account record is not usable');
-      }
-      renderNet(world, netState, performance.now(), undefined, netPredictor,
-                (ack) => (netLink ? netLink.uplink.since(ack) : []));
+      renderNet(world, netState, performance.now());
       setGrabTarget(netState.grabTarget); // the room owns the Grab; this is only its beam
       renderTick(dt);
     }
@@ -1217,7 +1208,10 @@ if (NETSIM) {
     get started() { return netStarted; },
     get deferredBy() { return netDeferredBy; }, // why we are on the LOCAL sim right now (null = we are not)
     get down() { return netDown; },             // the socket died; local until the next run
-    get predicting() { return !!netPredictor; },
+    // The ship is INTERPOLATED like everything else now (docs/plans/netsim-one-clock-rendering.md); nothing
+    // in this tab predicts. Kept as a field so a test or a console reading it gets a straight answer.
+    get predicting() { return false; },
+    get clock() { return netState.clock; },   // tick → wall clock, the one timeline the picture is drawn on
     get roomIdle() { return netRoomIdle; },
     get drawing() { return netDrawing; },
     get tick() { return netState.lastTick; },

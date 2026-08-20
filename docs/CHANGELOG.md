@@ -5,6 +5,33 @@
 
 ## 2026-08-20
 
+- **One clock: the netsim client interpolates everything and extrapolates nothing.** A day spent chasing
+  stutter one artifact at a time ended with a playtest on fully reverted code that stuttered exactly as much
+  — so the defect was never any of the individual fixes, it was that the tab drew on **four clocks at once**:
+  enemies interpolated 100 ms in the past, bullets and rockets dead-reckoned into the present, the local ship
+  predicted *ahead* of the server, and spawns and despawns applied the instant a packet landed. Every seam
+  between two of them was an artifact, and each artifact had its own plausible local fix.
+
+  Now there is one timeline and it is made of **server ticks**, not arrival times: a snapshot states the tick
+  it describes, and when it turned up is not part of the picture. Everything is drawn at
+  `renderTick − delay`, bracketed by the two samples around it. Nothing extrapolates: past the newest sample
+  the world holds still, which is what every comparable system does and what Colyseus's own source says in
+  as many words ("extrapolation here is what produced the flickery feel"). **Spawns and despawns ride the
+  same clock** — a body appears when the player's moment reaches the tick it was born on and is retired when
+  that moment reaches its last sample, so a ship is still on screen for its own explosion. Client-side
+  prediction is deleted (89 lines plus its wiring); the ship is drawn like everything else.
+
+  Measured on the same harness, 60 s of fight with the delivery jitter captured from real play:
+  **7476 breaks in the drawn motion → 6**, and the fraction landing on the frame a packet arrived went from
+  half to none. Snapshots now go out at **30 Hz** (`SNAPSHOT_EVERY 4 → 2`), which halves the one thing linear
+  interpolation is bad at — a curve — and buys the buffer back: 100 ms is *three* snapshot intervals at 30 Hz
+  where it was one and a half at 15, and two is the documented minimum everywhere from Valve to Mirror.
+
+  The cost is honest and was chosen: the ship answers the controls ~100 ms later. The maintainer asked for a
+  smooth picture and said outright that reaction time is not a requirement for this game; server authority,
+  which is what actually keeps cheating out, is untouched. Plan and sources:
+  `docs/plans/netsim-one-clock-rendering.md`.
+
 - **REVERTED: the netsim rendering is back to where it stood before the gun-sound work.** The maintainer's
   reading is the one that decides it — before any of it, no stutter was visible on enemies, rockets or the
   nose of a ship; after it, stutter was visible everywhere. Whether the microscope created the symptom or

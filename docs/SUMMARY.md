@@ -3122,40 +3122,37 @@ player already owned. It used to build the catalog default for everyone, so a ne
 ignored everything the player owned. Reading it from the DB rather than from the client also means a client
 cannot claim a better ship than it has.
 
-**Interpolation.** Snapshots arrive at 15 Hz and frames render at 60, so the world is drawn as it was
-`INTERP_DELAY_MS` (100 ms) ago, between the two snapshots bracketing that moment. **The LOCAL SHIP is not interpolated at all**: its drawn pose is integrated every frame from the reported
-velocity and the observed angular velocity, then converged on the authoritative pose with a time constant
-(`VIEW_TAU_S`). Reading the heading straight off each snapshot turned the nose in 15 Hz steps, which reads
-as the game dropping to 15 fps whenever you turn. **Rockets** are likewise drawn in the present (by finite
-difference over their last two samples — and on the launch velocity from their spawn descriptor until the
-second sample exists, or a rocket freezes at the muzzle for a snapshot interval and then jumps) — their smoke puffs arrive as events placed at the rocket's CURRENT
-position, so a rocket drawn in the past had its own trail running ahead of it. All finite differences are
-taken over the **server tick** span, never over arrival times: snapshots arrive in bursts and dividing by
-that gap once inferred hundreds of rad/s. For everything else, positions lerp and
-headings take the short way around the circle; **bullets are not interpolated at all** — a bullet flies
-straight at a constant speed, so it is anchored on its newest sample and dead-reckoned into the present
-(capped at `MAX_EXTRAPOLATION_MS`, or a stalled connection would fly it off the map). **Health, both shield pools and the fire-group
-cooldowns do not
-interpolate** either — a bar sliding down over
-100 ms reads as a bug rather than as smoothing, and a cooldown is a countdown that would run backwards if a
-late snapshot were blended into it. (The cooldowns are the ROOM's: nothing on the client advances the local
-ship's fire groups, so the HUD's 🚀 dial reads `player.cd` off the wire.) Past the newest sample the world holds still rather than
-extrapolating: a wrong guess that has to be taken back looks worse than a tenth of a second of stillness.
+**ONE CLOCK.** Snapshots go out every `SNAPSHOT_EVERY = 2` ticks (30 Hz) and frames render at 60–120, so the
+world is drawn as it was `INTERP_DELAY_MS` (100 ms — **three snapshot intervals**) ago. The timeline is made
+of **server ticks, not arrival times**: `state.clock.offset` is the wall-clock instant tick 0 is due, slewed
+toward each packet's observation by `CLOCK_FOLLOW` (2%) and taken outright past `CLOCK_RESYNC_MS` (250 ms,
+i.e. a changed relationship — a paused room — rather than a jittery link). `tickAt(state, now)` gives the
+fractional tick of an instant; `renderNet` draws everything at `tickAt − delay`, bracketed by the two samples
+around it (`bracket()` compares `sample.tick`). Delivery jitter therefore moves nothing.
+
+**Everything is interpolated; nothing is extrapolated.** Enemies, drops, bullets, rockets and the local ship
+all take the same path. Past the newest sample the world **holds still** rather than guessing — a wrong guess
+that has to be taken back reads worse than stillness, and it is what every comparable system does. Health,
+the warp flag and both shield pools are STATE, not motion: taken from the newer sample outright, never
+blended. Headings interpolate the short way around the circle. The local ship gets a short output spring
+(`VIEW_TAU_S`) purely to take the corner off the sample points; it is not a correction mechanism, because
+there are no corrections left. **There is no client-side prediction** — the ship answers the controls ~100 ms
+later, which is the trade this game chose (DECISIONS §127).
+
+**Spawn and despawn are events on the render timeline too.** A described entity is built and starts
+collecting samples the moment its packet lands, but is only put in the World (`attachGhost` → `host.onSpawn`)
+when the render clock reaches the tick it was born on — otherwise it stands frozen at its spawn point for the
+whole interpolation delay, which was a stutter at the birth of every bullet and rocket. An entity that stops
+being listed is retired when the clock reaches its **last sample** (not the snapshot that failed to mention
+it, which would leave it standing still for an interval first), so a ship is still on screen for its own
+explosion. One that lived and died inside a single interpolation delay is simply forgotten, never shown.
+
 Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost
 "despawn" message would leak a mesh.
 
-**The player's own `fire` is SCHEDULED; every other event plays on arrival** (DECISIONS §126). Every wire
-event carries `tk`, the tick it happened on. A `fire` from the local player is queued by `applySnapshot` and
-released by `renderNet` (`releaseNetEvents`, called before the frame's own drain so audio sees it the same
-frame) after `budget − (how late it already is)`, where the budget is one snapshot interval
-(`PLAYER_EVENT_BUFFER_MS`, ~67 ms) — that puts the shot back on its own tick, because events ride snapshots
-and a weapon whose reload does not divide the snapshot interval otherwise comes out on the snapshot's beat
-(the starter gun measured 200/133/200/200 ms instead of a flat 183). Everything else is emitted on arrival:
-**an event anchored to something on screen may not be moved in time**, since bullets and rockets are drawn
-in the present, enemies in the past, and a ghost despawns the instant the room stops listing it — holding
-`smoke`/`detonate` detached a rocket from its trail and put its blast 100 ms after the rocket vanished. The
-queue is capped at `MAX_EVENT_QUEUE`; past it the oldest are released at once — an event may be late, never
-lost.
+Measured on the `?netjerk` harness (60 s of fight, delivery jitter captured from real play): **6 breaks in
+the drawn motion, none on a packet frame**, against 7476 (half of them on packet frames) for the four-clock
+design this replaced. Rationale and sources: `docs/plans/netsim-one-clock-rendering.md`, DECISIONS §127.
 
 **`?netjerk` — the drawn-motion probe** (`client/src/netsim-jerk.js`). A diagnostic, off unless the flag is
 on. It reads the poses `renderNet` writes and records every discontinuity together with the delivery

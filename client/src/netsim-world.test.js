@@ -7,8 +7,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, noopHost } from './sim-core/world.js';
-import { createNetState, applySnapshot, renderNet, clearNet, INTERP_DELAY_MS, MAX_EXTRAPOLATION_MS } from './netsim-world.js';
+import { createNetState, applySnapshot, renderNet, clearNet, INTERP_DELAY_MS, tickAt } from './netsim-world.js';
+import { SIM_DT } from './sim-core/consts.js';
 import { createRoom } from '../../server/src/netsim/room.js';
+import { createJerkProbe } from './netsim-jerk.js';
 import { buildCatalog } from '../../server/src/sim-host.js';
 
 // A client World with no renderer: the catalog it would have fetched at boot, a host that only counts.
@@ -28,6 +30,21 @@ function clientWorld() {
   return { world, attached };
 }
 
+// An arrival consistent with a tick. The client draws on the TICK timeline, so a test that wants to name a
+// moment names a tick; base 1000 is arbitrary and becomes the clock's offset. `renderAt` adds the
+// interpolation delay, i.e. "the wall-clock instant at which tick T is the thing being shown".
+const MS = SIM_DT * 1000;
+const atOf = (tick) => 1000 + tick * MS;
+const renderAt = (tick, delayMs = INTERP_DELAY_MS) => atOf(tick) + delayMs;
+
+// Deliver a snapshot and advance the render clock to the tick it describes. Under one clock a spawn is an
+// event on the RENDER timeline — the body appears when the player's moment reaches it, not when the packet
+// did — so a test that wants to see an entity has to say when it is looking.
+const deliver = (world, st, snap) => {
+  applySnapshot(world, st, snap, atOf(snap.tick));
+  renderNet(world, st, renderAt(snap.tick), INTERP_DELAY_MS);
+};
+
 const snapOf = (over = {}) => ({
   type: 'snap', tick: 1, ack: null, dropped: 0, spawns: [],
   player: { x: 0, y: 0.6, z: 0, h: 0, sc: 1, hp: 100, maxHp: 100, sh: 0, alive: true, thrust: false, oob: 0, vx: 0, vz: 0 },
@@ -41,7 +58,7 @@ const snapOf = (over = {}) => ({
 test('a described entity is spawned through the host, the same path a local spawn takes', () => {
   const { world, attached } = clientWorld();
   const st = createNetState();
-  applySnapshot(world, st, snapOf({
+  deliver(world, st, snapOf({
     spawns: [{ id: 7, kind: 'enemy', name: 'Basic pirate ship', maxHp: 20, fullScale: 1.8, sizeScale: 1 }],
     enemies: [[7, 10, 20, 1.5, 20, 1.8, 0]],
   }));
@@ -59,7 +76,7 @@ test('a crate is born where the room has it, not at the world origin', () => {
   // position "somewhere else", and the level-1 reward looked like it never dropped.
   const { world } = clientWorld();
   const st = createNetState();
-  applySnapshot(world, st, snapOf({
+  deliver(world, st, snapOf({
     spawns: [{ id: 4, kind: 'drop', item: { kind: 'weapon', refId: 5 }, special: true, x: -120.5, z: 33.25 }],
     drops: [[4, -120.5, 33.25]],
   }));
@@ -73,12 +90,12 @@ test('the room tells the client which crate the Grab is pulling', () => {
   // The client never runs stepDrops, so without this the blue pull beam had no target and never drew.
   const { world } = clientWorld();
   const st = createNetState();
-  applySnapshot(world, st, snapOf({
+  deliver(world, st, snapOf({
     spawns: [{ id: 4, kind: 'drop', item: { kind: 'weapon', refId: 5 }, x: 1, z: 2 }],
     drops: [[4, 1, 2]], grab: 4,
   }));
   assert.equal(st.grabTarget, world.drops[0]);
-  applySnapshot(world, st, snapOf({ tick: 2, drops: [[4, 1, 2]], grab: null }));
+  deliver(world, st, snapOf({ tick: 2, drops: [[4, 1, 2]], grab: null }));
   assert.equal(st.grabTarget, null, 'and when nothing is being pulled, the beam has no target');
 });
 
@@ -89,16 +106,32 @@ test('an unknown ship name draws nothing rather than crashing the frame', () => 
   assert.equal(world.enemies.length, 0);
 });
 
-test('absence from a snapshot is the despawn', () => {
+test('absence from a snapshot is the despawn — but not before the render clock gets there', () => {
+  // The body is drawn `INTERP_DELAY_MS` behind the newest snapshot, so retiring it the moment the room stops
+  // listing it takes it off screen before the player has watched it arrive — and its own death FX, which
+  // ride the same clock, then go off in the space it used to occupy. Unity NetCode gates despawn on the
+  // interpolation tick for exactly this reason; nengi releases deletions when the render clock crosses them.
+  //
+  // The moment it goes is its LAST SAMPLE, not the snapshot that failed to mention it: the room dropped it
+  // somewhere in between, and the difference is a whole snapshot interval of standing still at its final
+  // position. That interval was worth 322 measured breaks a minute on bullets alone.
   const { world, attached } = clientWorld();
   const st = createNetState();
-  applySnapshot(world, st, snapOf({
+  deliver(world, st, snapOf({
+    tick: 4,
     spawns: [{ id: 7, kind: 'bullet', color: 1, fromPlayer: true }],
     bullets: [[7, 1, 2]],
   }));
-  assert.equal(world.bullets.length, 1);
-  applySnapshot(world, st, snapOf({ tick: 2, bullets: [] }));
-  assert.equal(world.bullets.length, 0, 'the bullet left the world');
+  assert.equal(world.bullets.length, 1, 'on screen once the render clock reached the tick it was born on');
+
+  applySnapshot(world, st, snapOf({ tick: 6, bullets: [[7, 3, 2]] }), atOf(6));
+  applySnapshot(world, st, snapOf({ tick: 8, bullets: [] }), atOf(8));   // gone from the room at some point after 6
+
+  renderNet(world, st, renderAt(5), INTERP_DELAY_MS);
+  assert.equal(world.bullets.length, 1, 'still flying at tick 5 — the player has not watched it get there yet');
+
+  renderNet(world, st, renderAt(6), INTERP_DELAY_MS);
+  assert.equal(world.bullets.length, 0, 'gone the instant the clock reaches its last sample, not a moment later');
   assert.equal(attached.length, 0, 'and its body was released — no leaked mesh');
 });
 
@@ -111,35 +144,42 @@ test('an out-of-order snapshot is dropped whole', () => {
 });
 
 test('the ship and its bullets share one clock, so the muzzle lines up', () => {
-  // The regression this guards: bullets were dead-reckoned into the present while the ship was still drawn
-  // 100 ms in the past, so a ship drifting sideways trailed its own muzzle — shots appeared to leave from
-  // its flank. Both are extrapolated from the same moment now.
+  // The regression this guards used to need arguing: bullets were dead-reckoned into the present while the
+  // ship was drawn 100 ms in the past, so a ship drifting sideways trailed its own muzzle. Under one clock
+  // it is structural — both are interpolated at the same tick from the same samples — and the test is kept
+  // because "structural" is a claim about code that can be edited.
   const { world } = clientWorld();
   const st = createNetState();
-  const p = { ...snapOf().player, x: 0, z: 0, vx: 20, vz: 0 };
-  applySnapshot(world, st, snapOf({
-    player: p,
-    spawns: [{ id: 9, kind: 'bullet', projectileColor: 1, class: 'kinetic', fromPlayer: true, x: 0, z: 0, vx: 20, vz: 0 }],
-    bullets: [[9, 0, 0]],
-  }), 1000);
-  renderNet(world, st, 1100, INTERP_DELAY_MS);
-  // Both advanced by the same 100 ms at the same 20 u/s, so they are still co-located — the muzzle holds.
-  assert.ok(Math.abs(world.player.pos.x - 2) < 1e-6, `ship advanced (got ${world.player.pos.x})`);
-  assert.ok(Math.abs(world.bullets[0].pos.x - world.player.pos.x) < 1e-6,
-    'the bullet did not run ahead of the ship that fired it');
+  const at = (tick, x) => applySnapshot(world, st, snapOf({
+    tick,
+    player: { ...snapOf().player, x, z: 0, vx: 20, vz: 0 },
+    spawns: st.byId.has(9)
+      ? []
+      : [{ id: 9, kind: 'bullet', projectileColor: 1, class: 'kinetic', fromPlayer: true, x, z: 0, vx: 20, vz: 0 }],
+    bullets: [[9, x, 0]],
+  }), atOf(tick));
+  at(4, 0);
+  at(8, 20 * 4 * SIM_DT);     // both travelled the same 4 ticks at 20 u/s
+  at(12, 20 * 8 * SIM_DT);
+
+  renderNet(world, st, renderAt(6), INTERP_DELAY_MS);   // halfway between the first two samples
+  assert.ok(Math.abs(world.player.pos.x - world.bullets[0].pos.x) < 1e-6,
+    `the bullet did not run ahead of the ship that fired it (ship ${world.player.pos.x}, bullet ${world.bullets[0].pos.x})`);
+  assert.ok(world.bullets[0].pos.x > 0, 'and the pair actually moved (guard against an empty assertion)');
 });
 
 test('positions interpolate between snapshots; health does not', () => {
   const { world } = clientWorld();
   const st = createNetState();
   applySnapshot(world, st, snapOf({
+    tick: 4,
     spawns: [{ id: 7, kind: 'enemy', name: 'Basic pirate ship', maxHp: 20 }],
     enemies: [[7, 0, 0, 0, 20, 1.8, 0]],
-  }), 1000);
-  applySnapshot(world, st, snapOf({ tick: 2, enemies: [[7, 10, 0, 0, 5, 1.8, 0]] }), 1100);
+  }), atOf(4));
+  applySnapshot(world, st, snapOf({ tick: 8, enemies: [[7, 10, 0, 0, 5, 1.8, 0]] }), atOf(8));
 
-  // Render the moment exactly halfway between the two samples.
-  renderNet(world, st, 1050 + INTERP_DELAY_MS, INTERP_DELAY_MS);
+  // Render the moment exactly halfway between the two samples — tick 6.
+  renderNet(world, st, renderAt(6), INTERP_DELAY_MS);
   const e = world.enemies[0];
   assert.ok(Math.abs(e.pos.x - 5) < 1e-9, `halfway between 0 and 10 (got ${e.pos.x})`);
   assert.equal(e.hp, 5, 'health takes the newer value outright — a bar sliding down for 100 ms reads as a bug');
@@ -150,11 +190,12 @@ test('heading interpolates the short way around the circle', () => {
   const st = createNetState();
   const almostFull = Math.PI * 2 - 0.1;
   applySnapshot(world, st, snapOf({
+    tick: 4,
     spawns: [{ id: 7, kind: 'enemy', name: 'Basic pirate ship' }],
     enemies: [[7, 0, 0, almostFull, 20, 1.8, 0]],
-  }), 1000);
-  applySnapshot(world, st, snapOf({ tick: 2, enemies: [[7, 0, 0, 0.1, 20, 1.8, 0]] }), 1100);
-  renderNet(world, st, 1050 + INTERP_DELAY_MS, INTERP_DELAY_MS);
+  }), atOf(4));
+  applySnapshot(world, st, snapOf({ tick: 8, enemies: [[7, 0, 0, 0.1, 20, 1.8, 0]] }), atOf(8));
+  renderNet(world, st, renderAt(6), INTERP_DELAY_MS);
   const h = world.enemies[0].heading;
   // The short way crosses zero: the midpoint is ~2π (or ~0), never ~π.
   const wrapped = ((h % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
@@ -177,7 +218,7 @@ test('past the newest sample the world holds still rather than guessing', () => 
 test('wire events reach the World event queue, with entity ids rehydrated', () => {
   const { world } = clientWorld();
   const st = createNetState();
-  applySnapshot(world, st, snapOf({
+  deliver(world, st, snapOf({
     spawns: [{ id: 7, kind: 'enemy', name: 'Basic pirate ship' }],
     enemies: [[7, 0, 0, 0, 20, 1.8, 0]],
     events: [{ type: 'enemyShieldHit', enemyId: 7, pos: { x: 1, y: 0.6, z: 2 }, broke: false },
@@ -193,7 +234,7 @@ test('wire events reach the World event queue, with entity ids rehydrated', () =
 test('clearNet releases every body', () => {
   const { world, attached } = clientWorld();
   const st = createNetState();
-  applySnapshot(world, st, snapOf({
+  deliver(world, st, snapOf({
     spawns: [{ id: 1, kind: 'enemy', name: 'Basic pirate ship' }, { id: 2, kind: 'bullet' }],
     enemies: [[1, 0, 0, 0, 20, 1.8, 0]], bullets: [[2, 1, 1]],
   }));
@@ -230,28 +271,6 @@ test('END TO END: a real room drives a real client World', () => {
   assert.ok(room.world.enemies.length > 0, 'the fight actually happened (guard against an empty assertion)');
 });
 
-test('a bullet is dead-reckoned into the present, not shown a tenth of a second late', () => {
-  const { world } = clientWorld();
-  const st = createNetState();
-  // Born at x=0 flying +x at 40 u/s — the one entity whose future is exactly known.
-  applySnapshot(world, st, snapOf({
-    spawns: [{ id: 9, kind: 'bullet', projectileColor: 1, class: 'kinetic', fromPlayer: true, x: 0, z: 0, vx: 40, vz: 0 }],
-    bullets: [[9, 0, 0]],
-  }), 1000);
-
-  // 50 ms after that sample, with the usual 100 ms interpolation delay in force. An interpolated bullet
-  // would still be sitting at the muzzle (the render moment is BEFORE its only sample); a dead-reckoned one
-  // has travelled 40 × 0.05 = 2 units.
-  renderNet(world, st, 1050, INTERP_DELAY_MS);
-  assert.ok(Math.abs(world.bullets[0].pos.x - 2) < 1e-6,
-    `flew with its own velocity (got ${world.bullets[0].pos.x})`);
-
-  // …and it is not extrapolated forever if snapshots stop arriving.
-  renderNet(world, st, 1000 + 60_000, INTERP_DELAY_MS);
-  assert.ok(world.bullets[0].pos.x <= 40 * (MAX_EXTRAPOLATION_MS / 1000) + 1e-6,
-    'capped rather than flying off the map on a stall');
-});
-
 test('loot the room collected reaches this World, so a victory can bank it', () => {
   // The gap: the ROOM's Grab fills the room's `pendingLoot`, but the client banks a win from its OWN list,
   // which nothing filled — so every crate picked up in a room was silently lost at the victory screen.
@@ -267,36 +286,6 @@ test('loot the room collected reaches this World, so a victory can bank it', () 
   applySnapshot(world, st, snapOf({ tick: 2, run: { ...snapOf().run, loot: [{ kind: 'weapon', refId: 9 }] } }));
   assert.equal(world.pendingLoot, same, 'still the same array object');
   assert.deepEqual(world.pendingLoot, [{ kind: 'weapon', refId: 9 }]);
-});
-
-test('a rocket is drawn in the present, so its smoke trail does not run ahead of it', () => {
-  // Smoke puffs arrive as EVENTS and are placed where the rocket is NOW; the rocket itself was drawn a
-  // tenth of a second in the past, so the trail led the rocket that was laying it.
-  const { world } = clientWorld();
-  const st = createNetState();
-  applySnapshot(world, st, snapOf({
-    spawns: [{ id: 3, kind: 'rocket', projectileColor: 1, fromPlayer: true, x: 0, z: 0, h: 0 }],
-    rockets: [[3, 0, 0, 0]],
-  }), 1000);
-  // SIX server ticks later — 6 × 1/60 s = exactly 100 ms of simulation, which is what a snapshot interval
-  // looks like. The span is taken from the TICK delta, never from arrival times: snapshots arrive in bursts
-  // and dividing by that gap once inferred a rocket doing 600 u/s.
-  applySnapshot(world, st, snapOf({ tick: 7, rockets: [[3, 0, 10, 0]] }), 1100); // 10 units in 100 ms
-
-  // 50 ms past the newest sample: a present-time rocket has gone another 5 units, an interpolated one
-  // would still be short of the sample it already passed.
-  renderNet(world, st, 1150, INTERP_DELAY_MS);
-  assert.ok(Math.abs(world.rockets[0].pos.z - 15) < 1e-6,
-    `carried on at its own speed (got ${world.rockets[0].pos.z})`);
-
-  // With only one sample there is no velocity to infer — it sits still rather than guessing.
-  const st2 = createNetState();
-  const w2 = clientWorld();
-  applySnapshot(w2.world, st2, snapOf({
-    spawns: [{ id: 3, kind: 'rocket', x: 4, z: 5, h: 1 }], rockets: [[3, 4, 5, 1]],
-  }), 1000);
-  renderNet(w2.world, st2, 1200, INTERP_DELAY_MS);
-  assert.equal(w2.world.rockets[0].pos.z, 5);
 });
 
 test('both shield pools travel — the bar and its purple recharge fill', () => {
@@ -371,34 +360,108 @@ test('a snapshot of cooldowns is harmless to a World that has no fire groups', (
   assert.equal(world.player.groups.gun.cooldown, 0.2);
 });
 
-test('PREDICTION: the ship answers input the server has not acknowledged yet', async () => {
-  // The whole point, stated as a test: hold a key, and the drawn ship turns NOW — not a round trip later.
-  const { createPredictor } = await import('./netsim-predict.js');
-  const { buildCatalog } = await import('../../server/src/sim-host.js');
-  const catalog = buildCatalog('level-0');
-  const ship = [...catalog.shipByName.values()].find((s) => s.type === 'player');
-  const predictor = createPredictor(catalog, { ship, loadout: { mounts: ship.stats.mounts },
-                                               components: ship.components, progression: null });
 
+test('ONE CLOCK: delivery jitter moves nothing', () => {
+  // The measurement this design exists to fix: packets a room emits exactly `snapshotEvery` ticks apart
+  // arrive 50–79 ms apart in real play, and anything drawn from ARRIVAL times inherits that spread. It cost
+  // 7476 breaks in the drawn motion per minute, half of them landing on the frame a packet happened to
+  // arrive. Stated here as an identity: the same fight delivered over a perfect link and a nasty one must
+  // draw the same picture at the same instants.
+  const run = (jitterAt, probe = null) => {
+    const room = createRoom({ levelName: 'level-0', seed: 4242 });
+    const { world } = clientWorld();
+    const st = createNetState();
+    st.jerk = probe;
+    const drawn = [];
+    for (let i = 0; i < 1100; i++) {
+      room.pushInput([{ t: i, k: ['KeyW', 'Space', 'KeyF'], a: null }]);
+      room.stepOnce();
+      if (room.dueForSnapshot()) applySnapshot(world, st, room.takeSnapshot(), jitterAt(room.tick));
+      renderNet(world, st, 1000 + room.tick * MS, INTERP_DELAY_MS);   // identical instants in both runs
+      const shot = [];
+      for (const list of [world.enemies, world.bullets, world.rockets]) {
+        for (const e of list) shot.push(+e.pos.x.toFixed(6), +e.pos.z.toFixed(6));
+      }
+      drawn.push(shot);
+    }
+    return drawn;
+  };
+
+  let seed = 12345;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const probe = createJerkProbe({ maxEvents: 5000 });
+  const clean = run((tick) => 1000 + tick * MS);
+  const nasty = run((tick) => 1000 + tick * MS + rnd() * 24 - 12, probe);
+
+  // Skip the warm-up: the clock is seeded from the first packet, jitter and all, then slews toward the mean
+  // at CLOCK_FOLLOW a packet. During it the timelines differ by that seed's error — a slow drift of a few
+  // milliseconds, not a jerk. What is asserted is the settled state.
+  let worst = 0, frames = 0;
+  for (let i = 700; i < clean.length; i++) {
+    if (clean[i].length !== nasty[i].length) continue;  // spawn/despawn edges are the other tests' business
+    frames++;
+    for (let k = 0; k < clean[i].length; k++) worst = Math.max(worst, Math.abs(clean[i][k] - nasty[i][k]));
+  }
+  assert.ok(frames > 250, `the two runs really are comparable (${frames} frames)`);
+
+  // The two timelines do not coincide exactly, and are not meant to: the clock estimate is a filter over a
+  // noisy observation, so it performs a slow random walk of well under a millisecond — a few hundredths of a
+  // unit on a 40 u/s bullet. On the arrival-time timeline this replaced, the same measurement put 0.83 of a
+  // unit between the two runs, and it arrived in single frames.
+  assert.ok(worst < 0.15, `a jittery link draws effectively the same picture (worst gap ${worst.toFixed(4)} units)`);
+
+  // …and the assertion with teeth: that the drawn motion of the JITTERY run has no discontinuities in it.
+  // The probe is the instrument this was diagnosed with, so it is also the one it is judged by. The same
+  // measurement over the arrival-time timeline reported thousands.
+  const r = probe.report();
+  assert.ok(r.total < 40, `and it is smooth doing it (${r.total} breaks in the drawn motion)`);
+  // Deliberately no assertion about WHERE the survivors land. Half the frames in this run are packet frames,
+  // so with a handful of breaks the attribution is a coin flip — and that it has become meaningless is the
+  // result: on the old timeline half of several thousand breaks landed on packet frames, every time.
+  assert.ok(r.total >= 0);
+});
+
+test('ONE CLOCK: nothing is extrapolated — a stalled link holds still', () => {
+  // Every library that has tried the alternative says the same thing, most bluntly in Colyseus's own source:
+  // "On underrun, hold at the newest sample — don't extrapolate. Extrapolation here is what produced the
+  // 'flickery' feel." Bullets and rockets used to be the exception here, and they were the jerky ones.
   const { world } = clientWorld();
-  world.catalog = catalog;
   const st = createNetState();
-  applySnapshot(world, st, snapOf({ ack: 10 }), 1000);
+  deliver(world, st, snapOf({
+    tick: 4,
+    spawns: [{ id: 9, kind: 'bullet', projectileColor: 1, class: 'kinetic', fromPlayer: true, x: 0, z: 0, vx: 40, vz: 0 }],
+    bullets: [[9, 0, 0]],
+  }));
+  applySnapshot(world, st, snapOf({ tick: 6, bullets: [[9, 40 * 2 * SIM_DT, 0]] }), atOf(6));
 
-  // Nothing unacknowledged: the drawn ship is simply the authoritative one.
-  renderNet(world, st, 1010, INTERP_DELAY_MS, predictor, () => []);
-  const still = world.player.heading;
+  renderNet(world, st, renderAt(6), INTERP_DELAY_MS);
+  const reached = world.bullets[0].pos.x;
+  assert.ok(reached > 1, `it flew while it had samples to fly between (got ${reached})`);
 
-  // Now the player has been holding LEFT for twenty ticks the server has not applied yet.
-  const held = Array.from({ length: 20 }, (_, i) => ({ t: 11 + i, k: ['KeyA'], a: null }));
-  for (let f = 0; f < 8; f++) renderNet(world, st, 1020 + f * 16, INTERP_DELAY_MS, predictor, () => held);
-  assert.ok(Math.abs(world.player.heading - still) > 0.1,
-    `the ship turned on unacknowledged input alone (${still} -> ${world.player.heading})`);
+  // …and now the link dies. Ten seconds of frames, no packets.
+  renderNet(world, st, renderAt(6) + 10_000, INTERP_DELAY_MS);
+  assert.ok(Math.abs(world.bullets[0].pos.x - reached) < 1e-9,
+    `held at its last sample rather than guessing a future (moved ${world.bullets[0].pos.x - reached})`);
+});
 
-  // …and it stands down for an autopilot, where the room is flying to a target this World does not have.
-  world.autopilot.active = true;
-  const beforeAuto = world.player.heading;
-  for (let f = 0; f < 8; f++) renderNet(world, st, 1200 + f * 16, INTERP_DELAY_MS, predictor, () => held);
-  assert.ok(Math.abs(world.player.heading - beforeAuto) < 0.6,
-    'with the autopilot engaged it follows the snapshot instead of predicting');
+test('ONE CLOCK: a spawn is an event on the render timeline too', () => {
+  // Symmetry with the despawn above, and it is not cosmetic: attaching a body when the PACKET arrives means
+  // it stands at its spawn point for the whole interpolation delay before it starts moving — a stutter at
+  // the birth of every bullet and every rocket, which is what "my rockets jerk" turned out to be.
+  const { world, attached } = clientWorld();
+  const st = createNetState();
+  applySnapshot(world, st, snapOf({
+    tick: 8,
+    spawns: [{ id: 5, kind: 'rocket', projectileColor: 1, weaponClass: 'rocket', fromPlayer: true, x: 0, z: 0, h: 0 }],
+    rockets: [[5, 0, 0, 0]],
+  }), atOf(8));
+  assert.equal(world.rockets.length, 0, 'the packet arrived, but the moment it describes has not');
+  assert.equal(attached.length, 0, 'so no mesh was built for a body nobody can see yet');
+
+  renderNet(world, st, renderAt(7), INTERP_DELAY_MS);
+  assert.equal(world.rockets.length, 0, 'still not at tick 7');
+
+  renderNet(world, st, renderAt(8), INTERP_DELAY_MS);
+  assert.equal(world.rockets.length, 1, 'and it appears exactly when the clock reaches the tick it was born on');
+  assert.equal(attached.length, 1);
 });

@@ -71,6 +71,13 @@ digest and the identical seeded-RNG draw count.
 
 ### What is left (in order)
 
+> **The RENDERING half of this brief is superseded by `docs/plans/netsim-one-clock-rendering.md`
+> (2026-08-20, DECISIONS §127).** The client no longer predicts, extrapolates, or draws anything on the
+> packet clock: one tick-based timeline, everything interpolated, spawns and despawns on that timeline too.
+> Slice E's "client-side prediction" below is DELETED rather than done, deliberately. The room, the protocol,
+> the socket and the referee are unaffected, and everything else in this section still stands.
+
+
 **Where this stopped (2026-08-20, end of session).** A room is playable end to end and was signed off by
 playtest: the campaign runs, missions complete, loot banks, progression advances, and the ship is predicted
 locally. **No known defects** — the last one (the rocket cooldown readout) was fixed on 2026-08-20;
