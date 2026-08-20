@@ -16,6 +16,7 @@ import { generateMissions } from './missions.js';
 import { mountAdmin } from './admin.js';
 import { sendVerificationEmail, verificationUrl, sendPasswordResetEmail, passwordResetUrl } from './ses.js';
 import { putTrace, getTrace } from './s3.js';
+import { createTicketStore } from './netsim/tickets.js';
 import crypto from 'node:crypto';
 
 const SUPPORTED_LANGUAGES = ['en', 'ru']; // mirror of client SUPPORTED (DECISIONS §10)
@@ -315,6 +316,23 @@ export async function createApp() {
     res.json(level);
   }));
 
+  // ---------- Netsim handshake (docs/plans/server-authoritative-sim.md §5) ----------
+  // A browser cannot set `Authorization` on a WebSocket handshake and `Origin` is not a security control,
+  // so the socket is gated by a single-use ticket minted here, over the ordinary HTTP API, and spent within
+  // 30 s at `/ws?ticket=…`. The store is exposed on the app so the boot code (and the tests) can hand the
+  // same instance to `attachNetsim`.
+  const wsTickets = createTicketStore();
+  app.set('wsTickets', wsTickets);
+  app.post('/api/ws-ticket', rateLimit({ windowMs: 60_000, max: 60 }), wrap(async (req, res) => {
+    // Netsim is opt-in and single-player still runs locally (D1), so this deliberately accepts the same
+    // anonymous `playerId` every other player-scoped route accepts today — the ticket raises the bar from
+    // "anyone may open a socket" to "a caller that just talked to our API may", which is the boundary this
+    // cut needs. When accounts become the norm, bind it to `getSessionPlayer` instead and nothing else moves.
+    const playerId = String((req.body || {}).playerId || '').trim();
+    if (!playerId) return res.status(400).json({ error: 'playerId (string) required' });
+    res.json(wsTickets.issue(playerId));
+  }));
+
   // ---------- Authentication (DECISIONS §11) ----------
   const requireAuth = makeRequireAuth(getSessionPlayer);
   const authLimiter = rateLimit({ windowMs: 60_000, max: 10 }); // per-IP, per-minute on auth routes
@@ -572,10 +590,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const server = app.listen(PORT, () => {
     console.log(`Space game server running: http://localhost:${PORT}`);
   });
+  // The netsim WebSocket rides the same listener (a socket arrives as an `upgrade` on the raw server, not
+  // through Express). Nothing changes for a client that never asks for a ticket — single-player stays local.
+  const { attachNetsim } = await import('./netsim/socket.js');
+  const netsim = attachNetsim(server, { tickets: app.get('wsTickets') });
   // Graceful shutdown: on stop, stop accepting new connections and let in-flight
   // requests finish before exiting -> no dropped requests when the old container is
   // removed during a zero-downtime rollout.
   const shutdown = () => {
+    netsim.closeAll(); // a live room holds an open socket; close it or `server.close` never resolves
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 8000).unref(); // hard cap
   };

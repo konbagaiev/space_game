@@ -24,3 +24,14 @@ export const SPAWN_GROW_TIME = 1.0;
 export const ARENA = 360;            // 1.5× the original 240 — a bigger combat zone
 export const OOB_WARN_DELAY = 2.0;   // seconds outside before the HUD warning shows
 export const OOB_RETURN_TIME = 30.0; // seconds outside before the auto warp-back
+
+// The single tunable sim tick rate. ALL sim stepping — live play, ?record/?playback, ?bench, the Level-0
+// cutscene, the headless referee and a netsim room — advances at this fixed step, so a tick maps 1:1 across
+// every host and every recording. It lives here rather than beside the ?bench flag because **both hosts
+// must agree on it or they are not running the same simulation**: integration is dt-dependent
+// (`vel *= 1 - DRAG*dt`, thrust accumulation, `spawnAge`), so 30 Hz in Node against 60 Hz in the browser
+// produces different outcomes for identical input, which destroys the divergence oracle (DECISIONS §118).
+// Lowering it is therefore one edit HERE, applying to both hosts at once. Changing it changes every NEW
+// recording's dt; old traces carry their own dt and still replay at the rate they were recorded.
+export const TICK_HZ = 60;
+export const SIM_DT = 1 / TICK_HZ;
