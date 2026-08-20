@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalNetsim, wsUrl, createUplink, connectNetsim, netsimDefersTo, INPUT_BATCH } from './netsim.js';
+import { evalNetsim, wsUrl, createUplink, connectNetsim, netsimDefersTo, netsimDeferReason, INPUT_BATCH } from './netsim.js';
 import { SIM_DT } from './sim-core/consts.js';
 import { snapshotInput } from './replay.js';
 
@@ -122,4 +122,17 @@ test('netsim defers to any record/playback session, the intro cutscene included'
   assert.equal(netsimDefersTo({ record: null, playback: null }), false, 'a plain session is netsim\'s to drive');
   assert.equal(netsimDefersTo({ record: null, playback: { id: 'x' } }), true, '?playback / the intro owns the tick');
   assert.equal(netsimDefersTo({ record: { level: 'level-0' }, playback: null }), true, '?record owns it too');
+});
+
+test('netsim stands aside for a side mission, and says so', () => {
+  // A side mission's descriptor is generated per player and is in no room's level table. The socket opens
+  // during the MENU, when activeMission is still null, and the mission is picked AFTER — so deciding this
+  // once at connect let a room start the campaign level while the tab flew a side mission.
+  assert.equal(netsimDeferReason({ sideMission: true }), 'side-mission');
+  assert.equal(netsimDeferReason({ playback: { id: 'x' } }), 'replay');
+  assert.equal(netsimDeferReason({ record: { level: 'level-0' } }), 'replay');
+  assert.equal(netsimDeferReason({}), null, 'a plain campaign run is netsim\'s to drive');
+  // A replay wins the reason when both are true — it is the more fundamental conflict.
+  assert.equal(netsimDeferReason({ playback: { id: 'x' }, sideMission: true }), 'replay');
+  assert.equal(netsimDefersTo({ sideMission: true }), true, 'the boolean shorthand agrees');
 });

@@ -6,7 +6,7 @@
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
 import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
-import { evalNetsim, connectNetsim, netsimDefersTo } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
+import { evalNetsim, connectNetsim, netsimDeferReason } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
@@ -85,6 +85,7 @@ let netRoomPaused = false;  // last pause state pushed to the room (so we send o
 let netStarted = false;     // the room has been told to begin (take-off), as opposed to merely joined
 let netRunAt = null;        // G.gameStartTime of the run the room is playing (a new one means restart it)
 let netLevel = null;        // the level the current room was created for (a change means reconnect)
+let netDeferredBy = null;   // 'replay' | 'side-mission' | null — why netsim is standing aside this frame
 const netState = createNetState();
 const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
@@ -812,16 +813,6 @@ async function startNetsim() {
     // centre — or the two disagree about where the world is. `CATALOG.levelName` is the seed name the
     // client resolved at boot; an explicit `?netsim=level-N` overrides it deliberately.
     //
-    // A SIDE MISSION has no name a room can resolve: its descriptor is generated per player by
-    // `server/src/missions.js` and never appears in `catalog_seed.js` LEVELS. Rather than quietly running
-    // the campaign level in the room while this tab shows the side mission — the same "the enemy is in the
-    // wrong place" failure — refuse and play locally. Side missions over the network are an explicit
-    // non-goal for this cut (plan §6).
-    if (G.activeMission && !NETSIM.level) {
-      bail(new Error('a side mission cannot be run in a room yet — pick the campaign, or name a level with ?netsim=level-N'));
-      netConnecting = false;
-      return;
-    }
     const level = NETSIM.level || CATALOG.levelName;
     netLevel = level;
     netLink = await connectNetsim({
@@ -851,9 +842,13 @@ function animate() {
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
   // A record/playback session — the intro cutscene included — replays the LOCAL sim and owns the tick, so
   // netsim stands aside for as long as one is running (see netsimDefersTo).
-  const replayOwnsLoop = netsimDefersTo({ record: REC, playback: rs.play });
-  if (netsimActive && replayOwnsLoop && netLink) dropNetsim();
-  const netsimDriving = netsimActive && !replayOwnsLoop;
+  // Why a room is not driving this frame (null = it is). Re-decided every frame on purpose — see
+  // netsimDeferReason; both reasons arrive AFTER the socket is already open.
+  netDeferredBy = netsimDeferReason({
+    record: REC, playback: rs.play, sideMission: !!G.activeMission && !NETSIM.level,
+  });
+  const netsimDriving = netsimActive && !netDeferredBy;
+  if (netsimActive && netLink && netDeferredBy) dropNetsim();
   const live = G.gameStarted && !BENCH && !REC && !rs.play && !netsimDriving; // real player session → deterministic accumulator loop (always-on recording)
   if (netsimDriving) {
     // The server owns the fight: no local sim step at all. Send this frame's input, draw the world as the
@@ -1018,6 +1013,7 @@ if (NETSIM) {
     get active() { return netsimActive; },
     get connected() { return !!netLink; },
     get started() { return netStarted; },
+    get deferredBy() { return netDeferredBy; }, // why we are on the LOCAL sim right now (null = we are not)
     get tick() { return netState.lastTick; },
     get level() { return (netState.welcome && netState.welcome.level) || NETSIM.level; },
     get welcome() { return netState.welcome; }, // what the room said about this fight when we joined

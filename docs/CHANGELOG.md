@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **netsim's side-mission guard was decided too early, so a room could fight the wrong level.** The refusal
+  ran once inside `startNetsim()` — but the socket opens during the MENU, when `activeMission` is still
+  null, and the player picks the mission afterwards. A room therefore started the CAMPAIGN level while the
+  tab flew a side mission: the "enemy in the wrong place" failure a third time, from checking a condition
+  once that arrives later. The rule is now `netsimDeferReason({record, playback, sideMission})`, evaluated
+  EVERY frame and returning why netsim is standing aside (`'replay'` / `'side-mission'` / null). Deferring
+  is no longer disabling either: the old path killed netsim for the whole tab, this one drops the link and
+  reconnects once the reason clears. `window.__netsim.deferredBy` reports it for a human.
+
 - **Session replays were fiction for any player with skill points — trace format bumped to v4.** Watching
   real player replays in the admin viewer, the pilot looked like it was "fighting ghosts": shooting where
   nothing was. Enemy spawning was fine; the trace was missing the **skill allocation**. `makeTrace` recorded

@@ -3047,10 +3047,17 @@ world and starts the level script again inside the same socket, with the tick co
 client drops any snapshot not newer than the last one applied, so rewinding it would make the next run
 invisible). A change of LEVEL reconnects instead, since the room is built around one.
 
-**netsim defers to any replay.** `?record`, `?playback` and the Level-0 intro cutscene — which rides the
-same machinery, armed programmatically at bootstrap — replay the local simulation deterministically and own
-the tick. While one is running netsim joins no room and drops any it has (`netsimDefersTo`), then connects
-once it ends. Without this the intro's frozen card sat over a server fight that kept running.
+**netsim defers, per frame, and says why.** `netsimDeferReason({record, playback, sideMission})` returns
+`'replay'`, `'side-mission'` or null, and the loop consults it every frame — deferring drops the link and
+reconnects once the reason clears, rather than disabling netsim for the tab.
+- **`'replay'`** — `?record`, `?playback` and the Level-0 intro cutscene (which rides the same machinery,
+  armed programmatically at bootstrap) replay the local simulation deterministically and own the tick.
+  Without this the intro's frozen card sat over a server fight that kept running.
+- **`'side-mission'`** — a side mission's descriptor is generated per player by `missions.js` and appears in
+  no room's level table, so a room has nothing to fight.
+**Both reasons arrive AFTER the socket is open**, which is why the check cannot live at connect time: the
+socket opens during the menu, the mission is chosen after, and deciding once let a room start the campaign
+level under a side-mission run. `window.__netsim.deferredBy` reports the current reason.
 
 **Server side — `server/src/netsim/`:**
 - `room.js` — one World, one player. Deliberately **clock-free**: `stepOnce()` advances one tick,

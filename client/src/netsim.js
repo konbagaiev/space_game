@@ -42,16 +42,31 @@ export function evalNetsim(search) {
   return { level, seed };
 }
 
-// Does a record/playback session own the tick right now?
+// Why netsim is NOT driving this frame — or null when it is. Returns a reason string, so the console
+// handle can answer "why am I not in a room" without anyone reading the loop.
 //
-// `?record`, `?playback` AND the Level-0 intro cutscene (which rides the same machinery, armed
-// programmatically at bootstrap) all replay the LOCAL simulation deterministically from a seed and a list
-// of inputs. A server room has no part in that: it would step its own fight behind the cutscene, which is
-// exactly what shipped — the card froze the replay while the room kept running underneath it.
+// This must be re-evaluated EVERY FRAME, not once at connect. Both reasons arrive after the socket is
+// already open, and both were shipped as bugs by checking too early:
 //
-// So netsim DEFERS rather than disables: no socket while a replay owns the loop, and any existing one is
-// dropped. When the intro finishes and `rs.play` clears, netsim connects for the real fight.
-export function netsimDefersTo({ record, playback }) { return !!(record || playback); }
+//   'replay'      — `?record`, `?playback`, and the Level-0 intro cutscene, which rides the same machinery
+//                   and is armed programmatically at bootstrap. They replay the LOCAL simulation from a
+//                   seed and a list of inputs and own the tick. A room alongside one steps a second,
+//                   invisible fight: the cutscene card froze the replay while the server kept simulating.
+//   'side-mission'— a side mission's descriptor is generated per player by `missions.js` and appears in no
+//                   room's level table, so there is nothing for a room to fight. The socket opens during
+//                   the MENU, when `activeMission` is still null, and the player picks the mission after —
+//                   so checking only at connect let the room start the CAMPAIGN level while the tab flew a
+//                   side mission, which is the "enemy in the wrong place" failure all over again.
+//
+// Deferring is not disabling: the link is dropped and netsim reconnects once the reason clears.
+export function netsimDeferReason({ record, playback, sideMission }) {
+  if (record || playback) return 'replay';
+  if (sideMission) return 'side-mission';
+  return null;
+}
+
+// Back-compat shorthand for the boolean form.
+export function netsimDefersTo(state) { return netsimDeferReason(state) !== null; }
 
 // Build the socket URL from the page's origin (or the configured API base), swapping the scheme. Kept pure
 // so the mapping http→ws / https→wss is testable; getting it wrong on the itch build would be a silent
