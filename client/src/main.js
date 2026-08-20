@@ -8,6 +8,7 @@ import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded G
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
 import { evalNetsim, connectNetsim, netsimDeferReason } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
+import { createPredictor } from './netsim-predict.js';
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
@@ -86,6 +87,7 @@ let netStarted = false;     // the room has been told to begin (take-off), as op
 let netRunAt = null;        // G.gameStartTime of the run the room is playing (a new one means restart it)
 let netLevel = null;        // the level the current room was created for (a change means reconnect)
 let netDeferredBy = null;   // 'replay' | 'side-mission' | null — why netsim is standing aside this frame
+let netPredictor = null;    // client-side prediction of the local ship (netsim-predict.js)
 let netDown = false;        // the socket died under us: local for THIS run, retry on the next one
 let netDownRunAt = null;    // the run it died in (G.gameStartTime), so the retry waits for a different one
 const netState = createNetState();
@@ -922,7 +924,14 @@ function animate() {
     if (netLink && wantPaused) netLink.keepAlive(); // a paused client sends no input; don't look abandoned
     if (netLink && netStarted && !wantPaused && !netsimPaused) {
       netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
-      renderNet(world, netState, performance.now());
+      // Prediction needs the account record the ROOM built its ship from; built lazily because
+      // `G.activeShip` arrives with the bootstrap fetch, after the socket may already be open.
+      if (!netPredictor && G.activeShip && G.activeShip.ship) {
+        netPredictor = createPredictor(CATALOG, G.activeShip);
+        if (!netPredictor) console.warn('[netsim] no prediction: the account record is not usable');
+      }
+      renderNet(world, netState, performance.now(), undefined, netPredictor,
+                (ack) => (netLink ? netLink.uplink.since(ack) : []));
       setGrabTarget(netState.grabTarget); // the room owns the Grab; this is only its beam
       renderTick(dt);
     }
@@ -1089,6 +1098,7 @@ if (NETSIM) {
     get started() { return netStarted; },
     get deferredBy() { return netDeferredBy; }, // why we are on the LOCAL sim right now (null = we are not)
     get down() { return netDown; },             // the socket died; local until the next run
+    get predicting() { return !!netPredictor; },
     get tick() { return netState.lastTick; },
     get level() { return (netState.welcome && netState.welcome.level) || NETSIM.level; },
     get welcome() { return netState.welcome; }, // what the room said about this fight when we joined

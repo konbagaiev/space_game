@@ -99,7 +99,12 @@ export function createUplink({ send, batch = INPUT_BATCH }) {
   let tick = 0;
   let pending = [];
   let lastSent = null; // the most recent batch, for the ?netsim console handle
+  // Recent input, kept so client-side prediction can replay whatever the room has not acknowledged yet.
+  // Bounded: past a second of unacked input the connection is in trouble and a longer tail buys nothing.
+  const history = [];
   return {
+    // Every input tick after `t`, oldest first. `t == null` means nothing has been acknowledged yet.
+    since(t) { return t == null ? history.slice() : history.filter((x) => x.t > t); },
     get tick() { return tick; },
     get pendingCount() { return pending.length; },
     get lastSent() { return lastSent; },
@@ -112,7 +117,10 @@ export function createUplink({ send, batch = INPUT_BATCH }) {
       let steps = 0;
       while (acc >= SIM_DT && steps < 6) {
         const s = snapshotInput(keys, touchAim);
-        pending.push({ t: tick++, k: s.k, a: s.t });
+        const snapshotTick = { t: tick++, k: s.k, a: s.t };
+        pending.push(snapshotTick);
+        history.push(snapshotTick);
+        if (history.length > 180) history.splice(0, history.length - 180);
         acc -= SIM_DT;
         steps++;
       }

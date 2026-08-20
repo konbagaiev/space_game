@@ -323,3 +323,35 @@ test('both shield pools travel — the bar and its purple recharge fill', () => 
   assert.equal(world.enemies[0]._shieldValue, 10, 'refilled in one step, as the sim did it');
   assert.equal(world.enemies[0]._shieldRechargeAccum, 0);
 });
+
+test('PREDICTION: the ship answers input the server has not acknowledged yet', async () => {
+  // The whole point, stated as a test: hold a key, and the drawn ship turns NOW — not a round trip later.
+  const { createPredictor } = await import('./netsim-predict.js');
+  const { buildCatalog } = await import('../../server/src/sim-host.js');
+  const catalog = buildCatalog('level-0');
+  const ship = [...catalog.shipByName.values()].find((s) => s.type === 'player');
+  const predictor = createPredictor(catalog, { ship, loadout: { mounts: ship.stats.mounts },
+                                               components: ship.components, progression: null });
+
+  const { world } = clientWorld();
+  world.catalog = catalog;
+  const st = createNetState();
+  applySnapshot(world, st, snapOf({ ack: 10 }), 1000);
+
+  // Nothing unacknowledged: the drawn ship is simply the authoritative one.
+  renderNet(world, st, 1010, INTERP_DELAY_MS, predictor, () => []);
+  const still = world.player.heading;
+
+  // Now the player has been holding LEFT for twenty ticks the server has not applied yet.
+  const held = Array.from({ length: 20 }, (_, i) => ({ t: 11 + i, k: ['KeyA'], a: null }));
+  for (let f = 0; f < 8; f++) renderNet(world, st, 1020 + f * 16, INTERP_DELAY_MS, predictor, () => held);
+  assert.ok(Math.abs(world.player.heading - still) > 0.1,
+    `the ship turned on unacknowledged input alone (${still} -> ${world.player.heading})`);
+
+  // …and it stands down for an autopilot, where the room is flying to a target this World does not have.
+  world.autopilot.active = true;
+  const beforeAuto = world.player.heading;
+  for (let f = 0; f < 8; f++) renderNet(world, st, 1200 + f * 16, INTERP_DELAY_MS, predictor, () => held);
+  assert.ok(Math.abs(world.player.heading - beforeAuto) < 0.6,
+    'with the autopilot engaged it follows the snapshot instead of predicting');
+});

@@ -3152,8 +3152,23 @@ path deposits them exactly as in single-player — the client is still what bank
 list before, so every crate picked up in a room was silently lost at the victory screen. The special
 last-kill reward deposits nothing by design (the real copy is installed server-side on victory).
 
-**What it does not do yet.** No client-side prediction (Slice E), so the local ship answers about 100 ms
-late, plus ~50 ms of input queueing. No lag compensation (D5), so aim-assist selection resolves against the
+**Client-side prediction (Slice E).** The local ship is not drawn from snapshots — it is SIMULATED locally
+and corrected. `netsim-predict.js` holds a shadow World containing nothing but the player (no enemies, no
+level script, no host, events discarded) and steps it with **the real `stepPlayer`** — predicting with a
+second, simplified movement model is how prediction rots, and sharing the code is the whole reason
+`sim-core` exists. Every rendered frame it re-seeds the shadow from the newest authoritative player block
+and replays the input the room has not acknowledged (`ack` on every snapshot; the uplink keeps the recent
+ticks), so the ship answers the controls at once rather than a round trip later. Re-simulating from scratch
+each frame rather than stepping incrementally makes the whole thing idempotent — there is no accumulated
+local state to get out of step. Verified against a real room: 120 ticks of thrusting and turning agree to
+1e-9. It **stands down** when the ship is not the player's to author — an engaged autopilot is flying to a
+target the shadow does not have, and a dead ship is not being authored — where the snapshot is simply the
+better answer. Convergence uses a much shorter time constant while predicting
+(`VIEW_TAU_PREDICTED_S`): smoothing exists to absorb the server disagreeing, and must not also smooth the
+player's own input, which is already correct.
+
+**What it does not do yet.** Bullets are still spawned by the room, so a shot appears when the snapshot
+carrying it does rather than on the keypress (the roadmap's "don't stream bullets" — the next slice). No lag compensation (D5), so aim-assist selection resolves against the
 server's present rather than what the client saw. No reconnect, no second player, no delta encoding, and
 the economy is still banked by the client's own `POST /api/games`. The Grab's pull beam draws from the target id the room reports (only the room knows what is being pulled). A failed handshake **falls back to simulating
 locally** rather than leaving a ship that will not answer.

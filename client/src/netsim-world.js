@@ -24,6 +24,7 @@ import { Vec3 } from './sim-core/vec.js';
 import { makeEnemyShell } from './sim-core/ship-entity.js';
 import { shortestAngleDelta } from './sim-core/steering.js';
 import { BULLET_PLANE_Y, SIM_DT } from './sim-core/consts.js';
+import { MAX_REPLAY_TICKS } from './netsim-predict.js';
 
 // How far a dead-reckoned projectile may be advanced past its newest sample before it is left alone. If
 // snapshots stall, a bullet extrapolated indefinitely flies off across the map and then snaps back.
@@ -36,6 +37,10 @@ export const INTERP_DELAY_MS = 100;
 // result is frame-rate independent. Small enough that the ship never feels detached from the server;
 // large enough to absorb a snapshot's worth of correction without a visible step.
 export const VIEW_TAU_S = 0.08;
+// …and a much shorter one while PREDICTING. Smoothing exists to absorb the server disagreeing with us; it
+// must not also be smoothing the player's own input, which is already correct the instant it is pressed.
+// A predicted pose therefore converges nearly at once, leaving just enough give to ease in a correction.
+export const VIEW_TAU_PREDICTED_S = 0.03;
 
 // Finite differences are taken over the SERVER TICK span, never over arrival times. Snapshots arrive in
 // bursts — two can land in the same millisecond after a slow frame — and dividing by that gap produced an
@@ -59,6 +64,11 @@ export function createNetState() {
     // from the samples because it must be a smooth function of real time, not of snapshot arrivals.
     view: null,        // { x, z, h } | null until the first snapshot
     viewAt: 0,         // when `view` was last advanced
+    // The newest authoritative player block and the tick it acknowledged — the state client-side
+    // prediction re-simulates from (netsim-predict.js).
+    playerBlock: null,
+    ack: null,
+    arena: { x: 0, z: 0 },
     history: [],       // [{ at, tick }] — arrival times, for choosing the render moment
     lastTick: -1,      // newest server tick applied (an out-of-order snapshot is dropped)
     welcome: null,
@@ -154,8 +164,11 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
     state.byId.delete(id); state.kinds.delete(id); state.samples.delete(id);
   }
 
+  state.ack = snap.ack;
+  if (snap.arena) state.arena = { x: snap.arena.x, z: snap.arena.z };
   const p = snap.player;
   if (p) {
+    state.playerBlock = p;
     pushSample(state.playerSamples, { at, tick: snap.tick, x: p.x, z: p.z, h: p.h, sc: p.sc, vx: p.vx, vz: p.vz });
     // Non-positional player state is applied at once: a health bar lagging 100 ms behind the hull it
     // describes reads as a bug, while a position lagging 100 ms reads as smooth.
@@ -246,7 +259,10 @@ function bracket(samples, t) {
 }
 
 // Write the interpolated transforms into the World, ready for `syncMeshes`. Called once per rendered frame.
-export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY_MS) {
+// `predictor` + `unacked` are optional: without them the ship is drawn from the snapshot alone, which is
+// what single-player-free clients and the tests do.
+export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY_MS,
+                          predictor = null, unacked = () => []) {
   const t = now - delayMs;
 
   for (const [id, e] of state.byId) {
@@ -322,11 +338,24 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
     const span = prev ? sampleSpan(prev, last) : 0;
     const omega = span > 0 ? shortestAngleDelta(prev.h, last.h) / span : 0;
     const el = Math.min(now - last.at, MAX_EXTRAPOLATION_MS) / 1000;
-    const target = {
+    let predicting = false;
+    let target = {
       x: last.x + (last.vx || 0) * el,
       z: last.z + (last.vz || 0) * el,
       h: last.h + omega * el,
     };
+    // CLIENT-SIDE PREDICTION. Where extrapolation guesses the ship's future from its last reported motion,
+    // prediction KNOWS it: it re-simulates the player's own unacknowledged input through the same
+    // `sim-core` step the room runs. The result is the ship answering the controls at once instead of a
+    // round trip later. It stands down whenever the ship is not the player's to author (autopilot, death),
+    // where the snapshot is simply the better answer.
+    if (predictor && state.playerBlock && predictor.predictable(world.autopilot, world.player.alive)) {
+      predictor.reset(state.playerBlock, world.autopilot, state.arena);
+      const pending = unacked(state.ack);
+      for (let i = Math.max(0, pending.length - MAX_REPLAY_TICKS); i < pending.length; i++) predictor.step(pending[i]);
+      target = predictor.pose;
+      predicting = true;
+    }
     if (!state.view) { state.view = { ...target }; state.viewAt = now; }
     const frameDt = Math.max(0, Math.min((now - state.viewAt) / 1000, 0.1));
     state.viewAt = now;
@@ -334,7 +363,7 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
     v.x += (last.vx || 0) * frameDt;      // integrate first, so motion is continuous at frame rate…
     v.z += (last.vz || 0) * frameDt;
     v.h += omega * frameDt;
-    const k = 1 - Math.exp(-frameDt / VIEW_TAU_S); // …then converge on the server's truth
+    const k = 1 - Math.exp(-frameDt / (predicting ? VIEW_TAU_PREDICTED_S : VIEW_TAU_S)); // …then converge
     v.x += (target.x - v.x) * k;
     v.z += (target.z - v.z) * k;
     v.h += shortestAngleDelta(v.h, target.h) * k;

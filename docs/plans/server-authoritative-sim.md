@@ -90,10 +90,16 @@ sends keys, not a crosshair, and fire direction comes from the ship's nose, whic
 itself. With auto-aim gone, `touchAim` is the only remaining input whose meaning depends on what the client
 saw, and it is a heading, not a target.
 
-**3. Slice E — client-side prediction.** The client keeps its unacked inputs, reseeds its World from each
-snapshot and re-runs them through the same `sim-core`. That is exactly what `replay.js` already does
-(simulate from a state + a list of inputs), applied per frame. `ack` is already on every snapshot and the
-uplink already numbers its ticks, so the plumbing is in place.
+**3. Slice E — client-side prediction.** ✅ DONE 2026-08-20 for the ship's MOTION
+(`client/src/netsim-predict.js`): a shadow World holding only the player, stepped by the real `stepPlayer`,
+re-seeded from the newest snapshot each frame and replayed forward over the unacknowledged input. Agrees
+with a real room to 1e-9 over 120 ticks. Stands down for an autopilot or a dead ship.
+
+**What is left of it: local BULLETS.** A shot still appears when the snapshot carrying it does, rather than
+on the keypress. That is the roadmap's "don't stream bullets": the client fires locally and flies the
+projectile deterministically, the room stops streaming bullet rows, and the server keeps deciding hits. It
+is the same machinery — the predictor already runs `stepPlayer`, which fires — so the work is mostly in
+suppressing the double (server bullets AND local ones) and in not double-playing the `fire` sound.
 
 **4. Seal the economy** (the payoff D1 promised, still a separate slice): `POST /api/games` is
 client-authoritative, the client already uploads every session as an input trace, and `runTrace()` can

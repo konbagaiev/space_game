@@ -5,6 +5,19 @@
 
 ## 2026-08-20
 
+- **Slice E: the local ship is predicted, not watched.** In a room the ship you fly was drawn from
+  snapshots, so it answered the controls a round trip late — and the ship is the one thing whose motion the
+  player is authoring rather than watching. `client/src/netsim-predict.js` holds a shadow World containing
+  nothing but the player and steps it with **the real `stepPlayer`**: predicting with a second, simplified
+  movement model is how prediction rots, and sharing the code is the entire reason `sim-core` exists. Each
+  rendered frame it re-seeds from the newest authoritative player block and replays whatever the room has
+  not acknowledged, which makes the correction idempotent — no accumulated local state to fall out of step.
+  It stands down for an autopilot or a dead ship, where the room is flying to something the shadow does not
+  have. Verified against a real room in-process: 120 ticks of thrusting and turning agree to **1e-9**, and
+  a test asserts the drawn ship turns on unacknowledged input alone.
+  Smoothing also had to learn the difference: it absorbs the SERVER disagreeing, and must not also smooth
+  the player's own input, so a predicted pose converges on a much shorter time constant.
+
 - **The shield bar's purple fill was wrong in a room — and so was every enemy's shield.** The HUD draws the
   blue strip from `_shieldValue` and the PURPLE fill from `_shieldRechargeAccum / rechargeSec`, and neither
   pool was on the wire. The player's recharge fill therefore never moved, and an enemy's ghost kept the
