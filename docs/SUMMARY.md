@@ -3161,8 +3161,10 @@ Measured on the `?netjerk` harness (60 s of fight, delivery jitter captured from
 the drawn motion, none on a packet frame**, against 7476 (half of them on packet frames) for the four-clock
 design this replaced. Rationale and sources: `docs/plans/netsim-one-clock-rendering.md`, DECISIONS §127.
 
-**`?netjerk` — the drawn-motion probe** (`client/src/netsim-jerk.js`). A diagnostic, off unless the flag is
-on. It reads the poses `renderNet` writes and records every discontinuity together with the delivery
+**The drawn-motion probe** (`client/src/netsim-jerk.js`). **On by default on a local dev host**
+(`localhost`/`127.0.0.1`) — a diagnostic that has to be remembered is off during the run that mattered, which
+happened twice. `?netjerk` forces it on anywhere (a deployed build, a phone); `?netjerk=0` forces it off. It
+never touches the picture. It reads the poses `renderNet` writes and records every discontinuity together with the delivery
 fingerprint at that instant: whether a packet was applied on that frame, the arrival gap, the tick gap, and
 the time/tick span between the two samples the object is drawn from. `__netsim.jerk.report()` returns the
 tally (`byKind`, `byCause`, arrival-gap and frame-time percentiles, the nose-step and step-change

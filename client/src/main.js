@@ -82,11 +82,18 @@ const netsimActive = !!NETSIM; // the flag is on. NEVER cleared — an unavailab
 // `?netjerk` — a diagnostic that watches the poses renderNet writes and reports every break in them, with
 // the delivery fingerprint at that instant. Read it from the console: `__netsim.jerk.report()`. Off by
 // default: it walks every drawn entity per frame, and it answers a question, it is not a feature.
-// Matched against the raw query rather than through URLSearchParams, which is strict about the exact
-// parameter NAME: a URL that picked up a trailing comma on its way through a chat window becomes
-// `&netjerk,` and `has('netjerk')` is then false, so the probe silently never arms. A diagnostic flag that
-// is hard to type correctly is a diagnostic flag that does not get used.
-const NETJERK = typeof location !== 'undefined' && /(^|[?&])netjerk\b/i.test(location.search);
+// The drawn-motion probe (netsim-jerk.js). ON BY DEFAULT while developing locally, because a diagnostic you
+// have to remember to switch on is a diagnostic that is off during the run that mattered — twice already,
+// once to a stray comma in the URL and once to simply not typing it. It costs a walk over the drawn entities
+// per frame and records only discontinuities, and it never touches the picture.
+//
+// `?netjerk` forces it on anywhere (a deployed build, a phone); `?netjerk=0` forces it off. Matched against
+// the raw query rather than through URLSearchParams, which is strict about the exact parameter name.
+const netjerkFlag = typeof location !== 'undefined' && /(^|[?&])netjerk(=([^&]*))?/i.exec(location.search);
+const netjerkOff = !!(netjerkFlag && /^(0|false|off)$/i.test(netjerkFlag[3] || ''));
+const LOCAL_HOST = typeof location !== 'undefined'
+  && /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(location.hostname || '');
+const NETJERK = !netjerkOff && (!!netjerkFlag || LOCAL_HOST);
 const perfNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 let netLink = null;           // the socket + uplink, once connected
 let netConnecting = false;
@@ -163,7 +170,8 @@ if (NETJERK) {
         + `  arrivalGap ${ev.arrivalGapMs}ms tickGap ${ev.tickGap} sampleSpan ${ev.sampleSpanMs}ms/${ev.sampleTickGap}t`);
     },
   });
-  console.info('[netjerk] probe armed — play, then run __netsim.jerk.report()');
+  console.info(`[netjerk] probe armed${netjerkFlag ? '' : ' (local dev — ?netjerk=0 to silence it)'}`
+    + ' — dying writes the record to the server; __netsim.jerk.report() for the tally');
 }
 const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)

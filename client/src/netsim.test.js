@@ -190,13 +190,29 @@ test('a socket that dies on its own DOES notify', async () => {
 // The ?netjerk flag is matched against the raw query, not through URLSearchParams — see main.js. A flag a
 // human has to retype from a chat window will pick up punctuation, and a diagnostic that silently does not
 // arm is worse than no diagnostic. Kept here as the contract, next to the other flag parsing.
-test('the netjerk flag survives the punctuation a URL picks up in transit', () => {
-  const armed = (search) => /(^|[?&])netjerk\b/i.test(search);
-  assert.equal(armed('?netsim=1&netjerk'), true);
-  assert.equal(armed('?netsim=1&netjerk,'), true, 'a trailing comma is what actually happened');
-  assert.equal(armed('?netjerk&netsim=1'), true);
-  assert.equal(armed('?netjerk=1'), true);
-  assert.equal(armed('?netsim=1'), false);
-  assert.equal(armed(''), false);
-  assert.equal(armed('?nonetjerk=1'), false, 'and it is not matched inside another name');
+// The drawn-motion probe arms itself on a local dev host and takes a flag everywhere else — the rule lives
+// in main.js, which no test can import, so the predicate is mirrored here. It exists because a diagnostic
+// that has to be switched on by hand was off for both of the runs that mattered: once because the URL had
+// picked up a trailing comma, once because it simply was not typed.
+const netjerkArmed = (search, hostname) => {
+  const m = /(^|[?&])netjerk(=([^&]*))?/i.exec(search);
+  const off = !!(m && /^(0|false|off)$/i.test((m[3] || '')));
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(hostname || '');
+  return !off && (!!m || local);
+};
+
+test('the netjerk probe is on by default locally, and off in the wild without asking', () => {
+  assert.equal(netjerkArmed('?netsim=1', 'localhost'), true, 'no flag needed while developing');
+  assert.equal(netjerkArmed('', '127.0.0.1'), true);
+  assert.equal(netjerkArmed('?netsim=1', 'vega.tenony.com'), false, 'and never a cost a player pays silently');
+  assert.equal(netjerkArmed('?netsim=1&netjerk', 'vega.tenony.com'), true, 'unless it is asked for');
+});
+
+test('the netjerk flag survives the punctuation a URL picks up in transit, and can be switched off', () => {
+  assert.equal(netjerkArmed('?netsim=1&netjerk,', 'vega.tenony.com'), true, 'a trailing comma is what actually happened');
+  assert.equal(netjerkArmed('?netjerk&netsim=1', 'vega.tenony.com'), true);
+  assert.equal(netjerkArmed('?netjerk=1', 'vega.tenony.com'), true);
+  assert.equal(netjerkArmed('?netsim=1&netjerk=0', 'localhost'), false, 'and the local default can be silenced');
+  assert.equal(netjerkArmed('?netjerk=off', 'localhost'), false);
+  assert.equal(netjerkArmed('?nonetjerk=1', 'vega.tenony.com'), false, 'not matched inside another name');
 });

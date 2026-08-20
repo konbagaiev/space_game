@@ -5,6 +5,12 @@
 
 ## 2026-08-20
 
+- **The drawn-motion probe arms itself while developing locally.** Two playtests produced no data because
+  the flag was not on — once to a comma the URL picked up in a chat window, once to simply not typing it.
+  A diagnostic that has to be remembered is off during the run that mattered, so on `localhost` it is now on
+  by default (`?netjerk=0` to silence it, `?netjerk` to force it on a deployed build). It costs a walk over
+  the drawn entities per frame, records only discontinuities, and never touches the picture.
+
 - **…and the two things one clock got wrong on the first pass, both reported from playtest within minutes.**
   *Events* were left playing on packet arrival while the world moved to the render clock — so a rocket's
   smoke, which carries the position the rocket had at a tick, was laid a full interpolation delay AHEAD of
