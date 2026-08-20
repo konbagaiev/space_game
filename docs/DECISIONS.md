@@ -4299,7 +4299,7 @@ one process then holds many Worlds, which is what a server needs (§116).
 
 The proxies are the deliberate part. Rewriting every call site would have made a 6000-line diff out of a
 behaviour-neutral refactor, and behaviour-neutral is the only property that made the intro-replay oracle
-(`tick=2503/3490`, unmoved across eighteen commits) meaningful evidence. Every call site changed is a place
+(`tick=2503/3490`, unmoved across nineteen commits) meaningful evidence. Every call site changed is a place
 the oracle cannot see. The cost is one indirection and a small amount of "this looks like a singleton but
 isn't" — paid once, in two files, both of which say so at the top.
 
