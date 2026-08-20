@@ -141,6 +141,7 @@ export async function connectNetsim({ playerId, level, seed, origin = location.o
 
   const uplink = createUplink({ send: (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); } });
   const send = (m) => { try { if (ws.readyState === 1) ws.send(JSON.stringify(m)); } catch {} };
+  let lastPing = 0;
   return {
     ws, uplink,
     pump: (dt, keys, touchAim) => uplink.pump(dt, keys, touchAim),
@@ -150,6 +151,10 @@ export async function connectNetsim({ playerId, level, seed, origin = location.o
     // Ask the room to stop / resume stepping. A room holds one player, so this is a true freeze rather
     // than the lie a pause button in a shared world would be (DECISIONS §16).
     setPaused(paused) { uplink.flush(); send({ type: paused ? 'pause' : 'resume' }); },
+    // A paused client sends no input, and the room drops a socket that has said nothing for 30 s — so a
+    // long pause would silently end the session and drop the player back to the local simulation. Called
+    // every frame while paused; rate-limits itself.
+    keepAlive(now = Date.now()) { if (now - lastPing > 5000) { lastPing = now; send({ type: 'ping' }); } },
     close() { uplink.flush(); send({ type: 'bye' }); try { ws.close(); } catch {} },
   };
 }

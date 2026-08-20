@@ -71,6 +71,7 @@ export function attachNetsim(httpServer, { tickets, log = console } = {}) {
       // Stopping the driver stops the fight: no spawns, no enemy fire, no cooldowns ticking.
       else if (msg && msg.type === 'pause') driver.stop();
       else if (msg && msg.type === 'resume') driver.start();
+      else if (msg && msg.type === 'ping') { /* `lastSeen` above is the whole point of it */ }
       else if (msg && msg.type === 'bye') ws.close(1000, 'bye');
     });
 

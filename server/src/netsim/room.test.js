@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRoom, MAX_QUEUED_INPUTS } from './room.js';
+import { createRoom, MAX_QUEUED_INPUTS, INPUT_QUEUE_TARGET } from './room.js';
 import { EVENT_FIELDS, wireEvent } from './protocol.js';
 import { runTrace } from '../../tools/sim-replay.mjs';
 import { hydrateTrace } from '../../../client/src/replay.js';
@@ -29,17 +29,14 @@ test('a room replaying the canonical trace matches the headless referee exactly'
   const t = hydrateTrace(rawTrace);
   const room = createRoom({ levelName: 'level-0', seed: t.seed,
     ship: { shipId: t.shipId, loadout: t.loadout, components: t.components } });
-  room.pushInput(t.ticks.slice(0, MAX_QUEUED_INPUTS).map((x, i) => ({ t: i, k: x.k, a: x.t })));
-  let fed = MAX_QUEUED_INPUTS;
+  // Fed at the NATURAL rate — one input per tick, which is what a healthy client produces. A room that is
+  // handed a backlog deliberately fast-forwards through it (INPUT_QUEUE_TARGET), and that is not a replay.
   for (let i = 0; i < t.ticks.length; i++) {
-    // Top the queue up as it drains, the way a live client's batches would.
-    if (fed < t.ticks.length && room.queued < 60) {
-      const chunk = t.ticks.slice(fed, fed + 60).map((x, j) => ({ t: fed + j, k: x.k, a: x.t }));
-      room.pushInput(chunk); fed += chunk.length;
-    }
+    room.pushInput([{ t: i, k: t.ticks[i].k, a: t.ticks[i].t }]);
     room.stepOnce();
   }
-  assert.equal(room.droppedInputs, 0, 'the queue never overflowed, so every input was applied in order');
+  assert.equal(room.droppedInputs, 0, 'nothing overflowed');
+  assert.equal(room.caughtUpInputs, 0, 'and nothing was fast-forwarded, so every input was simulated in order');
 
   const ref = runTrace(rawTrace);
   const got = room.digest();
@@ -141,4 +138,22 @@ test('an entity reference becomes an id, never the entity', () => {
 
 test('an unknown event is dropped, not forwarded raw', () => {
   assert.equal(wireEvent({ type: 'somethingNew', secret: 1 }, () => null), null);
+});
+
+test('a bursty client does not build permanent input lag', () => {
+  const room = createRoom({ seed: 11 });
+  // 60 ticks arrive at once — a client that stalled for a second and caught up in one frame.
+  room.pushInput(Array.from({ length: 60 }, (_, i) => ({ t: i, k: [], a: null })));
+  for (let i = 0; i < 40; i++) room.stepOnce();
+  assert.ok(room.queued <= INPUT_QUEUE_TARGET + 1,
+    `the queue drained to ${room.queued}, not left as standing latency`);
+  assert.ok(room.caughtUpInputs > 0, 'and it says how many it fast-forwarded');
+  assert.equal(room.droppedInputs, 0, 'nothing was lost to the overflow cap — this is catch-up, not loss');
+});
+
+test('a client feeding at the natural rate is never fast-forwarded', () => {
+  const room = createRoom({ seed: 11 });
+  for (let i = 0; i < 200; i++) { room.pushInput([{ t: i, k: [], a: null }]); room.stepOnce(); }
+  assert.equal(room.caughtUpInputs, 0, 'no catch-up when there is nothing to catch up on');
+  assert.equal(room.queued, 0);
 });

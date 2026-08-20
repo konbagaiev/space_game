@@ -33,6 +33,20 @@ export const SNAPSHOT_EVERY = 4;
 // that floods must not be able to grow the server's memory, and stale input is the least useful input.
 export const MAX_QUEUED_INPUTS = 240;
 
+// How deep the input queue is allowed to sit before the room starts catching up.
+//
+// The room consumes exactly one input per tick and the client produces about sixty a second, so the two
+// are balanced ONLY on average. Any burst — a slow client frame emits up to six ticks at once — leaves a
+// backlog that never drains, because the room has no way to go faster. Every later input then waits
+// `queue.length` ticks before it is simulated, which the player feels as input latency stacked on top of
+// the interpolation delay: measured at 8–11 ticks (130–180 ms) after a minute of ordinary play.
+//
+// So while the queue is deeper than this, a tick retires two inputs instead of one. The skipped input's
+// dt is never simulated — that is the point, it is a fast-forward — which is invisible for held keys and
+// bounds the queueing delay at ~3 ticks (50 ms). It also means a live room is NOT bit-identical to a trace
+// replay when the client is bursty, which is correct and is why `stepOnce` only does it when behind.
+export const INPUT_QUEUE_TARGET = 3;
+
 const EMPTY_INPUT = { k: [], t: null };
 
 export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapshotEvery = SNAPSHOT_EVERY } = {}) {
@@ -58,6 +72,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
   let tick = 0;                // server ticks stepped
   let pendingEvents = [];      // drained since the last snapshot
   let dropped = 0;             // inputs discarded by the queue cap (a diagnostic, reported in the snapshot)
+  let caughtUp = 0;            // inputs fast-forwarded to keep the queue shallow (a diagnostic)
 
   const idOf = (e) => ids.get(e) ?? null;
 
@@ -95,6 +110,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     get tick() { return tick; },
     get queued() { return queue.length; },
     get droppedInputs() { return dropped; },
+    get caughtUpInputs() { return caughtUp; },
 
     // Accept a batch of per-tick input snapshots, `replay.js snapshotInput()` shape plus the client's tick.
     pushInput(ticks) {
@@ -106,7 +122,13 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
 
     // Exactly one tick. Consumes one queued input, or repeats the last one if the client is silent —
     // holding the controls rather than dropping them, which is what a brief network gap should feel like.
+    // While the queue has grown past INPUT_QUEUE_TARGET it retires an extra one, so a burst cannot become
+    // permanent input lag.
     stepOnce() {
+      while (queue.length > INPUT_QUEUE_TARGET + 1) {
+        const skipped = queue.shift();
+        lastInput = skipped; ack = skipped.t; caughtUp++;
+      }
       const next = queue.shift();
       if (next) { lastInput = next; ack = next.t; }
       // `applyInput` takes the recorded tick shape: `{ k, t }` where `t` is the touch aim.

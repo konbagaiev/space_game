@@ -851,6 +851,7 @@ function animate() {
     // freeze legitimate (DECISIONS §16).
     const wantPaused = G.paused || G.mapOpen;
     if (netLink && wantPaused !== netRoomPaused) { netRoomPaused = wantPaused; netLink.setPaused(wantPaused); }
+    if (netLink && wantPaused) netLink.keepAlive(); // a paused client sends no input; don't look abandoned
     if (netLink && netStarted && !wantPaused && !netsimPaused) {
       netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
       renderNet(world, netState, performance.now());

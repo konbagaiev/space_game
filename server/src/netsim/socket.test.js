@@ -12,7 +12,7 @@ import http from 'node:http';
 import express from 'express';
 import { WebSocket } from 'ws';
 import { createTicketStore } from './tickets.js';
-import { attachNetsim, WS_PATH } from './socket.js';
+import { attachNetsim, WS_PATH, IDLE_TIMEOUT_MS } from './socket.js';
 
 let server, base, wsBase, tickets, netsim;
 
@@ -30,6 +30,13 @@ before(async () => {
 });
 
 after(() => { netsim.closeAll(); server.close(); });
+
+// Sockets close asynchronously, so a test that asserts on the ROOM COUNT has to wait for its predecessors
+// to be reaped first. Absolute counts were flaky without this as the suite grew.
+async function settle(ms = 2000) {
+  const deadline = Date.now() + ms;
+  while (netsim.rooms > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+}
 
 const getTicket = async (playerId = 'p-test') => (await (await fetch(`${base}/api/ws-ticket`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerId }),
@@ -113,10 +120,19 @@ test('input sent over the wire is applied, and acked', async () => {
   // A run opens gliding forward at 10% of top speed, and with NO input that drift decays (IDLE_DRAG). So
   // "the ship moved" proves nothing — "the ship SPED UP" is what only thrust can do. 40 ticks is enough to
   // separate the two clearly and keeps this to ~0.7 s of real time.
-  ws.send(JSON.stringify({ type: 'input',
-    ticks: Array.from({ length: 60 }, (_, i) => ({ t: i, k: ['KeyW'], a: null })) }));
-  const acked = await waitFor(ws, (m) => m.type === 'snap' && m.ack != null && m.ack >= 40);
-  assert.ok(acked.ack >= 40, 'the room acked our input ticks so the client can drop them from its buffer');
+  // Fed the way a real client feeds — a small batch every frame. Dumping 60 ticks at once would be a
+  // BURST, and the room deliberately fast-forwards through a backlog (INPUT_QUEUE_TARGET), so most of that
+  // thrust would be retired without ever being simulated. That is correct behaviour; it just is not this
+  // test's subject.
+  let sent = 0;
+  const feeder = setInterval(() => {
+    ws.send(JSON.stringify({ type: 'input',
+      ticks: [0, 1, 2].map((n) => ({ t: sent + n, k: ['KeyW'], a: null })) }));
+    sent += 3;
+  }, 50);
+  const acked = await waitFor(ws, (m) => m.type === 'snap' && Math.hypot(m.player.vx, m.player.vz) > 12, 15000);
+  clearInterval(feeder);
+  assert.ok(acked.ack != null && acked.ack > 0, 'the room acked our input so the client can drop it from its buffer');
   assert.ok(speed(acked.player) > speed(before.player) * 2,
     `held thrust accelerated the ship (${speed(before.player).toFixed(2)} → ${speed(acked.player).toFixed(2)} u/s)`);
   assert.equal(acked.dropped, 0, 'no input was discarded');
@@ -129,9 +145,13 @@ test('an idle client coasts to a stop — the drift decays, so the thrust test a
   ws.send(JSON.stringify({ type: 'start' }));
   const before = await waitFor(ws, (m) => m.type === 'snap');
   const speed = (p) => Math.hypot(p.vx, p.vz);
-  ws.send(JSON.stringify({ type: 'input',
-    ticks: Array.from({ length: 60 }, (_, i) => ({ t: i, k: [], a: null })) }));
-  const acked = await waitFor(ws, (m) => m.type === 'snap' && m.ack != null && m.ack >= 40);
+  let sent = 0;
+  const feeder = setInterval(() => {
+    ws.send(JSON.stringify({ type: 'input', ticks: [0, 1, 2].map((n) => ({ t: sent + n, k: [], a: null })) }));
+    sent += 3;
+  }, 50);
+  const acked = await waitFor(ws, (m) => m.type === 'snap' && m.ack != null && m.ack >= 40, 15000);
+  clearInterval(feeder);
   assert.ok(speed(acked.player) < speed(before.player),
     `no input means no thrust (${speed(before.player).toFixed(2)} → ${speed(acked.player).toFixed(2)} u/s)`);
   ws.close();
@@ -149,6 +169,7 @@ test('a malformed frame is ignored, not fatal', async () => {
 });
 
 test('closing the socket tears the room down', async () => {
+  await settle();
   const ws = await openSocket(`ticket=${await getTicket()}`);
   await waitFor(ws, (m) => m.type === 'welcome');
   assert.equal(netsim.rooms, 1);
@@ -182,5 +203,22 @@ test('pause really stops the room, and resume restarts it', async () => {
   ws.send(JSON.stringify({ type: 'resume' }));
   const resumed = await waitFor(ws, (m) => m.type === 'snap' && m.tick > running.tick + 1);
   assert.ok(resumed.tick > running.tick, 'and it picks up where it left off');
+  ws.close();
+});
+
+test('a ping keeps a paused room alive', async () => {
+  // A paused client sends no input, and the idle reaper drops a socket that has said nothing. Without a
+  // heartbeat a long pause would silently end the session and drop the player back to local play.
+  await settle();
+  const ws = await openSocket(`ticket=${await getTicket()}`);
+  await waitFor(ws, (m) => m.type === 'welcome');
+  ws.send(JSON.stringify({ type: 'start' }));
+  ws.send(JSON.stringify({ type: 'pause' }));
+  assert.ok(IDLE_TIMEOUT_MS >= 10_000, 'the reaper is slow enough that a heartbeat every 5 s covers it');
+  const closed = [];
+  ws.on('close', (code) => closed.push(code));
+  for (let i = 0; i < 4; i++) { ws.send(JSON.stringify({ type: 'ping' })); await new Promise((r) => setTimeout(r, 120)); }
+  assert.equal(closed.length, 0, 'still connected');
+  assert.equal(netsim.rooms, 1, 'and the room is still there');
   ws.close();
 });
