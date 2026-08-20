@@ -114,7 +114,7 @@ function greenFallbackBox() {
   const geo = new THREE.BoxGeometry(2, 2, 2);
   const mat = new THREE.MeshStandardMaterial({ color: REWARD_TINT, emissive: REWARD_TINT, emissiveIntensity: 0.9, metalness: 0.2, roughness: 0.5 });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.userData.__fallback = true;   // so spawnSpecialDrop can find + remove it once the model arrives
+  mesh.userData.__fallback = true;   // so buildRewardObj can find + remove it once the model arrives
   return mesh;
 }
 
@@ -179,19 +179,10 @@ export function preloadRewardModel(reward) {
   if (spec && spec.url) requestRewardModel(spec.url, spec.targetLen, null);
 }
 
-// Spawn the cosmetic reward drop (reward = { kind, refId } from the level's lastKillDrop). It reuses the
-// normal drops[] lifecycle (rotate, arm, pull, off-screen marker) but is GREEN + haloed and, being
-// `special: true`, deposits NOTHING when collected (see collect() / DECISIONS: exactly one copy). The
-// model is cloned instantly from the warm cache (preloadRewardModel); if it isn't ready yet a green
-// fallback box shows and the model swaps in on load (same wrap group, so an in-flight pull continues).
-export function spawnSpecialDrop(pos, reward) {
-  if (!reward) return;
-  const spec = rewardModelSpec(reward);
-  if (!spec) return;
-  if (!spawnDropIn(world, pos, reward, spec.cat.weight || WEIGHT_FALLBACK, true)) {
-    console.warn('drops: cap reached, skipping reward drop');
-  }
-}
+// The cosmetic reward drop (the level's `lastKillDrop`) is spawned by the simulation now
+// (sim-core/step-enemies.js), through the same sim-core spawnDrop with `special: true`. What stays here is
+// its BODY: `special` drops are GREEN + haloed, cloned instantly from the warm cache (preloadRewardModel),
+// or shown as a green fallback box that the model replaces on arrival — see buildRewardObj below.
 
 // Ownership gate off G.activeShip: has the player already got this reward? Delegates to the pure
 // rewardOwned() (drops-config.js) so the logic stays node-testable; here we just supply G.activeShip.

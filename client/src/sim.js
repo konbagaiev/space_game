@@ -10,33 +10,27 @@ import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
 import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './sim-core/system-map.js';
 import { repairTick, shieldRecharge } from './sim-core/components.js';
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, keyboardThrust } from './sim-core/steering.js';
+import { headingToDir, shortestAngleDelta, steerToward, keyboardThrust } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, spawnRocketBurst, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
-import { spawnEnemyShip, updateGroups, preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
-import { simRandom } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
+import { updateGroups, preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
 import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
 import { BANNER_FADE, showBanner as showBannerIn, clearBanner } from './sim-core/events.js';
-import { despawnAt } from './sim-core/spawn.js';
 import { stepBullets, stepRockets } from './sim-core/step-projectiles.js';
-import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
+import { stepEnemyAI, stepEnemyDeaths, stepPlayerDeath } from './sim-core/step-enemies.js';
+import { runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
 import { startLevel, updateLevelRunner, winLevel, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
-import { drawDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops, attachDropBody, detachDropBody } from './drops.js';
+import { drawDrops, preloadRewardModel, ownsReward, clearDrops, takeLoot, drops, attachDropBody, detachDropBody } from './drops.js';
 import { stepDrops } from './sim-core/drops-sim.js';
 import { BASE_ARRIVE_RADIUS } from './sim-core/autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 import { logEvent, clearEventLog } from './eventlog.js';
-
-const _bulletP0 = new Vec3(); // reused: a bullet's pre-move position for the swept collision test
-// Triple spiral rocket: warhead corkscrew around the leader's flight axis.
-const SPIRAL_RADIUS = 1.4;  // orbit radius around the leader axis (world units)
-const SPIRAL_ANGULAR = 6;   // rad/s — how fast the warheads corkscrew
 
 // ---------- Music ----------
 // Music follows game state: the driving combat mood during a live fight, the calmer hangar mood on
@@ -569,13 +563,13 @@ export function simTick(dt) {
   world.combatElapsed += dt; // unpaused combat clock (skipped while paused) — drives the enemy hold-fire grace
 
   stepPlayer(dt);   // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
-  stepEnemyAI(dt);
+  stepEnemyAI(world, dt);
   stepBullets(world, dt);
   stepRockets(world, dt);
-  stepEnemyDeaths();
+  stepEnemyDeaths(world);
   grabTarget = stepDrops(world, dt); // the Grab: arm, pull, collect (drawn in renderTick)
   levelRunner.update(dt);            // spawning + phase transitions from the active level
-  stepPlayerDeath();
+  stepPlayerDeath(world);
 }
 
 // Whatever the Grab is currently pulling, handed from simTick to renderTick. Presentation only.
@@ -744,59 +738,6 @@ function stepPlayer(dt) {
   updateGroups(G.player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
 }
 
-function stepEnemyAI(dt) {
-  // --- enemy AI ---
-  for (const e of enemies) {
-    // spawn animation: grow from a dot to full size over the enemy's warp duration (ease-out). While
-    // warping the enemy is invulnerable + can't fire + isn't homing-targetable (guards below); the
-    // duration is its stagger interval so "the delay IS the arrival animation" (DECISIONS §54).
-    if (e.spawnAge < e.spawnDur) {
-      e.spawnAge = Math.min(e.spawnDur, e.spawnAge + dt);
-      const t = e.spawnAge / e.spawnDur;
-      const k = 1 - Math.pow(1 - t, 3); // ease-out cubic
-      e.scale = e.fullScale * Math.max(0.001, k);
-      if (e.spawnAge >= e.spawnDur) e.warping = false; // fully formed: now a normal combatant
-    }
-
-    // --- enemy shield: recharge only once fully depleted, then refill to full (same rule as the player).
-    // NOTE: the timer runs from the BREAKING hit and keeps banking under continuous fire — hull damage
-    // never resets it (see DECISIONS §76).
-    if (e.shield) {
-      const wasBroken = e._shieldValue <= 0;
-      const s = shieldRecharge(e._shieldValue, e.shield.capacity, e.shield.rechargeSec, dt, e._shieldRechargeAccum);
-      e._shieldValue = s.shieldValue; e._shieldRechargeAccum = s.accum;
-      if (wasBroken && s.shieldValue > 0) G.enemyShieldRefills++; // diagnostic counter (replay triage)
-    }
-
-    const toPlayer = G.player.pos.clone().sub(e.pos);
-    const dist = toPlayer.length();
-    toPlayer.normalize();
-
-    // target angle toward the player
-    const desired = Math.atan2(toPlayer.x, toPlayer.z);
-    const diff = shortestAngleDelta(e.heading, desired); // used below for aim checks
-    e.heading = steerToward(e.heading, desired, e.turnRate * dt);
-
-    const ef = forwardVec(e.heading);
-    // keep distance ~20: close in from afar, back off if too close
-    const thrust = enemyThrustFactor(dist);
-    e.vel.addScaledVector(ef, e.acceleration * thrust * dt);
-    e.vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
-    if (e.engine.maxSpeed && e.vel.length() > e.engine.maxSpeed) e.vel.setLength(e.engine.maxSpeed);
-
-    e.pos.addScaledVector(e.vel, dt); // no arena clamp: enemies chase the player out of bounds
-
-    // engine trail: same exhaust behavior as the player, when thrusting forward
-    e.thrusting = thrust > 0.1;
-
-    // fire each group whose AI rule (range + aim tolerance) is satisfied — and only after the opening grace
-    updateGroups(e, ef, false, dt,
-      (g) => !e.warping && G.combatElapsed >= ENEMY_FIRE_GRACE && g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
-  }
-}
-
-
-
 function stepMicroExplosions(dt) {
   // --- micro-explosions (short fiery flash) ---
   for (let i = explosions.length - 1; i >= 0; i--) {
@@ -875,59 +816,6 @@ function stepCreditPopups(dt) {
   for (let i = creditPopups.length - 1; i >= 0; i--) {
     creditPopups[i].life -= dt;
     if (creditPopups[i].life <= 0) creditPopups.splice(i, 1);
-  }
-}
-
-function stepEnemyDeaths() {
-  // --- enemy deaths ---
-  for (let i = enemies.length - 1; i >= 0; i--) {
-    if (enemies[i].hp <= 0) {
-      // colorful death burst: sized to the ship, tinted by its engine's exhaust color
-      const e = enemies[i];
-      // Bosses go up bigger + in stages (secondary detonation + expanding rings); everyone else = the
-      // standard flipbook fireball + one ring.
-      const isBoss = e.role === 'boss' || e.role === 'boss2';
-      const reward = e.reward || 0;
-      const xp = e.xp || 0;
-      // ONE event carries everything the presentation needs — every value copied, because by the time the
-      // adapter runs this entity is already spliced out of `enemies`.
-      simEvents.emit({
-        type: 'kill', pos: e.pos.clone(), isBoss, exhaustColor: e.engine.exhaust.color,
-        sizeScale: e.sizeScale || 1, role: e.role, shipClass: e.class, reward, xp, name: e.name,
-      });
-
-      despawnAt(world, 'enemy', enemies, i);
-      G.kills++;                  // count (drives level thresholds + HUD)
-      // "N enemies left" banner at the 10- and 5-remaining milestones (once each, only when the level's
-      // total is known). kills increments by 1, so `left` lands on each value exactly once.
-      if (G.enemyTotal > 0) {
-        const left = G.enemyTotal - G.kills;
-        if ((left === 10 || left === 5) && !world.firedBanners.has(left)) {
-          world.firedBanners.add(left);
-          showBanner('ui.banner.enemies_left', { count: left });
-        }
-      }
-      G.earned += reward;         // credits (reward for this ship type)
-      G.earnedXp += xp;           // character experience (banked with the run at /api/games)
-      // reward drop: the LAST enemy of a level that carries a lastKillDrop drops the reward model (cosmetic —
-      // no stash deposit; the real copy is server-installed on victory), but only if the player doesn't already
-      // own it. Otherwise fall back to the usual 20% metal-box loot roll (one of the enemy's non-hull parts /
-      // mounted weapons the grab can pull in — deposited on victory; hulls never drop).
-      const lkd = levelRunner.level && levelRunner.level.lastKillDrop;
-      if (lkd && isLastKillDrop({ kills: G.kills, enemyTotal: G.enemyTotal }) && !ownsReward(lkd)) {
-        spawnSpecialDrop(e.pos, lkd);
-      } else if (simRandom() < DROP_CHANCE) {   // GAMEPLAY draw (does this kill drop loot?)
-        const loot = pickLoot(e); if (loot) spawnDrop(e.pos, loot);
-      }
-    }
-  }
-}
-
-function stepPlayerDeath() {
-  // --- player death ---
-  if (G.player.hp <= 0 && G.player.alive) {
-    G.player.alive = false;
-    simEvents.emit({ type: 'death' }); // the adapter owns the boom, the sting, the overlay and the banking
   }
 }
 
