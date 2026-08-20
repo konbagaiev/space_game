@@ -9,8 +9,9 @@ import { scene, skyScene, renderer, camera } from './engine.js';
 import { G, setPieces, world as simWorld } from './state.js'; // simWorld: the running fight (sim-core/world.js)
 import { gltfLoader } from './ship-factory.js'; // shared GLTFLoader (meshopt-wired) for the .glb freighter set-piece
 import { makeFreighterExhaust } from './exhaust-fx.js'; // shared GPU/baked-texture engine plume (freighter set-piece)
-import { SYSTEM, bodyRenderPos, bodyFade, moonAngle, applySystemSpec, planetOriginOffset, worldToLocal } from './system-map.js'; // pure star-system geometry + body placement
+import { SYSTEM, bodyRenderPos, bodyFade, moonAngle, applySystemSpec, planetOriginOffset, worldToLocal } from './sim-core/system-map.js'; // pure star-system geometry + body placement
 import { Vec3 } from './sim-core/vec.js';
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME } from './sim-core/consts.js';
 import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
@@ -20,10 +21,8 @@ import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field 
 // ARENA is the half-size of the square battlefield, used only for the soft-boundary UI (the edge
 // marker + the out-of-bounds warning/warp-back; see the OOB logic in update()). NOTHING is hard-clamped
 // to it: the player, enemies, bullets and rockets all move and fight freely beyond it. See DECISIONS §2.
-export const ARENA = 360; // half-size of the square arena (x4); 1.5x the original 240 -> a bigger combat zone
+export { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME }; // the soft boundary's rules live in sim-core/consts.js
 const ORIGIN = new THREE.Vector3(0, 0, 0); // the base / spawn point — the stand-in ship position before one exists
-export const OOB_WARN_DELAY = 2.0;   // seconds continuously out of bounds before the warning shows
-export const OOB_RETURN_TIME = 30.0; // seconds continuously out of bounds before the auto warp-back
 
 // The combat zone's CENTER. Usually (0,0), but for a drifting mission (e.g. escort a freighter) the map
 // descriptor's `drift` slowly moves it; the soft boundary, warp-back and mini-map all compute relative to

@@ -2931,7 +2931,10 @@ credit double, the XP bonus) and emits `win`; the overlay and the `bankRun`/`dep
 `stepSmokeTrail` runs *after* the drain — it rebuilds the instanced puff pool from `smoke[]`, so it must
 see this tick's puffs.
 
-**What lives in `sim-core/`:** `vec.js`, `consts.js` and `events.js` plus the game's pure rules —
+**What lives in `sim-core/`:** `vec.js`, `consts.js` (including `SHIP_GROUP_SCALE`, `BULLET_PLANE_Y`,
+`SPAWN_GROW_TIME` and the soft boundary's `ARENA`/`OOB_WARN_DELAY`/`OOB_RETURN_TIME`), `events.js`,
+`world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`, `drops-sim.js`,
+`system-map.js` — plus the game's pure rules —
 `components.js` (`deriveDrive`/`shipMass`/`repairTick`/`shieldRecharge`/`applyShieldedDamage`),
 `steering.js`, `spawn-timing.js`, `collision.js`, `level-sim.js`, `drops-config.js`, `autopilot-config.js`
 and `sim-random.js` (the seeded gameplay stream, DECISIONS §73). Their unit tests moved with them.

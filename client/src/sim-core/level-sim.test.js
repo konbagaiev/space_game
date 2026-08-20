@@ -6,7 +6,7 @@ import { levelEnemyTotal, isLastKillDrop, simulateLevel, runCenter, stepMissionZ
 import { LEVELS } from '../../../server/src/catalog_seed.js';
 // …and against the navigation anchors it must agree with (a centre that drifts off its landmark parks the
 // player outside the fly-in zone — the whole failure this file guards).
-import { ANCHORS } from '../system-map.js';
+import { ANCHORS } from './system-map.js';
 
 test('isLastKillDrop fires only when kills exactly reaches a positive enemyTotal', () => {
   assert.equal(isLastKillDrop({ kills: 13, enemyTotal: 14 }), false);

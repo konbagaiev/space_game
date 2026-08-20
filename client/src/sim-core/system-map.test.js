@@ -11,7 +11,7 @@ import {
   orbitVec, starWorldPos, planetOriginOffset, worldToLocal, localToWorld,
 } from './system-map.js';
 // The seed's set-pieces are pure data (no DB import), so the anchor↔set-piece invariant is checkable here.
-import { MAPS } from '../../server/src/catalog_seed.js';
+import { MAPS } from '../../../server/src/catalog_seed.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BODY_NAMES = ['star', ...SYSTEM.planets.map((p) => p.name)];

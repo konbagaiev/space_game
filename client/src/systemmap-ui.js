@@ -17,7 +17,7 @@
 import { G, CATALOG } from './state.js';
 import { t } from './i18n.js';
 import { esc } from './format.js';
-import { SYSTEM, bodyWorldPos, listSystemObjects, systemRadius, objectForMission, objectForActiveMission } from './system-map.js';
+import { SYSTEM, bodyWorldPos, listSystemObjects, systemRadius, objectForMission, objectForActiveMission } from './sim-core/system-map.js';
 import { DEFAULT_VIEW, clampView, scaleOf, toScreen, panByScreen, zoomAtScreen, centerOn, pickAt } from './map-view.js';
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js';
 import { runCenter } from './sim-core/level-sim.js';

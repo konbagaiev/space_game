@@ -19,7 +19,7 @@ import { SKILL_RATES } from './sim-core/components.js'; // per-point skill rates
 import { reset, levelRunner, refreshMusic, engagePointAutopilot } from './sim.js';
 import { runCenter } from './sim-core/level-sim.js'; // where the current level fights (0,0 unless it names a centre)
 import { mountSystemNav, showStartMissionPrompt, showDockPrompt, objectForMission } from './systemmap-ui.js';
-import { objectForActiveMission } from './system-map.js'; // where the active mission sits → roam HUD pointer + autopilot target
+import { objectForActiveMission } from './sim-core/system-map.js'; // where the active mission sits → roam HUD pointer + autopilot target
 import { buildModelViewer, startViewer, stopViewer, resizeViewer, setViewerModel, itemModelCfg } from './model-viewer.js';
 import { Device } from './device.js';
 import { openBay, showBayView, updateTakeoffGate, resetShipStatsDelta, stopLoadoutPreview, hasNewShopItems } from './shop.js';

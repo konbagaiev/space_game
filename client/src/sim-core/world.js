@@ -24,7 +24,11 @@ import { createEventQueue } from './events.js';
 import { Vec3 } from './vec.js';
 
 // A host that gives entities no body — the authority, the headless referee, and every unit test.
-export const noopHost = { onSpawn() {}, onDespawn() {} };
+// The host also answers `onWarmLevel(level)`: "this level is about to be fought, get ready". In a browser
+// that means fetching and parsing the .glb of every ship the level can spawn plus its reward drop, so no
+// spawn pays for a download mid-fight. On a server it means nothing at all — which is exactly why the
+// simulation asks rather than doing it.
+export const noopHost = { onSpawn() {}, onDespawn() {}, onWarmLevel() {} };
 
 export function createWorld({ host = noopHost } = {}) {
   return {

@@ -245,6 +245,31 @@ Two things this surfaced:
 Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
 `17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
 
+#### B3c part 5 outcome — the last things the steps were reaching for
+
+Everything `simTick` still borrowed from a client module is now either in `sim-core` or behind the host:
+
+- **`system-map.js` moved into `sim-core/`** (with its test). It was already pure — its only import was
+  `level-sim.js`, and its single mention of "three" is a word in a prose comment — but the boundary test
+  forbids sim-core reaching outside itself, so the seam it provides (`capLifted`, `arrivedAtPoint`,
+  `ARRIVE_RADIUS`, plus the whole star-system geometry) had to come along.
+- **`ARENA`, `OOB_WARN_DELAY`, `OOB_RETURN_TIME`** moved to `sim-core/consts.js`. The soft boundary is a
+  rule (DECISIONS §2), not scenery; `world.js` re-exports them.
+- **The arena border stopped being written from inside `stepPlayer`.** The simulation was setting a
+  material's opacity. `drawArenaBorder()` now derives the marker's position and brightness from where the
+  ship is, in `renderTick`.
+- **Asset warming became a host call.** `world.host.onWarmLevel(level)` replaces `preloadLevelShipModels` +
+  `preloadRewardModel` at both call sites (level start, and the roam countdown that warms a fight three
+  seconds before it begins). The browser host fetches and parses; `noopHost` does nothing, which is the
+  point.
+
+Verified: client tests 386 → **388**, intro trace `tick=2503/3490`, guard scenarios green including
+`26-ship-model-cache` and `28-scene-warm`, which are what the warming exists for.
+
+**What is left of Slice B:** the physical move of `stepPlayer` / `stepEnemyAI` / `stepBullets` /
+`stepRockets` / `levelRunner` into `sim-core` (now nearly mechanical — `simTick` contains exactly them),
+and splitting `reset()` into "reset the world" and "rebuild the scene".
+
 #### B3c part 4 outcome — the tick has two halves, and detonation stops mixing them
 
 **`update(dt)` is now `simTick(dt)` + `renderTick(dt)`.** The first is the game — movement, deaths, the

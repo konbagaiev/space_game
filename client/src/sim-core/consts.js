@@ -17,3 +17,10 @@ export const BULLET_PLANE_Y = 0.6;
 // it is growing a ship is invulnerable, cannot fire and cannot be homed on (DECISIONS §54). The level runner
 // overrides it per spawn with that enemy's stagger interval — "the delay IS the arrival animation".
 export const SPAWN_GROW_TIME = 1.0;
+
+// The soft boundary (DECISIONS §2). ARENA is the half-size of the square combat zone, measured from the
+// (possibly drifting) arena centre. Flying past it is allowed: the player is WARNED after
+// OOB_WARN_DELAY seconds continuously outside, and warped back to the centre after OOB_RETURN_TIME.
+export const ARENA = 360;            // 1.5× the original 240 — a bigger combat zone
+export const OOB_WARN_DELAY = 2.0;   // seconds outside before the HUD warning shows
+export const OOB_RETURN_TIME = 30.0; // seconds outside before the auto warp-back

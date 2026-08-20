@@ -5,6 +5,19 @@
 
 ## 2026-08-20
 
+- **The last things the simulation was reaching for moved out of the client.** `system-map.js` (and its
+  test) moved into `client/src/sim-core/` — it was already pure, its only import being `level-sim.js`, but
+  the boundary test forbids sim-core reaching outside itself and the steps need its `capLifted` /
+  `arrivedAtPoint` / `ARRIVE_RADIUS` seam. `ARENA`, `OOB_WARN_DELAY` and `OOB_RETURN_TIME` moved to
+  `sim-core/consts.js` (the soft boundary is a rule, not scenery; `world.js` re-exports them). The arena
+  edge marker stopped being written from inside `stepPlayer` — the simulation was setting a material's
+  opacity — and is now derived in `renderTick` from where the ship is. Asset warming became a host call,
+  `world.host.onWarmLevel(level)`, replacing the two `preloadLevelShipModels`/`preloadRewardModel` sites
+  (level start, and the roam countdown that warms a fight three seconds early); the browser host fetches
+  and parses, `noopHost` does nothing. No gameplay change: intro trace still `tick=2503/3490`; client tests
+  386 → 388.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3c, part 5).
+
 - **The tick has two halves now: `simTick` and `renderTick`.** `update(dt)` keeps its name and signature —
   the accumulator, the replay stepper and every `?debug` hook call it — but internally it is the game
   (movement, deaths, the Grab, the level runner) followed by the picture (`syncMeshes`, the event drain,

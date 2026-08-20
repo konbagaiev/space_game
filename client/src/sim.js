@@ -8,7 +8,7 @@ import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, 
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
-import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './system-map.js';
+import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './sim-core/system-map.js';
 import { repairTick, shieldRecharge, applyShieldedDamage } from './sim-core/components.js';
 import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset, keyboardThrust } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
@@ -91,13 +91,7 @@ export const levelRunner = {
   start(level) {
     this.level = level; this.resetLevelRunnerState();
     G.enemyTotal = (level && level.enemyTotal) || 0; // total enemies for the HUD killed/total (0 if not seeded)
-    // Warm the last-kill reward model NOW (only if it will actually drop) so the last-enemy spawn is
-    // hitch-free — the high-poly CloudFront hangar glb is fetched/parsed here, not on the killing frame.
-    const lkd = level && level.lastKillDrop;
-    if (lkd && !ownsReward(lkd)) preloadRewardModel(lkd);
-    // Same reasoning for the ENEMY models: parse each type once here, so no spawn ever pays for a
-    // fetch/parse/texture-upload mid-fight (and no enemy flies as the placeholder waiting for its glb).
-    preloadLevelShipModels(level);
+    world.host.onWarmLevel(level); // fetch/parse this level's models before the fight, not during it
     this.enterPhase();
   },
   get phase() { return this.level ? this.level.phases[this.phaseIndex] : null; },
@@ -368,9 +362,7 @@ function checkMissionZone(dt) {
     z.warmed = true;
     const lvl = CATALOG.level;
     if (lvl) {
-      preloadLevelShipModels(lvl);
-      const lkd = lvl.lastKillDrop;
-      if (lkd && !ownsReward(lkd)) preloadRewardModel(lkd);
+      world.host.onWarmLevel(lvl);
     }
   }
   if (r.t == null) z.warmed = false; // left the zone → warm again on the next approach (cheap: cached)
@@ -647,6 +639,15 @@ world.host = {
     else if (kind === 'enemy') attachEnemyBody(e);
     else if (kind === 'drop') attachDropBody(e);
   },
+  // Fetch + parse every model this level can put on screen, BEFORE the fight: the enemy ships and the
+  // last-kill reward drop. Without it the first spawn of each type pays for a CloudFront fetch, a parse and
+  // a texture upload on the frame it appears, which a weak phone feels as a freeze.
+  onWarmLevel(level) {
+    if (!level) return;
+    preloadLevelShipModels(level);
+    const lkd = level.lastKillDrop;
+    if (lkd && !ownsReward(lkd)) preloadRewardModel(lkd);
+  },
   onDespawn(kind, e) {
     if (kind === 'bullet') detachBulletBody(e);
     else if (kind === 'rocket') detachRocketBody(e);
@@ -683,8 +684,22 @@ export function simTick(dt) {
 // Whatever the Grab is currently pulling, handed from simTick to renderTick. Presentation only.
 let grabTarget = null;
 
+// The soft-boundary edge marker: it sits at the (possibly drifting) arena centre and brightens as the ship
+// approaches the wall, brightest while outside. Pure presentation derived from where the ship IS — it used
+// to be written from inside stepPlayer, which meant the simulation was setting a material's opacity.
+function drawArenaBorder() {
+  const p = world.player.pos;
+  arenaBorder.line.position.set(arenaCenter.x, 0, arenaCenter.z);
+  const dxc = p.x - arenaCenter.x, dzc = p.z - arenaCenter.z;
+  const edge = Math.max(Math.abs(dxc), Math.abs(dzc));
+  const near = Math.min(1, Math.max(0, (edge - (ARENA - 60)) / 60));
+  const oob = Math.abs(dxc) > ARENA || Math.abs(dzc) > ARENA;
+  arenaBorder.mat.opacity = 0.12 + near * 0.5 + (oob ? 0.25 : 0);
+}
+
 export function renderTick(dt) {
   syncMeshes(dt);                 // sim transforms → scene graph
+  drawArenaBorder();
   simEvents.drain(applySimEvent); // everything the sim decided this tick, turned into sight and sound
   drawDrops(grabTarget, dt);      // crate spin + the blue pull beam
 
@@ -799,7 +814,6 @@ function stepPlayer(dt) {
   if (world.arenaDrift) {
     arenaCenter.x += world.arenaDrift.x * dt;
     arenaCenter.z += world.arenaDrift.z * dt;
-    arenaBorder.line.position.set(arenaCenter.x, 0, arenaCenter.z);
   }
 
   // Soft boundary (DECISIONS §2): the player can fly past ±ARENA freely (measured from the arena center).
@@ -816,10 +830,6 @@ function stepPlayer(dt) {
   } else {
     G.player.oobTime = 0;
   }
-  // edge marker brightens as the player approaches the wall, brightest while out of bounds
-  const edge = Math.max(Math.abs(dxc), Math.abs(dzc));
-  const near = Math.min(1, Math.max(0, (edge - (ARENA - 60)) / 60));
-  arenaBorder.mat.opacity = 0.12 + near * 0.5 + (oob ? 0.25 : 0);
 
   // warp-back animation: grow from a dot back to full size (reuses the enemy "warp in")
   if (G.player.spawnAge < SPAWN_GROW_TIME) {
