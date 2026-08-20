@@ -1,16 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalNetsim, wsUrl, createUplink, INPUT_BATCH } from './netsim.js';
+import { evalNetsim, wsUrl, createUplink, connectNetsim, INPUT_BATCH } from './netsim.js';
 import { SIM_DT } from './sim-core/consts.js';
 import { snapshotInput } from './replay.js';
 
 test('evalNetsim: the flag is opt-in, per visit, and can name a level', () => {
   assert.equal(evalNetsim(''), null);
   assert.equal(evalNetsim('?dev=1'), null);
-  assert.deepEqual(evalNetsim('?netsim'), { level: 'level-0', seed: null });
-  assert.deepEqual(evalNetsim('?netsim=1'), { level: 'level-0', seed: null });
+  // A bare flag means "the level this player is actually on" — NOT level-0. Defaulting to a fixed level
+  // put the room in a different world from the one the client had built, which is how it was found.
+  assert.deepEqual(evalNetsim('?netsim'), { level: null, seed: null });
+  assert.deepEqual(evalNetsim('?netsim=1'), { level: null, seed: null });
   assert.deepEqual(evalNetsim('?netsim=level-2'), { level: 'level-2', seed: null });
-  assert.deepEqual(evalNetsim('?netsim&seed=77'), { level: 'level-0', seed: 77 });
+  assert.deepEqual(evalNetsim('?netsim&seed=77'), { level: null, seed: 77 });
   assert.equal(evalNetsim('?netsim=off'), null, 'explicitly off');
   assert.equal(evalNetsim('?netsim=0'), null);
 });
@@ -77,4 +79,38 @@ test('touch aim rides along in the recorded-tick shape', () => {
   // and the session recorder speak the identical dialect, so the recorder is the right oracle for it.
   assert.deepEqual(sent[0].ticks[0].a, snapshotInput({}, aim).t);
   assert.ok(sent[0].ticks[0].a[0] !== 1.2345, 'and it really is quantized, not passed through raw');
+});
+
+test('connectNetsim does not hand back a handle until the socket is OPEN', async () => {
+  // A WebSocket starts in CONNECTING, where send() is a silent no-op. Returning a handle then produced one
+  // that swallowed the first message — which was `start`, so the room joined and never stepped.
+  const events = {};
+  let readyState = 0;
+  class FakeWS {
+    constructor() { this.readyState = 0; setTimeout(() => { this.readyState = 1; readyState = 1; events.open?.(); }, 20); }
+    addEventListener(type, fn) { events[type] = fn; }
+    send() { this.sentWhileConnecting = this.readyState !== 1; }
+    close() {}
+  }
+  const fetchFn = async () => ({ ok: true, json: async () => ({ ticket: 't' }) });
+  const link = await connectNetsim({ playerId: 'p', origin: 'http://x', fetchFn, WebSocketImpl: FakeWS });
+  assert.ok(link, 'connected');
+  assert.equal(readyState, 1, 'it waited for open');
+  link.start();
+  assert.notEqual(link.ws.sentWhileConnecting, true, 'start was sent on an OPEN socket, not dropped');
+});
+
+test('a socket that dies during the handshake reports an error instead of a half-handle', async () => {
+  const events = {};
+  class DyingWS {
+    constructor() { this.readyState = 0; setTimeout(() => events.close?.(), 10); }
+    addEventListener(type, fn) { events[type] = fn; }
+    send() {} close() {}
+  }
+  const fetchFn = async () => ({ ok: true, json: async () => ({ ticket: 't' }) });
+  const errors = [];
+  const link = await connectNetsim({ playerId: 'p', origin: 'http://x', fetchFn, WebSocketImpl: DyingWS,
+                                     onError: (e) => errors.push(e) });
+  assert.equal(link, null);
+  assert.equal(errors.length, 1);
 });

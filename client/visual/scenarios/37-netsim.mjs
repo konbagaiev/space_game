@@ -26,6 +26,13 @@ const status = (page) => page.evaluate(() => {
     alive: p.alive,
     uplinkTick: window.__netsim ? window.__netsim.uplinkTick : -1,
     ack: window.__netsim ? window.__netsim.ack : null,
+    roomLevel: window.__netsim && window.__netsim.welcome ? window.__netsim.welcome.level : null,
+    clientLevel: g.levelName,
+    bullets: g.bullets.length,
+    bulletLook: g.bullets.slice(0, 1).map((x) => ({ color: x.projectileColor, cls: x.class, mesh: !!x.mesh })),
+    rockets: g.rockets.length,
+    rocketBodies: g.rockets.filter((r) => !!r.obj).length,
+    smoke: g.smoke.length,
   };
 });
 
@@ -45,8 +52,14 @@ export default async function ({ page, assert, shot, baseURL }) {
     null, { timeout: 20000 });
   const joined = await status(page);
   assert.equal(joined.netsim, true, 'the tab is in netsim mode');
-  console.log(`      joined a room: tick=${joined.tick} enemyTotal=${joined.enemyTotal}`);
+  console.log(`      joined a room: tick=${joined.tick} enemyTotal=${joined.enemyTotal} level=${joined.roomLevel}/${joined.clientLevel}`);
   assert.equal(joined.enemyTotal, 4, 'the room told us, on join, how many enemies this level has');
+  // THE ROOM AND THIS TAB MUST FIGHT THE SAME LEVEL. The client builds the map, the set-pieces and the
+  // arena centre at take-off; a room running a different level puts its enemies around a different centre,
+  // in a world the player is not looking at. `?netsim=1` used to hardcode level-0, which did exactly that
+  // for any player past the first level, and it reads as "the enemy appeared in the wrong place".
+  assert.equal(joined.roomLevel, joined.clientLevel,
+    `the room is fighting ${joined.roomLevel} but this tab built ${joined.clientLevel}`);
 
   // Fly. There is NO local sim step in this mode, so any movement at all had to come back over the wire.
   //
@@ -81,6 +94,48 @@ export default async function ({ page, assert, shot, baseURL }) {
   console.log(`      enemies=${withEnemy.enemies} withMeshes=${withEnemy.enemyMeshes}`);
   assert.ok(withEnemy.enemies > 0, 'the room spawned an enemy and told us');
   assert.equal(withEnemy.enemyMeshes, withEnemy.enemies, 'every networked enemy got a body through the host');
+
+  // --- Weapons. Both paths broke in the first playtest and neither was covered here. ---
+
+  // The gun: a shot must arrive carrying the LOOK of the weapon that fired it. Without `projectileColor`
+  // and `class` the host falls through to an untinted dot instead of the weapon's bolt — which is what a
+  // netsim fight looked like when the wire carried neither.
+  await page.keyboard.down('Space');
+  await page.waitForFunction('window.__game.bullets.length > 0', null, { timeout: 20000 });
+  const shooting = await status(page);
+  await page.keyboard.up('Space');
+  console.log(`      bullets=${shooting.bullets} look=${JSON.stringify(shooting.bulletLook[0])}`);
+  assert.ok(shooting.bulletLook[0].mesh, 'the bullet got a body');
+  assert.ok(Number.isFinite(shooting.bulletLook[0].color), 'and the weapon\'s projectile colour');
+  assert.ok(shooting.bulletLook[0].cls, 'and its class, which is what picks the bolt over a plain dot');
+
+  // The rocket: this froze the whole game. Wire events carry `pos` as plain JSON, and the FX layer calls
+  // `pos.clone()` on it — a rocket emits a smoke puff about thirty times a second, so the frame threw,
+  // the loop died and the last sound played forever. The runner fails on page errors, so simply firing
+  // one here is most of the guard; the assertions below are the rest.
+  const beforeRocket = await status(page);
+  // HELD, not pressed. The uplink samples input once per rendered frame, and headless renders a handful a
+  // second — a 10 ms keypress can fall entirely between two samples and never reach the room at all.
+  await page.keyboard.down('KeyF');
+  await page.waitForFunction('window.__game.smoke.length > 0', null, { timeout: 25000 });
+  await page.keyboard.up('KeyF');
+  const flying = await status(page);
+  console.log(`      rocket: bodies=${flying.rocketBodies}/${flying.rockets} smokePuffs=${flying.smoke}`);
+  assert.equal(flying.rocketBodies, flying.rockets, 'every networked rocket has a body');
+  assert.ok(flying.smoke > 0, 'its trail is being drawn — the puff path is where the freeze lived');
+  assert.ok(flying.tick > beforeRocket.tick, 'and the loop is still running after firing it');
+
+  // Pause must reach the ROOM. A room holds one player, so a real freeze is legitimate — and a button that
+  // says "Paused" while the fight keeps running and the ship keeps taking hits is worse than no button.
+  await page.evaluate(() => document.getElementById('pause-btn').click());
+  await page.waitForTimeout(900);
+  const p1 = await status(page);
+  await page.waitForTimeout(900);
+  const p2 = await status(page);
+  console.log(`      paused: ticks ${p1.tick} -> ${p2.tick}`);
+  assert.equal(p2.tick, p1.tick, 'the ROOM stopped stepping while paused, not just the drawing');
+  await page.evaluate(() => document.getElementById('pause-btn').click());
+  await page.waitForFunction((t) => window.__netsim.tick > t, p2.tick, { timeout: 20000 });
 
   // Nothing is being simulated locally: freeze the uplink and the socket, and the world must go STILL.
   // If a local sim were secretly running, positions would keep changing — the quiet fork this guards.

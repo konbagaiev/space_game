@@ -73,11 +73,18 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       return { id, kind, name: e.name, shipClass: e.class, color: e.color,
                fullScale: e.fullScale, maxHp: e.maxHp, role: e.role, sizeScale: e.sizeScale };
     }
+    // A projectile's LOOK travels with it: `projectileColor` + `class` decide whether the client draws the
+    // weapon's bolt or an untinted dot, and `lead`/`spiralOf` decide whether a rocket has a mesh at all
+    // (a spiral volley's leader is invisible). The birth POSITION rides along too — a bullet lives well
+    // under a second, so waiting for the next snapshot row to place it is a visible pop.
     if (kind === 'bullet') {
-      return { id, kind, color: e.color, fromPlayer: e.fromPlayer, weaponClass: e.weaponClass };
+      return { id, kind, projectileColor: e.projectileColor, class: e.class, fromPlayer: e.fromPlayer,
+               x: e.pos.x, z: e.pos.z, vx: e.vel.x, vz: e.vel.z };
     }
     if (kind === 'rocket') {
-      return { id, kind, color: e.color, fromPlayer: e.fromPlayer, weaponClass: e.weaponClass };
+      return { id, kind, projectileColor: e.projectileColor, weaponClass: e.weaponClass,
+               fromPlayer: e.fromPlayer, lead: !!e.lead, spiralOf: !!e.spiralOf,
+               x: e.pos.x, z: e.pos.z, h: e.heading };
     }
     if (kind === 'drop') return { id, kind, item: e.item, special: !!e.special };
     return { id, kind };

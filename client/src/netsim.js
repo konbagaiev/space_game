@@ -24,13 +24,19 @@ export const MAX_PENDING_TICKS = 240;
 
 // `?netsim` / `?netsim=1` → { level, seed } | null. URL-only, never sticky: this is an experiment you opt
 // into per visit, and a flag that survived a reload would silently keep a player on the socket path.
-// `?netsim=level-2` names a level; `&seed=N` pins the room's RNG so a session is reproducible.
+// `?netsim=level-2` names an explicit level; `&seed=N` pins the room's RNG so a session is reproducible.
+//
+// A bare `?netsim=1` yields `level: null`, meaning "whatever level this player is actually on". It must
+// NOT default to level-0: the client builds the map, the set-pieces and the arena centre for the player's
+// CURRENT level at take-off, so a room running a different one puts the fight somewhere else entirely —
+// enemies spawn around the room's arena centre while the player looks at another level's scenery. That
+// reads exactly like "the enemy appeared in the wrong place", which is how it was found.
 export function evalNetsim(search) {
   const p = new URLSearchParams(search || '');
   if (!p.has('netsim')) return null;
   const v = p.get('netsim');
   if (v === '0' || v === 'false' || v === 'off') return null;
-  const level = (v && v !== '' && v !== '1' && v !== 'true') ? v : 'level-0';
+  const level = (v && v !== '' && v !== '1' && v !== 'true') ? v : null; // null = follow the client's level
   const seedRaw = p.get('seed');
   const seed = seedRaw != null && /^\d+$/.test(seedRaw) ? Number(seedRaw) : null;
   return { level, seed };
@@ -120,10 +126,30 @@ export async function connectNetsim({ playerId, level, seed, origin = location.o
   ws.onclose = (ev) => onClose?.(ev);
   ws.onerror = (err) => onError?.(err);
 
+  // WAIT FOR THE SOCKET TO OPEN before handing back a handle. A `WebSocket` is constructed in CONNECTING
+  // state and anything sent then is dropped on the floor — silently, since `send` can only check
+  // `readyState`. Returning early therefore produced a handle that looked connected and swallowed the
+  // first message sent through it, which was `start`: the room joined and then never stepped, and the
+  // player sat in a fight that was not running. A handle means USABLE.
+  const opened = await new Promise((resolve) => {
+    if (ws.readyState === 1) return resolve(true);
+    ws.addEventListener?.('open', () => resolve(true), { once: true });
+    ws.addEventListener?.('close', () => resolve(false), { once: true });
+    if (!ws.addEventListener) { const prev = ws.onopen; ws.onopen = (e) => { prev?.(e); resolve(true); }; }
+  });
+  if (!opened) { onError?.(new Error('socket closed before it opened')); return null; }
+
   const uplink = createUplink({ send: (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); } });
+  const send = (m) => { try { if (ws.readyState === 1) ws.send(JSON.stringify(m)); } catch {} };
   return {
     ws, uplink,
     pump: (dt, keys, touchAim) => uplink.pump(dt, keys, touchAim),
-    close() { try { uplink.flush(); ws.send(JSON.stringify({ type: 'bye' })); } catch {} try { ws.close(); } catch {} },
+    // Begin the fight. Connecting and starting are separate so the handshake can happen while the player
+    // is still on a menu — paying it after take-off is two seconds of a ship that does not answer.
+    start() { send({ type: 'start' }); },
+    // Ask the room to stop / resume stepping. A room holds one player, so this is a true freeze rather
+    // than the lie a pause button in a shared world would be (DECISIONS §16).
+    setPaused(paused) { uplink.flush(); send({ type: paused ? 'pause' : 'resume' }); },
+    close() { uplink.flush(); send({ type: 'bye' }); try { ws.close(); } catch {} },
   };
 }

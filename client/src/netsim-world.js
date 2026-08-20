@@ -56,12 +56,20 @@ function spawnGhost(world, desc) {
     e.maxHp = desc.maxHp ?? e.maxHp;
     world.enemies.push(e);
   } else if (desc.kind === 'bullet') {
-    e = { pos: new Vec3(0, BULLET_PLANE_Y, 0), vel: new Vec3(), color: desc.color,
-          fromPlayer: !!desc.fromPlayer, weaponClass: desc.weaponClass, traveled: 0, alive: true };
+    // `projectileColor` + `class` are what make a shot look like the weapon that fired it: the class picks
+    // its BOLT_SCALE, and without one `attachBulletBody` falls through to a plain untinted dot. That is
+    // exactly what a netsim fight looked like before these were carried.
+    e = { pos: new Vec3(desc.x ?? 0, BULLET_PLANE_Y, desc.z ?? 0), vel: new Vec3(desc.vx || 0, 0, desc.vz || 0),
+          projectileColor: desc.projectileColor, class: desc.class,
+          fromPlayer: !!desc.fromPlayer, traveled: 0, alive: true };
     world.bullets.push(e);
   } else if (desc.kind === 'rocket') {
-    e = { pos: new Vec3(0, BULLET_PLANE_Y, 0), vel: new Vec3(), heading: 0, color: desc.color,
-          fromPlayer: !!desc.fromPlayer, weaponClass: desc.weaponClass, alive: true };
+    // `lead` marks the invisible leader of a spiral volley (no mesh at all) and `spiralOf` picks the
+    // warhead geometry — both decide what `attachRocketBody` builds, so both have to survive the wire.
+    e = { pos: new Vec3(desc.x ?? 0, BULLET_PLANE_Y, desc.z ?? 0), vel: new Vec3(), heading: desc.h || 0,
+          projectileColor: desc.projectileColor, weaponClass: desc.weaponClass,
+          lead: !!desc.lead, spiralOf: desc.spiralOf ? true : undefined,
+          fromPlayer: !!desc.fromPlayer, alive: true };
     world.rockets.push(e);
   } else if (desc.kind === 'drop') {
     e = { pos: new Vec3(0, 0.8, 0), item: desc.item, special: !!desc.special, inRange: 0, alive: true };
@@ -150,11 +158,21 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
   return true;
 }
 
-// Turn a wire event back into what the adapter expects: an entity id becomes the entity again, so a shield
-// ripple binds to the ship it hit.
+// Turn a wire event back into what the adapter expects.
+//
+// TWO conversions, and the second one is not optional. JSON flattens a `Vec3` into a bare `{x,y,z}`, and
+// the FX layer does not merely READ a position — `spawnSmoke`, `spawnBossExplosion` and the credit popups
+// all call `pos.clone()` on it, because a puff has to keep the point it was born at after the emitter has
+// moved on. A plain object throws there, once per puff, which a rocket produces about thirty times a
+// second: the frame dies, the loop stops, and the last sound left playing loops forever. So every
+// positional field comes back as a real `Vec3` before the adapter ever sees it.
+//
+// The other conversion is the reverse of the wire's entity-id swap, so a shield ripple binds to the ship
+// it hit rather than to a number.
 function hydrateEvent(state, ev) {
-  if (ev.enemyId != null) return { ...ev, enemy: state.byId.get(ev.enemyId) || null };
-  return ev;
+  const out = ev.pos ? { ...ev, pos: new Vec3(ev.pos.x, ev.pos.y, ev.pos.z) } : { ...ev };
+  if (ev.enemyId != null) out.enemy = state.byId.get(ev.enemyId) || null;
+  return out;
 }
 
 // ---------- Rendering a moment in the past ----------

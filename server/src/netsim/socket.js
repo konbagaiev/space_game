@@ -55,13 +55,22 @@ export function attachNetsim(httpServer, { tickets, log = console } = {}) {
     sessions.add(session);
 
     send(ws, { ...room.welcome(), seed, playerId });
-    driver.start();
+    // The room does NOT start stepping on join. A client connects while the player is still on a menu — the
+    // handshake takes a couple of seconds on a cold page, and paying that after take-off left the ship dead
+    // and unresponsive for exactly that long. So the socket is established early and the fight begins when
+    // the client says `start`; otherwise the level would also be spawning enemies into an empty hangar.
 
     ws.on('message', (data) => {
       session.lastSeen = Date.now();
       let msg;
       try { msg = JSON.parse(data); } catch { return; } // a malformed frame is dropped, never fatal
       if (msg && msg.type === 'input') room.pushInput(msg.ticks);
+      else if (msg && msg.type === 'start') driver.start();
+      // Pause is a REAL freeze here, and it is legitimate precisely because a room holds one player
+      // (DECISIONS §16 forbids it for a SHARED world — when rooms hold more than one, this must go).
+      // Stopping the driver stops the fight: no spawns, no enemy fire, no cooldowns ticking.
+      else if (msg && msg.type === 'pause') driver.stop();
+      else if (msg && msg.type === 'resume') driver.start();
       else if (msg && msg.type === 'bye') ws.close(1000, 'bye');
     });
 

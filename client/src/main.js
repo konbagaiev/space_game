@@ -81,6 +81,8 @@ let netsimActive = !!NETSIM;  // cleared if the handshake fails, so the tab fall
 let netLink = null;           // the socket + uplink, once connected
 let netConnecting = false;
 let netsimPaused = false;   // __netsim.pause(): stop pumping/applying, freeze on the last known state
+let netRoomPaused = false;  // last pause state pushed to the room (so we send only on a change)
+let netStarted = false;     // the room has been told to begin (take-off), as opposed to merely joined
 const netState = createNetState();
 const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
 let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
@@ -794,11 +796,27 @@ async function startNetsim() {
     netLink = null; netsimActive = false;
   };
   try {
+    // The room must fight the level this tab has already BUILT — same map, same set-pieces, same arena
+    // centre — or the two disagree about where the world is. `CATALOG.levelName` is the seed name the
+    // client resolved at boot; an explicit `?netsim=level-N` overrides it deliberately.
+    //
+    // A SIDE MISSION has no name a room can resolve: its descriptor is generated per player by
+    // `server/src/missions.js` and never appears in `catalog_seed.js` LEVELS. Rather than quietly running
+    // the campaign level in the room while this tab shows the side mission — the same "the enemy is in the
+    // wrong place" failure — refuse and play locally. Side missions over the network are an explicit
+    // non-goal for this cut (plan §6).
+    if (G.activeMission && !NETSIM.level) {
+      bail(new Error('a side mission cannot be run in a room yet — pick the campaign, or name a level with ?netsim=level-N'));
+      netConnecting = false;
+      return;
+    }
+    const level = NETSIM.level || CATALOG.levelName;
     netLink = await connectNetsim({
-      playerId: G.playerId, level: NETSIM.level, seed: NETSIM.seed,
+      playerId: G.playerId, level, seed: NETSIM.seed,
       onWelcome: (w) => {
         netState.welcome = w;
         console.info(`[netsim] room joined: level=${w.level} seed=${w.seed} dt=${w.dt} snapshotEvery=${w.snapshotEvery}`);
+        if (w.level !== level) console.warn(`[netsim] the room is fighting ${w.level}, this tab built ${level}`);
       },
       onSnapshot: (snap) => { netState.ack = snap.ack; if (!netsimPaused) applySnapshot(world, netState, snap, performance.now()); },
       onClose: (ev) => { if (netsimActive) bail(new Error(`socket closed (${ev && ev.code})`)); },
@@ -824,8 +842,16 @@ function animate() {
     // room described it ~100 ms ago (netsim-world.js interpolates between snapshots), and run the ordinary
     // render half — which drains the wire events through the SAME adapter local events go through, so FX,
     // audio, the HUD and the overlays all work without knowing where the fight is being decided.
-    if (G.gameStarted && !netConnecting && !netLink) startNetsim();
-    if (netLink && G.gameStarted && !G.mapOpen && !netsimPaused) {
+    // Connect as soon as the catalog names a level — during the menu, not at take-off.
+    if (!netConnecting && !netLink && CATALOG.levelName) startNetsim();
+    // …and tell the room to begin only when the player actually launches.
+    if (netLink && G.gameStarted && !netStarted) { netStarted = true; netLink.start(); }
+    // Pause and the system map both have to reach the ROOM, or the button lies: the local overlay would say
+    // "Paused" while the fight kept running and the ship kept taking hits. One player per room makes a real
+    // freeze legitimate (DECISIONS §16).
+    const wantPaused = G.paused || G.mapOpen;
+    if (netLink && wantPaused !== netRoomPaused) { netRoomPaused = wantPaused; netLink.setPaused(wantPaused); }
+    if (netLink && netStarted && !wantPaused && !netsimPaused) {
       netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
       renderNet(world, netState, performance.now());
       renderTick(dt);
@@ -958,8 +984,9 @@ if (NETSIM) {
   window.__netsim = {
     get active() { return netsimActive; },
     get connected() { return !!netLink; },
+    get started() { return netStarted; },
     get tick() { return netState.lastTick; },
-    get level() { return NETSIM.level; },
+    get level() { return (netState.welcome && netState.welcome.level) || NETSIM.level; },
     get welcome() { return netState.welcome; }, // what the room said about this fight when we joined
     get uplinkTick() { return netLink ? netLink.uplink.tick : -1; },
     // Round-trip health at a glance: how far the room's acknowledgement trails the input we have sent.
@@ -999,6 +1026,7 @@ if (location.search.includes('debug')) {
     get enemyShieldSlots() { return enemyShieldSlots(); }, // diagnostic: the pooled enemy bubble slots
     get enemyShieldRefills() { return G.enemyShieldRefills; }, // diagnostic: completed enemy shield refills this run (replay triage)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
+    get levelName() { return CATALOG.levelName; },     // the SEED NAME (level-N) this tab resolved at boot
     get needsSceneWarm() { return G.needsSceneWarm; }, // diagnostic: a level build is waiting to be compiled/uploaded
     get pendingAssets() { return G.pendingAssets; }, // diagnostic: essential .glb loads still in flight (veil gate)
     smokePool, // diagnostic: the instanced rocket-trail pool (live count + per-instance alphas)

@@ -73,9 +73,23 @@ test('a ticket cannot be used twice', async () => {
   ws.close();
 });
 
+test('a joined room does not step until the client says start', async () => {
+  const ws = await openSocket(`ticket=${await getTicket()}&seed=5`);
+  await waitFor(ws, (m) => m.type === 'welcome');
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(ws.inbox.filter((m) => m.type === 'snap').length, 0,
+    'no snapshots before `start` — a client connects while the player is still on a menu, and the level '
+    + 'must not spawn enemies into an empty hangar');
+  ws.send(JSON.stringify({ type: 'start' }));
+  const snap = await waitFor(ws, (m) => m.type === 'snap');
+  assert.ok(snap.tick > 0, 'and it begins the moment we ask');
+  ws.close();
+});
+
 test('a joined client gets a welcome, then snapshots', async () => {
   const ws = await openSocket(`ticket=${await getTicket()}&level=level-0&seed=1234`);
   const welcome = await waitFor(ws, (m) => m.type === 'welcome');
+  ws.send(JSON.stringify({ type: 'start' }));
   assert.equal(welcome.level, 'level-0');
   assert.equal(welcome.seed, 1234, 'the room used the seed we asked for — replayable');
   assert.equal(welcome.enemyTotal, 4);
@@ -93,6 +107,7 @@ test('a joined client gets a welcome, then snapshots', async () => {
 test('input sent over the wire is applied, and acked', async () => {
   const ws = await openSocket(`ticket=${await getTicket()}&seed=99`);
   await waitFor(ws, (m) => m.type === 'welcome');
+  ws.send(JSON.stringify({ type: 'start' }));
   const before = await waitFor(ws, (m) => m.type === 'snap');
   const speed = (p) => Math.hypot(p.vx, p.vz);
   // A run opens gliding forward at 10% of top speed, and with NO input that drift decays (IDLE_DRAG). So
@@ -111,6 +126,7 @@ test('input sent over the wire is applied, and acked', async () => {
 test('an idle client coasts to a stop — the drift decays, so the thrust test above means something', async () => {
   const ws = await openSocket(`ticket=${await getTicket()}&seed=99`);
   await waitFor(ws, (m) => m.type === 'welcome');
+  ws.send(JSON.stringify({ type: 'start' }));
   const before = await waitFor(ws, (m) => m.type === 'snap');
   const speed = (p) => Math.hypot(p.vx, p.vz);
   ws.send(JSON.stringify({ type: 'input',
@@ -124,6 +140,7 @@ test('an idle client coasts to a stop — the drift decays, so the thrust test a
 test('a malformed frame is ignored, not fatal', async () => {
   const ws = await openSocket(`ticket=${await getTicket()}`);
   await waitFor(ws, (m) => m.type === 'welcome');
+  ws.send(JSON.stringify({ type: 'start' }));
   ws.send('not json at all');
   ws.send(JSON.stringify({ type: 'nonsense' }));
   const snap = await waitFor(ws, (m) => m.type === 'snap');
@@ -146,4 +163,24 @@ test('an unknown level is reported, not crashed', async () => {
   const ws = await openSocket(`ticket=${await getTicket()}&level=level-does-not-exist`);
   const err = await waitFor(ws, (m) => m.type === 'error');
   assert.match(err.error, /level-does-not-exist/);
+});
+
+test('pause really stops the room, and resume restarts it', async () => {
+  const ws = await openSocket(`ticket=${await getTicket()}&seed=7`);
+  await waitFor(ws, (m) => m.type === 'welcome');
+  ws.send(JSON.stringify({ type: 'start' }));
+  const running = await waitFor(ws, (m) => m.type === 'snap');
+
+  ws.send(JSON.stringify({ type: 'pause' }));
+  await new Promise((r) => setTimeout(r, 300));   // let any in-flight snapshot land
+  const atPause = ws.inbox.filter((m) => m.type === 'snap').length;
+  await new Promise((r) => setTimeout(r, 500));
+  const afterWaiting = ws.inbox.filter((m) => m.type === 'snap').length;
+  assert.equal(afterWaiting, atPause,
+    'no snapshots at all while paused — the room stopped stepping, it did not merely stop being drawn');
+
+  ws.send(JSON.stringify({ type: 'resume' }));
+  const resumed = await waitFor(ws, (m) => m.type === 'snap' && m.tick > running.tick + 1);
+  assert.ok(resumed.tick > running.tick, 'and it picks up where it left off');
+  ws.close();
 });
