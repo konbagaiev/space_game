@@ -180,9 +180,9 @@ export async function connectNetsim({ playerId, level, seed, origin = location.o
     pump: (dt, keys, touchAim) => uplink.pump(dt, keys, touchAim),
     // Begin the fight. Connecting and starting are separate so the handshake can happen while the player
     // is still on a menu — paying it after take-off is two seconds of a ship that does not answer.
-    start() { send({ type: 'start' }); },
+    start(pose = null) { send({ type: 'start', pose }); },
     // Begin a FRESH run in the same room — a retry, or the next level after an advance.
-    restart() { uplink.flush(); send({ type: 'restart' }); },
+    restart(pose = null) { uplink.flush(); send({ type: 'restart', pose }); },
     // Click-to-fly. Flushed alongside the pending input so the room applies it in the right order relative
     // to the keys the player was holding when they clicked.
     command(cmd) { uplink.flush(); send({ type: 'autopilot', cmd }); },

@@ -217,9 +217,17 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     //
     // The seeded stream is deliberately NOT re-seeded: it carries on, which is what live play does (an
     // unseeded run draws from Math.random). Re-seeding would make every retry identical.
-    restart() {
+    // `pose` = start the run WITHOUT moving the ship, from exactly where the client's ship already is. A
+    // mission entered by flying into it is meant to be seamless: the fight begins around you. Placing the
+    // ship at the arena centre instead turned the fly-in countdown into a teleport.
+    restart(pose = null) {
       clearAndPlaceRun(world);
-      startRun(world);
+      if (pose) {
+        world.player.pos.set(pose.x, world.player.pos.y, pose.z);
+        world.player.heading = pose.h;
+        world.player.vel.set(pose.vx || 0, 0, pose.vz || 0);
+      }
+      startRun(world, { keepPlayer: !!pose });
       queue.length = 0; lastInput = EMPTY_INPUT; ack = null;
       pendingEvents = [];
       return tick;

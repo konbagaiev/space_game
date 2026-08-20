@@ -158,6 +158,25 @@ test('a client feeding at the natural rate is never fast-forwarded', () => {
   assert.equal(room.queued, 0);
 });
 
+test('a run can begin AROUND the ship, not by teleporting it to the arena centre', () => {
+  // A mission entered by flying into it is meant to be seamless — the fight starts where you already are.
+  // The room placed the ship at the arena centre instead, so the fly-in countdown ended in a teleport.
+  const room = createRoom({ levelName: 'level-1', seed: 3 });
+  const pose = { x: 240.5, z: -180.25, h: 1.75, vx: 12, vz: -4 };
+  room.restart(pose);
+  const p = room.world.player;
+  assert.equal(p.pos.x, pose.x);
+  assert.equal(p.pos.z, pose.z);
+  assert.equal(p.heading, pose.h, 'heading kept, so the fight does not open facing +Z');
+  assert.equal(p.vel.x, pose.vx, 'and the ship is still moving — it opens mid-flight, as it should');
+  assert.equal(p.vel.z, pose.vz);
+  assert.equal(room.world.levelRunner.phaseIndex, 0, 'the level script still started from the top');
+
+  // Without a pose it is the ordinary placement at the run centre.
+  room.restart();
+  assert.notEqual(room.world.player.pos.x, pose.x, 'a plain restart centres the ship as before');
+});
+
 test('restart begins a fresh run in the same room', () => {
   const room = createRoom({ seed: 21 });
   for (let i = 0; i < 900; i++) { room.pushInput([{ t: i, k: ['KeyW'], a: null }]); room.stepOnce(); }

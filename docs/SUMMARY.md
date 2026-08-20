@@ -3042,7 +3042,11 @@ the first message sent through it.
 
 **The room follows the run, in level and in freshness.** `start` is keyed to `G.gameStartTime` — the
 per-run stamp `reset()` sets — not to `G.gameStarted`, which stays true between fights and used to make a
-room begin while the player was reading a briefing. A new run sends **`restart`**: the room empties its
+room begin while the player was reading a briefing. That key **survives a reconnect**: advancing a level
+reconnects the room, and forgetting the run there made the next fight start under the victory overlay.
+Both `start` and `restart` carry the ship's **pose** when the run began without moving it
+(`world.runKeepPlayer`, set by `reset({ keepPlayer })`) — a mission flown into opens around the ship,
+mid-flight, instead of teleporting it to the arena centre. A new run sends **`restart`**: the room empties its
 world and starts the level script again inside the same socket, with the tick counter still climbing (the
 client drops any snapshot not newer than the last one applied, so rewinding it would make the next run
 invisible). A change of LEVEL reconnects instead, since the room is built around one.

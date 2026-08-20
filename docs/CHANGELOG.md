@@ -5,6 +5,18 @@
 
 ## 2026-08-20
 
+- **Winning a level immediately started the next one.** Advancing after a victory changes
+  `CATALOG.levelName`, which reconnects the room — and the reconnect cleared `netRunAt`, so the very next
+  frame looked like a brand-new run and told the fresh room to begin. The player was thrown into level 2
+  while still looking at the victory overlay, with no chance to reach the hangar. `netRunAt` survives a
+  reconnect now: it records which RUN a room was last told to play, and `G.gameStarted` — true between
+  fights — was never a safe gate for it.
+- **The fly-in countdown ended in a teleport.** A mission entered by flying into it keeps the ship exactly
+  where it is; that seamlessness is the whole point. The room knew nothing about it and placed the ship at
+  the arena centre. `start`/`restart` carry the ship's pose now (position, heading and velocity, so the
+  fight opens mid-flight), and the room begins the run around it — `reset()` records `world.runKeepPlayer`
+  for the client to pass on.
+
 - **Crates were drawn at the world origin.** A drop's spawn description carried no position, so the ghost was
   born at (0,0,0) — and `drawDrops` only ever positioned the crate being PULLED, which is fine locally
   (a crate does not move until the Grab takes it) and wrong over a network, where its position arrives in

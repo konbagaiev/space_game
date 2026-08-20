@@ -91,8 +91,10 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, log = conso
       deliver = (msg) => {
         session.lastSeen = Date.now();
         if (msg.type === 'input') room.pushInput(msg.ticks);
-        else if (msg.type === 'start') driver.start();
-        else if (msg.type === 'restart') { room.restart(); driver.start(); }
+        // Both begin a run; `start` is simply the first one on this link. Either may carry a pose, which
+        // means "the fight begins around the ship where it already is" (a mission flown into).
+        else if (msg.type === 'start') { room.restart(msg.pose || null); driver.start(); }
+        else if (msg.type === 'restart') { room.restart(msg.pose || null); driver.start(); }
         else if (msg.type === 'autopilot') room.command(msg.cmd);
         // Pause is a REAL freeze here, and it is legitimate precisely because a room holds one player
         // (DECISIONS §123 forbids it for a SHARED world — when rooms hold more than one, this must go).

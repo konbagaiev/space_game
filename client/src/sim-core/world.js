@@ -77,6 +77,9 @@ export function createWorld({ host = noopHost } = {}) {
     // World nobody steps. Deliberately not the event queue — events describe what HAPPENED; this is an
     // intent travelling the other way, from the player toward whoever is simulating.
     onCommand: null,
+    // Did the current run begin WITHOUT moving the ship (a mission entered by flying into it)? Read by the
+    // netsim client, which has to tell the room; irrelevant in single-player, where reset() acts directly.
+    runKeepPlayer: false,
     // The player's active-ship record { ship, loadout, components, progression, … }. The simulation needs
     // it to decide whether the last-kill reward drop should appear at all (you never get a second copy).
     activeShip: null,

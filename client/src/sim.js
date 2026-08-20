@@ -600,6 +600,11 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   hideGrabLine();            // the Grab's pull beam has no drop to point at any more
   clearEventLog(); // start a fresh run with an empty event log
 
+  // Remember HOW this run started. A mission entered by flying into it keeps the ship exactly where it is
+  // — that seamlessness is the whole point of the fly-in — and a room has to be told, or it places the ship
+  // at the arena centre and the countdown ends in a teleport.
+  world.runKeepPlayer = keepPlayer;
+
   // --- the fight, part 1: empty the world and decide where this run is fought ---
   const { x: cx, z: cz } = clearAndPlaceRun(world);
 

@@ -822,7 +822,11 @@ function sendNetCommand(cmd) {
 
 function dropNetsim() {
   try { netLink.close(); } catch {}
-  netLink = null; netStarted = false; netRoomPaused = false; netRunAt = null; netLevel = null;
+  // `netRunAt` deliberately SURVIVES: it records which run a room was last told to play. Clearing it made
+  // a reconnect look like a brand-new run, so winning a level — which advances `CATALOG.levelName` and
+  // therefore reconnects — immediately started the NEXT level's fight while the player was still looking at
+  // the victory overlay. `G.gameStarted` stays true between fights, so it cannot be the gate.
+  netLink = null; netStarted = false; netRoomPaused = false; netLevel = null;
   clearNet(world, netState);
   netState.welcome = null; netState.ack = null;
 }
@@ -901,10 +905,14 @@ function animate() {
     // Begin — or begin AGAIN — only when a run actually starts, so a room does not spawn into an empty
     // hangar while the player reads a briefing.
     if (netLink && G.gameStarted && netRunAt !== G.gameStartTime) {
-      const first = netRunAt === null;
       netRunAt = G.gameStartTime;
-      netStarted = true;
-      if (first) netLink.start(); else netLink.restart();
+      // A fresh LINK starts; an existing one restarts its world. Keyed to `netStarted` (per link) rather
+      // than to whether we have ever seen a run, because a level change reconnects mid-session.
+      const pose = world.runKeepPlayer ? {
+        x: world.player.pos.x, z: world.player.pos.z, h: world.player.heading,
+        vx: world.player.vel.x, vz: world.player.vel.z,
+      } : null;
+      if (!netStarted) { netStarted = true; netLink.start(pose); } else netLink.restart(pose);
     }
     // Pause and the system map both have to reach the ROOM, or the button lies: the local overlay would say
     // "Paused" while the fight kept running and the ship kept taking hits. One player per room makes a real
