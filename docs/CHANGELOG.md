@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **…and the file now lands on the DEV SERVER, not in `~/Downloads`.** The first death produced nothing:
+  Chrome does not credit a `requestAnimationFrame` callback with the user gesture a download wants, which is
+  why the same one-liner works from the backdrop panel's button and not from here. So the record is POSTed
+  to `/api/netjerk` and written next to the code that has to read it (`.netjerk/`, gitignored); the download
+  stays as a fallback for a page with no dev server behind it, and the dump now logs unconditionally so a
+  silent failure is impossible to mistake for a trigger that never fired. The endpoint is **absent unless
+  the server was started with `NETJERK_SINK=1`** — writing a client-supplied body to disk is not something
+  to leave standing — and two tests hold both halves of that.
+
 - **`?netjerk` now writes a file when you die.** Dying is the save button: by the time you have alt-tabbed
   to type a command the interesting seconds have scrolled out of the ring buffers, so the probe dumps
   itself the moment the ship dies (`__netsim.saveJerk()` if you would rather not). The file carries the raw

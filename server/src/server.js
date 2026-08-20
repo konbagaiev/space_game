@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/node';
 import express from 'express';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import fsp from 'node:fs/promises';
 import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advanceProgress, recordGame, getPlayerGames, stats, getShips, getWeapons, getComponents, getSoundCatalog, getActivePlayerShip, getMap, getLevel, getLevels, backend, resetPlayer,
   getPlayerPublic, setUsername, findPlayerForLogin, registerAccount, setVerifyToken, verifyEmailToken, createSession, getSessionPlayer, deleteSession, recordEvent, recordPerfSample,
   setResetToken, consumeResetToken, deleteSessionsForPlayer,
@@ -75,8 +76,12 @@ export async function createApp() {
 
   const jsonParser = express.json();                    // ~100kb default — every normal route
   const sessionJson = express.json({ limit: '3mb' });   // replay traces are larger
-  app.use((req, res, next) =>
-    (req.path === '/api/sessions' && req.method === 'POST') ? next() : jsonParser(req, res, next));
+  const netjerkJson = express.json({ limit: '8mb' });   // a whole session's netjerk record (dev sink only)
+  app.use((req, res, next) => {
+    if (req.path === '/api/sessions' && req.method === 'POST') return next();
+    if (req.path === '/api/netjerk' && req.method === 'POST') return netjerkJson(req, res, next);
+    return jsonParser(req, res, next);
+  });
 
   // CORS for the cross-origin itch.io build (docs/plans/2026-07-01-1824-itch-html5-export.md). We reflect
   // the request Origin and do NOT allow credentials — the itch client authenticates with a bearer token,
@@ -110,6 +115,34 @@ export async function createApp() {
   }));
 
   // Record one finished game and bank the credits earned into the player's balance.
+  // ---------- ?netjerk sink (development only) ----------
+  //
+  // The probe's record, written to disk on THIS machine so a stutter report is a file the maintainer never
+  // has to carry anywhere. It exists because the browser's own download is the wrong tool here: it needs a
+  // user gesture Chrome may not credit to a rAF callback, and it lands in ~/Downloads rather than next to
+  // the code that has to read it.
+  //
+  // OFF unless `NETJERK_SINK=1` is in the environment, and deliberately so: an endpoint that writes a
+  // client-supplied body to disk is not something to leave standing on a public server. The filename is
+  // built here, never taken from the request.
+  if (process.env.NETJERK_SINK === '1') {
+    const sinkDir = path.join(__dirname, '..', '..', '.netjerk');
+    app.post('/api/netjerk', wrap(async (req, res) => {
+      const body = req.body || {};
+      if (body.kind !== 'netjerk') return res.status(400).json({ error: 'not a netjerk record' });
+      await fsp.mkdir(sinkDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const name = `netjerk-${String(body.level || 'room').replace(/[^a-z0-9-]/gi, '')}-${stamp}.json`;
+      const file = path.join(sinkDir, name);
+      await fsp.writeFile(file, JSON.stringify(body));
+      const n = (a) => (Array.isArray(a) ? a.length : 0);
+      console.log(`[netjerk] ${name}: ${n(body.events)} breaks, ${n(body.arrivals)} packets, `
+        + `${n(body.slowFrames)} slow frames, ${n(body.marks)} marks (reason: ${body.reason})`);
+      res.json({ ok: true, file });
+    }));
+    console.log(`[netjerk] sink armed → ${sinkDir}`);
+  }
+
   app.post('/api/games', wrap(async (req, res) => {
     const { playerId, credits, score, kills, durationMs, xp } = req.body || {};
     if (!playerId || typeof playerId !== 'string') {

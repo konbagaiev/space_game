@@ -115,16 +115,30 @@ function saveJerkDump(reason = 'manual') {
     screen: typeof window !== 'undefined' ? { w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio } : null,
     gfx: G.gfx ? { tier: G.gfx.tier } : null,
   });
+  const size = `${data.events.length} breaks, ${data.arrivals.length} packets, `
+    + `${data.slowFrames.length} slow frames, ${data.marks.length} lifecycle marks`;
+  console.info(`[netjerk] dumping (${reason}) — ${size}`);
+  const json = JSON.stringify(data);
+
+  // PRIMARY: post it to the dev server, which writes it next to the code that has to read it. The browser
+  // download is a poor fit for this — Chrome may not credit a rAF callback with the user gesture a download
+  // wants, which is exactly what happened the first time — and a file in ~/Downloads still has to be carried.
+  // The sink only exists when the server was started with NETJERK_SINK=1; a 404 is not an error worth noise.
+  fetch('/api/netjerk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json })
+    .then((r) => r.ok ? r.json() : Promise.reject(new Error(`sink said ${r.status}`)))
+    .then((r) => console.info(`[netjerk] written on the server → ${r.file}`))
+    .catch((err) => console.warn(`[netjerk] server sink unavailable (${err.message}); use the download or __netsim.jerk.dump()`));
+
+  // SECONDARY: the download, for when there is no dev server behind the page.
   try {
     const name = `netjerk-${data.level || 'room'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-    const b = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const b = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(b); a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    console.info(`[netjerk] saved ${name} — ${data.events.length} breaks, ${data.arrivals.length} packets, `
-      + `${data.slowFrames.length} slow frames, ${data.marks.length} lifecycle marks`);
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 10_000); // the click is async; do not pull the URL out from under it
     return name;
-  } catch (err) { console.warn('[netjerk] could not save the dump', err); return null; }
+  } catch (err) { console.warn('[netjerk] could not download the dump', err); return null; }
 }
 
 if (NETJERK) {

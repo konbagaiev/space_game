@@ -3163,8 +3163,9 @@ fingerprint at that instant: whether a packet was applied on that frame, the arr
 the time/tick span between the two samples the object is drawn from. `__netsim.jerk.report()` returns the
 tally (`byKind`, `byCause`, arrival-gap and frame-time percentiles, the nose-step and step-change
 percentiles, and the ten worst events by both absolute turn and size-relative-to-cruise); it also warns once
-a second while playing. **The ship dying writes the whole record to a downloaded JSON file** (or
-`__netsim.saveJerk()`): every packet arrival, every frame the tab lost, every break with its context, and a
+a second while playing. **The ship dying POSTs the whole record to `/api/netjerk`**, which writes it
+to `.netjerk/` on the dev machine (gitignored; the endpoint exists only when the server was started with
+`NETJERK_SINK=1`), with a browser download as fallback — or `__netsim.saveJerk()` by hand. The file holds: every packet arrival, every frame the tab lost, every break with its context, and a
 lifecycle timeline (socket dropped, run restarted, room idle, delivery stalls over 200 ms / 8 ticks). `byCause` is the point: a break on a frame that applied **no** packet is
 the client drawing a curve as a straight line, not a network fault.
 
