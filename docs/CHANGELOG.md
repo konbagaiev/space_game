@@ -5,6 +5,22 @@
 
 ## 2026-08-20
 
+- **The projectile steps now run from `sim-core`, and the suite's worst flake is fixed.** `stepBullets` and
+  `stepRockets` moved to `client/src/sim-core/step-projectiles.js` taking the World explicitly — the swept
+  bullet test, the warping-enemy immunity, the opt-in dodge roll and the spiral volley's child accounting
+  all verbatim, since each was a bug once. Three couplings went with them: the UI handovers became the
+  events `missionArrival` / `baseArrival` / `missionZoneEnter`, clearing a lingering banner became
+  `bannerClear` (the simulation had been writing `G.banner.life`), and `ownsReward` moved to sim-core
+  reading `world.activeShip`. **`17-triple-spiral-rocket` is fixed rather than tolerated**: it had been
+  failing ~half the time all day, on `main` too, and blocking every full-suite comparison. Checking its
+  invariant deterministically (`stepSim` instead of the wall clock) showed the game was fine — 4 rockets
+  born, all gone in 239 fixed steps, no leader left — and the *measurement* was wrong: the scenario waited
+  4000 ms of wall clock, but headless software WebGL under load renders a few frames a second and the
+  accumulator caps at 6 steps per frame, so that was never 4 seconds of simulation. It now steps the sim
+  and passes 5/5 where it passed 2/5. No gameplay change: intro trace still `tick=2503/3490`; client tests
+  388 → 390.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3c, part 6).
+
 - **The last things the simulation was reaching for moved out of the client.** `system-map.js` (and its
   test) moved into `client/src/sim-core/` — it was already pure, its only import being `level-sim.js`, but
   the boundary test forbids sim-core reaching outside itself and the steps need its `capLifted` /

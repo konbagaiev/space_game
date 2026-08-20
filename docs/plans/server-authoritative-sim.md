@@ -245,6 +245,31 @@ Two things this surfaced:
 Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
 `17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
 
+#### B3c part 6 outcome — the projectile steps run from sim-core, and a two-month flake is gone
+
+`stepBullets` and `stepRockets` moved to **`sim-core/step-projectiles.js`**, taking the World explicitly.
+They were the busiest part of `sim.js`. Everything they used is now either a sim-core import or reached
+through `world` — the swept bullet test, the warping-enemy immunity, the opt-in dodge roll and the spiral
+volley's child accounting are all verbatim, because each of those was a bug once.
+
+Three smaller couplings went with them: the UI handovers (`onMissionArrival` / `onBaseArrival` /
+`onMissionZoneEnter`) became the events `missionArrival` / `baseArrival` / `missionZoneEnter`; clearing a
+lingering banner became `bannerClear` (the simulation was writing `G.banner.life` directly); and
+`ownsReward` moved to sim-core, reading the account record from `world.activeShip`.
+
+**`17-triple-spiral-rocket` is fixed, not tolerated.** It had been failing about half the time all day, on
+`main` as much as here, and it sat in the way of reading every full-suite delta. Rather than shrug at it I
+checked the invariant it asserts — "once the warheads are gone, the invisible leader must leave too" —
+**deterministically**, stepping the sim with `stepSim` instead of the wall clock: 4 rockets born (1 leader
++ 3 warheads), all gone after 239 fixed steps, `leadersLeft = 0`. The invariant holds; the *measurement*
+was wrong. The scenario waited `4000 ms` of WALL CLOCK, but headless software WebGL under load renders only
+a few frames a second and the accumulator caps at 6 steps per frame — so "wait 4 seconds" was never 4
+seconds of simulation. It now steps the sim, and passes **5/5** where it used to pass 2/5.
+
+That is worth generalising: a scenario that waits on real time is asserting something about the CPU.
+
+Verified: client tests 388 → **390**, intro trace `tick=2503/3490`.
+
 #### B3c part 5 outcome — the last things the steps were reaching for
 
 Everything `simTick` still borrowed from a client module is now either in `sim-core` or behind the host:

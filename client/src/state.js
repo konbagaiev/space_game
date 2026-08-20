@@ -56,7 +56,6 @@ export const G = {
   quitSent: false,            // quit funnel event fires once per session when the player leaves
   pendingBriefing: null,      // a level briefing to show before the next Restart (set on advance)
   // --- player ship selection / loadout (read across welcome/shop/account/net/sim) ---
-  activeShip: null,           // the player's active-ship record { ship, loadout, components, ... }
   currentShipName: null,      // name of the ship currently built into the scene
   // --- run lifecycle (read across sim/UI; written by reset/take-off/pause) ---
   gameStarted: false,         // false on the welcome screen (backdrop renders, but the level isn't running)
@@ -154,7 +153,8 @@ world.input = { keys, touchAim };
 //                 is the active choice and its level names a `center`; `t` is the live countdown, stepped by
 //                 sim.js checkMissionZone, which calls onMissionZoneEnter when it runs out.
 for (const k of ['kills', 'enemyTotal', 'earned', 'earnedXp', 'banked', 'combatElapsed', 'enemyShieldRefills',
-                 'activeMission', 'roam', 'returnToBase', 'replayMode', 'missionZone', 'autopilot']) {
+                 'activeMission', 'roam', 'returnToBase', 'replayMode', 'missionZone', 'autopilot',
+                 'activeShip']) {
   Object.defineProperty(G, k, {
     get: () => world[k],
     set: (v) => { world[k] = v; },

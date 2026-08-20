@@ -31,6 +31,10 @@
 //   { type: 'kill',            pos, isBoss, exhaustColor, sizeScale, role, shipClass, reward, xp, name }
 //   { type: 'warpFlash',       pos }                                   the soft-boundary warp-back arrival
 //   { type: 'banner',          key, params, dur }                      transient centred announcement (i18n KEY, not text)
+//   { type: 'bannerClear' }                                             drop whatever banner is showing, now
+//   { type: 'missionArrival',  missionId }                             a roam point-autopilot parked at a mission
+//   { type: 'baseArrival' }                                             a roam dock-autopilot parked at the station
+//   { type: 'missionZoneEnter' }                                        the fly-into-it countdown ran out
 //   { type: 'win',             textKey, text }                         the mission was cleared
 //   { type: 'death' }                                                  the player's ship was destroyed
 //

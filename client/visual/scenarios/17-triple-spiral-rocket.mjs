@@ -46,11 +46,18 @@ export default async function ({ page, assert, shot }) {
 
   // Let them home + detonate; the whole volley must drain (leader self-removes when children gone). Count
   // only spiral entries so a late campaign-wave enemy rocket can't skew the check.
-  await page.waitForTimeout(4000); // 24u at speed ~14 → homing + detonation well within 4s
-  const drained = await page.evaluate(() => ({
-    spiral: window.__game.rockets.filter((r) => r.lead || r.spiralOf).length,
-    leaders: window.__game.rockets.filter((r) => r.lead).length,
-  }));
+  // Step the SIM, not the wall clock. Headless software WebGL under load renders only a few frames a
+  // second and the accumulator caps at 6 steps per frame, so "wait 4 seconds" was not 4 seconds of
+  // simulation — which is exactly why this assertion used to fail on a busy machine roughly half the time,
+  // on main as well as here. Fixed steps make it a statement about the game instead of about the CPU.
+  const drained = await page.evaluate(() => {
+    const g = window.__game;
+    for (let i = 0; i < 600 && g.rockets.some((r) => r.lead || r.spiralOf); i++) g.stepSim(1); // ≤10 s of sim
+    return {
+      spiral: g.rockets.filter((r) => r.lead || r.spiralOf).length,
+      leaders: g.rockets.filter((r) => r.lead).length,
+    };
+  });
   assert.equal(drained.leaders, 0, 'no immortal invisible leader left behind');
   assert.equal(drained.spiral, 0, 'the whole spiral volley drains from the pool (no leaked entries)');
 }

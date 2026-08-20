@@ -9,8 +9,8 @@ import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
 import { capLifted, arrivedAtPoint, ARRIVE_RADIUS } from './sim-core/system-map.js';
-import { repairTick, shieldRecharge, applyShieldedDamage } from './sim-core/components.js';
-import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, spiralOffset, keyboardThrust } from './sim-core/steering.js';
+import { repairTick, shieldRecharge } from './sim-core/components.js';
+import { headingToDir, shortestAngleDelta, steerToward, enemyThrustFactor, keyboardThrust } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, spawnRocketBurst, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
@@ -21,9 +21,9 @@ import { stepSpawnGate } from './sim-core/spawn-timing.js';
 import { simRandom } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in; cosmetic FX stay on Math.random)
 import { Vec3 } from './sim-core/vec.js'; // sim transforms are plain vectors — no THREE in the simulation path
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
-import { despawnAt, detonateRocket } from './sim-core/spawn.js';
+import { despawnAt } from './sim-core/spawn.js';
+import { stepBullets, stepRockets } from './sim-core/step-projectiles.js';
 import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
-import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './sim-core/collision.js';
 import { drawDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops, attachDropBody, detachDropBody } from './drops.js';
 import { stepDrops } from './sim-core/drops-sim.js';
 import { canDock, BASE_ARRIVE_RADIUS } from './sim-core/autopilot-config.js';
@@ -50,7 +50,7 @@ export function refreshMusic() { audio.setScene(musicForState()); }
 // `dur` seconds (opacity = life/maxLife, drawn by updateBanner). One slot: a newer banner overrides
 // the current one. `firedBanners` guards each milestone so it shows once per run (reset in reset()).
 const BANNER_FADE = 3;              // seconds to fade from full to invisible (per the design)
-const firedBanners = new Set();     // milestone keys already shown this run (10, 5, 'final')
+const firedBanners = () => world.firedBanners; // milestone keys already shown this run (10, 5, 'final')
 // The sim never translates: it names the string and lets the adapter resolve it through i18n.
 function showBanner(key, params = null, dur = BANNER_FADE) { simEvents.emit({ type: 'banner', key, params, dur }); }
 // Floating "EVADE" text over the ship when a hostile shot is dodged (Maneuver skill). Reuses the
@@ -85,7 +85,7 @@ export const levelRunner = {
     this.phaseIndex = 0; this.won = false; this.winPending = 0; this.returningToBase = false;
     G.returnToBase = false; G.autopilot.active = false; G.autopilot.target = null;
     if (G.baseStation) G.baseStation.active = false;
-    firedBanners.clear(); G.banner.life = 0; // fresh run: re-arm the milestone banners + clear any lingering one
+    firedBanners().clear(); simEvents.emit({ type: 'bannerClear' }); // fresh run: re-arm the milestones, drop any lingering banner
   },
 
   start(level) {
@@ -102,8 +102,8 @@ export const levelRunner = {
     // "Final Stage" banner: fire when entering the last combat phase — the one right before the
     // `event: 'win'` phase (the boss/finale on every level). Once per run.
     const next = this.level && this.level.phases[this.phaseIndex + 1];
-    if (ph && !ph.event && next && next.event === 'win' && !firedBanners.has('final')) {
-      firedBanners.add('final');
+    if (ph && !ph.event && next && next.event === 'win' && !firedBanners().has('final')) {
+      firedBanners().add('final');
       showBanner('ui.banner.final_stage');
     }
     if (ph && ph.event === 'win') {
@@ -310,7 +310,7 @@ function checkPointArrival() {
   if (G.player.vel.length() > 0.6) return; // wait until the kinematic brake has settled the ship
   const mission = tgt.mission;
   G.autopilot.active = false; G.autopilot.target = null; // park
-  if (mission && typeof G.onMissionArrival === 'function') G.onMissionArrival(mission);
+  if (mission) simEvents.emit({ type: 'missionArrival', missionId: mission });
 }
 
 // Reaching the base station WHILE ROAMING. This is the free-flight counterpart of checkArrival(): there is
@@ -324,7 +324,7 @@ function checkStationArrival() {
   if (G.player.vel.length() > 0.6) return;              // let the terminal brake settle the ship first
   G.autopilot.active = false; G.autopilot.target = null; // park
   G.player.vel.set(0, 0, 0);                            // and hold station while the prompt is up
-  if (typeof G.onBaseArrival === 'function') G.onBaseArrival();
+  simEvents.emit({ type: 'baseArrival' });
 }
 
 // Flying into the ACTIVE campaign mission's neighbourhood while roaming. `G.missionZone` is set by the roam
@@ -347,7 +347,7 @@ function checkMissionZone(dt) {
     || (tgt.kind === 'point'
         && Math.hypot(tgt.pos.x - z.center.x, tgt.pos.z - z.center.z) > MISSION_ZONE_RADIUS));
   if (elsewhere) {
-    if (z.t != null) G.banner.life = 0;
+    if (z.t != null) simEvents.emit({ type: 'bannerClear' });
     z.t = null;
     return;
   }
@@ -374,9 +374,9 @@ function checkMissionZone(dt) {
     // on arrival anyway, which is the invariant that line was reaching for.)
     showBanner('ui.roam.engaging', { n: Math.ceil(r.t) }, 1);
   } else if (wasCounting && r.t == null) {
-    G.banner.life = 0; // left the zone → drop the countdown banner immediately
+    simEvents.emit({ type: 'bannerClear' }); // left the zone → drop the countdown banner immediately
   }
-  if (r.fire && typeof G.onMissionZoneEnter === 'function') G.onMissionZoneEnter();
+  if (r.fire) simEvents.emit({ type: 'missionZoneEnter' });
 }
 
 // ---------- Homing arrow + HUD hint (world-space arrow + DOM hint) ----------
@@ -542,6 +542,10 @@ function applySimEvent(ev) {
     case 'shieldHit':      spawnShieldHit(ev.pos, ev.broke); break;
     case 'enemyShieldHit': spawnEnemyShieldHit(ev.enemy, ev.pos, ev.broke); break;
     case 'shieldReady':    spawnShieldReady(); break;
+    // Handovers back to the UI: the prompts and screen changes these open are the host's, not the sim's.
+    case 'missionArrival':   G.onMissionArrival?.(ev.missionId); break;
+    case 'baseArrival':      G.onBaseArrival?.(); break;
+    case 'missionZoneEnter': G.onMissionZoneEnter?.(); break;
     case 'pickup': {
       audio.sfx.pickup?.(); // small feedback blip
       const it = ev.item;
@@ -566,6 +570,7 @@ function applySimEvent(ev) {
     case 'evade':
       creditPopups.push({ pos: ev.pos, text: t('ui.evade'), evade: true, life: 1.2, maxLife: 1.2 });
       break;
+    case 'bannerClear':    G.banner.life = 0; break;
     case 'banner': {
       const dur = ev.dur ?? BANNER_FADE;
       G.banner.text = ev.params ? t(ev.key, ev.params) : t(ev.key);
@@ -673,8 +678,8 @@ export function simTick(dt) {
 
   stepPlayer(dt);   // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
   stepEnemyAI(dt);
-  stepBullets(dt);
-  stepRockets(dt);
+  stepBullets(world, dt);
+  stepRockets(world, dt);
   stepEnemyDeaths();
   grabTarget = stepDrops(world, dt); // the Grab: arm, pull, collect (drawn in renderTick)
   levelRunner.update(dt);            // spawning + phase transitions from the active level
@@ -898,145 +903,7 @@ function stepEnemyAI(dt) {
   }
 }
 
-function stepBullets(dt) {
-  // --- projectiles ---
-  for (let i = bullets.length - 1; i >= 0; i--) {
-    const b = bullets[i];
-    // SWEPT test: capture the pre-move position, then test the whole movement segment [p0→p1] vs the hull
-    // so a fast bullet (~1-3 world units/frame) can't tunnel through a thin box between frames.
-    _bulletP0.copy(b.pos);
-    b.traveled += b.vel.length() * dt;
-    b.pos.addScaledVector(b.vel, dt);
 
-    let hit = false;
-    let absorbed = false;                 // this hit landed on a SHIELD → cyan flash instead of the orange spark
-    if (b.fromPlayer) {
-      for (const e of enemies) {
-        if (e.warping) continue; // invulnerable while forming — bullets pass through
-        if (segmentHitsShip(e, _bulletP0, b.pos)) {
-          const dr = applyShieldedDamage(e, b.damage); // shield first, excess spills to the hull this tick
-          if (dr.absorbed) { absorbed = true; simEvents.emit({ type: 'enemyShieldHit', enemy: e, pos: b.pos.clone(), broke: dr.broke }); }
-          hit = true; simEvents.emit({ type: 'hit', target: 'enemy' }); break;
-        }
-      }
-    } else {
-      // Maneuver skill: on a geometric connect, evade with probability dodge/(100+dodge) (hit chance =
-      // 100/(100+dodge-accuracy); accuracy is 0 until that skill ships). The RNG is drawn ONLY when
-      // dodge>0, so a no-skill run — and every existing recording — consumes zero extra draws and replays
-      // bit-identically (DECISIONS §73 opt-in-per-draw contract).
-      const dodge = G.player.dodge || 0;
-      const dodgeRoll = dodge > 0 ? () => simRandom() >= 100 / (100 + dodge) : null;
-      const res = resolveHostileBulletHit(G.player, _bulletP0, b.pos, b.damage, dodgeRoll);
-      if (res.hit) {
-        hit = true;
-        if (res.dodged) {
-          spawnEvadePopup(G.player.pos); // evaded: "EVADE" text, no damage/FX
-        } else {
-          if (res.impact) b.pos.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
-          if (res.damageResult.absorbed) simEvents.emit({ type: 'shieldHit', pos: b.pos.clone(), broke: res.damageResult.broke }); // cyan ripple where the shot connects with the shield
-          simEvents.emit({ type: 'hit', target: 'player', shipClass: G.player.class }); // sampled impact when OUR ship is struck
-        }
-      }
-    }
-
-    // interception: a bullet damages an opposite-side rocket; it's shot down when its hp runs out
-    if (!hit) {
-      for (let j = rockets.length - 1; j >= 0; j--) {
-        const r = rockets[j];
-        if (r.lead) continue;                        // the invisible spiral leader has no hp — not shootable
-        if (r.fromPlayer === b.fromPlayer) continue; // only rockets of the opposite side
-        if (b.pos.distanceTo(r.pos) < 2.4) {
-          r.hp -= b.damage;
-          if (r.hp <= 0) { detonateRocket(world, r, false); if (r.spiralOf) r.spiralOf.children--; despawnAt(world, 'rocket', rockets, j); } // destroyed (a spiral warhead frees its leader slot)
-          hit = true; break;                                                 // else it survives, takes another
-        }
-      }
-    }
-
-    // limited only by range/hits — bullets fly normally beyond the arena (no boundary culling)
-    if (hit || b.traveled >= b.maxRange) {
-      // Class-keyed hit-flash: a small flipbook mini-blast (kinetic spark / cannon flash). A hit ABSORBED
-      // by a shield instead plays the same mini-blast smaller and tinted CYAN (SHIELD_HIT_TINT), so "the
-      // field stopped it" reads differently from an orange hull hit while staying in the one FX family
-      // (DECISIONS §75). spawnHitSprite draws no RNG → replay-safe either way.
-      if (hit) simEvents.emit({ type: 'bulletImpact', pos: b.pos.clone(), weaponClass: b.class, absorbed });
-      despawnAt(world, 'bullet', bullets, i);
-    }
-  }
-}
-
-function stepRockets(dt) {
-  // --- rockets: homing (accelerate toward target), detonate near the enemy ---
-  // Spiral-rocket volley = 1 invisible leader (r.lead: homes, no damage, no smoke) + 3 visible warheads
-  // (r.spiralOf: ride the leader in a corkscrew, each a real rocket). A warhead freeing its slot decrements
-  // the leader's `children`; the leader self-removes when the last is gone (or it hits maxRange).
-  const removeRocket = (idx, r) => { if (r.spiralOf) r.spiralOf.children--; despawnAt(world, 'rocket', rockets, idx); };
-  for (let i = rockets.length - 1; i >= 0; i--) {
-    const r = rockets[i];
-
-    if (r.lead) {
-      // Invisible leader: home + move exactly like a normal rocket, but no smoke, no detonation.
-      if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
-      if (r.target) {
-        const to = r.target.pos.clone().sub(r.pos);
-        const desired = Math.atan2(to.x, to.z);
-        const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
-        const speed = r.vel.length() + r.accel * dt;
-        r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
-      }
-      r.traveled += r.vel.length() * dt;
-      r.pos.addScaledVector(r.vel, dt);
-      r.spiralPhase += SPIRAL_ANGULAR * dt;
-      // Expire when out of range OR all children gone (children decremented on each warhead removal).
-      if (r.traveled >= r.maxRange || r.children <= 0) despawnAt(world, 'rocket', rockets, i);
-      continue;
-    }
-
-    if (r.spiralOf) {
-      // Visible warhead: position = leader.pos + corkscrew offset; velocity tracked for orientation + smoke.
-      const L = r.spiralOf;
-      const axisV = L.vel.lengthSq() > 1e-4 ? L.vel.clone().normalize() : new Vec3(0, 0, 1);
-      const o = spiralOffset({ x: axisV.x, y: axisV.y, z: axisV.z }, L.spiralPhase + r.spiralPhaseOffset, SPIRAL_RADIUS);
-      const off = new Vec3(o.x, o.y, o.z);
-      const prev = r.pos.clone();
-      r.pos.copy(L.pos).add(off);
-      const moved = r.pos.clone().sub(prev);
-      r.vel.copy(moved).multiplyScalar(1 / Math.max(dt, 1e-4)); // for orientation + smoke direction
-      r.traveled = L.traveled; // share the leader's range accounting
-      if (r.vel.lengthSq() > 0.01) r.heading = Math.atan2(r.vel.x, r.vel.z);
-      simEvents.emit({ type: 'smoke', pos: r.pos.clone() }); // corkscrew trail: three offset helices (same fading-line puffs)
-      // detonation/shoot-down handled by the shared block below (uses removeRocket → child-count decrement)
-    } else {
-      // Normal rocket: existing homing + move.
-      // target lost: for a player rocket - if the enemy died; for an enemy one - if the player died
-      if (r.target && (r.fromPlayer ? !enemies.includes(r.target) : !G.player.alive)) r.target = null;
-      if (r.target) {
-        // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
-        const to = r.target.pos.clone().sub(r.pos);
-        const desired = Math.atan2(to.x, to.z);
-        const cur = steerToward(Math.atan2(r.vel.x, r.vel.z), desired, r.turnRate * dt);
-        const speed = r.vel.length() + r.accel * dt;
-        r.vel.set(Math.sin(cur) * speed, 0, Math.cos(cur) * speed);
-      }
-      r.traveled += r.vel.length() * dt;
-      r.pos.addScaledVector(r.vel, dt);
-      if (r.vel.lengthSq() > 0.01) r.heading = Math.atan2(r.vel.x, r.vel.z);
-      simEvents.emit({ type: 'smoke', pos: r.pos.clone() }); // light smoke trail
-    }
-
-    let det = false;
-    if (r.fromPlayer) {
-      for (const e of enemies) {
-        if (e.warping) continue; // no detonation on a forming enemy
-        if (pointHitsShip(e, r.pos, r.detonateR)) { det = true; break; }
-      }
-    } else if (G.player.alive && pointHitsShip(G.player, r.pos, r.detonateR)) {
-      det = true;
-    }
-    // limited only by range/detonation — rockets fly normally beyond the arena (no boundary culling)
-    if (det || r.traveled >= r.maxRange) { detonateRocket(world, r); removeRocket(i, r); }
-  }
-}
 
 function stepMicroExplosions(dt) {
   // --- micro-explosions (short fiery flash) ---
@@ -1143,8 +1010,8 @@ function stepEnemyDeaths() {
       // total is known). kills increments by 1, so `left` lands on each value exactly once.
       if (G.enemyTotal > 0) {
         const left = G.enemyTotal - G.kills;
-        if ((left === 10 || left === 5) && !firedBanners.has(left)) {
-          firedBanners.add(left);
+        if ((left === 10 || left === 5) && !firedBanners().has(left)) {
+          firedBanners().add(left);
           showBanner('ui.banner.enemies_left', { count: left });
         }
       }

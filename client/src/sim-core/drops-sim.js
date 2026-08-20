@@ -11,7 +11,11 @@
 // See docs/plans/server-authoritative-sim.md (Slice B3c).
 import { Vec3 } from './vec.js';
 import { ARM_DELAY, COLLECT_DIST, FIELD_CUTOFF, MAX_DROPS, WEIGHT_FALLBACK,
-         field, pullSpeed, shouldDeposit } from './drops-config.js';
+         field, pullSpeed, shouldDeposit, rewardOwned } from './drops-config.js';
+
+// Does the player already have this reward? A level's last-kill drop appears only if not — there is
+// exactly one copy of it, ever. Pure; the account record lives on the World.
+export function ownsReward(world, reward) { return rewardOwned(world.activeShip, reward); }
 
 // A drop's data. `special` marks the cosmetic reward drop, which deposits NOTHING when collected — the real
 // copy is server-installed on victory, so there is exactly one of it.

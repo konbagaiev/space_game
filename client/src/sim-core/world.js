@@ -71,6 +71,11 @@ export function createWorld({ host = noopHost } = {}) {
     replayMode: false,      // ?record/?playback dev session → the run must NOT mutate the server
     missionZone: null,      // the armed fly-into-it zone + its live countdown (roam → campaign handover)
     autopilot: { active: false, phase: 'brake0', target: null },
+    // The player's active-ship record { ship, loadout, components, progression, … }. The simulation needs
+    // it to decide whether the last-kill reward drop should appear at all (you never get a second copy).
+    activeShip: null,
+    // Milestone banners already shown this run ('final', 10, 5) — each fires once. Cleared on reset.
+    firedBanners: new Set(),
 
     // Input for THIS tick: { keys, touchAim } in the shape replay.js already records and replays. The
     // browser points this at its live keyboard/touch objects; a server replaces it per tick with what the
