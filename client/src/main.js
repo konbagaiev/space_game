@@ -83,7 +83,11 @@ const netsimActive = !!NETSIM; // the flag is on. NEVER cleared — an unavailab
 // `?netjerk` — a diagnostic that watches the poses renderNet writes and reports every break in them, with
 // the delivery fingerprint at that instant. Read it from the console: `__netsim.jerk.report()`. Off by
 // default: it walks every drawn entity per frame, and it answers a question, it is not a feature.
-const NETJERK = typeof location !== 'undefined' && new URLSearchParams(location.search).has('netjerk');
+// Matched against the raw query rather than through URLSearchParams, which is strict about the exact
+// parameter NAME: a URL that picked up a trailing comma on its way through a chat window becomes
+// `&netjerk,` and `has('netjerk')` is then false, so the probe silently never arms. A diagnostic flag that
+// is hard to type correctly is a diagnostic flag that does not get used.
+const NETJERK = typeof location !== 'undefined' && /(^|[?&])netjerk\b/i.test(location.search);
 const perfNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 let netLink = null;           // the socket + uplink, once connected
 let netConnecting = false;
@@ -106,7 +110,14 @@ const netState = createNetState();
 // buffers. Also on `__netsim.jerk.save()` for when you would rather not die.
 function saveJerkDump(reason = 'manual') {
   const probe = netState.jerk;
-  if (!probe) return null;
+  if (!probe) {
+    // Say so rather than returning null into a console: "nothing happened" is the one answer a diagnostic
+    // must never give.
+    console.warn('[netjerk] the probe is not armed — reload with ?netjerk on the URL '
+      + `(this tab's query is "${typeof location !== 'undefined' ? location.search : ''}"). `
+      + 'Look for "[netjerk] probe armed" in the console to confirm.');
+    return null;
+  }
   const data = probe.dump({
     reason,
     savedAt: new Date().toISOString(),

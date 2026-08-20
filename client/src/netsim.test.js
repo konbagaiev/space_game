@@ -186,3 +186,17 @@ test('a socket that dies on its own DOES notify', async () => {
   link.ws.onclose({ code: 1006 });   // the server went away
   assert.equal(closes, 1);
 });
+
+// The ?netjerk flag is matched against the raw query, not through URLSearchParams — see main.js. A flag a
+// human has to retype from a chat window will pick up punctuation, and a diagnostic that silently does not
+// arm is worse than no diagnostic. Kept here as the contract, next to the other flag parsing.
+test('the netjerk flag survives the punctuation a URL picks up in transit', () => {
+  const armed = (search) => /(^|[?&])netjerk\b/i.test(search);
+  assert.equal(armed('?netsim=1&netjerk'), true);
+  assert.equal(armed('?netsim=1&netjerk,'), true, 'a trailing comma is what actually happened');
+  assert.equal(armed('?netjerk&netsim=1'), true);
+  assert.equal(armed('?netjerk=1'), true);
+  assert.equal(armed('?netsim=1'), false);
+  assert.equal(armed(''), false);
+  assert.equal(armed('?nonetjerk=1'), false, 'and it is not matched inside another name');
+});

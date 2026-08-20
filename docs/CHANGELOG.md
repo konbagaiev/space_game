@@ -5,6 +5,12 @@
 
 ## 2026-08-20
 
+- **…and `?netjerk` now survives being retyped.** Two playtest rounds produced no data at all because the
+  URL had picked up a trailing comma — `&netjerk,` — and `URLSearchParams.has('netjerk')` is false for that,
+  so the probe never armed and `saveJerk()` returned a bare `null` into the console. The flag is matched
+  against the raw query now, and an unarmed probe says so instead of returning nothing. A diagnostic that
+  fails silently is worse than no diagnostic.
+
 - **…and the file now lands on the DEV SERVER, not in `~/Downloads`.** The first death produced nothing:
   Chrome does not credit a `requestAnimationFrame` callback with the user gesture a download wants, which is
   why the same one-liner works from the backdrop panel's button and not from here. So the record is POSTed
