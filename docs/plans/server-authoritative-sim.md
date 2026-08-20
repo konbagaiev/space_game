@@ -71,14 +71,19 @@ digest and the identical seeded-RNG draw count.
 
 ### What is left (in order)
 
-**1. Play a level or two and judge the FEEL.** The intro and the first three campaign levels were played
-end to end in a room on 2026-08-20 and reported as fine; the one complaint was the auto-aim, which has since
-been REMOVED from the game entirely (DECISIONS §124) rather than lag-compensated. So the open question is
-what is left: the general input delay drew no complaint, which is evidence against Slice E (prediction)
-being urgent, but it has not been judged since the assist went away and shooting now depends purely on
-where the player points.
+**Where this stopped (2026-08-20, end of session).** A room is playable end to end and was signed off by
+playtest: the campaign runs, missions complete, loot banks, progression advances, and the ship is predicted
+locally. Everything below is genuinely optional or genuinely next — nothing here is a known defect.
 
-**2. D5 — lag compensation.** The one part of Slice D not built. **Its main consumer is gone**: aim-assist
+**1. Local BULLETS — the last piece of Slice E, and the biggest remaining feel item.** A shot appears when
+the snapshot carrying it does rather than on the keypress. The roadmap's "don't stream bullets": the client
+fires locally and flies the projectile deterministically, the room stops streaming bullet rows, the server
+keeps deciding hits. Most of the machinery exists — the predictor already runs `stepPlayer`, which fires —
+so the work is suppressing the double (server bullets AND local ones), not double-playing the `fire` sound,
+and reconciling a local bullet the server says hit something. It also removes the largest per-snapshot
+payload once a room holds more than one player.
+
+**2. D5 — lag compensation.** The one part of Slice D never built. **Its main consumer is gone**: aim-assist
 target selection was the thing that needed rewinding, and auto-aim no longer exists (§124). What remains is
 player-bullet hit tests resolved against the server's present rather than the client's view — worth doing
 only if hits start feeling wrong now that aiming is entirely manual. Judge it by feel first.
@@ -95,11 +100,7 @@ saw, and it is a heading, not a target.
 re-seeded from the newest snapshot each frame and replayed forward over the unacknowledged input. Agrees
 with a real room to 1e-9 over 120 ticks. Stands down for an autopilot or a dead ship.
 
-**What is left of it: local BULLETS.** A shot still appears when the snapshot carrying it does, rather than
-on the keypress. That is the roadmap's "don't stream bullets": the client fires locally and flies the
-projectile deterministically, the room stops streaming bullet rows, and the server keeps deciding hits. It
-is the same machinery — the predictor already runs `stepPlayer`, which fires — so the work is mostly in
-suppressing the double (server bullets AND local ones) and in not double-playing the `fire` sound.
+What is left of it is local bullets — item 1 above.
 
 **4. Seal the economy** (the payoff D1 promised, still a separate slice): `POST /api/games` is
 client-authoritative, the client already uploads every session as an input trace, and `runTrace()` can
