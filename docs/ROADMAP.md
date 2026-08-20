@@ -126,22 +126,16 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
   have a head start: the pure logic is extracted into `client/src/*.js` (`components.js`, `steering.js`),
   which is groundwork for a shared/server simulation. This path keeps the "open in browser, no install"
   advantage and is well-suited to **co-op (PvE)**.
-- **Client-side head start — the "ghost battle" is already a remote-entity renderer.** In MP, ships NOT
-  controlled by this client are driven by a **server stream of transforms** (position / orientation /
-  velocity / turn-rate) that the client **interpolates** in real time. That is a *remote-entity renderer,
-  not a second sim* — no AI / spawn / collision decisions for those ships, just "apply transform + smooth"
-  — so it costs **"more objects on screen," not 2× sim**. The current `client/src/ghost-battle.js` (the
-  distant ambient "ghost battle" that lerps a committed transform track, `backdrop-battle.js`) is **already
-  a primitive of exactly this**: a transform-stream interpolator. **Planned convergence (its own branch,
-  taken up with MP):** make the "battle recording" format a stand-in for the **server stream format** and
-  unify the backdrop + MP remote-entity render into **one path** (plus richer fidelity — real bullets/FX),
-  so the freighter/truck backdrop battle becomes remote-controlled entities fed by a recording. Projectiles
-  stay client-side for now (consistent with "Don't stream bullets" below). This reframes the earlier "rip
-  out the backdrop lerp and re-play it on the engine" idea: the lerp is not thrown away — it **evolves into
-  the networked remote-entity renderer**. Why not a *true* concurrent second live sim instead: `sim.js
-  update()` mutates ~20 module-level singletons (`G`, `enemies`, `bullets`, `drops`, …) with no world
-  context, so a second sim would mean instancing the whole core — the remote-entity path avoids that.
-  **Until that branch, the existing backdrop battle stays exactly as-is.**
+- ~~**Client-side head start — the "ghost battle" is already a remote-entity renderer.**~~ **SUPERSEDED
+  (2026-08-20).** The plan was to generalize `ghost-battle.js`'s transform-lerp into the MP remote-entity
+  renderer, on the reasoning that a real second world was impossible because `sim.js update()` mutated ~20
+  module-level singletons with no world context. **That reasoning no longer holds** — the World context
+  exists (`sim-core/world.js`), so netsim did the better thing instead: the client keeps its OWN World and
+  lets the network write it, so remote entities arrive through the same `world.host.onSpawn` local spawns
+  use and get the same meshes, HUD, health bars and FX for free (DECISIONS §121). There is no second
+  renderer to build and none was built. Interpolation lives in `netsim-world.js`.
+  **The backdrop ghost battle stays exactly as-is** and is now unrelated to multiplayer — it is decor with a
+  committed track, and merging the two would buy nothing.
 - **Godot only if/when fast competitive PvP needs it.** The browser's transport ceiling is WebSocket
   (TCP) / WebRTC; real-time PvP wants UDP/ENet, which only a native (downloaded) client gives — that's
   the real reason to reconsider Godot (DECISIONS §1), at the cost of the frictionless browser client.
@@ -166,22 +160,48 @@ deployed.
   their AI already aims itself. **D5 (lag compensation) is no longer needed for this**; it comes back into
   scope only if auto-aim, or any other see-what-the-client-saw mechanic, returns.
 
-### Netcode notes (parked — far future, from design discussion)
-- **Prereq work, not perf:** the bottleneck to *getting* server-authoritative MP is decoupling the sim
-  from Three.js (own vectors/structs, no `mesh.position`) + a **fixed-step loop** (~30 Hz via
-  accumulator, separate from rendering, deterministic). CPU for one 5v5 @30 Hz is trivial.
-- **Don't stream bullets.** Replicating every bullet 30×/s (esp. machine-gun fire, in JSON) is the real
-  bandwidth/GC hog. Instead send **fire events**; clients simulate the deterministic flight locally.
-- **Hits: server-authoritative, same bandwidth.** The *server* also simulates the same deterministic
-  bullets and **decides hits itself** (clients send inputs/fire+aim, not "I hit X"). Client may predict
-  the hit for feel; the server verdict wins. Hitscan → lag-compensated rewind to the shooter's view-time.
-  Avoid client-reported hits + mere position-plausibility checks (aimbot/fabricated-hit hole).
+### Netcode notes — status against the 2026-08-20 branch
+
+The original design discussion is preserved below with its verdict. Several items are simply done.
+
+- [x] **Prereq work, not perf:** decouple the sim from Three.js + a deterministic fixed-step loop. **Done** —
+  `sim-core/`, `TICK_HZ = 60` in `sim-core/consts.js` (60, not 30: both hosts must agree or the same input
+  produces different outcomes, DECISIONS §118).
+- [x] **Hits are server-authoritative.** **Done** in a room — the server simulates everything and the client
+  reports nothing. It also removes the "aimbot / fabricated hit" hole by construction.
+- [x] **Transport: co-op ~15–20 Hz over WebSocket + interpolation.** **Done** — 15 Hz snapshots, ~100 ms
+  interpolation buffer.
+- [x] **Server-side fire-rate cap.** **Done implicitly** — the room owns the fire-group cooldowns; a client
+  can only hold a key down.
+- [ ] **Don't stream bullets — send fire events instead, and let clients fly them deterministically.**
+  **NOT done, deliberately deferred.** The room streams bullet transforms today, which is the simple thing
+  and is fine for one player. It is the first real bandwidth item when a room holds several, and it pairs
+  naturally with prediction (a client that can simulate its own bullets is most of the way to Slice E).
+- [ ] **Client prediction + reconciliation.** Slice E in the plan. Not urgent by playtest evidence — the
+  ~100 ms input delay drew no complaint across three levels — but it is what makes the netsim path feel
+  equal to local.
+- [ ] **Binary encoding + quantized floats + deltas.** Untouched; JSON snapshots are ~2–5 KB and nowhere
+  near a problem at this scale.
 - **Co-op can be simpler:** client-side hit handling is fine for PvE (cheating barely matters). Server-
-  authoritative hits + lag-comp are only mandatory for **PvP**.
-- **Transport:** co-op ~15–20 Hz over WebSocket + interpolation is fine. Fast PvP wants ~30–60 Hz and
-  UDP/ENet (native client, or WebRTC data channels in-browser) — TCP/WebSocket head-of-line blocking is
-  the limiter. Also: server-side fire-rate cap, client prediction + reconciliation.
-- Binary encoding + quantized floats + deltas when state *is* sent (ships), to cut size/serialization.
+  authoritative hits + lag-comp are only mandatory for **PvP** — and we got the strict version anyway,
+  because it fell out of running the whole sim server-side.
+- **Fast PvP** still wants ~30–60 Hz and UDP/ENet (native client, or WebRTC data channels) — TCP/WebSocket
+  head-of-line blocking is the limiter. Unchanged; it is the Godot decision above.
+
+### Still open for multiplayer proper (none of it started)
+
+- [ ] **More than one player in a room.** Everything so far is one player: no join/leave, no per-player
+  input routing, no interest management. This is the actual co-op work.
+- [ ] **Rooms, matchmaking, invites** — no UI, no lifecycle beyond "one socket, one room".
+- [ ] **Reconnect.** A dropped socket ends the room today.
+- [ ] **Socket draining across the blue-green deploy swap** — a deploy currently kills live rooms.
+- [ ] **Shared roam and side missions over the network** — side missions are refused in a room at all,
+  since their descriptors are generated per player and no room can resolve one by name.
+- [ ] **Pause must change when a room holds two people** (DECISIONS §123) — today it really freezes the
+  room, which is only legitimate while there is exactly one player in it.
+- [ ] **Netsim runs are not recorded for analytics.** The always-on session recorder lives on the local-sim
+  path, so a netsim fight produces no `gameplay_sessions` row. Harmless while netsim is an opt-in flag;
+  a hole the moment it is a real path.
 
 ---
 
