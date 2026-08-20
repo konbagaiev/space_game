@@ -1,8 +1,9 @@
 # Server-authoritative combat simulation
 
 > **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), all green.
-> **Slices A, B and C are done — the simulation runs headless in Node and a test proves it agrees with the
-> browser.** Slice D (the socket) is next. Started 2026-08-19; last worked 2026-08-20. **Local testing only
+> **Slices A–D are done — a level can be played in a server-run room over a WebSocket (`?netsim=1`), and
+> the browser and Node provably simulate the same fight.** What is left of D is lag compensation (D5);
+> then Slice E, client-side prediction, which is what makes the netsim path feel good. Started 2026-08-19; last worked 2026-08-20. **Local testing only
 > — nothing ships to prod or itch, and nothing is pushed, until the maintainer says so.**
 >
 > **Resuming? Read §0 first** — it is a self-contained pick-up brief: current state, the exact next steps
@@ -58,6 +59,11 @@ digest and the identical seeded-RNG draw count.
   `syncMeshes`, the FX-ageing steps, the DOM readouts, music/pause, the scene half of `reset()`, and thin
   binds of the sim-core entry points other modules import by name (`levelRunner`, `warpPlayerToCenter`,
   the four autopilot verbs).
+- **A level can be played in a server-run room.** `?netsim=1` connects this tab to `/ws`, sends input, and
+  draws snapshots; the tab runs no local sim at all. Server side: `server/src/netsim/{room,driver,socket,
+  tickets,protocol}.js` plus `server/src/sim-host.js` (the World factory the room and the referee share).
+  Client side: `client/src/netsim.js` (flag, handshake, uplink) and `netsim-world.js` (reconciliation +
+  interpolation, THREE-free and unit-tested). No prediction yet — the local ship answers ~100 ms late.
 - Starting a run is **two sim-core calls with the host's scenery rebuild between them** —
   `clearAndPlaceRun(world)` → the client rebuilds its set-pieces → `startRun(world, { keepPlayer })`.
   That order is not negotiable in either direction; `reset-world.js` explains why (the home station is a
@@ -65,28 +71,44 @@ digest and the identical seeded-RNG draw count.
 
 ### What is left (in order)
 
-**Slice D — the socket.** A WebSocket carrying input up and world snapshots down, one server-run mission
-instance, no client-side prediction yet. See §4 Slice D. Nothing in the simulation blocks it: the authority
-already exists, it just has nobody to talk to.
+**1. Play it and bring back feel notes.** `?netsim=1` on the local server is playable now and the local ship
+answers about 100 ms late — no prediction yet. That mush is the measurable baseline Slice E is judged
+against, so it wants a human verdict before more is built on top of it. Things to notice: how bad the input
+delay actually is, whether enemy motion reads as smooth at 15 Hz snapshots + 100 ms interpolation, and
+whether shooting feels like it connects.
 
-Two smaller things worth doing first, both cheap:
+**2. D5 — lag compensation.** The one part of Slice D not built. The server keeps a ring buffer of per-tick
+entity transforms (~1 s) and resolves **aim-assist target selection** and **player-bullet hit tests** against
+the rewound state at `clientTick − (interpDelay + RTT/2)`. Our shape mutes the classic version of this
+problem — the client sends keys, not a crosshair, and fire direction comes from the ship's nose, which the
+server simulates itself — so the only things that genuinely depend on where the client SAW the enemies are
+`findBulletAimTarget` / `findTargetInSector` and `touchAim`. Worth doing after the feel notes, because those
+notes decide how much of it is needed.
 
-1. **A `node --test` unit test around the headless referee.** `36-sim-divergence` needs a browser, so the
-   Node half only runs inside the visual suite today. A plain unit test that replays the trace and asserts
-   the outcome (4 kills, arena cleared, a stable digest) would catch a Node-side regression in 300 ms.
-2. **Seal the economy** (the payoff D1 promised): `POST /api/games` is client-authoritative, the client
-   already uploads every session as an input trace, and `runTrace()` can now re-simulate one server-side
-   and decide the reward itself. This is a separate slice, not part of Slice D.
+**3. Slice E — client-side prediction.** The client keeps its unacked inputs, reseeds its World from each
+snapshot and re-runs them through the same `sim-core`. That is exactly what `replay.js` already does
+(simulate from a state + a list of inputs), applied per frame. `ack` is already on every snapshot and the
+uplink already numbers its ticks, so the plumbing is in place.
+
+**4. Seal the economy** (the payoff D1 promised, still a separate slice): `POST /api/games` is
+client-authoritative, the client already uploads every session as an input trace, and `runTrace()` can
+re-simulate one server-side and decide the reward itself.
 
 ### How to verify (do not skip, do not assume)
 
 ```
-cd client && node --test                      # 427 pass
-cd server && npm test                         # 147 pass (needs local Postgres)
+cd client && node --test                      # 445 pass
+cd server && npm test                         # 175 pass (needs local Postgres)
 cd client && node visual/run.mjs 22-intro-replay
 cd client && node visual/run.mjs 36-sim-divergence
+cd client && node visual/run.mjs 37-netsim
 node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json
 ```
+
+To play the netsim path: `PORT=4010 node src/server.js` from `server/`, then
+**`http://localhost:4010/?netsim=1`** (add `&seed=N` to pin the room's RNG, `&netsim=level-2` for another
+level). `window.__netsim` reports `connected` / `tick` / `ack` / `behind` from the console, and
+`__netsim.pause()` freezes the world on its last known state.
 
 **Two oracles, and they check different things.**
 - `22-intro-replay` must print
@@ -724,7 +746,7 @@ different hash.
 dynamically imports every `sim-core` module, which turns that whole class of mistake into a unit-test
 failure in 300 ms. Verified by breaking an import on purpose.
 
-### Slice D — WebSocket + one server-run mission instance, no prediction
+### Slice D — WebSocket + one server-run mission instance, no prediction — ✅ DONE 2026-08-20 (except D5)
 
 1. `ws` added to `server/` (first new runtime dep since `pg`). Upgrade at `/ws`.
 2. A room = one `World` stepping at 60 Hz. One player.
@@ -739,6 +761,48 @@ failure in 300 ms. Verified by breaking an import on purpose.
 baseline.
 *Pause:* there is no freeze in a room (§16). First cut: Esc opens a local menu, the ship keeps flying and
 stays vulnerable. Needs hands-on evaluation.
+
+#### Slice D outcome
+
+Items 1–5 landed; **6 (lag compensation) is not built** and is the first thing left in §0.
+
+**A room is clock-free, and that is what made it testable.** `room.stepOnce()` advances one tick,
+`takeSnapshot()` builds one message, and `driver.js` owns the 60 Hz interval separately. So the
+load-bearing test feeds the canonical Level-0 trace through a room in a for-loop and requires the SAME
+digest the headless referee produces — a room that drifts from the referee is a third simulation, which is
+what this project exists to prevent.
+
+**The client does not grow a second rendering path.** It keeps the same World, written by the network
+instead of by `simTick`: ghosts arrive through the same `world.host.onSpawn` local spawns use (same meshes,
+same code), and wire events are pushed onto `world.events`, so the network is just another producer of the
+stream the adapter already drains into FX, audio and the HUD. Nothing downstream knows where the fight is
+being decided. `netsim-world.js` stays THREE-free, so reconciliation and interpolation are unit-tested in
+Node — including a test that drives a real room into a real client World in-process.
+
+Decisions taken while building it:
+- **`TICK_HZ`/`SIM_DT` moved to `sim-core/consts.js`** (bench.js re-exports `BENCH_DT`). §118 said the tick
+  rate is "one constant"; it was living beside the `?bench` flag, where a server could not reach it.
+- **`makeEnemyShell`** — an enemy's numbers with no RNG, so a networked ghost is built by the same code a
+  combatant is rather than by a second, thinner "render-only enemy". The three seeded draws stay in
+  `makeEnemy` in contract order (§73); the intro oracle's tick count is unmoved.
+- **A ship is NAMED on the wire, not described.** The client holds the same catalog, so it resolves model,
+  yaw, lift and scale from the name. The first draft sent `modelCfg` — which carries dozens of collision
+  OBBs — and the snapshot-size guard in `room.test.js` caught it before it ever ran.
+- **An explicit event allowlist** (`protocol.js`), because `enemyShieldHit` carries a live entity reference.
+  A test parses the catalogue at the top of `sim-core/events.js` and fails if a new event is not wired.
+- **A failed handshake falls back to simulating locally** rather than leaving a ship that will not answer.
+- **Interpolation renders ~100 ms in the past**; positions lerp (headings the short way round), health does
+  not — a bar sliding down over 100 ms reads as a bug, not as smoothing. Past the newest sample the world
+  holds still rather than extrapolating: a wrong guess that has to be taken back looks worse than stillness.
+
+**Two guards worth knowing about.** `37-netsim` pauses the room and requires the world to FREEZE — that is
+how a local sim secretly running underneath would be caught, the failure where everything looks right and
+the two worlds have quietly forked. It also pixel-diffs the screen centre with the hull hidden, because
+every other assertion in it can pass while the player sees nothing (the Slice A lesson, again).
+
+Measured: client tests 427 → **445**, server 153 → **175**, intro oracle `tick=2503/3490` unchanged,
+divergence oracle `hash=0x9d2050b0 draws=38` unchanged. Both paths verified live on `localhost:4010` with
+zero page errors.
 
 ### Slice E — client-side prediction + reconciliation of the local ship
 
@@ -824,5 +888,9 @@ once already:
 - `docs/CHANGELOG.md` — a bullet per slice.
 - `docs/DECISIONS.md` — D1 (single-player stays local), D2 (World context, not worker-per-room),
   D4 (60 Hz on both hosts), D5 (lag compensation from day one), D6 (bullets as events, rockets streamed).
-  §16 (pause) gets revisited at Slice D.
+  Written so far: **§116** (single-player stays local), **§117** (sim owns the transforms), **§118** (60 Hz
+  on both hosts), **§119** (the World is an argument; sim.js keeps proxies), **§120** (the divergence oracle
+  compares a digest AND the RNG draw count), **§121** (a netsim client re-uses its own World), **§122**
+  (snapshots name a ship, never describe it). **§16 (pause) still needs revisiting** — a netsim room has no
+  freeze, and the first cut simply has no pause at all on that path.
 - `docs/plans/multiplayer-architecture.md` — point its phase list at this file.

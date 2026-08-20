@@ -3,13 +3,16 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-20 (**The simulation runs in Node, and a test proves it agrees with the browser** — the
+**Updated:** 2026-08-20 (**A level can be played in a server-run room — `?netsim=1`** — the server holds the
+World and steps it at 60 Hz while the browser sends input and draws 15 Hz snapshots, running no local
+simulation at all; opt-in, so single-player is untouched. Built on the same `sim-core` the browser runs, and
+a test requires a room to reach the same digest as the headless referee. No client-side prediction yet, so
+the local ship answers ~100 ms late. Slices A–D of `docs/plans/server-authoritative-sim.md`; see "Playing in
+a server-run room" below.) Prior: (**The simulation runs in Node, and a test proves it agrees with the browser** — the
 whole tick lives in `client/src/sim-core/` behind `tick.js simTick(world, dt)`, `sim.js` is down to ~630
 lines of picture, and `server/tools/sim-replay.mjs` replays the canonical Level-0 input trace headlessly
-(3490 ticks, 4 kills, arena cleared) with no browser anywhere. The new `36-sim-divergence` scenario requires
-the browser and Node to land on the same world digest AND the same seeded-RNG draw count. Slices A–C of
-`docs/plans/server-authoritative-sim.md`; see "Simulation state is Three.js-free" and "The headless referee
-and the divergence oracle" below.) Prior: (**Simulation state moved out of Three.js** — every simulated entity now owns plain
+(3490 ticks, 4 kills, arena cleared) with no browser anywhere. `36-sim-divergence` requires the browser and
+Node to land on the same world digest AND the same seeded-RNG draw count.) Prior: (**Simulation state moved out of Three.js** — every simulated entity now owns plain
 `pos`/`vel`/`heading`/`scale` data (`sim-core/vec.js`), `collision.js` composes the ship's world matrix itself
 from that state instead of reading `mesh.matrixWorld`, and the new one-way `sim.js syncMeshes()` is the only
 place the simulation reaches the scene graph. Warp-in is sim state, not an animation. A pure refactor: the
@@ -2456,9 +2459,12 @@ first translation). See DECISIONS §10.
   `GET /api/auth/me`, `GET /api/auth/verify`), plus
   `GET /api/config` (public client config), `POST /api/events` (funnel telemetry),
   `POST /api/perf` (client perf samples from the `?dev` monitor — write-only diagnostic telemetry),
-  `POST /api/sessions` (store one gameplay session recording — 3MB route-scoped body parser) and
+  `POST /api/sessions` (store one gameplay session recording — 3MB route-scoped body parser),
   `GET /api/sessions/:id/trace` (serve a recorded trace for admin playback — **intentionally
-  unauthenticated**: seed + input only, no PII, unguessable UUID key).
+  unauthenticated**: seed + input only, no PII, unguessable UUID key) and
+  `POST /api/ws-ticket` (mint a single-use 30 s ticket for the `?netsim` WebSocket — see "Playing in a
+  server-run room"; the socket itself is an `upgrade` on the raw HTTP server at **`/ws`**, not an Express
+  route).
 - **Session recordings (funnel analytics, `docs/plans/2026-08-03-1246-record-all-sessions.md`):**
   **every live campaign session** (side missions excluded in v1 — their server-generated descriptors
   aren't refetchable for `/api/levels/:name` playback) is captured **always-on and invisibly** as a
@@ -2952,7 +2958,9 @@ credit double, the XP bonus) and emits `win`; the overlay and the `bankRun`/`dep
 see this tick's puffs.
 
 **What lives in `sim-core/`:** `vec.js`, `consts.js` (including `SHIP_GROUP_SCALE`, `BULLET_PLANE_Y`,
-`SPAWN_GROW_TIME` and the soft boundary's `ARENA`/`OOB_WARN_DELAY`/`OOB_RETURN_TIME`), `events.js`,
+`SPAWN_GROW_TIME`, the soft boundary's `ARENA`/`OOB_WARN_DELAY`/`OOB_RETURN_TIME`, and `TICK_HZ`/`SIM_DT` —
+the fixed sim step both hosts must agree on or they are not running the same simulation, DECISIONS §118;
+`bench.js` re-exports it as `BENCH_DT`), `events.js`,
 `world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`, `drops-sim.js`,
 `system-map.js`, `digest.js`, and the whole tick — `tick.js`, `step-player.js`, `step-enemies.js`,
 `step-projectiles.js`, `level-runner.js`, `reset-world.js` — plus the game's pure rules —
@@ -3018,10 +3026,81 @@ path reaching into the seeded gameplay stream (DECISIONS §73) shifts one host's
 and the test says so rather than reporting an opaque hash difference. `22-intro-replay` guards the cutscene
 path; this one guards the simulation.
 
-This is Slices A–C of `docs/plans/server-authoritative-sim.md` — one simulation, two hosts (browser for
-single-player, Node for multiplayer and for the headless referee). Nothing about gameplay changed at any
-point: the recorded Level-0 intro trace replays bit-identically throughout (same 4 kills, same
-`tick=2503/3490`). Slice D — the WebSocket and a server-run mission instance — is not built.
+### Playing in a server-run room (`?netsim=1`)
+
+**Opt-in and additive.** Open the game with `?netsim=1` and the level is simulated by a server ROOM: this
+tab sends input and draws what comes back, and calls `simTick` never. Without the flag nothing below runs
+and single-player is exactly what it was — that is DECISIONS §116, not an accident. `?netsim=level-2` picks
+a level, `&seed=N` pins the room's RNG so a session is reproducible.
+
+**Server side — `server/src/netsim/`:**
+- `room.js` — one World, one player. Deliberately **clock-free**: `stepOnce()` advances one tick,
+  `takeSnapshot()` builds one message, and who calls them is somebody else's problem. That is what lets the
+  load-bearing test drive a room from a for-loop and require the same digest the headless referee produces.
+  It assigns network ids through the World's **host** (in a `WeakMap`, so nothing is written onto a sim
+  entity), holds a bounded input queue (240 ticks; overflow drops the OLDEST and is reported in the
+  snapshot), and repeats the last input when the client goes quiet — a network gap holds the controls
+  rather than releasing them.
+- `driver.js` — the 60 Hz clock, with the browser's same bounded catch-up (6 steps) so a stalled event loop
+  cannot spiral into fast-forwarding the fight.
+- `protocol.js` — the wire shapes and an **explicit event allowlist**. It exists because `enemyShieldHit`
+  carries a live entity reference; a test parses the catalogue at the top of `sim-core/events.js` and fails
+  if a new event type is not wired, so an unhandled event cannot be silently dropped.
+- `tickets.js` + **`POST /api/ws-ticket`** — single-use, 30 s, in memory. A browser cannot set
+  `Authorization` on a WebSocket handshake and `Origin` is not a security control, so the socket is gated by
+  a ticket minted over the ordinary HTTP API and spent at `/ws?ticket=…` (plan §5).
+- `socket.js` — one socket, one room, with an idle timeout, a room cap and teardown on close.
+- `server/src/sim-host.js` — the World factory the room and `server/tools/sim-replay.mjs` **share**: a
+  referee and a room that built their worlds differently would be two simulations again.
+
+**Client side:**
+- `netsim.js` — the flag (`evalNetsim`, URL-only and never sticky), the handshake, and an uplink that turns
+  real time into whole 60 Hz input ticks and batches 3 per message. It speaks `replay.js`'s recorded-tick
+  shape, because the client already produces exactly that for session recording and the referee already
+  consumes it.
+- `netsim-world.js` — reconciliation and interpolation. **THREE-free on purpose**, so it is unit-tested
+  under `node --test`, including a test that drives a real room into a real client World in-process.
+
+**The client grows no second rendering path.** It keeps the same World, written by the network instead of by
+`simTick`. Ghosts arrive through the same `world.host.onSpawn` local spawns use — so a networked enemy gets
+its mesh from the same code — and wire events are pushed onto `world.events`, so the network is just another
+producer of the stream `sim.js`'s adapter already drains into FX, audio, i18n and the HUD. Nothing
+downstream knows or cares where the fight is being decided. A **ship is named, not described**: the client
+holds the same catalog and resolves the model, yaw, lift and scale from the name, which also keeps dozens of
+collision OBBs per hull off the wire.
+
+**Interpolation.** Snapshots arrive at 15 Hz and frames render at 60, so the world is drawn as it was
+`INTERP_DELAY_MS` (100 ms) ago, between the two snapshots bracketing that moment. Positions lerp and
+headings take the short way around the circle; **health does not interpolate** — a bar sliding down over
+100 ms reads as a bug rather than as smoothing. Past the newest sample the world holds still rather than
+extrapolating: a wrong guess that has to be taken back looks worse than a tenth of a second of stillness.
+Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost
+"despawn" message would leak a mesh.
+
+**What it does not do yet.** No client-side prediction (Slice E), so the local ship answers about 100 ms
+late. No lag compensation (D5), so aim-assist selection resolves against the server's present rather than
+what the client saw. No reconnect, no second player, no delta encoding, and the economy is still banked by
+the client's own `POST /api/games`. The Grab's pull beam does not draw (the room owns the Grab and the
+client never runs `stepDrops`). A failed handshake **falls back to simulating locally** rather than leaving
+a ship that will not answer.
+
+**Diagnosing it.** `window.__netsim` is attached whenever the flag is on — `?debug` or not, because the
+first question about a server-run fight is always "am I connected". It reports `connected`, `tick`, `ack`,
+`behind` (how far the room's acknowledgement trails the input sent), `welcome` and `lastSent`, and
+`__netsim.pause()` / `.resume()` freeze the world on its last known state.
+
+**Guards.** `client/src/netsim-world.test.js` covers reconciliation in Node; `server/src/netsim/*.test.js`
+cover the room, the protocol allowlist, the tickets and the socket end to end; and `37-netsim` proves the
+wiring in a real browser — the room flies the ship, its enemies arrive with bodies, pausing the room freezes
+the world (which is how a local sim secretly running underneath would be caught), and a pixel diff with the
+hull hidden proves the ship is actually on screen.
+
+---
+
+This is Slices A–D of `docs/plans/server-authoritative-sim.md` — one simulation, two hosts (browser for
+single-player, Node for multiplayer, the headless referee and now a live room). Nothing about single-player
+gameplay changed at any point: the recorded Level-0 intro trace replays bit-identically throughout (same 4
+kills, same `tick=2503/3490`).
 - **Pure, Three.js-free logic (unit-tested):** the rules-bearing ones now live in `sim-core/` (see above);
   the rest stay in `src/`. `components.js` (catalogs + `deriveDrive` + `shipMass` +
   `hitsToKill` + `repairTick`), `drops-config.js` (the loot-drop constants incl. the single `DROP_MODEL_URL`,
@@ -3234,6 +3313,11 @@ point: the recorded Level-0 intro trace replays bit-identically throughout (same
   z**, with the y column untouched and the pool size unchanged — the guard that the backdrop is
   player-locked, not camera-locked or origin-anchored; mutation-verified: wrapping on the camera position
   instead fails the z bound by the camera's +26 z offset).
+  and **netsim** (`37-netsim.mjs`: opens `?netsim=1`, joins a server room, and asserts the ROOM flies the
+  ship — this tab runs no sim — that the room's enemies arrive with real bodies built from the catalog by
+  name, that `__netsim.pause()` FREEZES the world (the check that no local simulation is running underneath,
+  the failure where the two worlds quietly fork), and that the hull is actually drawn at the screen centre
+  by pixel-diffing against a frame with it hidden),
   and **sim-divergence** (`36-sim-divergence.mjs`: replays the canonical Level-0 trace in a real browser on a
   plain `?playback&debug` url **and** headlessly in Node via `server/tools/sim-replay.mjs`, then asserts the
   two hosts agree on the world digest (`sim-core/digest.js`), on the run summary and on the seeded-RNG draw

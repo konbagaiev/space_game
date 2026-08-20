@@ -5,6 +5,48 @@
 
 ## 2026-08-20
 
+- **A level can now be played in a server-run room: `?netsim=1`.** The server holds the World and steps it
+  at 60 Hz; the browser sends input and draws snapshots at 15 Hz, running no local simulation at all.
+  Server side: `server/src/netsim/` — a clock-free `room.js` (so it is testable by a for-loop, and the
+  load-bearing test feeds it the canonical Level-0 trace and requires the SAME digest the headless referee
+  produces), `driver.js` (the 60 Hz clock, with the browser's own bounded catch-up so a stall cannot
+  spiral), `protocol.js` (an explicit event allowlist — `enemyShieldHit` carries a live entity, and a test
+  parses the catalogue in `sim-core/events.js` and fails if a new event is not wired), `tickets.js` +
+  `POST /api/ws-ticket` (single-use, 30 s: a browser cannot set `Authorization` on a WebSocket handshake and
+  `Origin` is not a security control), and `socket.js`. `server/src/sim-host.js` is the World factory the
+  room and the referee now share, so they cannot set up differently.
+  Client side: `netsim.js` (flag, handshake, an uplink speaking `replay.js`'s recorded-tick shape) and
+  `netsim-world.js` — reconciliation and interpolation, kept THREE-free so both are unit-tested in Node,
+  including a test that drives a real room into a real client World in-process. **The client grows no second
+  rendering path:** ghosts arrive through the same `world.host.onSpawn` local spawns use, and wire events go
+  onto `world.events`, so FX, audio, the HUD and the overlays work without knowing where the fight is
+  decided. No prediction yet, so the local ship answers ~100 ms late — that is the measurable baseline
+  Slice E is judged against. Nothing changes without the flag: single-player still simulates locally.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice D; D5 lag compensation is still open).
+
+- **`TICK_HZ` / `SIM_DT` moved to `sim-core/consts.js`** (`bench.js` re-exports `BENCH_DT`, so every
+  importer is unchanged). DECISIONS §118 already said the tick rate is "one constant" both hosts must agree
+  on — it was living beside the `?bench` flag, where a server could not reach it.
+
+- **An enemy's numbers can be built without the RNG** (`ship-entity.makeEnemyShell`), so a networked ghost
+  is constructed by the same code a real combatant is, rather than by a second thinner "render-only enemy".
+  The three seeded draws stay in `makeEnemy` in their contract order (DECISIONS §73); the intro oracle's
+  `tick=2503/3490` is unmoved.
+
+- **Two guards worth calling out.** `37-netsim` pauses the room and requires the world to FREEZE — that is
+  how a local simulation secretly running underneath would be caught, the failure where everything looks
+  right and the two worlds have quietly forked. It also pixel-diffs the screen centre with the hull hidden,
+  because every other assertion in it can pass while the player sees nothing. And the snapshot-size guard in
+  `room.test.js` caught a real leak as it was written: enemy spawns were carrying `modelCfg`, which holds
+  dozens of collision OBBs — a ship is NAMED on the wire now and the client resolves the model from the
+  catalog it already has.
+
+- **The headless referee got `node --test` coverage** (`server/tools/sim-replay.test.js`, 6 tests, 250 ms):
+  the catalog and station it assembles, the Level-0 trace replaying to a cleared arena, two runs being
+  bit-identical, a tight ceiling on seeded-RNG draws, and a truncated run stopping where told. The trace is
+  a gitignored S3 asset, so a checkout without it skips — a red suite meaning "you did not pull" trains
+  people to ignore red suites.
+
 - **The game's rules now run in Node, and a test proves the two hosts agree.**
   `node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json` replays the
   canonical Level-0 input trace headlessly — 3490/3490 ticks, 4 kills, 125 credits, arena cleared — with no

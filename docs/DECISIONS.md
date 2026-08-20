@@ -4333,3 +4333,54 @@ the cutscene freezes on cards and fakes a "Return to base" click, and a trace re
 a mouse. That is browser-only machinery a headless referee has no business reproducing. `22-intro-replay`
 guards the cutscene path; this guards the simulation. Neither sees the *picture* — a NaN camera passes both
 (§117's lesson), which is what the full visual suite is for.
+
+## 121. A netsim client re-uses its own World; the network is just another producer of the event stream
+
+**Context.** With the server able to run a fight (§116, Slice D), the browser needed a way to draw one it is
+not simulating. The obvious shape is a separate "remote entity" renderer — the plan itself suggested
+generalizing `ghost-battle.js` for it.
+
+**Decision.** There is no second rendering path. `?netsim` keeps the same `World` the tab always had and
+lets the NETWORK write it instead of `simTick`:
+- entities arrive through **`world.host.onSpawn` / `onDespawn`**, the same lifecycle hook the simulation
+  uses, so a networked enemy gets its mesh from exactly the code a local one does;
+- wire events are pushed onto **`world.events`**, so the adapter in `sim.js` turns them into FX, audio, the
+  HUD, i18n and the overlays without knowing where the fight was decided;
+- `renderTick(dt)` runs unchanged.
+
+**Why.** The alternative duplicates the half of the client that is hardest to keep correct — health bars,
+markers, the mini-map, kill FX, the event log, the victory overlay — and it duplicates it in the path that
+gets played LESS, so it rots first. The host and the event queue were built for precisely this asymmetry
+("what does an entity mean to this host", "what happened, for someone else to act on"); a netsim client is
+just a third host answering the same two questions. The practical cost was about 250 lines
+(`netsim-world.js`) and it is THREE-free, so reconciliation is unit-tested in Node against a real room.
+
+**What this buys later.** Slice E's prediction is then a small change rather than a new subsystem: the World
+is already there and already steppable by `sim-core/tick.js`, so predicting is "re-run my unacked inputs on
+it", which is what `replay.js` already does.
+
+**The trap it creates, and the guard.** Because the netsim path looks identical downstream, a local
+simulation still running underneath would produce a screen that looks perfectly right while the two worlds
+silently diverge. `37-netsim` pauses the room and asserts the world FREEZES; that is the only cheap way to
+prove nothing else is moving it.
+
+## 122. Snapshots name a ship; they never describe it
+
+**Context.** A client must build a mesh for an enemy the server spawned. The direct approach is to put what
+the renderer needs into the spawn message.
+
+**Decision.** The wire carries the catalog **name** plus the few per-entity numbers the catalog cannot give
+(`maxHp`, `fullScale`, `role`). The client resolves the model, yaw, lift, scale and everything else from the
+catalog it already fetched at boot.
+
+**Why.** The first draft sent `modelCfg`, which is `shipModelCfg(stats)` — and that carries `hitBoxes`,
+dozens of oriented bounding boxes per hull. It is collision geometry only the server uses in a netsim room,
+it would have been tens of kilobytes repeated 15 times a second, and it hands a client the authority's
+internal state for free. The guard that caught it before it ever ran is a snapshot-size assertion in
+`server/src/netsim/room.test.js` plus an explicit `assert(!json.includes('hitBoxes'))` — worth keeping,
+because the leak arrived by copying a field list, which is how it will arrive again.
+
+**Corollary.** The same reasoning produced `protocol.js`'s explicit event allowlist. `enemyShieldHit` carries
+a live entity reference (deliberately — it binds a pooled bubble to a ship), so events cannot be serialized
+naively. A test parses the catalogue at the top of `sim-core/events.js` and fails when a new event type has
+no wire entry, because the alternative failure is an event that is silently dropped on the way to a client.
