@@ -5,6 +5,21 @@
 
 ## 2026-08-20
 
+- **The ship stuttered when turning — "as if 15 fps".** It was exactly 15 fps, for the heading only: the
+  drawn position was extrapolated (a continuous function of time) while the heading took the newest
+  snapshot value, so the nose turned in 15 Hz steps. The local ship's drawn pose is now its own
+  continuously integrated thing — advanced every frame by the reported velocity and by the angular velocity
+  observed between samples, then pulled toward the authoritative pose with a time constant
+  (`VIEW_TAU_S`), so corrections arrive as convergence instead of a step. Measured: the heading changes on
+  every rendered frame now (0 of 89 frames unchanged, against a step every fourth before).
+- **A rocket's smoke trail ran ahead of the rocket.** Puffs arrive as EVENTS and are placed the moment they
+  land — at the rocket's current position — while the rocket itself was drawn a tenth of a second in the
+  past. Rockets are drawn in the present too now, by finite difference over their last two samples.
+- **Finite differences are taken over the SERVER TICK span, never over arrival times.** Snapshots arrive in
+  bursts — two can land in the same millisecond after a slow frame — and dividing by that gap inferred an
+  angular velocity in the hundreds of rad/s: the first version of the fix spun the ship through 138
+  revolutions in a ten-second test. Samples carry their tick, and the span comes from that.
+
 - **Winning a level immediately started the next one.** Advancing after a victory changes
   `CATALOG.levelName`, which reconnects the room — and the reconnect cleared `netRunAt`, so the very next
   frame looked like a brand-new run and told the fresh room to begin. The player was thrown into level 2

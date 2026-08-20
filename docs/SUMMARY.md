@@ -3123,7 +3123,14 @@ ignored everything the player owned. Reading it from the DB rather than from the
 cannot claim a better ship than it has.
 
 **Interpolation.** Snapshots arrive at 15 Hz and frames render at 60, so the world is drawn as it was
-`INTERP_DELAY_MS` (100 ms) ago, between the two snapshots bracketing that moment. Positions lerp and
+`INTERP_DELAY_MS` (100 ms) ago, between the two snapshots bracketing that moment. **The LOCAL SHIP is not interpolated at all**: its drawn pose is integrated every frame from the reported
+velocity and the observed angular velocity, then converged on the authoritative pose with a time constant
+(`VIEW_TAU_S`). Reading the heading straight off each snapshot turned the nose in 15 Hz steps, which reads
+as the game dropping to 15 fps whenever you turn. **Rockets** are likewise drawn in the present (by finite
+difference over their last two samples) — their smoke puffs arrive as events placed at the rocket's CURRENT
+position, so a rocket drawn in the past had its own trail running ahead of it. All finite differences are
+taken over the **server tick** span, never over arrival times: snapshots arrive in bursts and dividing by
+that gap once inferred hundreds of rad/s. For everything else, positions lerp and
 headings take the short way around the circle; **bullets are not interpolated at all** — a bullet flies
 straight at a constant speed, so it is anchored on its newest sample and dead-reckoned into the present
 (capped at `MAX_EXTRAPOLATION_MS`, or a stalled connection would fly it off the map). **Health does not

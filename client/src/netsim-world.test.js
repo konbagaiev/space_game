@@ -268,3 +268,33 @@ test('loot the room collected reaches this World, so a victory can bank it', () 
   assert.equal(world.pendingLoot, same, 'still the same array object');
   assert.deepEqual(world.pendingLoot, [{ kind: 'weapon', refId: 9 }]);
 });
+
+test('a rocket is drawn in the present, so its smoke trail does not run ahead of it', () => {
+  // Smoke puffs arrive as EVENTS and are placed where the rocket is NOW; the rocket itself was drawn a
+  // tenth of a second in the past, so the trail led the rocket that was laying it.
+  const { world } = clientWorld();
+  const st = createNetState();
+  applySnapshot(world, st, snapOf({
+    spawns: [{ id: 3, kind: 'rocket', projectileColor: 1, fromPlayer: true, x: 0, z: 0, h: 0 }],
+    rockets: [[3, 0, 0, 0]],
+  }), 1000);
+  // SIX server ticks later — 6 × 1/60 s = exactly 100 ms of simulation, which is what a snapshot interval
+  // looks like. The span is taken from the TICK delta, never from arrival times: snapshots arrive in bursts
+  // and dividing by that gap once inferred a rocket doing 600 u/s.
+  applySnapshot(world, st, snapOf({ tick: 7, rockets: [[3, 0, 10, 0]] }), 1100); // 10 units in 100 ms
+
+  // 50 ms past the newest sample: a present-time rocket has gone another 5 units, an interpolated one
+  // would still be short of the sample it already passed.
+  renderNet(world, st, 1150, INTERP_DELAY_MS);
+  assert.ok(Math.abs(world.rockets[0].pos.z - 15) < 1e-6,
+    `carried on at its own speed (got ${world.rockets[0].pos.z})`);
+
+  // With only one sample there is no velocity to infer — it sits still rather than guessing.
+  const st2 = createNetState();
+  const w2 = clientWorld();
+  applySnapshot(w2.world, st2, snapOf({
+    spawns: [{ id: 3, kind: 'rocket', x: 4, z: 5, h: 1 }], rockets: [[3, 4, 5, 1]],
+  }), 1000);
+  renderNet(w2.world, st2, 1200, INTERP_DELAY_MS);
+  assert.equal(w2.world.rockets[0].pos.z, 5);
+});

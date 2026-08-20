@@ -22,7 +22,8 @@
 // the only way to get real coverage of reconciliation without a browser.
 import { Vec3 } from './sim-core/vec.js';
 import { makeEnemyShell } from './sim-core/ship-entity.js';
-import { BULLET_PLANE_Y } from './sim-core/consts.js';
+import { shortestAngleDelta } from './sim-core/steering.js';
+import { BULLET_PLANE_Y, SIM_DT } from './sim-core/consts.js';
 
 // How far a dead-reckoned projectile may be advanced past its newest sample before it is left alone. If
 // snapshots stall, a bullet extrapolated indefinitely flies off across the map and then snaps back.
@@ -31,6 +32,17 @@ export const MAX_EXTRAPOLATION_MS = 250;
 // How far behind the newest snapshot we render. One snapshot interval (at 15 Hz, ~67 ms) is the minimum
 // that can bracket; 100 ms leaves headroom for one late or reordered packet before we run dry.
 export const INTERP_DELAY_MS = 100;
+// How fast the drawn ship converges on the authoritative one. A time constant, not a fraction, so the
+// result is frame-rate independent. Small enough that the ship never feels detached from the server;
+// large enough to absorb a snapshot's worth of correction without a visible step.
+export const VIEW_TAU_S = 0.08;
+
+// Finite differences are taken over the SERVER TICK span, never over arrival times. Snapshots arrive in
+// bursts — two can land in the same millisecond after a slow frame — and dividing by that gap produced an
+// angular velocity in the hundreds of rad/s, which spun the ship through 138 revolutions in one test. The
+// tick delta is exact and immune to jitter. `span` is in seconds; a non-positive one means "cannot tell".
+const sampleSpan = (a, b) => (b.tick > a.tick ? (b.tick - a.tick) * SIM_DT : 0);
+
 // How much history to keep. Enough to cover the delay several times over, so a burst of jitter cannot
 // exhaust it; small enough that it is a handful of objects.
 export const MAX_HISTORY = 12;
@@ -43,6 +55,10 @@ export function createNetState() {
     samples: new Map(),// network id → [{ at, x, z, h, sc, extra }] — newest last
     playerSamples: [], // the same, for the local ship
     grabTarget: null,  // the crate the room's Grab is pulling, so renderTick can draw its beam
+    // The DRAWN pose of the local ship, integrated continuously and pulled toward the server's. Kept apart
+    // from the samples because it must be a smooth function of real time, not of snapshot arrivals.
+    view: null,        // { x, z, h } | null until the first snapshot
+    viewAt: 0,         // when `view` was last advanced
     history: [],       // [{ at, tick }] — arrival times, for choosing the render moment
     lastTick: -1,      // newest server tick applied (an out-of-order snapshot is dropped)
     welcome: null,
@@ -123,10 +139,11 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
 
   const seen = new Set();
   const rows = (list, fn) => { for (const r of list || []) { seen.add(r[0]); const e = state.byId.get(r[0]); if (e) fn(e, r); } };
-  rows(snap.enemies, (e, r) => pushSample(state.samples.get(r[0]), { at, x: r[1], z: r[2], h: r[3], hp: r[4], sc: r[5], warping: !!r[6] }));
-  rows(snap.bullets, (e, r) => pushSample(state.samples.get(r[0]), { at, x: r[1], z: r[2] }));
-  rows(snap.rockets, (e, r) => pushSample(state.samples.get(r[0]), { at, x: r[1], z: r[2], h: r[3] }));
-  rows(snap.drops,   (e, r) => pushSample(state.samples.get(r[0]), { at, x: r[1], z: r[2] }));
+  const tick = snap.tick;
+  rows(snap.enemies, (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2], h: r[3], hp: r[4], sc: r[5], warping: !!r[6] }));
+  rows(snap.bullets, (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2] }));
+  rows(snap.rockets, (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2], h: r[3] }));
+  rows(snap.drops,   (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2] }));
 
   // Absence IS the despawn: an entity the room no longer lists is gone. There is no separate message,
   // because a snapshot is a complete statement about the world and a lost "despawn" would leak a mesh.
@@ -138,7 +155,7 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
 
   const p = snap.player;
   if (p) {
-    pushSample(state.playerSamples, { at, x: p.x, z: p.z, h: p.h, sc: p.sc, vx: p.vx, vz: p.vz });
+    pushSample(state.playerSamples, { at, tick: snap.tick, x: p.x, z: p.z, h: p.h, sc: p.sc, vx: p.vx, vz: p.vz });
     // Non-positional player state is applied at once: a health bar lagging 100 ms behind the hull it
     // describes reads as a bug, while a position lagging 100 ms reads as smooth.
     const me = world.player;
@@ -237,6 +254,28 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
     // second in the past like everything else. Anchored on its newest sample and advanced by its own
     // velocity, it is drawn where it actually IS, which is also where the hit flash will happen.
     // (Rockets home, so their future is not known; they keep the interpolation buffer.)
+    // ROCKETS ARE DRAWN IN THE PRESENT TOO, for the same reason bullets are — with a twist. Their smoke
+    // puffs arrive as EVENTS and are placed the moment they land, i.e. at the rocket's current position,
+    // while the rocket itself was being drawn a tenth of a second in the past. The trail therefore ran
+    // AHEAD of the rocket that was laying it. A rocket homes, so its future is not exactly known, but its
+    // recent past is: velocity and turn rate by finite difference over the last two samples are close
+    // enough over ~100 ms, and far better than a trail that leads.
+    if (state.kinds.get(id) === 'rocket') {
+      const ss = state.samples.get(id);
+      const last = ss && ss[ss.length - 1];
+      if (!last) continue;
+      const prev = ss[ss.length - 2];
+      const el = Math.min(now - last.at, MAX_EXTRAPOLATION_MS) / 1000;
+      const span = prev ? sampleSpan(prev, last) : 0;
+      if (span > 0) {
+        e.pos.x = last.x + ((last.x - prev.x) / span) * el;
+        e.pos.z = last.z + ((last.z - prev.z) / span) * el;
+        e.heading = last.h + (shortestAngleDelta(prev.h, last.h) / span) * el;
+      } else {
+        e.pos.x = last.x; e.pos.z = last.z; e.heading = last.h;
+      }
+      continue;
+    }
     if (state.kinds.get(id) === 'bullet') {
       const ss = state.samples.get(id);
       const last = ss && ss[ss.length - 1];
@@ -258,23 +297,44 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
     if (br.b.warping !== undefined) e.warping = br.b.warping;
   }
 
-  // THE LOCAL SHIP IS DEAD-RECKONED TOO, and it has to be for the same reason bullets are: they must share
-  // one clock. Drawing the ship 100 ms in the past while its bullets were in the present put the muzzle in
-  // the wrong place — with the ship drifting right, shots appeared to leave from its right flank instead of
-  // its nose, because the bullet was born where the ship WAS going to be. It also happens to make the ship
-  // feel less remote, which is a down payment on proper prediction.
+  // THE LOCAL SHIP IS INTEGRATED, THEN CORRECTED — it is never simply read off a snapshot.
   //
-  // Position extrapolates along the reported velocity; heading takes the newest value rather than a guess,
-  // since turning is not linear and there is no angular velocity on the wire.
+  // It has to share one clock with its bullets, or a ship drifting sideways trails its own muzzle and shots
+  // appear to leave from its flank. But dead-reckoning alone is not enough: taking the newest HEADING each
+  // time made the nose turn in 15 Hz steps, which reads exactly like the game dropping to 15 fps whenever
+  // you turn — while the position, being a continuous function of time, stayed smooth.
+  //
+  // So the drawn pose is its own continuously integrated thing: advanced every frame by the ship's reported
+  // velocity and by the angular velocity observed between the last two samples, then pulled toward the
+  // authoritative pose with a time constant. Corrections arrive as a gentle convergence instead of a step,
+  // and nothing in the picture happens at the snapshot rate.
   const me = world.player;
   const ps = state.playerSamples;
   const last = ps[ps.length - 1];
   if (me && last) {
-    const dtms = Math.min(now - last.at, MAX_EXTRAPOLATION_MS);
-    me.pos.x = last.x + (last.vx || 0) * (dtms / 1000);
-    me.pos.z = last.z + (last.vz || 0) * (dtms / 1000);
-    me.pos.y = BULLET_PLANE_Y;
-    me.heading = last.h;
+    const prev = ps[ps.length - 2];
+    // Angular velocity by finite difference — the wire carries no turn rate, and this is exactly as good.
+    const span = prev ? sampleSpan(prev, last) : 0;
+    const omega = span > 0 ? shortestAngleDelta(prev.h, last.h) / span : 0;
+    const el = Math.min(now - last.at, MAX_EXTRAPOLATION_MS) / 1000;
+    const target = {
+      x: last.x + (last.vx || 0) * el,
+      z: last.z + (last.vz || 0) * el,
+      h: last.h + omega * el,
+    };
+    if (!state.view) { state.view = { ...target }; state.viewAt = now; }
+    const frameDt = Math.max(0, Math.min((now - state.viewAt) / 1000, 0.1));
+    state.viewAt = now;
+    const v = state.view;
+    v.x += (last.vx || 0) * frameDt;      // integrate first, so motion is continuous at frame rate…
+    v.z += (last.vz || 0) * frameDt;
+    v.h += omega * frameDt;
+    const k = 1 - Math.exp(-frameDt / VIEW_TAU_S); // …then converge on the server's truth
+    v.x += (target.x - v.x) * k;
+    v.z += (target.z - v.z) * k;
+    v.h += shortestAngleDelta(v.h, target.h) * k;
+    me.pos.x = v.x; me.pos.z = v.z; me.pos.y = BULLET_PLANE_Y;
+    me.heading = v.h;
     me.scale = last.sc;
   }
 }
@@ -284,5 +344,6 @@ export function clearNet(world, state) {
   for (const [id, e] of [...state.byId]) despawnGhost(world, state.kinds.get(id), e);
   state.byId.clear(); state.kinds.clear(); state.samples.clear();
   state.playerSamples.length = 0; state.history.length = 0;
+  state.view = null; state.viewAt = 0;
   state.lastTick = -1;
 }
