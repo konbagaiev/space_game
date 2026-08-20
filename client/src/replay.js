@@ -14,16 +14,24 @@
 // input changes ~2×/second while we capture 60 ticks/second, so a real session collapses ~24× (measured on
 // a 131 s desktop session: 7867 ticks → 279 runs, 254 KB → 10.7 KB). That is what makes a whole session fit
 // in an unload beacon and keeps the live recorder's retained memory flat on a weak device.
+// v4 adds `skills` — the character-progression allocation the run was played with. It is a CORRECTNESS
+// fix, not a format tidy-up: skills change engine power, weapon damage, shield capacity and — through
+// Maneuver's dodge — whether the hostile-hit roll DRAWS from the seeded stream at all. A v3 trace replayed
+// on a skill-less ship is a different fight: measured on the Level-0 trace, Maneuver 3 turns 4 kills into
+// 3 and kills the player (21 extra RNG draws shift every later enemy spawn), and Mobility 3 turns it into
+// 1 kill and flies the ship 300 units off course. That is what "the player is fighting ghosts" looked like
+// in the admin session viewer. The version is what tells a consumer whether a trace can be trusted to
+// reproduce: **v4 and up can, v1–v3 cannot** unless the player had no points spent.
 // v3 changes no bytes — it marks the 0-BASED LEVEL RENUMBERING. A trace stores the level NAME it was
 // recorded on, and every campaign level moved down one that day (the intro went `level-1` → `level-0`), so a
 // v1/v2 trace's stored name now points at the WRONG level: replaying the shipped intro asset would have
 // loaded "Level 1" and re-simmed a fight the recorded input never fought. The version IS the marker of
 // which naming a trace speaks — see `traceLevelName`. Nothing was rewritten in place: the intro asset is
 // content-hashed on S3, and every recorded session trace in the bucket is equally affected.
-export const TRACE_VERSION = 3;
+export const TRACE_VERSION = 4;
 // Versions we can still READ. v1 traces exist in the wild (the shipped Level-0 intro asset + every session
 // recorded before 2026-08-03), and they stay playable forever — hydrateTrace() normalizes both shapes.
-export const READABLE_TRACE_VERSIONS = new Set([1, 2, 3]);
+export const READABLE_TRACE_VERSIONS = new Set([1, 2, 3, 4]);
 
 // Map a `level` URL value to a catalog level NAME. A bare number N → the seed name `level-N` (so
 // `?record=1&level=0` records the intro four-ship fight, whose seed name is `level-0`); a non-numeric value is
@@ -167,7 +175,7 @@ export const CUTSCENE_STALL_TICKS = 900;
 // Takes EITHER a flat `ticks` array (dev ?record, tests) or already-packed `runs` (+ `tickCount`) straight
 // from the live recorder, and always emits the packed v2 shape. The runs are copied, so a recorder that
 // keeps capturing after a provisional upload cannot mutate a trace already handed to the transport.
-export function makeTrace({ id, level, seed, dt, shipId, loadout, components, ticks, runs, tickCount }) {
+export function makeTrace({ id, level, seed, dt, shipId, loadout, components, skills, ticks, runs, tickCount }) {
   const packed = runs ? runs.map((r) => [r[0], r[1]]) : packTicks(ticks);
   return {
     version: TRACE_VERSION,
@@ -179,6 +187,10 @@ export function makeTrace({ id, level, seed, dt, shipId, loadout, components, ti
     shipId: shipId == null ? null : shipId,
     loadout: loadout || null,       // { mounts:[{weapon,group,offset,delay}] } — null → playback uses ship defaults
     components: components || null,  // { hull,engine,thruster,repair,grab } ids — null → ship defaults
+    // The character-progression allocation in force during the run. WITHOUT it a replay rebuilds a
+    // different ship and diverges immediately (see the v4 note at the top) — null means "none spent",
+    // which is also how every pre-v4 trace has to be read.
+    skills: skills || null,
     tickCount: Number.isFinite(tickCount) ? tickCount : packed.reduce((n, r) => n + r[1], 0),
     runs: packed,                    // [[tickSnapshot, repeatCount], …] — hydrateTrace() expands it at load
   };
@@ -280,6 +292,8 @@ export function validateTrace(t) {
   if (!Number.isFinite(t.seed)) problems.push('seed missing or not a finite number');
   if (!Number.isFinite(t.dt) || t.dt <= 0) problems.push('dt missing or not a positive number');
   if (!t.level) problems.push('level missing');
+  // `skills` is optional (absent in v1–v3) but must be an object when present: it rebuilds the ship.
+  if (t.skills != null && typeof t.skills !== 'object') problems.push('skills is present but not an object');
   // Either shape is accepted: v1's flat `ticks`, or v2's packed `runs`. Both must be non-empty.
   if (Array.isArray(t.ticks)) { if (t.ticks.length === 0) problems.push('ticks is empty'); }
   else if (Array.isArray(t.runs)) {

@@ -10,6 +10,8 @@
 // running, so a player who comes back and finishes re-sends the same session id (the server upserts it).
 //
 // Fail-before: without the listener, no /api/sessions request is made on hide and the assertion trips.
+import { TRACE_VERSION } from '../../src/replay.js';
+
 export const name = 'session-upload-on-hide';
 
 export default async function ({ page, assert, shot }) {
@@ -59,7 +61,12 @@ export default async function ({ page, assert, shot }) {
 
   const body = JSON.parse(posts[posts.length - 1].body || '{}');
   assert.ok(body.id, 'the upload carries a client-minted session id, so a later final flush upserts the same row');
-  assert.equal(body.trace.version, 2, 'the uploaded trace is the packed v2 shape');
+  // Asserted against the CONSTANT, not a literal: this said `2` long after traces went to v3, so it was
+  // failing for a reason that had nothing to do with what the scenario is about.
+  assert.equal(body.trace.version, TRACE_VERSION, `the uploaded trace is the current shape (v${TRACE_VERSION})`);
+  // v4 and up carry the run's skill allocation. It may legitimately be null (nothing spent), but the FIELD
+  // has to be there — without it a replay rebuilds a different ship and the recording is fiction.
+  assert.ok('skills' in body.trace, 'the trace carries the run\'s skill allocation (null = none spent)');
   assert.ok(Array.isArray(body.trace.runs) && body.trace.runs.length > 0, 'packed runs are present');
   assert.ok(body.trace.tickCount > 200, `the whole session went out, got tickCount=${body.trace.tickCount}`);
 

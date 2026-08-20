@@ -4441,3 +4441,41 @@ choice, not a networking detail — and once it was visible as one, it was not t
 **Left deliberately un-rebalanced:** the Kinetic skill is now damage-only and is straightforwardly worth
 less per point. Padding `kineticDmgPct` to hide that would be a balance change smuggled inside a mechanic
 removal; if the skill needs to be worth more, that is its own decision with its own playtest.
+
+## 125. A session trace records the SKILL allocation — without it a replay is a different fight
+
+**Context.** Every campaign session is recorded as an input trace (seed + per-tick input) and replayed by
+the admin session viewer. The maintainer, watching real player replays, reported that the pilot looked like
+it was "fighting ghosts" — shooting where nothing was — and guessed enemy spawning was broken.
+
+**Cause.** Spawning was fine. `makeTrace` recorded `shipId`, `loadout` and `components` but **not
+`skills`**, and `buildPlayerFor` forced `skills: null` for any playback override — with a comment claiming
+that this "keeps replays deterministic". It does the opposite. Skills change engine power, weapon damage,
+shield capacity, and through Maneuver they give the ship a `dodge`, whose roll **draws from the seeded
+gameplay stream** on every hostile hit. Measured on the Level-0 trace by re-simulating it headlessly with
+different allocations:
+
+| allocation | kills | RNG draws | ends at | hp |
+|---|---|---|---|---|
+| none (what playback used) | 4 | 38 | −36.7, 22.2 | 100 |
+| Maneuver 3 | 3 | **59** | −36.7, 22.2 | **−4 (dies)** |
+| Mobility 3 | **1** | 15 | **−164, 356** | 100 |
+
+Maneuver's extra draws shift the stream, so **every later enemy spawn angle and distance changes** — the
+replayed enemies are genuinely somewhere else than the ones the recorded player was shooting at. Mobility
+makes the ship faster, so identical inputs fly a different path. Either way the replay is fiction, and the
+more a player had invested, the more fictional it was.
+
+**Decision.** `skills` is part of the trace (**v4**), the live recorder captures the allocation in force,
+and playback — including the admin viewer — rebuilds the ship with it. `TRACE_VERSION` is what tells a
+consumer whether a trace can be trusted to reproduce: **v4 and up can; v1–v3 can only be trusted for a
+player who had spent nothing** (which is why the shipped Level-0 intro, recorded on a fresh account, was
+always fine and its oracle never caught this).
+
+**Why the version bump matters beyond bookkeeping.** Sealing the economy — re-simulating a submitted trace
+server-side and deciding the reward from it instead of trusting `POST /api/games` — is only sound on a
+trace that reproduces. v4 is the line: below it, a re-simulation would disagree with an honest player and
+punish them.
+
+**Not fixed retroactively.** Every trace already in S3 stays unreproducible; nothing can recover an
+allocation that was never written down. The admin viewer will keep showing ghosts for old sessions.

@@ -33,14 +33,15 @@ export function makeSessionRecorder() {
     active: false,       // true between begin() and the final flush
     final: false,        // a terminal (win/death) flush already went out → this session is closed
     id: null,            // client-minted, stable across the session's provisional + final uploads
-    seed: 0, level: null, shipId: null, loadout: null, components: null, dt: 0,
+    seed: 0, level: null, shipId: null, loadout: null, components: null, skills: null, dt: 0,
     runs: [],            // [[tickSnapshot, repeatCount], …]
     tickCount: 0,
     sentTicks: 0,        // tickCount at the last provisional upload — never re-send an unchanged trace
-    begin({ seed, level, shipId, loadout, components, dt }) {
+    begin({ seed, level, shipId, loadout, components, skills, dt }) {
       this.active = true; this.final = false; this.id = newSessionId();
       this.seed = seed >>> 0; this.level = normalizeLevelName(level);
       this.shipId = shipId ?? null; this.loadout = loadout || null; this.components = components || null;
+      this.skills = skills || null; // the allocation in force — a replay rebuilds a different ship without it
       this.dt = dt; this.runs = []; this.tickCount = 0; this.sentTicks = 0;
     },
     captureTick(snapshot) {
@@ -67,7 +68,7 @@ export function makeSessionRecorder() {
       this.sentTicks = this.tickCount;
       const trace = makeTrace({
         id: this.id, level: this.level, seed: this.seed, dt: this.dt,
-        shipId: this.shipId, loadout: this.loadout, components: this.components,
+        shipId: this.shipId, loadout: this.loadout, components: this.components, skills: this.skills,
         runs: this.runs, tickCount: this.tickCount,
       });
       return { id: this.id, trace, level: this.level, outcome, durationMs, kills };

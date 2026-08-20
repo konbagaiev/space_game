@@ -99,6 +99,15 @@ uplink already numbers its ticks, so the plumbing is in place.
 client-authoritative, the client already uploads every session as an input trace, and `runTrace()` can
 re-simulate one server-side and decide the reward itself.
 
+**Its first blocker is cleared but worth knowing about.** Traces did not reproduce: they omitted the
+character-progression allocation, and playback rebuilt the ship without it — so a run by a player with
+points spent replayed as a different fight (DECISIONS §125; the admin viewer showed it as "fighting
+ghosts"). Fixed by trace **v4**, which carries `skills`. The consequence for this slice is a hard rule:
+**only v4+ traces can be re-simulated for reward.** Anything older has to be trusted or refused, never
+re-judged — a re-simulation of a v3 trace would disagree with an honest player and take credits off them.
+A sensible first cut is therefore: verify v4+, trust below it, and watch how often the two disagree before
+making the verdict binding.
+
 ### How to verify (do not skip, do not assume)
 
 ```

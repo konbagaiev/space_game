@@ -119,3 +119,22 @@ test('flush() before any begin() returns null', () => {
   const sr = makeSessionRecorder();
   assert.equal(sr.flush('quit'), null);
 });
+
+test('the recorder carries the run\'s skill allocation into the trace', () => {
+  // The plumbing half of the v4 fix. A session recorded without `skills` replays on a different ship —
+  // Maneuver alone shifts the seeded stream and moves every later enemy spawn — which is what made admin
+  // session playback look like the pilot was fighting ghosts.
+  const sr = makeSessionRecorder();
+  sr.begin({ seed: 7, level: 'level-2', shipId: 1, loadout: { mounts: [] }, components: {},
+             skills: { kinetic: 2, maneuver: 3 }, dt: 1 / 60 });
+  for (let i = 0; i < 300; i++) sr.captureTick({ k: [], t: null });
+  const out = sr.flush('win', { durationMs: 1000, kills: 3 });
+  assert.ok(out, 'flushed');
+  assert.deepEqual(out.trace.skills, { kinetic: 2, maneuver: 3 });
+
+  // …and a player with nothing spent records null, which is also how pre-v4 traces read.
+  const bare = makeSessionRecorder();
+  bare.begin({ seed: 7, level: 'level-2', shipId: 1, dt: 1 / 60 });
+  for (let i = 0; i < 300; i++) bare.captureTick({ k: [], t: null });
+  assert.equal(bare.flush('win', { durationMs: 1000, kills: 0 }).trace.skills, null);
+});

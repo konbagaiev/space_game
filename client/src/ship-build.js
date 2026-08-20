@@ -43,9 +43,13 @@ export function buildPlayerFor(ship, override = null) {
   const useActive = !override && G.activeShip && G.activeShip.ship && G.activeShip.ship.name === ship.name;
   const loadout = override ? override.loadout : (useActive ? G.activeShip.loadout : { mounts: ship.stats.mounts });
   const components = override ? override.components : (useActive ? G.activeShip.components : ship.components);
-  // Skills apply ONLY to the real active ship — never to previews or ?playback overrides (which must
-  // reproduce the exact ship a recording was made with, keeping replays deterministic).
-  const skills = (!override && useActive && G.activeShip.progression) ? G.activeShip.progression.skills : null;
+  // Skills come from the OVERRIDE when there is one — a ?playback/admin replay must rebuild the ship the
+  // recording was made with, points included. This used to force `null` for every override, which was the
+  // opposite of faithful: skills change engine power, weapon damage, shield capacity and (via Maneuver's
+  // dodge) whether the hostile-hit roll draws from the seeded stream, so a skilled player's run replayed on
+  // a skill-less ship diverged within seconds. Previews still get none. See the v4 note in replay.js.
+  const skills = override ? (override.skills || null)
+    : ((useActive && G.activeShip.progression) ? G.activeShip.progression.skills : null);
   G.player = buildPlayer({ ship, loadout, components, skills });
   G.currentShipName = ship.name;
   scene.add(G.player.mesh);

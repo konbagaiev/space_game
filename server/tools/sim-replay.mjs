@@ -40,7 +40,11 @@ export function runTrace(trace, { maxTicks = Infinity, onTick = null } = {}) {
   const world = createSimWorld({
     levelName: traceLevelName(t),
     seed: t.seed,
-    ship: { shipId: t.shipId, loadout: t.loadout, components: t.components },
+    // SKILLS INCLUDED. A run played with points spent is a different ship — engine power, weapon damage,
+    // shield capacity, and via Maneuver's dodge whether the hostile-hit roll draws from the seeded stream
+    // at all. Re-simulating without them is re-simulating somebody else's fight (trace v4; older traces
+    // carry none and can only be trusted for a player who had spent nothing).
+    ship: { shipId: t.shipId, loadout: t.loadout, components: t.components, skills: t.skills },
   });
 
   const dt = t.dt;

@@ -5,6 +5,25 @@
 
 ## 2026-08-20
 
+- **Session replays were fiction for any player with skill points — trace format bumped to v4.** Watching
+  real player replays in the admin viewer, the pilot looked like it was "fighting ghosts": shooting where
+  nothing was. Enemy spawning was fine; the trace was missing the **skill allocation**. `makeTrace` recorded
+  ship, loadout and components but not `skills`, and `buildPlayerFor` forced `skills: null` for playback —
+  with a comment claiming that kept replays deterministic, which is exactly backwards. Skills change engine
+  power, weapon damage, shield capacity, and through Maneuver they add a `dodge` whose roll **draws from the
+  seeded gameplay stream**, so every later enemy spawn moves. Measured by re-simulating the Level-0 trace
+  headlessly: Maneuver 3 → 3 kills instead of 4, 59 RNG draws instead of 38, and the player dies;
+  Mobility 3 → 1 kill and the ship ends 300 units off course. Now the recorder captures the allocation, the
+  trace carries it (v4), and playback rebuilds the ship with it. **Old traces stay unreproducible** — an
+  allocation that was never written down cannot be recovered. DECISIONS §125.
+  This also unblocks sealing the economy: re-simulating a submitted run server-side is only sound on a trace
+  that reproduces, and `TRACE_VERSION` is now the line that says which ones do.
+
+- **`30-session-upload-on-hide` was failing on a stale literal.** It asserted `trace.version === 2` long
+  after traces went to v3 — a baseline failure that had nothing to do with what the scenario tests. It
+  checks against the `TRACE_VERSION` constant now, and additionally that the uploaded trace carries the
+  `skills` field. Green again.
+
 - **Auto-aim removed from the game.** Bullet weapons carried an `aimAssistDeg` cone that silently redirected
   a shot at any opposing-side target inside it — symmetric, so enemy guns did it too, and the Kinetic skill
   widened the player's by +0.5°/point. It is gone: the stat from every weapon, the branch from `fireMount`,

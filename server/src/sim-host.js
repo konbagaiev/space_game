@@ -58,7 +58,7 @@ export function stationFor(mapName) {
 // Build the exact ship a client (or a recording) is playing — id-only refs, so it is independent of any
 // account row. An unknown `shipId` falls back to the catalog's player ship and its default loadout, which
 // is what a trace recorded before those fields existed needs.
-export function buildShip(catalog, { shipId = null, loadout = null, components = null } = {}) {
+export function buildShip(catalog, { shipId = null, loadout = null, components = null, skills = null } = {}) {
   let ship = null;
   for (const s of catalog.shipByName.values()) if (s.id === shipId) { ship = s; break; }
   if (!ship) for (const s of catalog.shipByName.values()) if (s.type === 'player') { ship = s; break; }
@@ -67,9 +67,11 @@ export function buildShip(catalog, { shipId = null, loadout = null, components =
     ship,
     loadout: loadout || { mounts: ship.stats.mounts },
     components: components || ship.components,
-    // Skills are never applied server-side: a recording must reproduce the ship it was MADE with, and a
-    // live room must not take the client's word for its own stat multipliers (DECISIONS §73 / §120).
-    skills: null,
+    // Skills change the ship — engine power, weapon damage, shield capacity, and (Maneuver) whether the
+    // dodge roll DRAWS from the seeded stream at all. A run must therefore be re-simulated with the same
+    // allocation it was played with, or it is a different fight. A live room takes them from the account
+    // server-side, never from the client.
+    skills,
   });
 }
 

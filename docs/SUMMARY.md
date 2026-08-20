@@ -2453,12 +2453,20 @@ first translation). See DECISIONS §10.
 - **Session recordings (funnel analytics, `docs/plans/2026-08-03-1246-record-all-sessions.md`):**
   **every live campaign session** (side missions excluded in v1 — their server-generated descriptors
   aren't refetchable for `/api/levels/:name` playback) is captured **always-on and invisibly** as a
-  deterministic input-replay (seed + per-tick input, reusing `replay.js`) and uploaded via `POST
+  deterministic input-replay (seed + per-tick input + the ship it was flown with, reusing `replay.js`) and
+  uploaded via `POST
   /api/sessions`. The **server** uploads the trace to S3 (`server/src/s3.js` — hand-rolled SigV4 PutObject,
   no `@aws-sdk`, keyed `recordings/sessions/<uuid>.json`; **no-ops without AWS creds** so `npm test` stays
   green) and writes a metadata row to the **`gameplay_sessions`** table (`id`, nullable `player_id`, `level`,
   `outcome` win|death|quit, `duration_ms`, `kills`, `s3_key`, `game_version`, `created_at`; indexes
-  `idx_gsessions_created`/`idx_gsessions_player`). **This table is DISTINCT from the auth `sessions` token
+  `idx_gsessions_created`/`idx_gsessions_player`).
+  **A trace must carry the SKILL allocation or the replay is fiction (v4, DECISIONS §125).** Skills change
+  engine power, weapon damage, shield capacity and — through Maneuver's `dodge` — whether the hostile-hit
+  roll draws from the seeded gameplay stream at all, so a run replayed on a skill-less ship diverges within
+  seconds and every later enemy spawn lands elsewhere; in the admin viewer that looked like the pilot
+  fighting ghosts. `TRACE_VERSION` is the line: **v4 and up reproduce, v1–v3 only for a player who had
+  spent nothing** (which is why the shipped Level-0 intro was always fine). Old traces cannot be fixed —
+  an allocation that was never recorded is not recoverable. **This table is DISTINCT from the auth `sessions` token
   store** (`db.js`; different name + `idx_gsessions_*` prefix — reusing either would silently no-op the
   `CREATE TABLE`). **Upload triggers (four, DECISIONS §87):** win/death → plain `fetch`, **final** (the
   session closes, nothing more is sent); **tab hidden (`visibilitychange`) → plain `fetch`**, provisional
@@ -3193,7 +3201,7 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   record/playback (`replay.js` pure core + `window.__replay`) + `bootstrap()` (fetch the DB
   catalog/level/active-ship, build the world + player, restore the session, show the landing screen).
 - **Input-replay:** `replay.js` — the pure, DOM/engine-free half of `?record`/`?playback` (URL-flag parsing,
-  the `{seed,dt,shipId,level,tickCount,runs}` trace shape + its run-length codec
+  the `{version,seed,dt,shipId,level,loadout,components,skills,tickCount,runs}` trace shape + its run-length codec
   (`packTicks`/`unpackTicks`/`sameInput`/`hydrateTrace`/`traceTickCount`), per-tick input snapshot/apply
   (the touch aim is quantized in `snapshotInput`), validate, the
   `makeReplaySession()` lifecycle object **incl. the return-home watchdog counters +

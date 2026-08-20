@@ -337,8 +337,23 @@ test('traceLevelName never shifts below the intro, or mangles an unexpected shap
   assert.equal(traceLevelName(null), 'level-0');
 });
 
-test('a trace written today is v3 — the marker the shift keys off', () => {
+test('a trace written today is v4 — the marker consumers key off', () => {
   const t = makeTrace({ id: 'r', level: 'level-2', seed: 1, dt: 1 / 60, ticks: [{ k: [], t: null }] });
-  assert.equal(t.version, 3, 'bumping TRACE_VERSION is what tells old recordings apart from new ones');
-  assert.equal(traceLevelName(t), 'level-2', 'so a fresh recording is never shifted');
+  assert.equal(t.version, 4, 'bumping TRACE_VERSION is what tells old recordings apart from new ones');
+  assert.equal(traceLevelName(t), 'level-2', 'so a fresh recording is never shifted (the v3 renumbering)');
+});
+
+test('a trace carries the skill allocation the run was played with', () => {
+  // Without this a replay rebuilds a DIFFERENT ship: skills change engine power, weapon damage, shield
+  // capacity and — through Maneuver's dodge — whether the hostile-hit roll draws from the seeded stream at
+  // all. Measured on the Level-0 trace: Maneuver 3 turns 4 kills into 3 and kills the player.
+  const skills = { kinetic: 2, maneuver: 3 };
+  const t = makeTrace({ id: 'r', level: 'level-1', seed: 1, dt: 1 / 60, shipId: 1, skills, ticks: [{ k: [], t: null }] });
+  assert.deepEqual(t.skills, skills);
+  assert.equal(validateTrace(t).length, 0);
+  // Absent is legal and means "none spent" — that is how every pre-v4 recording has to be read.
+  const none = makeTrace({ id: 'r', level: 'level-1', seed: 1, dt: 1 / 60, ticks: [{ k: [], t: null }] });
+  assert.equal(none.skills, null);
+  assert.equal(validateTrace(none).length, 0);
+  assert.deepEqual(validateTrace({ ...none, skills: 'three' }), ['skills is present but not an object']);
 });

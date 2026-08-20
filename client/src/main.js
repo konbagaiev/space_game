@@ -1397,6 +1397,8 @@ export function beginLiveSession() {
   const activeMatches = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === G.currentShipName;
   sr.begin({
     seed, level: CATALOG.levelName || 'level-0', shipId,   // the SEED NAME (level-N), stashed at each CATALOG.level set (C2a)
+    // The allocation this run is actually being played with — the ship the replay has to rebuild.
+    skills: (activeMatches && G.activeShip.progression) ? G.activeShip.progression.skills : null,
     loadout: activeMatches ? G.activeShip.loadout : null,
     components: activeMatches ? G.activeShip.components : null,
     dt: BENCH_DT,
@@ -1428,12 +1430,19 @@ function startPlaybackSession(trace) {
   // whole replay diverges. Install the seed only after, so reset()+the fight draw from an identical stream.
   const shipDef = trace.shipId != null ? shipByIdGlobal(trace.shipId) : null;
   if (shipDef) {
-    // Force the recorded ship+loadout (NEVER the current account's) so a replay is faithful regardless of what
-    // the player has equipped now. Old traces (no captured loadout) fall back to the ship's catalog defaults —
-    // correct for the intro, which was recorded on the fresh starter loadout. Uses native RNG (cosmetic).
+    // Force the recorded ship+loadout+SKILLS (NEVER the current account's) so a replay is faithful
+    // regardless of what the player has equipped or spent now. Old traces (no captured loadout/skills) fall
+    // back to the ship's catalog defaults and no skills — correct for the intro, which was recorded on the
+    // fresh starter loadout by a player with nothing spent. Uses native RNG (cosmetic).
+    //
+    // Skills are NOT cosmetic here: they change engine power, weapon damage, shield capacity and — through
+    // Maneuver's dodge — whether the hostile-hit roll draws from the seeded stream at all. Replaying a
+    // skilled player's run on a skill-less ship was why admin session playback looked like the pilot was
+    // fighting ghosts (see the v4 note in replay.js).
     buildPlayerFor(shipDef, {
       loadout: trace.loadout || { mounts: shipDef.stats.mounts },
       components: trace.components || shipDef.components,
+      skills: trace.skills || null,
     });
   }
   seedSim(trace.seed);                           // install the sim's seeded stream (gameplay draws only)

@@ -75,3 +75,22 @@ test('a truncated trace stops where it is told and leaves a live fight', { skip 
   assert.equal(r.summary.returning, false, 'nowhere near the end of the level yet');
   assert.ok(r.world.levelRunner.level, 'the level script is running');
 });
+
+test('the skill allocation is part of the run — re-simulating without it is a different fight', { skip }, () => {
+  // The bug this guards: session traces used to omit `skills`, and playback rebuilt the ship with none. A
+  // player who had spent points therefore watched a replay of a fight that never happened — enemies in the
+  // wrong places, because Maneuver's dodge roll DRAWS from the seeded gameplay stream and shifts every
+  // later spawn. It looked, in the admin session viewer, like the pilot was fighting ghosts.
+  const base = runTrace(trace);
+  assert.equal(base.summary.kills, 4);
+
+  const dodgy = runTrace({ ...trace, skills: { maneuver: 3 } });
+  assert.notEqual(dodgy.draws, base.draws,
+    'Maneuver spends extra RNG on dodge rolls, so the seeded stream — and every later enemy spawn — moves');
+  assert.notEqual(dodgy.hash, base.hash, 'which is a different fight, not a cosmetic difference');
+
+  const quick = runTrace({ ...trace, skills: { mobility: 3 } });
+  assert.notEqual(quick.hash, base.hash, 'a faster ship flies the same inputs somewhere else entirely');
+  assert.ok(Math.abs(quick.summary.px - base.summary.px) > 10,
+    `and ends up far away (${base.summary.px} → ${quick.summary.px})`);
+});
