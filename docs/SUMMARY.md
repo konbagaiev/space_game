@@ -3134,9 +3134,9 @@ around it (`bracket()` compares `sample.tick`). Delivery jitter therefore moves 
 all take the same path. Past the newest sample the world **holds still** rather than guessing — a wrong guess
 that has to be taken back reads worse than stillness, and it is what every comparable system does. Health,
 the warp flag and both shield pools are STATE, not motion: taken from the newer sample outright, never
-blended. Headings interpolate the short way around the circle. The local ship gets a short output spring
-(`VIEW_TAU_S`) purely to take the corner off the sample points; it is not a correction mechanism, because
-there are no corrections left. **There is no client-side prediction** — the ship answers the controls ~100 ms
+blended. Headings interpolate the short way around the circle. The local ship is interpolated with no smoothing of any
+kind: a spring lags the interpolated pose by its own time constant, which puts the ship behind its own muzzle
+while it drifts sideways, and bullets are interpolated at exactly the same tick. **There is no client-side prediction** — the ship answers the controls ~100 ms
 later, which is the trade this game chose (DECISIONS §127).
 
 **Spawn and despawn are events on the render timeline too.** A described entity is built and starts
@@ -3149,6 +3149,13 @@ explosion. One that lived and died inside a single interpolation delay is simply
 
 Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost
 "despawn" message would leak a mesh.
+
+**Events ride the clock too.** Every wire event carries `tk`, the tick it happened on; `applySnapshot` queues
+it and `renderNet` releases it when the render clock reaches that tick, before the frame's own drain so FX
+and audio reach the adapter alongside the poses they belong to. Played on arrival instead, an event fires
+against a world a tenth of a second younger than the thing it describes — a rocket's smoke laid ahead of the
+rocket, an explosion after its ship has gone. The queue is capped at `MAX_EVENT_QUEUE`; past it the oldest
+are released at once, so an event can be late but never lost.
 
 Measured on the `?netjerk` harness (60 s of fight, delivery jitter captured from real play): **6 breaks in
 the drawn motion, none on a packet frame**, against 7476 (half of them on packet frames) for the four-clock

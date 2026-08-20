@@ -150,8 +150,12 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       applyInput({ k: lastInput.k, t: lastInput.a }, world.input.keys, world.input.touchAim);
       // simTick hands back whatever the Grab is pulling — presentation only, but only the room knows it.
       grabTarget = simTick(world, SIM_DT);
-      world.events.drain((ev) => { const w = wireEvent(ev, idOf); if (w) pendingEvents.push(w); });
       tick++;
+      // Every event is stamped with the tick it happened on. The client draws the whole world at
+      // `renderTick − delay`, so an event played when its PACKET lands fires against a picture a tenth of a
+      // second younger than the thing it describes — a rocket's smoke laid ahead of the rocket, a hit spark
+      // before the ship reaches the pose it was hit in. With the stamp it simply rides the same clock.
+      world.events.drain((ev) => { const w = wireEvent(ev, idOf); if (w) { w.tk = tick; pendingEvents.push(w); } });
       return tick;
     },
 

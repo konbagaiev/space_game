@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **…and the two things one clock got wrong on the first pass, both reported from playtest within minutes.**
+  *Events* were left playing on packet arrival while the world moved to the render clock — so a rocket's
+  smoke, which carries the position the rocket had at a tick, was laid a full interpolation delay AHEAD of
+  the rocket laying it. They now carry `tk` and wait for the frame that shows what they describe. And the
+  drawn ship kept a short *output spring*, which lags the interpolated pose by its own time constant: a ship
+  drifting sideways sat a few centimetres behind its own muzzle and the shots left from beside the nose
+  rather than from it. A spring is a fourth clock wearing a small hat; it is gone, and the ship is
+  interpolated at exactly the tick its bullets are. Both are guarded, both negative-tested.
+
 - **One clock: the netsim client interpolates everything and extrapolates nothing.** A day spent chasing
   stutter one artifact at a time ended with a playtest on fully reverted code that stuttered exactly as much
   — so the defect was never any of the individual fixes, it was that the tab drew on **four clocks at once**:

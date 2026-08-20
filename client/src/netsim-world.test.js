@@ -465,3 +465,61 @@ test('ONE CLOCK: a spawn is an event on the render timeline too', () => {
   assert.equal(world.rockets.length, 1, 'and it appears exactly when the clock reaches the tick it was born on');
   assert.equal(attached.length, 1);
 });
+
+test('ONE CLOCK: an event waits for the frame that shows what it describes', () => {
+  // The maintainer's report, twice in one day and from opposite directions: a rocket's smoke trail running
+  // AHEAD of the rocket. Smoke arrives as an event carrying the position the rocket had at some tick, and
+  // playing it when its PACKET lands puts the puff a full interpolation delay in front of the body that is
+  // supposed to be laying it. The event carries `tk`; it waits for the same clock as everything else.
+  const { world } = clientWorld();
+  const st = createNetState();
+  applySnapshot(world, st, snapOf({
+    tick: 8,
+    events: [{ type: 'smoke', pos: { x: 1, y: 0.6, z: 2 }, tk: 8 },
+             { type: 'warpFlash', pos: { x: 3, y: 0.6, z: 4 }, tk: 4 }],
+  }), atOf(8));
+
+  const drained = [];
+  world.events.drain((e) => drained.push(e));
+  assert.equal(drained.length, 0, 'nothing plays on arrival any more');
+
+  renderNet(world, st, renderAt(4), INTERP_DELAY_MS);
+  world.events.drain((e) => drained.push(e));
+  assert.deepEqual(drained.map((e) => e.type), ['warpFlash'], 'the older event goes first, at its own tick');
+
+  renderNet(world, st, renderAt(8), INTERP_DELAY_MS);
+  world.events.drain((e) => drained.push(e));
+  assert.deepEqual(drained.map((e) => e.type), ['warpFlash', 'smoke'], 'and the newer one when the clock gets there');
+  assert.ok(drained[1].pos.clone, 'positions come back as real Vec3s — the FX layer clones them');
+});
+
+test('ONE CLOCK: the muzzle stays on the nose while the ship drifts sideways', () => {
+  // A short output spring on the drawn ship was tried and removed the same evening: it lags the interpolated
+  // pose by its own time constant, so a ship sliding sideways sits a little behind its own muzzle and the
+  // shots appear to leave from beside the nose. Bullets are interpolated at exactly this tick, so the ship
+  // has to be too — no smoothing, no exceptions, one clock.
+  const { world } = clientWorld();
+  const st = createNetState();
+  const V = 25;                                    // drifting right at 25 u/s, nose still pointing +z
+  const place = (tick) => {
+    const x = V * tick * SIM_DT;
+    applySnapshot(world, st, snapOf({
+      tick,
+      player: { ...snapOf().player, x, z: 0, vx: V, vz: 0 },
+      spawns: st.byId.has(3) ? [] : [{ id: 3, kind: 'bullet', projectileColor: 1, class: 'kinetic',
+                                       fromPlayer: true, x, z: 0, vx: V, vz: 0 }],
+      bullets: [[3, x, 0]],
+    }), atOf(tick));
+  };
+  for (const tick of [2, 4, 6, 8, 10, 12]) place(tick);
+
+  // Sample every frame across several snapshot intervals: a spring shows up as a gap that grows and shrinks,
+  // not as a constant one, so one instant would not catch it.
+  let worst = 0;
+  for (let ms = renderAt(4); ms <= renderAt(10); ms += 8) {
+    renderNet(world, st, ms, INTERP_DELAY_MS);
+    worst = Math.max(worst, Math.abs(world.player.pos.x - world.bullets[0].pos.x));
+  }
+  assert.ok(worst < 1e-9, `the muzzle never leaves the nose (worst gap ${worst})`);
+  assert.ok(world.player.pos.x > 0, 'and the ship really was moving (guard against an empty assertion)');
+});

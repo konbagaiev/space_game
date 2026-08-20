@@ -46,15 +46,14 @@ import { BULLET_PLANE_Y, SIM_DT } from './sim-core/consts.js';
 // is Fiedler's margin for losing two in a row, and it is affordable here because this game has no latency
 // requirement worth the trade. At `SNAPSHOT_EVERY = 2` (30 Hz) three intervals is 100 ms.
 export const INTERP_DELAY_MS = 100;   // = 3 intervals at SNAPSHOT_EVERY 2; keep the two in step
-// An output spring on the drawn local ship. Under one clock there are no corrections left to absorb, so this
-// is cosmetic only: a time constant (frame-rate independent) that takes the first-order discontinuity off
-// the sample points — the thing Fiedler describes as "your brain detecting 1st order discontinuity" — at the
-// cost of a few milliseconds. Colyseus calls the same knob `smoothMs`.
-export const VIEW_TAU_S = 0.08;
 
 // How much history to keep. Enough to cover the delay several times over, so a burst of jitter cannot
 // exhaust it; small enough that it is a handful of objects.
 export const MAX_HISTORY = 12;
+
+// A ceiling on events waiting for their moment. Roughly ten seconds of a busy fight; past it the oldest are
+// released at once, which is what used to happen to all of them, always.
+export const MAX_EVENT_QUEUE = 512;
 
 // ---------- tick → wall clock ----------
 //
@@ -92,14 +91,11 @@ export function createNetState() {
     idOf: new WeakMap(),// the reverse: a clicked entity → the id the room knows it by
     kinds: new Map(),  // network id → 'enemy' | 'bullet' | 'rocket' | 'drop'
     arriving: new Map(),// network id → the tick it was born on; attached when the render clock reaches it
+    events: [],        // wire events waiting for the render clock to reach the tick they happened on
     leaving: new Map(),// network id → the tick it stopped being listed; despawned when the clock reaches it
     samples: new Map(),// network id → [{ at, x, z, h, sc, extra }] — newest last
     playerSamples: [], // the same, for the local ship
     grabTarget: null,  // the crate the room's Grab is pulling, so renderTick can draw its beam
-    // The DRAWN pose of the local ship, integrated continuously and pulled toward the server's. Kept apart
-    // from the samples because it must be a smooth function of real time, not of snapshot arrivals.
-    view: null,        // { x, z, h } | null until the first snapshot
-    viewAt: 0,         // when `view` was last advanced
     // The newest authoritative player block and the tick it acknowledged. `ack` is still reported upstream
     // (it is how the uplink retires input it no longer needs); nothing re-simulates from it any more.
     playerBlock: null,
@@ -273,8 +269,15 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
     if (world.station) world.station.active = !!run.stationActive;
   }
 
-  // The network is just another producer of the event stream the client already drains every tick.
-  for (const ev of snap.events || []) world.events.emit(hydrateEvent(state, ev));
+  // The network is just another producer of the event stream the client already drains every tick — but on
+  // the SAME clock as the picture. An event played when its packet lands fires against a world a tenth of a
+  // second younger than the thing it describes: a rocket's smoke laid ahead of the rocket that is laying it,
+  // an explosion after its ship has gone. Queued here, released by `renderNet`.
+  for (const ev of snap.events || []) state.events.push(ev);
+  // A tab that is not rendering (paused, hidden, in a menu) never drains the queue. Bound it by RELEASING
+  // the excess, never by dropping: a lost event is a banner that never showed or a pickup that never logged.
+  if (state.events.length > MAX_EVENT_QUEUE) state.events.splice(0, state.events.length - MAX_EVENT_QUEUE)
+    .forEach((ev) => world.events.emit(hydrateEvent(state, ev)));
 
   pushSample(state.history, { at, tick: snap.tick });
   if (state.jerk) state.jerk.snapshot(snap, at); // ?netjerk: the delivery fingerprint of this packet
@@ -348,6 +351,17 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
     state.arriving.delete(id);
   }
 
+  // Now the events whose moment has come, in the order the room produced them. Before the frame's own drain,
+  // so FX and audio reach the adapter in the same frame as the poses they belong to.
+  if (state.events.length) {
+    const held = [];
+    for (const ev of state.events) {
+      if (ev.tk != null && t < ev.tk - 1e-6) held.push(ev);
+      else world.events.emit(hydrateEvent(state, ev));
+    }
+    state.events = held;
+  }
+
   for (const [id, e] of state.byId) {
     if (state.arriving.has(id)) continue;   // born, but not yet in the moment being drawn
     const br = bracket(state.samples.get(id), t);
@@ -390,28 +404,21 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
   // not a requirement here. Prediction put the ship on a THIRD clock, ahead of the world it was flying
   // through, and every seam between the two produced artifacts that cost a day to chase one at a time.
   //
-  // What remains is a short output spring, purely cosmetic: it takes the corner off the sample points
-  // without moving the ship anywhere the server did not put it.
+  // AND NOTHING SMOOTHS IT. A short output spring was tried here and taken out the same evening: it lags the
+  // interpolated pose by its own time constant, which puts the ship a few centimetres behind its own muzzle
+  // whenever it is drifting sideways — the maintainer reported shots leaving from beside the nose rather
+  // than from it. A spring is a fourth clock wearing a small hat. Bullets are interpolated at exactly this
+  // tick, so the ship must be too.
   const me = world.player;
   const ps = state.playerSamples;
   if (me && ps.length) {
     const br = bracket(ps, t);
-    const target = br
-      ? { x: lerp(br.a.x, br.b.x, br.k), z: lerp(br.a.z, br.b.z, br.k), h: lerpAngle(br.a.h, br.b.h, br.k) }
-      : null;
-    if (target) {
-      if (!state.view) { state.view = { ...target }; state.viewAt = now; }
-      const frameDt = Math.max(0, Math.min((now - state.viewAt) / 1000, 0.1));
-      state.viewAt = now;
-      const v = state.view;
-      const k = 1 - Math.exp(-frameDt / VIEW_TAU_S);
-      v.x += (target.x - v.x) * k;
-      v.z += (target.z - v.z) * k;
-      v.h += shortestAngleDelta(v.h, target.h) * k;
-      me.pos.x = v.x; me.pos.z = v.z; me.pos.y = BULLET_PLANE_Y;
-      me.heading = v.h;
-      const last = ps[ps.length - 1];
-      me.scale = last.sc;
+    if (br) {
+      me.pos.x = lerp(br.a.x, br.b.x, br.k);
+      me.pos.z = lerp(br.a.z, br.b.z, br.k);
+      me.pos.y = BULLET_PLANE_Y;
+      me.heading = lerpAngle(br.a.h, br.b.h, br.k);
+      me.scale = lerp(br.a.sc, br.b.sc, br.k);
     }
   }
 
@@ -424,9 +431,8 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
 export function clearNet(world, state) {
   for (const [id, e] of [...state.byId]) despawnGhost(world, state.kinds.get(id), e);
   state.byId.clear(); state.kinds.clear(); state.samples.clear();
-  state.leaving.clear(); state.arriving.clear();
+  state.leaving.clear(); state.arriving.clear(); state.events.length = 0;
   state.clock.offset = null; // a new run is a new tick→wall-clock relationship, not a drift to slew toward
   state.playerSamples.length = 0; state.history.length = 0;
-  state.view = null; state.viewAt = 0;
   state.lastTick = -1;
 }
