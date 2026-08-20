@@ -5,6 +5,17 @@
 
 ## 2026-08-20
 
+- **A room that is not being stepped now says so, and a tool to prove it is not.** Playtest showed three
+  delivery stalls of 300–750 ms, each carrying a single snapshot interval of simulation while the tab
+  rendered happily throughout (one slow frame in the whole run) — so the client could see the symptom but
+  not name the cause. `driver.js` warns when a pump arrives more than `STALL_LOG_MS` (100 ms) late, and
+  separately when the stepping itself takes that long, which separates "the room was starved" from "the room
+  is slow". New `server/tools/netsim-load.mjs` is a synthetic browser: it mints a ticket, joins, plays at
+  60 Hz and reports the arrival-gap distribution. First use cleared both suspects — driving level-2 for a
+  minute gave p50 34 ms / p95 37 / max 75 and **zero** stalls, and the same again while the server served
+  1.5 MB models on repeat. The room and the file serving are innocent; the search moves to what else is
+  competing for the machine.
+
 - **The drawn-motion probe arms itself while developing locally.** Two playtests produced no data because
   the flag was not on — once to a comma the URL picked up in a chat window, once to simply not typing it.
   A diagnostic that has to be remembered is off during the run that mattered, so on `localhost` it is now on

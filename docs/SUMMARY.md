@@ -3181,6 +3181,13 @@ events the room sent, so a tab that stopped rendering because the room had nothi
 moment it had the most to say. Only an explicit pause or the system map freezes the picture. Both flags are
 on `window.__netsim` (`roomIdle`, `drawing`).
 
+**Diagnosing a stall.** `server/src/netsim/driver.js` warns on the server when a pump arrives more than
+`STALL_LOG_MS` (100 ms) late (`[netsim] the room was not stepped for N ms`) and, separately, when the
+stepping itself takes that long — the first means the process was busy elsewhere, the second that the room
+is slow. `node server/tools/netsim-load.mjs [--level L] [--seconds N] [--port P]` drives a real room from a
+synthetic client and prints the arrival-gap distribution, which is how "is it the room or the browser?" gets
+an answer without a human playing.
+
 **A room only steps while a fight is actually running.** It is paused whenever the player is not in one —
 a death or victory overlay, a menu, the system map, an explicit pause, or a **hidden tab** (a background tab
 draws nothing and samples no input, so a room that kept fighting would kill a player who could neither see
