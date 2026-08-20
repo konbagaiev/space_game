@@ -37,6 +37,7 @@ export function createWorld({ host = noopHost } = {}) {
     bullets: [],
     rockets: [],
     drops: [],
+    pendingLoot: [],   // items collected this run — deposited into the stash on VICTORY only
 
     // --- where this run is being fought ---
     // The combat zone's centre. A mission may drift it (the freighter escort), and the soft boundary,

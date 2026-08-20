@@ -8,20 +8,21 @@
 // Pure math (pullSpeed, pickLoot) lives here / in drops-config.js so it's node-testable without THREE.
 import * as THREE from 'three';
 import { scene } from './engine.js';
-import { G, CATALOG, drops } from './state.js';
+import { G, CATALOG, drops, world } from './state.js';
 import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLoader
-import { audio } from './sound-routing.js';
-import { DROP_MODEL_URL, DROP_CHANCE, MAX_DROPS, ARM_DELAY, ROTATE_PERIOD, COLLECT_DIST, WEIGHT_FALLBACK,
-         REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pullSpeed, field, FIELD_CUTOFF, pickLoot, shouldDeposit, rewardOwned } from './sim-core/drops-config.js';
-import { logEvent } from './eventlog.js';
+import { DROP_MODEL_URL, DROP_CHANCE, ROTATE_PERIOD, WEIGHT_FALLBACK,
+         REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pickLoot, rewardOwned } from './sim-core/drops-config.js';
 import { t } from './i18n.js';
-import { Vec3 } from './sim-core/vec.js'; // a drop's world position is sim state (the Grab pulls it)
+import { spawnDrop as spawnDropIn, stepDrops, clearDrops as clearDropsIn,
+         takeLoot as takeLootIn } from './sim-core/drops-sim.js';
 
 // The live drops of the current World, re-exported under the name every caller already uses. The array
 // itself belongs to the World (sim-core/world.js) so the simulation can reach it in Node too; drops.js
 // stays the module that gives a drop its body and its pull behaviour.
 export { drops };            // { obj, pos, item:{kind,refId}, weight, inRange (sec), special? }
-export const pendingLoot = [];      // { kind, refId } collected this run — deposited on VICTORY only
+// Items collected this run, deposited into the stash on VICTORY only. The array belongs to the World
+// (sim-core/drops-sim.js fills it); re-exported here under the name callers already use.
+export const pendingLoot = world.pendingLoot;
 export { DROP_CHANCE, pickLoot };   // re-export so sim.js/main.js read one source (pickLoot is pure, in drops-config.js)
 
 let template = null;                // cloned per drop once the glb loads
@@ -75,18 +76,13 @@ function warnMissing() {
   if (!warned) { warned = true; console.warn('drops: item has no weight — using WEIGHT_FALLBACK'); }
 }
 
-// item = { kind:'component'|'weapon', refId } — its weight is looked up + cached at spawn.
+// item = { kind:'component'|'weapon', refId }. The weight is looked up HERE — reading the catalog is the
+// client's job — and carried on the entity, so the pull never needs a lookup again.
 export function spawnDrop(pos, item) {
   if (!item) return;
-  if (drops.length >= MAX_DROPS) { console.warn('drops: cap reached, skipping'); return; } // perf guard
   const cat = item.kind === 'component' ? CATALOG.components.get(item.refId) : CATALOG.weapons.get(item.refId);
   const weight = (cat && cat.weight) || (warnMissing(), WEIGHT_FALLBACK);
-  const obj = template ? template.clone(true) : fallbackBox();
-  obj.position.copy(pos); obj.position.y = 0.8;   // seed the render copy; `pos` below is the authority
-  scene.add(obj);
-  const colorInt = cat && cat.color ? new THREE.Color(cat.color).getHex() : 0xffffff;
-  addHalo(obj, colorInt, DROP_HALO_SIZE); // soft glow tinted by the item's rarity color
-  drops.push({ obj, pos: new Vec3(pos.x, 0.8, pos.z), item, weight, inRange: 0 });
+  if (!spawnDropIn(world, pos, item, weight)) console.warn('drops: cap reached, skipping');
 }
 
 // ---------- Special (L1/L2 reward) drops: green model + halo, cosmetic (no stash deposit) ----------
@@ -190,73 +186,69 @@ export function preloadRewardModel(reward) {
 // fallback box shows and the model swaps in on load (same wrap group, so an in-flight pull continues).
 export function spawnSpecialDrop(pos, reward) {
   if (!reward) return;
-  if (drops.length >= MAX_DROPS) { console.warn('drops: cap reached, skipping reward drop'); return; }
   const spec = rewardModelSpec(reward);
   if (!spec) return;
-  const weight = spec.cat.weight || WEIGHT_FALLBACK;
-  const wrap = new THREE.Group();
-  addHalo(wrap);                         // additive green halo sprite behind the model
-  wrap.position.copy(pos); wrap.position.y = 0.8; // seed the render copy; `pos` below is the authority
-  scene.add(wrap);
-  const cached = spec.url && rewardModelCache.get(spec.url);
-  if (cached && cached.model) {
-    wrap.add(cached.model.clone(true));  // warm cache → instant clone, no hitch
-  } else {
-    wrap.add(greenFallbackBox());        // not preloaded yet: glowing green stand-in until the glb arrives
-    if (spec.url) requestRewardModel(spec.url, spec.targetLen, (model) => {
-      const box = wrap.children.find((c) => c.userData.__fallback);
-      if (box) { wrap.remove(box); box.geometry.dispose(); box.material.dispose(); }
-      wrap.add(model);
-    });
+  if (!spawnDropIn(world, pos, reward, spec.cat.weight || WEIGHT_FALLBACK, true)) {
+    console.warn('drops: cap reached, skipping reward drop');
   }
-  drops.push({ obj: wrap, pos: new Vec3(pos.x, 0.8, pos.z), item: reward, weight, inRange: 0, special: true });
 }
 
 // Ownership gate off G.activeShip: has the player already got this reward? Delegates to the pure
 // rewardOwned() (drops-config.js) so the logic stays node-testable; here we just supply G.activeShip.
 export function ownsReward(reward) { return rewardOwned(G.activeShip, reward); }
 
+// Host half of the Grab: advance the simulation, then show what it did. The spin, the beam and the crate
+// positions are presentation; arming, pulling and collecting belong to sim-core/drops-sim.js.
 export function updateDrops(dt) {
-  // 1) rotate every drop (cosmetic) — one turn / ROTATE_PERIOD
-  for (const d of drops) d.obj.rotation.y += dt * (Math.PI * 2 / ROTATE_PERIOD);
-  const p = G.player, grab = p && p.grab;
-  // feature inert with no grab / dead player: hide the line and stop pulling
-  if (!p || !p.alive || !grab) { hideLine(); return; }
-  const ppos = p.pos;
-  // 2) arm timers + find the nearest ARMED, field-eligible drop. Eligibility is the inverse-square
-  //    field crossing FIELD_CUTOFF (weight-independent) — the reach is emergent, not a stored radius.
-  let target = null, best = Infinity;
-  for (const d of drops) {
-    const dist = tmp.copy(d.pos).sub(ppos).length();
-    if (field(grab.strength, dist) >= FIELD_CUTOFF) {
-      d.inRange += dt;
-      if (d.inRange >= ARM_DELAY && dist < best) { best = dist; target = d; }
-    } else d.inRange = 0;
-  }
+  for (const d of drops) d.obj && (d.obj.rotation.y += dt * (Math.PI * 2 / ROTATE_PERIOD)); // cosmetic spin
+  const target = stepDrops(world, dt);
   if (!target) { hideLine(); return; }
-  // 3) pull the target toward the ship at the linear-ramp, weight-scaled speed (faster the closer it is)
-  tmp.copy(ppos).sub(target.pos); const d = tmp.length();
-  if (d <= COLLECT_DIST) return collect(target);         // arrived → collect + re-target next frame
-  const speed = pullSpeed(target.weight, d);
-  target.pos.addScaledVector(tmp.normalize(), Math.min(speed * dt, d));
-  target.obj.position.set(target.pos.x, target.pos.y, target.pos.z); // sim → render (see sim.js syncMeshes)
-  drawLine(ppos, target.pos);                            // thin blue activity indicator
+  if (target.obj) target.obj.position.set(target.pos.x, target.pos.y, target.pos.z);
+  drawLine(world.player.pos, target.pos); // thin blue activity indicator
 }
 
-function collect(d) {
+// Give a drop its body / let it go — the browser half of world.host.onSpawn('drop', d) and its mirror.
+export function attachDropBody(d) {
+  const obj = d.special ? buildRewardObj(d.item) : (template ? template.clone(true) : fallbackBox());
+  obj.position.set(d.pos.x, d.pos.y, d.pos.z);
+  scene.add(obj);
+  if (!d.special) {
+    const cat = d.item.kind === 'component' ? CATALOG.components.get(d.item.refId) : CATALOG.weapons.get(d.item.refId);
+    addHalo(obj, cat && cat.color ? new THREE.Color(cat.color).getHex() : 0xffffff, DROP_HALO_SIZE);
+  }
+  d.obj = obj;
+}
+
+export function detachDropBody(d) {
+  if (!d.obj) return;
   scene.remove(d.obj);
-  drops.splice(drops.indexOf(d), 1);
-  if (shouldDeposit(d)) pendingLoot.push(d.item); // cosmetic reward drops deposit NOTHING (DECISIONS: exactly one copy)
-  audio.sfx.pickup?.(); // small feedback blip
-  const cat = d.item.kind === 'component' ? CATALOG.components.get(d.item.refId) : CATALOG.weapons.get(d.item.refId);
-  if (cat) logEvent(t('ui.log.picked_up', { name: cat.name }), cat.color); // pickup line, tinted by the item color
-  hideLine();
+  d.obj = null;
 }
 
-// Remove every drop mesh + the line and DISCARD any uncollected/un-deposited loot (called by reset()).
-export function clearDrops() { for (const d of drops) scene.remove(d.obj); drops.length = 0; pendingLoot.length = 0; hideLine(); }
+// The reward drop's body: a green halo plus either the warm-cached model (instant) or a glowing stand-in
+// that the model replaces on arrival — the wrap group is the same either way, so an in-flight pull continues.
+function buildRewardObj(reward) {
+  const spec = rewardModelSpec(reward);
+  const wrap = new THREE.Group();
+  addHalo(wrap);
+  const cached = spec && spec.url && rewardModelCache.get(spec.url);
+  if (cached && cached.model) {
+    wrap.add(cached.model.clone(true));
+  } else {
+    wrap.add(greenFallbackBox());
+    if (spec && spec.url) requestRewardModel(spec.url, spec.targetLen, (model) => {
+      const box = wrap.children.find((c) => c.userData.__fallback);
+      if (box) { wrap.remove(box); box.geometry.dispose(); box.material.dispose(); }
+      wrap.add(model);
+    });
+  }
+  return wrap;
+}
+
+// Remove every drop + the line and DISCARD any uncollected loot (called by reset()).
+export function clearDrops() { clearDropsIn(world); hideLine(); }
 // Hand the run's collected loot to the caller (the victory deposit), clearing it.
-export function takeLoot() { const l = pendingLoot.slice(); pendingLoot.length = 0; return l; }
+export function takeLoot() { return takeLootIn(world); }
 
 // One pooled blue THREE.Line (2-vertex BufferGeometry), created lazily; only its two positions change.
 function ensureLine() {

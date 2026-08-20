@@ -24,6 +24,7 @@
 //   { type: 'shieldReady' }                                            the player's shield finished recharging
 //   { type: 'fire',            weaponClass, isRocket, fromPlayer }      a mount fired (only the player's is audible)
 //   { type: 'evade',           pos }                                   a shot was dodged (Maneuver skill)
+//   { type: 'pickup',          item }                                  the Grab collected a loot drop
 //   { type: 'smoke',           pos }                                   one rocket-trail puff
 //   { type: 'kill',            pos, isBoss, exhaustColor, sizeScale, role, shipClass, reward, xp, name }
 //   { type: 'warpFlash',       pos }                                   the soft-boundary warp-back arrival

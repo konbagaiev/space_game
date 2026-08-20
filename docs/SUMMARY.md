@@ -2866,6 +2866,13 @@ and the run state — `kills`, `enemyTotal`, `earned`, `earnedXp`, `banked`, `co
 to change. What stays genuinely on `G` is the client's own: graphics tier, scene handles, the account, UI
 callbacks, `paused`/`gameStarted`/`mapOpen`, and the HUD banner.
 
+**Loot drops are split the same way.** `sim-core/drops-sim.js` owns the Grab — arming (`ARM_DELAY` in the
+field), the weight-scaled pull, the collect at `COLLECT_DIST` — and fills `world.pendingLoot`, which the
+victory path drains. Reach is **emergent**: a drop is eligible while the inverse-square field crosses
+`FIELD_CUTOFF`, never a stored radius. `drops.js` keeps the crate model, the rarity halo, the cosmetic spin,
+the blue beam and the catalog weight lookup, and provides `attachDropBody`/`detachDropBody` to the host.
+A collect emits `pickup`; the adapter plays the blip and writes the event-log line.
+
 **Firing is simulation, sound is not.** `fireMount`/`updateGroups` live in `sim-core/ship-entity.js` and
 emit a `fire` event ({ weaponClass, isRocket, fromPlayer }) instead of playing anything; the adapter in
 `sim.js` decides that only the player's own shots are audible (enemy fire is deliberately silent — rocket

@@ -245,6 +245,25 @@ Two things this surfaced:
 Verified: client tests 374 → **378**, intro trace `tick=2503/3490`, guard scenarios green — and
 `17-triple-spiral-rocket`, which had been failing intermittently on *both* branches, is now stably green.
 
+#### B3c part 3 outcome — loot drops split
+
+`sim-core/drops-sim.js` owns the Grab: `makeDrop`, `spawnDrop`, `stepDrops` (arm → pick the nearest
+eligible drop → pull → collect), `takeLoot`, `clearDrops`. `world.pendingLoot` holds what the run has
+collected. `drops.js` keeps the crate model, the halo, the cosmetic spin, the blue beam and the catalog
+weight lookup, plus `attachDropBody`/`detachDropBody` for the host. Collecting emits **`pickup`**; the
+adapter plays the blip and writes the event-log line, both of which needed the catalog and i18n and so were
+never the simulation's to do.
+
+Note the reach stays emergent — a drop is eligible while the inverse-square field crosses `FIELD_CUTOFF`,
+never a stored radius — and `special` reward drops still deposit nothing.
+
+**Verified the pickup path by hand, for the same reason as the fire sound.** `19-hud-log` fails on the KILL
+line assertion — identically on `main` — *before* it reaches the pickup line, so it would have passed a
+broken `pickup` event silently. A probe dropped a component next to the ship: `drops 1 → 0`, one blip, and
+`#event-log` reading "picked up Scout engine".
+
+Verified: client tests 384 → **386**, intro trace `tick=2503/3490`.
+
 #### B3c part 2 outcome — the World now holds everything a fight is made of
 
 The last data the simulation was reading out of client modules moved onto the World, each reachable under

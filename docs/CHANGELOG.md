@@ -5,6 +5,19 @@
 
 ## 2026-08-20
 
+- **Loot drops split into simulation and body, like the projectiles and ships before them.**
+  `client/src/sim-core/drops-sim.js` owns the Grab — arming, the inverse-square pull, the collect — plus
+  `world.pendingLoot`; `drops.js` keeps the crate model, halo, cosmetic spin, blue beam and the catalog
+  weight lookup, and gains `attachDropBody`/`detachDropBody` for the host. Collecting now emits a
+  **`pickup`** event (the fourteenth); the adapter plays the blip and writes the event-log line, both of
+  which need the catalog and i18n and so were never the simulation's work. The reach stays emergent (a drop
+  is eligible while the field crosses `FIELD_CUTOFF`, not by a stored radius) and reward drops still deposit
+  nothing. Verified the path by hand rather than trusting `19-hud-log`, which fails on its KILL-line
+  assertion — identically on `main` — before reaching the pickup line: a probe dropped a component beside
+  the ship and saw `drops 1 → 0`, one blip, and "picked up Scout engine" in `#event-log`. No gameplay
+  change: intro trace still `tick=2503/3490`; client tests 384 → 386.
+  Plan: `docs/plans/server-authoritative-sim.md` (Slice B3c, part 3).
+
 - **The World now holds everything a fight is made of.** The last simulation data still living in client
   modules moved onto `world`, each reachable under its historical name so no call site changed: the **home
   station** (`world.station`, carrying a `pos` captured once because it never moves — docking distance

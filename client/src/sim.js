@@ -24,7 +24,7 @@ import { simEvents, world } from './state.js'; // the sim's outbound channel + t
 import { despawnAt } from './sim-core/spawn.js';
 import { isLastKillDrop, runCenter, stepMissionZone, MISSION_ZONE_RADIUS } from './sim-core/level-sim.js';
 import { pointHitsShip, segmentHitsShip, resolveHostileBulletHit } from './sim-core/collision.js';
-import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops } from './drops.js';
+import { updateDrops, spawnDrop, spawnSpecialDrop, preloadRewardModel, pickLoot, ownsReward, clearDrops, takeLoot, DROP_CHANCE, drops, attachDropBody, detachDropBody } from './drops.js';
 import { canDock, BASE_ARRIVE_RADIUS } from './sim-core/autopilot-config.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
@@ -549,6 +549,13 @@ function applySimEvent(ev) {
     case 'shieldHit':      spawnShieldHit(ev.pos, ev.broke); break;
     case 'enemyShieldHit': spawnEnemyShieldHit(ev.enemy, ev.pos, ev.broke); break;
     case 'shieldReady':    spawnShieldReady(); break;
+    case 'pickup': {
+      audio.sfx.pickup?.(); // small feedback blip
+      const it = ev.item;
+      const cat = it.kind === 'component' ? CATALOG.components.get(it.refId) : CATALOG.weapons.get(it.refId);
+      if (cat) logEvent(t('ui.log.picked_up', { name: cat.name }), cat.color); // pickup line, tinted by the item
+      break;
+    }
     case 'fire':
       // Enemy fire makes no sound at all — intentional, only your own shots are audible. The weapon's
       // class picks the sample through the DB map; unset falls back to a synthesized zap.
@@ -633,11 +640,13 @@ world.host = {
     if (kind === 'bullet') attachBulletBody(e);
     else if (kind === 'rocket') attachRocketBody(e);
     else if (kind === 'enemy') attachEnemyBody(e);
+    else if (kind === 'drop') attachDropBody(e);
   },
   onDespawn(kind, e) {
     if (kind === 'bullet') detachBulletBody(e);
     else if (kind === 'rocket') detachRocketBody(e);
     else if (kind === 'enemy') detachEnemyBody(e);
+    else if (kind === 'drop') detachDropBody(e);
   },
 };
 
