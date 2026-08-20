@@ -1,6 +1,6 @@
 # Server-authoritative combat simulation
 
-> **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), 18 commits, all green.
+> **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), 20 commits, all green.
 > **Slices A, B and C are done — the simulation runs headless in Node and a test proves it agrees with the
 > browser.** Slice D (the socket) is next. Started 2026-08-19; last worked 2026-08-20. **Local testing only
 > — nothing ships to prod or itch, and nothing is pushed, until the maintainer says so.**
@@ -22,7 +22,7 @@ Read it first. Nothing here needs a prior conversation.
 
 ### Where the work lives
 
-- Worktree **`../ag-wt/server-sim`**, branch **`feature/server-sim`**, 19 commits ahead of `main`.
+- Worktree **`../ag-wt/server-sim`**, branch **`feature/server-sim`**, 20 commits ahead of `main`.
   `main` is untouched at `24849f7` with a clean tree, and **nothing has been deployed or pushed** — the
   branch is local only. Do not merge or deploy without asking.
 - Local server for playtesting: **`PORT=4010 node src/server.js`** from `server/`. Port 4000 is the
