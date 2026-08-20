@@ -73,7 +73,25 @@ digest and the identical seeded-RNG draw count.
 
 **Where this stopped (2026-08-20, end of session).** A room is playable end to end and was signed off by
 playtest: the campaign runs, missions complete, loot banks, progression advances, and the ship is predicted
-locally. Everything below is genuinely optional or genuinely next — nothing here is a known defect.
+locally. There is exactly ONE known defect, item 0; everything after it is optional or next.
+
+**0. KNOWN DEFECT — the rocket cooldown readout is dead in a room.** The 🚀 button's radial fill reads
+`G.player.groups.rocket.cooldown` / `.reload` (`client/src/hud.js:77-79`), and fire-group cooldowns are
+owned by the ROOM and never sent — so the client's copy sits at 0 and the button always reads "ready".
+
+This is the netsim bug class in its purest form: *anything the client reads must be on the wire*. The fix is
+the same shape as the shield pools were — put the player's group cooldowns in the snapshot's player block
+and apply them in `applySnapshot`, taken outright rather than interpolated (a cooldown is a countdown).
+Roughly:
+  • `server/src/netsim/room.js` `takeSnapshot()` → add e.g. `cd: Object.fromEntries(Object.entries(world.player.groups).map(([k, g]) => [k, g.cooldown]))`;
+  • `client/src/netsim-world.js` `applySnapshot` → write each back onto `world.player.groups[k].cooldown`;
+  • a test in `netsim-world.test.js` alongside the shield-pool one.
+Note the predictor already runs the real `stepPlayer`, so a later slice could predict the cooldown instead
+of shipping it — but shipping it is right today, since the room is the authority on when you actually fired.
+
+**Look for siblings while you are there.** The same question ("is this field on the wire at all?") has found
+six bugs so far; other client-read, room-owned state worth auditing: the repair drone's accumulator, the
+warp-in `spawnAge` of the player, and anything else `hud.js` reads off `G.player` that is not already sent.
 
 **1. Local BULLETS — the last piece of Slice E, and the biggest remaining feel item.** A shot appears when
 the snapshot carrying it does rather than on the keypress. The roadmap's "don't stream bullets": the client
