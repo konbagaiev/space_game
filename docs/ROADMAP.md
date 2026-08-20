@@ -148,6 +148,32 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
   So the engine decision tracks **co-op vs competitive PvP**, not anti-cheat. A major re-platforming
   decision, not a feature bolt-on. Sequenced **after** the ~50-sortie campaign.
 
+### Server-authoritative sim — in progress on `feature/server-sim` (2026-08-20)
+
+Phase 5's first move is under way ahead of schedule, on a local-only branch. The rules live in
+`client/src/sim-core/` and run unchanged in the browser and in Node; a headless referee replays input
+traces server-side; and **`?netsim=1` plays a level in a real server-run room over a WebSocket**. Playtested
+through the intro and the first three campaign levels end to end. See
+`docs/plans/server-authoritative-sim.md` (§0 is a self-contained pick-up brief) — nothing is pushed or
+deployed.
+
+- [ ] **AIM ASSIST NEEDS REWORK FOR NETSIM — flagged from the first full playthrough (2026-08-20).**
+  Everything else played fine; the assist is the part that reads wrong. It is the one mechanic that
+  genuinely depends on *where the player saw the enemy*: `findBulletAimTarget` / `findTargetInSector`
+  pick a target inside a cone from LIVE enemy positions, and in a room those are the server's present,
+  while the screen is showing the world ~100 ms in the past (plus ~50 ms of input queueing). So the
+  assist corrects toward a position the player is not looking at. Two candidate fixes, and they are not
+  exclusive:
+  - **D5, lag compensation (already specified in the plan, not yet built):** the room keeps a ring buffer
+    of per-tick entity transforms (~1 s) and resolves aim-assist selection *and* player-bullet hit tests
+    against the rewound state at `clientTick − (interpDelay + RTT/2)`. This is the principled fix — it
+    makes the server judge what the player actually saw.
+  - **Slice E, client-side prediction:** removes the local ship's share of the delay, which shrinks the
+    error but does not remove it, since remote enemies stay interpolated.
+  Worth deciding by feel which the assist actually needs; D5 is the one aimed at this symptom.
+  Single-player is unaffected — it simulates locally, so the assist already resolves against what is on
+  screen.
+
 ### Netcode notes (parked — far future, from design discussion)
 - **Prereq work, not perf:** the bottleneck to *getting* server-authoritative MP is decoupling the sim
   from Three.js (own vectors/structs, no `mesh.position`) + a **fixed-step loop** (~30 Hz via

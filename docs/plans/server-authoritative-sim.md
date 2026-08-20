@@ -71,15 +71,22 @@ digest and the identical seeded-RNG draw count.
 
 ### What is left (in order)
 
-**1. Play it again and bring back FEEL notes.** The first playtest (2026-08-20) found five outright
-defects, all now fixed — see the Slice D outcome below; none of them were about feel, so the feel question
-is still open. `?netsim=1` is playable and the local ship answers ~100 ms late (interpolation) plus ~50 ms
-(input queueing). That mush is the measurable baseline Slice E is judged against, so it wants a human
-verdict before more is built on top of it. Things to notice: how bad the input delay actually is, whether
-enemy motion reads as smooth at 15 Hz snapshots + 100 ms interpolation, and whether shooting feels like it
-connects.
+**1. AIM ASSIST — the one thing the playthrough asked for.** The intro and the first three campaign levels
+were played end to end in a room on 2026-08-20 and reported as fine, **except the auto-aim**, which needs
+rework. That is D5's exact subject and the plan predicted it: the assist is the only mechanic that depends
+on *where the client saw the enemy*. `findBulletAimTarget` / `findTargetInSector` pick from LIVE enemy
+positions, which in a room are the server's present, while the screen shows the world ~100 ms in the past
+(plus ~50 ms of input queueing) — so the assist corrects toward somewhere the player is not looking.
 
-**2. D5 — lag compensation.** The one part of Slice D not built. The server keeps a ring buffer of per-tick
+Note what this reorders: the general input delay drew **no complaint**, which is evidence against the
+assumption that Slice E (prediction) is the urgent next step. Prediction shrinks the error but cannot
+remove it, since remote enemies stay interpolated; **D5 is the fix aimed at this symptom.** Also tracked in
+`docs/ROADMAP.md` under Phase 5.
+
+**Feel, for the record:** intro + levels 0–2 completed in a room with no complaints about delay or
+smoothness. Retries, level advance, wins, banking and the briefing hand-offs all worked over the socket.
+
+**2. D5 — lag compensation.** The one part of Slice D not built, and now the highest-value item (see 1). The server keeps a ring buffer of per-tick
 entity transforms (~1 s) and resolves **aim-assist target selection** and **player-bullet hit tests** against
 the rewound state at `clientTick − (interpDelay + RTT/2)`. Our shape mutes the classic version of this
 problem — the client sends keys, not a crosshair, and fire direction comes from the ship's nose, which the

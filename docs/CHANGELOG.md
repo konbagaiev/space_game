@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **netsim playtested end to end: the intro and the first three campaign levels, all server-run.** Retries,
+  level advance, wins, banking and the briefing hand-offs all worked over the socket. **One thing needs
+  rework: the aim assist** — it is the only mechanic that depends on *where the client saw the enemy*
+  (`findBulletAimTarget` / `findTargetInSector` pick from live enemy positions, which in a room are the
+  server's present, while the screen shows the world ~100 ms in the past), so it corrects toward somewhere
+  the player is not looking. Tracked in `docs/ROADMAP.md` (Phase 5) and in the plan's §0 as the next item;
+  the fix aimed at it is D5, lag compensation. Notably the general input delay drew no complaint, which is
+  evidence against Slice E (prediction) being the urgent next step.
+
 - **netsim now stands aside for a replay, and its room follows the run.** Three related defects, all found
   by refreshing on a fresh profile:
   **The intro cutscene ran with a room stepping behind it** — the card came up and froze the replay while
