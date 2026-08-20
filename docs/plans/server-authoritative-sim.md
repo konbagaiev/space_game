@@ -1,6 +1,6 @@
 # Server-authoritative combat simulation
 
-> **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), 20 commits, all green.
+> **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), all green.
 > **Slices A, B and C are done — the simulation runs headless in Node and a test proves it agrees with the
 > browser.** Slice D (the socket) is next. Started 2026-08-19; last worked 2026-08-20. **Local testing only
 > — nothing ships to prod or itch, and nothing is pushed, until the maintainer says so.**
@@ -22,7 +22,7 @@ Read it first. Nothing here needs a prior conversation.
 
 ### Where the work lives
 
-- Worktree **`../ag-wt/server-sim`**, branch **`feature/server-sim`**, 20 commits ahead of `main`.
+- Worktree **`../ag-wt/server-sim`**, branch **`feature/server-sim`** (`git log --oneline main..HEAD` for the commit list).
   `main` is untouched at `24849f7` with a clean tree, and **nothing has been deployed or pushed** — the
   branch is local only. Do not merge or deploy without asking.
 - Local server for playtesting: **`PORT=4010 node src/server.js`** from `server/`. Port 4000 is the
@@ -91,7 +91,7 @@ node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.
 **Two oracles, and they check different things.**
 - `22-intro-replay` must print
   `kills=4 enemiesLeft=0 cards=p0|p1|p2|p3|p4 won=true ended=true playDone=true tick=2503/3490`.
-  **The tick count matters as much as the outcome** — it has not moved once across nineteen commits, and a
+  **The tick count matters as much as the outcome** — it has not moved once across the whole branch, and a
   change in it means the simulation diverged even if `won=true`.
 - `36-sim-divergence` must print the same hash and the same draw count on both lines
   (`hash=0x9d2050b0 … draws=38`). A *hash* mismatch means the two hosts simulate different fights; a *draw
