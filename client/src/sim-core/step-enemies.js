@@ -60,6 +60,21 @@ export function stepEnemyAI(world, dt) {
       if (wasBroken && s.shieldValue > 0) world.enemyShieldRefills++; // diagnostic counter (replay triage)
     }
 
+    // THE PLAYER IS DEAD: cut the engines and hold fire. There is nothing left to chase and nobody left to
+    // shoot, and a wreck being pounded on the "Ship Destroyed" screen — complete with the sounds — reads as
+    // the game not having noticed. They coast to a stop on their own drag instead of freezing, so the scene
+    // settles rather than stopping dead.
+    //
+    // Single-player never reaches this: `update()` returns early once the ship is gone, so its loop stops
+    // before anything can be seen. The rule lives here anyway, because there is one simulation and the room
+    // keeps stepping.
+    if (!player.alive) {
+      e.vel.multiplyScalar(Math.max(0, 1 - DRAG * dt));
+      e.pos.addScaledVector(e.vel, dt);
+      e.thrusting = false;
+      continue;
+    }
+
     const toPlayer = player.pos.clone().sub(e.pos);
     const dist = toPlayer.length();
     toPlayer.normalize();

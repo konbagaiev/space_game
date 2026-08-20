@@ -915,11 +915,23 @@ function animate() {
         vx: world.player.vel.x, vz: world.player.vel.z,
       } : null;
       if (!netStarted) { netStarted = true; netLink.start(pose); } else netLink.restart(pose);
+      netRoomPaused = false; // both messages start the driver server-side
     }
     // Pause and the system map both have to reach the ROOM, or the button lies: the local overlay would say
     // "Paused" while the fight kept running and the ship kept taking hits. One player per room makes a real
     // freeze legitimate (DECISIONS §16).
-    const wantPaused = G.paused || G.mapOpen;
+    // EXIT POINTS. A room must not keep stepping when there is no fight to step: after a death or a
+    // victory the player is looking at an overlay, and after "back to the hangar" they are in a menu — but
+    // the room went on simulating, so the badge still read green in the hangar and the server kept a 60 Hz
+    // world alive for nobody. Same predicate the game uses everywhere else for "a fight is running".
+    const fightLive = G.gameStarted && G.player && G.player.alive && !levelRunner.won;
+    // A HIDDEN TAB pauses the room too. The browser throttles rAF to nothing in a background tab, so the
+    // client stops sampling input and stops drawing — but the room kept stepping at 60 Hz, which means
+    // coming back to a ship that had been shot at by an enemy you could neither see nor answer. (The
+    // audible symptom is the reverse: the sounds stop, because the tab does, while the fight does not.)
+    // Single-player has the same instinct — `autoPauseOnBlur` — and one player per room makes it honest.
+    const hidden = typeof document !== 'undefined' && document.hidden;
+    const wantPaused = G.paused || G.mapOpen || hidden || !fightLive;
     if (netLink && wantPaused !== netRoomPaused) { netRoomPaused = wantPaused; netLink.setPaused(wantPaused); }
     if (netLink && wantPaused) netLink.keepAlive(); // a paused client sends no input; don't look abandoned
     if (netLink && netStarted && !wantPaused && !netsimPaused) {
@@ -1077,11 +1089,13 @@ function updateNetBadge() {
     document.body.appendChild(netBadgeEl);
   }
   // Green ONLY while a room is actually driving this tab; amber for every flavour of "you are local".
-  const driving = netsimActive && !netDeferredBy && !!netLink && netStarted;
+  const driving = netsimActive && !netDeferredBy && !!netLink && netStarted && !netRoomPaused;
   const reason = netDeferredBy ? `local · ${netDeferredBy}`
     : netDown ? 'local · disconnected'
     : !netLink ? (netConnecting ? 'connecting…' : 'local · no room')
-    : !netStarted ? 'room joined' : `room · ${netState.welcome ? netState.welcome.level : '?'}`;
+    : !netStarted ? 'room joined'
+    : netRoomPaused ? 'room idle'   // joined, but no fight to step — an overlay or a menu is up
+    : `room · ${netState.welcome ? netState.welcome.level : '?'}`;
   const colour = driving ? '#4dff88' : '#ffb454';
   netBadgeEl.style.color = colour;
   netBadgeEl.style.border = `1px solid ${colour}`;

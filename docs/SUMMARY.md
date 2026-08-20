@@ -3140,6 +3140,17 @@ extrapolating: a wrong guess that has to be taken back looks worse than a tenth 
 Absence from a snapshot IS the despawn — a snapshot is a complete statement about the world, and a lost
 "despawn" message would leak a mesh.
 
+**A room only steps while a fight is actually running.** It is paused whenever the player is not in one —
+a death or victory overlay, a menu, the system map, an explicit pause, or a **hidden tab** (a background tab
+draws nothing and samples no input, so a room that kept fighting would kill a player who could neither see
+nor answer it). The badge reads `room idle` then. Without this the room burned a 60 Hz world for nobody and
+the badge stayed green in the hangar.
+
+**When the player dies the fight winds down**, in `sim-core` so both hosts share the rule: the tick you die
+on completes, and from the next one a dead ship neither flies nor fires, the level stops spawning, and the
+enemies cut their engines and hold fire, coasting to a stop on their own drag. Single-player never sees it
+only because `update()` stops its loop first.
+
 **Pause is real here.** The pause button and the system map both stop the ROOM (`pause` / `resume` messages
 stop and restart its driver), because a room holds one player and a local-only pause would be a lie — the
 overlay saying "Paused" while the fight ran on and the ship kept taking hits. A paused client sends no

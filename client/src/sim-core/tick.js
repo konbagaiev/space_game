@@ -23,13 +23,18 @@ import { updateLevelRunner } from './level-runner.js';
 export function simTick(world, dt) {
   world.combatElapsed += dt; // unpaused combat clock (skipped while paused) — drives the enemy hold-fire grace
 
-  stepPlayer(world, dt);   // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
-  stepEnemyAI(world, dt);
+  // Read ONCE, before the steps: the tick on which the ship dies must complete normally (that is the tick
+  // that fires the explosion and the death event). From the next one the fight winds down — a dead ship
+  // does not fly or fire even with a key held, and the level stops sending more enemies at a wreck.
+  const alive = world.player.alive;
+
+  if (alive) stepPlayer(world, dt); // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
+  stepEnemyAI(world, dt);           // …which cuts the engines and holds fire once the player is gone
   stepBullets(world, dt);
   stepRockets(world, dt);
   stepEnemyDeaths(world);
-  const grabTarget = stepDrops(world, dt); // the Grab: arm, pull, collect
-  updateLevelRunner(world, dt);            // spawning + phase transitions from the active level
+  const grabTarget = stepDrops(world, dt); // the Grab: arm, pull, collect (inert without a live player)
+  if (alive) updateLevelRunner(world, dt); // spawning + phase transitions from the active level
   stepPlayerDeath(world);
   return grabTarget;
 }

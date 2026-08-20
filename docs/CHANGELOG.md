@@ -5,6 +5,25 @@
 
 ## 2026-08-20
 
+- **Enemies kept shooting the wreck.** After the player died the room went on simulating: the enemies held
+  station over the corpse and kept firing, so the "Ship Destroyed" screen came with the sound of hits still
+  landing. `sim-core/tick.js` now reads `alive` once at the top of the tick — the tick you die on completes
+  normally, and from the next one a dead ship neither flies nor fires even with a key held, the level stops
+  sending more enemies at a wreck, and `stepEnemyAI` cuts the enemies' engines and holds their fire so they
+  coast to a stop on their own drag instead of freezing. Measured after the change: **zero events** in the
+  15 s following a death, enemies drifting 0.18 units and stopping. The rule lives in sim-core because
+  there is one simulation; single-player never reaches it only because `update()` stops its loop first.
+- **Exit points: a room now idles when there is no fight.** After a death or a victory the player is on an
+  overlay, and after "back to the hangar" they are in a menu — but the room kept stepping at 60 Hz for
+  nobody, and the badge still read green in the hangar. It pauses on the same predicate the rest of the
+  game uses for "a fight is running", and the badge reads `room idle`. Verified: 0 ticks in 3 s on the
+  death screen, and a retry brings it straight back.
+- **A hidden tab pauses the room.** The browser throttles a background tab to nothing, so the client stops
+  sampling input and drawing — while the room kept fighting, which means coming back to a ship that had
+  been shot at by an enemy you could neither see nor answer. (The audible symptom is the reverse: the
+  sounds stop, because the tab does and the fight does not.) Single-player has the same instinct in
+  `autoPauseOnBlur`; one player per room makes it honest here too.
+
 - **Slice E: the local ship is predicted, not watched.** In a room the ship you fly was drawn from
   snapshots, so it answered the controls a round trip late — and the ship is the one thing whose motion the
   player is authoring rather than watching. `client/src/netsim-predict.js` holds a shadow World containing
