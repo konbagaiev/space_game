@@ -86,6 +86,9 @@ export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, hos
   world.catalog = catalog;
   world.station = stationFor(catalog.level.map);
   world.player = buildShip(catalog, ship);
+  // The account record the simulation itself consults: `ownsReward` reads it to decide whether the
+  // last-kill reward drop should appear at all (you never get a second copy). Left null it always dropped.
+  world.activeShip = ship.activeShip || null;
   seedSim(seed);
   clearAndPlaceRun(world);
   startRun(world);

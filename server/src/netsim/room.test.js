@@ -222,3 +222,34 @@ test('a drop is claimed by its network id, and a stale id is harmless', () => {
   room.command({ kind: 'nonsense' });
   assert.equal(room.world.autopilot.active, false, 'and neither does a malformed command');
 });
+
+test('the Grab collects, and the snapshot reports what was collected', () => {
+  const room = createRoom({ levelName: 'level-1', seed: 7 });
+  const w = room.world;
+  assert.ok(w.player.grab, 'the ship the room built has a Grab at all');
+  let t = 0;
+  const step = () => { room.pushInput([{ t: t++, k: [], a: null }]); room.stepOnce(); };
+  for (let i = 0; i < 30000 && !w.levelRunner.returningToBase; i++) {
+    for (const e of w.enemies) if (!e.warping) e.hp = 0;
+    step();
+  }
+  assert.ok(w.drops.length > 0, 'the run left crates on the field');
+
+  // Click one, the way the client does — by the network id from its spawn description.
+  let id = null;
+  for (const sp of room.takeSnapshot().spawns) if (sp.kind === 'drop') id = sp.id;
+  assert.ok(id != null, 'a crate is addressable by network id');
+  const before = w.drops.length;
+  room.command({ kind: 'drop', id });
+  assert.equal(w.autopilot.target.kind, 'drop', 'the click reached the room');
+  for (let i = 0; i < 8000 && w.drops.length === before; i++) step();
+  assert.equal(w.drops.length, before - 1, 'the Grab pulled it in and collected it');
+
+  // Non-special loot is reported so the client can bank it at the victory screen.
+  const collectedNormal = w.pendingLoot.length > 0;
+  assert.deepEqual(room.takeSnapshot().run.loot, w.pendingLoot.map((i) => ({ kind: i.kind, refId: i.refId })));
+  if (!collectedNormal) {
+    // The reward crate is `special`: cosmetic, deposits nothing — the real copy is installed on victory.
+    assert.equal(w.pendingLoot.length, 0, 'a special reward deposits nothing, by design');
+  }
+});

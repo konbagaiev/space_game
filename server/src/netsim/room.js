@@ -171,6 +171,10 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
           earned: world.earned, earnedXp: world.earnedXp,
           won: lr.won, returning: lr.returningToBase, phase: lr.phaseIndex,
           stationActive: !!(world.station && world.station.active),
+          // What the Grab has picked up this run. The room holds it, but the CLIENT is still the one that
+          // banks a victory (sealing the economy is a later slice), and it deposits from its own
+          // `world.pendingLoot` — which nothing was filling, so every crate collected in a room was lost.
+          loot: world.pendingLoot.map((it) => ({ kind: it.kind, refId: it.refId })),
         },
         // What the ship is being flown to, if anything — the roam nav buttons and the return-to-base HUD
         // read it, and only the room knows.

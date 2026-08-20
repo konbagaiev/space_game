@@ -3109,7 +3109,9 @@ a flag on a World nobody steps: the station could not be clicked, drops could no
 winning requires docking under an engaged station autopilot, **no mission was completable**.
 
 **A room flies the player's REAL ship**, read from the account server-side by the ticket's `playerId` —
-loadout, components and skills included. It used to build the catalog default for everyone, so a netsim run
+loadout, components, skills, and the account record itself (`world.activeShip`), which the simulation reads
+to decide whether the last-kill reward drop should appear at all: without it a room offered a reward the
+player already owned. It used to build the catalog default for everyone, so a netsim run
 ignored everything the player owned. Reading it from the DB rather than from the client also means a client
 cannot claim a better ship than it has.
 
@@ -3129,11 +3131,18 @@ stop and restart its driver), because a room holds one player and a local-only p
 overlay saying "Paused" while the fight ran on and the ship kept taking hits. A paused client sends no
 input, so it heartbeats every 5 s; otherwise the 30 s idle reaper would end the session. See DECISIONS §123.
 
+**Loot works, and reaches the stash.** The Grab runs in the room and collects as it always did; a clicked
+crate is fetched by the drop autopilot (as a command, above). The collected items come back in the
+snapshot's `run.loot` and are mirrored **in place** into the client's `world.pendingLoot`, so the victory
+path deposits them exactly as in single-player — the client is still what banks a win. Nothing filled that
+list before, so every crate picked up in a room was silently lost at the victory screen. The special
+last-kill reward deposits nothing by design (the real copy is installed server-side on victory).
+
 **What it does not do yet.** No client-side prediction (Slice E), so the local ship answers about 100 ms
 late, plus ~50 ms of input queueing. No lag compensation (D5), so aim-assist selection resolves against the
 server's present rather than what the client saw. No reconnect, no second player, no delta encoding, and
-the economy is still banked by the client's own `POST /api/games`. The Grab's pull beam does not draw (the
-room owns the Grab and the client never runs `stepDrops`). A failed handshake **falls back to simulating
+the economy is still banked by the client's own `POST /api/games`. The Grab's pull BEAM does not draw — the room owns the Grab and the client never runs `stepDrops`, so
+nothing hands `drawDrops` a target; the crate still flies in and is collected, there is just no line. A failed handshake **falls back to simulating
 locally** rather than leaving a ship that will not answer.
 
 **You can SEE which simulation is running.** With `?netsim` on, a small badge sits under the wordmark:

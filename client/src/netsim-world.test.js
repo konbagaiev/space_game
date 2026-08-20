@@ -203,3 +203,20 @@ test('a bullet is dead-reckoned into the present, not shown a tenth of a second 
   assert.ok(world.bullets[0].pos.x <= 40 * (MAX_EXTRAPOLATION_MS / 1000) + 1e-6,
     'capped rather than flying off the map on a stall');
 });
+
+test('loot the room collected reaches this World, so a victory can bank it', () => {
+  // The gap: the ROOM's Grab fills the room's `pendingLoot`, but the client banks a win from its OWN list,
+  // which nothing filled — so every crate picked up in a room was silently lost at the victory screen.
+  const { world } = clientWorld();
+  const st = createNetState();
+  const loot = [{ kind: 'component', refId: 6 }, { kind: 'weapon', refId: 5 }];
+  applySnapshot(world, st, snapOf({ run: { ...snapOf().run, loot } }));
+  assert.deepEqual(world.pendingLoot, loot);
+
+  // Mutated IN PLACE, because `takeLoot()` slices this exact array — replacing it would leave the victory
+  // path holding the old one.
+  const same = world.pendingLoot;
+  applySnapshot(world, st, snapOf({ tick: 2, run: { ...snapOf().run, loot: [{ kind: 'weapon', refId: 9 }] } }));
+  assert.equal(world.pendingLoot, same, 'still the same array object');
+  assert.deepEqual(world.pendingLoot, [{ kind: 'weapon', refId: 9 }]);
+});

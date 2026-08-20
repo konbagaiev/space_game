@@ -161,6 +161,9 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
     world.levelRunner.won = run.won;
     world.levelRunner.returningToBase = run.returning;
     world.levelRunner.phaseIndex = run.phase;
+    // Mirror the room's collected loot into this World's own list, IN PLACE (takeLoot slices it). The
+    // victory path then deposits exactly as it does in single-player and needs to know nothing about rooms.
+    if (run.loot) { world.pendingLoot.length = 0; for (const it of run.loot) world.pendingLoot.push(it); }
     world.returnToBase = run.returning;
     if (world.station) world.station.active = !!run.stationActive;
   }

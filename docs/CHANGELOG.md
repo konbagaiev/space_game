@@ -5,6 +5,17 @@
 
 ## 2026-08-20
 
+- **Loot collected in a room was silently lost.** The Grab and the crates worked — a room spawns drops,
+  pulls them in and collects them — but the ROOM held the collected items while the client banks a victory
+  from its OWN `world.pendingLoot`, which nothing filled. So every crate picked up in netsim vanished at the
+  victory screen. The snapshot now reports `run.loot` and the client mirrors it in place (the victory path
+  slices that exact array), so depositing works exactly as in single-player. The special last-kill reward
+  still deposits nothing by design — the real copy is installed server-side on victory.
+
+- **A room offered rewards the player already owned.** `world.activeShip` was never set on a room's World,
+  so `ownsReward` always answered "not owned" and the last-kill reward drop always spawned. The room gets
+  the account record along with the ship now.
+
 - **A netsim mission could not be FINISHED — click-to-fly never reached the room.** First real playthrough
   in a room: the machine gun (the level-1 reward drop) could not be picked up, autopilots did not engage,
   and clicking the base did nothing. One cause for all three — `engageAutopilot` / `engageDropAutopilot` /
