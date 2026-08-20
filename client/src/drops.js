@@ -13,7 +13,7 @@ import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLo
 import { DROP_MODEL_URL, DROP_CHANCE, ROTATE_PERIOD, WEIGHT_FALLBACK,
          REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pickLoot, rewardOwned } from './sim-core/drops-config.js';
 import { t } from './i18n.js';
-import { spawnDrop as spawnDropIn, clearDrops as clearDropsIn,
+import { spawnDrop as spawnDropIn,
          takeLoot as takeLootIn } from './sim-core/drops-sim.js';
 
 // The live drops of the current World, re-exported under the name every caller already uses. The array
@@ -236,8 +236,10 @@ function buildRewardObj(reward) {
   return wrap;
 }
 
-// Remove every drop + the line and DISCARD any uncollected loot (called by reset()).
-export function clearDrops() { clearDropsIn(world); hideLine(); }
+// The crates themselves are cleared by the simulation's reset (sim-core/reset-world.js → clearDrops),
+// which releases each body through the host. What is left for the client is the pull BEAM: it points at a
+// drop that no longer exists, so a fresh run has to hide it.
+export function hideGrabLine() { hideLine(); }
 // Hand the run's collected loot to the caller (the victory deposit), clearing it.
 export function takeLoot() { return takeLootIn(world); }
 

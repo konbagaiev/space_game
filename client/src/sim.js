@@ -1,10 +1,22 @@
-// The simulation: the per-frame fixed-step `update(dt)`, the level runner (DB phase/wave script), the
-// cosmetic helpers (forward vector, wing-bank, soft-boundary warp + OOB warning), music routing, and
-// pause control. This sits at the TOP of the dependency graph — it touches almost everything — so it
-// imports the leaves (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported
-// only by the composition root (the inline script / main). It never imports the loop's callers.
+// The loop and the PICTURE half of it. The rules themselves have left: every step of `simTick` now lives
+// in `sim-core/` and takes the World, which is what lets the same fight run in Node. What is left here is
+// the browser's side of that arrangement, and it is a real job:
+//
+//   • `update(dt)` = `simTick(dt)` + `renderTick(dt)` — the fixed-step tick, under its historical name
+//     because main.js's accumulator, the replay stepper and every ?debug hook call it;
+//   • the browser HOST — what an entity's body IS here: a Three.js object in the scene (`world.host`);
+//   • the ADAPTER — the 19 simulation events turned into FX, audio, the HUD, i18n and the backend;
+//   • the scene-graph copy (`syncMeshes`), the cosmetic wing-bank and the FX-ageing steps;
+//   • the DOM readouts the fight drives: the banner, the OOB warning, the return arrow/hint, roam nav;
+//   • music routing, pause, and the scene half of `reset()` (its simulation half is sim-core/reset-world.js);
+//   • thin binds of the sim-core entry points every other module already imports by name from here
+//     (`levelRunner`, `warpPlayerToCenter`, the four autopilot verbs).
+//
+// This sits at the TOP of the dependency graph — it touches almost everything — so it imports the leaves
+// (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported only by the
+// composition root (the inline script / main). It never imports the loop's callers.
 import * as THREE from 'three';
-import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, SPAWN_GROW_TIME, BULLET_PLANE_Y, creditPopups } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
@@ -16,15 +28,15 @@ import { updateShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
-import { BANNER_FADE, showBanner as showBannerIn, clearBanner } from './sim-core/events.js';
+import { BANNER_FADE, showBanner as showBannerIn } from './sim-core/events.js';
 import { stepBullets, stepRockets } from './sim-core/step-projectiles.js';
 import { stepEnemyAI, stepEnemyDeaths, stepPlayerDeath } from './sim-core/step-enemies.js';
 import { stepPlayer, PLAYER_MAX_SPEED, warpPlayerToCenter as warpPlayerToCenterIn,
          engageAutopilot as engageAutopilotIn, engageDropAutopilot as engageDropAutopilotIn,
          engagePointAutopilot as engagePointAutopilotIn, cancelAutopilot as cancelAutopilotIn } from './sim-core/step-player.js';
-import { runCenter } from './sim-core/level-sim.js';
 import { startLevel, updateLevelRunner, winLevel, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
-import { drawDrops, preloadRewardModel, ownsReward, clearDrops, takeLoot, attachDropBody, detachDropBody } from './drops.js';
+import { clearAndPlaceRun, startRun } from './sim-core/reset-world.js';
+import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
 import { stepDrops } from './sim-core/drops-sim.js';
 import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
 import { t } from './i18n.js';
@@ -562,6 +574,8 @@ export function autoPauseOnBlur() {
 // Clear all transient entities/FX, recenter the (possibly drifting) arena, rebuild the map's set-pieces,
 // respawn the player at full health, and (re)start the level. Called by the UI flows (take-off, the
 // overlay Restart/Continue) — imported by them from here.
+// The fight's half of this is sim-core's, in TWO calls with the set-piece rebuild between them
+// (clearAndPlaceRun → scenery → startRun); reset-world.js explains why that order is not negotiable.
 // `keepPlayer` — start the level WITHOUT moving the ship. Used when a mission begins because you FLEW to
 // it: you are already at the fight, and yanking the ship to the arena centre would undo the trip you just
 // made. Everything else about the run is still fresh (enemies, drops, counters, hp, the seeded stream).
@@ -571,12 +585,10 @@ export function autoPauseOnBlur() {
 // you. Only used when the fight begins in a world that is already standing (the roam → combat handover);
 // a cold start still rebuilds, which is what resets the cruising freighter to its start.
 export function reset({ keepPlayer = false, keepWorld = false } = {}) {
-  for (const b of bullets) world.host.onDespawn('bullet', b);
-  bullets.length = 0;
+  // --- the picture: FX pools, the event log and the pooled bodies this tab owns ---
+  // (The entity collections are the World's and are emptied by clearAndPlaceRun below, through the host.)
   for (const x of explosions) { scene.remove(x.mesh); x.mesh.material.dispose(); }
   explosions.length = 0;
-  for (const r of rockets) world.host.onDespawn('rocket', r);
-  rockets.length = 0;
   smoke.length = 0; smokePool.clear(); // pooled: the instanced mesh + material are kept, only the live count resets
   for (const s of sparks) { scene.remove(s.mesh); s.mesh.material.dispose(); }
   sparks.length = 0;
@@ -587,22 +599,13 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   clearDeferredBlasts(); // drop any pending boss chain-detonations so a restart can't fire stale blasts
   creditPopups.length = 0; // DOM-only, no scene meshes to dispose
   clearEnemyShieldBubbles(); // hide + unbind pooled enemy shield bubbles (no cross-run leaks)
-  clearDrops(); // remove drop meshes + the pull line; DISCARD any uncollected/un-deposited loot on a fresh run
+  hideGrabLine();            // the Grab's pull beam has no drop to point at any more
   clearEventLog(); // start a fresh run with an empty event log
-  simEvents.clear(); // and no events left over from an aborted tick (e.g. a win drained into a teardown)
-  G.autopilot.active = false; G.autopilot.target = null; // defensive: no dangling drop-target autopilot into the new run
 
-  for (const e of enemies) world.host.onDespawn('enemy', e);
-  enemies.length = 0;
-  // Where this run fights: a side mission's own `center`, else the campaign level's (most use the default
-  // (0,0); "Level 3" fights at the space factory, "Level 4" inside the far belt outpost). Resolved by the
-  // pure `runCenter` seam — see level-sim.js.
-  const { x: cx, z: cz } = runCenter(G.activeMission, CATALOG.level);
-  arenaCenter.set(cx, 0, cz);             // fresh run: center the (possibly drifting) combat zone
+  // --- the fight, part 1: empty the world and decide where this run is fought ---
+  const { x: cx, z: cz } = clearAndPlaceRun(world);
+
   arenaBorder.line.position.set(cx, 0, cz);
-  // a mission may drift its zone (the freighter escort); the campaign and other missions stay static
-  world.arenaDrift = (G.activeMission && G.activeMission.drift)
-    ? { x: G.activeMission.drift.x || 0, z: G.activeMission.drift.z || 0 } : null;
   // rebuild the shared world's set-pieces fresh each run (resets the cruising freighter to its start)
   if (!keepWorld) {
     for (const sp of setPieces) { sp.dispose?.(); scene.remove(sp.obj); } // dispose() frees the freighter plume's materials (no-op for others)
@@ -617,46 +620,17 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   if (!G.roam && G.activeMission?.title !== 'freighter') {
     import('./ghost-battle.js').then((m) => m.buildGhostBattle()).catch(() => {}); // async; distant decor (never in roam)
   }
-  // WHERE THE SHIP GOES. Three cases, and only one of them moves it:
-  //   • roam (Take off) — you launch from your HOME STATION and fly to the mission yourself, so the spawn is
-  //     the origin no matter where this level fights. Take off is never a teleport to the mission.
-  //   • `keepPlayer` — the mission just started because you ARRIVED: leave the ship exactly where it is and
-  //     let the enemies come to you. Heading and velocity are kept too, so the fight opens mid-flight
-  //     instead of snapping you to a standstill facing +Z.
-  //   • otherwise — a normal level start (retry, or a level that begins where you already are): centre it.
-  if (!keepPlayer) {
-    const spawn = G.roam ? { x: 0, z: 0 } : { x: cx, z: cz };
-    G.player.pos.set(spawn.x, BULLET_PLANE_Y, spawn.z);
-    G.player.heading = 0;                                // forward = +Z (forwardVec(0) = (0,0,1))
-    G.player.vel.set(0, 0, PLAYER_MAX_SPEED * 0.1);      // open the fight already gliding forward at 10% of top speed (3 u/s)
-  }
-  G.player.hp = G.player.maxHp;
-  G.player.oobTime = 0;             // fresh run: clear the out-of-bounds timer
-  G.player.spawnAge = SPAWN_GROW_TIME; // and any in-progress warp-back animation (back to full size)
-  G.player.scale = G.player.fullScale;  // and any in-progress warp shrink
-  G.player._repairAccum = 0; // fresh run: clear banked repair-drone time
-  G.player._shieldValue = G.player.shield ? G.player.shield.capacity : 0; // fresh run: shield full & active
-  G.player._shieldRechargeAccum = 0;
-  for (const g of Object.values(G.player.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
-  G.player.alive = true;
-  G.earned = 0; G.earnedXp = 0; G.kills = 0; G.banked = false; // new run: reset session credits/XP + the bank-once guard (balance persists)
-  G.enemyShieldRefills = 0; // diagnostic: completed enemy shield refills this run (replay triage)
   // The level's scene is now built (set-pieces, arena, player). Ask the render loop to compile + upload it
   // BEFORE the fight instead of during it — a weak phone otherwise spends 10+ s of the first 15 blocked on
   // lazy shader compiles and texture uploads (see prewarmShaders in main.js).
   G.needsSceneWarm = true;
   G.gameStartTime = performance.now(); // start timing a new game (for history)
-  G.combatElapsed = 0;  // fresh run: restart the enemy hold-fire grace clock
   arenaBorder.line.visible = !G.roam; // the soft-boundary edge marker is a combat cue only — hidden while roaming
-  // ROAM: no levelRunner (level = null → its update() early-returns → NO spawns), but clear the SAME shared
-  // return-to-base/win/banner state start() would (so a prior mission win's `won:true` can't freeze the
-  // roaming ship). COMBAT: start() the chosen mission / campaign level exactly as before.
-  if (G.roam) {
-    levelRunner.level = null; levelRunner.resetLevelRunnerState();
-    // …and make the home station clickable for the whole roam, the way beginReturn() does after the last
-    // kill: while flying freely you can always click home to be flown back and offered a dock.
-    if (G.baseStation) G.baseStation.active = true;
-  } else levelRunner.start(G.activeMission || CATALOG.level); // a chosen side mission overrides the campaign level
+
+  // --- the fight, part 2: the ship, the counters, the level script ---
+  // AFTER the set-piece rebuild, and that is load-bearing: the home station is a set-piece, so `world.station`
+  // is a brand-new object by now, and a roam has to arm THAT one (see reset-world.js).
+  startRun(world, { keepPlayer });
   // Push the fresh sim state into the scene graph NOW, before a single frame is drawn. reset() teleports
   // the ship (and restores its full scale), and the very next thing a replay/cutscene start does is call
   // settleView() to frame a FROZEN pre-fight card — with no sync the camera would sit at the new position
