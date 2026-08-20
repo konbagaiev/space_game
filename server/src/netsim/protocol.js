@@ -23,7 +23,7 @@
 // encoding is an explicit non-goal for this cut — but because a snapshot is the one message that repeats
 // 15 times a second, and `[7,12.5,-3.1]` stays readable in a log where `{id:7,x:12.5,z:-3.1}` becomes noise.
 export const COLUMNS = {
-  enemies: 'id, x, z, heading, hp, scale, warping',
+  enemies: 'id, x, z, heading, hp, scale, warping, shieldValue, shieldRecharge',
   bullets: 'id, x, z',
   rockets: 'id, x, z, heading',
   drops:   'id, x, z',

@@ -5,6 +5,15 @@
 
 ## 2026-08-20
 
+- **The shield bar's purple fill was wrong in a room — and so was every enemy's shield.** The HUD draws the
+  blue strip from `_shieldValue` and the PURPLE fill from `_shieldRechargeAccum / rechargeSec`, and neither
+  pool was on the wire. The player's recharge fill therefore never moved, and an enemy's ghost kept the
+  pools it was BORN with, so its blue strip sat full for its entire life no matter how much you shot it.
+  Both pools travel now — the player's in the snapshot's player block, the enemies' as two more columns on
+  their row — and both are taken outright rather than blended, like health: a recharge countdown that lerps
+  is a countdown that lies. Verified live: shield drains 12 → 8 → 4 → 0, the purple fill then climbs
+  0.13 → 5.0 s, and the hull only starts taking damage once the shield is gone.
+
 - **The ship stuttered when turning — "as if 15 fps".** It was exactly 15 fps, for the heading only: the
   drawn position was extrapolated (a continuous function of time) while the heading took the newest
   snapshot value, so the nose turned in 15 Hz steps. The local ship's drawn pose is now its own

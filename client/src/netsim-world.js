@@ -140,7 +140,8 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
   const seen = new Set();
   const rows = (list, fn) => { for (const r of list || []) { seen.add(r[0]); const e = state.byId.get(r[0]); if (e) fn(e, r); } };
   const tick = snap.tick;
-  rows(snap.enemies, (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2], h: r[3], hp: r[4], sc: r[5], warping: !!r[6] }));
+  rows(snap.enemies, (e, r) => pushSample(state.samples.get(r[0]),
+    { at, tick, x: r[1], z: r[2], h: r[3], hp: r[4], sc: r[5], warping: !!r[6], sh: r[7], shr: r[8] }));
   rows(snap.bullets, (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2] }));
   rows(snap.rockets, (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2], h: r[3] }));
   rows(snap.drops,   (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2] }));
@@ -160,7 +161,7 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
     // describes reads as a bug, while a position lagging 100 ms reads as smooth.
     const me = world.player;
     if (me) {
-      me.hp = p.hp; me.maxHp = p.maxHp; me._shieldValue = p.sh;
+      me.hp = p.hp; me.maxHp = p.maxHp; me._shieldValue = p.sh; me._shieldRechargeAccum = p.shr || 0;
       me.alive = p.alive; me.thrusting = !!p.thrust; me.oobTime = p.oob || 0;
       me.vel.set(p.vx || 0, 0, p.vz || 0);
     }
@@ -295,6 +296,10 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
     // would draw a health bar sliding down over 100 ms, which reads as a bug rather than as smoothing.
     if (br.b.hp !== undefined) e.hp = br.b.hp;
     if (br.b.warping !== undefined) e.warping = br.b.warping;
+    // The shield pools are STATE like health — take the newer of the pair, never a blend. A bar sliding
+    // between two values reads as a bug; and the purple fill is a countdown, which must not be smoothed.
+    if (br.b.sh !== undefined) e._shieldValue = br.b.sh;
+    if (br.b.shr !== undefined) e._shieldRechargeAccum = br.b.shr;
   }
 
   // THE LOCAL SHIP IS INTEGRATED, THEN CORRECTED — it is never simply read off a snapshot.

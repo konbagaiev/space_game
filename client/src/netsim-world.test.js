@@ -298,3 +298,28 @@ test('a rocket is drawn in the present, so its smoke trail does not run ahead of
   renderNet(w2.world, st2, 1200, INTERP_DELAY_MS);
   assert.equal(w2.world.rockets[0].pos.z, 5);
 });
+
+test('both shield pools travel — the bar and its purple recharge fill', () => {
+  // The HUD's blue strip is `_shieldValue / capacity` and its PURPLE fill is
+  // `_shieldRechargeAccum / rechargeSec`. Neither was on the wire: the player's recharge fill never moved,
+  // and an enemy's ghost kept the pools it was BORN with, so its blue strip sat full for its whole life.
+  const { world } = clientWorld();
+  const st = createNetState();
+  applySnapshot(world, st, snapOf({
+    player: { ...snapOf().player, sh: 3.5, shr: 4.25 },
+    spawns: [{ id: 2, kind: 'enemy', name: 'Basic pirate ship', maxHp: 20 }],
+    enemies: [[2, 0, 0, 0, 12, 1.8, 0, 0, 6.5]],   // shield broken, 6.5 s banked toward the refill
+  }));
+  assert.equal(world.player._shieldValue, 3.5);
+  assert.equal(world.player._shieldRechargeAccum, 4.25, 'the purple fill has something to read');
+
+  renderNet(world, st, Date.now(), 0);
+  assert.equal(world.enemies[0]._shieldValue, 0, 'the enemy really is broken, not full as it was born');
+  assert.equal(world.enemies[0]._shieldRechargeAccum, 6.5);
+
+  // Taken outright, never blended: a recharge countdown that lerps is a countdown that lies.
+  applySnapshot(world, st, snapOf({ tick: 7, enemies: [[2, 0, 0, 0, 12, 1.8, 0, 10, 0]] }), Date.now() + 100);
+  renderNet(world, st, Date.now() + 200, 0);
+  assert.equal(world.enemies[0]._shieldValue, 10, 'refilled in one step, as the sim did it');
+  assert.equal(world.enemies[0]._shieldRechargeAccum, 0);
+});

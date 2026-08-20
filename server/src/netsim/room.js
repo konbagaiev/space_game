@@ -166,10 +166,16 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         player: {
           x: p.pos.x, y: p.pos.y, z: p.pos.z, h: p.heading, sc: p.scale,
           hp: p.hp, maxHp: p.maxHp, sh: p._shieldValue, alive: p.alive,
+          // The seconds banked toward the next recharge. The HUD's PURPLE fill is this over `rechargeSec`,
+          // so without it a broken shield showed an empty bar that never filled.
+          shr: p._shieldRechargeAccum,
           thrust: !!p.thrusting, oob: p.oobTime,
           vx: p.vel.x, vz: p.vel.z, // the client extrapolates between snapshots; velocity is what it needs
         },
-        enemies: world.enemies.map((e) => [idOf(e), e.pos.x, e.pos.z, e.heading, e.hp, e.scale, e.warping ? 1 : 0]),
+        // …plus the shield pools. Neither was sent, so an enemy's blue strip sat at full for its whole life
+        // and its purple recharge fill never moved: the client's ghost kept the values it was BORN with.
+        enemies: world.enemies.map((e) => [idOf(e), e.pos.x, e.pos.z, e.heading, e.hp, e.scale,
+                                           e.warping ? 1 : 0, e._shieldValue, e._shieldRechargeAccum]),
         bullets: world.bullets.map((b) => [idOf(b), b.pos.x, b.pos.z]),
         rockets: world.rockets.map((r) => [idOf(r), r.pos.x, r.pos.z, r.heading]),
         drops:   world.drops.map((d) => [idOf(d), d.pos.x, d.pos.z]),
