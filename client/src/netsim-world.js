@@ -52,6 +52,38 @@ const sampleSpan = (a, b) => (b.tick > a.tick ? (b.tick - a.tick) * SIM_DT : 0);
 // exhaust it; small enough that it is a handful of objects.
 export const MAX_HISTORY = 12;
 
+// ---------- When an event is PLAYED ----------
+//
+// Events are batched into snapshots, so they arrive on the snapshot grid rather than at the tick they
+// happened on. Playing them on arrival therefore puts the SNAPSHOT RATE into the game: the starter gun
+// reloads in 0.18 s — 10.8 ticks, so the sim fires every 11, dead even — while snapshots go out every 4.
+// The rounding error walks 1→2→3→0, and every fourth shot lands a whole snapshot early. Measured gaps
+// between delivered shots: **200, 133, 200, 200 ms**, which the ear reads as a stutter, or as one shot in
+// four being doubled. Each event carries the tick it happened on (`tk`, stamped by the room), so the fix is
+// to hold it for `budget − (how late it already is)`: every event then waits exactly `budget` from ITS OWN
+// tick and the original rhythm comes back.
+//
+// TWO BUDGETS, because the world is drawn on two clocks:
+//
+//   • Everything the ROOM owns is rendered `INTERP_DELAY_MS` in the past, so its events belong there too.
+//     Played on arrival they run AHEAD of the picture they describe — a hit spark a tenth of a second
+//     before the ship reaches the pose where it was hit. (The rocket trail was this same bug, patched once
+//     by drawing rockets in the present; this is the general fix.)
+//   • The LOCAL ship is predicted and drawn in the PRESENT, so its own events (`fire`, from the player)
+//     want the smallest buffer that still does the de-quantising above: one snapshot interval, no more.
+//     Anything longer is latency added to the sound of your own gun.
+//
+// The player's buffer must cover a full snapshot interval or the tail of each batch is still early; the
+// room tells us that interval in the `welcome` (`snapshotEvery`), and this is the fallback for before it
+// arrives — 4 ticks at 60 Hz, the room's own default.
+export const PLAYER_EVENT_BUFFER_MS = 4 * SIM_DT * 1000;
+
+// A ceiling on the pending queue. A tab that is not rendering — paused, hidden, in a menu — never drains
+// it, and an event is worth releasing late but never worth losing (a banner, a pickup, a kill line). Past
+// the cap the oldest are marked due and go out in the next drain, which is exactly what used to happen to
+// every event, always.
+export const MAX_EVENT_QUEUE = 512;
+
 export function createNetState() {
   return {
     byId: new Map(),   // network id → the World entity it drives
@@ -70,6 +102,7 @@ export function createNetState() {
     ack: null,
     arena: { x: 0, z: 0 },
     history: [],       // [{ at, tick }] — arrival times, for choosing the render moment
+    eventQueue: [],    // [{ due, ev }] — wire events waiting for their moment (see PLAYER_EVENT_BUFFER_MS)
     lastTick: -1,      // newest server tick applied (an out-of-order snapshot is dropped)
     welcome: null,
   };
@@ -211,11 +244,40 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
     if (world.station) world.station.active = !!run.stationActive;
   }
 
-  // The network is just another producer of the event stream the client already drains every tick.
-  for (const ev of snap.events || []) world.events.emit(hydrateEvent(state, ev));
+  // The network is just another producer of the event stream the client already drains every tick — but
+  // NOT on arrival. Each event is scheduled onto the clock the thing it describes is drawn on; `renderNet`
+  // releases it when its moment comes. See PLAYER_EVENT_BUFFER_MS for why.
+  for (const ev of snap.events || []) scheduleEvent(state, snap, ev, at);
 
   pushSample(state.history, { at, tick: snap.tick });
   return true;
+}
+
+// Hold one wire event until its moment. `late` is how much of its budget the trip already spent: an event
+// from the first tick of a batch is three ticks old by the time its snapshot is built, one from the last
+// tick is brand new, and paying the difference back is the whole trick.
+function scheduleEvent(state, snap, ev, at) {
+  const every = state.welcome && state.welcome.snapshotEvery;
+  const budget = ev.fromPlayer ? (every ? every * SIM_DT * 1000 : PLAYER_EVENT_BUFFER_MS) : INTERP_DELAY_MS;
+  const late = Math.max(0, snap.tick - (ev.tk ?? snap.tick)) * SIM_DT * 1000;
+  state.eventQueue.push({ due: at + Math.max(0, budget - late), ev });
+  // Never grow without bound: release the excess at once rather than lose it.
+  for (let i = 0, over = state.eventQueue.length - MAX_EVENT_QUEUE; i < over; i++) state.eventQueue[i].due = 0;
+}
+
+// Release every event whose moment has come, in the order the room produced them. Called from `renderNet`,
+// which runs before the frame's event drain, so a released event reaches FX and audio in the same frame.
+//
+// Entity ids are resolved HERE rather than on arrival: a ghost can despawn during the wait, and a shield
+// ripple bound to a ship that is already gone would paint a bubble on a corpse. `null` simply draws nothing.
+export function releaseNetEvents(world, state, now) {
+  if (!state.eventQueue.length) return;
+  const held = [];
+  for (const q of state.eventQueue) {
+    if (q.due <= now) world.events.emit(hydrateEvent(state, q.ev));
+    else held.push(q);
+  }
+  state.eventQueue = held;
 }
 
 // Turn a wire event back into what the adapter expects.
@@ -269,6 +331,9 @@ function bracket(samples, t) {
 export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY_MS,
                           predictor = null, unacked = () => []) {
   const t = now - delayMs;
+  // First: hand the frame the events whose moment has come. Before anything is drawn, because the adapter
+  // that turns them into FX and audio runs after this call and must see them in the same frame.
+  releaseNetEvents(world, state, now);
 
   for (const [id, e] of state.byId) {
     // BULLETS ARE DEAD-RECKONED, not interpolated. A bullet flies in a straight line at a constant speed —
@@ -384,5 +449,6 @@ export function clearNet(world, state) {
   state.byId.clear(); state.kinds.clear(); state.samples.clear();
   state.playerSamples.length = 0; state.history.length = 0;
   state.view = null; state.viewAt = 0;
+  state.eventQueue.length = 0; // a new run does not want the last one's pending FX
   state.lastTick = -1;
 }

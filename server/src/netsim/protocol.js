@@ -62,6 +62,11 @@ export const EVENT_FIELDS = {
   death:            [],
 };
 
+// Every wire event also carries `tk` — the server tick it happened on — added by the room, not listed here
+// because it is not a field of any simulation event. The client schedules on it (netsim-world.js): a batch
+// of events all arrive with the same snapshot, and without the stamp they would all be PLAYED at the same
+// moment too, which puts the snapshot rate into the audio instead of the weapon's own rhythm.
+
 // Fields holding a live entity, replaced by that entity's network id under the same name + `Id`.
 export const EVENT_ENTITY_REFS = { enemyShieldHit: ['enemy'] };
 

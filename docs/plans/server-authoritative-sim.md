@@ -76,6 +76,14 @@ playtest: the campaign runs, missions complete, loot banks, progression advances
 locally. **No known defects** — the last one (the rocket cooldown readout) was fixed on 2026-08-20;
 everything below is optional or next.
 
+**0b. FIXED 2026-08-20 — event TIMING: the gun's rhythm was the snapshot grid's.** Events were played when
+their snapshot landed, so a weapon whose reload does not divide the snapshot interval came out on the wrong
+beat (measured 200/133/200/200 ms for the starter gun, heard as every fourth shot doubled), and every
+event ran ~100 ms ahead of the interpolated picture it described. Events now carry `tk` and are scheduled:
+`scheduleEvent`/`releaseNetEvents` in `netsim-world.js`, released from the top of `renderNet`. Two clocks —
+the room's events on `INTERP_DELAY_MS`, the local ship's own `fire` on one snapshot interval, because the
+local ship is predicted and drawn in the present. DECISIONS §126; three tests, negative-tested.
+
 **0. FIXED 2026-08-20 — the rocket cooldown readout.** The 🚀 dial read
 `G.player.groups.rocket.cooldown` (`client/src/hud.js:77-79`) off a copy nothing in the client advances, so
 it sat at 0 and the button always read "ready". The snapshot's player block now carries `cd` (group name →
@@ -96,7 +104,10 @@ the snapshot carrying it does rather than on the keypress. The roadmap's "don't 
 fires locally and flies the projectile deterministically, the room stops streaming bullet rows, the server
 keeps deciding hits. Most of the machinery exists — the predictor already runs `stepPlayer`, which fires —
 so the work is suppressing the double (server bullets AND local ones), not double-playing the `fire` sound,
-and reconciling a local bullet the server says hit something. It also removes the largest per-snapshot
+and reconciling a local bullet the server says hit something. **It also carries the sound half**: keeping the
+predictor's own `fire` event instead of discarding it makes your gun answer the keypress with zero latency
+and perfect spacing, which is strictly better than the ~67 ms buffer §126 gives it today — at which point
+the player-event budget in `scheduleEvent` has nothing left to schedule and can go. It also removes the largest per-snapshot
 payload once a room holds more than one player.
 
 **2. D5 — lag compensation.** The one part of Slice D never built. **Its main consumer is gone**: aim-assist

@@ -142,8 +142,12 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       applyInput({ k: lastInput.k, t: lastInput.a }, world.input.keys, world.input.touchAim);
       // simTick hands back whatever the Grab is pulling — presentation only, but only the room knows it.
       grabTarget = simTick(world, SIM_DT);
-      world.events.drain((ev) => { const w = wireEvent(ev, idOf); if (w) pendingEvents.push(w); });
       tick++;
+      // Every event is stamped with the tick it happened on (`tk`). It costs one number and it buys the
+      // client the ability to play the event on its own clock instead of on the snapshot grid: events are
+      // batched, so without a stamp a shot fired on tick 11 and one fired on tick 12 are indistinguishable
+      // and both land when tick 12's snapshot does. See `scheduleEvent` in netsim-world.js.
+      world.events.drain((ev) => { const w = wireEvent(ev, idOf); if (w) { w.tk = tick; pendingEvents.push(w); } });
       return tick;
     },
 

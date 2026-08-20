@@ -4479,3 +4479,51 @@ punish them.
 
 **Not fixed retroactively.** Every trace already in S3 stays unreproducible; nothing can recover an
 allocation that was never written down. The admin viewer will keep showing ghosts for old sessions.
+
+## 126. Wire events are scheduled, not played on arrival — and on two clocks, not one
+
+**Context.** A room batches its simulation events into snapshots, 15 times a second, and the client played
+each batch the moment it landed. The maintainer, playtesting `?netsim=1`, reported that the machine gun
+"sounds doubled on about every third shot in a long burst".
+
+**Cause.** The rhythm the player heard was the SNAPSHOT RATE, not the weapon. `Basic kinetic` reloads in
+0.18 s — 10.8 ticks, so the simulation fires every **11** ticks, perfectly even — while snapshots go out
+every **4**. Rounding each shot up to the next snapshot walks the error 1→2→3→0, and every fourth shot
+arrives a whole snapshot early. Measured by driving a real room with the trigger held:
+
+| gaps between delivered shots | 200 | 133 | 200 | 200 | 200 | 133 | … |
+|---|---|---|---|---|---|---|---|
+
+Two shots 133 ms apart after a run of 200 ms gaps is exactly what a flam sounds like. In single-player the
+same weapon is a metronome at 183 ms.
+
+**The second half of the same bug.** Everything the room owns is drawn `INTERP_DELAY_MS` (100 ms) in the
+past, but its events were played on arrival — so sound and FX ran a tenth of a second AHEAD of the picture
+they described. This had already been hit once and patched narrowly — rockets are drawn in the present
+because their smoke puffs, which arrive as events, were overtaking the rocket laying them — but the problem
+was general all along.
+
+**Decision.** Each wire event carries `tk`, the tick it happened on, and the client HOLDS it for
+`budget − (how late it already is)` before emitting. Every event then waits exactly `budget` from its own
+tick, and the simulation's rhythm survives the transport intact.
+
+The budget is **not one number**, because the world is drawn on two clocks:
+
+- **The room's events ride `INTERP_DELAY_MS`** — the same delay their subjects are drawn with. A hit spark
+  now flashes on the frame that shows the hit.
+- **The local ship's own events (`fire`, `fromPlayer`) ride one snapshot interval** (~67 ms) — the minimum
+  that undoes the batching. The local ship is *predicted* and drawn in the present, so its events belong to
+  the present; anything more is latency added to the sound of your own gun.
+
+**Alternative rejected: raise the snapshot rate.** It shrinks the artifact without removing it — any rate
+that does not divide the reload leaves the same beat — and it spends bandwidth on the one message that
+repeats 15 times a second.
+
+**Alternative deferred: predict the player's own fire.** The predictor already runs the real `stepPlayer`,
+which fires; keeping its `fire` event instead of discarding it would make your own gun answer the keypress
+with zero latency and perfect spacing. That is the sound half of the local-bullets slice and is worth doing
+— but it fixes exactly one event, and every other one still needs to be on the picture's clock.
+
+**Consequence to know.** Run state (`kills`, `won`, hp) is still applied on arrival while the events about
+it now wait, so the kill counter leads its explosion by ~100 ms. Six frames on a number nobody is watching,
+against sound that lines up with the picture; taken deliberately.

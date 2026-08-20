@@ -5,6 +5,19 @@
 
 ## 2026-08-20
 
+- **The machine gun sounded doubled on every fourth shot in a room — the ear was hearing the snapshot
+  rate.** Events ride snapshots and were played the moment their batch landed, so a weapon whose reload does
+  not divide the snapshot interval came out on the wrong beat: `Basic kinetic` reloads in 0.18 s (10.8 ticks
+  → the sim fires every 11) while snapshots go out every 4, and the rounding error walked 1→2→3→0 until
+  every fourth shot arrived a whole 67 ms early. Measured gaps: **200, 133, 200, 200 ms**. Every wire event
+  now carries the tick it happened on (`tk`) and the client holds it for `budget − (how late it already is)`,
+  which puts each one back on its own clock — the delivered rhythm is now the simulated one, to within a
+  rounding error. **The same change fixes sound and FX running ahead of the picture:** the room's world is
+  drawn 100 ms in the past, so its events now wait that long too and a hit spark lands on the frame that
+  shows the hit. Your own ship is the exception — it is predicted and drawn in the present, so its `fire`
+  waits only one snapshot interval, the minimum that undoes the batching. Rationale and the rejected
+  alternatives in DECISIONS §126; three tests guard it, one driving a real room and measuring the gaps.
+
 - **The rocket dial in a room was always green.** The 🚀 button's radial fill is
   `player.groups.rocket.cooldown` over its reload, and fire-group cooldowns are advanced by whoever runs the
   tick — which in a room is the SERVER. The client's own copy therefore sat at 0 for the whole fight: the
