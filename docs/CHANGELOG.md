@@ -5,6 +5,14 @@
 
 ## 2026-08-21
 
+- **Shipped: `feature/server-sim` merged to `main`, deployed, and published to itch** (build #1903408,
+  version 67 — 96.7% of the previous build re-used, 768 KB of fresh data). Sixty-nine commits: the whole
+  simulation moved into `sim-core/` and now runs identically in the browser and in Node, a server-run room
+  behind `?netsim=1`, auto-aim removed (§124), session traces fixed so admin replays stop "fighting ghosts"
+  (§125), one-clock rendering (§127), and a fight that no longer stops because a tab looked away (§128).
+  For a player without the flag the two visible changes are **auto-aim gone** and **honest session
+  recordings**; everything else is machinery. Verified on production by playtest.
+
 - **A server-run fight no longer stops because one tab looked away.** The room used to pause for a hidden
   tab, an open menu and the system map — and every one of those was a "the world is frozen, now resume it"
   moment to get wrong, which is where a day of freeze reports lived, including the one that reached

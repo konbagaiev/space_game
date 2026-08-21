@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-20 (**A level can be played in a server-run room — `?netsim=1`** — the server holds the
+**Updated:** 2026-08-21 (**A level can be played in a server-run room — `?netsim=1`** — the server holds the
 World and steps it at 60 Hz while the browser sends input and draws 15 Hz snapshots, running no local
 simulation at all; opt-in, so single-player is untouched. Built on the same `sim-core` the browser runs, and
 a test requires a room to reach the same digest as the headless referee. No client-side prediction yet, so
@@ -3175,11 +3175,18 @@ to `.netjerk/` on the dev machine (gitignored; the endpoint exists only when the
 lifecycle timeline (socket dropped, run restarted, room idle, delivery stalls over 200 ms / 8 ticks). `byCause` is the point: a break on a frame that applied **no** packet is
 the client drawing a curve as a straight line, not a network fault.
 
-**Two separate questions: does the ROOM step, and does the TAB draw.** Conflating them froze the game on
-the death screen — the explosion, the overlay and the banking all happen in `renderTick`, draining the
-events the room sent, so a tab that stopped rendering because the room had nothing left to step died at the
-moment it had the most to say. Only an explicit pause or the system map freezes the picture. Both flags are
-on `window.__netsim` (`roomIdle`, `drawing`).
+**THREE separate questions, never merged** (`window.__netsim`: `roomIdle`, `flying`, `drawing`) —
+DECISIONS §128:
+
+| flag | question | false when |
+|---|---|---|
+| `roomIdle` | should the ROOM step? | there is no live fight — between runs, in the hangar, after a death |
+| `flying` | should this tab send INPUT? | a menu, the system map, or a hidden tab |
+| `drawing` | should this tab RENDER? | an explicit pause or the map — **never** a death |
+
+Conflating the first two froze the game on the death screen (the explosion, the overlay and the banking all
+happen in `renderTick`, draining the room's events, so a tab that stopped rendering died at the moment it
+had the most to say). Conflating the first and third froze it on coming back to a tab, in production.
 
 **Diagnosing a stall.** `server/src/netsim/driver.js` warns on the server when a pump arrives more than
 `STALL_LOG_MS` (100 ms) late (`[netsim] the room was not stepped for N ms`) and, separately, when the
@@ -3192,11 +3199,18 @@ separates "the OS descheduled us" from "we blocked ourselves". The same reading 
 synthetic client and prints the arrival-gap distribution, which is how "is it the room or the browser?" gets
 an answer without a human playing.
 
-**A room only steps while a fight is actually running.** It is paused whenever the player is not in one —
-a death or victory overlay, a menu, the system map, an explicit pause, or a **hidden tab** (a background tab
-draws nothing and samples no input, so a room that kept fighting would kill a player who could neither see
-nor answer it). The badge reads `room idle` then. Without this the room burned a 60 Hz world for nobody and
-the badge stayed green in the hangar.
+**A room steps whenever there is a live fight, and stops for nothing else.** Not for a menu, not for the
+system map, not for a hidden tab, not for the pause button — **a running simulation is not stopped by what
+one tab is doing** (DECISIONS §128, superseding §123's pause). It idles only where there is no fight at all:
+between runs, in the hangar, on a death or victory overlay. The badge reads `room idle` then.
+
+The cost is deliberate: **leave a fight and you are still in it, being shot at.** What the room will not do
+is fly the ship for you. It repeats the last input across a short gap — one late packet must not stutter a
+held key — but past `INPUT_HOLD_TICKS` (30 ticks, half a second) it **releases the controls**, so a ship
+whose player walked away coasts to a stop on its own drag instead of running on a held thruster into the
+arena wall. Liveness is the transport's: the server pings every `PING_EVERY_MS` (10 s) and a frozen tab
+answers from its network stack without running a line of page JavaScript, which is what the previous
+render-loop keep-alive could not do.
 
 **When the player dies the fight winds down**, in `sim-core` so both hosts share the rule: the tick you die
 on completes, and from the next one a dead ship neither flies nor fires, the level stops spawning, and the

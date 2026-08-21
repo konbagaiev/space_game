@@ -1,6 +1,10 @@
 # Server-authoritative combat simulation
 
-> **Status:** in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), all green.
+> **Status: MERGED TO `main` AND DEPLOYED, 2026-08-21.** Live on `vega.tenony.com` and on itch (build
+> #1903408, version 67). `feature/server-sim` is fully merged and can be deleted; the worktree
+> `../ag-wt/server-sim` is no longer the place to work — use the main checkout.
+>
+> Previously: in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), all green.
 > **Slices A–D are done — a level can be played in a server-run room over a WebSocket (`?netsim=1`), and
 > the browser and Node provably simulate the same fight.** What is left of D is lag compensation (D5);
 > then Slice E, client-side prediction, which is what makes the netsim path feel good. Started 2026-08-19; last worked 2026-08-20. **Local testing only
@@ -78,18 +82,28 @@ digest and the identical seeded-RNG draw count.
 > the socket and the referee are unaffected, and everything else in this section still stands.
 
 
-**Where this stopped (2026-08-20, end of session).** A room is playable end to end and was signed off by
-playtest: the campaign runs, missions complete, loot banks, progression advances, and the ship is predicted
-locally. **No known defects.**
+**Where this stopped (2026-08-21, end of session).** Everything below `0` is done and shipped. A room is
+playable end to end, was signed off by playtest on **production**, and the whole branch is merged and
+deployed. Client tests 478, server 190, both green; the visual suite's failures are its known flaky set
+(judge by zero page errors — the two oracles, `22-intro-replay` and `sim-divergence`, are the ones that
+matter).
 
-**2026-08-21: the RENDERING half of this plan has been rewritten** — see
-`docs/plans/netsim-one-clock-rendering.md` and DECISIONS §127. One tick-based clock, everything interpolated,
-nothing extrapolated, spawns/despawns/events all on that clock, prediction deleted, snapshots at 30 Hz.
-Measured 7476 breaks in the drawn motion per minute → 6. Signed off by playtest: smooth, and the added
-latency "не выглядит критично". The one artifact left is the SIMULATION's own steering (§127's correction),
-which single-player shares and which is a gameplay question.
+**THE NEXT PIECE OF WORK IS §4, SEALING THE ECONOMY.** It is the last thing left of what D1 promised: the
+room knows the truth about a run, and the credits and XP are still awarded on the browser's word.
 
-Everything below is optional or next.
+What landed on 2026-08-21, in case a symptom points back at it:
+
+- **One clock** (`docs/plans/netsim-one-clock-rendering.md`, DECISIONS §127). Everything interpolated on a
+  tick timeline, nothing extrapolated, spawns/despawns/events on that same clock, client-side prediction
+  deleted, snapshots at 30 Hz. Measured 7476 breaks in the drawn motion per minute → 6.
+- **A fight does not stop because one tab looked away** (DECISIONS §128, superseding §123). `roomIdle` is
+  now exactly "is there a live fight"; `flying` and `drawing` are separate flags. A quiet client has its
+  controls released after `INPUT_HOLD_TICKS`. Liveness is a WebSocket ping, not a render-loop message.
+- **Diagnostics that did not exist before**: the `?netjerk` drawn-motion probe (on by default on localhost,
+  writes a dump to `.netjerk/` when the ship dies), `driver.js` stall warnings with an event-loop-delay
+  reading, `server/tools/watch-machine.mjs`, `server/tools/netsim-load.mjs`. All described in SUMMARY.
+- **A production bug the visual suite caught and no playtest could**: the frame loop read `NETSIM.level`
+  unguarded, and `NETSIM` is null for every player without the flag. Every playtest had the flag on.
 
 **0b. FIXED 2026-08-20 — event TIMING: the gun's rhythm was the snapshot grid's.** Events were played when
 their snapshot landed, so a weapon whose reload does not divide the snapshot interval came out on the wrong
@@ -167,13 +181,21 @@ making the verdict binding.
 ### How to verify (do not skip, do not assume)
 
 ```
-cd client && node --test                      # 445 pass
-cd server && npm test                         # 175 pass (needs local Postgres)
-cd client && node visual/run.mjs 22-intro-replay
-cd client && node visual/run.mjs 36-sim-divergence
-cd client && node visual/run.mjs 37-netsim
+cd client && npm test                         # 478 pass
+cd server && npm test                         # 190 pass (needs local Postgres)
+cd client && node visual/run.mjs 22-intro-replay 36-sim-divergence 37-netsim   # the ones that matter
 node server/tools/sim-replay.mjs client/assets/recordings/level0-intro.6674d840.json
 ```
+
+The full visual suite (`node visual/run.mjs`, ~2 min on four workers) fails ~13 scenarios at baseline and
+always has; **judge it by zero page errors and by the two oracles above**, not by the count. It earns its
+keep anyway: on 2026-08-21 it caught a production-bound crash that no playtest could have, because every
+playtest had `?netsim` on and the crash only happened without it.
+
+**Do not run a test suite while the maintainer is playtesting locally.** The server, the browser and the
+suite share ten cores; a suite run starves the room's 60 Hz timer for hundreds of milliseconds and produces
+"hard lag" reports that are entirely your own. This happened, and cost half a day of looking in the wrong
+place. `node server/tools/watch-machine.mjs` settles it in one line when it is in doubt.
 
 To play the netsim path: `PORT=4010 node src/server.js` from `server/`, then
 **`http://localhost:4010/?netsim=1`** (add `&seed=N` to pin the room's RNG, `&netsim=level-2` for another
