@@ -218,6 +218,51 @@ hits, HP and deaths all decided by the server, with client-side prediction of th
 The first cut is **not** multiplayer. Rooms, matchmaking UI, PvP, shared roam, side missions, sealed
 economy, reconnect and socket-draining on deploy are all explicitly out of scope.
 
+### What several players in one room would actually cost (measured 2026-08-21)
+
+Recorded here, unimplemented, because none of it is worth building before the second player exists — but the
+shape of the growth decides design questions that come up sooner than that, and guessing at it was already
+about to send one of them the wrong way.
+
+The snapshot is JSON at 30 Hz, and its size is linear in the number of entities the room is holding —
+fitted over 600 real snapshots of level-2:
+
+```
+snapshot bytes = 306 fixed + 90 per entity
+```
+
+Per-player bandwidth is therefore linear in the room's population, and the SERVER's total is quadratic,
+because every player's entities are sent to every player. Assuming each player brings a ship and ~8 bullets
+in flight, with ~10 enemies shared:
+
+| players | entities | per player | total downstream |
+|---|---|---|---|
+| 1 | 12 | 41 KB/s | 41 KB/s *(matches the measured 40)* |
+| 2 | ~28 | 84 KB/s | 170 KB/s |
+| 3 | ~37 | 108 KB/s | 325 KB/s |
+| 10 | ~100 | 280 KB/s | **2.8 MB/s** (22 Mbit/s) |
+
+Ten players in one room is therefore **affordable on the VPS** — about 2% of a gigabit port — but it is
+2.2 Mbit/s down *per client*, which is comfortable on broadband and not on a poor mobile link.
+
+**The first thing to fix is CPU, not bandwidth, and it is quadratic too.** `socket.js` `send()` calls
+`JSON.stringify` **per socket**: the same 9 KB object is serialized once for every player, thirty times a
+second. The simulation itself is one World per room and barely notices the population — the whole cost is in
+serialization. Serialize once per snapshot and hand the string to every session.
+
+**Free, whenever anyone touches this:** coordinates go out at full float precision
+(`34.92385002434235` where the eye needs two decimals — the arena is hundreds of units across). Rounding to
+2 dp measured **23% smaller** snapshots with no visible difference.
+
+**And it settles a question that is live now.** Curve fidelity (a homing rocket's arc, a small enemy's nose)
+can be bought either by raising the snapshot rate or by Hermite interpolation with velocity on the wire. At
+one player, doubling the rate is the simpler answer. At ten it is the wrong one: doubling costs **+100%** of
+everything, while velocity in a row costs **+22%** and removes the error rather than halving it. Whichever is
+chosen, choose it knowing the other becomes right later.
+
+The real lever past all of this, if it is ever needed, is the one already listed as a deliberate non-goal
+below: binary or delta encoding instead of JSON, worth 3–5×.
+
 **Every slice must leave single-player fully playable locally.** The maintainer plays between slices and
 brings back feel notes; a slice that only produces green tests has failed its purpose.
 
