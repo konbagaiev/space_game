@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalNetsim, wsUrl, createUplink, connectNetsim, netsimDefersTo, netsimDeferReason, INPUT_BATCH } from './netsim.js';
+import { evalNetsim, wsUrl, createUplink, connectNetsim, netsimDefersTo, netsimDeferReason, INPUT_BATCH, isUnroomableSideMission } from './netsim.js';
 import { SIM_DT } from './sim-core/consts.js';
 import { snapshotInput } from './replay.js';
 
@@ -215,4 +215,21 @@ test('the netjerk flag survives the punctuation a URL picks up in transit, and c
   assert.equal(netjerkArmed('?netsim=1&netjerk=0', 'localhost'), false, 'and the local default can be silenced');
   assert.equal(netjerkArmed('?netjerk=off', 'localhost'), false);
   assert.equal(netjerkArmed('?nonetjerk=1', 'vega.tenony.com'), false, 'not matched inside another name');
+});
+
+test('a player without ?netsim is not thrown at when a side mission is active', () => {
+  // The bug this pins, which reached `main` and was caught by the visual suite on three scenarios at once:
+  // the frame loop read `NETSIM.level` unconditionally, and `NETSIM` is null for everyone who has not put
+  // the flag on their URL. Short-circuiting hid it until a mission was ACTIVE — and then it threw once per
+  // frame and took the rest of the frame with it. Every playtest had the flag on, so no playtest saw it.
+  assert.doesNotThrow(() => isUnroomableSideMission(null, { id: 'side-mining' }));
+  assert.equal(isUnroomableSideMission(null, { id: 'side-mining' }), true,
+    'no room exists at all, so a mission is certainly not one a room can fight');
+  assert.equal(isUnroomableSideMission(null, null), false, 'and no mission is no reason to stand aside');
+
+  // With the flag: a bare `?netsim=1` follows the client's level, so a side mission is the reason to defer…
+  assert.equal(isUnroomableSideMission({ level: null, seed: null }, { id: 'side-research' }), true);
+  // …while an explicit `?netsim=level-2` names a campaign level, and a mission alongside it does not.
+  assert.equal(isUnroomableSideMission({ level: 'level-2', seed: null }, { id: 'side-research' }), false);
+  assert.equal(isUnroomableSideMission({ level: 'level-2', seed: null }, null), false);
 });

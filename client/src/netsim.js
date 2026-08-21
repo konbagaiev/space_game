@@ -75,6 +75,20 @@ export function netsimDeferReason({ record, playback, sideMission, roam }) {
 // Back-compat shorthand for the boolean form.
 export function netsimDefersTo(state) { return netsimDeferReason(state) !== null; }
 
+// Is THIS run a side mission that a room cannot fight?
+//
+// A pure seam, and it exists because the expression it replaces was `!!activeMission && !NETSIM.level`
+// written inline in the frame loop — where `NETSIM` is null for every player who has not put `?netsim` on
+// their URL, i.e. all of them. Short-circuiting hid it until a mission was active, and then it threw once
+// per frame and took the rest of the frame with it. Playtesting never saw it because playtesting always had
+// the flag on; the visual suite caught it on three scenarios at once.
+//
+// `netsim` is the parsed flag or null. An EXPLICIT `?netsim=level-N` names a campaign level, so a mission
+// running alongside it is not the reason to stand aside — that is what the `.level` check was for.
+export function isUnroomableSideMission(netsim, activeMission) {
+  return !!activeMission && !(netsim && netsim.level);
+}
+
 // Build the socket URL from the page's origin (or the configured API base), swapping the scheme. Kept pure
 // so the mapping http→ws / https→wss is testable; getting it wrong on the itch build would be a silent
 // mixed-content failure with no error worth reading.

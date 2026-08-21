@@ -5,6 +5,14 @@
 
 ## 2026-08-21
 
+- **Fixed before it shipped: the frame loop threw once per frame for any player with an active side
+  mission.** `main.js` computed the netsim deferral with `!!G.activeMission && !NETSIM.level` — every frame,
+  unconditionally — and `NETSIM` is `null` for everyone who has not put `?netsim` on their URL, which is
+  every player. Short-circuiting hid it until a mission was *active*, and then the exception took the rest of
+  the frame with it. **No amount of playtesting would have found it**, because every playtest had the flag
+  on. The visual suite caught it on three scenarios at once, which is what a visual suite is for. Now a pure
+  seam, `isUnroomableSideMission(netsim, activeMission)` in `netsim.js`, with a test that covers the null.
+
 - **Correction: the snapshot rate was raised for the wrong reason.** 15 → 30 Hz was justified by halving the
   chord-cutting on a curve, which is real on a synthetic constant-curvature path and **does nothing in an
   actual fight** — measured at 15, 30 and 60 Hz, the drawn nose step stays ~2.1° at every rate. The residual

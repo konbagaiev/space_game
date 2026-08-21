@@ -6,7 +6,7 @@
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
 import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
-import { evalNetsim, connectNetsim, netsimDeferReason } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
+import { evalNetsim, connectNetsim, netsimDeferReason, isUnroomableSideMission } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
 import { createJerkProbe } from './netsim-jerk.js'; // ?netjerk: catch every break in the DRAWN motion
 import * as THREE from 'three';
@@ -965,7 +965,8 @@ function animate() {
   // Why a room is not driving this frame (null = it is). Re-decided every frame on purpose — see
   // netsimDeferReason; both reasons arrive AFTER the socket is already open.
   netDeferredBy = netsimDeferReason({
-    record: REC, playback: rs.play, roam: G.roam, sideMission: !!G.activeMission && !NETSIM.level,
+    record: REC, playback: rs.play, roam: G.roam,
+    sideMission: isUnroomableSideMission(NETSIM, G.activeMission),
   });
   // A dropped socket is local until a NEW run starts — retrying mid-fight would swap the simulation out
   // from under the player, and retrying every frame would hammer the endpoint.
