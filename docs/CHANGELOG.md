@@ -5,6 +5,16 @@
 
 ## 2026-08-21
 
+- **Correction: the snapshot rate was raised for the wrong reason.** 15 → 30 Hz was justified by halving the
+  chord-cutting on a curve, which is real on a synthetic constant-curvature path and **does nothing in an
+  actual fight** — measured at 15, 30 and 60 Hz, the drawn nose step stays ~2.1° at every rate. The residual
+  is the SIMULATION's: an enemy's change of turn rate per tick is p50 0.000°, p99 0.021°, **max 3.64°**, and
+  3.64 × 0.6 (a 100 fps frame in ticks) is 2.2° — the drawn number to two decimals. The AI sometimes changes
+  how fast it turns within one tick and the client draws that faithfully. **Single-player has the same
+  artifact and always has.** 30 Hz stays on the argument that was always the stronger one: at 15 Hz our
+  100 ms buffer is 1.5 snapshot intervals, under the documented minimum of two. Bandwidth measured rather
+  than extrapolated: 25 / 40 / 70 KB/s at 15 / 30 / 60 Hz. DECISIONS §127.
+
 - **The drawn-motion probe was measuring the renderer's pacing as if it were the world's.** It compared
   per-FRAME displacement, and frames are not evenly spaced — a browser at ~96 fps varies by a couple of
   milliseconds — so an object moving perfectly correctly in time was flagged whenever the pacing wobbled. The

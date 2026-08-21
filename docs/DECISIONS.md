@@ -4598,7 +4598,35 @@ artifacts above — they all live in the rendering layer, which the libraries le
 offer is the doctrine, and the doctrine is what this entry copies. Worth revisiting only if we need
 something they solve and we have not built: matchmaking, reconnection, or delta-encoded state.
 
-**Alternative rejected: spline interpolation** (Hermite / Catmull-Rom) for the curve error. It is the
-textbook next step and Fiedler reports it removes the artifact entirely — but it needs velocity on the wire,
-no comparable JS library ships it, and doubling the snapshot rate to 30 Hz cost nothing at one player per
-room and cut the nose step from 3.5°/frame to 2.1°. Revisit only if a real fight still shows it.
+**Alternative rejected: spline interpolation** (Hermite / Catmull-Rom) for the curve error. It needs velocity
+on the wire and no comparable JS library ships it — and, as the correction below establishes, there is no
+curve error left to spend it on.
+
+### Correction, 2026-08-21: the snapshot rate was raised for the wrong reason, and is right anyway
+
+The rate went from 15 Hz to 30 Hz to halve the chord-cutting on a curve, measured on a synthetic constant-
+curvature path where it plainly did. In a REAL fight it does nothing at all:
+
+| rate | interpolation delay | bandwidth | breaks / 60 s | nose step p95 / max |
+|---|---|---|---|---|
+| 15 Hz | 100 ms | 25 KB/s | 15 | 2.14° / 2.14° |
+| 30 Hz | 100 ms | 40 KB/s | 22 | 1.99° / 2.01° |
+| 60 Hz | 100 ms | 70 KB/s | 27 | 2.10° / 2.10° |
+| 60 Hz | 50 ms | 70 KB/s | 24 | 2.12° / 2.12° |
+
+**The residual is not the network's, and not the interpolation's — it is the SIMULATION's own.** Measured on
+the room's internal state, with no client involved, an enemy's change of turn rate per tick is p50 0.000°,
+p95 0.002°, p99 0.021° — and **max 3.64°**. A frame at 100 fps is 0.6 of a tick, and 3.64 × 0.6 = 2.2°,
+which is the drawn nose step to two decimal places. The AI occasionally changes how fast it is turning in a
+single tick (a manoeuvre ends, a target changes), the client draws that faithfully, and the eye catches it.
+**Single-player has exactly the same artifact**, since it runs the same steering — it has simply never been
+looked for there. Smoothing it means limiting angular acceleration in `steerToward`, which is a gameplay
+change and belongs nowhere near this entry.
+
+So 30 Hz stays, on the other argument, which was always the stronger one and is unaffected: at 15 Hz our
+100 ms buffer is **1.5 snapshot intervals**, below the two that Valve, Mirror and Colyseus all give as the
+minimum for surviving one lost packet. At 30 Hz it is three. The bandwidth is the price of the buffer, not
+of smoothness.
+
+60 Hz remains available and measured: it would allow a 50 ms buffer at the same three intervals, halving the
+input lag for 70 KB/s. Held in reserve — the maintainer tried the 100 ms and reported it fine.
