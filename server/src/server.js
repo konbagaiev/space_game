@@ -134,7 +134,11 @@ export async function createApp() {
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       const name = `netjerk-${String(body.level || 'room').replace(/[^a-z0-9-]/gi, '')}-${stamp}.json`;
       const file = path.join(sinkDir, name);
-      await fsp.writeFile(file, JSON.stringify(body));
+      // Stamp what the MACHINE was doing on the way in. The client cannot see it, and a stall report without
+      // it has cost a day of looking in the wrong place already.
+      const { health } = await import('./netsim/health.js');
+      const record = { ...body, server: { at: new Date().toISOString(), ...health().sample() } };
+      await fsp.writeFile(file, JSON.stringify(record));
       const n = (a) => (Array.isArray(a) ? a.length : 0);
       console.log(`[netjerk] ${name}: ${n(body.events)} breaks, ${n(body.arrivals)} packets, `
         + `${n(body.slowFrames)} slow frames, ${n(body.marks)} marks (reason: ${body.reason})`);

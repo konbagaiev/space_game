@@ -3184,7 +3184,11 @@ on `window.__netsim` (`roomIdle`, `drawing`).
 **Diagnosing a stall.** `server/src/netsim/driver.js` warns on the server when a pump arrives more than
 `STALL_LOG_MS` (100 ms) late (`[netsim] the room was not stepped for N ms`) and, separately, when the
 stepping itself takes that long — the first means the process was busy elsewhere, the second that the room
-is slow. `node server/tools/netsim-load.mjs [--level L] [--seconds N] [--port P]` drives a real room from a
+is slow. The warning carries a reading from `netsim/health.js`: Node's event-loop-delay histogram (its own
+resolution subtracted, so idle reads ~0) plus the machine's load average and core count, which is what
+separates "the OS descheduled us" from "we blocked ourselves". The same reading is stamped onto every
+`?netjerk` dump the sink receives, so one file holds both sides. `node server/tools/watch-machine.mjs
+[--seconds N]` prints load and the greediest processes once a second for the length of a playtest. `node server/tools/netsim-load.mjs [--level L] [--seconds N] [--port P]` drives a real room from a
 synthetic client and prints the arrival-gap distribution, which is how "is it the room or the browser?" gets
 an answer without a human playing.
 

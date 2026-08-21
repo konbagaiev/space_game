@@ -5,6 +5,17 @@
 
 ## 2026-08-20
 
+- **The server now measures what the MACHINE is doing to it.** A room that stops stepping for half a second
+  looks identical from outside whether the OS descheduled the process or the process blocked itself, and the
+  two have opposite fixes. `server/src/netsim/health.js` keeps Node's native event-loop-delay histogram
+  (`monitorEventLoopDelay`, minus its own resolution so an idle process reads ~0) beside the machine's load
+  average, and the stall warning now carries both: a high loop delay with fast stepping means we were not
+  given the CPU. The `?netjerk` sink stamps the same reading onto every dump it receives, so one file holds
+  both sides of a stall. `server/tools/watch-machine.mjs` prints load and the greediest processes once a
+  second for the length of a playtest, and says at the end whether a stall in that window was the machine or
+  worth chasing in the code. Prompted by a load average of **17.6 on ten cores** during a stall report —
+  Spotlight indexing, a VM, Chrome and the agent itself all competing.
+
 - **A room that is not being stepped now says so, and a tool to prove it is not.** Playtest showed three
   delivery stalls of 300–750 ms, each carrying a single snapshot interval of simulation while the tab
   rendered happily throughout (one slow frame in the whole run) — so the client could see the symptom but

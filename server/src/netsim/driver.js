@@ -10,6 +10,7 @@
 // steps per frame for exactly this reason (`main.js`), so this caps too, and drops the excess time on the
 // floor: a room that fell behind resumes in the present rather than fast-forwarding the fight.
 import { SIM_DT } from '../../../client/src/sim-core/consts.js';
+import { health } from './health.js';
 
 export const MAX_CATCHUP_STEPS = 6;
 
@@ -35,8 +36,10 @@ export function createDriver(room, { onSnapshot, intervalMs = 1000 * SIM_DT, now
     // tab rendering happily throughout, which is what sent the search here.
     if (gap > STALL_LOG_MS) {
       stalls++;
+      // …and WHY. A high event-loop delay with fast stepping means the process was not given the CPU; a low
+      // one means we blocked ourselves. They look identical from the client and they have opposite fixes.
       console.warn(`[netsim] the room was not stepped for ${Math.round(gap)} ms `
-        + `(tick ${room.tick}, ${stalls} stalls this room). The event loop was busy elsewhere.`);
+        + `(tick ${room.tick}, ${stalls} stalls this room) — ${health().line()}`);
     }
     let steps = 0;
     const work = now();
