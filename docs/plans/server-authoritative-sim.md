@@ -139,6 +139,12 @@ sends keys, not a crosshair, and fire direction comes from the ship's nose, whic
 itself. With auto-aim gone, `touchAim` is the only remaining input whose meaning depends on what the client
 saw, and it is a heading, not a target.
 
+**2.5. An ALLY before multiplayer** (`docs/plans/combat-ally.md`, ROADMAP Phase 4.5, requested 2026-08-21).
+A friendly ship with logic of its own. It sits here on purpose: a second combatant in a room that is not the
+player exercises most of what co-op needs — a ship on the wire the client does not own, targeting decided
+server-side, a room with more than one fighter, friendly fire, shared loot — while matchmaking, reconnect
+and two humans' input stay out of it. Design questions are open and belong to the maintainer.
+
 **3. Slice E — client-side prediction. ❌ DELETED 2026-08-21, deliberately.** It was built on 2026-08-20
 and agreed with a real room to 1e-9, and it was removed the next day with the rest of the four-clock
 rendering: `netsim-predict.js` is gone and the ship is interpolated like everything else. It bought latency

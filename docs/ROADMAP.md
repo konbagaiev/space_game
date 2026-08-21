@@ -114,6 +114,23 @@ The post-level-3 goal: grind to upgrade/buy ships. Needs an economy + a place to
 - [ ] Corporate-war faction conflict.
 (Deliberately after we have real feedback — don't build this blind.)
 
+## Phase 4.5 — An ALLY who fights with you (before multiplayer, deliberately)
+
+Requested 2026-08-21. A friendly ship that flies with the player and helps in combat, **with logic of its
+own rather than an enemy bot pointed the other way**. Brief: `docs/plans/combat-ally.md`.
+
+Two reasons it comes before Phase 5 rather than after:
+
+- **It is the dress rehearsal.** A second combatant in a room that is not the player exercises almost
+  everything co-op needs — a ship on the wire that the client does not own, per-ship targeting decided
+  server-side, a room holding more than one fighter, friendly fire, and shared loot — while the hard parts
+  of multiplayer (matchmaking, reconnect, two humans' input, draining sockets on deploy) stay out of it. If
+  the ally reads well, co-op is mostly plumbing. If it does not, co-op would not have saved it.
+- **It is worth having on its own**, single-player, with no netcode attached.
+
+- [ ] Ally logic distinct from `stepEnemyAI` — see the brief for what "distinct" has to mean
+- [ ] Design decisions the maintainer still owns (origin, command, death, loot — listed in the brief)
+
 ## Phase 5 — Multiplayer (FAR future, not soon)
 - [ ] **Co-op first** — players fly missions together.
 - [ ] **PvP later** — *maybe* (uncertain, decide based on demand).
