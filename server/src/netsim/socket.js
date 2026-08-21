@@ -122,8 +122,12 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, log = conso
       ws.on('pong', () => { session.lastSeen = Date.now(); });
       const idle = setInterval(() => {
         if (Date.now() - session.lastSeen > idleTimeoutMs) return ws.close(1001, 'idle');
-        // NEGATIVE TEST: no ping
+        if (ws.readyState === ws.OPEN) { try { ws.ping(); } catch { /* the close path will deal with it */ } }
       }, pingEveryMs);
+      // A liveness timer must never be the reason a process stays alive. Without this the test runner hangs
+      // after the last assertion has passed — which is a worse failure than a red test, because it looks
+      // like the suite is still working.
+      idle.unref?.();
 
       const teardown = () => {
         clearInterval(idle);

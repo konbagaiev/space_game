@@ -5,6 +5,13 @@
 
 ## 2026-08-21
 
+- **The visual suite runs on four pages instead of one — ~6 min → ~2.** Scenarios were already independent
+  (each reloads the page for a clean slate); the only thing serialising them was that there was one page.
+  Each worker now gets its own page, game and page-error list, with the browser and server shared. The run
+  also reports where its time went — measured: **6 s per scenario is the reload alone**, which over 42
+  scenarios was four of the six minutes, while the 40 s of fixed sleeps I had suspected were a tenth of it.
+  `VISUAL_WORKERS=1` restores the sequential run when a failure needs reading without interleaving.
+
 - **Tabbing away from a netsim fight for half a minute froze the game — found on production.** The client's
   keep-alive was sent from its RENDER LOOP, and a browser stops rendering a hidden tab entirely, so the
   server saw thirty seconds of silence, called the peer abandoned and closed the socket. The client then fell

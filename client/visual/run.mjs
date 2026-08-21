@@ -76,48 +76,80 @@ async function main() {
       headless: true,
       args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
     });
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-    const pageErrors = [];
-    page.on('pageerror', (e) => pageErrors.push(String(e.message || e)));
-
     // 3. discover scenarios (an optional argv filter runs just one: `node visual/run.mjs 22-intro-replay`)
     const only = process.argv[2] || '';
     const files = (await readdir(path.join(__dirname, 'scenarios')))
       .filter((f) => f.endsWith('.mjs') && f.includes(only))
       .sort();
 
-    for (const file of files) {
-      const mod = await import(pathToFileURL(path.join(__dirname, 'scenarios', file)).href);
-      const name = mod.name || file.replace(/\.mjs$/, '');
-      const errBefore = pageErrors.length;
-      // clean slate: a full reload resets all game state
-      await page.goto(BASE_URL, { waitUntil: 'load' });
-      // bootstrap() builds the player asynchronously after fetching the catalog from the API
-      await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
-      // dismiss the welcome screen and start the game (scenarios test the running game)
-      await page.evaluate(() => {
-        const w = document.getElementById('welcome');
-        if (w && w.style.display !== 'none') document.getElementById('takeoff').click();
-      });
-      await page.waitForTimeout(150);
+    // 4. run them across N pages.
+    //
+    // Scenarios are independent by construction — each one reloads the page for a clean slate — so the only
+    // thing that made this sequential was that there was one page. Each worker gets its own page, its own
+    // game and its own page-error list; the tab and the server are shared, which is what makes a worker
+    // cheap. Concurrency is conservative by default because these scenarios wait on the SIMULATION reaching
+    // states, and a machine under load turns those waits into timeouts (the suite has flaked that way all
+    // day). `VISUAL_WORKERS=1` puts it back to one page if a failure needs to be read without interleaving.
+    const WORKERS = Math.max(1, Number(process.env.VISUAL_WORKERS || 4));
+    const queue = files.slice();
+    const timings = [];
 
-      const shot = async (label) => {
-        const p = path.join(shotsDir, `${name}__${label}.png`);
-        await page.screenshot({ path: p });
-        return p;
-      };
+    const worker = async () => {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      const pageErrors = [];
+      page.on('pageerror', (e) => pageErrors.push(String(e.message || e)));
+      const lines = [];   // buffered so one scenario's output is not interleaved with another's
 
-      try {
-        await mod.default({ page, assert, shot, baseURL: BASE_URL });
-        const newErrors = pageErrors.slice(errBefore);
-        assert.equal(newErrors.length, 0, `page errors during scenario:\n${newErrors.join('\n')}`);
-        results.push({ name, ok: true });
-        console.log(`  ✓ ${name}`);
-      } catch (err) {
-        results.push({ name, ok: false, err });
-        console.log(`  ✗ ${name}\n      ${String(err && err.message || err).split('\n').join('\n      ')}`);
+      while (queue.length) {
+        const file = queue.shift();
+        const mod = await import(pathToFileURL(path.join(__dirname, 'scenarios', file)).href);
+        const name = mod.name || file.replace(/\.mjs$/, '');
+        const errBefore = pageErrors.length;
+        const t0 = Date.now();
+        // clean slate: a full reload resets all game state
+        await page.goto(BASE_URL, { waitUntil: 'load' });
+        // bootstrap() builds the player asynchronously after fetching the catalog from the API
+        await page.waitForFunction('!!(window.__game && window.__game.player)', null, { timeout: 8000 });
+        // dismiss the welcome screen and start the game (scenarios test the running game)
+        await page.evaluate(() => {
+          const w = document.getElementById('welcome');
+          if (w && w.style.display !== 'none') document.getElementById('takeoff').click();
+        });
+        await page.waitForTimeout(150);
+        const booted = Date.now();
+
+        const shot = async (label) => {
+          const p = path.join(shotsDir, `${name}__${label}.png`);
+          await page.screenshot({ path: p });
+          return p;
+        };
+
+        try {
+          await mod.default({ page, assert, shot, baseURL: BASE_URL });
+          const newErrors = pageErrors.slice(errBefore);
+          assert.equal(newErrors.length, 0, `page errors during scenario:\n${newErrors.join('\n')}`);
+          results.push({ name, ok: true });
+          lines.push(`  ✓ ${name}`);
+        } catch (err) {
+          results.push({ name, ok: false, err });
+          lines.push(`  ✗ ${name}\n      ${String(err && err.message || err).split('\n').join('\n      ')}`);
+        }
+        const done = Date.now();
+        timings.push({ name, boot: booted - t0, body: done - booted });
+        console.log(lines.pop());
       }
-    }
+      await page.close();
+    };
+
+    const started = Date.now();
+    await Promise.all(Array.from({ length: Math.min(WORKERS, files.length) }, worker));
+
+    // Where the time went, so the next person to call this slow has numbers rather than an impression.
+    const sum = (k) => timings.reduce((a, t) => a + t[k], 0);
+    const slowest = [...timings].sort((a, b) => (b.boot + b.body) - (a.boot + a.body)).slice(0, 5);
+    console.log(`\n  ${((Date.now() - started) / 1000).toFixed(0)}s wall on ${WORKERS} worker(s); `
+      + `${(sum('boot') / 1000).toFixed(0)}s of it reloading the page, ${(sum('body') / 1000).toFixed(0)}s in scenarios`);
+    console.log('  slowest: ' + slowest.map((t) => `${t.name} ${((t.boot + t.body) / 1000).toFixed(1)}s`).join(', '));
   } finally {
     if (browser) await browser.close();
     stopServer();
