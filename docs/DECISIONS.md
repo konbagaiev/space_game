@@ -4630,3 +4630,44 @@ of smoothness.
 
 60 Hz remains available and measured: it would allow a 50 ms buffer at the same three intervals, halving the
 input lag for 70 KB/s. Held in reserve — the maintainer tried the 100 ms and reported it fine.
+
+## 128. A server-run fight does not stop because one tab looked away (supersedes §123's pause)
+
+**Context.** §123 allowed a real pause in a netsim room, reasoning that a room holds exactly one player so
+freezing the world harms nobody — and a button reading "Paused" while the ship keeps taking hits is worse
+than no button. Under that rule the room also stopped for the system map and for a hidden tab, the last one
+justified as "coming back to a ship that had been shot at by an enemy you could neither see nor answer".
+
+**What it cost.** Every stop is a *"the world is frozen, now resume it"* moment, and that moment is where a
+day of freeze reports lived. The one that reached production: complete a level, start the next, switch tabs,
+come back — and the game is dead. A hidden tab renders nothing, so the client's keep-alive (sent from the
+render loop) stopped, the server declared the peer abandoned, and the fallback to the local simulation
+handed the player an emptied arena and a level script waiting for kills that could no longer happen.
+
+The transport-level fix for the keep-alive was necessary and is kept. It is not sufficient, because the
+class of bug is the resume, not the socket.
+
+**Decision, on the maintainer's call.** A running simulation is not stopped by what one tab is doing.
+`roomIdle` is now exactly "is there a live fight", and nothing else — no pause, no map, no hidden tab.
+Three questions, three flags, and they are never merged:
+
+| flag | question | false when |
+|---|---|---|
+| `roomIdle` | should the ROOM step? | there is no live fight — between runs, in the hangar, after a death |
+| `flying` | should this tab send INPUT? | a menu, the system map, or a hidden tab |
+| `drawing` | should this tab RENDER? | an explicit pause or the map (never a death — that frame has the most to say) |
+
+**The cost is real and was chosen: leave a fight and you are still in it.** Walk away and you can be shot;
+open the menu and the fight continues under it. What the room does *not* do is fly your ship for you — a
+client that goes quiet has its controls released after `INPUT_HOLD_TICKS` (30 ticks, half a second), so the
+ship coasts to a stop on its own drag instead of running on a held thruster into the arena wall. Repeating
+the last input is right for the gap one late packet leaves and wrong for a client that has stopped talking;
+half a second is far more than any packet gap and far less than a human pause.
+
+**Alternative considered: end the run when the client goes quiet** (treat leaving as leaving, and return the
+player to base). Cleaner than letting an unattended ship be shot to pieces, and it is what networked games
+do with disconnects. Rejected for now because it makes "I looked away" a *run-ending* event, which is a
+harsher rule than being shot at; revisit if playtest says the current version punishes ordinary distraction.
+
+**This is also the rule multiplayer requires**, so it is the honest version arriving early: §123 permitted
+the pause only because a room holds one player, and that premise expires the moment a room holds two.

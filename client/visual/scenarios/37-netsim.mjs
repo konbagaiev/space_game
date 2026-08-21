@@ -36,6 +36,7 @@ const status = (page) => page.evaluate(() => {
     netsim: !!(window.__netsim && window.__netsim.active),
     connected: !!(window.__netsim && window.__netsim.connected),
     tick: window.__netsim ? window.__netsim.tick : -1,
+    flying: window.__netsim ? window.__netsim.flying : null,
     px: p.pos.x, pz: p.pos.z,
     speed: Math.hypot(p.vel.x, p.vel.z),
     enemies: g.enemies.length,
@@ -159,15 +160,19 @@ export default async function ({ page, assert, shot, baseURL }) {
   assert.ok(flying.smoke > 0, 'its trail is being drawn — the puff path is where the freeze lived');
   assert.ok(flying.tick > beforeRocket.tick, 'and the loop is still running after firing it');
 
-  // Pause must reach the ROOM. A room holds one player, so a real freeze is legitimate — and a button that
-  // says "Paused" while the fight keeps running and the ship keeps taking hits is worse than no button.
+  // PAUSE DOES NOT REACH THE ROOM ANY MORE. It used to — a room holds one player, so a real freeze looked
+  // legitimate — and every freeze was a "now resume it" moment to get wrong, which is where a day of freeze
+  // reports lived, one of them on production. A server-authoritative fight is not stopped by what one tab
+  // is doing; the button pauses the PICTURE and the tab stops flying, and the room hears that silence and
+  // releases the controls. The cost was chosen deliberately: you are still in the fight (DECISIONS §128).
   await page.evaluate(() => document.getElementById('pause-btn').click());
   await page.waitForTimeout(900);
   const p1 = await status(page);
   await page.waitForTimeout(900);
   const p2 = await status(page);
-  console.log(`      paused: ticks ${p1.tick} -> ${p2.tick}`);
-  assert.equal(p2.tick, p1.tick, 'the ROOM stopped stepping while paused, not just the drawing');
+  console.log(`      paused: ticks ${p1.tick} -> ${p2.tick}, flying=${p2.flying}`);
+  assert.ok(p2.tick > p1.tick, 'the room keeps stepping while the player reads a menu — the fight is real');
+  assert.equal(p2.flying, false, 'but the tab is not flying it, so no held key is being sent');
   await page.evaluate(() => document.getElementById('pause-btn').click());
   await page.waitForFunction((t) => window.__netsim.tick > t, p2.tick, { timeout: SLOW });
 
@@ -209,29 +214,37 @@ export default async function ({ page, assert, shot, baseURL }) {
   // the explosion plays, the "Ship Destroyed" overlay opens and the run is banked — all of it in
   // `renderTick`, draining the events the room sent. Stopping the render because the ROOM had nothing left
   // to step killed the game at the moment it had the most to say.
-  // A HIDDEN TAB is the stable way to make the room idle for a reason that is NOT a pause — poking
-  // `player.alive` does not hold, because the next snapshot puts it straight back (which is itself
-  // reassuring). The distinction under test is the same one either way.
+  // A HIDDEN TAB used to idle the room. It does not any more, and that is the point of this block: a
+  // running simulation is not stopped by what one tab is doing. Every stop created a "the world is frozen,
+  // now resume it" moment to get wrong, and that is where a day of freeze reports lived — including one on
+  // production, where coming back to a tab left the player in a dead run. What the tab stops doing is
+  // FLYING: it sends no input, the room hears the silence and lets go of the controls (INPUT_HOLD_TICKS),
+  // and the ship coasts instead of running on a held thruster.
   const idleStates = await page.evaluate(async () => {
     const n = window.__netsim;
     const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const live = { roomIdle: n.roomIdle, drawing: n.drawing };
+    const read = () => ({ roomIdle: n.roomIdle, drawing: n.drawing, flying: n.flying });
+    const live = read();
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
     document.dispatchEvent(new Event('visibilitychange'));
     await frame();
-    const away = { roomIdle: n.roomIdle, drawing: n.drawing };
+    const away = read();
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
     document.dispatchEvent(new Event('visibilitychange'));
     await frame();
-    return { live, away, back: { roomIdle: n.roomIdle, drawing: n.drawing } };
+    return { live, away, back: read() };
   });
   console.log(`      fighting ${JSON.stringify(idleStates.live)} | hidden ${JSON.stringify(idleStates.away)} | back ${JSON.stringify(idleStates.back)}`);
-  assert.equal(idleStates.live.roomIdle, false, 'a live, visible fight steps the room');
-  assert.equal(idleStates.away.roomIdle, true, 'a hidden tab idles it — the fight must not run unwatched');
+  assert.equal(idleStates.live.roomIdle, false, 'a live fight steps the room');
+  assert.equal(idleStates.live.flying, true, 'and a visible one is being flown');
+  assert.equal(idleStates.away.roomIdle, false,
+    'a hidden tab does NOT stop the room — the fight you walked away from is still happening');
+  assert.equal(idleStates.away.flying, false,
+    'but the tab stops flying it, so the room hears silence and releases the controls');
   assert.equal(idleStates.away.drawing, true,
-    'but the tab keeps DRAWING: gating the render on "is the room stepping" froze the game the instant you died, '
+    'and the tab keeps DRAWING: gating the render on "is the room stepping" froze the game the instant you died, '
     + 'because the explosion, the overlay and the banking all happen in renderTick');
-  assert.equal(idleStates.back.roomIdle, false, 'and coming back resumes it');
+  assert.equal(idleStates.back.flying, true, 'and coming back puts you at the controls again');
 
   // --- NETSIM MUST STAND ASIDE FOR A REPLAY ---
   //

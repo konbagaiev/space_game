@@ -106,6 +106,7 @@ let netDeferredBy = null;   // 'replay' | 'side-mission' | null — why netsim i
 let netJerkAlive = false;   // ?netjerk: previous frame's alive flag, so death can trigger the dump once
 let netRoomIdle = false;    // the ROOM is not stepping (no live fight, a pause, a menu, a hidden tab)
 let netDrawing = true;      // this tab is still RENDERING — true even on the death screen
+let netFlying = false;      // this tab is at the CONTROLS — false in a menu, on the map, or when hidden
 let netDown = false;        // the socket died under us: local for THIS run, retry on the next one
 let netDownRunAt = null;    // the run it died in (G.gameStartTime), so the retry waits for a different one
 const netState = createNetState();
@@ -1027,27 +1028,40 @@ function animate() {
     // audible symptom is the reverse: the sounds stop, because the tab does, while the fight does not.)
     // Single-player has the same instinct — `autoPauseOnBlur` — and one player per room makes it honest.
     const hidden = typeof document !== 'undefined' && document.hidden;
-    // TWO SEPARATE QUESTIONS, and conflating them froze the game on the death screen.
+    // THREE SEPARATE QUESTIONS. Conflating the first two froze the game on the death screen; conflating the
+    // first and third froze it on coming back to a tab.
     //
-    //   `roomIdle`   — should the ROOM step? No, whenever there is no live fight to step.
+    //   `roomIdle`   — should the ROOM step? Only "is there a live fight", and nothing else. **A running
+    //                  simulation is not stopped by what one tab is doing.** It used to stop for a hidden
+    //                  tab, an open menu and the system map, and every one of those created a moment of
+    //                  "the world is frozen, now resume it" to get wrong — which is where a day of freeze
+    //                  reports lived. It is also the rule multiplayer requires (DECISIONS §123 allowed the
+    //                  pause only because a room holds one player), so this is the honest version arriving
+    //                  early. The cost is deliberate and was chosen: leave a fight and you are still IN it,
+    //                  being shot at. The room releases your controls when you go quiet (INPUT_HOLD_TICKS)
+    //                  so the ship coasts rather than flying on, but it does not protect you.
+    //   `flying`     — should this tab send INPUT? Only while the player is actually at the controls. A
+    //                  menu, the map or a hidden tab all mean "not flying", and the room hears the silence.
     //   `drawing`    — should this tab still RENDER? Almost always yes. The frame after you die is when the
     //                  explosion plays, the "Ship Destroyed" overlay opens and the run is banked — all of
     //                  which happen in `renderTick`, draining the events the room sent. Gating rendering on
     //                  "is a fight running" therefore stopped the game dead at the exact moment it had the
-    //                  most to say. Only an explicit pause (or the system map) freezes the picture, which
-    //                  is what a pause IS and what single-player does too.
-    const roomIdle = !fightLive || G.paused || G.mapOpen || hidden;
+    //                  most to say.
+    const roomIdle = !fightLive;
+    const flying = fightLive && !G.paused && !G.mapOpen && !hidden;
     const drawing = !G.paused && !G.mapOpen && !netsimPaused;
-    netRoomIdle = roomIdle; netDrawing = drawing; // exposed on __netsim: these two must never be one flag
+    netRoomIdle = roomIdle; netDrawing = drawing; netFlying = flying; // on __netsim: never one flag
     if (netLink && roomIdle !== netRoomPaused) {
       netRoomPaused = roomIdle; netLink.setPaused(roomIdle);
       netState.jerk?.mark('room-idle', { on: roomIdle }, perfNow());
     }
-    if (netLink && roomIdle) netLink.keepAlive(); // a paused client sends no input; don't look abandoned
+    // A client that is not flying still says hello — though the room no longer depends on it for liveness
+    // (the server pings, and a frozen tab answers that without running any code at all).
+    if (netLink && !flying) netLink.keepAlive();
     if (netLink && netStarted && drawing) {
-      // Input only while there is something to fly. A dead ship must not be able to fire a held key, and a
-      // paused room would only queue the input up to apply on resume.
-      if (!roomIdle) netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
+      // Input only while the player is actually at the controls. A dead ship must not fire a held key, and
+      // a menu is not flying — the room hears the silence and lets go of the controls on its own.
+      if (flying) netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
       renderNet(world, netState, performance.now());
       setGrabTarget(netState.grabTarget); // the room owns the Grab; this is only its beam
       renderTick(dt);
@@ -1222,6 +1236,7 @@ if (NETSIM) {
     get predicting() { return false; },
     get clock() { return netState.clock; },   // tick → wall clock, the one timeline the picture is drawn on
     get roomIdle() { return netRoomIdle; },
+    get flying() { return netFlying; },   // is this tab at the controls (menus and hidden tabs are not)
     get drawing() { return netDrawing; },
     get tick() { return netState.lastTick; },
     get level() { return (netState.welcome && netState.welcome.level) || NETSIM.level; },

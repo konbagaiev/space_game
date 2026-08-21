@@ -5,6 +5,17 @@
 
 ## 2026-08-21
 
+- **A server-run fight no longer stops because one tab looked away.** The room used to pause for a hidden
+  tab, an open menu and the system map — and every one of those was a "the world is frozen, now resume it"
+  moment to get wrong, which is where a day of freeze reports lived, including the one that reached
+  production. `roomIdle` is now exactly "is there a live fight". Two new flags keep the questions apart:
+  `flying` (is this tab at the controls — a menu and a hidden tab are not) and the existing `drawing`.
+  **The cost was chosen: leave a fight and you are still in it, being shot at.** What the room will not do
+  is fly your ship for you — a client that goes quiet has its controls released after `INPUT_HOLD_TICKS`
+  (half a second), so the ship coasts to a stop instead of running on a held thruster into the arena wall.
+  Repeating the last input is right for one late packet and wrong for a tab that has stopped talking.
+  DECISIONS §128, superseding §123's pause.
+
 - **The visual suite runs on four pages instead of one — ~6 min → ~2.** Scenarios were already independent
   (each reloads the page for a clean slate); the only thing serialising them was that there was one page.
   Each worker now gets its own page, game and page-error list, with the browser and server shared. The run

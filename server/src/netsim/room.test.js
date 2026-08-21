@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRoom, MAX_QUEUED_INPUTS, INPUT_QUEUE_TARGET } from './room.js';
+import { createRoom, MAX_QUEUED_INPUTS, INPUT_QUEUE_TARGET, INPUT_HOLD_TICKS } from './room.js';
 import { EVENT_FIELDS, wireEvent } from './protocol.js';
 import { runTrace } from '../../tools/sim-replay.mjs';
 import { hydrateTrace } from '../../../client/src/replay.js';
@@ -271,4 +271,26 @@ test('the Grab collects, and the snapshot reports what was collected', () => {
     // The reward crate is `special`: cosmetic, deposits nothing — the real copy is installed on victory.
     assert.equal(w.pendingLoot.length, 0, 'a special reward deposits nothing, by design');
   }
+});
+
+test('a client that goes quiet lets go of the controls', async () => {
+  // Repeating the last input across a gap is right for one late packet and wrong for a client that has
+  // stopped talking. A browser renders nothing in a hidden tab, so a player who switched tabs mid-flight
+  // had the room fly their ship on a held thruster until it left the arena — and since the room no longer
+  // pauses for a hidden tab (that pause was itself the source of a day of freeze reports), this is what
+  // stands between "you are still in the fight" and "your ship flew into the wall while you were away".
+  const room = createRoom({ levelName: 'level-0', seed: 4242 });
+  for (let i = 0; i < 60; i++) { room.pushInput([{ t: i, k: ['KeyW'], a: null }]); room.stepOnce(); }
+  const flying = room.world.player.vel.length();
+  assert.ok(flying > 5, `the ship really was under thrust (${flying.toFixed(1)} u/s)`);
+
+  // Now silence. Well inside the hold, the ship must still be flying — one late packet is not letting go.
+  for (let i = 0; i < INPUT_HOLD_TICKS - 5; i++) room.stepOnce();
+  assert.ok(room.world.player.vel.length() > flying * 0.8,
+    'a short gap holds the controls, so a dropped packet does not stutter a held key');
+
+  // Past it, the controls are released and the ship coasts down on its own drag.
+  for (let i = 0; i < 300; i++) room.stepOnce();
+  const coasted = room.world.player.vel.length();
+  assert.ok(coasted < flying * 0.2, `it let go and coasted (${flying.toFixed(1)} → ${coasted.toFixed(1)} u/s)`);
 });

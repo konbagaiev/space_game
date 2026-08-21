@@ -60,6 +60,16 @@ export const INPUT_QUEUE_TARGET = 3;
 
 const EMPTY_INPUT = { k: [], t: null };
 
+// How long the last input is repeated when the client goes quiet.
+//
+// Repeating it at all is right for the gap a dropped packet leaves — a held key must not stutter because
+// one message was late. It is wrong for a client that has stopped talking altogether: a browser renders
+// nothing in a hidden tab, so a player who switched tabs mid-flight had the room fly their ship on a held
+// thruster until it left the arena. Half a second is far more than any packet gap and far less than a
+// pause a human would notice; past it the controls are simply released and the ship coasts to a stop on
+// its own drag, which is what letting go looks like.
+export const INPUT_HOLD_TICKS = 30;
+
 export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapshotEvery = SNAPSHOT_EVERY } = {}) {
   const ids = new WeakMap();   // entity → network id. WeakMap: the sim never learns it has one.
   let nextId = 1;
@@ -78,7 +88,8 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
   const world = createSimWorld({ levelName, seed, ship, host });
 
   const queue = [];            // pending client input snapshots, oldest first
-  let lastInput = EMPTY_INPUT; // repeated when the client is silent: a gap holds the controls, never drops them
+  let lastInput = EMPTY_INPUT; // repeated across a short gap: one late packet must not stutter a held key
+  let sinceInput = 0;          // ticks since a real one arrived — past INPUT_HOLD_TICKS the controls let go
   let ack = null;              // the client tick of the most recently applied input
   let tick = 0;                // server ticks stepped
   let pendingEvents = [];      // drained since the last snapshot
@@ -145,9 +156,11 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         lastInput = skipped; ack = skipped.t; caughtUp++;
       }
       const next = queue.shift();
-      if (next) { lastInput = next; ack = next.t; }
+      if (next) { lastInput = next; ack = next.t; sinceInput = 0; } else sinceInput++;
+      // Held across a short gap, released across a long one. A client that has gone quiet is not flying.
+      const applied = sinceInput > INPUT_HOLD_TICKS ? EMPTY_INPUT : lastInput;
       // `applyInput` takes the recorded tick shape: `{ k, t }` where `t` is the touch aim.
-      applyInput({ k: lastInput.k, t: lastInput.a }, world.input.keys, world.input.touchAim);
+      applyInput({ k: applied.k, t: applied.a }, world.input.keys, world.input.touchAim);
       // simTick hands back whatever the Grab is pulling — presentation only, but only the room knows it.
       grabTarget = simTick(world, SIM_DT);
       tick++;
@@ -251,7 +264,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         world.player.vel.set(pose.vx || 0, 0, pose.vz || 0);
       }
       startRun(world, { keepPlayer: !!pose });
-      queue.length = 0; lastInput = EMPTY_INPUT; ack = null;
+      queue.length = 0; lastInput = EMPTY_INPUT; ack = null; sinceInput = 0;
       pendingEvents = [];
       return tick;
     },
