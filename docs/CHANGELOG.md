@@ -5,6 +5,18 @@
 
 ## 2026-08-21
 
+- **Tabbing away from a netsim fight for half a minute froze the game — found on production.** The client's
+  keep-alive was sent from its RENDER LOOP, and a browser stops rendering a hidden tab entirely, so the
+  server saw thirty seconds of silence, called the peer abandoned and closed the socket. The client then fell
+  back to the local simulation mid-run, against an arena whose ghosts had just been swept away and a level
+  script waiting for kills that could no longer happen. Nothing moved.
+
+  Liveness belongs to the **transport**, not to the game loop: a WebSocket ping is answered by the peer's
+  network stack without a line of page JavaScript running, which is exactly the property "is anyone there"
+  needs and "is the page running" does not. The room pings every 10 s and counts a pong as alive. The
+  timings are injectable so the guard — a client that sends *nothing* for five idle timeouts stays connected
+  — runs in 750 ms instead of two minutes, and it was negative-tested by removing the ping.
+
 - **Fixed before it shipped: the frame loop threw once per frame for any player with an active side
   mission.** `main.js` computed the netsim deferral with `!!G.activeMission && !NETSIM.level` — every frame,
   unconditionally — and `NETSIM` is `null` for everyone who has not put `?netsim` on their URL, which is

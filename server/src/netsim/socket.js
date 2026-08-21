@@ -15,8 +15,18 @@ import { createRoom } from './room.js';
 import { createDriver } from './driver.js';
 
 export const WS_PATH = '/ws';
-// A room with nobody talking to it is a leak. The client sends input ~15×/s, so silence this long means the
-// peer is gone in a way the socket has not noticed yet.
+// A room with nobody on the other end is a leak, and liveness is measured at the TRANSPORT, not in the game
+// loop. That distinction is the whole of a bug that reached production: the client's keep-alive was sent
+// from its render loop, and a browser stops rendering a hidden tab completely — so a player who switched
+// tabs for half a minute was declared abandoned, had their socket closed, and came back to a run whose
+// enemies had been swept away and whose level script was waiting for kills that could no longer happen.
+//
+// A WebSocket PING is answered by the browser's network stack without running a line of the page's
+// JavaScript, so it stays true while the tab is frozen — which is exactly the property "is anyone there"
+// needs and "is the page running" does not.
+export const PING_EVERY_MS = 10_000;
+// Two missed pings. Long enough to ride out a slow network, short enough that a dead socket is not a room
+// stepping at 60 Hz for nobody.
 export const IDLE_TIMEOUT_MS = 30_000;
 // A cap on concurrent rooms — one box, 60 Hz each. Small on purpose for a first cut; raise by measurement.
 export const MAX_ROOMS = 32;
@@ -25,7 +35,8 @@ export const MAX_ROOMS = 32;
 // The room used to build the catalog's default starter ship for everyone, so a netsim run ignored every
 // weapon, hull and skill point the player owned. Taking it from the DB rather than from the client also
 // means a client cannot claim a better ship than it has.
-export function attachNetsim(httpServer, { tickets, loadShip = null, log = console } = {}) {
+export function attachNetsim(httpServer, { tickets, loadShip = null, log = console,
+                                          pingEveryMs = PING_EVERY_MS, idleTimeoutMs = IDLE_TIMEOUT_MS } = {}) {
   const wss = new WebSocketServer({ noServer: true });
   const sessions = new Set();
 
@@ -106,9 +117,13 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, log = conso
       for (const m of pending) deliver(m);   // whatever arrived while the ship was being read
       pending.length = 0;
 
+      // Liveness: ping the peer, and let the PONG (or any message) count as being alive. A hidden tab sends
+      // nothing of its own and still answers this.
+      ws.on('pong', () => { session.lastSeen = Date.now(); });
       const idle = setInterval(() => {
-        if (Date.now() - session.lastSeen > IDLE_TIMEOUT_MS) ws.close(1001, 'idle');
-      }, 5_000);
+        if (Date.now() - session.lastSeen > idleTimeoutMs) return ws.close(1001, 'idle');
+        // NEGATIVE TEST: no ping
+      }, pingEveryMs);
 
       const teardown = () => {
         clearInterval(idle);

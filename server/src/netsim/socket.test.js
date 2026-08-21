@@ -224,3 +224,32 @@ test('a ping keeps a paused room alive', async () => {
   assert.equal(netsim.rooms, 1, 'and the room is still there');
   ws.close();
 });
+
+test('a silent tab is kept alive by the transport, not by the game loop', async () => {
+  // The bug this pins reached production. The client's keep-alive was sent from its RENDER LOOP, and a
+  // browser stops rendering a hidden tab entirely — so switching tabs for half a minute got the socket
+  // closed as "idle", and the player came back to a run whose enemies had been swept away and whose level
+  // script was waiting for kills that could no longer happen. "Everything froze."
+  //
+  // Liveness belongs to the transport: a WebSocket PING is answered by the peer's network stack without a
+  // line of page JavaScript running. This test is that claim — a client that sends NOTHING survives well
+  // past the idle timeout, because `ws` answers pings for it exactly as a frozen browser would.
+  const own = http.createServer(express());
+  await new Promise((r) => own.listen(0, r));
+  const store = createTicketStore();
+  const net = attachNetsim(own, { tickets: store, pingEveryMs: 20, idleTimeoutMs: 150,
+                                  log: { warn: () => {} } });
+  const url = `ws://localhost:${own.address().port}${WS_PATH}?ticket=${store.issue('quiet').ticket}`;
+  const ws = new WebSocket(url);
+  await new Promise((r, j) => { ws.on('open', r); ws.on('error', j); });
+
+  let closed = null;
+  ws.on('close', (code) => { closed = code; });
+  await new Promise((r) => setTimeout(r, 750));   // five idle timeouts' worth of saying nothing at all
+
+  assert.equal(closed, null, `a quiet peer that answers pings is not abandoned (closed with ${closed})`);
+  assert.equal(ws.readyState, WebSocket.OPEN);
+  ws.close();
+  net.closeAll();
+  own.close();
+});
