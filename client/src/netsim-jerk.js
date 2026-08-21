@@ -16,7 +16,14 @@
 
 // A break is judged against the object's OWN recent motion, not an absolute number: 0.2 units of change in
 // one frame is nothing for a bullet and a lurch for a drifting crate.
-export const STEP_BREAK = 0.5;      // |Δ step| over the object's mean step — 0.5 = "half its cruise speed, in one frame"
+//
+// And it is judged on SPEED, not on per-frame displacement. Frames are not evenly spaced — a browser at
+// ~96 fps varies by a couple of milliseconds a frame — so an object moving perfectly correctly in TIME still
+// covers different distances in consecutive frames. Measuring displacement therefore reports the renderer's
+// pacing as if it were the object's: a first real-session capture logged 3041 "breaks" on bullets, which fly
+// in a straight line at a constant speed and cannot break at all. Dividing by the frame's own duration is
+// the difference between measuring the world and measuring the clock that samples it.
+export const STEP_BREAK = 0.5;      // |Δ speed| over the object's mean speed — 0.5 = "half its cruise speed"
 export const TURN_BREAK_DEG = 0.6;  // |Δ turn| per frame, absolute: the nose stepping the eye actually catches
 export const MAX_EVENTS = 400;      // ring buffer; a long session must not grow without bound
 export const MAX_ARRIVALS = 4000;  // every packet's arrival, so the jitter DISTRIBUTION can be read offline
@@ -28,7 +35,7 @@ const wrap = (d) => { let x = d; while (x > Math.PI) x -= Math.PI * 2; while (x 
 const DEG = 180 / Math.PI;
 
 export function createJerkProbe({ maxEvents = MAX_EVENTS, maxArrivals = MAX_ARRIVALS, onBreak = null } = {}) {
-  const prev = new Map();   // entity → { x, z, h, step, turn, meanStep, n }
+  const prev = new Map();   // entity → { x, z, h, at, speed, omega, meanSpeed, n }
   const events = [];
   const arrivals = [];      // { tick, at, gap } for EVERY packet — the jitter distribution, not just its victims
   const slowFrames = [];    // { t, dt } for frames the tab itself lost
@@ -52,6 +59,10 @@ export function createJerkProbe({ maxEvents = MAX_EVENTS, maxArrivals = MAX_ARRI
 
     // Called by applySnapshot: the delivery fingerprint of THIS packet.
     snapshot(snap, at) {
+      // A tick that goes BACKWARDS is a different room, not a stall: the counter restarts at 0 on every
+      // join, so a reconnect after six minutes in the menus would otherwise be logged as a six-minute
+      // freeze. (It was, in the first capture that had one.)
+      if (last.tick >= 0 && snap.tick < last.tick) { last = { at, tick: -1, arrivalGapMs: 0, tickGap: 0, appliedThisFrame: true }; }
       const arrivalGapMs = last.tick >= 0 ? at - last.at : 0;
       const tickGap = last.tick >= 0 ? snap.tick - last.tick : 0;
       last = { at, tick: snap.tick, arrivalGapMs, tickGap, appliedThisFrame: true };
@@ -83,14 +94,18 @@ export function createJerkProbe({ maxEvents = MAX_EVENTS, maxArrivals = MAX_ARRI
           if (!e || !e.pos) continue;
           seen.add(e);
           const p = prev.get(e);
-          const step = p ? Math.hypot(e.pos.x - p.x, e.pos.z - p.z) : null;
-          const turn = p && e.heading != null && p.h != null ? wrap(e.heading - p.h) : null;
-          if (p && p.step != null && step != null) {
-            const mean = p.meanStep || step || 1e-6;
-            const dStep = Math.abs(step - p.step);
-            const dTurn = p.turn != null && turn != null ? Math.abs(turn - p.turn) : 0;
+          // Per SECOND, not per frame — see STEP_BREAK. A frame shorter than its neighbour is not a stutter.
+          const dt = p && p.at != null ? Math.max(now - p.at, 1e-3) / 1000 : null;
+          const speed = dt ? Math.hypot(e.pos.x - p.x, e.pos.z - p.z) / dt : null;
+          const omega = dt && e.heading != null && p.h != null ? wrap(e.heading - p.h) / dt : null;
+          if (p && p.speed != null && speed != null) {
+            const mean = p.meanSpeed || speed || 1e-6;
+            const dStep = Math.abs(speed - p.speed);
+            const dTurn = p.omega != null && omega != null ? Math.abs(omega - p.omega) : 0;
             const stepBroke = dStep > STEP_BREAK * Math.max(mean, 1e-3);
-            const turnBroke = dTurn * DEG > TURN_BREAK_DEG;
+            // The turn threshold is per FRAME to stay a number a human can picture, so it is scaled back by
+            // the frame's share of a second.
+            const turnBroke = dTurn * DEG * (dt || 0) > TURN_BREAK_DEG;
             if (stepBroke || turnBroke) {
               const id = state.idOf.get(e) ?? null;
               const kind = id != null ? state.kinds.get(id) : 'unknown';
@@ -99,8 +114,8 @@ export function createJerkProbe({ maxEvents = MAX_EVENTS, maxArrivals = MAX_ARRI
               const a = n > 1 ? samples[n - 2] : null, b = n > 0 ? samples[n - 1] : null;
               const ev = {
                 t: Math.round(now), kind, id,
-                dStep: +dStep.toFixed(4), stepMean: +mean.toFixed(4),
-                dTurnDeg: +(dTurn * DEG).toFixed(3),
+                dStep: +dStep.toFixed(4), stepMean: +mean.toFixed(4),   // units per SECOND
+                dTurnDeg: +(dTurn * DEG * (dt || 0)).toFixed(3),        // degrees in this frame
                 // DELIVERY at this instant. `sampleSpanMs` is the gap between the two samples this entity is
                 // being drawn from — a collapsed span (two packets stamped at the same millisecond) and a
                 // stretched one (a packet lost or late) are different faults with the same symptom.
@@ -120,9 +135,9 @@ export function createJerkProbe({ maxEvents = MAX_EVENTS, maxArrivals = MAX_ARRI
             }
           }
           const nn = p ? p.n + 1 : 1;
-          const meanStep = step == null ? (p ? p.meanStep : null)
-            : p && p.meanStep != null ? p.meanStep + (step - p.meanStep) / Math.min(nn, 30) : step;
-          prev.set(e, { x: e.pos.x, z: e.pos.z, h: e.heading, step, turn, meanStep, n: nn });
+          const meanSpeed = speed == null ? (p ? p.meanSpeed : null)
+            : p && p.meanSpeed != null ? p.meanSpeed + (speed - p.meanSpeed) / Math.min(nn, 30) : speed;
+          prev.set(e, { x: e.pos.x, z: e.pos.z, h: e.heading, at: now, speed, omega, meanSpeed, n: nn });
         }
       }
       for (const e of prev.keys()) if (!seen.has(e)) prev.delete(e); // despawned

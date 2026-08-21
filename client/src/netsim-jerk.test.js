@@ -131,3 +131,45 @@ test('a frame the TAB lost is recorded apart from the room\'s faults', () => {
   assert.ok(r.frames.worstDtMs >= 250);
   assert.ok(r.frames.meanDtMs > 16 && r.frames.meanDtMs < 40);
 });
+
+test('uneven FRAMES are not reported as uneven motion', () => {
+  // The flaw this closes cost a real capture its credibility: the probe measured per-frame displacement, so
+  // an object moving perfectly correctly in time was flagged whenever the browser's frame pacing wobbled.
+  // A bullet flies straight at a constant speed and cannot break at all; the first real session logged 3041
+  // breaks on bullets.
+  const { e, world, state } = rig();
+  const probe = createJerkProbe();
+  const V = 40;                       // units per second, dead constant
+  let t = 0;
+  const frames = [10, 16, 9, 21, 11, 8, 25, 12, 10, 17, 9, 14, 30, 10, 11];  // a browser, honestly
+  for (const dt of frames) {
+    t += dt;
+    e.pos.x += V * (dt / 1000);
+    probe.frame(world, state, t);
+  }
+  assert.equal(probe.events.length, 0,
+    `constant speed through wobbling frames is not a defect (${probe.events.length} reported)`);
+
+  // …and a REAL break is still caught through the same wobble: one frame where it covers nothing.
+  t += 12;
+  probe.frame(world, state, t);        // the object did not move at all this frame
+  assert.equal(probe.events.length, 1, 'a genuine stall in the motion still registers');
+});
+
+test('a reconnect is not a six-minute stall', () => {
+  // Room tick counters restart at 0 on every join. Without noticing that, a client that spent six minutes in
+  // the menus and then reconnected recorded a `delivery-stall` of 509 seconds with a tickGap of -7470 — and
+  // poisoned the arrival and frame statistics of the whole capture with it.
+  const { world, state } = rig();
+  const probe = createJerkProbe();
+  probe.snapshot({ tick: 7468 }, 1000);
+  probe.snapshot({ tick: 7470 }, 1033);
+  probe.snapshot({ tick: 2 }, 510_000);          // a different room, six minutes later
+
+  const stalls = probe.marks.filter((m) => m.label === 'delivery-stall');
+  assert.equal(stalls.length, 0, 'the join is not a stall');
+  const last = probe.arrivals[probe.arrivals.length - 1];
+  assert.equal(last.tick, 2);
+  assert.equal(last.gap, 0, 'and it starts a fresh timeline rather than measuring against the old one');
+  assert.equal(last.tickGap, 0);
+});

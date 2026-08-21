@@ -3,6 +3,18 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-21
+
+- **The drawn-motion probe was measuring the renderer's pacing as if it were the world's.** It compared
+  per-FRAME displacement, and frames are not evenly spaced — a browser at ~96 fps varies by a couple of
+  milliseconds — so an object moving perfectly correctly in time was flagged whenever the pacing wobbled. The
+  first long real-session capture logged **3041 breaks on bullets**, which fly straight at a constant speed
+  and cannot break at all. It measures speed now (displacement over the frame's own duration), which is the
+  difference between measuring the world and measuring the clock that samples it. Also: a room's tick counter
+  restarts at 0 on every join, so a client that spent six minutes in the menus and reconnected recorded a
+  509-second "delivery stall" with a tick gap of −7470, poisoning the arrival and frame statistics of the
+  whole capture. A tick that goes backwards starts a fresh timeline. Both guarded.
+
 ## 2026-08-20
 
 - **The server now measures what the MACHINE is doing to it.** A room that stops stepping for half a second

@@ -29,7 +29,7 @@ const t = await (await fetch(BASE + '/api/ws-ticket', {
 
 const ws = new WebSocket(`ws://localhost:${PORT}/ws?ticket=${t.ticket}&level=${LEVEL}`);
 const arrivals = [];
-let last = null, started = false, tick = 0;
+let last = null, started = false, tick = 0, bytes = 0, entities = 0;
 
 ws.on('message', (raw) => {
   const m = JSON.parse(raw);
@@ -40,6 +40,9 @@ ws.on('message', (raw) => {
     return;
   }
   if (m.type !== 'snap') return;
+  // Bandwidth is the price of a higher snapshot rate, so it is measured rather than guessed.
+  bytes += raw.length;
+  entities += (m.enemies?.length || 0) + (m.bullets?.length || 0) + (m.rockets?.length || 0) + (m.drops?.length || 0);
   const now = performance.now();
   if (last != null) arrivals.push({ gap: now - last, tick: m.tick });
   last = now;
@@ -64,6 +67,10 @@ setTimeout(() => {
   const q = (p) => gaps[Math.floor((gaps.length - 1) * p)];
   console.log(`\n${arrivals.length} snapshots over ${((performance.now() - t0) / 1000).toFixed(0)}s`);
   console.log(`gaps ms: p05 ${q(0.05).toFixed(0)}  p50 ${q(0.5).toFixed(0)}  p95 ${q(0.95).toFixed(0)}  max ${q(1).toFixed(0)}`);
+  const secs = (performance.now() - t0) / 1000;
+  console.log(`downstream: ${(bytes / 1024 / secs).toFixed(0)} KB/s  `
+    + `(${(bytes / 1024 / 1024).toFixed(1)} MB total, ${(bytes / arrivals.length).toFixed(0)} B/snapshot, `
+    + `${(entities / (arrivals.length + 1)).toFixed(0)} entities each)`);
   const stalls = arrivals.filter((a) => a.gap > 100);
   console.log(`stalls over 100 ms: ${stalls.length}`);
   for (const s of stalls.slice(0, 12)) console.log(`   tick ${s.tick}  gap ${s.gap.toFixed(0)} ms`);
