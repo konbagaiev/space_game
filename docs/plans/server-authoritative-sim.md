@@ -80,8 +80,16 @@ digest and the identical seeded-RNG draw count.
 
 **Where this stopped (2026-08-20, end of session).** A room is playable end to end and was signed off by
 playtest: the campaign runs, missions complete, loot banks, progression advances, and the ship is predicted
-locally. **No known defects** — the last one (the rocket cooldown readout) was fixed on 2026-08-20;
-everything below is optional or next.
+locally. **No known defects.**
+
+**2026-08-21: the RENDERING half of this plan has been rewritten** — see
+`docs/plans/netsim-one-clock-rendering.md` and DECISIONS §127. One tick-based clock, everything interpolated,
+nothing extrapolated, spawns/despawns/events all on that clock, prediction deleted, snapshots at 30 Hz.
+Measured 7476 breaks in the drawn motion per minute → 6. Signed off by playtest: smooth, and the added
+latency "не выглядит критично". The one artifact left is the SIMULATION's own steering (§127's correction),
+which single-player shares and which is a gameplay question.
+
+Everything below is optional or next.
 
 **0b. FIXED 2026-08-20 — event TIMING: the gun's rhythm was the snapshot grid's.** Events were played when
 their snapshot landed, so a weapon whose reload does not divide the snapshot interval came out on the wrong
@@ -108,16 +116,16 @@ definition, identical on both sides. The two suspects named earlier are non-issu
 effects (`scale`, `hp`) already travel. **Keep asking the question anyway on every new HUD readout** — "is
 this field on the wire at all?" has now found seven bugs on this branch.
 
-**1. Local BULLETS — the last piece of Slice E, and the biggest remaining feel item.** A shot appears when
-the snapshot carrying it does rather than on the keypress. The roadmap's "don't stream bullets": the client
-fires locally and flies the projectile deterministically, the room stops streaming bullet rows, the server
-keeps deciding hits. Most of the machinery exists — the predictor already runs `stepPlayer`, which fires —
-so the work is suppressing the double (server bullets AND local ones), not double-playing the `fire` sound,
-and reconciling a local bullet the server says hit something. **It also carries the sound half**: keeping the
-predictor's own `fire` event instead of discarding it makes your gun answer the keypress with zero latency
-and perfect spacing, which is strictly better than the ~67 ms buffer §126 gives it today — at which point
-the player-event budget in `scheduleEvent` has nothing left to schedule and can go. It also removes the largest per-snapshot
-payload once a room holds more than one player.
+**1. Local BULLETS — RECAST 2026-08-21, and no longer a "next step".** The idea was that a shot should
+appear on the keypress rather than when its snapshot arrives, by firing locally and flying the projectile
+client-side. Under one clock (`docs/plans/netsim-one-clock-rendering.md`, DECISIONS §127) that is a SECOND
+TIMELINE, and every artifact of 2026-08-20 lived on a seam between two of them. The maintainer has since
+played the 100 ms version and called the latency fine, so the demand is gone as well as the design.
+
+If responsiveness is ever wanted back, the way is the one §127 names: an explicit second timeline for the
+player's own things, with its own despawn rule — Unity NetCode's model, where predicted ghosts despawn on
+the server tick and interpolated ones on the interpolation tick. Colyseus calls the same shape *predicted
+spawns*. Not extrapolation, and not a spring. **Do not open it at the same time as anything else.**
 
 **2. D5 — lag compensation.** The one part of Slice D never built. **Its main consumer is gone**: aim-assist
 target selection was the thing that needed rewinding, and auto-aim no longer exists (§124). What remains is
@@ -131,12 +139,11 @@ sends keys, not a crosshair, and fire direction comes from the ship's nose, whic
 itself. With auto-aim gone, `touchAim` is the only remaining input whose meaning depends on what the client
 saw, and it is a heading, not a target.
 
-**3. Slice E — client-side prediction.** ✅ DONE 2026-08-20 for the ship's MOTION
-(`client/src/netsim-predict.js`): a shadow World holding only the player, stepped by the real `stepPlayer`,
-re-seeded from the newest snapshot each frame and replayed forward over the unacknowledged input. Agrees
-with a real room to 1e-9 over 120 ticks. Stands down for an autopilot or a dead ship.
-
-What is left of it is local bullets — item 1 above.
+**3. Slice E — client-side prediction. ❌ DELETED 2026-08-21, deliberately.** It was built on 2026-08-20
+and agreed with a real room to 1e-9, and it was removed the next day with the rest of the four-clock
+rendering: `netsim-predict.js` is gone and the ship is interpolated like everything else. It bought latency
+that this game does not need, and it cost the artifacts that a day went into chasing. The reasoning, the
+measurements and the way back are in DECISIONS §127.
 
 **4. Seal the economy** (the payoff D1 promised, still a separate slice): `POST /api/games` is
 client-authoritative, the client already uploads every session as an input trace, and `runTrace()` can
