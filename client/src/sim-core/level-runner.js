@@ -12,14 +12,15 @@
 //      REWARD is decided and handed over: the credits double, the mission XP bonus lands, and `cleared` goes
 //      out for the host to bank. It is a pure consequence of the fight, so a browser, a server-run room and
 //      a headless referee all reach it identically, with nobody clicking anything.
-//   2. **WON** — the player says the mission is over, with the "Complete mission" button. This closes it:
-//      the remaining salvage is swept up, then the overlay, the sting, the hangar. `lr.won` still means
-//      exactly what it always meant, everywhere it is read.
+//   2. **WON** — the player says the mission is over. This closes it: the remaining salvage is swept up,
+//      then the overlay, the sting, the hangar. `lr.won` still means exactly what it always meant.
 //
-// **Docking no longer ends a mission** (DECISIONS §132). It used to, and that made finishing a cleared level
-// depend on flying all the way home and completing an autopilot approach — so a player who cleared the
-// sector and then reloaded the tab had to fight the whole level again. Between the two moments the pilot is
-// simply free in a sector with no enemies left: linger, pick over the wreckage, then end it when ready.
+// **Two ways to say it, and they do the same thing** (DECISIONS §132): press "Finish and Return", or fly
+// home and dock. Both run `completeMission`, so both sweep the field and pay identically — docking is the
+// scenic route, not a better deal. What changed is that docking is no longer the ONLY way: making a cleared
+// level depend on completing a flight meant a player who cleared it and then reloaded the tab had to fight
+// the whole thing again. Between the two moments the pilot is free in a sector with no enemies left:
+// linger, pick over the wreckage, then end it however they like.
 //
 // It used to be one object literal in `sim.js` holding its own mutable fields. The fields now live on the
 // World (`world.levelRunner`) and the functions take the World, because a server runs many fights in one
@@ -31,6 +32,7 @@
 import { stepSpawnGate } from './spawn-timing.js';
 import { simRandom } from './sim-random.js';
 import { spawnEnemy } from './ship-entity.js';
+import { canDock } from './autopilot-config.js';
 import { showBanner, clearBanner } from './events.js';
 import { collectAll } from './drops-sim.js';
 
@@ -132,12 +134,12 @@ export function clearMission(world) {
   if (!winConditionMet(world)) return;            // not yet — the runner asks again next tick
   lr.cleared = true;
 
-  // The sector is quiet: the out-of-bounds warp lifts (nothing left to fight in the arena, so wandering is
-  // allowed) and the HUD swaps its "Return to base" prompt for "Complete mission". The station is NOT made
-  // clickable — docking stopped being how a mission ends, so an approach that leads nowhere would only lie
-  // about what finishes the run.
+  // The sector is quiet: the out-of-bounds warp lifts (nothing left to fight, so wandering is allowed), the
+  // HUD offers "Finish and Return", and the station becomes clickable — flying home still ends the mission,
+  // it just is not the only way any more.
   lr.returningToBase = true;
   world.returnToBase = true;
+  if (world.station) world.station.active = true;
 
   // The rules stay here; banking, the stash deposit and the progress advance are the host's job.
   world.earned *= 2;                              // clearing the level doubles the credits earned in it
@@ -149,15 +151,28 @@ export function clearMission(world) {
 // scenarios talk about it that way. Prefer `clearMission`.
 export const beginReturn = clearMission;
 
-// MOMENT 2: the player ends it. The "Complete mission" button, and the ONLY way a mission closes.
+// MOMENT 2: the player ends it — the "Finish and Return" button, or docking at home (checkArrival). Both
+// land here, so the two routes cannot drift apart.
 //
-// A cleared mission waits for this rather than for a docking approach, so it cannot be lost by reloading the
-// tab, and so the salvage sweep, the campaign advance and the ship rebuild all happen at an instant the
-// PLAYER chose — with the fight already over, which is what makes rebuilding the ship safe at all
-// (`unlockNextLevel` can swap a weapon).
+// A cleared mission waits for one of them rather than for a docking approach ALONE, so it cannot be lost by
+// reloading the tab, and the salvage sweep, the campaign advance and the ship rebuild all happen at an
+// instant the PLAYER chose — with the fight already over, which is what makes rebuilding the ship safe at
+// all (`unlockNextLevel` can swap a weapon).
 //
 // Refuses before the sector is cleared: there is no early exit from a mission, and a button that sometimes
-// ends a live fight would be a bug waiting to be found by a stray tap.
+// ended a live fight would be a bug waiting to be found by a stray tap.
+// Flying home and docking — the scenic way to say the same thing. Requires an ENGAGED autopilot whose
+// target is the STATION (`canDock`), so proximity alone never ends a mission and a chest-aimed autopilot
+// never can; any control input cancels the dock, and the player re-taps to resume. Routed through
+// `completeMission` so docking and the button are the same act, salvage sweep included.
+export function checkArrival(world) {
+  const p = world.player;
+  if (!world.station || !p || !p.alive) return;
+  const s = world.station.pos;
+  const dx = p.pos.x - s.x, dz = p.pos.z - s.z;
+  if (canDock(world.autopilot, Math.hypot(dx, dz))) completeMission(world);
+}
+
 export function completeMission(world) {
   const lr = world.levelRunner;
   if (!lr.cleared || lr.won) return false;
@@ -199,9 +214,9 @@ export function updateLevelRunner(world, dt) {
     if (lr.winPending <= 0) clearMission(world);
     return;
   }
-  // cleared: no more spawning, and nothing to wait for — the mission ends when the player says so
-  // (completeMission). The runner's work is done.
-  if (lr.returningToBase) return;
+  // cleared: no more spawning. The mission ends when the player says so — the button, or by flying home,
+  // which is what this still watches for.
+  if (lr.returningToBase) { checkArrival(world); return; }
   // The win phase is up but the condition has not been met yet — ask again. No level shipped today can
   // reach this (each one's last combat phase advances on `allCleared`, so the arena is already empty), but
   // a win condition that is only a rename cannot be tested, and one that can wait is a real gate.

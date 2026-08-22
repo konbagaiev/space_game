@@ -5,6 +5,15 @@
 
 ## 2026-08-22
 
+- **…and docking finishes a mission again.** The change above went one step too far and removed the flight
+  home as a route entirely; the maintainer put it back the same day. The bug was "you MUST fly home", not
+  "you may". `checkArrival` now routes through the same `completeMission` the button does, so the two cannot
+  drift apart — same salvage sweep, same payout, same close — and the station is clickable on a clear with
+  the homing arrow pointing at it. `canDock` still requires an ENGAGED station autopilot, so proximity alone
+  finishes nothing and a chest-aimed autopilot never can. Covered both ways round in
+  `level-runner.test.js` (button and dock produce identical worlds, including the sweep) and in
+  `room.test.js` (a room runs the docking route as well as the command). Client 494, server 214.
+
 - **A mission ends when you say so — the "Finish and Return" button, not a docking approach.** Reported from
   play the day §130 shipped: cleared Level 3, pressed "Return to base", reloaded the tab — the credits had
   survived, the level had not, and it had to be flown again. Closing a mission no longer depends on

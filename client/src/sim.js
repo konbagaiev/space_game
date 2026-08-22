@@ -123,10 +123,10 @@ function ensureReturnArrow() {
   g.add(shaft, head); g.visible = false; scene.add(g);
   return (returnArrow = g);
 }
-// Shown only in ROAM now. A cleared mission no longer has to be flown home (DECISIONS §132), so an arrow
-// insisting on a direction would be telling the player to do something that does nothing.
+// The homing arrow, pointing at the station. Still shown in a cleared sector: flying home is one of the two
+// ways to end a mission (DECISIONS §132), so the direction is real information, not an instruction.
 export function updateReturnArrow() {
-  const on = G.roam && G.player && G.player.alive && !levelRunner.won && G.baseStation;
+  const on = (G.returnToBase || G.roam) && G.player && G.player.alive && !levelRunner.won && G.baseStation;
   if (!on) { if (returnArrow) returnArrow.visible = false; return; }
   const a = ensureReturnArrow();
   const st = G.baseStation.pos, pos = G.player.pos;
@@ -134,9 +134,9 @@ export function updateReturnArrow() {
   a.rotation.y = Math.atan2(st.x - pos.x, st.z - pos.z);    // point at the station (heading convention)
   a.visible = true;
 }
-// The cleared-sector prompt and its button. Since DECISIONS §132 the button ENDS the mission rather than
-// flying the ship home, so it is shown for as long as the mission is open — there is no autopilot state to
-// hide it behind, and no way to be "already on the way".
+// The cleared-sector prompt and its button. The button ENDS the mission outright (DECISIONS §132) rather
+// than flying the ship home, so unlike the old "Return to base" it stays up for as long as the mission is
+// open — including while the ship IS flying home under autopilot, where it is the shortcut past the trip.
 export function updateReturnHint() {
   const show = G.returnToBase && G.player && G.player.alive && !levelRunner.won
     && el.overlay.style.display === 'none';

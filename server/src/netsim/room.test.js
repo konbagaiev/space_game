@@ -228,6 +228,28 @@ test('a mission can be FINISHED in a room — cleared, then ended by command', (
   assert.ok('autopilot' in room.takeSnapshot(), 'the snapshot reports the autopilot');
 });
 
+test('…and flying home still finishes it too — the room runs the docking route as well', () => {
+  // Both ways to end a mission (DECISIONS §132) have to work where the ROOM owns the world, or clicking the
+  // station in a netsim run would engage an autopilot that flies to a dock that does nothing.
+  const room = createRoom({ levelName: 'level-0', seed: 99 });
+  const w = room.world;
+  let t = 0;
+  const step = () => { room.pushInput([{ t: t++, k: [], a: null }]); room.stepOnce(); };
+  for (let i = 0; i < 20000 && !w.levelRunner.cleared; i++) {
+    for (const e of w.enemies) if (!e.warping) e.hp = 0;
+    step();
+  }
+  assert.ok(w.station.active, 'a cleared sector opens the station');
+
+  room.command({ kind: 'station' });
+  assert.equal(w.autopilot.active, true, 'the click reached the room');
+  assert.equal(w.autopilot.target.kind, 'station');
+
+  for (let i = 0; i < 40000 && !w.levelRunner.won; i++) step();
+  assert.equal(w.levelRunner.won, true, 'the ship flew home and docked — the mission is COMPLETABLE that way');
+  assert.equal(w.earned, 250, 'worth exactly what the button would have paid');
+});
+
 test('a room refuses to end a mission that is not cleared — no walking out with the credits', () => {
   const room = createRoom({ levelName: 'level-0', seed: 99 });
   const w = room.world;

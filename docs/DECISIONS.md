@@ -4837,9 +4837,12 @@ losable by closing a tab, and finishing it should not depend on completing a fli
   base" and engage an autopilot). Pressing it is the only thing that closes a mission.
 - `completeMission(world)` sweeps every crate still on the field into the run, then `winLevel`. It refuses
   unless the sector is actually cleared, so a stray tap can never walk out of a live fight with the credits.
-- **Docking ends nothing.** The station is no longer even made clickable on a clear — an approach that led
-  nowhere would only lie about what finishes a run. Flying home is now pure logistics, and roam keeps its
-  own docking (`checkStationArrival`) untouched.
+- **Docking still ends a mission — it is just no longer the ONLY way.** (Amended the same day: the first cut
+  removed the docking route entirely, and the maintainer put it back. It was over-correction — the bug was
+  "you MUST fly home", not "you may".) `checkArrival` routes through `completeMission` like the button does,
+  so the two cannot drift apart: same sweep, same payout, same close. The station is clickable on a clear
+  and the homing arrow still points at it. Roam keeps its own docking (`checkStationArrival`) untouched, and
+  proximity alone still never ends anything — `canDock` requires an engaged STATION autopilot.
 - Between the two moments the pilot is simply free in a quiet sector: linger, pick over the wreckage, then
   end it. That is what makes the loot sweep a safety net rather than a substitute — **the crate the last
   enemy drops appears at the exact instant the fight ends, and no amount of skill gets a ship to it in
@@ -4861,7 +4864,7 @@ reload-after-clearing bug closes with it.
 edges. "Finish and Return" is 200 px and fits every form factor; the wrap and viewport cap stay anyway,
 because a translation is free to be longer than its source and the Russian one already is.
 
-**What this costs.** The flight home as a beat is gone — the homing arrow now only appears in roam, and the
-denouement between "last kill" and "hangar" is whatever the player chooses to do with a quiet sector. That
-was the trade the maintainer asked for, and it is the same trade §130 half-made: a mission is worth what it
-was fought for, not what was survived on the way back.
+**What this costs.** The flight home stops being *required* — it is now a choice between a button and a
+trip, and the denouement between "last kill" and "hangar" is whatever the player wants to do with a quiet
+sector. That is the same trade §130 half-made: a mission is worth what it was fought for, not what was
+survived on the way back. Since both routes sweep the field, flying home buys atmosphere rather than loot.

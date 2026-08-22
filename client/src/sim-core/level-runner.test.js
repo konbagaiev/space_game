@@ -6,8 +6,8 @@
 // that could take a whole cleared level away from you. DECISIONS §130 split it in two:
 //
 //   cleared — the win condition holds. THE REWARD IS DECIDED HERE.
-//   won     — the player pressed "Complete mission". The mission is closed. Nothing is earned.
-//             (Docking used to do this. It stopped: DECISIONS §132.)
+//   won     — the player ended it, with the "Finish and Return" button OR by flying home and docking.
+//             Both routes run `completeMission`. The mission is closed. Nothing is earned. (§132)
 //
 // The four tests about WHEN the payout happens were negative-tested by moving the reward back into
 // `winLevel`; all four fail there. The rest cover the `winCondition` data and API, which did not exist
@@ -15,7 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from './world.js';
-import { startLevel, updateLevelRunner, clearMission, completeMission, winLevel,
+import { startLevel, updateLevelRunner, clearMission, completeMission, checkArrival, winLevel,
          winConditionMet, winConditionOf, DEFAULT_WIN_CONDITION } from './level-runner.js';
 import { LEVELS } from '../../../server/src/catalog_seed.js';
 
@@ -187,9 +187,57 @@ test('ending the mission sweeps the field — including a crate no ship could ha
   assert.equal(world.pendingLoot.length, before + 1, 'the ordinary crate banked, the special one did not');
 });
 
-test('a cleared sector does not make the station clickable — docking ends nothing now', () => {
+test('a cleared sector lifts the bounds AND opens the station — flying home is the other way out', () => {
   const { world } = atWinPhase();
   clearMission(world);
   assert.equal(world.returnToBase, true, 'the out-of-bounds warp lifts, so the pilot may wander');
-  assert.equal(world.station.active, false, 'but there is nothing to dock FOR');
+  assert.equal(world.station.active, true, 'and the station is clickable — docking still ends the mission');
+});
+
+// The two routes must not drift apart: whatever the button does, docking does.
+test('docking ends the mission exactly as the button does — sweep included', () => {
+  const byDock = atWinPhase({ earned: 100, earnedXp: 40 }).world;
+  const byButton = atWinPhase({ earned: 100, earnedXp: 40 }).world;
+  for (const w of [byDock, byButton]) {
+    clearMission(w);
+    w.drops.push({ pos: { x: 3000, y: 0.8, z: 3000 }, item: { kind: 'weapon', refId: 5 },
+                   weight: 1, inRange: 0, special: false, alive: true });
+  }
+
+  completeMission(byButton);
+
+  // Fly the other one home: park the ship at the station under an ENGAGED station autopilot.
+  byDock.player.pos.x = byDock.station.pos.x; byDock.player.pos.z = byDock.station.pos.z;
+  byDock.autopilot.active = true; byDock.autopilot.target = { kind: 'station' };
+  checkArrival(byDock);
+
+  assert.equal(byDock.levelRunner.won, true, 'docking closed it');
+  assert.equal(byButton.levelRunner.won, true, 'so did the button');
+  assert.equal(byDock.earned, byButton.earned, 'and both are worth the same');
+  assert.equal(byDock.earnedXp, byButton.earnedXp);
+  assert.deepEqual(byDock.pendingLoot, byButton.pendingLoot, 'docking sweeps the field too');
+  assert.equal(byDock.drops.length, 0);
+});
+
+test('proximity alone never ends a mission — the autopilot has to be flying you IN', () => {
+  const { world } = atWinPhase();
+  clearMission(world);
+  world.player.pos.x = world.station.pos.x; world.player.pos.z = world.station.pos.z; // parked on top of it
+  world.autopilot.active = false;                                                      // …but flown manually
+  checkArrival(world);
+  assert.equal(world.levelRunner.won, false, 'drifting through the station is not docking');
+
+  world.autopilot.active = true; world.autopilot.target = { kind: 'drop' };  // a chest-aimed autopilot
+  checkArrival(world);
+  assert.equal(world.levelRunner.won, false, 'and neither is arriving at a crate that happens to be here');
+});
+
+test('docking before the sector is cleared does nothing at all', () => {
+  const { world } = atWinPhase();
+  world.enemies = [{ alive: true }];
+  world.player.pos.x = world.station.pos.x; world.player.pos.z = world.station.pos.z;
+  world.autopilot.active = true; world.autopilot.target = { kind: 'station' };
+  checkArrival(world);
+  assert.equal(world.levelRunner.won, false, 'completeMission refuses, so the approach lands on nothing');
+  assert.equal(world.levelRunner.cleared, false);
 });
