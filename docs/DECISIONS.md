@@ -4671,3 +4671,152 @@ harsher rule than being shot at; revisit if playtest says the current version pu
 
 **This is also the rule multiplayer requires**, so it is the honest version arriving early: §123 permitted
 the pause only because a room holds one player, and that premise expires the moment a room holds two.
+
+## 129. A trace is evidence about the build that made it — and the verdict is recorded long before it binds
+
+**Context.** `POST /api/games` is client-authoritative: the browser says what it earned and the server adds
+it to the balance. Every campaign run is already recorded as an input trace, and `runTrace()` can re-simulate
+one headlessly, so the obvious move is to let the server decide the reward. §125 had already set one limit —
+only **v4+** traces carry the skill allocation, so only those reproduce. The question this entry answers is
+what happened when that was actually measured instead of assumed.
+
+**Measured, 2026-08-21, on all 74 production sessions: 20% agreement.** Not one of the disagreements was a
+cheat.
+
+**The finding §125 did not cover: a trace only reproduces on the BUILD that recorded it.** Removing auto-aim
+(§124) changed where a bullet goes; §124 itself measured the shipped Level-0 replay moving from tick 2503 to
+2474 on identical input, and judged that harmless because the intro still cleared. On a longer fight it is
+not harmless — it compounds. The survey shows the shape exactly:
+
+| runs that agreed | runs that disagreed |
+|---|---|
+| ≤ 4 kills (7× the Level-0 intro, one 0-kill, one 4-kill) | 12–22 kills |
+
+**Decision.** `game_version` — already stored on every session row and previously ignored — is part of the
+admission test. A run recorded by any other build is `build-drift` and is refused, exactly as a pre-v4 trace
+is refused. The practical consequence is worth stating plainly rather than discovering later:
+**verification only ever works for the currently deployed build**, and every deploy invalidates whatever has
+not yet been judged. Judging must therefore be prompt, and any dashboard over it is scoped to a build, not
+to a rolling window.
+
+**And the verdict is recorded before it is allowed to bind.** The first cut writes a verdict onto the run
+and changes no balance, because the failure mode of getting this wrong is not "a cheat gets through" — it is
+"an honest player is robbed", which is the same failure §125 exists to prevent. Enforcement waits on the
+observed disagreement rate, and when it comes it will be *bank after the trace* (verify synchronously,
+award the computed figure) rather than *correct afterwards*: a game that quietly takes credits back minutes
+later is worse than one that can be cheated.
+
+**Two smaller rules that came out of the same work.**
+- **The world digest is the wrong oracle for money.** The last kill's reward drop is gated on `ownsReward`
+  (`sim-core/step-enemies.js`), which reads account state a trace does not carry, and whose two branches
+  consume a different number of RNG draws. A player who already owned the level's reward legitimately
+  produces a different hash and an identical reward. The digest stays the right oracle for
+  `36-sim-divergence`; the verdict compares credits, XP and kills, and nothing else.
+- **A headless referee can never win, so it must be told to finish the job.** Victory needs the docking
+  autopilot, engaged by a mouse click, which a trace does not record — `levelRunner.won` is always false in
+  Node. Left alone the referee under-counts every winning run by half (`winLevel` doubles the credits). A
+  claimed win whose re-simulation reached return-to-base — the arena cleared, the only thing that makes the
+  station dockable — has the victory bonus applied by the verifier. A claimed win that never cleared the
+  arena is a real disagreement, and the loudest signal the whole mechanism can produce.
+
+**Superseded in DIRECTION, not in findings (2026-08-22).** Re-simulating a submitted trace was abandoned
+as the route to a sealed economy the day after this was measured: a server-run room already simulates the
+fight and knows every kill as it happens, so it can do the bookkeeping itself — no recording, no
+re-simulation, and therefore nothing for build drift to break. Everything measured above stays true and
+still governs any trace-based check (the build gate above all). See `docs/plans/seal-the-economy.md`.
+
+**Full write-up, including the netsim recording bug the survey exposed:**
+`docs/plans/seal-the-economy.md` §3.1.
+
+## 130. A mission ends TWICE — clearing the sector pays you, reporting back advances you
+
+**Context.** Victory was one moment: the player flew home after the last kill and DOCKED, and only then did
+the credits double and the mission's XP bonus land. Two problems came out of that, and they look unrelated
+until you notice they are the same problem.
+
+- **The reward depended on a mouse click.** Docking is engaged by clicking the station (`canDock` requires an
+  engaged autopilot). A click is not simulation state: it is not in an input trace, and it does not exist at
+  all for a headless host. So `levelRunner.won` could never become true in Node, and §129's referee had to
+  re-apply `winLevel` itself just to work out what a winning run was worth. A server-run room had the same
+  hole from the other side — it simulated the whole fight and still could not conclude the mission.
+- **The flight home could take a whole cleared level away from you.** Killed by a stray shot on the way
+  back, and the sector you had just cleared paid nothing.
+
+**Decision. Split the moment in two, and put the rule in the simulation.**
+
+1. A level states a **`winCondition`** on its descriptor — today `{ type: 'allEnemiesDead' }` on every
+   campaign level and side mission, which is what their phase scripts already encoded implicitly.
+2. **CLEARED** — the condition holds. `clearMission()` doubles the credits, adds the one-shot XP bonus, opens
+   the way home, and emits `cleared` with the totals. **This is where the reward is decided**, and it is a
+   pure consequence of the fight, so the browser, a room and a headless referee all reach it identically.
+3. **WON** — the player docked. `winLevel()` closes the mission: the overlay, the sting, the hangar. It earns
+   nothing. `lr.won` keeps the meaning all ~20 of its readers already assume.
+
+**What a player feels.** Flying home stops being a stake on the wallet: die on the way back and you keep the
+credits, the XP and the loot you had banked. It is not free, though — see below.
+
+**The campaign advance deliberately did NOT move.** `unlockNextLevel()` stays on the dock, and not for
+symmetry: it is not a reward, it is "load the next mission into this tab", and it is **unsafe while the ship
+is flying**. It calls `buildPlayerFor` — rebuilding the player, including a briefing's weapon swap, as
+Level 2's does — and `buildMap` when the next level uses a different one. Running that mid-flight would
+change the ship under the pilot on the way home. So the two moments end up meaning different things, and the
+difference is legible in play:
+
+> **Clearing the sector pays you. Reporting back advances you.**
+
+Die on the flight home and you keep everything you earned, but you fly the level again.
+
+**What it costs.** `winCondition` changes no behaviour today — every level's last combat phase already
+advances on `allCleared`, so the condition holds the instant the win phase is entered. It is a name for the
+existing rule and the seam for the next one (survive N, escort X, reach Y). An **unreadable** condition can
+never be met: we do not pay out on a rule we cannot evaluate.
+
+**Measured.** The Level-0 trace now replays headlessly to 250 credits instead of 125 — a referee concluding a
+mission with no browser and no click, which before this was structurally impossible. `36-sim-divergence`
+reports the identical world hash and the identical 38 RNG draws on both hosts, so the simulation itself did
+not move; `22-intro-replay` held at `tick=2474`. Nine tests in `sim-core/level-runner.test.js` guard the
+split, and the four about payout timing were negative-tested by moving the reward back into `winLevel`.
+
+**This is what replaced trace re-simulation as the route to a sealed economy** (§129, and
+`docs/plans/seal-the-economy.md`): the next step is a room banking its own run off the `cleared` event,
+with no recording in the loop at all.
+
+## 131. A room banks its own run — the economy is sealed for the fights the server actually ran
+
+**Context.** `POST /api/games` takes the browser's word for what a run earned. §129 measured the obvious
+alternative — re-simulate the submitted input trace and compare — and it does not hold up: a trace only
+reproduces on the build that recorded it, and under `?netsim=1` the recorder captures a stub anyway. The
+maintainer's observation cut through it: **a server-run room already simulated the fight and knows every
+kill as it happens.** There is nothing to reconstruct.
+
+**Decision.** A room reports what its own simulation decided, and the server writes it.
+
+- `createRoom({ onEconomy })` — the room calls it once per run, on the simulation's `cleared` (the win
+  condition held; credits already doubled, mission XP added — §130) or `death` (whatever was earned before
+  it). A `banked` guard makes a duplicate event, a second death or a reconnect unable to pay twice; a
+  `restart()` re-arms it because a retry is a new run.
+- **The room stays out of the database.** It reports; it does not persist. That is what keeps it clock-free
+  and unit-testable with a spy, which is the same discipline that let `room.test.js` require bit-identity
+  with the headless referee.
+- `makeEconomySink({ playerId, level, bankRun })` in `socket.js` does the writing, and **`playerId` comes
+  from the redeemed handshake ticket and is applied LAST**, so no field arriving with the run can substitute
+  another account. (Written the other way round first — `{ playerId, ...run }` — where a `playerId` on the
+  payload would have overridden it. Caught before it shipped, and the guard is negative-tested.)
+- A run that simply STOPS — a disconnect, an abandoned tab — is worth nothing, the same rule single-player
+  has always had for closing the browser mid-fight. Crates still in the hold on death are lost.
+- The client stops banking a run the room is banking: `G.netDriving` (published each frame by the loop) gates
+  `bankRun`/`depositLoot`, and `refreshAfterRoomBank()` re-reads the account instead, so the HUD catches up
+  with a balance it did not write.
+
+**What is sealed and what is not — the honest line.** Credits, XP and loot are sealed **for fights a room
+ran**, which today means `?netsim=1` only: it is opt-in, so nearly all real play is still browser-hosted and
+still banks on trust. Routing everything through rooms was considered and NOT chosen — `server-authoritative-sim.md`
+D1's reasons stand (a blip would kill a fight in progress rather than lose an unbanked run; itch is served
+worldwide from one VPS; N worlds at 60 Hz beside Postgres; and the browser host is the free divergence oracle
+that keeps "one simulation" honest). Campaign PROGRESSION (`/advance`) also stays a client call: it is not
+currency, and it must reload the next level into the tab either way (§130).
+
+**Why this and not the trace verifier.** The verifier had to reconstruct a fight the server never watched,
+which made it hostage to build drift, to recording gaps, and to a trace format that has already been wrong
+twice (§125, §129). A room needs none of that. The verifier survives as a diagnostic — it is what found the
+netsim recording bug — but it is off the critical path.

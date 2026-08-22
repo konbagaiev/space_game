@@ -3,7 +3,74 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-22
+
+- **A server-run room now banks its own run — the economy is sealed for the fights the server actually ran.**
+  A `?netsim=1` room simulated the whole fight and then let the browser tell the server what it was worth.
+  Now the room reports what ITS simulation decided (`createRoom({ onEconomy })`, fired once on the
+  simulation's `cleared` or `death`) and `makeEconomySink` in `socket.js` writes it with `recordGame` +
+  `depositLoot`. The room itself stays out of the database — it reports, it does not persist — which is what
+  keeps it clock-free and testable with a spy. **`playerId` comes from the redeemed handshake ticket and is
+  applied last**, so nothing arriving with the run can substitute another account; written the other way
+  round first (`{ playerId, ...run }`, where a payload field would have won), caught before shipping, and the
+  guard is negative-tested. A `banked` guard means a duplicate event, a second death or a reconnect cannot
+  pay twice; `restart()` re-arms it, because a retry is a new run; a run that simply stops — disconnect,
+  abandoned tab — is worth nothing, the same rule single-player has always had. Client-side, `G.netDriving`
+  (published each frame by the loop) stops the tab banking a run the room is banking, and
+  `refreshAfterRoomBank()` re-reads the account so the HUD catches up with a balance it did not write.
+  **The honest scope:** credits, XP and loot are sealed only for fights a room ran, and netsim is opt-in, so
+  nearly all real play is still browser-hosted and still banks on trust — that was chosen, not overlooked
+  (D1's reasons stand). Campaign progression (`/advance`) also stays a client call: it is not currency and it
+  has to reload the next level into the tab either way. Server 211 (8 new), client 487. DECISIONS §131.
+
+- **A mission now ends twice: clearing the sector PAYS you, reporting back ADVANCES you.** Victory used to
+  be one moment — you flew home and docked, and only then did the credits double and the mission XP land.
+  That tied the reward to a **mouse click** (docking engages an autopilot), which is not simulation state:
+  it is not in an input trace and does not exist for a headless host, so a server-run room could simulate a
+  whole fight and still not conclude the mission. Now a level states a **`winCondition`** on its descriptor
+  (`{ type: 'allEnemiesDead' }` on every campaign level and side mission — what their phase scripts already
+  encoded implicitly), and the simulation grants the reward the moment it holds: `clearMission()` doubles
+  the credits, adds the one-shot XP bonus, opens the way home and emits a new **`cleared`** event with the
+  totals. `winLevel()` keeps only the ceremony — overlay, sting, hangar — and earns nothing.
+  **What players feel:** shot down on the flight home, you keep the credits, the XP and the loot. It is not
+  free — the **campaign advance deliberately stayed at the dock**, because `unlockNextLevel` rebuilds the
+  player (Level 2's briefing swaps a weapon) and would otherwise change the ship under the pilot mid-flight.
+  So clearing pays, reporting back advances; die on the way home and you fly the level again.
+  **Behaviour-neutral for the simulation itself:** `36-sim-divergence` reports the same world hash and the
+  same 38 RNG draws on both hosts, `22-intro-replay` held at `tick=2474`. The headless referee now replays
+  the Level-0 trace to **250 credits instead of 125** — concluding a mission with no browser and no click,
+  which was structurally impossible before — so `verify-run.js` lost the `winLevel` hack it needed to guess
+  what a winning run was worth. Nine new tests in `sim-core/level-runner.test.js`; the four about payout
+  timing were negative-tested by moving the reward back. Client 487, server 203. DECISIONS §130.
+
+- **Noticed while verifying:** `visual/run.mjs` takes only **one** scenario filter (`process.argv[2]`), so
+  the `node visual/run.mjs 22-intro-replay 36-sim-divergence 37-netsim` line in the docs silently ran only
+  the first of the three. And the full suite does not currently finish on this machine at all — it aborts
+  on an unhandled `waitForFunction` timeout after ~13 scenarios. Both reproduce identically on a clean
+  `main`, so neither is new; recorded here so the next person does not rediscover them mid-change.
+
 ## 2026-08-21
+
+- **Sealing the economy, step 0: measured whether a submitted run can be re-judged at all — it cannot, yet.**
+  `POST /api/games` is client-authoritative, and the plan for taking that back
+  (`docs/plans/seal-the-economy.md`) turns on one number nobody had: how often a server-side re-simulation
+  disagrees with an HONEST player. New **`server/src/seal/verify-run.js`** (the pure verdict — refuses what
+  it must not judge, completes the win a headless referee structurally cannot reach, compares the reward and
+  never the world digest) and **`server/tools/verify-sessions.mjs`** (read-only survey; `--rows` reads a
+  dumped row set so production's unpublished database never needs a tool copied into a live container).
+  Nothing writes a balance, and no award changed.
+  **Surveyed all 74 recorded production sessions: 20% agreement, and nobody is cheating.** Three causes:
+  (1) **a trace only reproduces on the build that recorded it** — removing auto-aim (§124) moved the
+  Level-0 replay 2503 → 2474 ticks, and on a longer fight that compounds; every run that agreed was ≤4
+  kills, every run that disagreed was 12–22. `game_version` is now part of the admission test
+  (`build-drift`), which leaves **2** verifiable sessions on the current build. (2) **A netsim session
+  records a stub:** `live` at `client/src/main.js:980` excludes `netsimDriving`, so `captureTick` never
+  fires while a room drives, yet the row still stores the room's kills — session `282b6018` claims 650 s
+  and 14 kills with a 49-second trace holding 5 seconds of real input. That also means **the admin replay
+  viewer has been playing a 5-second stub for every netsim session**, and it blocks the rest of this work.
+  (3) 14 pre-migration rows disagree with their traces about the level, an artifact of the 0-based level
+  renumbering rewriting `gameplay_sessions.level` (`db.js:66`) where S3 traces could not be rewritten.
+  DECISIONS §129.
 
 - **Shipped: `feature/server-sim` merged to `main`, deployed, and published to itch** (build #1903408,
   version 67 — 96.7% of the previous build re-used, 768 KB of fresh data). Sixty-nine commits: the whole

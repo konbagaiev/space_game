@@ -88,8 +88,15 @@ deployed. Client tests 478, server 190, both green; the visual suite's failures 
 (judge by zero page errors — the two oracles, `22-intro-replay` and `sim-divergence`, are the ones that
 matter).
 
-**THE NEXT PIECE OF WORK IS §4, SEALING THE ECONOMY.** It is the last thing left of what D1 promised: the
-room knows the truth about a run, and the credits and XP are still awarded on the browser's word.
+**SEALING THE ECONOMY MOVED OUT TO ITS OWN BRIEF AND IS PARTLY DONE — `docs/plans/seal-the-economy.md`
+(2026-08-22).** The §4 bullet below describes the approach that was ABANDONED: re-simulating a submitted
+input trace. It was measured against production first and does not hold up — a trace only reproduces on the
+build that recorded it (DECISIONS §129). What replaced it is the room doing its own bookkeeping, which needs
+no recording at all: a mission now pays out on a simulation event rather than on a mouse click (§130), and a
+room banks its own run under the playerId from its handshake ticket (§131). Both shipped 2026-08-22.
+
+**Still open there:** browser single-player banks on trust (deliberate — D1's reasons stand), and session
+recording captures a STUB under `?netsim=1`, which is a live defect in the admin replay viewer.
 
 What landed on 2026-08-21, in case a symptom points back at it:
 
@@ -165,9 +172,15 @@ rendering: `netsim-predict.js` is gone and the ship is interpolated like everyth
 that this game does not need, and it cost the artifacts that a day went into chasing. The reasoning, the
 measurements and the way back are in DECISIONS §127.
 
-**4. Seal the economy** (the payoff D1 promised, still a separate slice): `POST /api/games` is
-client-authoritative, the client already uploads every session as an input trace, and `runTrace()` can
-re-simulate one server-side and decide the reward itself.
+**4. Seal the economy** — ✅ SPLIT OUT AND PARTLY DONE, see `docs/plans/seal-the-economy.md`. **The design
+below was tried and rejected on evidence; it is kept because the reasoning about trace versions is still
+correct and still governs any trace-based check.** Re-simulating a submitted trace founders on a constraint
+this bullet did not know about: a trace reproduces only on the BUILD that recorded it (DECISIONS §129,
+measured on all 74 production sessions — 20% agreement, and no cheating). The room does the bookkeeping
+instead (§130, §131).
+
+Original text: `POST /api/games` is client-authoritative, the client already uploads every session as an
+input trace, and `runTrace()` can re-simulate one server-side and decide the reward itself.
 
 **Its first blocker is cleared but worth knowing about.** Traces did not reproduce: they omitted the
 character-progression allocation, and playback rebuilt the ship without it — so a run by a player with

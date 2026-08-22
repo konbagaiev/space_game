@@ -294,3 +294,88 @@ test('a client that goes quiet lets go of the controls', async () => {
   const coasted = room.world.player.vel.length();
   assert.ok(coasted < flying * 0.2, `it let go and coasted (${flying.toFixed(1)} → ${coasted.toFixed(1)} u/s)`);
 });
+
+// ---------- The room banks its own run (DECISIONS §131) ----------
+//
+// The point of a server-run room is that nothing about the reward has to be taken on the client's word.
+// These assert the room reports what IT simulated, once, and stays out of the database while doing it.
+
+// A room parked one tick away from clearing: the arena is empty and the win phase's delay has run out.
+function roomAtTheEnd(onEconomy) {
+  const room = createRoom({ levelName: 'level-1', seed: 7, onEconomy });
+  const w = room.world;
+  const lr = w.levelRunner;
+  lr.phaseIndex = w.catalog.level.phases.length - 1;   // the `event: 'win'` phase
+  lr.winPending = 0;
+  w.enemies.length = 0;
+  w.earned = 300; w.earnedXp = 90; w.kills = 14;
+  return room;
+}
+
+test('a cleared run is reported once, with the figures the ROOM simulated', () => {
+  const seen = [];
+  const room = roomAtTheEnd((r) => seen.push(r));
+  room.world.pendingLoot.push({ kind: 'component', refId: 12 }, { kind: 'weapon', refId: 5 });
+
+  for (let i = 0; i < 5; i++) room.stepOnce();
+
+  assert.equal(seen.length, 1, 'exactly one payout');
+  const r = seen[0];
+  assert.equal(r.kind, 'cleared');
+  assert.equal(r.credits, 600, 'the doubled credits the simulation decided (§130), not anything a client said');
+  assert.equal(r.xp, 90 + LEVELS.find((l) => l.name === 'level-1').descriptor.xpReward);
+  assert.equal(r.kills, 14);
+  assert.deepEqual(r.loot, [{ kind: 'component', refId: 12 }, { kind: 'weapon', refId: 5 }]);
+  assert.ok(r.durationMs > 0, 'and how long the run took, from the room\'s own tick count');
+  assert.equal(room.banked, true);
+});
+
+test('a death pays what was earned before it, and loses the crates still in the hold', () => {
+  const seen = [];
+  const room = createRoom({ levelName: 'level-1', seed: 7, onEconomy: (r) => seen.push(r) });
+  room.world.earned = 120; room.world.earnedXp = 40; room.world.kills = 5;
+  room.world.pendingLoot.push({ kind: 'component', refId: 12 });
+  room.world.player.hp = -1;                      // killed by the next tick's death check
+  for (let i = 0; i < 3; i++) room.stepOnce();
+
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].kind, 'death');
+  assert.equal(seen[0].credits, 120, 'undoubled — nothing was cleared');
+  assert.deepEqual(seen[0].loot, [], 'dying with loot in the hold loses it');
+});
+
+test('a run that just STOPS is worth nothing — no clear, no death, no payout', () => {
+  const seen = [];
+  const room = createRoom({ levelName: 'level-1', seed: 7, onEconomy: (r) => seen.push(r) });
+  room.world.earned = 400;
+  for (let i = 0; i < 120; i++) room.stepOnce();   // two seconds of ordinary fighting, then the tab closes
+  assert.equal(seen.length, 0, 'an abandoned run banks nothing, exactly as single-player has always done');
+  assert.equal(room.banked, false);
+});
+
+test('a retry re-arms the payout, and its duration starts over', () => {
+  const seen = [];
+  const room = roomAtTheEnd((r) => seen.push(r));
+  for (let i = 0; i < 5; i++) room.stepOnce();
+  assert.equal(seen.length, 1);
+  const firstDuration = seen[0].durationMs;
+
+  room.restart();
+  assert.equal(room.banked, false, 'the second fight in this room must be payable');
+  const w = room.world;
+  w.levelRunner.phaseIndex = w.catalog.level.phases.length - 1;
+  w.levelRunner.winPending = 0;
+  w.enemies.length = 0; w.earned = 50; w.earnedXp = 10; w.kills = 2;
+  for (let i = 0; i < 5; i++) room.stepOnce();
+
+  assert.equal(seen.length, 2, 'and it pays');
+  assert.equal(seen[1].credits, 100);
+  assert.ok(seen[1].durationMs < firstDuration + 200, 'the clock restarted rather than kept accumulating');
+});
+
+test('a room with no economy hook still runs — the seam is optional, not load-bearing', () => {
+  const room = roomAtTheEnd(null);
+  for (let i = 0; i < 5; i++) room.stepOnce();
+  assert.equal(room.world.levelRunner.cleared, true, 'the fight concluded regardless');
+  assert.equal(room.banked, false);
+});

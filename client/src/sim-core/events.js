@@ -35,7 +35,9 @@
 //   { type: 'missionArrival',  missionId }                             a roam point-autopilot parked at a mission
 //   { type: 'baseArrival' }                                             a roam dock-autopilot parked at the station
 //   { type: 'missionZoneEnter' }                                        the fly-into-it countdown ran out
-//   { type: 'win',             textKey, text }                         the mission was cleared
+//   { type: 'cleared',         credits, xp, kills }                    the win condition was met — THE REWARD
+//                                                                       IS DECIDED HERE (bank it; DECISIONS §130)
+//   { type: 'win',             textKey, text }                         the player docked — the mission is closed
 //   { type: 'death' }                                                  the player's ship was destroyed
 //
 // Note `banner` carries an i18n KEY plus params, never a translated string: `t()` is a client concern and

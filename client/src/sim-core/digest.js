@@ -37,7 +37,8 @@ export function worldSummary(world) {
     enemyShieldRefills: world.enemyShieldRefills,
     enemies: world.enemies.length, bullets: world.bullets.length,
     rockets: world.rockets.length, drops: world.drops.length, loot: world.pendingLoot.length,
-    phase: lr.phaseIndex, spawned: lr.spawnedThisPhase, won: lr.won, returning: lr.returningToBase,
+    phase: lr.phaseIndex, spawned: lr.spawnedThisPhase, won: lr.won, cleared: lr.cleared,
+    returning: lr.returningToBase,
     hp: p ? p.hp : null,
     px: p ? Math.round(p.pos.x * 1000) / 1000 : null,
     pz: p ? Math.round(p.pos.z * 1000) / 1000 : null,
@@ -52,7 +53,8 @@ export function worldDigest(world) {
     String(world.banked), String(world.enemyShieldRefills), String(world.combatElapsed),
     String(world.returnToBase), String(world.roam));
   parts.push('lr', String(lr.phaseIndex), String(lr.killsAtPhaseStart), String(lr.spawnedThisPhase),
-    String(lr.spawnCooldown), String(lr.won), String(lr.winPending), String(lr.returningToBase));
+    String(lr.spawnCooldown), String(lr.won), String(lr.cleared), String(lr.winPending),
+    String(lr.returningToBase));
   parts.push('arena', String(world.arenaCenter.x), String(world.arenaCenter.z));
   parts.push('ap', String(world.autopilot.active), String(world.autopilot.phase),
     String(world.autopilot.target && world.autopilot.target.kind));

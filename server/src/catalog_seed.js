@@ -481,6 +481,11 @@ export const LEVELS = [
       // same-origin from S3 via assets:pull (content-hashed → new recording = new URL). The client bootstrap
       // plays this as the cutscene for a new player, then advances to Level 1. See docs/plans/2026-07-09-replay-record.md.
       introTrace: 'assets/recordings/level0-intro.6674d840.json',
+      // What clears the mission. Stated as DATA so the rule lives in the simulation rather than in the
+      // interface, and so a room and a headless referee reach it the same way the browser does — the
+      // REWARD is granted the moment it holds, not when the pilot docks (DECISIONS §130). Every level
+      // asks the same thing today; the phase script already encoded it implicitly.
+      winCondition: { type: 'allEnemiesDead' },
       phases: [
         {
           name: 'wave-1', // three basic pirates, one at a time (kill one -> the next warps in)
@@ -505,6 +510,11 @@ export const LEVELS = [
       // original "first flight" briefing (pirates in the home system + a fast ship). No `actions` (nothing to
       // install yet); the shop is still locked, so the Main Window shows just the briefing + Take off.
       briefing: { textKey: 'level.1.briefing' },
+      // What clears the mission. Stated as DATA so the rule lives in the simulation rather than in the
+      // interface, and so a room and a headless referee reach it the same way the browser does — the
+      // REWARD is granted the moment it holds, not when the pilot docks (DECISIONS §130). Every level
+      // asks the same thing today; the phase script already encoded it implicitly.
+      winCondition: { type: 'allEnemiesDead' },
       phases: [
         {
           name: 'wave-1', // only plain fighters, 3 at a time
@@ -541,6 +551,11 @@ export const LEVELS = [
         text: "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. And now that you're back at the station, the hangar's open to you: the shop is yours to use between missions — kit out before you push on. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",
         actions: [{ type: 'replaceWeapon', from: 1, to: 5 }, { type: 'unlockShop' }], // MG swap + open the hangar shop (side missions unlock later, after "Level 3" — DECISIONS §91)
       },
+      // What clears the mission. Stated as DATA so the rule lives in the simulation rather than in the
+      // interface, and so a room and a headless referee reach it the same way the browser does — the
+      // REWARD is granted the moment it holds, not when the pilot docks (DECISIONS §130). Every level
+      // asks the same thing today; the phase script already encoded it implicitly.
+      winCondition: { type: 'allEnemiesDead' },
       phases: [
         {
           name: 'wave-1', // only fighters until 5 kills
@@ -591,6 +606,11 @@ export const LEVELS = [
         text: "You salvaged a repair drone last push — it's fitted, patching your hull a little at a time; if you're getting torn up, break off to a quiet corner and let it work. Now the hard part, Sentinel: the factory itself. They've parked something big over it — the first real warship we've run into out here. Put it down and the factory's ours.",
         actions: [{ type: 'installComponent', slot: 'repair', component: 12 }],
       },
+      // What clears the mission. Stated as DATA so the rule lives in the simulation rather than in the
+      // interface, and so a room and a headless referee reach it the same way the browser does — the
+      // REWARD is granted the moment it holds, not when the pilot docks (DECISIONS §130). Every level
+      // asks the same thing today; the phase script already encoded it implicitly.
+      winCondition: { type: 'allEnemiesDead' },
       phases: [
         {
           name: 'wave-1',
@@ -650,6 +670,11 @@ export const LEVELS = [
         text: "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. And you've been out here long enough now, Sentinel — command's opening the side-job board to you: take a few between missions to bank extra credits. Good hunting.",
         actions: [], // text-only: the shop opened back on reaching "Level 2"; the side-mission board unlocks HERE by the name-based progress gate (`level-5`, DECISIONS §91/§96), no action needed
       },
+      // What clears the mission. Stated as DATA so the rule lives in the simulation rather than in the
+      // interface, and so a room and a headless referee reach it the same way the browser does — the
+      // REWARD is granted the moment it holds, not when the pilot docks (DECISIONS §130). Every level
+      // asks the same thing today; the phase script already encoded it implicitly.
+      winCondition: { type: 'allEnemiesDead' },
       phases: [
         {
           name: 'wave-1', // pirate gunners + rocketeers + advanced medium pirates (docs/plans/level-4-difficulty.md)

@@ -3,7 +3,21 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-21 (**A level can be played in a server-run room — `?netsim=1`** — the server holds the
+**Updated:** 2026-08-22 (**A server-run room banks its own run** — a `?netsim=1` room reports what its own
+simulation decided (`onEconomy` → `makeEconomySink` → `recordGame`/`depositLoot`) under the playerId from
+its handshake ticket, and the tab stops banking a run the room is banking. Credits, XP and loot are sealed
+for fights the server actually ran; netsim is opt-in, so browser single-player still banks on trust and is
+described that way. DECISIONS §131.) Prior: (**A mission ends twice — clearing the sector pays you,
+reporting back advances you** — a level states a `winCondition` (`allEnemiesDead` everywhere today) and the simulation grants the
+reward the moment it holds: doubled credits, the one-shot XP bonus and a new `cleared` event, with docking
+left as ceremony. Victory no longer depends on a mouse click, so a room or a headless referee can conclude a
+mission; die on the flight home and you keep the credits but fly the level again. DECISIONS §130.)
+Prior: (**The server can now say what a run SHOULD have earned — and it is only watching**
+— `server/src/seal/verify-run.js` re-simulates a recorded run and returns a verdict; nothing is enforced and
+no balance is touched, because the first survey of production says traces do not yet reproduce (20%
+agreement, no cheating — DECISIONS §129, `docs/plans/seal-the-economy.md` §3.1). The finding that matters: a
+trace reproduces only on the **build** that recorded it, and session recording captures a stub under
+`?netsim=1`.) Prior: (**A level can be played in a server-run room — `?netsim=1`** — the server holds the
 World and steps it at 60 Hz while the browser sends input and draws 15 Hz snapshots, running no local
 simulation at all; opt-in, so single-player is untouched. Built on the same `sim-core` the browser runs, and
 a test requires a room to reach the same digest as the headless referee. No client-side prediction yet, so
@@ -1379,8 +1393,21 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `BASE_ARRIVE_RADIUS`, unit-tested) fires **only when the target is the station** — a chest-aimed autopilot is
   structurally incapable of winning. **Proximity alone never wins**, and any control input cancels the dock
   (clears `active` + `target`) so a cancelled/manual approach doesn't complete (re-tap to resume). Clicking
-  while already inside the radius wins on the next frame. `win()` tears the return state back down (arrow/hint/clickable off) and reuses the existing
-  victory handling (overlay, `bankRun`, `×2`, `unlockNextLevel` for campaign only).
+  while already inside the radius wins on the next frame.
+  **A mission ends in TWO moments, not one (DECISIONS §130).** (1) **CLEARED** — the level's `winCondition`
+  holds (`{ type: 'allEnemiesDead' }` on every campaign level and side mission today, stated on the
+  descriptor). `clearMission()` in `sim-core/level-runner.js` doubles the credits, adds the one-shot
+  `xpReward`, opens the way home, and emits the `cleared` event; the client's adapter banks off THAT —
+  `bankRun`, `depositLoot`, the session flush, the side-mission clear flag. The reward is therefore a pure
+  consequence of the fight, reachable by the browser, a server-run room and a headless referee alike — no
+  mouse click involved, which is what made it unreachable for any host without one. (2) **WON** — the player
+  docked. `winLevel()` tears the return state back down (arrow/hint/clickable off) and does the ceremony
+  only: overlay, sting, hangar, any loot the grab pulled in on the way home — **plus `unlockNextLevel()` for
+  campaign levels**, which stays here deliberately because it rebuilds the player (`buildPlayerFor`, and a
+  briefing can swap a weapon) and the map, neither of which is safe mid-flight. So **clearing the sector
+  pays you and reporting back advances you**: shot down on the way home you keep the credits, the XP and the
+  loot, but you fly the level again. An unreadable `winCondition` can never be met — no payout on a rule we
+  cannot evaluate.
   A **bottom-center "Return to base" pill button** (`#return-btn`, i18n `ui.return.button`, shown/hidden in
   `updateReturnHint`) is also drawn as an **explicit, always-on-screen tap target** — same effect as clicking
   the station (`engageAutopilot()`) — since the station model is small and often off-screen. It's visible only
@@ -2513,6 +2540,25 @@ first translation). See DECISIONS §10.
   500 via `getAdminSessions`): created, player (id short or `anon`), level, outcome, duration, kills,
   game_version (+ **✓/✗** whether it matches the current deploy `SENTRY_RELEASE`), and a **▶ play** link
   (`/?playback&id=<id>`) that streams the trace from `GET /api/sessions/:id/trace` and re-sims it.
+- **Run verification (`server/src/seal/verify-run.js`, `server/tools/verify-sessions.mjs`) — MEASURING ONLY,
+  nothing is enforced.** `POST /api/games` is still client-authoritative: the browser says what it earned
+  and the server banks it. `verifyRun({ trace, claim, build })` is the other half being built up — it
+  re-simulates a recorded run with `runTrace()` and returns `{ verdict, credits, xp, kills, note }`, where
+  verdict is `agree` / `disagree` / `unverifiable` / `no-trace` / `error`. **It writes nothing and no caller
+  may change a balance on it.** What it refuses to judge is the point: a trace below **v4** (no skill
+  allocation — DECISIONS §125), a trace at the recorder's tick/run cap (its tail was never recorded), a
+  level the catalog does not carry (side missions), a claim about a different level, and — the constraint
+  measurement added, DECISIONS §129 — a run recorded by **any build other than the one running**
+  (`build-drift` / `build-unknown`), because removing auto-aim (§124) proved a trace reproduces only on the
+  code that made it. Two rules inside it: a claimed win whose re-simulation reached return-to-base gets
+  `winLevel` applied (a headless referee cannot dock, so it would otherwise under-count every victory by
+  half), and the comparison is credits/XP/kills — **never the world digest**, whose `ownsReward` branch
+  legitimately differs per account. `server/tools/verify-sessions.mjs` is the read-only survey over
+  `gameplay_sessions` (`--rows FILE` to survey a dumped row set with no database connection,
+  `--build SHA` to apply the live gate, `--include-unskilled` to widen the sample to pre-v4 traces from
+  accounts that never spent a point). **First survey, 2026-08-21, all 74 production sessions: 20%
+  agreement, no cheating** — see `docs/plans/seal-the-economy.md` §3.1, which also records that session
+  recording captures a stub under `?netsim=1` (so the admin replay viewer plays a 5-second stub for those).
 - **Health / uptime** — `GET /api/health` is the monitoring endpoint (UptimeRobot, the Docker
   healthcheck, the CI smoke check all use it). It touches the DB (via `stats`), so it reflects DB
   outages, not just process liveness: **200** `{ ok:true, status:"ok", backend, uptimeSec, players,
@@ -3025,6 +3071,21 @@ path; this one guards the simulation.
 tab sends input and draws what comes back, and calls `simTick` never. Without the flag nothing below runs
 and single-player is exactly what it was — that is DECISIONS §116, not an accident. `&seed=N` pins the
 room's RNG so a session is reproducible.
+
+**The room banks its own run (DECISIONS §131).** `createRoom({ onEconomy })` fires **once** per run, on the
+simulation's own `cleared` (win condition held — credits already doubled, mission XP added, §130) or `death`
+(whatever was earned before it), carrying credits, XP, kills, duration and the collected loot.
+`makeEconomySink({ playerId, level, bankRun })` in `socket.js` does the writing (`recordGame` +
+`depositLoot`); the room itself never touches the database, which is what keeps it clock-free and testable
+with a spy. **`playerId` comes from the redeemed handshake ticket and is applied last**, so no field on the
+run can substitute another account. A `banked` guard makes a duplicate event, a second death or a reconnect
+unable to pay twice; `restart()` re-arms it (a retry is a new run); a run that just STOPS — disconnect,
+abandoned tab — is worth nothing, and crates still in the hold on death are lost. Client-side `G.netDriving`
+(written every frame by the loop) stops this tab banking a run the room is banking, and
+`refreshAfterRoomBank()` re-reads the account so the HUD catches up. **Scope, stated plainly: credits, XP and
+loot are sealed only for fights a ROOM ran.** netsim is opt-in, so browser single-player still banks through
+`POST /api/games` on trust; that is a choice (D1), not an oversight. Campaign progression (`/advance`) also
+stays a client call — not currency, and it must reload the next level into the tab either way.
 
 **Which level the room fights.** A bare `?netsim=1` means **the level this tab is already on**
 (`CATALOG.levelName`). It must: the client builds the map, the set-pieces and the arena centre at take-off,

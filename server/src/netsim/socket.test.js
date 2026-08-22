@@ -12,7 +12,7 @@ import http from 'node:http';
 import express from 'express';
 import { WebSocket } from 'ws';
 import { createTicketStore } from './tickets.js';
-import { attachNetsim, WS_PATH, IDLE_TIMEOUT_MS } from './socket.js';
+import { attachNetsim, makeEconomySink, WS_PATH, IDLE_TIMEOUT_MS } from './socket.js';
 
 let server, base, wsBase, tickets, netsim;
 
@@ -242,4 +242,41 @@ test('a silent tab is kept alive by the transport, not by the game loop', async 
   });
   assert.equal(pinged, true, 'the room pings its peer, which a frozen tab answers without running any code');
   ws.close();
+});
+
+// ---------- Who the room banks for (DECISIONS §131) ----------
+
+test('the bank is called for the TICKET\'s player — a field on the run cannot substitute another account', async () => {
+  const calls = [];
+  const sink = makeEconomySink({ playerId: 'p-real', level: 'level-2',
+    bankRun: async (r) => { calls.push(r); }, log: {} });
+
+  // The room composes this object, not a client — but the identity must not be overridable from it under
+  // any circumstances, because that is the one thing a server-run economy is FOR.
+  sink({ kind: 'cleared', credits: 600, xp: 590, kills: 14, durationMs: 90000, loot: [],
+         playerId: 'p-attacker', level: 'level-9' });
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].playerId, 'p-real', 'the handshake ticket decides, nothing else');
+  assert.equal(calls[0].level, 'level-2', 'and so does the level the room was created for');
+  assert.equal(calls[0].credits, 600);
+});
+
+test('a failed bank is logged, never thrown into the room', async () => {
+  const warned = [];
+  const sink = makeEconomySink({ playerId: 'p1', level: 'level-1',
+    bankRun: async () => { throw new Error('database is on fire'); },
+    log: { warn: (m) => warned.push(m) } });
+
+  assert.doesNotThrow(() => sink({ kind: 'death', credits: 10, xp: 1, kills: 1, durationMs: 5, loot: [] }));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /BANK FAILED player=p1/);
+  assert.match(warned[0], /database is on fire/);
+});
+
+test('no banker wired → no sink at all, and a room runs without one', () => {
+  assert.equal(makeEconomySink({ playerId: 'p1', level: 'level-1', bankRun: null }), null);
 });

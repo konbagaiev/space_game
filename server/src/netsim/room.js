@@ -16,8 +16,15 @@
 //     tick, in order.
 //   • snapshots: transforms, run state, and the events drained since the last one.
 //
+// **The room banks its own runs** (DECISIONS §131). It simulated the fight, so it knows what the run was
+// worth without asking anyone: when the simulation says `cleared` or `death`, the room reports the totals
+// through `onEconomy` and the socket writes them under the playerId it took from the handshake TICKET.
+// Nothing in that path came from the client. The room itself stays free of the database — it reports, it
+// does not persist — which is what keeps it unit-testable with a spy and clock-free.
+//
 // Non-goals for this cut (docs/plans/server-authoritative-sim.md §6): several players, reconnect, delta
-// encoding, and the sealed economy — a netsim run still banks through the client's own `POST /api/games`.
+// encoding. Campaign PROGRESSION (`/advance`) is still the client's call — it is not currency, and it has
+// to reload the next level into the tab either way.
 import { createSimWorld } from '../sim-host.js';
 import { clearAndPlaceRun, startRun } from '../../../client/src/sim-core/reset-world.js';
 import { simTick } from '../../../client/src/sim-core/tick.js';
@@ -70,7 +77,8 @@ const EMPTY_INPUT = { k: [], t: null };
 // its own drag, which is what letting go looks like.
 export const INPUT_HOLD_TICKS = 30;
 
-export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapshotEvery = SNAPSHOT_EVERY } = {}) {
+export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapshotEvery = SNAPSHOT_EVERY,
+                             onEconomy = null } = {}) {
   const ids = new WeakMap();   // entity → network id. WeakMap: the sim never learns it has one.
   let nextId = 1;
   const spawnQueue = [];       // static descriptions of entities the client has not been told about yet
@@ -96,6 +104,8 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
   let dropped = 0;             // inputs discarded by the queue cap (a diagnostic, reported in the snapshot)
   let caughtUp = 0;            // inputs fast-forwarded to keep the queue shallow (a diagnostic)
   let grabTarget = null;       // the crate the Grab is pulling this tick, so the client can draw its beam
+  let banked = false;          // this run's reward has been reported — exactly once, whatever else happens
+  let runStartTick = 0;        // for the run's duration; `restart()` re-stamps it
 
   const idOf = (e) => ids.get(e) ?? null;
 
@@ -131,9 +141,36 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     return { id, kind };
   }
 
+  // What the run was worth, reported ONCE, off the simulation's own verdict.
+  //
+  // Two moments end a run and both pay what was earned up to them: `cleared` (the win condition held — the
+  // credits are already doubled and the mission XP added, see DECISIONS §130) and `death` (whatever the
+  // pilot banked before dying, exactly as the browser has always done). Whichever comes first wins; the
+  // `banked` guard is what makes a reconnect, a late duplicate event or a second death unable to pay twice.
+  //
+  // A run that simply STOPS — a disconnect, an abandoned tab — reports nothing and is worth nothing, which
+  // is the same rule single-player has always had for closing the browser mid-fight.
+  function reportEconomy(ev) {
+    if (!onEconomy || banked) return;
+    if (ev.type !== 'cleared' && ev.type !== 'death') return;
+    banked = true;
+    onEconomy({
+      kind: ev.type,
+      credits: world.earned,
+      xp: world.earnedXp,
+      kills: world.kills,
+      durationMs: Math.round((tick - runStartTick) * SIM_DT * 1000),
+      // Crates reach the stash only on a CLEARED run — dying with them still in the hold loses them, which
+      // is what the browser does and the one bit of the flight home that is still a stake.
+      loot: ev.type === 'cleared' ? world.pendingLoot.map((it) => ({ kind: it.kind, refId: it.refId })) : [],
+    });
+  }
+
   return {
     world,
     get tick() { return tick; },
+    // Whether this run has already been paid. A diagnostic, and what the tests assert on.
+    get banked() { return banked; },
     get queued() { return queue.length; },
     get droppedInputs() { return dropped; },
     get caughtUpInputs() { return caughtUp; },
@@ -168,7 +205,10 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       // `renderTick − delay`, so an event played when its PACKET lands fires against a picture a tenth of a
       // second younger than the thing it describes — a rocket's smoke laid ahead of the rocket, a hit spark
       // before the ship reaches the pose it was hit in. With the stamp it simply rides the same clock.
-      world.events.drain((ev) => { const w = wireEvent(ev, idOf); if (w) { w.tk = tick; pendingEvents.push(w); } });
+      world.events.drain((ev) => {
+        const w = wireEvent(ev, idOf); if (w) { w.tk = tick; pendingEvents.push(w); }
+        reportEconomy(ev);
+      });
       return tick;
     },
 
@@ -266,6 +306,9 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       startRun(world, { keepPlayer: !!pose });
       queue.length = 0; lastInput = EMPTY_INPUT; ack = null; sinceInput = 0;
       pendingEvents = [];
+      // A retry is a NEW run: re-arm the payout and re-stamp the clock, or the second fight in this room
+      // would be worth nothing and the first one's duration would keep growing.
+      banked = false; runStartTick = tick;
       return tick;
     },
 

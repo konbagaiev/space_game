@@ -36,7 +36,8 @@ import { startLevel, updateLevelRunner, winLevel, resetLevelRunnerState, current
 import { clearAndPlaceRun, startRun } from './sim-core/reset-world.js';
 import { simTick as simTickIn } from './sim-core/tick.js';
 import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
-import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared } from './net.js';
+import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared,
+         refreshAfterRoomBank } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 import { logEvent, clearEventLog } from './eventlog.js';
@@ -76,7 +77,7 @@ export function updateBanner() {
 // exists because eight modules and three visual scenarios read (and one writes) `levelRunner.<field>` —
 // so the historical shape is kept and every property forwards to `world.levelRunner`.
 const LEVEL_RUNNER_FIELDS = ['level', 'phaseIndex', 'killsAtPhaseStart', 'spawnedThisPhase', 'spawnCooldown',
-  'won', 'winPending', 'winText', 'winTextKey', 'returningToBase'];
+  'won', 'cleared', 'winPending', 'winText', 'winTextKey', 'returningToBase'];
 export const levelRunner = {
   start(level) { startLevel(world, level); },
   update(dt) { updateLevelRunner(world, dt); },
@@ -301,28 +302,60 @@ function applySimEvent(ev) {
       logEvent(t('ui.log.killed', { name: ev.name, amount: ev.reward, xp: ev.xp })); // event-log kill line
       break;
     }
+    // THE REWARD LANDS HERE — the win condition was met (DECISIONS §130). Everything with a server side
+    // effect hangs off `cleared`, not off docking, so a pilot shot down on the flight home keeps what they
+    // cleared the sector for. The overlay is NOT here: the mission is not over, the ship is still flying.
+    case 'cleared': {
+      // A ?record/?playback dev session is READ-ONLY: replay the fight but do NOT mutate the server —
+      // otherwise a (re)played clear banks credits, deposits loot AND advances current_progress, silently
+      // skipping the level for the real player.
+      if (!G.replayMode) {
+        track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
+        G.flushSession && G.flushSession('win'); // upload the recorded session (funnel analytics)
+        // WHO banks depends on who simulated the fight (DECISIONS §131). A server-run room decided the
+        // reward itself from the same `cleared` event and has already written it, under a playerId it took
+        // from the handshake ticket rather than from anything this tab said — so here we only catch up with
+        // the account. Everything else in this block is progression, not currency, and stays the tab's job.
+        if (G.netDriving) {
+          refreshAfterRoomBank();
+        } else {
+          bankRun(); // bank the earned credits + XP into the account balance
+          const loot = takeLoot(); if (loot.length) depositLoot(loot); // the run's collected drops → the stash
+        }
+        const lvl = levelRunner.level;
+        // A side mission's permanent clear flag is a reward too (it unlocks `minMission` shop rows) and
+        // costs nothing to record now. The CAMPAIGN advance is deliberately NOT here — see the `win` case.
+        if (lvl && lvl.sideMission && lvl.missionId) reportMissionCleared(lvl.missionId);
+      }
+      break;
+    }
+    // The mission is CLOSED — the player docked. Ceremony and exit only; nothing is earned here.
     case 'win': {
       audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
       el.overlayTitle.textContent = t('ui.overlay.victory');
       // resolve the level's victory line through i18n (key → translation → English fallback)
-      const cleared = ev.textKey ? t(ev.textKey) : (ev.text || t('ui.overlay.sector_cleared'));
-      el.overlaySub.textContent = `${cleared} — ${t('ui.credits.doubled', { credits: G.earned })}`;
+      const clearedLine = ev.textKey ? t(ev.textKey) : (ev.text || t('ui.overlay.sector_cleared'));
+      el.overlaySub.textContent = `${clearedLine} — ${t('ui.credits.doubled', { credits: G.earned })}`;
       el.restart.textContent = t('ui.button.continue'); // a win continues to the Hangar
       el.backHangar.style.display = 'none'; // Continue already goes to the Hangar — no separate button on a win
       el.overlay.style.display = 'flex';
-      // A ?record/?playback dev session is READ-ONLY: show the victory overlay but do NOT mutate the server —
-      // otherwise a (re)played win banks credits, deposits loot AND advances current_progress, silently skipping
-      // the level for the real player. All server side effects below are gated on !G.replayMode.
       if (!G.replayMode) {
-        track('level_clear', { level: currentLevelLabel() }); // funnel: this level was cleared
-        bankRun(); // bank the earned credits into the account balance
-        G.flushSession && G.flushSession('win'); // upload the recorded session (funnel analytics)
-        const loot = takeLoot(); if (loot.length) depositLoot(loot); // victory only: dump the run's collected drops into the stash
-        // Side missions are repeatable grind: bank credits but do NOT advance the story counter. Campaign
-        // levels advance progression as before.
+        // Anything the grab pulled in DURING the flight home still has to reach the stash — `takeLoot`
+        // drains what it takes, so this cannot double-count what `cleared` already deposited. In a room the
+        // crates are the room's to deposit, here as there.
+        if (!G.netDriving) { const late = takeLoot(); if (late.length) depositLoot(late); }
+        // THE CAMPAIGN ADVANCE STAYS HERE, at the dock, and deliberately — it is not a reward, it is
+        // "load the next mission into this tab", and it is NOT safe while the ship is still flying:
+        // `unlockNextLevel` rebuilds the PLAYER (`buildPlayerFor` — a briefing action can swap the weapon,
+        // as Level 2's does) and rebuilds the MAP when the next level uses a different one. Doing that
+        // mid-flight would change the ship under the pilot on the way home.
+        //
+        // So the two moments mean different things, and the difference is legible in play: clearing the
+        // sector PAYS you (§130), reporting back ADVANCES you. Die on the flight home and you keep the
+        // credits, the XP and the loot, but you fly the level again. Side missions never advance the story
+        // counter — theirs was recorded at `cleared`.
         const lvl = levelRunner.level;
-        if (lvl && !lvl.sideMission) unlockNextLevel(); // record progress + load the next level for the next Restart
-        else if (lvl && lvl.missionId) reportMissionCleared(lvl.missionId); // permanent side-mission clear → `minMission` shop unlocks
+        if (lvl && !lvl.sideMission) unlockNextLevel();
       }
       break;
     }
@@ -330,7 +363,11 @@ function applySimEvent(ev) {
       spawnShipExplosion(G.player.pos, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
       audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
       track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
-      bankRun(); // bank the earned credits into the account balance + record the game
+      // Both are no-ops when the mission was already CLEARED (shot down on the flight home): `G.banked`
+      // guards the bank and the recorder is closed after its final flush. That is the point of §130 — the
+      // reward was secured at the last kill and the way home cannot take it back. Loot the grab pulled in
+      // AFTER the clear is lost, though, the same as anything unbanked has always been.
+      if (G.netDriving) refreshAfterRoomBank(); else bankRun(); // the room banks its own runs (§131)
       G.flushSession && G.flushSession('death'); // upload the recorded session (funnel analytics)
       el.overlayTitle.textContent = t('ui.overlay.ship_destroyed');
       el.overlaySub.textContent = t('ui.gameover.sub', { kills: G.kills, credits: G.earned });

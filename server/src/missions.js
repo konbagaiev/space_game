@@ -81,6 +81,9 @@ export function generateMissions() {
     estXp: MISSION_XP,
     descriptor: {
       title: f.type, map: 'home-system', sideMission: true, xpReward: MISSION_XP,
+      // Same rule as every campaign level: the reward is granted when the arena is empty, not at the dock
+      // (DECISIONS §130). Stated here so the descriptor a room or a referee is handed is self-contained.
+      winCondition: { type: 'allEnemiesDead' },
       center: f.center, drift: f.drift || null,
       phases,
       enemyTotal,

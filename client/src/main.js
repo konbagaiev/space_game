@@ -977,6 +977,8 @@ function animate() {
   // Route click-to-fly to whoever is simulating. Installed only while a room actually drives the fight, so
   // the moment netsim defers or drops, clicking the station goes back to engaging the LOCAL autopilot.
   world.onCommand = (netsimDriving && netLink && netStarted) ? sendNetCommand : null;
+  // Published for the victory path: a run a ROOM is simulating is a run the room banks (DECISIONS §131).
+  G.netDriving = netsimDriving;
   const live = G.gameStarted && !BENCH && !REC && !rs.play && !netsimDriving; // real player session → deterministic accumulator loop (always-on recording)
   if (netsimDriving) {
     // The server owns the fight: no local sim step at all. Send this frame's input, draw the world as the

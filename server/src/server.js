@@ -633,6 +633,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const netsim = attachNetsim(server, {
     tickets: app.get('wsTickets'),
     loadShip: getActivePlayerShip, // the room flies the player's REAL ship, read from the account, not the client
+    // …and the room BANKS its own runs (DECISIONS §131). The figures come from the simulation the server
+    // itself ran and the playerId from the handshake ticket, so a room's reward never passes through the
+    // client at all — unlike `POST /api/games`, which browser single-player still uses on trust.
+    bankRun: async ({ playerId, credits, xp, kills, durationMs, loot }) => {
+      await recordGame(playerId, { credits, kills, durationMs, xp });
+      if (loot && loot.length) await depositLoot(playerId, loot);
+    },
   });
   // Graceful shutdown: on stop, stop accepting new connections and let in-flight
   // requests finish before exiting -> no dropped requests when the old container is

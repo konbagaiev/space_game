@@ -45,10 +45,15 @@ test('the Level-0 trace replays to a cleared arena, headless', { skip }, () => {
   assert.equal(r.ticksRun, r.ticksTotal, 'the whole trace ran (no early death or win)');
   assert.equal(r.summary.kills, 4, 'all four enemies destroyed');
   assert.equal(r.summary.enemies, 0, 'the arena is empty');
-  assert.equal(r.summary.earned, 125, 'credits banked by the kills');
-  assert.equal(r.summary.returning, true, 'the win phase opened the return-to-base gate');
-  // NOT won: docking needs the autopilot, and a trace records keys and touch, never a mouse click. The
-  // browser's cutscene fakes that click; a referee has no business reproducing it (see 36-sim-divergence).
+  // 250, not the 125 the kills are worth: the arena emptied, so the win condition held and the mission
+  // reward was granted — DOUBLED credits — right there (DECISIONS §130). This is the line that says a
+  // headless referee can now conclude a mission, which before §130 it structurally could not.
+  assert.equal(r.summary.earned, 250, 'kills are worth 125; clearing the level doubles it');
+  assert.equal(r.summary.cleared, true, 'the win condition was met and the reward granted');
+  assert.equal(r.summary.returning, true, 'and the way home opened');
+  // Still NOT won: `won` means DOCKED, docking needs the autopilot, and a trace records keys and touch,
+  // never a mouse click. The browser's cutscene fakes that click; a referee has no business reproducing
+  // it (see 36-sim-divergence). Nothing is earned there any more, so nothing is missed by not doing it.
   assert.equal(r.summary.won, false);
   assert.ok(r.world.player.alive, 'the recorded run survives it');
 });

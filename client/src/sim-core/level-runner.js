@@ -2,9 +2,22 @@
 //
 // Each phase optionally spawns a weighted pool up to `maxConcurrent` (with an optional `total` cap), and
 // advances when its condition is met: { kills } (cumulative), { killsSincePhase }, or { allCleared } (map
-// empty AND the phase's total fully spawned). A phase with `event: 'win'` ends the level — not with a
-// victory overlay, but by opening the return-to-base gate; the mission is won when the player DOCKS.
-// The boss phase pool is the boss only, after clear-out empties the arena → the boss always appears alone.
+// empty AND the phase's total fully spawned). The boss phase pool is the boss only, after clear-out empties
+// the arena → the boss always appears alone.
+//
+// ── A mission ends in TWO moments, not one (DECISIONS §130) ─────────────────────────────────────────────
+// They used to be the same moment and it cost more than it looked:
+//
+//   1. **CLEARED** — the level's `winCondition` is met (today, always `allEnemiesDead`). This is where the
+//      REWARD is decided and handed over: the credits double, the mission XP bonus lands, and `cleared` goes
+//      out for the host to bank. It is a pure consequence of the fight, so a browser, a server-run room and
+//      a headless referee all reach it identically, with nobody clicking anything.
+//   2. **WON** — the player has flown home and DOCKED. This closes the mission: the overlay, the sting, the
+//      hangar. `lr.won` still means exactly what it always meant, everywhere it is read.
+//
+// Flying home therefore stops being a stake and becomes the way out: a pilot killed on the way back keeps
+// what they cleared the sector for. And victory stops depending on a MOUSE CLICK — which is what made it
+// unreachable for any host without a mouse, and is why a headless run could never conclude a mission.
 //
 // It used to be one object literal in `sim.js` holding its own mutable fields. The fields now live on the
 // World (`world.levelRunner`) and the functions take the World, because a server runs many fights in one
@@ -27,8 +40,9 @@ export function createLevelRunnerState() {
     killsAtPhaseStart: 0,
     spawnedThisPhase: 0,
     spawnCooldown: 0,
-    won: false,
-    winPending: 0,          // seconds left before the win phase opens the return-to-base gate
+    won: false,             // DOCKED — the mission is closed (overlay, hangar). See the header.
+    cleared: false,         // the win condition was met and the REWARD has been granted. Once per run.
+    winPending: 0,          // seconds left before the win phase tests the win condition
     winText: '',            // English fallback for the victory line
     winTextKey: undefined,  // i18n key for the victory line (resolved by the client adapter)
     returningToBase: false,
@@ -40,7 +54,7 @@ export function createLevelRunnerState() {
 // mission win's `won: true` would freeze the roaming ship, or a stale `level` would spawn enemies in roam.
 export function resetLevelRunnerState(world) {
   const lr = world.levelRunner;
-  lr.phaseIndex = 0; lr.won = false; lr.winPending = 0; lr.returningToBase = false;
+  lr.phaseIndex = 0; lr.won = false; lr.cleared = false; lr.winPending = 0; lr.returningToBase = false;
   world.returnToBase = false; world.autopilot.active = false; world.autopilot.target = null;
   if (world.station) world.station.active = false;
   world.firedBanners.clear(); clearBanner(world); // fresh run: re-arm the milestones, drop any lingering banner
@@ -71,20 +85,65 @@ export function enterPhase(world) {
     showBanner(world, 'ui.banner.final_stage');
   }
   if (ph && ph.event === 'win') {
-    // defer the overlay by `delay` seconds so the boss explosion can play out first
+    // defer by `delay` seconds so the boss explosion can play out before the reward lands
     lr.winTextKey = ph.textKey; lr.winText = ph.text; // i18n key (+ English fallback)
     lr.winPending = ph.delay ?? 0;
-    if (lr.winPending <= 0) beginReturn(world);
+    if (lr.winPending <= 0) clearMission(world);
   }
 }
 
-// Return-to-base gate (replaces the immediate win): the last kill lifts OOB, shows the homing arrow +
-// hint, and makes the station clickable. Victory fires only once the player docks (see checkArrival).
-export function beginReturn(world) {
-  world.levelRunner.returningToBase = true;
-  world.returnToBase = true;                      // lifts OOB warp, shows arrow + hint (read by sim + HUD)
-  if (world.station) world.station.active = true; // station becomes clickable
+// ---------- The win condition ----------
+// What a level asks of you. Stated on the descriptor so it is DATA rather than a special-cased phase, and
+// evaluated inside the simulation so every host answers it the same way. Every level and side mission
+// carries `allEnemiesDead` today, which is what their phase scripts already encoded implicitly — so this is
+// a name for the existing rule, and the seam for the next one (survive N, escort X, reach Y).
+export const DEFAULT_WIN_CONDITION = { type: 'allEnemiesDead' };
+
+export function winConditionOf(level) {
+  return (level && level.winCondition) || DEFAULT_WIN_CONDITION; // a descriptor without one behaves as before
 }
+
+export function winConditionMet(world) {
+  const lr = world.levelRunner;
+  if (!lr.level) return false;
+  const cond = winConditionOf(lr.level);
+  switch (cond.type) {
+    // The arena is empty and the script has nothing left to spawn. On every level shipped today the phase
+    // before `event: 'win'` advances on `allCleared`, so this is already true the moment the win phase is
+    // entered — the condition is being made explicit, not tightened.
+    case 'allEnemiesDead': return world.enemies.length === 0;
+    default: return false;   // an unknown condition can never be met: never pay out on a rule we cannot read
+  }
+}
+
+// MOMENT 1: the win condition is met — the reward is granted and the way home opens.
+//
+// Everything the run is worth is decided HERE, not at the dock: the credits double, the mission's one-shot
+// XP bonus lands, and `cleared` carries the totals out to whoever does the banking (the browser's adapter
+// today, a room itself next). From this point the flight home cannot take any of it back.
+//
+// Retried each tick until the condition holds (see updateLevelRunner) and guarded by `lr.cleared`, so it
+// pays out exactly once however often it is called.
+export function clearMission(world) {
+  const lr = world.levelRunner;
+  if (lr.cleared) return;
+  if (!winConditionMet(world)) return;            // not yet — the runner asks again next tick
+  lr.cleared = true;
+
+  // the way home: lifts OOB warp, shows arrow + hint (read by sim + HUD), makes the station clickable
+  lr.returningToBase = true;
+  world.returnToBase = true;
+  if (world.station) world.station.active = true;
+
+  // The rules stay here; banking, the stash deposit and the progress advance are the host's job.
+  world.earned *= 2;                              // clearing the level doubles the credits earned in it
+  world.earnedXp += (lr.level && lr.level.xpReward) || 0; // one-shot mission bonus (per-kill XP is NOT doubled)
+  world.events.emit({ type: 'cleared', credits: world.earned, xp: world.earnedXp, kills: world.kills });
+}
+
+// The old name for moment 1, kept because "begin the return" is still half of what it does and three
+// scenarios talk about it that way. Prefer `clearMission`.
+export const beginReturn = clearMission;
 
 export function checkArrival(world) {
   // Victory requires an ENGAGED autopilot whose target is the STATION (a chest-aimed autopilot must never
@@ -98,6 +157,11 @@ export function checkArrival(world) {
   if (canDock(world.autopilot, Math.hypot(dx, dz))) winLevel(world);
 }
 
+// MOMENT 2: the player docked — the mission is closed.
+//
+// Nothing is earned here any more (see clearMission). This is the ceremony and the exit: the overlay, the
+// sting, the way back to the hangar. `lr.won` keeps the meaning every one of its ~20 readers already
+// assumes — "the fight is over, stop running it".
 export function winLevel(world) {
   const lr = world.levelRunner;
   lr.won = true;
@@ -105,9 +169,6 @@ export function winLevel(world) {
   lr.returningToBase = false;
   world.returnToBase = false; world.autopilot.active = false; world.autopilot.target = null;
   if (world.station) world.station.active = false;
-  // Rules stay here; the sting, the overlay and every backend side effect are the adapter's job.
-  world.earned *= 2; // double the credits earned for clearing the level
-  world.earnedXp += lr.level.xpReward || 0; // one-shot mission XP bonus on victory (per-kill XP is NOT doubled)
   world.events.emit({ type: 'win', textKey: lr.winTextKey, text: lr.winText });
 }
 
@@ -122,15 +183,19 @@ export function updateLevelRunner(world, dt) {
   const lr = world.levelRunner;
   const ph = currentPhase(world);
   if (!ph || lr.won) return;
-  // victory pending: keep the game running (so the boss explosion animates) until the delay ends,
-  // then open the return-to-base gate (arrow + hint + clickable station) instead of winning outright
+  // victory pending: keep the game running (so the boss explosion animates) until the delay ends, then
+  // test the win condition and pay out
   if (lr.winPending > 0) {
     lr.winPending -= dt;
-    if (lr.winPending <= 0) beginReturn(world);
+    if (lr.winPending <= 0) clearMission(world);
     return;
   }
   // returning to base: no more spawning; just wait for the player to fly home and dock
   if (lr.returningToBase) { checkArrival(world); return; }
+  // The win phase is up but the condition has not been met yet — ask again. No level shipped today can
+  // reach this (each one's last combat phase advances on `allCleared`, so the arena is already empty), but
+  // a win condition that is only a rename cannot be tested, and one that can wait is a real gate.
+  if (ph.event === 'win') { clearMission(world); return; }
   // Staggered spawn: one enemy at a time on a randomized 2–4 s cooldown (see spawn-timing.js). The
   // first enemy of a phase is immediate (cooldown reset to 0 in enterPhase); every spawn re-arms 2–4 s.
   // A full arena freezes the timer, so a kill's replacement still waits 2–4 s (never instant).

@@ -91,6 +91,28 @@ export function bankRun() {
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run
 }
 
+// A run a ROOM simulated is a run the room BANKED (DECISIONS §131), so this tab must not post its own
+// numbers for it — but it still has to catch up with what the server now holds, or the HUD keeps showing a
+// stale balance and previews XP that has already been credited. Re-reads the account instead of banking it.
+//
+// Best-effort like everything else here: on failure the hangar's own refetch corrects it a moment later.
+export function refreshAfterRoomBank() {
+  if (!G.playerId) return;
+  G.banked = true; // the run is settled; nothing else in this tab may bank it
+  banking = fetchJson(`/api/players/${G.playerId}/active-ship`).then((active) => {
+    if (!active) return;
+    if (typeof active.credits === 'number') { G.balance = active.credits; }
+    const p = active.progression;
+    if (p && G.activeShip) {
+      const before = (G.activeShip.progression && G.activeShip.progression.level) || 0;
+      G.activeShip.progression = p;
+      if (p.level > before) announceLevel(p.level); // no-op when the live HUD already toasted this level
+    }
+    G.earnedXp = 0; // banked by the room — stop previewing it on top of the account total
+    updateHud();
+  }).catch(() => {});
+}
+
 // Upload one finished/abandoned session recording for funnel analytics (docs/plans/2026-08-03-1246-record-all-sessions.md).
 // The SERVER uploads the trace to S3 + writes the metadata row + stamps game_version (client never touches AWS).
 // Win/death flushes happen while the page STAYS OPEN (the victory/death overlay is up), so they use a PLAIN

@@ -40,6 +40,11 @@ export const G = {
   // this is > 0, so a player never starts a fight looking at procedural placeholder cones (DECISIONS §84).
   pendingAssets: 0,
   balance: 0,                 // persistent account balance (loaded from the server; banked at run end)
+  // Is a server-run room simulating this fight right now? Written every frame by the loop (main.js) and
+  // read by the victory path, which must NOT bank a run the ROOM is banking (DECISIONS §131). Distinct
+  // from "the netsim flag is on": a deferred or dropped link means this tab is back on its own simulation
+  // and owns its own banking again.
+  netDriving: false,
   // --- backend identity + per-session funnel guards (read across net/sim/UI; reassigned by login/reset/advance) ---
   // Anonymous player id kept in localStorage (auto-register). `let`-style reassignment (an account login
   // adopts the account's row) is why it lives on G. Best-effort: null if storage is blocked.

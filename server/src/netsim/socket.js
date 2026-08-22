@@ -35,7 +35,28 @@ export const MAX_ROOMS = 32;
 // The room used to build the catalog's default starter ship for everyone, so a netsim run ignored every
 // weapon, hull and skill point the player owned. Taking it from the DB rather than from the client also
 // means a client cannot claim a better ship than it has.
-export function attachNetsim(httpServer, { tickets, loadShip = null, log = console,
+// `bankRun({ playerId, kind, credits, xp, kills, durationMs, loot, level })` persists what a room's run was
+// worth. Injected rather than imported so this file stays free of the database and the tests can watch it.
+// Called with a playerId that came from the handshake TICKET — the client never names itself — and with
+// figures the ROOM's own simulation produced, which is the whole point of DECISIONS §131.
+// What a room does with the run it just decided. Its own function because the ONE property that matters
+// here is a property of this code and not of the room: **the identity is the server's, never the payload's.**
+// `playerId` comes from the redeemed handshake ticket and is written LAST, so no field arriving with the
+// run — however it got there — can substitute another account. The rest is deliberately boring.
+export function makeEconomySink({ playerId, level, bankRun, log = console }) {
+  if (!bankRun) return null;   // no banker wired (tests, a bare app) → the room simply reports to nobody
+  return (run) => {
+    // Best-effort and never in the room's way: a failed write must not kill a live fight, and the player
+    // has already been shown what they earned. Logged loudly, because quietly losing somebody's credits is
+    // the one failure here that nobody would ever notice.
+    Promise.resolve(bankRun({ ...run, level, playerId }))
+      .then(() => log.info?.(`[netsim] banked player=${playerId} ${run.kind} `
+        + `credits=${run.credits} xp=${run.xp} kills=${run.kills} loot=${(run.loot || []).length}`))
+      .catch((err) => log.warn?.(`[netsim] BANK FAILED player=${playerId}: ${err && err.message}`));
+  };
+}
+
+export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = null, log = console,
                                           pingEveryMs = PING_EVERY_MS, idleTimeoutMs = IDLE_TIMEOUT_MS } = {}) {
   const wss = new WebSocketServer({ noServer: true });
   const sessions = new Set();
@@ -82,7 +103,8 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, log = conso
 
       let room;
       try {
-        room = createRoom({ levelName, seed, ship });
+        room = createRoom({ levelName, seed, ship,
+          onEconomy: makeEconomySink({ playerId, level: levelName, bankRun, log }) });
       } catch (err) {
         // An unknown level is the client's mistake, not a crash: say so and close.
         send(ws, { type: 'error', error: String(err.message || err) });
