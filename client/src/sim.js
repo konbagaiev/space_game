@@ -32,7 +32,7 @@ import { BANNER_FADE, showBanner as showBannerIn } from './sim-core/events.js';
 import { PLAYER_MAX_SPEED, warpPlayerToCenter as warpPlayerToCenterIn,
          engageAutopilot as engageAutopilotIn, engageDropAutopilot as engageDropAutopilotIn,
          engagePointAutopilot as engagePointAutopilotIn, cancelAutopilot as cancelAutopilotIn } from './sim-core/step-player.js';
-import { startLevel, updateLevelRunner, winLevel, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
+import { startLevel, updateLevelRunner, winLevel, completeMission as completeMissionIn, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
 import { clearAndPlaceRun, startRun } from './sim-core/reset-world.js';
 import { simTick as simTickIn } from './sim-core/tick.js';
 import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
@@ -123,8 +123,10 @@ function ensureReturnArrow() {
   g.add(shaft, head); g.visible = false; scene.add(g);
   return (returnArrow = g);
 }
+// Shown only in ROAM now. A cleared mission no longer has to be flown home (DECISIONS §132), so an arrow
+// insisting on a direction would be telling the player to do something that does nothing.
 export function updateReturnArrow() {
-  const on = G.returnToBase && G.player && G.player.alive && !levelRunner.won && G.baseStation;
+  const on = G.roam && G.player && G.player.alive && !levelRunner.won && G.baseStation;
   if (!on) { if (returnArrow) returnArrow.visible = false; return; }
   const a = ensureReturnArrow();
   const st = G.baseStation.pos, pos = G.player.pos;
@@ -132,6 +134,9 @@ export function updateReturnArrow() {
   a.rotation.y = Math.atan2(st.x - pos.x, st.z - pos.z);    // point at the station (heading convention)
   a.visible = true;
 }
+// The cleared-sector prompt and its button. Since DECISIONS §132 the button ENDS the mission rather than
+// flying the ship home, so it is shown for as long as the mission is open — there is no autopilot state to
+// hide it behind, and no way to be "already on the way".
 export function updateReturnHint() {
   const show = G.returnToBase && G.player && G.player.alive && !levelRunner.won
     && el.overlay.style.display === 'none';
@@ -139,11 +144,15 @@ export function updateReturnHint() {
     el.returnHint.style.display = 'block';
     el.returnHint.textContent = t('ui.return.hint');
   }
-  // Bottom-center "Return to base" tap button: same availability as the hint, but ALSO requires the
-  // station to be clickable AND the autopilot NOT already engaged (hide it once the ship is flying home;
-  // it re-appears if the player cancels the autopilot mid-flight — accepted). Mirrors stationClickable().
-  const btnShow = show && G.baseStation && G.baseStation.active && !G.autopilot.active;
-  el.returnBtn.style.display = btnShow ? 'block' : 'none';
+  el.returnBtn.style.display = show ? 'block' : 'none';
+}
+
+// End the mission — the button, and the only thing that closes a cleared run. In a server-run room the
+// ROOM owns the world, so this travels as a command exactly like click-to-fly does; locally it is the
+// sim-core call. Returns whether it took (false before the sector is cleared, or if it already ended).
+export function completeMission() {
+  if (world.onCommand) { command({ kind: 'complete' }); return true; }
+  return completeMissionIn(world);
 }
 // Roam bottom-center navigation: "Return to Base" (dock autopilot) + "Autopilot to Mission" (fly to the
 // active mission). Shown only while roaming. Each button doubles as its OWN cancel — clicking the
@@ -357,6 +366,10 @@ function applySimEvent(ev) {
         const lvl = levelRunner.level;
         if (lvl && !lvl.sideMission) unlockNextLevel();
       }
+      // The mission is over, so a server-run room has nothing left to simulate — release it (§132). The
+      // menu reconnects for the next run by itself. Outside the replay gate deliberately: a link is a link
+      // whether or not this tab is allowed to mutate the account.
+      if (G.netDriving && G.dropNetsim) G.dropNetsim();
       break;
     }
     case 'death': {

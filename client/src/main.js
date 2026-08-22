@@ -29,7 +29,7 @@ import { el } from './dom.js'; // single fail-loud inventory of shared index.htm
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateMissionMarker, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/gold mission pointer/enemy health bars/XP bar+skill badge)
 import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, renderTick, setGrabTarget, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
+import { update, renderTick, setGrabTarget, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, completeMission, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './sim-core/system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -394,7 +394,7 @@ if (Device.hasTouch) {
   // (steering finger on #stick-zone) would never fire (the DECISIONS §42 bug). preventDefault stops the
   // compat click so a lone tap doesn't double-engage. audio.sfx.uiClick() gives click-sound parity — the
   // global capture-phase click→uiClick (main.js:53) also won't fire during flight for the same reason.
-  el.returnBtn.addEventListener('touchstart', e => { engageAutopilot(); audio.sfx.uiClick(); e.preventDefault(); }, { passive: false });
+  el.returnBtn.addEventListener('touchstart', e => { completeMission(); audio.sfx.uiClick(); e.preventDefault(); }, { passive: false });
 } else {
   // PC: the rocket circle is also clickable (besides the F key)
   const rocketBtn = document.getElementById('rocket-btn');
@@ -419,7 +419,7 @@ if (!Device.hasTouch) {
 
 // Mouse-only: on touch the "Return to base" button fires on `touchstart` (in the touch block above).
 if (!Device.hasTouch) {
-  el.returnBtn.addEventListener('click', () => { engageAutopilot(); });
+  el.returnBtn.addEventListener('click', () => { completeMission(); });
 }
 
 // Roam bottom-center nav buttons (Return to Base / Autopilot to Mission). Each doubles as its OWN cancel:
@@ -1647,6 +1647,11 @@ export function flushSession(outcome, { beacon = false, final = true } = {}) {
   if (payload) postSession(payload, { beacon });
 }
 G.flushSession = flushSession; // exposed on the shared bag so sim.js can flush on win/death without a main.js import cycle
+// Same trick, same reason: the victory path lives in sim.js and has to RELEASE THE ROOM when a mission ends
+// (DECISIONS §132). There is nothing left for a server-run fight to simulate once the player has closed the
+// mission, and leaving it stepping means a room flying a ship nobody is playing. The menu reconnects for the
+// next run on its own (see the connect gate in animate()).
+G.dropNetsim = () => { if (netLink) dropNetsim(); };
 
 // Start the PLAYBACK session from an already-loaded, validated trace: re-seed, rebuild the recorded ship,
 // launch the recorded level. animate() then steps the trace one tick per frame (see the rs.play block there).
@@ -1818,16 +1823,18 @@ function cutsceneObserve() {
     cutFrozen = true; cutFired.add(pause.id); cutsceneShowCard(pause.textKey);
     return;
   }
-  // Fight cleared (all enemies down → G.returnToBase) → simulate the "Return to base" button. That is a CLICK
-  // (engageAutopilot), never captured in the key trace, so playback would otherwise never complete the level.
-  // Drop the recorded input (rs.cutReturning; the accumulator clears keys so the sim's manual-input check can't
-  // cancel the autopilot) and let it fly home; on docking the sim fires the win → victory overlay, then we end.
+  // Fight cleared (all enemies down → G.returnToBase) → press "Complete mission" for the pilot. That is a
+  // CLICK, never captured in the key trace, so playback would otherwise sit in a cleared sector forever.
+  // Since DECISIONS §132 it ends the mission on the spot instead of flying home first, so the intro stops
+  // when the fight does — the cutscene's five cards all fire DURING the fight, and the flight home only ever
+  // existed because winning used to require docking. (`rs.cutReturning` keeps its name and its job: the
+  // one-shot latch that says the ending has been triggered.)
   if (!rs.cutReturning && G.returnToBase && !levelRunner.won) {
     rs.cutReturning = true;
     for (const c in keys) keys[c] = false; touchAim.active = false;
-    engageAutopilot();
+    completeMission();
   } else if (rs.cutReturning && levelRunner.won) {
-    cutsceneEnd(); rs.done = true; // docked home → level complete; stop the re-sim on the victory overlay
+    cutsceneEnd(); rs.done = true; // mission complete → stop the re-sim on the victory overlay
   }
 }
 function cutsceneAdvance() { // tap/click while a card is up → resume the re-sim

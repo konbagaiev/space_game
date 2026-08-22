@@ -225,6 +225,28 @@ keep the tests, inverted.
   count; `36-sim-divergence` asserts a world hash. Credit totals move, so the hash moves. Run both, read
   the new numbers, and record them in the plan — a changed hash here is expected exactly once.
 
+## 4b. Slice 1b — the flight home is gone; the player ends the mission — ✅ DONE 2026-08-22
+
+Came straight out of play. §130 moved the reward to the last kill but left CLOSING the mission at the dock,
+and the maintainer hit the consequence the same day: cleared Level 3, pressed "Return to base", reloaded the
+tab, and had to fly the level again — credits kept, level lost.
+
+- **"Finish and Return"** replaces "Return to base": pressing it sweeps the field's remaining crates into
+  the run and closes the mission. Refuses unless the sector is cleared. Docking ends nothing any more; the
+  homing arrow is roam-only.
+- **The campaign advance moved onto the button**, which is what fixes the reported bug. §130 had to leave it
+  at the dock (`unlockNextLevel` rebuilds the player — Level 2's briefing swaps a weapon), and a button
+  restores the very condition that made docking safe: the fight is frozen first.
+- **The button releases a netsim room too** — nothing left to simulate — and travels as a
+  `{kind:'complete'}` command so the ROOM ends the mission it is simulating.
+- **The loot sweep is the point, not a convenience.** The last enemy's crate spawns at the instant the fight
+  ends; without the flight-home window no ship can reach it.
+- The label was measured: the first draft was ~390 px, wider than a 360 px phone, with the centring
+  transform pushing it off both edges. Rendered and checked at desktop / phone-landscape / rotated-portrait.
+
+DECISIONS §132. Client 491, server 213; `22-intro-replay` held at `tick=2474` and `36-sim-divergence` still
+agrees on both hosts.
+
 ## 5. Slice 2 — the room banks its own run — ✅ DONE 2026-08-22
 
 Built as designed. Two things worth carrying forward:

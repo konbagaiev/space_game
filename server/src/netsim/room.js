@@ -33,6 +33,7 @@ import { SIM_DT } from '../../../client/src/sim-core/consts.js';
 import { applyInput } from '../../../client/src/replay.js';
 import { engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot }
   from '../../../client/src/sim-core/step-player.js';
+import { completeMission } from '../../../client/src/sim-core/level-runner.js';
 import { wireEvent } from './protocol.js';
 
 // Ticks between snapshots. 2 → 30 Hz at TICK_HZ 60. The SIM rate is not negotiable across hosts
@@ -279,6 +280,11 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     command(cmd) {
       if (!cmd || typeof cmd !== 'object') return;
       if (cmd.cancel) return cancelAutopilot(world);
+      // "Complete mission" — the player ending a cleared run (DECISIONS §132). It is a command for the same
+      // reason click-to-fly is: the ROOM owns the world, and a client that ended the mission in a World
+      // nobody simulates would end nothing. `completeMission` refuses unless the sector is actually cleared,
+      // so this cannot be used to walk out of a live fight with the credits.
+      if (cmd.kind === 'complete') return completeMission(world);
       if (cmd.kind === 'station') return engageAutopilot(world);
       if (cmd.kind === 'point' && cmd.pos) return engagePointAutopilot(world, cmd.pos, cmd.mission || null);
       if (cmd.kind === 'drop') {

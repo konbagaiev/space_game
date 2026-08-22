@@ -4820,3 +4820,48 @@ currency, and it must reload the next level into the tab either way (§130).
 which made it hostage to build drift, to recording gaps, and to a trace format that has already been wrong
 twice (§125, §129). A room needs none of that. The verifier survives as a diagnostic — it is what found the
 netsim recording bug — but it is off the critical path.
+
+## 132. A mission ends when the player says so — "Finish and Return", not a docking approach
+
+**Context.** §130 moved the REWARD to the moment the win condition holds, and left CLOSING the mission where
+it had always been: flying home and completing a docking approach. The maintainer hit the consequence within
+a day of it shipping — cleared Level 3, pressed "Return to base", reloaded the tab, and had to fly the whole
+level again. The credits had survived; the level had not.
+
+That is the shape of the problem, not a bug in the fix: **a mission you have already won should not be
+losable by closing a tab, and finishing it should not depend on completing a flight.**
+
+**Decision.** The last enemy's death clears the sector; the PLAYER ends the mission, with a button.
+
+- Once cleared, the bottom-centre HUD button reads **"Finish and Return"** (it used to read "Return to
+  base" and engage an autopilot). Pressing it is the only thing that closes a mission.
+- `completeMission(world)` sweeps every crate still on the field into the run, then `winLevel`. It refuses
+  unless the sector is actually cleared, so a stray tap can never walk out of a live fight with the credits.
+- **Docking ends nothing.** The station is no longer even made clickable on a clear — an approach that led
+  nowhere would only lie about what finishes a run. Flying home is now pure logistics, and roam keeps its
+  own docking (`checkStationArrival`) untouched.
+- Between the two moments the pilot is simply free in a quiet sector: linger, pick over the wreckage, then
+  end it. That is what makes the loot sweep a safety net rather than a substitute — **the crate the last
+  enemy drops appears at the exact instant the fight ends, and no amount of skill gets a ship to it in
+  time.** The `special` reward crate still deposits nothing; its real copy is installed server-side.
+- **The button also releases a server-run room** (§131). Once the mission is closed there is nothing left
+  for a room to simulate, and leaving it stepping means a room flying a ship nobody is playing. The menu
+  reconnects for the next run by itself.
+- In a room the press travels as a `{kind:'complete'}` COMMAND, for the same reason click-to-fly does: the
+  room owns the world, and a client that ended the mission in a World nobody simulates would end nothing.
+
+**Where the campaign advance went, and why it could move now.** §130 kept `unlockNextLevel()` at the dock
+because it rebuilds the player (`buildPlayerFor` — Level 2's briefing swaps a weapon) and the map, which is
+not safe while the ship is flying. Ending the mission on a button restores exactly the condition that made
+docking safe: `lr.won` freezes the fight first. So the advance rides the button, and the maintainer's
+reload-after-clearing bug closes with it.
+
+**The label was measured, not guessed.** The first draft, "Complete mission and return to base", renders
+~390 px at 16 px bold — wider than a 360 px phone, and the centring transform would have pushed it off BOTH
+edges. "Finish and Return" is 200 px and fits every form factor; the wrap and viewport cap stay anyway,
+because a translation is free to be longer than its source and the Russian one already is.
+
+**What this costs.** The flight home as a beat is gone — the homing arrow now only appears in roam, and the
+denouement between "last kill" and "hangar" is whatever the player chooses to do with a quiet sector. That
+was the trade the maintainer asked for, and it is the same trade §130 half-made: a mission is worth what it
+was fought for, not what was survived on the way back.

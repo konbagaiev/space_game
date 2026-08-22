@@ -202,33 +202,64 @@ test('restart begins a fresh run in the same room', () => {
   assert.equal(room.tick, tickBefore + 1);
 });
 
-test('a mission can be FINISHED in a room — cleared, then docked by command', () => {
-  // The gap this closes: click-to-fly was applied to the CLIENT's World, which nobody steps in netsim, so
-  // the station could not be clicked, drops could not be collected and no mission could ever be completed
-  // (winning requires docking under an engaged station autopilot). The room takes the command now.
+test('a mission can be FINISHED in a room — cleared, then ended by command', () => {
+  // The gap this closes: an end-of-mission click was applied to the CLIENT's World, which nobody steps in
+  // netsim, so drops could not be collected and no mission could ever be completed. The room takes the
+  // command. (It used to be `{kind:'station'}` and a flight home; since DECISIONS §132 the player presses
+  // "Complete mission" instead, and docking ends nothing.)
   const room = createRoom({ levelName: 'level-0', seed: 99 });
   const w = room.world;
   let t = 0;
   const step = () => { room.pushInput([{ t: t++, k: [], a: null }]); room.stepOnce(); };
 
-  for (let i = 0; i < 20000 && !w.levelRunner.returningToBase; i++) {
+  for (let i = 0; i < 20000 && !w.levelRunner.cleared; i++) {
     for (const e of w.enemies) if (!e.warping) e.hp = 0; // clear the level without simulating marksmanship
     step();
   }
   assert.equal(w.kills, 4, 'the level was cleared');
-  assert.equal(w.levelRunner.returningToBase, true, 'which opens the return-to-base gate');
-  assert.ok(w.station.active, 'and makes the station clickable');
+  assert.equal(w.earned, 250, 'the reward landed on the clear, not on any arrival (§130)');
+  assert.equal(w.levelRunner.won, false, 'but the mission is still open — the player has not ended it');
 
-  room.command({ kind: 'station' });
-  assert.equal(w.autopilot.active, true, 'the click reached the room');
-  assert.equal(w.autopilot.target.kind, 'station');
-
-  for (let i = 0; i < 40000 && !w.levelRunner.won; i++) step();
-  assert.equal(w.levelRunner.won, true, 'the ship flew home and docked — the mission is COMPLETABLE');
-  assert.equal(w.earned, 250, 'and the victory doubling was applied');
+  room.command({ kind: 'complete' });
+  assert.equal(w.levelRunner.won, true, 'the button reached the room and CLOSED the mission');
+  assert.equal(w.earned, 250, 'and ending it pays nothing further');
 
   // The state the HUD reads has to come back too, or the player cannot see what the ship is doing.
   assert.ok('autopilot' in room.takeSnapshot(), 'the snapshot reports the autopilot');
+});
+
+test('a room refuses to end a mission that is not cleared — no walking out with the credits', () => {
+  const room = createRoom({ levelName: 'level-0', seed: 99 });
+  const w = room.world;
+  room.pushInput([{ t: 0, k: [], a: null }]); room.stepOnce();
+  w.earned = 500;                                   // mid-fight, with something worth leaving with
+
+  room.command({ kind: 'complete' });
+  assert.equal(w.levelRunner.won, false, 'refused: the sector is not cleared');
+  assert.equal(w.levelRunner.cleared, false);
+  assert.equal(room.banked, false, 'and nothing was banked');
+});
+
+test('ending a mission sweeps the crates still on the field into the run', () => {
+  const room = createRoom({ levelName: 'level-0', seed: 99 });
+  const w = room.world;
+  let t = 0;
+  const step = () => { room.pushInput([{ t: t++, k: [], a: null }]); room.stepOnce(); };
+  for (let i = 0; i < 20000 && !w.levelRunner.cleared; i++) {
+    for (const e of w.enemies) if (!e.warping) e.hp = 0;
+    step();
+  }
+  const before = w.pendingLoot.length;
+  // One crate a long way off, plus whatever the fight itself left lying about — all of it unreachable in
+  // the flight-home window this replaced, and the point of sweeping at all.
+  w.drops.push({ pos: { x: 900, y: 0.8, z: 900 }, item: { kind: 'component', refId: 12 },
+                 weight: 1, inRange: 0, special: false, alive: true });
+  const onField = w.drops.filter((d) => !d.special).length;
+  assert.ok(onField >= 1);
+
+  room.command({ kind: 'complete' });
+  assert.equal(w.drops.length, 0, 'the field is cleared');
+  assert.equal(w.pendingLoot.length, before + onField, 'and every depositable crate went into the run');
 });
 
 test('a drop is claimed by its network id, and a stale id is harmless', () => {

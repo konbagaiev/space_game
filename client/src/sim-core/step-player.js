@@ -48,8 +48,9 @@ function brakeStep(world, accel, dt) {
 
 // Click-to-fly: brake to a stop → rotate to face the station → accelerate at max → kinematic brake so the
 // ship coasts to ~0 right at the station. `heading` convention matches forwardVec/touchAim: desired = atan2(dx, dz).
-// Arrival isn't handled here — checkArrival() (level-runner.js) fires the win ONLY while autopilot is engaged,
-// so a manual/cancelled approach never completes the mission; autopilot just stalls at the station until arrival.
+// Arrival isn't handled here, and since DECISIONS §132 arriving does not end a mission at all — the
+// "Complete mission" button does (`level-runner.completeMission`). Flying home is now pure logistics: the
+// autopilot parks at the station and roam's `checkStationArrival` offers to dock back into the hangar.
 // Resolve the autopilot's current world-space goal. Returns null if the target vanished (drop collected
 // by the passive Grab, drops cleared on reset) → the caller cancels the autopilot.
 function autopilotTargetPos(world) {
@@ -100,10 +101,9 @@ function autopilotControl(world, dt, accel, turn) {
   }
 }
 
-// Fly to the base station to dock. Valid in TWO out-of-combat states, and the difference matters:
-//   • return-to-base (post-kill) — this is the target that can WIN the mission (checkArrival/canDock);
-//   • roam — you took off for a free flight and clicked home; there is no mission to win, so arriving just
-//     parks and offers to dock (checkStationArrival → the `baseArrival` event).
+// Fly to the base station to dock. Valid in the out-of-combat states — roam, and a cleared sector. Arriving
+// never WINS anything any more (§132); it parks and offers to dock back into the hangar
+// (checkStationArrival → the `baseArrival` event).
 // Never during a live fight.
 export function engageAutopilot(world) {
   const p = world.player;
@@ -146,9 +146,8 @@ function checkPointArrival(world) {
   if (mission) world.events.emit({ type: 'missionArrival', missionId: mission });
 }
 
-// Reaching the base station WHILE ROAMING. This is the free-flight counterpart of checkArrival(): there is
-// no mission to win here (levelRunner.returningToBase is false, so canDock/win never runs), so the ship
-// simply parks at the station and the host is asked whether to dock back into the hangar.
+// Reaching the base station WHILE ROAMING: the ship parks and the host is asked whether to dock back into
+// the hangar. Since §132 this is the ONLY thing arriving anywhere does — no arrival wins a mission.
 function checkStationArrival(world) {
   const tgt = world.autopilot.target;
   if (!world.roam || !tgt || tgt.kind !== 'station' || !world.station) return;

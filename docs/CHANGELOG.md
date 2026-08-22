@@ -5,6 +5,28 @@
 
 ## 2026-08-22
 
+- **A mission ends when you say so — the "Finish and Return" button, not a docking approach.** Reported from
+  play the day §130 shipped: cleared Level 3, pressed "Return to base", reloaded the tab — the credits had
+  survived, the level had not, and it had to be flown again. Closing a mission no longer depends on
+  completing a flight. Once the sector is clear the bottom-centre button reads **Finish and Return**;
+  pressing it sweeps every crate still on the field into the run and closes the mission. It refuses unless
+  the sector really is cleared, so a stray tap cannot walk out of a live fight with the credits.
+  **Docking now ends nothing** — the station is not even made clickable on a clear, and the homing arrow is
+  roam-only; flying home is pure logistics. Between the last kill and the button the pilot is free in a
+  quiet sector: linger, pick over the wreckage, then end it. The loot sweep is the safety net for the one
+  crate skill cannot reach — the last enemy's drop appears at the instant the fight ends. **The campaign
+  advance rides the button too**, which is what closes the reported bug: §130 had to leave it at the dock
+  because `unlockNextLevel` rebuilds the player (Level 2's briefing swaps a weapon), and a button restores
+  the condition that made docking safe — the fight is frozen first. **The button also releases a server-run
+  room** (§131): nothing is left to simulate, and the menu reconnects for the next run on its own; in a room
+  the press travels as a `{kind:'complete'}` command. New strings EN + RU (`ui.return.button`,
+  `ui.return.hint`). The label was measured, not guessed: the first draft ("Complete mission and return to
+  base") renders ~390 px, wider than a 360 px phone, and the centring transform would have pushed it off
+  both edges — "Finish and Return" is 200 px and fits desktop, phone landscape and rotated portrait, with a
+  wrap + viewport cap kept for longer translations. Client 491, server 213; `22-intro-replay` held at
+  `tick=2474` (the cutscene's five cards all fire during the fight — the flight home only ever existed
+  because winning required docking) and `36-sim-divergence` still agrees on both hosts. DECISIONS §132.
+
 - **A server-run room now banks its own run — the economy is sealed for the fights the server actually ran.**
   A `?netsim=1` room simulated the whole fight and then let the browser tell the server what it was worth.
   Now the room reports what ITS simulation decided (`createRoom({ onEconomy })`, fired once on the

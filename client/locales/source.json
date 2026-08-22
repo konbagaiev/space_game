@@ -32,12 +32,12 @@
     "context": "Countdown under the out-of-bounds warning; the ship is auto-warped back to center when it reaches 0. {seconds} is an integer; 's' is the seconds abbreviation."
   },
   "ui.return.hint": {
-    "source": "Sector cleared — return to base",
-    "context": "HUD hint shown after the last enemy is destroyed, directing the player to fly back to the base station to complete the mission."
+    "source": "Sector cleared — salvage, then Finish and Return",
+    "context": "HUD hint shown after the last enemy is destroyed. The sector is quiet and the player is free to fly around collecting loot crates; the mission ends only when they press the button, whose label is the ui.return.button string — keep the two worded the same so the hint names what to press. Do not tell them to return to base: flying home is not required."
   },
   "ui.return.button": {
-    "source": "Return to base",
-    "context": "Label on the bottom-center HUD button shown during return-to-base (after the last enemy is destroyed). Clicking it auto-flies the ship home to the base station to complete the mission — the same action as clicking the station model. Short, imperative."
+    "source": "Finish and Return",
+    "context": "Label on the bottom-center HUD button shown once the sector is cleared. Pressing it ENDS the mission: it sweeps up any loot still on the field, banks the run and returns the player to the hangar. It does not fly the ship anywhere — 'Return' means going back to base, not a journey to make. Must stay SHORT: it is a phone-width button."
   },
   "ui.roam.return": {
     "source": "Return to Base",

@@ -6,7 +6,8 @@
 // that could take a whole cleared level away from you. DECISIONS §130 split it in two:
 //
 //   cleared — the win condition holds. THE REWARD IS DECIDED HERE.
-//   won     — the player docked. The mission is closed. Nothing is earned.
+//   won     — the player pressed "Complete mission". The mission is closed. Nothing is earned.
+//             (Docking used to do this. It stopped: DECISIONS §132.)
 //
 // The four tests about WHEN the payout happens were negative-tested by moving the reward back into
 // `winLevel`; all four fail there. The rest cover the `winCondition` data and API, which did not exist
@@ -14,7 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from './world.js';
-import { startLevel, updateLevelRunner, clearMission, winLevel, checkArrival,
+import { startLevel, updateLevelRunner, clearMission, completeMission, winLevel,
          winConditionMet, winConditionOf, DEFAULT_WIN_CONDITION } from './level-runner.js';
 import { LEVELS } from '../../../server/src/catalog_seed.js';
 
@@ -67,7 +68,7 @@ test('allEnemiesDead means the arena is empty — and an unreadable condition ca
 
 // ---------- the reward moment ----------
 
-test('the reward lands when the condition holds, NOT at the dock', () => {
+test('the reward lands when the condition holds, before the player ends anything', () => {
   const { world, descriptor } = atWinPhase({ earned: 100, earnedXp: 40 });
   // run out the boss-explosion delay
   for (let i = 0; i < Math.ceil((descriptor.phases.at(-1).delay ?? 0) / DT) + 1; i++) updateLevelRunner(world, DT);
@@ -76,8 +77,7 @@ test('the reward lands when the condition holds, NOT at the dock', () => {
   assert.equal(world.levelRunner.won, false, 'and NOT won — nobody has docked');
   assert.equal(world.earned, 200, 'credits doubled');
   assert.equal(world.earnedXp, 40 + descriptor.xpReward, "plus the level's one-shot XP bonus");
-  assert.equal(world.returnToBase, true, 'and the way home is open');
-  assert.equal(world.station.active, true, 'station clickable');
+  assert.equal(world.returnToBase, true, 'and the sector is free to wander');
 
   const ev = drain(world).find((e) => e.type === 'cleared');
   assert.ok(ev, 'a `cleared` event went out for the host to bank');
@@ -85,7 +85,7 @@ test('the reward lands when the condition holds, NOT at the dock', () => {
     { credits: 200, xp: 40 + descriptor.xpReward, kills: 17 });
 });
 
-test('docking closes the mission and earns NOTHING — the pre-§130 doubling is gone from winLevel', () => {
+test('ending the mission earns NOTHING — the pre-§130 doubling is gone from winLevel', () => {
   const { world } = atWinPhase();
   clearMission(world);
   const afterClear = { earned: world.earned, xp: world.earnedXp };
@@ -102,13 +102,12 @@ test('docking closes the mission and earns NOTHING — the pre-§130 doubling is
 });
 
 // THE behaviour change players will feel: flying home stops being a stake.
-test('being shot down on the flight home keeps the reward', () => {
+test('being shot down in the cleared sector keeps the reward', () => {
   const { world, descriptor } = atWinPhase({ earned: 100, earnedXp: 40 });
   clearMission(world);
 
-  world.player.alive = false;                 // killed somewhere between the arena and the station
+  world.player.alive = false;                 // killed while picking over the cleared sector
   updateLevelRunner(world, DT);
-  checkArrival(world);                        // whatever the runner still does, it must not take it back
 
   // Asserted against the ABSOLUTE figures, not against "whatever it was a moment ago": the pre-§130 runner
   // also leaves `earned` untouched on the way home — it just never granted anything in the first place.
@@ -147,4 +146,50 @@ test('a fresh run clears the cleared flag — a second mission must be payable',
   startLevel(world, descriptor);
   assert.equal(world.levelRunner.cleared, false);
   assert.equal(world.levelRunner.won, false);
+});
+
+// ---------- Ending it is the player's call, and only theirs (DECISIONS §132) ----------
+
+test('a cleared mission stays open until the player ends it', () => {
+  const { world, descriptor } = atWinPhase();
+  for (let i = 0; i < Math.ceil((descriptor.phases.at(-1).delay ?? 0) / DT) + 600; i++) updateLevelRunner(world, DT);
+  assert.equal(world.levelRunner.cleared, true);
+  assert.equal(world.levelRunner.won, false, 'ten seconds of quiet later it is STILL open — nothing ends it on its own');
+});
+
+test('completeMission closes it, and refuses on a fight that is not cleared', () => {
+  const { world } = atWinPhase();
+  world.levelRunner.winPending = 99;             // still mid-fight as far as the runner is concerned
+  world.enemies = [{ alive: true }];
+  assert.equal(completeMission(world), false, 'no walking out of a live fight');
+  assert.equal(world.levelRunner.won, false);
+
+  world.enemies = [];
+  clearMission(world);
+  assert.equal(completeMission(world), true);
+  assert.equal(world.levelRunner.won, true);
+  assert.equal(completeMission(world), false, 'and it cannot be pressed twice');
+});
+
+test('ending the mission sweeps the field — including a crate no ship could have reached', () => {
+  const { world } = atWinPhase();
+  clearMission(world);
+  const before = world.pendingLoot.length;
+  world.drops.push({ pos: { x: 5000, y: 0.8, z: 5000 }, item: { kind: 'weapon', refId: 5 },
+                     weight: 1, inRange: 0, special: false, alive: true });
+  // The cosmetic reward crate deposits nothing — its real copy is installed server-side — and must not
+  // start doing so just because the sweep collects it.
+  world.drops.push({ pos: { x: 10, y: 0.8, z: 10 }, item: { kind: 'component', refId: 12 },
+                     weight: 1, inRange: 0, special: true, alive: true });
+
+  completeMission(world);
+  assert.equal(world.drops.length, 0, 'the field is empty');
+  assert.equal(world.pendingLoot.length, before + 1, 'the ordinary crate banked, the special one did not');
+});
+
+test('a cleared sector does not make the station clickable — docking ends nothing now', () => {
+  const { world } = atWinPhase();
+  clearMission(world);
+  assert.equal(world.returnToBase, true, 'the out-of-bounds warp lifts, so the pilot may wander');
+  assert.equal(world.station.active, false, 'but there is nothing to dock FOR');
 });

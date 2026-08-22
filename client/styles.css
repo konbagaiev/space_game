@@ -1095,15 +1095,21 @@
      the zoom pair which now lives top-right). Styled to match the Take-off button (orange gradient,
      dark text) so it reads as the primary "go" action. Shown/hidden by updateReturnHint (display none
      by default). */
+  /* The end-of-mission button ("Finish and Return"). The label is short by design — a first draft read
+     "Complete mission and return to base", which at 16px is ~390px, wider than a 360px phone, and the
+     centring transform would have pushed it off BOTH edges. The wrap + viewport cap stay anyway: a
+     translation is free to be longer than its English source, and RU already is. */
   #return-btn {
     position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 6;
     display: none; pointer-events: auto; cursor: pointer;
     font-family: system-ui, sans-serif; font-weight: 700; font-size: 16px; letter-spacing: 1px;
     color: #1a0c02; background: linear-gradient(90deg,#ffb35a,#ff7a3c); border: 0;
     border-radius: 22px; padding: 12px 24px;
+    max-width: 92vw; white-space: normal; text-align: center; line-height: 1.2;
     box-shadow: 0 0 16px rgba(255,140,60,.4);
     -webkit-tap-highlight-color: transparent;
   }
+  body.touch #return-btn { max-width: 78vw; }
   #return-btn:hover { filter: brightness(1.08); }
   #return-btn:active { filter: brightness(1.15); }
   /* Roam bottom-center nav: two buttons side by side (wrap on very narrow screens), same slot as #return-btn

@@ -76,6 +76,18 @@ function collect(world, d) {
   world.events.emit({ type: 'pickup', item: d.item });
 }
 
+// Sweep every crate still on the field into the run's loot — what "Complete mission" does before it closes
+// the mission (DECISIONS §132). Without it, ending the mission on a button press would silently bin whatever
+// the last kill dropped: it appears at the exact moment the fight ends, and no amount of skill gets a ship
+// to it in time. Clearing the sector earns the salvage in it.
+//
+// Goes through the same `collect` the Grab uses, so the `special` reward crate still deposits nothing (its
+// real copy is installed server-side) and every crate still emits `pickup` — the host's blip and pop play
+// for each, which is what makes the sweep legible rather than magic.
+export function collectAll(world) {
+  for (const d of world.drops.slice()) collect(world, d);
+}
+
 // Hand the run's collected loot to the caller (the victory deposit), clearing it.
 export function takeLoot(world) {
   const l = world.pendingLoot.slice();

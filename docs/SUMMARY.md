@@ -3,7 +3,10 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-22 (**A server-run room banks its own run** — a `?netsim=1` room reports what its own
+**Updated:** 2026-08-22 (**A mission ends when the player presses "Finish and Return"** — the last kill
+clears the sector and pays the reward; the pilot is then free in a quiet sector to pick over the wreckage,
+and the button sweeps up what is left, closes the mission, advances the campaign and releases the room.
+Docking ends nothing any more. DECISIONS §132.) Prior: (**A server-run room banks its own run** — a `?netsim=1` room reports what its own
 simulation decided (`onEconomy` → `makeEconomySink` → `recordGame`/`depositLoot`) under the playerId from
 its handshake ticket, and the tab stops banking a run the room is banking. Credits, XP and loot are sealed
 for fights the server actually ran; netsim is opt-in, so browser single-player still banks on trust and is
@@ -1394,20 +1397,22 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   structurally incapable of winning. **Proximity alone never wins**, and any control input cancels the dock
   (clears `active` + `target`) so a cancelled/manual approach doesn't complete (re-tap to resume). Clicking
   while already inside the radius wins on the next frame.
-  **A mission ends in TWO moments, not one (DECISIONS §130).** (1) **CLEARED** — the level's `winCondition`
+  **A mission ends in TWO moments, not one (DECISIONS §130, §132).** (1) **CLEARED** — the level's `winCondition`
   holds (`{ type: 'allEnemiesDead' }` on every campaign level and side mission today, stated on the
   descriptor). `clearMission()` in `sim-core/level-runner.js` doubles the credits, adds the one-shot
   `xpReward`, opens the way home, and emits the `cleared` event; the client's adapter banks off THAT —
   `bankRun`, `depositLoot`, the session flush, the side-mission clear flag. The reward is therefore a pure
   consequence of the fight, reachable by the browser, a server-run room and a headless referee alike — no
-  mouse click involved, which is what made it unreachable for any host without one. (2) **WON** — the player
-  docked. `winLevel()` tears the return state back down (arrow/hint/clickable off) and does the ceremony
-  only: overlay, sting, hangar, any loot the grab pulled in on the way home — **plus `unlockNextLevel()` for
-  campaign levels**, which stays here deliberately because it rebuilds the player (`buildPlayerFor`, and a
-  briefing can swap a weapon) and the map, neither of which is safe mid-flight. So **clearing the sector
-  pays you and reporting back advances you**: shot down on the way home you keep the credits, the XP and the
-  loot, but you fly the level again. An unreadable `winCondition` can never be met — no payout on a rule we
-  cannot evaluate.
+  mouse click involved, which is what made it unreachable for any host without one. (2) **WON** — the player presses
+  **"Finish and Return"**, the bottom-centre button that replaces the old "Return to base" once the sector is
+  clear. `completeMission()` sweeps every crate still on the field into the run (the last enemy's drop
+  appears at the instant the fight ends — no ship reaches it in time), then `winLevel()` does the ceremony:
+  overlay, sting, hangar, `unlockNextLevel()` for campaign levels, and releasing a netsim room. It refuses
+  unless the sector is really cleared, so a stray tap cannot end a live fight. **Docking ends nothing**
+  (§132): the station is not made clickable on a clear and the homing arrow is roam-only — a cleared mission
+  cannot be lost by reloading the tab, which is what the old flight-home requirement did. In a room the press
+  travels as a `{kind:'complete'}` command. An unreadable `winCondition` can never be met — no payout on a
+  rule we cannot evaluate.
   A **bottom-center "Return to base" pill button** (`#return-btn`, i18n `ui.return.button`, shown/hidden in
   `updateReturnHint`) is also drawn as an **explicit, always-on-screen tap target** — same effect as clicking
   the station (`engageAutopilot()`) — since the station model is small and often off-screen. It's visible only

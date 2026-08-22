@@ -12,9 +12,10 @@
 // Sharing this is the point: a room and a referee that built their worlds differently would be two
 // simulations again (docs/plans/server-authoritative-sim.md D1).
 //
-// The one thing worth stating plainly: **the home station is simulation state, not scenery.** Docking at it
-// is how a mission is won (`level-runner.checkArrival` → `canDock`), so a headless World has to place it
-// even though nothing here will ever draw it.
+// The one thing worth stating plainly: **the home station is simulation state, not scenery.** It is where a
+// run begins and where the ship flies home to, so a headless World has to place it even though nothing here
+// will ever draw it. (It used to be load-bearing for a different reason — docking was how a mission was won
+// — until DECISIONS §132 made that a button instead.)
 import { COMPONENTS, WEAPONS, SHIPS, LEVELS, MAPS } from './catalog_seed.js';
 import { enemyTotalFromPhases } from './enemy_total.js';
 import { createWorld, noopHost } from '../../client/src/sim-core/world.js';
