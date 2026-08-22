@@ -43,6 +43,14 @@
   what a winning run was worth. Nine new tests in `sim-core/level-runner.test.js`; the four about payout
   timing were negative-tested by moving the reward back. Client 487, server 203. DECISIONS §130.
 
+- **CI caught a test that read a gitignored asset unconditionally.** `seal/verify-run.test.js` opened
+  `client/assets/recordings/level0-intro.*.json` directly; that trace is pulled from S3 and is not in the
+  repo, so the server job died with ENOENT while everything was green locally. It now carries the same
+  `skip` guard its neighbours (`sim-replay.test.js`, `room.test.js`) already had, resolving the path from
+  the level descriptor so a re-recorded trace never needs the file edited. **Worth knowing:** 12 of its 13
+  tests therefore do not run in CI at all — the same pre-existing hole those neighbours have. The §130 and
+  §131 guards do run there; they build their worlds from `catalog_seed.js` and need no asset.
+
 - **Noticed while verifying:** `visual/run.mjs` takes only **one** scenario filter (`process.argv[2]`), so
   the `node visual/run.mjs 22-intro-replay 36-sim-divergence 37-netsim` line in the docs silently ran only
   the first of the three. And the full suite does not currently finish on this machine at all — it aborts
