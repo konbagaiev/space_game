@@ -37,7 +37,9 @@
 //   { type: 'missionZoneEnter' }                                        the fly-into-it countdown ran out
 //   { type: 'cleared',         credits, xp, kills }                    the win condition was met — THE REWARD
 //                                                                       IS DECIDED HERE (bank it; DECISIONS §130)
-//   { type: 'win',             textKey, text }                         the player docked — the mission is closed
+//   { type: 'finishing' }                                               the player ended the mission: salvage
+//                                                                       swept, flying home — COMMIT THE ADVANCE
+//   { type: 'win',             textKey, text }                         the ship arrived — the mission is closed
 //   { type: 'death' }                                                  the player's ship was destroyed
 //
 // Note `banner` carries an i18n KEY plus params, never a translated string: `t()` is a client concern and

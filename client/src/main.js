@@ -29,7 +29,7 @@ import { el } from './dom.js'; // single fail-loud inventory of shared index.htm
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateMissionMarker, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/gold mission pointer/enemy health bars/XP bar+skill badge)
 import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, renderTick, setGrabTarget, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, completeMission, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
+import { update, renderTick, setGrabTarget, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, finishMission, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './sim-core/system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -394,7 +394,7 @@ if (Device.hasTouch) {
   // (steering finger on #stick-zone) would never fire (the DECISIONS §42 bug). preventDefault stops the
   // compat click so a lone tap doesn't double-engage. audio.sfx.uiClick() gives click-sound parity — the
   // global capture-phase click→uiClick (main.js:53) also won't fire during flight for the same reason.
-  el.returnBtn.addEventListener('touchstart', e => { completeMission(); audio.sfx.uiClick(); e.preventDefault(); }, { passive: false });
+  el.returnBtn.addEventListener('touchstart', e => { finishMission(); audio.sfx.uiClick(); e.preventDefault(); }, { passive: false });
 } else {
   // PC: the rocket circle is also clickable (besides the F key)
   const rocketBtn = document.getElementById('rocket-btn');
@@ -419,7 +419,7 @@ if (!Device.hasTouch) {
 
 // Mouse-only: on touch the "Return to base" button fires on `touchstart` (in the touch block above).
 if (!Device.hasTouch) {
-  el.returnBtn.addEventListener('click', () => { completeMission(); });
+  el.returnBtn.addEventListener('click', () => { finishMission(); });
 }
 
 // Roam bottom-center nav buttons (Return to Base / Autopilot to Mission). Each doubles as its OWN cancel:
@@ -1832,7 +1832,7 @@ function cutsceneObserve() {
   if (!rs.cutReturning && G.returnToBase && !levelRunner.won) {
     rs.cutReturning = true;
     for (const c in keys) keys[c] = false; touchAim.active = false;
-    completeMission();
+    finishMission();
   } else if (rs.cutReturning && levelRunner.won) {
     cutsceneEnd(); rs.done = true; // mission complete → stop the re-sim on the victory overlay
   }

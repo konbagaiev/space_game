@@ -5,6 +5,23 @@
 
 ## 2026-08-22
 
+- **"Finish and Return" now flies you home instead of teleporting you there.** §132 ended a cleared mission
+  the instant the button was pressed — the victory overlay appeared where the ship stood. The flight home is
+  the denouement of a mission; deleting it was never the ask, only making it *required* was the bug. A
+  mission now ends in three moments: **cleared** (reward granted), **finishing** (the press: salvage swept,
+  campaign advance committed server-side, autopilot engaged for home) and **won** (arrival: overlay, hangar,
+  and the tab-side half of the advance). Everything that must survive reloading the tab happens at the press;
+  everything that needs a stationary ship waits for the arrival. That line exists for a concrete reason —
+  `unlockNextLevel` was one function doing both, and its second half calls `buildPlayerFor`, which builds a
+  **brand-new player** starting at the spawn point, so running it mid-flight would teleport the ship out from
+  under its own autopilot. It is now `commitLevelAdvance()` + `loadAdvancedLevel()`, with `unlockNextLevel()`
+  kept as both for callers that finish standing still. Docking without pressing still settles and closes in
+  one go. In a room the press travels as `{kind:'finish'}` and the ROOM flies the ship home; the salvage
+  swept at the press gets its own money-free economy report, or those crates would never reach the stash
+  after the room had already banked at `cleared`. **A guard the tests found:** `checkArrival` called
+  `winLevel` unconditionally, so a docking approach could have closed an *uncleared* level — unreachable in
+  practice, fixed and asserted anyway. Client 494, server 214; oracles unchanged. DECISIONS §133.
+
 - **…and docking finishes a mission again.** The change above went one step too far and removed the flight
   home as a route entirely; the maintainer put it back the same day. The bug was "you MUST fly home", not
   "you may". `checkArrival` now routes through the same `completeMission` the button does, so the two cannot

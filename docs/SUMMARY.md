@@ -5,8 +5,9 @@
 
 **Updated:** 2026-08-22 (**A mission ends when the player presses "Finish and Return"** — the last kill
 clears the sector and pays the reward; the pilot is then free in a quiet sector to pick over the wreckage,
-and "Finish and Return" sweeps up what is left, closes the mission, advances the campaign and releases the
-room. Flying home and docking does the same thing — it is a choice, not a requirement. DECISIONS §132.) Prior: (**A server-run room banks its own run** — a `?netsim=1` room reports what its own
+and "Finish and Return" sweeps up what is left, commits the campaign advance and flies the ship home on
+autopilot; arriving closes the mission. Reloading the tab mid-flight loses nothing — settling is what
+survives the trip, not the trip. DECISIONS §132, §133.) Prior: (**A server-run room banks its own run** — a `?netsim=1` room reports what its own
 simulation decided (`onEconomy` → `makeEconomySink` → `recordGame`/`depositLoot`) under the playerId from
 its handshake ticket, and the tab stops banking a run the room is banking. Credits, XP and loot are sealed
 for fights the server actually ran; netsim is opt-in, so browser single-player still banks on trust and is
@@ -1403,18 +1404,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `xpReward`, opens the way home, and emits the `cleared` event; the client's adapter banks off THAT —
   `bankRun`, `depositLoot`, the session flush, the side-mission clear flag. The reward is therefore a pure
   consequence of the fight, reachable by the browser, a server-run room and a headless referee alike — no
-  mouse click involved, which is what made it unreachable for any host without one. (2) **WON** — the player presses
+  mouse click involved, which is what made it unreachable for any host without one. (2) **FINISHING** — the player presses
   **"Finish and Return"**, the bottom-centre button that replaces the old "Return to base" once the sector is
-  clear. `completeMission()` sweeps every crate still on the field into the run (the last enemy's drop
-  appears at the instant the fight ends — no ship reaches it in time), then `winLevel()` does the ceremony:
-  overlay, sting, hangar, `unlockNextLevel()` for campaign levels, and releasing a netsim room. It refuses
-  unless the sector is really cleared, so a stray tap cannot end a live fight. **Flying home and docking ends
-  it too** — `checkArrival` routes through the same `completeMission`, so the two cannot drift apart (same
-  sweep, same payout); the station is clickable on a clear and the homing arrow still points at it, and
-  `canDock` still requires an ENGAGED station autopilot so proximity alone never finishes anything. What
-  changed (§132) is that docking is no longer the ONLY way, so a cleared mission cannot be lost by reloading
-  the tab. In a room the button press travels as a `{kind:'complete'}` command; the docking route the room
-  runs itself. An unreadable `winCondition` can never be met — no payout on a
+  clear. `finishMission()` sweeps every crate still on the field into the run (the last enemy's drop appears
+  at the instant the fight ends — no ship reaches it in time), emits `finishing`, and **engages the autopilot
+  home**. The host deposits the loot and commits the campaign advance **server-side** on that event, so
+  reloading the tab mid-flight loses nothing. It refuses unless the sector is really cleared, so a stray tap
+  cannot end a live fight. (3) **WON** — the ship arrives. `checkArrival` → `winLevel()`: overlay, sting,
+  hangar, releasing a netsim room, and only now `loadAdvancedLevel()` — the descriptor, the map and the
+  rebuilt ship, which need everything standing still (`buildPlayerFor` makes a fresh player at the spawn
+  point, so mid-flight it would teleport the ship out from under its own autopilot). Flying home WITHOUT
+  pressing settles and closes in one go; `canDock` still requires an ENGAGED station autopilot, so proximity
+  alone finishes nothing. In a room the press travels as `{kind:'finish'}` and the room flies the ship home
+  itself; the salvage swept at the press gets its own money-free economy report. An unreadable `winCondition` can never be met — no payout on a
   rule we cannot evaluate.
   A **bottom-center "Return to base" pill button** (`#return-btn`, i18n `ui.return.button`, shown/hidden in
   `updateReturnHint`) is also drawn as an **explicit, always-on-screen tap target** — same effect as clicking

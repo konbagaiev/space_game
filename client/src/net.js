@@ -191,18 +191,36 @@ export function track(type, data) {
   } catch { /* telemetry must never break the game */ }
 }
 
-// On victory: tell the server to unlock the next level, then load that level so the next Restart plays it
-// (rebuilding the map if it changed). The advance may return a `briefing` (message + the server already
-// ran its actions, e.g. a weapon swap) and may have changed the active ship — so we reload the active
-// ship and rebuild the player, and stash the briefing (G.pendingBriefing) to show before the next run.
-export async function unlockNextLevel() {
+// Advancing to the next level is TWO steps, and they happen at different moments (DECISIONS §133).
+//
+// The split exists because the second half is not safe while the ship is flying. `buildPlayerFor` builds a
+// brand-new player — a briefing action can swap a weapon, as Level 2's does — and a fresh player starts at
+// the spawn point, so rebuilding mid-flight would teleport the ship out from under the autopilot taking it
+// home. `buildMap` has the same problem for a level that lives on a different map.
+//
+// So: COMMIT when the player presses "Finish and Return" (a server call and nothing else, so the progress
+// survives reloading the tab during the flight home — which is the exact bug that started all this), and
+// LOAD once the ship has arrived and nothing is moving.
+
+// Step 1 — commit the advance server-side. Safe at any moment: it touches the account, never this tab's
+// world. Stashes the next level's briefing so the Main Window can show it after landing.
+export async function commitLevelAdvance() {
   if (!G.playerId) return;
-  const clearedLevel = currentLevelLabel(); // before CATALOG.level is swapped to the next level
+  const clearedLevel = currentLevelLabel(); // before anything swaps CATALOG.level out from under us
   try {
     const adv = await (await fetch(API_BASE + `/api/players/${G.playerId}/advance`, { method: 'POST' })).json();
     clientLog('adv:resp', { advanced: adv && adv.advanced, cp: adv && adv.currentProgress, hasBriefing: !!(adv && adv.briefing) }); // TEMP debug
     if (adv && !adv.advanced) track('victory', { level: clearedLevel }); // no next level → final win
     if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) G.pendingBriefing = adv.briefing;
+  } catch (e) { clientLog('adv:error', { msg: String((e && e.message) || e) }); /* best-effort: the same level replays */ }
+}
+
+// Step 2 — load the level the server has already advanced us to into THIS tab: the descriptor (so the next
+// Restart plays it), its map if that changed, and the active ship (a briefing action may have swapped a
+// weapon). REBUILDS THE PLAYER, so it must only run with the ship at rest.
+export async function loadAdvancedLevel() {
+  if (!G.playerId) return;
+  try {
     const level = await fetchJson(`/api/players/${G.playerId}/level`);
     clientLog('adv:level', { name: level && level.name, title: level && level.descriptor && level.descriptor.title, map: level && level.descriptor && level.descriptor.map }); // TEMP debug
     if (level.descriptor.map !== CATALOG.level.map) {
@@ -211,7 +229,6 @@ export async function unlockNextLevel() {
     }
     CATALOG.level = level.descriptor; // reset() restarts CATALOG.level → next Restart is the new level
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
-    // a briefing action may have changed the loadout (weapon swap) — reload the active ship + rebuild.
     // Wait for the run's bank POST first: this read would otherwise return the PRE-run experience and
     // overwrite the freshly banked progression with it (see `banking`).
     await bankingDone();
@@ -219,4 +236,10 @@ export async function unlockNextLevel() {
     if (refreshed) { G.activeShip = refreshed; if (refreshed.ship) buildPlayerFor(refreshed.ship); }
     clientLog('adv:done', { catalogLevel: CATALOG.level && CATALOG.level.title, catalogName: CATALOG.levelName }); // TEMP debug
   } catch (e) { clientLog('adv:error', { msg: String((e && e.message) || e), stack: String((e && e.stack) || '').slice(0, 400) }); /* progression is best-effort; on failure the same level replays */ }
+}
+
+// Both halves back to back — for a caller that finishes with the ship already at rest.
+export async function unlockNextLevel() {
+  await commitLevelAdvance();
+  await loadAdvancedLevel();
 }

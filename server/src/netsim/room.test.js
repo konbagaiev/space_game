@@ -202,11 +202,11 @@ test('restart begins a fresh run in the same room', () => {
   assert.equal(room.tick, tickBefore + 1);
 });
 
-test('a mission can be FINISHED in a room — cleared, then ended by command', () => {
+test('a mission can be FINISHED in a room — cleared, ended by command, flown home by the room', () => {
   // The gap this closes: an end-of-mission click was applied to the CLIENT's World, which nobody steps in
   // netsim, so drops could not be collected and no mission could ever be completed. The room takes the
-  // command. (It used to be `{kind:'station'}` and a flight home; since DECISIONS §132 the player presses
-  // "Complete mission" instead, and docking ends nothing.)
+  // command — and since DECISIONS §133 the command ENGAGES THE AUTOPILOT rather than winning outright, so
+  // the flight home is simulated by the room like everything else.
   const room = createRoom({ levelName: 'level-0', seed: 99 });
   const w = room.world;
   let t = 0;
@@ -220,15 +220,21 @@ test('a mission can be FINISHED in a room — cleared, then ended by command', (
   assert.equal(w.earned, 250, 'the reward landed on the clear, not on any arrival (§130)');
   assert.equal(w.levelRunner.won, false, 'but the mission is still open — the player has not ended it');
 
-  room.command({ kind: 'complete' });
-  assert.equal(w.levelRunner.won, true, 'the button reached the room and CLOSED the mission');
-  assert.equal(w.earned, 250, 'and ending it pays nothing further');
+  room.command({ kind: 'finish' });
+  assert.equal(w.levelRunner.finishing, true, 'the button reached the room and SETTLED the mission');
+  assert.equal(w.levelRunner.won, false, 'but it is not closed yet — the ship still has to get home');
+  assert.equal(w.autopilot.active, true, 'the room is flying it there');
+  assert.equal(w.autopilot.target.kind, 'station');
+
+  for (let i = 0; i < 40000 && !w.levelRunner.won; i++) step();
+  assert.equal(w.levelRunner.won, true, 'and on arrival the mission closes');
+  assert.equal(w.earned, 250, 'the journey pays nothing further');
 
   // The state the HUD reads has to come back too, or the player cannot see what the ship is doing.
   assert.ok('autopilot' in room.takeSnapshot(), 'the snapshot reports the autopilot');
 });
 
-test('…and flying home still finishes it too — the room runs the docking route as well', () => {
+test('…and flying home WITHOUT pressing the button finishes it too', () => {
   // Both ways to end a mission (DECISIONS §132) have to work where the ROOM owns the world, or clicking the
   // station in a netsim run would engage an autopilot that flies to a dock that does nothing.
   const room = createRoom({ levelName: 'level-0', seed: 99 });
@@ -256,9 +262,10 @@ test('a room refuses to end a mission that is not cleared — no walking out wit
   room.pushInput([{ t: 0, k: [], a: null }]); room.stepOnce();
   w.earned = 500;                                   // mid-fight, with something worth leaving with
 
-  room.command({ kind: 'complete' });
-  assert.equal(w.levelRunner.won, false, 'refused: the sector is not cleared');
-  assert.equal(w.levelRunner.cleared, false);
+  room.command({ kind: 'finish' });
+  assert.equal(w.levelRunner.finishing, false, 'refused: the sector is not cleared');
+  assert.equal(w.levelRunner.won, false);
+  assert.equal(w.autopilot.active, false, 'and it did not quietly fly the player out of the fight');
   assert.equal(room.banked, false, 'and nothing was banked');
 });
 
@@ -279,7 +286,7 @@ test('ending a mission sweeps the crates still on the field into the run', () =>
   const onField = w.drops.filter((d) => !d.special).length;
   assert.ok(onField >= 1);
 
-  room.command({ kind: 'complete' });
+  room.command({ kind: 'finish' });
   assert.equal(w.drops.length, 0, 'the field is cleared');
   assert.equal(w.pendingLoot.length, before + onField, 'and every depositable crate went into the run');
 });

@@ -6,8 +6,8 @@
 // that could take a whole cleared level away from you. DECISIONS §130 split it in two:
 //
 //   cleared — the win condition holds. THE REWARD IS DECIDED HERE.
-//   won     — the player ended it, with the "Finish and Return" button OR by flying home and docking.
-//             Both routes run `completeMission`. The mission is closed. Nothing is earned. (§132)
+//   finishing — the player pressed "Finish and Return": salvage swept, advance committed, flying home. (§133)
+//   won       — the ship arrived. The mission is closed. Nothing is earned.
 //
 // The four tests about WHEN the payout happens were negative-tested by moving the reward back into
 // `winLevel`; all four fail there. The rest cover the `winCondition` data and API, which did not exist
@@ -15,7 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from './world.js';
-import { startLevel, updateLevelRunner, clearMission, completeMission, checkArrival, winLevel,
+import { startLevel, updateLevelRunner, clearMission, finishMission, checkArrival, winLevel,
          winConditionMet, winConditionOf, DEFAULT_WIN_CONDITION } from './level-runner.js';
 import { LEVELS } from '../../../server/src/catalog_seed.js';
 
@@ -157,18 +157,24 @@ test('a cleared mission stays open until the player ends it', () => {
   assert.equal(world.levelRunner.won, false, 'ten seconds of quiet later it is STILL open — nothing ends it on its own');
 });
 
-test('completeMission closes it, and refuses on a fight that is not cleared', () => {
+test('finishMission settles the run and FLIES HOME — it does not close it on the spot', () => {
   const { world } = atWinPhase();
   world.levelRunner.winPending = 99;             // still mid-fight as far as the runner is concerned
   world.enemies = [{ alive: true }];
-  assert.equal(completeMission(world), false, 'no walking out of a live fight');
-  assert.equal(world.levelRunner.won, false);
+  assert.equal(finishMission(world), false, 'no walking out of a live fight');
+  assert.equal(world.autopilot.active, false, 'and no quiet exit flight either');
 
   world.enemies = [];
   clearMission(world);
-  assert.equal(completeMission(world), true);
-  assert.equal(world.levelRunner.won, true);
-  assert.equal(completeMission(world), false, 'and it cannot be pressed twice');
+  world.events.drain(() => {});
+  assert.equal(finishMission(world), true);
+  assert.equal(world.levelRunner.finishing, true, 'settled');
+  assert.equal(world.levelRunner.won, false, 'but NOT closed — the ship has to get home first (§133)');
+  assert.equal(world.autopilot.active, true, 'the autopilot is taking it there');
+  assert.equal(world.autopilot.target.kind, 'station');
+  const evs = drain(world).map((e) => e.type);
+  assert.ok(evs.includes('finishing'), 'and the host is told to commit the campaign advance NOW');
+  assert.equal(finishMission(world), false, 'it cannot be pressed twice');
 });
 
 test('ending the mission sweeps the field — including a crate no ship could have reached', () => {
@@ -182,7 +188,7 @@ test('ending the mission sweeps the field — including a crate no ship could ha
   world.drops.push({ pos: { x: 10, y: 0.8, z: 10 }, item: { kind: 'component', refId: 12 },
                      weight: 1, inRange: 0, special: true, alive: true });
 
-  completeMission(world);
+  finishMission(world);
   assert.equal(world.drops.length, 0, 'the field is empty');
   assert.equal(world.pendingLoot.length, before + 1, 'the ordinary crate banked, the special one did not');
 });
@@ -194,8 +200,9 @@ test('a cleared sector lifts the bounds AND opens the station — flying home is
   assert.equal(world.station.active, true, 'and the station is clickable — docking still ends the mission');
 });
 
-// The two routes must not drift apart: whatever the button does, docking does.
-test('docking ends the mission exactly as the button does — sweep included', () => {
+// The two routes must not drift apart: a player who never presses the button and just flies home has to end
+// up with exactly the world the button would have produced.
+test('docking without pressing the button settles AND closes it, identically', () => {
   const byDock = atWinPhase({ earned: 100, earnedXp: 40 }).world;
   const byButton = atWinPhase({ earned: 100, earnedXp: 40 }).world;
   for (const w of [byDock, byButton]) {
@@ -204,15 +211,18 @@ test('docking ends the mission exactly as the button does — sweep included', (
                    weight: 1, inRange: 0, special: false, alive: true });
   }
 
-  completeMission(byButton);
+  // The button settles it and starts the flight; park it home and let arrival close it.
+  finishMission(byButton);
+  byButton.player.pos.x = byButton.station.pos.x; byButton.player.pos.z = byButton.station.pos.z;
+  checkArrival(byButton);
 
-  // Fly the other one home: park the ship at the station under an ENGAGED station autopilot.
+  // The other never presses anything — it just flies home manually and docks.
   byDock.player.pos.x = byDock.station.pos.x; byDock.player.pos.z = byDock.station.pos.z;
   byDock.autopilot.active = true; byDock.autopilot.target = { kind: 'station' };
   checkArrival(byDock);
 
   assert.equal(byDock.levelRunner.won, true, 'docking closed it');
-  assert.equal(byButton.levelRunner.won, true, 'so did the button');
+  assert.equal(byButton.levelRunner.won, true, 'so did the button plus the trip');
   assert.equal(byDock.earned, byButton.earned, 'and both are worth the same');
   assert.equal(byDock.earnedXp, byButton.earnedXp);
   assert.deepEqual(byDock.pendingLoot, byButton.pendingLoot, 'docking sweeps the field too');

@@ -59,6 +59,7 @@ export const EVENT_FIELDS = {
   baseArrival:      [],
   missionZoneEnter: [],
   cleared:          ['credits', 'xp', 'kills'],
+  finishing:        [],
   win:              ['textKey', 'text'],
   death:            [],
 };

@@ -4868,3 +4868,43 @@ because a translation is free to be longer than its source and the Russian one a
 trip, and the denouement between "last kill" and "hangar" is whatever the player wants to do with a quiet
 sector. That is the same trade §130 half-made: a mission is worth what it was fought for, not what was
 survived on the way back. Since both routes sweep the field, flying home buys atmosphere rather than loot.
+
+## 133. "Finish and Return" flies you home — settling the mission is what survives the trip, not the trip
+
+**Context.** §132 made a cleared mission end on a button press. It ended it *instantly*: the victory overlay
+appeared where the ship was standing. The maintainer's note was one line — *"надо не телепортировать на базу,
+а включить автопилот туда"* — and it is right. The flight home is the denouement of a mission; deleting it
+was never the ask. The ask was that finishing must not **depend** on completing it.
+
+**Decision.** Split what the press does from where the ship ends up. A mission now ends in three moments:
+
+1. **CLEARED** — the last enemy dies. The reward is granted (§130).
+2. **FINISHING** — the player presses "Finish and Return" (or docks without pressing). `finishMission`
+   sweeps the field's salvage into the run, emits `finishing`, and **engages the autopilot home**. The host
+   uses that event to deposit the loot and to **commit the campaign advance server-side**.
+3. **WON** — the ship arrives. `checkArrival` → `winLevel`: overlay, sting, hangar, and only now the
+   tab-side half of the advance.
+
+**Everything that must survive a reload happens at 2, everything that needs a stationary ship happens at 3.**
+That line is the whole design, and it is drawn where it is for a concrete reason: `unlockNextLevel` was one
+function doing both, and its second half calls `buildPlayerFor`, which builds a **brand-new player** — a
+briefing action can swap a weapon, as Level 2's does — and a fresh player starts at the spawn point. Running
+it mid-flight would teleport the ship out from under the autopilot bringing it home. So `net.js` splits into
+`commitLevelAdvance()` (a server call, safe at any moment) and `loadAdvancedLevel()` (descriptor, map,
+rebuilt ship — at rest only), with `unlockNextLevel()` kept as both back to back for callers that finish
+standing still.
+
+**What this preserves from §132.** Press the button and reload the tab mid-flight: the credits were banked at
+the clear, the salvage was deposited and the progress was committed at the press. Nothing is lost. That was
+the bug — cleared Level 3, pressed return, reloaded, had to fly it again — and it stays fixed while the
+flight home comes back.
+
+**A guard the tests found, not the design.** `checkArrival` first called `winLevel` unconditionally after
+trying to settle, so a docking approach could have closed an *uncleared* level. In practice unreachable —
+`updateLevelRunner` only calls it once the fight is over — but "arriving can win a live mission" is not a
+guard to leave to the caller. It now bails when settling is refused, and a test asserts it.
+
+**In a room** the press travels as `{kind:'finish'}` and the ROOM engages its own autopilot, so the flight
+home is simulated where everything else is. The salvage swept at step 2 gets its own economy report
+(`kind:'salvage'`, no money — the run was paid at `cleared`), because the room's banking already happened
+and those crates would otherwise never reach the stash.

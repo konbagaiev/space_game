@@ -32,12 +32,12 @@ import { BANNER_FADE, showBanner as showBannerIn } from './sim-core/events.js';
 import { PLAYER_MAX_SPEED, warpPlayerToCenter as warpPlayerToCenterIn,
          engageAutopilot as engageAutopilotIn, engageDropAutopilot as engageDropAutopilotIn,
          engagePointAutopilot as engagePointAutopilotIn, cancelAutopilot as cancelAutopilotIn } from './sim-core/step-player.js';
-import { startLevel, updateLevelRunner, winLevel, completeMission as completeMissionIn, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
+import { startLevel, updateLevelRunner, winLevel, finishMission as finishMissionIn, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
 import { clearAndPlaceRun, startRun } from './sim-core/reset-world.js';
 import { simTick as simTickIn } from './sim-core/tick.js';
 import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
-import { track, currentLevelLabel, bankRun, unlockNextLevel, depositLoot, reportMissionCleared,
-         refreshAfterRoomBank } from './net.js';
+import { track, currentLevelLabel, bankRun, commitLevelAdvance, loadAdvancedLevel, depositLoot,
+         reportMissionCleared, refreshAfterRoomBank } from './net.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 import { logEvent, clearEventLog } from './eventlog.js';
@@ -77,7 +77,7 @@ export function updateBanner() {
 // exists because eight modules and three visual scenarios read (and one writes) `levelRunner.<field>` —
 // so the historical shape is kept and every property forwards to `world.levelRunner`.
 const LEVEL_RUNNER_FIELDS = ['level', 'phaseIndex', 'killsAtPhaseStart', 'spawnedThisPhase', 'spawnCooldown',
-  'won', 'cleared', 'winPending', 'winText', 'winTextKey', 'returningToBase'];
+  'won', 'cleared', 'finishing', 'winPending', 'winText', 'winTextKey', 'returningToBase'];
 export const levelRunner = {
   start(level) { startLevel(world, level); },
   update(dt) { updateLevelRunner(world, dt); },
@@ -147,12 +147,13 @@ export function updateReturnHint() {
   el.returnBtn.style.display = show ? 'block' : 'none';
 }
 
-// End the mission — the button, and the only thing that closes a cleared run. In a server-run room the
-// ROOM owns the world, so this travels as a command exactly like click-to-fly does; locally it is the
-// sim-core call. Returns whether it took (false before the sector is cleared, or if it already ended).
-export function completeMission() {
-  if (world.onCommand) { command({ kind: 'complete' }); return true; }
-  return completeMissionIn(world);
+// End the mission — "Finish and Return". Settles it (salvage + the campaign advance) and flies the ship
+// home; arrival closes it. In a server-run room the ROOM owns the world, so this travels as a command
+// exactly like click-to-fly does. Returns whether it took (false before the sector is cleared, or if the
+// player has already pressed it).
+export function finishMission() {
+  if (world.onCommand) { command({ kind: 'finish' }); return true; }
+  return finishMissionIn(world);
 }
 // Roam bottom-center navigation: "Return to Base" (dock autopilot) + "Autopilot to Mission" (fly to the
 // active mission). Shown only while roaming. Each button doubles as its OWN cancel — clicking the
@@ -338,7 +339,19 @@ function applySimEvent(ev) {
       }
       break;
     }
-    // The mission is CLOSED — the player docked. Ceremony and exit only; nothing is earned here.
+    // The player ended it: the salvage is swept and the ship is flying home. Everything that must survive a
+    // reload of the tab happens HERE (DECISIONS §133) — the stash deposit and the server-side half of the
+    // campaign advance. The tab-side half waits for the ship to stop; see `win`.
+    case 'finishing': {
+      if (!G.replayMode) {
+        if (!G.netDriving) { const loot = takeLoot(); if (loot.length) depositLoot(loot); } // a room deposits its own
+        const lvl = levelRunner.level;
+        if (lvl && !lvl.sideMission) commitLevelAdvance(); // progress is now safe even if the flight is abandoned
+      }
+      break;
+    }
+    // The ship ARRIVED — the mission is closed. Ceremony, exit, and only now the half of the advance that
+    // rebuilds the ship and the map, which needs everything standing still.
     case 'win': {
       audio.sfx.jingle(true); refreshMusic(); // victory sting + back to the calmer menu music
       el.overlayTitle.textContent = t('ui.overlay.victory');
@@ -349,22 +362,16 @@ function applySimEvent(ev) {
       el.backHangar.style.display = 'none'; // Continue already goes to the Hangar — no separate button on a win
       el.overlay.style.display = 'flex';
       if (!G.replayMode) {
-        // Anything the grab pulled in DURING the flight home still has to reach the stash — `takeLoot`
-        // drains what it takes, so this cannot double-count what `cleared` already deposited. In a room the
-        // crates are the room's to deposit, here as there.
+        // Anything still pending reaches the stash — `takeLoot` drains what it takes, so this cannot
+        // double-count what `finishing` already deposited. In a room the crates are the room's to deposit.
         if (!G.netDriving) { const late = takeLoot(); if (late.length) depositLoot(late); }
-        // THE CAMPAIGN ADVANCE STAYS HERE, at the dock, and deliberately — it is not a reward, it is
-        // "load the next mission into this tab", and it is NOT safe while the ship is still flying:
-        // `unlockNextLevel` rebuilds the PLAYER (`buildPlayerFor` — a briefing action can swap the weapon,
-        // as Level 2's does) and rebuilds the MAP when the next level uses a different one. Doing that
-        // mid-flight would change the ship under the pilot on the way home.
-        //
-        // So the two moments mean different things, and the difference is legible in play: clearing the
-        // sector PAYS you (§130), reporting back ADVANCES you. Die on the flight home and you keep the
-        // credits, the XP and the loot, but you fly the level again. Side missions never advance the story
-        // counter — theirs was recorded at `cleared`.
+        // The tab-side half of the advance, and it waits for HERE deliberately: `loadAdvancedLevel`
+        // rebuilds the PLAYER (`buildPlayerFor` — Level 2's briefing swaps a weapon) and a fresh player
+        // starts at the spawn point, so running it mid-flight would teleport the ship out from under the
+        // autopilot bringing it home. The server-side half was committed at `finishing`, so the progress
+        // is already safe whether or not this ever runs.
         const lvl = levelRunner.level;
-        if (lvl && !lvl.sideMission) unlockNextLevel();
+        if (lvl && !lvl.sideMission) loadAdvancedLevel();
       }
       // The mission is over, so a server-run room has nothing left to simulate — release it (§132). The
       // menu reconnects for the next run by itself. Outside the replay gate deliberately: a link is a link

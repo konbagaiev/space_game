@@ -33,7 +33,7 @@ import { SIM_DT } from '../../../client/src/sim-core/consts.js';
 import { applyInput } from '../../../client/src/replay.js';
 import { engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot }
   from '../../../client/src/sim-core/step-player.js';
-import { completeMission } from '../../../client/src/sim-core/level-runner.js';
+import { finishMission } from '../../../client/src/sim-core/level-runner.js';
 import { wireEvent } from './protocol.js';
 
 // Ticks between snapshots. 2 → 30 Hz at TICK_HZ 60. The SIM rate is not negotiable across hosts
@@ -106,6 +106,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
   let caughtUp = 0;            // inputs fast-forwarded to keep the queue shallow (a diagnostic)
   let grabTarget = null;       // the crate the Grab is pulling this tick, so the client can draw its beam
   let banked = false;          // this run's reward has been reported — exactly once, whatever else happens
+  let salvaged = false;        // …and the end-of-mission salvage sweep, likewise once
   let runStartTick = 0;        // for the run's duration; `restart()` re-stamps it
 
   const idOf = (e) => ids.get(e) ?? null;
@@ -152,7 +153,17 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
   // A run that simply STOPS — a disconnect, an abandoned tab — reports nothing and is worth nothing, which
   // is the same rule single-player has always had for closing the browser mid-fight.
   function reportEconomy(ev) {
-    if (!onEconomy || banked) return;
+    if (!onEconomy) return;
+    // The salvage sweep happens when the player ENDS the mission, which is after `cleared` has already been
+    // reported — so those crates need a report of their own or they would never reach the stash in a room.
+    // No money rides on it: the run was paid at `cleared`.
+    if (ev.type === 'finishing' && !salvaged) {
+      salvaged = true;
+      const loot = world.pendingLoot.map((it) => ({ kind: it.kind, refId: it.refId }));
+      if (loot.length) onEconomy({ kind: 'salvage', credits: 0, xp: 0, kills: world.kills, durationMs: 0, loot });
+      return;
+    }
+    if (banked) return;
     if (ev.type !== 'cleared' && ev.type !== 'death') return;
     banked = true;
     onEconomy({
@@ -280,11 +291,12 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     command(cmd) {
       if (!cmd || typeof cmd !== 'object') return;
       if (cmd.cancel) return cancelAutopilot(world);
-      // "Complete mission" — the player ending a cleared run (DECISIONS §132). It is a command for the same
-      // reason click-to-fly is: the ROOM owns the world, and a client that ended the mission in a World
-      // nobody simulates would end nothing. `completeMission` refuses unless the sector is actually cleared,
-      // so this cannot be used to walk out of a live fight with the credits.
-      if (cmd.kind === 'complete') return completeMission(world);
+      // "Finish and Return" — the player ending a cleared run (DECISIONS §132/§133). It is a command for
+      // the same reason click-to-fly is: the ROOM owns the world, and a client that ended the mission in a
+      // World nobody simulates would end nothing. `finishMission` refuses unless the sector is actually
+      // cleared, so this cannot be used to walk out of a live fight with the credits — and it engages the
+      // autopilot rather than winning outright, so the ship flies home under the room's own simulation.
+      if (cmd.kind === 'finish') return finishMission(world);
       if (cmd.kind === 'station') return engageAutopilot(world);
       if (cmd.kind === 'point' && cmd.pos) return engagePointAutopilot(world, cmd.pos, cmd.mission || null);
       if (cmd.kind === 'drop') {
@@ -314,7 +326,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       pendingEvents = [];
       // A retry is a NEW run: re-arm the payout and re-stamp the clock, or the second fight in this room
       // would be worth nothing and the first one's duration would keep growing.
-      banked = false; runStartTick = tick;
+      banked = false; salvaged = false; runStartTick = tick;
       return tick;
     },
 
