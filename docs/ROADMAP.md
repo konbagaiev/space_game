@@ -159,14 +159,24 @@ Two reasons it comes before Phase 5 rather than after:
   So the engine decision tracks **co-op vs competitive PvP**, not anti-cheat. A major re-platforming
   decision, not a feature bolt-on. Sequenced **after** the ~50-sortie campaign.
 
-### Server-authoritative sim — in progress on `feature/server-sim` (2026-08-20)
+### Server-authoritative sim — ✅ SHIPPED (merged, deployed, on itch; 2026-08-21/22)
 
-Phase 5's first move is under way ahead of schedule, on a local-only branch. The rules live in
-`client/src/sim-core/` and run unchanged in the browser and in Node; a headless referee replays input
-traces server-side; and **`?netsim=1` plays a level in a real server-run room over a WebSocket**. Playtested
-through the intro and the first three campaign levels end to end. See
-`docs/plans/server-authoritative-sim.md` (§0 is a self-contained pick-up brief) — nothing is pushed or
-deployed.
+Phase 5's first move landed far ahead of schedule. The rules live in `client/src/sim-core/` and run
+unchanged in the browser and in Node; a headless referee replays input traces server-side; and
+**`?netsim=1` plays a level in a real server-run room over a WebSocket**, live on `vega.tenony.com` and on
+itch. See `docs/plans/server-authoritative-sim.md` (§0 is a self-contained pick-up brief).
+
+- [x] **The room banks its own run — the economy is sealed for fights the server ran** (2026-08-22,
+  DECISIONS §131, `docs/plans/seal-the-economy.md`). A room reports what its own simulation decided and the
+  server writes it under the playerId from the handshake ticket; the tab no longer banks a run the room is
+  banking. **Scope, stated honestly: netsim is opt-in, so nearly all real play is still browser-hosted and
+  still banks on trust.** That is the *Integrity* backlog item below, and it is now half-closed rather than
+  open. The route not taken — re-simulating the client's uploaded input trace — was measured against
+  production and abandoned: a trace reproduces only on the BUILD that recorded it (§129).
+- [x] **A mission can be concluded by a host without a mouse** (§130, §132, §133). Victory used to require
+  a docking CLICK, so a room could simulate an entire fight and still not finish it. A level now states a
+  `winCondition`, the reward lands when it holds, and the player ends the mission with "Finish and Return".
+  This was a prerequisite for the room owning the economy, not a cosmetic change.
 
 - [x] **AIM ASSIST — flagged from the first full playthrough, then REMOVED (2026-08-20).** The auto-aim cone
   was the one mechanic that depended on *where the player saw the enemy*, so in a room it corrected toward a
@@ -216,9 +226,14 @@ The original design discussion is preserved below with its verdict. Several item
   since their descriptors are generated per player and no room can resolve one by name.
 - [ ] **Pause must change when a room holds two people** (DECISIONS §123) — today it really freezes the
   room, which is only legitimate while there is exactly one player in it.
-- [ ] **Netsim runs are not recorded for analytics.** The always-on session recorder lives on the local-sim
-  path, so a netsim fight produces no `gameplay_sessions` row. Harmless while netsim is an opt-in flag;
-  a hole the moment it is a real path.
+- [ ] **Netsim runs record a STUB, which is worse than recording nothing** (measured 2026-08-21,
+  `docs/plans/seal-the-economy.md` §3.1b and §6). `live` in `main.js` excludes `netsimDriving`, so
+  `captureTick` never fires while a room drives — but the flush still writes a `gameplay_sessions` row, with
+  the kills and duration the ROOM produced. Session `282b6018` claims 650 s and 14 kills against a
+  49-second trace holding 5 seconds of real input. So the admin replay viewer has been playing a
+  five-second stub for every netsim session since the flag shipped. **A row whose `kills` describe a fight
+  its trace does not contain is the indefensible part** — fix by capturing under netsim too, or by not
+  writing the row at all.
 
 ---
 
@@ -240,8 +255,12 @@ The original design discussion is preserved below with its verdict. Several item
   from real data.
 
 ### Integrity (backlog)
-- The sim + credits are client-side; with a real economy on a public site they're tamperable. Add
-  server-side validation/sanity-checks on results before the economy carries real weight.
+- **Half-closed (2026-08-22).** A run fought in a server-run room is now banked BY that room, from its own
+  simulation, under an identity the client never supplies (DECISIONS §131). But `?netsim=1` is opt-in, so
+  **browser single-player — nearly all real play — still banks on its own word** through `POST /api/games`.
+  Closing the rest means either routing all play through rooms (deliberately NOT chosen; see D1 in
+  `docs/plans/server-authoritative-sim.md`) or making trace verification work, which today it does not
+  (§129). Also still client-authoritative: loot deposit, side-mission clears, and `/advance`.
 
 ### Assets pipeline
 - Source vs runtime split, budgets, optimize step, CDN delivery — DECISIONS §14.

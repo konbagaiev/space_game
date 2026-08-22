@@ -5,6 +5,14 @@
 
 ## 2026-08-22
 
+- **ROADMAP brought back in line with what shipped.** Phase 5's server-authoritative section still read
+  "in progress on a local-only branch — nothing is pushed or deployed" a day after it was merged, deployed
+  and published. Marked shipped, with the two things the section did not know about: the room banking its
+  own runs (§131) and a mission being concludable by a host without a mouse (§130/§132/§133). The
+  *Integrity* backlog item is now **half-closed** rather than open, and says which half. One item was
+  factually wrong and is now the sharper truth: netsim runs do not "produce no `gameplay_sessions` row" —
+  they produce a row whose kills and duration describe a fight its own trace does not contain.
+
 - **"Finish and Return" now flies you home instead of teleporting you there.** §132 ended a cleared mission
   the instant the button was pressed — the victory overlay appeared where the ship stood. The flight home is
   the denouement of a mission; deleting it was never the ask, only making it *required* was the bug. A
