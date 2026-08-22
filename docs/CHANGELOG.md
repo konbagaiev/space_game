@@ -5,6 +5,17 @@
 
 ## 2026-08-22
 
+- **Docs self-check: three things a fresh session would have read and believed.** (1) `seal-the-economy.md`
+  still said **"Status: PLANNED"** while Slices 1, 1b and 2 were merged, deployed and on itch — now
+  "SHIPPED except §6", with a short orientation paragraph up top. (2) SUMMARY's mission-end section still
+  described the OLD architecture — a `levelRunner` intercept swapping `this.win()` for `beginReturn()`, a
+  "mandatory dock", and the retired hint text — rewritten to the current three moments. (3) DECISIONS §132
+  named `completeMission`, a function §133 renamed and re-shaped the same day; §132 now points forward
+  rather than leaving a dead symbol (the entry itself is history and is not rewritten).
+  Also **deleted the `beginReturn` alias**: kept "because three scenarios talk about it that way", it turned
+  out to be called by nothing — two comments mentioned it and now say `clearMission`. And the
+  server-sim brief's itch build number was two versions stale.
+
 - **ROADMAP brought back in line with what shipped.** Phase 5's server-authoritative section still read
   "in progress on a local-only branch — nothing is pushed or deployed" a day after it was merged, deployed
   and published. Marked shipped, with the two things the section did not know about: the room banking its

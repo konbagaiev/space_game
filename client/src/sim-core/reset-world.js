@@ -86,7 +86,7 @@ export function startRun(world, { keepPlayer = false } = {}) {
   // freeze the roaming ship). COMBAT: start the chosen mission / campaign level exactly as before.
   if (world.roam) {
     world.levelRunner.level = null; resetLevelRunnerState(world);
-    // …and make the home station clickable for the whole roam, the way beginReturn() does after the last
+    // …and make the home station clickable for the whole roam, the way clearMission() does after the last
     // kill: while flying freely you can always click home to be flown back and offered a dock.
     if (world.station) world.station.active = true;
   } else {

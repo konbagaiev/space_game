@@ -4837,9 +4837,12 @@ losable by closing a tab, and finishing it should not depend on completing a fli
   base" and engage an autopilot). Pressing it is the only thing that closes a mission.
 - `completeMission(world)` sweeps every crate still on the field into the run, then `winLevel`. It refuses
   unless the sector is actually cleared, so a stray tap can never walk out of a live fight with the credits.
+  **(Renamed and re-shaped by §133 the same day: it is `finishMission`, and it engages the autopilot home
+  rather than winning on the spot. There is no `completeMission` in the code.)**
 - **Docking still ends a mission — it is just no longer the ONLY way.** (Amended the same day: the first cut
   removed the docking route entirely, and the maintainer put it back. It was over-correction — the bug was
-  "you MUST fly home", not "you may".) `checkArrival` routes through `completeMission` like the button does,
+  "you MUST fly home", not "you may".) `checkArrival` routes through the same settle-then-close the button
+  does (`finishMission` → `winLevel`, see §133),
   so the two cannot drift apart: same sweep, same payout, same close. The station is clickable on a clear
   and the homing arrow still points at it. Roam keeps its own docking (`checkStationArrival`) untouched, and
   proximity alone still never ends anything — `canDock` requires an engaged STATION autopilot.

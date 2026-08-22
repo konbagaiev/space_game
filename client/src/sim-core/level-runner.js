@@ -152,9 +152,6 @@ export function clearMission(world) {
   world.events.emit({ type: 'cleared', credits: world.earned, xp: world.earnedXp, kills: world.kills });
 }
 
-// The old name for moment 1, kept because "begin the return" is still half of what it does and three
-// scenarios talk about it that way. Prefer `clearMission`.
-export const beginReturn = clearMission;
 
 // Flying home and docking — the same act as the button, reached the scenic way. Requires an ENGAGED
 // autopilot whose target is the STATION (`canDock`), so proximity alone never ends a mission and a

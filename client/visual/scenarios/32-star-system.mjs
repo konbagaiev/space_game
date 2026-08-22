@@ -300,7 +300,7 @@ export default async function ({ page, assert, shot }) {
   //    levelRunner (so no enemies leak in), and the point-autopilot must advance the ship.
   const guard = await page.evaluate(async () => {
     const g = window.__game;
-    // stamp a prior mission win + its return-to-base state (what win()/beginReturn set)
+    // stamp a prior mission win + its cleared-sector state (what winLevel()/clearMission set)
     g.levelRunner.won = true; g.levelRunner.returningToBase = true;
     // enter roam toward a point AHEAD (+Z, aligned with the fresh heading so it cruises quickly)
     await g.enterRoam({ pos: { x: 0, z: 300 }, missionId: null });

@@ -1,7 +1,15 @@
 # Seal the economy — the room is the accountant
 
-> **Status: PLANNED (rewritten 2026-08-22 after Phase 0). Phase 0 is DONE and in the tree.**
-> Written against `main` @ `8360fff`.
+> **Status: SHIPPED except §6, 2026-08-22.** Phase 0 (the survey), Slice 1 (the win condition and the
+> reward moment), Slice 1b (the "Finish and Return" button) and Slice 2 (the room banks its own run) are
+> merged, deployed to `vega.tenony.com` and published to itch. **What is left in this brief is §6 — session
+> recording captures a stub under `?netsim=1`** — plus everything §7 names as deliberately unsealed.
+> Written against `main` @ `8360fff`; the work landed in `0a363ca..d4158db`.
+>
+> **The short version for a fresh session:** credits, XP and loot are sealed for fights a server-run ROOM
+> ran (DECISIONS §131). `?netsim=1` is opt-in, so browser single-player — nearly all real play — still
+> banks on its own word, and that was chosen rather than overlooked. Re-simulating uploaded input traces
+> was measured and abandoned (§129); the diagnostic that measured it survives in `server/src/seal/`.
 >
 > Read first: `docs/plans/server-authoritative-sim.md` §0 and its §4 bullet; `docs/DECISIONS.md` §125
 > (trace v4), §129 (what Phase 0 measured), §30 (keep processes simple), §73 (seeded-RNG contract).

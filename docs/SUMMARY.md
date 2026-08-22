@@ -1379,25 +1379,26 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   double-count the run's XP on top of the banked total; that refetch (in `unlockNextLevel`) also
   **`await`s the bank POST** via `bankingDone()`, so it can't read the pre-run experience and overwrite the
   banked progression with it. (Aim assist used to live here too; it is gone — DECISIONS §124.)
-- **Return-to-base mission end (all missions).** Killing the last enemy **no longer wins immediately**. A single
-  `levelRunner` intercept (`sim.js`) replaces the `win` phase's `this.win()` with `beginReturn()`, so **every**
-  mission — campaign L1–4 **and** the three side missions — ends the same way, with no per-descriptor edits (the
-  `win` phase's `delay` still runs first, so the boss explosion plays out). On `beginReturn`: `G.returnToBase`
-  goes true — the **OOB warp-back is lifted** (`&& !G.returnToBase`, so a side mission fought far from `(0,0)`
-  can fly home), a translucent **blue homing arrow** (`updateReturnArrow`, anchored to the ship, re-pointed at
-  the station each frame) and a centered **"Sector cleared — return to base"** HUD hint (`updateReturnHint`,
-  i18n `ui.return.hint`) appear, and the **base station becomes clickable** (`G.baseStation.active`). Clicking/
-  tapping the station is a **mandatory dock** (on touch a **slop-gated tap** — a <10px single-finger gesture —
-  through the shared `engageObjectAt` pick, not a raw touch-anywhere): it calls `engageAutopilot()` (sets `G.autopilot.active` + phase
-  `brake0` + `target = { kind:'station' }`), and `checkArrival()` fires the existing `win()` once the ship is
-  within `BASE_ARRIVE_RADIUS` (45u, horizontal xz) of the station's actual position `(-10,-10)` (the win
-  test measures distance to `G.baseStation.obj.position`, not a hardcoded origin). `G.autopilot` now carries a typed **`target`**
-  (the station **or** a loot drop — the same autopilot flies to loot chests, see Grab & loot drops); the
-  dock/win predicate `canDock(autopilot, dist)` (pure, in `client/src/sim-core/autopilot-config.js` with
-  `BASE_ARRIVE_RADIUS`, unit-tested) fires **only when the target is the station** — a chest-aimed autopilot is
-  structurally incapable of winning. **Proximity alone never wins**, and any control input cancels the dock
-  (clears `active` + `target`) so a cancelled/manual approach doesn't complete (re-tap to resume). Clicking
-  while already inside the radius wins on the next frame.
+- **Ending a mission (all missions).** Killing the last enemy does not close the mission — it CLEARS the
+  sector, which is a different thing (see the three moments below). `clearMission()` in
+  `sim-core/level-runner.js` runs for **every** mission, campaign L1–4 and the three side missions alike,
+  off the `win` phase in the descriptor's script (whose `delay` still runs first, so the boss explosion
+  plays out). It lifts the **OOB warp-back** (`&& !G.returnToBase`, so a side mission fought far from
+  `(0,0)` can fly home), shows a translucent **blue homing arrow** (`updateReturnArrow`, anchored to the
+  ship, re-pointed at the station each frame) and a centred HUD hint (`updateReturnHint`, i18n
+  `ui.return.hint`), and makes the **base station clickable** (`G.baseStation.active`).
+  Flying home is one of the two ways to end it, and no longer mandatory. Clicking/tapping the station (on
+  touch a **slop-gated tap** — a <10px single-finger gesture — through the shared `engageObjectAt` pick, not
+  a raw touch-anywhere) calls `engageAutopilot()` (sets `G.autopilot.active` + phase `brake0` +
+  `target = { kind:'station' }`), and `checkArrival()` closes the mission once the ship is within
+  `BASE_ARRIVE_RADIUS` (45u, horizontal xz) of the station's actual position (measured against
+  `G.baseStation.obj.position`, not a hardcoded origin). `G.autopilot` carries a typed **`target`** (the
+  station **or** a loot drop — the same autopilot flies to loot chests, see Grab & loot drops); the
+  dock predicate `canDock(autopilot, dist)` (pure, in `client/src/sim-core/autopilot-config.js` with
+  `BASE_ARRIVE_RADIUS`, unit-tested) fires **only when the target is the station** — a chest-aimed autopilot
+  is structurally incapable of ending a mission. **Proximity alone never ends one**, and any control input
+  cancels the dock (clears `active` + `target`) so a cancelled/manual approach doesn't complete (re-tap to
+  resume).
   **A mission ends in TWO moments, not one (DECISIONS §130, §132).** (1) **CLEARED** — the level's `winCondition`
   holds (`{ type: 'allEnemiesDead' }` on every campaign level and side mission today, stated on the
   descriptor). `clearMission()` in `sim-core/level-runner.js` doubles the credits, adds the one-shot
@@ -3037,7 +3038,7 @@ READS `arenaCenter`/`arenaDrift` (drifting maps pin their decor to the zone cent
 has to arm the new object. A headless authority has the same shape.
 
 **The level runner runs on the World.** `sim-core/level-runner.js` holds the phase/wave script's rules
-(`startLevel`, `updateLevelRunner`, `enterPhase`, `shouldAdvance`, `beginReturn`, `checkArrival`,
+(`startLevel`, `updateLevelRunner`, `enterPhase`, `shouldAdvance`, `clearMission`, `finishMission`, `checkArrival`,
 `winLevel`) and its state lives on `world.levelRunner` (`level`, `phaseIndex`, `killsAtPhaseStart`,
 `spawnedThisPhase`, `spawnCooldown`, `won`, `winPending`, `winText`, `winTextKey`, `returningToBase`).
 `sim.js` still exports an object called `levelRunner` whose properties proxy onto those fields and whose

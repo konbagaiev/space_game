@@ -1,7 +1,8 @@
 # Server-authoritative combat simulation
 
-> **Status: MERGED TO `main` AND DEPLOYED, 2026-08-21.** Live on `vega.tenony.com` and on itch (build
-> #1903408, version 67). `feature/server-sim` is fully merged and can be deleted; the worktree
+> **Status: MERGED TO `main` AND DEPLOYED, 2026-08-21.** Live on `vega.tenony.com` and on itch (now build
+> #1906027, version 69 — the economy and mission-end work of 2026-08-22 shipped on top; see
+> `docs/plans/seal-the-economy.md` and DECISIONS §130–§133). `feature/server-sim` is fully merged and can be deleted; the worktree
 > `../ag-wt/server-sim` is no longer the place to work — use the main checkout.
 >
 > Previously: in progress on `feature/server-sim` (worktree `../ag-wt/server-sim`), all green.
