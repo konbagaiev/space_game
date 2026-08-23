@@ -16,7 +16,7 @@
 // (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported only by the
 // composition root (the inline script / main). It never imports the loop's callers.
 import * as THREE from 'three';
-import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, setPieces, CATALOG, creditPopups } from './state.js';
+import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, allies, setPieces, CATALOG, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
@@ -26,7 +26,7 @@ import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredB
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust } from './exhaust-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
-import { preloadLevelShipModels, attachEnemyBody, detachEnemyBody } from './ship-build.js';
+import { preloadLevelShipModels, attachEnemyBody, detachEnemyBody, attachAllyBody, detachAllyBody } from './ship-build.js';
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
 import { BANNER_FADE, showBanner as showBannerIn } from './sim-core/events.js';
 import { PLAYER_MAX_SPEED, warpPlayerToCenter as warpPlayerToCenterIn,
@@ -233,6 +233,7 @@ function syncShipMesh(ship, dt) {
 export function syncMeshes(dt = 0) {
   if (G.player) syncShipMesh(G.player, dt);
   for (const e of enemies) syncShipMesh(e, dt);
+  for (const a of allies) syncShipMesh(a, dt); // the wingman is a ship like any other (empty in every shipped level)
   for (const b of bullets) b.mesh.position.set(b.pos.x, b.pos.y, b.pos.z); // bolt orientation is baked at spawn
   for (const r of rockets) {
     r.obj.position.set(r.pos.x, r.pos.y, r.pos.z);
@@ -255,7 +256,8 @@ export function syncMeshes(dt = 0) {
 function applySimEvent(ev) {
   switch (ev.type) {
     case 'hit':
-      // enemy struck → the generic zap; our own hull struck → the ship-class sampled impact
+      // OUR OWN hull struck → the ship-class sampled impact. Anything else — an enemy, or the wingman's
+      // hull ('ally') — gets the generic zap: only the player's own ship is worth a sampled sound.
       audio.sfx.hit(ev.target === 'player' ? sfxFor('ship', ev.shipClass, 'hit') : undefined);
       break;
     case 'bulletImpact':
@@ -309,7 +311,10 @@ function applySimEvent(ev) {
       if (ev.reward > 0) { // floating "+xx" green popup at the kill site (cosmetic feedback)
         creditPopups.push({ pos: ev.pos, amount: ev.reward, life: 2.0, maxLife: 2.0 });
       }
-      logEvent(t('ui.log.killed', { name: ev.name, amount: ev.reward, xp: ev.xp })); // event-log kill line
+      // The event log is the PLAYER's own tally, so an ally's kill writes no line: "X destroyed +0 · +0 XP"
+      // would be a lie, and there is no new string to describe a wingman's kill in this step. One-line flip
+      // if the maintainer wants it back (docs/plans/combat-ally.md).
+      if (!ev.byAlly) logEvent(t('ui.log.killed', { name: ev.name, amount: ev.reward, xp: ev.xp })); // event-log kill line
       break;
     }
     // THE REWARD LANDS HERE — the win condition was met (DECISIONS §130). Everything with a server side
@@ -411,6 +416,7 @@ world.host = {
     if (kind === 'bullet') attachBulletBody(e);
     else if (kind === 'rocket') attachRocketBody(e);
     else if (kind === 'enemy') attachEnemyBody(e);
+    else if (kind === 'ally') attachAllyBody(e);
     else if (kind === 'drop') attachDropBody(e);
   },
   // Fetch + parse every model this level can put on screen, BEFORE the fight: the enemy ships and the
@@ -426,6 +432,7 @@ world.host = {
     if (kind === 'bullet') detachBulletBody(e);
     else if (kind === 'rocket') detachRocketBody(e);
     else if (kind === 'enemy') detachEnemyBody(e);
+    else if (kind === 'ally') detachAllyBody(e);
     else if (kind === 'drop') detachDropBody(e);
   },
 };

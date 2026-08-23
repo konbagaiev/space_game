@@ -17,7 +17,7 @@
 // The event catalogue. Documented here rather than in a type system so there is one place to read what
 // the simulation can say — the server will answer to the same list.
 //
-//   { type: 'hit',             target: 'enemy'|'player', shipClass }   a bullet connected (drives the impact SFX)
+//   { type: 'hit',             target: 'enemy'|'player'|'ally', shipClass }  a bullet connected (impact SFX)
 //   { type: 'bulletImpact',    pos, weaponClass, absorbed }            hit-flash where a bullet died
 //   { type: 'shieldHit',       pos, broke }                            the PLAYER's shield caught a shot
 //   { type: 'enemyShieldHit',  enemy, pos, broke }                     an ENEMY's shield caught a shot
@@ -28,7 +28,7 @@
 //   { type: 'smoke',           pos }                                   one rocket-trail puff
 //   { type: 'detonate',        pos, weaponClass, blastVis, blastTint, blastTime, blastBright }
 //                                                                       a rocket went off (damage already applied)
-//   { type: 'kill',            pos, isBoss, exhaustColor, sizeScale, role, shipClass, reward, xp, name }
+//   { type: 'kill',            pos, isBoss, exhaustColor, sizeScale, role, shipClass, reward, xp, byAlly, name }
 //   { type: 'warpFlash',       pos }                                   the soft-boundary warp-back arrival
 //   { type: 'banner',          key, params, dur }                      transient centred announcement (i18n KEY, not text)
 //   { type: 'bannerClear' }                                             drop whatever banner is showing, now

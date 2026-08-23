@@ -197,7 +197,9 @@ const rightVec = (fwd) => new Vec3(fwd.z, 0, -fwd.x); // perpendicular to fwd, i
 // Fire one mount: spawn its projectile at the muzzle + lateral offset (side-by-side fire).
 // Emits `fire` rather than playing a sound: only the player's own shots are audible, and deciding that is
 // the client's business, not the simulation's.
-function fireMount(world, ship, mount, fwd, isPlayer) {
+function fireMount(world, ship, mount, fwd, side, rocketTarget) {
+  const isPlayer = side === 'player';
+  const friendly = side !== 'enemy';       // the PROJECTILE's `fromPlayer` means "fired by the friendly side"
   const sc = ship.scale || 1;                              // current world scale (incl. spawn-grow + sizeScale)
   const noseZ = (ship.noseZ ?? 1.6) * sc;                  // spawn at the model's actual nose, not a fixed offset
   const muzzle = ship.pos.clone()
@@ -205,18 +207,24 @@ function fireMount(world, ship, mount, fwd, isPlayer) {
     .addScaledVector(rightVec(fwd), mount.offset * (ship.sizeScale || 1));
   const w = mount.weapon;
   if (w.type === 'rocket') {
-    const target = isPlayer ? findTargetInSector(world, muzzle, fwd, w.seekHalfAngle ?? Math.PI) : world.player;
+    // Friendlies seek an enemy in the nose sector; a hostile rocket is handed whoever its shooter is flying
+    // at (the player today, the player OR an ally once one exists).
+    const target = friendly
+      ? findTargetInSector(world, muzzle, fwd, w.seekHalfAngle ?? Math.PI)
+      : (rocketTarget || world.player);
     // Player rocket accel rides the ship's (mobility-boosted) acceleration, then the Rocket skill's own
     // speed multiplier on top so "+rocket speed" is felt through the whole flight, not just launch.
     const accel = isPlayer ? ship.acceleration * (ship.rocketSpeedMul || 1) : (w.accel ?? ship.acceleration);
-    spawnRocket(world, muzzle, fwd, w, accel, isPlayer, target);
+    spawnRocket(world, muzzle, fwd, w, accel, friendly, target, side === 'ally');
+    // NOTE the split: the projectile's `fromPlayer` is "friendly side"; the EVENT's is "it was YOUR shot".
+    // Only the player's fire is audible (sim.js adapter) — the ally's guns must be silent (§2.6).
     world.events.emit({ type: 'fire', weaponClass: w.class, isRocket: true, fromPlayer: isPlayer });
   } else {
     // Straight along the nose, always. There used to be an auto-aim cone here (DECISIONS §89/§112) that
     // silently redirected a bullet at any target within ±aimAssistDeg — removed in §124: it decides where a
     // shot goes from information the shooter does not have, which reads as the game aiming for you, and in
     // a server-run room it aimed at a position the player was not even being shown.
-    spawnBullet(world, muzzle, fwd, w, isPlayer, ship.vel);
+    spawnBullet(world, muzzle, fwd, w, friendly, ship.vel, side === 'ally');
     world.events.emit({ type: 'fire', weaponClass: w.class, isRocket: false, fromPlayer: isPlayer });
   }
 }
@@ -224,15 +232,19 @@ function fireMount(world, ship, mount, fwd, isPlayer) {
 // Advance a ship's fire groups: drain queued (staggered) volleys, and start a new volley when
 // `wantsFire(group)` is true and the group is off cooldown. One trigger fires ALL the group's
 // mounts, each after its own `delay` (so two launchers fire one after the other).
-export function updateGroups(world, ship, fwd, isPlayer, dt, wantsFire) {
+// `side` is 'player' | 'ally' | 'enemy'. `rocketTarget` is only read for an ENEMY's rockets — whoever its
+// shooter is flying at — because a friendly rocket resolves its own seeker target from the nose sector.
+export function updateGroups(world, ship, fwd, side, dt, wantsFire, rocketTarget = null) {
   for (const g of Object.values(ship.groups)) {
     g.cooldown -= dt;
     for (let i = g.pending.length - 1; i >= 0; i--) {
       g.pending[i].t -= dt;
-      if (g.pending[i].t <= 0) { fireMount(world, ship, g.pending[i].mount, fwd, isPlayer); g.pending.splice(i, 1); }
+      if (g.pending[i].t <= 0) { fireMount(world, ship, g.pending[i].mount, fwd, side, rocketTarget); g.pending.splice(i, 1); }
     }
     if (g.mounts.length && g.cooldown <= 0 && wantsFire(g)) {
-      g.cooldown = g.reload + (isPlayer ? 0 : simRandom() * 0.5); // enemies stagger their reloads a bit (GAMEPLAY: shifts when their bullets exist)
+      // Only ENEMIES stagger their reloads, and only they draw for it. The player and the ally consume no
+      // randomness here, which is what keeps every recorded trace bit-identical (DECISIONS §73).
+      g.cooldown = g.reload + (side === 'enemy' ? simRandom() * 0.5 : 0); // (GAMEPLAY: shifts when their bullets exist)
       for (const m of g.mounts) g.pending.push({ mount: m, t: m.delay });
     }
   }

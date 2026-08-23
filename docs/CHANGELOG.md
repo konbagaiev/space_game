@@ -3,6 +3,29 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-23
+
+- **A third combatant in the simulation, and the wingman who flies it.** The fight was binary end to end —
+  a bullet either scanned `world.enemies` or struck `world.player`, and `stepEnemyAI` read `world.player`
+  directly. It is now **three-sided in targeting**: `nearestHostileTarget` hands a hostile ship the nearer of
+  player-or-ally to steer, aim, fire and home at, and hostile fire can hit a friendly ship that is not you.
+  It stays **two-sided in damage routing** — friendly fire is off both ways, so a projectile is only ever
+  "friendly" or "hostile" (DECISIONS §134). On top of that, `sim-core/step-ally.js` flies a **Sentinel
+  wingman** with logic of his own rather than `stepEnemyAI` pointed the other way: he charges the nearest
+  pirate at full thrust, flies straight through it, **brakes and comes about together** (a ~6 s cycle that
+  swings him ~50 u out and back), re-picks, holds fire whenever your hull crosses his line, escorts you at
+  ~10 u when there is nothing to fight, and **breaks off to heal at 20 % hull, returning at 40 %** — he
+  cannot die. He flies the PLAYER's movement model, not the enemy's: the same flat 30 u/s cap (top speed is a
+  property of the ship, not of the engine) on acceleration 8.7 and turn 1.16 rad/s from his 200 HP hull.
+  **His kills advance the mission and pay nothing** — `world.kills` counts every death so phases still
+  advance, but an ally kill adds 0 credits and 0 XP and writes no event-log line.
+  He arrives because a **level PHASE says `ally: true`**, which is the mechanism Level 5 will use unchanged;
+  **no shipped level carries the field**, so for players nothing about the game changes — not one extra
+  entity and not one extra seeded RNG draw (the intro oracle still logs tick 2474, `36-sim-divergence` still
+  agrees on hash `0x2a36f8d9` with 38 draws). `?ally` injects that phase into the level a tab is flying for
+  local play, and a room takes the same phase name over the handshake and puts him on the wire. No new
+  assets: he flies the existing `player_combat` .glb in a friendly green.
+
 ## 2026-08-22
 
 - **Phase 4.5's open design questions are answered — and the ally turned out to need a new mission to

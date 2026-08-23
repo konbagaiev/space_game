@@ -3,7 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-22 (**A mission ends when the player presses "Finish and Return"** — the last kill
+**Updated:** 2026-08-23 (**A third combatant in the simulation, and the wingman who flies it** — the fight
+is three-sided in TARGETING (an enemy steers, aims and homes at the nearer of player-or-ally) and stays
+two-sided in DAMAGE ROUTING (no friendly fire, DECISIONS §134). `world.allies` + `sim-core/step-ally.js`
+fly a Sentinel wingman with logic of his own — charge, pass through, brake-and-come-about, break off to
+heal at 20 % hull and return at 40 %. He arrives because a level PHASE says `ally: true`; **no shipped
+level does**, so with the `?ally` dev flag off nothing about the game changes and not one seeded RNG draw
+moves. His kills advance the mission and pay nothing.) Prior: (**A mission ends when the player presses "Finish and Return"** — the last kill
 clears the sector and pays the reward; the pilot is then free in a quiet sector to pick over the wreckage,
 and "Finish and Return" sweeps up what is left, commits the campaign advance and flies the ship home on
 autopilot; arriving closes the mission. Reloading the tab mid-flight loses nothing — settling is what
@@ -1054,6 +1060,47 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   center over time (edge marker + warp-back + mini-map follow; a `sync` set-piece rides it) — the mechanic
   is built and tested, but **no mission turns drift on today** (set-pieces are static). Wired for a future
   escort mission.
+- **The ally (a third combatant)** — a Sentinel **wingman** who is neither the player nor an enemy
+  (`sim-core/ally-config.js` / `ally.js` / `step-ally.js`; design brief `docs/plans/combat-ally.md`).
+  **No level that ships spawns him**: he arrives only when a level **phase carries `ally: true`**, which
+  Level 5 will set and the **`?ally` dev flag** injects for local play (`client/src/ally-dev.js` — bare
+  `?ally` = the `clear-out` phase, `?ally=<phase>` names another; not sticky, URL only). With the flag off
+  there is no ally, no ally step, no extra entity and **not one extra seeded RNG draw**.
+  - **What he flies:** the same `player_combat` .glb as you, tinted friendly green (`ALLY_COLOR 0x3ddc84`).
+    Heavy hull id 13 (**200 HP**), Basic engine id 5, Basic thrusters id 8, Repair drone id 12, Base shield
+    id 31, **Heavy cannon id 6 + Rocket (homing) id 3**. **No grab and no skills** — so he never reacts to
+    loot, and a hostile hit never rolls the dodge draw. Derived by `deriveDrive`: mass **86**, acceleration
+    **8.7**, turn **1.16 rad/s**.
+  - **He flies the PLAYER's movement model, not the enemy's.** Top speed is a property of the ship, not of
+    the engine, so he is capped at the flat `PLAYER_MAX_SPEED` **30 u/s** read from `step-player.js` (never
+    `engine.maxSpeed`, never the enemy `DRAG`, never the passive `IDLE_DRAG`). He is always either thrusting
+    or braking on the player's own kinematic decel (`brakeVel`, extracted from `brakeStep`). 0→30 takes
+    **3.45 s**; a 180° reversal takes **2.71 s** and **brakes and turns together**, so he comes about nearly
+    stationary and rebuilds speed into the next pass — a ~6 s cycle swinging him ~50 u out and back.
+  - **What he does:** charges the enemy nearest **to himself** (`ALLY_TARGET_LEASH` is `Infinity`; make it
+    finite to keep him near the player), fires while the nose is on, **flies through the hull** (deliberate —
+    there is no ship-to-ship collision and no lateral pass offset), then brakes and comes about. He re-picks
+    once the target is >120° behind (`ALLY_BEHIND_ANGLE`), snapping straight onto anything already inside the
+    0.25 rad aim cone. **He never fires through your hull.** With nothing to fight he escorts to ~10 u of you,
+    judged on the **closing** speed so he holds formation instead of settling 60 u back.
+  - **He cannot die** (§2.4): `hp` floors at `ALLY_MIN_HP` 1 and there is no ally death path anywhere.
+    Instead he **breaks off at ≤20 % hull with the shield down** — never mid-charge, only after a pass —
+    runs to `ALLY_RETREAT_DIST` **70 u** from the arena centre (out of frame) to let the drone work, and
+    **rejoins at ≥40 % hull with the shield full**.
+  - **Enemies fight him.** `nearestHostileTarget` (`sim-core/targeting.js`) gives a hostile ship the nearer
+    of player-or-ally to steer, aim, fire and home at — **including a RETREATING one**, deliberately: he must
+    behave as close to a real player as possible, and he outruns every Level-4 pirate, so being chased costs
+    him nothing. With no ally it returns `world.player` verbatim, so every existing level is unchanged.
+  - **Friendly fire is off in both directions.** A projectile is only ever "friendly" or "hostile"
+    (`fromPlayer` means *the friendly side*), and a hostile one now tests the player **and** every ally.
+  - **His kills count but pay nothing.** A kill he lands increments `world.kills` (so phases advance, the
+    HUD moves, banners fire and the last-kill drop still rolls) and adds **0 credits and 0 XP**; the kill
+    event carries `byAlly`, which suppresses the credit popup and the event-log line. `world.allyKills` is a
+    **diagnostic** of his share of the run — on `window.__game.allyKills`, and deliberately in neither the
+    world digest nor the world summary.
+  - **On screen (A4):** hull + shield bars from the same pool the enemies use, and a green minimap dot.
+    Deliberately **no** off-screen edge arrow (it would read as "threat over there"), no name label, no HUD
+    panel and no player-facing copy at all.
 - **Grab & loot drops** (`client/src/drops.js` + `drops-config.js`; docs/plans/2026-07-03-1412-grab-tractor-drops.md).
   On each enemy kill there's a **20 %** chance (`DROP_CHANCE`) to drop **one** item — chosen uniformly from
   the enemy's **non-hull** components (engine, thruster) **+** its mounted weapons (the real catalog id +
@@ -2923,11 +2970,14 @@ reads `enemies`/`bullets` is unchanged. The reason it exists: `state.js` cannot 
 `window.localStorage` at import), so the simulation can never reach module singletons — collections have to
 arrive as an argument, and one process can then hold many Worlds.
 
-**What the World holds.** Besides the entities and the event queue: `arenaCenter`/`arenaDrift`, the home
+**What the World holds.** Besides the entities and the event queue: **`allies`** — the friendly ships that
+are not the player (**empty in every shipped level**; the Sentinel wingman arrives only when a phase says
+`ally: true`), `arenaCenter`/`arenaDrift`, the home
 `station` (`{ pos, active, obj }` — `pos` is captured once at build because it never moves, and docking
 distance decides the mission win), `catalog`, `input` (`{ keys, touchAim }`, the shape `replay.js` records),
 and the run state — `kills`, `enemyTotal`, `earned`, `earnedXp`, `banked`, `combatElapsed`,
-`enemyShieldRefills`, `activeMission`, `roam`, `returnToBase`, `replayMode`, `missionZone`, `autopilot`.
+`enemyShieldRefills`, **`allyKills`** (diagnostic: the wingman's share of this run — in neither the digest
+nor the summary), `activeMission`, `roam`, `returnToBase`, `replayMode`, `missionZone`, `autopilot`.
 **All of it is still reachable as `G.<name>`**: `state.js` defines getter/setter proxies (`G.player`,
 `G.baseStation`, and the thirteen run-state fields in one loop), so there is one copy and no call site had
 to change. What stays genuinely on `G` is the client's own: graphics tier, scene handles, the account, UI
@@ -2937,8 +2987,9 @@ callbacks, `paused`/`gameStarted`/`mapOpen`, and the HUD banner.
 then `renderTick(dt)`, and it keeps that name and signature because the fixed-step accumulator, the replay
 stepper and the `?debug` hooks all call it. `simTick` is a one-line bind of **`sim-core/tick.js`
 `simTick(world, dt)`** — the module a server runs — which advances the combat clock and then calls, in this
-order: `stepPlayer`, `stepEnemyAI`, `stepBullets`, `stepRockets`, `stepEnemyDeaths`, `stepDrops`,
-`updateLevelRunner`, `stepPlayerDeath`. It draws nothing, plays nothing and fetches nothing; it returns the
+order: `stepPlayer`, **`stepAlly`**, `stepEnemyAI`, `stepBullets`, `stepRockets`, `stepEnemyDeaths`,
+`stepDrops`, `updateLevelRunner`, `stepPlayerDeath` (`stepAlly` returns immediately when `world.allies` is
+empty — the friendly side moves before the hostile side reads its position). It draws nothing, plays nothing and fetches nothing; it returns the
 Grab's current target, the one thing the host wants back (the pull beam is drawn around it). **Call order is
 execution order** — deaths after the projectiles that caused them, spawning after the deaths that free its
 slots, the player's death check last. `renderTick` is the picture: `syncMeshes`, the event drain, the drop
@@ -2960,8 +3011,15 @@ A collect emits `pickup`; the adapter plays the blip and writes the event-log li
 **Firing is simulation, sound is not.** `fireMount`/`updateGroups` live in `sim-core/ship-entity.js` and
 emit a `fire` event ({ weaponClass, isRocket, fromPlayer }) instead of playing anything; the adapter in
 `sim.js` decides that only the player's own shots are audible (enemy fire is deliberately silent — rocket
-detonations still sound). Target selection is `sim-core/targeting.js`: `findTargetInSector` for the rocket
-seeker, `findBulletAimTarget` for the aim-assist cone, both pure scans over the World's combatants.
+detonations still sound). **`updateGroups`/`fireMount` take a three-valued `side`** (`'player' | 'ally' |
+'enemy'`) rather than an `isPlayer` boolean, and the split matters: the PROJECTILE's `fromPlayer` means
+*"fired by the friendly side"* (player **or** ally) while the `fire` EVENT's means *"it was YOUR shot"*, so
+the wingman's guns are silent. Only an enemy draws the reload jitter (`side === 'enemy'`), which is what
+keeps every recorded trace bit-identical. A second flag `fromAlly` rides the projectile purely so an ally
+kill can pay nothing; it never crosses the wire. Target selection is `sim-core/targeting.js`:
+`findTargetInSector` for the rocket seeker, and **`nearestHostileTarget`** — who a HOSTILE ship is fighting,
+the nearer of the player and the allies — both pure scans over the World's combatants. With no ally,
+`nearestHostileTarget` returns `world.player` verbatim.
 `ship-build.js` keeps a World-bound `updateGroups` wrapper. **`G.player` is a getter/setter onto
 `world.player`** — one object, two names, no duplicated state.
 
@@ -3014,8 +3072,10 @@ see this tick's puffs.
 the fixed sim step both hosts must agree on or they are not running the same simulation, DECISIONS §118;
 `bench.js` re-exports it as `BENCH_DT`), `events.js`,
 `world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`, `drops-sim.js`,
-`system-map.js`, `digest.js`, and the whole tick — `tick.js`, `step-player.js`, `step-enemies.js`,
-`step-projectiles.js`, `level-runner.js`, `reset-world.js` — plus the game's pure rules —
+`system-map.js`, `digest.js`, the wingman — **`ally-config.js`** (his loadout + every `ALLY_*` tuning
+constant + `withAllyAt`, the non-mutating "this phase carries an ally" helper) and **`ally.js`**
+(`makeAlly`/`spawnAlly`) — and the whole tick — `tick.js`, `step-player.js`, **`step-ally.js`**,
+`step-enemies.js`, `step-projectiles.js`, `level-runner.js`, `reset-world.js` — plus the game's pure rules —
 `components.js` (`deriveDrive`/`shipMass`/`repairTick`/`shieldRecharge`/`applyShieldedDamage`),
 `steering.js`, `spawn-timing.js`, `collision.js`, `level-sim.js`, `drops-config.js`, `autopilot-config.js`
 and `sim-random.js` (the seeded gameplay stream, DECISIONS §73). Their unit tests moved with them.
@@ -3073,7 +3133,7 @@ same order, so bit-identical is the correct expectation and rounding would hide 
 
 **`36-sim-divergence` is the standing guard.** It replays the same trace in a real browser (plain
 `?playback`, no cutscene) and in Node, and requires the digest, the summary AND the draw count to match —
-`hash=0x9d2050b0`, `draws=38`, 3490 ticks each. The draw count is the half that names a culprit: a cosmetic
+`hash=0x2a36f8d9`, `draws=38`, 3490 ticks each. The draw count is the half that names a culprit: a cosmetic
 path reaching into the seeded gameplay stream (DECISIONS §73) shifts one host's stream and not the other's,
 and the test says so rather than reporting an opaque hash difference. `22-intro-replay` guards the cutscene
 path; this one guards the simulation.
@@ -3154,6 +3214,17 @@ level under a side-mission run. `window.__netsim.deferredBy` reports the current
   drains and shows up as 130–180 ms of standing input lag. The skipped input's `dt` is never simulated, so
   a live room is intentionally NOT bit-identical to a trace replay when the client is bursty; the
   determinism test feeds at the natural rate and asserts nothing was fast-forwarded.
+  **A room can run the WINGMAN.** The simulation is shared, so an ally written in `sim-core` is already
+  server-controlled inside a room — there is no second implementation. What is extra is the wire:
+  `createRoom({ … , ally })` takes the PHASE NAME he arrives on (`sim-host.createSimWorld` applies
+  `withAllyAt`, which COPIES rather than mutating the shared seed), `describe()` gains a **`kind: 'ally'`**
+  spawn descriptor (`name`, `shipClass`, `color`, `fullScale`, `maxHp`, `sizeScale` — the client resolves the
+  model from the name plus its own catalog, and `color` is the only thing it cannot derive), and the snapshot
+  gains an **`allies`** rows array with **the same column order as `enemies`**
+  (`id, x, z, heading, hp, scale, warping, shieldValue, shieldRecharge`). The `kill` event gained `byAlly` on
+  the wire, or a room's client would write his kills into the player's own event log. `socket.js` reads
+  `?ally=<phase>` off the handshake; the client's `?ally` dev flag forwards it (`wsUrl`/`connectNetsim`).
+  Both are inert without the param — a room with no ally sends `allies: []`.
 - `driver.js` — the 60 Hz clock, with the browser's same bounded catch-up (6 steps) so a stalled event loop
   cannot spiral into fast-forwarding the fight.
 - `protocol.js` — the wire shapes and an **explicit event allowlist**. It exists because `enemyShieldHit`
@@ -3173,6 +3244,9 @@ level under a side-mission run. `window.__netsim.deferredBy` reports the current
   consumes it.
 - `netsim-world.js` — reconciliation and interpolation. **THREE-free on purpose**, so it is unit-tested
   under `node --test`, including a test that drives a real room into a real client World in-process.
+  An **ally ghost** is built by the simulation's own `makeAlly` (there is no second, render-only ally), lands
+  in `world.allies`, and rides the generic per-id apply — so its interpolation, health bars and despawn
+  timing come for free.
 
 **The client grows no second rendering path.** It keeps the same World, written by the network instead of by
 `simTick`. Ghosts arrive through the same `world.host.onSpawn` local spawns use — so a networked enemy gets
@@ -3474,7 +3548,18 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `components.test.js` `skillEffects`: empty=identity / one step per point /
   independence / negative-clamp; `collision.test.js` dodge: `dodgeRoll` gates damage, is consulted **only
   after a geometric connect** (a miss never rolls → replay determinism), and skips shield absorption on an
-  evade; `progression.test.js`: the curve, cumulative thresholds, derived level, and unspent-points math).
+  evade; `progression.test.js`: the curve, cumulative thresholds, derived level, and unspent-points math),
+  and **the wingman** (`sim-core/step-ally.test.js`: target selection by distance to the ALLY, the
+  finite-vs-`Infinity` leash, the snap cone, the "never fire through the player" rule, both retreat
+  thresholds needing BOTH conditions, the pass arming at >120°, and — the regressions this file exists for —
+  that he flies the **player's** movement model (speed climbs past the enemy drag-limited 4.8 u/s and
+  settles at `PLAYER_MAX_SPEED`, and slowing is LINEAR at his own accel rather than an exponential drag),
+  that the come-about **brakes and turns together** and re-accelerates the instant the nose arrives, that the
+  escort judges the **closing** speed on a MOVING player (formation → thrust; convergence from 60 u closes
+  inside 20 u — both halves fail against the ground-speed rule), that the retreat is never taken mid-charge,
+  that he cannot die, that a **RETREATING ally is still a valid enemy target** (the 2026-08-23 veto), and
+  that 600 ticks of a fight with an ally draw **zero** seeded randomness; `ally-dev.test.js`: the `?ally`
+  flag's URL-only parsing and that `withAllyAt` never mutates the level it is given).
   Run: `cd client && npm test`. **Bench gate** —
   `client/src/bench.test.js` (`evalBench` sticky tri-state + `mulberry32` determinism, still importable from
   `bench.js` which re-exports it from `sim-random.js`) +
@@ -3517,6 +3602,19 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   gets the shop + basic gun). DECISIONS §95.
 - **Auth unit** — `server/src/auth.test.js` (5): scrypt round-trip (right/wrong password), per-user
   salt, token uniqueness + SHA-256 hashing, cookie-header parsing.
+- **The wingman against the real seed** — `server/src/ally-sim.test.js` (12): no shipped level carries an
+  `ally` phase; he arrives when his phase starts, exactly once; his loadout is **pinned against catalog
+  drift** (200 HP, mass 86, accel 8.7, turn 1.16, shield 20, drone present, **no grab**, weapons 6+3,
+  `maxSpeedMul` 1 so his cap is exactly `PLAYER_MAX_SPEED`); `spawnAlly` consumes no seeded draws; an ally
+  kill advances `world.kills` and pays **0 credits / 0 XP** while a player kill still pays; his gun fires
+  FRIENDLY (`fromPlayer`), ATTRIBUTED (`fromAlly`) and SILENT (the `fire` event says `fromPlayer: false`)
+  with every projectile on the combat plane; he holds fire rather than shooting through the player's hull;
+  an enemy fights the nearer of player-or-ally and its rocket homes on whoever it picked; hostile fire lands
+  on the ally, shield first then hull, reported as `target: 'ally'`; and `withAllyAt` never mutates `LEVELS`.
+- **A room runs the wingman** — `server/src/netsim/ally-room.test.js` (5): the room emits a `kind: 'ally'`
+  spawn descriptor with no `hitBoxes`, its `allies` rows are the documented width, an ally room is
+  deterministic across a re-run with the same seed and inputs, a room WITHOUT the flag sends `allies: []`
+  and no ally descriptor, and `byAlly` is on the wire's `kill` allowlist.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly).
 - **Visual / e2e** — `client/visual/` (Playwright headless, **not in CI**): boots the real game and
@@ -3579,10 +3677,18 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   and **sim-divergence** (`36-sim-divergence.mjs`: replays the canonical Level-0 trace in a real browser on a
   plain `?playback&debug` url **and** headlessly in Node via `server/tools/sim-replay.mjs`, then asserts the
   two hosts agree on the world digest (`sim-core/digest.js`), on the run summary and on the seeded-RNG draw
-  count — `hash=0x9d2050b0`, `draws=38`, 3490 ticks each. This is the standing proof that "one simulation,
+  count — `hash=0x2a36f8d9`, `draws=38`, 3490 ticks each. This is the standing proof that "one simulation,
   two hosts" is true and not aspirational; the draw count is the half that names the culprit when a cosmetic
   path reaches into the gameplay stream. Negative-verified by adding one `simRandom()` call to the browser's
-  tick, which fails it with the draw mismatch. Needs `npm run assets:pull`, like 22-intro-replay).
+  tick, which fails it with the draw mismatch. Needs `npm run assets:pull`, like 22-intro-replay),
+  and **ally** (`38-ally.mjs`: the one place the WINGMAN is seen in a browser — the two determinism oracles
+  above deliberately exercise none of his code, because the Level-0 trace has no ally. It boots once with the
+  flag OFF (`allies` stays empty — the "players see nothing" guarantee), then once on `?ally=wave-1`, and
+  asserts he arrives from the PHASE, is given a body in the scene in his green livery, flies under the
+  player's cap, that his MESH tracks the simulation, and — projecting that mesh through the camera — that his
+  hull is actually **inside the frame** on most samples (he is expected to leave it mid-reversal, so the
+  assertion is a share, not an instant). The player never touches the controls, so every kill is his: the
+  kill counter climbs and `earned` stays 0, which is the economy split end to end).
   Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`; a single scenario:

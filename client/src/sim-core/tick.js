@@ -11,9 +11,14 @@
 // player's death check is last so the tick it dies on is complete. A reorder is a behaviour change wearing
 // tidying-up's clothes; the intro replay's tick count is the thing that catches it.
 //
+// `stepAlly` sits immediately after `stepPlayer`: the friendly side moves before the hostile side reads its
+// position, mirroring where the player already sat. It returns at once when `world.allies` is empty, which
+// is every level that ships today, so the order it adds is inert there.
+//
 // See docs/plans/server-authoritative-sim.md (Slice B3d/C).
 import { stepPlayer, stepPlayerDeath } from './step-player.js';
 import { stepEnemyAI, stepEnemyDeaths } from './step-enemies.js';
+import { stepAlly } from './step-ally.js';
 import { stepBullets, stepRockets } from './step-projectiles.js';
 import { stepDrops } from './drops-sim.js';
 import { updateLevelRunner } from './level-runner.js';
@@ -29,6 +34,7 @@ export function simTick(world, dt) {
   const alive = world.player.alive;
 
   if (alive) stepPlayer(world, dt); // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
+  stepAlly(world, dt);              // the friendly ship that is not the player (winds down on his own if the player is gone)
   stepEnemyAI(world, dt);           // …which cuts the engines and holds fire once the player is gone
   stepBullets(world, dt);
   stepRockets(world, dt);

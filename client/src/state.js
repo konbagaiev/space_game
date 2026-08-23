@@ -92,7 +92,7 @@ export const G = {
 // names, so every client module that reads `enemies`/`bullets`/`rockets`/`drops` is unchanged; the browser
 // host (which gives entities their Three.js bodies) is installed by sim.js at boot.
 export const world = createWorld();
-export const { enemies, bullets, rockets, drops } = world;
+export const { enemies, bullets, rockets, drops, allies } = world;
 // The sim's outbound channel for this world — see sim-core/events.js and the adapter in sim.js.
 export const simEvents = world.events;
 
@@ -158,8 +158,8 @@ world.input = { keys, touchAim };
 //                 is the active choice and its level names a `center`; `t` is the live countdown, stepped by
 //                 sim.js checkMissionZone, which calls onMissionZoneEnter when it runs out.
 for (const k of ['kills', 'enemyTotal', 'earned', 'earnedXp', 'banked', 'combatElapsed', 'enemyShieldRefills',
-                 'activeMission', 'roam', 'returnToBase', 'replayMode', 'missionZone', 'autopilot',
-                 'activeShip']) {
+                 'allyKills', 'activeMission', 'roam', 'returnToBase', 'replayMode', 'missionZone',
+                 'autopilot', 'activeShip']) {
   Object.defineProperty(G, k, {
     get: () => world[k],
     set: (v) => { world[k] = v; },

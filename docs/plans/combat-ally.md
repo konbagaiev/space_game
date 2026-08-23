@@ -111,8 +111,13 @@ advance into it. Note the stale-looking `level-5` references in older DECISIONS 
   a framing constraint, not a free choice.
 - ~~Its combat behaviour in detail~~ — **settled, see §2d**: the firing pass, the two re-target angles, the
   retreat thresholds and station-keeping. §3 remains the reasoning behind why it is shaped this way.
-- **The exact arrival moment.** Level 4's shape shows the natural seams and Level 5 will have its own:
-  early enough to read his behaviour, or at the boss as the cavalry.
+- ~~**How he arrives**~~ — **settled and BUILT (2026-08-23):** a **phase of the level descriptor carries
+  `ally: true`**, and entering that phase is when he joins (`sim-core/level-runner.js enterPhase` →
+  `sim-core/ally.js spawnAlly`). Level 5 sets one field and nothing else. No seeded level carries it today;
+  the `?ally` dev flag injects it into whatever level the tab is flying, and a room takes the same phase name
+  over the handshake.
+- **The exact arrival MOMENT for Level 5** is still the maintainer's call. Level 4's shape shows the natural
+  seams and Level 5 will have its own: early enough to read his behaviour, or at the boss as the cavalry.
 - **Level 5 itself** — centre/anchor, `xpReward`, `lastKillDrop`, briefing and victory copy (write from
   `docs/narrative/`, never ad-hoc). The enemy composition mirrors Level 4 and there IS a boss (§2c).
 - **The BOSS's model, and therefore CREDITS.md** — §2c says the boss gets a different model. If it is not
@@ -197,8 +202,21 @@ Heavy armour, ordinary engine and thrusters, an ordinary repair drone, a heavy c
 
 **Derived through `deriveDrive` (`components.js:29`):** mass **86** against `REFERENCE_MASS` 50 →
 `massFactor` **0.58**. Acceleration **8.7** (the player's is 10), turn rate **1.16 rad/s** (the player's is
-2.0) — a 180° reversal takes **2.7 s**. With `DRAG = 1.8` (`step-enemies.js:30`) terminal speed is about
-**4.8 u/s**.
+2.0) — a 180° reversal takes **2.7 s**. ~~With `DRAG = 1.8` (`step-enemies.js:30`) terminal speed is about
+**4.8 u/s**.~~
+
+> **CORRECTED (2026-08-23), and this one was WRONG rather than merely imprecise.** The struck sentence
+> applied the **ENEMY** movement model. The ally flies the **player's**: `PLAYER_MAX_SPEED` is a **flat
+> 30 u/s** (`sim-core/step-player.js:29`, *"Flat top speed for the PLAYER only… Enemies use their per-engine
+> `maxSpeed` instead"*), there is no per-frame drag while thrusting (`IDLE_DRAG` runs only when no control is
+> held), and slowing down is the kinematic `brakeVel`. **Thrust decides ACCELERATION; top speed is a property
+> of the SHIP, not of the engine** (maintainer, 2026-08-23). So the real numbers are: acceleration **8.7**
+> (0→30 u/s in **3.45 s**), turn **1.16 rad/s** (180° in **2.71 s**), top speed **30 u/s** — the same as the
+> player's. `step-ally.js` reads the cap straight from `step-player.js` and never restates it.
+>
+> The reversal is therefore **brake → turn → re-accelerate**, not a constant-speed arc: braking (3.45 s)
+> outlasts the 180° turn (2.71 s), so he comes about nearly stationary, carrying ≈6.4 u/s of old-direction
+> drift, and rebuilds speed into the next pass. A whole pass cycle is ~6 s and swings him ~50 u out and back.
 
 *Confirmed as id 6 (Heavy cannon), not id 7.*
 
@@ -220,10 +238,13 @@ moment the current one is behind him** — the angles are to be tuned.
   `catalog_seed.js:298`; the rule is in `step-enemies.js:100`). So he fires while the nose is on, falls
   silent through the pass, and opens up again out of the turn. Nothing has to be written to make that
   rhythm — it falls out of the existing fire rule.
-- **The pass bottoms out at about 4 units and he flies THROUGH the enemy — and that is INTENDED.** Turn
-  radius = speed / turn rate = 4.8 / 1.16 ≈ **4.2 u**, and the nose only slides off the target at roughly
-  that range, so he closes to near contact. Hulls are `broadR` ≈ 2.0 each and **there is no ship-to-ship
-  collision anywhere in `sim-core`** (checked), so two hulls will visibly overlap on the pass. Steering at a
+- ~~**The pass bottoms out at about 4 units and he flies THROUGH the enemy — and that is INTENDED.** Turn
+  radius = speed / turn rate = 4.8 / 1.16 ≈ **4.2 u**~~ — **CORRECTED (2026-08-23):** that figure came from
+  the wrong 4.8 u/s above. Turn radius = speed / turn rate = 30 / 1.16 ≈ **26 u** at full speed (the
+  player's is 15 u), so the nose slides off the target far earlier and **flying through a hull will now
+  rarely be seen at all**. *The ruling it supported is unchanged and still stands:* hulls are `broadR` ≈ 2.0
+  each and **there is no ship-to-ship collision anywhere in `sim-core`**, so two hulls may still visibly
+  overlap on the pass. Steering at a
   lateral offset to make him cut down the flank instead was proposed and **declined by the maintainer,
   2026-08-22: passing through ships is by design, not a bug.** Do not "fix" it in review, and do not add
   ship-to-ship collision to stop it.
@@ -290,9 +311,16 @@ and every difference below follows from one of those two.
 - **It positions relative to the PLAYER, not to its target.** A wingman holds a station off your flank and
   fights from there; a bot that beelines at whatever it is shooting reads as a stranger who happens to be
   nearby. This is also what makes it feel like an ally at all, before it fires a shot.
-- **It targets what threatens YOU**, not what is nearest to it: the enemy shooting at the player, or the one
+- ~~**It targets what threatens YOU**, not what is nearest to it: the enemy shooting at the player, or the one
   closest to the player. A companion that wanders off to the far side of the arena is not helping, however
-  many kills it gets.
+  many kills it gets.~~
+
+  > **SUPERSEDED (2026-08-23).** This bullet is the brief's own prose, written before the maintainer
+  > specified the behaviour. **§2d is authoritative: the ally picks the enemy nearest to HIMSELF**, and that
+  > is what shipped in `sim-core/step-ally.js`. The maintainer's own spec beats the brief's earlier
+  > reasoning. The player-relative idea survives only as `ALLY_TARGET_LEASH` (`sim-core/ally-config.js`), a
+  > named constant **defaulting to `Infinity`** — set it finite and he will only engage enemies within that
+  > distance of the player. Do not re-open this from §3's wording.
 - **It must not steal the fight.** If it out-kills the player, the player is a spectator; if it does
   nothing, it is decoration. This is a tuning problem with a real answer — cap its damage share, or give it
   a role that is not damage (drawing fire, finishing wounded ships, screening the player while shields

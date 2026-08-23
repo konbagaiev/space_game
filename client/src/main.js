@@ -12,7 +12,7 @@ import { createJerkProbe } from './netsim-jerk.js'; // ?netjerk: catch every bre
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
-import { G, world, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
+import { G, world, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, allies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, setZoom, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
@@ -34,6 +34,7 @@ import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.j
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './sim-core/system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
+import { allyDev, applyAllyDev } from './ally-dev.js'; // ?ally dev flag: the wingman's arrival phase
 import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
@@ -932,6 +933,7 @@ async function startNetsim() {
     netLevel = level;
     netLink = await connectNetsim({
       playerId: G.playerId, level, seed: NETSIM.seed,
+      ally: allyDev()?.phase || null,   // ?ally (dev): ask the room to run the wingman on that phase
       onWelcome: (w) => {
         netState.welcome = w;
         netState.jerk?.mark('welcome', { tick: w.tick, level: w.level, snapshotEvery: w.snapshotEvery }, perfNow());
@@ -1269,7 +1271,7 @@ if (location.search.includes('debug')) {
   window.__game = {
     // `skyScene` + `renderer` are here for headless PERF probes: the frame is two full passes (sky, then
     // combat), and reasoning about fill cost needs to walk both scenes and read renderer.info.
-    scene, skyScene, renderer, camera, enemies, bullets, rockets,
+    scene, skyScene, renderer, camera, enemies, allies, bullets, rockets,
     explosions, sparks, shockwaves, smoke,
     // Exhaust FX debug hooks: the GLOBAL (a)/(b) look toggle + read the current mode / live freighter plume.
     exhaust: {
@@ -1285,6 +1287,9 @@ if (location.search.includes('debug')) {
     spawnEnemyShieldHit, // test/tool hook: fire an enemy shield ripple at a world point
     get enemyShieldSlots() { return enemyShieldSlots(); }, // diagnostic: the pooled enemy bubble slots
     get enemyShieldRefills() { return G.enemyShieldRefills; }, // diagnostic: completed enemy shield refills this run (replay triage)
+    get allyKills() { return G.allyKills; }, // diagnostic: how many of this run's kills the WINGMAN took — the
+                                             // number the ?ally dev flag exists to produce (nothing else on
+                                             // screen reveals it, by design; docs/plans/combat-ally.md §3)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
     get levelName() { return CATALOG.levelName; },     // the SEED NAME (level-N) this tab resolved at boot
     get needsSceneWarm() { return G.needsSceneWarm; }, // diagnostic: a level build is waiting to be compiled/uploaded
@@ -2032,7 +2037,7 @@ async function bootstrap() {
     for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);
-    CATALOG.level = level.descriptor;
+    CATALOG.level = applyAllyDev(level.descriptor); // ?ally (dev): inject the wingman's arrival phase
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
 
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map

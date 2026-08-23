@@ -11,8 +11,11 @@ import { resolveWeapon as resolveWeaponIn, resolveComponents as resolveComponent
 
 // Advance a ship's fire groups in THIS tab's World. The firing logic itself is sim-core's (it decides what
 // is spawned and emits `fire`); this only binds the World so the two call sites in sim.js are unchanged.
+// The historical 5-argument shape kept a BOOLEAN `isPlayer`; sim-core now takes a three-valued `side`
+// ('player' | 'ally' | 'enemy'), so the boolean is mapped here rather than in every caller. An ally is
+// never fired through this shim — `stepAlly` calls sim-core directly.
 export const updateGroups = (ship, fwd, isPlayer, dt, wantsFire) =>
-  updateGroupsIn(world, ship, fwd, isPlayer, dt, wantsFire);
+  updateGroupsIn(world, ship, fwd, isPlayer ? 'player' : 'enemy', dt, wantsFire);
 import { world } from './state.js';                             // the World these shots are fired into
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
 
@@ -81,6 +84,11 @@ export function detachEnemyBody(e) {
   scene.remove(e.mesh);
   e.mesh = null;
 }
+
+// An ally's body is built exactly like an enemy's — same .glb, tinted by its OWN colour (ally-config
+// ALLY_COLOR). Named separately because the host's `kind` is what says which list it came from.
+export const attachAllyBody = attachEnemyBody;
+export const detachAllyBody = detachEnemyBody;
 
 // Spawn a specific enemy by role name (used by tests/tools), falling back to the first kind.
 export function spawnEnemy(role) {

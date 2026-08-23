@@ -89,6 +89,10 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
 
     (async () => {
       const levelName = params.get('level') || 'level-0';
+      // ?ally=<phase> on the handshake: the room runs the Sentinel wingman, arriving on that phase. Dev
+      // only today (the client's `?ally` flag forwards it); Level 5's own descriptor will carry the field
+      // and need no param at all.
+      const ally = params.get('ally') || null;
       const seed = (Number(params.get('seed')) >>> 0) || (Math.random() * 0xffffffff) >>> 0;
       // The player's real ship, from their account. A lookup failure is not fatal — the room falls back to
       // the catalog default, which is what every room used to fly.
@@ -103,7 +107,7 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
 
       let room;
       try {
-        room = createRoom({ levelName, seed, ship,
+        room = createRoom({ levelName, seed, ship, ally,
           onEconomy: makeEconomySink({ playerId, level: levelName, bankRun, log }) });
       } catch (err) {
         // An unknown level is the client's mistake, not a crash: say so and close.

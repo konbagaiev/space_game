@@ -12,6 +12,7 @@ import { fetchJson } from './net.js';
 import { API_BASE } from './api-base.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
+import { applyAllyDev } from './ally-dev.js'; // ?ally (dev): inject the wingman's arrival phase into the level
 import { levelRunner } from './sim.js';
 import { t } from './i18n.js';
 import { showMain } from './mainwindow.js';
@@ -277,7 +278,7 @@ async function reloadPlayerWorld() {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
     }
-    CATALOG.level = level.descriptor;
+    CATALOG.level = applyAllyDev(level.descriptor); // ?ally re-injects here too, or it would stop working after a login
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
     const active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
     G.activeShip = active;

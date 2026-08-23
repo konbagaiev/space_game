@@ -22,6 +22,7 @@
 // the only way to get real coverage of reconciliation without a browser.
 import { Vec3 } from './sim-core/vec.js';
 import { makeEnemyShell } from './sim-core/ship-entity.js';
+import { makeAlly } from './sim-core/ally.js';
 import { shortestAngleDelta } from './sim-core/steering.js';
 import { BULLET_PLANE_Y, SIM_DT } from './sim-core/consts.js';
 
@@ -89,7 +90,7 @@ export function createNetState() {
   return {
     byId: new Map(),   // network id → the World entity it drives
     idOf: new WeakMap(),// the reverse: a clicked entity → the id the room knows it by
-    kinds: new Map(),  // network id → 'enemy' | 'bullet' | 'rocket' | 'drop'
+    kinds: new Map(),  // network id → 'enemy' | 'ally' | 'bullet' | 'rocket' | 'drop'
     arriving: new Map(),// network id → the tick it was born on; attached when the render clock reaches it
     events: [],        // wire events waiting for the render clock to reach the tick they happened on
     leaving: new Map(),// network id → the tick it stopped being listed; despawned when the clock reaches it
@@ -121,6 +122,13 @@ function spawnGhost(world, desc) {
     if (!shipDef) return null; // an unknown ship name is the server's bug; drawing nothing beats crashing
     e = makeEnemyShell(world.catalog, shipDef);
     e.maxHp = desc.maxHp ?? e.maxHp;
+  } else if (desc.kind === 'ally') {
+    // The SAME constructor the simulation uses — that is the whole point: there is no second, render-only
+    // ally to keep in step. Only his livery and hull max come off the wire.
+    e = makeAlly(world.catalog);
+    if (!e) return null;
+    e.maxHp = desc.maxHp ?? e.maxHp;
+    if (desc.color != null) e.color = desc.color;
   } else if (desc.kind === 'bullet') {
     // `projectileColor` + `class` are what make a shot look like the weapon that fired it: the class picks
     // its BOLT_SCALE, and without one `attachBulletBody` falls through to a plain untinted dot. That is
@@ -153,6 +161,7 @@ function spawnGhost(world, desc) {
 // are events on the render timeline, not on the arrival one.
 function attachGhost(world, kind, e) {
   const list = kind === 'enemy' ? world.enemies
+    : kind === 'ally' ? world.allies
     : kind === 'bullet' ? world.bullets
     : kind === 'rocket' ? world.rockets
     : kind === 'drop' ? world.drops : null;
@@ -163,6 +172,7 @@ function attachGhost(world, kind, e) {
 
 function despawnGhost(world, kind, e) {
   const list = kind === 'enemy' ? world.enemies
+    : kind === 'ally' ? world.allies
     : kind === 'bullet' ? world.bullets
     : kind === 'rocket' ? world.rockets
     : kind === 'drop' ? world.drops : null;
@@ -199,6 +209,10 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
   const rows = (list, fn) => { for (const r of list || []) { seen.add(r[0]); const e = state.byId.get(r[0]); if (e) fn(e, r); } };
   const tick = snap.tick;
   rows(snap.enemies, (e, r) => pushSample(state.samples.get(r[0]),
+    { at, tick, x: r[1], z: r[2], h: r[3], hp: r[4], sc: r[5], warping: !!r[6], sh: r[7], shr: r[8] }));
+  // The wingman rides the SAME column order as an enemy, so `renderNet`'s generic per-id apply gives his
+  // interpolation, health bars and despawn timing for free.
+  rows(snap.allies, (e, r) => pushSample(state.samples.get(r[0]),
     { at, tick, x: r[1], z: r[2], h: r[3], hp: r[4], sc: r[5], warping: !!r[6], sh: r[7], shr: r[8] }));
   rows(snap.bullets, (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2] }));
   rows(snap.rockets, (e, r) => pushSample(state.samples.get(r[0]), { at, tick, x: r[1], z: r[2], h: r[3] }));

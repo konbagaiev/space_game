@@ -4911,3 +4911,50 @@ guard to leave to the caller. It now bails when settling is refused, and a test 
 home is simulated where everything else is. The salvage swept at step 2 gets its own economy report
 (`kind:'salvage'`, no money — the run was paid at `cleared`), because the room's banking already happened
 and those crates would otherwise never reach the stash.
+
+## 134. The simulation is three-sided in TARGETING and two-sided in DAMAGE ROUTING
+
+**2026-08-23.** The fight was binary end to end: a bullet either scanned `world.enemies` or struck
+`world.player`, a rocket branched on `r.fromPlayer`, and `stepEnemyAI` read `world.player` directly. The
+Sentinel wingman (`docs/plans/combat-ally.md`) is a friendly ship that is **not** the player, so something
+had to give.
+
+**We made the simulation three-sided where it decides WHO to fight, and left it two-sided where it decides
+WHO takes damage.** Concretely: `nearestHostileTarget(world, pos)` hands a hostile ship the nearer of the
+player and the allies to steer, aim, fire and home at; a hostile projectile now tests the player **and**
+every ally. But a projectile still carries only `fromPlayer`, and its meaning is widened from *"the player
+fired it"* to **"the friendly side fired it"**. One extra boolean, `fromAlly`, rides along for the single
+rule that needs to tell the two friendlies apart: an ally's kill pays no credits and no XP.
+
+**Why not a general N-team / faction model.** Because friendly fire is off in both directions by design
+(§2.6 of the brief), a projectile never needs to know more than "friendly" or "hostile" — a `teamId` on
+every entity and a friend-or-foe matrix would be machinery with exactly two values in it. §30 says build the
+smallest thing that fully delivers.
+
+**What it buys.** Every branch this adds is one the code does not take when `world.allies` is empty, which
+is every level that ships. With no ally, `nearestHostileTarget` returns `world.player` verbatim and a
+hostile rocket's `!r.target.alive` is the old `!world.player.alive`, so both expressions are algebraically
+identical; the ally step returns on its first line; the digest appends nothing; the enemy reload jitter is
+the only `simRandom()` call in `updateGroups` and it is now explicitly `side === 'enemy'`, identical for the
+player. The Level-0 intro oracle still logs tick **2474** and `36-sim-divergence` still agrees on hash
+`0x2a36f8d9` with **38** draws. The recorded archive is untouched (§73).
+
+**What it costs.** Co-op and PvP will have to generalise it — a second human means friendly fire is a real
+question and "the friendly side" stops being one team. That is deliberately deferred to when there is a
+second human to ask about, rather than guessed at now.
+
+**Rejected alternative: making a RETREATING ally invisible to enemy target selection.** An earlier draft did
+exactly that, so a wingman breaking off to heal could not drag half a wave off screen with him. **Vetoed by
+the maintainer at the review gate (2026-08-23):** it is artificial, and the ally must behave as close to a
+real player as possible, because this whole feature is a rehearsal for actual multiplayer — nothing makes a
+fleeing human stop being a target. If enemies latch onto him and follow him out of the fight, that is
+accepted; the minimap shows where everyone is. It also costs him nothing, because he shares the player's
+flat speed cap and every Level-4 pirate is slower, so a chased retreat is still a retreat he wins. A test
+named for the veto (`step-ally.test.js`) fails if anyone re-adds the exclusion.
+
+**Also settled here, because both fall out of the same shape.** The `fire` EVENT keeps meaning *"your own
+shot"* (`fromPlayer: side === 'player'`) while the PROJECTILE means *"the friendly side"*
+(`fromPlayer: side !== 'enemy'`) — without the split the client adapter would play the wingman's guns as if
+they were yours, and his fire must be silent. And **he cannot die**: `hp` floors at `ALLY_MIN_HP` and there
+is no ally death path anywhere, which is what keeps `world.allies` from ever shrinking mid-run and keeps the
+digest and the wire simple.

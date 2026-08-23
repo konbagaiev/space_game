@@ -39,12 +39,16 @@ export function forwardVec(heading) {
 // thrust `accel` (Decision 2 — the passive IDLE_DRAG is exponential and can't stop cleanly).
 // Shared with the player's manual brake (S/↓ in stepPlayer) — it stops at 0 and never flips the
 // direction, which is exactly the "no flying backwards" rule.
-function brakeStep(world, accel, dt) {
-  const v = world.player.vel, sp = v.length();
-  if (sp <= 1e-4) { v.set(0, 0, 0); return; }
+// Generalised over the VELOCITY rather than bound to `world.player`, because the ally brakes exactly like a
+// hand-flown ship (docs/plans/combat-ally.md) and one implementation cannot drift from itself. A pure
+// extraction: same maths, same operand order, same vector — the player's motion is bit-identical.
+export function brakeVel(vel, accel, dt) {
+  const sp = vel.length();
+  if (sp <= 1e-4) { vel.set(0, 0, 0); return; }
   const dec = Math.min(sp, accel * dt); // symmetric decel == thrust accel
-  v.addScaledVector(v.clone().normalize(), -dec);
+  vel.addScaledVector(vel.clone().normalize(), -dec);
 }
+function brakeStep(world, accel, dt) { brakeVel(world.player.vel, accel, dt); }
 
 // Click-to-fly: brake to a stop → rotate to face the station → accelerate at max → kinematic brake so the
 // ship coasts to ~0 right at the station. `heading` convention matches forwardVec/touchAim: desired = atan2(dx, dz).
@@ -337,7 +341,7 @@ export function stepPlayer(world, dt) {
   }
 
   // --- player: fire each group when its key is held (the rocket group also via the touch button) ---
-  updateGroups(world, player, fwd, true, dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
+  updateGroups(world, player, fwd, 'player', dt, (g) => !!(keys[g.key] || (g.name === 'rocket' && keys['_rocket'])));
 }
 
 // The last thing a tick does: notice the ship died. Deliberately separate from the damage that killed it —
