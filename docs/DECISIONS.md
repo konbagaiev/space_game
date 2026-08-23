@@ -5073,7 +5073,30 @@ position depends on the nose being solved for. It corrects the SHOOTER's drift o
 target is a separate problem and is not attempted**.
 
 **ENEMY AIMING HAS THE SAME FLAW AND IS DELIBERATELY LEFT ALONE.** Do not "fix" the asymmetry when you find
-it. Correcting enemy aim makes every enemy in the game hit harder, which raises the difficulty of all five
-levels at once and moves every recorded replay — it needs its own slice with its own balance pass. That is
-why `aimWithDrift` lives in `step-ally.js` beside its one caller rather than in `steering.js`, and why a test
-named for it asserts an enemy still points its nose at the player, flaw and all.
+it. Correcting enemy aim makes every enemy in the game hit harder, which would raise the difficulty of all
+five levels at once and move every recorded replay. That is why `aimWithDrift` lives in `step-ally.js` beside
+its one caller rather than in `steering.js`, and why a test named for it asserts an enemy still points its
+nose at the player, flaw and all.
+
+**Amended 2026-08-23 — the retrofit is not scheduled, it is CANCELLED.** The maintainer's decision after
+playing it: **the enemies that exist today keep the flaw permanently — the intro's above all — and the
+Level 5 base pirates get the corrected aim from birth.** That dissolves the problem rather than deferring
+it: no campaign-wide rebalance, no recorded replay moves, and the new enemies are tuned against corrected
+aim from their first playtest instead of being retuned after it. The practical constraint this puts on the
+Level 5 work: whatever carries the correction must be **opt-in per ship or per enemy type**, never a change
+to the shared firing path. `22-intro-replay` must still hold at tick 2474.
+
+**Three more follow-ups the maintainer CLOSED rather than scheduled (2026-08-23).** Each looks like an
+obvious defect to a fresh reader, which is exactly why each is written down:
+
+- **The escort's standing-start orbit is accepted.** Reversing from rest, the closing-speed rule reads a
+  circling ship as "not closing" and keeps thrusting, so he drifts outward (80 u → orbiting 40–95 u over
+  ~40 s) instead of settling at `ALLY_ESCORT_DIST`. It happens only while the player is stationary and the
+  wingman has nothing to do, and it is bounded. Judged fine in play. **Do not "fix" it** — the maintainer
+  will say so if it becomes a problem.
+- **Ally-through-ally fire is accepted for now.** §2.6's "never a tracer through a friendly hull" is
+  enforced against the PLAYER only; ally-on-ally shots are unchecked. It becomes visible only with more than
+  one wingman on the field, and that is when it will be revisited.
+- **"Does he steal the fight?" (`combat-ally.md` §3) is CLOSED.** Played on Level 4: he clears a wave
+  unaided and cannot take the boss alone, and the balance was judged acceptable — while being tuned for
+  **Level 5**, not Level 4. Do not re-open it, and do not ask for the kill-share number again.
