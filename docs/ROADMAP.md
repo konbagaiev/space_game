@@ -141,6 +141,23 @@ Two reasons it comes before Phase 5 rather than after:
   moment, and Level 5's own content (centre, enemy pool, boss, briefing/victory copy, set-piece — and
   whether that set-piece needs a `CREDITS.md` row)
 
+### Follow-ups opened by the ally (2026-08-23)
+
+- [ ] **Enemy aiming has the same velocity-inheritance flaw the ally's just had, and is deliberately left
+  alone.** Kinetic bullets inherit the shooter's velocity (`sim-core/spawn.js:26-27`; rockets do not, §70),
+  so any ship drifting sideways with its nose on target misses even a STATIONARY enemy — measured at
+  **10.5° of shot error at 12 u/s of crossing drift**. The ally now compensates (`aimWithDrift` in
+  `step-ally.js`, ally-only by design); `stepEnemyAI` does not. **This is not an oversight — do not "fix"
+  the asymmetry in passing.** Correcting enemy aim makes every enemy in the game hit far more often, which
+  raises the difficulty of all five campaign levels at once and moves every recorded replay
+  (`22-intro-replay` currently holds at tick 2474). It needs its own slice with a full play-through of each
+  level, exactly as removing auto-aim did (§124, which moved the intro from 2503 to 2474).
+- [ ] **The wingman's escort orbits instead of converging from a standing start.** Reversing from rest, the
+  closing-speed rule reads a circling ship as "not closing" and keeps thrusting, so he drifts outward
+  (80 u → orbiting 40–95 u over ~40 s) instead of settling at `ALLY_ESCORT_DIST`. Bounded, idle/healing-only
+  behaviour, and pre-existing rather than introduced by the fixes. Any repair is a design change and wants a
+  live judgement first.
+
 ## Phase 5 — Multiplayer (FAR future, not soon)
 - [ ] **Co-op first** — players fly missions together.
 - [ ] **PvP later** — *maybe* (uncertain, decide based on demand).

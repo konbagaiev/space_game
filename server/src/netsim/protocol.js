@@ -55,6 +55,9 @@ export const EVENT_FIELDS = {
   // `byAlly` — the wingman landed the killing blow. Without it a room's client would write his kills into
   // the player's own event log (docs/plans/combat-ally.md).
   kill:             ['pos', 'isBoss', 'exhaustColor', 'sizeScale', 'role', 'shipClass', 'reward', 'xp', 'byAlly', 'name'],
+  // The wingman was destroyed. Carries only what the explosion needs — he is worth nothing, so there is no
+  // reward field to leak and nothing for a client to bank.
+  allyDown:         ['pos', 'exhaustColor', 'sizeScale', 'shipClass'],
   warpFlash:        ['pos'],
   banner:           ['key', 'params', 'dur'],
   bannerClear:      [],

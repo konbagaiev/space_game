@@ -5,6 +5,57 @@
 
 ## 2026-08-23
 
+- **The wingman now breaks off the moment he is hurt enough — the rule that was supposed to protect his
+  charge was killing him.** He still pressed the attack at low hull and died. The threshold was not
+  mis-implemented, it was unreachable: Level 4's boss mounts 2× weapon 10 and 3× weapon 4, about **35 damage
+  per second**, so 20 % of a 200 HP hull is a **one-second** window — and the decision was only taken once
+  per **~6 s** pass cycle, so it landed inside the fatal window about one time in six. The root cause was a
+  collision between two earlier decisions: *"low health never interrupts a charge"* was written while the
+  ally **could not die**, when interrupting bought nothing; once he became mortal the same rule meant "die
+  mid-charge". **That rule is now retired.** He breaks off at **≤25 % hull** (was 20 %) with the shield down,
+  **evaluated as the damage lands and acted on at once**, mid-charge or not; he rejoins at ≥40 % as before.
+  The `wantsRetreat` latch that used to bridge "condition true" → "pass armed" is deleted along with the gap
+  it bridged. **He can still die** — that is deliberate and untouched; leaving is a chance, not protection.
+  Accepted cost: he turns away with his nose still on the enemy, so the gap dips to near contact during the
+  ~2.7 s reversal before it opens.
+- **The wingman's break-off was measured from the wrong point, and his shots did not go where his nose
+  pointed.** Two defects from the maintainer's live play, both in things that looked justified on paper.
+  (1) **The break-off now runs from the ENEMY, not from the arena centre.** `ALLY_RETREAT_DIST = 70` was a
+  radius around `arenaCenter` — but enemies *spawn* at 70–130 from that same centre, so the "holding point"
+  was the inner edge of their spawn ring; and because he charges enemies out there, his own distance from
+  the centre was normally already past 70, which made the remaining distance negative, the thrust zero, and
+  the retreat a **dead stop in the middle of the fight**. He now flies directly away from the nearest enemy
+  (recomputed as he goes) until that gap reaches `ALLY_BREAK_OFF_DIST` **120 u** — past the pirate gunner's
+  90 u reach, not merely past the 45 u basic gun — and holds there; with no enemy at all he escorts and heals
+  instead of flying into empty space. (2) **His nose is now aimed so the BULLET lands.** Kinetic bullets
+  inherit the shooter's velocity (rockets deliberately do not, §70), so a ship drifting across its own line
+  of fire misses even a stationary enemy — and his whole manoeuvre is a firing pass with heavy drift.
+  `aimWithDrift` cants the nose so the resulting shot travels at the target. Because that nose is optimised
+  for the GUN, his two weapons fly down different lines, so **both** the aim gate and §2.6's "never a tracer
+  through your hull" are now asked **per fire group, of the path that group's projectile actually takes** —
+  `fwd × speed + vel` for a bullet, the bare nose for a rocket, which inherits nothing and homes afterwards. **Ally only:** enemies have the identical flaw and are deliberately left alone, because
+  correcting them raises the difficulty of all five levels at once and moves every recorded replay — that
+  gets its own slice and its own balance pass.
+- **The wingman can be killed, and he can now be aimed at a level — two fixes from flying it.** Three
+  changes, all from the maintainer playing the branch. (1) **He dies.** This REVERSES "he cannot die" in the
+  bullet below (`combat-ally.md` §2.4, DECISIONS §134): an immortal wingman sat at a sliver of hull soaking
+  three boss rockets and read as a prop rather than a pilot. He is now destroyed for the rest of the
+  **mission** and returns in the next one, announced by the explosion alone (`allyDown`) — no banner, no log
+  line, no new string. He is worth nothing on the way out: no credits, no XP, no loot, and `world.kills` does
+  not move, so phase thresholds and the `cleared` payload cannot notice. *(With no orders in this cut the
+  player cannot defend him, so his death reads as bad luck — chosen knowingly.)* (2) **The retreat actually
+  fires now.** It required ≤20 % hull AND a broken shield but was tested on a single tick per pass, while the
+  shield's all-or-nothing 10 s refill makes that condition oscillate — so it almost always missed, which is
+  why the wingman never left. The rule is unchanged; the intent is latched every tick and acted on at the
+  next pass. (3) **`?ally` can name a LEVEL**, via the existing `level` param (`?ally=wave-1&level=4`) — the
+  same one `?record=1&level=<id>` uses. Level 3 and Level 4 carry identical phase names, so a test flight
+  aimed at Level 4 silently landed on whichever level the account was on.
+- **The wingman is finally distinguishable — his wings are blue.** He flies the player's own
+  `player_combat` .glb, and catalog ships are built with `tint: false`, so his `ALLY_COLOR` green only ever
+  reached the minimap dot: on screen he was **pixel-identical to your own ship**. `applyShipModel` gained an
+  optional `accent` — a colour plus a material-name prefix — and his `Wings_`-prefixed materials are
+  repainted `ALLY_ACCENT_COLOR`. The accent defaults to `null`, so every other ship in the game is
+  byte-identical. No new asset, no CREDITS row, no content-hash change.
 - **A third combatant in the simulation, and the wingman who flies it.** The fight was binary end to end —
   a bullet either scanned `world.enemies` or struck `world.player`, and `stepEnemyAI` read `world.player`
   directly. It is now **three-sided in targeting**: `nearestHostileTarget` hands a hostile ship the nearer of

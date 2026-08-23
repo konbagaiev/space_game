@@ -29,6 +29,10 @@
 //   { type: 'detonate',        pos, weaponClass, blastVis, blastTint, blastTime, blastBright }
 //                                                                       a rocket went off (damage already applied)
 //   { type: 'kill',            pos, isBoss, exhaustColor, sizeScale, role, shipClass, reward, xp, byAlly, name }
+//   { type: 'allyDown',        pos, exhaustColor, sizeScale, shipClass }  the WINGMAN was destroyed — he is
+//                                                                       gone for the rest of the mission and
+//                                                                       is worth nothing (no credits, no XP,
+//                                                                       no loot, not counted in world.kills)
 //   { type: 'warpFlash',       pos }                                   the soft-boundary warp-back arrival
 //   { type: 'banner',          key, params, dur }                      transient centred announcement (i18n KEY, not text)
 //   { type: 'bannerClear' }                                             drop whatever banner is showing, now

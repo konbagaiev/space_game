@@ -79,3 +79,30 @@ test('a room WITHOUT the flag is the fight that ships: no ally, no allies rows',
 test('the kill event carries `byAlly` over the wire, or a room\'s client would log his kills as yours', () => {
   assert.ok(EVENT_FIELDS.kill.includes('byAlly'));
 });
+
+test('a room whose wingman DIES stops listing him, and keeps stepping', () => {
+  const room = createRoom({ levelName: 'level-4', seed: 99, ally: 'wave-1' });
+  stepFor(room, 60);
+  assert.equal(room.world.allies.length, 1);
+  room.world.allies[0].hp = 0;
+  // Absence IS the despawn on this wire — there is no separate message — so the only thing the room has to
+  // do is stop listing him. The client's `leaving` path retires the ghost (netsim-world.test.js covers it).
+  let sawEmpty = false;
+  stepFor(room, 120, (snap) => { if (snap.allies.length === 0) sawEmpty = true; });
+  assert.equal(room.world.allies.length, 0, 'the room removed him');
+  assert.ok(sawEmpty, 'and its snapshots stopped listing him');
+  assert.ok(room.tick > 60, 'the room kept stepping through his death');
+});
+
+test('his death crosses the wire as `allyDown`, and it carries no reward to bank', () => {
+  const room = createRoom({ levelName: 'level-4', seed: 99, ally: 'wave-1' });
+  stepFor(room, 60);
+  room.world.allies[0].hp = 0;
+  let ev = null;
+  stepFor(room, 20, (snap) => { for (const e of snap.events) if (e.type === 'allyDown') ev = ev || e; });
+  assert.ok(ev, 'the client is told, or a friendly ship would vanish in silence');
+  assert.ok(ev.pos && ev.sizeScale, 'with what the explosion needs');
+  assert.equal(ev.reward, undefined);
+  assert.equal(ev.xp, undefined);
+  assert.ok(EVENT_FIELDS.allyDown, 'and the type is on the wire allowlist');
+});

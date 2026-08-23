@@ -79,7 +79,8 @@ export function worldDigest(world) {
     parts.push('al');
     pushVec(parts, a.pos); pushVec(parts, a.vel);
     parts.push(String(a.heading), String(a.hp), String(a._shieldValue), String(a.spawnAge),
-      String(a.warping), String(a.retreating), String(world.enemies.indexOf(a.target))); // -1 = no target
+      String(a.warping), String(a.retreating),
+      String(world.enemies.indexOf(a.target))); // -1 = no target
   }
   for (const b of world.bullets) { parts.push('b'); pushVec(parts, b.pos); parts.push(String(b.traveled)); }
   for (const r of world.rockets) { parts.push('r'); pushVec(parts, r.pos); parts.push(String(r.heading), String(r.hp)); }

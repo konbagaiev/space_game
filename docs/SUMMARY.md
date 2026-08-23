@@ -7,7 +7,8 @@
 is three-sided in TARGETING (an enemy steers, aims and homes at the nearer of player-or-ally) and stays
 two-sided in DAMAGE ROUTING (no friendly fire, DECISIONS §134). `world.allies` + `sim-core/step-ally.js`
 fly a Sentinel wingman with logic of his own — charge, pass through, brake-and-come-about, break off to
-heal at 20 % hull and return at 40 %. He arrives because a level PHASE says `ally: true`; **no shipped
+heal at 25 % hull and return at 40 %, and **die** if that fails — he is lost for the rest of the mission and
+returns in the next one, worth nothing. He arrives because a level PHASE says `ally: true`; **no shipped
 level does**, so with the `?ally` dev flag off nothing about the game changes and not one seeded RNG draw
 moves. His kills advance the mission and pay nothing.) Prior: (**A mission ends when the player presses "Finish and Return"** — the last kill
 clears the sector and pays the reward; the pilot is then free in a quiet sector to pick over the wreckage,
@@ -1063,10 +1064,20 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **The ally (a third combatant)** — a Sentinel **wingman** who is neither the player nor an enemy
   (`sim-core/ally-config.js` / `ally.js` / `step-ally.js`; design brief `docs/plans/combat-ally.md`).
   **No level that ships spawns him**: he arrives only when a level **phase carries `ally: true`**, which
-  Level 5 will set and the **`?ally` dev flag** injects for local play (`client/src/ally-dev.js` — bare
-  `?ally` = the `clear-out` phase, `?ally=<phase>` names another; not sticky, URL only). With the flag off
-  there is no ally, no ally step, no extra entity and **not one extra seeded RNG draw**.
-  - **What he flies:** the same `player_combat` .glb as you, tinted friendly green (`ALLY_COLOR 0x3ddc84`).
+  Level 5 will set and the **`?ally` dev flag** injects for local play (`client/src/ally-dev.js`). `?ally`
+  names the **phase** (bare = `clear-out`; `?ally=<phase>` names another) and the existing **`level`** param
+  names the **level** — the same param and the same `normalizeLevelName` mapping `?record=1&level=<id>` uses
+  — so `?ally=wave-1&level=4&debug` is a reproducible test flight. The level half exists because Level 3 and
+  Level 4 carry IDENTICAL phase names, so a flight aimed at Level 4 silently landed on whichever level the
+  account happened to be on. Not sticky, URL only. With the flag off there is no ally, no ally step, no extra
+  entity and **not one extra seeded RNG draw**.
+  - **What he flies:** the same `player_combat` .glb as you, with his **WINGS repainted blue**
+    (`ALLY_ACCENT_COLOR 0x2f6bff` over the model's `Wings_`-prefixed materials, via `applyShipModel`'s
+    optional `accent`). That repaint is the only thing separating him from the player in 3D: catalog ships
+    are built with `tint: false` (`ship-factory.js modelSpec`), so a ship's `color` reaches the **minimap dot
+    and the primitive placeholder but never the .glb** — `ALLY_COLOR 0x3ddc84` is his radar green, not his
+    hull. The accent defaults to `null` for every other ship, so nothing else in the game is touched. No new
+    asset, no `CREDITS.md` row, no content-hash change.
     Heavy hull id 13 (**200 HP**), Basic engine id 5, Basic thrusters id 8, Repair drone id 12, Base shield
     id 31, **Heavy cannon id 6 + Rocket (homing) id 3**. **No grab and no skills** — so he never reacts to
     loot, and a hostile hit never rolls the dodge draw. Derived by `deriveDrive`: mass **86**, acceleration
@@ -1077,16 +1088,56 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     or braking on the player's own kinematic decel (`brakeVel`, extracted from `brakeStep`). 0→30 takes
     **3.45 s**; a 180° reversal takes **2.71 s** and **brakes and turns together**, so he comes about nearly
     stationary and rebuilds speed into the next pass — a ~6 s cycle swinging him ~50 u out and back.
+  - **His nose is aimed for the GUN, not at the enemy.** Kinetic bullets inherit the shooter's velocity
+    (`spawn.js`; rockets deliberately do not, DECISIONS §70), so a ship drifting across its own line of fire
+    misses even a STATIONARY target — and his whole manoeuvre is a firing pass with heavy lateral drift.
+    `aimWithDrift` picks the nose so the RESULTING bullet travels at the target. The nose is optimised for
+    the gun (0.6 s cooldown vs the rocket's 5 s), which means the two weapons on the hull fly down
+    **different lines** — so every question about a shot is asked **per fire group, of the path that group's
+    projectile actually takes**: `fwd × speed + vel` for a bullet, and the bare nose for a rocket, which
+    inherits nothing and homes afterwards. Both the aim gate AND the §2.6 player-safety gate read that same
+    per-group path. `aimWithDrift` takes the bearing from the hull CENTRE, not the muzzle (~3-4° of parallax
+    at 20 u) — the same parallax the player's and every enemy's aim already carries. It corrects the
+    SHOOTER's drift only; leading a moving target is a separate problem. **Enemies have the same flaw and
+    are deliberately left alone** pending a balance pass (see below).
   - **What he does:** charges the enemy nearest **to himself** (`ALLY_TARGET_LEASH` is `Infinity`; make it
-    finite to keep him near the player), fires while the nose is on, **flies through the hull** (deliberate —
+    finite to keep him near the player), fires when the SHOT is on, **flies through the hull** (deliberate —
     there is no ship-to-ship collision and no lateral pass offset), then brakes and comes about. He re-picks
     once the target is >120° behind (`ALLY_BEHIND_ANGLE`), snapping straight onto anything already inside the
-    0.25 rad aim cone. **He never fires through your hull.** With nothing to fight he escorts to ~10 u of you,
-    judged on the **closing** speed so he holds formation instead of settling 60 u back.
-  - **He cannot die** (§2.4): `hp` floors at `ALLY_MIN_HP` 1 and there is no ally death path anywhere.
-    Instead he **breaks off at ≤20 % hull with the shield down** — never mid-charge, only after a pass —
-    runs to `ALLY_RETREAT_DIST` **70 u** from the arena centre (out of frame) to let the drone work, and
-    **rejoins at ≥40 % hull with the shield full**.
+    0.25 rad aim cone. **He never fires through your hull** — and that is judged per weapon group on the path
+    the projectile really takes (below), not on the nose. With nothing to fight he escorts toward
+    `ALLY_ESCORT_DIST` ~10 u of you, judged on the **closing** speed so he holds formation instead of
+    settling 60 u back. *Known:* coming at you from a standing start facing away, his 26 u turn radius puts
+    him into a slow bounded orbit rather than onto the hold point; it is idle/healing behaviour and is left
+    for a live judgement.
+  - **He breaks off at ≤25 % hull with the shield down, the instant the damage lands** — mid-charge or not —
+    and flies **directly away from the nearest ENEMY** until that gap reaches `ALLY_BREAK_OFF_DIST` **120 u**,
+    holds there while the drone works, and **rejoins at ≥40 % hull with the shield full**.
+    *§2d's "low health never interrupts a charge" is RETIRED (2026-08-23): it was written while he could not
+    die, and once he was mortal it meant "die mid-charge". Level 4's boss deals ~35 dmg/s, so 20 % of a
+    200 HP hull was a ~1 s window against a ~6 s pass cycle — the decision landed inside the fatal window
+    about one time in six.* The condition is evaluated every tick and acted on at once (equivalent to a
+    damage trigger: it can only newly become true when damage lands, since the drone only heals and the
+    shield only refills). The shield clause is kept but is nearly free — damage routes through the shield
+    first (§76), so at the instant hull damage lands the shield is already down. **He can still die**; that
+    is a chance, not protection. The cost, accepted: he turns away with his nose still on the enemy, so the
+    gap dips to near contact during the ~2.7 s reversal before it opens. The threat is
+    recomputed every tick (the nearest one can change as he runs) and the arrival rule is judged on the rate
+    the **gap is opening**, not on ground speed, so a pursuer matching his course does not read as escape.
+    With no enemy at all there is nothing to break from, so he falls through to the escort instead of flying
+    into empty space. *The distance was measured from the ARENA CENTRE and was broken twice over: enemies
+    spawn at 70–130 from that same centre, so the old 70 u holding point sat on the inner edge of their spawn
+    ring — and since he charges enemies out there, his own distance from the centre was normally already past
+    it, making the remaining distance negative, thrust 0, and the "retreat" a dead stop in the middle of the
+    fight.*
+  - **He CAN die** (§2.4, reversed 2026-08-23 — an immortal wingman soaked three boss rockets at a sliver of
+    hull and read as a prop). `stepAllyDeaths` removes him at `hp <= 0` and emits **`allyDown`**; he is gone
+    for the rest of the **mission** and returns in the next one, because a fresh run empties `world.allies`
+    and the level's phase spawns him again. He is worth **nothing** — no credits, no XP, no loot roll, and
+    `world.kills` does not move, so phase thresholds, `enemyTotal`, `isLastKillDrop` and the `cleared`
+    payload cannot notice, and his death does not end the mission. The **explosion FX is the entire
+    announcement**: no banner, no log line, no new string. (Known and accepted: with no orders in this cut
+    the player cannot defend him, so his death reads as bad luck rather than as their mistake.)
   - **Enemies fight him.** `nearestHostileTarget` (`sim-core/targeting.js`) gives a hostile ship the nearer
     of player-or-ally to steer, aim, fire and home at — **including a RETREATING one**, deliberately: he must
     behave as close to a real player as possible, and he outruns every Level-4 pirate, so being chased costs
@@ -2988,8 +3039,9 @@ then `renderTick(dt)`, and it keeps that name and signature because the fixed-st
 stepper and the `?debug` hooks all call it. `simTick` is a one-line bind of **`sim-core/tick.js`
 `simTick(world, dt)`** — the module a server runs — which advances the combat clock and then calls, in this
 order: `stepPlayer`, **`stepAlly`**, `stepEnemyAI`, `stepBullets`, `stepRockets`, `stepEnemyDeaths`,
-`stepDrops`, `updateLevelRunner`, `stepPlayerDeath` (`stepAlly` returns immediately when `world.allies` is
-empty — the friendly side moves before the hostile side reads its position). It draws nothing, plays nothing and fetches nothing; it returns the
+**`stepAllyDeaths`**, `stepDrops`, `updateLevelRunner`, `stepPlayerDeath` (`stepAlly` returns immediately
+when `world.allies` is empty — the friendly side moves before the hostile side reads its position — and
+`stepAllyDeaths` sits after the projectiles that caused the damage, exactly like the enemy death step). It draws nothing, plays nothing and fetches nothing; it returns the
 Grab's current target, the one thing the host wants back (the pull beam is drawn around it). **Call order is
 execution order** — deaths after the projectiles that caused them, spawning after the deaths that free its
 slots, the player's death check last. `renderTick` is the picture: `syncMeshes`, the event drain, the drop
@@ -3556,10 +3608,21 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   settles at `PLAYER_MAX_SPEED`, and slowing is LINEAR at his own accel rather than an exponential drag),
   that the come-about **brakes and turns together** and re-accelerates the instant the nose arrives, that the
   escort judges the **closing** speed on a MOVING player (formation → thrust; convergence from 60 u closes
-  inside 20 u — both halves fail against the ground-speed rule), that the retreat is never taken mid-charge,
-  that he cannot die, that a **RETREATING ally is still a valid enemy target** (the 2026-08-23 veto), and
-  that 600 ticks of a fight with an ally draw **zero** seeded randomness; `ally-dev.test.js`: the `?ally`
-  flag's URL-only parsing and that `withAllyAt` never mutates the level it is given).
+  inside 20 u — both halves fail against the ground-speed rule), that crossing 25 % hull **breaks the charge
+  on that very tick** (the inverse of the retired "low health never interrupts a charge") and that the
+  threshold and the shield clause are exactly as specified,
+  that **he DIES and is gone for the rest of the mission**, that a **RETREATING ally is still a valid enemy target** (the 2026-08-23 veto), and
+  that 600 ticks of a fight with an ally draw **zero** seeded randomness, that the break-off is measured **from
+  the threat** (the gap to the enemy grows, it works when he is already past the retired centre-relative
+  70 u, he settles at `ALLY_BREAK_OFF_DIST`, he outruns a pursuer flying at the fastest Level-4 enemy's
+  15.75 u/s — though the gap first CLOSES during his ~2.7 s reversal, which is recorded rather than guarded —
+  and with no enemy he escorts instead of flying off), that his nose is **aimed so the BULLET
+  lands** (the shot points at a stationary enemy while he drifts 15 u/s across the line, the correction is a
+  strict no-op at zero velocity, the solvability bound and its fallback, and **an enemy is left alone** —
+  nose still on the player, flaw and all), and that he **dies** cleanly: out of
+  `world.allies`, `alive` false, one `allyDown` event carrying no reward, and `kills`/`earned`/`earnedXp`/
+  `drops` all untouched; `ally-dev.test.js`: the `?ally` flag's URL-only parsing, the `level` param, the two
+  composing, and that `withAllyAt` never mutates the level it is given).
   Run: `cd client && npm test`. **Bench gate** —
   `client/src/bench.test.js` (`evalBench` sticky tri-state + `mulberry32` determinism, still importable from
   `bench.js` which re-exports it from `sim-random.js`) +
@@ -3602,7 +3665,7 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   gets the shop + basic gun). DECISIONS §95.
 - **Auth unit** — `server/src/auth.test.js` (5): scrypt round-trip (right/wrong password), per-user
   salt, token uniqueness + SHA-256 hashing, cookie-header parsing.
-- **The wingman against the real seed** — `server/src/ally-sim.test.js` (12): no shipped level carries an
+- **The wingman against the real seed** — `server/src/ally-sim.test.js` (25): no shipped level carries an
   `ally` phase; he arrives when his phase starts, exactly once; his loadout is **pinned against catalog
   drift** (200 HP, mass 86, accel 8.7, turn 1.16, shield 20, drone present, **no grab**, weapons 6+3,
   `maxSpeedMul` 1 so his cap is exactly `PLAYER_MAX_SPEED`); `spawnAlly` consumes no seeded draws; an ally
@@ -3610,11 +3673,25 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   FRIENDLY (`fromPlayer`), ATTRIBUTED (`fromAlly`) and SILENT (the `fire` event says `fromPlayer: false`)
   with every projectile on the combat plane; he holds fire rather than shooting through the player's hull;
   an enemy fights the nearer of player-or-ally and its rocket homes on whoever it picked; hostile fire lands
-  on the ally, shield first then hull, reported as `target: 'ally'`; and `withAllyAt` never mutates `LEVELS`.
-- **A room runs the wingman** — `server/src/netsim/ally-room.test.js` (5): the room emits a `kind: 'ally'`
+  on the ally, shield first then hull, reported as `target: 'ally'`; `withAllyAt` never mutates `LEVELS`; and
+  he **dies** paying nothing (no kill, no credits, no XP, no loot, mission not ended), a full tick keeps
+  running with him gone, a fresh run brings him back, and — end to end against the real catalog and the real
+  projectile step — his Heavy cannon **connects with a stationary enemy while he drifts 15 u/s across his
+  own line of fire**, which is the shot that used to miss. **The per-group gates are pinned in both
+  directions under real drift** (30 u/s, where the nose and the bullet line sit ~0.48 rad apart): §2.6 holds
+  fire when the BULLET would cross the player though the nose is clear, and permits it when the NOSE crosses
+  him but the bullet does not, with a player-far-away control proving the two differ only in his position;
+  the ROCKET holds when the nose is off the true bearing even though the corrected aim reads "aligned", and
+  is blocked by a player on the NOSE line in the one geometry where the gun is simultaneously clear.
+  **And the reported break-off defect, end to end against the real boss loadout** (2× weapon 10 + 3× weapon 4
+  = ~35 dmg/s): from 30 % hull mid-charge he breaks off **within 2 ticks** of crossing 25 % — not at the next
+  pass, which is ~360 ticks away — survives if the fire then stops, **still dies if it does not**, and does
+  not turn tail at 60 % hull.
+- **A room runs the wingman** — `server/src/netsim/ally-room.test.js` (7): the room emits a `kind: 'ally'`
   spawn descriptor with no `hitBoxes`, its `allies` rows are the documented width, an ally room is
   deterministic across a re-run with the same seed and inputs, a room WITHOUT the flag sends `allies: []`
-  and no ally descriptor, and `byAlly` is on the wire's `kill` allowlist.
+  and no ally descriptor, `byAlly` is on the wire's `kill` allowlist, and a room whose wingman DIES stops
+  listing him, keeps stepping, and sends an `allyDown` event carrying no reward.
 - The backend was made testable: `server.js` exports `createApp()` (no auto-listen; listens only when
   run directly).
 - **Visual / e2e** — `client/visual/` (Playwright headless, **not in CI**): boots the real game and
@@ -3684,7 +3761,9 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   and **ally** (`38-ally.mjs`: the one place the WINGMAN is seen in a browser — the two determinism oracles
   above deliberately exercise none of his code, because the Level-0 trace has no ally. It boots once with the
   flag OFF (`allies` stays empty — the "players see nothing" guarantee), then once on `?ally=wave-1`, and
-  asserts he arrives from the PHASE, is given a body in the scene in his green livery, flies under the
+  asserts he arrives from the PHASE, is given a body in the scene with his **blue wings** (asserted on the
+  live material colours, and negatively on the player and an enemy — the accent has to be a strict no-op for
+  every other ship), that `&level=` really overrides the account's progress level, flies under the
   player's cap, that his MESH tracks the simulation, and — projecting that mesh through the camera — that his
   hull is actually **inside the frame** on most samples (he is expected to leave it mid-reversal, so the
   assertion is a share, not an instant). The player never touches the controls, so every kill is his: the

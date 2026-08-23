@@ -70,7 +70,7 @@ export function stepBullets(world, dt) {
         // The third party. Player first, then allies, in list order — deterministic, and skipped entirely
         // when there is no ally (which is every level that ships today).
         for (const a of world.allies) {
-          if (a.warping) continue;               // untouchable while forming, the same rule enemies get (§54)
+          if (!a.alive || a.warping) continue;   // untouchable while forming (§54); and a wingman already down is gone
           const ra = resolveHostileBulletHit(a, _bulletP0, b.pos, b.damage, null); // no dodge: the ally has no skills
           if (!ra.hit) continue;
           hit = true;
@@ -176,7 +176,7 @@ export function stepRockets(world, dt) {
     } else {
       if (world.player.alive && pointHitsShip(world.player, r.pos, r.detonateR)) det = true;
       else if (world.allies.length) {
-        for (const a of world.allies) { if (!a.warping && pointHitsShip(a, r.pos, r.detonateR)) { det = true; break; } }
+        for (const a of world.allies) { if (a.alive && !a.warping && pointHitsShip(a, r.pos, r.detonateR)) { det = true; break; } }
       }
     }
     // limited only by range/detonation — world.rockets fly normally beyond the arena (no boundary culling)

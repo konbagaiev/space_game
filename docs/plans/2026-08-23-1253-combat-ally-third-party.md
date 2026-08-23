@@ -43,11 +43,11 @@ your credits do not.
 | Loadout | Heavy hull id 13 (200 HP), Basic engine id 5, Basic thrusters id 8, Repair drone id 12, **Heavy cannon id 6**, Rocket (homing) id 3, Base shield id 31. **No grab, no skills.** Derived via `deriveDrive`: mass 86, massFactor 0.58, acceleration **8.7** (player 10), turnRate **1.16 rad/s** (player 2.0). **Top speed = the player's flat `PLAYER_MAX_SPEED` 30 u/s** — see "Movement model" below; the brief's "terminal ≈4.8 u/s" was wrong and is corrected in `combat-ally.md` §2d as part of this change. |
 | Manoeuvre | Nearest enemy → accelerate at it while firing → fly past → turn. Re-search **arms when the target is behind him** (`|diff| > 120°`); mid-turn switch when another enemy is inside `aimTol` 0.25 rad. Both in named constants. |
 | Firing | Falls out of the existing rule (a group only fires inside `g.ai.aimTol`) — he goes quiet through the pass by himself. **Never fires through the player's hull:** `inForwardSector` against the player, hold when it passes and the player is nearer than the target. |
-| Retreat | Never mid-charge — the decision is taken **after the pass**. Leaves at **≤20 %** hull with the shield **down**; rejoins at **≥40 %** hull with the shield **full**. |
+| Retreat | ~~Never mid-charge — the decision is taken **after the pass**. Leaves at **≤20 %** hull~~ **RETIRED/CORRECTED 2026-08-23 (it killed him):** the decision is taken **the instant the damage lands**, mid-charge or not, and the threshold is **≤25 %** hull with the shield **down**. The old rule was written while he could not die; against the boss's ~35 dmg/s a 20 % threshold is a ~1 s window vs a ~6 s pass cycle. Rejoins at **≥40 %** hull with the shield **full**, unchanged. See `combat-ally.md` §2d and DECISIONS §134. |
 | Idle | No enemy anywhere → close to ~10 u of the player and hold station. |
 | Economy | His kills **increment `world.kills`** (phase advance, HUD, banners, `isLastKillDrop`, the `cleared` payload) and add **nothing** to `world.earned` / `world.earnedXp`. No grab; he does not react to loot at all. |
 | Deliberate | He flies **through** enemy hulls on the pass. **Do not** add a lateral pass offset. **Do not** add ship-to-ship collision. Both were proposed and declined. |
-| Cannot die | §2.4: he retreats, he does not die. |
+| ~~Cannot die~~ | ~~§2.4: he retreats, he does not die.~~ **REVERSED 2026-08-23 by the maintainer after flying it: HE DIES**, for the rest of the mission, and returns in the next one. The retreat survives and becomes the thing standing between low hull and death. See `combat-ally.md` §2.4 and DECISIONS §134. |
 
 **Answered by the maintainer for this step (2026-08-23):**
 
@@ -60,7 +60,13 @@ your credits do not.
   so shipped behaviour is literal §2d and "he wandered off frame" is a one-value fix. **Do not ship a
   finite default.** `docs/plans/combat-ally.md` §3 is edited in this same change so the contradiction
   cannot resurface (Step 19).
-- **A3 — the retreat is visible.** He turns, runs to `ALLY_RETREAT_DIST = 70 u` from the arena centre,
+- **A3 — the retreat is visible.** ~~He turns, runs to `ALLY_RETREAT_DIST = 70 u` from the arena centre,~~
+  **CORRECTED 2026-08-23 (it did not work):** the distance is measured from the **NEAREST ENEMY**, not from
+  the arena centre — `ALLY_BREAK_OFF_DIST = 120 u`. Enemies spawn at 70..130 from the centre, so the old
+  holding point was the inner edge of their spawn ring, and because he charges enemies out there his own
+  centre distance was usually already past 70: `70 − d` went negative, thrust was 0, and he stopped dead in
+  the fight. See DECISIONS §134. The original wording follows.
+  He turns, runs to `ALLY_RETREAT_DIST = 70 u` from the arena centre,
   holds there while the drone works, and flies back at ≥40 %. No despawn, no warp, no teleport. 70 u is
   deliberately **just past the frame edge** (visible half-extent ≈ ±57 u vertically at zoom 1), so he does
   leave view while healing — intended: the player is meant to be alone.
@@ -100,8 +106,14 @@ your credits do not.
    PROJECTILE keeps meaning "friendly side" (`fromPlayer: side !== 'enemy'`). Without this split the
    adapter at `client/src/sim.js:281` would play the ally's guns as if they were yours — his fire must be
    silent (§2.6).
-5. **He cannot die, enforced by a floor:** `hp` clamps at `ALLY_MIN_HP = 1`. There is no ally death path at
-   all, which also means `world.allies` never shrinks mid-run — the digest and the wire stay simple.
+5. ~~**He cannot die, enforced by a floor:** `hp` clamps at `ALLY_MIN_HP = 1`. There is no ally death path at
+   all, which also means `world.allies` never shrinks mid-run — the digest and the wire stay simple.~~
+   **REVERSED 2026-08-23.** The floor and the constant are gone; `stepAllyDeaths` (in `step-ally.js`, called
+   from `tick.js` right after `stepEnemyDeaths`) removes him at `hp <= 0` and emits **`allyDown`** — a new
+   event, because `kill` is built for enemies and carries a reward. He pays nothing and `world.kills` does
+   not move. `world.allies` therefore DOES shrink mid-run; the digest is still deterministic (same step,
+   same tick order on both hosts) and the wire needed nothing (absence is the despawn). The FX is the whole
+   announcement — no banner, no log line, no new string.
 6. **The ally's kill writes no event-log line** (`byAlly` on the `kill` event; the adapter skips
    `logEvent`). The log is the player's own tally, and "`X` destroyed **+0** · **+0 XP**" would be a lie
    with no new string available to fix it. One-line flip if the maintainer wants it back.
@@ -239,8 +251,11 @@ unit vector from the ally to the player — which is the speed at which the GAP 
 - **the player pulling away**: closing is negative → clamped to 0 → full thrust, which is all he can do.
 
 **The retreat branch keeps GROUND speed, and that is not an oversight**: its destination is a fixed point
-`ALLY_RETREAT_DIST` from the arena centre, so ground speed *is* the closing speed there. The asymmetry is
-the difference between a moving destination and a stationary one, and it is commented at both call sites.
+~~`ALLY_RETREAT_DIST` from the arena centre, so ground speed *is* the closing speed there.~~ **CORRECTED
+2026-08-23: the break-off destination MOVES too** — it is "120 u from the nearest enemy", and that enemy is
+flying. So BOTH branches judge the closing speed, and the "stationary destination" case no longer exists.
+The lesson generalised the third time it bit: a distance is only meaningful relative to the thing it is
+protecting him from (DECISIONS §134).
 
 **Two limits to state plainly, both accepted:**
 
@@ -275,11 +290,21 @@ which is why the *holding point* of the retreat, not his speed, is the thing to 
 - **Orders / command UI** (§2.3 — autonomous only), a hangar row, a price, a component, a shop entry.
 - **Friendly fire in either direction**, ship-to-ship collision, a lateral pass offset.
 - **Several allies**, an ally in side missions or roam by default, an ally the player can lose permanently.
+  (He can now be lost for the rest of a MISSION — reversed 2026-08-23 — but never for the campaign: a fresh
+  run re-enters the phase that spawns him.)
 - **Any player-facing string, briefing line, banner or log line** about the wingman.
 - **A general N-team/faction model** in the projectile step — see decision 2 above.
 - **Any escape mechanic for the retreat** — no speed boost while retreating, no enemy loss-of-interest
   rule, no target-drop distance. He already outruns every enemy in the level (see "Movement model"); if the
-  retreat still plays badly the answer is the existing `ALLY_RETREAT_DIST` constant, not a mechanic.
+  retreat still plays badly the answer is the existing `ALLY_BREAK_OFF_DIST` constant, not a mechanic.
+- **Leading a MOVING target.** `aimWithDrift` (added 2026-08-23) corrects the SHOOTER's own drift, which is
+  what made his shots miss stationary enemies; predicting where a moving target will be is a separate and
+  larger problem.
+- **A single fire gate shared by his gun and his rocket.** They fly down different lines off one nose, so
+  both the aim test and the §2.6 safety test are asked per group of that group's own projectile path.
+- **Correcting ENEMY aim.** Enemies have the identical inherit-velocity flaw and are deliberately left alone:
+  fixing it raises the difficulty of all five levels at once and moves every recorded replay. Its own slice,
+  its own balance pass (DECISIONS §134).
 - **A charge-speed cap or any other new `ALLY_*` knob** invented before the live test — the pass being fast
   and the firing window short are recorded consequences to observe, not defects to pre-empt.
 - Enemy behaviour changes other than "target the nearer of player-or-ally".
@@ -405,9 +430,11 @@ export const ALLY_TARGET_LEASH = Infinity; // engage only enemies within this of
                                            // play shows him wandering off frame — see §3 of combat-ally.md.
 
 // ---------- Retreat & station-keeping ----------
-export const ALLY_RETREAT_HP_FRAC = 0.20; // breaks off at ≤20% hull WITH the shield down
+export const ALLY_RETREAT_HP_FRAC = 0.25; // CORRECTED 2026-08-23 (was 0.20): breaks off at ≤25% hull WITH
+                                          // the shield down, the INSTANT the damage lands
 export const ALLY_REJOIN_HP_FRAC = 0.40;  // rejoins at ≥40% hull WITH the shield full (≈40 s at 1 HP/s)
-export const ALLY_RETREAT_DIST = 70;      // heals this far from the arena centre — just past the frame edge
+export const ALLY_BREAK_OFF_DIST = 120;   // CORRECTED 2026-08-23 — see DECISIONS §134. Was:
+// export const ALLY_RETREAT_DIST = 70;   // heals this far from the arena centre — just past the frame edge
                                           // (visible half-extent ≈ ±57 u vertically at zoom 1): he does leave view.
                                           // WHY 70: it is well outside the 45 u gun range his pursuers fight
                                           // at (and their 14-22 u standoff band), so anything that follows
@@ -417,7 +444,7 @@ export const ALLY_RETREAT_DIST = 70;      // heals this far from the arena centr
 export const ALLY_ESCORT_DIST = 10;       // station-keeping distance with no enemy anywhere (§2d)
 export const ALLY_ESCORT_BAND = 2;        // …and the deadband: he only re-thrusts past ESCORT_DIST + this,
                                           // so he settles instead of pulsing the engine on the spot
-export const ALLY_MIN_HP = 1;             // HE CANNOT DIE (§2.4). There is no ally death path anywhere.
+// (`ALLY_MIN_HP` was here; REMOVED 2026-08-23 with the no-death rule — see the decision list above.)
 
 // TOP SPEED IS DELIBERATELY NOT A CONSTANT HERE. It is a property of the SHIP, not of the engine or of
 // this feature: the ally flies the PLAYER's movement model, so `step-ally.js` reads
@@ -469,7 +496,7 @@ export function makeAlly(catalog) {
   a.isAlly = true;
   a.target = null;          // the enemy he is charging
   a.passArmed = false;      // the current target is BEHIND him: the re-search (and the retreat check) are armed
-  a.retreating = false;     // running out to ALLY_RETREAT_DIST to heal — he is STILL a valid enemy target
+  a.retreating = false;     // opening the gap to the nearest ENEMY (ALLY_BREAK_OFF_DIST) — STILL a target
   a.thrusting = false;
   return a;
 }
@@ -747,7 +774,9 @@ export function stepAlly(world, dt) {
     //    refills all-or-nothing 10 s after breaking (components.repairTick / shieldRecharge).
     const rp = repairTick(a.hp, a.maxHp, a.repair, dt, a._repairAccum); a.hp = rp.hp; a._repairAccum = rp.accum;
     if (a.shield) { …shieldRecharge, same 5 lines enemies use… }
-    if (a.hp < ALLY_MIN_HP) a.hp = ALLY_MIN_HP;   // HE CANNOT DIE (§2.4) — there is no ally death path
+    // SUPERSEDED 2026-08-23 — there is no latch and no `wantsRetreat` field. The break-off is decided
+    // at the TOP of the step and acted on at once; see the retreat note below.
+    if (!a.retreating && shouldRetreat(a)) { a.retreating = true; a.target = null; a.passArmed = false; }
 
     // 3. The player is gone → come to a stop and hold fire, the same wind-down enemies do
     //    (step-enemies.js:71) — but braked like a pilot letting go, not on the enemy's exponential DRAG.
@@ -757,7 +786,7 @@ export function stepAlly(world, dt) {
     let desired, thrust, wantsFire = false, dist = Infinity, diff = 0;
 
     if (a.retreating) {
-      // 4a. BREAKING OFF. Straight out from the arena centre to ALLY_RETREAT_DIST and STOP there — the
+      // 4a. BREAKING OFF. CORRECTED 2026-08-23 — straight away from the NEAREST ENEMY, not from the centre:
       //     player's arrival rule, so he settles on the holding point instead of sailing past it (at
       //     30 u/s the stopping distance is ~52 u, which is most of the run). He does not fire while
       //     healing — a wingman leaving reads as leaving. HE IS STILL A TARGET while he does it (the veto
@@ -768,7 +797,9 @@ export function stepAlly(world, dt) {
       // Ground speed IS the closing speed here: the holding point is STATIONARY and he is flying straight
       // at it. (Any lateral drift left over from the fight only overstates it, which brakes him early —
       // safe.) The escort branch below must NOT copy this line; its destination moves.
-      thrust = approachThrust(a.vel.length(), ALLY_RETREAT_DIST - d, a.acceleration);
+      // CORRECTED 2026-08-23: threat-relative, and judged on the rate the GAP IS OPENING (the destination
+      // moves, so this is the escort case, not the stationary-point one).
+      thrust = approachThrust(openingRateFromNearestEnemy, ALLY_BREAK_OFF_DIST - gap, a.acceleration);
       if (shouldRejoin(a)) a.retreating = false;             // ≥40% hull AND the shield full → back in
     } else {
       // 4b. THE PASS. Target bookkeeping first, then geometry against the FINAL target.
@@ -778,7 +809,8 @@ export function stepAlly(world, dt) {
         const d0 = shortestAngleDelta(a.heading, angleTo(a, a.target));
         if (!a.passArmed && Math.abs(d0) > ALLY_BEHIND_ANGLE) {
           // THE TARGET IS BEHIND HIM: the pass is over. This is the ONLY place the retreat is decided —
-          // "low health never interrupts a charge" (§2d).
+          // (RETIRED 2026-08-23: the retreat is no longer decided here — it is taken the instant the
+          //  damage lands. "low health never interrupts a charge" (§2d) is struck; see DECISIONS §134.)
           a.passArmed = true;
           if (shouldRetreat(a)) { a.retreating = true; a.target = null; }
         }
@@ -863,12 +895,30 @@ Note deliberately absent: `ENEMY_FIRE_GRACE` (he arrives mid-fight, long past it
 player's passive `IDLE_DRAG` (he is an AI — he always holds a control, so he thrusts or brakes), and
 `enemyThrustFactor` (its negative band is a reverse the player does not have).
 
-**About the `ALLY_MIN_HP` floor and WHEN it runs.** It is applied at the top of `stepAlly`, but damage lands
-later in the same tick — `stepBullets`/`stepRockets` come after `stepAlly` in `tick.js`. So his `hp` can sit
-at or below 0 for the remainder of a tick, and his health bar can draw 0 % for a single frame before the
-next tick lifts it back to 1. That is cosmetic and harmless: **there is no ally death path anywhere** —
-nothing tests `ally.hp <= 0`, no step despawns him, and `stepEnemyDeaths` only walks `world.enemies`. Do not
-read the floor as a revival, and do not "fix" it by adding a death check.
+**~~About the `ALLY_MIN_HP` floor and WHEN it runs.~~ SUPERSEDED 2026-08-23 — HE DIES.** `stepAllyDeaths`
+walks `world.allies`, and anything at `hp <= 0` emits `allyDown` and is despawned. It runs from `tick.js`
+immediately after `stepEnemyDeaths`, i.e. after the projectile steps that caused the damage — the same
+placement and the same reason the enemy death step has.
+
+**And the retreat had to be fixed in the same change, because it is now the thing that keeps him alive. It
+took THREE attempts, and the first two are recorded here because each looked correct on paper.**
+
+1. *Sampled once per pass.* `shouldRetreat` was consulted only at the instant `passArmed` flipped. But
+   `shieldRecharge` refills all-or-nothing 10 s after a break, so the condition oscillates on a ~10 s cycle
+   and that single sample almost always missed it — against a boss re-breaking the shield he never left.
+2. *Latched every tick, acted on at the pass.* Fixed the sampling, kept the cadence. Still failed: Level 4's
+   boss puts out ~35 dmg/s, so at 200 max HP the 20 % threshold gave a **~1 second** window against a ~6 s
+   pass cycle. The rule "low health never interrupts a charge" was written while the ally **could not die**;
+   once he became mortal it meant "die mid-charge".
+3. **Current, 2026-08-23: threshold 25 %, decided on damage and acted on IMMEDIATELY.** There is no latch and
+   no `wantsRetreat` field — both are deleted. §2d's "never interrupts a charge" is RETIRED. The shield
+   clause survives but costs nothing: damage routes through the shield first (§76), so it is down by
+   construction when hull damage lands.
+
+**The accepted cost:** leaving mid-charge turns him away with 30 u/s of momentum and the nose still on the
+enemy, so he coasts THROUGH it — the gap dips to well under a unit and he stays inside the 45 u gun range for
+2.2–3.6 s before opening to 120 u. Exposure went from unbounded to bounded; some break-offs still end in
+death, which is intended.
 
 ### Step 10 — the tick order (`client/src/sim-core/tick.js`)
 
@@ -1180,8 +1230,12 @@ chosen) passes `allyDev()?.phase || null`.
      ≈5.7 u, so it settles near the threshold and the test reads as flaky instead of as a regression.);
    - **the retreat is never taken mid-charge**: at 10 % hull with a broken shield and the target ahead,
      `a.retreating` stays false; it flips only on the tick the pass arms;
-   - **he cannot die**: apply 10⁶ damage, step, assert `hp === ALLY_MIN_HP` and he is still in
-     `world.allies`;
+   - **he DIES** (reversed 2026-08-23): bring `hp` to 0, run `stepAllyDeaths`, assert he is out of
+     `world.allies`, `alive === false`, that `world.kills` / `earned` / `earnedXp` / `drops` did not move,
+     and that exactly one `allyDown` event was emitted carrying no reward field. Plus: a full tick with a
+     dead wingman still runs, and a fresh run brings him back;
+   - **the retreat LATCHES**: at 10 % hull with the shield broken, let the shield refill to FULL *before* the
+     pass arms — he must still retreat. That is the exact case the one-sample-per-pass rule let escape;
    - **a RETREATING ally is still a target** — name the case for the module it actually guards, e.g.
      `test('targeting: nearestHostileTarget still returns a RETREATING ally (veto 2026-08-23)')`. It lives
      in this file because it belongs to the ally's rules, but it exercises `sim-core/targeting.js` (both
@@ -1272,7 +1326,7 @@ draws); a mismatch there names the culprit directly.
    **Two things to report:** whether pursuers **follow him off screen and out of your fight** — how many
    peel off, for how long, and whether the fight in front of you got easier or emptier — and whether they
    **re-engage him at the holding point** and stop him healing. He outruns every Level-4 enemy, so if the
-   second happens the answer is a bigger `ALLY_RETREAT_DIST`, one number. Do not fix it; report it.
+   second happens the answer is a bigger `ALLY_BREAK_OFF_DIST`, one number. Do not fix it; report it.
 6. **THE NUMBER THIS STEP EXISTS FOR — his share of the fight.** Play Level 4 with `?ally&debug` **all the
    way to the win** and report `window.__game.allyKills` against the level's total: *"the ally took N of
    the level's 22 kills"* (Level 4's `enemyTotal` is 8 + 8 + 5 + 1 = 22). This is the input to

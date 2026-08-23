@@ -34,7 +34,7 @@ import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.j
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './sim-core/system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
-import { allyDev, applyAllyDev } from './ally-dev.js'; // ?ally dev flag: the wingman's arrival phase
+import { allyDev, allyDevLevel, applyAllyDev } from './ally-dev.js'; // ?ally dev flag: the wingman's arrival phase (+ the level it forces)
 import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
@@ -2007,9 +2007,14 @@ async function bootstrap() {
         return;
       }
     }
-    // ?record forces the requested level; ?playback uses the recorded level; otherwise the player's progress level.
+    // ?record forces the requested level; ?playback uses the recorded level; `?ally&level=N` forces one too
+    // (same `level` param, same normalization — a wingman test flight must not depend on campaign progress,
+    // and Level 3 and Level 4 have identical phase NAMES, so aiming at one and landing on the other was
+    // invisible from the URL). Otherwise the player's progress level.
+    const allyLevel = allyDevLevel();
     const levelUrl = REC ? `/api/levels/${REC.level}`
       : rs.play ? `/api/levels/${traceLevelName(rs.trace)}`  // pre-v3 traces name the pre-renumbering level
+      : allyLevel ? `/api/levels/${allyLevel}`
       : G.playerId ? `/api/players/${G.playerId}/level` : '/api/levels/level-0';
     const [weapons, components, ships, level, sounds] = await Promise.all([
       fetchJson('/api/weapons'), fetchJson('/api/components'),

@@ -18,7 +18,7 @@
 // See docs/plans/server-authoritative-sim.md (Slice B3d/C).
 import { stepPlayer, stepPlayerDeath } from './step-player.js';
 import { stepEnemyAI, stepEnemyDeaths } from './step-enemies.js';
-import { stepAlly } from './step-ally.js';
+import { stepAlly, stepAllyDeaths } from './step-ally.js';
 import { stepBullets, stepRockets } from './step-projectiles.js';
 import { stepDrops } from './drops-sim.js';
 import { updateLevelRunner } from './level-runner.js';
@@ -39,6 +39,7 @@ export function simTick(world, dt) {
   stepBullets(world, dt);
   stepRockets(world, dt);
   stepEnemyDeaths(world);
+  stepAllyDeaths(world);            // …and the wingman's own death, after the projectiles that caused it
   const grabTarget = stepDrops(world, dt); // the Grab: arm, pull, collect (inert without a live player)
   if (alive) updateLevelRunner(world, dt); // spawning + phase transitions from the active level
   stepPlayerDeath(world);

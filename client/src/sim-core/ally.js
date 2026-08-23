@@ -29,7 +29,8 @@ export function makeAlly(catalog) {
   a.isAlly = true;
   a.target = null;          // the enemy he is charging
   a.passArmed = false;      // the current target is BEHIND him: the re-search (and the retreat check) are armed
-  a.retreating = false;     // running out to ALLY_RETREAT_DIST to heal — he is STILL a valid enemy target
+  a.retreating = false;     // opening the gap to the nearest ENEMY (ALLY_BREAK_OFF_DIST) so the drone can
+                            // work — he is STILL a valid enemy target while he does it
   a.thrusting = false;
   return a;
 }

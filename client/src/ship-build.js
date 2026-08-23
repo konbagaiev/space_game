@@ -18,6 +18,7 @@ export const updateGroups = (ship, fwd, isPlayer, dt, wantsFire) =>
   updateGroupsIn(world, ship, fwd, isPlayer ? 'player' : 'enemy', dt, wantsFire);
 import { world } from './state.js';                             // the World these shots are fired into
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
+import { ALLY_ACCENT_COLOR, ALLY_ACCENT_MATERIAL_PREFIX } from './sim-core/ally-config.js'; // the wingman's wing livery
 
 // Catalog resolution lives in sim-core/ship-entity.js (a server has to do it too). These wrappers bind
 // THIS tab's World so the long-standing call signatures — `resolveComponents(refs)` and friends — keep
@@ -70,8 +71,12 @@ export function spawnEnemyShip(shipDef) {
 // transform is seeded here rather than left to syncMeshes because an enemy can spawn AFTER syncMeshes has
 // already run this tick (levelRunner.update() is late in update()), and it must be drawn in the right place
 // on the very frame it appears.
-export function attachEnemyBody(e) {
-  e.mesh = makeShip(e.color, modelSpec(e.modelUrl, e.modelCfg));
+export function attachEnemyBody(e) { attachShipBody(e, null); }
+
+// The shared body-attach. `accent` is an optional { color, prefix } livery repaint applied to the model's
+// matching materials (ship-factory `applyShipModel`); null — every enemy — is a strict no-op.
+function attachShipBody(e, accent) {
+  e.mesh = makeShip(e.color, modelSpec(e.modelUrl, e.modelCfg, accent));
   e.mesh.position.set(e.pos.x, e.pos.y, e.pos.z);
   e.mesh.rotation.y = e.heading;
   e.mesh.scale.setScalar(e.scale);
@@ -85,9 +90,13 @@ export function detachEnemyBody(e) {
   e.mesh = null;
 }
 
-// An ally's body is built exactly like an enemy's — same .glb, tinted by its OWN colour (ally-config
-// ALLY_COLOR). Named separately because the host's `kind` is what says which list it came from.
-export const attachAllyBody = attachEnemyBody;
+// An ally's body is built exactly like an enemy's, with ONE difference: his WINGS are repainted
+// (`ALLY_ACCENT_COLOR` over the model's `Wings_`-prefixed materials). That repaint is the only thing that
+// separates him from the player on screen — he flies the player's own `player_combat` .glb, and catalog
+// ships are built with `tint: false`, so a ship's `color` reaches the minimap dot and the primitive
+// placeholder but never the model. No new asset: one tint constant against the same glb.
+export const ALLY_ACCENT = { color: ALLY_ACCENT_COLOR, prefix: ALLY_ACCENT_MATERIAL_PREFIX };
+export function attachAllyBody(a) { attachShipBody(a, ALLY_ACCENT); }
 export const detachAllyBody = detachEnemyBody;
 
 // Spawn a specific enemy by role name (used by tests/tools), falling back to the first kind.

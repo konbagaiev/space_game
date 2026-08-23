@@ -10,14 +10,16 @@ import assert from 'node:assert/strict';
 import { Vec3 } from './vec.js';
 import { createWorld } from './world.js';
 import {
-  stepAlly, nearestEnemyTo, aimedEnemy, holdFireForPlayer, shouldRetreat, shouldRejoin, approachThrust,
+  stepAlly, stepAllyDeaths, nearestEnemyTo, aimedEnemy, holdFireForPlayer, shouldRetreat, shouldRejoin,
+  approachThrust, aimWithDrift, bulletDir, gunSpeed,
 } from './step-ally.js';
 import { nearestHostileTarget } from './targeting.js';
+import { stepEnemyAI } from './step-enemies.js';
 import { shortestAngleDelta } from './steering.js';
 import { PLAYER_MAX_SPEED } from './step-player.js';
 import {
-  ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_MIN_HP, ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC,
-  ALLY_ESCORT_DIST,
+  ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC, ALLY_ESCORT_DIST,
+  ALLY_BREAK_OFF_DIST,
 } from './ally-config.js';
 import { seedSim, simRandomDraws } from './sim-random.js';
 
@@ -99,7 +101,7 @@ test('holdFireForPlayer: only when the player is in the cone AND nearer than the
 
 // ---------- retreat / rejoin thresholds ----------
 
-test('shouldRetreat needs BOTH ≤20% hull and a broken shield', () => {
+test('shouldRetreat needs BOTH ≤25% hull and a broken shield', () => {
   const low = ALLY_RETREAT_HP_FRAC * 200 - 1;
   assert.equal(shouldRetreat(ally({ hp: low, _shieldValue: 0 })), true);
   assert.equal(shouldRetreat(ally({ hp: low, _shieldValue: 20 })), false); // shield up → stays in
@@ -275,26 +277,191 @@ test('approachThrust clamps an OPENING (negative) closing speed to zero — full
 
 // ---------- the retreat ----------
 
-test('the retreat is NEVER taken mid-charge: it flips only on the tick the pass arms', () => {
-  const a = ally({ hp: 20, _shieldValue: 0 });   // 10% hull, shield down — every reason to run
-  const e = enemy(0, 60);                        // …but dead ahead: he is mid-charge
+test('crossing the threshold BREAKS THE CHARGE, on the very tick it happens (§2d rule retired)', () => {
+  // The inverse of what this file used to assert. "Low health never interrupts a charge" was written while
+  // the ally could not die; once he became mortal it meant "die mid-charge", because Level 4's boss deals
+  // ~35 dmg/s and the threshold is barely a second wide against a ~6 s pass cycle.
+  const a = ally({ hp: 0.6 * 200, _shieldValue: 0 });   // healthy: no reason to leave yet
+  const e = enemy(0, 60);                               // dead ahead, and he is charging it
   const w = fight({ allies: [a], enemies: [e] });
   for (let i = 0; i < 60; i++) stepAlly(w, DT);
-  assert.equal(a.retreating, false, 'low health never interrupts a charge (§2d)');
-  e.pos.set(0, 0.6, a.pos.z - 40);               // now it is behind him: the pass is over
-  stepAlly(w, DT);
-  assert.equal(a.retreating, true);
-  assert.equal(a.target, null, 'and he drops the target on the way out');
+  assert.equal(a.retreating, false, 'above the threshold he presses the attack');
+  assert.equal(a.target, e, 'and he is genuinely mid-charge, with the target held');
+
+  a.hp = ALLY_RETREAT_HP_FRAC * a.maxHp - 1;            // a hit lands and takes him under 25%
+  stepAlly(w, DT);                                      // …the very next tick
+  assert.equal(a.retreating, true, 'he breaks off AT ONCE — no waiting for the pass to arm');
+  assert.equal(a.target, null, 'dropping the charge on the way out');
+  assert.equal(a.passArmed, false);
 });
 
-test('HE CANNOT DIE: 10^6 damage still leaves him at ALLY_MIN_HP and in world.allies', () => {
+test('the threshold is 25% of max hull, and the shield clause still holds', () => {
+  const justAbove = ally({ hp: 0.25 * 200 + 1, _shieldValue: 0 });
+  assert.equal(shouldRetreat(justAbove), false, 'just above 25% he stays in');
+  const atIt = ally({ hp: 0.25 * 200, _shieldValue: 0 });
+  assert.equal(shouldRetreat(atIt), true, '…and at 25% he goes');
+  // Kept because the maintainer specified "≤25% with the shield down". It is nearly free now: damage routes
+  // through the shield first (§76), so at the instant hull damage lands the shield is already down.
+  const shielded = ally({ hp: 0.10 * 200, _shieldValue: 20 });
+  assert.equal(shouldRetreat(shielded), false, 'a shield still up means he is not taking hull damage');
+});
+
+test('rejoining at 40% puts him back in, and nothing has to be re-armed', () => {
+  const a = ally({ hp: 20, _shieldValue: 0, retreating: true, pos: new Vec3(0, 0.6, 200) });
+  const w = fight({ allies: [a], enemies: [enemy(0, 0)] });   // already well clear of the threat
+  stepAlly(w, DT);
+  assert.equal(a.retreating, true, 'still hurt: still out');
+  a.hp = ALLY_REJOIN_HP_FRAC * a.maxHp; a._shieldValue = a.shield.capacity;
+  stepAlly(w, DT);
+  assert.equal(a.retreating, false, 'back in at ≥40% with the shield full');
+  // …and he does not immediately turn round again: the decision is a live read of his hull, not a latch.
+  assert.equal(shouldRetreat(a), false);
+});
+
+// ---------- THE BREAK-OFF IS MEASURED FROM THE THREAT ----------
+// Every case here fails against the centre-relative retreat it replaced. That version aimed him at a fixed
+// radius from `world.arenaCenter`, but enemies SPAWN at 70..130 from that same centre, so the 70 u holding
+// point sat on the inner edge of their spawn ring — and because he charges enemies out there, his own
+// distance from the centre was normally already past it. `70 − d` went negative, `approachThrust` returned 0
+// (correctly: he has no reverse) and he stopped dead in the fight, retreating but going nowhere.
+
+// A hurt ally, mid-fight, already out where the enemies are — the exact geometry of the reported bug.
+function breakingOff({ centreDist = 100, enemyGap = 20 } = {}) {
+  const a = ally({ hp: 20, _shieldValue: 0, pos: new Vec3(centreDist, 0.6, 0), vel: new Vec3() });
+  const e = enemy(centreDist - enemyGap, 0);       // between him and the arena centre
+  const w = fight({ allies: [a], enemies: [e] });
+  w.player.pos.set(0, 0.6, 0);
+  a.heading = Math.atan2(e.pos.x - a.pos.x, e.pos.z - a.pos.z); // nose on it: he is charging
+  stepAlly(w, DT);                                 // …and under 25% hull, so he leaves on this very tick
+  assert.equal(a.retreating, true, 'he broke off');
+  return { a, e, w };
+}
+
+const gapTo = (a, e) => Math.hypot(a.pos.x - e.pos.x, a.pos.z - e.pos.z);
+
+test('breaking off OPENS THE GAP TO THE ENEMY — the defect the maintainer reported', () => {
+  const { a, e, w } = breakingOff({ centreDist: 100, enemyGap: 20 });
+  const before = gapTo(a, e);
+  for (let i = 0; i < 60 * 4; i++) stepAlly(w, DT);   // 4 s
+  const after = gapTo(a, e);
+  assert.ok(after > before + 20,
+    `he runs from the ENEMY (gap ${before.toFixed(1)} → ${after.toFixed(1)} u)`);
+});
+
+test('…and it works when he is ALREADY beyond the old centre-relative 70 u', () => {
+  // The old rule's `70 − d` is negative here, so it produced thrust 0 and he held position in the fight.
+  const { a, e, w } = breakingOff({ centreDist: 110, enemyGap: 15 });
+  const startCentre = Math.hypot(a.pos.x, a.pos.z);
+  assert.ok(startCentre > 70, 'he starts outside the retired holding radius');
+  const before = gapTo(a, e);
+  const startPos = { x: a.pos.x, z: a.pos.z };
+  for (let i = 0; i < 60 * 3; i++) stepAlly(w, DT);
+  assert.ok(Math.hypot(a.pos.x - startPos.x, a.pos.z - startPos.z) > 10, 'he MOVED, rather than stopping dead');
+  assert.ok(gapTo(a, e) > before, 'and the gap grew');
+});
+
+test('he settles AT the break-off distance instead of running for ever', () => {
+  const { a, e, w } = breakingOff({ centreDist: 100, enemyGap: 20 });
+  for (let i = 0; i < 60 * 30; i++) stepAlly(w, DT);   // 30 s: long past arrival
+  const gap = gapTo(a, e);
+  assert.ok(gap > ALLY_BREAK_OFF_DIST - 15 && gap < ALLY_BREAK_OFF_DIST + 15,
+    `he holds around ALLY_BREAK_OFF_DIST (gap ${gap.toFixed(1)} u)`);
+  assert.ok(a.vel.length() < 3, `and comes to rest there (speed ${a.vel.length().toFixed(2)} u/s)`);
+});
+
+test('he OUTRUNS a pursuer — breaking contact is a race he wins, not a claim in a comment', () => {
+  const { a, e, w } = breakingOff({ centreDist: 100, enemyGap: 20 });
+  const before = gapTo(a, e);
+  // The fastest Level-4 enemy is the pirate gunner at maxSpeed 15.75 (catalog_seed.js). Fly it straight at
+  // him at that speed — the ally caps at PLAYER_MAX_SPEED 30, so the race is his once he is pointed away.
+  let worst = Infinity;
+  for (let i = 0; i < 60 * 10; i++) {
+    const dx = a.pos.x - e.pos.x, dz = a.pos.z - e.pos.z, d = Math.hypot(dx, dz) || 1;
+    e.vel.set((dx / d) * 15.75, 0, (dz / d) * 15.75);
+    e.pos.addScaledVector(e.vel, DT);
+    stepAlly(w, DT);
+    worst = Math.min(worst, gapTo(a, e));
+  }
+  assert.ok(gapTo(a, e) > before + 50,
+    `he opens the gap decisively even while chased (${before.toFixed(1)} → ${gapTo(a, e).toFixed(1)} u)`);
+  // RECORDED, NOT GUARDED: he breaks off mid-charge now, nose still ON the enemy, so he spends the first
+  // ~2.7 s coming about while the pursuer closes — the gap dips to near contact before it opens. That is
+  // the price of leaving the instant the threshold is crossed instead of at the end of the pass, and it is
+  // the right trade (the alternative killed him). Asserted loosely so it is visible without being brittle.
+  assert.ok(worst < before, `the gap first CLOSES during the reversal (down to ${worst.toFixed(1)} u)`);
+});
+
+test('retreating with NOTHING to run from falls through to escort, not off into empty space', () => {
+  // The contract here is only "there is no threat, so there is no gap to open — go to the player instead".
+  // It is deliberately NOT a convergence assertion: from a standing start facing away he has to reverse,
+  // and his 26 u turn radius then puts him into a slow orbit of the player rather than onto him (a
+  // pre-existing property of the escort rule, not of this fall-through — see the escort tests above, which
+  // cover the case where he is already flying at the player). What must be true is that he heads for the
+  // player and stays near him, instead of flying outward for ever as a threat-less break-off would.
+  const START = 80;
+  const a = ally({ hp: 20, _shieldValue: 0, retreating: true, pos: new Vec3(0, 0.6, START) });
+  const w = fight({ allies: [a], enemies: [] });     // arena empty: nothing to run from
+  w.player.pos.set(0, 0.6, 0);
+  let min = Infinity, max = 0;
+  for (let i = 0; i < 60 * 20; i++) {
+    stepAlly(w, DT);
+    const d = Math.hypot(a.pos.x - w.player.pos.x, a.pos.z - w.player.pos.z);
+    min = Math.min(min, d); max = Math.max(max, d);
+  }
+  assert.ok(min < START - 25, `he closes on the player (got within ${min.toFixed(1)} u of ${START})`);
+  assert.ok(max < START * 2, `and never runs away (furthest ${max.toFixed(1)} u)`);
+  assert.equal(a.retreating, true, 'still healing, still out of the fight');
+  // …and the break-off's own rule is what would have sent him outward, so prove it is not running: with a
+  // threat present he would be opening a gap, not orbiting the player.
+  assert.equal(a.target, null, 'he is not engaging anything either — he is still out');
+});
+
+test('he rejoins at ≥40% hull with the shield full, from the break-off hold', () => {
+  const { a, w } = breakingOff({ centreDist: 100, enemyGap: 20 });
+  for (let i = 0; i < 60 * 5; i++) stepAlly(w, DT);
+  assert.equal(a.retreating, true, 'still hurt: still out');
+  a.hp = 0.5 * a.maxHp; a._shieldValue = a.shield.capacity;
+  stepAlly(w, DT);
+  assert.equal(a.retreating, false, 'back in');
+});
+
+test('HE DIES, and is gone for the rest of the mission (§2.4 reversed 2026-08-23)', () => {
   const a = ally();
   const w = fight({ allies: [a], enemies: [] });
-  a.hp -= 1e6;
-  stepAlly(w, DT);
-  assert.equal(a.hp, ALLY_MIN_HP);
-  assert.equal(w.allies.length, 1);
-  assert.equal(w.allies[0], a);
+  const kills0 = w.kills, earned0 = w.earned, xp0 = w.earnedXp;
+  a.hp = 0;
+  stepAllyDeaths(w);
+  assert.equal(w.allies.length, 0, 'removed from the world…');
+  assert.equal(a.alive, false, '…and marked gone, so anything still holding him can ask');
+  // He is worth NOTHING: a phase's kills threshold, enemyTotal, isLastKillDrop and the cleared payload all
+  // behave exactly as if he had never been there.
+  assert.equal(w.kills, kills0, 'his death is not a kill');
+  assert.equal(w.earned, earned0, 'no credits');
+  assert.equal(w.earnedXp, xp0, 'no XP');
+  assert.equal(w.drops.length, 0, 'and no loot roll');
+  const evs = [];
+  w.events.drain((ev) => evs.push(ev));
+  assert.deepEqual(evs.map((e) => e.type), ['allyDown'], 'exactly one event, and it is NOT a `kill`');
+  assert.ok(evs[0].pos && evs[0].sizeScale, 'carrying what the explosion needs — the FX is the announcement');
+  assert.equal(evs[0].reward, undefined, 'and no reward field: there is nothing to bank for him');
+});
+
+test('a dead wingman leaves the fight alone: no ally, no ally step, nothing throws', () => {
+  const a = ally();
+  const w = fight({ allies: [a], enemies: [enemy(0, 40)] });
+  a.hp = 0;
+  stepAllyDeaths(w);
+  for (let i = 0; i < 60; i++) stepAlly(w, DT);   // the step must early-out on an empty list
+  assert.equal(w.allies.length, 0);
+});
+
+test('the player dying while the wingman lives winds him down rather than throwing', () => {
+  const a = ally({ vel: new Vec3(0, 0, 20) });
+  const w = fight({ allies: [a], enemies: [enemy(0, 40)] });
+  w.player.alive = false;
+  for (let i = 0; i < 300; i++) stepAlly(w, DT);
+  assert.ok(a.vel.length() < 0.001, 'he coasts to a stop');
+  assert.equal(a.thrusting, false);
 });
 
 test('targeting: nearestHostileTarget still returns a RETREATING ally (veto 2026-08-23)', () => {
@@ -327,4 +494,108 @@ test('ZERO RNG: 600 ticks of a fight WITH an ally draw nothing from the seeded s
     if (i === 400) enemies.splice(0, 1);                        // and one dies: he re-picks
   }
   assert.equal(simRandomDraws(), before, 'stepAlly consumes no gameplay randomness at all');
+});
+
+// ---------- AIMING A GUN WHOSE BULLETS INHERIT THE SHOOTER'S VELOCITY ----------
+// A kinetic bullet leaves at `nose × projectileSpeed + shipVelocity` (spawn.js; rockets do not inherit,
+// §70), so a ship drifting sideways with its nose ON a target misses a STATIONARY one. The wingman is the
+// worst case in the game: his whole manoeuvre is a firing pass with heavy lateral drift.
+
+const HEAVY_CANNON_SPEED = 65;   // catalog_seed.js weapon id 6, the ally's gun
+const unit = (x, z) => { const l = Math.hypot(x, z); return { x: x / l, z: z / l }; };
+const angleOf = (v) => Math.atan2(v.x, v.z);
+
+test('aimWithDrift: the resulting BULLET points at the target, not the nose', () => {
+  const u = { x: 0, z: 1 };                       // target dead ahead in +Z
+  const vel = { x: 12, z: 4 };                    // drifting hard to the right, and a little forward
+  const n = aimWithDrift(u, vel, HEAVY_CANNON_SPEED);
+  assert.equal(n.solved, true);
+  assert.ok(Math.abs(Math.hypot(n.x, n.z) - 1) < 1e-12, 'the nose is a unit vector');
+  assert.ok(n.x < 0, 'and it is canted INTO the drift, away from the target');
+  // The whole contract, stated the way the bug was: where does the bullet actually go?
+  const bd = bulletDir(n, vel, HEAVY_CANNON_SPEED);
+  assert.ok(Math.abs(shortestAngleDelta(angleOf(bd), angleOf(u))) < 1e-9,
+    `the shot travels at the target (off by ${shortestAngleDelta(angleOf(bd), angleOf(u))})`);
+  // …and the naive nose-on-target aim, which is what the code did before, does NOT.
+  const naive = bulletDir(u, vel, HEAVY_CANNON_SPEED);
+  assert.ok(Math.abs(shortestAngleDelta(angleOf(naive), angleOf(u))) > 0.15,
+    'pointing the nose at it misses by a wide margin — the defect this fixes');
+});
+
+test('aimWithDrift: at ZERO ship velocity the correction is a strict no-op', () => {
+  for (const u of [{ x: 0, z: 1 }, unit(3, -7), unit(-1, -1)]) {
+    const n = aimWithDrift(u, { x: 0, z: 0 }, HEAVY_CANNON_SPEED);
+    assert.equal(n.solved, true);
+    assert.equal(n.x, u.x); assert.equal(n.z, u.z);
+  }
+  // …and pure closing/receding drift needs no correction either: it crosses the line by nothing.
+  const n = aimWithDrift({ x: 0, z: 1 }, { x: 0, z: 25 }, HEAVY_CANNON_SPEED);
+  assert.ok(Math.abs(n.x) < 1e-12 && Math.abs(n.z - 1) < 1e-12);
+});
+
+test('aimWithDrift: the SOLVABILITY bound, and the fallback past it', () => {
+  const u = { x: 0, z: 1 };
+  // The ally can never reach it: his cap is PLAYER_MAX_SPEED against a 65 u/s cannon, so even a fully
+  // sideways drift leaves the crossing component well inside the bound.
+  assert.ok(PLAYER_MAX_SPEED < HEAVY_CANNON_SPEED, 'a future loadout that broke this would hit the fallback');
+  assert.equal(aimWithDrift(u, { x: PLAYER_MAX_SPEED, z: 0 }, HEAVY_CANNON_SPEED).solved, true);
+  // Past the bound there is no nose that cancels the drift: aim as close as possible — straight into it.
+  const over = aimWithDrift(u, { x: 80, z: 0 }, HEAVY_CANNON_SPEED);
+  assert.equal(over.solved, false);
+  assert.ok(Math.abs(over.x + 1) < 1e-12 && Math.abs(over.z) < 1e-12, 'nose straight into the drift');
+  assert.ok(Math.abs(Math.hypot(over.x, over.z) - 1) < 1e-12, 'still a unit vector');
+});
+
+test('gunSpeed picks the BALLISTIC mount, and a homing-only ship gets 0 (aim = nose on target)', () => {
+  const shipWith = (mounts) => ({ groups: { g: { mounts } } });
+  assert.equal(gunSpeed(shipWith([{ weapon: { type: 'bullet', projectileSpeed: 65 } },
+                                  { weapon: { type: 'rocket', projectileSpeed: 999 } }])), 65);
+  assert.equal(gunSpeed(shipWith([{ weapon: { type: 'rocket', projectileSpeed: 999 } }])), 0);
+  const u = { x: 0, z: 1 };
+  assert.deepEqual(aimWithDrift(u, { x: 20, z: 0 }, 0), { x: 0, z: 1, solved: true });
+});
+
+test('the ALLY in flight: his bullet flies at a stationary enemy while he drifts across the line', () => {
+  // The end-to-end version of the defect. He is 40 u out with the enemy dead ahead and 15 u/s of pure
+  // sideways drift; he must settle onto a nose that puts the SHOT on the target, not the nose.
+  const a = ally({ pos: new Vec3(0, 0.6, 0), vel: new Vec3(15, 0, 0), heading: 0 });
+  a.groups = { gun: { name: 'gun', ai: { range: 45, aimTol: 0.25 }, mounts: [{ weapon: { type: 'bullet', projectileSpeed: HEAVY_CANNON_SPEED } }], reload: 0.6, cooldown: 0, pending: [] } };
+  a.mounts = a.groups.gun.mounts;
+  const e = enemy(0, 40);
+  const w = fight({ allies: [a], enemies: [e] });
+  w.player.pos.set(0, 0.6, -200);      // far behind: never in the line of fire
+  // Hold him on the spot so the geometry is the only thing under test.
+  for (let i = 0; i < 240; i++) { a.pos.set(0, 0.6, 0); a.vel.set(15, 0, 0); stepAlly(w, DT); }
+  const u = unit(e.pos.x - a.pos.x, e.pos.z - a.pos.z);
+  const fwd = { x: Math.sin(a.heading), z: Math.cos(a.heading) };
+  const bd = bulletDir(fwd, a.vel, HEAVY_CANNON_SPEED);
+  const off = Math.abs(shortestAngleDelta(angleOf(bd), angleOf(u)));
+  assert.ok(off < 0.02, `his SHOT is on the enemy (off by ${off.toFixed(4)} rad)`);
+  // And the nose is genuinely NOT on the enemy — which is the point, and what the old gate would have vetoed.
+  const noseOff = Math.abs(shortestAngleDelta(a.heading, angleOf(u)));
+  assert.ok(noseOff > 0.15, `while the nose is canted off it by ${noseOff.toFixed(3)} rad`);
+});
+
+test('an ENEMY is left alone: it still points its nose at the player, flaw and all', () => {
+  // Deliberate (DECISIONS §134): correcting enemy aim raises the difficulty of all five levels at once and
+  // would move every recorded replay, so it is its own slice with its own balance pass. If someone wires
+  // the correction into stepEnemyAI without that pass, this fails and says why.
+  const w = createWorld();
+  w.player = { pos: new Vec3(0, 0.6, 40), vel: new Vec3(), heading: 0, alive: true, class: 'player' };
+  const e = {
+    pos: new Vec3(0, 0.6, 0), vel: new Vec3(14, 0, 0), heading: 0,
+    acceleration: 0, turnRate: 3, engine: { maxSpeed: 0, exhaust: { color: 0 } },
+    hp: 30, maxHp: 30, alive: true, warping: false, spawnAge: 1, spawnDur: 1, scale: 1, fullScale: 1,
+    shield: null, _shieldValue: 0, _shieldRechargeAccum: 0, groups: {}, mounts: [], class: 'fighter',
+  };
+  w.enemies = [e];
+  // Hold its pose and its drift each tick — stepEnemyAI applies its own DRAG, which would otherwise bleed
+  // the sideways velocity away and leave nothing for the flaw to show up in.
+  for (let i = 0; i < 120; i++) { e.pos.set(0, 0.6, 0); e.vel.set(14, 0, 0); stepEnemyAI(w, DT); }
+  const u = unit(w.player.pos.x - e.pos.x, w.player.pos.z - e.pos.z);
+  assert.ok(Math.abs(shortestAngleDelta(e.heading, angleOf(u))) < 0.01,
+    'the enemy nose sits ON the player — no drift compensation, exactly as before');
+  const bd = bulletDir({ x: Math.sin(e.heading), z: Math.cos(e.heading) }, e.vel, HEAVY_CANNON_SPEED);
+  assert.ok(Math.abs(shortestAngleDelta(angleOf(bd), angleOf(u))) > 0.15,
+    'so its shot still misses while it drifts — the known flaw, left for the balance pass');
 });

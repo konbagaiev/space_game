@@ -15,8 +15,11 @@ import { shipModelCfg } from './sim-core/ship-config.js';
 export { shipModelCfg }; // moved to sim-core (it is catalog data, not rendering); re-exported for existing importers
 
 // Build the spec applyShipModel/makeShip consume from a resolved shipModelCfg (mc). null url → primitive.
-export const modelSpec = (url, mc = {}) => (url
-  ? { url, tint: false, yaw: mc.yaw ?? 0, scaleMul: mc.scaleMul ?? 1, lift: mc.lift ?? 0, muzzle: mc.muzzle ?? null, exhaust: mc.exhaust ?? null }
+//
+// `accent` is OPTIONAL and defaults to null, which is a strict no-op: every existing caller — every player
+// ship, every enemy — passes nothing and comes out byte-identical. See `applyShipModel` for what it does.
+export const modelSpec = (url, mc = {}, accent = null) => (url
+  ? { url, tint: false, yaw: mc.yaw ?? 0, scaleMul: mc.scaleMul ?? 1, lift: mc.lift ?? 0, muzzle: mc.muzzle ?? null, exhaust: mc.exhaust ?? null, accent }
   : null);
 
 export const gltfLoader = new GLTFLoader();
@@ -104,7 +107,7 @@ export const shipModelCacheSize = () => shipModelCache.size;
 function applyShipModel(group, spec, color) {
   const cfg = (typeof spec === 'string') ? { url: spec } : spec;
   const { url, yaw = 0, tint = true, scaleMul = 1, lift = 0, muzzle = null, exhaust = null,
-    opacity = null, darken = 0 } = cfg; // opacity/darken: ghost-battle readability treatment (real ships pass neither)
+    opacity = null, darken = 0, accent = null } = cfg; // opacity/darken: ghost-battle readability treatment (real ships pass neither)
   requestShipModel(url, (model) => {
     // `model` is a fresh clone of the cached template — safe to scale/recenter/re-parent per instance.
     const box = new THREE.Box3().setFromObject(model);
@@ -119,6 +122,29 @@ function applyShipModel(group, spec, color) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => m.color && m.color.set(color));
       }
+    });
+    // ACCENT TINT: recolour only the materials whose NAME starts with `accent.prefix`, leaving the rest of
+    // the model exactly as the artist baked it. It exists so one .glb can wear two liveries — the Sentinel
+    // wingman flies the player's own hull and is otherwise indistinguishable from it (real ships pass
+    // `tint: false`, so the block above never runs for them and a ship's `color` reaches only the primitive
+    // placeholder and the minimap dot). Painting his WINGS is what separates the two silhouettes without a
+    // second asset. `Wings_Material` is the one wing-prefixed material in `player_combat.9188c820.glb`.
+    //
+    // A prefix STRING rather than a predicate function, so the whole thing is plain data that can live in a
+    // config module. `null` (every existing ship) skips the traverse entirely, which is why this is
+    // replay-neutral and cannot move a recorded trace (DECISIONS §73 — cosmetics never touch the sim).
+    // Materials are cloned per instance, or the tint would leak onto every ship sharing the cached glb.
+    // The wing material carries a baseColorTexture, so `m.color` MULTIPLIES it: the tint reads as a wash
+    // over the artwork rather than as flat paint. That is intended; brighten the constant if it reads dull.
+    if (accent && accent.prefix) model.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      if (!mats.some((m) => m && typeof m.name === 'string' && m.name.startsWith(accent.prefix))) return;
+      o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+      const cloned = Array.isArray(o.material) ? o.material : [o.material];
+      cloned.forEach((m) => {
+        if (m && typeof m.name === 'string' && m.name.startsWith(accent.prefix) && m.color) m.color.set(accent.color);
+      });
     });
     // Ghost-battle readability treatment: darken + fade + fog so the ghost skirmish reads as distant decor.
     // Guarded by truthiness → real ships (which pass neither key) are byte-unaffected. Clones each material

@@ -291,6 +291,14 @@ function applySimEvent(ev) {
       spawnRocketBurst(ev.pos, ev.blastVis, ev.blastTint, ev.blastTime, ev.blastBright); // flipbook fireball + ring
       audio.sfx.explosion(0.7, sfxFor('weapon', ev.weaponClass, 'explode'), 0.3); // 70% quieter than a ship
       break;
+    // THE WINGMAN WENT DOWN. The FX is the entire announcement: no banner, no log line and no new string —
+    // player-facing copy for him is out of scope (docs/plans/combat-ally.md §2) — but a friendly ship that
+    // simply vanished would read as a bug. Same explosion + boom an enemy of his size gets; no credit popup,
+    // because he was never worth anything.
+    case 'allyDown':
+      spawnShipExplosion(ev.pos, ev.exhaustColor, ev.sizeScale);
+      audio.sfx.explosion(ev.sizeScale, sfxFor('ship', ev.shipClass, 'explode'), 1.5);
+      break;
     case 'warpFlash':      spawnExplosion(ev.pos); break;
     case 'evade':
       creditPopups.push({ pos: ev.pos, text: t('ui.evade'), evade: true, life: 1.2, maxLife: 1.2 });

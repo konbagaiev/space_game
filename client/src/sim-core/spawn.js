@@ -178,7 +178,7 @@ export function detonateRocket(world, r, dealDamage = true) {
       // `enemyShieldHit` is reused deliberately: it is the "bubble on THAT ship" event (it carries an entity
       // reference and is already id-swapped on the wire); `shieldHit` is specifically the player's own.
       for (const a of world.allies || []) {
-        if (a.warping) continue;               // untouchable while forming (§54)
+        if (!a.alive || a.warping) continue;   // untouchable while forming (§54); a wingman already down is gone
         if (!pointHitsShip(a, r.pos, r.blastR)) continue;
         const dr = applyShieldedDamage(a, r.damage);
         if (dr.absorbed) world.events.emit({ type: 'enemyShieldHit', enemy: a, pos: r.pos.clone(), broke: dr.broke });

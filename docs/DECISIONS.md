@@ -4955,6 +4955,125 @@ named for the veto (`step-ally.test.js`) fails if anyone re-adds the exclusion.
 **Also settled here, because both fall out of the same shape.** The `fire` EVENT keeps meaning *"your own
 shot"* (`fromPlayer: side === 'player'`) while the PROJECTILE means *"the friendly side"*
 (`fromPlayer: side !== 'enemy'`) — without the split the client adapter would play the wingman's guns as if
-they were yours, and his fire must be silent. And **he cannot die**: `hp` floors at `ALLY_MIN_HP` and there
+they were yours, and his fire must be silent. ~~And **he cannot die**: `hp` floors at `ALLY_MIN_HP` and there
 is no ally death path anywhere, which is what keeps `world.allies` from ever shrinking mid-run and keeps the
-digest and the wire simple.
+digest and the wire simple.~~
+
+**AMENDED 2026-08-23 — he DIES.** The maintainer flew the branch and reversed the no-death rule
+(`combat-ally.md` §2.4): an immortal wingman sat at a sliver of hull soaking three boss rockets and would
+not leave, which reads as a prop rather than as a pilot. He is now destroyed for the rest of the MISSION and
+returns in the next one — `sim-core/step-ally.js stepAllyDeaths`, which runs after the projectile steps for
+the same reason `stepEnemyDeaths` does.
+
+*What that cost, since the original entry leaned on the opposite.* `world.allies` **can** now shrink mid-run.
+The digest is unaffected in practice: both hosts run the same step in the same tick order, so they remove him
+on the same tick, and an empty `allies` still appends nothing. The wire needed nothing new either — absence
+IS the despawn there, and the client's `leaving` path already retires a ghost the room stops listing.
+
+*He is worth nothing.* No credits, no XP, no loot roll, and `world.kills` does not move, so a phase's
+`advanceWhen: {kills:N}`, `world.enemyTotal`, `isLastKillDrop` and the `cleared` payload all behave exactly
+as if he had never been there. His death does not end the mission.
+
+*Why a new `allyDown` event rather than reusing `kill`.* `kill` is built for enemies and carries
+`reward`/`xp`/`role`, which the client's adapter reads; borrowing it would mean emitting a reward of zero for
+something that is not a kill, and every later reader would have to work out which of the two a given event
+was. `allyDown` carries only what the explosion needs. **The FX is the entire announcement** — no banner, no
+log line, no new string, because player-facing copy for the wingman is out of scope in this step — but a
+friendly ship that vanished in silence would read as a bug.
+
+*And the explosion is required on its own merits, not merely as feedback* (maintainer, 2026-08-23): **this is
+preparation for real multiplayer.** In co-op the ship that blows up is another PERSON's, and the destruction
+of a ship this client does not own is exactly the event `allyDown` already is — emitted by whoever simulates,
+carried on the wire (`EVENT_FIELDS.allyDown`, `protocol.js:60`), and played by the adapter that draws every
+other explosion (`sim.js:298`). So it must not be treated as an optional flourish that could be dropped to
+keep the ally quiet, and it must not be folded back into `kill` later for tidiness: it is the seam a remote
+player's destruction will arrive through. The local player's own death keeps its separate path (the
+"Ship Destroyed" overlay), because that one is about ending YOUR run rather than about drawing a wreck.
+
+*The retreat became load-bearing, and it took THREE goes to make it work.* It is now the only thing between
+low hull and a dead wingman.
+
+  1. **Sampled once per pass** — `shouldRetreat` needs ≤20 % hull *and* a broken shield, but the shield
+     refills all-or-nothing 10 s after breaking, so the condition oscillates on a ~10 s cycle and was being
+     read at exactly one tick per pass. Against a boss re-breaking the shield it essentially never held at
+     the sampled instant.
+  2. **Latched every tick, acted on at the next pass** — fixed the sampling, but still waited for the pass.
+  3. **Taken the instant it is true** (the shipped rule, and §2d's *"low health never interrupts a charge"*
+     is **RETIRED** with it).
+
+**Why the rule had to go, with the number that settled it.** It was written while the ally could not die,
+when interrupting a charge bought nothing — the retreat was purely about finding time to heal. Once he became
+mortal, the same words meant "die mid-charge". Level 4's boss mounts 2× weapon 10 (power 10, cooldown 1.0)
+and 3× weapon 4 (power 20, cooldown 4): about **35 damage per second**. Against 200 HP the old 20 % threshold
+is 40 HP, so **crossing it to dead is about one second**, against a ~6 s pass cycle — the decision landed
+inside the fatal window about one time in six, which is exactly what the maintainer kept watching.
+
+**The shipped rule:** break off at **≤25 %** hull with the shield down, evaluated every tick and acted on
+immediately; rejoin at **≥40 %**, unchanged. Evaluating per tick rather than hooking the damage router is
+behaviourally identical — `shouldRetreat` can only newly become true when damage lands, because the repair
+drone only raises hp and `shieldRecharge` only refills — and it needs no second path through the damage
+router to keep in step. The `wantsRetreat` latch is deleted rather than left inert: with no gap between
+"true" and "acted on" there is nothing to bridge.
+
+**Two things this deliberately does NOT do.** It does not protect him — he still dies if the fire does not
+stop, and there is a test asserting exactly that. And it does not make the break-off free: he now turns with
+his nose still on the enemy, so he spends the first ~2.7 s coming about while a pursuer closes, and the gap
+dips to near contact before it opens. That is the price of leaving at once instead of at the end of the
+pass, and it is the better trade.
+
+**The shield clause survives but no longer gates anything.** Damage routes through the shield before the hull
+(§76), so at the instant hull damage lands the shield is already down by construction. It is kept because the
+maintainer specified "≤25 % with the shield down" and it still states something true — a wingman whose shield
+came back up is not taking hull damage — but it can essentially never be the thing that blocks a retreat now.
+
+*Known and accepted:* the player has **no orders** in this cut (§2.3), so they cannot defend him or call him
+off — his death will read as bad luck rather than as their mistake. The maintainer chose this knowingly. It
+is the argument for orders in a later cut, not a defect.
+
+**AMENDED again 2026-08-23 — two defects the live play found, both in things that looked justified.**
+
+*1. The break-off was measured from the wrong point.* `ALLY_RETREAT_DIST = 70` was a distance from the
+**arena centre**, justified as "well outside the 45 u gun range". That was reasoning about the wrong
+reference: enemies **spawn at 70..130 from that same centre** (`ship-entity.js`, `70 + simRandom() * 60`), so
+the holding point was the inner edge of their spawn ring. Worse, because he charges enemies sitting out
+there, his own distance from the centre was normally already **past** 70 when the break-off fired — the
+remaining distance went negative, `approachThrust` correctly returned 0 (he has no reverse), and he stopped
+dead in the middle of the fight: retreating, holding fire, going nowhere. That is precisely what the
+maintainer reported as "the break-off does not work". It is now **threat-relative**: fly directly away from
+the nearest enemy, recomputed each tick, until that gap reaches `ALLY_BREAK_OFF_DIST = 120` (past
+`GUN_LONG`'s 90 u reach, not merely past the 45 u basic gun), then hold. With no enemy at all there is
+nothing to break from and he falls through to the escort. **The lesson is the reference point, not the
+number**: a distance is only meaningful relative to the thing it is protecting him from. And the arrival
+rule is again judged on the CLOSING speed — the rate the GAP is opening, since the destination moves — which
+is the third time that distinction has decided whether a rule in this file works.
+
+*2. His shots did not go where his nose pointed.* Kinetic bullets inherit the shooter's velocity
+(`spawn.js makeBullet`; rockets deliberately do **not**, §70), so a ship drifting across its own line of fire
+misses even a **stationary** enemy, and only hits while flying straight down its nose. The wingman is the
+worst case in the game — his whole manoeuvre is a firing pass with heavy lateral drift. `aimWithDrift`
+(`step-ally.js`) now picks the nose so the RESULTING bullet velocity points at the target, and the fire gate
+moved with it: judging the shot on the raw nose-vs-bearing would have suppressed his fire for exactly as
+long as the correction was working.
+
+**One nose, two ballistics — so every gate is asked PER GROUP, of the path that group's projectile actually
+takes.** The nose is optimised for the gun (0.6 s cooldown against the rocket's 5 s), which means the two
+weapons on the same hull fly down different lines: a bullet's is `fwd × speed + vel`, a rocket's is the bare
+nose (it inherits nothing, §70, and homes afterwards). Both the AIM gate and the §2.6 player-safety gate read
+that same per-group path. Getting this half-right is worse than not doing it: gating the rocket on the
+*corrected* line lets it launch ~0.5 rad off the true bearing while the gate reports "aligned", and testing
+its safety against the *bullet's* line quietly LOOSENS "never a tracer through your hull" for the one weapon
+that still flies down the nose. Both mistakes were made and both are now pinned by tests that fail in either
+direction.
+
+Unsolvable when the crossing drift exceeds the muzzle speed (65 against his 30 u/s cap — never, for him, and
+there is a test on the bound); the fallback aims straight into the drift. The bearing is taken from the hull
+CENTRE rather than the muzzle: that is ~3-4° of parallax at 20 u, it is the same parallax the player's and
+every enemy's aim already carries, and correcting it exactly would need an iteration because the muzzle's
+position depends on the nose being solved for. It corrects the SHOOTER's drift only — **leading a moving
+target is a separate problem and is not attempted**.
+
+**ENEMY AIMING HAS THE SAME FLAW AND IS DELIBERATELY LEFT ALONE.** Do not "fix" the asymmetry when you find
+it. Correcting enemy aim makes every enemy in the game hit harder, which raises the difficulty of all five
+levels at once and moves every recorded replay — it needs its own slice with its own balance pass. That is
+why `aimWithDrift` lives in `step-ally.js` beside its one caller rather than in `steering.js`, and why a test
+named for it asserts an enemy still points its nose at the player, flaw and all.
