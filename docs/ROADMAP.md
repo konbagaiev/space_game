@@ -143,20 +143,24 @@ Two reasons it comes before Phase 5 rather than after:
 
 ### Follow-ups opened by the ally (2026-08-23)
 
-- [ ] **Enemy aiming has the same velocity-inheritance flaw the ally's just had, and is deliberately left
-  alone.** Kinetic bullets inherit the shooter's velocity (`sim-core/spawn.js:26-27`; rockets do not, §70),
-  so any ship drifting sideways with its nose on target misses even a STATIONARY enemy — measured at
-  **10.5° of shot error at 12 u/s of crossing drift**. The ally now compensates (`aimWithDrift` in
-  `step-ally.js`, ally-only by design); `stepEnemyAI` does not. **This is not an oversight — do not "fix"
-  the asymmetry in passing.** Correcting enemy aim makes every enemy in the game hit far more often, which
-  raises the difficulty of all five campaign levels at once and moves every recorded replay
-  (`22-intro-replay` currently holds at tick 2474). It needs its own slice with a full play-through of each
-  level, exactly as removing auto-aim did (§124, which moved the intro from 2503 to 2474).
-- [ ] **The wingman's escort orbits instead of converging from a standing start.** Reversing from rest, the
-  closing-speed rule reads a circling ship as "not closing" and keeps thrusting, so he drifts outward
-  (80 u → orbiting 40–95 u over ~40 s) instead of settling at `ALLY_ESCORT_DIST`. Bounded, idle/healing-only
-  behaviour, and pre-existing rather than introduced by the fixes. Any repair is a design change and wants a
-  live judgement first.
+- [ ] **Velocity-compensated aim goes to NEW enemies only — the existing ones keep their flaw, permanently.**
+  (Decided 2026-08-23.) Kinetic bullets inherit the shooter's velocity (`sim-core/spawn.js:26-27`; rockets do
+  not, §70), so a ship drifting sideways with its nose on target misses even a STATIONARY enemy — measured at
+  **10.5° of shot error at 12 u/s of crossing drift**. The ally compensates (`aimWithDrift` in `step-ally.js`).
+  **`stepEnemyAI` will NOT be retrofitted.** The maintainer's decision: the enemies that exist today — the
+  intro's above all — stay exactly as they are, and the **Level 5 base pirates get the corrected aim from
+  birth**. That dissolves the problem rather than scheduling it: no campaign-wide rebalance, no recorded
+  replay moves, and the new enemies are tuned against corrected aim from their first playtest. Whatever
+  carries the correction must therefore be **opt-in per ship or per enemy type**, never a change to the
+  shared path. `22-intro-replay` must still hold at tick 2474.
+- [x] ~~The wingman's escort orbits instead of converging from a standing start.~~ **ACCEPTED, not a defect
+  (maintainer, 2026-08-23).** Reversing from rest, the closing-speed rule reads a circling ship as "not
+  closing" and keeps thrusting, so he drifts outward (80 u → orbiting 40–95 u over ~40 s) instead of settling
+  at `ALLY_ESCORT_DIST`. Seen in play and judged fine — it only happens while the player is stationary and
+  the wingman has nothing to do. **Do not "fix" it; the maintainer will say so if it ever becomes a problem.**
+- [x] ~~Friendly fire passing through an ally's hull.~~ **ACCEPTED for now (maintainer, 2026-08-23).** §2.6's
+  "never a tracer through a friendly hull" is enforced against the PLAYER only; ally-through-ally shots are
+  not checked. Deliberately deferred — it only becomes visible with more than one wingman on the field.
 
 ## Phase 5 — Multiplayer (FAR future, not soon)
 - [ ] **Co-op first** — players fly missions together.
