@@ -18,7 +18,11 @@ import { applyShieldedDamage } from './components.js';
 
 // A bullet: straight flight, no steering, culled by distance travelled rather than time.
 // `shooterVel` is the firing ship's velocity — bullets inherit it (rockets deliberately do not, §70).
-export function makeBullet(from, dir, weapon, fromPlayer, shooterVel) {
+//
+// `fromAlly` — WHO on the friendly side fired this. It exists for exactly one rule: an ally's kill pays no
+// credits and no XP (docs/plans/combat-ally.md §2.5). It never crosses the wire: nothing is drawn
+// differently. `fromPlayer` stays "fired by the FRIENDLY SIDE" and is what damage routing reads.
+export function makeBullet(from, dir, weapon, fromPlayer, shooterVel, fromAlly = false) {
   const vel = new Vec3(dir.x, dir.y, dir.z).normalize().multiplyScalar(weapon.projectileSpeed);
   if (shooterVel) vel.add(shooterVel);
   return {
@@ -27,6 +31,7 @@ export function makeBullet(from, dir, weapon, fromPlayer, shooterVel) {
     traveled: 0,
     maxRange: weapon.maxRange ?? 88,
     fromPlayer,
+    fromAlly,
     damage: weapon.power,
     class: weapon.class,
     projectileColor: weapon.projectileColor, // presentation, carried so the host needs no catalog lookup
@@ -34,10 +39,11 @@ export function makeBullet(from, dir, weapon, fromPlayer, shooterVel) {
 }
 
 // Fields every damaging rocket shares — a normal one and a spiral warhead differ only in how they steer.
-function rocketBody(from, weapon, fromPlayer, maxRangeDefault) {
+function rocketBody(from, weapon, fromPlayer, maxRangeDefault, fromAlly = false) {
   return {
     pos: new Vec3(from.x, from.y, from.z),
     fromPlayer,
+    fromAlly,
     damage: weapon.power,
     detonateR: weapon.detonateRadius,
     blastR: weapon.blastRadius,
@@ -56,10 +62,10 @@ function rocketBody(from, weapon, fromPlayer, maxRangeDefault) {
 
 // A homing rocket. Launch direction is strictly the ship's nose with NO inherited inertia — realistic
 // velocity inheritance was tried and rejected as unplayable (DECISIONS §70).
-export function makeRocket(from, fwd, weapon, accel, fromPlayer, target) {
+export function makeRocket(from, fwd, weapon, accel, fromPlayer, target, fromAlly = false) {
   const vel = new Vec3(fwd.x, fwd.y, fwd.z).multiplyScalar(weapon.launchSpeed);
   return {
-    ...rocketBody(from, weapon, fromPlayer, 120),
+    ...rocketBody(from, weapon, fromPlayer, 120, fromAlly),
     vel,
     heading: Math.atan2(vel.x, vel.z),
     accel,
@@ -72,7 +78,7 @@ export function makeRocket(from, fwd, weapon, accel, fromPlayer, target) {
 // axis in a corkscrew. The leader carries no damage and cannot be shot down; `children` counts live
 // orbiters so it expires once the last one is gone. Returns [leader, ...warheads] in push order — the
 // caller adds them all to `world.rockets` and gives each a body.
-export function makeSpiralVolley(from, fwd, weapon, accel, fromPlayer, target) {
+export function makeSpiralVolley(from, fwd, weapon, accel, fromPlayer, target, fromAlly = false) {
   const leadVel = new Vec3(fwd.x, fwd.y, fwd.z).multiplyScalar(weapon.launchSpeed);
   const heading = Math.atan2(leadVel.x, leadVel.z);
   const leader = {
@@ -83,6 +89,7 @@ export function makeSpiralVolley(from, fwd, weapon, accel, fromPlayer, target) {
     turnRate: weapon.turnRate,
     target,
     fromPlayer,
+    fromAlly,           // carried on the leader too; harmless (it deals no damage and kills nothing)
     lead: true,
     children: 3,
     spiralPhase: 0,
@@ -92,7 +99,7 @@ export function makeSpiralVolley(from, fwd, weapon, accel, fromPlayer, target) {
   const warheads = [];
   for (let i = 0; i < 3; i++) {
     warheads.push({
-      ...rocketBody(from, weapon, fromPlayer, 150),
+      ...rocketBody(from, weapon, fromPlayer, 150, fromAlly),
       vel: leadVel.clone(),
       heading,
       spiralOf: leader,
@@ -108,18 +115,18 @@ export function makeSpiralVolley(from, fwd, weapon, accel, fromPlayer, target) {
 // the mirror: tell the host to let the body go, THEN drop the entity, because the host still needs the
 // reference to dispose it.
 
-export function spawnBullet(world, from, dir, weapon, fromPlayer, shooterVel) {
-  const b = makeBullet(from, dir, weapon, fromPlayer, shooterVel);
+export function spawnBullet(world, from, dir, weapon, fromPlayer, shooterVel, fromAlly = false) {
+  const b = makeBullet(from, dir, weapon, fromPlayer, shooterVel, fromAlly);
   world.bullets.push(b);
   world.host.onSpawn('bullet', b);
   return b;
 }
 
 // A `spiral` weapon fires a whole volley (leader + 3 warheads) rather than one rocket.
-export function spawnRocket(world, from, fwd, weapon, accel, fromPlayer, target) {
+export function spawnRocket(world, from, fwd, weapon, accel, fromPlayer, target, fromAlly = false) {
   const made = weapon.spiral
-    ? makeSpiralVolley(from, fwd, weapon, accel, fromPlayer, target)
-    : [makeRocket(from, fwd, weapon, accel, fromPlayer, target)];
+    ? makeSpiralVolley(from, fwd, weapon, accel, fromPlayer, target, fromAlly)
+    : [makeRocket(from, fwd, weapon, accel, fromPlayer, target, fromAlly)];
   for (const r of made) {
     world.rockets.push(r);
     world.host.onSpawn('rocket', r);
@@ -156,13 +163,26 @@ export function detonateRocket(world, r, dealDamage = true) {
       for (const e of world.enemies) {
         if (e.warping) continue; // invulnerable while forming — no splash damage
         if (pointHitsShip(e, r.pos, r.blastR)) {
+          e.lastHitBy = r.fromAlly ? 'ally' : 'player'; // WHO gets paid for the kill (docs/plans/combat-ally.md §2.5)
           const dr = applyShieldedDamage(e, r.damage); // shield first, excess spills to the hull this tick
           if (dr.absorbed) world.events.emit({ type: 'enemyShieldHit', enemy: e, pos: r.pos.clone(), broke: dr.broke });
         }
       }
-    } else if (world.player && world.player.alive && pointHitsShip(world.player, r.pos, r.blastR)) {
-      const dr = applyShieldedDamage(world.player, r.damage);
-      if (dr.absorbed) world.events.emit({ type: 'shieldHit', pos: r.pos.clone(), broke: dr.broke });
+    } else {
+      if (world.player && world.player.alive && pointHitsShip(world.player, r.pos, r.blastR)) {
+        const dr = applyShieldedDamage(world.player, r.damage);
+        if (dr.absorbed) world.events.emit({ type: 'shieldHit', pos: r.pos.clone(), broke: dr.broke });
+      }
+      // …and the third party. A blast splashes everyone hostile fire can reach, so the ally takes it too —
+      // the loop is skipped entirely when there is no ally, which is every level that ships today.
+      // `enemyShieldHit` is reused deliberately: it is the "bubble on THAT ship" event (it carries an entity
+      // reference and is already id-swapped on the wire); `shieldHit` is specifically the player's own.
+      for (const a of world.allies || []) {
+        if (!a.alive || a.warping) continue;   // untouchable while forming (§54); a wingman already down is gone
+        if (!pointHitsShip(a, r.pos, r.blastR)) continue;
+        const dr = applyShieldedDamage(a, r.damage);
+        if (dr.absorbed) world.events.emit({ type: 'enemyShieldHit', enemy: a, pos: r.pos.clone(), broke: dr.broke });
+      }
     }
   }
   world.events.emit({

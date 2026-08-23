@@ -23,6 +23,7 @@ import { makePlayer } from '../../client/src/sim-core/ship-entity.js';
 import { clearAndPlaceRun, startRun } from '../../client/src/sim-core/reset-world.js';
 import { seedSim } from '../../client/src/sim-core/sim-random.js';
 import { Vec3 } from '../../client/src/sim-core/vec.js';
+import { withAllyAt } from '../../client/src/sim-core/ally-config.js';
 
 // The catalog the client assembles from `/api` at boot (main.js), built here straight from the seed the
 // server would have served. Same shape, same keys — `world.catalog` is the only way the sim reaches it.
@@ -81,8 +82,14 @@ export function buildShip(catalog, { shipId = null, loadout = null, components =
 //
 // The two-call reset is deliberate and mirrors the browser exactly (`clearAndPlaceRun` → the host's
 // scenery → `startRun`); there is simply no scenery to rebuild in between here.
-export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, host = noopHost } = {}) {
+// `ally` — the name of the phase this fight's WINGMAN arrives on, or null. A room may be asked to run him
+// (the ?ally dev flag today; Level 5's own descriptor tomorrow). The headless referee
+// (`server/tools/sim-replay.mjs`) passes nothing, so a re-simulated trace is unchanged.
+export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, host = noopHost, ally = null } = {}) {
   const catalog = buildCatalog(levelName);
+  // withAllyAt COPIES: `buildCatalog` shares the seed's `phases` array, so mutating it in place would give
+  // every room in this process an ally.
+  if (ally) catalog.level = withAllyAt(catalog.level, ally);
   const world = createWorld({ host });
   world.catalog = catalog;
   world.station = stationFor(catalog.level.map);

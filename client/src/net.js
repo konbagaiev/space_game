@@ -10,6 +10,7 @@ import { updateHud, announceLevel } from './hud.js';
 import { levelFromXp } from './progression.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
+import { applyAllyDev } from './ally-dev.js'; // ?ally (dev): inject the wingman's arrival phase into the level
 import { sendSession } from './session-transport.js'; // pure beacon-vs-fetch routing (unit-tested; the no-keepalive win/death fix)
 
 // TEMP client → server debug log (fire-and-forget). Prints to the server console via /api/clientlog so
@@ -227,7 +228,7 @@ export async function loadAdvancedLevel() {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
     }
-    CATALOG.level = level.descriptor; // reset() restarts CATALOG.level → next Restart is the new level
+    CATALOG.level = applyAllyDev(level.descriptor); // reset() restarts CATALOG.level → next Restart is the new level (?ally re-injects on every level)
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
     // Wait for the run's bank POST first: this read would otherwise return the PRE-run experience and
     // overwrite the freshly banked progression with it (see `banking`).

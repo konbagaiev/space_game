@@ -5,7 +5,7 @@
 // (setPaused/togglePause) and the OOB warning stay inline with the sim cluster — they touch the level
 // runner + music routing, which haven't been split out yet.
 import * as THREE from 'three';
-import { G, enemies, creditPopups } from './state.js';
+import { G, enemies, allies, creditPopups } from './state.js';
 import { drops } from './drops.js'; // off-screen loot markers (no circular dep — drops.js does not import hud.js)
 import { camera, renderer, gameW, gameH } from './engine.js';
 import { ARENA, arenaCenter } from './world.js';
@@ -350,13 +350,17 @@ export function updateEnemyHealthBars() {
   // straight up on screen above the model, while staying depth-correct (scales with zoom/distance).
   _screenUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
   let used = 0;
-  for (const e of enemies) {
+  // One ship's bars, from the shared pools. Extracted so the ALLY gets exactly the same treatment as an
+  // enemy without spreading two arrays into one per frame — he carries every field this reads (`hp`,
+  // `maxHp`, `shield`, `_shieldValue`, `_shieldRechargeAccum`, `radius`, `pos`).
+  // Returns whether it used a pool slot.
+  const drawShipBars = (e) => {
     const sh = e.shield || null;
     const shieldFull = !sh || e._shieldValue >= sh.capacity;
-    if (e.hp >= e.maxHp && shieldFull) continue;   // nothing damaged at all → no bars
+    if (e.hp >= e.maxHp && shieldFull) return false;   // nothing damaged at all → no bars
     _hb.copy(e.pos).addScaledVector(_screenUp, e.radius * 1.6 + 2); // lift up-screen, clear of the hull
     _hb.project(camera);
-    if (_hb.z > 1) continue;                        // behind the camera -> skip
+    if (_hb.z > 1) return false;                       // behind the camera -> skip
     const px = (_hb.x * 0.5 + 0.5) * w, py = (-_hb.y * 0.5 + 0.5) * h;
     const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));
     const i = used++;
@@ -364,9 +368,9 @@ export function updateEnemyHealthBars() {
     setStyle(b, 'display', 'block');
     place(b, px, py, ' translate(-50%, calc(-100% - 4px))'); // bottom edge pinned just above the anchor
     setStyle(b.firstChild, 'width', (frac * 100) + '%');
-    // Shield strip: same anchor, lifted by the CSS transform. Enemies without a shield get no strip.
+    // Shield strip: same anchor, lifted by the CSS transform. Ships without a shield get no strip.
     const s = getShieldBar(i);
-    if (!sh) { setStyle(s, 'display', 'none'); continue; }
+    if (!sh) { setStyle(s, 'display', 'none'); return true; }
     const broken = !(e._shieldValue > 0);
     const sFrac = broken
       ? Math.max(0, Math.min(1, (e._shieldRechargeAccum || 0) / sh.rechargeSec)) // purple: recharge progress
@@ -375,7 +379,10 @@ export function updateEnemyHealthBars() {
     setStyle(s, 'display', 'block');
     place(s, px, py, ' translate(-50%, calc(-100% - 10px))'); // stacked above the red bar (4+5+1 px)
     setStyle(s.firstChild, 'width', (sFrac * 100) + '%');
-  }
+    return true;
+  };
+  for (const e of enemies) drawShipBars(e);
+  for (const a of allies) drawShipBars(a);   // the wingman's hull + shield, same pools (empty in shipped levels)
   for (let i = used; i < hpBarPool.length; i++) setStyle(hpBarPool[i], 'display', 'none');
   for (let i = used; i < shieldBarPool.length; i++) setStyle(shieldBarPool[i], 'display', 'none');
 }
@@ -416,6 +423,18 @@ export function updateMiniMap() {
     miniCtx.fillStyle = cssColor(e.color ?? 0xffffff);
     miniCtx.beginPath();
     miniCtx.arc(ex, ey, 2.4, 0, Math.PI * 2);
+    miniCtx.fill();
+  }
+
+  // the wingman, in his own friendly colour — A4's whole legibility kit for him is his hull tint, his bars
+  // and this dot. Deliberately NO off-screen edge arrow: an arrow pointing at him reads as "threat over
+  // there". Empty in every level that ships today.
+  for (const a of allies) {
+    const ax = toX(a.pos.x), ay = toY(a.pos.z);
+    if (ax < 1 || ax > S - 1 || ay < 1 || ay > S - 1) continue; // off the radar
+    miniCtx.fillStyle = cssColor(a.color ?? 0xffffff);
+    miniCtx.beginPath();
+    miniCtx.arc(ax, ay, 2.4, 0, Math.PI * 2);
     miniCtx.fill();
   }
 

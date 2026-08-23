@@ -53,9 +53,26 @@ in both without a second implementation.
    autonomous logic instead of exposing it. Orders remain cheap to add later — `world.onCommand` already
    carries click-to-fly and would take them unchanged, and the click-to-fly UI already knows how to name a
    target on screen.
-4. **Can it die?** → **No. It RETREATS at low health** and comes back in the next mission. The player sees a
+4. **Can it die?** → ~~**No. It RETREATS at low health** and comes back in the next mission. The player sees a
    consequence (he is suddenly alone) without an irreversible loss, and we never create the "restart the
-   level because the bot died stupidly" moment.
+   level because the bot died stupidly" moment.~~
+
+   > **REVERSED (2026-08-23), by the maintainer, after flying it.** **He DIES**, is gone for the rest of the
+   > mission, and returns in the next one. The immortality was watched in play on Level 4 and read as
+   > wrong: the wingman sat at a sliver of hull soaking three boss rockets and simply would not leave, which
+   > is neither a retreat nor a fight — it is a prop. The retreat SURVIVES and is now the thing standing
+   > between low hull and a dead wingman (it also had a real sampling bug, fixed in the same change: the
+   > break-off condition was tested on one tick per pass while the shield's all-or-nothing 10 s refill made
+   > it oscillate, so it almost always missed — it is latched every tick now and acted on at the next pass).
+   > He is worth **nothing** on the way out: no credits, no XP, no loot, and `world.kills` does not move, so
+   > phase thresholds, `enemyTotal`, `isLastKillDrop` and the `cleared` payload cannot notice. His death is
+   > announced by the **explosion FX alone** (`allyDown`) — no banner, no log line, no new string, because
+   > player-facing copy is still out of scope (§2).
+   >
+   > **Recorded, not solved:** in this first cut the player has **no orders** (§2.3), so they cannot defend
+   > him, screen for him or call him off. His death will therefore read as bad luck rather than as the
+   > player's mistake. The maintainer chose this knowing it; it is the argument for orders in a later cut,
+   > not a defect to file.
 5. **Does it take?** → **Credits and XP: NO. Phase progress and the HUD counter: YES.** See the box below —
    this one has a trap in it.
 6. **Friendly fire.** → **No damage in either direction**, but it still **holds the line of fire**: it must
@@ -111,8 +128,13 @@ advance into it. Note the stale-looking `level-5` references in older DECISIONS 
   a framing constraint, not a free choice.
 - ~~Its combat behaviour in detail~~ — **settled, see §2d**: the firing pass, the two re-target angles, the
   retreat thresholds and station-keeping. §3 remains the reasoning behind why it is shaped this way.
-- **The exact arrival moment.** Level 4's shape shows the natural seams and Level 5 will have its own:
-  early enough to read his behaviour, or at the boss as the cavalry.
+- ~~**How he arrives**~~ — **settled and BUILT (2026-08-23):** a **phase of the level descriptor carries
+  `ally: true`**, and entering that phase is when he joins (`sim-core/level-runner.js enterPhase` →
+  `sim-core/ally.js spawnAlly`). Level 5 sets one field and nothing else. No seeded level carries it today;
+  the `?ally` dev flag injects it into whatever level the tab is flying, and a room takes the same phase name
+  over the handshake.
+- **The exact arrival MOMENT for Level 5** is still the maintainer's call. Level 4's shape shows the natural
+  seams and Level 5 will have its own: early enough to read his behaviour, or at the boss as the cavalry.
 - **Level 5 itself** — centre/anchor, `xpReward`, `lastKillDrop`, briefing and victory copy (write from
   `docs/narrative/`, never ad-hoc). The enemy composition mirrors Level 4 and there IS a boss (§2c).
 - **The BOSS's model, and therefore CREDITS.md** — §2c says the boss gets a different model. If it is not
@@ -197,8 +219,21 @@ Heavy armour, ordinary engine and thrusters, an ordinary repair drone, a heavy c
 
 **Derived through `deriveDrive` (`components.js:29`):** mass **86** against `REFERENCE_MASS` 50 →
 `massFactor` **0.58**. Acceleration **8.7** (the player's is 10), turn rate **1.16 rad/s** (the player's is
-2.0) — a 180° reversal takes **2.7 s**. With `DRAG = 1.8` (`step-enemies.js:30`) terminal speed is about
-**4.8 u/s**.
+2.0) — a 180° reversal takes **2.7 s**. ~~With `DRAG = 1.8` (`step-enemies.js:30`) terminal speed is about
+**4.8 u/s**.~~
+
+> **CORRECTED (2026-08-23), and this one was WRONG rather than merely imprecise.** The struck sentence
+> applied the **ENEMY** movement model. The ally flies the **player's**: `PLAYER_MAX_SPEED` is a **flat
+> 30 u/s** (`sim-core/step-player.js:29`, *"Flat top speed for the PLAYER only… Enemies use their per-engine
+> `maxSpeed` instead"*), there is no per-frame drag while thrusting (`IDLE_DRAG` runs only when no control is
+> held), and slowing down is the kinematic `brakeVel`. **Thrust decides ACCELERATION; top speed is a property
+> of the SHIP, not of the engine** (maintainer, 2026-08-23). So the real numbers are: acceleration **8.7**
+> (0→30 u/s in **3.45 s**), turn **1.16 rad/s** (180° in **2.71 s**), top speed **30 u/s** — the same as the
+> player's. `step-ally.js` reads the cap straight from `step-player.js` and never restates it.
+>
+> The reversal is therefore **brake → turn → re-accelerate**, not a constant-speed arc: braking (3.45 s)
+> outlasts the 180° turn (2.71 s), so he comes about nearly stationary, carrying ≈6.4 u/s of old-direction
+> drift, and rebuilds speed into the next pass. A whole pass cycle is ~6 s and swings him ~50 u out and back.
 
 *Confirmed as id 6 (Heavy cannon), not id 7.*
 
@@ -220,10 +255,13 @@ moment the current one is behind him** — the angles are to be tuned.
   `catalog_seed.js:298`; the rule is in `step-enemies.js:100`). So he fires while the nose is on, falls
   silent through the pass, and opens up again out of the turn. Nothing has to be written to make that
   rhythm — it falls out of the existing fire rule.
-- **The pass bottoms out at about 4 units and he flies THROUGH the enemy — and that is INTENDED.** Turn
-  radius = speed / turn rate = 4.8 / 1.16 ≈ **4.2 u**, and the nose only slides off the target at roughly
-  that range, so he closes to near contact. Hulls are `broadR` ≈ 2.0 each and **there is no ship-to-ship
-  collision anywhere in `sim-core`** (checked), so two hulls will visibly overlap on the pass. Steering at a
+- ~~**The pass bottoms out at about 4 units and he flies THROUGH the enemy — and that is INTENDED.** Turn
+  radius = speed / turn rate = 4.8 / 1.16 ≈ **4.2 u**~~ — **CORRECTED (2026-08-23):** that figure came from
+  the wrong 4.8 u/s above. Turn radius = speed / turn rate = 30 / 1.16 ≈ **26 u** at full speed (the
+  player's is 15 u), so the nose slides off the target far earlier and **flying through a hull will now
+  rarely be seen at all**. *The ruling it supported is unchanged and still stands:* hulls are `broadR` ≈ 2.0
+  each and **there is no ship-to-ship collision anywhere in `sim-core`**, so two hulls may still visibly
+  overlap on the pass. Steering at a
   lateral offset to make him cut down the flank instead was proposed and **declined by the maintainer,
   2026-08-22: passing through ships is by design, not a bug.** Do not "fix" it in review, and do not add
   ship-to-ship collision to stop it.
@@ -231,21 +269,69 @@ moment the current one is behind him** — the angles are to be tuned.
   "Could fire on it immediately", allowing the mid-turn switch: reuse `aimTol` 0.25 rad — the same number
   that already gates firing, so the rule reads identically in the code and on screen. Both belong in named
   constants for live tuning.
+- **HIS NOSE IS AIMED FOR THE GUN, NOT AT THE ENEMY (added 2026-08-23).** Kinetic bullets inherit the
+  shooter's velocity (`spawn.js makeBullet`; rockets deliberately do not, DECISIONS §70), so a ship drifting
+  across its own line of fire misses even a **stationary** target. That is the worst possible defect for
+  *this* ship, whose entire manoeuvre is a firing pass with heavy lateral drift. `aimWithDrift` picks the
+  nose so the RESULTING bullet travels at the target. One nose, two ballistics: it is optimised for the GUN
+  (0.6 s cooldown against the rocket's 5 s), so the two weapons fly down different lines — and therefore
+  **every gate, the firing rule above AND §2.6's player-safety rule, is asked per fire group of the path
+  that group's projectile really takes** (`fwd × speed + vel` for a bullet; the bare nose for a rocket,
+  which inherits nothing and homes afterwards). Corrects the SHOOTER's drift only; leading a moving target
+  is a separate job. The bearing is taken from the hull centre, not the muzzle — the same few degrees of
+  parallax every other aim in the game already carries.
+  **Enemies have the same flaw and are deliberately untouched** — fixing it would raise the difficulty of
+  all five levels at once and move every recorded replay.
 - **Fire discipline has a ready-made primitive.** §2.6 requires he never shoot through the player's hull.
   `inForwardSector(fwd, toTarget, halfAngle)` (`steering.js:49`) is exactly that test; run it against the
   player and hold fire when it passes and the player is nearer than the target.
 
 ### The retreat, and station-keeping — settled 2026-08-22
 
-**Low health never interrupts a charge.** He commits to the run he is on; the decision to leave is taken
+~~**Low health never interrupts a charge.** He commits to the run he is on; the decision to leave is taken
 **after the pass**, never in the middle of one. So the retreat can only ever look like a wingman breaking
-off, not like one flinching.
+off, not like one flinching.~~
+
+> **RETIRED 2026-08-23 — this rule was killing him.** It was written while the ally **could not die**, when
+> interrupting a charge bought nothing: the retreat was only ever about finding time to heal. The moment he
+> became mortal (§2.4 above), the same words meant *"die mid-charge"*.
+>
+> **The measurement that settled it.** Level 4's boss (`catalog_seed.js`) mounts 2× weapon 10 (power 10,
+> `fireCooldown` 1.0) and 3× weapon 4 (power 20, `fireCooldown` 4) — about **35 damage per second** on
+> target. Against a 200 HP hull the old 20 % threshold is 40 HP, so **crossing it to dead takes about one
+> second**, while a full pass cycle is ~6 s (2.71 s reversal + 3.45 s re-acceleration). A decision taken
+> once per pass therefore landed inside the fatal window roughly **one time in six**. The maintainer flew it
+> and watched him press on and die.
+>
+> **What replaces it:** break off at **≤ 25 %** hull (was 20 %) with the shield down, **evaluated as the
+> damage lands and acted on at once** — mid-charge or not. Rejoin at **≥ 40 %**, unchanged. He may still
+> die; that is deliberate and is not to be softened. The `wantsRetreat` latch that used to bridge
+> "condition true" → "pass armed" is gone with the gap it bridged.
+>
+> **The cost, accepted:** he now turns away with his nose still on the enemy, so he spends the first ~2.7 s
+> of the break-off coming about while a pursuer closes — the gap dips to near contact before it opens. That
+> is the price of leaving immediately rather than at the end of the pass, and it is the better trade.
+
+**WHERE he goes, corrected 2026-08-23.** *Away from the nearest ENEMY* — `ALLY_BREAK_OFF_DIST = 120 u`,
+recomputed each tick — and he holds there while the drone works. The first implementation measured the
+distance from the **arena centre** (70 u) and did not work at all: enemies spawn at 70..130 from that same
+centre, so the holding point was the inner edge of their spawn ring, and since he charges enemies out there
+his own centre-distance was normally already past it — the remaining distance went negative, thrust went to
+zero, and the "retreat" was a dead stop in the middle of the fight. **A retreat distance is only meaningful
+relative to the thing he is retreating FROM.** With no enemy at all there is nothing to break from, so he
+escorts and heals instead. See DECISIONS §134.
+
+**And the break-off decision is TAKEN THE INSTANT IT IS TRUE.** The pair of conditions below is evaluated
+every tick and acted on at once — no latch, no pass gate, no timed cadence. (Two earlier shapes both failed:
+sampling the conditions once per pass tested them at one arbitrary point of the shield's ~10 s break/refill
+cycle and almost always missed; latching the intent and acting on it at the next pass fixed *that* but still
+waited up to ~6 s, which at 35 dmg/s is most of a life. See the retired rule above.)
 
 **Two thresholds, and they are deliberately not the same number:**
 
 | | hull | shield |
 |---|---|---|
-| breaks off to heal | ≤ **20 %** (40 of 200 HP) | down (0) |
+| breaks off to heal | ≤ **25 %** (50 of 200 HP) — *was 20 %, raised 2026-08-23* | down (0) |
 | rejoins the fight | ≥ **40 %** (80 HP) | recharged (full) |
 
 **Why two.** The repair drone (id 12) heals **1 HP/s** and only to `maxFraction` 0.8 — 160 of 200 HP — so
@@ -255,7 +341,11 @@ the mission the whole beat exists for. Returning at 40 % makes it **40 s** (40 �
 back for the boss — bloodied, and plausibly leaving a second time. The shield condition costs nothing:
 `shieldRecharge` (`components.js:107`) refills all-or-nothing 10 s after breaking and only from zero, so it
 is full long before the hull reaches 80. **The hull is the binding constraint; the shield clause is a
-legibility gate, not a delay.**
+legibility gate, not a delay.** *(2026-08-23: under the damage-triggered check the shield clause is nearly
+free on the BREAK-OFF side too — damage routes through the shield before the hull (§76), so at the instant
+any hull damage lands the shield is already down by construction. It is kept because the maintainer
+specified "≤25 % with the shield down", and it still says something true: a wingman whose shield came back
+up is no longer taking hull damage.)*
 
 **Between waves, with no enemy anywhere, he closes to about 10 u of the player** and holds there. That is
 §3's "it positions relative to the PLAYER" in its simplest form, and it means a wingman with nothing to do
@@ -290,9 +380,16 @@ and every difference below follows from one of those two.
 - **It positions relative to the PLAYER, not to its target.** A wingman holds a station off your flank and
   fights from there; a bot that beelines at whatever it is shooting reads as a stranger who happens to be
   nearby. This is also what makes it feel like an ally at all, before it fires a shot.
-- **It targets what threatens YOU**, not what is nearest to it: the enemy shooting at the player, or the one
+- ~~**It targets what threatens YOU**, not what is nearest to it: the enemy shooting at the player, or the one
   closest to the player. A companion that wanders off to the far side of the arena is not helping, however
-  many kills it gets.
+  many kills it gets.~~
+
+  > **SUPERSEDED (2026-08-23).** This bullet is the brief's own prose, written before the maintainer
+  > specified the behaviour. **§2d is authoritative: the ally picks the enemy nearest to HIMSELF**, and that
+  > is what shipped in `sim-core/step-ally.js`. The maintainer's own spec beats the brief's earlier
+  > reasoning. The player-relative idea survives only as `ALLY_TARGET_LEASH` (`sim-core/ally-config.js`), a
+  > named constant **defaulting to `Infinity`** — set it finite and he will only engage enemies within that
+  > distance of the player. Do not re-open this from §3's wording.
 - **It must not steal the fight.** If it out-kills the player, the player is a spectator; if it does
   nothing, it is decoration. This is a tuning problem with a real answer — cap its damage share, or give it
   a role that is not damage (drawing fire, finishing wounded ships, screening the player while shields

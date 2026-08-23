@@ -12,6 +12,10 @@
 //     shift the browser's stream and not Node's, and the draw count catches that immediately — with a clear
 //     cause — where a state hash would just say "different".
 //
+// `world.allyKills` is in NEITHER the digest nor the summary, deliberately: it is a maintainer's readout of
+// the wingman's share of a run, not simulation state the two hosts must agree on, and putting it in either
+// would move hashes and summaries for no benefit.
+//
 // Positions are hashed at FULL precision on purpose. Both hosts run the same code over IEEE doubles in the
 // same order, so bit-identical is the correct expectation; rounding first would hide a real early
 // divergence that has not grown large yet.
@@ -35,7 +39,7 @@ export function worldSummary(world) {
   return {
     kills: world.kills, earned: world.earned, earnedXp: world.earnedXp,
     enemyShieldRefills: world.enemyShieldRefills,
-    enemies: world.enemies.length, bullets: world.bullets.length,
+    enemies: world.enemies.length, allies: world.allies.length, bullets: world.bullets.length,
     rockets: world.rockets.length, drops: world.drops.length, loot: world.pendingLoot.length,
     phase: lr.phaseIndex, spawned: lr.spawnedThisPhase, won: lr.won, cleared: lr.cleared,
     returning: lr.returningToBase,
@@ -68,6 +72,15 @@ export function worldDigest(world) {
     parts.push('e');
     pushVec(parts, e.pos); pushVec(parts, e.vel);
     parts.push(String(e.heading), String(e.hp), String(e._shieldValue), String(e.spawnAge), String(e.warping));
+  }
+  // The friendly side that is not the player. An EMPTY `allies` pushes nothing, so every existing hash is
+  // unchanged — which is what keeps the recorded archive and both oracles untouched (DECISIONS §73).
+  for (const a of world.allies) {
+    parts.push('al');
+    pushVec(parts, a.pos); pushVec(parts, a.vel);
+    parts.push(String(a.heading), String(a.hp), String(a._shieldValue), String(a.spawnAge),
+      String(a.warping), String(a.retreating),
+      String(world.enemies.indexOf(a.target))); // -1 = no target
   }
   for (const b of world.bullets) { parts.push('b'); pushVec(parts, b.pos); parts.push(String(b.traveled)); }
   for (const r of world.rockets) { parts.push('r'); pushVec(parts, r.pos); parts.push(String(r.heading), String(r.hp)); }

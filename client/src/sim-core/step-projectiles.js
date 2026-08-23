@@ -6,7 +6,10 @@
 // Notable rules preserved verbatim, because each was a bug once:
 //   • bullets use a SWEPT test — the segment from where the bullet WAS to where it now IS — so a fast shot
 //     cannot step clean over a thin wing between frames (DECISIONS §45).
-//   • a warping enemy is untouchable: bullets pass through, rockets do not detonate on it (§54).
+//   • a warping enemy is untouchable: bullets pass through, rockets do not detonate on it (§54) — and the
+//     same rule now covers a warping ALLY, who is a third party hostile fire can hit (DECISIONS §134).
+//   • a hostile projectile tests the player FIRST, then every ally in list order; both loops are skipped
+//     entirely when `world.allies` is empty, which is every level that ships today.
 //   • the Maneuver dodge roll is drawn ONLY when dodge > 0, so a no-skill run consumes zero extra RNG and
 //     every existing recording replays bit-identically (§73).
 //   • a spiral volley's leader carries no hp and is never shootable; each warhead frees its slot on death.
@@ -40,6 +43,7 @@ export function stepBullets(world, dt) {
       for (const e of world.enemies) {
         if (e.warping) continue; // invulnerable while forming — world.bullets pass through
         if (segmentHitsShip(e, _bulletP0, b.pos)) {
+          e.lastHitBy = b.fromAlly ? 'ally' : 'player'; // WHO gets paid for the kill (docs/plans/combat-ally.md §2.5)
           const dr = applyShieldedDamage(e, b.damage); // shield first, excess spills to the hull this tick
           if (dr.absorbed) { absorbed = true; world.events.emit({ type: 'enemyShieldHit', enemy: e, pos: b.pos.clone(), broke: dr.broke }); }
           hit = true; world.events.emit({ type: 'hit', target: 'enemy' }); break;
@@ -61,6 +65,19 @@ export function stepBullets(world, dt) {
           if (res.impact) b.pos.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
           if (res.damageResult.absorbed) world.events.emit({ type: 'shieldHit', pos: b.pos.clone(), broke: res.damageResult.broke }); // cyan ripple where the shot connects with the shield
           world.events.emit({ type: 'hit', target: 'player', shipClass: world.player.class }); // sampled impact when OUR ship is struck
+        }
+      } else if (world.allies.length) {
+        // The third party. Player first, then allies, in list order — deterministic, and skipped entirely
+        // when there is no ally (which is every level that ships today).
+        for (const a of world.allies) {
+          if (!a.alive || a.warping) continue;   // untouchable while forming (§54); and a wingman already down is gone
+          const ra = resolveHostileBulletHit(a, _bulletP0, b.pos, b.damage, null); // no dodge: the ally has no skills
+          if (!ra.hit) continue;
+          hit = true;
+          if (ra.impact) b.pos.copy(ra.impact);
+          if (ra.damageResult.absorbed) { absorbed = true; world.events.emit({ type: 'enemyShieldHit', enemy: a, pos: b.pos.clone(), broke: ra.damageResult.broke }); }
+          world.events.emit({ type: 'hit', target: 'ally', shipClass: a.class });
+          break;
         }
       }
     }
@@ -102,7 +119,7 @@ export function stepRockets(world, dt) {
 
     if (r.lead) {
       // Invisible leader: home + move exactly like a normal rocket, but no smoke, no detonation.
-      if (r.target && (r.fromPlayer ? !world.enemies.includes(r.target) : !world.player.alive)) r.target = null;
+      if (r.target && (r.fromPlayer ? !world.enemies.includes(r.target) : !r.target.alive)) r.target = null;
       if (r.target) {
         const to = r.target.pos.clone().sub(r.pos);
         const desired = Math.atan2(to.x, to.z);
@@ -135,7 +152,7 @@ export function stepRockets(world, dt) {
     } else {
       // Normal rocket: existing homing + move.
       // target lost: for a player rocket - if the enemy died; for an enemy one - if the player died
-      if (r.target && (r.fromPlayer ? !world.enemies.includes(r.target) : !world.player.alive)) r.target = null;
+      if (r.target && (r.fromPlayer ? !world.enemies.includes(r.target) : !r.target.alive)) r.target = null;
       if (r.target) {
         // maneuver: turn the velocity vector toward the target (turnRate) + accelerate forward (accel)
         const to = r.target.pos.clone().sub(r.pos);
@@ -156,8 +173,11 @@ export function stepRockets(world, dt) {
         if (e.warping) continue; // no detonation on a forming enemy
         if (pointHitsShip(e, r.pos, r.detonateR)) { det = true; break; }
       }
-    } else if (world.player.alive && pointHitsShip(world.player, r.pos, r.detonateR)) {
-      det = true;
+    } else {
+      if (world.player.alive && pointHitsShip(world.player, r.pos, r.detonateR)) det = true;
+      else if (world.allies.length) {
+        for (const a of world.allies) { if (a.alive && !a.warping && pointHitsShip(a, r.pos, r.detonateR)) { det = true; break; } }
+      }
     }
     // limited only by range/detonation — world.rockets fly normally beyond the arena (no boundary culling)
     if (det || r.traveled >= r.maxRange) { detonateRocket(world, r); removeRocket(i, r); }

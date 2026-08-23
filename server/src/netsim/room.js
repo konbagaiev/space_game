@@ -79,7 +79,7 @@ const EMPTY_INPUT = { k: [], t: null };
 export const INPUT_HOLD_TICKS = 30;
 
 export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapshotEvery = SNAPSHOT_EVERY,
-                             onEconomy = null } = {}) {
+                             onEconomy = null, ally = null } = {}) {
   const ids = new WeakMap();   // entity → network id. WeakMap: the sim never learns it has one.
   let nextId = 1;
   const spawnQueue = [];       // static descriptions of entities the client has not been told about yet
@@ -94,7 +94,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     onWarmLevel() {}, // a server parses no models
   };
 
-  const world = createSimWorld({ levelName, seed, ship, host });
+  const world = createSimWorld({ levelName, seed, ship, host, ally });
 
   const queue = [];            // pending client input snapshots, oldest first
   let lastInput = EMPTY_INPUT; // repeated across a short gap: one late packet must not stutter a held key
@@ -122,6 +122,13 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     if (kind === 'enemy') {
       return { id, kind, name: e.name, shipClass: e.class, color: e.color,
                fullScale: e.fullScale, maxHp: e.maxHp, role: e.role, sizeScale: e.sizeScale };
+    }
+    // The WINGMAN. Same shape as an enemy minus the role — the client resolves the model from the NAME plus
+    // the catalog it already has (it builds the ghost through the very same `makeAlly`); only the COLOUR is
+    // extra, because his livery is the one thing that separates three ships sharing one silhouette.
+    if (kind === 'ally') {
+      return { id, kind, name: e.name, shipClass: e.class, color: e.color,
+               fullScale: e.fullScale, maxHp: e.maxHp, sizeScale: e.sizeScale };
     }
     // A projectile's LOOK travels with it: `projectileColor` + `class` decide whether the client draws the
     // weapon's bolt or an untinted dot, and `lead`/`spiralOf` decide whether a rocket has a mesh at all
@@ -258,6 +265,10 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         // and its purple recharge fill never moved: the client's ghost kept the values it was BORN with.
         enemies: world.enemies.map((e) => [idOf(e), e.pos.x, e.pos.z, e.heading, e.hp, e.scale,
                                            e.warping ? 1 : 0, e._shieldValue, e._shieldRechargeAccum]),
+        // …and the friendly ship that is not the player, in the SAME column order as `enemies` so the
+        // client's row reader is the same code. Empty in every level that ships today.
+        allies: world.allies.map((a) => [idOf(a), a.pos.x, a.pos.z, a.heading, a.hp, a.scale,
+                                         a.warping ? 1 : 0, a._shieldValue, a._shieldRechargeAccum]),
         bullets: world.bullets.map((b) => [idOf(b), b.pos.x, b.pos.z]),
         rockets: world.rockets.map((r) => [idOf(r), r.pos.x, r.pos.z, r.heading]),
         drops:   world.drops.map((d) => [idOf(d), d.pos.x, d.pos.z]),

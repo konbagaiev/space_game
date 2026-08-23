@@ -1,8 +1,9 @@
 // The enemy half of a tick: how every hostile ship flies, aims and fires, and what happens when one dies.
 //
-// The AI is deliberately simple and has not changed in the move: turn toward the player at the hull's turn
+// The AI is deliberately simple and has not changed in the move: turn toward its target at the hull's turn
 // rate, hold a stand-off distance of about 20 units, and fire each mount whose range + aim tolerance is
-// satisfied. What it does NOT do is as load-bearing as what it does — a warping enemy is invulnerable,
+// satisfied. Its TARGET is the nearer of the player and any ally (`nearestHostileTarget`) — which is the
+// player verbatim in every fight that has no wingman, i.e. every level that ships today. What it does NOT do is as load-bearing as what it does — a warping enemy is invulnerable,
 // silent and unhomeable until it has finished materialising (DECISIONS §54), and nobody fires at all
 // during the opening ENEMY_FIRE_GRACE seconds, which is what stops a fresh run from opening under fire.
 //
@@ -21,6 +22,7 @@ import { isLastKillDrop } from './level-sim.js';
 import { spawnDrop, ownsReward } from './drops-sim.js';
 import { DROP_CHANCE, WEIGHT_FALLBACK, pickLoot } from './drops-config.js';
 import { showBanner } from './events.js';
+import { nearestHostileTarget } from './targeting.js';
 
 let warnedWeight = false;
 function warnMissingWeight() {
@@ -75,12 +77,15 @@ export function stepEnemyAI(world, dt) {
       continue;
     }
 
-    const toPlayer = player.pos.clone().sub(e.pos);
-    const dist = toPlayer.length();
-    toPlayer.normalize();
+    // WHO THIS SHIP IS FIGHTING: the nearer of the player and any ally. With no ally in the world this is
+    // `world.player` verbatim, so every shipped level and every recorded trace is unchanged (§73).
+    const target = nearestHostileTarget(world, e.pos) || player;
+    const toTarget = target.pos.clone().sub(e.pos);
+    const dist = toTarget.length();
+    toTarget.normalize();
 
-    // target angle toward the player
-    const desired = Math.atan2(toPlayer.x, toPlayer.z);
+    // target angle toward whoever it picked
+    const desired = Math.atan2(toTarget.x, toTarget.z);
     const diff = shortestAngleDelta(e.heading, desired); // used below for aim checks
     e.heading = steerToward(e.heading, desired, e.turnRate * dt);
 
@@ -97,8 +102,9 @@ export function stepEnemyAI(world, dt) {
     e.thrusting = thrust > 0.1;
 
     // fire each group whose AI rule (range + aim tolerance) is satisfied — and only after the opening grace
-    updateGroups(world, e, ef, false, dt,
-      (g) => !e.warping && world.combatElapsed >= ENEMY_FIRE_GRACE && g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol);
+    updateGroups(world, e, ef, 'enemy', dt,
+      (g) => !e.warping && world.combatElapsed >= ENEMY_FIRE_GRACE && g.ai && dist < g.ai.range && Math.abs(diff) < g.ai.aimTol,
+      target);            // …and its rockets home on whoever it is flying at
   }
 }
 
@@ -119,15 +125,21 @@ export function stepEnemyDeaths(world) {
       const isBoss = e.role === 'boss' || e.role === 'boss2';
       const reward = e.reward || 0;
       const xp = e.xp || 0;
+      // WHO KILLED IT decides only the money. Progress does not care: `world.kills` counts every death, or a
+      // level with `advanceWhen: {kills:8}` whose ally took three would never advance and the HUD would
+      // freeze over an empty sector (docs/plans/combat-ally.md §2.5). Last hit wins.
+      const byAlly = e.lastHitBy === 'ally';
       // ONE event carries everything the presentation needs — every value copied, because by the time the
       // adapter runs this entity is already spliced out of `enemies`.
       world.events.emit({
         type: 'kill', pos: e.pos.clone(), isBoss, exhaustColor: e.engine.exhaust.color,
-        sizeScale: e.sizeScale || 1, role: e.role, shipClass: e.class, reward, xp, name: e.name,
+        sizeScale: e.sizeScale || 1, role: e.role, shipClass: e.class,
+        reward: byAlly ? 0 : reward, xp: byAlly ? 0 : xp, byAlly, name: e.name,
       });
 
       despawnAt(world, 'enemy', enemies, i);
-      world.kills++;              // count (drives level thresholds + HUD)
+      world.kills++;              // count (drives level thresholds + HUD) — EVERY death, whoever landed it
+      if (byAlly) world.allyKills++; // DIAGNOSTIC: the wingman's share of this run (nothing in the sim reads it)
       // "N enemies left" banner at the 10- and 5-remaining milestones (once each, only when the level's
       // total is known). kills increments by 1, so `left` lands on each value exactly once.
       if (world.enemyTotal > 0) {
@@ -137,8 +149,8 @@ export function stepEnemyDeaths(world) {
           showBanner(world, 'ui.banner.enemies_left', { count: left });
         }
       }
-      world.earned += reward;     // credits (reward for this ship type)
-      world.earnedXp += xp;       // character experience (banked with the run at /api/games)
+      world.earned += byAlly ? 0 : reward;   // credits (reward for this ship type) — an ALLY kill pays nothing
+      world.earnedXp += byAlly ? 0 : xp;     // character experience (banked with the run at /api/games)
       // reward drop: the LAST enemy of a level that carries a lastKillDrop drops the reward model (cosmetic —
       // no stash deposit; the real copy is server-installed on victory), but only if the player doesn't already
       // own it. Otherwise fall back to the usual 20% metal-box loot roll (one of the enemy's non-hull parts /

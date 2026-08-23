@@ -34,6 +34,10 @@ export function clearAndPlaceRun(world) {
 
   for (const e of world.enemies) world.host.onDespawn('enemy', e);
   world.enemies.length = 0;
+  // …and the friendly side that is not the player. A fresh run never inherits a wingman: he arrives again
+  // only if the new level's phase script asks for one (docs/plans/combat-ally.md).
+  for (const a of world.allies) world.host.onDespawn('ally', a);
+  world.allies.length = 0;
 
   // Where this run fights: a side mission's own `center`, else the campaign level's (most use the default
   // (0,0); "Level 3" fights at the space factory, "Level 4" inside the far belt outpost).
@@ -79,6 +83,7 @@ export function startRun(world, { keepPlayer = false } = {}) {
 
   world.earned = 0; world.earnedXp = 0; world.kills = 0; world.banked = false; // new run: reset session credits/XP + the bank-once guard (balance persists)
   world.enemyShieldRefills = 0; // diagnostic: completed enemy shield refills this run (replay triage)
+  world.allyKills = 0;          // diagnostic: how many of this run's kills the wingman took
   world.combatElapsed = 0;      // fresh run: restart the enemy hold-fire grace clock
 
   // ROAM: no level (level = null → the runner's update() early-returns → NO spawns), but clear the SAME

@@ -523,3 +523,51 @@ test('ONE CLOCK: the muzzle stays on the nose while the ship drifts sideways', (
   assert.ok(worst < 1e-9, `the muzzle never leaves the nose (worst gap ${worst})`);
   assert.ok(world.player.pos.x > 0, 'and the ship really was moving (guard against an empty assertion)');
 });
+
+// ---------- The third combatant on the wire ----------
+
+test('an ALLY ghost lands in world.allies, with a body, built by the simulation\'s own constructor', () => {
+  const { world, attached } = clientWorld();
+  const st = createNetState();
+  deliver(world, st, snapOf({
+    spawns: [{ id: 9, kind: 'ally', name: 'Basic player ship', shipClass: 'player',
+               color: 0x3ddc84, fullScale: 1.1, maxHp: 200, sizeScale: 1.1 }],
+    allies: [[9, 4, -8, 0.5, 200, 1.1, 0, 20, 0]],
+  }));
+  assert.equal(world.allies.length, 1, 'the wingman is in the ALLY list, not among the enemies');
+  assert.equal(world.enemies.length, 0);
+  const a = world.allies[0];
+  assert.equal(a.isAlly, true, 'built through sim-core makeAlly — there is no second, render-only ally');
+  assert.equal(a.maxHp, 200);
+  assert.equal(a.color, 0x3ddc84, 'his livery is the one thing the wire has to carry');
+  assert.ok(a.radius > 0, 'and he carries the health-bar anchor the HUD loop reads');
+  assert.deepEqual(attached.map((x) => x.kind), ['ally'], 'the host gave him a body under the ally kind');
+});
+
+test('an ally is INTERPOLATED between samples; hp and the shield are taken outright', () => {
+  const { world } = clientWorld();
+  const st = createNetState();
+  const spawns = [{ id: 9, kind: 'ally', name: 'Basic player ship', color: 0x3ddc84, maxHp: 200 }];
+  applySnapshot(world, st, snapOf({ tick: 10, spawns, allies: [[9, 0, 0, 0, 200, 1, 0, 20, 0]] }), atOf(10));
+  applySnapshot(world, st, snapOf({ tick: 20, allies: [[9, 10, 20, 1, 140, 1, 0, 0, 3.5]] }), atOf(20));
+  // Halfway between the two ticks.
+  renderNet(world, st, renderAt(15), INTERP_DELAY_MS);
+  const a = world.allies[0];
+  assert.ok(Math.abs(a.pos.x - 5) < 1e-6, `x lerps to the midpoint (got ${a.pos.x})`);
+  assert.ok(Math.abs(a.pos.z - 10) < 1e-6, `z lerps to the midpoint (got ${a.pos.z})`);
+  assert.equal(a.hp, 140, 'health is STATE: the newer of the pair, never a slide');
+  assert.equal(a._shieldValue, 0);
+  assert.equal(a._shieldRechargeAccum, 3.5, 'and the purple recharge fill has something to read');
+});
+
+test('an ally the room stops listing is despawned when the render clock reaches it', () => {
+  const { world, attached } = clientWorld();
+  const st = createNetState();
+  const spawns = [{ id: 9, kind: 'ally', name: 'Basic player ship', color: 0x3ddc84, maxHp: 200 }];
+  deliver(world, st, snapOf({ tick: 10, spawns, allies: [[9, 0, 0, 0, 200, 1, 0, 20, 0]] }));
+  assert.equal(world.allies.length, 1);
+  applySnapshot(world, st, snapOf({ tick: 20, allies: [] }), atOf(20));
+  renderNet(world, st, renderAt(20), INTERP_DELAY_MS);
+  assert.equal(world.allies.length, 0, 'gone from the list…');
+  assert.equal(attached.length, 0, '…and his body released through the host');
+});

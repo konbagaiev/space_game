@@ -24,6 +24,7 @@
 // 15 times a second, and `[7,12.5,-3.1]` stays readable in a log where `{id:7,x:12.5,z:-3.1}` becomes noise.
 export const COLUMNS = {
   enemies: 'id, x, z, heading, hp, scale, warping, shieldValue, shieldRecharge',
+  allies:  'id, x, z, heading, hp, scale, warping, shieldValue, shieldRecharge',
   bullets: 'id, x, z',
   rockets: 'id, x, z, heading',
   drops:   'id, x, z',
@@ -51,7 +52,12 @@ export const EVENT_FIELDS = {
   pickup:           ['item'],
   smoke:            ['pos'],
   detonate:         ['pos', 'weaponClass', 'blastVis', 'blastTint', 'blastTime', 'blastBright'],
-  kill:             ['pos', 'isBoss', 'exhaustColor', 'sizeScale', 'role', 'shipClass', 'reward', 'xp', 'name'],
+  // `byAlly` — the wingman landed the killing blow. Without it a room's client would write his kills into
+  // the player's own event log (docs/plans/combat-ally.md).
+  kill:             ['pos', 'isBoss', 'exhaustColor', 'sizeScale', 'role', 'shipClass', 'reward', 'xp', 'byAlly', 'name'],
+  // The wingman was destroyed. Carries only what the explosion needs — he is worth nothing, so there is no
+  // reward field to leak and nothing for a client to bank.
+  allyDown:         ['pos', 'exhaustColor', 'sizeScale', 'shipClass'],
   warpFlash:        ['pos'],
   banner:           ['key', 'params', 'dur'],
   bannerClear:      [],

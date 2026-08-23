@@ -23,3 +23,26 @@ export function findTargetInSector(world, pos, fwd, halfAngle) {
   }
   return best;
 }
+
+// WHO A HOSTILE SHIP IS FIGHTING: the nearest of the player and the allies, by hull centre. Planar, no RNG.
+//
+// With no ally in the world this returns `world.player` — which is what every enemy read directly before
+// there was a third party, so every existing level and every recorded trace is arithmetically unchanged.
+//
+// A RETREATING ALLY IS STILL A TARGET, deliberately (maintainer, 2026-08-23). An earlier draft skipped him
+// so a wingman breaking off could not drag part of the wave off screen; that was vetoed as artificial. The
+// ally must behave as close to a real player as possible — this is a rehearsal for multiplayer, and nothing
+// makes a fleeing human stop being a target. He is FASTER than every enemy in the level (same flat cap as
+// the player), so being chased is a fight he can leave — it costs him nothing. Only WARPING is excluded,
+// and only because a forming ship is untouchable anyway (§54).
+export function nearestHostileTarget(world, pos) {
+  let best = null, bestD = Infinity;
+  const p = world.player;
+  if (p && p.alive) { best = p; bestD = Math.hypot(p.pos.x - pos.x, p.pos.z - pos.z); }
+  for (const a of world.allies) {
+    if (!a.alive || a.warping) continue;
+    const d = Math.hypot(a.pos.x - pos.x, a.pos.z - pos.z);
+    if (d < bestD) { best = a; bestD = d; }
+  }
+  return best;
+}

@@ -92,13 +92,16 @@ export function isUnroomableSideMission(netsim, activeMission) {
 // Build the socket URL from the page's origin (or the configured API base), swapping the scheme. Kept pure
 // so the mapping http→ws / https→wss is testable; getting it wrong on the itch build would be a silent
 // mixed-content failure with no error worth reading.
-export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed }) {
+export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally }) {
   const base = apiBase || origin;
   const u = new URL('/ws', base);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
   u.searchParams.set('ticket', ticket);
   if (level) u.searchParams.set('level', level);
   if (seed != null) u.searchParams.set('seed', String(seed));
+  // `ally` names the PHASE the wingman arrives on — the dev flag's one hop onto the wire, so a room runs
+  // the same simulation the browser would (docs/plans/combat-ally.md).
+  if (ally) u.searchParams.set('ally', ally);
   return u.toString();
 }
 
@@ -155,7 +158,7 @@ export function createUplink({ send, batch = INPUT_BATCH }) {
 //
 // Failure is quiet and total: if the ticket or the socket fails there is no half-connected state to reason
 // about, `onError` fires once, and the caller decides what the player sees.
-export async function connectNetsim({ playerId, level, seed, origin = location.origin,
+export async function connectNetsim({ playerId, level, seed, ally = null, origin = location.origin,
                                       onWelcome, onSnapshot, onClose, onError,
                                       fetchFn = fetch, WebSocketImpl = WebSocket } = {}) {
   let res;
@@ -168,7 +171,7 @@ export async function connectNetsim({ playerId, level, seed, origin = location.o
   if (!res.ok) { onError?.(new Error(`ws-ticket ${res.status}`)); return null; }
   const { ticket } = await res.json();
 
-  const ws = new WebSocketImpl(wsUrl({ origin, ticket, level, seed }));
+  const ws = new WebSocketImpl(wsUrl({ origin, ticket, level, seed, ally }));
   // Attached BEFORE the socket opens: the room sends `welcome` the instant the upgrade completes, so a
   // handler installed on `open` races it and loses the message.
   ws.onmessage = (ev) => {

@@ -5,6 +5,10 @@
 // empty AND the phase's total fully spawned). The boss phase pool is the boss only, after clear-out empties
 // the arena → the boss always appears alone.
 //
+// A phase may also carry **`ally: true`** — "the Sentinel wingman joins when this phase starts". Entering
+// the phase spawns him (`sim-core/ally.js spawnAlly`, which refuses a second). No seeded level carries the
+// field today; the `?ally` dev flag injects it into Level 4 and Level 5 will set it for real.
+//
 // ── A mission ends in TWO moments, not one (DECISIONS §130) ─────────────────────────────────────────────
 // They used to be the same moment and it cost more than it looked:
 //
@@ -38,6 +42,7 @@ import { canDock } from './autopilot-config.js';
 import { engageAutopilot } from './step-player.js';
 import { showBanner, clearBanner } from './events.js';
 import { collectAll } from './drops-sim.js';
+import { spawnAlly } from './ally.js';
 
 // The runner's mutable state for one fight. Lives on the World (see world.js).
 export function createLevelRunnerState() {
@@ -93,6 +98,10 @@ export function enterPhase(world) {
     world.firedBanners.add('final');
     showBanner(world, 'ui.banner.final_stage');
   }
+  // THE ALLY ARRIVES BECAUSE THE MISSION SAYS SO. `ally: true` on a phase = "he joins when this phase
+  // starts" — the same data-driven shape the enemy waves use, so Level 5 sets one field and nothing else
+  // (docs/plans/combat-ally.md). No level in the seed carries it today; the ?ally dev flag injects it.
+  if (ph && ph.ally) spawnAlly(world);   // refuses a second one
   if (ph && ph.event === 'win') {
     // defer by `delay` seconds so the boss explosion can play out before the reward lands
     lr.winTextKey = ph.textKey; lr.winText = ph.text; // i18n key (+ English fallback)

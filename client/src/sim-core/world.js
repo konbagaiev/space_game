@@ -14,7 +14,14 @@
 // at all. The simulation must not know which it is talking to, so it announces lifecycle instead:
 // `world.host.onSpawn(kind, entity)` when it creates something, `world.host.onDespawn(kind, entity)` when
 // it destroys it. The browser host attaches and disposes Three.js objects; the Node host is `noopHost`
-// below and does nothing. `kind` is one of 'enemy' | 'bullet' | 'rocket' | 'drop'.
+// below and does nothing. `kind` is one of 'enemy' | 'ally' | 'bullet' | 'rocket' | 'drop'.
+//
+// WHAT THE WORLD HOLDS, beyond the obvious: `enemies` and `allies` are the two combatant lists that are
+// not the player. The fight is three-sided in TARGETING — an enemy steers, aims and homes at the nearer of
+// player-or-ally — and two-sided in DAMAGE ROUTING, because friendly fire is off in both directions
+// (DECISIONS §134). `allies` is empty in every shipped level; the wingman arrives only when a level PHASE
+// carries `ally: true`. `allyKills` is a maintainer's readout of his share of the run and is deliberately
+// in neither the digest nor the summary.
 //
 // Note this is deliberately NOT the event queue. Events describe things that HAPPENED, are copied, and are
 // drained in a batch at end of tick; the host is a lifecycle callback that has to run at the exact moment
@@ -39,6 +46,11 @@ export function createWorld({ host = noopHost } = {}) {
     // --- entities ---
     player: null,      // set by the host once the ship is built (ship-build.buildPlayer)
     enemies: [],
+    // The friendly ships this fight has that are NOT the player. At most one today (the Sentinel wingman,
+    // docs/plans/combat-ally.md); an ARRAY because every consumer — the digest, the netsim ghost map, the
+    // HUD bars, the minimap — is list-shaped already. Empty in every shipped level: the ally arrives only
+    // when a level PHASE asks for him.
+    allies: [],
     bullets: [],
     rockets: [],
     drops: [],
@@ -64,6 +76,11 @@ export function createWorld({ host = noopHost } = {}) {
     banked: false,          // guard so a run banks its credits exactly once
     combatElapsed: 0,       // seconds of UNPAUSED combat since run start; gates the enemy hold-fire grace
     enemyShieldRefills: 0,  // diagnostic: enemy shields that completed a refill this run (replay-desync triage)
+    // DIAGNOSTIC ONLY — how many of this run's kills the ALLY took. It exists to answer the one question
+    // the dev flag is for: "is the wingman stealing the fight?" (docs/plans/combat-ally.md §3). Read off
+    // `window.__game.allyKills`; deliberately NOT in the digest or the summary, and nothing gameplay
+    // reads it.
+    allyKills: 0,
 
     // --- what kind of run this is ---
     activeMission: null,    // the side mission being played (null = the campaign level)
