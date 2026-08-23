@@ -5,6 +5,27 @@
 
 ## 2026-08-23
 
+- **The pipeline gains a grilling stage, because five defects walked past every automated gate.**
+  `.claude/skills/feature-pipeline/SKILL.md` now has **Stage 2.5 — grill the design** (`grill-with-docs`),
+  run with the maintainer AFTER discovery and BEFORE the plan is written. The combat-ally run is the reason:
+  551 client tests, 246 server tests and six visual scenarios all passed on a build where the wingman
+  rendered pixel-identical to the player's ship, never broke off from a losing fight, and missed stationary
+  enemies. Batched multiple-choice discovery asks whether a design is coherent; it cannot ask whether it
+  survives contact with a neighbouring system. The skill's own core rule — *if a question can be answered by
+  exploring the codebase, explore the codebase instead* — would have caught two of the five on its own, both
+  of which entered as already-justified numbers in the orchestrator's brief and were never questioned across
+  six rounds of critique. Three project-specific additions ride with it: check **reachability** (what is this
+  threshold measured against, what closes its window, how fast, how often is the decision taken), check the
+  value **reaches the screen** rather than merely being assigned, and treat every number in the brief as a
+  claim. Its document conventions are mapped onto this project's rather than adopted — `CONTEXT.md` →
+  `docs/SUMMARY.md`, `docs/adr/` → a numbered `docs/DECISIONS.md` entry — so no second rationale store
+  appears (§30). Skipped for genuinely mechanical changes.
+
+- **The wingman's balance has a measurement, and the brief's central risk now has an answer.** `combat-ally.md`
+  §3 asks that he "must not steal the fight". Played on Level 4: he **clears a wave unaided but cannot take
+  the boss alone**, judged acceptable. He was tuned for **Level 5**, so Level 4 is the sterner test for this
+  risk and his share should fall on the harder mission. Recorded as the baseline Level 5 tuning starts from.
+
 - **The wingman now breaks off the moment he is hurt enough — the rule that was supposed to protect his
   charge was killing him.** He still pressed the attack at low hull and died. The threshold was not
   mis-implemented, it was unreachable: Level 4's boss mounts 2× weapon 10 and 3× weapon 4, about **35 damage

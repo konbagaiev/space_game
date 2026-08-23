@@ -390,7 +390,13 @@ and every difference below follows from one of those two.
   > reasoning. The player-relative idea survives only as `ALLY_TARGET_LEASH` (`sim-core/ally-config.js`), a
   > named constant **defaulting to `Infinity`** — set it finite and he will only engage enemies within that
   > distance of the player. Do not re-open this from §3's wording.
-- **It must not steal the fight.** If it out-kills the player, the player is a spectator; if it does
+- **It must not steal the fight.** **MEASURED IN PLAY, 2026-08-23 — the answer is "not yet".** On Level 4,
+  under `?ally&level=4`, the wingman **clears a wave on his own but cannot take the boss alone**, and the
+  maintainer judged that balance acceptable. Two things frame it: he was tuned for **Level 5**, not Level 4,
+  so on the harder mission his share should fall further; and Level 4 is the sterner test of the two for
+  this particular risk, since it is the one he was NOT built for. This is the baseline any Level 5 tuning
+  starts from — if his share there is materially higher, something regressed. The original wording of this
+  bullet follows. If it out-kills the player, the player is a spectator; if it does
   nothing, it is decoration. This is a tuning problem with a real answer — cap its damage share, or give it
   a role that is not damage (drawing fire, finishing wounded ships, screening the player while shields
   recharge).

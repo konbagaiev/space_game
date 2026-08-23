@@ -16,7 +16,7 @@ Full rationale and rules: `docs/plans/multi-agent-pipeline.md`. Follow `CLAUDE.m
 (**keep it simple — don't over-engineer**). Consider using `TaskCreate` to track the stages below.
 
 Track these counters across the run for the retro: `plannerRevisions`, `scopeGrewInDiscovery` (bool),
-`criticRounds`, `reviewRounds`, `perfGate` (`FLAT`/`REGRESSION(…)`/`inactive`, from Stage 6.7). These counters, plus per-agent usage (`subagent_tokens` / `tool_uses` /
+`criticRounds`, `reviewRounds`, `grillRan` (bool — Stage 2.5), `perfGate` (`FLAT`/`REGRESSION(…)`/`inactive`, from Stage 6.7). These counters, plus per-agent usage (`subagent_tokens` / `tool_uses` /
 `duration_ms`) summed from each `task-notification`, are persisted to `docs/pipeline-runs.jsonl` at
 Stage 11 — so build the run record in memory as you go.
 
@@ -42,6 +42,49 @@ worktree path, and a reminder to read DECISIONS/SUMMARY/relevant plans. It retur
 Relay the questions to the maintainer via `AskUserQuestion` (batch ≤4 per call; include the planner's
 suggested defaults as options). If the maintainer's answers introduce **substantial new scope** beyond
 the original request, set `scopeGrewInDiscovery = true` (a planner-context signal for the retro).
+
+## Stage 2.5 — Grill the design (`grill-with-docs`), BEFORE the plan is written
+
+Added 2026-08-23 after the combat-ally run, where **five defects survived 551 client tests, 246 server
+tests and six visual scenarios and were found only by playing the branch**. Every one was internally
+consistent and wrong against a NEIGHBOURING system — a threshold against the boss's damage rate, a distance
+against the enemy spawn radius, a poll against the shield's recharge cycle, a colour against whether it
+reached the model at all. Batched multiple-choice discovery cannot find that class of defect; it asks
+whether the design is coherent, not whether it survives contact.
+
+**Invoke the `grill-with-docs` skill and run the interview with the maintainer** on the design that came
+out of Stage 2, before the planner writes anything. Its core move is the one that matters here:
+
+> *If a question can be answered by exploring the codebase, explore the codebase instead.*
+
+That single rule would have caught two of the five (the ally's top speed, and the fact that his colour never
+reached the .glb) — both of which entered as already-justified numbers in the orchestrator's own brief and
+were never questioned by six rounds of critique.
+
+**Three things this project needs on top of the skill's own agenda:**
+
+1. **Reachability, not just consistency.** For every threshold, distance, rate and cadence in the design,
+   ask what it is measured AGAINST, what closes the window it opens, how fast, and how often the decision is
+   taken. "≤20 % hull" and "decided once per pass" are each defensible and together were fatal.
+2. **Does the value reach the screen?** A setting can be correct, tested and invisible. Trace it to the
+   pixel, not to the assignment.
+3. **Every number in the brief is a CLAIM.** Including one the orchestrator supplied. Verify it at the
+   source before reasoning from it.
+
+**Map the skill's document conventions onto this project's — do NOT create its defaults.** It reaches for
+`CONTEXT.md` and `docs/adr/`; here the equivalents already exist and are the ones the whole workflow trusts:
+
+| the skill wants | write to instead |
+|---|---|
+| `CONTEXT.md` | `docs/SUMMARY.md` (current state) |
+| `docs/adr/NNNN-*.md` | a numbered entry in `docs/DECISIONS.md` |
+
+That keeps DECISIONS §30 (one obvious place per kind of fact) and avoids a second, competing rationale
+store. Everything written stays English (CLAUDE.md).
+
+**Skip it** when the change is genuinely mechanical — a rename, a doc edit, a CSS tweak — and say so rather
+than running it out of habit. It is a conversation with the maintainer and it costs their attention, which
+is the scarcest thing in this loop.
 
 ## Stage 3 — Planning: write
 
