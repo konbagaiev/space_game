@@ -2570,6 +2570,8 @@ first translation). See DECISIONS §10.
   accounts that never spent a point). **First survey, 2026-08-21, all 74 production sessions: 20%
   agreement, no cheating** — see `docs/plans/seal-the-economy.md` §3.1, which also records that session
   recording captures a stub under `?netsim=1` (so the admin replay viewer plays a 5-second stub for those).
+  **That defect is PARKED** (§6): the flag is a manual opt-in, so no production session is affected, and the
+  fix — the ROOM writes the trace — waits for real multiplayer sessions.
 - **Health / uptime** — `GET /api/health` is the monitoring endpoint (UptimeRobot, the Docker
   healthcheck, the CI smoke check all use it). It touches the DB (via `stats`), so it reflects DB
   outages, not just process liveness: **200** `{ ok:true, status:"ok", backend, uptimeSec, players,

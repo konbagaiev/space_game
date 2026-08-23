@@ -5,6 +5,72 @@
 
 ## 2026-08-22
 
+- **Phase 4.5's open design questions are answered — and the ally turned out to need a new mission to
+  arrive in.** `combat-ally.md` §2 held eight questions the implementer was forbidden to guess; all eight
+  are now settled inline. The wingman is assigned by the Sentinels (story, not economy), appears in ONE
+  campaign mission and **mid-fight**, is autonomous in the first cut, retreats at low health instead of
+  dying, and neither deals nor takes friendly fire while still refusing to shoot through the player's hull.
+  The mission he arrives in is a **new Level 5** — the pirate-base assault Level 4's victory line already
+  promises — so the phase is now a mission plus a companion. **One answer had a trap and was split rather
+  than taken literally:** "his kills don't count for the player" cannot mean skipping `world.kills++`, since
+  that counter drives phase advance (`{kills:8}`, `{kills:16}`, …), the HUD, the enemies-left banners, the
+  reward-drop pick and the `cleared` payload — a level would simply hang. His kills advance the level and
+  the HUD; only credits and XP are withheld. Recorded with the consequence to watch: the better he shoots,
+  the poorer the run. No code changed.
+
+- **The ally's spec is complete — and the retreat needed TWO thresholds, not one.** Finalised in
+  `combat-ally.md` §2d: Heavy cannon (id 6), Base shield (id 31, weight 0 — the mass and every derived
+  number are unchanged), no grab at all, and no reaction to loot, which turns "takes nothing" (§2.5) into a
+  property of the ship instead of a suppressed pickup path. Low health never interrupts a charge: he
+  commits to the run and breaks off **after** the pass. He leaves at **20 % hull with the shield down** and
+  rejoins at **40 % with it back** — deliberately not the repair drone's own ceiling, because the drone
+  heals 1 HP/s to `maxFraction` 0.8 (160 of 200 HP), which is a 100–120 s round trip against an ally who
+  arrives one wave before the boss; he would have been absent for the climax he exists for. Returning at
+  40 % makes it 40 s. Between waves he closes to ~10 u of the player and holds station. Recorded as
+  DELIBERATE so no future review "fixes" it: **he flies through enemy hulls on the pass** — a lateral pass
+  offset was proposed and declined, and ship-to-ship collision must not be added to stop it. No code
+  changed.
+
+- **The ally's loadout and combat behaviour are specified — and the numbers changed one thing about the
+  manoeuvre.** `combat-ally.md` §2d: heavy hull, ordinary engine/thrusters, ordinary repair drone, heavy
+  cannon, ordinary rocket, no skills — which derives through `deriveDrive` to mass 86, acceleration 8.7 and
+  a turn rate of 1.16 rad/s (a 2.7 s reversal) against the player's 10 and 2.0. Behaviour is a firing pass:
+  charge the nearest enemy shooting, fly past, turn, re-target if something is nearer or swings into a shot
+  during the turn. Three findings: the firing PULSE is free (a group only fires inside `aimTol` ≈ 14°, so he
+  goes quiet through the pass by itself); the pass bottoms out around 4 u because that is his turn radius,
+  and since **nothing in `sim-core` collides ship-to-ship** two hulls of `broadR` ≈ 2 will visibly overlap —
+  so he should steer at a point offset 6–8 u to the target's side instead of at the target; and the "don't
+  shoot through the player" rule of §2.6 already has its primitive in `inForwardSector`. Also noted: the
+  build has no shield (retreat fires sooner) and no grab — the latter making "takes no loot" a property of
+  the ship rather than a special case. No code changed.
+
+- **Level 5 designed in outline, and three costs measured before anyone writes a plan.** The maintainer
+  described the mission (`combat-ally.md` §2c): the pirate base, defenders flying OUR hull in another
+  livery — faster, tougher, and holding station at their firing range instead of pressing in — closing on
+  whichever of the player or the ally is nearer, a heavy stopping at its shortest-ranged weapon; a boss with
+  its own model and equipment; the ally arriving just before the last wave before that boss. Three findings
+  against the code, so the weapons discussion starts from facts: **(a)** standoff already exists at a
+  hardcoded 14–22 (`steering.js:43`) while weapon ranges are 45/80/90 — and the frame at zoom 1 is only
+  about ±57 units vertically and ±32 horizontally in portrait, so a pirate holding at 45 shoots a phone
+  player from off-screen; **(b)** the simulation has no third combatant at all — `step-projectiles.js` is
+  binary (scan `world.enemies` or hit `world.player`, rockets branching on `fromPlayer`) and `stepEnemyAI`
+  reads `world.player` directly, which is the bulk of the work and exactly the co-op rehearsal this phase
+  was scheduled for; **(c)** player, ally and base pirates would share one silhouette in three tints, which
+  costs no asset but puts the whole friend-or-foe read on colour in a game where you aim yourself. No code
+  changed.
+
+- **The netsim recording defect is PARKED, and the parking is now written down.** `seal-the-economy.md` §6
+  (a `gameplay_sessions` row carrying the room's real kills next to a five-second input trace) read as the
+  one piece of outstanding work in a shipped plan. It is deferred on purpose: `?netsim=1` is a manual opt-in
+  — `evalNetsim` returns null without the flag, and neither `index.html` nor the server ever sets it — so
+  every production and itch session is browser-hosted and records faithfully; the corrupt rows are the
+  maintainer's own test runs. The repair now waits for the first real multiplayer sessions (an ally bot in a
+  room counts), and the approach is decided in advance: **the room writes the trace**, since it knows which
+  input it applied on which tick and already returns its seed in `welcome()`. Capturing client-side under
+  netsim was weighed and rejected — the room applies the last input received per fixed tick, so a dropped
+  frame desynchronises the client's stream from the fight. §6, the plan header and the ROADMAP bullet all
+  say so now. No code changed.
+
 - **Docs self-check: three things a fresh session would have read and believed.** (1) `seal-the-economy.md`
   still said **"Status: PLANNED"** while Slices 1, 1b and 2 were merged, deployed and on itch — now
   "SHIPPED except §6", with a short orientation paragraph up top. (2) SUMMARY's mission-end section still

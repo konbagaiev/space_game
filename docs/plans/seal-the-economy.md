@@ -1,9 +1,11 @@
 # Seal the economy — the room is the accountant
 
-> **Status: SHIPPED except §6, 2026-08-22.** Phase 0 (the survey), Slice 1 (the win condition and the
-> reward moment), Slice 1b (the "Finish and Return" button) and Slice 2 (the room banks its own run) are
-> merged, deployed to `vega.tenony.com` and published to itch. **What is left in this brief is §6 — session
-> recording captures a stub under `?netsim=1`** — plus everything §7 names as deliberately unsealed.
+> **Status: SHIPPED, 2026-08-22. Nothing here is outstanding work.** Phase 0 (the survey), Slice 1 (the win
+> condition and the reward moment), Slice 1b (the "Finish and Return" button) and Slice 2 (the room banks its
+> own run) are merged, deployed to `vega.tenony.com` and published to itch. **§6 — session recording captures
+> a stub under `?netsim=1` — is a known defect that is PARKED**, deliberately, until multiplayer produces
+> sessions worth watching; read the box in §6 before picking it up. Everything §7 names is deliberately
+> unsealed.
 > Written against `main` @ `8360fff`; the work landed in `0a363ca..d4158db`.
 >
 > **The short version for a fresh session:** credits, XP and loot are sealed for fights a server-run ROOM
@@ -286,7 +288,24 @@ Result: server **211** (8 new), client **487**, `37-netsim`, `22-intro-replay`, 
    where closing the tab mid-run loses the unbanked credits.
 5. `POST /api/games` stays exactly as it is for browser single-player.
 
-## 6. Blocking bug, independent of all of the above
+## 6. Known defect, PARKED until multiplayer is real (decided 2026-08-22)
+
+> **Deferred on purpose, do not "fix" it in passing.** `?netsim=1` is a manual opt-in used for testing, so
+> every production session — all of prod and all of itch — is browser-hosted and records a faithful trace.
+> The corrupt rows exist only for netsim runs, i.e. the maintainer's own. The repair is therefore worth
+> doing *with* the first real multiplayer sessions (an ally bot in a room counts), not before: at that
+> point the right fix is the third option below, and doing option 1 first would be work thrown away.
+>
+> **Three options were weighed, and the choice is already made — take option 3 when the time comes.**
+> 1. *Stop writing the row* (or write it without an `s3_key`, and let the admin page say "room-run, no
+>    replay"). Cheap and honest, but buys nothing once netsim runs matter enough to watch.
+> 2. *Capture the input client-side under netsim.* Rejected: the room applies the LAST input it received on
+>    each of its own fixed 60 Hz ticks, so a dropped frame desynchronises the client's stream from what the
+>    room actually simulated. It would produce a longer trace that is still not the fight.
+> 3. **The ROOM writes the trace.** It knows which input it applied on which tick, and it knows the seed
+>    (`server/src/netsim/socket.js:118` returns it in `welcome()`). This is the only option that makes a
+>    netsim fight watchable, and it is the natural continuation of §131 — the room is the accountant, so
+>    let it also be the recorder.
 
 **Session recording captures a stub under `?netsim=1`** (§3.1b). `client/src/main.js:980` computes
 `live = … && !netsimDriving`, so `captureTick` never fires while a room drives — yet the row still stores
@@ -295,8 +314,12 @@ the room's kills and the real duration. Session `282b6018`: 650 s and 14 kills c
 
 This is a live defect in the admin replay viewer (it has been playing a 5-second stub for every netsim
 session) and it is not about the economy at all. Fix it on its own merits, with its own regression test.
-Either capture input under netsim too, or stop writing a session row for a run that was not recorded —
-**a row whose `kills` describe a fight its trace does not contain is the indefensible part.**
+**A row whose `kills` describe a fight its trace does not contain is the indefensible part** — and the row's
+two halves come apart because they are read from different places: `flushSession` (`client/src/main.js:1642`)
+takes `kills`/`durationMs` from the live run, which the wire keeps current under netsim, while the trace is
+built by `captureTick`, which only ever runs inside the fixed-step accumulator (`main.js:1087`) — and that
+whole branch is skipped while a room drives the frame. So it is not the `live` flag alone: there is no local
+sim step to hang a capture on.
 
 ## 7. What this does NOT seal — say it plainly
 

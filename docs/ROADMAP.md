@@ -129,7 +129,17 @@ Two reasons it comes before Phase 5 rather than after:
 - **It is worth having on its own**, single-player, with no netcode attached.
 
 - [ ] Ally logic distinct from `stepEnemyAI` — see the brief for what "distinct" has to mean
-- [ ] Design decisions the maintainer still owns (origin, command, death, loot — listed in the brief)
+- [x] Design decisions the maintainer owned (origin, command, death, loot) — **answered 2026-08-22**, see
+  `combat-ally.md` §2. A Sentinel wingman, one mission only, arriving MID-FIGHT, autonomous (no orders in
+  the first cut), retreats at low health rather than dying, no friendly-fire damage either way, and his
+  kills advance the level and the HUD but pay no credits and no XP.
+- [ ] **A NEW Level 5** — the assault on the pirate base that Level 4's victory line already promises. This
+  is where the ally arrives, so Phase 4.5 is now a mission plus a companion, not a companion alone. Adding
+  a seed row with id 5 hands it to players who already finished the campaign with no migration
+  (`advanceLevel` takes `MIN(id) WHERE id > current_progress`).
+- [ ] Still open, deferred to planning: the ally's weapons, its detailed combat behaviour, the exact arrival
+  moment, and Level 5's own content (centre, enemy pool, boss, briefing/victory copy, set-piece — and
+  whether that set-piece needs a `CREDITS.md` row)
 
 ## Phase 5 — Multiplayer (FAR future, not soon)
 - [ ] **Co-op first** — players fly missions together.
@@ -226,14 +236,17 @@ The original design discussion is preserved below with its verdict. Several item
   since their descriptors are generated per player and no room can resolve one by name.
 - [ ] **Pause must change when a room holds two people** (DECISIONS §123) — today it really freezes the
   room, which is only legitimate while there is exactly one player in it.
-- [ ] **Netsim runs record a STUB, which is worse than recording nothing** (measured 2026-08-21,
-  `docs/plans/seal-the-economy.md` §3.1b and §6). `live` in `main.js` excludes `netsimDriving`, so
-  `captureTick` never fires while a room drives — but the flush still writes a `gameplay_sessions` row, with
-  the kills and duration the ROOM produced. Session `282b6018` claims 650 s and 14 kills against a
-  49-second trace holding 5 seconds of real input. So the admin replay viewer has been playing a
-  five-second stub for every netsim session since the flag shipped. **A row whose `kills` describe a fight
-  its trace does not contain is the indefensible part** — fix by capturing under netsim too, or by not
-  writing the row at all.
+- [ ] **Netsim runs record a STUB, which is worse than recording nothing — PARKED, do it WITH this phase**
+  (measured 2026-08-21, parked 2026-08-22; `docs/plans/seal-the-economy.md` §6). No local sim step runs while
+  a room drives the frame, so `captureTick` never fires — but the flush still writes a `gameplay_sessions`
+  row carrying the kills and duration the ROOM produced. Session `282b6018` claims 650 s and 14 kills against
+  a 49-second trace holding 5 seconds of real input, so the admin replay viewer has been playing a
+  five-second stub for every netsim session since the flag shipped. **It affects no production player:**
+  `?netsim=1` is a manual opt-in (`client/src/netsim.js:36` returns null without it), so all of prod and itch
+  record faithfully and only the maintainer's own test runs are corrupt. Hence parked until real
+  multiplayer sessions exist — an ally bot in a room counts. **The fix is decided: the ROOM writes the
+  trace** (it knows the applied input per tick and the seed); capturing client-side under netsim was
+  considered and rejected. See §6 for why.
 
 ---
 
