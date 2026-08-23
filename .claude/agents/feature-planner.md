@@ -162,3 +162,23 @@ Your final message: a point-by-point list of how each issue was resolved.
   framing is what picks the right sprite/material. Also, never reuse a texture/material just because it
   exists: `getStarGlowTexture` is a soft halo tuned for additive stars and averages ~25% alpha, which is why
   the field had to be blown up and whitened before it could be seen. DECISIONS §96 amendment.
+
+- **2026-08-23 (combat-ally): a number handed to you in the brief is a CLAIM, not a fact — go and look.**
+  The brief stated the ally's terminal speed as ~4.8 u/s, derived by applying the ENEMY movement model
+  (per-frame `DRAG`) to a ship that should fly the player's. The real cap is `PLAYER_MAX_SPEED = 30`
+  (`step-player.js:29`), flat and player-only, with no drag under thrust. You built the whole manoeuvre on
+  the wrong figure, six critic rounds never questioned it, and the maintainer caught it from first
+  principles. **Verify every load-bearing number against the source before you reason from it**, especially
+  ones that arrive already-justified.
+- **2026-08-23: state what each threshold, distance or rate is measured AGAINST, then check it is
+  reachable.** Two defects shipped past every gate because a rule was self-consistent and wrong against a
+  neighbouring system: the retreat point was 70 u *from the arena centre* while enemies spawn 70–130 u from
+  that same centre (so "retreating" meant standing still), and the 20 % hull threshold gave a ~1 s window
+  against Level 4's boss at ~35 dmg/s while the decision was taken once per ~6 s pass. For every threshold
+  ask: what closes this window, how fast, and how often is the decision taken? A plan that answers only
+  "is this internally consistent" will pass review and fail in play.
+- **2026-08-23: a code snippet in a plan carries type errors that document review cannot see.** Your
+  `stepAlly` snippet fed `headingToDir`'s bare `{x, z}` to `Vec3.addScaledVector`, putting `NaN` in the
+  velocity, and the same object then broke `findTargetInSector`'s `fwd.dot`. Six passes over the prose
+  missed both; only running it found them. Keep snippets minimal, or mark them as illustrative rather than
+  literal.

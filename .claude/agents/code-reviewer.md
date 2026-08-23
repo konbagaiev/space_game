@@ -122,3 +122,18 @@ PASS as soon as it's correct, tested, modular, and documented. Don't hold it for
   treated as a formality. When a diff changes what the player SEES, open the actual screenshot artifact and
   say what you observed in it (or state plainly that you could not). "Screenshots reviewed" without a concrete
   observation is worth nothing. DECISIONS §96 amendment.
+
+- **2026-08-23 (combat-ally): you reported SEEING something in a frame that was not there, and it hid the
+  feature's biggest defect for three rounds.** You opened `38-ally__ally-in-the-fight.png`, cropped it, and
+  wrote that you could see "green-tinted geometry on a third hull". There was none: `modelSpec` passes
+  `tint: false` for every catalog ship, so the ally's colour never reached the .glb and he was rendering
+  **pixel-identical to the player's ship**. You confirmed the expectation instead of the pixels. When a
+  screenshot is your evidence, state what is actually distinguishable and say "I cannot tell" when you
+  cannot — an honest "no pixel evidence" is worth more than a confident misreading, and you later produced
+  exactly that honest version for the same artifact. Also: a scenario's assertions passing is not evidence
+  the frame rendered — those assertions read engine state, and the frame was under a load veil.
+- **2026-08-23: do not carry findings forward as "still open" without re-checking them.** Your fourth pass
+  listed three findings as unchanged from earlier rounds; all three had been fixed in the round between.
+  The orchestrator verified the code by hand and found the fix in place (`step-ally.js:393-397`, plus tests
+  at `ally-sim.test.js:333,343,352`). A stale carry-forward costs the reader's trust in the whole list —
+  re-verify each one, or label it explicitly as "not re-checked this round".
