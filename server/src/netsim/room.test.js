@@ -152,15 +152,118 @@ test('a beam discharge crosses the wire as two plain points, and leaks no entity
     hit: true, absorbed: false, weaponClass: 'beam', fromPlayer: true,
   });
   assert.equal(typeof w.from.clone, 'undefined', 'a bare point, not the live vector object');
-  assert.equal(w.enemyId, undefined, 'beamFire carries NO entity reference — the hostile sight is deferred');
+  // beamFire carries NO entity reference, and that is correct rather than pending: the ref rides on
+  // `beamCharge` alone, because a sight that knows when a charge STARTED and how long it lasts needs nothing
+  // from the release — the entry ends on its own `dur`, which IS the sim's chargeTime.
+  assert.equal(w.enemyId, undefined, 'beamFire carries no entity reference — the ref rides on beamCharge');
+  assert.equal(w.shipId, undefined);
 });
 
-test('a beam charge crosses as pos + dur + fromPlayer, and nothing per-tick', () => {
+test('a beam charge crosses as pos + dur + fromPlayer + the SHOOTER\'s id, and nothing per-tick', () => {
   // Two events per shot IS the whole protocol for this weapon: a charge is per-ship state that changes
-  // every tick and an aiming corridor is per-ship geometry — neither is broadcast.
-  const w = wireEvent({ type: 'beamCharge', pos: { x: 0, y: 0.6, z: 1.6 }, dur: 1.0, weaponClass: 'beam', fromPlayer: true }, () => 7);
-  assert.deepEqual(w, { type: 'beamCharge', pos: { x: 0, y: 0.6, z: 1.6 }, dur: 1.0, weaponClass: 'beam', fromPlayer: true });
+  // every tick and an aiming corridor is per-ship geometry — neither is broadcast. The one addition is the
+  // shooter's ID, which is what lets a client draw a corridor for a ship it never simulates.
+  const shooter = { name: 'pirate lancer', hitBoxes: [1, 2, 3], groups: {}, pos: { x: 0, y: 0, z: 0 } };
+  const w = wireEvent({ type: 'beamCharge', ship: shooter, pos: { x: 0, y: 0.6, z: 1.6 }, dur: 1.0, weaponClass: 'beam', fromPlayer: false }, () => 7);
+  assert.deepEqual(w, { type: 'beamCharge', pos: { x: 0, y: 0.6, z: 1.6 }, dur: 1.0, weaponClass: 'beam', fromPlayer: false, shipId: 7 });
   assert.equal(w.weaponClass, 'beam', 'the class rides along so a second beam row routes its OWN swell');
+  assert.ok(!JSON.stringify(w).includes('hitBoxes'), 'an id, never the entity — no collision geometry leaks');
+
+  // The PLAYER is never host.onSpawn'ed, so `idOf` returns null for him and his own charge simply carries
+  // no ref. Harmless: `fromPlayer` already routes it.
+  const mine = wireEvent({ type: 'beamCharge', ship: {}, pos: { x: 0, y: 0.6, z: 1.6 }, dur: 1.0, weaponClass: 'beam', fromPlayer: true }, () => null);
+  assert.equal(mine.shipId, undefined);
+});
+
+// --- THE GATE: a room's hostile charge names a ship the client can find (DECISIONS §135) ---
+//
+// The whole reason `beamCharge` carries an entity ref. In a room the shooter is a remote ghost NOBODY
+// simulates locally — its fire group is never ticked, so `g.charge` never advances and there is nothing to
+// derive a corridor from. The only thing that can hang the three lines on a hull is a name for the hull.
+//
+// This asserts the SERVER half: the room really runs lancers when asked, they really charge, and every
+// charge crosses the wire with a `shipId` the client was already told about by a `spawn`. The client half
+// (that id resolving back to a ghost) is `netsim-world.test.js`; the two together are the wire.
+test('a room running pirate lancers emits beamCharge with a shipId the client has been told about', () => {
+  const room = createRoom({ levelName: 'level-4', seed: 5, lancer: 'wave-1' });
+  const described = new Map();   // network id → the spawn description the client received
+  const charges = [];
+  // 1600 ticks ≈ 27 s: the wave has to spawn, warp in, close to its standoff and clear the 5 s
+  // ENEMY_FIRE_GRACE before the first charge can start.
+  for (let i = 0; i < 1600; i++) {
+    room.stepOnce();
+    const snap = room.takeSnapshot();
+    if (!snap) continue;
+    for (const sp of snap.spawns || []) described.set(sp.id, sp);
+    for (const ev of snap.events || []) if (ev.type === 'beamCharge') charges.push(ev);
+  }
+
+  const lancers = [...described.values()].filter((sp) => sp.name === 'pirate lancer');
+  assert.ok(lancers.length >= 1,
+    `the ?lancer handshake param reached createSimWorld — the room spawned ${lancers.length} lancers `
+    + `(described: ${[...described.values()].map((sp) => sp.name).join(', ')})`);
+
+  assert.ok(charges.length >= 1, 'and at least one of them started a charge inside the run');
+  for (const ev of charges) {
+    assert.equal(ev.fromPlayer, false, 'these are HOSTILE charges — the room flies no player beam');
+    assert.ok(ev.shipId != null, 'every hostile charge names its shooter (the gate: DECISIONS §135)');
+    const sp = described.get(ev.shipId);
+    assert.ok(sp, `shipId ${ev.shipId} was described to the client before it was referenced`);
+    assert.equal(sp.name, 'pirate lancer', 'and it resolves to the ship that actually carries the beam');
+    assert.equal(ev.dur, 1.0, 'with the telegraph window the sight must fill');
+    assert.ok(!JSON.stringify(ev).includes('hitBoxes'), 'an id, never the entity graph');
+  }
+});
+
+// --- THE OTHER HALF OF "a dev flag must reach the room": ?beam arms the PLAYER ---
+//
+// The bug this guards, reported from a live flight of `?beam&netsim=level-4&lancer&level=4`: "I have a
+// machine gun installed, but I have the aiming dashes and the lock animation". `?beam` was a browser-only
+// loadout swap, so the ROOM — which builds the authoritative player — flew the account's real gun while the
+// tab drew a green beam sight over it. The sight was telling the truth about the local copy and lying about
+// the authority, which is precisely what an aiming line must never do.
+test('a room asked for ?beam builds a player whose gun group really IS a beam group', async () => {
+  const { isBeamGroup, beamWeaponOf } = await import('../../../client/src/sim-core/beam.js');
+
+  const armed = createRoom({ levelName: 'level-4', seed: 5, beam: true });
+  const g = armed.world.player.groups.gun;
+  assert.ok(g, 'the player has a gun group at all');
+  assert.ok(isBeamGroup(g), 'and it takes the BEAM path, so the room simulates a charge, not a kinetic');
+  assert.equal(g.mounts.length, 1, 'still exactly one mount — a beam must never share a group');
+  assert.equal(beamWeaponOf(g).id, 12, 'the PLAYER\'s Charged beam (12), never the lancer\'s enemy row (13)');
+  assert.equal(beamWeaponOf(g).maxRange, 100, 'with the player\'s reach, not the lancer\'s 67');
+
+  // THE ORDER OF THESE TWO IS LOAD-BEARING — do not swap them. The unflagged room is built AFTER the armed
+  // one, in the same process, so this doubles as the catalog-poisoning guard: on the fallback path
+  // `buildShip` resolves the loadout to `ship.stats.mounts`, the module-level SEED array, and a swap that
+  // mutated in place would leave every later room in the process flying a beam.
+  const plain = createRoom({ levelName: 'level-4', seed: 5 });
+  assert.ok(!isBeamGroup(plain.world.player.groups.gun),
+    'and a room WITHOUT the flag flies the ordinary loadout — the flag is opt-in at every hop, and the '
+    + 'armed room above did not poison the shared catalog row');
+});
+
+test('?beam reaches the room even when the account lookup gives no loadout', () => {
+  // The fallback hole this deliberately closes: `buildShip` falls back to the catalog default when the
+  // account row is missing (`ship = {}`), so a swap applied to the account's loadout upstream would have
+  // silently done nothing in exactly that case — the same shape of bug as the one being fixed. The swap is
+  // therefore applied to the EFFECTIVE loadout inside `buildShip`.
+  const room = createRoom({ levelName: 'level-4', seed: 5, ship: {}, beam: true });
+  const mounts = room.world.player.groups.gun.mounts;
+  assert.equal(mounts[0].weapon.id, 12, 'the catalog-default ship still gets the beam');
+});
+
+test('a room asked for NO lancers runs the level exactly as shipped', () => {
+  // The dev flag is opt-in at every hop; a room with no `lancer` param must be the shipped fight.
+  const room = createRoom({ levelName: 'level-4', seed: 5 });
+  const names = new Set();
+  for (let i = 0; i < 600; i++) {
+    room.stepOnce();
+    const snap = room.takeSnapshot();
+    for (const sp of (snap && snap.spawns) || []) names.add(sp.name);
+  }
+  assert.ok(names.size > 0, 'the wave spawned at all');
+  assert.ok(!names.has('pirate lancer'), `no lancer without the flag (saw: ${[...names].join(', ')})`);
 });
 
 test('an unknown event is dropped, not forwarded raw', () => {

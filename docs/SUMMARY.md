@@ -3,7 +3,19 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-25 (**The Charged beam — a shot that takes time, has no projectile, and announces
+**Updated:** 2026-08-25 (**The enemy charged beam — the pirate lancer, and the red telegraph that makes
+it fair.** A weakened enemy-only beam row (id 13: **power 45, maxRange 67, charge 1.0 s + cooldown 2.0 s
+→ a 3.0 s cycle, 15 sustained DPS**) on a NEW beam-only ship, the **pirate lancer** — which turns at
+**50°/s** on a thruster row of its own — the same 50°/s the pirate gunner and advanced rocket pirate
+were brought down to in the same change, the intro's two ships deliberately excluded; a pooled
+**charge-only hostile sight** in `#ff6b4a` drawn from any charging enemy's hull — including a shooter in
+a server-run room, because `beamCharge` now carries the SHOOTER as an entity reference; and a `?lancer`
+dev flag that swaps a phase's spawn pool. **DECISIONS §135's gate is MET.** The first pass shipped a 0.5
+s cooldown and a 148°/s turn, at which the lancer held the corridor and practically never missed; the
+maintainer flew it and cut both — a 4× longer cooldown and a 3× slower turn — so **the beam is now
+genuinely escapable**, which is what the corridor design always assumed. It spawns only behind `?lancer`
+until Level 5.)
+Prior: (**The Charged beam — a shot that takes time, has no projectile, and announces
 itself.** A third weapon `type` (`'beam'`, catalog id 12, 5500 credits, gated behind "Level 3"): three thin
 lines run from the hull — the centre and the two edges of a **±2° hit corridor** — the trigger commits to a
 **1.0 s charge**, and at release it **hitscans** the ship it painted if any part of it is still between the
@@ -12,9 +24,8 @@ second of charge makes that tracking mandatory. Its sustained 53 DPS is **delibe
 gun: it is bought for the instant, no-lead hit at range, not for damage. Undodgeable and RNG-free — **the
 corridor IS the dodge** (DECISIONS §135) — and it takes the PRIMARY GUN slot, so buying it means giving up
 your rapid gun. The green dashed sight hands over to a cyan-white discharge; both sounds are cut from one
-CC-BY clip, the game's first. **No ship carries one: it is a player purchase.** The simulation is
-side-agnostic all the same — no `side === 'player'` branch anywhere — but arming an enemy is GATED on
-building the hostile sight first, because a telegraph the player never sees is not a warning.) Prior:
+CC-BY clip, the game's first. Shipped as a player purchase, with arming an enemy GATED on building the
+hostile sight first, because a telegraph the player never sees is not a warning.) Prior:
 (**A third combatant in the simulation, and the wingman who flies it** — the fight
 is three-sided in TARGETING (an enemy steers, aims and homes at the nearer of player-or-ally) and stays
 two-sided in DAMAGE ROUTING (no friendly fire, DECISIONS §134). `world.allies` + `sim-core/step-ally.js`
@@ -767,7 +778,32 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   massFactor`. `REFERENCE_MASS` = 50 (the player's starter loadout: hull 20 + engine 10 + thrusters 4 + gun 6
   + rocket 8 + **grab 2**) keeps the player at accel 15 / turn 2.0; heavier ships are slower & less agile.
   (`REFERENCE_MASS` was bumped 48 → 50 when the base grab was auto-equipped, so its 2 weight is mass-neutral
-  at the baseline — a deliberate neutralization, not a nerf.) A **required slot
+  at the baseline — a deliberate neutralization, not a nerf.)
+  **TURN RATES, AS A LADDER RATHER THAN A CLAIM.** Turn rate falls out of mass, so it is easy to get
+  backwards; the numbers are given in full because a superlative about them has been wrong three times.
+  Slowest first (°/s, measured through `deriveDrive`):
+
+  | °/s | ship | why |
+  |---|---|---|
+  | 21 · 25 · 27 · 31 | pirate mini boss · first pirate boss · advanced medium pirate · second pirate boss | the four CAPITALS — heavy, so slow on mass alone |
+  | **50** | **pirate gunner · advanced rocket pirate · pirate lancer** | the SLOW FIGHTER TIER — set deliberately, see below |
+  | 115 | the player (mass 50; ≈103 carrying the Charged beam at mass 56) | |
+  | 170 · 218 | basic rocket pirate · basic pirate | the INTRO's two ships, deliberately left fast |
+
+  What the player wins over the fast pirates is not agility but **SPEED** — `PLAYER_MAX_SPEED` 30 against
+  their 10.5–15.75.
+  **The 50°/s tier is a deliberate design line** (maintainer, 2026-08-25: *"make it 50 for everyone except
+  those in the intro"*). It matters because turn rate is what decides whether an enemy can hold a target
+  inside a beam corridor: at the AI's 14–22 u standoff a player's best bearing sweep is 30/18 = 1.67 rad/s ≈
+  **96°/s**, so a 50°/s enemy can be pulled off the line and a 183°/s one could not.
+  **A thruster row reaches 50°/s at exactly ONE mass** (power = 0.8727 × mass / 50), so the three ships need
+  **two** rows: component **32 `Pirate fighter thruster`** (0.541, mass 31) and **33 `Pirate skirmisher
+  thruster`** (0.4363, mass 25). Both are weight 3 like the `Scout thrusters` they replace, so no mass and
+  no acceleration moved. A future fighter at another mass needs a third row.
+  **The intro's two ships are excluded on purpose** — level-0's pool is exactly `Basic pirate ship` +
+  `basic rocket pirate` and level-0 carries `introTrace`, so slowing either would move the recorded replay
+  archive (§73). That exclusion is why this retune needed no re-recorded cutscene.
+  A **required slot
   (hull/engine/thruster) may legitimately be empty** in the hangar (you can unequip it back into the
   stash) — the active ship then reports `launchable: false` + `missingRequired`, the **Take-off button
   is disabled** (`updateTakeoffGate`, "required slot empty" note), and the hangar preview build is
@@ -1057,20 +1093,37 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `1 / fireCooldown`, which would advertise **2.0/s** for a weapon that spends a whole second charging.
   `Speed` is skipped: a hitscan has no projectile speed. It has no `modelUrlHigh`, so
   the shop shows the "no model" placeholder.
-  **NO SHIP IN THE GAME CARRIES A BEAM: it is a player purchase.** No pirate is armed with one and no
-  hostile aiming corridor is drawn — that work is deferred behind an explicit gate (DECISIONS §135: the
-  hostile sight and the wire entity reference must exist *first*, because a 1.0 s telegraph the player
-  never sees is not a warning). The simulation is nevertheless **side-agnostic** — `sim-core/beam.js` has
-  no `side === 'player'` branch anywhere and `updateGroups` routes player, ally and enemy down the one
-  branch — so arming a pirate later is a catalog edit plus rendering work.
+  **ONE SHIP CARRIES A BEAM: the `pirate lancer`, and it carries its OWN weapon row (id 13, below).** The
+  player's 12 remains a hangar purchase and appears on no ship row. The simulation is **side-agnostic** —
+  `sim-core/beam.js` has no `side === 'player'` branch anywhere and `updateGroups` routes player, ally and
+  enemy down the one branch — which is why arming a pirate was a catalog edit plus rendering work.
   **Mixed-group trap, for whoever adds the next player ship:** `isBeamGroup` uses `some`, so a group
   holding a beam takes the beam path and **every other mount in it goes silent** (it never reaches
   `fireMount`). `equipItem` replaces the **first** mount of the target group (`db.js`), so a player ship
   with *two* `gun` mounts would end up with a beam in one and a kinetic in the other. No **player** ship
-  has two mounts in one group today; four enemy ships do (twin guns / rocket pods — `first pirate
-  boss`, `second pirate boss`, `pirate mini boss`, `advanced medium pirate`), which is why arming one of
-  those with a beam means giving it its own single-mount group. `server/src/catalog_beam.test.js` guards
-  both halves.
+  has two mounts in one group today; four enemy ships do, six groups between them (twin guns / rocket pods
+  — `first pirate boss`, `second pirate boss`, `pirate mini boss`, `advanced medium pirate`), which is why
+  the lancer got its **own single-mount group** rather than a weapon id swapped onto one of those — it is
+  the worked example of the right way to arm an enemy with a beam.
+  `server/src/catalog_beam.test.js` guards all of it, and now asserts that **exactly one** seeded ship
+  carries a beam and that it is `pirate lancer/gun`.
+- **Pirate charged beam** (id 13 — the ENEMY beam, and the second `'beam'` row): **power 45, maxRange 67,
+  chargeTime 1.0 s, corridorDeg ±2°, fireCooldown 2.0 s, weight 12, `buyable: false`, no `minLevel`, price
+  250 (resale only), `class: 'beam'`.** Deliberately a **second row rather than a shared one**: every
+  behaviour number lives in the weapon row precisely so two ships can carry differently-tuned beams, and
+  `sim-core/beam.js` reads all five off `g.mounts[…].weapon` every tick. Damage and reach are the only
+  levers turned down from the player's row — **the telegraph length is unchanged on purpose**, because the
+  second of warning is what makes the weapon fair rather than what makes it weak. **The cooldown is 4× the
+  player's 0.5**, set by the maintainer after flying the first pass: the cycle is **3.0 s → 15 sustained
+  DPS**, *below* the pirate machine gun's 16.7 and above the advanced pirate cannon's 10, while 45 is still
+  2.25× the biggest single hit that exists (the 20-damage pirate rocket). A big, rare, announced hit rather
+  than a stream — do not restore the shorter cooldown to "fix" the DPS (DECISIONS §135). Its `class: 'beam'` reuses the existing
+  charge + fire `SOUND_MAP` rows, but **a hostile charge is silent** — both beam sounds stay gated on
+  `ev.fromPlayer` (only your own shots are audible; DECISIONS §135). It is a normal enemy weapon in every
+  other respect, which means it can be **LOOTED**: enemy weapons drop into the stash and the `gun` slot
+  accepts `beam`, so a player who kills a lancer could equip a 45-power beam without paying 5500 or
+  clearing the Level-4 gate. Unreachable in shipped play (the lancer spawns only behind `?lancer`), and a
+  real question the day Level 5 fields lancers.
 - **Enemy types** (DB ships, `type` `enemy`, `stats.role`). **Appearance = the ship's `.glb` model; we
   never tint by `color`** (see DECISIONS §14), so enemies that reuse a base model look like it until a
   distinct model is authored. The basic pirates use the **red `enemy_1..4` models**; the advanced tier uses
@@ -1084,9 +1137,26 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **310 hp** (boss buff: 210 +100), 3× model, max speed 10.4 (+30%), **two Pirate machine guns** + two rocket
   launchers), and `boss2` (the **Second Boss**, `second pirate boss`, L4 finale — **orange `enemy_4`** —
   **550 hp** (boss buff: 450 +100), max speed 14.3 (+30%), ~+30% accel/turn vs the first boss, **two
-  Advanced pirate cannons + three rockets**; reward 500). One more ship is seeded but **not wired into any
-  level** yet: `advanced_rocket_pirate` (`advanced rocket pirate`, **orange `enemy_2`** — Pirate
-  hull/engine, Pirate MG + a rocket; reward 75), kept for a future harder rocketeer wave. Which
+  Advanced pirate cannons + three rockets**; reward 500). **Two** more ships are seeded but **not wired into
+  any level** yet: `advanced_rocket_pirate` (`advanced rocket pirate`, **orange `enemy_2`** — Pirate
+  hull/engine, Pirate MG + a rocket; reward 75), kept for a future harder rocketeer wave, and
+  `pirate_lancer` (`pirate lancer` — **the first enemy in the game that carries a CHARGED BEAM**, weapon 13,
+  in its own single-mount `gun` group with the `BEAM` preset). Pirate hull + Pirate engine + its OWN thrusters
+  (36 durability → 12 shield + 24 hull), reward/xp **100** — above the gunner's 50, below the mini boss's
+  125, because it is the most dangerous small ship in the game. It **reuses the pirate gunner's orange
+  `enemy_1` .glb and its baked model block verbatim**, so it is *visually identical to a gunner* — the red
+  aiming corridor is the identification, accepted knowingly (DECISIONS §135), and no asset or `CREDITS.md`
+  row changed.
+  **It turns at 50°/s (0.873 rad/s) — the SLOW FIGHTER TIER, shared with the pirate gunner and the advanced
+  rocket pirate** (see the turn-rate ladder above; no superlative, because that claim has been wrong three
+  times). Set by the maintainer after flying the first pass's 148°/s. Turn rate is derived, never a field, so
+  it carries a **dedicated thruster row** (component **32, `Pirate fighter thruster`**, power 0.541,
+  `buyable: false`) exactly as the `Pirate medium thruster` (25) and `Second-boss thruster` (27) do:
+  `0.541 × REFERENCE_MASS 50 / mass 31 = 0.873 rad/s`. That row keeps the Scout thrusters' **weight 3**, so mass stays **31** and **acceleration is
+  unchanged at 30.6** — the turn was slowed, not the ship. At 50°/s it turns slower than the player (115°/s)
+  and slower than a player's ~96°/s bearing sweep at the AI's 14–22 u standoff, which is what makes its beam
+  escapable during the 1.0 s charge. **It spawns only behind the `?lancer` dev flag**
+  until Level 5 fields it — putting it in a shipped pool would move `enemyTotal` and break recorded traces. Which
   enemies spawn is decided by the **level/mission** (see Gameplay), not the ship; ship `radius` scales with
   model size. Each enemy carries a **`reward`** (`stats.reward`, fighter 25 / rocketeer 50 / pirate gunner 50 /
   medium 125 / advanced medium pirate 200 / first boss 250 / Second Boss 500) in **credits**, earned on
@@ -1130,6 +1200,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Level 4 carry IDENTICAL phase names, so a flight aimed at Level 4 silently landed on whichever level the
   account happened to be on. Not sticky, URL only. With the flag off there is no ally, no ally step, no extra
   entity and **not one extra seeded RNG draw**.
+  **`?lancer` is the same shape, for the pirate lancer** (`client/src/beam-dev.js`, transform in
+  `sim-core/lancer-config.js`): bare `?lancer` = phase `wave-1`, `?lancer=<phase>` names another, `&level=N`
+  forces the level, `0|false|off` (or absent) is off. It swaps that phase's `spawn.pool` for **100 %
+  `pirate lancer`** and clamps `spawn.maxConcurrent` to **2** (two simultaneous 1-second telegraphs is a
+  legible fight; five is a red lattice) — and touches **`spawn.total` and `advanceWhen` for nothing**, because
+  `advanceWhen: { kills: N }` is cumulative and `enemyTotal` is the sum of every phase's total. It is
+  draw-count neutral (`pickShip` calls `simRandom()` once per spawn even for a single-entry pool), it
+  composes with `?beam` (`?beam&lancer&level=4` is your beam against theirs), and it is **forwarded on the
+  netsim handshake** so a room runs the same fight. Like `?ally`, a campaign session recorded with it on
+  re-simulates into a divergence in `verify-sessions.mjs` — expected for a dev flag.
   - **What he flies:** the same `player_combat` .glb as you, with his **WINGS repainted blue**
     (`ALLY_ACCENT_COLOR 0x2f6bff` over the model's `Wings_`-prefixed materials, via `applyShipModel`'s
     optional `accent`). That repaint is the only thing separating him from the player in 3D: catalog ships
@@ -1905,7 +1985,27 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   shot never cuts the first short. **The charge FX is driven by the `beamCharge` EVENT carrying `dur`**,
   never by reading `g.charge`: in a room the local group is never ticked, so the event is the only thing
   that arrives; locally the two agree tick-for-tick. All of it is cosmetic and RNG-free → replay-neutral
-  (§73). It draws the **local player's** sight only — a rendering scope, not a simulation one.
+  (§73).
+  **It also draws a POOLED HOSTILE SIGHT.** Any enemy that is charging gets the same three lines from its own
+  hull, in **`#ff6b4a`** instead of the player's green — same dash rhythms, same 0.22 + 0.38 opacity ramp,
+  drawn to that weapon's own `maxRange` (67 for the lancer, never clipped to the shooter's vicinity, because
+  the half of the corridor the player reads is the half crossing his own ship). Four pooled entries
+  (`beamHostileSight*`, so a headless scenario can assert on those and not on the player's `beamSight*`), one
+  per shooter, keyed on the entity `beamCharge` now carries. It is **CHARGE-ONLY** — lines from a hostile hull
+  always mean "a shot is coming right now" — and an entry is dropped when its `dur` expires (which is also
+  "it fired"), when the shooter dies, when a room despawns the ghost (`alive = false`), or on `hideBeamFx`.
+  The geometry is re-derived from the shooter's LIVE (in a room, interpolated) heading every frame, never
+  from the event's frozen `pos`.
+  **The hostile pass runs FIRST and unconditionally in `drawBeamSight`**, before the player's — the player's
+  pass returns early for a ship with no beam, which is the usual case, so a hostile pass placed after those
+  returns would never run at all (`40-enemy-beam` fails if it is moved).
+  **Hostile/friendly is decided HERE, in rendering scope**, by asking whether the shooter is in
+  `world.enemies`: the event carries `fromPlayer`, not `side`, so an ally handed a beam would otherwise draw
+  red — and there is still no `side === 'player'` test anywhere in `sim-core`.
+  **Known deferral:** the hostile dashes show the right pattern but do **not FLOW**, because `dashPhase` is
+  advanced inside the player's pass, which returns early for a player with no beam. One line moved fixes it,
+  but it retimes the player's own sight too, so it is on the ROADMAP for the live-tuning pass rather than
+  changed underneath him.
   **Known and accepted:** at the 0.22 idle opacity the sight reads clearly against space (ΔG ≈ +19 on the
   `(27,37,49)` sky) but is **not distinguishable where it crosses a brightly-lit white set-piece** — over
   Level 0's station arm it samples `(237,250,241)` on `(255,255,255)`. Measured on
@@ -3208,10 +3308,15 @@ lock-out — so two ships can carry differently-tuned beams. It **never calls `s
 player/ally paths still consume zero gameplay randomness (§73). Attribution follows §134 unchanged:
 `lastHitBy = 'ally' | 'player'` for credit/XP on the friendly path, and the hostile path reuses
 `resolveHostileBulletHit` (so the shield catches it on the bubble, §76) with a **`null` dodge roll**.
-It emits exactly **two events per shot** — `beamCharge` (pos, dur, weaponClass, fromPlayer) and `beamFire`
-(from, to, hit, absorbed, weaponClass, fromPlayer). The "only your own shots are audible" rule is **unchanged**: both
-beam sounds are gated on `ev.fromPlayer`, exactly like `fire`. The discharge BOLT is drawn whoever fired
-it; the sight's charge clock is gated on `fromPlayer` too, because `beam-fx.js` draws one ship's sight.
+It emits exactly **two events per shot** — `beamCharge` (**ship**, pos, dur, weaponClass, fromPlayer) and
+`beamFire` (from, to, hit, absorbed, weaponClass, fromPlayer). **`ship` is the SHOOTER, an entity REFERENCE
+rather than a value** (one of the two in `EVENT_ENTITY_REFS`): a remote client never ticks that ship's fire
+group, so without a name for the hull its corridor is underivable. The emit is side-agnostic — the player's
+own charge carries the same field — and the renderer, not the simulation, decides whose sight it becomes.
+The "only your own shots are audible" rule is **unchanged**: both beam sounds are gated on `ev.fromPlayer`,
+exactly like `fire`, and **a hostile charge is silent**. The discharge BOLT is drawn whoever fired it; the
+PLAYER's charge clock is still gated on `fromPlayer`, because his sight is a single always-on corridor — a
+hostile's has its own per-shooter pool.
 `step-ally.js`'s two aiming predicates were narrowed from `type !== 'rocket'` to **`type === 'bullet'`**
 (`gunSpeed`, `isBallistic`) so a wingman carrying a beam plus a kinetic never leads the beam group by the
 other gun's projectile speed — a hitscan must not be led. Provably identical for every catalog row that
@@ -3266,9 +3371,14 @@ see this tick's puffs.
 the fixed sim step both hosts must agree on or they are not running the same simulation, DECISIONS §118;
 `bench.js` re-exports it as `BENCH_DT`), `events.js`,
 `world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`, `drops-sim.js`,
-`system-map.js`, `digest.js`, the wingman — **`ally-config.js`** (his loadout + every `ALLY_*` tuning
+`system-map.js`, `digest.js`, **`beam-config.js`** (`withBeamGun` — the pure, unconditional "swap the gun
+mount for the Charged beam" transform behind `?beam`; host-neutral because a netsim ROOM has to apply the
+same swap and cannot read `location.search`), the wingman — **`ally-config.js`** (his loadout + every `ALLY_*` tuning
 constant + `withAllyAt`, the non-mutating "this phase carries an ally" helper) and **`ally.js`**
-(`makeAlly`/`spawnAlly`) — and the whole tick — `tick.js`, `step-player.js`, **`step-ally.js`**,
+(`makeAlly`/`spawnAlly`) — **`lancer-config.js`** (the `?lancer` dev injection: `withLancersAt`, the
+non-mutating "this phase's pool becomes 100% pirate lancers, concurrency clamped to 2" helper; it touches
+`spawn.total` and `advanceWhen` for nothing, because `advanceWhen: { kills: N }` is CUMULATIVE and lowering
+a total below its phase's threshold hangs the level) — and the whole tick — `tick.js`, `step-player.js`, **`step-ally.js`**,
 `step-enemies.js`, `step-projectiles.js`, `level-runner.js`, `reset-world.js` — plus the game's pure rules —
 `components.js` (`deriveDrive`/`shipMass`/`repairTick`/`shieldRecharge`/`applyShieldedDamage`),
 `steering.js`, `spawn-timing.js`, `collision.js`, `level-sim.js`, `drops-config.js`, `autopilot-config.js`,
@@ -3422,11 +3532,25 @@ level under a side-mission run. `window.__netsim.deferredBy` reports the current
   the wire, or a room's client would write his kills into the player's own event log. `socket.js` reads
   `?ally=<phase>` off the handshake; the client's `?ally` dev flag forwards it (`wsUrl`/`connectNetsim`).
   Both are inert without the param — a room with no ally sends `allies: []`.
+  **THREE dev params now ride the handshake, and the rule behind them is general: a dev flag that changes
+  the FIGHT has to reach the room, or the two ends simulate different worlds.**
+  `?ally=<phase>` and **`?lancer=<phase>`** take the same hops (`socket.js` → `createRoom` →
+  `createSimWorld` → `withAllyAt` / `withLancersAt`); **`beam=1`** is a boolean rather than a phase and goes
+  one step further, into `buildShip`, where the player's EFFECTIVE loadout is resolved — applied there and
+  not to the account row, because a failed account lookup falls back to the catalog default and an upstream
+  swap would have silently done nothing in exactly that case. The headless referee
+  (`server/tools/sim-replay.mjs`) passes none of the three, so a re-simulated trace is unchanged.
 - `driver.js` — the 60 Hz clock, with the browser's same bounded catch-up (6 steps) so a stalled event loop
   cannot spiral into fast-forwarding the fight.
-- `protocol.js` — the wire shapes and an **explicit event allowlist**. It exists because `enemyShieldHit`
-  carries a live entity reference; a test parses the catalogue at the top of `sim-core/events.js` and fails
-  if a new event type is not wired, so an unhandled event cannot be silently dropped. **Positional fields
+- `protocol.js` — the wire shapes and an **explicit event allowlist**. It exists because two events carry a
+  live entity reference; a test parses the catalogue at the top of `sim-core/events.js` and fails
+  if a new event type is not wired, so an unhandled event cannot be silently dropped.
+  **`EVENT_ENTITY_REFS` lives in `client/src/sim-core/events.js`, not here** (DECISIONS §136): `protocol.js`
+  imports and re-exports it, and `netsim-world.js hydrateEvent` loops over the SAME table on the way back
+  in. One table, two readers — the client cannot import from `server/` (the browser is served `client/`
+  alone), so the alternative was a server-side table shadowed by a hardcoded `enemyId` line on the client,
+  which is how the next reference gets forgotten on the way back. Today it holds two entries:
+  `enemyShieldHit: ['enemy']` and `beamCharge: ['ship']`. **Positional fields
   are vec-serialized from an explicit `VEC_FIELDS` set (`pos`, `from`, `to`)** rather than by the field
   literally being named `pos` — otherwise the beam's two endpoints would cross as whatever
   `JSON.stringify` makes of a `Vec3` *instance*, which is `{x,y,z}` today only by accident of the class's
@@ -3435,14 +3559,23 @@ level under a side-mission run. `window.__netsim.deferredBy` reports the current
   **The Charged beam adds exactly two events and nothing else** — `beamCharge` (`pos`, `dur`,
   `weaponClass`, `fromPlayer`) and `beamFire` (`from`, `to`, `hit`, `absorbed`, `weaponClass`,
   `fromPlayer`). Both carry the class so the adapter routes each sample through `SOUND_MAP` instead of
-  hardcoding `'beam'` — a second beam row with its own class then gets its own swell and crack. No entity
-  reference (`EVENT_ENTITY_REFS` still holds only `enemyShieldHit.enemy`), **no per-tick charge broadcast
-  and no snapshot column**: a charge is per-ship state that changes every tick and an aiming corridor is
-  per-ship geometry. The corridor's WIDTH is this weapon's lag compensation, which is why it needs no
+  hardcoding `'beam'` — a second beam row with its own class then gets its own swell and crack. `beamCharge`
+  carries **one entity reference, the SHOOTER** (`EVENT_ENTITY_REFS.beamCharge = ['ship']`, serialized as
+  `shipId`), which is what lets a client draw a REMOTE shooter's aiming corridor for a fight it never
+  simulates — the second half of DECISIONS §135's gate, proven end to end by
+  `client/visual/scenarios/41-enemy-beam-netsim.mjs`. `beamFire` carries none and needs none: the sight
+  entry ends on its own `dur`, which IS the sim's `chargeTime`. There is still **no per-tick charge
+  broadcast and no snapshot column**: a charge is per-ship state that changes every tick and an aiming
+  corridor is per-ship geometry. The corridor's WIDTH is this weapon's lag compensation, which is why it needs no
   rewind. `digest.js` is untouched (it hashes transforms/counts/draws, not group state), so the
   determinism hashes do not move. **Known room behaviour:** the player's idle sight still draws (the
   locally-built `world.player` keeps its `groups` and its transform is overwritten per snapshot), but the
-  client has no ticked `g.charge` — which is exactly why the brightening rides the `beamCharge` event. The
+  client has no ticked `g.charge` — which is exactly why the brightening rides the `beamCharge` event.
+  **That only tells the truth because the ROOM agrees about the weapon**, which is why `?beam` is forwarded
+  on the handshake: while it was a browser-only loadout swap, the local copy had a beam group and the server
+  flew the account's real machine gun, so the tab drew a green aiming sight and a lock reticle over a ship
+  that was firing kinetics. A sight derived from a loadout the authority does not share is exactly the lie
+  the three lines exist not to tell. Fixed 2026-08-25. The
   reticle's corridor scan runs over ghost enemies, which do not always carry hitboxes, so it falls back to
   the broad sphere: accurate enough for a sight, and deliberately not "fixed" (§30).
 - `tickets.js` + **`POST /api/ws-ticket`** — single-use, 30 s, in memory. A browser cannot set
@@ -3636,8 +3769,10 @@ first question about a server-run fight is always "am I connected". It reports `
 `__netsim.pause()` / `.resume()` freeze the world on its last known state.
 
 **Guards.** `client/src/netsim-world.test.js` covers reconciliation in Node; `server/src/netsim/*.test.js`
-cover the room, the protocol allowlist, the tickets and the socket end to end; and `37-netsim` proves the
-wiring in a real browser — the room flies the ship, its enemies arrive with bodies, pausing the room freezes
+cover the room, the protocol allowlist, the tickets and the socket end to end — including that a room asked
+for `?lancer` really runs lancers and that **every hostile `beamCharge` crosses the wire with a `shipId` the
+client was already told about by a `spawn`** (with a control asserting a room without the flag runs the
+shipped fight); and `37-netsim` proves the wiring in a real browser — the room flies the ship, its enemies arrive with bodies, pausing the room freezes
 the world (which is how a local sim secretly running underneath would be caught), and a pixel diff with the
 hull hidden proves the ship is actually on screen.
 
@@ -3698,10 +3833,16 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   replay of the staggered level runner + the `isLastKillDrop` reward-drop predicate: `levelEnemyTotal`/
   `simulateLevel`, unit-tested — proves the killed/total counter reaches `enemyTotal` and the drop fires on
   the last kill), `beam-fx.js` (the Charged beam's LOOK — the three-line green sight, the diamond reticle,
-  the muzzle bead, the pooled discharge bolt + impact bloom; `drawBeamSight`/`startBeamCharge`/
-  `spawnBeamBolt`/`hideBeamFx`, all cosmetic and RNG-free), `beam-dev.js` (the `?beam` dev flag —
-  `evalBeamDev`/`beamLoadout`, URL-only, never sticky, a strict no-op when absent; wired into
-  `ship-build.js buildPlayerFor`), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
+  the muzzle bead, the pooled discharge bolt + impact bloom, **and the pooled charge-only HOSTILE sight**
+  (`beamHostileSight*`, `#ff6b4a`, four entries, one per charging enemy); `drawBeamSight`/`startBeamCharge`/
+  **`startHostileBeamCharge`**/`spawnBeamBolt`/`hideBeamFx`, all cosmetic and RNG-free), `beam-dev.js` (the
+  `?beam` dev flag — `evalBeamDev`/`beamLoadout`, URL-only, never sticky, a strict no-op when absent; wired
+  into `ship-build.js buildPlayerFor`, and **forwarded on the netsim handshake** (`beam=1`) so a ROOM mounts
+  the same weapon — the pure swap itself lives in `sim-core/beam-config.js` (`withBeamGun`) precisely so both
+  hosts can apply it — **and the `?lancer` flag beside it**: `evalLancerDev`/`lancerDev`/
+  `lancerDevLevel`/`applyLancerDev`, which swaps a phase's spawn pool for pirate lancers. The two params
+  compose (`?beam&lancer&level=4` is your beam against theirs) and are read independently; `?lancer` is
+  forwarded on the netsim handshake so a ROOM runs the same fight, exactly as `?ally` is), `tune.js` (the dev-only `?tune` palette panel `buildTunePanel`).
 - **Between-battles UI:** `shop.js` (hangar shop + stash + live ship-stats bar; a leaf the Main Window
   calls into), `shop-slots.js` (the pure slot↔weapon-type rule extracted out of `shop.js` so it can be
   unit-tested — `GROUP_WEAPON_TYPE` (`gun: ['bullet','beam']`, `rocket: ['rocket']`), `isWeaponSlot`,
@@ -3793,7 +3934,7 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `world.allies`, `alive` false, one `allyDown` event carrying no reward, and `kills`/`earned`/`earnedXp`/
   `drops` all untouched; `ally-dev.test.js`: the `?ally` flag's URL-only parsing, the `level` param, the two
   composing, and that `withAllyAt` never mutates the level it is given), and
-  **the Charged beam** (`sim-core/beam.test.js`, 24: the **hull-aware corridor in both directions** — a
+  **the Charged beam** (`sim-core/beam.test.js`, 28: the **hull-aware corridor in both directions** — a
   target 4° off the nose at 45 u is hittable because an EDGE line crosses its hull even though its centre
   bearing is outside ±2° (the same test asserts that bearing, so it states the difference from a
   centre-based test rather than re-encoding the implementation), while one 10° off is not; the three drawn
@@ -3811,18 +3952,37 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `RoF 0.7/s` stat line, asserted together with sustained DPS staying deliberately under 60); a lock that dies or warps
   mid-charge falls back to the current candidate and a charge with nothing in the corridor still fires;
   **zero seeded draws** across a full charge + discharge (§73); **the HOSTILE path, driven directly with
-  `side: 'enemy'`** — no ship in the catalog carries a beam, so this is its only exerciser: a hostile beam
+  `side: 'enemy'`** and catalog-free: a hostile beam
   damages a player with `dodge = 100` (the corridor is the dodge), is caught on the shield BUBBLE with the
   drawn endpoint stopping in front of the hull, and picks player-then-allies in list order. That test is
-  what keeps arming a pirate cheap, and it is what fails if a `side === 'player'` shortcut ever creeps in —
-  mutation-verified, along with the centre-based corridor. Finally **the numbers come off the ROW**: two
-  ships carrying differently-tuned beams behave differently in one world (the regression guard for the
-  spike's deleted shared `beamTuning`). `shop-slots.test.js` is the only automated proof the beam is
-  **equippable** at all (the `?beam` flag bypasses the shop); `beam-dev.test.js` covers the flag's URL-only
-  parsing and that `beamLoadout` is identity with it off; `step-ally.test.js` adds that a beam mount is
+  what made arming a pirate cheap, and it is what fails if a `side === 'player'` shortcut ever creeps in —
+  mutation-verified, along with the centre-based corridor. It also asserts that a hostile `beamCharge`
+  **names the SHOOTER entity** with `fromPlayer: false`, and that the player's own charge carries the same
+  field — so the emit is provably side-agnostic. Then **the numbers come off the ROW**: two
+  synthetic beams behave differently in one world (the regression guard for the
+  spike's deleted shared `beamTuning`), and — now that two REAL rows exist — the **pirate lancer** is built
+  from the real catalog and asserted to hold weapon 13 in a single-mount group with `reload` **2.0**, the
+  `BEAM` preset's `ai.range` 50 / `aimTol` 0.12, and a drawn corridor of **67 u, not the player row's 100**.
+  A further case pins the two BALANCE numbers in the units the maintainer chose them in, because both are
+  reachable by accident from several directions: the enemy row's **cooldown 2.0 → a 3.0 s cycle → exactly 15
+  DPS** (with the player's 0.5 asserted untouched beside it), and the lancer's derived **50°/s ± 0.1**,
+  its mass **31** and its **unchanged 30.6 acceleration** — plus the contrast that the gunner and the basic
+  pirate still turn >180°/s, and that 50°/s is below the player's ~96°/s bearing sweep, which is the whole
+  point of the number.
+  `shop-slots.test.js` is the only automated proof the beam is
+  **equippable** at all (the `?beam` flag bypasses the shop); `beam-dev.test.js` covers both flags' URL-only
+  parsing — that `beamLoadout` is identity with `?beam` off, that no spelling of `?beam` arms an enemy
+  (the enemy half has its own param), and that `?beam&lancer&level=4` reads as both independently;
+  `sim-core/lancer-config.test.js` pins `withLancersAt` — the pool swap, the concurrency clamp to 2,
+  non-mutation of the shared seed, and above all that **`spawn.total` and `advanceWhen` come through
+  byte-identical**, because `advanceWhen: { kills: N }` is cumulative and a clamped total hangs the level
+  forever while `enemyTotal` drives the HUD and the last-kill drop;
+  `step-ally.test.js` adds that a beam mount is
   never ballistic and contributes no muzzle speed, and that the narrowing is neutral for every
   bullet/rocket combination that ships today; `netsim-world.test.js` adds that a wire `beamFire` hydrates
-  `from`/`to` back into real `Vec3`s.
+  `from`/`to` back into real `Vec3`s, that a `beamCharge` carrying `shipId` **hydrates to the ghost that id
+  names** (consuming the raw id), that an unknown id resolves to `null` rather than throwing, and that the
+  player's own ref-less charge comes through with no `ship` key at all.
   Run: `cd client && npm test`. **Bench gate** —
   `client/src/bench.test.js` (`evalBench` sticky tri-state + `mulberry32` determinism, still importable from
   `bench.js` which re-exports it from `sim-random.js`) +
@@ -3865,16 +4025,18 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   gets the shop + basic gun). DECISIONS §95.
 - **Auth unit** — `server/src/auth.test.js` (5): scrypt round-trip (right/wrong password), per-user
   salt, token uniqueness + SHA-256 hashing, cookie-header parsing.
-- **The Charged beam's catalog row** — `server/src/catalog_beam.test.js` (6): every `type: 'beam'` row
+- **The Charged beam's catalog row** — `server/src/catalog_beam.test.js` (8, two beam rows × the per-row
+  loop): every `type: 'beam'` row
   carries a positive `power`/`maxRange`/`chargeTime`/`corridorDeg`/`fireCooldown`/`weight` plus a sound
   `class` (a beam reads all five off its own row every tick, and a missing field falls back silently rather
   than throwing), `corridorDeg` is a plausible HALF-angle in DEGREES, and its class routes BOTH a `charge`
   and a `fire` sample to keys that exist in `SOUNDS`. Plus the two group guards: **no seeded ship puts a
   beam in a group with any other mount** (a beam group never reaches `fireMount`, so the rest would go
   silent), **no PLAYER ship has a multi-mount group at all** (`equipItem` replaces the FIRST mount, so two
-  `gun` mounts would strand a kinetic), and the four ENEMY multi-mount groups are pinned by name as a
-  documented list — input to the deferred enemy beam, which must be given its own single-mount group rather
-  than a swapped weapon id.
+  `gun` mounts would strand a kinetic), and the six ENEMY multi-mount groups across four ships are pinned by
+  name as a documented list — which is why an enemy beam gets its own single-mount group rather than a
+  swapped weapon id. The first guard now asserts the beam-carrying groups **by name**: exactly
+  `['pirate lancer/gun']`, so a second beam-armed ship is a deliberate edit rather than a silent one.
 - **The wingman against the real seed** — `server/src/ally-sim.test.js` (25): no shipped level carries an
   `ally` phase; he arrives when his phase starts, exactly once; his loadout is **pinned against catalog
   drift** (200 HP, mass 86, accel 8.7, turn 1.16, shield 20, drone present, **no grab**, weapons 6+3,
@@ -3993,8 +4155,32 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   the 1.0 s fade, and gives the target a large hull so no kill explosion covers the frame. The target is pinned on the centre line during the
   charge on purpose: at 40 u the ±2° corridor is 1.4 u wide against a ~2.6 u hull, so a live AI drifts out
   of it through a 1.0 s charge most of the time, which is the weapon working — the escape is measured
-  exactly in `sim-core/beam.test.js` instead. No enemy
-  is armed and no hostile sight is asserted: that is deferred behind DECISIONS §135).
+  exactly in `sim-core/beam.test.js` instead. It covers the PLAYER's beam only),
+  **the enemy beam** (`40-enemy-beam.mjs`: the LOCAL half of DECISIONS §135's gate. Boots `?lancer&level=4`,
+  flies into the campaign's armed zone to leave roam, and asserts a lancer really carries weapon 13 in a
+  single-mount `gun` group with `maxRange` 67; that with nothing charging **no hostile sight is on screen**
+  (the charge-only half); then steps into a charge with the lancer pinned 25 u dead ahead and every other
+  enemy shoved past its `ai.range`, and captures its reading **inside the stepping loop, on the frame the
+  sight is visible** — a hidden line keeps its `position`, `lineDistance` and colour, so a reading taken
+  afterwards would pass off a stale buffer. It asserts the hostile `#ff6b4a` and *not* the player's green;
+  one colour and one opacity across all three with the centre distinguished only by `dashSize`; that each
+  line spans the weapon's full **67 u** from the LANCER's own muzzle (a corridor clipped to the shooter's
+  vicinity fails here); that it brightens and is brightest LATE; that the release **hides** all three while
+  the bolt is drawn as real geometry; and that the player lost **45** combined shield+hull, not 80. Finally
+  it pauses the rAF clock, steps to a second charge and photographs it, asserting on the **projected screen
+  coordinates** — the corridor spans >200 px and runs well PAST the player's own hull, which is the reading
+  that makes it a warning rather than decoration),
+  and **the enemy beam in a ROOM** (`41-enemy-beam-netsim.mjs`: the other half of the gate, and the reason
+  the gate exists. `?netsim=level-4&lancer&level=4` — the room runs the lancers, this tab simulates nothing.
+  It sends **no input at all** (the supply of telegraphs is finite: an idle player dies in ~3 windows and
+  `stepEnemyAI` holds all fire once he is dead) and takes ONE `waitForFunction` polled on an explicit 100 ms
+  timer — independent of a 2 fps render loop — that returns null until a `beamHostileSightCentre` is visible
+  and returns the whole reading on the frame it is. That single wait is the proof: the room's `beamCharge`
+  crossed the wire, `hydrateEvent` resolved its `shipId` to a ghost, and the renderer drew a corridor for a
+  shooter this tab never simulated, off that ghost's interpolated pose. A timeout fails with the player's
+  liveness and the ghost count in the message, because a bare timeout here reads as "the wire is broken".
+  Mutation-checked: removing `beamCharge: ['ship']` from `EVENT_ENTITY_REFS` leaves **40 passing and 41
+  failing**, which is exactly why both exist).
   Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`; a single scenario:

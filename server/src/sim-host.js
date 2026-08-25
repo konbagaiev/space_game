@@ -24,6 +24,8 @@ import { clearAndPlaceRun, startRun } from '../../client/src/sim-core/reset-worl
 import { seedSim } from '../../client/src/sim-core/sim-random.js';
 import { Vec3 } from '../../client/src/sim-core/vec.js';
 import { withAllyAt } from '../../client/src/sim-core/ally-config.js';
+import { withLancersAt } from '../../client/src/sim-core/lancer-config.js';
+import { withBeamGun } from '../../client/src/sim-core/beam-config.js';
 
 // The catalog the client assembles from `/api` at boot (main.js), built here straight from the seed the
 // server would have served. Same shape, same keys — `world.catalog` is the only way the sim reaches it.
@@ -60,14 +62,25 @@ export function stationFor(mapName) {
 // Build the exact ship a client (or a recording) is playing — id-only refs, so it is independent of any
 // account row. An unknown `shipId` falls back to the catalog's player ship and its default loadout, which
 // is what a trace recorded before those fields existed needs.
-export function buildShip(catalog, { shipId = null, loadout = null, components = null, skills = null } = {}) {
+export function buildShip(catalog, { shipId = null, loadout = null, components = null, skills = null,
+                                     beam = false } = {}) {
   let ship = null;
   for (const s of catalog.shipByName.values()) if (s.id === shipId) { ship = s; break; }
   if (!ship) for (const s of catalog.shipByName.values()) if (s.type === 'player') { ship = s; break; }
   if (!ship) throw new Error('catalog carries no player ship');
+  // `?beam` (dev) is applied HERE, to the EFFECTIVE loadout, rather than to the account row in socket.js.
+  // The fallback is why: an account lookup that fails leaves `loadout` null and the room flies the catalog
+  // default, and a swap applied upstream would have silently done nothing in exactly that case — the same
+  // shape of bug this flag is being forwarded to fix. One place, one resolved loadout, no hole.
+  //
+  // AND ON THAT FALLBACK PATH THE MOUNTS ARE `ship.stats.mounts` — THE MODULE-LEVEL SEED ARRAY. `withBeamGun`
+  // being non-mutating is therefore not a style preference here: mutating in place would rewrite the shared
+  // catalog row and hand every later room in the process a beam-armed player. (Same trap as `withAllyAt`
+  // and `withLancersAt` with a level's `phases`.)
+  const effective = loadout || { mounts: ship.stats.mounts };
   return makePlayer(catalog, {
     ship,
-    loadout: loadout || { mounts: ship.stats.mounts },
+    loadout: beam ? withBeamGun(effective) : effective,
     components: components || ship.components,
     // Skills change the ship — engine power, weapon damage, shield capacity, and (Maneuver) whether the
     // dodge roll DRAWS from the seeded stream at all. A run must therefore be re-simulated with the same
@@ -83,17 +96,25 @@ export function buildShip(catalog, { shipId = null, loadout = null, components =
 // The two-call reset is deliberate and mirrors the browser exactly (`clearAndPlaceRun` → the host's
 // scenery → `startRun`); there is simply no scenery to rebuild in between here.
 // `ally` — the name of the phase this fight's WINGMAN arrives on, or null. A room may be asked to run him
-// (the ?ally dev flag today; Level 5's own descriptor tomorrow). The headless referee
-// (`server/tools/sim-replay.mjs`) passes nothing, so a re-simulated trace is unchanged.
-export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, host = noopHost, ally = null } = {}) {
+// (the ?ally dev flag today; Level 5's own descriptor tomorrow).
+// `lancer` — the name of the phase whose spawn pool becomes 100% PIRATE LANCERS, or null (the ?lancer dev
+// flag today; Level 5's own descriptor tomorrow).
+// `beam` — mount the player's Charged beam (the ?beam dev flag). It has to be honoured HERE and not only in
+// the browser: the room builds the authoritative player, so a client-only swap gave the two ends different
+// weapons and drew an aiming sight over a ship that was firing a machine gun.
+// The headless referee (`server/tools/sim-replay.mjs`) passes NONE of the three, so a re-simulated trace is
+// unchanged.
+export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, host = noopHost, ally = null,
+                                 lancer = null, beam = false } = {}) {
   const catalog = buildCatalog(levelName);
-  // withAllyAt COPIES: `buildCatalog` shares the seed's `phases` array, so mutating it in place would give
-  // every room in this process an ally.
+  // Both transforms COPY: `buildCatalog` shares the seed's `phases` array, so mutating it in place would
+  // give every room in this process an ally (or a wave of lancers).
   if (ally) catalog.level = withAllyAt(catalog.level, ally);
+  if (lancer) catalog.level = withLancersAt(catalog.level, lancer);
   const world = createWorld({ host });
   world.catalog = catalog;
   world.station = stationFor(catalog.level.map);
-  world.player = buildShip(catalog, ship);
+  world.player = buildShip(catalog, { ...ship, beam });
   // The account record the simulation itself consults: `ownsReward` reads it to decide whether the
   // last-kill reward drop should appear at all (you never get a second copy). Left null it always dropped.
   world.activeShip = ship.activeShip || null;

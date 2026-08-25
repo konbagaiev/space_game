@@ -48,7 +48,7 @@ for (const w of beams) {
 }
 
 test('NO seeded ship puts a beam in a fire group with any other mount', () => {
-  let beamGroups = 0;
+  const beamGroups = [];
   const beamIds = new Set(beams.map((w) => w.id));
   for (const ship of SHIPS) {
     const s = ship.stats || {};
@@ -56,15 +56,17 @@ test('NO seeded ship puts a beam in a fire group with any other mount', () => {
     for (const groupName of Object.keys(s.groups || {})) {
       const gm = mounts.filter((m) => m.group === groupName);
       if (!gm.some((m) => beamIds.has(m.weapon))) continue;
-      beamGroups++;
+      beamGroups.push(`${ship.name}/${groupName}`);
       assert.equal(gm.length, 1,
         `${ship.name}'s '${groupName}' group holds a beam AND ${gm.length - 1} other mount(s) — the other `
         + 'mounts would go silent, because a beam group never reaches fireMount');
     }
   }
-  // Stated rather than asserted as a count: no ship in the shipped catalog carries a beam at all today —
-  // it is a PLAYER PURCHASE. The loop above is what protects the day one does.
-  assert.equal(beamGroups, 0, 'no seeded ship carries a beam today (it is bought in the hangar)');
+  // EXACTLY ONE seeded ship carries a beam: the pirate lancer, the worked example of the right way to arm
+  // an enemy with one — its OWN single-mount group, not a weapon id swapped onto an existing pirate
+  // (DECISIONS §135). The player's own beam is a hangar PURCHASE and so appears on no seeded ship row.
+  // Update this list deliberately, never to make a failure go away.
+  assert.deepEqual(beamGroups.sort(), ['pirate lancer/gun']);
 });
 
 test('no PLAYER ship has two mounts in one fire group — the hangar\'s mixed-group trap has no foothold', () => {
@@ -72,7 +74,7 @@ test('no PLAYER ship has two mounts in one fire group — the hangar\'s mixed-gr
   // of the target group, so a player ship with two `gun` mounts would end up with a beam in one and a
   // kinetic in the other — and the kinetic would go silent. Restricted to player ships on purpose: several
   // BOSSES do carry multi-mount groups (twin guns / rocket pods, the staggered-volley feature), and that is
-  // a real constraint on the deferred enemy beam rather than a defect — see the next test.
+  // a real constraint on how an ENEMY may be armed with a beam rather than a defect — see the next test.
   for (const ship of SHIPS.filter((s) => s.type === 'player')) {
     const s = ship.stats || {};
     const mounts = Array.isArray(s.mounts) ? s.mounts : [];
@@ -88,9 +90,9 @@ test('no PLAYER ship has two mounts in one fire group — the hangar\'s mixed-gr
 test('the enemy ships that DO carry multi-mount groups are known, and none of them is a beam', () => {
   // Documented rather than forbidden. Four bosses/mediums fire twin guns or rocket pods out of ONE group,
   // which is exactly what a beam may never share: `isBeamGroup` uses `some`, so a beam dropped into one of
-  // these groups would take the beam path and silence its twin. INPUT TO THE DEFERRED ENEMY BEAM (the gate
-  // in DECISIONS §135): arming one of these means giving it its OWN single-mount group, not swapping a
-  // weapon id. The first test above is the guard that fires if anyone does it the cheap way.
+  // these groups would take the beam path and silence its twin. THIS IS WHY THE PIRATE LANCER IS A NEW SHIP
+  // (DECISIONS §135): arming an enemy with a beam means giving it its OWN single-mount group, not swapping a
+  // weapon id onto one of these. The first test above is the guard that fires if anyone does it the cheap way.
   const beamIds = new Set(beams.map((w) => w.id));
   const multi = [];
   for (const ship of SHIPS) {

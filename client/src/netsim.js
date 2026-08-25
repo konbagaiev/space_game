@@ -92,7 +92,7 @@ export function isUnroomableSideMission(netsim, activeMission) {
 // Build the socket URL from the page's origin (or the configured API base), swapping the scheme. Kept pure
 // so the mapping http→ws / https→wss is testable; getting it wrong on the itch build would be a silent
 // mixed-content failure with no error worth reading.
-export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally }) {
+export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally, lancer, beam }) {
   const base = apiBase || origin;
   const u = new URL('/ws', base);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -102,6 +102,13 @@ export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally })
   // `ally` names the PHASE the wingman arrives on — the dev flag's one hop onto the wire, so a room runs
   // the same simulation the browser would (docs/plans/combat-ally.md).
   if (ally) u.searchParams.set('ally', ally);
+  // `lancer` names the PHASE whose spawn pool becomes pirate lancers — the same one hop onto the wire, so a
+  // room runs the beam-armed fight the browser would (docs/plans/2026-08-25-1433-enemy-charged-beam.md).
+  if (lancer) u.searchParams.set('lancer', lancer);
+  // `beam` is a BOOLEAN flag, not a phase name — it says "mount the Charged beam on the player". It has to
+  // cross the wire because the ROOM builds the player: without it the server flies the account's real gun
+  // while this tab draws a beam sight over it, which is what the aiming lines are there NOT to do.
+  if (beam) u.searchParams.set('beam', '1');
   return u.toString();
 }
 
@@ -158,7 +165,7 @@ export function createUplink({ send, batch = INPUT_BATCH }) {
 //
 // Failure is quiet and total: if the ticket or the socket fails there is no half-connected state to reason
 // about, `onError` fires once, and the caller decides what the player sees.
-export async function connectNetsim({ playerId, level, seed, ally = null, origin = location.origin,
+export async function connectNetsim({ playerId, level, seed, ally = null, lancer = null, beam = null, origin = location.origin,
                                       onWelcome, onSnapshot, onClose, onError,
                                       fetchFn = fetch, WebSocketImpl = WebSocket } = {}) {
   let res;
@@ -171,7 +178,7 @@ export async function connectNetsim({ playerId, level, seed, ally = null, origin
   if (!res.ok) { onError?.(new Error(`ws-ticket ${res.status}`)); return null; }
   const { ticket } = await res.json();
 
-  const ws = new WebSocketImpl(wsUrl({ origin, ticket, level, seed, ally }));
+  const ws = new WebSocketImpl(wsUrl({ origin, ticket, level, seed, ally, lancer, beam }));
   // Attached BEFORE the socket opens: the room sends `welcome` the instant the upgrade completes, so a
   // handler installed on `open` races it and loses the message.
   ws.onmessage = (ev) => {

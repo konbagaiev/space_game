@@ -93,6 +93,12 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
       // only today (the client's `?ally` flag forwards it); Level 5's own descriptor will carry the field
       // and need no param at all.
       const ally = params.get('ally') || null;
+      // ?lancer=<phase> on the handshake: the room swaps that phase's spawn pool for pirate lancers, so a
+      // room runs the same beam-armed fight the client-side flag produces. Dev only today.
+      const lancer = params.get('lancer') || null;
+      // ?beam=1 on the handshake: mount the player's Charged beam in the ROOM too. Without it the server
+      // flies the account's real gun while the client draws a beam sight over it (see sim-core/beam-config.js).
+      const beam = params.get('beam') === '1';
       const seed = (Number(params.get('seed')) >>> 0) || (Math.random() * 0xffffffff) >>> 0;
       // The player's real ship, from their account. A lookup failure is not fatal — the room falls back to
       // the catalog default, which is what every room used to fly.
@@ -107,7 +113,7 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
 
       let room;
       try {
-        room = createRoom({ levelName, seed, ship, ally,
+        room = createRoom({ levelName, seed, ship, ally, lancer, beam,
           onEconomy: makeEconomySink({ playerId, level: levelName, bankRun, log }) });
       } catch (err) {
         // An unknown level is the client's mistake, not a crash: say so and close.

@@ -4,10 +4,10 @@
 //   1. PAINT ≡ CORRIDOR ≡ HIT. One hull-aware predicate decides the reticle, the lock and the shot. A ±2°
 //      corridor is NARROWER THAN A SHIP at most ranges, so a centre-based test would paint targets it
 //      cannot hit — the three drawn lines would lie, which is the one thing they promise not to do.
-//   2. THE SIMULATION IS SIDE-AGNOSTIC. No ship in the shipped catalog carries a beam (it is a player
-//      purchase), so the hostile path has no in-game exerciser at all. Test 7 drives it directly. Without
-//      it, someone could make the whole weapon player-only and every other test here would stay green —
-//      and arming a pirate later would stop being a catalog edit.
+//   2. THE SIMULATION IS SIDE-AGNOSTIC. Test 7 drives the hostile path directly, with `side: 'enemy'` and
+//      no catalog at all. Without it, someone could make the whole weapon player-only and every other test
+//      here would stay green — and arming a pirate would stop being a catalog edit. (There IS a beam-armed
+//      enemy in the catalog now, the pirate lancer; test 9 pins its real row against the player's.)
 //   3. THE NUMBERS LIVE IN THE WEAPON ROW. Two ships must be able to carry differently-tuned beams; the
 //      throwaway spike kept them in one shared module object, and test 8 is the regression guard for that.
 //   4. ZERO RNG DRAWS on the player/ally path (DECISIONS §73).
@@ -316,12 +316,11 @@ test('a full player charge + discharge consumes ZERO gameplay randomness (DECISI
   assert.equal(simRandomDraws(), before, 'not one draw — every recorded trace stays bit-identical');
 });
 
-// ---------- 7. no dodge, and THE HOSTILE PATH EXISTS ----------
+// ---------- 7. no dodge, and THE HOSTILE PATH IS THE SAME PATH ----------
 //
-// No enemy in the shipped catalog carries a beam — it is a player purchase (plan §2d) — so this is the only
-// exerciser the hostile path has. It is deliberately driven with `side: 'enemy'` straight into
-// `updateBeamGroup`: the evidence that arming a pirate later is a catalog edit plus rendering work, not a
-// simulation change. A `side === 'player'` shortcut anywhere in beam.js makes THIS test fail.
+// Driven with `side: 'enemy'` straight into `updateBeamGroup`, catalog-free: the evidence that arming a
+// pirate is a catalog edit plus rendering work, not a simulation change. A `side === 'player'` shortcut
+// anywhere in beam.js makes THIS test fail.
 
 test('a HOSTILE beam damages the player through the same side-agnostic path — and dodge does not save him', () => {
   const hostile = shooter({ heading: 0, class: 'fighter' });
@@ -338,6 +337,38 @@ test('a HOSTILE beam damages the player through the same side-agnostic path — 
   assert.equal(victim.hp, victim.maxHp - BEAM.power, 'the corridor IS the dodge — no roll, no escape (§135)');
   assert.ok(events.some((e) => e.type === 'hit' && e.target === 'player'));
   assert.equal(events.find((e) => e.type === 'beamFire').fromPlayer, false, 'and it is not the player\'s shot');
+});
+
+test('a hostile beamCharge names the SHOOTER, so a client can draw a corridor it never ticked', () => {
+  // The wire's one entity reference (EVENT_ENTITY_REFS, sim-core/events.js). In a netsim room a remote
+  // shooter's fire group is never ticked — the ghost keeps its `groups`, but nothing advances `g.charge` —
+  // so without a name for the hull there is nothing to hang the corridor on. Side-agnostic: it is the same
+  // field on the player's own charge, and the RENDERER decides whose sight it becomes.
+  const hostile = shooter({ heading: 0, class: 'fighter' });
+  const victim = target(0, 40, { class: 'player' });
+  const w = fight({ player: victim, enemies: [] });
+  const events = [];
+  for (let i = 0; i < 5; i++) {
+    updateBeamGroup(w, hostile, hostile.groups.gun, FWD, 'enemy', DT, () => true);
+    w.events.drain((e) => events.push(e));
+  }
+  const charge = events.find((e) => e.type === 'beamCharge');
+  assert.ok(charge, 'the hostile charge is announced at all');
+  assert.equal(charge.ship, hostile, 'and it carries the SHOOTER entity, not a copied position');
+  assert.equal(charge.fromPlayer, false);
+  assert.ok(charge.pos instanceof Vec3, 'the muzzle position still rides along, cloned as ever');
+
+  // The player's own charge carries the same field — no `side` branch in the emit.
+  const p = shooter({ heading: 0, class: 'player' });
+  const w2 = fight({ player: p, enemies: [target(0, 40)] });
+  const own = [];
+  for (let i = 0; i < 5; i++) {
+    updateBeamGroup(w2, p, p.groups.gun, FWD, 'player', DT, () => true);
+    w2.events.drain((e) => own.push(e));
+  }
+  const mine = own.find((e) => e.type === 'beamCharge');
+  assert.equal(mine.ship, p, 'the player\'s charge names him too — the emit is side-agnostic');
+  assert.equal(mine.fromPlayer, true);
 });
 
 test('a hostile beam is caught on the SHIELD BUBBLE, not the hull inside it (§76)', () => {
@@ -440,6 +471,140 @@ test('beamGroupOf finds the ship\'s beam group, or null for every ship that has 
   assert.equal(beamGroupOf({ groups: { gun: { mounts: [{ weapon: { type: 'bullet' } }] } } }), null);
   assert.equal(beamGroupOf(null), null);
   assert.equal(beamGroupOf({}), null);
+});
+
+// ---------- 9. TWO REAL CATALOG BEAMS, differently tuned, in the same catalog ----------
+//
+// Test 8 proves the rule against synthetic rows. This one proves the SHIPPED rows actually differ, which is
+// the whole reason the pirate lancer got its own weapon id instead of borrowing the player's: the enemy beam
+// is 45 damage over 67 u, the player's is 80 over 100, and nothing shared can make them agree.
+test('the pirate lancer carries weapon 13 in its OWN single-mount group, tuned apart from the player\'s 12', async () => {
+  const { WEAPONS, SHIPS } = await import('../../../server/src/catalog_seed.js');
+  const lancer = SHIPS.find((sh) => sh.name === 'pirate lancer');
+  assert.ok(lancer, 'the catalog has a pirate lancer');
+  const mounts = lancer.stats.mounts.filter((m) => m.group === 'gun');
+  assert.equal(mounts.length, 1,
+    'a beam group must hold EXACTLY one mount — isBeamGroup uses `some`, so any other mount in it goes silent');
+  assert.equal(mounts[0].weapon, 13);
+  assert.deepEqual(Object.keys(lancer.stats.groups), ['gun'], 'and it carries nothing else at all');
+
+  const theirs = WEAPONS.find((w) => w.id === 13).stats;
+  const ours = WEAPONS.find((w) => w.id === 12).stats;
+  assert.equal(theirs.power, 45); assert.equal(ours.power, 80);
+  assert.equal(theirs.maxRange, 67); assert.equal(ours.maxRange, 100);
+  assert.equal(theirs.chargeTime, ours.chargeTime, 'the telegraph length is NOT the lever — both are 1.0 s');
+  assert.equal(theirs.corridorDeg, ours.corridorDeg);
+  // THE COOLDOWN IS THE SECOND LEVER, and it is 4x the player's. Set by the maintainer after flying the
+  // first pass (2026-08-25): 1.0 s charge + 2.0 s cooldown = a 3.0 s cycle = 15 sustained DPS, which is
+  // BELOW the pirate machine gun's 16.7 — the beam trades rate of fire for a big announced hit.
+  assert.equal(theirs.fireCooldown, 2.0);
+  assert.equal(ours.fireCooldown, 0.5, 'and the PLAYER\'s row is untouched by that retune');
+  assert.equal(theirs.power / (theirs.chargeTime + theirs.fireCooldown), 15, 'sustained DPS is 15');
+  assert.equal(theirs.buyable, false, 'enemy gear: never in the shop');
+  assert.equal(theirs.minLevel, undefined, 'a hidden row needs no level gate');
+});
+
+// THE TURN RATE IS A BALANCE NUMBER, so it gets an assertion — it is DERIVED (thruster power × mass), which
+// means it can be changed from three different places by accident: the thruster row, the hull/engine
+// weights, or the beam's own weight. This pins the OUTCOME, in the unit the maintainer chose it in.
+test('the pirate lancer turns at 50 deg/s, ties the other two slow fighters, and is slower than the player', async () => {
+  const { COMPONENTS, WEAPONS, SHIPS } = await import('../../../server/src/catalog_seed.js');
+  const { deriveDrive, REFERENCE_MASS } = await import('./components.js');
+  const byId = Object.fromEntries(COMPONENTS.map((c) => [c.id, c]));
+  const part = (id) => (id ? { weight: byId[id].weight, ...byId[id].stats } : null);
+  const build = (sh) => deriveDrive({
+    hull: part(sh.components.hull), engine: part(sh.components.engine), thruster: part(sh.components.thruster),
+    repair: part(sh.components.repair), grab: part(sh.components.grab), shield: part(sh.components.shield),
+    mounts: sh.stats.mounts.map((m) => ({ weapon: { weight: WEAPONS.find((w) => w.id === m.weapon).stats.weight } })),
+  });
+  const byName = (n) => build(SHIPS.find((sh) => sh.name === n));
+  const deg = (r) => r * 180 / Math.PI;
+
+  const lancer = byName('pirate lancer');
+  assert.equal(lancer.mass, 31, 'hull 10 + engine 6 + thrusters 3 + the beam\'s own 12');
+  assert.ok(Math.abs(deg(lancer.turnRate) - 50) < 0.1,
+    `50 deg/s, the maintainer's number after flying it (got ${deg(lancer.turnRate).toFixed(2)})`);
+  // ACCELERATION IS DELIBERATELY UNCHANGED: he asked to slow the TURN, not the ship, which is why the
+  // thruster rows keep the Scout thrusters' weight 3 and the masses stay put.
+  assert.ok(Math.abs(lancer.acceleration - (19 * REFERENCE_MASS / 31)) < 1e-9);
+  assert.ok(Math.abs(lancer.acceleration - 30.645) < 0.01, `accel 30.6 (got ${lancer.acceleration.toFixed(3)})`);
+
+  // NO SUPERLATIVE HERE, ON PURPOSE. "The slowest enemy" was false (the heavy capitals are slower), and
+  // "the slowest fighter" became a TIE the moment the gunner and the advanced rocket pirate were brought
+  // down to 50 as well (2026-08-25). The ladder is the durable fact, so the ladder is what is asserted.
+  const slowTier = ['pirate lancer', 'pirate gunner', 'advanced rocket pirate'];
+  for (const n of slowTier) {
+    assert.ok(Math.abs(deg(byName(n).turnRate) - 50) < 0.1,
+      `${n} is in the 50 deg/s tier (got ${deg(byName(n).turnRate).toFixed(2)}) — note a thruster row hits `
+      + '50 at ONE mass only, so these three need two different rows (32 at mass 31, 33 at mass 25)');
+  }
+
+  // THE SAFETY PROPERTY OF THAT RETUNE, AND THE REASON IT WAS ALLOWED TO SHIP HERE: the INTRO's two ships
+  // are excluded and stay fast. Level-0's pool is exactly these two and level-0 carries `introTrace`, which
+  // the cutscene AND `36-sim-divergence` re-simulate — slowing either would move the recorded archive
+  // (DECISIONS §73). If someone "finishes the job" by putting them on the 50 deg/s rows, this fails first
+  // and says why, instead of the gates failing later with a bare hash mismatch.
+  assert.ok(deg(byName('Basic pirate ship').turnRate) > 210,
+    `the intro's basic pirate stays FAST (${deg(byName('Basic pirate ship').turnRate).toFixed(0)} deg/s) — it is in level-0's pool`);
+  assert.ok(deg(byName('basic rocket pirate').turnRate) > 165,
+    `and so does the intro's rocket pirate (${deg(byName('basic rocket pirate').turnRate).toFixed(0)} deg/s)`);
+
+  // The capitals are slower still, on MASS alone — which is why "slowest enemy" was never true.
+  const mini = byName('pirate mini boss');
+  assert.ok(deg(mini.turnRate) < deg(lancer.turnRate),
+    `a heavy capital turns SLOWER than the 50 deg/s tier (mini boss ${deg(mini.turnRate).toFixed(0)} deg/s)`);
+
+  const fighters = SHIPS.filter((sh) => sh.type === 'enemy' && sh.stats.class === 'fighter').map(build);
+  // `[].every()` is TRUE, so the check below would go green testing nothing if `stats.class` were ever
+  // renamed. Pin the population first — the same guard `boundary.test.js` puts in front of its own loop.
+  assert.equal(fighters.length, 5,
+    `expected the catalog's 5 enemy fighters, found ${fighters.length} — a rename of \`stats.class\` must `
+    + 'not silently empty this check');
+  assert.ok(fighters.every((f) => deg(f.turnRate) >= 50 - 0.1),
+    'and 50 deg/s is the FLOOR of the fighter tier — no fighter turns slower than it');
+
+  // THE POINT OF THE NUMBER: it turns slower than a player's bearing sweep at the AI's 14-22 u standoff
+  // (PLAYER_MAX_SPEED 30 / 18 u = 1.67 rad/s = 96 deg/s), so the corridor can be escaped during the charge.
+  const player = byName('Basic player ship');
+  assert.ok(Math.abs(deg(player.turnRate) - 114.6) < 0.5,
+    `the player is untouched at ~115 deg/s (got ${deg(player.turnRate).toFixed(2)})`);
+  assert.ok(deg(lancer.turnRate) < deg(player.turnRate), 'the lancer turns slower than the player');
+  const sweepDeg = deg(30 / 18);
+  assert.ok(deg(lancer.turnRate) < sweepDeg,
+    `50 < the player's ~${sweepDeg.toFixed(0)} deg/s bearing sweep, so the beam is genuinely escapable`);
+});
+
+test('a lancer built from the REAL catalog reloads in 2.0 s and draws a 67 u corridor, not 100', async () => {
+  // Built the way the simulation builds it (`buildGroups` → `reload = max(mount.fireCooldown)`), so the
+  // 1.0 + 2.0 = 3.0 s cycle is read off the real row rather than asserted about it.
+  const { createSimWorld } = await import('../../../server/src/sim-host.js');
+  const { makeEnemyShell } = await import('./ship-entity.js');
+  const world = createSimWorld({ levelName: 'level-4', seed: 3 });
+  const row = world.catalog.shipByName.get('pirate lancer');
+  assert.ok(row, 'the room\'s catalog resolves the lancer by name — this is how a spawn pool names it');
+  const e = makeEnemyShell(world.catalog, row, new Vec3(0, 0.6, 0), 0);
+
+  const g = beamGroupOf(e);
+  assert.ok(g, 'its gun group takes the BEAM path');
+  assert.equal(g.mounts.length, 1);
+  assert.equal(g.reload, 2.0, 'the post-discharge lock-out, off the mount\'s own fireCooldown');
+  assert.equal(g.ai.range, 50, 'the BEAM preset gates the START of a charge at 50 u — not the fighting distance');
+  assert.equal(g.ai.aimTol, 0.12);
+
+  const w = beamWeaponOf(g);
+  assert.equal(w.maxRange, 67);
+  assert.equal(chargeTimeOf(w), 1.0);
+
+  // THE DRAWN CORRIDOR IS THIS WEAPON'S REACH. The sight is drawn from exactly these endpoints, so a
+  // corridor built off the player's 100 would be a telegraph that promised a shot 33 u longer than the one
+  // it can take.
+  const fwd = new Vec3(0, 0, 1);
+  const muzzle = new Vec3(), endC = new Vec3(), endL = new Vec3(), endR = new Vec3();
+  beamMuzzle(e, fwd, muzzle);
+  corridorEnds(e, fwd, w.maxRange, corridorRadOf(w), endC, endL, endR);
+  const len = Math.hypot(endC.x - muzzle.x, endC.z - muzzle.z);
+  assert.ok(Math.abs(len - 67) < 1e-6, `the centre line spans the row's 67 u (got ${len.toFixed(3)})`);
+  assert.notEqual(Math.round(len), 100, 'and emphatically not the player row\'s 100');
 });
 
 // ---------- a charge must NOT survive a run reset ----------

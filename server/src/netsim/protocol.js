@@ -52,8 +52,10 @@ export const EVENT_FIELDS = {
   // The charged beam, two events per shot and nothing else: the start of the charge and the release. A
   // charge is per-ship state that changes every tick and an aiming corridor is per-ship geometry — neither
   // is broadcast. The corridor's WIDTH is this weapon's lag compensation, which is why it needs no rewind.
-  // No entity reference: the only consumer of one would be drawing a REMOTE shooter's corridor, and the
-  // hostile sight is deferred (plan §2d). The local player's own charge needs none — he is world.player.
+  // It DOES carry one entity reference, and only one: the SHOOTER, added by `wireEvent`'s second loop as
+  // `shipId` off `EVENT_ENTITY_REFS` rather than listed here. A remote shooter's fire group is never ticked
+  // in this tab, so its corridor is underivable without a name for the hull to draw it from. The player's
+  // own charge needs none — he is `world.player`, and `idOf` returns null for him anyway.
   beamCharge:       ['pos', 'dur', 'weaponClass', 'fromPlayer'],
   beamFire:         ['from', 'to', 'hit', 'absorbed', 'weaponClass', 'fromPlayer'],
   pickup:           ['item'],
@@ -82,7 +84,12 @@ export const EVENT_FIELDS = {
 // reaches that tick, so FX and audio land on the frame that shows what they describe.
 
 // Fields holding a live entity, replaced by that entity's network id under the same name + `Id`.
-export const EVENT_ENTITY_REFS = { enemyShieldHit: ['enemy'] };
+// ONE TABLE, TWO READERS — it lives in host-neutral `sim-core/events.js` because the client cannot import
+// from `server/` (the browser is served `client/` alone), and a server-side table shadowed by a hardcoded
+// rehydration line on the client is how the third reference gets forgotten on the way back (DECISIONS §136).
+// Re-exported here so `protocol.js` stays the one place the wire's shape is read from.
+export { EVENT_ENTITY_REFS } from '../../../client/src/sim-core/events.js';
+import { EVENT_ENTITY_REFS } from '../../../client/src/sim-core/events.js';
 
 const vec = (v) => (v ? { x: v.x, y: v.y, z: v.z } : null);
 

@@ -9,8 +9,10 @@
 // **Events carry copied values, never live references to moving state.** The queue is drained at the end
 // of the tick, by which time a bullet's `pos` has moved on and its entity may be gone. An event describes
 // what happened *at the moment it happened*, so positions are cloned at emit time. (Entity references are
-// the exception, and deliberate: `enemyShieldHit` binds a pooled bubble to a specific ship, which is
-// identity, not a value — exactly as it did when the call was inline.)
+// the exception, and deliberate — there are exactly two, both IDENTITY rather than a value, and both listed
+// in `EVENT_ENTITY_REFS` below: `enemyShieldHit` binds a pooled bubble to a specific ship, and `beamCharge`
+// names the SHOOTER, because a corridor must be redrawn from that hull's pose every frame for a whole
+// second and a copied position at charge start would be a lie by the time the shot lands.)
 //
 // See docs/plans/server-authoritative-sim.md (Slice B2).
 
@@ -24,8 +26,10 @@
 //   { type: 'shieldReady' }                                            the player's shield finished recharging
 //   { type: 'fire',            weaponClass, isRocket, fromPlayer }      a mount fired (only the player's is audible)
 //   { type: 'evade',           pos }                                   a shot was dodged (Maneuver skill)
-//   { type: 'beamCharge',      pos, dur, weaponClass, fromPlayer }     a beam started charging (the sight
-//                                                                       brightens over `dur` seconds)
+//   { type: 'beamCharge',      ship, pos, dur, weaponClass, fromPlayer }  a beam started charging (the sight
+//                                                                       brightens over `dur` seconds; `ship`
+//                                                                       is the SHOOTER — an entity ref, so a
+//                                                                       client can draw a REMOTE corridor)
 //   { type: 'beamFire',        from, to, hit, absorbed, weaponClass, fromPlayer }  the discharge itself —
 //                                                                       a hitscan, so it is already resolved
 //   { type: 'pickup',          item }                                  the Grab collected a loot drop
@@ -52,6 +56,16 @@
 //
 // Note `banner` carries an i18n KEY plus params, never a translated string: `t()` is a client concern and
 // must not be reachable from a headless authority.
+
+// Fields holding a LIVE ENTITY rather than a value. One table, two readers: the room swaps each for a
+// network id on the way out (server/src/netsim/protocol.js wireEvent), and a netsim client swaps it back for
+// the ghost that id names (client/src/netsim-world.js hydrateEvent). It lives HERE, in host-neutral
+// sim-core, because the client cannot import from server/ — the browser is served client/ alone — and the
+// alternative was a table on the server shadowed by a hardcoded `enemyId` line on the client. (DECISIONS §136)
+export const EVENT_ENTITY_REFS = {
+  enemyShieldHit: ['enemy'],  // bind a pooled shield bubble to a specific ship
+  beamCharge: ['ship'],       // the SHOOTER, so a client can draw a remote corridor (DECISIONS §135's gate)
+};
 
 export function createEventQueue() {
   const q = [];

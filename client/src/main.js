@@ -35,6 +35,7 @@ import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObj
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { allyDev, allyDevLevel, applyAllyDev } from './ally-dev.js'; // ?ally dev flag: the wingman's arrival phase (+ the level it forces)
+import { beamDev, lancerDev, lancerDevLevel, applyLancerDev } from './beam-dev.js'; // ?beam / ?lancer dev flags: the player's beam, the pirate lancer's spawn phase (+ the level it forces)
 import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
@@ -934,6 +935,8 @@ async function startNetsim() {
     netLink = await connectNetsim({
       playerId: G.playerId, level, seed: NETSIM.seed,
       ally: allyDev()?.phase || null,   // ?ally (dev): ask the room to run the wingman on that phase
+      lancer: lancerDev()?.phase || null, // ?lancer (dev): ask the room to fly that phase against pirate lancers
+      beam: beamDev() || null,            // ?beam (dev): the ROOM must mount the beam too, or it flies the real gun
       onWelcome: (w) => {
         netState.welcome = w;
         netState.jerk?.mark('welcome', { tick: w.tick, level: w.level, snapshotEvery: w.snapshotEvery }, perfNow());
@@ -2007,14 +2010,14 @@ async function bootstrap() {
         return;
       }
     }
-    // ?record forces the requested level; ?playback uses the recorded level; `?ally&level=N` forces one too
-    // (same `level` param, same normalization — a wingman test flight must not depend on campaign progress,
-    // and Level 3 and Level 4 have identical phase NAMES, so aiming at one and landing on the other was
-    // invisible from the URL). Otherwise the player's progress level.
-    const allyLevel = allyDevLevel();
+    // ?record forces the requested level; ?playback uses the recorded level; `?ally&level=N` and
+    // `?lancer&level=N` force one too (same `level` param, same normalization — a dev test flight must not
+    // depend on campaign progress, and Level 3 and Level 4 have identical phase NAMES, so aiming at one and
+    // landing on the other was invisible from the URL). Otherwise the player's progress level.
+    const devLevel = allyDevLevel() || lancerDevLevel();
     const levelUrl = REC ? `/api/levels/${REC.level}`
       : rs.play ? `/api/levels/${traceLevelName(rs.trace)}`  // pre-v3 traces name the pre-renumbering level
-      : allyLevel ? `/api/levels/${allyLevel}`
+      : devLevel ? `/api/levels/${devLevel}`
       : G.playerId ? `/api/players/${G.playerId}/level` : '/api/levels/level-0';
     const [weapons, components, ships, level, sounds] = await Promise.all([
       fetchJson('/api/weapons'), fetchJson('/api/components'),
@@ -2042,7 +2045,9 @@ async function bootstrap() {
     for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);
-    CATALOG.level = applyAllyDev(level.descriptor); // ?ally (dev): inject the wingman's arrival phase
+    // ?ally / ?lancer (dev): inject the wingman's arrival phase and/or swap a phase's pool for pirate
+    // lancers. The two COMPOSE, and each is a strict no-op with its own flag off (the same object back out).
+    CATALOG.level = applyLancerDev(applyAllyDev(level.descriptor));
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
 
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map

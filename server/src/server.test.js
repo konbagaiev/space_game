@@ -394,11 +394,12 @@ test('events: records an allowlisted event (204), rejects unknown/junk (400), st
 
 test('catalog: ships are seeded (player + enemies) with stats', async () => {
   const ships = await getJson('/api/ships');
-  assert.equal(ships.length, 9);
+  assert.equal(ships.length, 10);
   const names = ships.map((s) => s.name);
   assert.deepEqual(names.sort(),
     ['Basic player ship', 'Basic pirate ship', 'pirate mini boss', 'basic rocket pirate', 'first pirate boss',
-     'pirate gunner', 'advanced medium pirate', 'second pirate boss', 'advanced rocket pirate'].sort());
+     'pirate gunner', 'advanced medium pirate', 'second pirate boss', 'advanced rocket pirate',
+     'pirate lancer'].sort());
   const player = ships.find((s) => s.name === 'Basic player ship');
   assert.equal(player.type, 'player');
   assert.equal(player.modelUrl, 'assets/ships/player_combat.9188c820.glb'); // real "Air & Space Vessel" model (textured)
@@ -415,7 +416,7 @@ test('catalog: ships are seeded (player + enemies) with stats', async () => {
   assert.equal(player.stats.mounts[0].weapon, 1);              // mounts reference weapons BY ID
   assert.ok(player.stats.groups.gun, 'player has a gun group');
   const enemies = ships.filter((s) => s.type === 'enemy');
-  assert.equal(enemies.length, 8); // fighter, rocketeer, mini-boss, first boss, pirate gunner, advanced medium pirate, second boss, advanced rocket pirate
+  assert.equal(enemies.length, 9); // fighter, rocketeer, mini-boss, first boss, pirate gunner, advanced medium pirate, second boss, advanced rocket pirate, pirate lancer
   // fighter + rocketeer share the same light hull + scout engine + scout thrusters
   const fighter = ships.find((s) => s.name === 'Basic pirate ship');
   const rocketeer = ships.find((s) => s.name === 'basic rocket pirate');
@@ -441,8 +442,12 @@ test('catalog: components (hulls + engines + thrusters + repair drone) are seede
   const comps = await getJson('/api/components');
   // 4 hulls + 3 engines + 4 thrusters + 1 repair drone (enemy/starter) + 6 player-shop ladder rows
   // (Heavy hull 13, Solid-fuel 15, Ion 16, Repair II 19, Nanobot 20, Advanced thrusters 21)
-  // + 2 Grab components (base 29, advanced 30) + 1 base shield (31) = 28
-  assert.equal(comps.length, 28);
+  // + 2 Grab components (base 29, advanced 30) + 1 base shield (31)
+  // + 2 slow pirate thrusters (32 'Pirate fighter thruster' @ mass 31, 33 'Pirate skirmisher thruster' @
+  //   mass 25) — the 50 deg/s rows. Turn rate is DERIVED from thruster power AND mass, so a thruster hits
+  //   50 at exactly one mass: three ships at 50 deg/s need TWO rows, not one. Same per-ship-thruster
+  //   pattern as Pirate medium 25 and Second-boss 27. = 30
+  assert.equal(comps.length, 30);
   const drone = comps.find((c) => c.name === 'Repair drone');
   assert.equal(drone.id, 12);
   assert.equal(drone.type, 'repair');
@@ -518,7 +523,8 @@ test('catalog: weapons are seeded with type bullet/rocket/beam', async () => {
   const weapons = await getJson('/api/weapons');
   // 5 base (ids 1–5) + 3 player-shop ladder weapons (Heavy cannon 6, Heavy Machine Gun 7, Heavy rocket 8)
   // + 2 enemy weapons (ids 9–10) + Triple spiral rocket (11) + Charged beam (12)
-  assert.equal(weapons.length, 12);
+  // + the pirate lancer's weakened enemy-only Pirate charged beam (13)
+  assert.equal(weapons.length, 13);
   const types = new Set(weapons.map((w) => w.type));
   assert.deepEqual([...types].sort(), ['beam', 'bullet', 'rocket']);
   // The Charged beam: the third type, and the one whose numbers are read off the row every tick.

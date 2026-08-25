@@ -36,7 +36,7 @@ import { startLevel, updateLevelRunner, winLevel, finishMission as finishMission
 import { clearAndPlaceRun, startRun } from './sim-core/reset-world.js';
 import { simTick as simTickIn } from './sim-core/tick.js';
 import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
-import { drawBeamSight, startBeamCharge, spawnBeamBolt, hideBeamFx } from './beam-fx.js';
+import { drawBeamSight, startBeamCharge, startHostileBeamCharge, spawnBeamBolt, hideBeamFx } from './beam-fx.js';
 import { track, currentLevelLabel, bankRun, commitLevelAdvance, loadAdvancedLevel, depositLoot,
          reportMissionCleared, refreshAfterRoomBank } from './net.js';
 import { t } from './i18n.js';
@@ -305,12 +305,11 @@ function applySimEvent(ev) {
     // resolve their sample through the event's OWN `weaponClass` — never a hardcoded 'beam' — so a second
     // beam row with its own class gets its own charge and discharge samples.
     //
-    // Both the sight's charge clock and the audio are gated on `ev.fromPlayer`. The audio for the usual
-    // reason — only your own shots are audible. The CLOCK because `beam-fx.js` draws exactly one ship's
-    // sight (the local player's), so a wingman handed a beam would otherwise brighten the PLAYER's sight
-    // and stop it again on his own release. Not reachable in shipped play today (no ship carries a beam
-    // until the player buys one), and it dissolves the day `beamCharge` carries a shooter reference — which
-    // is the deferred work in the plan's §2d, gated by DECISIONS §135.
+    // The PLAYER's charge clock and the audio are both gated on `ev.fromPlayer`. The audio for the usual
+    // reason — only your own shots are audible, and the beam makes no exception. The clock because the
+    // player's own sight is a single always-on corridor: a wingman handed a beam must not brighten it and
+    // stop it again on his own release. A HOSTILE's charge is no longer that problem — it has its own
+    // per-shooter pool in `beam-fx.js`, keyed on the shooter the event now carries (DECISIONS §135's gate).
     case 'beamCharge':
       if (ev.fromPlayer) {
         startBeamCharge(ev.dur);
@@ -319,6 +318,12 @@ function applySimEvent(ev) {
         // random per-shot pitch jitter sfx.shoot applies by default — a timing cue must sound identical
         // every time.
         audio.sfx.shoot(sfxFor('weapon', ev.weaponClass, 'charge'), { rate: BEAM_CHARGE_CLIP_SEC / (ev.dur || 1) });
+      } else if (ev.ship) {
+        // A HOSTILE is charging: draw its corridor, in the hostile hue, for exactly its `dur`. SILENT — only
+        // your own shots are audible, and the beam makes no exception (DECISIONS §135's gate names the sight
+        // and the wire ref, not a sound). `ev.ship` is the live entity locally and the rehydrated GHOST in a
+        // room; beam-fx accepts it only if it is in world.enemies, so an ally's beam never draws red.
+        startHostileBeamCharge(ev.ship, ev.dur);
       }
       break;
     case 'beamFire':

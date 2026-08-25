@@ -21,6 +21,7 @@
 // THREE-free on purpose: this file is unit-testable under `node --test` (netsim-world.test.js), which is
 // the only way to get real coverage of reconciliation without a browser.
 import { Vec3 } from './sim-core/vec.js';
+import { EVENT_ENTITY_REFS } from './sim-core/events.js';
 import { makeEnemyShell } from './sim-core/ship-entity.js';
 import { makeAlly } from './sim-core/ally.js';
 import { shortestAngleDelta } from './sim-core/steering.js';
@@ -308,7 +309,7 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
 // positional field comes back as a real `Vec3` before the adapter ever sees it.
 //
 // The other conversion is the reverse of the wire's entity-id swap, so a shield ripple binds to the ship
-// it hit rather than to a number.
+// it hit — and a charging hostile's corridor to the ghost firing it — rather than to a number.
 function hydrateEvent(state, ev) {
   const out = { ...ev };
   // Every positional field, not just `pos`: the charged beam's discharge carries `from`/`to`, and the FX
@@ -316,7 +317,13 @@ function hydrateEvent(state, ev) {
   for (const f of ['pos', 'from', 'to']) {
     if (ev[f]) out[f] = new Vec3(ev[f].x, ev[f].y, ev[f].z);
   }
-  if (ev.enemyId != null) out.enemy = state.byId.get(ev.enemyId) || null;
+  // The reverse of the wire's entity-id swap, generalised over the ONE ref table both ends read: a shield
+  // ripple binds to the ship it hit, and a hostile beam's corridor to the ghost that is charging it. An id
+  // whose ghost has already been retired resolves to null, and the FX treats that as "nothing to draw".
+  for (const f of EVENT_ENTITY_REFS[ev.type] || []) {
+    const id = ev[`${f}Id`];
+    if (id != null) { out[f] = state.byId.get(id) || null; delete out[`${f}Id`]; }
+  }
   return out;
 }
 
