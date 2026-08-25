@@ -13,8 +13,8 @@
 //      that vanish quietly when a look is re-typed from a document;
 //   4. it charges, discharges and DAMAGES.
 //
-// The scenario covers the PLAYER's beam only: no enemy is armed and no hostile sight is asserted, because
-// the enemy beam is deferred behind the gate in DECISIONS §135.
+// The scenario covers the PLAYER's beam only. The HOSTILE half — the pirate lancer's red charge-only
+// corridor, locally and for a remote shooter in a room — is `40-enemy-beam` and `41-enemy-beam-netsim`.
 //
 // Asserted on OBSERVABLE STATE — hull damage, the group's own charge field, and the NAMED scene objects —
 // rather than on sim events: `__game` deliberately does not expose the World.

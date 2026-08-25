@@ -201,7 +201,13 @@ export function updateBeamGroup(world, ship, g, fwd, side, dt, wantsFire) {
       // SOUND_MAP by (weapon, class, 'charge'), so a SECOND beam row with its own class must get its own
       // charge sample rather than the first one's. Cheap now, and it removes the only place the adapter
       // would otherwise have had to hardcode 'beam'.
-      type: 'beamCharge', pos: _muzzle.clone(), dur: chargeTime, weaponClass: w.class,
+      //
+      // `ship` is the SHOOTER, and it is an entity REFERENCE rather than a value — the one exception the
+      // event catalogue names, alongside `enemyShieldHit`'s. The wire turns it into a network id and back
+      // (`EVENT_ENTITY_REFS`, sim-core/events.js), because a remote client never ticks that ship's fire
+      // group and so cannot derive its corridor from anything it holds. Side-agnostic: the renderer, not
+      // the simulation, decides whose sight this becomes. Still two events per shot.
+      type: 'beamCharge', ship, pos: _muzzle.clone(), dur: chargeTime, weaponClass: w.class,
       fromPlayer: side === 'player',
     });
   }

@@ -5,6 +5,75 @@
 
 ## 2026-08-25
 
+- **The enemy charged beam — the pirate lancer, and the red telegraph that makes it fair.** [2026-08-25-1433-enemy-charged-beam]
+  **DECISIONS §135's gate is MET**, and this is what met it. A **pooled charge-only hostile sight** in
+  `beam-fx.js`: any enemy that is charging gets the player's own three lines from its own hull, in
+  **`#ff6b4a`** instead of green, drawn to *that weapon's* full reach and cleared the instant the shot is
+  away. And the wire half — **`beamCharge` now carries the SHOOTER** as an entity reference, which is what
+  lets a client draw the corridor of a remote shooter in a **server-run room**, a fight it never simulates.
+  Still two events per shot: no per-tick charge fraction, no snapshot column, no digest field, so both
+  determinism gates are unmoved. On top of that: a **weakened enemy-only beam row** (id 13 — power **45**,
+  range **67**, charge **1.0 s** unchanged from the player's on purpose because the telegraph length is not
+  the lever, cooldown **2.0 s** → a 3.0 s cycle and **15 sustained DPS**, below the pirate machine gun's
+  16.7) carried by a **new beam-only ship, the `pirate lancer`**, in its own single-mount group —
+  a new ship rather than a weapon swapped onto a pirate, because `isBeamGroup` uses `some` and a beam
+  sharing a group silences every other mount in it. It reuses the pirate gunner's model verbatim, so no
+  asset and no `CREDITS.md` row changed and no itch re-publish is needed; it is visually identical to a
+  gunner, and the red corridor is the identification. A **`?lancer` dev flag** (URL only, composes with
+  `?beam`, forwarded on the netsim handshake) swaps a phase's spawn pool and clamps concurrency to 2 —
+  deliberately touching neither `spawn.total` nor `advanceWhen`, which would hang the level. **No shipped
+  level's pool changes**: the lancer is dev-flag-only until Level 5.
+  **Balanced by flying it, and the sequence is worth knowing.** The first pass shipped a 0.5 s cooldown
+  (30 DPS, then the highest of any enemy) and a **148°/s** turn — at which the lancer held the ±2° corridor
+  through its charge and practically never missed. That was measured, and accepted deliberately for a first
+  pass rather than missed. The maintainer then flew it and cut **both** levers the same day: the cooldown to
+  **2.0 s** ("1 second charge, 2 seconds cooldown") and the turn rate to **50°/s** — implemented as its own
+  thruster row (component 32, `Pirate fighter thruster`, power 0.541) because turn rate is derived from thruster
+  power and mass, with the Scout thrusters' weight 3 kept so mass stays 31 and **acceleration is untouched**:
+  he asked to slow the turn, not the ship. The lancer now turns slower than the player, and slower than a
+  player's ~96°/s bearing sweep at the AI's standoff — so **its
+  beam is genuinely escapable during the charge**, which is what the corridor design always assumed and the
+  first pass did not deliver. The ROADMAP follow-up that asked for exactly this is closed by the same
+  change. Still open there, and disclosed rather than hidden: the hostile dashes show the
+  right pattern but do not FLOW, because the shared `dashPhase` is advanced inside the player's own pass.
+  **Also fixed, found by the same flight: `?beam` did not reach the room.** It was a browser-only loadout
+  swap, so in a netsim fight the server flew the account's real machine gun while the tab drew a green
+  aiming sight and a lock reticle over it — the lines were telling the truth about the local copy and lying
+  about the authority, which is the one thing an aiming line must not do. The pure swap moved to
+  host-neutral `sim-core/beam-config.js` (`withBeamGun`) and `beam=1` now rides the handshake beside `ally`
+  and `lancer`, applied where the player's effective loadout is resolved so a fallback to the catalog
+  default cannot silently skip it. Pre-existing, but this change is what made
+  `?beam&netsim=…&lancer` the recommended test flight.
+
+- **50°/s becomes a TIER: the pirate gunner and the advanced rocket pirate join the lancer.** [2026-08-25-1433-enemy-charged-beam]
+  Having flown the slowed lancer, the maintainer asked for it generally — *"make it 50 for everyone except
+  those in the intro"*. **In shipped play this changes exactly ONE enemy: the pirate gunner** (183°/s → 50),
+  which flies in **Level 4 and the side missions**. The advanced rocket pirate came down too (148 → 50) but
+  is in no level's pool, so it has no live effect today. **Levels 0–3 are completely unchanged** — "we
+  slowed all the pirates" would be a false summary, because the basic pirate (218°/s) and basic rocket
+  pirate (170°/s) are most of the early campaign and both stay fast. The four capitals were already
+  21–31°/s on mass alone, and the player is untouched at 115°/s.
+  **The intro's two ships are excluded deliberately, and that is what made this safe to ship here:**
+  level-0 carries `introTrace`, so slowing either would have moved the recorded **replay archive** (§73)
+  and required a re-recorded cutscene. Both determinism gates were read and are unmoved (tick 2474;
+  hash 0x2a36f8d9 / 38 draws), and a test now asserts the intro pair stays fast so the mistake fails
+  loudly rather than as a hash mismatch. **Separately — and this is a different artifact:** recorded
+  **sessions** covering Level 4 or the side missions will now re-simulate into divergence in
+  `verify-sessions.mjs`, which is expected under **§129** (a trace is evidence about the build that made
+  it) and is *not* the §73 archive.
+  Two thruster rows cover the three ships, because a thruster reaches 50°/s at exactly one mass:
+  **32 `Pirate fighter thruster`** (mass 31) and **33 `Pirate skirmisher thruster`** (mass 25) — both
+  weight 3 like the Scout thrusters they replace, so no mass and no acceleration moved. Id 32 was renamed
+  from `Lancer thrusters`: component names show in the stash when gear drops, and a rocket pirate carrying
+  "Lancer thrusters" reads wrong.
+  The hostile charge is **silent** — only your own shots are audible, and the beam gets no exception.
+  Along the way, two corrections that were carried in the docs rather than discovered later: the wire's
+  entity-ref table moved to host-neutral `sim-core/events.js` so both ends read ONE table (DECISIONS §136 —
+  the client cannot import from `server/`, and a hardcoded rehydration line is how the next reference gets
+  forgotten), and §135's "the frame is only ±32 u wide on a phone in portrait" was **wrong** — a touch
+  device held in portrait renders LANDSCAPE (§26), so the binding axis is the vertical ±57 u on every
+  device, which is what `ai.range` 50 is actually chosen against.
+
 - **The Charged beam — a shot that takes time, has no projectile, and announces itself before it lands.**
   A **third weapon `type`** (`'beam'`) joins `bullet` and `rocket` as an ordinary `WEAPONS` row (id 12,
   **5500 credits, gated behind "Level 3"**): power 80, **range 100** (ten past the long guns), **charge

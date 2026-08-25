@@ -79,7 +79,7 @@ const EMPTY_INPUT = { k: [], t: null };
 export const INPUT_HOLD_TICKS = 30;
 
 export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapshotEvery = SNAPSHOT_EVERY,
-                             onEconomy = null, ally = null } = {}) {
+                             onEconomy = null, ally = null, lancer = null, beam = false } = {}) {
   const ids = new WeakMap();   // entity → network id. WeakMap: the sim never learns it has one.
   let nextId = 1;
   const spawnQueue = [];       // static descriptions of entities the client has not been told about yet
@@ -94,7 +94,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     onWarmLevel() {}, // a server parses no models
   };
 
-  const world = createSimWorld({ levelName, seed, ship, host, ally });
+  const world = createSimWorld({ levelName, seed, ship, host, ally, lancer, beam });
 
   const queue = [];            // pending client input snapshots, oldest first
   let lastInput = EMPTY_INPUT; // repeated across a short gap: one late packet must not stutter a held key

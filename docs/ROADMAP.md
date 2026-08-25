@@ -140,6 +140,13 @@ Two reasons it comes before Phase 5 rather than after:
 - [ ] Still open, deferred to planning: the ally's weapons, its detailed combat behaviour, the exact arrival
   moment, and Level 5's own content (centre, enemy pool, boss, briefing/victory copy, set-piece — and
   whether that set-piece needs a `CREDITS.md` row)
+- **The ENEMY BEAM gate (DECISIONS §135) is PASSED (2026-08-25), so Level 5 can field beam pirates.** The
+  hostile sight and `beamCharge`'s shooter reference both exist and are proven in a server-run room, the
+  weakened enemy weapon row exists (id 13: power 45, range 67), and so does a carrier — the **`pirate
+  lancer`** ship row. Level 5 fields them by naming `pirate lancer` in a phase pool; nothing else is needed.
+  Two things to settle that day: whether a **looted lancer beam** should be equippable (enemy weapons drop
+  into the stash and the `gun` slot accepts `beam`, so killing one hands the player a 45-power beam without
+  paying 5500 or clearing the Level-4 gate), and the turn-rate follow-up immediately below.
 
 ### Follow-ups opened by the ally (2026-08-23)
 
@@ -161,6 +168,33 @@ Two reasons it comes before Phase 5 rather than after:
 - [x] ~~Friendly fire passing through an ally's hull.~~ **ACCEPTED for now (maintainer, 2026-08-23).** §2.6's
   "never a tracer through a friendly hull" is enforced against the PLAYER only; ally-through-ally shots are
   not checked. Deliberately deferred — it only becomes visible with more than one wingman on the field.
+
+### Follow-ups opened by the enemy charged beam (2026-08-25)
+
+Both were deferred on 2026-08-25 for the first pass. **The maintainer then flew the build the same day and
+closed the first one on the spot** (see below); the second is still open.
+
+- [x] ~~**Lower the pirate lancer's TURN RATE so its beam becomes genuinely escapable.**~~ **DONE
+  2026-08-25, in the change that opened this entry.** The first pass measured 148°/s against a player's best
+  ~96°/s bearing sweep at the AI's 14–22 u standoff, i.e. the corridor held and the shot landed every cycle.
+  Having flown it, the maintainer set **50°/s** — *"let's give the lancer a turn rate of 50"* — and the
+  cooldown to 2.0 s with it.
+  **How, since `turnRate` is derived and not a field** (`turnRate = thruster.power × REFERENCE_MASS / mass`,
+  `client/src/sim-core/components.js`): the lancer got its **own thruster row**, component **32
+  (now `Pirate fighter thruster`, power 0.541 — renamed when the gunner and advanced rocket pirate joined
+  the same 50°/s tier)** — the same per-ship pattern as `Pirate medium thruster` (25) and
+  `Second-boss thruster` (27) — because `0.541 × 50/31 = 0.873 rad/s = 50.0°/s`.
+  **The MASS lever this entry originally proposed was NOT used, and that is the better outcome:** adding
+  ballast would have scaled acceleration down by the same factor (30.6 → 13.6 at mass 70), so the lancer
+  would have closed and repositioned markedly worse. A dedicated thruster row keeps **weight 3, mass 31 and
+  acceleration 30.6 untouched** and moves only the turn — which is what was actually asked for. Nothing here
+  is left to do; kept as the record of why the number is 50 and why it lives in a thruster.
+- [ ] **The hostile sight's dashes do not FLOW** (they show the right pattern, static). `dashPhase` is
+  advanced only inside the player's pass, which returns early for a player with no beam group
+  (`client/src/beam-fx.js`). **One line moved** fixes it — advance `dashPhase` in `drawBeamSight` before
+  either pass — but it changes the player's own sight timing too, which is a look value the maintainer
+  wants to judge in flight rather than have changed underneath him. **Still open after the 2026-08-25 live
+  test** — he retuned the balance numbers and left this one alone.
 
 ## Phase 5 — Multiplayer (FAR future, not soon)
 - [ ] **Co-op first** — players fly missions together.

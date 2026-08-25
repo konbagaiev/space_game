@@ -232,6 +232,55 @@ test('wire events reach the World event queue, with entity ids rehydrated', () =
   assert.equal(drained[1].type, 'kill');
 });
 
+test('a hostile beamCharge rehydrates its shipId into the GHOST — the remote-corridor gate', () => {
+  // THE POINT OF THE WHOLE WIRE REF (DECISIONS §135). A remote shooter's fire group is never ticked in this
+  // tab, so `g.charge` never advances and the corridor is underivable — the only thing that can hang it on
+  // a hull is a name for the hull. `hydrateEvent` walks EVENT_ENTITY_REFS (sim-core/events.js), the same
+  // table `protocol.js wireEvent` reads on the way out, so a ref cannot be forgotten on the way back.
+  const { world } = clientWorld();
+  const st = createNetState();
+  deliver(world, st, snapOf({
+    spawns: [{ id: 7, kind: 'enemy', name: 'pirate lancer' }],
+    enemies: [[7, 0, 0, 0, 24, 2.1, 0]],
+    events: [{ type: 'beamCharge', shipId: 7, pos: { x: 1, y: 0.6, z: 2 }, dur: 1.0,
+               weaponClass: 'beam', fromPlayer: false }],
+  }));
+  const drained = [];
+  world.events.drain((e) => drained.push(e));
+  assert.equal(drained.length, 1);
+  assert.equal(drained[0].ship, world.enemies[0], 'the id became the ghost again, so the corridor has a hull');
+  assert.equal(drained[0].shipId, undefined, 'and the raw id is consumed, not left beside it');
+  assert.ok(drained[0].pos instanceof Vec3, 'the muzzle still hydrates as a Vec3');
+  assert.equal(drained[0].dur, 1.0);
+});
+
+test('a beamCharge whose ghost is already retired hydrates to null rather than throwing', () => {
+  // A charge from a ship the render clock has since despawned: the FX must simply have nothing to draw.
+  const { world } = clientWorld();
+  const st = createNetState();
+  deliver(world, st, snapOf({
+    events: [{ type: 'beamCharge', shipId: 999, pos: { x: 0, y: 0.6, z: 0 }, dur: 1.0,
+               weaponClass: 'beam', fromPlayer: false }],
+  }));
+  const drained = [];
+  world.events.drain((e) => drained.push(e));
+  assert.equal(drained[0].ship, null);
+});
+
+test("the PLAYER's own beamCharge carries no shipId, and comes through untouched", () => {
+  // `idOf(world.player)` is null — the player is never host.onSpawn'ed — so his charge simply has no ref,
+  // and `fromPlayer` is what routes it. The generalised rehydration must not invent a `ship: null` for it.
+  const { world } = clientWorld();
+  const st = createNetState();
+  deliver(world, st, snapOf({
+    events: [{ type: 'beamCharge', pos: { x: 0, y: 0.6, z: 0 }, dur: 1.0, weaponClass: 'beam', fromPlayer: true }],
+  }));
+  const drained = [];
+  world.events.drain((e) => drained.push(e));
+  assert.equal(drained[0].fromPlayer, true);
+  assert.ok(!('ship' in drained[0]), 'no ship key at all — the adapter\'s `else if (ev.ship)` must not fire');
+});
+
 test('a beam discharge comes back with from/to as real Vec3s, not bare objects', () => {
   // The FX calls `.clone()` on positional fields, so a bare `{x,y,z}` is not a style point — it throws,
   // the frame dies, the loop stops and the last sound left playing loops forever. `pos` was already

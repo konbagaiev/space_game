@@ -182,6 +182,14 @@ at 45 is off-frame to the side on a phone; one holding at 90 is off-frame everyw
 empty space is the failure mode**, so the standoff distance has to be clamped to the frame (portrait is the
 binding case), or these pirates need deliberately short-ranged weapons. This is the first input to "the
 enemies' and the boss's weapons are still to be discussed".
+> **CORRECTION, 2026-08-25 — the ±32 u portrait frame DOES NOT EXIST, and the conclusion survives anyway.**
+> A touch device held in portrait renders **LANDSCAPE**: `applyOrientation()` sets `G.rotated` and rotates the
+> whole `<body>` 90° in CSS, with `gameW()`/`gameH()` swapped (`client/src/engine.js`, `body.rot` in
+> `client/styles.css`, DECISIONS §26). A modern handset therefore ends up at aspect ~2.16 — roughly **±124 u
+> horizontally, the WIDEST frame in the game**, not the narrowest. **The binding axis is the VERTICAL, ±57 u
+> on the combat plane on every device**, and every "keep the enemy on frame" conclusion below holds against
+> that. (The shipped `BEAM` preset's `ai.range` 50 was chosen against exactly that ±57 u.)
+
 
 **(b) There is no third combatant in the simulation today, and this is the bulk of the work.**
 `step-projectiles.js` is binary end to end: a bullet either scans `world.enemies` (`:40`) or strikes

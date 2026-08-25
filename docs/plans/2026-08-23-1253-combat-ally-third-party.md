@@ -222,6 +222,14 @@ pass cycle is therefore ~6 s and swings him ~50 u out and back** — big, and de
    Heavy-cannon round** (`fireCooldown` 0.6). Expect a modest damage share — which is exactly what
    `allyKills` measures. The ~50 u excursion is also comparable to the visible frame (≈ ±57 u vertically,
    ≈ ±32 u horizontally in portrait), so **he may leave view mid-reversal**, especially on a phone.
+> **CORRECTION, 2026-08-25 — the ±32 u portrait frame DOES NOT EXIST, and the conclusion survives anyway.**
+> A touch device held in portrait renders **LANDSCAPE**: `applyOrientation()` sets `G.rotated` and rotates the
+> whole `<body>` 90° in CSS, with `gameW()`/`gameH()` swapped (`client/src/engine.js`, `body.rot` in
+> `client/styles.css`, DECISIONS §26). A modern handset therefore ends up at aspect ~2.16 — roughly **±124 u
+> horizontally, the WIDEST frame in the game**, not the narrowest. **The binding axis is the VERTICAL, ±57 u
+> on the combat plane on every device**, and every "keep the enemy on frame" conclusion below holds against
+> that. (The shipped `BEAM` preset's `ai.range` 50 was chosen against exactly that ±57 u.)
+
 
 **Do not add machinery for either.** The maintainer's closing instruction: *"when we've built it I'll test
 it and then we'll correct from there."* Every lever needed to correct them is already a named constant.
@@ -239,6 +247,8 @@ falls back, and settles at roughly `ALLY_ESCORT_DIST + 52` ≈ **62 u** — past
 (±57 u vertically, ±32 u in portrait) and exactly the "drifting scenery" §2d says the escort exists to
 avoid. **And no constant fixes it:** the 52 falls out of `v²/2a`, so neither `ALLY_ESCORT_DIST` nor
 `ALLY_ESCORT_BAND` moves it.
+> *(See the ±32 u portrait CORRECTION earlier in this file, 2026-08-25: a phone held in portrait renders
+> LANDSCAPE, so the binding axis is the vertical ±57 u on every device. The conclusion here survives.)*
 
 The rule is therefore judged on the **closing speed** — the component of `(ally.vel − player.vel)` along the
 unit vector from the ally to the player — which is the speed at which the GAP is actually shrinking:

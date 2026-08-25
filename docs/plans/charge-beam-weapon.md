@@ -106,6 +106,15 @@ holding A/D still works easily** and turn rate remains the beam's skill stat.
 
 ### 0a-ter. SCOPE CUT — the ENEMY beam is OUT until the maintainer asks (2026-08-25)
 
+> **STATUS: CLOSED, 2026-08-25.** The maintainer asked, and the enemy beam shipped the same day —
+> `docs/plans/2026-08-25-1433-enemy-charged-beam.md`. Everything this section cut has now been built: the
+> hostile sight (pooled, charge-only, `#ff6b4a`), the `beamCharge` shooter reference, a weakened enemy
+> weapon row (id 13: power 45, range 67) on a new beam-only ship (the `pirate lancer`), a `BEAM` AI preset,
+> and the `?lancer` dev flag — the enemy half under its OWN param, not a `?beam=enemy` mode. **The gate the
+> cut created (DECISIONS §135) was met, not waived.** Two things stayed cut on purpose and are still out:
+> an audible hostile charge, and a `lil-gui` tuning panel. Read the section below as history.
+
+
 **Maintainer, 2026-08-25: "Don't waste time for enemy beam before I asked."** This cut lands AFTER the plan
 was first written, so anything below (or in the first draft of
 `docs/plans/2026-08-25-1056-charge-beam-weapon.md`) that builds the enemy experience is superseded.
@@ -148,6 +157,14 @@ beam is fine; range 90 on an ENEMY's beam means it can charge you **from off-scr
 (the frame is only ±32 u wide), which is precisely the failure `combat-ally.md` §2c(a) names — and an aiming
 line you never see is not a warning. **Propose a shorter enemy `ai.range` (≈45–55) so the telegraph is
 always on screen, and surface it at the review gate.**
+> **CORRECTION, 2026-08-25 — the ±32 u portrait frame DOES NOT EXIST, and the conclusion survives anyway.**
+> A touch device held in portrait renders **LANDSCAPE**: `applyOrientation()` sets `G.rotated` and rotates the
+> whole `<body>` 90° in CSS, with `gameW()`/`gameH()` swapped (`client/src/engine.js`, `body.rot` in
+> `client/styles.css`, DECISIONS §26). A modern handset therefore ends up at aspect ~2.16 — roughly **±124 u
+> horizontally, the WIDEST frame in the game**, not the narrowest. **The binding axis is the VERTICAL, ±57 u
+> on the combat plane on every device**, and every "keep the enemy on frame" conclusion below holds against
+> that. (The shipped `BEAM` preset's `ai.range` 50 was chosen against exactly that ±57 u.)
+
 
 **How this reconciles with §124 (auto-aim was removed on purpose) — write this into DECISIONS.** A corridor
 *without* a lock **is** the deleted aim-assist cone, verbatim. Three things make this not that, and all
@@ -505,6 +522,14 @@ decisions.
   about ±32 horizontally on a phone in portrait**. A beam whose range exceeds that lets an enemy shoot from
   off-screen, which is the failure mode `combat-ally.md` §2c(a) names. The AIMING LINE makes this worse,
   not better: a line drawn from off-frame is a warning the player never sees.
+> **CORRECTION, 2026-08-25 — the ±32 u portrait frame DOES NOT EXIST, and the conclusion survives anyway.**
+> A touch device held in portrait renders **LANDSCAPE**: `applyOrientation()` sets `G.rotated` and rotates the
+> whole `<body>` 90° in CSS, with `gameW()`/`gameH()` swapped (`client/src/engine.js`, `body.rot` in
+> `client/styles.css`, DECISIONS §26). A modern handset therefore ends up at aspect ~2.16 — roughly **±124 u
+> horizontally, the WIDEST frame in the game**, not the narrowest. **The binding axis is the VERTICAL, ±57 u
+> on the combat plane on every device**, and every "keep the enemy on frame" conclusion below holds against
+> that. (The shipped `BEAM` preset's `ai.range` 50 was chosen against exactly that ±57 u.)
+
 - **Determinism.** `22-intro-replay` must still log **tick 2474** and `36-sim-divergence` must still agree
   on hash **0x2a36f8d9** with **38** draws. If the weapon is on no existing ship, both should be untouched
   by construction — verify it rather than assume it.

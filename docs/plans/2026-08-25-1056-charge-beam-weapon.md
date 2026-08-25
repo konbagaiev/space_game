@@ -131,6 +131,21 @@ one thing the spike explicitly asks the production build to undo.
 
 ### 2d. DEFERRED — the enemy beam, and the gate that must be passed before one is ever armed
 
+> **STATUS: CLOSED, 2026-08-25** — `docs/plans/2026-08-25-1433-enemy-charged-beam.md` built it, and
+> DECISIONS §135's gate was MET rather than waived: the pooled hostile sight and `beamCharge`'s shooter
+> reference both exist and are proven in a server-run room (`41-enemy-beam-netsim`).
+>
+> **One thing below was SUPERSEDED rather than implemented: the wire shape.** This section proposed carrying
+> the shooter's `range` and `corridorDeg` on the event. They are not needed and were not added — a ghost is
+> built by the SAME constructor the simulation uses (`spawnGhost` → `makeEnemyShell` → `buildGroups`), so it
+> already holds the weapon row, and the client reads `maxRange`/`corridorDeg` straight off the ghost's own
+> groups. The event carries **only the shooter reference**, and `EVENT_ENTITY_REFS` moved to host-neutral
+> `sim-core/events.js` so both ends read one table (DECISIONS §136).
+>
+> Still out, deliberately: an audible hostile charge, a per-tick charge fraction, a snapshot column, a digest
+> field, and a second reference on `beamFire`.
+
+
 Cut by the maintainer on 2026-08-25 ("Don't waste time for enemy beam before I asked", brief §0a-ter).
 **Not built, not tuned, not tested here:** an enemy `BEAM` AI preset, a beam on any enemy ship, the drawing
 of a *hostile* corridor while it charges, any generalisation of `beam-fx.js` beyond the player, the
@@ -154,6 +169,15 @@ unfair attack. Writing this gate down is what makes taking the cut safe now.
   enemy beam is built, give its preset a shorter `ai.range` (≈45–55, on-screen vertically on every device)
   and a tighter `aimTol` than `GUN`'s 0.25 rad, because `aimTol` only gates the *start* of a charge and half
   a second of steering closes a small error against a ±2° corridor.
+
+> **CORRECTION, 2026-08-25 — the ±32 u portrait frame DOES NOT EXIST, and the conclusion survives anyway.**
+> A touch device held in portrait renders **LANDSCAPE**: `applyOrientation()` sets `G.rotated` and rotates the
+> whole `<body>` 90° in CSS, with `gameW()`/`gameH()` swapped (`client/src/engine.js`, `body.rot` in
+> `client/styles.css`, DECISIONS §26). A modern handset therefore ends up at aspect ~2.16 — roughly **±124 u
+> horizontally, the WIDEST frame in the game**, not the narrowest. **The binding axis is the VERTICAL, ±57 u
+> on the combat plane on every device**, and every "keep the enemy on frame" conclusion below holds against
+> that. (The shipped `BEAM` preset's `ai.range` 50 was chosen against exactly that ±57 u.)
+
 - **The wire shape that work needs:** `beamCharge` gains the shooter as an `EVENT_ENTITY_REFS` entry (→
   `shipId`, never the entity) plus `range` and `corridorDeg`, so a client can draw a remote corridor from
   the heading it already interpolates — still two events per shot, still no per-tick charge broadcast.
@@ -786,6 +810,9 @@ touched.
     not a warning, it is an unfair attack. Record with it, as input to that work, that a hostile's
     `ai.range` is a separate number from `maxRange` 90 and must be shorter (≈45–55), because the visible
     frame is ±57 u vertically and only ±32 u horizontally on a phone in portrait (`combat-ally.md` §2c(a)).
+> *(See the ±32 u portrait CORRECTION earlier in this file, 2026-08-25: a phone held in portrait renders
+> LANDSCAPE, so the binding axis is the vertical ±57 u on every device. The conclusion here survives.)*
+
 - **`docs/plans/charge-beam-weapon.md`** — a status line at the top pointing at this plan as the built
   version, so the request file is not read later as if still open.
 

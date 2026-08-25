@@ -15,9 +15,10 @@
 // pattern is the only lever, and it doubles as the charge animation: the dashes FLOW outward as the shot
 // builds, so the charge has direction and rhythm instead of only a brightness ramp.
 //
-// SCOPE: it draws the LOCAL PLAYER's sight and nothing else. That is a RENDERING scope, not a simulation
-// one — `sim-core/beam.js` has no `side === 'player'` test anywhere, and the deferred hostile sight (plan
-// §2d, gated in DECISIONS §135) becomes another entry here rather than a rewrite.
+// SCOPE: it draws the LOCAL PLAYER's sight AND a pooled HOSTILE sight — the corridor of any enemy that is
+// currently charging, in a hostile hue, for exactly the length of its charge (DECISIONS §135's gate). That
+// is a RENDERING scope, not a simulation one: `sim-core/beam.js` has no `side === 'player'` test anywhere,
+// and the hostile/friendly decision is made HERE, by asking whether the shooter is in `world.enemies`.
 //
 // All of it is cosmetic and RNG-free, hence replay-neutral (DECISIONS §73).
 import * as THREE from 'three';
@@ -56,6 +57,19 @@ const CENTRE_DASH = 2.4, CENTRE_GAP = 1.6;    // centre: long strokes
 const EDGE_DASH = 0.7, EDGE_GAP = 1.5;        // edges: short ticks — same weight, different rhythm
 const FLOW_IDLE = 3, FLOW_CHARGING = 40;      // dash travel (u/s): a drift while aiming, a rush while charging
 
+// THE HOSTILE SIGHT IS THE PLAYER'S SIGHT IN RED, AND NOTHING ELSE. Maintainer, 2026-08-25: "Change
+// nothing. As soon as they start shooting at me, I see all the lines." Same three lines, same dash rhythms,
+// same 0.22 + 0.38 opacity ramp — it differs in the hue, and in being CHARGE-ONLY (lines from a hostile hull
+// must always mean "a shot is coming right now" — brief §0b Q2). No muzzle bead, no reticle, no marker on
+// your ship, no brighter ramp: all proposed, all declined. He will judge it in flight.
+//
+// KNOWN AND DEFERRED (maintainer, 2026-08-25; it is on the ROADMAP): the dashes do not FLOW while the player
+// carries no beam, because `dashPhase` is advanced inside the player's pass, which returns early for a ship
+// with no beam group. The pattern is right, it just holds still. One line moved fixes it — but it retimes
+// the player's own sight too, so it waits for the live-tuning pass. Do not "fix" it in passing.
+const HOSTILE_SIGHT_COLOR = 0xff6b4a;
+const HOSTILE_POOL = 4;   // several lancers can charge at once
+
 const BOLT_POOL = 4; // round-robin: a second discharge inside the 1.0 s fade must not cut the first short
 
 // sim-core Vec3, not THREE.Vector3: `beamMuzzle`/`corridorEnds` write into these with sim-core's own vector
@@ -71,6 +85,7 @@ let reticle = null;      // a diamond around the painted ship
 let orb = null;          // energy gathering at the muzzle while charging
 let bolts = null;        // pooled discharges: { core, glow, flash, boltLife, flashLife }
 let boltNext = 0;
+let hostiles = null;     // pooled hostile sights: [{ ship, t, dur, centre, left, right }]
 let dashPhase = 0, spin = 0;
 
 // The charge, as the FX knows it. Driven by the `beamCharge` EVENT rather than read off the fire group,
@@ -117,6 +132,28 @@ function ensureSight() {
     right: makeLine(SIGHT_COLOR, SIGHT_IDLE, 'beamSightEdge', true, EDGE_DASH, EDGE_GAP),
   };
   return sight;
+}
+
+// One entry per SHOOTER, not per shot: several lancers can be charging at once and each owns three lines.
+// Their object names are their OWN (`beamHostileSight*`), so a headless scenario asserts on these and never
+// confuses them with the player's `beamSight*`.
+function ensureHostiles() {
+  if (hostiles) return hostiles;
+  hostiles = [];
+  for (let i = 0; i < HOSTILE_POOL; i++) {
+    hostiles.push({
+      ship: null, t: 0, dur: 0,
+      centre: makeLine(HOSTILE_SIGHT_COLOR, SIGHT_IDLE, 'beamHostileSightCentre', true, CENTRE_DASH, CENTRE_GAP),
+      left: makeLine(HOSTILE_SIGHT_COLOR, SIGHT_IDLE, 'beamHostileSightEdge', true, EDGE_DASH, EDGE_GAP),
+      right: makeLine(HOSTILE_SIGHT_COLOR, SIGHT_IDLE, 'beamHostileSightEdge', true, EDGE_DASH, EDGE_GAP),
+    });
+  }
+  return hostiles;
+}
+
+function clearHostile(e) {
+  e.ship = null; e.t = 0; e.dur = 0;
+  e.centre.visible = e.left.visible = e.right.visible = false;
 }
 
 // A DIAMOND, not a circle (4 segments), so it reads as a targeting mark rather than a halo.
@@ -202,11 +239,76 @@ function hideSight() {
 
 // ---------- per-frame ----------
 
-// Draw the local player's beam sight. Called from renderTick; a no-op for a ship with no beam mounted,
-// which is every ship until one is bought (or the `?beam` dev flag mounts one). The transients are aged
-// FIRST and unconditionally, so a discharge still finishes fading if the ship dies in the same instant.
+// The per-frame entry point. THE ORDER MATTERS AND IS NOT AN ACCIDENT: the hostile pass runs FIRST and
+// UNCONDITIONALLY, because the player's pass returns early for a ship with no beam group — which is the
+// usual case (the PLAYER carries no beam until one is bought, or `?beam` mounts one). A hostile pass placed
+// after those returns would simply never run. The transients are aged first and unconditionally too, so a
+// discharge still finishes fading if the ship dies in the same instant.
 export function drawBeamSight(dt) {
   stepTransients(dt);
+  drawHostileSights(dt);
+  drawPlayerSight(dt);
+}
+
+// The `beamCharge` event's HOSTILE branch: start (or restart) a shooter's telegraph for exactly `dur`.
+//
+// It accepts ONLY a ship that is in `world.enemies`. That is the whole hostile/friendly decision, made in
+// RENDERING scope: the event carries `fromPlayer`, not `side`, so an ALLY carrying a beam would otherwise
+// take this branch and draw a red corridor on a friendly. Asking the world which list the shooter is in
+// introduces no `side === 'player'` test into `sim-core` (DECISIONS §135's standing constraint).
+export function startHostileBeamCharge(ship, dur) {
+  if (!ship || !(world.enemies || []).includes(ship)) return;
+  const pool = ensureHostiles();
+  // Reuse the entry already keyed to this shooter (a second charge resets it), else a free one, else evict
+  // the entry with the least charge left — the one whose telegraph is nearest to being over anyway.
+  let e = pool.find((x) => x.ship === ship) || pool.find((x) => !x.ship);
+  if (!e) {
+    e = pool[0];
+    for (const x of pool) if ((x.dur - x.t) < (e.dur - e.t)) e = x;
+  }
+  e.ship = ship; e.t = 0; e.dur = dur > 0 ? dur : 1;
+}
+
+// Redraw every live hostile corridor from its shooter's CURRENT pose. Never from the event's `pos`: that is
+// the muzzle at charge START, and the shooter turns for the whole second — the corridor is nose-attached at
+// RELEASE by design, so a sight frozen at charge start would be a lie of exactly the kind the three lines
+// promise not to tell. In a room `ship.heading` is the INTERPOLATED heading (§127's one clock), and the
+// event is released when the render clock reaches its tick, so sight and picture stay in step.
+function drawHostileSights(dt) {
+  if (!hostiles) return;   // nothing has ever charged: no pool, nothing to draw
+  for (const e of hostiles) {
+    if (!e.ship) continue;
+    e.t += dt;
+    // The four ways a telegraph ends (the shooter fired is the FIRST of them — `dur` IS the sim's
+    // chargeTime, so there is no second entity ref on `beamFire` and none is needed). `!alive` covers both a
+    // local death and a room despawn: `despawnGhost` sets `alive = false` before it drops the ghost.
+    if (!e.ship.alive || e.ship.warping || e.t >= e.dur) { clearHostile(e); continue; }
+
+    // The weapon row comes off the SHOOTER's own catalog groups — the ghost carries them, built by the same
+    // constructor the simulation uses — so this corridor is THIS weapon's 67 u and ±2°, never the player's.
+    const w = beamWeaponOf(beamGroupOf(e.ship));
+    if (!w) { clearHostile(e); continue; }
+
+    const ship = e.ship;
+    _fwd.set(Math.sin(ship.heading), 0, Math.cos(ship.heading));
+    beamMuzzle(ship, _fwd, _muzzle);
+    // The FULL maxRange, never clipped to the shooter's vicinity: from a lancer at its 14-22 u standoff the
+    // half of the telegraph the player actually reads is the ~45 u running PAST his own ship.
+    corridorEnds(ship, _fwd, w.maxRange, corridorRadOf(w), _endC, _endL, _endR);
+    const y = ship.pos.y;
+
+    const k = Math.min(1, e.t / e.dur);
+    setLine(e.centre, _muzzle.x, _muzzle.z, _endC.x, _endC.z, y, dashPhase);
+    setLine(e.left, _muzzle.x, _muzzle.z, _endL.x, _endL.z, y, dashPhase);
+    setLine(e.right, _muzzle.x, _muzzle.z, _endR.x, _endR.z, y, dashPhase);
+    const op = SIGHT_IDLE + k * SIGHT_GAIN;   // the player's exact ramp
+    e.centre.material.opacity = e.left.material.opacity = e.right.material.opacity = op;
+  }
+}
+
+// Draw the local player's beam sight. A no-op for a ship with no beam mounted, which is every ship until one
+// is bought (or the `?beam` dev flag mounts one).
+function drawPlayerSight(dt) {
   const ship = world.player;
   if (!ship || !ship.alive) { hideSight(); return; }
   const g = beamGroupOf(ship);
@@ -282,8 +384,9 @@ export function startBeamCharge(dur) {
 // as a strike that leaves a trail. Round-robin over the pool so a second shot never cuts the first short.
 //
 // The bolt is drawn WHOEVER fired it — a discharge is a visible event in the world. `ownShot` says whether
-// it was the local player's, and only then does it stop the sight's charge clock: this module draws exactly
-// one ship's sight, so another shooter's release must not blank it.
+// it was the local player's, and only then does it stop the PLAYER's charge clock: a hostile telegraph ends
+// on its own entry's `dur`, which is the sim's `chargeTime`, so another shooter's release must not blank
+// this one.
 export function spawnBeamBolt(from, to, ownShot = false) {
   if (ownShot) chargeFx.active = false;
   const pool = ensureBolts();
@@ -332,9 +435,11 @@ function stepTransients(dt) {
   }
 }
 
-// A fresh run must not inherit a sight, a bolt or a half-finished charge pointing into a fight that is over.
+// A fresh run must not inherit a sight, a bolt or a half-finished charge pointing into a fight that is over
+// — a RED corridor left over from a dead lancer included.
 export function hideBeamFx() {
   hideSight();
+  for (const e of hostiles || []) clearHostile(e);
   chargeFx.active = false; chargeFx.t = 0;
   for (const b of bolts || []) {
     b.glow.visible = false; b.core.visible = false; b.boltLife = 0;

@@ -29,6 +29,27 @@ test('wsUrl carries the ticket, the level and the seed', () => {
   assert.equal(u.searchParams.get('seed'), '9');
 });
 
+// THE THREE DEV FLAGS THAT CHANGE THE FIGHT MUST ALL REACH THE ROOM. A dev flag applied only in the browser
+// gives the two ends different worlds, and the failure is silent-looking rather than loud: `?beam` used to
+// be client-only, so a room flew the account's real machine gun while this tab drew a green beam sight over
+// it (fixed 2026-08-25, after the maintainer hit it). Absent flags must add no params at all, so an ordinary
+// room's URL is unchanged.
+test('wsUrl forwards the dev flags — ally, lancer and beam — and adds nothing when they are absent', () => {
+  const plain = new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't1', level: 'level-4' }));
+  assert.equal(plain.searchParams.get('ally'), null);
+  assert.equal(plain.searchParams.get('lancer'), null);
+  assert.equal(plain.searchParams.get('beam'), null, 'a normal room is asked for nothing extra');
+
+  const dev = new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't1', level: 'level-4',
+                              ally: 'clear-out', lancer: 'wave-1', beam: true }));
+  assert.equal(dev.searchParams.get('ally'), 'clear-out', 'the wingman arrives on a named PHASE');
+  assert.equal(dev.searchParams.get('lancer'), 'wave-1', 'the lancers fill a named PHASE');
+  assert.equal(dev.searchParams.get('beam'), '1', 'but `beam` is a boolean: mount it on the player');
+
+  // The three compose — `?beam&lancer&level=4` in a room is the full test flight, your beam against theirs.
+  assert.equal(new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't', beam: true })).searchParams.get('beam'), '1');
+});
+
 test('the uplink turns elapsed time into whole 60 Hz input ticks', () => {
   const sent = [];
   const up = createUplink({ send: (m) => sent.push(m) });
