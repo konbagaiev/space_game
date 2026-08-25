@@ -19,6 +19,7 @@ asset page is also handy, in case the author later changes the terms).
 | sounds/music_hangar_1.\<hash\>.mp3 (hangar background loop) | Freesound (CC0 filter) | _id not retained (renamed menu-background-sound-1.wav)_ | CC0 1.0 | 2026-06-24 |
 | sounds/music_combat_1.\<hash\>.mp3 (combat background loop) | Freesound (CC0 filter) | _id not retained (renamed game-background-dragons-breath.wav)_ | CC0 1.0 | 2026-06-24 |
 | sounds/music_combat_2.\<hash\>.mp3 (combat background track — "Energetic Synthwave") | ed-musicproductions | https://pixabay.com/music/synthwave-energetic-synthwave-412360/ | Pixabay Content License | 2026-06-30 |
+| sounds/beamCharge.\<hash\>.mp3 + sounds/beamFire.\<hash\>.mp3 (Charged beam charge + discharge SFX, cut from one source) | TannerSound | https://freesound.org/s/843729/ | CC-BY 4.0 | 2026-08-25 |
 | ships/enemy_1–4 + enemy_1–4_orange (combat + hangar `.glb`, derived from `_source/lowpoly_spaceships.glb`; the `_orange` set is the same models recolored red → #f4741f) — basic enemy, rocketeer, medium, first boss (+ orange variants) | Pedram Ashoori | https://skfb.ly/6pxFX | CC-BY 4.0 | 2026-06-24 |
 | ships/player_combat + player_hangar `.glb` (player ship, textures downscaled) | Raven | https://skfb.ly/otR6F | CC-BY 4.0 | 2026-06-24 |
 | ships/repair_drone_hangar.\<hash\>.glb (Repair drone item icon — menu only) | Ivan Potupin | https://skfb.ly/pGPyp | CC-BY 4.0 | 2026-06-29 |
@@ -183,11 +184,40 @@ asset-credits rule in `CLAUDE.md`).
 no third-party assets. On top of that sit two sampled layers, each a third-party asset that **must** be
 listed in the table above with its source + license before use:
 - a **sampled SFX layer** (DECISIONS §22) — curated recordings (gun fire, hits, explosions) where they
-  beat the synth;
+  beat the synth. It was entirely CC0 until the Charged beam; **`beamCharge` + `beamFire` are the first
+  CC-BY sound in the game**, so their attribution below must stay while they are in use;
 - **sampled background-music tracks** per scene (the older generative synth music was removed) — picked
   at random and rotated per battle. Combat currently rotates `music_combat_1` (CC0) and `music_combat_2`
   ("Energetic Synthwave" by ed-musicproductions, **Pixabay Content License** — commercial use OK, no
   attribution required; embedding it as combat music is allowed, only standalone resale is not).
+
+The **Charged beam's two samples** (`beamCharge`, `beamFire`) are both cut from ONE source — **"Scifi Laser
+Gun Shooting"** by **TannerSound** (Freesound, **CC-BY 4.0** — attribution required, so this entry must stay
+while in use). The maintainer chose both cuts by ear (2026-08-25); neither is a straight excerpt.
+
+**`beamCharge` is THREE pieces of the source concatenated**, 1.400 s in all: a quiet opening burst
+(0.600→1.100, pulled down 9 dB), a **lifted** build (2.750→3.250), and a tail that deliberately runs *past*
+the shot (3.250→3.650). Three details in that are load-bearing rather than incidental: only the **first
+1.0 s is the charge** (the last 0.4 s is meant to ring out over and after the discharge, which is why the
+playback rate is computed against 1.0 s and not the file's 1.4 s); the build starts at **2.750, not 2.800**,
+which puts the source's own crack onset exactly on the shot instead of 50 ms early, where it reads as a flam
+rather than one fuller hit; and the build's lift is **tapered (+19 dB → +4 dB), not flat**, because a flat
+lift made the build as loud as the crack and the shot stopped being the payoff of its own build-up.
+
+**`beamFire` is pitch-shifted down and then EQ'd** — the maintainer asked for something lower and less
+piercing. The EQ is the part that does the work, and it is counter-intuitive enough to be worth recording:
+measured per band, pitch-shifting *alone* barely touches the harsh 2–5 kHz region, because it slides higher
+content down to refill it. The shipped chain (0.82× with tempo correction, then −11 dB at 3.5 kHz, a −6 dB
+shelf from 6 kHz and a 9 kHz low-pass) takes that band down ~9 dB while leaving the bass essentially intact.
+
+Neither file is loudness-normalised, and neither should be: the **swell must stay audibly quieter than the
+crack** (it sits ~4 dB down by mean), which is the whole build-then-crack dynamic. Trim with a `SOUNDS`
+`gain` if it is ever needed — a per-file `loudnorm` cannot express "quieter than the other file" and would
+silently equalise them.
+
+**Required attribution (use verbatim, e.g. in an in-game credits screen):**
+
+> "Scifi Laser Gun Shooting" (https://freesound.org/s/843729/) by TannerSound is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 Sample bytes are content-hashed and live on S3 (`sfx/`), pulled into `client/assets/sounds/` (gitignored)
 — see `docs/plans/audio-sample-pipeline.md`.

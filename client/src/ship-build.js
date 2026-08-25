@@ -19,6 +19,7 @@ export const updateGroups = (ship, fwd, isPlayer, dt, wantsFire) =>
 import { world } from './state.js';                             // the World these shots are fired into
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
 import { ALLY_ACCENT_COLOR, ALLY_ACCENT_MATERIAL_PREFIX } from './sim-core/ally-config.js'; // the wingman's wing livery
+import { beamLoadout } from './beam-dev.js';         // ?beam: mount the Charged beam (a strict no-op when off)
 
 // Catalog resolution lives in sim-core/ship-entity.js (a server has to do it too). These wrappers bind
 // THIS tab's World so the long-standing call signatures — `resolveComponents(refs)` and friends — keep
@@ -54,7 +55,9 @@ export function buildPlayerFor(ship, override = null) {
   // a skill-less ship diverged within seconds. Previews still get none. See the v4 note in replay.js.
   const skills = override ? (override.skills || null)
     : ((useActive && G.activeShip.progression) ? G.activeShip.progression.skills : null);
-  G.player = buildPlayer({ ship, loadout, components, skills });
+  // `?beam` swaps the gun mount for the Charged beam on the way in. With the flag off `beamLoadout`
+  // returns the very same object, so a normal build is untouched.
+  G.player = buildPlayer({ ship, loadout: beamLoadout(loadout), components, skills });
   G.currentShipName = ship.name;
   scene.add(G.player.mesh);
 }

@@ -310,7 +310,12 @@ export function applySnapshot(world, state, snap, at = Date.now()) {
 // The other conversion is the reverse of the wire's entity-id swap, so a shield ripple binds to the ship
 // it hit rather than to a number.
 function hydrateEvent(state, ev) {
-  const out = ev.pos ? { ...ev, pos: new Vec3(ev.pos.x, ev.pos.y, ev.pos.z) } : { ...ev };
+  const out = { ...ev };
+  // Every positional field, not just `pos`: the charged beam's discharge carries `from`/`to`, and the FX
+  // clones them exactly like a puff clones its `pos`. Mirrors protocol.js's VEC_FIELDS on the way out.
+  for (const f of ['pos', 'from', 'to']) {
+    if (ev[f]) out[f] = new Vec3(ev[f].x, ev[f].y, ev[f].z);
+  }
   if (ev.enemyId != null) out.enemy = state.byId.get(ev.enemyId) || null;
   return out;
 }

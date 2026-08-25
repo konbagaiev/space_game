@@ -67,6 +67,8 @@
   "ui.shop.stat.dmg": "Урон",
   "ui.shop.stat.rof": "Скор.",
   "ui.shop.stat.reload": "Перезар.",
+  "ui.shop.stat.charge": "Заряд",
+  "ui.shop.stat.arc": "Сектор",
   "ui.shop.stat.speed": "Скор. снаряда",
   "ui.shop.stat.range": "Дальность",
   "ui.shop.stat.blast": "Взрыв",

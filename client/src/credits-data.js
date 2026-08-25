@@ -26,5 +26,6 @@ export const CREDITS = {
     { name: "hangar background loop", author: "Freesound (CC0 filter)", url: null, license: "CC0 1.0", licenseUrl: null, modified: false, requiresAttribution: false },
     { name: "combat background loop", author: "Freesound (CC0 filter)", url: null, license: "CC0 1.0", licenseUrl: null, modified: false, requiresAttribution: false },
     { name: "combat background track — \"Energetic Synthwave\"", author: "ed-musicproductions", url: "https://pixabay.com/music/synthwave-energetic-synthwave-412360/", license: "Pixabay Content License", licenseUrl: null, modified: false, requiresAttribution: false },
+    { name: "Scifi Laser Gun Shooting", author: "TannerSound", url: "https://freesound.org/s/843729/", license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/", modified: false, requiresAttribution: true },
   ],
 };

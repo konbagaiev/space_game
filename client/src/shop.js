@@ -14,6 +14,7 @@ import { t } from './i18n.js';
 import { shipModelCfg } from './ship-factory.js';
 import { buildModelViewer, setViewerModel, startViewer, stopViewer, resizeViewer, disposeViewer, itemModelCfg, setTopDownView, enableOrbit } from './model-viewer.js';
 import { gatedRefs, hasNew, prune, primeSets, unseenSections, unseenItems, refOf, absorbRefs, GATE_KINDS, LEGACY_GATE_KINDS } from './shop-markers.js';
+import { GROUP_WEAPON_TYPE, slotAcceptsWeaponType } from './shop-slots.js';
 
 let shopData = null;       // { credits, shopUnlocked, stash, activeShip } — last server state
 let panelMode = 'slot';   // right context panel: 'slot' (selected-slot detail) | 'shop' (the shop)
@@ -27,7 +28,6 @@ let loadoutViewer = null; // 3D viewer for the centered ship (#loadout-ship), bu
 let shopModelViewer = null; // 3D viewer for the shop detail card's item model (#shop-model)
 const REQUIRED_SLOTS = ['hull', 'engine', 'thruster']; // can't be empty at take-off
 const COMPONENT_SLOTS = ['hull', 'engine', 'thruster', 'repair', 'grab', 'shield'];
-const GROUP_WEAPON_TYPE = { gun: 'bullet', rocket: 'rocket' }; // weapon fire-group → catalog weapon type
 // Where each slot chip sits around the centered ship (percent of #loadout-center; translate -50%,-50%).
 const SLOT_LAYOUT = {
   gun:      { top: '12%', left: '30%' }, rocket:   { top: '12%', left: '70%' }, // weapons up front
@@ -62,10 +62,21 @@ function statLine(kind, type, s, weight) {
     // Triple spiral rocket fires 3 real warheads, each dealing `power` — show the per-warhead × count
     // so the shop reflects the true on-hit damage (40×3), not one warhead's 40. (See catalog id 11.)
     add('ui.shop.stat.dmg', s.spiral ? `${s.power}×3` : s.power);
+    // The charged beam's two extra facts: how long the trigger takes to fire, and how wide the hit corridor
+    // drawn on screen is. Both are the weapon — reading only DMG/RoF would describe a different gun.
+    // `toFixed(1)` on the charge so a whole second reads "1.0s" rather than "1s", i.e. as a duration.
+    if (type === 'beam') {
+      parts.push(`${t('ui.shop.stat.charge')} ${s.chargeTime.toFixed(1)}s`);
+      parts.push(`${t('ui.shop.stat.arc')} ±${s.corridorDeg}°`);
+    }
     if (s.fireCooldown) parts.push(type === 'rocket'
       ? `${t('ui.shop.stat.reload')} ${s.fireCooldown}s`
-      : `${t('ui.shop.stat.rof')} ${(1 / s.fireCooldown).toFixed(1)}/s`);
-    add('ui.shop.stat.speed', s.projectileSpeed);
+      // A BEAM'S TRUE CYCLE IS charge + cooldown. `1 / fireCooldown` alone would advertise **2.0/s** for a
+      // weapon that spends a whole second charging and only fires every 1.5 s — a flat lie, and exactly the
+      // trap the Triple spiral's `40×3` two lines above exists to avoid. At the shipped 1.0 s + 0.5 s this
+      // renders `RoF 0.7/s` (the label's existing one-decimal format).
+      : `${t('ui.shop.stat.rof')} ${(1 / (type === 'beam' ? s.chargeTime + s.fireCooldown : s.fireCooldown)).toFixed(1)}/s`);
+    add('ui.shop.stat.speed', s.projectileSpeed); // absent on a beam: a hitscan has no flight time
     add('ui.shop.stat.range', s.maxRange);
     add('ui.shop.stat.blast', s.blastRadius);
   }
@@ -280,12 +291,13 @@ function equippedInSlot(active, slotKey) {
   const id = (active.components || {})[slotKey];
   return id != null ? normComponent(CATALOG.components.get(id)) : null;
 }
-// Stash items that fit a slot (same component type, or the group's weapon type).
+// Stash items that fit a slot (one of the group's accepted weapon types, or the component type).
 function stashForSlot(slotKey) {
   const asWeapon = !!GROUP_WEAPON_TYPE[slotKey];
-  const wantType = asWeapon ? GROUP_WEAPON_TYPE[slotKey] : slotKey;
   return ((shopData && shopData.stash) || []).map(normStash)
-    .filter((n) => asWeapon ? (n.kind === 'weapon' && n.type === wantType) : (n.kind === 'component' && n.type === wantType));
+    .filter((n) => asWeapon
+      ? (n.kind === 'weapon' && slotAcceptsWeaponType(slotKey, n.type))
+      : (n.kind === 'component' && n.type === slotKey));
 }
 
 // The slot chips around the ship: each = its slot label + the equipped item name (or "empty").

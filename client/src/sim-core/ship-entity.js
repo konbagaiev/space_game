@@ -21,6 +21,7 @@ import { simRandom } from './sim-random.js';
 import { SHIP_GROUP_SCALE, BULLET_PLANE_Y, SPAWN_GROW_TIME } from './consts.js';
 import { spawnBullet, spawnRocket } from './spawn.js';
 import { findTargetInSector } from './targeting.js';
+import { isBeamGroup, updateBeamGroup } from './beam.js';
 
 export const resolveWeapon = (catalog, id) => (id != null ? catalog.weapons.get(id) || null : null);
 
@@ -236,6 +237,10 @@ function fireMount(world, ship, mount, fwd, side, rocketTarget) {
 // shooter is flying at — because a friendly rocket resolves its own seeker target from the nose sector.
 export function updateGroups(world, ship, fwd, side, dt, wantsFire, rocketTarget = null) {
   for (const g of Object.values(ship.groups)) {
+    // A BEAM group has its own tick: a charge that spans ticks, and a hitscan instead of a projectile. A
+    // branch here rather than a fourth call site is what makes "any weapon on any ship" keep meaning what it
+    // means today — player, ally and enemy all get it, and a ship without one never takes this branch.
+    if (isBeamGroup(g)) { updateBeamGroup(world, ship, g, fwd, side, dt, wantsFire); continue; }
     g.cooldown -= dt;
     for (let i = g.pending.length - 1; i >= 0; i--) {
       g.pending[i].t -= dt;

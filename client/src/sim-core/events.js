@@ -24,6 +24,10 @@
 //   { type: 'shieldReady' }                                            the player's shield finished recharging
 //   { type: 'fire',            weaponClass, isRocket, fromPlayer }      a mount fired (only the player's is audible)
 //   { type: 'evade',           pos }                                   a shot was dodged (Maneuver skill)
+//   { type: 'beamCharge',      pos, dur, weaponClass, fromPlayer }     a beam started charging (the sight
+//                                                                       brightens over `dur` seconds)
+//   { type: 'beamFire',        from, to, hit, absorbed, weaponClass, fromPlayer }  the discharge itself —
+//                                                                       a hitscan, so it is already resolved
 //   { type: 'pickup',          item }                                  the Grab collected a loot drop
 //   { type: 'smoke',           pos }                                   one rocket-trail puff
 //   { type: 'detonate',        pos, weaponClass, blastVis, blastTint, blastTime, blastBright }
