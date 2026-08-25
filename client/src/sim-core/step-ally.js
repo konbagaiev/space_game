@@ -170,20 +170,30 @@ export function approachThrust(closingSpeed, remaining, accel) {
 // Which muzzle speed the NOSE is optimised for: the ship's BALLISTIC (non-homing) mounts. A ship with no
 // gun at all gets 0, which makes `aimWithDrift` a no-op — the nose then simply points at the target, which
 // is right for a homing-only loadout.
+//
+// `type === 'bullet'`, not `!== 'rocket'`: a BEAM has no `projectileSpeed` at all. (That half was already a
+// no-op — `undefined > best` is false — so this is a statement of intent, not a bug fix; `isBallistic`
+// below is the half that actually mattered.)
 export function gunSpeed(ship) {
   let best = 0;
   for (const g of Object.values(ship.groups || {})) {
     for (const m of g.mounts || []) {
-      if (m.weapon && m.weapon.type !== 'rocket' && m.weapon.projectileSpeed > best) best = m.weapon.projectileSpeed;
+      if (m.weapon && m.weapon.type === 'bullet' && m.weapon.projectileSpeed > best) best = m.weapon.projectileSpeed;
     }
   }
   return best;
 }
 
-// Does this fire group throw something that INHERITS the ship's velocity? Bullets do; rockets do not (§70).
-// That is why every gate below is asked per GROUP: off one nose the two weapons travel down different
-// lines, so they need different answers to both "is this shot on target?" and "does it cross the player?".
-const isBallistic = (g) => (g.mounts || []).some((m) => m.weapon && m.weapon.type !== 'rocket');
+// Does this fire group throw something that INHERITS the ship's velocity? Bullets do; rockets do not (§70),
+// and a BEAM is a hitscan with no flight time at all. That is why every gate below is asked per GROUP: off
+// one nose the three weapons travel down different lines, so they need different answers to both "is this
+// shot on target?" and "does it cross the player?".
+//
+// `type === 'bullet'` rather than `!== 'rocket'` is LOAD-BEARING for the beam. A wingman carrying a beam AND
+// a kinetic (he can be handed the player's gear) would otherwise treat the beam group as ballistic and lead
+// its aim by the OTHER gun's projectile speed — and a hitscan must never be led. Provably neutral for every
+// row that exists today, since every non-rocket weapon in the shipped catalog except the beam is a bullet.
+export const isBallistic = (g) => (g.mounts || []).some((m) => m.weapon && m.weapon.type === 'bullet');
 
 // ---------- The step ----------
 

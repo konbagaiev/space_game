@@ -136,6 +136,33 @@ test('an entity reference becomes an id, never the entity', () => {
   assert.ok(!JSON.stringify(w).includes('hitBoxes'));
 });
 
+test('a beam discharge crosses the wire as two plain points, and leaks no entity graph', () => {
+  // `wireEvent` used to vec-serialize only a field literally named `pos`; the beam's two endpoints would
+  // then have crossed as whatever JSON.stringify makes of a Vec3 INSTANCE — which happens to be {x,y,z}
+  // today only because the constructor assigns three own enumerable fields. That is an implicit dependency
+  // on a class's field layout, in the one file whose job is to make the wire explicit.
+  const from = { x: 1.5, y: 0.6, z: 2.5, clone() { return this; } };  // Vec3-shaped, with methods on it
+  const to = { x: 3.5, y: 0.6, z: 42.5, clone() { return this; } };
+  const w = wireEvent({
+    type: 'beamFire', from, to, hit: true, absorbed: false, weaponClass: 'beam', fromPlayer: true,
+  }, () => 7);
+  assert.deepEqual(w, {
+    type: 'beamFire',
+    from: { x: 1.5, y: 0.6, z: 2.5 }, to: { x: 3.5, y: 0.6, z: 42.5 },
+    hit: true, absorbed: false, weaponClass: 'beam', fromPlayer: true,
+  });
+  assert.equal(typeof w.from.clone, 'undefined', 'a bare point, not the live vector object');
+  assert.equal(w.enemyId, undefined, 'beamFire carries NO entity reference — the hostile sight is deferred');
+});
+
+test('a beam charge crosses as pos + dur + fromPlayer, and nothing per-tick', () => {
+  // Two events per shot IS the whole protocol for this weapon: a charge is per-ship state that changes
+  // every tick and an aiming corridor is per-ship geometry — neither is broadcast.
+  const w = wireEvent({ type: 'beamCharge', pos: { x: 0, y: 0.6, z: 1.6 }, dur: 1.0, weaponClass: 'beam', fromPlayer: true }, () => 7);
+  assert.deepEqual(w, { type: 'beamCharge', pos: { x: 0, y: 0.6, z: 1.6 }, dur: 1.0, weaponClass: 'beam', fromPlayer: true });
+  assert.equal(w.weaponClass, 'beam', 'the class rides along so a second beam row routes its OWN swell');
+});
+
 test('an unknown event is dropped, not forwarded raw', () => {
   assert.equal(wireEvent({ type: 'somethingNew', secret: 1 }, () => null), null);
 });

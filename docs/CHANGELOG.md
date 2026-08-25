@@ -3,6 +3,103 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-25
+
+- **The Charged beam — a shot that takes time, has no projectile, and announces itself before it lands.**
+  A **third weapon `type`** (`'beam'`) joins `bullet` and `rocket` as an ordinary `WEAPONS` row (id 12,
+  **5500 credits, gated behind "Level 3"**): power 80, **range 100** (ten past the long guns), **charge
+  1.0 s**, cooldown 0.5 s, weight 12. While it
+  is mounted, **three thin lines run from the hull** — the centre and the two edges of a **±2° hit
+  corridor**. Pull the trigger and energy builds for a full second; at release the beam **hitscans**: it
+  strikes the ship it painted if **any part of that ship is still between the two drawn lines**, otherwise
+  whatever is in the corridor at that instant, otherwise nothing. Nothing interrupts a charge — the trigger
+  is a tap that COMMITS — so turning away breaks the shot while turning toward the target tracks it, and
+  **turn rate becomes the weapon's skill stat**. The charge was raised from 0.5 s to **1.0 s** so the
+  build-up is clearly heard and seen; the side effect is that every target now drifts twice as far during
+  it, which makes **active tracking with A/D mandatory rather than optional** (even a 5 u/s crosser escapes
+  at close range now, where at 0.5 s it stayed in).
+- **Its sustained DPS is 53, and that is deliberate — do not "fix" it.** 80 damage over a
+  `chargeTime + fireCooldown` = 1.5 s cycle is **below the 800-credit starter gun (56)** and beside Heavy
+  cannon (58). Offered a zero cooldown or 120 damage to restore 80 DPS, the maintainer declined both and
+  kept the 5500 price and the Level-4 gate after being told it reads as a trap purchase. The reasoning is
+  recorded in DECISIONS §135 because it is a real argument rather than a preference: **nominal DPS assumes
+  every shot lands.** A kinetic must be LED and has travel time, so much of it misses a manoeuvring target,
+  while the beam has zero flight time and lands on whatever stayed in the corridor — and it reaches 100 u
+  where the starter gun reaches 88. Any future rebalance must compare **effective damage-on-target**. The corridor test is **hull-aware**, which is a
+  correctness requirement rather than polish: at ±2° the corridor is *narrower than a ship* inside ~60 u,
+  so a centre-based test would light the reticle on targets the shot then misses. It is deliberately
+  **undodgeable and RNG-free** — the corridor IS the dodge — so the drawn lines never lie and no recorded
+  trace can shift.
+- **Buying it means giving up your rapid gun.** The beam occupies the **primary gun slot** and fires on
+  **Space** — no new slot, no new key. The hangar's slot rule moved out of `shop.js` into a pure,
+  unit-tested `client/src/shop-slots.js`, where the `gun` slot now accepts `bullet | beam`; the server
+  already routed it, and `WEAPON_GROUP` in `db.js` now says so explicitly. Its shop stat line reads exactly
+  `DMG 80 · Charge 1.0s · Arc ±2° · RoF 0.7/s · Range 100 · Weight 12` — the RoF is the **true
+  charge+cooldown cycle** (`1/1.5` at the label's existing one decimal), never `1/fireCooldown`, which
+  would have advertised **2.0/s** for a weapon that spends a whole second charging. Two new i18n keys (`ui.shop.stat.charge`, `ui.shop.stat.arc`) with Russian translations.
+- **The look, and the game's first CC-BY sound.** A green (`#5ad17f`) dashed sight hands over to a
+  cyan-white (`0xbfefff`) discharge — split hues on purpose, so the aiming aid never steals the moment it
+  exists to announce and can therefore sit on screen permanently. All three lines carry one colour and one
+  opacity (0.22 idle, +0.38 over the charge); the centre is distinguished by **dash rhythm, not
+  brightness**, because every WebGL line is 1 px whatever `linewidth` says. The dashes ARE the charge
+  animation, drifting at 3 u/s and rushing to 40 u/s as the shot fills; a bead of light gathers at the
+  muzzle, a **diamond** reticle tightens and spins up on the painted target, and the discharge is a sharp
+  pop. **The discharge is a thick beam, not a line** — a WebGL line is 1 px wide whatever `linewidth` says,
+  so thickness is only expressible as geometry: two additive quads, a white-hot core (width 0.3) inside a
+  cyan glow (width 1.0), in WORLD units so the beam keeps its thickness as the camera zooms. The fade is
+  1.0 s and split — the glow goes `a²` over the whole second while the core burns out in the first quarter,
+  so it reads as a strike that leaves a trail rather than a dissolve — plus the unchanged impact bloom
+  expanding over 0.24 s. Audio is one CC-BY clip
+  (*Scifi Laser Gun Shooting* by **TannerSound**, CC-BY 4.0), cut by the maintainer by ear.
+  **`beamCharge` is three pieces of the source concatenated** (1.400 s): a quiet opening burst, a lifted
+  build, and a tail that deliberately runs PAST the shot. Only its **first 1.0 s is the charge** — hence
+  `BEAM_CHARGE_CLIP_SEC = 1.0`, not the file's 1.4, which would play it 40 % fast and drag the crack in
+  front of the shot; the build starts at **2.750, not 2.800**, putting the source's own crack onset exactly
+  on the shot instead of 50 ms early where it reads as a *flam*; and its lift is **tapered (+19 → +4 dB),
+  not flat**, because a flat lift made the build as loud as the crack and the shot stopped being the payoff
+  of its own build-up. **`beamFire` is pitch-shifted down and then EQ'd** for something lower and less
+  piercing — and the EQ is the part that does the work: measured per band, pitch-shifting alone moves the
+  harsh 2–5 kHz region by ~0.1 dB (it slides higher content down to refill it), while the shipped chain
+  takes that band down ~9 dB with the bass essentially intact. Do not "simplify" it to a pitch shift. `CREDITS.md` gains its row
+  **and** the verbatim attribution blockquote; this is the first sampled sound in the game that is not CC0,
+  so that attribution has to stay while the asset is in use.
+- **No ship carries a beam — it is a player purchase — and arming an enemy is now GATED.** No pirate has
+  one, no hostile corridor is drawn, and nothing is tuned for an AI. The simulation is side-agnostic
+  regardless: the whole mechanic sits behind ONE branch in `updateGroups`, there is no `side === 'player'`
+  test anywhere in `sim-core`, and a unit test drives the hostile path directly to prove it — which is what
+  keeps arming pirates later a catalog edit rather than a rewrite. **DECISIONS §135** records the gate that
+  goes with the deferral: before any enemy is ever armed, the hostile-sight rendering and the wire entity
+  reference must exist first, because an enemy beam is a 0.5 s unanswerable hit unless its telegraph is on
+  screen — an aiming line the player never sees is not a warning, it is an unfair attack. §135 also records
+  the §124 reconciliation (a corridor *without* a lock would be the deleted aim-assist cone; three things
+  make it not that, and all three are on screen — and the recorded wording stays precise even though the
+  maintainer calls the corridor "aim assist", because §124 removed a cone that silently **redirected** a
+  shot at a target the player never chose, whereas this corridor never moves the shot) and **retracts** an
+  earlier, wrong determinism argument against a beam dodge roll.
+- **Determinism and the wire, verified rather than assumed.** No shipped ship mounts a beam, so
+  `isBeamGroup` is false for every group in the archive and the new branch never executes:
+  `22-intro-replay` still logs **tick=2474** and `36-sim-divergence` still agrees on
+  **hash=0x2a36f8d9 / draws=38**, both re-run against a baseline captured before the first edit. The
+  weapon adds **two events per shot and nothing else** (`beamCharge`, `beamFire`) — no entity reference, no
+  per-tick charge broadcast, no snapshot column, no change to the digest; the corridor's width is this
+  weapon's lag compensation. `protocol.js` now vec-serializes positions from an explicit `VEC_FIELDS` set
+  instead of relying on a field being literally named `pos`. New guards: `sim-core/beam.test.js` (21,
+  including the hostile path and mutation-verified against both a centre-based corridor and a player-only
+  shortcut), `server/src/catalog_beam.test.js`, `client/src/shop-slots.test.js`,
+  `client/src/beam-dev.test.js`, and the visual scenario `39-charge-beam`. Client suite **551 → 590**.
+- **A charge does not survive a run reset.** `clearAndPlaceRun` already cleared `cooldown` and `pending`
+  off every fire group; `charge` now goes with them. It was reachable and nasty: `tick.js` only steps the
+  player while alive, so **dying mid-charge FREEZES the charge**, and Restart reuses the same player object
+  and the same `groups` (it never rebuilds the ship) — so the next run would have discharged by itself
+  `chargeTime − t` seconds in, with a bolt and a bang the player never triggered, no charge FX in front of
+  it, the cooldown eaten so the first real shot came late, and `charge.lock` still pointing at an enemy
+  from the PREVIOUS run — 80 damage into a corpse at a stale position that the beam was then drawn to.
+  Allies and enemies need no equivalent: their entities are destroyed on reset and rebuilt through
+  `buildGroups`. Guarded by a regression test driven against the real catalog and the real reset path.
+- **A `?beam` dev flag to fly it before you can buy it** (`client/src/beam-dev.js`) — URL-only, never
+  sticky, a strict no-op when absent, and with **no enemy half**: there is deliberately no way to turn a
+  hostile beam on until §135's gate is passed.
+
 ## 2026-08-23
 
 - **The pipeline gains a grilling stage, because five defects walked past every automated gate.**

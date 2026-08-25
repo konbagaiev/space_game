@@ -11,7 +11,7 @@ import { Vec3 } from './vec.js';
 import { createWorld } from './world.js';
 import {
   stepAlly, stepAllyDeaths, nearestEnemyTo, aimedEnemy, holdFireForPlayer, shouldRetreat, shouldRejoin,
-  approachThrust, aimWithDrift, bulletDir, gunSpeed,
+  approachThrust, aimWithDrift, bulletDir, gunSpeed, isBallistic,
 } from './step-ally.js';
 import { nearestHostileTarget } from './targeting.js';
 import { stepEnemyAI } from './step-enemies.js';
@@ -553,6 +553,56 @@ test('gunSpeed picks the BALLISTIC mount, and a homing-only ship gets 0 (aim = n
   assert.equal(gunSpeed(shipWith([{ weapon: { type: 'rocket', projectileSpeed: 999 } }])), 0);
   const u = { x: 0, z: 1 };
   assert.deepEqual(aimWithDrift(u, { x: 20, z: 0 }, 0), { x: 0, z: 1, solved: true });
+});
+
+// A wingman can be handed the PLAYER's gear, so a beam on an ally is reachable today without arming a
+// single pirate — and a hitscan must never be led. `isBallistic` is the load-bearing half: a group holding
+// a beam AND a kinetic would otherwise be treated as ballistic and aimed ahead of the target by the OTHER
+// gun's projectile speed. `gunSpeed`'s half was already a no-op for beams (no projectileSpeed → the
+// comparison is false); it was narrowed for the same intent, not to fix a bug.
+test('a BEAM mount is not ballistic and contributes no muzzle speed — a hitscan is never led', () => {
+  const beam = { type: 'beam', power: 80, maxRange: 100, chargeTime: 1.0, corridorDeg: 2, fireCooldown: 0.5 };
+  const kinetic = { type: 'bullet', projectileSpeed: 40 };
+  const shipWith = (mounts) => ({ groups: { g: { mounts } } });
+
+  assert.equal(isBallistic({ mounts: [{ weapon: beam }] }), false, 'a beam group flies down the NOSE');
+  assert.equal(gunSpeed(shipWith([{ weapon: beam }])), 0, 'and offers no speed to lead by');
+
+  // The mixed loadout: the beam group is still not ballistic, and the kinetic's 40 does not leak into it.
+  assert.equal(isBallistic({ mounts: [{ weapon: beam }, { weapon: kinetic }] }), true,
+    'a group that also holds a bullet IS ballistic — for its bullet');
+  assert.equal(isBallistic({ mounts: [{ weapon: beam }] }), false);
+  assert.equal(gunSpeed({ groups: { gun: { mounts: [{ weapon: beam }] }, alt: { mounts: [{ weapon: kinetic }] } } }), 40,
+    'a ship-wide muzzle speed still comes from its real bullets');
+});
+
+test('the narrowing to `type === bullet` is NEUTRAL for every bullet/rocket combination that ships today', () => {
+  // The S3 claim, asserted rather than left in prose: with no beam in the mix, `type === 'bullet'` and the
+  // old `type !== 'rocket'` agree on every group, so nothing about an existing ally run changed.
+  const bullet = (sp) => ({ type: 'bullet', projectileSpeed: sp });
+  const rocket = { type: 'rocket', projectileSpeed: 999 };
+  const combos = [
+    [], [{ weapon: bullet(40) }], [{ weapon: rocket }],
+    [{ weapon: bullet(40) }, { weapon: rocket }],
+    [{ weapon: rocket }, { weapon: bullet(65) }],
+    [{ weapon: bullet(40) }, { weapon: bullet(65) }],
+    [{ weapon: rocket }, { weapon: rocket }],
+  ];
+  const oldIsBallistic = (g) => (g.mounts || []).some((m) => m.weapon && m.weapon.type !== 'rocket');
+  const oldGunSpeed = (ship) => {
+    let best = 0;
+    for (const g of Object.values(ship.groups || {})) {
+      for (const m of g.mounts || []) {
+        if (m.weapon && m.weapon.type !== 'rocket' && m.weapon.projectileSpeed > best) best = m.weapon.projectileSpeed;
+      }
+    }
+    return best;
+  };
+  for (const mounts of combos) {
+    assert.equal(isBallistic({ mounts }), oldIsBallistic({ mounts }),
+      `isBallistic changed for ${JSON.stringify(mounts.map((m) => m.weapon.type))}`);
+    assert.equal(gunSpeed({ groups: { g: { mounts } } }), oldGunSpeed({ groups: { g: { mounts } } }));
+  }
 });
 
 test('the ALLY in flight: his bullet flies at a stationary enemy while he drifts across the line', () => {

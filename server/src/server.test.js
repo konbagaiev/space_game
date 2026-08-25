@@ -514,13 +514,26 @@ test('levels: intro Level 0 (no boss), then Level 1-4 served in order (content s
   assert.equal((await fetch(base + '/api/levels/nope')).status, 404);
 });
 
-test('catalog: weapons are seeded with type bullet/rocket', async () => {
+test('catalog: weapons are seeded with type bullet/rocket/beam', async () => {
   const weapons = await getJson('/api/weapons');
   // 5 base (ids 1–5) + 3 player-shop ladder weapons (Heavy cannon 6, Heavy Machine Gun 7, Heavy rocket 8)
-  // + 2 enemy weapons (ids 9–10) + Triple spiral rocket (11)
-  assert.equal(weapons.length, 11);
+  // + 2 enemy weapons (ids 9–10) + Triple spiral rocket (11) + Charged beam (12)
+  assert.equal(weapons.length, 12);
   const types = new Set(weapons.map((w) => w.type));
-  assert.deepEqual([...types].sort(), ['bullet', 'rocket']);
+  assert.deepEqual([...types].sort(), ['beam', 'bullet', 'rocket']);
+  // The Charged beam: the third type, and the one whose numbers are read off the row every tick.
+  const beam = weapons.find((w) => w.name === 'Charged beam');
+  assert.equal(beam.id, 12);
+  assert.equal(beam.type, 'beam');
+  assert.equal(beam.price, 5500);
+  assert.equal(beam.stats.power, 80);
+  assert.equal(beam.stats.maxRange, 100);      // ten past the long guns' 90
+  assert.equal(beam.stats.chargeTime, 1.0);    // raised from 0.5 so the build-up is heard and seen
+  assert.equal(beam.stats.fireCooldown, 0.5);  // → a 1.5 s cycle, i.e. 53 DPS, deliberately low
+  assert.equal(beam.stats.corridorDeg, 2);     // HALF-angle, degrees
+  assert.equal(beam.stats.weight, 12);
+  assert.equal(beam.stats.class, 'beam');
+  assert.equal(beam.stats.minLevel, 'level-4'); // FACTORY_GATE — sold only after "Level 3"
   const basic = weapons.find((w) => w.name === 'Basic kinetic');
   assert.equal(basic.type, 'bullet');
   assert.equal(basic.stats.power, 10);

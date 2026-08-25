@@ -78,7 +78,15 @@ export function startRun(world, { keepPlayer = false } = {}) {
   p._repairAccum = 0;           // fresh run: clear banked repair-drone time
   p._shieldValue = p.shield ? p.shield.capacity : 0; // fresh run: shield full & active
   p._shieldRechargeAccum = 0;
-  for (const g of Object.values(p.groups)) { g.cooldown = 0; g.pending.length = 0; } // reset fire groups
+  // Reset fire groups. `charge` is the CHARGED BEAM's in-flight state and it belongs here for exactly the
+  // reason `cooldown` and `pending` do — a restart reuses the SAME player object and the SAME `groups`
+  // (`mainwindow.js` el.restart → leaveOverlay → reset(), which never rebuilds the ship), so anything left
+  // on a group is carry-over from the run that just ended. A charge is worse than a stale cooldown: dying
+  // mid-charge FREEZES it (tick.js only steps the player while alive), so the next run would discharge by
+  // itself `chargeTime − t` seconds in — a bolt and a bang the player never triggered, with no charge FX in
+  // front of it (hideBeamFx already ran) — and `charge.lock` would still point at a ship entity from the
+  // PREVIOUS run, dealing damage to a corpse at a stale position that the beam is then drawn to.
+  for (const g of Object.values(p.groups)) { g.cooldown = 0; g.pending.length = 0; g.charge = null; }
   p.alive = true;
 
   world.earned = 0; world.earnedXp = 0; world.kills = 0; world.banked = false; // new run: reset session credits/XP + the bank-once guard (balance persists)

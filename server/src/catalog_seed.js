@@ -151,12 +151,16 @@ export const COMPONENTS = [
     stats: { capacity: 20, rechargeSec: 10 } },
 ];
 
-// --- weapons: type 'bullet' | 'rocket'; stats hold the (now fully DB-driven) characteristics ---
+// --- weapons: type 'bullet' | 'rocket' | 'beam'; stats hold the (now fully DB-driven) characteristics ---
 // bullets: power (damage), projectileSpeed, maxRange (units), fireCooldown, weight, projectileColor.
 // rockets: power (damage), accel, turnRate (maneuverability), launchSpeed, maxRange, health
 //   (HP — reduced by a bullet's `power`; the rocket is shot down when it hits 0, so e.g. 20 HP
 //   takes two 10-damage gun hits), blastRadius (AoE — can hit several), detonateRadius, blastVisual,
 //   seekHalfAngle (homing search cone), fireCooldown, weight, projectileColor.
+// beams: power (damage, applied instantly at release), maxRange (units — the hitscan's reach),
+//   chargeTime (seconds from trigger to discharge), corridorDeg (HALF-angle of the hit corridor in
+//   degrees — the two drawn edge lines), fireCooldown (the post-discharge lock-out), weight,
+//   projectileColor (the DISCHARGE tint; the aiming sight is a separate hue in beam-fx.js), class.
 // Optional top-level `price` (credits, hangar shop) defaults to 0 when omitted (see COMPONENTS note).
 export const WEAPONS = [
   {
@@ -243,6 +247,30 @@ export const WEAPONS = [
       minLevel: FACTORY_GATE // gated: sold only after "Level 3"
     }
   },
+  // The charged beam (docs/plans/2026-08-25-1056-charge-beam-weapon.md) — a THIRD weapon `type`. No
+  // projectile: a 1.0 s charge, then a hitscan that strikes the ship it painted if ANY PART of it is still
+  // inside the ±corridorDeg wedge drawn from the nose. Numbers live HERE, per row, so two ships can carry
+  // differently-tuned beams. `class: 'beam'` routes its own charge + discharge samples (SOUND_MAP below).
+  // It occupies the PRIMARY GUN slot and fires on Space, so buying it means giving up your rapid gun.
+  //
+  // ITS SUSTAINED DPS IS DELIBERATELY LOW — DO NOT "FIX" IT. The cycle is chargeTime + fireCooldown = 1.5 s,
+  // so 80 damage is 53 DPS: below the 800-credit starter gun (56) and beside Heavy cannon (58). Offered a
+  // zero cooldown or 120 damage to restore it, the maintainer chose to leave it weaker on purpose
+  // (2026-08-25) and kept the 5500 price and the Level-4 gate. The beam is bought for the INSTANT, no-lead
+  // hit at range 100, not for damage: nominal DPS assumes every shot lands, and a kinetic round has travel
+  // time and must be LED, so much of it misses a manoeuvring target while the beam lands on whatever stayed
+  // in the corridor. Any rebalance must compare EFFECTIVE damage-on-target, not the stat line.
+  {
+    id: 12, name: 'Charged beam', type: 'beam', price: 5500, stats: {
+      power: 80, maxRange: 100, fireCooldown: 0.5, weight: 12, projectileColor: 0xbfefff, class: 'beam',
+      // projectileColor is the DISCHARGE's cyan-white; the aiming sight is green and its look values are
+      // module constants in beam-fx.js (plan §2e) — the two hues are deliberately different.
+      chargeTime: 1.0,   // seconds from trigger to discharge — raised from 0.5 (maintainer, 2026-08-25) so
+                         // the charge sound and the build-up animation are clearly heard and seen
+      corridorDeg: 2,    // HALF-angle of the hit corridor, degrees (the two drawn edge lines)
+      minLevel: FACTORY_GATE, // gated: sold only after "Level 3", like the Heavy Machine Gun
+    }
+  },
 ];
 
 // --- item rarity + color (drives the in-world drop glow + the pickup-log tint on the client).
@@ -259,11 +287,34 @@ for (const row of [...COMPONENTS, ...WEAPONS]) {
 // --- sounds: the SFX asset registry (key -> same-origin content-hashed url, optional playback gain).
 // Volume is mostly baked into the files (gain defaults to 1); per-sound `gain` trims it at playback. These
 // are the rows of the `sounds` table; the client
-// fetches them (/api/sounds), preloads each, and plays by key. All CC0 (see client/assets/CREDITS.md).
+// fetches them (/api/sounds), preloads each, and plays by key. Mostly CC0; the two beam samples are the
+// first CC-BY sound in the game and their attribution must stay (see client/assets/CREDITS.md).
 export const SOUNDS = [
   { key: 'kinetic',  url: 'assets/sounds/kinetic.6d8dda6a.mp3', gain: 0.7 }, // machine-gun fire, -30%
   { key: 'rocket',   url: 'assets/sounds/rocket.0e10b34a.mp3' },
   { key: 'cannon',   url: 'assets/sounds/cannon.689d2b52.mp3' },
+  // The charged beam, both cut from ONE CC-BY source (the maintainer chose these cuts by ear, 2026-08-25).
+  //
+  // CHARGE — THREE pieces concatenated, 1.400 s total: a quiet opening burst (0.600→1.100 at −9 dB), a
+  // LIFTED build (2.750→3.250), then a tail that deliberately runs PAST the shot (3.250→3.650).
+  //   • Only the FIRST 1.0 s is the charge. The last 0.4 s is meant to play over and after the discharge,
+  //     which is why `BEAM_CHARGE_CLIP_SEC` in sim.js is **1.0, not 1.4** — the rate must fill the CHARGE
+  //     window, not the file. Using 1.4 speeds it up 40 % and drags the crack in front of the shot.
+  //   • The build starts at 2.750, NOT 2.800: that 50 ms puts the source's own crack onset exactly on the
+  //     shot (the B/C boundary lands at 1.0 s). At 2.800 it arrives 50 ms early, which reads as a FLAM
+  //     rather than one fuller hit.
+  //   • Its lift is TAPERED (+19 dB → +4 dB over the piece), not flat. A flat +15 dB made the build as loud
+  //     as the crack and the shot stopped being the payoff of its own build-up.
+  // DISCHARGE — pitch-shifted DOWN (0.82×, tempo-corrected) and then EQ'd: −11 dB at 3.5 kHz, a −6 dB
+  // high shelf from 6 kHz, and a 9 kHz low-pass. THE EQ IS THE PART THAT MATTERS and it is counter-
+  // intuitive — do NOT "simplify" this to a plain pitch shift. Measured: pitch-shifting alone moves the
+  // harsh 2–5 kHz band by 0.1 dB (it slides higher content down to refill it); the shipped chain takes
+  // that band down ~9 dB while leaving the bass intact.
+  // NO loudnorm anywhere, on either file: the swell must stay audibly QUIETER than the crack (it is ~4 dB
+  // down by mean). Trim with `gain` here if ever needed — a per-file loudnorm cannot express "quieter than
+  // the other file" and would silently equalise them.
+  { key: 'beamCharge', url: 'assets/sounds/beamCharge.4e80a3a9.mp3' },
+  { key: 'beamFire',   url: 'assets/sounds/beamFire.76c91f98.mp3' },
   { key: 'shipHit',  url: 'assets/sounds/shipHit.8b58950e.mp3' },
   { key: 'shipBoom', url: 'assets/sounds/shipBoom.dcd028da.mp3' },
   { key: 'blast',    url: 'assets/sounds/blast.fcd21671.mp3' },
@@ -274,7 +325,9 @@ export const SOUNDS = [
 ];
 
 // --- sound_map: routing. (entity, class, event) -> sound key. `entity` is 'ship' | 'weapon'; `class` is
-// the entity's stats.class; `event` is ship 'explode'/'hit' or weapon 'fire'/'explode' (rocket detonation).
+// the entity's stats.class; `event` is ship 'explode'/'hit' or weapon 'fire'/'explode' (rocket detonation)
+// or — for the charged beam alone — 'charge', the swell that precedes its 'fire'. `sound_map.event` is a
+// free-text column, so a new event name needs no schema change.
 // The client resolves at runtime (sfxFor / tracksFor) — NO hardcoded routing. Unmapped -> synth/silent.
 // Multiple rows may share (entity,class,event) — e.g. several music tracks per scene, played at random.
 // Enemy weapon FIRE is never sampled (gated by isPlayer at the call site), so only the rocket 'explode'
@@ -284,6 +337,8 @@ export const SOUND_MAP = [
   { entity: 'weapon', class: 'cannon',  event: 'fire',    sound: 'cannon' },
   { entity: 'weapon', class: 'rocket',  event: 'fire',    sound: 'rocket' },
   { entity: 'weapon', class: 'rocket',  event: 'explode', sound: 'blast' },   // rocket detonation
+  { entity: 'weapon', class: 'beam',    event: 'charge',  sound: 'beamCharge' }, // the 1.0 s swell
+  { entity: 'weapon', class: 'beam',    event: 'fire',    sound: 'beamFire' },   // ...and the crack
   { entity: 'ship',   class: 'fighter', event: 'explode', sound: 'blast' },   // small ships
   { entity: 'ship',   class: 'capital', event: 'explode', sound: 'shipBoom' },// medium/large ships
   { entity: 'ship',   class: 'player',  event: 'explode', sound: 'shipBoom' },

@@ -36,6 +36,7 @@ import { startLevel, updateLevelRunner, winLevel, finishMission as finishMission
 import { clearAndPlaceRun, startRun } from './sim-core/reset-world.js';
 import { simTick as simTickIn } from './sim-core/tick.js';
 import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
+import { drawBeamSight, startBeamCharge, spawnBeamBolt, hideBeamFx } from './beam-fx.js';
 import { track, currentLevelLabel, bankRun, commitLevelAdvance, loadAdvancedLevel, depositLoot,
          reportMissionCleared, refreshAfterRoomBank } from './net.js';
 import { t } from './i18n.js';
@@ -253,6 +254,20 @@ export function syncMeshes(dt = 0) {
 //
 // Moves to its own `sim-view.js` in Slice B3, once levelRunner's state lives on the World and this file's
 // simulation half can leave for sim-core/ without dragging a circular import along.
+
+// How much of the `beamCharge` SAMPLE is the CHARGE — and this is NOT the file's length.
+//
+// The file is 1.400 s: three concatenated pieces whose first 1.0 s is the build-up and whose last 0.4 s is
+// a tail deliberately cut to run OVER AND AFTER the discharge. Divided by the weapon's own `chargeTime`
+// this gives the playback rate that fits the build to the charge window exactly (1.0 at the shipped 1.0 s
+// charge), leaving the overrun to ring out across the shot.
+//
+// **Using the file's 1.4 s here would be the bug this constant exists to prevent:** the clip would play
+// 40 % fast and the source's own crack — which sits precisely at the 1.0 s mark — would land ahead of the
+// beam leaving the ship. Tied to the CUT, not to the weapon: if the clip is ever re-cut, measure where its
+// build ends and move this number with it.
+const BEAM_CHARGE_CLIP_SEC = 1.0;
+
 function applySimEvent(ev) {
   switch (ev.type) {
     case 'hit':
@@ -285,6 +300,30 @@ function applySimEvent(ev) {
         const sample = sfxFor('weapon', ev.weaponClass, 'fire');
         if (ev.isRocket) audio.sfx.rocket(sample); else audio.sfx.shoot(sample);
       }
+      break;
+    // THE CHARGED BEAM, in two beats. `beamCharge` opens the 1.0 s swell; `beamFire` is the release. Both
+    // resolve their sample through the event's OWN `weaponClass` — never a hardcoded 'beam' — so a second
+    // beam row with its own class gets its own charge and discharge samples.
+    //
+    // Both the sight's charge clock and the audio are gated on `ev.fromPlayer`. The audio for the usual
+    // reason — only your own shots are audible. The CLOCK because `beam-fx.js` draws exactly one ship's
+    // sight (the local player's), so a wingman handed a beam would otherwise brighten the PLAYER's sight
+    // and stop it again on his own release. Not reachable in shipped play today (no ship carries a beam
+    // until the player buys one), and it dissolves the day `beamCharge` carries a shooter reference — which
+    // is the deferred work in the plan's §2d, gated by DECISIONS §135.
+    case 'beamCharge':
+      if (ev.fromPlayer) {
+        startBeamCharge(ev.dur);
+        // The clip is stretched to fill the charge window exactly: `rate = clip length / chargeTime`, so
+        // retuning chargeTime can never desync the bang from the shot. An EXPLICIT rate also suppresses the
+        // random per-shot pitch jitter sfx.shoot applies by default — a timing cue must sound identical
+        // every time.
+        audio.sfx.shoot(sfxFor('weapon', ev.weaponClass, 'charge'), { rate: BEAM_CHARGE_CLIP_SEC / (ev.dur || 1) });
+      }
+      break;
+    case 'beamFire':
+      spawnBeamBolt(ev.from, ev.to, !!ev.fromPlayer); // the bolt is drawn whoever fired it
+      if (ev.fromPlayer) audio.sfx.shoot(sfxFor('weapon', ev.weaponClass, 'fire'), { rate: 1 });
       break;
     case 'smoke':          spawnSmoke(ev.pos); break;
     case 'detonate':
@@ -485,6 +524,10 @@ export function renderTick(dt) {
   drawArenaBorder();
   simEvents.drain(applySimEvent); // everything the sim decided this tick, turned into sight and sound
   drawDrops(grabTarget, dt);      // crate spin + the blue pull beam
+  // The charged beam's green aiming sight (three lines + reticle + muzzle bead). A no-op when the player
+  // has no beam mounted — but it still ages the bolt/bloom/charge transients, so a discharge finishes
+  // fading even if the ship dies in the same instant.
+  drawBeamSight(dt);
 
   stepMicroExplosions(dt);
   updateFlipbooks(dt);            // sprite-sheet explosions: advance frame, fade + drop when finished
@@ -670,6 +713,7 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   creditPopups.length = 0; // DOM-only, no scene meshes to dispose
   clearEnemyShieldBubbles(); // hide + unbind pooled enemy shield bubbles (no cross-run leaks)
   hideGrabLine();            // the Grab's pull beam has no drop to point at any more
+  hideBeamFx();              // and the charged beam's sight has no fight left to aim into
   clearEventLog(); // start a fresh run with an empty event log
 
   // Remember HOW this run started. A mission entered by flying into it keeps the ship exactly where it is

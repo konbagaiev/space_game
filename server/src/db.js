@@ -879,7 +879,10 @@ export async function reachedLevels(currentProgress, db = pool) {
 // Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
 const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']);
 const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']);
-const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket' };
+// Catalog weapon type → the fire group it installs into. The `gun` group is the PRIMARY weapon slot: a
+// bullet OR a beam, never both (installing one replaces the other). Listed explicitly rather than left to
+// the `|| 'gun'` fallback below, because this map is where a reader looks for the routing.
+const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket', beam: 'gun' };
 const sellPrice = (price) => Math.floor((price | 0) * 0.75);
 
 async function catalogItem(kind, refId, client = pool) {

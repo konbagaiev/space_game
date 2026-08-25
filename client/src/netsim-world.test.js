@@ -12,6 +12,7 @@ import { SIM_DT } from './sim-core/consts.js';
 import { createRoom } from '../../server/src/netsim/room.js';
 import { createJerkProbe } from './netsim-jerk.js';
 import { buildCatalog } from '../../server/src/sim-host.js';
+import { Vec3 } from './sim-core/vec.js';
 
 // A client World with no renderer: the catalog it would have fetched at boot, a host that only counts.
 function clientWorld() {
@@ -229,6 +230,26 @@ test('wire events reach the World event queue, with entity ids rehydrated', () =
   assert.equal(drained.length, 2);
   assert.equal(drained[0].enemy, world.enemies[0], 'the id became the entity again, so the bubble binds');
   assert.equal(drained[1].type, 'kill');
+});
+
+test('a beam discharge comes back with from/to as real Vec3s, not bare objects', () => {
+  // The FX calls `.clone()` on positional fields, so a bare `{x,y,z}` is not a style point — it throws,
+  // the frame dies, the loop stops and the last sound left playing loops forever. `pos` was already
+  // hydrated; the beam added two more positional fields and they need the same treatment.
+  const { world } = clientWorld();
+  const st = createNetState();
+  deliver(world, st, snapOf({
+    events: [{ type: 'beamFire', from: { x: 1, y: 0.6, z: 2 }, to: { x: 3, y: 0.6, z: 40 },
+               hit: true, absorbed: false, weaponClass: 'beam', fromPlayer: true }],
+  }));
+  const drained = [];
+  world.events.drain((e) => drained.push(e));
+  assert.equal(drained.length, 1);
+  assert.ok(drained[0].from instanceof Vec3, 'from is a Vec3 — .clone() must not throw');
+  assert.ok(drained[0].to instanceof Vec3, 'and so is to');
+  assert.equal(drained[0].to.z, 40);
+  assert.equal(typeof drained[0].from.clone, 'function');
+  assert.equal(drained[0].weaponClass, 'beam', 'the non-positional fields pass through untouched');
 });
 
 test('clearNet releases every body', () => {

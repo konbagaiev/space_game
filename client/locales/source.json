@@ -177,7 +177,7 @@
   },
   "ui.shop.slot.gun": {
     "source": "Gun",
-    "context": "Weapon slot label (the primary bullet weapon, fired with Space). Short."
+    "context": "Weapon slot label (the primary weapon — a bullet gun or the charged beam — fired with Space). Short."
   },
   "ui.shop.slot.rocket": {
     "source": "Rocket",
@@ -270,6 +270,14 @@
   "ui.shop.stat.reload": {
     "source": "Reload",
     "context": "Stat label — rocket reload time in seconds (followed by e.g. '5s'). Short."
+  },
+  "ui.shop.stat.charge": {
+    "source": "Charge",
+    "context": "Stat label — the charged beam's charge time in seconds (followed by e.g. '0.5s'). Short."
+  },
+  "ui.shop.stat.arc": {
+    "source": "Arc",
+    "context": "Stat label — the charged beam's hit corridor as a half-angle (followed by e.g. '±2°'). Short."
   },
   "ui.shop.stat.speed": {
     "source": "Speed",

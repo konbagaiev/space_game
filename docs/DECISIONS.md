@@ -5100,3 +5100,114 @@ obvious defect to a fresh reader, which is exactly why each is written down:
 - **"Does he steal the fight?" (`combat-ally.md` §3) is CLOSED.** Played on Level 4: he clears a wave
   unaided and cannot take the boss alone, and the balance was judged acceptable — while being tuned for
   **Level 5**, not Level 4. Do not re-open it, and do not ask for the kill-share number again.
+
+## 135. A charged beam has a visible corridor, and that is why it is not the auto-aim §124 deleted
+
+**Date:** 2026-08-25. **Context:** the Charged beam (`docs/plans/2026-08-25-1056-charge-beam-weapon.md`).
+At release the beam hits the ship it painted at charge start **if any part of it is still within ±2° of the
+nose** — a *corridor*, chosen by the maintainer over both a hard lock and a bare nose-line. Shipped numbers:
+power 80, range 100, **charge 1.0 s**, cooldown 0.5 s, weight 12, price 5500, gated at Level 4.
+
+**The tension, stated honestly: a corridor WITHOUT a lock is the deleted aim-assist cone, verbatim.** §124
+removed `aimAssistDeg` on purpose, from the player and from enemies, because a cone that silently redirects
+a shot means the game is aiming for you. Three things make this not that, and **all three are on screen**:
+
+- **the target is NAMED at charge start**, not chosen at the instant of fire;
+- **the reticle shows which one** it is — a diamond, on the ship the shot is committed to;
+- **the corridor is DRAWN for the whole 1.0 s**, so the player watches a target leave it.
+
+§124's actual complaint was *"the player cannot see it working or not working."* Here, seeing it work **is**
+the mechanic. It is also why the weapon survives PvP, where an invisible lock reads as an aimbot: this one is
+visibly escapable, and a fast crosser really does escape — 15.75 u/s drifts the full 15.75 u through the
+1.0 s charge and ends **8.95° off the nose at 100 u**, against a ±2° corridor whose effective (hull-aware)
+window there is 6.09 u.
+
+**A terminology note, because the shorthand would collapse the argument.** The maintainer calls the corridor
+"aim assist", and colloquially that is what it feels like. The recorded rationale stays precise anyway:
+**§124 removed a cone that silently REDIRECTED a shot at a target the player never chose. This corridor never
+moves the shot** — it is a hit test the player keeps a target inside by TURNING, drawn on screen for the
+whole charge. That distinction is the entire reconciliation; do not let "aim assist" erase it.
+
+**The corridor is attached to the NOSE AT RELEASE, not frozen at charge start.** So the three drawn lines
+are literally the hit test rather than an illustration of it: they are glued to the hull and rotate with it.
+Turning away breaks the shot (~1 rad/s sweeps ~57° in a second); turning toward the target tracks it and
+keeps the hit — which makes **turn rate the beam's skill stat**, a thing the Mobility skill already buys. A
+frozen corridor would have to either detach from the hull on screen or lie about where the beam will go.
+
+**The charge is 1.0 s, raised from 0.5 s (maintainer, 2026-08-25) so the charge sound and the build-up
+animation are clearly heard and seen** — it is a look-and-feel weapon first. The consequence is not
+cosmetic: **every target drifts twice as far during the charge**, so ACTIVE tracking with A/D became
+mandatory rather than optional. A mere 5 u/s crosser at 20 u drifted 2.5 u at 0.5 s and stayed inside the
+~3.30 u effective window; at 1.0 s it drifts 5.0 u and escapes. Anything tuned against the old half second
+has to be re-derived, not merely re-timed.
+
+**SUSTAINED DPS IS 53, AND THAT IS THE DESIGN — do not "fix" it.** The cycle is `chargeTime + fireCooldown`
+= 1.5 s, so 80 damage is 53 DPS: *below* the 800-credit starter gun (56) and beside Heavy cannon (58 at
+2000 cr). Offered both ways to restore 80 DPS — zero cooldown, or damage 120 — the maintainer **declined
+both**, and then kept the 5500 price and the Level-4 gate after being told the stat line would read as a
+trap purchase next to Heavy MG's. His reasoning, and it answers the objection rather than waving it away:
+*"Pure DPS is not that important. It is compensated by the range and by the aim assist."* **Nominal DPS
+assumes every shot lands.** A kinetic round has travel time and must be LED, so a large share of it misses a
+manoeuvring target; the beam has zero flight time and lands on whatever stayed in the corridor. Its
+*effective* damage against a moving target is therefore far closer to a kinetic's than 53-vs-56 suggests,
+and it reaches 100 u where the starter gun reaches 88. **Any future rebalance must compare EFFECTIVE
+damage-on-target, not the stat line.** The shop tells the truth about the rate, which is the other half of
+this being honest rather than a trap: `RoF` is `1 / (chargeTime + fireCooldown)` = **0.7/s**, never
+`1 / fireCooldown`, which would claim 2.0/s for a weapon that spends a whole second charging.
+
+**The corridor's WIDTH is this weapon's lag compensation.** §127's shipped 100 ms interpolation delay makes a
+top-speed crosser 1.0° stale at 90 u (0.9° at the shipped 100 u reach); the hull-aware window is ~3.3°.
+That is why the beam needs no D5 rewind
+in a server-run room, and why a hard lock (zero tolerance) would have re-created exactly the problem the
+discarded 2026-08-19 spike measured — 14 % of client hit reports rejected at 0 ms, 55 % at 300 ms. The test
+being **hull-aware** rather than centre-based is what buys that margin, and it is also a plain correctness
+requirement: at ±2° the corridor is *narrower than a ship* inside ~60 u (half-width 0.70 u at 20 u, 1.57 u at
+45 u, against a hull ~2 u across), so a centre-based test would paint targets the shot cannot hit — the
+reticle would lie, which is the one thing the three lines promise not to do.
+
+**No dodge roll — and the RETRACTION that goes with it.** An earlier draft argued that a beam dodge roll
+would break the recorded archive under §73. **That was wrong, and it is retracted here rather than quietly
+dropped.** `dodgeRoll` is an injected predicate consulted only AFTER a geometric connect
+(`collision.js:208`) and passed only from `step-projectiles.js:58`; no archived trace mounts a beam, so a
+beam dodge would have drawn nothing in any recorded fight. §73 does not decide this. The real reason is a
+design one: **the corridor IS the dodge.** You escape a beam by flying out of the drawn lines — a skill the
+player exercises directly — rather than by a percentage. The weapon stays entirely RNG-free and the drawn
+lines never lie: if the corridor showed a hit, you took a hit. **Accepted cost:** a Maneuver-heavy build gets
+no statistical protection from a beam.
+
+**THE GATE — no enemy may be armed with a beam until two things are built.** The weapon ships as a *player*
+purchase; **no ship in the game carries one** (maintainer, 2026-08-25: *"Don't waste time for enemy beam
+before I asked"*). The simulation is nevertheless side-agnostic — the whole mechanic sits behind one branch
+in `updateGroups`, there is **no `side === 'player'` test anywhere in `sim-core`**, and
+`sim-core/beam.test.js` drives the hostile path directly to prove it — so arming a pirate stays a catalog
+edit. But:
+
+> **An enemy beam is a 1.0 s unanswerable hit unless its telegraph is on screen. Before any enemy is ever
+> armed with one, two things must exist first: (1) the hostile-sight rendering — the three lines drawn from
+> a charging hostile hull, in a hostile colour, for the duration of its charge — and (2) the wire entity
+> reference on `beamCharge` that lets a client draw a REMOTE shooter's corridor in a room.** An aiming line
+> the player never sees is not a warning; it is an unfair attack.
+
+Writing that gate down is what makes taking the deferral safe now. Two things are recorded with it as input
+to that future work, not as work to do:
+
+- **A hostile's engagement range is a SEPARATE number from the weapon's reach.** A fire group's `ai.range`
+  and the weapon's `maxRange` are independent (`GUN_LONG` pairs `ai.range` 90 with weapon 9's `maxRange` 90,
+  but they need not match). The shipped `maxRange` is **100**, which is right for the player; **100 on an
+  enemy would let it charge you from well off-screen**, because the visible half-extent is ±57 u vertically
+  and only **±32 u horizontally on a phone in portrait** — precisely the failure `combat-ally.md` §2c(a)
+  names, and worse at 100 than at the 90 an earlier draft of this bullet reasoned from. Give a hostile preset a shorter
+  `ai.range` (≈45–55) and a tighter `aimTol` than `GUN`'s 0.25 rad, since `aimTol` gates only the *start* of
+  a charge and half a second of steering closes a small error against a ±2° corridor.
+- **A beam must never share a fire group.** `isBeamGroup` uses `some`, so a group holding a beam takes the
+  beam path and every other mount in it goes silent. Four enemy ships carry multi-mount groups today (twin
+  guns / rocket pods on both bosses, the mini boss and the advanced medium), so arming one means giving it
+  its **own single-mount group**, not swapping a weapon id. `server/src/catalog_beam.test.js` guards it.
+
+**Also settled, and not to be re-opened:** the trigger is a **tap that COMMITS** (nothing interrupts a
+charge — not releasing fire, not damage, not the locked target dying; touch has a fire *button*, an AI's
+`wantsFire` flickers, and there is no "charge spoiled" state to invent or put on the wire); the shot is a
+**hitscan**, which also dissolves §134's enemy-aim flaw for this weapon *by construction* — a hitscan has no
+projectile velocity to inherit — without touching the shared firing path, so §134's cancellation holds; and
+**every behaviour number lives in the WEAPON ROW**, never a shared module object, so two ships can carry
+differently-tuned beams.

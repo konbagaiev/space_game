@@ -301,12 +301,16 @@ export default async function ({ page, assert, shot }) {
     clicked: JSON.parse(localStorage.getItem(`shopItemsClicked:${pid}`) || 'null'),
     markerShown: document.getElementById('mw-loadout-new').classList.contains('show'),
   }), pastGate);
-  // still 3: this fresh player has cleared no side mission, so the two `minMission` rows are locked and are
-  // correctly not in the baseline (the gold trail fires for them only once they are earned).
-  assert.ok(Array.isArray(primed.baseline) && primed.baseline.length === 3,
-    'bootstrap baselines the three already-unlocked gated items as seen');
-  assert.ok(Array.isArray(primed.clicked) && primed.clicked.length === 3,
-    'the per-item clicked key is baselined with the same three refs');
+  // FOUR `FACTORY_GATE` items are unlocked for a player past that gate: Heavy Machine Gun, Triple spiral
+  // rocket, the Heavy hull and — since 2026-08-25 — the **Charged beam**. This fresh player has cleared no
+  // side mission, so the two `minMission` rows are still locked and correctly absent from the baseline
+  // (the gold trail fires for them only once they are earned). Bump this deliberately when a gated item is
+  // added; it is the count that proves the baseline covers the whole unlocked set.
+  assert.ok(Array.isArray(primed.baseline) && primed.baseline.length === 4,
+    `bootstrap baselines the four already-unlocked gated items as seen (incl. the Charged beam) `
+    + `— got ${primed.baseline && primed.baseline.length}`);
+  assert.ok(Array.isArray(primed.clicked) && primed.clicked.length === 4,
+    'the per-item clicked key is baselined with the same four refs');
   assert.ok(!primed.markerShown, 'a player already past the gate on first sight gets no "(new)" marker');
   // …and no gold anywhere in the shop either — the guard now covers the whole trail, not just its first step
   await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());

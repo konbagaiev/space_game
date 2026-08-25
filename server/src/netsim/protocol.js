@@ -49,6 +49,13 @@ export const EVENT_FIELDS = {
   shieldReady:      [],
   fire:             ['weaponClass', 'isRocket', 'fromPlayer'],
   evade:            ['pos'],
+  // The charged beam, two events per shot and nothing else: the start of the charge and the release. A
+  // charge is per-ship state that changes every tick and an aiming corridor is per-ship geometry — neither
+  // is broadcast. The corridor's WIDTH is this weapon's lag compensation, which is why it needs no rewind.
+  // No entity reference: the only consumer of one would be drawing a REMOTE shooter's corridor, and the
+  // hostile sight is deferred (plan §2d). The local player's own charge needs none — he is world.player.
+  beamCharge:       ['pos', 'dur', 'weaponClass', 'fromPlayer'],
+  beamFire:         ['from', 'to', 'hit', 'absorbed', 'weaponClass', 'fromPlayer'],
   pickup:           ['item'],
   smoke:            ['pos'],
   detonate:         ['pos', 'weaponClass', 'blastVis', 'blastTint', 'blastTime', 'blastBright'],
@@ -79,6 +86,12 @@ export const EVENT_ENTITY_REFS = { enemyShieldHit: ['enemy'] };
 
 const vec = (v) => (v ? { x: v.x, y: v.y, z: v.z } : null);
 
+// Fields holding a POSITION, vec-serialized explicitly on the way out. Explicit rather than "whatever
+// JSON.stringify makes of a Vec3": that happens to be `{x,y,z}` today only because the constructor assigns
+// three own enumerable fields — an implicit dependency on a class's field layout, in the one file whose job
+// is to make what crosses the wire explicit. The beam's `from`/`to` are the second and third members.
+const VEC_FIELDS = new Set(['pos', 'from', 'to']);
+
 // One simulation event → one wire event. Returns null for a type nobody wired up, so an unknown event is
 // dropped rather than leaked; the test above is what stops that from happening silently.
 export function wireEvent(ev, idOf) {
@@ -88,7 +101,7 @@ export function wireEvent(ev, idOf) {
   for (const f of fields) {
     const v = ev[f];
     if (v === undefined) continue;
-    out[f] = (f === 'pos') ? vec(v) : v;
+    out[f] = VEC_FIELDS.has(f) ? vec(v) : v;
   }
   for (const f of EVENT_ENTITY_REFS[ev.type] || []) {
     const id = ev[f] ? idOf(ev[f]) : null;
