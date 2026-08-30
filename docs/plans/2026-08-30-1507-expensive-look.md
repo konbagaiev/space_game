@@ -1,3 +1,64 @@
+## 0. RESUME HERE (2026-08-31, paused mid-tuning)
+
+**Branch `feature/2026-08-30-1507-expensive-look`, worktree `../ag-wt/2026-08-30-1507-expensive-look`,
+last commit `ea0fdc5` (WIP). The merge of `main` is DONE and committed. Nothing is deployed.**
+
+### Where the feature actually stands
+
+The full-frame `EffectComposer` from the original plan **was built, live-tested, and thrown away**.
+Decisions D2/D3/D5 and the ACES/exposure/grade/vignette half of D1 are VOID — see the header of
+`client/src/postfx.js` for the measured reasons (MSAA + `UnrealBloomPass` renders black on ANGLE Metal;
+routing the frame through a composer discarded the canvas's free MSAA; ACES fought lighting authored for
+direct sRGB output and over-exposed everything).
+
+What ships now: the frame draws **straight to the canvas exactly as on `main`**, and glow is an **additive
+overlay** — only objects on `GLOW_LAYER` (`client/src/glow-layer.js`) are re-rendered into a small buffer,
+thresholded, blurred once H+V, and added back.
+
+### What is GOOD (confirmed by the maintainer on a real GPU)
+
+- Bullets read well as light sources.
+- Antialiasing, the original lighting, and the overexposure are all fixed (by removing the composer).
+- The hull emissive floor is OFF (`hullEmissive: 0`) — at 0.25 it flattened hulls and killed their glint.
+- The hull no longer joins the glow layer during a hit flash; the impact sprite already lights that point.
+- Vertical striping is gone at high zoom.
+
+### THE OPEN PROBLEM — and the maintainer's hypothesis, which is probably right
+
+**Stripes still flash during movement, and the glow only looks right at MAXIMUM zoom-in. Zoomed out, the
+ship disappears inside its own glow spot.** The maintainer's read: *"у нас что-то искусственное, что надо
+заменить на натуральное"* — something artificial that should be replaced by something natural.
+
+That diagnosis fits the mechanism. The current glow is **screen-space**: the blur is a fixed number of
+glow-buffer texels, i.e. a fixed size ON SCREEN, while the emitter is sized in WORLD units. So zooming out
+shrinks the ship but NOT the halo, and the source shrinks toward the sub-texel size where the 5-tap kernel
+combs instead of smearing. Every fix so far has been a different way of compensating for that mismatch.
+
+**Next thing to try: make the engine light a REAL light instead of a faked one** — e.g. an actual
+`PointLight` at the nozzle that lights the hull and nearby geometry. That is world-space, so it scales
+correctly with zoom by construction, needs no proxy sprite, no threshold, and no blur, and it removes the
+whole class of artifact rather than tuning around it. Cost and tier-gating need checking (lights are not
+free, and `sim.js`/`world.js` already manage a small fixed set), but this is the direction to explore
+BEFORE any more tuning of the overlay.
+
+### Live knobs (`?tune` → "Post (glow overlay)")
+
+`glow strength` (0 = off, whole-frame), `glow radius` (blur texels), `threshold`, `knee`,
+`engine light SIZE`, `engine light BRIGHTNESS`, `backdrop amp`, `backdrop follow`.
+**Size and brightness are deliberately separate levers** — dimming by shrinking the source is what caused
+the stripes twice. Shipped values live in `POST_DEFAULTS` (`client/src/graphics.js`).
+
+### Still owed before this can merge
+
+- Docs are STALE: the plan body, SUMMARY and DECISIONS §138 still describe the composer + ACES.
+- Full test run (`node --test`, `npm test`, `22-intro-replay`, `43-expensive-look`, `99-fill`, the suite
+  against a `main` baseline). Only `graphics.test.js` / `exhaust-fx.test.js` have been re-run since the pivot.
+- `43-expensive-look` asserts against the composed frame and may need re-measuring.
+- The A/B perf bench has NOT been run (opt-in).
+- Backups of pre-edit files: `<scratchpad>/postfx.js.bak`, `exhaust-fx.js.bak`, `hit-fx.js.bak`.
+
+---
+
 # Plan: Make the game look expensive — post-processing, a layered backdrop, and readable silhouettes
 
 **Feature id:** `2026-08-30-1507-expensive-look`
