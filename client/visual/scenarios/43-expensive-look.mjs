@@ -15,12 +15,25 @@
 //      createPostFx() threw and the frame fell back to the raw two-pass path);
 //   2. the parallax backdrop really CONTRIBUTES — measured differentially (amp 0 vs the shipped amp) in the
 //      same frame sequence, because an absolute floor is already satisfied by the baked cube and the stars;
-//   3. the backdrop brightness CEILING: the nebula's peak stays below the dimmer end of the lit hull;
+//   3. the backdrop brightness ratio (D13): the nebula's PEAK over the whole sky (bgP99) against the DIMMEST
+//      end of the lit hull (hullP25) — the plan's quantities, not a local ring/median. D13's 1.5x CEILING is
+//      NOT met (1.30x) and was already breached by the pre-existing baked cubemap, so what is asserted is a
+//      REGRESSION FLOOR at D13_FLOOR. Read the long note at the assertion before touching it;
 //   4. nothing is blown out at rest.
 //
 // All luminances below are sRGB 0..1 — the buffer read is the FINAL, tonemapped image, i.e. what the player
 // actually sees (same convention as speed-field.js's BG_LUMA).
-export const name = '42-expensive-look';
+export const name = '43-expensive-look';
+
+// D13's REGRESSION FLOOR. The approved ideal was 1.50x and is not met (see the long note at the assertion
+// itself). The shipped ratio is extremely stable — five consecutive runs measured 1.2981 / 1.3040 / 1.3040 /
+// 1.3040 / 1.3048, i.e. a spread of ~0.5%, and two in-suite runs landed at 1.2988 and 1.2996. 1.25 sits ~4%
+// under the observed minimum: far outside that noise, but tight enough that a real change in either
+// direction trips it. MUTATION-CHECKED by raising backdrop.amp (a real, reachable ?tune value — its slider
+// range is [0, 1.5]) until the assertion fires: amp 0.25 -> 1.304x PASS | 0.35 -> 1.270x PASS |
+// 0.45 -> 1.213x FAIL | 0.60 -> 1.099x FAIL | 1.00 -> 1.061x FAIL. So it bites at roughly amp 0.40, i.e. the
+// layer getting ~1.6x brighter than shipped. It is a floor something can actually trip, not decoration.
+const D13_FLOOR = 1.25;
 
 export default async function ({ page, assert, shot, baseURL }) {
   const origin = new URL(baseURL).origin;
@@ -135,17 +148,26 @@ export default async function ({ page, assert, shot, baseURL }) {
       if (step === 0) { g.setBackdropAmp(0); step = 1; }            // switch the layer off …
       else if (step === 1) { step = 2; }                            // … let that reach the screen
       else if (step === 2) {
-        out.skyOff = mean(split(grab()).sky);                       // the reference frame
+        const f0 = split(grab());                                   // the reference frame
+        out.skyOff = mean(f0.sky);
+        // The layer-OFF sky peak: the floor `amp` cannot reduce, because it is the baked cube plus the
+        // bright-star layer. Printed so that if the ceiling below ever fails, it is immediately clear
+        // whether dialling `amp` can still fix it or whether the BASE backdrop is what is too bright.
+        out.skyP99Off = pct(f0.sky, 0.99);
         g.setBackdropAmp(shippedAmp);
         step = 3;
       } else if (step === 3) { step = 4; }                          // let the restored amp reach the screen
       else {
         const f = split(grab());
         out.skyOn = mean(f.sky);
-        out.skyP99 = pct(f.sky, 0.99);
-        out.ringP95 = pct(f.ring, 0.95);
+        // bgP99 — the 99th percentile of the WHOLE sky, i.e. the nebula's PEAK on screen. D13's ceiling is
+        // asserted against this and not against a local ring: a ring measures only the sky the ship happens
+        // to be sitting in front of right now, so a bright mass two hundred pixels away — exactly what a
+        // player flies into a second later — would never enter the number.
+        out.bgP99 = pct(f.sky, 0.99);
+        out.ringP95 = pct(f.ring, 0.95);   // diagnostics only: the local sky, for retuning by eye
         out.ringP99 = pct(f.ring, 0.99);
-        const lit = f.ship.filter((l) => l > out.ringP95);
+        const lit = f.ship.filter((l) => l > out.bgP99);
         out.hullLit = lit.length;
         out.hullP25 = lit.length ? pct(lit, 0.25) : 0;
         out.hullP50 = lit.length ? pct(lit, 0.50) : 0;
@@ -164,7 +186,9 @@ export default async function ({ page, assert, shot, baseURL }) {
     `the ship must be framed for any of this to mean anything (projected to ${JSON.stringify(r.offScreen)} on a ${r.W}x${r.H} buffer — did take-off actually happen?)`);
 
   console.log(`      frame ${r.W}x${r.H} · ship @${r.box.cx},${r.box.cy} · sky mean luma off=${r.skyOff.toFixed(4)} on=${r.skyOn.toFixed(4)} (delta ${(r.skyOn - r.skyOff).toFixed(4)})`);
-  console.log(`      skyP99=${r.skyP99.toFixed(4)} ringP95=${r.ringP95.toFixed(4)} ringP99=${r.ringP99.toFixed(4)} · hull lit px=${r.hullLit} p25=${r.hullP25.toFixed(4)} p50=${r.hullP50.toFixed(4)} max=${r.hullMax.toFixed(4)} · blown=${r.blownPct.toFixed(3)}%`);
+  console.log(`      bgP99=${r.bgP99.toFixed(4)} (layer off: ${r.skyP99Off.toFixed(4)}) ringP95=${r.ringP95.toFixed(4)} ringP99=${r.ringP99.toFixed(4)}`
+    + ` · hull lit px=${r.hullLit} p25=${r.hullP25.toFixed(4)} p50=${r.hullP50.toFixed(4)} max=${r.hullMax.toFixed(4)}`
+    + ` · ceiling ratio ${(r.hullP25 / (r.bgP99 || 1)).toFixed(3)}x (D13 ideal 1.50x, shipped regression floor ${D13_FLOOR.toFixed(2)}x) · blown=${r.blownPct.toFixed(3)}%`);
 
   // The frame itself — saved BEFORE the assertions, so a failure still leaves the picture to look at. The
   // automated numbers below cannot replace a human deciding whether this looks expensive or blown out.
@@ -178,12 +202,45 @@ export default async function ({ page, assert, shot, baseURL }) {
   assert.ok(r.skyOn - r.skyOff >= 0.01,
     `the backdrop layer adds real light to the frame (sky mean luma ${r.skyOff.toFixed(4)} → ${r.skyOn.toFixed(4)})`);
 
-  // 3. THE BACKDROP BRIGHTNESS CEILING (D13): the sky IMMEDIATELY AROUND THE SHIP must stay below the lit
-  //    hull, or the backdrop out-brightens the ships and the silhouette is gone. Local, because that is what
-  //    readability is: contrast against what is behind the ship, not against the frame average.
-  assert.ok(r.hullLit >= 150, `the hull reads as a silhouette at all (${r.hullLit} lit pixels in the ship box)`);
-  assert.ok(r.hullP50 >= 1.5 * r.ringP95,
-    `the lit hull (median ${r.hullP50.toFixed(4)}) stays >= 1.5x the sky right around it (${r.ringP95.toFixed(4)})`);
+  // 3. THE BACKDROP BRIGHTNESS CEILING (D13) — MEASURED HONESTLY, PINNED AS A REGRESSION FLOOR.
+  //
+  //    D13 asked for `hullP25 >= 1.5 x bgP99`: the nebula's PEAK over the whole sky staying a factor of 1.5
+  //    below the DIMMEST end of the lit hull. That ideal is NOT met and never was — measured 1.30x. What is
+  //    asserted here is the same quantities, measured the same way, against a floor just under the measured
+  //    value, so the ratio can never silently get WORSE. Maintainer's call, 2026-08-30. See DECISIONS §138(k).
+  //
+  //    WHY THE IDEAL IS NOT THIS FEATURE'S DEBT. Attributed on a real frame by switching contributors off:
+  //      everything on 0.4770 | this layer at amp 0 -> 0.4555 | + star layers hidden -> 0.4549
+  //      | + the baked nebula cubemap removed -> 0.0000
+  //    The PRE-EXISTING baked cubemap (docs/plans/2026-07-04-0933-procedural-nebula-sky.md) is ~95% of the
+  //    sky peak; this feature's parallax layer is ~4.5% and the stars ~0.1%. The amp sweep confirms the knob
+  //    is powerless: amp 0.00 -> 1.36x | 0.08 -> 1.35x | 0.15 -> 1.33x | 0.25 -> 1.30x. The WHOLE range is
+  //    worth 0.05x and 0.19x is missing, so deleting the layer outright would still fail 1.50x. Meeting it
+  //    would mean dimming shipped backdrop art, or raising hulls — and raising hulls was REJECTED because it
+  //    pushes them toward the 0.65 bloom threshold and breaks D12 (a hull must not statically glow).
+  //
+  //    THE METRIC IS DELIBERATELY UNCHANGED. Two weaker formulations were tried and rejected, both of which
+  //    pass on a frame the honest one rejects:
+  //      • `hullP50` instead of `hullP25` — the median lit facet instead of the dimmest. A hull's shadowed
+  //        side is the half that disappears against a bright sky, so the median is the wrong half to ask
+  //        about; p25 is the promise "even the dim facets survive the backdrop".
+  //      • `ringP95` (a 130 px annulus) instead of `bgP99` (the whole sky) — that only measures the patch of
+  //        sky the ship is parked in front of at this instant. The nebula's masses are structured, so the
+  //        ring can sit in a void while a mass two hundred pixels away is twice as bright; the player flies
+  //        into that mass a second later.
+  //    Lowering the THRESHOLD while keeping the honest measurement is a different act from quietly measuring
+  //    something easier, and only the first one is happening here.
+  assert.ok(r.hullLit >= 200,
+    `the hull reads as a silhouette at all (${r.hullLit} pixels in the ship box are brighter than the sky peak ${r.bgP99.toFixed(4)})`);
+  assert.ok(r.hullP25 >= D13_FLOOR * r.bgP99,
+    `THE BACKDROP GOT BRIGHTER RELATIVE TO THE HULL — this is a REGRESSION FLOOR, not the D13 ideal. `
+    + `hullP25 ${r.hullP25.toFixed(4)} >= ${D13_FLOOR}x bgP99 ${r.bgP99.toFixed(4)} = ${(D13_FLOOR * r.bgP99).toFixed(4)}; `
+    + `measured ${(r.hullP25 / (r.bgP99 || 1)).toFixed(3)}x, was 1.298-1.305x across five runs when pinned. `
+    + `NOTE the approved D13 ideal (1.50x) is NOT met either and never was: with this feature's parallax layer `
+    + `switched fully OFF the sky peak is still ${r.skyP99Off.toFixed(4)} (ratio ~${(r.hullP25 / (r.skyP99Off || 1)).toFixed(3)}x), `
+    + `so the layer contributes only ${(r.bgP99 - r.skyP99Off).toFixed(4)} of it and DIALLING backdrop.amp CANNOT FIX EITHER NUMBER — `
+    + `the pre-existing baked nebula cubemap is ~95% of the sky peak. If THIS floor breaks, something made the `
+    + `backdrop brighter or the hulls darker; look there, not at backdrop.amp. See DECISIONS §138(k).`);
 
   // 4. Nothing is blown out on a frame with no explosion.
   assert.ok(r.blownPct < 0.5, `nothing is blown out at rest (${r.blownPct.toFixed(3)}% of pixels at 250+ on all channels)`);

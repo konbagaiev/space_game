@@ -44,6 +44,11 @@ export const COLUMNS = {
 export const EVENT_FIELDS = {
   hit:              ['target', 'shipClass'],
   bulletImpact:     ['pos', 'weaponClass', 'absorbed'],
+  // The victim of a projectile that reached a HULL. The `ship` entity ref is added by `wireEvent`'s second
+  // loop off EVENT_ENTITY_REFS (as `shipId`), not listed here. NOTE: the local player has no network id, so
+  // a hit on your OWN ship in a netsim room arrives without one — the flash simply does not draw there,
+  // while `target: 'player'` still crosses so the camera shudder works.
+  hullHit:          ['target', 'dirHeading', 'weaponClass', 'toHull', 'pos'],
   shieldHit:        ['pos', 'broke'],
   enemyShieldHit:   ['pos', 'broke'],
   shieldReady:      [],
@@ -56,8 +61,8 @@ export const EVENT_FIELDS = {
   // `shipId` off `EVENT_ENTITY_REFS` rather than listed here. A remote shooter's fire group is never ticked
   // in this tab, so its corridor is underivable without a name for the hull to draw it from. The player's
   // own charge needs none — he is `world.player`, and `idOf` returns null for him anyway.
-  beamCharge:       ['pos', 'dur', 'weaponClass', 'fromPlayer'],
-  beamFire:         ['from', 'to', 'hit', 'absorbed', 'weaponClass', 'fromPlayer'],
+  beamCharge:       ['pos', 'dur', 'weaponClass', 'color', 'fromPlayer'],
+  beamFire:         ['from', 'to', 'hit', 'absorbed', 'weaponClass', 'color', 'fromPlayer'],
   pickup:           ['item'],
   smoke:            ['pos'],
   detonate:         ['pos', 'weaponClass', 'blastVis', 'blastTint', 'blastTime', 'blastBright'],

@@ -25,6 +25,7 @@ import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, spawnRocketBurst, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust } from './exhaust-fx.js';
+import { hullFlash, punchShip, cameraShudder, updateHitFx, applyCameraShake, resetHitFx } from './hit-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { preloadLevelShipModels, attachEnemyBody, detachEnemyBody, attachAllyBody, detachAllyBody } from './ship-build.js';
 import { simEvents, world } from './state.js'; // the sim's outbound channel + the World it runs in
@@ -279,6 +280,18 @@ function applySimEvent(ev) {
       spawnHitSprite(ev.pos, (HIT_FLASH_SCALE[ev.weaponClass] ?? 0.8) * (ev.absorbed ? 0.7 : 1),
         ev.absorbed ? SHIELD_HIT_TINT : null);
       break;
+    // THE TARGET REACTS. One event, three consequences, all render-only (docs/plans/2026-08-30-1505-combat-hit-feel.md):
+    // every hull hit flashes; rockets + the heavy cannon also punch the model; a ROCKET into the PLAYER's
+    // hull also shudders the camera. `ev.ship` is undefined for the local player in a netsim room (he has
+    // no network id) — the flash then simply does not draw, which is fine for a dev sandbox.
+    case 'hullHit': {
+      if (ev.ship && ev.ship.mesh) {
+        hullFlash(ev.ship);
+        if (ev.weaponClass === 'rocket' || ev.weaponClass === 'cannon') punchShip(ev.ship, ev.dirHeading);
+      }
+      if (ev.weaponClass === 'rocket' && ev.target === 'player') cameraShudder();
+      break;
+    }
     case 'shieldHit':      spawnShieldHit(ev.pos, ev.broke); break;
     case 'enemyShieldHit': spawnEnemyShieldHit(ev.enemy, ev.pos, ev.broke); break;
     case 'shieldReady':    spawnShieldReady(); break;
@@ -312,7 +325,7 @@ function applySimEvent(ev) {
     // per-shooter pool in `beam-fx.js`, keyed on the shooter the event now carries (DECISIONS §135's gate).
     case 'beamCharge':
       if (ev.fromPlayer) {
-        startBeamCharge(ev.dur);
+        startBeamCharge(ev.dur, ev.color);
         // The clip is stretched to fill the charge window exactly: `rate = clip length / chargeTime`, so
         // retuning chargeTime can never desync the bang from the shot. An EXPLICIT rate also suppresses the
         // random per-shot pitch jitter sfx.shoot applies by default — a timing cue must sound identical
@@ -323,11 +336,13 @@ function applySimEvent(ev) {
         // your own shots are audible, and the beam makes no exception (DECISIONS §135's gate names the sight
         // and the wire ref, not a sound). `ev.ship` is the live entity locally and the rehydrated GHOST in a
         // room; beam-fx accepts it only if it is in world.enemies, so an ally's beam never draws red.
-        startHostileBeamCharge(ev.ship, ev.dur);
+        startHostileBeamCharge(ev.ship, ev.dur, ev.color);
       }
       break;
     case 'beamFire':
-      spawnBeamBolt(ev.from, ev.to, !!ev.fromPlayer); // the bolt is drawn whoever fired it
+      // The bolt is drawn whoever fired it, tinted by the WEAPON's own colour off the event — never by the
+      // side, so an ally carrying the pirates' beam fires their red (maintainer, 2026-08-30).
+      spawnBeamBolt(ev.from, ev.to, !!ev.fromPlayer, ev.color);
       if (ev.fromPlayer) audio.sfx.shoot(sfxFor('weapon', ev.weaponClass, 'fire'), { rate: 1 });
       break;
     case 'smoke':          spawnSmoke(ev.pos); break;
@@ -540,6 +555,7 @@ export function renderTick(dt) {
   // engine exhaust: advance every ship's attached plume (uTime) + decay its thrust throttle so a ship that
   // stops thrusting fades out. Fixed-cost render objects, not a growing pool (exhaust-fx.js).
   updateShipExhaust(dt);
+  updateHitFx(dt);                // hull flash + model punch + the camera-shudder impulse (render-only)
   stepSparks(dt);
   stepShockwaves(dt);
   stepBannerFade(dt);
@@ -657,6 +673,7 @@ export function settleView(dt = 0) {
   // renders nothing, with no error thrown. A sim-core Vec3 is duck-compatible with everything that merely
   // READS x/y/z (`copy`, `Matrix4.compose`, …) but not with THREE APIs that type-test. See vec.js.
   camera.lookAt(G.player.pos.x, G.player.pos.y, G.player.pos.z);
+  applyCameraShake(camera);       // render-only shudder; AFTER lookAt = pure translation, no view swing
   G.stars.position.copy(camera.position); // stars: an infinitely distant backdrop stuck to the camera (no parallax)
   updateBackdropLayer();                   // the additive nebula layer: tracks the camera at a FRACTION of its motion (real parallax)
   updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
@@ -720,6 +737,7 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   clearEnemyShieldBubbles(); // hide + unbind pooled enemy shield bubbles (no cross-run leaks)
   hideGrabLine();            // the Grab's pull beam has no drop to point at any more
   hideBeamFx();              // and the charged beam's sight has no fight left to aim into
+  resetHitFx();              // no flash/punch/shudder may survive into the next run
   clearEventLog(); // start a fresh run with an empty event log
 
   // Remember HOW this run started. A mission entered by flying into it keeps the ship exactly where it is

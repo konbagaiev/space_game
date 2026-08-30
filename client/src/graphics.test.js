@@ -47,20 +47,28 @@ test('nebulaBake: High/Balance bake, Performance keeps the flat color', () => {
   assert.equal(resolveTier('performance').nebulaBake, null);
 });
 
-test('post: High/Balance run the composer, Performance runs none', () => {
+test('post: High/Balance run the glow overlay, Performance runs none', () => {
   // Tiered by PASS COUNT, not resolution: §23 measured that cutting backbuffer pixels 5.5-7x moved fps by
-  // nothing on real weak phones, so the only lever that protects one is "build no chain at all".
-  assert.deepEqual(resolveTier('high').post, { bloom: true, bloomScale: 1.0, samples: 4 });
-  assert.deepEqual(resolveTier('balance').post, { bloom: true, bloomScale: 0.5, samples: 0 });
+  // nothing on real weak phones, so the only lever that protects one is "add no overlay at all".
+  assert.deepEqual(resolveTier('high').post, { bloom: true, glowScale: 0.50 });
+  assert.deepEqual(resolveTier('balance').post, { bloom: true, glowScale: 0.35 });
   assert.equal(resolveTier('performance').post, null);
-  // Balance keeps the bloom but pays less fill for it; High is the only tier with MSAA on the composer RT
-  // (the composer bypasses the canvas's own AA).
-  assert.ok(resolveTier('balance').post.bloomScale < resolveTier('high').post.bloomScale);
-  assert.ok(resolveTier('balance').post.samples < resolveTier('high').post.samples);
+  // Balance keeps the glow but pays less fill for it.
+  assert.ok(resolveTier('balance').post.glowScale < resolveTier('high').post.glowScale);
+  // NO `samples`/`superSample` KNOB MAY COME BACK HERE. The frame is drawn straight to the canvas, so AA is
+  // the canvas's own MSAA again (`antialias` above) — which is exactly what the abandoned full-frame chain
+  // threw away, and what supersampling was rejected for buying back at 2.25x the fill (DECISIONS §138(l)).
+  for (const t of ['high', 'balance']) {
+    assert.equal(resolveTier(t).post.samples, undefined, `${t}: AA is the canvas's, not the overlay's`);
+    assert.equal(resolveTier(t).post.superSample, undefined, `${t}: no supersampling`);
+  }
 });
 
-test('the bloom threshold clears the speed-field dust (it must not glow)', () => {
-  // three's LuminosityHighPassShader thresholds on the LINEAR Rec.601 luma of the frame. The speed field is
+test('the glow threshold clears the speed-field dust (it must not glow)', () => {
+  // BELT AND BRACES. Since the pivot to a glow LAYER the dust cannot bloom at all — it is never rendered
+  // into the glow buffer — but the numeric margin is still asserted, so a future re-tint that brightens the
+  // dust fails a test instead of quietly depending on the layer membership.
+  // The overlay thresholds on the LINEAR Rec.601 luma of the glow buffer. The speed field is
   // an opaque, unlit, near-white-grey dot at opacity 1.0 — its linear luma is ~0.608, which is the highest
   // value in the frame that must NOT bloom. Below the threshold the field turns into sparks, re-opening
   // DECISIONS §96's settled "dim rocks, not stars". The margin is thin, hence this assertion.
@@ -70,18 +78,21 @@ test('the bloom threshold clears the speed-field dust (it must not glow)', () =>
     `bloom threshold ${POST_DEFAULTS.bloom.threshold} must clear the dust (${dust}) by >= ${BLOOM_DUST_MARGIN}x`);
 });
 
-test('the hull emissive floor stays below the bloom threshold (hulls must not glow)', () => {
+test('the hull emissive floor stays below the glow threshold (a hull is not a standing light)', () => {
   // NECESSARY, NOT SUFFICIENT: this proves only that the EMISSIVE TERM ALONE cannot reach the threshold —
-  // the shaded result is emissive + direct + ambient + env. The real proof that hulls do not glow is the
-  // rendered frame (visual/scenarios/42-expensive-look.mjs + a human looking at it).
+  // the shaded result is emissive + direct + ambient + env. The real proof that a hull does not glow at rest
+  // is the rendered frame (visual/scenarios/43-expensive-look.mjs + a human looking at it).
+  // It is about the STATIC floor only. hit-fx's hull flash deliberately drives the same emissive to white at
+  // HIT_FX.flash.intensity (1.6) for 0.12 s AND puts the hull on the glow layer for that time — a hit blooms,
+  // by design.
   assert.ok(POST_DEFAULTS.hullEmissive < POST_DEFAULTS.bloom.threshold,
     `emissive floor ${POST_DEFAULTS.hullEmissive} must stay under the bloom threshold ${POST_DEFAULTS.bloom.threshold}`);
 });
 
-test('postGain pins every HDR gain to 1 without a composer (no clipping, no hue shift)', () => {
-  // With no composer the frame goes straight to an 8-bit sRGB canvas with no tone mapping, so a >1 colour
-  // clamps PER CHANNEL: 0xffb050 x 1.5 clips R and G but not B — a flat white patch AND a hue shift. So on
-  // Performance every gain must resolve to exactly 1.
+test('postGain pins every HDR gain to 1 without the overlay (no clipping, no hue shift)', () => {
+  // With no overlay nothing turns >1 light into glow and the frame goes straight to an 8-bit sRGB canvas, so
+  // a >1 colour only clamps PER CHANNEL: 0xffb050 x 1.5 clips R and G but not B — a flat white patch AND a
+  // hue shift. So on Performance every gain must resolve to exactly 1.
   assert.equal(postGain(false, 1.6), 1);
   assert.equal(postGain(true, 1.6), 1.6);
   assert.equal(postGain(false, POST_DEFAULTS.exhaustGain), 1);

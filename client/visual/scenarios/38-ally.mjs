@@ -106,12 +106,15 @@ export default async function ({ page, assert, shot }) {
   const livery = await page.evaluate(() => {
     const g = window.__game;
     const scan = (mesh) => {
-      const out = { wing: [], other: [] };
+      const out = { wing: [], other: [], wingEmissive: [] };
       mesh.traverse((o) => {
         if (!o.isMesh || !o.material) return;
         for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
           if (!m || !m.color) continue;
-          (String(m.name || '').startsWith('Wings_') ? out.wing : out.other).push(m.color.getHex());
+          const isWing = String(m.name || '').startsWith('Wings_');
+          (isWing ? out.wing : out.other).push(m.color.getHex());
+          // The SELF-LIT hue, not just the painted one — see the emissive assertion below.
+          if (isWing && m.emissive) out.wingEmissive.push({ hex: m.emissive.getHex(), i: m.emissiveIntensity });
         }
       });
       return out;
@@ -121,6 +124,17 @@ export default async function ({ page, assert, shot }) {
   });
   assert.ok(livery.ally.wing.length, 'the model really does carry a Wings_-prefixed material');
   for (const c of livery.ally.wing) assert.equal(c, 0x2f6bff, 'the wingman\'s wings are repainted blue');
+  // …AND THEY SELF-LIGHT IN THAT BLUE, NOT IN THE HULL COLOUR THEY WERE CLONED FROM.
+  // The hull emissive floor (DECISIONS §138(f)) is applied to the shared TEMPLATE, where it copies each
+  // material's emissive from its base colour. The accent repaint then RE-ASSIGNS that base colour per
+  // instance — so without an explicit re-copy the repainted wings would keep glowing at 0.25 in the PLAYER's
+  // hull hue and wash the blue back out of the one thing that distinguishes the two ships on screen. That is
+  // §138(j)'s trap pointing the other way (a gain/derived value applied where a colour is BUILT, lost where
+  // it is later re-assigned), and the wingman's colour identity is not something to leave implicit.
+  for (const e of livery.ally.wingEmissive) {
+    assert.equal(e.hex, 0x2f6bff, 'the wing emissive FLOOR follows the accent repaint, not the pre-accent hue');
+    assert.ok(e.i > 0 && e.i < 0.65, `and stays a floor rather than a glow (emissiveIntensity ${e.i})`);
+  }
   assert.ok(livery.ally.other.length, 'and the rest of his hull exists');
   assert.ok(!livery.ally.other.includes(0x2f6bff), 'but is NOT repainted — the accent is wings-only');
   // The no-op half. The player flies the same .glb: his wings must be whatever the artist baked.

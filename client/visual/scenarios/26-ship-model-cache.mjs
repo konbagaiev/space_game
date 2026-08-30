@@ -5,6 +5,11 @@
 //
 // The load-bearing assertion is GEOMETRY IDENTITY: two enemies of the same type must share the very same
 // BufferGeometry instance. On the old code each parse produced its own, so this fails.
+//
+// MATERIALS are deliberately NOT shared any more (docs/plans/2026-08-30-1505-combat-hit-feel.md): they are
+// cloned per instance at attach so the hit flash can light up one ship without lighting up every ship of
+// its type. That costs nothing the cache exists to save — geometry, textures and the compiled shader
+// program are still one copy per TYPE — so a per-spawn re-parse still fails this scenario.
 export const name = '26-ship-model-cache';
 
 export default async function ({ page, assert }) {
@@ -49,7 +54,11 @@ export default async function ({ page, assert }) {
 
   // Two ships of one type reuse the same GPU resources...
   assert.ok(r.sameTypeGeo, `two ${r.names[0]} share one geometry set (got different ones — the model was re-parsed per spawn)`);
-  assert.ok(r.sameTypeMat, 'two ships of the same type share their materials (one GPU copy per type)');
+  // Materials are cloned PER INSTANCE since the hit flash (docs/plans/2026-08-30-1505-combat-hit-feel.md):
+  // a shared material would flash every ship of the type at once. Geometry + textures stay one GPU copy per
+  // type — the clone shares them — so the cache's whole point is intact. DECISIONS §79 anticipated this
+  // exactly ("anything new that wants a per-ship visual state must clone the material for that instance").
+  assert.ok(!r.sameTypeMat, 'two ships of the same type get their OWN materials (per-instance clone for the hit flash)');
   // ...but are still independent scene objects, and a DIFFERENT ship type keeps its own model.
   assert.ok(r.distinctObjects, 'each ship is still its own scene object (clone, not the same node reused)');
   assert.ok(!r.otherTypeGeo, 'a different ship type does not accidentally share the first type\'s geometry');

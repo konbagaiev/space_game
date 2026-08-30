@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { flipbooks, G } from './state.js';
 import { POST_DEFAULTS, postGain } from './graphics.js'; // the fireball's HDR lift — gated on the composer (D18)
+import { markGlow } from './glow-layer.js'; // the fireball is an intended glow source (postfx's additive overlay)
 
 // ---- Tunables (edit + reload to retune live; these become GUI sliders in a later pass) ----
 const COLS = 8, ROWS = 8;              // sprite-sheet grid → COLS*ROWS animation frames
@@ -174,6 +175,7 @@ export function spawnFlipbookExplosion(pos, sizeScale = 1, tint = null, speed = 
   m.renderOrder = 3;             // draw over ships/bullets (additive, no depth write)
   // A small deterministic per-blast frame skew so simultaneous deaths don't animate in lockstep.
   const skew = (spawnCount++ % 5) * 0.6;
+  markGlow(m);   // the fireball is THE glow source among the FX
   scene.add(m);
   flipbooks.push({ mesh: m, mat, frame: skew, fps: FPS * speed }); // speed > 1 → quicker (e.g. rocket blast)
 }
@@ -202,6 +204,7 @@ export function spawnHitSprite(pos, sizeScale = 1, tint = null) {
   m.position.copy(pos);
   m.renderOrder = 3;
   const skew = (spawnCount++ % 5) * 0.6;
+  markGlow(m);
   scene.add(m);
   flipbooks.push({ mesh: m, mat, frame: skew, fps: HIT_FPS });
 }

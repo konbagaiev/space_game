@@ -35,10 +35,13 @@ export const SHIP_MODEL_LEN = 3.4; // auto-normalize a model's longest axis to ~
 // visibly climbing as the scene assembled mid-fight) and the model often arrived so late that an enemy
 // lived its whole life as the placeholder primitive. Same fix, same shape as drops.js's rewardModelCache.
 //
-// `clone(true)` shares geometry AND materials with the template, which is what we want: one GPU copy per
-// ship type. Safe because nothing mutates a live ship's materials — the two places that would (the `tint`
-// recolor and the ghost-battle darken/fade) clone the material themselves first, and a dead enemy only
-// disposes its attached exhaust plume, never the model (sim.js).
+// `clone(true)` shares geometry AND materials with the template. The geometry sharing is the whole point —
+// one GPU copy of the mesh + its textures per ship TYPE, and the compiled shader program with them. The
+// MATERIAL sharing is not: a material is per-instance visual state, and `applyShipModel` now clones every
+// one of them at attach so a single ship can flash when it is hit without lighting up every other ship of
+// its type (hit-fx.js; DECISIONS §79/§137). Clones cost nothing on the GPU — they carry the same geometry,
+// the same textures and identical parameters, so three.js reuses the same program — and nothing disposes
+// them: a dead enemy frees only its attached exhaust plume, never the model (sim.js).
 // entry = { scene, waiters }. The template `scene` is never added to the scene graph itself.
 const shipModelCache = new Map();
 
@@ -63,21 +66,44 @@ const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissive
 // DELIBERATELY 0.25 — far below the 0.65 bloom threshold. Hulls must NOT glow; they must merely stop going
 // black. Engines are the bloom source. Do not raise this until hulls bloom.
 //
-// It is applied ONCE to the shared TEMPLATE, before warmModel and before any clone is served — a one-time
-// static mutation per ship TYPE (§79-safe), never per instance, and it draws no randomness. It must NOT live
-// in applyShipModel's tint traverse: that block is `if (tint)` and EVERY ship with a real .glb loads with
-// `tint: false`, so the natural-looking spot would ship a silent no-op that passes every test.
+// It is applied ONCE to the shared TEMPLATE, before warmModel and before any clone is served, and it draws
+// no randomness. THE ORDERING IS THE POINT, and it is not (any longer) about §79's "never mutate a live
+// ship's material": §137 amended that, and applyShipModel now clones every material PER INSTANCE so the hit
+// flash can light one ship alone. What matters is that the floor must be on the template BEFORE that clone,
+// because the clone is what `flashMats` captures as the baked value the flash RESTORES TO — put the floor
+// after it and every flashed hull would settle back to black.
+// It must also NOT live in applyShipModel's tint traverse: that block is `if (tint)` and EVERY ship with a
+// real .glb loads with `tint: false`, so the natural-looking spot would ship a silent no-op that passes
+// every test.
+// (A hull therefore does GLOW while it is being hit — the flash is white at intensity 1.6, over the bloom
+// threshold. That is hit-fx's effect, by design; the STATIC floor below is what must never reach it.)
 function applyHullEmissiveFloor(root) {
   root.traverse((o) => {
     if (!o.isMesh || !o.material) return;
     for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
       if (!m || !m.emissive) continue;                                 // not a lit material
       if (m.emissiveMap || m.emissive.getHex() !== 0x000000) continue; // the artist already authored a glow — leave it
-      m.emissive.copy(m.color);
+      m.emissive.copy(m.color);   // emissive === color IS the floor's signature — see floorMark/reFloor below
       m.emissiveIntensity = POST_DEFAULTS.hullEmissive;
     }
   });
 }
+
+// Re-point a material's emissive FLOOR at its (just re-assigned) base colour.
+//
+// §138(j) IN MIRROR FORM. applyHullEmissiveFloor copies `emissive` from `color` on the shared TEMPLATE; any
+// per-instance pass that RE-ASSIGNS `color` afterwards therefore leaves the hull self-lighting in the hue it
+// used to be. On the wingman that is not academic: his whole visual identity is the accent repaint of the
+// `Wings_` materials, and without this the repainted wings would glow at 0.25 in the PLAYER's hull colour and
+// wash the green out of the one thing that tells the two ships apart. (The ally's colour identity has been an
+// escaped defect in this project before — it does not get to be implicit.)
+//
+// `emissive.equals(color)` BEFORE the re-assignment is the floor's own signature: applyHullEmissiveFloor is
+// the only thing that sets them equal, and it deliberately skips any material whose artist authored a glow.
+// Testing the state directly rather than tagging `userData` keeps this independent of what three's
+// Material.clone() copies. Call it as `const f = floorMark(m); m.color.set(x); reFloor(m, f);`
+const floorMark = (m) => !!(m && m.emissive && m.color && m.emissive.equals(m.color));
+const reFloor = (m, hadFloor) => { if (hadFloor) m.emissive.copy(m.color); };
 
 function warmModel(root) {
   try {
@@ -147,7 +173,12 @@ function applyShipModel(group, spec, color) {
       if (o.isMesh && o.material) {
         o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach((m) => m.color && m.color.set(color));
+        mats.forEach((m) => {
+          if (!m.color) return;
+          const hadFloor = floorMark(m);   // the emissive floor must follow the recolour, not the old hue
+          m.color.set(color);
+          reFloor(m, hadFloor);
+        });
       }
     });
     // ACCENT TINT: recolour only the materials whose NAME starts with `accent.prefix`, leaving the rest of
@@ -170,7 +201,10 @@ function applyShipModel(group, spec, color) {
       o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
       const cloned = Array.isArray(o.material) ? o.material : [o.material];
       cloned.forEach((m) => {
-        if (m && typeof m.name === 'string' && m.name.startsWith(accent.prefix) && m.color) m.color.set(accent.color);
+        if (!(m && typeof m.name === 'string' && m.name.startsWith(accent.prefix) && m.color)) return;
+        const hadFloor = floorMark(m);   // …so the wingman's wings self-light in the ACCENT green, not the
+        m.color.set(accent.color);       //    player hull's colour they were cloned from
+        reFloor(m, hadFloor);
       });
     });
     // Ghost-battle readability treatment: darken + fade + fog so the ghost skirmish reads as distant decor.
@@ -182,9 +216,17 @@ function applyShipModel(group, spec, color) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => {
           if (darken && m.color) m.color.multiplyScalar(darken);
-          // The emissive floor must dim WITH the albedo: without this a ghost would keep full self-lit
-          // brightness while its colour is scaled by `darken`, reading brighter and flatter than the
-          // "distant decor" treatment intends and fighting the real ships for attention.
+          // DEFENSIVE ONLY — `darken` HAS NO CALLER TODAY, and neither does the line above it. The ghost
+          // battle used to pass 0.45 here, but it was over-dimmed into invisibility and now ships at
+          // `opacity: 0.9` with no darken at all (ghost-battle.js builds its spec with `opacity` only; the
+          // 0.45 survives as history in ghost-battle-track.js's GHOST_TUNE comment). So the ghost skirmish
+          // currently carries the full 0.25 hull emissive floor UNCOMPENSATED — which is consistent with
+          // its current intent ("a watchable distant battle"), not with the old "dimmed decor" one.
+          // The line stays because `darken` is still a supported applyShipModel option: if anyone re-enables
+          // it, dimming the albedo while leaving the emissive at full strength is exactly the flat, too-bright
+          // result they would not be expecting. Keeping only the colour half would leave that trap armed.
+          // NOTE it cannot be verified by the visual suite: ghostBattlePlan disables the ghost battle under
+          // `?debug` on every tier, so no headless frame can ever contain a ghost.
           if (darken && m.emissive) m.emissive.multiplyScalar(darken);
           if (opacity != null) { m.transparent = true; m.opacity = opacity; }
           m.fog = true;
@@ -214,6 +256,30 @@ function applyShipModel(group, spec, color) {
       c.geometry?.dispose?.();
       c.material?.dispose?.();
     }
+    // PER-INSTANCE MATERIALS (docs/plans/2026-08-30-1505-combat-hit-feel.md). `clone(true)` shares
+    // materials with the cached template, so setting `emissive` on one enemy would flash EVERY enemy of
+    // that type. Cloning here keeps geometry + textures shared (no re-upload, no shader recompile — a
+    // clone has identical parameters, so THREE reuses the same compiled program) and gives each hull its
+    // own uniform set. `flashMats` is the list hit-fx.js writes to, with the baked values it restores.
+    // NOTHING DISPOSES THESE. `detachEnemyBody` frees only the ship's exhaust plume (DECISIONS §79), so the
+    // clones are simply garbage-collected with the mesh. Do NOT add a dispose pass here: a compiled program
+    // dies with its last material, and freeing it would recompile on the next spawn — the §83 freeze.
+    //
+    // KNOWN LIMITATION: where a material carries an `emissiveMap`, three.js MULTIPLIES emissive by that
+    // map, so such a material glows only where the map is non-black. Measured on the shipped glbs:
+    // enemy_1_combat and enemy_2_combat have none at all; player_combat has 2 of 15. The flash therefore
+    // reaches the overwhelming majority of every hull. Do NOT null the map to "fix" it — changing a map
+    // slot forces a shader recompile, which is the mid-fight freeze DECISIONS §83 exists to prevent. If the
+    // player ship reads weak in play, raise `flash.intensity` in the ?dev panel.
+    const flashMats = [];
+    model.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (m && m.emissive) flashMats.push({ mat: m, emissive: m.emissive.clone(), intensity: m.emissiveIntensity });
+      }
+    });
+    group.userData.flashMats = flashMats;
     host.add(pivot);
   }); // a failed load logs + keeps the placeholder primitive inside requestShipModel
 }
@@ -239,6 +305,10 @@ export function makeShip(color, model = null) {
   );
   glow.position.z = -1.6;
   bank.add(glow);
+  // The hull flash's material list (hit-fx.js). The placeholder's MeshStandardMaterial is already built
+  // fresh per ship, so it only needs recording — no clone. `applyShipModel` overwrites this when the glb
+  // lands, which is correct: it disposes these meshes in the same block.
+  g.userData.flashMats = [{ mat, emissive: mat.emissive.clone(), intensity: mat.emissiveIntensity }];
   g.position.y = BULLET_PLANE_Y; // sit the group on the canonical combat plane (bullets fly here)
   g.scale.setScalar(SHIP_GROUP_SCALE); // larger - the arena is far away, otherwise ships look tiny
   g.userData.noseZ = 1.6;  // muzzle/forward spawn (group-local: primitive cone nose) — replaced by the

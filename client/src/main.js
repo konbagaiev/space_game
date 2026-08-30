@@ -14,13 +14,14 @@ import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t 
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
 import { G, world, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, allies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, setZoom, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
-import { renderFrame, postStatus } from './postfx.js'; // THE frame: the post-processing composer (bloom + ACES grade) or, with no composer, today's two-pass frame
+import { renderFrame, postStatus, postTargets, glowParams } from './postfx.js'; // THE frame: the historical two-pass render, plus the additive glow overlay where a tier has one
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers, backdropAmp, setBackdropAmp } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap + the parallax backdrop's ?debug knobs
 import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
-import { spawnRocket as spawnRocketInto } from './sim-core/spawn.js'; // takes the World explicitly — __game wraps it below
+import { spawnRocket as spawnRocketInto, spawnBullet as spawnBulletInto } from './sim-core/spawn.js'; // take the World explicitly — __game wraps them below
+import { HIT_FX } from './hit-fx-config.js'; // ?debug hook: the live hit-feel tunables a scenario drives
 import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples
 import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
@@ -808,8 +809,10 @@ function prewarmShaders() {
     }
     renderer.compile(skyScene, camera);
     renderer.compile(scene, camera);
-    // No composer warm is needed here: the post chain's own shaders (bloom + grade) compile on the first
-    // renderFrame(), which is the very first animate() frame — long before any fight. Don't add one.
+    // No overlay warm is needed here: the glow overlay's own shaders (one blur + one composite) compile on
+    // the first renderFrame(), which is the very first animate() frame — long before any fight. Don't add
+    // one. The GLOW-LAYER geometry compiles with the base frame: it is the same objects and, because the
+    // combat lights are on the layer too, the same shader programs (see postfx.js createOverlay).
   } catch { /* best-effort — shader warmup must never break startup or a level load */ }
 }
 
@@ -1170,8 +1173,8 @@ function animate() {
     prewarmShaders();
     el.levelWarm.classList.remove('on');
   }
-  // The whole frame — the composed one (sky → combat → bloom → ACES grade) where a composer exists, and
-  // the historical two-pass frame where it does not. It resets renderer.info itself. See postfx.js.
+  // The whole frame — the historical two passes (sky → combat) straight to the canvas, plus the additive
+  // glow overlay on the tiers that have one. It resets renderer.info itself. See postfx.js.
   renderFrame();
   const t3 = DEV ? performance.now() : 0; // end of render submit (GPU exec is async — this is CPU submit cost)
   updatePerf(rawSec); // perf metrics use the RAW interval (clamped dt would cap fps/ms on slow devices)
@@ -1287,6 +1290,12 @@ if (location.search.includes('debug')) {
     // Debug/test shim: spawnRocket now takes the World first (sim-core/spawn.js). Bind this tab's World so
     // the visual scenarios keep their historical 6-argument call.
     spawnRocket: (from, fwd, weapon, accel, fromPlayer, target) => spawnRocketInto(world, from, fwd, weapon, accel, fromPlayer, target),
+    // Bullet spawn bound to this tab's World — mirrors the spawnRocket shim above.
+    spawnBullet: (from, dir, weapon, fromPlayer) => spawnBulletInto(world, from, dir, weapon, fromPlayer, null),
+    // Hit feel (hit-fx.js): the live tunables + each ship's own flash/punch impulse state, so a scenario can
+    // drive real hits and read what the FX did instead of guessing at pixels alone.
+    hitFx: { HIT_FX, flashOf: (ship) => ship?.mesh?.userData?.hitFlash || null,
+             punchOf: (ship) => ship?.mesh?.userData?.hitPunch || null },
     spawnEnemyShieldHit, // test/tool hook: fire an enemy shield ripple at a world point
     get enemyShieldSlots() { return enemyShieldSlots(); }, // diagnostic: the pooled enemy bubble slots
     get enemyShieldRefills() { return G.enemyShieldRefills; }, // diagnostic: completed enemy shield refills this run (replay triage)
@@ -1294,12 +1303,19 @@ if (location.search.includes('debug')) {
                                              // number the ?ally dev flag exists to produce (nothing else on
                                              // screen reveals it, by design; docs/plans/combat-ally.md §3)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
-    // Post-processing state + the parallax backdrop's live brightness. `active`/`bloom` are the ONLY honest
-    // liveness check for the chain: "no page errors + NoToneMapping" is equally true when createPostFx()
-    // threw and the frame silently fell back to the raw two-pass path. `setBackdropAmp` lets a scenario
-    // measure the new layer DIFFERENTIALLY (amp 0 vs the shipped amp) in one frame sequence.
+    // Glow-overlay state + the parallax backdrop's live brightness. `active` is the ONLY honest liveness
+    // check for the overlay: "no page errors" is equally true when createOverlay() threw and the frame
+    // silently fell back to the bare two-pass path. `glow` (the live knobs) / `setBackdropAmp` + `renderOnce` let a
+    // scenario measure either of them DIFFERENTIALLY on a FROZEN scene.
     get postfx() { return { ...postStatus(), amp: backdropAmp() }; },
+    get postTargets() { return postTargets(); }, // GL ground truth: real canvas samples / buffer sizes
     setBackdropAmp,
+    get glow() { return glowParams(); },   // the LIVE overlay knobs (strength/radius/threshold/knee)
+    // Render one more frame RIGHT NOW, synchronously, without advancing anything. Two back-to-back calls
+    // with one knob changed in between are the same scene rendered twice, so a pixel diff isolates that knob
+    // exactly — which is what makes "does the overlay actually reach the canvas?" answerable at all
+    // (43-expensive-look). Never called by the game itself.
+    renderOnce: () => renderFrame(),
     get levelName() { return CATALOG.levelName; },     // the SEED NAME (level-N) this tab resolved at boot
     get needsSceneWarm() { return G.needsSceneWarm; }, // diagnostic: a level build is waiting to be compiled/uploaded
     get pendingAssets() { return G.pendingAssets; }, // diagnostic: essential .glb loads still in flight (veil gate)
@@ -2135,6 +2151,9 @@ async function bootstrap() {
       // Exhaust tuning panel: GLOBAL points/flame toggle + freighter-only palette/shape sliders + Copy JSON.
       const { buildExhaustPanel } = await import('./exhaust-fx.js');
       buildExhaustPanel(GUI);
+      // Hit-feel panel: hull flash / model punch / camera shudder / tracer variation + Copy JSON.
+      const { buildHitFxPanel } = await import('./hit-fx.js');
+      buildHitFxPanel(GUI);
     }
   } catch (err) {
     console.error('Failed to load the game from the API:', err);

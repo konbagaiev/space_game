@@ -195,8 +195,9 @@ export function segmentHitsShip(ship, p0, p1, pad = 0) {
 //   hit          — the shot connected geometrically (with the shield sphere while up, else the hull)
 //   dodged       — the connect was EVADED (Maneuver skill): no damage applied, bullet still consumed, caller
 //                  shows "EVADE" instead of a hit-flash/ripple. Always false when no dodgeRoll is supplied.
-//   damageResult — the { absorbed, broke } contract from applyShieldedDamage (null when no hit OR dodged), so
-//                  the caller can spawn the cyan shield ripple at the impact point
+//   damageResult — the { absorbed, broke, toHull } contract from applyShieldedDamage (null when no hit OR
+//                  dodged), so the caller can spawn the cyan shield ripple at the impact point — and, when
+//                  `toHull > 0`, the hull hit that got through (a breaking shield spills in the same tick)
 //   remove       — whether this hit consumes the bullet (true on any connect, dodged or not; range culling
 //                  stays in sim.update)
 //   impact       — the world point to place the impact FX at: the sphere-entry point when the shield caught it,

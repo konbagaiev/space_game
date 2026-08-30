@@ -23,51 +23,62 @@ export const GRAPHICS_DEFAULT = 'high';
 // GE8320, Mali-G52), a 5.5-7× backbuffer-pixel cut moved fps by *nothing* (the weak-device bottleneck is
 // CPU draw-call submit + the GPU/compositor governor, NOT fragment fill rate), so it only blurred the
 // image for no gain. Resolution levers are a dead end here; see DECISIONS §23.
-// `post` = the post-processing chain (bloom + the ACES/grade/vignette pass; the THREE wiring is in
-// postfx.js). It is tiered by PASS COUNT, not by resolution, for exactly the reason above: the only lever
-// that protects a weak phone is `post: null` on Performance — no chain at all, ~14 fewer full-screen draw
-// submits per frame. `bloomScale: 0.5` on Balance saves FILL, which §23 says is the *less* important axis;
-// if a live phone test shows Balance losing frames, the correct follow-up is moving Balance to `post: null`,
-// NOT shrinking the bloom further. (`nMips` is not configurable — UnrealBloomPass hardcodes 5 in r160 — so
-// `bloomScale` is the only tunable, and Balance keeps all 5 mips.) See DECISIONS §137.
+// `post` = the additive GLOW OVERLAY (the THREE wiring is in postfx.js). The frame itself is drawn straight
+// to the canvas on every tier — there is no full-frame chain and no offscreen composite of the base image —
+// so `post` gates only the extra pass that re-renders the GLOW LAYER small, blurs it and adds it back.
+// `glowScale` is that buffer's size as a fraction of the canvas. It is tiered by PASS COUNT rather than by
+// resolution for exactly the reason above: the lever that protects a weak phone is `post: null` on
+// Performance — no overlay at all, 6 fewer draw submits per frame and today's exact image. Balance keeps the
+// overlay at a smaller `glowScale`, which saves FILL (the *less* important axis per §23); if a live phone
+// test shows Balance losing frames, the correct follow-up is moving Balance to `post: null`, NOT shrinking
+// the glow buffer further. See DECISIONS §138.
 export const TIERS = {
-  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: 640, enemyShieldBubbles: 6, nebulaBake: { cube: 1024, octaves: 6 }, post: { bloom: true, bloomScale: 1.0, samples: 4 } },
-  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: 480, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 }, post: { bloom: true, bloomScale: 0.5, samples: 0 } },
+  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: 640, enemyShieldBubbles: 6, nebulaBake: { cube: 1024, octaves: 6 }, post: { bloom: true, glowScale: 0.50 } },
+  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: 480, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 }, post: { bloom: true, glowScale: 0.35 } },
   performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false, maxParticles: 300,      enemyShieldBubbles: 0, nebulaBake: null,                       post: null },
 };
 
 // Post-processing look constants (pure data — the THREE wiring is in postfx.js, the live sliders in
 // tune.js). These are STARTING POINTS: the maintainer dials them in a real build via ?tune and the dialed
-// numbers are pasted back here. See DECISIONS §137.
+// numbers are pasted back here. See DECISIONS §138.
 export const POST_DEFAULTS = {
-  // DIALED ON A REAL FRAME, not derived. The planned starting point (exposure 1.15, bloom 0.55/0.4) blew the
-  // base station's white modules into featureless white blobs — its panel detail and hull lettering were gone
-  // — which is the "hulls must not glow / the backdrop is not a bright wall" line this feature exists to
-  // hold. At these values the same frame keeps its detail, the blacks get DEEPER than before the chain
-  // (measured: p05 sRGB luma 0.126 -> 0.049 in open space) and the clipped-white share DROPS (>0.95 luma:
-  // 1.44% -> 0.32% of the frame), which is the filmic curve doing its job instead of an exposure push.
-  exposure: 1.0,         // three's ACES multiplies by exposure/0.6, so 1.0 is already a 1.67x lift
-  bloom: { strength: 0.30, radius: 0.30, threshold: 0.65 }, // threshold MUST clear the dust — see BLOOM_DUST_MARGIN
-  vignette: { strength: 0.35, softness: 0.6 },             // 0 strength = off
-  grade: { gain: [1, 1, 1], saturation: 1.0 },             // IDENTITY by default (D9 hue lock)
-  hullEmissive: 0.25,    // ship emissive floor — deliberately far BELOW bloom.threshold: hulls must not glow
-  // The two gain blocks below are >1 on purpose: they push a source above 1.0 in LINEAR HDR so it clears
-  // bloom.threshold. They are VALID ONLY WITH A COMPOSER — read them through postGain() (D18), never
-  // directly, or Performance clips them per channel and the hue shifts.
-  exhaustGain: 1.6,      // plume uGain — pushes the engine core above 1.0 so it IS a bloom source
+  // THE GLOW OVERLAY. `strength` scales the blurred glow as it is added over the finished frame; `radius` is
+  // the blur step in glow-buffer texels (one H/V iteration; the sources are already soft, see postfx.js);
+  // `threshold` is the LINEAR Rec.601 luma a glow-layer pixel must clear; `knee` is the
+  // soft band above it (a hard cut makes a decaying explosion's glow pop in and out).
+  // The threshold's historical justification is DECISIONS §138(d): it sits above the speed-field dust's
+  // 0.6079 so the field can never turn into sparks (§96). Since the pivot that is belt-and-braces — the dust
+  // is not on the glow layer at all — but the margin is still asserted, because a re-tint that brightens the
+  // dust should fail a test rather than quietly rely on the layer.
+  // strength HALVED from 1.0 on live feedback: at 1.0 the ship flew inside its own glow spot instead of
+  // being lit by it.
+  // `radius` is the blur STEP in glow-buffer texels. Below ~0.8 the kernel's five taps overlap, which is what
+  // makes a small source smear instead of repeating itself; above it they separate and a compact source
+  // combs. Brightness lives in `strength`, never in the size of a source; WIDTH lives in the source texture,
+  // not in extra blur levels (postfx.js renderGlow says why there is only one).
+  bloom: { strength: 0.5, radius: 0.7, threshold: 0.65, knee: 0.25 },
+  // Ship emissive FLOOR — deliberately far BELOW the glow threshold, so a hull is never a standing light
+  // source. (A hull DOES glow while it is being hit: hit-fx's flash drives the same emissive to white at
+  // intensity 1.6 AND puts the hull on the glow layer for 0.12 s. That is the intended read — a hit is a
+  // light, a hull is not. See DECISIONS §137 + §138.)
+  hullEmissive: 0,
+  // The two gain blocks below are >1 on purpose: they push a source above 1.0 in LINEAR HDR so it clears the
+  // glow threshold in the (HalfFloat) glow buffer. They are VALID ONLY WITH THE OVERLAY — read them through
+  // postGain() (D18), never directly, or Performance clips them per channel and the hue shifts.
+  exhaustGain: 1.6,      // plume uGain — pushes the engine core above 1.0 so it IS a glow source
   fxGain: { explosion: 1.5, muzzle: 1.6, ring: 1.2, bolt: 1.4 }, // scalar HDR multipliers (hue-preserving)
-  // The parallax layer. `amp` is its brightness and is the backdrop CEILING knob: it was dialed down from a
-  // planned 0.35 on a real frame, where the higher value put the sky right around the ship within 1.6x of the
-  // lit hull (42-expensive-look asserts >= 1.5x); at 0.25 that margin is 1.9x and the layer still lifts the
-  // sky's mean luminance by ~26%, i.e. it is unmistakably there.
+  // The parallax backdrop layer. `amp` is its brightness and is the backdrop CEILING knob: it was dialed
+  // down from a planned 0.35 on a real frame, where the higher value put the sky right around the ship
+  // within 1.6x of the lit hull; at 0.25 the layer still lifts the sky's mean luminance by ~26%, i.e. it is
+  // unmistakably there. (Unrelated to the overlay — it ships on the same tiers as the nebula bake.)
   backdrop: { amp: 0.25, follow: 0.94, offsetMax: 250, radius: 900 },
 };
 export const BLOOM_DUST_MARGIN = 1.05; // threshold must clear the dust's linear luma by at least 5%
 
-// THE ONLY WAY ANY CALLER MAY READ AN HDR GAIN (D18). Without a composer the frame is written straight to
-// an 8-bit sRGB canvas with no tone mapping, so a value above 1.0 clamps PER CHANNEL: 0xffb050 x 1.5 clips
-// R and G but not B, which is both a flat white patch AND a hue shift — the two things this feature exists
-// to avoid. `hasPost` is `!!G.gfx.post`.
+// THE ONLY WAY ANY CALLER MAY READ AN HDR GAIN (D18). Without the glow overlay nothing turns >1 light into
+// glow, and the frame is written straight to an 8-bit sRGB canvas: a value above 1.0 then clamps PER
+// CHANNEL — 0xffb050 x 1.5 clips R and G but not B, which is both a flat white patch AND a hue shift, the
+// two things this feature exists to avoid. `hasPost` is `!!G.gfx.post`.
 export const postGain = (hasPost, gain) => (hasPost ? gain : 1);
 export const TIER_ORDER = ['high', 'balance', 'performance'];
 

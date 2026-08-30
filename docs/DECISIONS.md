@@ -785,7 +785,7 @@ is irrelevant. The change tests both, measurement-first:
   5.5–7× backbuffer-pixel cut moved fps by *nothing*, so it only blurred the image. **Resolution levers are
   a dead end here** — the wall is CPU draw-call submit plus the GPU/compositor governor, not fragment fill.
   The knob is gone from `client/src/graphics.js` and `graphics.test.js` asserts it stays gone. This finding
-  is why the post-processing chain (§137) is tiered by **pass count**, not by resolution.
+  is why the post-processing chain (§138) is tiered by **pass count**, not by resolution.
 - **`maxParticles`** (Performance 300; `Infinity` off on High/Balance) is a hard ceiling on live additive
   particles (exhaust trail + sparks) — new emits are skipped over budget. Cuts both overdraw and
   per-frame JS, so it also helps under hypothesis (2). Layered on top of the existing `particleScale`.
@@ -2399,7 +2399,8 @@ sprite sheet (pre-rendered hex-shield frames played as a billboard).
 writes it and uses **no seeded RNG**, so record/playback + the intro cutscene stay bit-identical (the same
 rule that governs all cosmetic frame work, per the record/playback design). `applyPlayerDamage` was moved to
 `components.js` and made to return `{ absorbed, broke }` so the trigger contract is unit-tested rather than
-buried in the FX path. Scoped to the **base/starter shield** for now; higher shield tiers can diverge later.
+buried in the FX path (renamed `applyShieldedDamage` when enemies got shields too, and extended to
+`{ absorbed, broke, toHull }` by §137 — `absorbed` alone cannot tell you whether the hull was hurt). Scoped to the **base/starter shield** for now; higher shield tiers can diverge later.
 Cross-ref §66 (shield mechanics), §30 (keep it simple — no asset pipeline for a shader we can write).
 
 **Follow-up (2026-07-16): intercept the shot ON the sphere, not just draw the ripple there.** The FX above
@@ -2820,7 +2821,7 @@ one VRAM copy per instance) because there is no parsed-model cache — see the `
 precedent for the shape of that fix. Headers remove the network round trip; only an in-code cache removes the
 work.
 
-## 79. Ship models are parsed ONCE and cloned per spawn — so a live ship's materials must never be mutated
+## 79. Ship models are parsed ONCE and cloned per spawn — so a live ship's materials are CLONED PER INSTANCE
 
 **Problem.** `applyShipModel` called `gltfLoader.load(url, ...)` on **every spawn**, and nothing cached the
 result. The bytes came from the browser cache, but three.js re-ran the full pipeline each time: a new
@@ -2838,14 +2839,28 @@ can produce (`preloadLevelShipModels`). This is the same shape as `drops.js`'s `
 applied it to ships.
 
 **The constraint this creates.** `Object3D.clone(true)` shares **geometry and materials** with the template.
-That is the point — one GPU copy per ship *type* instead of per instance — but it means **mutating a live
-ship's material would leak to every other ship of that type**. Two existing paths deliberately mutate
-materials and must therefore keep cloning first: the `tint` recolour, and the ghost-battle `darken`/`opacity`
-readability treatment. Both already clone; do not "optimise" that away. Anything new that wants a per-ship
-visual state (a damage flash, a cloak, a team colour) must clone the material for that instance too.
+The geometry sharing is the point — one GPU copy per ship *type* instead of per instance — but the material
+sharing meant **mutating a live ship's material would leak to every other ship of that type**. Two paths
+already cloned before mutating (the `tint` recolour, and the ghost-battle `darken`/`opacity` readability
+treatment), and this section closed with: *anything new that wants a per-ship visual state (a damage flash,
+a cloak, a team colour) must clone the material for that instance too*.
+
+**AMENDED 2026-08-30 (§137): that case-by-case clone became ALWAYS-ON at attach.** The damage flash arrived,
+and it wants a per-ship visual state on *every* modelled ship, so `applyShipModel` now clones **every**
+material of **every** instance immediately before parenting the model, recording each one's baked
+`emissive`/`emissiveIntensity` in `group.userData.flashMats` for the flash to restore. The live clone path
+therefore **shares no materials at all**, and the per-path `tint` / ghost-battle clones are now redundant
+rather than load-bearing — harmless, and left in place. What is still **one copy per ship TYPE** is
+**geometry + textures + the compiled shader program**: a clone has identical parameters, so three.js reuses
+the program, and nothing is re-uploaded. The rule that survives is the one about the **template**: the
+cached template's materials must never be mutated — everything a live ship touches is its own copy.
 
 **Safe on teardown:** a dead enemy only disposes its attached exhaust plume (`sim.js`), never the model's
-geometry or materials, so sharing cannot leave another instance with disposed GPU resources.
+geometry or materials, so sharing cannot leave another instance with disposed GPU resources. This is also
+why the §137 per-instance material clones cost nothing: nothing frees them, so they are simply
+garbage-collected with the mesh — and nothing frees the shared compiled program either, which is what §83
+depends on. Do **not** add a dispose pass for them: a program dies with its last material, and freeing it
+would force a recompile on the next spawn.
 
 **Parsing is only half of it — the model must also be WARMED onto the GPU.** three.js uploads geometry and
 textures, and compiles a material's shader program, **lazily: on the first frame the object is actually
@@ -2860,9 +2875,12 @@ covers shaders only, hence the explicit texture pass. This mirrors `prewarmShade
 does the same for the FX materials but runs at startup, long before any ship model exists.
 
 **Guard:** `client/visual/scenarios/26-ship-model-cache.mjs` spawns two ships of one type and one of
-another, and asserts the pair shares a geometry set and a material set while remaining distinct scene
-objects, and that a different type does not. Mutation-verified: with the cache bypassed it fails on the
-shared-geometry assertion. The GPU warm itself has no headless guard — software WebGL does not reproduce
+another, and asserts the pair shares a **geometry** set while having **per-instance materials** (that
+assertion was inverted by §137, deliberately) and remaining distinct scene objects, and that a different
+type shares neither. Mutation-verified: with the cache bypassed it still fails, on the shared-geometry
+assertion **and** on the `parsed >= 2` cache-size floor — the two checks that actually catch a per-spawn
+re-parse. `42-hit-feel.mjs` covers the other direction, on screen: with the per-instance clone removed, the
+control ship brightens along with the one that was shot and the pixel assertion fails. The GPU warm itself has no headless guard — software WebGL does not reproduce
 the stall — so its verification is the field telemetry (`js.render` spikes on first-sighting frames).
 
 ## 80. Per-frame HUD overlays position via `transform`, and never write a DOM value that has not changed
@@ -5406,7 +5424,82 @@ The table is a property of the event catalogue, so it belongs with it.
 first time. It is the direction the codebase already runs in, and it is re-exported from `protocol.js` so
 that file stays the one place the wire's shape is read from.
 
-## 137. The post chain renders LINEAR, blooms, THEN tonemaps — and the bloom threshold sits above the dust
+## 137. A hit is felt on the RECEIVER — and `toHull > 0`, not `absorbed`, is what "felt" means
+
+**Problem.** Every signal in a firefight belonged to the SHOOTER: a muzzle flash at your barrel, a bolt
+leaving it, a spark where the bolt died. **Nothing on the ship you shot changed.** Combat read limp because
+the target never acknowledged being hit — you could empty a magazine into a pirate and the only evidence was
+a health bar ticking down.
+
+**Decision.** The simulation emits one new describing event, **`hullHit`** (`ship`, `target`, `pos`,
+`dirHeading`, `weaponClass`, `toHull`), from the six sites that already call `applyShieldedDamage`, and the
+renderer (`client/src/hit-fx.js`) turns it into three things: a **hull flash** on the victim, a **model
+punch** from rockets and the heavy cannon, and a **camera shudder** when a rocket reaches the player's hull.
+It is the one sim-side addition and it carries no new state — it describes damage that already happened.
+
+**(a) The predicate is `toHull > 0`, not `!absorbed`.** `applyShieldedDamage` returned `{ absorbed, broke }`
+and now returns `{ absorbed, broke, toHull }`. The third field exists because **`absorbed: true` does not
+mean nothing got through**: a shield that breaks spills the excess to the hull *in the same tick*. A Heavy
+rocket (power 80) into the player's Base shield (capacity 20) returns `{ absorbed: true, broke: true,
+toHull: 60 }` — the single biggest hit in the game. A naive `if (!absorbed)` would have silently skipped
+exactly the moment that most needs to be felt. **One predicate drives both the flash and the shudder**; a
+hit a shield absorbs entirely (`toHull === 0`) still gets only the existing cyan bubble ripple, and there is
+deliberately no shield-flash knob — it would be a control that could never fire (§30). One consequence is
+worth stating so nobody "fixes" it later: a pirate rocket (power 20) into a FULL Base shield (capacity 20)
+breaks it with **exactly 0 spilling**, so that hit is silent. The shield is then down for 10 s while rockets
+arrive every 4 s, so the *next* one is felt. First rocket strips the shield, second one hurts — that
+escalation reads well and is intended.
+
+**Guard for (a), and it has to be end-to-end.** Rewriting the six emit sites to the naive `if (!dr.absorbed)`
+leaves the whole client suite, the whole server suite and every other visual scenario **green** — the unit
+tests can pin the `{ absorbed, broke, toHull }` contract, but not what the call sites do with it. So
+`42-hit-feel.mjs` fires a real pirate rocket (power 20) into a **partial 10-point shield**: the shield
+BREAKS, 10 spills to the hull, `absorbed` comes back `true`, and the camera must still shudder. That is the
+one test that fails under the regression this section exists to warn about. A `reachedHull` predicate in
+`hit-fx-config.js` was tried and **deleted**: nothing in production called it (sim-core must not import a
+client render-config module), so it read like coverage of those call sites while guarding nothing — §30.
+
+**(b) Three punch rules are requirements, not tunables.** Per-shot weapon/camera recoil was cut from scope
+because it degenerates into constant jitter, and the punch is one bad decision away from the same fate. So:
+**instant displacement out with a smooth ease back** (easing out *and* back reads as jelly — `impulse01` is
+1 at t=0 and decays with a vanishing slope, so the model settles rather than wobbles); **refresh, never
+accumulate** (a new hit resets the impulse, it never sums with one in flight, so a burst cannot compound);
+and **a cooldown** (0.15 s), so the Triple spiral rocket's three real warheads punch once instead of
+vibrating the hull. These live in the THREE-free `hit-fx-config.js` and are unit-tested, precisely because
+they are the difference between "impact" and "noise".
+
+**(c) The punch rides the cosmetic child group, never the ship's transform.** It writes `bankGroup.position`
+and `bankGroup.scale` — the same child the wing bank already rolls, which "never affected hits"
+(`collision.js`) — and never `ship.pos`, `ship.heading` or `ship.scale`. `ship.scale` in particular is
+simulation state: it feeds the hitboxes *and* the muzzle offset, so shoving the model through it would move
+where bullets spawn and what they can hit. The shove is stored as a world yaw and rotated into the group's
+local frame **every frame**, so a ship that turns mid-punch keeps being shoved the way the shot travelled.
+
+**(d) Per-instance material clones — §79's case-by-case rule became always-on.** Catalog ships load with
+`tint: false`, so none of the existing clone paths ran for them: their materials came straight from the
+shared template, and setting `emissive` on one enemy would have flashed **every enemy of that type at once**.
+`applyShipModel` now clones every material of every instance at attach. §79 already blessed this ("anything
+new that wants a per-ship visual state must clone the material for that instance too"); all that changed is
+that it moved from case-by-case to always-on. **It costs nothing on the GPU**: a clone carries the same
+geometry and the same textures and has identical parameters, so three.js reuses the compiled program — and
+nothing disposes any of it, so there is no recompile risk (§83). The known limitation we chose to live with:
+where a material has an `emissiveMap`, three.js multiplies emissive by that map, so it glows only where the
+map is non-black (measured: 0 of the materials on either enemy hull, 2 of 15 on the player's). Nulling the
+map would "fix" it and force a **shader recompile mid-fight**, which is precisely the freeze §83 exists to
+prevent; the answer if a hull reads weak is to raise the intensity in the panel.
+
+**Render-only, and the intro proves it.** Nothing here writes entity state or draws from the seeded stream —
+all the randomness (the per-shot tracer look, the shudder angle) is the native `Math.random` on the render
+side, which §73 keeps out of the simulation. The Level-0 intro re-sim lands on the same tick (2474) with the
+same 4 kills and the same win. The recorded pilot now flashes and shudders on screen; that is accepted.
+
+**Every magnitude is a placeholder.** None of these numbers can be guessed from a desk — a shove that reads
+as unnatural jitter and one that reads as impact differ by a factor no one can name in advance. So both
+punch channels (a directional shove and a scale pop) ship at **0**, a `?dev` "Hit feel" panel exposes all of
+them, and whatever the maintainer tunes in a real fight becomes the committed default. Dead UI being worse
+than no UI, the panel has exactly the sliders that can do something.
+
+## 138. The post chain renders LINEAR, blooms, THEN tonemaps — and the bloom threshold sits above the dust
 
 The game reads by light, silhouette and glow, not polygon count, so the frame is now composed
 (`client/src/postfx.js`) rather than drawn straight to the canvas. Almost every decision here is about ORDER
@@ -5454,10 +5547,20 @@ gets a one-time emissive floor equal to its own base colour, so a hull never goe
 backdrop. It must NOT glow: engines and weapons are the bloom sources, hulls are the silhouette. The unit
 test (`hullEmissive < bloom.threshold`) is **necessary, not sufficient** — it proves only that the emissive
 TERM cannot reach the threshold, while the shaded result is emissive + direct + ambient + env. The real proof
-is a rendered frame, which is why `42-expensive-look` measures the hull against the sky around it.
+is a rendered frame, which is why `43-expensive-look` measures the hull against the sky around it.
 The floor also goes on the shared TEMPLATE in `requestShipModel`, not in `applyShipModel`'s tint traverse:
 that traverse is `if (tint)` and every ship with a real `.glb` loads with `tint: false`, so the natural-looking
 spot would have shipped a silent no-op that passed every test.
+**"Must not glow" means the STATIC floor, and this needs saying because §137 landed alongside it.** The
+hit-feel hull flash drives the very same `emissive` to white at `HIT_FX.flash.intensity` (1.6) for 0.12 s,
+which *does* clear the 0.65 threshold — so a hull being shot blooms, on purpose, and that is an intended new
+bloom source rather than a violation of this entry. The rule is that a hull is not a standing light; a HIT is
+a light. The two features also depend on this ordering: §137's `applyShipModel` clones every material per
+instance and records the baked emissive in `userData.flashMats` as the value the flash restores to. Because
+the floor is applied to the template first, that captured value IS the floor — a flashed hull settles back to
+0.25, not to black. Placing the floor after the clone would have quietly broken that. (This also supersedes
+the original §79 justification for the template placement: §137 amended §79, so the reason is now ordering,
+not immutability.)
 
 **(g) An HDR gain is a property of the COMPOSER, not of the effect.** Pushing a source above 1.0 in linear
 HDR is what makes it bloom — but only where something maps HDR back to the display. On Performance there is
@@ -5494,9 +5597,71 @@ failure of §96 wearing new numbers. A different **seed** puts the masses in dif
 **scale** makes them larger, so the two layers are a different picture standing still, before any motion; the
 parallax then makes them a different *depth*.
 
+**(j) A gain applied where a colour is BUILT is lost wherever that colour is later re-assigned.** The
+charged beam's bolt glow is a pooled quad whose tint is set **per shot** (`spawnBeamBolt`, from the weapon's
+`projectileColor`), so an `fxColor()` applied in the pool constructor would have been overwritten by the
+first discharge and the beam would silently have stopped clearing the bloom threshold. The lift therefore
+goes at the per-shot assignment, and only the never-retinted white CORE takes it at build time. Generalise
+before adding a gain: find every write to that `material.color`, not just its first one. The same shape is
+fine in `bolt-fx.js`, where the per-shot tracer brightness (§137) and `fxGain.bolt` are both scalars applied
+in the same constructor and simply compose.
+**The same trap points the other way at the hull emissive floor.** The floor copies `emissive` from `color` on
+the shared template; `applyShipModel`'s tint and accent passes then RE-ASSIGN `color` per instance. Left alone,
+the wingman's accent-repainted `Wings_` materials would self-light at 0.25 in the *player's* hull hue and wash
+the blue out of the only thing that distinguishes the two ships on screen — and the ally's colour identity has
+already been an escaped defect in this project once. Both passes therefore re-copy the emissive after the
+recolour, keyed on `emissive.equals(color)` (the floor's own signature, since the floor skips any material
+whose artist authored a glow) rather than on a `userData` tag, so it does not depend on what three's
+`Material.clone()` carries. `38-ally` asserts the wing emissive hue; mutation-checked.
+**Corollary worth stating once: `darken` is dead.** The plan's ghost-battle mitigation (dim the emissive with
+the albedo) is real code but has no caller — the ghost battle ships at `opacity: 0.9` with no darken, so the
+skirmish carries the floor uncompensated, and `ghostBattlePlan` disables ghosts under `?debug` so no headless
+frame can judge it. The line is kept as a guard for anyone who re-enables `darken`, and labelled as such.
+
+**(k) D13's backdrop ceiling is NOT met, was already breached before this feature, and ships as a
+REGRESSION FLOOR instead.** D13 promised "the nebula's peak on-screen luminance stays below the dimmest lit
+hull facet", tested numerically as `hullP25 >= 1.5 x bgP99` on a real frame. It was implemented in exactly
+that form in `43-expensive-look` — and it **measures 1.30x**. The ceiling is not this feature's to move.
+Attributed on a real frame by switching each contributor off in turn (sky p99 over the whole frame, ship box
+excluded):
+
+| sky peak (p99) | |
+|---|---|
+| everything on | **0.4770** |
+| this feature's parallax layer at `amp` 0 | 0.4555 |
+| …and the bright/dim star layers hidden too | 0.4549 |
+| …and the baked nebula cubemap removed | **0.0000** |
+
+So the **baked procedural nebula cubemap — shipped 2026-07-04, long before this change — is ~95% of the sky
+peak**; the new parallax layer is ~4.5% of it and the stars ~0.1%. An `amp` sweep confirms the knob is
+powerless: `amp` 0.00 → 1.36x, 0.08 → 1.35x, 0.15 → 1.33x, 0.25 → 1.30x. **The entire range of the knob is
+worth 0.05x and 0.19x is missing** — deleting this feature's layer outright would still fail D13. The
+promise was therefore never true; it simply had no test until now.
+
+**Decision (maintainer, 2026-08-30): accept the measured ratio and pin it.** The two ways to reach 1.50x were
+both rejected. *Dimming the baked cube* is a look change to already-shipped art that nobody asked for.
+*Raising the hulls* is worse than that: the emissive floor is 0.25 precisely because 0.65 is the bloom
+threshold, so lifting hulls far enough to clear the sky would push them toward blooming and **break D12** —
+a hull must not be a standing light source. The ceiling and the silhouette pull in opposite directions, and
+D12 wins.
+
+**What ships:** the same measurement — whole-sky `bgP99` against `hullP25`, the honest quantities — asserted
+against a **regression floor of 1.25x**, just under the observed minimum, so the ratio can never silently get
+worse. Observed spread across five consecutive runs: 1.2981 / 1.3040 / 1.3040 / 1.3040 / 1.3048 (~0.5%), plus
+1.2988 and 1.2996 in-suite. Mutation-checked against a reachable `?tune` value: `amp` 0.35 passes at 1.270x,
+0.45 fails at 1.213x, 1.00 fails at 1.061x — it bites at roughly `amp` 0.40, the layer getting ~1.6x brighter.
+`backdrop.amp` stays a live `?tune` knob, so the layer's brightness can still be dialled by eye.
+
+**Lowering a THRESHOLD is not the same act as weakening a METRIC, and only the first one happened.** An
+earlier cut of this scenario asserted `hullP50 >= 1.5 x ringP95` — the *median* lit facet against a 130 px
+*local annulus* — which passed with 16% headroom on the very frame the honest form rejects. That is how a
+ceiling stops being a ceiling: the number looks untouched while the question quietly changes. The metric is
+kept exactly as approved; only the threshold moved, and it moved in the open, with the reason recorded here.
+
 **Cost / what was accepted.** `renderer.info.render.calls` grows by ~14 on High and Balance (the `?dev` perf
 overlay shows it), and the A/B bench will report `load.draws` grew and print "load diverged". Bright stars
-bloom for the first time — expected and desirable, not a regression. The shipped look constants
+bloom for the first time — expected and desirable, not a regression. So does a hull being SHOT: §137's flash
+is well over the threshold and now blooms — an intended new bloom source, see (f). The shipped look constants
 (`POST_DEFAULTS`) were dialed on real frames rather than derived: the planned starting point (exposure 1.15,
 bloom 0.55/0.4) blew the base station's white modules into featureless white blobs, and the planned backdrop
 `amp` 0.35 put the sky within 1.6× of the lit hull; the shipped 1.0 / 0.30 / 0.30 / amp 0.25 keeps the detail

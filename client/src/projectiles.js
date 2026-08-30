@@ -14,9 +14,11 @@ import { applyShieldedDamage } from './sim-core/components.js';
 import { registerShieldImpact, registerEnemyShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
+import { tracerLook } from './hit-fx-config.js'; // per-class + per-shot tracer length/brightness (Math.random)
 import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
 import { fxColor } from './postfx.js'; // HDR FX tints: a hue-preserving scalar lift, pinned to 1.0 with no composer (D18)
+import { markGlow } from './glow-layer.js'; // muzzle flashes / bolts / blasts / rings are the intended glow sources
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -36,27 +38,32 @@ export function spawnEnemyShieldHit(enemy, pos, broke = false) { registerEnemySh
 // bullets moved to src/state.js
 export const bulletGeo = new THREE.SphereGeometry(0.28, 8, 8);
 
-// Bolt size by weapon class: the glowing tracer look is shared, the heft is not — a Heavy cannon slug
-// reads as a chunkier version of the kinetic bolt (same texture, same tint rules, 1.7x the world size,
+// Bolt WIDTH by weapon class (and the muzzle flash's size): the glowing tracer look is shared, the heft is
+// not — a Heavy cannon slug reads as a chunkier version of the kinetic bolt (same texture, same tint rules,
 // matching its 2x hit flash in HIT_FLASH_SCALE). A class with no entry here falls back to bulletGeo.
+// A bolt's LENGTH and BRIGHTNESS no longer come from here: they are the per-class + per-shot tracer look in
+// HIT_FX.tracer (hit-fx-config.js), tuned in the ?dev "Hit feel" panel.
 export const BOLT_SCALE = { kinetic: 1, cannon: 1.7 };
 
 // Give a bullet a body. The entity already exists in the World with its position, velocity and class —
 // this is purely what it looks like. Gun fire reads as a glowing, travel-aligned energy bolt plus a quick
 // muzzle flash at the barrel, sized by weapon class (BOLT_SCALE — a cannon fires the same bolt, just
-// bigger); a class with no entry keeps the plain sphere. No Math.random → replay-safe (the bolt's
-// orientation is derived from its constant velocity, and a bullet's hit test is a point, so size is
-// purely cosmetic).
+// chunkier); a class with no entry keeps the plain sphere. Each shot also gets its own length/brightness
+// (tracerLook), so a burst reads as a stream of distinct rounds instead of one repeated sprite.
+// The only randomness is the NATIVE Math.random inside tracerLook — never simRandom — and it changes
+// nothing but pixels: the bolt's orientation comes from its constant velocity and a bullet's hit test is a
+// point, so its drawn size is purely cosmetic and every recorded trace replays bit-identically (§73).
 export function attachBulletBody(b) {
   let m;
   const boltScale = BOLT_SCALE[b.class];
   if (boltScale) {
-    m = makeBolt(b.projectileColor, b.vel, boltScale);
-    spawnMuzzleFlash(b.pos, b.projectileColor, boltScale);
+    m = makeBolt(b.projectileColor, b.vel, boltScale, tracerLook(b.class));
+    spawnMuzzleFlash(b.pos, b.projectileColor, boltScale); // the flash keeps the class heft, unjittered
   } else {
     m = new THREE.Mesh(bulletGeo, new THREE.MeshBasicMaterial({ color: b.projectileColor }));
   }
   m.position.set(b.pos.x, b.pos.y, b.pos.z);
+  markGlow(m);   // both bodies: the tracer quad AND the plain sphere a low class gets
   scene.add(m);
   b.mesh = m;
 }
@@ -103,6 +110,7 @@ function spawnMuzzleFlash(pos, color, scale = 1) {
   m.position.copy(pos);
   m.rotation.x = -Math.PI / 2;                // flat on the combat plane, read face-on by the top-down cam
   m.renderOrder = 2;                          // over the ship hull (additive, no depth write)
+  markGlow(m);
   scene.add(m);
   explosions.push({ mesh: m, life: 0.06, maxLife: 0.06, maxScale: 1.19 * scale }); // 1.19 ≈ 30% smaller than the old 1.7 sphere flash; scaled by the weapon's bolt size
 }
@@ -128,6 +136,7 @@ export function spawnExplosion(pos, maxScale = 3, life = EXPLOSION_LIFE, color =
   const m = new THREE.Mesh(explosionGeo, mat);
   m.position.copy(pos);
   m.scale.setScalar(0.6);
+  markGlow(m);
   scene.add(m);
   explosions.push({ mesh: m, life, maxLife: life, maxScale });
 }
@@ -183,6 +192,7 @@ function spawnShockRing(pos, y, maxScale, life, color) {
   const ring = new THREE.Mesh(ringQuadGeo, mat);
   ring.position.copy(pos); ring.position.y = y; // flat on the combat plane (a below-plane ghost passes its own depth)
   ring.rotation.x = -Math.PI / 2;
+  markGlow(ring);
   scene.add(ring);
   shockwaves.push({ mesh: ring, life, maxLife: life, maxScale });
 }
@@ -292,10 +302,13 @@ const spiralRocketGeo = new THREE.ConeGeometry(0.34, 2.0, 6);
 export function attachRocketBody(r) {
   const holder = new THREE.Group();
   if (!r.lead) {
-    // Lifted above 1.0 in linear HDR so a warhead in flight is a small bloom source — which is what makes
-    // the spiral volley's three visible rockets read as a distinct weapon. Scalar, so the hue holds (D9);
-    // 1.0 with no composer (D18).
-    const mat = new THREE.MeshBasicMaterial({ color: fxColor(r.projectileColor, 'explosion') });
+    // NO HDR LIFT HERE, deliberately — this is the ONE site the retune had to give back at the pivot. The
+    // warhead body is an OPAQUE MeshBasicMaterial, not an additive sprite: an additive glow source clipping
+    // at 1.0 merely saturates its hot core, but an opaque >1 colour clips PER CHANNEL at the 8-bit sRGB
+    // write and SHIFTS ITS HUE — exactly what D18 exists to prevent. Now that the base frame is written
+    // straight to the canvas on every tier, that would happen on High too. The warhead is also not one of
+    // the intended glow sources (its exhaust plume and its blast are); it is a solid object.
+    const mat = new THREE.MeshBasicMaterial({ color: r.projectileColor });
     const m = new THREE.Mesh(r.spiralOf ? spiralRocketGeo : rocketGeo, mat);
     m.rotation.x = Math.PI / 2; // cone points along +Z
     holder.add(m);

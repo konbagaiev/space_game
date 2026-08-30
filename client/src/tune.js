@@ -5,9 +5,9 @@
 import { scene, skyScene, combatAmbient, sun } from './engine.js';
 import { G } from './state.js';
 import { buildMap, backdropAmp, setBackdropAmp, getBackdropFollow, setBackdropFollow } from './world.js';
-import { postUniforms, bloomHandle, postStatus } from './postfx.js';
+import { glowParams, postStatus } from './postfx.js';
 import { POST_DEFAULTS } from './graphics.js';
-import { setGlobalExhaustGain } from './exhaust-fx.js';
+import { setGlobalEmitterScale, getEmitterScale, setGlobalExhaustGain } from './exhaust-fx.js';
 
 function dumpPalette() {
   const H = c => '0x' + c.getHexString();
@@ -31,14 +31,11 @@ function dumpPalette() {
     combatSun: { color: H(sun.color), intensity: sun.intensity },
   });
   // The dialed post values, ready to paste back into graphics.js POST_DEFAULTS.
-  const u = postUniforms(), b = bloomHandle();
-  console.log('— client/src/graphics.js  POST_DEFAULTS —', u ? {
-    exposure: u.toneMappingExposure.value,
-    bloom: b ? { strength: b.strength, radius: b.radius, threshold: b.threshold } : null,
-    vignette: { strength: u.uVigStrength.value, softness: u.uVigSoftness.value },
-    grade: { gain: [u.uGain.value.x, u.uGain.value.y, u.uGain.value.z], saturation: u.uSat.value },
+  const g = glowParams();
+  console.log('— client/src/graphics.js  POST_DEFAULTS —', postStatus().active ? {
+    bloom: { strength: g.strength, radius: g.radius, threshold: g.threshold, knee: g.knee },
     backdrop: { amp: backdropAmp(), follow: getBackdropFollow() },
-  } : '(no composer on this tier — nothing to dump)');
+  } : '(no glow overlay on this tier — nothing to dump)');
 }
 
 export function buildTunePanel(GUI) {
@@ -80,49 +77,44 @@ export function buildTunePanel(GUI) {
   gui.add({ dump: dumpPalette }, 'dump').name('⤓ Dump palette → console');
 }
 
-// The post-processing folder. Every control writes STRAIGHT to a live uniform so a drag is instant (no
-// rebuild). Absent on Performance, where there is no composer to tune.
+// The post-processing folder: the additive GLOW OVERLAY's live knobs. Every control writes STRAIGHT to the
+// shared params object postfx.js reads each frame, so a drag is instant (no rebuild). Absent on Performance,
+// where there is no overlay to tune.
 //
-// NOTE: there are deliberately NO dust `size` sliders here. Size sliders for all three speed-field layers
-// already exist in the ?dev Backdrop → "Speed field" folder; they write the live material.size AND persist
-// to localStorage, and theirs is the panel buildMap re-applies. A second, non-persisted set writing the same
-// number would be two panels with two behaviours for one value (DECISIONS §30). Tune the dust where it lives.
+// There are deliberately no exposure / grade / vignette controls: those lived in the full-frame pass that
+// was dropped at the pivot (DECISIONS §138). The frame is written straight to the canvas now — there is no
+// full-screen pass to hang a curve on, and the game's lighting is authored for direct sRGB output.
+//
+// NOTE: there are also deliberately NO dust `size` sliders here. Size sliders for all three speed-field
+// layers already exist in the ?dev Backdrop → "Speed field" folder; they write the live material.size AND
+// persist to localStorage, and theirs is the panel buildMap re-applies. A second, non-persisted set writing
+// the same number would be two panels with two behaviours for one value (DECISIONS §30).
 function buildPostFolder(gui) {
-  const u = postUniforms();
-  const f = gui.addFolder('Post (bloom / grade / vignette)');
-  if (!u) {
-    f.add({ note: 'no composer on this quality tier (Performance)' }, 'note').name('status').disable();
+  const f = gui.addFolder('Post (glow overlay)');
+  const st = postStatus();
+  if (!st.active) {
+    f.add({ note: 'no glow overlay on this quality tier (Performance)' }, 'note').name('status').disable();
     return;
   }
-  const b = bloomHandle();
-  const st = { exposure: u.toneMappingExposure.value,
-               gainR: u.uGain.value.x, gainG: u.uGain.value.y, gainB: u.uGain.value.z,
-               saturation: u.uSat.value,
-               vigStrength: u.uVigStrength.value, vigSoftness: u.uVigSoftness.value,
-               exhaustGain: POST_DEFAULTS.exhaustGain,
-               amp: backdropAmp() ?? POST_DEFAULTS.backdrop.amp, follow: getBackdropFollow() };
-  f.add(st, 'exposure', 0.4, 2.5, 0.01).onChange((v) => { u.toneMappingExposure.value = v; });
-  if (b) {
-    f.add(b, 'strength', 0, 2, 0.01).name('bloom strength');
-    f.add(b, 'radius', 0, 1.5, 0.01).name('bloom radius');
-    // The SHIPPED threshold (0.65) is guarded by a unit test: it must stay above the speed-field dust's
-    // linear luma (0.607) or the field turns into sparks, which DECISIONS §96 forbids. Dialing below the
-    // dust here is a live experiment; it cannot ship.
-    // Write `b.threshold`, NOT the uniform: UnrealBloomPass.render() re-assigns
-    // highPassUniforms.luminosityThreshold from this.threshold on every frame, so a uniform write is
-    // overwritten before it is ever seen.
-    f.add(b, 'threshold', 0.40, 1.20, 0.01).name('threshold (dust glows below 0.61)');
-  }
-  f.add(st, 'vigStrength', 0, 1, 0.01).name('vignette strength').onChange((v) => { u.uVigStrength.value = v; });
-  f.add(st, 'vigSoftness', 0, 1, 0.01).name('vignette softness').onChange((v) => { u.uVigSoftness.value = v; });
-  // Grade ships at IDENTITY (D9 hue lock) — these exist to judge a look, not to bake in a tint.
-  f.add(st, 'gainR', 0.5, 1.5, 0.01).name('grade gain R').onChange((v) => { u.uGain.value.x = v; });
-  f.add(st, 'gainG', 0.5, 1.5, 0.01).name('grade gain G').onChange((v) => { u.uGain.value.y = v; });
-  f.add(st, 'gainB', 0.5, 1.5, 0.01).name('grade gain B').onChange((v) => { u.uGain.value.z = v; });
-  f.add(st, 'saturation', 0, 2, 0.01).name('saturation').onChange((v) => { u.uSat.value = v; });
-  f.add(st, 'exhaustGain', 1, 3, 0.05).name('exhaust HDR gain').onChange(setGlobalExhaustGain);
-  f.add(st, 'amp', 0, 1.5, 0.01).name('backdrop amp').onChange(setBackdropAmp);
-  f.add(st, 'follow', 0.60, 1.00, 0.005).name('backdrop follow (1 = skybox)').onChange(setBackdropFollow);
-  f.add({ note: `composer ${postStatus().active ? 'on' : 'off'}, bloom ${postStatus().bloom ? 'on' : 'off'}` }, 'note')
-   .name('chain').disable();
+  const g = glowParams();
+  f.add(g, 'strength', 0, 3, 0.01).name('glow strength (0 = off)');
+  f.add(g, 'radius', 0.2, 4, 0.05).name('glow radius (blur texels)');
+  // The SHIPPED threshold (0.65) is guarded by a unit test: it must stay above the speed-field dust's linear
+  // luma (0.607). Since the pivot the dust is not on the glow layer at all, so dialing below it is safe to
+  // TRY — but the margin still ships, so a future re-tint of the dust fails a test instead of relying on the
+  // layer. What dialing this down really does is let dimmer FX into the glow.
+  f.add(g, 'threshold', 0.10, 1.20, 0.01).name('threshold (dust luma 0.61)');
+  f.add(g, 'knee', 0, 1, 0.01).name('threshold knee (soft edge)');
+  f.add({ exhaustGain: POST_DEFAULTS.exhaustGain }, 'exhaustGain', 1, 3, 0.05)
+   .name('engine light BRIGHTNESS').onChange(setGlobalExhaustGain);
+  // SIZE, separate from brightness. The blur is a fixed number of glow-buffer TEXELS, i.e. a fixed size on
+  // SCREEN, while the emitter is sized in WORLD units — so zooming out shrinks the ship but not the halo,
+  // and far enough out the ship sits inside its own glow. That is what this knob is for.
+  f.add({ engineLightSize: getEmitterScale() }, 'engineLightSize', 0.1, 3, 0.05)
+   .name('engine light SIZE').onChange(setGlobalEmitterScale);
+  f.add({ amp: backdropAmp() ?? POST_DEFAULTS.backdrop.amp }, 'amp', 0, 1.5, 0.01)
+   .name('backdrop amp').onChange(setBackdropAmp);
+  f.add({ follow: getBackdropFollow() }, 'follow', 0.60, 1.00, 0.005)
+   .name('backdrop follow (1 = skybox)').onChange(setBackdropFollow);
+  f.add({ note: `glow buffer at ${Math.round(st.scale * 100)}% of the canvas` }, 'note').name('overlay').disable();
 }

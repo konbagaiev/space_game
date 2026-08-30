@@ -16,6 +16,7 @@ import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
 import { POST_DEFAULTS } from './graphics.js'; // the parallax backdrop layer's shipped constants (amp/follow/offsetMax/radius)
+import { markGlow } from './glow-layer.js'; // the star's corona + the bright-star layer are glow sources
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -164,6 +165,10 @@ function makeStars(count, radius, brightFraction = 0.02) {
       depthWrite: false,      // creep onto the planet disk (the transparency gotcha in DECISIONS §5)
     }));
     bright.renderOrder = -1;
+    // The bright ~2% have carried the comment "bright core blooms over the dark backdrop" since DECISIONS §4
+    // and never actually bloomed, because nothing bloomed. On the glow layer they finally do. The DIM
+    // majority stays off it: those are meant to be points, not lights.
+    markGlow(bright);
     group.add(bright);
   }
   return group;
@@ -411,7 +416,7 @@ export function updateBackdropLayer() {
 }
 
 // ?tune / test hooks for the layer's two live knobs. `amp` is the backdrop brightness ceiling the
-// 42-expensive-look scenario measures differentially (amp 0 vs the shipped amp).
+// 43-expensive-look scenario measures differentially (amp 0 vs the shipped amp).
 export const backdropAmp = () => (G.backdropMat ? G.backdropMat.uniforms.uAmp.value : null);
 export function setBackdropAmp(v) { if (G.backdropMat) G.backdropMat.uniforms.uAmp.value = v; }
 export const getBackdropFollow = () => backdropFollow;
@@ -576,6 +581,7 @@ function makeStarMesh(spec) {
       blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
     }));
     s.scale.setScalar(spec.size * widthInR);
+    markGlow(s);   // the corona is an intended glow source (postfx's additive overlay)
     g.add(s);
   };
   coronaLayer(spec.halo, spec.haloColor ?? spec.color); // broad outer bloom, added first (drawn behind)

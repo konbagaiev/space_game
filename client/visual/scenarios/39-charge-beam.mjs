@@ -9,7 +9,7 @@
 //   1. it MOUNTS (`?beam` puts the real catalog row into the real gun group);
 //   2. the sight is VISIBLE while aiming — three named lines and a reticle;
 //   3. THE LOOK SURVIVED — one green hue on all three lines, the centre distinguished by DASH RHYTHM and
-//      not by brightness, and a discharge in a DIFFERENT (cyan-white) hue. Those are precisely the values
+//      not by brightness, and a discharge in a DIFFERENT (blue) hue. Those are precisely the values
 //      that vanish quietly when a look is re-typed from a document;
 //   4. it charges, discharges and DAMAGES.
 //
@@ -21,14 +21,18 @@
 export const name = '39-charge-beam';
 
 const SIGHT_GREEN = 0x5ad17f;
-const DISCHARGE_CYAN = 0xbfefff;
+const DISCHARGE_BLUE = 0x3d8bff;   // the bolt + muzzle bead (taken bluer twice on 2026-08-26)
 
 // THE DISCHARGE IS NOW A LINEAR-HDR COLOUR. postfx lifts it above 1.0 (fxGain.bolt) so the strike clears the
 // bloom threshold and actually glows — which means `Color.getHex()` is no longer usable on it: getHex()
 // converts back to sRGB and CLAMPS to 0..255, so every lifted colour reports 0xffffff and an exact-hex
 // assertion would either fail or, worse, pass on white. What the sight/shot split protects is the HUE, so
-// that is what is asserted: the linear colour normalized by its brightest channel. (The SIGHT is not lifted,
-// so its assertions still compare hexes directly.)
+// that is what is asserted: the linear colour normalized by its brightest channel. The lift is a SCALAR
+// multiply, so the authored blue's hue survives it exactly — which is the property this checks.
+// The bolt GLOW is retinted per shot, so a pool entry that has never fired still carries the unlifted hex;
+// normalizing by the brightest channel makes the assertion true of both, which is why it is a hue test and
+// not a brightness one. The SIGHT, the muzzle BEAD and the charge DUST are not lifted at all, so their
+// assertions above still compare hexes directly.
 const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 const hueOf = ({ r, g, b }) => { const m = Math.max(r, g, b) || 1; return [r / m, g / m, b / m]; };
 const hexHue = (hex) => hueOf({ r: srgbToLinear(((hex >> 16) & 255) / 255),
@@ -121,8 +125,37 @@ export default async function ({ page, assert, shot, baseURL }) {
   assert.notEqual(look.centre.dashSize, look.edges[0].dashSize,
     `the centre's dash rhythm differs from an edge's (centre ${look.centre.dashSize}, edge ${look.edges[0].dashSize})`);
   assert.ok(look.centre.dashSize > look.edges[0].dashSize, 'centre = long strokes, edges = short ticks');
-  assert.equal(look.orb, DISCHARGE_CYAN, 'the muzzle bead carries the DISCHARGE hue, not the sight\'s');
+  assert.equal(look.orb, DISCHARGE_BLUE, 'the muzzle bead carries the DISCHARGE hue, not the sight\'s');
   // (The bolt itself is pooled on the first shot, so its hue is asserted after the fight below.)
+
+  //    THE CHARGE DUST — specks pulled into the bead (maintainer, 2026-08-27). Asserted on the REAL PIXEL
+  //    SIZE it will be drawn at, not on `visible`: the first cut of this used the plume's size formula
+  //    without its `300.0` factor and would have rendered a 0.24 px point — present in the scene graph,
+  //    invisible on screen. That is the third value in this feature to fail that way, so it gets a guard.
+  const dust = await page.evaluate(() => {
+    const g = window.__game;
+    let d = null;
+    g.scene.traverse((o) => { if (o.name === 'beamChargeDust') d = o; });
+    if (!d) return null;
+    const u = d.material.uniforms;
+    // Reproduce the vertex shader's size term at the camera's real distance to the muzzle.
+    const cam = g.camera.position;
+    const o0 = u.uOrigin.value;
+    const dist = Math.hypot(cam.x - o0.x, cam.y - o0.y, cam.z - o0.z);
+    const px = (k) => u.uSize.value * (0.7 + k * 0.6) * (300 / dist);
+    return {
+      isPoints: !!d.isPoints, count: d.geometry.attributes.position.count,
+      color: u.uColor.value.getHex(), radius: u.uRadius.value,
+      pxIdle: px(0), pxFull: px(1), dist,
+    };
+  });
+  assert.ok(dust, 'the charge dust exists once a charge has run');
+  assert.ok(dust.isPoints && dust.count > 16, `it is a real particle system (${dust.count} points)`);
+  assert.equal(dust.color, DISCHARGE_BLUE, 'the specks carry the discharge hue — the maintainer asked for THIS colour');
+  assert.ok(dust.pxIdle > 4 && dust.pxFull > dust.pxIdle,
+    `and they are drawn at a size a human can see, growing with the charge `
+    + `(${dust.pxIdle.toFixed(1)} → ${dust.pxFull.toFixed(1)} px at ${dust.dist.toFixed(0)} u)`);
+  assert.ok(dust.radius > 2, 'born far enough out that the inward fall reads as travel');
 
   // 4. IT CHARGES, DISCHARGES AND DAMAGES.
   //
@@ -259,15 +292,14 @@ export default async function ({ page, assert, shot, baseURL }) {
       color: o.material.color.getHex(),
       x: o.position.x, z: o.position.z, rotY: o.rotation.y,
     });
-    let glow = null, core = null, flash = null;
+    let glow = null, core = null;
     g.scene.traverse((o) => {
       if (o.name === 'beamBolt' && o.visible) glow = read(o);
       if (o.name === 'beamBoltCore' && o.visible) core = read(o);
-      if (o.name === 'beamFlash' && o.visible) flash = read(o);
     });
     return {
       fired, sawCharge, playerAlive: p.alive, enemies: g.enemies.length,
-      glow, core, flash, muzzle,
+      glow, core, muzzle,
       targetAlive: e ? e.alive : null,
       targetPos: e ? { x: e.pos.x, z: e.pos.z } : null,
     };
@@ -299,7 +331,9 @@ export default async function ({ page, assert, shot, baseURL }) {
     assert.ok(Math.hypot(bolt.glow.x - midX, bolt.glow.z - midZ) < 4,
       'and it is centred on the midpoint between them');
   }
-  assert.ok(bolt.flash, 'with the bloom where it landed');
+  // The impact flash is NOT this module's any more: the beam emits `bulletImpact` like every other weapon
+  // and the shared hit-sprite path draws it (maintainer, 2026-08-26 — "take the kinetic one for now"), so
+  // there is no `beamFlash` object to find here. `sim-core/beam.test.js` asserts the event instead.
   await shot('bolt');
 
   // 5. THE SIGHT AND THE SHOT ARE NOT THE SAME HUE. They shared one blue at first, and the aiming aid
@@ -309,18 +343,19 @@ export default async function ({ page, assert, shot, baseURL }) {
   const bolts = await page.evaluate(() => {
     const out = [];
     window.__game.scene.traverse((o) => {
+      // `beamFlash` is gone (the impact rides `bulletImpact` now), so only the glow quads are read here.
       const c = o.material && o.material.color;
-      if (o.name === 'beamBolt' || o.name === 'beamFlash') out.push({ name: o.name, rgb: { r: c.r, g: c.g, b: c.b } });
+      if (o.name === 'beamBolt') out.push({ name: o.name, rgb: { r: c.r, g: c.g, b: c.b } });
     });
     return out;
   });
   assert.ok(bolts.length >= 2, `the discharge really pooled its objects (${bolts.length} found)`);
   for (const b of bolts) {
-    assert.ok(sameHue(hueOf(b.rgb), hexHue(DISCHARGE_CYAN)), `${b.name} is cyan-white (0xbfefff), got ${JSON.stringify(b.rgb)}`);
+    assert.ok(sameHue(hueOf(b.rgb), hexHue(DISCHARGE_BLUE)), `${b.name} carries the discharge blue (0x3d8bff), got ${JSON.stringify(b.rgb)}`);
     assert.ok(!sameHue(hueOf(b.rgb), hexHue(SIGHT_GREEN)), 'the shot is a DIFFERENT hue from the green sight that announced it');
   }
   // The core is deliberately WHITE rather than the discharge hue — it is the hot centre of the glow, and
-  // giving it the same cyan would flatten the two quads into one colour and lose the "hot core" read.
+  // giving it the same blue would flatten the two quads into one colour and lose the "hot core" read.
   const core = await page.evaluate(() => {
     let c = null;
     window.__game.scene.traverse((o) => { if (o.name === 'beamBoltCore') c = { r: o.material.color.r, g: o.material.color.g, b: o.material.color.b }; });

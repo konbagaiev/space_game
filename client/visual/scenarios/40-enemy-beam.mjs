@@ -28,7 +28,22 @@ export const name = '40-enemy-beam';
 
 const HOSTILE_ORANGE = 0xff6b4a;
 const PLAYER_GREEN = 0x5ad17f;
+const DISCHARGE_BLUE = 0x3d8bff;   // the shot's hue — the telegraph must NOT be this
 const LANCER_RANGE = 67;
+
+// THE BOLT GLOW IS A LINEAR-HDR COLOUR. postfx lifts the discharge above 1.0 (fxGain.bolt) so it clears the
+// bloom threshold and actually glows, which makes `Color.getHex()` useless on it: getHex() converts back to
+// sRGB and CLAMPS at 255, so 0xff6b4a lifted reports 0xff7d57 — a "wrong colour" that is really the right
+// colour with more light in it. The lift is a SCALAR multiply, so the HUE is exactly preserved, and the hue
+// is what these assertions are about (the weapon's red vs the player's blue). Everything else this scenario
+// reads — the three sight lines, the charge dust, the bead — is deliberately NOT lifted and still compares
+// hexes directly.
+const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const hueOf = ({ r, g, b }) => { const m = Math.max(r, g, b) || 1; return [r / m, g / m, b / m]; };
+const hexHue = (hex) => hueOf({ r: srgbToLinear(((hex >> 16) & 255) / 255),
+                                g: srgbToLinear(((hex >> 8) & 255) / 255),
+                                b: srgbToLinear((hex & 255) / 255) });
+const sameHue = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 0.02);
 
 export default async function ({ page, assert, shot, baseURL }) {
   // `?lancer` swaps wave-1's spawn pool for 100% pirate lancers (and clamps concurrency to 2); `level=4`
@@ -188,6 +203,31 @@ export default async function ({ page, assert, shot, baseURL }) {
               ship: { x: lancer.pos.x, z: lancer.pos.z, heading: lancer.heading,
                       noseZ: lancer.noseZ ?? 1.6, scale: lancer.scale || 1 },
               range: grp.mounts[0].weapon.maxRange,
+              // The charge DUST and BEAD, read on this SAME frame. Pooled like the lines, so take the
+              // visible entry — an idle slot keeps a stale buffer and would answer for a cloud that is
+              // not on screen. Size is reproduced from the vertex shader at the camera's real distance,
+              // because `visible === true` has already proved worthless twice on this weapon and a point
+              // drawn at a fraction of a pixel is in the scene graph and nowhere else.
+              dust: (() => {
+                let d = null;
+                g.scene.traverse((o) => { if (o.name === 'beamHostileDust' && o.visible) d = o; });
+                if (!d) return null;
+                const u = d.material.uniforms;
+                const c = g.camera.position, o0 = u.uOrigin.value;
+                const dist = Math.hypot(c.x - o0.x, c.y - o0.y, c.z - o0.z);
+                return {
+                  isPoints: !!d.isPoints, count: d.geometry.attributes.position.count,
+                  color: u.uColor.value.getHex(), radius: u.uRadius.value,
+                  px: u.uSize.value * (0.7 + u.uK.value * 0.6) * (300 / dist),
+                  originX: o0.x, originZ: o0.z,
+                };
+              })(),
+              bead: (() => {
+                let b = null;
+                g.scene.traverse((o) => { if (o.name === 'beamHostileOrb' && o.visible) b = o; });
+                return b ? { color: b.material.color.getHex(), scale: b.scale.x,
+                             x: b.position.x, z: b.position.z } : null;
+              })(),
             };
           }
         }
@@ -201,9 +241,18 @@ export default async function ({ page, assert, shot, baseURL }) {
     const afterVisible = after.all.centres.concat(after.all.edges).filter((o) => o.visible).length;
     const afterCount = after.all.centres.length + after.all.edges.length;
 
+    // The bolt the LANCER just fired. Take the VISIBLE pooled quad: the pool is round-robin and shared with
+    // the player's shots, so an idle slot still carries whatever hue it was last tinted.
     let bolt = null;
     g.scene.traverse((o) => {
-      if (o.name === 'beamBolt' && !bolt) bolt = { isMesh: !!o.isMesh, width: o.scale.x, len: o.scale.z };
+      if (o.name === 'beamBolt' && o.visible && !bolt) {
+        bolt = { isMesh: !!o.isMesh, width: o.scale.x, len: o.scale.z, rgb: { r: o.material.color.r, g: o.material.color.g, b: o.material.color.b } };
+      }
+    });
+    if (!bolt) g.scene.traverse((o) => {   // it may already have faded out; fall back to any pooled quad
+      if (o.name === 'beamBolt' && !bolt) {
+        bolt = { isMesh: !!o.isMesh, width: o.scale.x, len: o.scale.z, rgb: { r: o.material.color.r, g: o.material.color.g, b: o.material.color.b } };
+      }
     });
 
     return {
@@ -244,6 +293,39 @@ export default async function ({ page, assert, shot, baseURL }) {
     z: s.z + Math.cos(s.heading) * s.noseZ * s.scale,
   };
   assert.equal(run.reading.range, LANCER_RANGE, 'drawn from the lancer\'s own weapon row');
+
+  // THE CHARGE DUST AND BEAD, in the TELEGRAPH's hue (maintainer, 2026-08-30). Red says "aimed at you, now";
+  // the bolt then leaves in the shared blue, so the hue change at release reads on its own as "it has gone".
+  // Both are pooled per shooter, and both are asserted on real drawn quantities — a point at a fraction of a
+  // pixel and a bead at zero scale are both `visible === true`, which is exactly how this weapon has failed
+  // before.
+  // AND THE SHOT ITSELF IS RED (maintainer, 2026-08-30) — because THE COLOUR IS THE WEAPON'S, not the
+  // shooter's. The lancer's row (id 13) carries `projectileColor` 0xff6b4a and the player's (id 12) blue, so
+  // the hue travels on the event and the renderer never asks which side fired. Hand the lancer's row to the
+  // wingman and his beam is red too; `sim-core/beam.test.js` pins exactly that.
+  assert.ok(run.bolt, 'the lancer\'s discharge was drawn');
+  assert.ok(sameHue(hueOf(run.bolt.rgb), hexHue(HOSTILE_ORANGE)),
+    `a hostile bolt carries the telegraph's red, not the shot blue (got ${JSON.stringify(run.bolt.rgb)})`);
+  assert.ok(!sameHue(hueOf(run.bolt.rgb), hexHue(DISCHARGE_BLUE)), 'and is explicitly not the friendly hue');
+
+  const dust = run.reading.dust;
+  assert.ok(dust, 'a charging lancer pulls dust into its muzzle, like the player does');
+  assert.ok(dust.isPoints && dust.count > 16, `it is a real particle system (${dust.count} points)`);
+  assert.equal(dust.color, HOSTILE_ORANGE,
+    `the specks burn the lancer WEAPON's colour (got 0x${dust.color.toString(16)})`);
+  assert.notEqual(dust.color, DISCHARGE_BLUE, 'and are deliberately NOT the player weapon\'s blue');
+  assert.ok(dust.px > 4, `drawn at a size a human can see (${dust.px.toFixed(1)} px)`);
+  assert.ok(dust.radius > 1, 'born far enough out that the inward fall reads as travel');
+
+  const bead = run.reading.bead;
+  assert.ok(bead, 'and the bead it falls into is drawn too');
+  assert.equal(bead.color, HOSTILE_ORANGE, 'the bead burns the weapon\'s colour too');
+  assert.ok(bead.scale > 0, `and has a real size (${bead.scale.toFixed(3)})`);
+  // Both sit on the LANCER's muzzle, not the player's — the pooled entry belongs to its own shooter.
+  assert.ok(Math.hypot(dust.originX - bead.x, dust.originZ - bead.z) < 1e-6,
+    'dust and bead share one origin — they are one effect');
+  assert.ok(Math.hypot(dust.originX - run.reading.centre.ax, dust.originZ - run.reading.centre.az) < 0.5,
+    'and that origin is where the corridor starts: the lancer\'s own muzzle');
   for (const [i, l] of lines.entries()) {
     const len = Math.hypot(l.bx - l.ax, l.bz - l.az);
     assert.ok(Math.abs(len - LANCER_RANGE) < 2,

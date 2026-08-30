@@ -20,8 +20,9 @@ import { seedSim, simRandomDraws } from './sim-random.js';
 import { simTick } from './tick.js';
 import {
   isBeamGroup, beamGroupOf, beamWeaponOf, beamMuzzle, corridorEnds, inCorridor, beamCandidate,
-  updateBeamGroup, corridorRadOf, chargeTimeOf,
+  updateBeamGroup, corridorRadOf, chargeTimeOf, hullEntryToward,
 } from './beam.js';
+import { broadRadius, pointHitsShip } from './collision.js';
 
 const DT = 1 / 60;
 const DEG = Math.PI / 180;
@@ -31,7 +32,7 @@ const DEG = Math.PI / 180;
 // 0.5 by the maintainer on 2026-08-25 so the charge is clearly heard and seen) and the cycle is therefore
 // chargeTime + fireCooldown = 1.5 s. At 60 Hz a charge takes ~61 ticks, not 30 — every loop below is sized
 // against that, and the geometry every "does it still hit?" case rests on was re-derived at 1.0 s.
-const BEAM = { type: 'beam', power: 80, maxRange: 100, chargeTime: 1.0, corridorDeg: 2, fireCooldown: 0.5, weight: 12, class: 'beam' };
+const BEAM = { type: 'beam', power: 80, maxRange: 100, chargeTime: 1.0, corridorDeg: 2, fireCooldown: 0.5, weight: 12, class: 'beam', projectileColor: 0x3d8bff };
 const CHARGE_TICKS = Math.ceil(BEAM.chargeTime * 60) + 2;   // a charge, with a tick of slack either side
 const CYCLE_TICKS = Math.ceil((BEAM.chargeTime + BEAM.fireCooldown) * 60);
 
@@ -388,6 +389,153 @@ test('a hostile beam is caught on the SHIELD BUBBLE, not the hull inside it (§7
   assert.equal(fired.absorbed, true);
   // The DRAWN beam stops on the bubble — in front of the ship, never out the far side of it.
   assert.ok(fired.to.z < victim.pos.z, `the bolt ends on the sphere at z=${fired.to.z.toFixed(2)}, before the hull at 40`);
+});
+
+// THE IMPACT FLASH. The beam used to draw its own bloom in `beam-fx.js` — the one weapon in the game whose
+// hit looked like nothing else's. It now emits `bulletImpact` exactly as a bullet does and the shared
+// hit-sprite path draws it (maintainer, 2026-08-26: "take the kinetic one for now"). These are the tests
+// that replace the scenario's old `beamFlash` assertion, which could only ever check that an object existed.
+test('a hit emits `bulletImpact`, at the point the beam visibly stops', () => {
+  const s = shooter();
+  const t = offNose(s, 0, 30);
+  const w = fight({ enemies: [t] });
+  const events = [];
+  for (let i = 0; i < CHARGE_TICKS; i++) {
+    updateBeamGroup(w, s, s.groups.gun, FWD, 'player', DT, () => i === 0);
+    w.events.drain((e) => events.push(e));
+  }
+  const impact = events.filter((e) => e.type === 'bulletImpact');
+  assert.equal(impact.length, 1, 'one flash per discharge, like one flash per bullet');
+  assert.equal(impact[0].weaponClass, BEAM.class, 'carrying the ROW\'s class, so a future beam class picks its own scale');
+  assert.equal(impact[0].absorbed, false, 'a hull hit, not a shield one');
+  // THE FLASH IS ON THE HULL SURFACE, NOT AT ITS CENTRE — and that is the whole point of this assertion.
+  // The bolt's endpoint IS the centre (that is what makes it read as striking the ship), but the hit sprite
+  // is ~4 u across against a ~4 u hull and its material keeps `depthTest` on, so a flash at the centre is
+  // swallowed by the ship's own depth and the player sees NOTHING. That shipped once, on 2026-08-26, and
+  // was found by flying rather than by any test — this is the test that would have caught it.
+  const fired = events.find((e) => e.type === 'beamFire');
+  const m = beamMuzzle(s, FWD);
+  const dCentre = Math.hypot(t.pos.x - m.x, t.pos.z - m.z);
+  const dFlash = Math.hypot(impact[0].pos.x - m.x, impact[0].pos.z - m.z);
+  assert.ok(Math.hypot(fired.to.x - t.pos.x, fired.to.z - t.pos.z) < 1e-9,
+    'the BOLT still ends at the hull centre (unchanged look)');
+  assert.ok(dFlash < dCentre - 1,
+    `the FLASH sits nearer the shooter than the centre — on the surface, not buried in the hull `
+    + `(flash at ${dFlash.toFixed(2)} u, centre at ${dCentre.toFixed(2)} u)`);
+  // AND IT IS ON THE HULL, not on the bounding sphere. That distinction is invisible on a round little
+  // pirate and fatal on a heavy one: the broad radius is half the hull's LENGTH, so a side-on hit on a
+  // heavy pirate (extent x ±4.05, radius 7.57) put the flash 3.5 u out in empty space beside the ship.
+  assert.ok(pointHitsShip(t, impact[0].pos),
+    'the flash sits ON the hull — the same OBB test a bullet collides against, not a sphere approximation');
+});
+
+// THE ONE THAT CAUGHT THE REAL DEFECT. Every other impact test here uses a PRIMITIVE target, whose hull IS
+// its broad sphere — so a sphere approximation and a hull test agree and neither can be told from the other.
+// The bug only existed on a MODELLED, ELONGATED hull hit from the SIDE: the heavy pirate is 8.1 u wide and
+// 12.4 u long, so its bounding radius is 7.57 — and a flash placed one radius back from the centre landed
+// 3.5 u out in empty space beside the ship. Nose-on it looked fine, which is exactly what the maintainer
+// reported: "when I hit a heavy pirate in the side I see no impact animation, only on the nose."
+test('a SIDE hit on a modelled heavy pirate flashes ON its hull, not out beside it', async () => {
+  const { createSimWorld } = await import('../../../server/src/sim-host.js');
+  const { makeEnemyShell } = await import('./ship-entity.js');
+  const w = createSimWorld({ levelName: 'level-4', seed: 7 });
+  const row = w.catalog.shipByName.get('pirate mini boss');
+  assert.ok(row, 'the heavy is in the catalog');
+
+  const heavy = makeEnemyShell(w.catalog, row, new Vec3(0, 0.6, 0), 0);
+  heavy.scale = heavy.fullScale; heavy.warping = false; heavy.spawnAge = heavy.spawnDur;
+  heavy.pos.set(0, 0.6, 0);
+  heavy.heading = 0;                       // its NOSE points +Z, so we come at its FLANK along +X
+  assert.ok(heavy.hitBoxes && heavy.hitBoxes.length, 'and it is modelled, not a primitive — the whole point');
+
+  // Shoot it broadside: the shooter sits on -X aiming +X, across the hull's short axis.
+  const s = shooter({ heading: Math.PI / 2 });
+  s.pos.set(-40, 0.6, 0);
+  const fwd = new Vec3(Math.sin(s.heading), 0, Math.cos(s.heading));
+  const world = fight({ enemies: [heavy] });
+  const events = [];
+  for (let i = 0; i < CHARGE_TICKS; i++) {
+    updateBeamGroup(world, s, s.groups.gun, fwd, 'player', DT, () => i === 0);
+    world.events.drain((e) => events.push(e));
+  }
+  const impact = events.find((e) => e.type === 'bulletImpact');
+  assert.ok(impact, 'the broadside hit landed');
+
+  // The assertion that fails on the sphere version: the flash is inside the real geometry.
+  assert.ok(pointHitsShip(heavy, impact.pos),
+    `the flash is ON the modelled hull (got x=${impact.pos.x.toFixed(2)}, z=${impact.pos.z.toFixed(2)}; `
+    + `the bounding sphere would have put it at x=${(-broadRadius(heavy)).toFixed(2)}, metres off the flank)`);
+  // ...and stated the other way round, so the failure message names the cause rather than the symptom.
+  assert.ok(Math.abs(impact.pos.x) < broadRadius(heavy) - 1,
+    'well inside the bounding radius - a sphere-based placement would sit exactly ON that radius');
+});
+
+// THE COLOUR IS THE WEAPON'S, NOT THE SHOOTER'S (maintainer, 2026-08-30). This is the test that keeps the
+// renderer from ever going back to a side test: the same row fired by the player, by the wingman and by a
+// pirate produces the SAME hue, and two different rows produce two different ones — so handing the pirates'
+// beam to the wingman really does make his shot theirs.
+test('both beam events carry the WEAPON\'s colour, identical for every side that fires it', () => {
+  const RED = { ...BEAM, projectileColor: 0xff6b4a };
+  const run = (side, weapon) => {
+    const ship = shooter({ groups: { gun: beamGroup(weapon) }, heading: 0, class: 'fighter' });
+    const world = side === 'enemy'
+      ? fight({ player: target(0, 40, { class: 'player' }) })
+      : fight({ enemies: [target(0, 30)] });
+    const evs = [];
+    for (let i = 0; i < CHARGE_TICKS; i++) {
+      updateBeamGroup(world, ship, ship.groups.gun, FWD, side, DT, () => i === 0);
+      world.events.drain((e) => evs.push(e));
+    }
+    return { charge: evs.find((e) => e.type === 'beamCharge'), fire: evs.find((e) => e.type === 'beamFire') };
+  };
+
+  // Guard the fixture first: without this the colour assertions below compare undefined to undefined and
+  // pass while testing nothing — the fixture briefly HAD no projectileColor and they did exactly that.
+  assert.equal(typeof BEAM.projectileColor, 'number', 'the fixture carries a real colour to assert on');
+  assert.notEqual(BEAM.projectileColor, RED.projectileColor, 'and the two rows really differ');
+
+  for (const side of ['player', 'ally', 'enemy']) {
+    const r = run(side, BEAM);
+    assert.equal(r.fire.color, BEAM.projectileColor, `${side} firing the blue row emits the blue`);
+    assert.equal(r.charge.color, BEAM.projectileColor, `${side}'s charge dust burns it too`);
+  }
+  // …and the ROW is what changes it. The wingman firing the pirates' beam fires THEIR colour.
+  const allyWithPirateBeam = run('ally', RED);
+  assert.equal(allyWithPirateBeam.fire.color, 0xff6b4a,
+    'the wingman handed the pirates\' row fires red — it is the same gun');
+  assert.notEqual(allyWithPirateBeam.fire.color, run('ally', BEAM).fire.color,
+    'two rows, two colours — the hue tracks the weapon and nothing else');
+  // The side split stays on the event for the AUDIO rule ("only your own shots are audible"), untouched.
+  assert.equal(run('player', BEAM).fire.fromPlayer, true);
+  assert.equal(run('enemy', BEAM).fire.fromPlayer, false);
+});
+
+test('a MISS emits no `bulletImpact` — nothing was struck', () => {
+  const s = shooter();
+  const w = fight({ enemies: [] });
+  const events = [];
+  for (let i = 0; i < CHARGE_TICKS; i++) {
+    updateBeamGroup(w, s, s.groups.gun, FWD, 'player', DT, () => i === 0);
+    w.events.drain((e) => events.push(e));
+  }
+  assert.ok(events.some((e) => e.type === 'beamFire'), 'the shot still went out (the tap commits)');
+  assert.equal(events.filter((e) => e.type === 'bulletImpact').length, 0);
+});
+
+test('an ABSORBED hit says so, so the flash can be tinted for the shield (§75)', () => {
+  const hostile = shooter({ heading: 0, class: 'fighter' });
+  const victim = target(0, 40, { class: 'player', shield: { capacity: 200, rechargeSec: 10 }, _shieldValue: 200 });
+  const w = fight({ player: victim });
+  const events = [];
+  for (let i = 0; i < CHARGE_TICKS; i++) {
+    updateBeamGroup(w, hostile, hostile.groups.gun, FWD, 'enemy', DT, () => true);
+    w.events.drain((e) => events.push(e));
+  }
+  const impact = events.find((e) => e.type === 'bulletImpact');
+  assert.ok(impact, 'a shielded hit still flashes');
+  assert.equal(impact.absorbed, true, 'and it is marked absorbed — this is what makes the sprite cyan');
+  // On the bubble, in front of the hull: the same endpoint the bolt was already asserted to stop at.
+  assert.ok(impact.pos.z < victim.pos.z, `the flash is on the sphere at z=${impact.pos.z.toFixed(2)}, not at the hull's 40`);
 });
 
 test('a hostile beam picks the PLAYER and the ALLIES as its hostiles, in list order', () => {
