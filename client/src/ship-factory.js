@@ -34,10 +34,13 @@ export const SHIP_MODEL_LEN = 3.4; // auto-normalize a model's longest axis to ~
 // visibly climbing as the scene assembled mid-fight) and the model often arrived so late that an enemy
 // lived its whole life as the placeholder primitive. Same fix, same shape as drops.js's rewardModelCache.
 //
-// `clone(true)` shares geometry AND materials with the template, which is what we want: one GPU copy per
-// ship type. Safe because nothing mutates a live ship's materials — the two places that would (the `tint`
-// recolor and the ghost-battle darken/fade) clone the material themselves first, and a dead enemy only
-// disposes its attached exhaust plume, never the model (sim.js).
+// `clone(true)` shares geometry AND materials with the template. The geometry sharing is the whole point —
+// one GPU copy of the mesh + its textures per ship TYPE, and the compiled shader program with them. The
+// MATERIAL sharing is not: a material is per-instance visual state, and `applyShipModel` now clones every
+// one of them at attach so a single ship can flash when it is hit without lighting up every other ship of
+// its type (hit-fx.js; DECISIONS §79/§137). Clones cost nothing on the GPU — they carry the same geometry,
+// the same textures and identical parameters, so three.js reuses the same program — and nothing disposes
+// them: a dead enemy frees only its attached exhaust plume, never the model (sim.js).
 // entry = { scene, waiters }. The template `scene` is never added to the scene graph itself.
 const shipModelCache = new Map();
 
@@ -183,6 +186,30 @@ function applyShipModel(group, spec, color) {
       c.geometry?.dispose?.();
       c.material?.dispose?.();
     }
+    // PER-INSTANCE MATERIALS (docs/plans/2026-08-30-1505-combat-hit-feel.md). `clone(true)` shares
+    // materials with the cached template, so setting `emissive` on one enemy would flash EVERY enemy of
+    // that type. Cloning here keeps geometry + textures shared (no re-upload, no shader recompile — a
+    // clone has identical parameters, so THREE reuses the same compiled program) and gives each hull its
+    // own uniform set. `flashMats` is the list hit-fx.js writes to, with the baked values it restores.
+    // NOTHING DISPOSES THESE. `detachEnemyBody` frees only the ship's exhaust plume (DECISIONS §79), so the
+    // clones are simply garbage-collected with the mesh. Do NOT add a dispose pass here: a compiled program
+    // dies with its last material, and freeing it would recompile on the next spawn — the §83 freeze.
+    //
+    // KNOWN LIMITATION: where a material carries an `emissiveMap`, three.js MULTIPLIES emissive by that
+    // map, so such a material glows only where the map is non-black. Measured on the shipped glbs:
+    // enemy_1_combat and enemy_2_combat have none at all; player_combat has 2 of 15. The flash therefore
+    // reaches the overwhelming majority of every hull. Do NOT null the map to "fix" it — changing a map
+    // slot forces a shader recompile, which is the mid-fight freeze DECISIONS §83 exists to prevent. If the
+    // player ship reads weak in play, raise `flash.intensity` in the ?dev panel.
+    const flashMats = [];
+    model.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (m && m.emissive) flashMats.push({ mat: m, emissive: m.emissive.clone(), intensity: m.emissiveIntensity });
+      }
+    });
+    group.userData.flashMats = flashMats;
     host.add(pivot);
   }); // a failed load logs + keeps the placeholder primitive inside requestShipModel
 }
@@ -208,6 +235,10 @@ export function makeShip(color, model = null) {
   );
   glow.position.z = -1.6;
   bank.add(glow);
+  // The hull flash's material list (hit-fx.js). The placeholder's MeshStandardMaterial is already built
+  // fresh per ship, so it only needs recording — no clone. `applyShipModel` overwrites this when the glb
+  // lands, which is correct: it disposes these meshes in the same block.
+  g.userData.flashMats = [{ mat, emissive: mat.emissive.clone(), intensity: mat.emissiveIntensity }];
   g.position.y = BULLET_PLANE_Y; // sit the group on the canonical combat plane (bullets fly here)
   g.scale.setScalar(SHIP_GROUP_SCALE); // larger - the arena is far away, otherwise ships look tiny
   g.userData.noseZ = 1.6;  // muzzle/forward spawn (group-local: primitive cone nose) — replaced by the

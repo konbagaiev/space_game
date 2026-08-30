@@ -19,7 +19,8 @@ import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag c
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap
 import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
-import { spawnRocket as spawnRocketInto } from './sim-core/spawn.js'; // takes the World explicitly — __game wraps it below
+import { spawnRocket as spawnRocketInto, spawnBullet as spawnBulletInto } from './sim-core/spawn.js'; // take the World explicitly — __game wraps them below
+import { HIT_FX } from './hit-fx-config.js'; // ?debug hook: the live hit-feel tunables a scenario drives
 import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples
 import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
@@ -1287,6 +1288,12 @@ if (location.search.includes('debug')) {
     // Debug/test shim: spawnRocket now takes the World first (sim-core/spawn.js). Bind this tab's World so
     // the visual scenarios keep their historical 6-argument call.
     spawnRocket: (from, fwd, weapon, accel, fromPlayer, target) => spawnRocketInto(world, from, fwd, weapon, accel, fromPlayer, target),
+    // Bullet spawn bound to this tab's World — mirrors the spawnRocket shim above.
+    spawnBullet: (from, dir, weapon, fromPlayer) => spawnBulletInto(world, from, dir, weapon, fromPlayer, null),
+    // Hit feel (hit-fx.js): the live tunables + each ship's own flash/punch impulse state, so a scenario can
+    // drive real hits and read what the FX did instead of guessing at pixels alone.
+    hitFx: { HIT_FX, flashOf: (ship) => ship?.mesh?.userData?.hitFlash || null,
+             punchOf: (ship) => ship?.mesh?.userData?.hitPunch || null },
     spawnEnemyShieldHit, // test/tool hook: fire an enemy shield ripple at a world point
     get enemyShieldSlots() { return enemyShieldSlots(); }, // diagnostic: the pooled enemy bubble slots
     get enemyShieldRefills() { return G.enemyShieldRefills; }, // diagnostic: completed enemy shield refills this run (replay triage)
@@ -2133,6 +2140,9 @@ async function bootstrap() {
       // Exhaust tuning panel: GLOBAL points/flame toggle + freighter-only palette/shape sliders + Copy JSON.
       const { buildExhaustPanel } = await import('./exhaust-fx.js');
       buildExhaustPanel(GUI);
+      // Hit-feel panel: hull flash / model punch / camera shudder / tracer variation + Copy JSON.
+      const { buildHitFxPanel } = await import('./hit-fx.js');
+      buildHitFxPanel(GUI);
     }
   } catch (err) {
     console.error('Failed to load the game from the API:', err);

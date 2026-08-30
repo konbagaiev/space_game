@@ -3,6 +3,33 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-30
+
+- **The target reacts — hull flash, model punch and a camera shudder.** [2026-08-30-1505-combat-hit-feel]
+  Combat was announced entirely by the SHOOTER's side of the exchange — a muzzle flash, a bolt, a spark
+  where the bullet died — and nothing on the ship you shot ever changed. Now it does. A new sim event,
+  **`hullHit`**, is emitted from the six damage sites that already route through `applyShieldedDamage`, and
+  the renderer turns it into three things (`client/src/hit-fx.js`, tunables in `client/src/hit-fx-config.js`):
+  a **hull flash** on every ship a projectile actually hurts — enemies, the wingman and your own ship alike;
+  a **model punch** (a directional shove and/or a scale pop) from **rockets and the heavy cannon only**,
+  never from plain bullets; and a light **camera shudder** when a **rocket** reaches the **player's** hull.
+  The predicate for all of it is **`toHull > 0`, not `absorbed`** — `applyShieldedDamage` now returns
+  `{ absorbed, broke, toHull }`, because a shield that BREAKS spills the excess in the same tick, so the
+  biggest hit in the game (a Heavy rocket into a 20-point shield) comes back `absorbed: true`. A rocket a
+  full shield eats completely is silent, deliberately: it strips the shield, and the NEXT one is felt.
+  The punch **refreshes rather than accumulates** and carries a cooldown, so a triple-warhead spiral volley
+  punches once instead of vibrating; it rides the cosmetic child group, never `ship.pos`/`heading`/`scale`.
+  **Bolts now vary** in length and brightness, per weapon class and per shot, so a burst reads as a stream
+  of rounds instead of one repeated sprite. All of it is render-only: no seeded RNG is drawn, and the
+  Level-0 intro trace still re-sims to the same tick.
+  **Ship materials are now cloned PER INSTANCE** at attach (`ship-factory.js`) — a shared material would
+  have flashed every ship of the type at once. Geometry, textures and the compiled shader program are still
+  one copy per ship TYPE, so the model cache's whole point is intact (DECISIONS §79 amended, new §137).
+  A **`?dev` "Hit feel" panel** tunes every number above (flash colour/intensity/duration, both punch
+  channels, shudder amplitude/duration/cooldown, the four tracer bases and two jitters) with `Copy JSON`;
+  the punch channels ship at **0** pending live tuning, because a shove that reads as jitter is worse than
+  no punch at all.
+
 ## 2026-08-25
 
 - **The enemy charged beam — the pirate lancer, and the red telegraph that makes it fair.** [2026-08-25-1433-enemy-charged-beam]

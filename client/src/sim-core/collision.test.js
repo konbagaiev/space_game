@@ -199,7 +199,9 @@ test('resolveHostileBulletHit: a swept segment through the hull damages the hull
   assert.equal(r.hit, true);
   assert.equal(r.remove, true);                    // bullet is consumed (would reach sim's splice)
   assert.equal(p.hp, 88);                          // 100 − 12, routed by applyShieldedDamage
-  assert.deepEqual(r.damageResult, { absorbed: false, broke: false });
+  // The full { absorbed, broke, toHull } contract: `toHull` is what the hull flash / camera shudder read
+  // (hit-fx.js) — no shield, so all 12 points reached the hull. See DECISIONS §137.
+  assert.deepEqual(r.damageResult, { absorbed: false, broke: false, toHull: 12 });
 });
 
 test('resolveHostileBulletHit: with a shield, damage is absorbed shield-first (ripple contract)', () => {
@@ -208,7 +210,7 @@ test('resolveHostileBulletHit: with a shield, damage is absorbed shield-first (r
   assert.equal(r.hit, true);
   assert.equal(p._shieldValue, 15);                // absorbed by the shield
   assert.equal(p.hp, 100);                          // hull untouched
-  assert.deepEqual(r.damageResult, { absorbed: true, broke: false });
+  assert.deepEqual(r.damageResult, { absorbed: true, broke: false, toHull: 0 }); // nothing reached the hull → no flash
 });
 
 test('resolveHostileBulletHit: an ACTIVE shield intercepts on the sphere and reports the surface impact point', () => {

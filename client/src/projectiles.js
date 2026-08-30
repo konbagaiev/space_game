@@ -14,6 +14,7 @@ import { applyShieldedDamage } from './sim-core/components.js';
 import { registerShieldImpact, registerEnemyShieldImpact } from './shield-fx.js';
 import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
+import { tracerLook } from './hit-fx-config.js'; // per-class + per-shot tracer length/brightness (Math.random)
 import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
 
@@ -35,23 +36,27 @@ export function spawnEnemyShieldHit(enemy, pos, broke = false) { registerEnemySh
 // bullets moved to src/state.js
 export const bulletGeo = new THREE.SphereGeometry(0.28, 8, 8);
 
-// Bolt size by weapon class: the glowing tracer look is shared, the heft is not — a Heavy cannon slug
-// reads as a chunkier version of the kinetic bolt (same texture, same tint rules, 1.7x the world size,
+// Bolt WIDTH by weapon class (and the muzzle flash's size): the glowing tracer look is shared, the heft is
+// not — a Heavy cannon slug reads as a chunkier version of the kinetic bolt (same texture, same tint rules,
 // matching its 2x hit flash in HIT_FLASH_SCALE). A class with no entry here falls back to bulletGeo.
+// A bolt's LENGTH and BRIGHTNESS no longer come from here: they are the per-class + per-shot tracer look in
+// HIT_FX.tracer (hit-fx-config.js), tuned in the ?dev "Hit feel" panel.
 export const BOLT_SCALE = { kinetic: 1, cannon: 1.7 };
 
 // Give a bullet a body. The entity already exists in the World with its position, velocity and class —
 // this is purely what it looks like. Gun fire reads as a glowing, travel-aligned energy bolt plus a quick
 // muzzle flash at the barrel, sized by weapon class (BOLT_SCALE — a cannon fires the same bolt, just
-// bigger); a class with no entry keeps the plain sphere. No Math.random → replay-safe (the bolt's
-// orientation is derived from its constant velocity, and a bullet's hit test is a point, so size is
-// purely cosmetic).
+// chunkier); a class with no entry keeps the plain sphere. Each shot also gets its own length/brightness
+// (tracerLook), so a burst reads as a stream of distinct rounds instead of one repeated sprite.
+// The only randomness is the NATIVE Math.random inside tracerLook — never simRandom — and it changes
+// nothing but pixels: the bolt's orientation comes from its constant velocity and a bullet's hit test is a
+// point, so its drawn size is purely cosmetic and every recorded trace replays bit-identically (§73).
 export function attachBulletBody(b) {
   let m;
   const boltScale = BOLT_SCALE[b.class];
   if (boltScale) {
-    m = makeBolt(b.projectileColor, b.vel, boltScale);
-    spawnMuzzleFlash(b.pos, b.projectileColor, boltScale);
+    m = makeBolt(b.projectileColor, b.vel, boltScale, tracerLook(b.class));
+    spawnMuzzleFlash(b.pos, b.projectileColor, boltScale); // the flash keeps the class heft, unjittered
   } else {
     m = new THREE.Mesh(bulletGeo, new THREE.MeshBasicMaterial({ color: b.projectileColor }));
   }

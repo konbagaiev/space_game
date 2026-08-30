@@ -51,13 +51,22 @@ const boltGeo = new THREE.PlaneGeometry(1, 1);
 const _dir = new THREE.Vector3(), _side = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _basis = new THREE.Matrix4();
 
 // Build a bolt mesh tinted by `color`, laid flat on the combat plane with its long axis along `vel`.
-// `scale` multiplies both dimensions, so a heavier weapon class (cannon) fires the SAME bolt, just
-// bigger. Caller sets position + adds to the scene; velocity is constant so orientation is set once.
-export function makeBolt(color, vel, scale = 1) {
+// `scale` sizes the bolt by weapon class — a heavier class (cannon) fires the SAME bolt, just chunkier.
+// Caller sets position + adds to the scene; velocity is constant so orientation is set once.
+//
+// `look` is ONE SHOT's tracer variation (`tracerLook` in hit-fx-config.js: a per-class base plus a
+// Math.random jitter, so no two bolts are clones). `look.len` REPLACES the class scale on the travel axis —
+// multiplying them would make a cannon bolt 1.7 x 1.9 long — while the WIDTH keeps riding `scale`, so a
+// cannon slug stays as chunky as it is today. `look.bright` scales the additive tint. No `look` (the
+// default) is byte-identical to the uniform bolt this replaced.
+export function makeBolt(color, vel, scale = 1, look = null) {
+  const lenMul = look && look.len != null ? look.len : scale;
+  const bright = look && look.bright != null ? look.bright : 1;
   const mat = new THREE.MeshBasicMaterial({
     map: boltTexture(), color, transparent: true,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
+  if (bright !== 1) mat.color.multiplyScalar(bright); // additive blend: a linear brightness scale
   const m = new THREE.Mesh(boltGeo, mat);
   _dir.copy(vel); _dir.y = 0;
   if (_dir.lengthSq() < 1e-6) _dir.set(0, 0, 1);
@@ -65,7 +74,7 @@ export function makeBolt(color, vel, scale = 1) {
   _side.crossVectors(_up, _dir);                 // in-plane perpendicular
   _basis.makeBasis(_dir, _side, _up);            // X=travel, Y=across, Z=up (quad faces the camera)
   m.quaternion.setFromRotationMatrix(_basis);
-  m.scale.set(BOLT_LEN * scale, BOLT_WID * scale, 1);
+  m.scale.set(BOLT_LEN * lenMul, BOLT_WID * scale, 1);
   m.renderOrder = 2;                             // draw over opaque ships/hull (additive, no depth write)
   return m;
 }
