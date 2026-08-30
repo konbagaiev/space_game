@@ -295,9 +295,12 @@ export const WEAPONS = [
   // in the corridor. Any rebalance must compare EFFECTIVE damage-on-target, not the stat line.
   {
     id: 12, name: 'Charged beam', type: 'beam', price: 5500, stats: {
-      power: 80, maxRange: 100, fireCooldown: 0.5, weight: 12, projectileColor: 0xbfefff, class: 'beam',
-      // projectileColor is the DISCHARGE's cyan-white; the aiming sight is green and its look values are
-      // module constants in beam-fx.js (plan §2e) — the two hues are deliberately different.
+      power: 80, maxRange: 100, fireCooldown: 0.5, weight: 12, projectileColor: 0x3d8bff, class: 'beam',
+      // projectileColor IS the colour this beam burns — its bolt, its charge dust and its muzzle bead. It
+      // travels on the two beam events and `beam-fx.js` tints per shot from it, so the hue belongs to the
+      // WEAPON rather than to the side firing it (maintainer, 2026-08-30): hand this row to a pirate and it
+      // stays blue; hand the pirates' red row (id 13) to the wingman and his beam is red. The aiming SIGHT
+      // is a separate thing and stays side-coloured — green is "my aid", red is "aimed at me" (§0e).
       chargeTime: 1.0,   // seconds from trigger to discharge — raised from 0.5 (maintainer, 2026-08-25) so
                          // the charge sound and the build-up animation are clearly heard and seen
       corridorDeg: 2,    // HALF-angle of the hit corridor, degrees (the two drawn edge lines)
@@ -325,7 +328,10 @@ export const WEAPONS = [
       chargeTime: 1.0,   // SAME as the player's: telegraph length is not the lever
       fireCooldown: 2.0, // 4x the player's 0.5 → a 3.0 s cycle (maintainer, after flying it 2026-08-25)
       corridorDeg: 2,    // HALF-angle of the hit corridor, degrees — unchanged from the player's
-      weight: 12, projectileColor: 0xbfefff, class: 'beam', buyable: false,
+      // THE COLOUR IS A PROPERTY OF THE WEAPON, not of who fired it (maintainer, 2026-08-30). This row is
+      // the pirates' beam and it burns RED; the player's id 12 is blue. An ALLY handed this row therefore
+      // fires red too, which is the point — it is the same gun. `beam-fx.js` reads this per shot.
+      weight: 12, projectileColor: 0xff6b4a, class: 'beam', buyable: false,
     }
   },
 ];

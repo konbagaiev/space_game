@@ -33,7 +33,7 @@
 // and every recorded trace stays bit-identical (DECISIONS §73).
 import { Vec3 } from './vec.js';
 import { shortestAngleDelta } from './steering.js';
-import { segmentHitsShip, resolveHostileBulletHit, broadRadius } from './collision.js';
+import { segmentHitsShip, resolveHostileBulletHit, broadRadius, pointHitsShip } from './collision.js';
 import { applyShieldedDamage } from './components.js';
 
 const DEG = Math.PI / 180;
@@ -50,6 +50,7 @@ const _endR = new Vec3();
 const _shotFrom = new Vec3();
 const _shotTo = new Vec3();
 const _through = new Vec3();
+const _impact = new Vec3();   // where the FLASH goes — the hull surface, which is not where the bolt ends
 
 // ---------- the group ----------
 
@@ -162,6 +163,45 @@ export function beamCandidate(world, ship, fwd, side, range, halfRad) {
   return best;
 }
 
+// WHERE THE BEAM FIRST TOUCHES THE HULL — the point to put the impact flash at. Written into `out`.
+//
+// A hit FLASH and the beam's drawn ENDPOINT are NOT the same point, and this function exists because
+// getting that wrong shipped twice in one day (2026-08-26):
+//   • at the hull CENTRE (the bolt's endpoint) the sprite is inside the model and the ship's own depth
+//     eats it — `depthTest` is on and the camera looks almost straight down. Nothing is drawn at all.
+//   • one BROAD RADIUS back was worse in a way that only shows on big ships: the broad radius is the
+//     bounding SPHERE, i.e. half the hull's LENGTH, so a side-on hit on a heavy pirate (extent x ±4.05,
+//     radius 7.57) put the flash 3.5 u out in empty space beside it. It read as no impact at all, and
+//     only nose-on hits — where the sphere and the hull nearly agree — looked right.
+// Both were found by flying, not by a test; `beam.test.js` now pins this.
+//
+// So march the shot and ask the SAME question a bullet asks: `pointHitsShip`, against the same baked OBBs.
+// That is the whole point — a beam's flash then lands exactly where a bullet's would, which is the
+// behaviour the maintainer compared it against ("with the machine gun you can see where every bullet
+// lands"). Starts at the broad sphere (always outside) and walks PAST the centre, because a modelled hull
+// can be hollow at its origin — the same reason the damage ray is extended past the centre below.
+//
+// Bounded, allocation-free and RNG-free. It runs once per discharge — a couple of dozen point tests every
+// 1.5–3 s — so the simple march beats a ray/OBB solver nobody would have to maintain otherwise (§30).
+const HULL_MARCH_STEPS = 24;
+export function hullEntryToward(out, target, from, at) {
+  const dx = at.x - from.x, dz = at.z - from.z;
+  const d = Math.hypot(dx, dz);
+  const r = broadRadius(target);
+  if (d <= 1e-6) return out.copy(at);
+  const ux = dx / d, uz = dz / d;
+  // Enter at the sphere and walk through to one radius PAST the centre.
+  const sx = at.x - ux * r, sz = at.z - uz * r;
+  const step = (2 * r) / HULL_MARCH_STEPS;
+  for (let i = 0; i <= HULL_MARCH_STEPS; i++) {
+    out.set(sx + ux * step * i, at.y, sz + uz * step * i);
+    if (pointHitsShip(target, out)) return out;
+  }
+  // A GRAZE: the corridor matched on an edge line, so the centre ray never entered the hull. The sphere
+  // boundary is the honest answer there — it is where the shot passed the ship.
+  return out.set(sx, at.y, sz);
+}
+
 // ---------- the tick ----------
 
 // One beam group's tick. Replaces the volley/cooldown machinery for beam-typed groups only; every other
@@ -208,6 +248,7 @@ export function updateBeamGroup(world, ship, g, fwd, side, dt, wantsFire) {
       // group and so cannot derive its corridor from anything it holds. Side-agnostic: the renderer, not
       // the simulation, decides whose sight this becomes. Still two events per shot.
       type: 'beamCharge', ship, pos: _muzzle.clone(), dur: chargeTime, weaponClass: w.class,
+      color: w.projectileColor,   // the dust and the bead burn the weapon's colour, like the bolt
       fromPlayer: side === 'player',
     });
   }
@@ -242,6 +283,11 @@ function fireBeam(world, ship, g, fwd, side, w, range, halfRad) {
         world.events.emit({ type: 'enemyShieldHit', enemy: target, pos: _shotTo.clone(), broke: dr.broke });
       }
       hit = true;
+      // The flash goes where the shot first MEETS THE HULL — see hullEntryToward. Not `target.pos` (inside
+      // the model, swallowed by its own depth) and not the bounding sphere (metres off the side of a big
+      // ship). `applyShieldedDamage` reports no contact point, unlike the hostile resolver, so it is
+      // derived here against the same OBBs a bullet collides with.
+      hullEntryToward(_impact, target, _shotFrom, _shotTo);
       world.events.emit({ type: 'hit', target: 'enemy' });
     } else {
       // A hostile beam routes through the SAME shield-then-hull resolver a hostile bullet uses (§76), so the
@@ -265,6 +311,9 @@ function fireBeam(world, ship, g, fwd, side, w, range, halfRad) {
         // The DRAWN endpoint stays on the hull or on the bubble — the player must not see the beam come out
         // the far side of what it struck.
         if (res.impact) _shotTo.copy(res.impact);
+        // The resolver DOES give a real contact point (hull or shield bubble), so the flash uses it as-is;
+        // only the friendly path above has to derive one. Without a point, fall back to the same surface.
+        if (res.impact) _impact.copy(res.impact); else hullEntryToward(_impact, target, _shotFrom, _shotTo);
         if (res.damageResult && res.damageResult.absorbed) {
           absorbed = true;
           const isPlayer = target === world.player;
@@ -277,11 +326,28 @@ function fireBeam(world, ship, g, fwd, side, w, range, halfRad) {
     }
   }
 
+  // THE IMPACT FLASH IS THE ONE EVERY OTHER WEAPON USES. A beam lands like a bullet lands, so it says so
+  // with the same event and gets the same flipbook mini-blast — including the CYAN tint when a shield
+  // stopped it, which is how "the field held" reads differently from an orange hull hit (DECISIONS §75).
+  // Emitted AFTER the branches on purpose, and at `_impact` rather than `_shotTo`: the bolt's endpoint is
+  // the hull CENTRE (that is what makes it read as striking the ship), and a ~4 u sprite placed there is
+  // buried inside a ~4 u hull with `depthTest` on. `_impact` is the surface facing the shooter.
+  //
+  // `weaponClass` is the row's own, so a beam with a new class picks up its own HIT_FLASH_SCALE the day one
+  // is added; today 'beam' has no entry and takes the 0.8 fallback — the kinetic's size, chosen by the
+  // maintainer (2026-08-26) as the honest reading of "take the kinetic one for now". RNG-free, so this stays
+  // replay-neutral (§73).
+  if (hit) world.events.emit({ type: 'bulletImpact', pos: _impact.clone(), weaponClass: w.class, absorbed });
+
   world.events.emit({
     type: 'beamFire',
     from: _shotFrom.clone(), to: _shotTo.clone(),
     hit, absorbed,
     weaponClass: w.class,
     fromPlayer: side === 'player',   // the EVENT means "your own shot" (§134's split) — the ally's is silent
+    // WHAT COLOUR IT BURNS, off the weapon row. The hue belongs to the WEAPON, not to the side firing it
+    // (maintainer, 2026-08-30) — hand the pirates' red row to the wingman and his beam is red, because it
+    // is the same gun. That is also why the renderer needs no side test here: it tints from this value.
+    color: w.projectileColor,
   });
 }

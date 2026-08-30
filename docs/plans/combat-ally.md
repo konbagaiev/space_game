@@ -124,8 +124,16 @@ advance into it. Note the stale-looking `level-5` references in older DECISIONS 
 ### Still open — the maintainer said these come later
 
 - ~~The ally's weapons~~ — **settled, see §2d** (Heavy cannon id 6 + Rocket id 3, Base shield, no grab).
-- **The base pirates' and the boss's weapons** — and with them the standoff distance, which §2c(a) shows is
-  a framing constraint, not a free choice.
+- ~~**The base pirates' and the boss's weapons**~~ — **REDIRECTED 2026-08-23, and it now BLOCKS this
+  mission.** Asked to choose a standoff distance against §2c(a)'s framing constraint, the maintainer chose
+  neither of the kinetic options and opened a **new weapon class instead: a charged beam** — a thin aiming
+  line from the hull, a reticle on whatever it crosses, a ~0.5 s charge on the trigger, and a shot that
+  manoeuvring during the charge can spoil. It is a feature in its own right, not a Level 5 stat block, and
+  it is deliberately **mountable by anyone** (the maintainer's own words: *"any weapon is available to
+  anyone — if I want to arm the pirates with it, that has to be easy"*), so the Level 5 pirates and the boss
+  will simply mount it like any other row. **Order of work, decided: the beam FIRST, then Level 5**, so the
+  mission is built and tuned once against the weapon that will actually be in it. Request brief:
+  `docs/plans/charge-beam-weapon.md`.
 - ~~Its combat behaviour in detail~~ — **settled, see §2d**: the firing pass, the two re-target angles, the
   retreat thresholds and station-keeping. §3 remains the reasoning behind why it is shaped this way.
 - ~~**How he arrives**~~ — **settled and BUILT (2026-08-23):** a **phase of the level descriptor carries
@@ -133,16 +141,38 @@ advance into it. Note the stale-looking `level-5` references in older DECISIONS 
   `sim-core/ally.js spawnAlly`). Level 5 sets one field and nothing else. No seeded level carries it today;
   the `?ally` dev flag injects it into whatever level the tab is flying, and a room takes the same phase name
   over the handshake.
-- **The exact arrival MOMENT for Level 5** is still the maintainer's call. Level 4's shape shows the natural
-  seams and Level 5 will have its own: early enough to read his behaviour, or at the boss as the cavalry.
-- **Level 5 itself** — centre/anchor, `xpReward`, `lastKillDrop`, briefing and victory copy (write from
-  `docs/narrative/`, never ad-hoc). The enemy composition mirrors Level 4 and there IS a boss (§2c).
-- **The BOSS's model, and therefore CREDITS.md** — §2c says the boss gets a different model. If it is not
-  an existing catalog ship, that is a new asset and a new credits row; ask before it lands.
-- **Its set-piece, and therefore CREDITS.md.** A pirate base is new scenery. `buildSetPiece`
-  (`world.js:1133`) knows `research-station`, `asteroid-field`, `freighter`, `base-station`,
-  `space-factory`. Reusing or re-tinting one costs no asset; a new model means a new
-  `client/assets/CREDITS.md` row and must be asked about before it lands.
+- ~~**The exact arrival MOMENT for Level 5**~~ — **settled 2026-08-23: the PENULTIMATE wave**, i.e. the
+  last wave before the boss. On Level 4's shape (`wave-1` → `wave-2` → `clear-out` → `boss` → `victory`)
+  that is the `clear-out` phase, and Level 5's equivalent phase is the one that carries `ally: true`. He is
+  therefore on the field for a full wave before the boss — long enough to read his behaviour, and still
+  present as the cavalry.
+- **Level 5 itself** — `xpReward`, `lastKillDrop`, briefing and victory copy (write from
+  `docs/narrative/`, never ad-hoc) are still open. The enemy composition mirrors Level 4 and there IS a
+  boss (§2c). **The centre/anchor is settled (2026-08-23):** the base hides in the **same far asteroid
+  field the Level 4 fight happens in** — `ANCHORS.mining3` (-900, 2800), the system's most distant outpost
+  — and the work is to **widen that asteroid field** and place the base **a little further out** than the
+  Level 4 centre. So Level 5 gets its own anchor a short hop beyond `mining3`, and the four-way invariant
+  (anchor == level `center` == set-piece pos == activity zone, `system-map.js:226`) must hold for the new
+  point exactly as it does for every existing one. Story-wise this is clean: the trail led to the belt, and
+  the base was sitting in it all along.
+- ~~**The BOSS's model, and therefore CREDITS.md**~~ — **settled 2026-08-23: a NEW `.glb` and a NEW
+  `client/assets/CREDITS.md` row.** The maintainer rejected both cheap options (re-tinting `enemy_4`, or
+  scaling up an existing hull): the bosses of Levels 3 and 4 already share the `enemy_4` silhouette, and the
+  campaign's finale reading as a third pass of the same ship is not acceptable. Source the model through the
+  `assets:*` pipeline (`docs/plans/ship-model-pipeline.md`) and **ask about the credits row before it
+  lands**, as CLAUDE.md requires.
+- ~~**Its set-piece, and therefore CREDITS.md.**~~ — **settled 2026-08-23: a SEPARATE pirate-base asset,
+  and it is HIDDEN until Level 4 is cleared.** Re-tinting `base-station` / `space-factory` was rejected; the
+  base gets its own model, so it is a new asset and a new `client/assets/CREDITS.md` row — ask before it
+  lands. It stands in the same far asteroid field as the Level 4 fight (see the centre/anchor above).
+  **And it must not exist in the world at all for a player who has not cleared Level 4** — not greyed out,
+  not un-selectable: absent. That is NEW MACHINERY: `buildSetPiece` (`world.js:1133`) builds whatever the
+  `home-system` map descriptor lists, and the map descriptor is global — there is no progress gate on a
+  set-piece today. Whoever plans this owns the gate (a `minProgress`-style field on the set-piece spec,
+  honoured by the client when it builds the map), and must check the same gate on every surface that
+  enumerates world objects: the navigation UI's object list and map markers (`system-map.js`), the activity
+  zones, and autopilot destinations. A base you cannot see but can still fly to from the map list is the
+  obvious way to get this half-right.
 
 ### What is already free, and does not need deciding
 

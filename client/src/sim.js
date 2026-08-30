@@ -312,7 +312,7 @@ function applySimEvent(ev) {
     // per-shooter pool in `beam-fx.js`, keyed on the shooter the event now carries (DECISIONS §135's gate).
     case 'beamCharge':
       if (ev.fromPlayer) {
-        startBeamCharge(ev.dur);
+        startBeamCharge(ev.dur, ev.color);
         // The clip is stretched to fill the charge window exactly: `rate = clip length / chargeTime`, so
         // retuning chargeTime can never desync the bang from the shot. An EXPLICIT rate also suppresses the
         // random per-shot pitch jitter sfx.shoot applies by default — a timing cue must sound identical
@@ -323,11 +323,13 @@ function applySimEvent(ev) {
         // your own shots are audible, and the beam makes no exception (DECISIONS §135's gate names the sight
         // and the wire ref, not a sound). `ev.ship` is the live entity locally and the rehydrated GHOST in a
         // room; beam-fx accepts it only if it is in world.enemies, so an ally's beam never draws red.
-        startHostileBeamCharge(ev.ship, ev.dur);
+        startHostileBeamCharge(ev.ship, ev.dur, ev.color);
       }
       break;
     case 'beamFire':
-      spawnBeamBolt(ev.from, ev.to, !!ev.fromPlayer); // the bolt is drawn whoever fired it
+      // The bolt is drawn whoever fired it, tinted by the WEAPON's own colour off the event — never by the
+      // side, so an ally carrying the pirates' beam fires their red (maintainer, 2026-08-30).
+      spawnBeamBolt(ev.from, ev.to, !!ev.fromPlayer, ev.color);
       if (ev.fromPlayer) audio.sfx.shoot(sfxFor('weapon', ev.weaponClass, 'fire'), { rate: 1 });
       break;
     case 'smoke':          spawnSmoke(ev.pos); break;

@@ -137,16 +137,26 @@ Two reasons it comes before Phase 5 rather than after:
   is where the ally arrives, so Phase 4.5 is now a mission plus a companion, not a companion alone. Adding
   a seed row with id 5 hands it to players who already finished the campaign with no migration
   (`advanceLevel` takes `MIN(id) WHERE id > current_progress`).
-- [ ] Still open, deferred to planning: the ally's weapons, its detailed combat behaviour, the exact arrival
-  moment, and Level 5's own content (centre, enemy pool, boss, briefing/victory copy, set-piece — and
-  whether that set-piece needs a `CREDITS.md` row)
+- [x] ~~Still open, deferred to planning: the ally's weapons, its detailed combat behaviour, the exact
+  arrival moment~~ — all settled (`combat-ally.md` §2d and §2's still-open list). The arrival moment is the
+  **penultimate wave**: the phase before the boss carries `ally: true`.
+- [x] ~~**A charged beam weapon — `docs/plans/charge-beam-weapon.md`, and it BLOCKS Level 5.**~~ **BOTH
+  HALVES SHIPPED 2026-08-25.** Asked for the base pirates' standoff distance, the maintainer opened a new
+  weapon class instead: aiming line, reticle, a charge on the trigger, spoiled by manoeuvring, mountable by
+  any ship. The order of work was **beam first, then Level 5**, and the beam is done — the player's Charged
+  beam (`docs/plans/2026-08-25-1056-charge-beam-weapon.md`) and the enemy half
+  (`docs/plans/2026-08-25-1433-enemy-charged-beam.md`), whose gate is the bullet below.
+- [ ] Level 5's remaining content: `xpReward`, `lastKillDrop`, briefing/victory copy. Settled already —
+  centre/anchor (a widened `ANCHORS.mining3` asteroid field with the base a short hop beyond it), a NEW boss
+  model (new `CREDITS.md` row), and a NEW base set-piece that is **absent from the world** until Level 4 is
+  cleared (new machinery: no set-piece carries a progress gate today)
 - **The ENEMY BEAM gate (DECISIONS §135) is PASSED (2026-08-25), so Level 5 can field beam pirates.** The
   hostile sight and `beamCharge`'s shooter reference both exist and are proven in a server-run room, the
   weakened enemy weapon row exists (id 13: power 45, range 67), and so does a carrier — the **`pirate
   lancer`** ship row. Level 5 fields them by naming `pirate lancer` in a phase pool; nothing else is needed.
-  Two things to settle that day: whether a **looted lancer beam** should be equippable (enemy weapons drop
+  One thing to settle that day: whether a **looted lancer beam** should be equippable (enemy weapons drop
   into the stash and the `gun` slot accepts `beam`, so killing one hands the player a 45-power beam without
-  paying 5500 or clearing the Level-4 gate), and the turn-rate follow-up immediately below.
+  paying 5500 or clearing the Level-4 gate).
 
 ### Follow-ups opened by the ally (2026-08-23)
 

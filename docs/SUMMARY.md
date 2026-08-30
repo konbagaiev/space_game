@@ -3,7 +3,8 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-25 (**The enemy charged beam — the pirate lancer, and the red telegraph that makes
+**Updated:** 2026-08-26 (**The beam is bluer, and its impact flash is now the shared one** — it emits `bulletImpact` like
+every other weapon instead of drawing its own bloom.) 2026-08-25 (**The enemy charged beam — the pirate lancer, and the red telegraph that makes
 it fair.** A weakened enemy-only beam row (id 13: **power 45, maxRange 67, charge 1.0 s + cooldown 2.0 s
 → a 3.0 s cycle, 15 sustained DPS**) on a NEW beam-only ship, the **pirate lancer** — which turns at
 **50°/s** on a thruster row of its own — the same 50°/s the pirate gunner and advanced rocket pirate
@@ -1062,7 +1063,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   long range 110; the Second Boss's main gun).
 - **Charged beam** (id 12, the third weapon `type` — `'beam'`): **power 80, maxRange 100, chargeTime 1.0 s,
   corridorDeg ±2° (a HALF-angle), fireCooldown 0.5 s, weight 12, price 5500, gated behind "Level 3"
-  (`FACTORY_GATE`), `class: 'beam'`, `projectileColor 0xbfefff`.** A shot that takes time, has no
+  (`FACTORY_GATE`), `class: 'beam'`, `projectileColor 0x3d8bff`.** **That colour is not decoration: it is what the beam
+  BURNS** — its bolt, its charge dust and its muzzle bead, carried on both beam events and applied per
+  shot. The hue belongs to the WEAPON, never to the side firing it, so the pirates' row (id 13, red
+  `0xff6b4a`) stays red in an ALLY's hands.
+ A shot that takes time, has no
   projectile and announces itself: pull the trigger and energy builds for a full second, then it
   **hitscans** — it strikes the ship it painted at charge start if **any part of that ship is still inside
   the ±2° wedge drawn from the nose**, otherwise whatever is in the corridor at that instant (nearest),
@@ -1959,7 +1964,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   throwaway spike and is reproduced, not re-tuned). While a beam is mounted the player sees **three thin
   lines from the hull, always on**: the centre and the two corridor edges, drawn from `sim-core/beam.js`'s
   `corridorEnds` — *the same three endpoints the hit test uses*, so the picture on screen IS the hit test.
-  **The sight is GREEN (`#5ad17f`); the shot is CYAN-WHITE (`0xbfefff`).** They shared one blue at first
+  **The sight is GREEN (`#5ad17f`); the shot is BLUE (`0x3d8bff`, taken bluer twice on 2026-08-26 from a
+  near-white cyan — the white-hot CORE is unchanged).** They shared one blue at first
   and the aiming aid competed with the discharge it exists to predict; split hues mean a full second of
   green build-up hands over to a cyan-white flash and the SHOT is what the eye lands on, so the sight can
   sit on screen permanently. **All three lines carry the same colour and the same opacity — 0.22 idle,
@@ -1969,8 +1975,32 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   ticks (0.7 / 1.5), all three `LineDashedMaterial`. **The dashes ARE the charge animation** — they drift
   outward at 3 u/s while aiming and rush to 40 u/s as the shot fills, implemented by writing the
   `lineDistance` attribute directly (`computeLineDistances()` restarts the pattern every frame and freezes
-  the flow). A **bead of light gathers at the muzzle** while charging (additive disc, `scale = 0.3 + k²·1.3`,
-  `opacity = 0.3 + k·0.65`, slowly spinning) and the **reticle is a DIAMOND**, not a circle
+  the flow). A **bead of light gathers at the muzzle** while charging (additive disc, `scale = 0.12 + k²·0.52`,
+  `opacity = 0.3 + k·0.65`, slowly spinning), **with DUST pulled into it** (`beamChargeDust`, maintainer
+  2026-08-27): a `THREE.Points` cloud of ~96 specks in the discharge blue, born on a 2.8 u ring around the
+  muzzle and falling inward on a slight curl. It is a **stream that COLLAPSES** — the fall quickens and
+  brightens as the charge fills, and in the last quarter the birth radius closes in, so the second has
+  motion throughout and an unmistakable "now" at the end (chosen over a single gathering sweep and over a
+  constant stream). Built on `exhaust-fx.js`'s idiom: one `Points`, the per-particle seed packed into the
+  position buffer, all motion in the vertex shader off `uTime`/`uK` — nothing stepped on the CPU, no
+  randomness, so it is replay-neutral like every other FX here. Its dot texture is its OWN (solid to 45% of
+  the radius); the plume's glow is soft by design and reads as fog at speck size. **The shader's `300.0`
+  size factor is load-bearing** — the combat camera is ~110 u up, so without it the specks render at
+  0.24 px, and scenario 39 asserts the real pixel size (6 → 11 px across the charge) for that reason.
+  **Every radius here came down 2.5× on 2026-08-27** after the maintainer flew it — ring 7.0 → 2.8, bead
+  0.3→1.6 becoming 0.12→0.64 — and the speck size came down with them, because at ~7 px per world unit
+  a 2.8 u ring is only ~40 px across and 15–28 px specks would merge into one patch.
+  **Their colour comes off the WEAPON ROW** (`projectileColor`, on both beam events), not from the side —
+  so the pirates' red row burns red for whoever mounts it. Only the three SIGHT lines stay
+  side-coloured: green is "my aid", red is "aimed at me", which is a different statement from the gun's
+  own light. **A charging HOSTILE gets the same bead and dust** (`beamHostileOrb` / `beamHostileDust`, one pair
+  per pool entry, maintainer 2026-08-30) — the player's numbers exactly, in the TELEGRAPH's `#ff6b4a`
+  rather than the shot's blue. Red says "aimed at you, now"; the bolt then leaves in the shared blue, so
+  the hue change at release reads on its own as "it has gone". The seed buffer is shared across every
+  cloud (the seeds are constants); `uTime`/`uK` are per-material, so each shooter animates on its own
+  charge. The hostile bead deliberately does NOT read `spin` — that counter advances in the player's
+  pass, which returns early for a ship with no beam, so it would sit frozen.
+  The **reticle is a DIAMOND**, not a circle
   (`RingGeometry(2.2, 2.7, 4)`), marking the corridor's current candidate — or, mid-charge, the committed
   lock — tightening onto it (`×= 1.25 - k·0.25`) and spinning up as the charge completes. **The discharge is a THICK BEAM
   that leaves a trail, and it is geometry by necessity — not a line.** A WebGL line is 1 px wide whatever
@@ -1980,8 +2010,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Y so it wins the additive blend. **Widths are in WORLD units**, so the beam keeps its thickness as the
   camera zooms. The **fade is 1.0 s and split**: the glow goes `a²` over the whole second while the core is
   `max(0, (a − 0.75) / 0.25)` — it burns out in the first quarter and only the trail lingers, which is what
-  makes it read as a strike rather than a dissolve. The impact bloom is unchanged (expands while fading
-  quadratically over 0.24 s, scale 0.6 → 5.0). Round-robin over a pool of 4 so a second
+  makes it read as a strike rather than a dissolve. **The impact flash is NOT this module's** — the beam
+  emits `bulletImpact` like every other weapon and the shared hit-sprite path draws it, so a beam hit looks
+  like a bullet hit and picks up the cyan `SHIELD_HIT_TINT` when a shield stopped it (§75). **It is placed where the shot
+  first MEETS THE HULL** (`hullEntryToward` — a bounded march asking `pointHitsShip` against the same baked
+  OBBs a bullet collides with), NOT at the bolt's endpoint and NOT on the bounding sphere. Both of those
+  shipped and were invisible: at the hull centre a ~4 u sprite is swallowed by the hull's own depth
+  (`depthTest` is on, camera near-top-down); on the sphere it floats metres off the flank of anything
+  elongated, because the broad radius is half the hull's LENGTH (heavy pirate: extent x ±4.05, radius 7.57).
+  A graze that matched on a corridor edge falls back to the sphere. The hostile path uses the resolver's own
+  contact point instead, hull or shield bubble. `'beam'` has no
+  `HIT_FLASH_SCALE` entry, so it takes the `0.8` fallback — the kinetic's size, chosen deliberately
+  (maintainer, 2026-08-26). It replaced a bespoke additive disc that made the beam the one weapon whose hit
+  resembled nothing else's and had no way to say "absorbed". Round-robin over a pool of 4 so a second
   shot never cuts the first short. **The charge FX is driven by the `beamCharge` EVENT carrying `dur`**,
   never by reading `g.charge`: in a room the local group is never ticked, so the event is the only thing
   that arrives; locally the two agree tick-for-tick. All of it is cosmetic and RNG-free → replay-neutral
@@ -3833,7 +3874,8 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   replay of the staggered level runner + the `isLastKillDrop` reward-drop predicate: `levelEnemyTotal`/
   `simulateLevel`, unit-tested — proves the killed/total counter reaches `enemyTotal` and the drop fires on
   the last kill), `beam-fx.js` (the Charged beam's LOOK — the three-line green sight, the diamond reticle,
-  the muzzle bead, the pooled discharge bolt + impact bloom, **and the pooled charge-only HOSTILE sight**
+  the muzzle bead, the pooled discharge bolt (the impact flash rides the shared `bulletImpact` path, not
+  this module), **and the pooled charge-only HOSTILE sight**
   (`beamHostileSight*`, `#ff6b4a`, four entries, one per charging enemy); `drawBeamSight`/`startBeamCharge`/
   **`startHostileBeamCharge`**/`spawnBeamBolt`/`hideBeamFx`, all cosmetic and RNG-free), `beam-dev.js` (the
   `?beam` dev flag — `evalBeamDev`/`beamLoadout`, URL-only, never sticky, a strict no-op when absent; wired
@@ -4145,7 +4187,7 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   untouched; that the three NAMED sight objects (`beamSightCentre`, two `beamSightEdge`) and the
   `beamReticle` are drawn while aiming; **that the LOOK survived the port** — one green `#5ad17f` hue and
   one opacity on all three lines, the centre distinguished only by a longer `dashSize`, all three
-  `LineDashedMaterial`, and the discharge/bead in a *different* cyan-white `0xbfefff`, which are exactly the
+  `LineDashedMaterial`, and the discharge/bead in a *different* blue `0x3d8bff`, which are exactly the
   values a careless re-type silently loses; that a held trigger runs charge → discharge → damage with the
   muzzle bead visible mid-charge and the sight brightest LATE in the charge; and — pausing to stop the rAF
   clock, since the transient is gone before a screenshot returns — that the **bolt is real GEOMETRY**: a

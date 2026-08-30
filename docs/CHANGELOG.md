@@ -3,6 +3,77 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-26
+
+- **The charge now pulls DUST into the bead.** A `THREE.Points` cloud of ~96 specks in the discharge blue
+  is born on a 2.8 u ring around the muzzle and falls inward on a curl, quicker and brighter as the shot
+  fills; in the last quarter the birth radius collapses, so the second has motion all the way through and an
+  unmistakable "now" at the end (the maintainer picked that over a single gathering sweep and over a plain
+  constant stream). Built on `exhaust-fx.js`'s idiom — one `Points`, the per-particle seed packed into the
+  position buffer, all motion in the vertex shader — so nothing is stepped on the CPU and nothing draws
+  randomness: replay-neutral (§73), and both gates still read tick=2474 / hash=0x2a36f8d9. Its dot texture
+  is its own rather than the plume's (a plume glow is soft by design and reads as fog at speck size).
+  **Enemies charge the same way, and the COLOUR MOVED TO THE WEAPON (2026-08-30):** every hostile pool
+  entry got its own bead and dust with the player's numbers exactly — and then the hue stopped being a
+  property of the shooter. It is `projectileColor` on the weapon row, carried on both beam events and
+  applied per shot, so the pirates' row (id 13, now red `0xff6b4a`) burns red for whoever mounts it and
+  the player's id 12 stays blue. A first cut tinted by SIDE and needed a new `fromAlly` field on
+  `beamFire` to tell the wingman from a pirate; the maintainer's rule removed both the field and the
+  question. It also gives `projectileColor` a job — until now nothing read it for a beam, which the
+  catalog comment claimed otherwise. Only the three SIGHT lines stay side-coloured (green "my aid" vs
+  red "aimed at me"), because that is a statement about who is aiming, not about the gun. Scenario 40
+  asserts the hue, a real drawn pixel size, and that dust and bead share the LANCER's muzzle;
+  `beam.test.js` proves the same row fired by player, ally and pirate yields one colour while two rows
+  yield two. Both mutation-checked — including a fixture that briefly lacked `projectileColor` and made
+  the colour assertions compare undefined to undefined. **A near miss worth recording:** the first cut copied the plume's size
+  formula WITHOUT its `300.0` factor, which at the combat camera's ~110 u would have drawn a **0.24 px**
+  point — in the scene graph, invisible on screen, the third value in this feature to fail exactly that way.
+  Scenario 39 now asserts the real pixel size and is mutation-checked against the missing factor.
+  **Tuned in flight the same day:** every radius in the charge came down 2.5× (ring 7.0 → 2.8, bead
+  0.3→1.6 → 0.12→0.64), and the speck size with them — at ~7 px per world unit the smaller ring is only
+  ~40 px across, so the original 15–28 px specks would have merged into a single patch.
+
+- **The beam is bluer.** Its bolt glow and muzzle bead go `0xbfefff` → `0x5fb0ff` → **`0x3d8bff`** (RGB 61 139 255), over two passes in flight, so
+  the discharge reads as a blue laser rather than a white flash (maintainer, 2026-08-26). The white-hot
+  **core is unchanged** — §0e records that the hot centre is what keeps the two additive quads from
+  flattening into one patch — and green-vs-blue keeps the sight and the shot distinct, which is the split
+  §0e exists to protect. Both beam rows' `projectileColor` is kept in step, with a comment saying plainly
+  what was not written down before: **that field does not draw a beam.** A beam has no projectile and
+  `beam-fx.js` owns every colour it renders, so changing the row alone would move nothing on screen.
+
+- **The charged beam's impact flash is the one every other weapon uses.** The beam used to draw its own
+  bloom in `beam-fx.js` — an additive disc expanding 0.6 → 5.0 over 0.24 s — which made it the only weapon
+  in the game whose hit looked like nothing else's, and which had no way to show that a shield had stopped
+  it. It now emits `bulletImpact` on a hit exactly as a bullet does (`sim-core/beam.js`), and
+  `sim.js`'s existing adapter draws the shared flipbook mini-blast, including the cyan `SHIELD_HIT_TINT` for
+  an absorbed hit (DECISIONS §75). `'beam'` has no `HIT_FLASH_SCALE` entry so it takes the `0.8` fallback —
+  the kinetic's own size, chosen by the maintainer ("take the kinetic one for now", 2026-08-26) over a
+  cannon-sized 2.0, so the placeholder is judged in flight before anything is invented. Nothing crosses the
+  wire that did not already: `bulletImpact` is long since in `EVENT_FIELDS`, so a netsim room got this for
+  free. RNG-free and replay-neutral (§73) — `22-intro-replay` still reads tick=2474 and `36-sim-divergence`
+  hash=0x2a36f8d9 / draws=38. Scenario 39's `beamFlash` assertion is replaced by three unit tests in
+  `sim-core/beam.test.js` covering the event's presence, its absence on a miss, and the `absorbed` flag.
+- **…and the flash goes on the hull SURFACE, not at its centre — the first cut of the above was invisible.**
+  Shipped and caught the same day, by flying rather than by any test. The bolt's endpoint is the hull
+  *centre* (that is what makes it read as striking the ship), so the flash inherited it — and the hit sprite
+  is ~4 u across against a ~4 u hull with `depthTest` on, under a near-top-down camera, so the ship's own
+  depth swallowed it whole. The bespoke bloom it replaced had survived that only by expanding to ~10 u and
+  escaping the silhouette as a ring; a bullet never hits it because a bullet dies where it collided, on the
+  surface. The bolt is unchanged; the hostile path keeps using the resolver's own contact point (hull or
+  shield bubble), which was already correct.
+- **…and then a second time, because a bounding SPHERE is not a hull.** The first fix put the flash one
+  broad radius back down the shot, which is right only for a round ship. The broad radius is half the
+  hull's LENGTH, so on a heavy pirate (extent x ±4.05, z ±6.18, radius **7.57**) a side-on hit put the flash
+  **3.5 u out in empty space beside the ship** — and nose-on, where the sphere and the hull nearly agree, it
+  looked fine. Reported exactly that way: *"when I hit a heavy pirate in the side I see no impact animation,
+  only on the nose."* New `hullEntryToward()` marches the shot and asks the SAME question a bullet asks —
+  `pointHitsShip` against the same baked OBBs — so a beam's flash lands where a bullet's would, which is the
+  comparison the maintainer was making. Bounded (24 point tests, once per discharge), allocation-free,
+  RNG-free. A graze that matched on a corridor EDGE line, where the centre ray never enters the hull, falls
+  back to the sphere boundary. `beam.test.js` gains a test on a REAL modelled heavy hit BROADSIDE — every
+  other impact test uses a primitive target, whose hull *is* its sphere, so none of them could tell the two
+  apart. Mutation-checked: the sphere version fails it with `x=-7.57`.
+
 ## 2026-08-25
 
 - **The enemy charged beam — the pirate lancer, and the red telegraph that makes it fair.** [2026-08-25-1433-enemy-charged-beam]
@@ -170,6 +241,24 @@
   hostile beam on until §135's gate is passed.
 
 ## 2026-08-23
+
+- **Level 5's weapons question opened a new weapon instead, and it now blocks the mission.** Asked to pick
+  a standoff distance for the Level 5 base pirates against the framing constraint (a phone in portrait shows
+  only ±32 units horizontally, so a pirate holding at the basic gun's 45 u sits off-frame), the maintainer
+  chose neither kinetic option and specified a **charged beam** — a thin aiming line from the hull, a
+  reticle on whatever it crosses, a ~0.5 s charge on the trigger, and a shot that manoeuvring during the
+  charge can spoil. Mountable by anyone, like every other catalog weapon. Requested as its own feature in
+  the new `docs/plans/charge-beam-weapon.md`, and the order of work is **beam first, then Level 5**, so the
+  mission is built and tuned once against the weapon that will really be in it. No code changed.
+- **Three of Level 5's four open decisions settled** (`docs/plans/combat-ally.md` §2's still-open list).
+  **Centre/anchor:** the pirate base hides in the same far asteroid field the Level 4 fight happens in
+  (`ANCHORS.mining3`), which gets widened, with the base placed a short hop further out on its own anchor.
+  **Boss model:** a new `.glb` and a new `CREDITS.md` row — re-tinting `enemy_4` was rejected because the
+  Level 3 and Level 4 bosses already share that silhouette and the finale must not read as a third pass of
+  it. **Set-piece:** its own model (new asset, new credits row), and it must be **absent from the world
+  entirely** for a player who has not cleared Level 4 — which is new machinery, since the `home-system` map
+  descriptor is global and no set-piece carries a progress gate today. **Ally arrival moment:** the
+  penultimate wave, i.e. the phase before the boss carries `ally: true`.
 
 - **The pipeline gains a grilling stage, because five defects walked past every automated gate.**
   `.claude/skills/feature-pipeline/SKILL.md` now has **Stage 2.5 — grill the design** (`grill-with-docs`),

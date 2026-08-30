@@ -56,8 +56,8 @@ export const EVENT_FIELDS = {
   // `shipId` off `EVENT_ENTITY_REFS` rather than listed here. A remote shooter's fire group is never ticked
   // in this tab, so its corridor is underivable without a name for the hull to draw it from. The player's
   // own charge needs none — he is `world.player`, and `idOf` returns null for him anyway.
-  beamCharge:       ['pos', 'dur', 'weaponClass', 'fromPlayer'],
-  beamFire:         ['from', 'to', 'hit', 'absorbed', 'weaponClass', 'fromPlayer'],
+  beamCharge:       ['pos', 'dur', 'weaponClass', 'color', 'fromPlayer'],
+  beamFire:         ['from', 'to', 'hit', 'absorbed', 'weaponClass', 'color', 'fromPlayer'],
   pickup:           ['item'],
   smoke:            ['pos'],
   detonate:         ['pos', 'weaponClass', 'blastVis', 'blastTint', 'blastTime', 'blastBright'],
