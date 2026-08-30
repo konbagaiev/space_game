@@ -15,6 +15,7 @@ import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME } from './sim-core/consts.js';
 import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
+import { POST_DEFAULTS } from './graphics.js'; // the parallax backdrop layer's shipped constants (amp/follow/offsetMax/radius)
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -285,6 +286,136 @@ function makeNebulaSky(prm, bake) {
   geo.dispose();
   return rt;
 }
+
+// ---------- The parallax backdrop layer (a SECOND, coarser nebula in front of the cube) ----------
+// A cubemap background is sampled by view DIRECTION only, so it is INCAPABLE of parallax by construction —
+// it can never be anything but infinitely far. This layer is the depth it cannot give: a second, coarser,
+// dimmer bake mapped onto an ADDITIVE sphere that tracks the camera at a FRACTION of its motion, so the
+// wisps slide slowly against the fixed cube behind them.
+//
+// THE NOT-A-SKYBOX GUARANTEE RESTS ON THE RENDER LIST, NOT ON `renderOrder`. three splits a scene into two
+// render lists — an object lands in the TRANSPARENT list iff `material.transparent === true` — and draws
+// ALL opaque objects before ANY transparent one; `renderOrder` only sorts WITHIN a list. Every ecliptic body
+// is opaque (the star core, the planets and moons, the dim star layer). So a `transparent: true` backdrop
+// sphere would be drawn AFTER all of them and — being full-screen, additive and depth-test-free — would wash
+// nebula over the planet disks and the terminator and slide across them as the player flies. Hence
+// `transparent: false`, which is LOAD-BEARING and not a typo: it puts the sphere in the OPAQUE list, where
+// `renderOrder: -3` draws it first, ahead of G.stars (-1) and every body. Additive blending survives
+// `transparent: false` — three forces NoBlending only for NormalBlending + transparent:false.
+const BACKDROP_VERT = `
+  varying vec3 vDir;
+  void main() {
+    vDir = position;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }`;
+const BACKDROP_FRAG = `
+  precision highp float;
+  uniform samplerCube uCube;
+  uniform float uAmp, uLift;
+  varying vec3 vDir;
+  void main() {
+    // Additive: only what the layer ADDS matters, so no alpha and no occlusion. uAmp is the shipped
+    // brightness (the backdrop ceiling — it must never out-brighten a lit hull); uLift rides the star wash.
+    gl_FragColor = vec4(textureCube(uCube, normalize(vDir)).rgb * uAmp * uLift, 1.0);
+  }`;
+
+// Its own CONSTANT seed and its own noise scale — NOT the base cube's (D17). An fbm truncated to one fewer
+// octave is literally the first n-1 terms of the SAME sum, so `{ ...nb, octaves: n-1 }` would land the coarse
+// wisps exactly on top of the cube's and composite the picture onto itself: a change that passes every test
+// and does nothing on screen (the same failure mode as the first, invisible speed field — DECISIONS §96).
+// A different `seed` puts the clouds in different DIRECTIONS; a lower `scale` (2.0 vs the map's 3.6) makes
+// them ~1.8x LARGER, so the eye reads big soft masses in front of the cube's fine structure — a different
+// picture standing still, before any motion. Constants, so the layer draws zero randomness (D15).
+// `thLow`/`thHigh` were dialed on a real frame and the window matters more than it looks: the fbm's values
+// cluster around ~0.48, so a threshold band that starts BELOW that (0.42 was tried) lights the whole sky and
+// the layer reads as FOG rather than as masses — it filled every dark gap and the frame lost its blacks. The
+// shipped 0.55 starts above the median, exactly like the base cube's own sparse setting, so roughly a
+// quarter of the sky carries a mass and the rest stays black. A tried-and-rejected 0.42/0.86 (a wide band
+// starting low) went the other way and was almost INVISIBLE (+0.003 mean luma).
+const NEBULA2_FALLBACK = { seed: 41, scale: 2.0, thLow: 0.55, thHigh: 0.78, glow: 0.5 };
+
+// Parallax accumulator. Fractional follow, accumulated from the camera DELTA and clamped — see
+// updateBackdropLayer for why an absolute-position formula cannot work in a 21 000-unit star system.
+const _bdOffset = new THREE.Vector3();
+const _bdLastCam = new THREE.Vector3();
+const _bdDelta = new THREE.Vector3();
+let backdropFollow = POST_DEFAULTS.backdrop.follow;
+
+// Build the layer (called only from the bakeNebula branch of buildMap, so it inherits both of that gate's
+// conditions for free: no layer on Performance, none under ?debug unless the `nebula` flag is passed).
+// `override` is the map descriptor's optional `sky.nebula2` block (per-key, like `sky.nebula`).
+function buildBackdropLayer(nb, bake, override) {
+  const nb2 = { ...nb, ...NEBULA2_FALLBACK, ...(override || {}), starB: 0, base: [0, 0, 0] };
+  // `starB: 0` and `base: [0,0,0]` are REQUIRED: the layer is additive, so its own star field would double
+  // the cube's stars and its base colour would lift the whole sky. Only the nebula wisps may survive.
+  G.backdropRT = makeNebulaSky(nb2, { cube: Math.max(128, bake.cube >> 1),
+                                      octaves: Math.max(3, bake.octaves - 1) });
+  const geo = new THREE.SphereGeometry(POST_DEFAULTS.backdrop.radius, 32, 16);
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthTest: false, depthWrite: false,   // can never depth-reject a body, and never writes depth itself
+    transparent: false,                    // <-- LOAD-BEARING (see above). NOT a typo, do not "fix" it.
+    blending: THREE.AdditiveBlending, fog: false,
+    uniforms: {
+      uCube: { value: G.backdropRT.texture },
+      uAmp: { value: POST_DEFAULTS.backdrop.amp },
+      uLift: { value: 1 },
+    },
+    vertexShader: BACKDROP_VERT, fragmentShader: BACKDROP_FRAG,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = -3;        // first in the OPAQUE list — ahead of G.stars (-1) and every system body
+  mesh.frustumCulled = false;   // it is re-centred on the camera every frame; its bounding sphere is stale by design
+  mesh.position.copy(camera.position);
+  skyScene.add(mesh);
+  G.backdropMesh = mesh;
+  G.backdropMat = mat;
+  // Seed the parallax from the CURRENT camera, never from the origin: a (0,0,0) seed would make frame 1's
+  // "delta" equal the camera's absolute position, which on Level 4 (11 200-16 800 u out, DECISIONS §106)
+  // instantly saturates the offset and kills the parallax for the whole level.
+  _bdOffset.set(0, 0, 0);
+  _bdLastCam.copy(camera.position);
+}
+
+function disposeBackdropLayer() {
+  if (G.backdropMesh) {
+    skyScene.remove(G.backdropMesh);
+    G.backdropMesh.geometry.dispose();
+    G.backdropMesh.material.dispose();
+    G.backdropMesh = null; G.backdropMat = null;
+  }
+  if (G.backdropRT) { G.backdropRT.dispose(); G.backdropRT = null; }
+}
+
+// Per-frame parallax. Called from settleView (the VIEW layer), right after the star sphere is pinned to the
+// camera. Consumes NO randomness and touches no sim state: replay-neutral by construction (DECISIONS §73).
+//
+// `follow` = how much of the camera's motion the layer copies. follow 1 -> locked to the camera = a skybox
+// (no parallax); follow 0 -> world-fixed (full parallax). The offset is accumulated from the camera DELTA
+// (not from |camPos|) and clamped, because the star system spans ~21 000 u: an absolute-position formula
+// would drift the layer's centre thousands of units off the camera, and once that offset exceeds the sphere
+// radius the camera exits the sphere and the backdrop VANISHES. Level 4 alone fights at 11 000-16 800 u from
+// the origin. Delta-accumulation keeps parallax alive wherever you actually fight and merely SATURATES (the
+// layer stops drifting) after ~4 km of travel in one direction — imperceptible on a far nebula.
+//
+// Geometry sanity (keep it true if you retune): radius 900 + offsetMax 250 -> the sphere is never more than
+// 1150 u from the camera, inside camera.far = 1300, and its near wall sits at 650 u — well outside the
+// camera-locked star sphere (stars.radius 400). Raise `radius` against camera.far, not by feel.
+export function updateBackdropLayer() {
+  const mesh = G.backdropMesh;
+  if (!mesh) return;
+  _bdOffset.add(_bdDelta.subVectors(camera.position, _bdLastCam).multiplyScalar(1 - backdropFollow));
+  _bdOffset.clampLength(0, POST_DEFAULTS.backdrop.offsetMax);
+  _bdLastCam.copy(camera.position);
+  mesh.position.copy(camera.position).sub(_bdOffset);
+}
+
+// ?tune / test hooks for the layer's two live knobs. `amp` is the backdrop brightness ceiling the
+// 42-expensive-look scenario measures differentially (amp 0 vs the shipped amp).
+export const backdropAmp = () => (G.backdropMat ? G.backdropMat.uniforms.uAmp.value : null);
+export function setBackdropAmp(v) { if (G.backdropMat) G.backdropMat.uniforms.uAmp.value = v; }
+export const getBackdropFollow = () => backdropFollow;
+export function setBackdropFollow(v) { backdropFollow = v; }
 
 // ---------- Procedural body textures (built by buildMap for the star-system backdrop) ----------
 // The camera looks almost straight down, so the "sky" is visible only near the top edge of the
@@ -651,6 +782,11 @@ function applyStarLift(spec, dist) {
   const t = Math.min(1, Math.max(0, (liftFar - dist) / Math.max(1, liftFar - liftNear)));
   const f = 1 + lift * (t * t * (3 - 2 * t)); // smoothstep
   skyScene.backgroundIntensity = f;
+  // The lift must drive the parallax LAYER too. `backgroundIntensity` and the Color multiply below both
+  // touch only skyScene.background — neither reaches a mesh material — so without this hook the sphere would
+  // hold its brightness while the cube behind it lifts, visibly splitting the backdrop into two layers at
+  // different brightnesses as you approach the star.
+  if (G.backdropMat) G.backdropMat.uniforms.uLift.value = f;
   const bg = skyScene.background;
   if (bg && bg.isColor) {
     if (_bgFor !== bg) { _bgFor = bg; _bgBase = bg.clone(); }
@@ -1191,11 +1327,19 @@ export function buildMap(descriptor) {
   // backdrop unchanged — do not regen baselines). Dispose the previous bake before rebuilding (buildMap
   // re-runs on every level start / map switch, so a leaked cube RT would accumulate).
   if (G.nebulaRT) { G.nebulaRT.dispose(); G.nebulaRT = null; }
-  const bakeNebula = G.gfx.nebulaBake && !location.search.includes('debug');
+  disposeBackdropLayer();   // same leak class as the nebula RT: buildMap re-runs on every level/map switch
+  // `nebula` is an OPT-IN test flag on top of ?debug: it turns the bake (and with it the parallax layer)
+  // back on for a scenario that needs the real backdrop while keeping ?debug's window.__game hooks — which
+  // the backdrop-brightness assertion needs to project the player to screen. Every existing scenario omits
+  // it and is therefore byte-identical.
+  const bakeNebula = G.gfx.nebulaBake
+    && (!location.search.includes('debug') || location.search.includes('nebula'));
   if (bakeNebula) {
     const nb = { ...NEBULA_ICEBLUE, ...(d.sky.nebula || {}) }; // descriptor overrides fall back per-key
     G.nebulaRT = makeNebulaSky(nb, G.gfx.nebulaBake);
     skyScene.background = G.nebulaRT.texture;
+    // Layer 1: the additive, camera-tracking parallax nebula in FRONT of the cube (its own seed + scale).
+    buildBackdropLayer(nb, G.gfx.nebulaBake, d.sky.nebula2);
   } else {
     skyScene.background = new THREE.Color(d.background);
   }

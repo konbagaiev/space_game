@@ -3,6 +3,62 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-30
+
+- **The expensive look — post-processing, a layered backdrop and readable silhouettes.**
+  [2026-08-30-1507-expensive-look]
+  **The frame is now composed, not just drawn.** A new `client/src/postfx.js` wraps the historical two-pass
+  frame (sky scene → depth clear → combat scene, DECISIONS §5, reproduced verbatim as a custom
+  `SceneRenderPass`) in an `EffectComposer`: the scene renders **linear HDR into a `HalfFloatType` target** →
+  **bloom** → one custom pass doing colour grade → **ACES filmic tonemapping** → vignette → sRGB encode.
+  `renderer.toneMapping` stays `NoToneMapping` permanently (tonemapping before bloom would make the bloom
+  threshold meaningless), and three's `OutputPass` is deliberately unused because it would recompile a shader
+  every frame. `renderFrame()` is the single frame entry point, shared by `animate()` and the `?bench`
+  harness so the two can never drift. **Emissive ship parts, engines and weapon fire now GLOW instead of
+  being flat bright patches**, and the picture gains real black (measured in open space: the 5th-percentile
+  luma drops from 0.126 to 0.049) with FEWER clipped-white pixels than before (>0.95 luma: 1.44% → 0.32% of
+  the frame) — the filmic curve doing its job.
+  **Tier-gated by PASS COUNT, not resolution** (new `post` knob in `graphics.js`): High
+  `{bloom, bloomScale 1.0, samples 4}`, Balance `{bloom, bloomScale 0.5, samples 0}`, **Performance `null` —
+  no composer is built at all**, ~14 fewer full-screen draw submits per frame. That follows §23's measured
+  finding that weak phones are CPU-submit-bound, not fill-bound.
+  **Performance keeps its FX EXACTLY as they were.** Every `>1.0` HDR gain is read through the new
+  `postGain`/`fxColor` helpers, which resolve to exactly 1.0 with no composer — without one, a >1 colour
+  clips per channel at the 8-bit sRGB write, which both flattens the effect and shifts its hue
+  (`0xffb050 × 1.5` clips R and G but not B). So muzzle flashes, explosions, rings, bolts and the beam
+  discharge are lifted into HDR (×1.2–1.6, always a hue-preserving scalar) only where a composer exists.
+  **Backdrop depth: one new additive parallax nebula layer.** A cubemap background is sampled by view
+  DIRECTION only, so it can never parallax. A second, coarser bake — with its **own constant seed and its own
+  noise scale**, because an `octaves-1` truncation of the same fbm would composite the existing wisps onto
+  themselves — now rides a camera-tracking sphere at `follow` 0.94, accumulating from the camera *delta* and
+  clamped, so the layer keeps parallax alive at Level 4's 11 000–16 800 u from the origin instead of sliding
+  off the sphere. It is built `transparent: false` on purpose: three draws the whole opaque list before any
+  transparent object, so that flag (not `renderOrder`) is what guarantees the planets, moons and star always
+  paint over it and it never becomes a skybox. It rides the star-proximity lift with the cube.
+  **Silhouettes:** every ship `.glb` template gets a one-time **emissive floor** (0.25 of its own base colour,
+  applied to the shared cache before any clone is served) so a hull never goes fully black — deliberately far
+  below the bloom threshold, because hulls must not glow — and the ghost-battle darken now dims the emissive
+  with the albedo. The engine plume carries an HDR `uGain` so the white-hot core is a real bloom source.
+  Both the floor and the larger dust apply on **every** tier.
+  **The speed-field dust is ~30% larger** (sizes 0.8/1.3/2.0 → **1.04/1.69/2.6**, changed in both the client
+  defaults and the `home-system` map descriptor). Speed reads by SIZE: the bloom threshold (0.65) sits
+  deliberately **above** the dust's linear luma (0.6079) so the field can never turn into sparks, guarded by
+  a unit test that derives the luma from the shipped colour.
+  **The hangar and briefing model viewers** now apply the same ACES curve + exposure, so a ship reads the
+  same in the hangar as in the fight (no bloom there — only the curve is shared).
+  **Tooling/tests:** a `Post` folder in the `?tune` panel writing straight to the live uniforms (exposure,
+  bloom strength/radius/threshold, vignette, grade, exhaust gain, backdrop amp/follow) plus a `POST_DEFAULTS`
+  dump; two long-standing `?tune` crashes fixed (with the nebula baked `skyScene.background` is a cube
+  Texture, and both the colour picker and the palette dump threw on it); a new opt-in `?debug&nebula` flag
+  that turns the bake + parallax layer back on for testing without losing the `window.__game` hooks; a new
+  visual scenario `42-expensive-look` that measures the composed frame with `gl.readPixels` (composer
+  liveness, the backdrop layer's contribution measured DIFFERENTIALLY, the backdrop-vs-hull brightness
+  ceiling, and a blow-out ceiling); two new readability guards in `99-fill`; four new unit tests in
+  `graphics.test.js` + one in `speed-field.test.js`.
+  **Docs:** DECISIONS §23's `renderScale` follow-up rewritten in the past tense as the *finding* it became
+  (the knob was removed in 2026-06-27), the matching stale comment in `hud.js` corrected, and `99-fill`'s two
+  Russian console lines translated to English.
+
 ## 2026-08-25
 
 - **The enemy charged beam — the pirate lancer, and the red telegraph that makes it fair.** [2026-08-25-1433-enemy-charged-beam]

@@ -19,7 +19,7 @@ import * as THREE from 'three';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, allies, setPieces, CATALOG, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, updateBackdropLayer, buildSetPiece } from './world.js';
 import { shortestAngleDelta } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, spawnRocketBurst, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
@@ -658,6 +658,7 @@ export function settleView(dt = 0) {
   // READS x/y/z (`copy`, `Matrix4.compose`, …) but not with THREE APIs that type-test. See vec.js.
   camera.lookAt(G.player.pos.x, G.player.pos.y, G.player.pos.z);
   G.stars.position.copy(camera.position); // stars: an infinitely distant backdrop stuck to the camera (no parallax)
+  updateBackdropLayer();                   // the additive nebula layer: tracks the camera at a FRACTION of its motion (real parallax)
   updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
   updateSpeedField(G.player.pos.x, G.player.pos.z); // player-locked backdrop (view-only, no RNG)
 }

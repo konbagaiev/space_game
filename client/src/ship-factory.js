@@ -12,6 +12,7 @@ import { BULLET_PLANE_Y, G } from './state.js'; // the canonical combat plane ev
 import { scene, renderer, camera } from './engine.js'; // needed to warm a freshly parsed model onto the GPU
 import { SHIP_GROUP_SCALE } from './sim-core/consts.js'; // the group's uniform world scale is SIM state (hitboxes + muzzle scale with it)
 import { shipModelCfg } from './sim-core/ship-config.js';
+import { POST_DEFAULTS } from './graphics.js'; // the hull emissive floor (pure data; the THREE wiring is here)
 export { shipModelCfg }; // moved to sim-core (it is catalog data, not rendering); re-exported for existing importers
 
 // Build the spec applyShipModel/makeShip consume from a resolved shipModelCfg (mc). null url → primitive.
@@ -53,6 +54,31 @@ const shipModelCache = new Map();
 // `compile()` handles shaders, not texture uploads. Mirrors `prewarmShaders()` in main.js, which does the
 // same for the FX materials at startup but runs long before any ship model exists.
 const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap'];
+// Self-lit floor so a hull is never a black hole against the backdrop. The combat glbs ship with NO emissive
+// at all (verified: every enemy material is a flat baseColorFactor with no textures; only the player's
+// PaletteMaterial001/002 carry an emissiveFactor + emissiveMap), and their material names (`07_-_Default`,
+// `black_mat_for_body`, `body_color_2`, `PaletteMaterial00N`) identify no engine or trim to hook — so this is
+// a UNIFORM floor, not a per-part tint. Same trick as drops.js's normalizeGreen.
+// Hue-safe: the emissive copies the material's OWN base colour, so nothing is recoloured (D9).
+// DELIBERATELY 0.25 — far below the 0.65 bloom threshold. Hulls must NOT glow; they must merely stop going
+// black. Engines are the bloom source. Do not raise this until hulls bloom.
+//
+// It is applied ONCE to the shared TEMPLATE, before warmModel and before any clone is served — a one-time
+// static mutation per ship TYPE (§79-safe), never per instance, and it draws no randomness. It must NOT live
+// in applyShipModel's tint traverse: that block is `if (tint)` and EVERY ship with a real .glb loads with
+// `tint: false`, so the natural-looking spot would ship a silent no-op that passes every test.
+function applyHullEmissiveFloor(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (!m || !m.emissive) continue;                                 // not a lit material
+      if (m.emissiveMap || m.emissive.getHex() !== 0x000000) continue; // the artist already authored a glow — leave it
+      m.emissive.copy(m.color);
+      m.emissiveIntensity = POST_DEFAULTS.hullEmissive;
+    }
+  });
+}
+
 function warmModel(root) {
   try {
     const holder = new THREE.Group();
@@ -83,6 +109,7 @@ export function requestShipModel(url, cb) {
   G.pendingAssets++; // hold the level-load veil up until this model is here (DECISIONS §84)
   gltfLoader.load(url, (gltf) => {
     entry.scene = gltf.scene;
+    applyHullEmissiveFloor(entry.scene); // BEFORE warmModel and before any clone is served to a waiter
     warmModel(entry.scene); // compile + upload NOW, not on the first frame this ship type is drawn
     for (const w of entry.waiters) w(entry.scene.clone(true));
     entry.waiters.length = 0;
@@ -155,6 +182,10 @@ function applyShipModel(group, spec, color) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => {
           if (darken && m.color) m.color.multiplyScalar(darken);
+          // The emissive floor must dim WITH the albedo: without this a ghost would keep full self-lit
+          // brightness while its colour is scaled by `darken`, reading brighter and flatter than the
+          // "distant decor" treatment intends and fighting the real ships for attention.
+          if (darken && m.emissive) m.emissive.multiplyScalar(darken);
           if (opacity != null) { m.transparent = true; m.opacity = opacity; }
           m.fog = true;
         });

@@ -777,19 +777,22 @@ didn't move. Two hypotheses survive: **(1)** the device's `devicePixelRatio` is 
 `min(DPR, 1)` are *identical* — the cap never reduced pixels — or **(2)** the frame is **CPU-bound** (the
 per-frame `update` + the DOM HUD/markers/minimap work, or the fixed two-pass overhead), where resolution
 is irrelevant. The change tests both, measurement-first:
-- **`renderScale`** (tier knob, Performance 0.7; 1.0 = off on High/Balance) multiplies into
-  `setPixelRatio`, rendering the backbuffer **below native** and letting the browser upscale the
-  full-size canvas. It is the **only** lever that bites *below* a pixelRatioCap of 1, so under hypothesis
-  (1) it is the first genuine fill-rate test. Chosen over a second render-target sky pass (a "Lever B" in
-  the plan) because it is one multiply, zero new GL objects, and no risk of a stale-sky parallax judder —
-  build the costlier sky throttle only if idle fps stays low *after* this.
+- **`renderScale` — TRIED AND REMOVED (2026-06-27); this bullet is a FINDING, not a live knob.** It was a
+  tier knob (Performance 0.7; 1.0 = off on High/Balance) multiplying into `setPixelRatio`, rendering the
+  backbuffer **below native** and letting the browser upscale the full-size canvas — the only lever that
+  bites *below* a pixelRatioCap of 1, and therefore the first genuine fill-rate test of hypothesis (1). It
+  answered the question and the answer was **no**: measured on two real GPUs (PowerVR GE8320, Mali-G52) a
+  5.5–7× backbuffer-pixel cut moved fps by *nothing*, so it only blurred the image. **Resolution levers are
+  a dead end here** — the wall is CPU draw-call submit plus the GPU/compositor governor, not fragment fill.
+  The knob is gone from `client/src/graphics.js` and `graphics.test.js` asserts it stays gone. This finding
+  is why the post-processing chain (§137) is tiered by **pass count**, not by resolution.
 - **`maxParticles`** (Performance 300; `Infinity` off on High/Balance) is a hard ceiling on live additive
   particles (exhaust trail + sparks) — new emits are skipped over budget. Cuts both overdraw and
   per-frame JS, so it also helps under hypothesis (2). Layered on top of the existing `particleScale`.
-- **Resolution readout:** the perf overlay now appends the real backbuffer size
-  (`renderer.domElement.width×height` = CSS × pixelRatio × renderScale). A tester can now see whether a
-  tier/renderScale change moved the pixel count *at all* — directly distinguishing hypothesis (1) from
-  (2). Both knobs (and a possible 4th "Potato" tier) stay deferred-until-measured; see
+- **Resolution readout:** the perf overlay appends the real backbuffer size
+  (`renderer.domElement.width×height` = CSS × pixelRatio — `renderScale` is no longer in that product). A
+  tester can see whether a tier change moved the pixel count *at all* — directly distinguishing hypothesis
+  (1) from (2). A possible 4th "Potato" tier stays deferred-until-measured; see
   `docs/plans/perf-low-end-phones.md`.
 
 **Follow-up #2 (2026-06-25): a `?dev` perf monitor + `perf_samples` telemetry — we were flying blind.** A
@@ -5402,3 +5405,99 @@ The table is a property of the event catalogue, so it belongs with it.
 **Cost.** One more file `server/src/netsim/protocol.js` reaches across into `client/`, which reads oddly the
 first time. It is the direction the codebase already runs in, and it is re-exported from `protocol.js` so
 that file stays the one place the wire's shape is read from.
+
+## 137. The post chain renders LINEAR, blooms, THEN tonemaps — and the bloom threshold sits above the dust
+
+The game reads by light, silhouette and glow, not polygon count, so the frame is now composed
+(`client/src/postfx.js`) rather than drawn straight to the canvas. Almost every decision here is about ORDER
+and about where a number is allowed to live.
+
+**(a) HDR-linear → bloom → ACES in the FINAL pass; never the reverse.** The scene renders linear into the
+composer's target, `UnrealBloomPass` picks out everything above the threshold, and only then does one custom
+`gradePass` apply the colour grade, ACES filmic tonemapping (with exposure), the vignette and the sRGB
+encode. Tonemapping first is the classic wrong order: it squashes every source into 0..1 before the
+high-pass sees it, which makes the bloom threshold meaningless and the glow flat and grey. The consequence
+is a rule that must not be "fixed" later: **`renderer.toneMapping` stays `NoToneMapping` permanently** on the
+main renderer. The only `toneMapping` assignment in the client is `model-viewer.js`'s, which has no composer
+and therefore has to tonemap itself (and uses three's own ACES chunk, so the hangar and the fight apply a
+bit-identical curve).
+
+**(b) three's `OutputPass` is not used.** Its `render()` compares `renderer.toneMapping` against a cached
+value and sets `material.needsUpdate = true` on a mismatch. Our chain needs `NoToneMapping` during the scene
+pass and ACES at output; toggling the renderer's mode per frame would flip that cache every frame and
+trigger a **shader recompile on every single frame**. Leaving the renderer on ACES permanently is equally
+wrong — every scene material would then tonemap during the scene pass. So we own the ACES step in our own
+pass.
+
+**(c) The composer's render target must be `HalfFloatType`.** With an 8-bit target every source clamps at
+1.0 before the bloom high-pass runs, and the bloom comes out flat. This is a hard requirement, not a nicety.
+
+**(d) The bloom threshold is 0.65 because the speed-field dust is 0.6079.** three's
+`LuminosityHighPassShader` thresholds on `dot(rgb, vec3(0.299, 0.587, 0.114))` over the LINEAR HDR frame. The
+dust is `0xd2ccc1` at opacity 1.0, unlit, on a crisp opaque dot sprite — linear Rec.601 luma **0.6079**. A
+threshold below that turns the field into sparks, which re-opens §96's settled "dim rocks, not stars — NOT
+additive" and the deliberate choice of the field's own hard-edged sprite over the star glow. Speed reads via
+**size** (hence the ~30% larger dust in this same change), never via glow. The margin is thin, so
+`graphics.test.js` derives the luma from the shipped colour and asserts `threshold >= luma × 1.05` — a future
+re-tint that brightens the dust fails a test instead of silently breaking the look.
+
+**(e) The chain is tiered by PASS COUNT, not by resolution.** §23 measured on two real GPUs that a 5.5–7×
+backbuffer-pixel cut moved fps by *nothing*: weak devices are bound by CPU draw-call submit and the
+GPU/compositor governor, not by fragment fill. So the lever that protects a weak phone is **`post: null` on
+Performance** — no chain at all, ~14 fewer full-screen draw submits per frame. Balance keeps the chain at
+`bloomScale: 0.5`, which saves fill (the *less* important axis); if a live phone test shows Balance losing
+frames, the correct follow-up is moving Balance to `post: null`, not shrinking the bloom further. (`nMips` is
+not tunable — `UnrealBloomPass` hardcodes 5 — so `bloomScale` is the only knob, and Balance keeps all 5 mips.)
+
+**(f) The hull emissive floor is 0.25 — deliberately far BELOW the threshold.** Each ship `.glb` template
+gets a one-time emissive floor equal to its own base colour, so a hull never goes fully black against the
+backdrop. It must NOT glow: engines and weapons are the bloom sources, hulls are the silhouette. The unit
+test (`hullEmissive < bloom.threshold`) is **necessary, not sufficient** — it proves only that the emissive
+TERM cannot reach the threshold, while the shaded result is emissive + direct + ambient + env. The real proof
+is a rendered frame, which is why `42-expensive-look` measures the hull against the sky around it.
+The floor also goes on the shared TEMPLATE in `requestShipModel`, not in `applyShipModel`'s tint traverse:
+that traverse is `if (tint)` and every ship with a real `.glb` loads with `tint: false`, so the natural-looking
+spot would have shipped a silent no-op that passed every test.
+
+**(g) An HDR gain is a property of the COMPOSER, not of the effect.** Pushing a source above 1.0 in linear
+HDR is what makes it bloom — but only where something maps HDR back to the display. On Performance there is
+no composer and no tone mapping, so a >1 colour clamps PER CHANNEL at the 8-bit sRGB write: `0xffb050 × 1.5`
+clips R and G but not B, which is both a flat white patch AND a hue shift — the two things this feature
+exists to remove. So every gain is read through `postGain(hasPost, gain)` / `fxColor(hex, key)` and resolves
+to exactly **1.0** without a composer, and **Performance's FX are byte-identical to before this change**. It
+still gets the two tier-independent parts, the emissive floor and the larger dust.
+Related: brightness is only ever changed by a **scalar multiply** on an existing colour, never by a new hex,
+so no hue moves anywhere. The colour grade ships at identity for the same reason — it is a live `?tune` knob,
+not a shipped tint.
+
+**(h) The parallax backdrop is not a skybox, and the guarantee rests on the OPAQUE RENDER LIST — not on
+`renderOrder`.** three splits a scene into two render lists (an object goes to the transparent list iff
+`material.transparent === true`) and draws **all** opaque objects before **any** transparent one;
+`renderOrder` only sorts *within* a list. Every ecliptic body — the star core, the planets, the moons, the
+dim star layer — is opaque. So a `transparent: true` backdrop sphere would be drawn **after** all of them
+and, being full-screen, additive and depth-test-free, would wash nebula over the planet disks and the
+terminator and slide across them as the player flies. Hence the material is built **`transparent: false`**,
+which lands it in the opaque list where `renderOrder: -3` draws it first; additive blending survives that
+flag (three forces `NoBlending` only for `NormalBlending` + `transparent: false`), and `depthTest: false` +
+`depthWrite: false` mean it can never occlude or depth-reject a body.
+Its parallax offset is accumulated from the camera **delta** and clamped, never derived from `|camPos|`: the
+star system spans ~21 000 u and Level 4 fights at 11 200–16 800 u from the origin, so an absolute-position
+formula would drift the sphere's centre thousands of units off and the camera would exit the sphere — the
+backdrop would simply vanish. Delta-accumulation keeps parallax alive wherever you actually fight and merely
+saturates after ~4 km of travel in one direction.
+
+**(i) The second nebula needs its OWN seed and its OWN noise scale.** The obvious construction —
+`{ ...baseNebula, octaves: n-1 }` — is wrong in a way that passes every test: an fbm truncated to `n-1`
+octaves is literally the first `n-1` terms of the same sum, so the coarse wisps land exactly on top of the
+base cube's and the composite is "the existing nebula × ~1.35". That is the invisible-first-speed-field
+failure of §96 wearing new numbers. A different **seed** puts the masses in different directions and a lower
+**scale** makes them larger, so the two layers are a different picture standing still, before any motion; the
+parallax then makes them a different *depth*.
+
+**Cost / what was accepted.** `renderer.info.render.calls` grows by ~14 on High and Balance (the `?dev` perf
+overlay shows it), and the A/B bench will report `load.draws` grew and print "load diverged". Bright stars
+bloom for the first time — expected and desirable, not a regression. The shipped look constants
+(`POST_DEFAULTS`) were dialed on real frames rather than derived: the planned starting point (exposure 1.15,
+bloom 0.55/0.4) blew the base station's white modules into featureless white blobs, and the planned backdrop
+`amp` 0.35 put the sky within 1.6× of the lit hull; the shipped 1.0 / 0.30 / 0.30 / amp 0.25 keeps the detail
+and the margin. They remain starting points — they are all live `?tune` sliders.

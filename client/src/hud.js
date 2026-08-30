@@ -158,9 +158,12 @@ export function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim
       ? (r.triangles / 1e6).toFixed(2) + 'M'
       : Math.round(r.triangles / 1e3) + 'k';
     const ms = (perfAccum / perfFrames * 1000).toFixed(1);
-    // Append the real backbuffer size (CSS size × pixelRatio × renderScale) — the actual pixels the GPU
-    // fills. Lets a tester confirm whether a tier/renderScale change moved the pixel count at all (a weak
-    // phone often reports devicePixelRatio ~1, so the pixelRatioCap is a no-op and only renderScale bites).
+    // Append the real backbuffer size (CSS size × pixelRatio) — the actual pixels the GPU fills. Lets a
+    // tester confirm whether a tier change moved the pixel count at all (a weak phone often reports
+    // devicePixelRatio ~1, so the pixelRatioCap can be a no-op there). A sub-1 `renderScale` knob was tried
+    // and REMOVED in 2026-06-27 — it moved fps by nothing on two real GPUs (DECISIONS §23), which is why
+    // the post chain is tiered by PASS COUNT instead. `calls` therefore now INCLUDES the composer's ~14
+    // full-screen passes on High/Balance and does not on Performance (no composer there at all).
     const res = `${renderer.domElement.width}×${renderer.domElement.height}`;
     // In ?dev, append live JS-heap usage (Chrome only) so the tester can eyeball current RAM.
     const devSuffix = DEV ? (performance.memory ? ` · ${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '') + ' ●dev' : '';

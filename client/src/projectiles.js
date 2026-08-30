@@ -16,6 +16,7 @@ import { spawnFlipbookExplosion } from './flipbook-fx.js';
 import { makeBolt } from './bolt-fx.js';
 import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
+import { fxColor } from './postfx.js'; // HDR FX tints: a hue-preserving scalar lift, pinned to 1.0 with no composer (D18)
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -93,7 +94,9 @@ function flashTexture() {
 
 function spawnMuzzleFlash(pos, color, scale = 1) {
   const mat = new THREE.MeshBasicMaterial({
-    map: flashTexture(), color, transparent: true, opacity: 1,
+    // fxColor lifts the weapon's own tint ABOVE 1.0 in linear HDR so the flash clears the bloom threshold
+    // and actually glows. A scalar multiply, so the hue is untouched (D9); 1.0 with no composer (D18).
+    map: flashTexture(), color: fxColor(color, 'muzzle'), transparent: true, opacity: 1,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   const m = new THREE.Mesh(flashQuadGeo, mat);
@@ -119,7 +122,7 @@ export function spawnExplosion(pos, maxScale = 3, life = EXPLOSION_LIFE, color =
   // glowing fiery sphere: additive blending + fade-out (life/color tunable so the same
   // primitive serves a quick hit-flash and a slower, layered ship-death fireball).
   const mat = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 1,
+    color: fxColor(color, 'explosion'), transparent: true, opacity: 1,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   const m = new THREE.Mesh(explosionGeo, mat);
@@ -174,7 +177,7 @@ export const ringKeepAliveMaterial = () => new THREE.MeshBasicMaterial({
 // pool so sim.update()'s shockwave loop grows its scale + fades it. Shared by ship death + rocket burst.
 function spawnShockRing(pos, y, maxScale, life, color) {
   const mat = new THREE.MeshBasicMaterial({
-    map: ringTexture(), color, transparent: true, opacity: 0.9,
+    map: ringTexture(), color: fxColor(color, 'ring'), transparent: true, opacity: 0.9,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
   });
   const ring = new THREE.Mesh(ringQuadGeo, mat);
@@ -289,7 +292,10 @@ const spiralRocketGeo = new THREE.ConeGeometry(0.34, 2.0, 6);
 export function attachRocketBody(r) {
   const holder = new THREE.Group();
   if (!r.lead) {
-    const mat = new THREE.MeshBasicMaterial({ color: r.projectileColor });
+    // Lifted above 1.0 in linear HDR so a warhead in flight is a small bloom source — which is what makes
+    // the spiral volley's three visible rockets read as a distinct weapon. Scalar, so the hue holds (D9);
+    // 1.0 with no composer (D18).
+    const mat = new THREE.MeshBasicMaterial({ color: fxColor(r.projectileColor, 'explosion') });
     const m = new THREE.Mesh(r.spiralOf ? spiralRocketGeo : rocketGeo, mat);
     m.rotation.x = Math.PI / 2; // cone points along +Z
     holder.add(m);

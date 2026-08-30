@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { G } from './state.js';
 import { gltfLoader, SHIP_MODEL_LEN } from './ship-factory.js';
+import { POST_DEFAULTS } from './graphics.js'; // the shared exposure — the hangar matches the fight's tone curve
 
 // Build a viewer on a canvas: renderer + scene + key/ambient light + optional RoomEnvironment PMREM + a
 // rotating group. `opts.autoRotate` (default true) → the render loop slowly spins the model; pass false for
@@ -13,6 +14,13 @@ import { gltfLoader, SHIP_MODEL_LEN } from './ship-factory.js';
 export function buildModelViewer(canvas, opts = {}) {
   const r = new THREE.WebGLRenderer({ canvas, antialias: G.gfx.antialias, alpha: true });
   r.setPixelRatio(Math.min(window.devicePixelRatio, G.gfx.pixelRatioCap));
+  // Match the in-game grade (postfx.js applies the SAME three ACES chunk in its final pass) so a ship reads
+  // the same in the hangar and in the fight. This is the ONLY legitimate toneMapping assignment in the
+  // client: the MAIN renderer must stay NoToneMapping (D3), because tonemapping before bloom would make the
+  // bloom threshold meaningless. No composer and no bloom here — the canvas is alpha:true and the loop is
+  // menus-only, so hangar emissives do not glow; only the tone CURVE is shared, not a pixel-identical ship.
+  r.toneMapping = THREE.ACESFilmicToneMapping;
+  r.toneMappingExposure = POST_DEFAULTS.exposure;
   const sc = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
   cam.position.set(0, 1.4, 7);

@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G } from './state.js';
 import { EXHAUST_DEFAULTS, SHIP_DEFAULTS, hash, plumeCfg, decayThrottle, derivePalette } from './exhaust-config.js';
+import { POST_DEFAULTS, postGain } from './graphics.js'; // the HDR plume lift — gated on the composer (D18)
 
 // Re-export the pure seams so callers/tests can reach them from the FX module too.
 export { EXHAUST_DEFAULTS, SHIP_DEFAULTS, hash, plumeCfg, decayThrottle, derivePalette };
@@ -89,14 +90,14 @@ const POINTS_VERT = /* glsl */`
 const POINTS_FRAG = /* glsl */`
   uniform sampler2D map;
   uniform vec3 uColHot, uColMid, uColEnd;
-  uniform float uThrottle, uSoft;
+  uniform float uThrottle, uSoft, uGain;
   varying float vT;
   void main() {
     vec3 col = vT < 0.5 ? mix(uColHot, uColMid, vT / 0.5)
                         : mix(uColMid, uColEnd, (vT - 0.5) / 0.5);
     float tex = texture2D(map, gl_PointCoord).a;
     float tailFade = 1.0 - vT;                          // dim toward the far tail
-    gl_FragColor = vec4(col, tex * uThrottle * uSoft * tailFade);
+    gl_FragColor = vec4(col * uGain, tex * uThrottle * uSoft * tailFade);
   }
 `;
 
@@ -117,7 +118,7 @@ const FLAME_VERT = /* glsl */`
   }
 `;
 const FLAME_FRAG = /* glsl */`
-  uniform float uTime, uSpeed, uThrottle, uSoft;
+  uniform float uTime, uSpeed, uThrottle, uSoft, uGain;
   uniform vec3 uColHot, uColMid, uColEnd;
   varying vec2 vUv;
   void main() {
@@ -136,7 +137,7 @@ const FLAME_FRAG = /* glsl */`
     float body = 1.0 - t;                               // fade toward the tip
     float a = (0.5 * edge + 1.3 * core) * body * n * uThrottle * uSoft;
     col += uColHot * core * 0.7 * body;                 // additive white-hot center → reads as intense
-    gl_FragColor = vec4(col, max(0.0, a));
+    gl_FragColor = vec4(col * uGain, max(0.0, a));
   }
 `;
 
@@ -158,6 +159,12 @@ export function makePlume(cfg) {
     uLen: { value: cfg.len }, uSize: { value: cfg.size }, uSpeed: { value: cfg.speed },
     uSpread: { value: cfg.spread }, uTurb: { value: cfg.turbulence }, uThrottle: { value: 1 },
     uSoft: { value: cfg.softness },
+    // HDR lift: uColHot/Mid/End are already LINEAR (colVec goes through THREE.Color.set, i.e.
+    // ColorManagement), so a gain above 1 pushes the white-hot core past 1.0 and makes the engine an actual
+    // BLOOM SOURCE — which is the whole point of the plume in the new render path. ONE scalar on all three
+    // palette stops, so no hue changes (D9). It MUST go through postGain: with no composer there is no
+    // headroom above 1.0, and a >1 value would clip per channel at the 8-bit sRGB write (D18).
+    uGain: { value: postGain(!!G.gfx.post, POST_DEFAULTS.exhaustGain) },
     uOrigin: { value: new THREE.Vector3(0, 0, 0) },
     uColHot: { value: colVec(cfg.palette.hot) },
     uColMid: { value: colVec(cfg.palette.mid) },
@@ -198,6 +205,7 @@ export function makePlume(cfg) {
       flameMesh.visible = (m === 'flame');
     },
     setThrottle(v) { uniforms.uThrottle.value = v; },
+    setGain(v) { uniforms.uGain.value = v; },   // ?tune "Post" folder: the live HDR plume lift
     setOrigin(vec3, spread) {
       uniforms.uOrigin.value.copy(vec3);
       if (spread != null) uniforms.uSpread.value = spread;
@@ -265,6 +273,14 @@ export function setGlobalExhaustMode(v) {
   currentMode = v;
   activeFreighterPlume?.setMode(v);
   for (const p of shipPlumes) p.setMode(v);
+}
+
+// GLOBAL exhaust HDR gain — the ?tune "Post" folder's live knob, fanned out to every live plume. The
+// SHIPPED value comes from POST_DEFAULTS.exhaustGain through postGain (D18); this only exists so the
+// maintainer can dial it in a real build. A plume attaching later reads the shipped value, not this one.
+export function setGlobalExhaustGain(v) {
+  activeFreighterPlume?.setGain(v);
+  for (const p of shipPlumes) p.setGain(v);
 }
 
 // ---- Freighter helper: build a full-throttle plume from spec.exhaust merged over EXHAUST_DEFAULTS. ----

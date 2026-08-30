@@ -14,9 +14,10 @@ import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t 
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
 import { G, world, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, allies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, setZoom, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
+import { renderFrame, postStatus } from './postfx.js'; // THE frame: the post-processing composer (bloom + ACES grade) or, with no composer, today's two-pass frame
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers, backdropAmp, setBackdropAmp } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap + the parallax backdrop's ?debug knobs
 import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { spawnRocket as spawnRocketInto } from './sim-core/spawn.js'; // takes the World explicitly — __game wraps it below
@@ -807,6 +808,8 @@ function prewarmShaders() {
     }
     renderer.compile(skyScene, camera);
     renderer.compile(scene, camera);
+    // No composer warm is needed here: the post chain's own shaders (bloom + grade) compile on the first
+    // renderFrame(), which is the very first animate() frame — long before any fight. Don't add one.
   } catch { /* best-effort — shader warmup must never break startup or a level load */ }
 }
 
@@ -1167,12 +1170,9 @@ function animate() {
     prewarmShaders();
     el.levelWarm.classList.remove('on');
   }
-  // two passes: first the sky backdrop (with its own light), then combat on top
-  renderer.info.reset();
-  renderer.clear();
-  renderer.render(skyScene, camera);
-  renderer.clearDepth();
-  renderer.render(scene, camera);
+  // The whole frame — the composed one (sky → combat → bloom → ACES grade) where a composer exists, and
+  // the historical two-pass frame where it does not. It resets renderer.info itself. See postfx.js.
+  renderFrame();
   const t3 = DEV ? performance.now() : 0; // end of render submit (GPU exec is async — this is CPU submit cost)
   updatePerf(rawSec); // perf metrics use the RAW interval (clamped dt would cap fps/ms on slow devices)
   if (DEV) devPerf.frame(rawSec, t0, t1, t2, t3);
@@ -1294,6 +1294,12 @@ if (location.search.includes('debug')) {
                                              // number the ?ally dev flag exists to produce (nothing else on
                                              // screen reveals it, by design; docs/plans/combat-ally.md §3)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
+    // Post-processing state + the parallax backdrop's live brightness. `active`/`bloom` are the ONLY honest
+    // liveness check for the chain: "no page errors + NoToneMapping" is equally true when createPostFx()
+    // threw and the frame silently fell back to the raw two-pass path. `setBackdropAmp` lets a scenario
+    // measure the new layer DIFFERENTIALLY (amp 0 vs the shipped amp) in one frame sequence.
+    get postfx() { return { ...postStatus(), amp: backdropAmp() }; },
+    setBackdropAmp,
     get levelName() { return CATALOG.levelName; },     // the SEED NAME (level-N) this tab resolved at boot
     get needsSceneWarm() { return G.needsSceneWarm; }, // diagnostic: a level build is waiting to be compiled/uploaded
     get pendingAssets() { return G.pendingAssets; }, // diagnostic: essential .glb loads still in flight (veil gate)
@@ -1409,11 +1415,7 @@ if (isBench()) {
     updateHud(); updateMarkers(); updateDropMarkers(); updateMissionMarker(); updateCreditPopups();
     updateEnemyHealthBars(); updateOobWarning(); updateReturnArrow(); updateReturnHint(); updateRoamNav(); updateMiniMap();
     const t2 = performance.now();
-    renderer.info.reset();
-    renderer.clear();
-    renderer.render(skyScene, camera);
-    renderer.clearDepth();
-    renderer.render(scene, camera);
+    renderFrame();   // the SAME entry point animate() uses — the bench must measure the real, composed frame
     const t3 = performance.now();
     return { update: t1 - t0, dom: t2 - t1, render: t3 - t2, total: t3 - t0,
              draws: renderer.info.render.calls, tris: renderer.info.render.triangles };

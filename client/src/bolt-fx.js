@@ -4,6 +4,7 @@
 // own tint material (disposed on bullet despawn, like the old sphere). One draw call per shot — no
 // costlier than the sphere it replaces, just prettier. Pure factory: the caller adds it to the scene.
 import * as THREE from 'three';
+import { fxColor } from './postfx.js'; // HDR bolt tint: a hue-preserving scalar lift, pinned to 1.0 with no composer (D18)
 
 // ---- Tunables (edit + reload to retune live) ----
 const BOLT_LEN = 2.4;   // world length along the travel direction
@@ -55,7 +56,9 @@ const _dir = new THREE.Vector3(), _side = new THREE.Vector3(), _up = new THREE.V
 // bigger. Caller sets position + adds to the scene; velocity is constant so orientation is set once.
 export function makeBolt(color, vel, scale = 1) {
   const mat = new THREE.MeshBasicMaterial({
-    map: boltTexture(), color, transparent: true,
+    // Pushed above 1.0 in linear HDR so the bolt clears the bloom threshold and reads as an energy bolt
+    // with a real glow rather than a flat bright quad. Scalar → hue preserved (D9).
+    map: boltTexture(), color: fxColor(color, 'bolt'), transparent: true,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   const m = new THREE.Mesh(boltGeo, mat);

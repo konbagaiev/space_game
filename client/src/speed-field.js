@@ -40,10 +40,13 @@ export const SPEED_FIELD_DEFAULTS = {
   // Weighted toward the NEAR layer: the close specks are the ones that actually sweep past and sell speed,
   // the deep ones barely move and mostly add clutter. So density climbs as the layers come closer and the
   // far layers are thinned out, with every size pulled down to fine-grain.
+  // Sizes are ~30% larger than the first shipped pass (0.8/1.3/2.0): SPEED READS VIA SIZE, never via glow.
+  // The post chain's bloom threshold sits deliberately ABOVE this field's luma (see linearLuma601 below),
+  // so the only lever left for "the specks sweep past faster" is how big they are.
   layers: [
-    { count: 760, size: 0.8, radius: 620, depth: 10,  depthVar: 16, opacity: 1.00 },
-    { count: 220, size: 1.3, radius: 620, depth: 90,  depthVar: 40, opacity: 0.95 },
-    { count: 110, size: 2.0, radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
+    { count: 760, size: 1.04, radius: 620, depth: 10,  depthVar: 16, opacity: 1.00 },
+    { count: 220, size: 1.69, radius: 620, depth: 90,  depthVar: 40, opacity: 0.95 },
+    { count: 110, size: 2.6,  radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
   ],
 };
 
@@ -68,6 +71,19 @@ export function layerLuma(colorHex, opacity, jitterFloor = 0.55) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) * jitterFloor * opacity;
 }
 export function contrastRatio(colorHex, opacity) { return layerLuma(colorHex, opacity) / BG_LUMA; }
+
+// sRGB 0..1 -> linear, per the sRGB transfer function three uses (ColorManagement).
+const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+// LINEAR Rec.601 luma of a hex colour — the exact quantity three's LuminosityHighPassShader thresholds on
+// (`dot(texel.rgb, vec3(0.299,0.587,0.114))` over linear HDR). This is what decides whether the dust glows:
+// the bloom threshold must sit ABOVE this value or the field turns into sparks (DECISIONS §96 forbids that).
+// NOT interchangeable with layerLuma() above, which is a perceptual sRGB proxy for the CONTRAST floor.
+export function linearLuma601(hex) {
+  const r = srgbToLinear(((hex >> 16) & 255) / 255);
+  const g = srgbToLinear(((hex >> 8) & 255) / 255);
+  const b = srgbToLinear((hex & 255) / 255);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
 
 // Slider bounds for the ?dev folder AND the clamp applied to every descriptor/stored value. `radius` may be
 // dialed BELOW WRAP_SAFE_RADIUS on purpose — exploring a tighter box is a legitimate live experiment; the

@@ -23,6 +23,7 @@
 // All of it is cosmetic and RNG-free, hence replay-neutral (DECISIONS §73).
 import * as THREE from 'three';
 import { scene } from './engine.js';
+import { fxColor } from './postfx.js'; // the DISCHARGE's HDR lift — hue-preserving, pinned to 1.0 with no composer (D18)
 import { world } from './state.js';
 import { Vec3 } from './sim-core/vec.js';
 import { beamMuzzle, corridorEnds, beamGroupOf, beamWeaponOf, beamCandidate, corridorRadOf, chargeTimeOf } from './sim-core/beam.js';
@@ -195,9 +196,14 @@ function ensureBolts() {
   bolts = [];
   for (let i = 0; i < BOLT_POOL; i++) {
     bolts.push({
-      glow: makeQuad(CHARGE_COLOR, 'beamBolt'),   // the wide coloured halo
-      core: makeQuad(0xffffff, 'beamBoltCore'),   // the white-hot centre, a hair above it in Y
-      flash: makeDisc(CHARGE_COLOR, 'beamFlash'),
+      // THE DISCHARGE ONLY is lifted into HDR (fxGain.bolt) so the strike clears the bloom threshold and
+      // glows. A scalar multiply, so the cyan-white shot keeps its exact HUE — the green sight and the
+      // cyan shot stay two different hues (DECISIONS §135), which is the whole point of the split. The
+      // SIGHT and the charge bead are deliberately NOT lifted: they are thin 1 px lines and a permanent
+      // on-screen aid, and a glowing aiming aid would compete with the shot it exists to predict.
+      glow: makeQuad(fxColor(CHARGE_COLOR, 'bolt'), 'beamBolt'),   // the wide coloured halo
+      core: makeQuad(fxColor(0xffffff, 'bolt'), 'beamBoltCore'),   // the white-hot centre, a hair above it in Y
+      flash: makeDisc(fxColor(CHARGE_COLOR, 'bolt'), 'beamFlash'),
       boltLife: 0, flashLife: 0,
     });
   }
