@@ -33,29 +33,59 @@
   }
   #help b { color: #cfe6ff; }
   /* The intro director's line, and the controls card that starts in the same slot.
-     THE BOTTOM BAND IS CROWDED. Every occupant, measured from the bottom edge:
-       #return-btn  — bottom:34, padding 12+12, line-height 1.2*16px = 19.2   →  top edge  77.2
-       #rocket-btn  — bottom:40, 84px tall                                    →  top edge 124
-       #fire-btn    — bottom:34, 96px tall (touch only)                       →  top edge 130
-       #event-log   — bottom:132, up to 4 kill lines of ~19px + 2px gaps      →  top edge ~214
-                      …and it is 240px wide at right:22, i.e. it spans x ∈ [vw-262, vw-22]
-     The slot sits at bottom:96 on desktop (19px of air above "Finish and Return", which appears at the same
-     instant as line L4) and bottom:150 on touch (20px above the FIRE button). Both clear the buttons.
-     #event-log is the one that cannot be cleared HORIZONTALLY: the card is centred with max-width
-     min(760px, 88vw), so its right edge passes x = vw-262 whenever the card is wider than vw-524 — true at
-     the 1280px suite viewport (760 > 756) and on every phone. And vertically the desktop card (bottom
-     96 → ~191 for two lines) runs straight into the log's 132→214 band. See below: during the intro the kill
-     log yields. Everything here is pointer-events:none, so none of it could steal a tap even if it did
-     overlap. */
+     THE SLOT IS AT THE TOP — a band 14% of the viewport height down, above the ship and out of the fight.
+     It began at the bottom and was moved here on the maintainer's live test: the bottom band is where
+     everything already lives ("Finish and Return", the rocket + FIRE buttons, the kill log), and reading a
+     line down there means looking away from your own ship. Up here the fixed neighbours are the corner
+     clusters, measured:
+       #hud left block (shield/HP/%) — y 14..63, x 18..282;  #hud .right (credits/Destroyed) — y 14..73
+       #settings-btn 12,11 36x36 (y 11..47) · #pause-btn top:3, 30 tall (y 3..33) — the same band as #hud
+       #minimap  — left:62 top:72, 132x132  → x 62..194, y 72..204   (the battle radar; LEFT of the slot)
+       body.touch #zoom — right:16 top:96, 44 wide, ~98 tall → its LEFT edge is 100vw-60 (RIGHT of the slot)
+     The card VERTICALLY overlaps the radar's band on any short screen and its background is opaque, so the
+     horizontal clearance is the only thing keeping it off the radar — and it is stated here as a PROOF, not
+     as a measurement at one viewport:
+
+       • `top: max(14vh, 76px)`. 14% is the look that was asked for and is what desktop gets (112px), but the
+         HUD block above it is a FIXED PIXEL height: on a 375px-tall landscape phone 14vh is 52px and the
+         card's top edge cut 10px into the HP bars. The 76px floor clears their 63px bottom edge by 13.
+
+       • `width` IS EXPLICIT, and that is the whole fix. These boxes are `position: fixed; left: 50%` with no
+         `right`, so their containing block runs from the 50% line to the viewport edge and a shrink-to-fit
+         width can never exceed **50vw** — which means a `max-width` above that is dead code, and the left
+         edge was simply `50vw - w/2 = 25vw` whatever else the rule said. 25vw is only clear of the radar's
+         fixed 194px edge while the viewport is wider than 776px: at 812 it cleared by 9px (the one width the
+         first version of this was measured at), at 780 by 1px, and at 736 and 667 it overlapped the radar by
+         10px and 27px. With `width` set, the left edge is `50vw - w/2` for a KNOWN w, so:
+             desktop  w = min(760, 100vw - 400)  →  left edge >= 200  at every viewport width
+             touch    the slot is centred in the FREE BAND instead (see below)
+     #banner (top:26%) would share this band, but no banner can fire on the intro: FINAL STAGE is suppressed
+     by the descriptor and the "N enemies left" milestones only fire at 10 and 5 remaining, against an
+     enemyTotal of 4.
+     Everything here is pointer-events:none — the player is flying underneath it. */
   #intro-line, #intro-help {
-    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 7;
+    position: fixed; left: 50%; top: max(14vh, 76px); transform: translateX(-50%); z-index: 7;
     pointer-events: none; opacity: 0; display: none;
-    max-width: min(760px, 88vw); padding: 16px 22px; border-radius: 14px; text-align: center;
+    width: min(760px, calc(100vw - 400px));
+    padding: 16px 22px; border-radius: 14px; text-align: center;
     background: rgba(6,10,16,.82); border: 1px solid rgba(255,255,255,.14);
     color: #eaf2ff; font: 500 clamp(15px,2.4vw,21px)/1.5 system-ui, sans-serif;
     box-shadow: 0 10px 40px rgba(0,0,0,.5);
   }
-  body.touch #intro-line, body.touch #intro-help { bottom: 150px; }
+  /* ON A PHONE, CENTRE IT IN THE FREE BAND RATHER THAN ON THE VIEWPORT. The symmetric desktop reserve costs
+     400px of an 812px screen and leaves a 267px column on a 667px one, which is a paragraph in a gutter —
+     but the right-hand reserve is only needed for the touch zoom column, which is 60px wide, not 200. The
+     free band is therefore [200, 100vw-66]; its centre is `50% + 67px` (so the `translateX(-50%)` the flight
+     maths depends on is untouched) and its width is `100vw - 266`. That yields ~6px of air on BOTH sides at
+     every phone width — 812 → x 200..746, 736 → 200..670, 667 → 200..601 — instead of a clearance that
+     evaporates below 776. Being 67px right of the screen's centre is the price, and it is the right price:
+     it is centred in the space that is actually free.
+     The type also steps down — 2.4vw is ~20px on a phone, which is a poster, not a HUD line, and every
+     point of size costs a wrapped line on a screen only 375px tall. */
+  body.touch #intro-line, body.touch #intro-help {
+    left: calc(50% + 67px); width: min(560px, calc(100vw - 266px));
+    padding: 12px 16px; font-size: clamp(13px, 1.9vw, 16px);
+  }
   /* transform-origin: left top — flyIntroHelp() moves the card's LEFT/TOP onto #help's left/top and then
      scales about that same corner. With any other origin the scale would drag the corner off the target. */
   #intro-help { font-size: clamp(14px,2vw,18px); transform-origin: left top; }
@@ -63,17 +93,11 @@
   /* The flight into the corner: main.js measures the two rects, composes the translate+scale (KEEPING the
      -50% centring inside it) and drives opacity itself. This class supplies ONLY the transition — putting
      `opacity: 0` here would lose to the inline opacity main.js sets, and the card would never fade.
-     Cosmetic; nothing in the sim watches it. */
-  #intro-help.fly { transition: transform .45s cubic-bezier(.4,0,.2,1), opacity .45s ease; }
-  /* THE KILL LOG YIELDS DURING THE INTRO. #event-log occupies bottom 132→~214 at the right edge and the
-     line slot is 96→~191 (desktop) / 150→~245 (touch), so they overlap in both axes on the suite viewport
-     and on every phone — and the intro's lines fire AROUND KILLS, which is exactly when the log is full,
-     so this is the common case and not an edge one. Moving the log up puts it near the top of a landscape
-     phone; narrowing the card cannot separate them (they would only clear at a card width under ~280px).
-     So for the ~40 s of the intro the log is simply not drawn: one message at a time is the whole point of
-     a tutorial, and every kill is still reported by the floating "+xx" credit popup at the kill site and by
-     the HUD's credits + Destroyed counters. Scoped to the intro; every other level is untouched. */
-  body.intro #event-log { display: none; }
+     The duration is the descriptor's `intro.helpFly` (0.9 s) — the card now crosses the whole screen from
+     the top-centre slot into the bottom-left cheatsheet, and at the old 0.45 s that diagonal read as a jump
+     rather than a journey. Cosmetic; nothing in the sim watches it, but the SPAWN FLOOR for enemy #2 is
+     derived from the same number, so the two cannot drift. */
+  #intro-help.fly { transition: transform .9s cubic-bezier(.4,0,.2,1), opacity .9s ease; }
   #overlay {
     position: fixed; inset: 0; display: none;
     align-items: center; justify-content: center; flex-direction: column;

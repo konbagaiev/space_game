@@ -5509,7 +5509,7 @@ Two things made it safe to do.
 
 **ONE TIMELINE.** The beat timings live on the `level-0` descriptor (`intro.lineHold/lineFade/helpHold/
 helpFly` + `intro.beats`) and the *simulation* reads the derived floors off the same object
-(`phases[0].spawn.earliest = [3, 8.95]`, honoured by `stepSpawnGate`'s new `blocked` input). So the DOM never
+(`phases[0].spawn.earliest = [3, 9.4]`, honoured by `stepSpawnGate`'s new `blocked` input). So the DOM never
 tells the sim when to spawn, the words and the fight cannot drift apart, and a recorded intro session
 replays exactly — in a browser, in a netsim room and in the headless referee alike. The floor FREEZES the
 spawn cooldown rather than draining it, so a 3 s floor can never leak into the 2–4 s warp-in duration the
@@ -5541,3 +5541,31 @@ already HUD or a thumb control, and a skip must never be a stray tap).
 
 **Cross-ref §63.** The intro's one-time-ness is still `current_progress` alone — a reset replays it. The
 cutscene that decision was written about is simply no longer what gets replayed.
+
+**Amended after the first live test: the lines belong at the TOP, and nothing in the HUD is taken away.**
+They shipped in a bottom-centre slot, which cost a rule hiding the kill log for the intro's ~40 seconds —
+justified at the time because the line and `#event-log` genuinely overlapped in both axes on the suite
+viewport and on every phone. Playing it showed the deeper problem: reading a line at the bottom of the
+screen means looking away from your own ship, in the one level whose entire job is to teach you to fly it.
+The slot moved to `top: max(14vh, 76px)`, the `body.intro #event-log` rule went with it, and the intro now
+takes **nothing** away from the HUD — which is what "the intro is a level, not a cutscene" was supposed to
+mean all along. The offset is two numbers because one is not enough: a percentage is the look that was
+asked for, and a pixel floor is what a HUD block of FIXED height demands on a 375px-tall landscape phone,
+where 14 % put the line inside the HP bars. The WIDTH needed the same treatment and did not get it first
+time: a `position: fixed; left: 50%` box with no `right` inset can never shrink-to-fit wider than 50vw, so
+the `max-width` written to keep the card off the battle radar was dead code and the left edge was just
+`25vw` — which clears the radar's fixed 194px edge only above ~776px of viewport. It was measured at 812
+(9px of clearance), asserted at 812, and overlapped the radar by 10px at 736 and 27px at 667: an opaque card
+painted over the live radar on every phone narrower than an iPhone X. The lesson is the specific one:
+**a clearance you measured at one viewport is not a rule; write the width down so the clearance follows from
+arithmetic**, and put the asserted viewports on BOTH sides of whatever boundary the arithmetic implies. `helpFly` went 0.45 s → 0.9 s with the move, because the card now crosses the
+whole diagonal into the corner and the old duration read as a jump; the enemy-#2 spawn floor recomputed
+from the same constant, which is the point of keeping it in one place.
+
+**And the ordering bug the live test found next to it (see the CHANGELOG).** The two halves of a campaign
+advance — the POST at "Finish and Return" and the GET at the dock — were only ever ordered by the flight
+home being long. Level 0's is not: its station sits ~43 u from the arena centre against a 45 u arrival
+radius. The fix is the one already in the file (`bankingDone()`): publish the in-flight promise, await it at
+the read. Worth recording because the lesson generalises — **"these two async calls happen far apart in
+time" is a claim about the WORLD, not about the code**, and a new level, a shorter map or a faster ship
+falsifies it silently.

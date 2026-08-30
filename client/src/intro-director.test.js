@@ -10,7 +10,7 @@ const DT = 1 / 60;
 // The SHIPPED script (server/src/catalog_seed.js level-0 `intro`) — kept in sync by hand on purpose: if
 // someone changes a beat there, these assertions describe what the intro used to do and must be re-read.
 const SCRIPT = {
-  lineHold: 3, lineFade: 2, helpHold: 3.5, helpFly: 0.45,
+  lineHold: 3, lineFade: 2, helpHold: 3.5, helpFly: 0.9,
   beats: [
     { id: 'l0', on: 'start', textKey: 'ui.intro.l0' },
     { id: 'l1', on: 'spawn', n: 2, textKey: 'ui.intro.l1' },
@@ -66,11 +66,11 @@ test('the controls card walks idle → hold → fly → done, one command each',
   assert.deepEqual(cmds.filter((c) => c.startsWith('help:')), ['help:fly']);
   assert.equal(dir.help, 'fly');
 
-  cmds = run(dir, 8.6 + DT, 9.2);              // + helpFly = 8.95
+  cmds = run(dir, 8.6 + DT, 9.5);              // + helpFly = 9.4
   assert.deepEqual(cmds.filter((c) => c.startsWith('help:')), ['help:done']);
   assert.equal(dir.help, 'done');
 
-  cmds = run(dir, 9.2 + DT, 12);
+  cmds = run(dir, 9.5 + DT, 12);
   assert.equal(cmds.filter((c) => c.startsWith('help:')).length, 0, 'done is terminal — no repeats');
 });
 

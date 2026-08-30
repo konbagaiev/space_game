@@ -1823,8 +1823,8 @@ function skipIntro() {
 // BY CONSTRUCTION: the normal ending (clear → "Finish and Return" → dock) advances the campaign IN PAGE —
 // `sim.js` win → `loadAdvancedLevel()` swaps `CATALOG.level` with no reload — so a sticky `intro` survived
 // into Level 1, re-armed itself on that level's `reset()` (the clock going backwards is the restart signal),
-// replayed the whole script over it, kept the kill log hidden for the rest of the session, and left the
-// Settings "Skip the intro" row live, where it would have granted a free level advance. Checked from both
+// replayed the whole script over it and left the Settings "Skip the intro" row live, where it would have
+// granted a free level advance. Checked from both
 // halves (the sim tick and the render frame), because either may run first in a frame.
 function introArmed() {
   if (intro && !(CATALOG.level && CATALOG.level.intro)) { intro = null; G.skipIntro = null; }
@@ -1839,8 +1839,9 @@ function introTick() {
     else if (cmd === 'help:done') { el.introHelp.style.display = 'none'; }
   }
 }
-// Once per FRAME: push the director's view into the DOM. Cheap and idempotent. `body.intro` is what makes
-// the kill log yield for the duration (styles.css).
+// Once per FRAME: push the director's view into the DOM. Cheap and idempotent. `body.intro` is a state hook
+// for "a director is armed" — no CSS hangs off it any more (it used to hide the kill log, back when the line
+// sat in the bottom band with it), but it is what a test reads to see the director come and go.
 function updateIntro() {
   const armed = introArmed();
   document.body.classList.toggle('intro', armed);

@@ -42,6 +42,17 @@ export const fetchJson = async (url) => {
 let banking = null;
 export function bankingDone() { return banking || Promise.resolve(); }
 
+// The in-flight ADVANCE POST, so the second half of the advance cannot overtake the first (see
+// commitLevelAdvance / loadAdvancedLevel). Same shape and same reason as `banking` above: the POST moves the
+// account to the next level and the GET reads which level that is, so a GET that wins the race hands the tab
+// back the level it just cleared — while the server is already on the next one. The player then takes off
+// into the level they have finished, clears it a second time, and the second clear advances the account
+// AGAIN, skipping a level and paying out its reward. The stored promise NEVER REJECTS (the body catches its
+// own errors), so awaiting it can only ever cost the request's own latency — a failed advance still lets the
+// read through, which is the "on failure the same level replays" contract.
+let advancing = null;
+export function advanceDone() { return advancing || Promise.resolve(); }
+
 // The in-flight side-mission "cleared" POST, so the hangar's shop refetch can WAIT for it (see openBay):
 // the unlock it grants must be visible in the very first /stash read after the victory, or the gated rows
 // stay hidden until the next landing. Never reset to null — an already-settled promise awaits instantly,
@@ -205,15 +216,20 @@ export function track(type, data) {
 
 // Step 1 — commit the advance server-side. Safe at any moment: it touches the account, never this tab's
 // world. Stashes the next level's briefing so the Main Window can show it after landing.
-export async function commitLevelAdvance() {
-  if (!G.playerId) return;
+// Callers may fire this and walk away (sim.js does, on "Finish and Return"), so it PUBLISHES its in-flight
+// promise on `advancing` rather than relying on being awaited — `loadAdvancedLevel` waits on that.
+export function commitLevelAdvance() {
+  if (!G.playerId) return Promise.resolve();
   const clearedLevel = currentLevelLabel(); // before anything swaps CATALOG.level out from under us
-  try {
-    const adv = await (await fetch(API_BASE + `/api/players/${G.playerId}/advance`, { method: 'POST' })).json();
-    clientLog('adv:resp', { advanced: adv && adv.advanced, cp: adv && adv.currentProgress, hasBriefing: !!(adv && adv.briefing) }); // TEMP debug
-    if (adv && !adv.advanced) track('victory', { level: clearedLevel }); // no next level → final win
-    if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) G.pendingBriefing = adv.briefing;
-  } catch (e) { clientLog('adv:error', { msg: String((e && e.message) || e) }); /* best-effort: the same level replays */ }
+  advancing = (async () => {
+    try {
+      const adv = await (await fetch(API_BASE + `/api/players/${G.playerId}/advance`, { method: 'POST' })).json();
+      clientLog('adv:resp', { advanced: adv && adv.advanced, cp: adv && adv.currentProgress, hasBriefing: !!(adv && adv.briefing) }); // TEMP debug
+      if (adv && !adv.advanced) track('victory', { level: clearedLevel }); // no next level → final win
+      if (adv && adv.briefing && (adv.briefing.textKey || adv.briefing.text)) G.pendingBriefing = adv.briefing;
+    } catch (e) { clientLog('adv:error', { msg: String((e && e.message) || e) }); /* best-effort: the same level replays */ }
+  })();
+  return advancing;
 }
 
 // Step 2 — load the level the server has already advanced us to into THIS tab: the descriptor (so the next
@@ -222,6 +238,13 @@ export async function commitLevelAdvance() {
 export async function loadAdvancedLevel() {
   if (!G.playerId) return;
   try {
+    // THE ADVANCE POST FIRST, ALWAYS. Both halves are fired without being awaited (sim.js: `finishing` then
+    // `win`), and the gap between them is a flight home that can be almost nothing — Level 0's home station
+    // sits ~43 u from the arena centre against a 45 u arrival radius, so the pilot can dock on the tick the
+    // button is pressed. This read then overtook the POST and set `CATALOG.level` back to the level just
+    // cleared. Reported live: the intro's briefing was correctly Level 1, Take-off replayed Level 0, and
+    // clearing it again advanced the account a second time — a free level plus Level 1's reward drop.
+    await advanceDone();
     const level = await fetchJson(`/api/players/${G.playerId}/level`);
     clientLog('adv:level', { name: level && level.name, title: level && level.descriptor && level.descriptor.title, map: level && level.descriptor && level.descriptor.map }); // TEMP debug
     if (level.descriptor.map !== CATALOG.level.map) {

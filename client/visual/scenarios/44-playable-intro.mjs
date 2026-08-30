@@ -144,32 +144,48 @@ export default async function ({ page, assert, shot, baseURL }) {
   await page.waitForFunction(() => Number(getComputedStyle(document.getElementById('intro-help')).opacity) < 0.05,
     null, { timeout: 2000 });
   await shot('card-landed');
-  await stepTo(9.2);   // + helpFly 0.45 → the card is taken down for good
+  await stepTo(9.5);   // + helpFly 0.9 → the card is taken down for good
   assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('intro-help')).display), 'none',
     'and is removed once it has arrived — #help is where the controls live from now on');
 
-  // ---- 6. The bottom band does not collide --------------------------------------------------
-  // The line slot shares the bottom of the screen with "Finish and Return", the rocket button, the FIRE
-  // button and the kill log. Force the two that are hidden by default to be visible and check the geometry.
+  // ---- 6. The TOP band does not collide, on desktop and on a landscape phone ----------------
+  // The line slot sits at `top: max(14vh, 76px)`, centred. Its neighbours up there are the two HUD corner
+  // clusters, the settings gear, the pause button, the battle radar (top-LEFT, 132px square) and — on touch
+  // only — the zoom column (top-RIGHT). Every one of them is measured, not assumed: the slot is centred
+  // BETWEEN the radar and the zoom column rather than moved away from them, and 9px of that clearance is all
+  // there is on an 812px-wide phone, so this is the assertion that catches a width or offset change.
+  //
+  // `#banner` is deliberately not in the list: it shares this band (top: 26%) but cannot fire on the intro —
+  // FINAL STAGE is suppressed by the descriptor and the "N enemies left" milestones only fire at 10 and 5
+  // remaining, against an enemyTotal of 4. Asserting on an element that is never displayed would be vacuous.
   const bandCheck = () => page.evaluate(() => {
-    const line = document.getElementById('intro-line');
-    const ret = document.getElementById('return-btn');
-    ret.style.display = 'block';
-    const log = document.getElementById('event-log');
-    const logShown = getComputedStyle(log).display !== 'none';
-    const rects = (el) => { const r = el.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; };
+    const rect = (el) => { const r = el.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; };
     const hits = (a, b) => !(a.r <= b.l || b.r <= a.l || a.b <= b.t || b.b <= a.t);
-    const L = rects(line);
-    const others = { returnBtn: rects(ret), rocketBtn: rects(document.getElementById('rocket-btn')), eventLog: rects(log) };
-    ret.style.display = '';
-    return { lineShown: getComputedStyle(line).display !== 'none', L, others, logShown,
+    const line = document.getElementById('intro-line');
+    const hudKids = [...document.querySelectorAll('#hud > div')];
+    const others = {
+      hudLeft: rect(hudKids[0]),                                  // shield / HP / percent
+      hudRight: rect(hudKids[1]),                                 // credits / Destroyed
+      minimap: rect(document.getElementById('minimap')),          // the battle radar
+      settingsBtn: rect(document.getElementById('settings-btn')),
+      pauseBtn: rect(document.getElementById('pause-btn')),
+      zoom: rect(document.getElementById('zoom')),
+    };
+    const L = rect(line);
+    return { lineShown: getComputedStyle(line).display !== 'none', L, others,
              view: { w: window.innerWidth, h: window.innerHeight },
              introBody: document.body.classList.contains('intro'),
+             logShown: getComputedStyle(document.getElementById('event-log')).display !== 'none',
              overlaps: Object.fromEntries(Object.entries(others).map(([k, v]) => [k, hits(L, v)])) };
   });
   // Name the rects in any failure — a bare `true !== false` on a geometry check says nothing.
   const where = (b, k) => `line ${JSON.stringify(b.L)} vs ${k} ${JSON.stringify(b.others[k])} `
     + `on a ${b.view.w}x${b.view.h} viewport`;
+  const assertBand = (b, tag) => {
+    for (const k of Object.keys(b.overlaps)) {
+      assert.equal(b.overlaps[k], false, `${tag}: the line clears ${k} — ${where(b, k)}`);
+    }
+  };
   // Put a line back on screen the way the game does: kill pirate #1 (the same hp=0 trick 19-hud-log uses),
   // let #2 arrive, and L1 fires on that second spawn.
   await page.evaluate(() => { for (const e of window.__game.enemies) e.hp = 0; });
@@ -191,50 +207,67 @@ export default async function ({ page, assert, shot, baseURL }) {
   await frame();
   let band = await bandCheck();
   assert.equal(band.introBody, true, 'body.intro is set while the director is armed');
-  assert.equal(band.logShown, false, 'the kill log stands down for the intro — it shares this band with the line');
   assert.equal(band.lineShown, true, 'a line is on screen for the geometry check (L1 fired on the 2nd spawn)');
-  assert.equal(band.overlaps.returnBtn, false, `the line clears "Finish and Return", which appears with L4 — ${where(band, 'returnBtn')}`);
-  assert.equal(band.overlaps.rocketBtn, false, `and the rocket button — ${where(band, 'rocketBtn')}`);
-  assert.equal(band.overlaps.eventLog, false, `and the kill log slot (guarded by geometry too, not only by hiding it) — ${where(band, 'eventLog')}`);
+  // THE KILL LOG RUNS DURING THE INTRO. It was hidden while the line lived in the bottom band beside it;
+  // with the line at the top there is no reason to take a HUD element away from the player, and the intro is
+  // a level, not a cutscene. `19-hud-log` would not catch a regression here — the runner silences the
+  // director before every other scenario.
+  assert.equal(band.logShown, true, 'the kill log is drawn during the intro, like on every other level');
+  assertBand(band, 'desktop');
+  await shot('top-band');
 
-  // The worst case is a landscape phone: the viewport is 375 px tall and the FIRE button joins the band.
+  // …and now the PHONE widths, which is where this nearly shipped broken. The first version of the top slot
+  // was asserted at 812x375 only, and it cleared the radar there by 9px — but the clearance was an accident
+  // of that width, not a rule: `position: fixed; left: 50%` with no `right` caps a shrink-to-fit box at
+  // 50vw, so the left edge was always 25vw and `max-width` was dead code. 25vw only clears the radar's fixed
+  // 194px right edge above ~776px of viewport: at 780 it cleared by 1px, at 736 it OVERLAPPED by 10 and at
+  // 667 by 27 — the opaque card painting over the battle radar mid-fight. Both asserted viewports sat on the
+  // clearing side of a boundary nobody had noticed, which is exactly how it escaped. So the widths below
+  // straddle it deliberately, and 667 is the narrowest landscape phone worth shipping to.
   //
   // WHAT THIS BLOCK DOES AND DOES NOT PROVE, stated plainly. The runner's page is a DESKTOP context, so
   // `Device.hasTouch` is false and adding `body.touch` by hand only switches the CSS — `#touch` is never
   // given its `.on` class, so `#stick-zone` and `#fire-btn` are not rendered and would measure as zero
-  // rects. A rect test against them would therefore be vacuous, and is not made. **This guards the CSS
-  // BAND**: that the touch rule moves the slot to `bottom: 150px`, which is what clears the FIRE button
-  // (bottom 34 + 96 tall → a 130px top edge) by 20px, and that the two elements which DO render on any
-  // layout — `#return-btn` and `#rocket-btn` — are still clear at a phone's height. A real device is the
-  // maintainer's live test (Stage 9 of the plan).
-  await page.setViewportSize({ width: 812, height: 375 });
-  await page.waitForTimeout(150);   // let the resize settle FIRST: engine.applyOrientation re-runs
-  // device.js's applyDevice() on every resize, and that would strip a `body.touch` we had added before it.
-  await page.evaluate(() => document.body.classList.add('touch'));
-  await frame();
-  band = await bandCheck();
-  const touchCss = await page.evaluate(() => ({
-    lineBottom: getComputedStyle(document.getElementById('intro-line')).bottom,
-    cardBottom: getComputedStyle(document.getElementById('intro-help')).bottom,
-    // #help is NOT hidden on touch any more, and it must clear the always-on XP bar (bottom 6, 14px tall
-    // → a 20px top edge) or the cheatsheet the intro's card flies into is drawn through it.
-    help: (() => { const e = document.getElementById('help'); const r = e.getBoundingClientRect();
-                   return { display: getComputedStyle(e).display, w: r.width, bottom: window.innerHeight - r.bottom }; })(),
-    xpTop: (() => { const r = document.getElementById('xp-bar').getBoundingClientRect();
-                    return window.innerHeight - r.bottom + r.height; })(),
-  }));
-  await shot('touch-band');
-  assert.equal(touchCss.lineBottom, '150px', 'touch: the line slot lifts to 150px, clearing the FIRE button (top edge 130px)');
-  assert.equal(touchCss.cardBottom, '150px', 'touch: and so does the controls card that shares the slot');
-  // #help must STAY ON SCREEN on touch: it used to be hidden outright ("keyboard hints not needed"), and a
-  // display:none element measures as a zero rect — the card would fly to the corner of the screen at
-  // minimum scale instead of landing on the cheatsheet.
-  assert.notEqual(touchCss.help.display, 'none', 'the bottom-left cheatsheet is on screen on touch too');
-  assert.ok(touchCss.help.w > 0, 'and has a real rect for the card to fly onto');
-  assert.ok(touchCss.help.bottom >= touchCss.xpTop,
-    `and it sits clear of the XP bar (#help bottom edge ${touchCss.help.bottom}px vs the bar's ${touchCss.xpTop}px top edge)`);
-  assert.equal(band.overlaps.returnBtn, false, `touch: still clears "Finish and Return" — ${where(band, 'returnBtn')}`);
-  assert.equal(band.overlaps.rocketBtn, false, `touch: still clears the rocket button — ${where(band, 'rocketBtn')}`);
+  // rects. A rect test against those would be vacuous and is not made. Everything asserted below DOES render
+  // on this layout. A real device is the maintainer's live test (Stage 9 of the plan).
+  const atPhone = async (w, h) => {
+    await page.setViewportSize({ width: w, height: h });
+    await page.waitForTimeout(150);   // let the resize settle FIRST: engine.applyOrientation re-runs
+    // device.js's applyDevice() on every resize, and that strips a `body.touch` added before it — which
+    // silently measures the DESKTOP rule and passes. Add it after, then ASSERT it survived.
+    await page.evaluate(() => document.body.classList.add('touch'));
+    await frame();
+    const b = await bandCheck();
+    const css = await page.evaluate(() => ({
+      touchOn: document.body.classList.contains('touch'),
+      lineTopCss: getComputedStyle(document.getElementById('intro-line')).top,
+      cardTopCss: getComputedStyle(document.getElementById('intro-help')).top,
+      help: (() => { const e = document.getElementById('help'); const r = e.getBoundingClientRect();
+                     return { display: getComputedStyle(e).display, w: r.width, bottom: window.innerHeight - r.bottom }; })(),
+      xpTop: (() => { const r = document.getElementById('xp-bar').getBoundingClientRect();
+                      return window.innerHeight - r.bottom + r.height; })(),
+    }));
+    assert.equal(css.touchOn, true, `${w}x${h}: body.touch survived the resize — without it this measures the desktop rule`);
+    return { b, css };
+  };
+
+  for (const [w, h] of [[812, 375], [736, 414], [667, 375]]) {
+    const { b, css } = await atPhone(w, h);
+    if (w === 812) await shot('touch-band');
+    // 14vh of a 375px-tall screen is 52px, which cut into the HP bars (they end at y 63): the
+    // `max(…, 76px)` floor is what holds the slot clear of a HUD block whose height is in PIXELS, not %.
+    assert.equal(css.lineTopCss, '76px', `${w}x${h}: the slot falls back to the 76px floor, not 14vh`);
+    assert.equal(css.cardTopCss, '76px', `${w}x${h}: and so does the controls card that shares the slot`);
+    assertBand(b, `${w}x${h}`);
+    assert.equal(b.logShown, true, `${w}x${h}: the kill log runs here too`);
+    // #help must STAY ON SCREEN on touch: it used to be hidden outright ("keyboard hints not needed"), and a
+    // display:none element measures as a zero rect — the card would fly to the corner of the screen at
+    // minimum scale instead of landing on the cheatsheet.
+    assert.notEqual(css.help.display, 'none', `${w}x${h}: the bottom-left cheatsheet is on screen on touch too`);
+    assert.ok(css.help.w > 0, `${w}x${h}: and has a real rect for the card to fly onto`);
+    assert.ok(css.help.bottom >= css.xpTop,
+      `${w}x${h}: and it sits clear of the XP bar (#help bottom edge ${css.help.bottom}px vs the bar's ${css.xpTop}px top edge)`);
+  }
   await page.evaluate(() => document.body.classList.remove('touch'));
   await page.setViewportSize({ width: 1280, height: 800 });   // hand the worker back a desktop layout
   await page.waitForTimeout(80);
@@ -357,29 +390,54 @@ export default async function ({ page, assert, shot, baseURL }) {
   await page.waitForSelector('#return-btn', { state: 'visible', timeout: 10000 });
   await shot('cleared');
   // "Finish and Return" commits the SERVER-side half of the advance (sim.js `finishing` →
-  // `commitLevelAdvance`, a fire-and-forget POST) and the DOCK runs the tab-side half (`loadAdvancedLevel`,
-  // which reads the level back). Real play puts a flight home between them; here the station sits ~43 u from
-  // the arena centre, so the pilot would dock on the very tick the button is pressed AND we would step
-  // through the whole thing inside one synchronous evaluate, never yielding for the POST to answer — and the
-  // tab would read its own pre-advance level back. So: park the ship a real distance out, press the button,
-  // step ONE tick to drain `finishing` (which issues the POST), let the page breathe until it answers, and
-  // only then fly home. This is the ordering production gets for free.
-  await page.evaluate(() => { const p = window.__game.player.pos; p.x = 200; p.z = 200; });
-  const advanced = page.waitForResponse((r) => /\/advance$/.test(new URL(r.url()).pathname), { timeout: 20000 });
-  await page.click('#return-btn');
-  await page.evaluate(() => window.__game.stepSim(1));   // drains `finishing` → fires commitLevelAdvance
-  await advanced;
-  const flewHome = await page.evaluate(() => {
-    const g = window.__game;
-    let guard = 0;
-    while (!g.levelRunner.won && guard++ < 40000) g.stepSim(1);
-    return g.levelRunner.won;
+  // `commitLevelAdvance`, a fire-and-forget POST `/advance`) and the DOCK runs the tab-side half
+  // (`loadAdvancedLevel`, a GET `/level`). THIS IS THE REGRESSION GUARD FOR THE RACE BETWEEN THEM, and it
+  // reproduces the worst case rather than avoiding it: the pilot docks FROM THE ARENA CENTRE, where the home
+  // station is ~43 u away against a 45 u arrival radius, so the arrival lands on the very tick the button is
+  // pressed. Reported live on this branch: the intro's briefing was correctly Level 1, Take-off replayed
+  // LEVEL 0, and clearing it a second time advanced the account again — a free level plus Level 1's machine
+  // gun. `net.js` now publishes the POST on `advancing` and `loadAdvancedLevel` awaits `advanceDone()`, so
+  // the GET can no longer overtake it. The bug is PRE-EXISTING on main for every level, not intro-only; the
+  // intro merely made it the common case. `net.js` cannot be unit-tested (it imports `hud.js` → `three`), so
+  // this is the guard.
+  //
+  // AND IT IS MADE DETERMINISTIC. Docking instantly is necessary but not sufficient: on localhost the POST
+  // usually answers first anyway, so the unfixed code passes by luck (verified — the mutation below did not
+  // fail until this delay was added). So HOLD THE POST for 1.5 s. Fixed, `loadAdvancedLevel` waits for it and
+  // reads level-1; unfixed, the GET goes out immediately and reads back the level just cleared.
+  let held = 0;   // …and COUNT the holds: a glob that stops matching (a changed API_BASE, a renamed route)
+  // would turn page.route into a silent no-op and quietly demote this to the version that passes against the
+  // UNFIXED code. The count is what makes the guard's own machinery observable.
+  await page.route('**/api/players/*/advance', async (route) => {
+    held++;
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
   });
-  assert.equal(flewHome, true, 'the autopilot flew home and docked — the ordinary win path');
-  await page.waitForFunction(() => getComputedStyle(document.getElementById('overlay')).display !== 'none',
-    null, { timeout: 10000 });
-  // THE ASSERTION THIS STEP EXISTS FOR: the level advanced in page, so the director is gone with it.
-  await page.waitForFunction(() => window.__game.levelName === 'level-1', null, { timeout: 20000 });
+  const pressedAt = Date.now();
+  try {
+    await page.click('#return-btn');
+    const flewHome = await page.evaluate(() => {
+      const g = window.__game;
+      let guard = 0;
+      while (!g.levelRunner.won && guard++ < 40000) g.stepSim(1);
+      return { won: g.levelRunner.won, ticks: guard, dist: Math.hypot(g.player.pos.x, g.player.pos.z) };
+    });
+    assert.equal(flewHome.won, true, 'the autopilot docked — the ordinary win path');
+    assert.ok(flewHome.ticks <= 2, `and it docked essentially instantly from the arena centre (${flewHome.ticks} tick(s)) `
+      + '— the worst case for the advance race, which is why this scenario does NOT fly a long way home first');
+    await page.waitForFunction(() => getComputedStyle(document.getElementById('overlay')).display !== 'none',
+      null, { timeout: 10000 });
+    // THE TWO ASSERTIONS THIS STEP EXISTS FOR. (1) The tab ends up on the level the SERVER advanced it to,
+    // even though the POST answered long after the dock — the race that handed the maintainer a free level.
+    await page.waitForFunction(() => window.__game.levelName === 'level-1', null, { timeout: 20000 });
+    const elapsed = Date.now() - pressedAt;
+    assert.equal(held, 1, `the /advance POST was actually intercepted and held (route hits: ${held}) — `
+      + 'without that this scenario passes against the unfixed code too');
+    assert.ok(elapsed >= 1400, `and the tab waited for it before reading the level back (${elapsed} ms >= the 1500 ms hold)`);
+  } finally {
+    await page.unroute('**/api/players/*/advance');   // never leak a route into the next scenario
+  }
+  // (2) …and the level advancing in page is what takes the director with it.
   await frame();
   const afterWin = await page.evaluate(() => ({
     intro: window.__game.intro, body: document.body.classList.contains('intro'),

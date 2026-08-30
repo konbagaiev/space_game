@@ -21,10 +21,16 @@
   other level (the funnel finally sees the level new players drop off on), advances 0 → 1 through the
   **normal** win path, and is **skippable from the Settings gear** (which already pauses the fight, so a
   skip is always deliberate). `#help` finally has a **touch variant** (`ui.help_touch`) instead of showing
-  keyboard bindings on phones; the kill log stands down for the ~40 s of the intro (it shares the bottom
-  band with the director's line, and on a phone they overlapped outright); and the "FINAL STAGE" banner is
-  suppressed on the intro via a descriptor flag rather than a special case, because that instant is when
-  line L3 speaks. Every new DOM node is `pointer-events: none` — the player is flying underneath them.
+  keyboard bindings on phones; and the "FINAL STAGE" banner is suppressed on the intro via a descriptor flag
+  rather than a special case, because that instant is when line L3 speaks. **The lines sit at the top of the
+  screen** — a centred slot at `top: max(14vh, 76px)`, above the ship and out of the fight — and the controls
+  card appears there and flies the whole diagonal into the bottom-left cheatsheet (`intro.helpFly` 0.45 s →
+  **0.9 s**, because that journey read as a jump at the old duration; the enemy-#2 spawn floor recomputes
+  from the same number, 8.95 → 9.4 s, and the canonical trace re-simulates bit-identically either way). The
+  76 px floor and the narrower touch card are derived from measured rects: 14 % of a 375 px-tall landscape
+  phone put the line inside the HP bars, and the battle radar and the touch zoom column leave a centred card
+  only 558 px between them. Nothing in the HUD is hidden for the intro — **the kill log runs** like on every
+  other level. Every new DOM node is `pointer-events: none` — the player is flying underneath them.
   The canonical Level-0 trace was **re-recorded** for the new pacing (`level0-intro.9fc4402d.json`, 3670
   ticks, hash `0x8d802ca2`, 38 draws); it is now purely a determinism-guard fixture that the client never
   fetches. New guards: `intro-director.test.js`, the `spawn.earliest` cases in `level-runner.test.js`, and
@@ -35,6 +41,22 @@
   campaign in page, and a latched flag replayed the whole script over Level 1. `#help` also moved up 12px to
   clear the XP bar, which it had always overlapped by 6px and which only became visible once it stopped
   being hidden on touch.
+
+- **Fixed: clearing a level could hand you the NEXT one for free.** [2026-08-30-1654-playable-intro]
+  Advancing the campaign is two calls at two moments (DECISIONS §133): "Finish and Return" POSTs
+  `/api/players/:id/advance`, and docking GETs `/api/players/:id/level` to load what the server advanced to.
+  Neither was awaited by its caller and nothing ordered them, so a dock that followed the button closely
+  enough let the **GET overtake the POST** — the tab then set `CATALOG.level` back to the level just cleared
+  while the account was already on the next one. Reported live on the intro: the briefing was correctly Level
+  1, Take-off replayed **Level 0**, and clearing it a second time advanced the account AGAIN, paying out
+  Level 1's machine-gun reward drop and landing on Level 2. `commitLevelAdvance()` now publishes its in-flight
+  promise and `loadAdvancedLevel()` **`await`s `advanceDone()`** before reading — the same pattern
+  `bankingDone()` already used one function above, and still best-effort (the stored promise never rejects,
+  so a failed advance lets the read through and the same level simply replays). **This bug is pre-existing on
+  `main` for every level**; Level 0 only made it easy to hit, because its home station sits ~43 u from the
+  arena centre against a 45 u arrival radius, so the pilot can dock on the tick the button is pressed.
+  Guarded by `44-playable-intro`, which docks instantly from the arena centre with the POST held back 1.5 s
+  and asserts the tab lands on `level-1` (`net.js` imports `three` transitively, so it cannot be unit-tested).
 
 - **The target reacts — hull flash, model punch and a camera shudder.** [2026-08-30-1505-combat-hit-feel]
   Combat was announced entirely by the SHOOTER's side of the exchange — a muzzle flash, a bolt, a spark

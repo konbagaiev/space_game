@@ -474,10 +474,9 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   a grab pickup it logs `picked up {name}` tinted by the item's rarity **color** (fires for every collected
   drop, including the L1/L2 cosmetic reward drops). Module `client/src/eventlog.js` (`logEvent(text,color)` /
   `clearEventLog()`); called from `sim.js` (kill line + `clearEventLog()` in `reset()`) and `drops.js`
-  `collect()` (pickup line). **Not drawn during the Level-0 intro** (`body.intro` hides it): it shares the
-  bottom band with the intro director's line slot on the suite viewport and on every phone, and the intro's
-  lines fire around kills, which is exactly when the log is full. Every kill is still reported by the
-  floating "+xx" credit popup and the HUD's Destroyed counter. Purely cosmetic — the fade is wall-clock, so it keeps fading while paused
+  `collect()` (pickup line). Drawn on **every** level including the Level-0 intro — it was briefly hidden
+  there while the intro's line shared this band with it, and came back when the line moved to the top of the
+  screen. Purely cosmetic — the fade is wall-clock, so it keeps fading while paused
   (DECISIONS §30, no per-frame integration). Strings `ui.log.killed` / `ui.log.picked_up` (EN+RU); the enemy
   ship name (kill line) and the component/weapon name (pickup line) render to players via the **English DB
   name** (unlocalized — a later i18n pass should localize these surfaces). Hidden on menus via `body.menu`.
@@ -645,16 +644,18 @@ trace (that is now only a determinism fixture — see *Combat record/playback*).
 SIMULATION read the same object, so the words and the fight cannot drift apart:
 - `intro.lineHold` **3 s** fully opaque, `intro.lineFade` **2 s** linear fade. A beat that fires while a line
   is up **replaces it immediately** (the fade restarts from full) — no queue.
-- `intro.helpHold` **3.5 s** the controls card sits in the line's slot, `intro.helpFly` **0.45 s** the flight
-  into `#help`.
+- `intro.helpHold` **3.5 s** the controls card sits in the line's slot, `intro.helpFly` **0.9 s** the flight
+  into `#help` — the card crosses the whole screen from the top-centre slot to the bottom-left cheatsheet, and
+  at 0.45 s that diagonal read as a jump rather than a journey. `styles.css`'s `.fly` transition carries the
+  same number.
 - `intro.beats`: `l0` on `start` · `l1` on the 2nd `spawn` · `l2` 2 s after the 2nd `kill` · `l3` on the 4th
   `spawn` (the rocketeer) · `l4` on `cleared`. Text keys `ui.intro.l0…l4` (EN source + RU).
-- `phases[0].spawn.earliest = [3, 8.95]` — the SIM half of the same timeline (see *Level flow*).
+- `phases[0].spawn.earliest = [3, 9.4]` — the SIM half of the same timeline (see *Level flow*).
 - `finalStageBanner: false` — the rocketeer's warp-in is when `l3` speaks, so the "FINAL STAGE" banner is
   suppressed by data rather than by a special case in `level-runner.js`.
 
 Resulting clock: **0 s** L0 · **3 s** pirate #1 warps in · **5 s** the controls card takes the slot ·
-**8.5 s** it starts flying · **8.95 s** it is gone · then #2 (once #1 is dead) with L1 · L2 two seconds after
+**8.5 s** it starts flying · **9.4 s** it is gone · then #2 (once #1 is dead) with L1 · L2 two seconds after
 the 2nd kill · the rocketeer with L3 · `cleared` → L4 + "Finish and Return".
 
 **The clock is `world.combatElapsed`** (sim ticks of unpaused combat, already in `worldDigest`) — never wall
@@ -669,18 +670,39 @@ clock, never rAF deltas. That is what makes a recorded intro session replay exac
 - **`main.js`** — `introTick()` runs once per SIM TICK (it is the `onTick` dep of `stepReplayTick`, and
   `__game.stepSim` calls it too); `updateIntro()` runs once per FRAME beside `updateBanner()` and writes
   `#intro-line`. `showIntroHelp()`/`flyIntroHelp()` execute the card commands.
-- **DOM:** `#intro-line` + `#intro-help` (`index.html`, styled in `styles.css`), bottom-centre at `bottom:96px`
-  (desktop) / `150px` (`body.touch`), `z-index: 7`. **Everything is `pointer-events: none`** — the player is
+- **DOM:** `#intro-line` + `#intro-help` (`index.html`, styled in `styles.css`), **top-centre** at
+  `top: max(14vh, 76px)`, `z-index: 7`. The slot sits above the ship and out of the fight (it started at the
+  bottom and moved here on the maintainer's live test — the bottom band already holds "Finish and Return",
+  the rocket/FIRE buttons and the kill log, and reading a line down there means looking away from your own
+  ship). **The offset and the WIDTH are both structural, and the width is the load-bearing one.** `top` is
+  `max(14vh, 76px)`: 14 % is the look, and the 76 px floor exists because the HUD block above it is a fixed
+  PIXEL height — on a 375 px-tall landscape phone 14vh is 52 px and cut 10 px into the HP bars, whose bottom
+  edge is 63. `width` is **explicit** (`min(760px, calc(100vw - 400px))`, and on touch the slot is centred in
+  the FREE BAND instead: `left: calc(50% + 67px); width: min(560px, calc(100vw - 266px))`). It has to be:
+  these boxes are `position: fixed; left: 50%` with no `right`, so a shrink-to-fit width can never exceed
+  **50vw** — a `max-width` above that is dead code and the left edge is simply `25vw`, which only clears the
+  radar's fixed 194 px right edge above ~776 px of viewport. That is how the first version of this shipped a
+  card painting over the battle radar on every phone narrower than an iPhone X: it cleared by 9 px at 812, by
+  1 px at 780, and overlapped by 10 px at 736 and 27 px at 667. With `width` set the left edge is
+  `50vw − w/2` for a KNOWN w, which is **≥ 200 px at every viewport width under both rules** — a proof rather
+  than a measurement. The touch rule shifts the centre right by 67 px because the left reserve must clear the
+  132 px radar and the right one only the 60 px zoom column; being 67 px off the screen's centre is the price
+  of being centred in the space that is actually free.
+  `44-playable-intro`'s `assertBand` checks non-intersection with the HUD's two corner blocks, the radar, the
+  gear, the pause button and the zoom column at **1280×800, 812×375, 736×414 and 667×375** — the phone widths
+  straddle the ~776 px boundary deliberately, because the escape was that both originally-asserted viewports
+  sat on the clearing side of it. (`#banner` shares the band at `top: 26%`
+  but cannot fire on the intro: FINAL STAGE is suppressed and the "N enemies left" milestones only fire at 10
+  and 5 remaining, against an enemyTotal of 4.) **Everything is `pointer-events: none`** — the player is
   flying underneath, and `#stick-zone` is a full-screen `pointer-events:auto` layer, so an interactive
   overlay here would swallow steering and fire taps. The card's flight is a FLIP: `main.js` measures both
   rects and sets `transform: translate(calc(-50% + dx), dy) scale(s)` with `transform-origin: left top` — the
   `-50%` must stay INSIDE the composed transform (the rect was measured with it applied) — and drives
   `opacity` from JS, because the inline `opacity:1` would beat any `.fly` class rule. The `.fly` class
   supplies only the transition. Both are negatively tested by `44-playable-intro`.
-- **The kill log stands down** for the intro: `body.intro` (set by `updateIntro` while a director is armed)
-  hides `#event-log`, which shares the bottom band with the line slot on the suite viewport and on every
-  phone. Kills are still reported by the floating "+xx" credit popup and the HUD's Destroyed counter. Scoped
-  to the intro; no other HUD element is hidden — the intro is a level, not a cutscene.
+- **Nothing in the HUD is taken away** — the intro is a level, not a cutscene. `body.intro` is still set by
+  `updateIntro` while a director is armed, but it is now only a state hook that tests read; no CSS hangs off
+  it. (It briefly hid `#event-log`, back when the line sat in the bottom band beside the kill log.)
 - **Skip lives in the Settings gear** (`#skip-intro`, `ui.intro.skip`, shown only while `G.skipIntro` is
   published). The gear already **pauses the fight** when opened, so a skip takes two deliberate acts and can
   never be a stray tap; every screen edge was already occupied by HUD or thumb controls. `skipIntro()`
@@ -697,14 +719,33 @@ clock, never rAF deltas. That is what makes a recorded intro session replay exac
   `intro` script, and clears `G.skipIntro` with it. That is not belt-and-braces: the win path advances the
   campaign **in page** (`loadAdvancedLevel` swaps `CATALOG.level`, no reload), so a latched module flag
   survived into Level 1, re-armed itself on that level's `reset()` — the clock going backwards is the
-  restart signal — and replayed the whole script over it, kept the kill log hidden for the rest of the
-  session, and left a Settings row that would have granted a free level advance.
+  restart signal — and replayed the whole script over it, and left a Settings row that would have granted a
+  free level advance.
 - **It is session-recorded** like every other campaign level: bootstrap calls `beginLiveSession()` before
   `reset()`, so the level new players actually drop off on finally reaches the funnel and `/admin/sessions`.
 - **Death is death.** Normal rules, normal Game-over overlay; **Restart** replays Level 0 with every beat
   re-armed (the director sees `combatElapsed` go backwards and resets itself).
 - **`#help` has a touch variant** (`ui.help_touch`): bootstrap swaps the key once when `Device.input ===
   'touch'`, so a phone no longer reads keyboard bindings — and the card that flies into it matches.
+
+#### ⚠ READ THIS BEFORE CHANGING ANY OF THE FOLLOWING — the intro breaks from the OTHER end
+
+The intro is coupled to systems that show no sign of it from their own side. Every row below is something
+that actually went wrong while building it, not a hypothetical. Full detail:
+`docs/plans/2026-08-30-1654-playable-intro.md`.
+
+| If you change… | The intro breaks like this | Do this |
+|---|---|---|
+| **Level-0 pacing** — `spawn.earliest`, the phase script, the pool, either intro ship's stats/turn rate | The canonical recorded trace no longer clears the level, and **three** determinism guards that pin its OUTCOME go red: `server/tools/sim-replay.test.js` (kills 4 / earned 250 / cleared), `server/src/seal/verify-run.test.js` (`TRUTH`), visual `22-trace-replay`. CI never sees it (the trace is a gitignored S3 asset and the tests `skip` when absent), so it rots silently until someone runs `assets:pull` | Re-record it — **Step 9 of the plan**. The cheap path is prepending idle ticks to the packed runs; when the first spawn moved to 3 s that was **exactly 180** ticks, because `180 × 1/60` sums to `2.9999999999999942 < 3` and so leaves the spawn on its original relative tick. 181 shifts the whole fight. Verify with `node server/tools/sim-replay.mjs <file> --json` and accept only on the six load-bearing fields; `loot` legitimately moves |
+| **The intro's timing numbers** (`intro.lineHold/lineFade/helpHold/helpFly` on the level-0 descriptor) | You have moved the FIGHT too, not just the words: `spawn.earliest[1]` is **derived** from them (`INTRO_HELP_GONE`), so a UI tweak retimes enemy #2. That is the design (one timeline, DECISIONS §138) — but it means the words and the fight cannot be tuned separately | Change the constant in `server/src/catalog_seed.js`, never a hard-coded copy, and re-run the trace check above. `styles.css`'s `.fly` transition duration must be edited to match `helpFly` by hand — CSS cannot read the descriptor |
+| **Anything about the default boot** of the visual suite | **Every one of the ~48 scenarios boots as a NEW player at progress 0 — i.e. into the intro.** The runner's boot gate (steps the sim until the arena holds an enemy) and `__game.silenceIntro()` exist ONLY for that. A pacing change is a change to the default boot of the whole suite | Keep the gate. Do not "fix" a scenario by giving the harness a different level-0 — the suite's value is that it fights the level production ships |
+| **`introArmed()`** (`main.js`) or the `intro` field on a served descriptor | The director outlives its level. This is not theoretical: a latched module flag survived the win (the advance is **in page**, no reload), re-armed on Level 1's `reset()` and replayed the whole script over it, and left a Settings "Skip the intro" row that granted a **free level advance** | Keep the lifetime tied to `CATALOG.level.intro`. Guarded by scenario 44's win step |
+| **`advanceDone()` / the order of `commitLevelAdvance` → `loadAdvancedLevel`** (`net.js`) | Re-opens the **free level** bug for every level, not just the intro: the level GET overtakes the advance POST, the tab reloads the level it just cleared, and clearing it again advances the account a second time and pays out the next level's reward | Leave the `await advanceDone()`. Guarded by scenario 44 docking instantly with the POST held 1.5 s |
+| **The TOP band** — adding/moving a fixed element near the top, or resizing `#minimap` | The line and the controls card live there and are opaque; a new neighbour is painted over (or paints over them) | Add it to `assertBand` in `44-playable-intro.mjs` and re-derive the slot's width. **Note the trap:** the radar overlap escaped because both asserted viewports sat on the clearing side of a ~776 px boundary — assert on BOTH sides of any boundary your arithmetic implies |
+| **`#help`** — moving, hiding, or hiding it on touch | It is the controls card's flight DESTINATION. A `display: none` target measures as a zero rect, so the card flies into the screen corner at minimum scale. It was hidden on touch for exactly this reason once | Keep it rendered whenever the intro can run. Guarded by scenario 44 at three phone widths |
+| **`#stick-zone` / the input layers, or the intro DOM** | Every intro node is `pointer-events: none` because the player is FLYING underneath them; `#stick-zone` is a full-screen `pointer-events: auto` layer. An interactive intro node swallows steering and fire | Keep `pointer-events: none`. Guarded by an `elementFromPoint` assertion in scenario 44 |
+| **`world.combatElapsed`, `reset()` zeroing it, or the digest** | The director's whole clock — and its restart contract (the clock going backwards IS the re-arm signal). Wall-clock timing would also desync a recorded intro session | Keep the director on sim ticks only |
+| **The i18n keys `ui.intro.l0`…`l4`, `ui.intro.skip`, `ui.help_touch`** | The lines are resolved by key at speak time; a rename shows the raw key on a new player's first screen | Rename in `source.json` AND `ru.json` AND the descriptor's `beats[].textKey` together |
 
 ## Ship model (DB-driven)
 Ships, components and weapons are **defined in the database** (`ships`, `components`, `weapons`); the
@@ -1733,7 +1774,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   clear. `finishMission()` sweeps every crate still on the field into the run (the last enemy's drop appears
   at the instant the fight ends — no ship reaches it in time), emits `finishing`, and **engages the autopilot
   home**. The host deposits the loot and commits the campaign advance **server-side** on that event, so
-  reloading the tab mid-flight loses nothing. It refuses unless the sector is really cleared, so a stray tap
+  reloading the tab mid-flight loses nothing. **The two halves are ordered by a promise, not by hope:**
+  `commitLevelAdvance()` publishes its in-flight POST on `advancing` and `loadAdvancedLevel()` **`await`s
+  `advanceDone()`** before its `GET /level` — the same pattern as `bankingDone()` beside it. Without that the
+  GET could overtake the POST and hand the tab back the level it had just cleared while the server was
+  already on the next one: the player took off into the level they had finished, cleared it a second time,
+  and the second clear advanced the account AGAIN — a skipped level plus its reward drop. It is easiest to
+  hit on the intro (the home station is ~43 u from the arena centre against a 45 u arrival radius, so the
+  dock can land on the tick the button is pressed) but the race was there for every level. The stored promise
+  never rejects, so a failed advance still lets the read through — "on failure the same level replays". It refuses unless the sector is really cleared, so a stray tap
   cannot end a live fight. (3) **WON** — the ship arrives. `checkArrival` → `winLevel()`: overlay, sting,
   hangar, releasing a netsim room, and only now `loadAdvancedLevel()` — the descriptor, the map and the
   rebuilt ship, which need everything standing still (`buildPlayerFor` makes a fresh player at the spawn
@@ -1909,7 +1958,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     in) → a single **rocket pirate** finale → **Victory!** No boss, no reward, no briefing (enemyTotal **4**).
     On first launch it auto-launches straight into the fight (see the Landing screen), with the scripted
     director talking over it and Skip in the Settings gear. Three fields make it the intro:
-    **`spawn.earliest: [3, 8.95]`** on `wave-1` — a FLOOR (in seconds of `world.combatElapsed`) on the first
+    **`spawn.earliest: [3, 9.4]`** on `wave-1` — a FLOOR (in seconds of `world.combatElapsed`) on the first
     two spawns, on top of the ordinary 2–4 s stagger, so pirate #1 waits for the opening line and #2 waits
     for the controls card to have flown away; **`intro`** — the director script (see *The scripted intro*);
     **`finalStageBanner: false`** — no "FINAL STAGE" banner, because that instant is when line `l3` speaks.
@@ -4414,19 +4463,21 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   returns the **canvas**, not the line (the `pointer-events:none` constraint); `enemyCount` 0 at 2.9 s and 1
   at 3.1 s (the spawn floor, end to end); the card appears at 5 s and carries `.fly` at 8.5 s; the flight
   **lands** — polled rects put it on `#help` within 4 px and its opacity under 0.05 — then is removed at
-  8.95 s; the line's rect intersects none of `#return-btn`/`#rocket-btn`/`#event-log`, repeated on an
-  812×375 `body.touch` layout (that block guards the CSS band only — the runner's page is a desktop context,
-  so `Device.hasTouch` is false and `#fire-btn`/`#stick-zone` are never rendered; it asserts the slot lifts
-  to `bottom: 150px`, which is what clears the FIRE button's 130px top edge, and that `#help` is on screen
-  and clear of the XP bar); the Settings **Skip** row is visible, the modal still FITS with it (the only
-  place that is checked with the row present), and clicking it lands on `level-1`; that dying and pressing
-  **Restart** re-arms `l0` **and takes the controls card off the screen** (the director's `reset()` emits no
-  command, so a card left up sat stacked on the re-armed line); and finally **the WIN ending** — fight it to
-  `cleared`, press "Finish and Return", dock, and assert the director is gone, `body.intro` is cleared, the
-  kill log is back, the Settings Skip row is gone, and a take-off into Level 1 draws no intro line.
-  Mutation-checked five ways: a bare `translate(dx,dy)` (dropping the `-50%`), moving the fade to the `.fly`
-  class rule, `pointer-events: auto`, reverting `introArmed()` to a sticky module flag, and removing the
-  card takedown — each fails it).
+  9.4 s; **the TOP band** — the line's rect intersects neither HUD corner block, nor the radar, the gear, the
+  pause button or the zoom column, asserted at **1280×800 and again at 812×375** with `body.touch` (where it
+  also pins the `76px` floor the slot falls back to, and that `#help` is on screen and clear of the XP bar;
+  that block guards the CSS band only — the runner's page is a desktop context, so `Device.hasTouch` is false
+  and `#fire-btn`/`#stick-zone` are never rendered, and it makes no vacuous assertion about them); that the
+  **kill log runs** on the intro like on every other level; the Settings **Skip** row is visible, the modal
+  still FITS with it (the only place that is checked with the row present), and clicking it lands on
+  `level-1`; that dying and pressing **Restart** re-arms `l0` **and takes the controls card off the screen**
+  (the director's `reset()` emits no command, so a card left up sat stacked on the re-armed line); and
+  finally **the WIN ending** — fight it to `cleared`, press "Finish and Return", **dock instantly from the
+  arena centre with the `/advance` POST held for 1.5 s** (the advance-race guard, below), and assert the tab
+  lands on `level-1`, the director is gone, `body.intro` is cleared, the Settings Skip row is gone, and a
+  take-off into Level 1 draws no intro line. Mutation-checked six ways: a bare `translate(dx,dy)` (dropping
+  the `-50%`), moving the fade to the `.fly` class rule, `pointer-events: auto`, reverting `introArmed()` to
+  a sticky module flag, removing the card takedown, and dropping `await advanceDone()` — each fails it).
   **The runner's boot gate** (`visual/run.mjs`): every scenario boots the throwaway player into level-0, so
   after the take-off click it now **steps the sim** to the state scenarios have always been handed (an arena
   with an enemy — level-0 holds its first spawn for 3 s of sim), then calls **`__game.silenceIntro()`** so

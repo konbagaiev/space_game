@@ -648,11 +648,15 @@ export const SHIPS = [
 const INTRO_LINE_HOLD = 3;     // a line is fully opaque this long…
 const INTRO_LINE_FADE = 2;     // …then fades over this long
 const INTRO_HELP_HOLD = 3.5;   // the controls card sits in the line slot this long (see the plan decision 12)
-const INTRO_HELP_FLY  = 0.45;  // …then flies/shrinks into the bottom-left #help cheatsheet
+// …then flies/shrinks into the bottom-left #help cheatsheet. 0.9 s, not the 0.45 s this shipped with: the
+// line slot moved to the TOP of the screen, so the card now crosses the whole diagonal instead of hopping a
+// short way, and at 0.45 s that read as a jump rather than a journey the eye can follow — which is the whole
+// point of the animation. `styles.css`'s `.fly` transition carries the same number.
+const INTRO_HELP_FLY  = 0.9;
 // Enemy #1 warps in ON the opening line, not before it: the pilot gets three quiet seconds to read.
 const INTRO_FIRST_SPAWN = 3;
 // Enemy #2 may not arrive while the player is still reading the controls card. Derived, never typed twice.
-const INTRO_HELP_GONE = INTRO_LINE_HOLD + INTRO_LINE_FADE + INTRO_HELP_HOLD + INTRO_HELP_FLY; // 8.95
+const INTRO_HELP_GONE = INTRO_LINE_HOLD + INTRO_LINE_FADE + INTRO_HELP_HOLD + INTRO_HELP_FLY; // 9.4
 
 export const LEVELS = [
   // Level 0 — the intro ambush. Gentle FIRST level for new players, and it is PLAYED, not watched
@@ -661,6 +665,17 @@ export const LEVELS = [
   // No boss, no reward, no briefing. On first launch the client auto-launches this level straight into
   // the fight (no welcome screen / Take-off) and a scripted director speaks over it; Skip lives in the
   // Settings gear.
+  //
+  // ⚠ STOP — THIS DESCRIPTOR IS LOAD-BEARING FAR OUTSIDE ITSELF. Read
+  // docs/SUMMARY.md → "The scripted intro (Level 0)" → "READ THIS BEFORE CHANGING ANY OF THE FOLLOWING"
+  // before editing anything below. The short version, because each of these cost real time:
+  //   • changing the PACING (`spawn.earliest`, the phases, the pool, either intro ship) invalidates the
+  //     canonical recorded trace that THREE determinism guards pin an outcome on, and re-recording it is a
+  //     procedure (Step 9 of the plan — the "prepend exactly 180 idle ticks, and 180 is exact" note);
+  //   • the four `intro` timing numbers are the SAME object the simulation derives its spawn floors from,
+  //     so retiming the words retimes the fight — that is deliberate, and it is why they live here;
+  //   • the whole visual suite boots as a new player at progress 0, i.e. INTO this level, so a pacing
+  //     change here is a change to the default boot of ~48 scenarios.
   {
     id: 0, name: 'level-0', descriptor: {
       title: 'Level 0', xpReward: 0, map: 'home-system', // intro/tutorial: no XP bonus (no reward, per below)

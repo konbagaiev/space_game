@@ -255,7 +255,7 @@ test('docking before the sector is cleared does nothing at all', () => {
 // ---------- `spawn.earliest`: the intro's spawn floors (docs/plans/2026-08-30-1654-playable-intro.md) ----------
 //
 // The playable Level-0 intro has to hold its first pirate until the opening line has been read (3 s) and its
-// second until the controls card has flown into the corner (8.95 s). Both are stated as DATA on the phase —
+// second until the controls card has flown into the corner (9.4 s). Both are stated as DATA on the phase —
 // `spawn.earliest[n]` = the soonest `world.combatElapsed` at which the (n+1)-th spawn may happen — so the
 // same floors apply in a browser, in a netsim room and in the headless referee. Every other level omits the
 // field, and the tests above (which use level-2/level-4 descriptors) are the guard that nothing changed for
@@ -304,7 +304,7 @@ test('an enemy released by a floor still materializes over the ordinary 2–4 s 
 });
 
 test('earliest[1] holds the SECOND spawn even with the arena empty and the cooldown long drained', async () => {
-  const world = await floorWorld([3, 8.95]);
+  const world = await floorWorld([3, 9.4]);
   runFor(world, 3.2);
   assert.equal(world.enemies.length, 1);
   world.enemies.length = 0;                             // the player kills it immediately
@@ -316,14 +316,14 @@ test('earliest[1] holds the SECOND spawn even with the arena empty and the coold
   const floorAt = world.combatElapsed;
   for (let i = 0; i < 60 * 6 && world.enemies.length === 0; i++) { world.combatElapsed += DT; updateLevelRunner(world, DT); }
   assert.equal(world.enemies.length, 1, 'and arrives once the floor has lifted and the stagger has run out');
-  assert.ok(world.combatElapsed >= 8.95, `never before the floor (arrived at ${world.combatElapsed.toFixed(2)} s)`);
+  assert.ok(world.combatElapsed >= 9.4, `never before the floor (arrived at ${world.combatElapsed.toFixed(2)} s)`);
   assert.ok(world.combatElapsed - floorAt <= 4.1, 'and within one stagger of it');
 });
 
 test('a spawn index BEYOND the earliest array is unfloored — the third pirate uses the plain stagger', async () => {
-  const world = await floorWorld([3, 8.95]);
+  const world = await floorWorld([3, 9.4]);
   runFor(world, 3.2); world.enemies.length = 0; world.kills = 1;
-  runFor(world, 5.8); world.enemies.length = 0; world.kills = 2;   // #2 arrived at 8.95 and died
+  runFor(world, 6.3); world.enemies.length = 0; world.kills = 2;   // #2 arrived at 9.4 and died
   const before = world.combatElapsed;
   for (let i = 0; i < 60 * 6 && world.enemies.length === 0; i++) { world.combatElapsed += DT; updateLevelRunner(world, DT); }
   assert.equal(world.enemies.length, 1, 'the third pirate arrives on the ordinary cooldown');
