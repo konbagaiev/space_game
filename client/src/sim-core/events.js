@@ -9,10 +9,11 @@
 // **Events carry copied values, never live references to moving state.** The queue is drained at the end
 // of the tick, by which time a bullet's `pos` has moved on and its entity may be gone. An event describes
 // what happened *at the moment it happened*, so positions are cloned at emit time. (Entity references are
-// the exception, and deliberate — there are exactly two, both IDENTITY rather than a value, and both listed
-// in `EVENT_ENTITY_REFS` below: `enemyShieldHit` binds a pooled bubble to a specific ship, and `beamCharge`
+// the exception, and deliberate — there are exactly three, all IDENTITY rather than a value, and all listed
+// in `EVENT_ENTITY_REFS` below: `enemyShieldHit` binds a pooled bubble to a specific ship, `beamCharge`
 // names the SHOOTER, because a corridor must be redrawn from that hull's pose every frame for a whole
-// second and a copied position at charge start would be a lie by the time the shot lands.)
+// second and a copied position at charge start would be a lie by the time the shot lands, and `hullHit`
+// names the VICTIM, whose own materials are the thing that flashes.)
 //
 // See docs/plans/server-authoritative-sim.md (Slice B2).
 
@@ -21,6 +22,14 @@
 //
 //   { type: 'hit',             target: 'enemy'|'player'|'ally', shipClass }  a bullet connected (impact SFX)
 //   { type: 'bulletImpact',    pos, weaponClass, absorbed }            hit-flash where a bullet died
+//   { type: 'hullHit',         ship, target, pos, dirHeading, weaponClass, toHull }   a PROJECTILE's damage
+//                                                                       reached this ship's HULL. Emitted
+//                                                                       only when toHull > 0 (a shield that
+//                                                                       broke and spilled counts); beams
+//                                                                       deliberately do not emit it.
+//                                                                       `ship` is an entity ref (the victim);
+//                                                                       `dirHeading` is the world yaw the
+//                                                                       impact pushes toward.
 //   { type: 'shieldHit',       pos, broke }                            the PLAYER's shield caught a shot
 //   { type: 'enemyShieldHit',  enemy, pos, broke }                     an ENEMY's shield caught a shot
 //   { type: 'shieldReady' }                                            the player's shield finished recharging
@@ -65,6 +74,7 @@
 export const EVENT_ENTITY_REFS = {
   enemyShieldHit: ['enemy'],  // bind a pooled shield bubble to a specific ship
   beamCharge: ['ship'],       // the SHOOTER, so a client can draw a remote corridor (DECISIONS §135's gate)
+  hullHit: ['ship'],          // the VICTIM — the renderer flashes/punches THAT hull, so it needs its identity
 };
 
 export function createEventQueue() {
@@ -91,3 +101,15 @@ export function showBanner(world, key, params = null, dur = BANNER_FADE) {
   world.events.emit({ type: 'banner', key, params, dur });
 }
 export function clearBanner(world) { world.events.emit({ type: 'bannerClear' }); }
+
+// ---------- Hull-hit helper ----------
+// A projectile reached a ship's HULL — the one event the receiving end of a shot is drawn from (the hull
+// flash, the model punch, the camera shudder; client/src/hit-fx.js). Emitted from the six damage sites that
+// already call `applyShieldedDamage`, which is why it lives here rather than being retyped at each.
+//
+// `pos` must already be a copy (events carry values, never live refs); `dirHeading` is a world yaw
+// (radians, `atan2(x, z)` like everything else here), so the payload stays plain numbers and needs no
+// vector serialization on the wire. See docs/plans/2026-08-30-1505-combat-hit-feel.md.
+export function emitHullHit(world, ship, target, pos, dirHeading, weaponClass, toHull) {
+  world.events.emit({ type: 'hullHit', ship, target, pos, dirHeading, weaponClass, toHull });
+}

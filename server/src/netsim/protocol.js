@@ -44,6 +44,11 @@ export const COLUMNS = {
 export const EVENT_FIELDS = {
   hit:              ['target', 'shipClass'],
   bulletImpact:     ['pos', 'weaponClass', 'absorbed'],
+  // The victim of a projectile that reached a HULL. The `ship` entity ref is added by `wireEvent`'s second
+  // loop off EVENT_ENTITY_REFS (as `shipId`), not listed here. NOTE: the local player has no network id, so
+  // a hit on your OWN ship in a netsim room arrives without one — the flash simply does not draw there,
+  // while `target: 'player'` still crosses so the camera shudder works.
+  hullHit:          ['target', 'dirHeading', 'weaponClass', 'toHull', 'pos'],
   shieldHit:        ['pos', 'broke'],
   enemyShieldHit:   ['pos', 'broke'],
   shieldReady:      [],
