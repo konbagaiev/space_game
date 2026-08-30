@@ -1,6 +1,6 @@
 # Character — the player (rookie Vega Sentinel)
 
-The protagonist. First-person in the intro cutscene; addressed in second person ("Sentinel") by
+The protagonist. First-person in the intro's spoken lines; addressed in second person ("Sentinel") by
 mission control everywhere else. Kept deliberately thin so the player projects onto their own
 **callsign** (chosen after Level 1).
 
@@ -25,7 +25,7 @@ mission control everywhere else. Kept deliberately thin so the player projects o
   that *happens* to reveal how the tools work — never as a tutorial caption.
 
 ## Reference (shipped lines)
-Their intro voice lives in `client/locales/source.json` keys `ui.cutscene.p0_intro` … `p4_second_rocket`
+Their intro voice lives in `client/locales/source.json` keys `ui.intro.l0` … `ui.intro.l4`
 (EN source + `ru.json`). Don't duplicate here — read those for the exact cadence.
 
 ## Open

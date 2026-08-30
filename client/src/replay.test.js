@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TRACE_VERSION, normalizeLevelName, evalRecord, evalPlayback,
-  snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, shouldPlayIntro,
-  CUTSCENE_STALL_TICKS, packTicks, unpackTicks, sameInput, hydrateTrace, traceTickCount, traceLevelName,
+  snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick,
+  RETURN_HOME_STALL_TICKS, packTicks, unpackTicks, sameInput, hydrateTrace, traceTickCount, traceLevelName,
 } from './replay.js';
 
 // A bare number is the campaign level number itself (0 = the intro), so `3` is `level-3` — since the
@@ -27,14 +27,14 @@ test('evalRecord parses ?record + level, honors the off switches', () => {
   assert.equal(evalRecord(''), null);
 });
 
-test('evalPlayback parses ?playback&id, the ?playback=id shorthand, and &cutscene', () => {
-  assert.deepEqual(evalPlayback('?playback&id=level-0-123'), { id: 'level-0-123', cutscene: false });
-  assert.deepEqual(evalPlayback('?playback=level-0-123'), { id: 'level-0-123', cutscene: false });
-  assert.deepEqual(evalPlayback('?playback'), { id: null, cutscene: false });   // bare → last recording
-  assert.deepEqual(evalPlayback('?playback=1'), { id: null, cutscene: false }); // ?playback=1 is the on-flag, not an id
-  assert.deepEqual(evalPlayback('?playback&id=r1&cutscene'), { id: 'r1', cutscene: true });
-  assert.deepEqual(evalPlayback('?playback&id=r1&cutscene=1'), { id: 'r1', cutscene: true });
-  assert.deepEqual(evalPlayback('?playback&id=r1&cutscene=0'), { id: 'r1', cutscene: false });
+test('evalPlayback parses ?playback&id, the ?playback=id shorthand, and &finish', () => {
+  assert.deepEqual(evalPlayback('?playback&id=level-0-123'), { id: 'level-0-123', finish: false });
+  assert.deepEqual(evalPlayback('?playback=level-0-123'), { id: 'level-0-123', finish: false });
+  assert.deepEqual(evalPlayback('?playback'), { id: null, finish: false });   // bare → last recording
+  assert.deepEqual(evalPlayback('?playback=1'), { id: null, finish: false }); // ?playback=1 is the on-flag, not an id
+  assert.deepEqual(evalPlayback('?playback&id=r1&finish'), { id: 'r1', finish: true });
+  assert.deepEqual(evalPlayback('?playback&id=r1&finish=1'), { id: 'r1', finish: true });
+  assert.deepEqual(evalPlayback('?playback&id=r1&finish=0'), { id: 'r1', finish: false });
   assert.equal(evalPlayback('?record=1'), null);
   assert.equal(evalPlayback(''), null);
 });
@@ -162,18 +162,18 @@ test('makeReplaySession: fresh session is inactive; teardown clears every field'
   const s = makeReplaySession();
   assert.equal(s.active, false);
 
-  // simulate an ACTIVE intro cutscene (the state finishIntro must fully clear)
-  s.play = { id: 'level-0-intro', cutscene: true };
+  // simulate an ACTIVE ?playback&finish session flying home (the state a teardown must fully clear)
+  s.play = { id: 'level-0-abc', finish: true };
   s.trace = { ticks: [{}, {}] };
   s.armed = true; s.index = 5; s.done = true;
-  s.cut = { pauses: [] }; s.cutDone = true; s.cutReturning = true; s.stallTicks = 42;
+  s.autoFinish = true; s.returning = true; s.stallTicks = 42;
   assert.equal(s.active, true);
 
   s.teardown();
   assert.equal(s.active, false);
   // deepEqual the owned fields back to a fresh session's defaults — this is what catches a forgotten reset
   const fresh = makeReplaySession();
-  for (const k of ['play', 'trace', 'armed', 'index', 'done', 'cut', 'cutDone', 'cutReturning', 'stallTicks'])
+  for (const k of ['play', 'trace', 'armed', 'index', 'done', 'autoFinish', 'returning', 'stallTicks'])
     assert.deepEqual(s[k], fresh[k], `teardown must reset ${k}`);
 });
 
@@ -190,16 +190,16 @@ test('makeReplaySession: return-home watchdog counts consecutive stalled ticks a
   assert.equal(s.stalled(), false);
 
   // it trips exactly AT the limit, not before
-  for (let i = 0; i < CUTSCENE_STALL_TICKS - 1; i++) s.noteTick(true);
-  assert.equal(s.stallTicks, CUTSCENE_STALL_TICKS - 1);
+  for (let i = 0; i < RETURN_HOME_STALL_TICKS - 1; i++) s.noteTick(true);
+  assert.equal(s.stallTicks, RETURN_HOME_STALL_TICKS - 1);
   assert.equal(s.stalled(), false);
   s.noteTick(true);
   assert.equal(s.stalled(), true);
   // 900 ticks == 15 s of sim time at the fixed 1/60 step — must clear a legitimate flight home (~7-8 s)
-  assert.equal(CUTSCENE_STALL_TICKS, 900);
-  assert.ok(CUTSCENE_STALL_TICKS / 60 >= 15);
+  assert.equal(RETURN_HOME_STALL_TICKS, 900);
+  assert.ok(RETURN_HOME_STALL_TICKS / 60 >= 15);
   // an explicit limit is honored (the callers use the default)
-  assert.equal(s.stalled(CUTSCENE_STALL_TICKS + 1), false);
+  assert.equal(s.stalled(RETURN_HOME_STALL_TICKS + 1), false);
 
   s.teardown();
   assert.equal(s.stalled(), false);
@@ -219,9 +219,10 @@ function tickHarness(over = {}) {
     rs, keys, touchAim, dt: 1 / 60,
     update: (dt) => log.push(`update:${dt}`),
     capture: () => log.push('capture'),
-    cutObserve: () => log.push('cutObserve'),
-    cutEnd: () => log.push('cutEnd'),
+    onTick: () => log.push('onTick'),
+    isCleared: () => false,
     isWon: () => false,
+    finish: () => log.push('finish'),
     ...over,
   };
   return { rs, keys, touchAim, deps, log, calls: (name) => log.filter((e) => e.split(':')[0] === name).length };
@@ -252,10 +253,10 @@ test('stepReplayTick: a normal playback tick applies the recorded input, steps o
   assert.equal(h.rs.index, 1);
 });
 
-test('stepReplayTick: rs.cutReturning clears the input and freezes the trace index (autopilot flies home)', () => {
+test('stepReplayTick: rs.returning clears the input and freezes the trace index (autopilot flies home)', () => {
   const h = tickHarness();
   h.rs.play = {}; h.rs.trace = { ticks: [{ k: ['KeyW'], t: null }] };
-  h.rs.cutReturning = true;
+  h.rs.returning = true;
   h.keys.KeyW = true; h.keys.Space = true; h.touchAim.active = true;
   assert.equal(stepReplayTick(h.deps), 'ok');
   assert.equal(h.keys.KeyW, false);      // NOT re-applied from the trace — every held key is released
@@ -265,11 +266,45 @@ test('stepReplayTick: rs.cutReturning clears the input and freezes the trace ind
   assert.equal(h.rs.index, 0);           // the index is frozen while flying home
 });
 
-test('stepReplayTick: the per-tick order is update → capture → cutObserve', () => {
+test('stepReplayTick: the per-tick order is update → capture → onTick', () => {
   const h = tickHarness();
-  h.rs.cut = { pauses: [] };
   assert.equal(stepReplayTick(h.deps), 'ok');
-  assert.deepEqual(h.log, ['update:' + (1 / 60), 'capture', 'cutObserve']);
+  assert.deepEqual(h.log, ['update:' + (1 / 60), 'capture', 'onTick']);
+});
+
+// ?playback&finish — a trace records keys and touch, never the MOUSE CLICK that ends a mission, so a
+// winning replay would sit in a cleared sector forever. This is the whole of that behaviour.
+test('stepReplayTick: &finish presses Finish and Return when the sector clears, and stops on the win', () => {
+  let cleared = false, won = false;
+  const h = tickHarness({ isCleared: () => cleared, isWon: () => won });
+  h.rs.play = { id: 'r1', finish: true }; h.rs.autoFinish = true;
+  h.rs.trace = { ticks: Array.from({ length: 10 }, () => ({ k: [], t: null })) };
+
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.calls('finish'), 0, 'nothing is pressed while the fight is live');
+  assert.equal(h.rs.returning, false);
+
+  cleared = true;
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.calls('finish'), 1, 'the button is pressed the tick the sector clears');
+  assert.equal(h.rs.returning, true);
+
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.calls('finish'), 1, 'and exactly once');
+
+  won = true;
+  assert.equal(stepReplayTick(h.deps), 'stop', 'the docking ends the playback');
+  assert.equal(h.rs.done, true);
+});
+
+test('stepReplayTick: WITHOUT &finish nothing is pressed — a plain playback just freezes on the last frame', () => {
+  const h = tickHarness({ isCleared: () => true, isWon: () => false });
+  h.rs.play = { id: 'r1', finish: false };   // autoFinish stays false
+  h.rs.trace = { ticks: [{ k: [], t: null }, { k: [], t: null }] };
+  assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(h.calls('finish'), 0);
+  assert.equal(h.rs.returning, false);
+  assert.equal(h.rs.stallTicks, 0, 'and the watchdog does not run at all');
 });
 
 test('stepReplayTick: live/record mode (rs.play === null) applies no trace input but still captures', () => {
@@ -281,22 +316,19 @@ test('stepReplayTick: live/record mode (rs.play === null) applies no trace input
   assert.equal(h.calls('capture'), 1);
 });
 
-test('stepReplayTick: the return-home watchdog trips exactly at CUTSCENE_STALL_TICKS, and a win resets it', () => {
+test('stepReplayTick: the return-home watchdog trips exactly at RETURN_HOME_STALL_TICKS, and a win resets it', () => {
   const h = tickHarness({ isWon: () => false });
-  h.rs.cut = { pauses: [] }; h.rs.cutReturning = true;
-  for (let i = 0; i < CUTSCENE_STALL_TICKS - 1; i++) assert.equal(stepReplayTick(h.deps), 'ok');
-  assert.equal(h.calls('cutEnd'), 0);
+  h.rs.autoFinish = true; h.rs.returning = true;
+  for (let i = 0; i < RETURN_HOME_STALL_TICKS - 1; i++) assert.equal(stepReplayTick(h.deps), 'ok');
   assert.equal(h.rs.done, false);
   assert.equal(stepReplayTick(h.deps), 'stop');   // the limit tick
-  assert.equal(h.calls('cutEnd'), 1);
   assert.equal(h.rs.done, true);
 
-  // while the level IS won the counter never climbs, so the watchdog can't fire on a healthy flight home
+  // while the level IS won the counter never climbs, so the watchdog can't fire on a healthy flight home…
   const w = tickHarness({ isWon: () => true });
-  w.rs.cut = { pauses: [] }; w.rs.cutReturning = true;
-  for (let i = 0; i < CUTSCENE_STALL_TICKS + 10; i++) assert.equal(stepReplayTick(w.deps), 'ok');
+  w.rs.autoFinish = true; w.rs.returning = true;
+  assert.equal(stepReplayTick(w.deps), 'stop', 'a won flight home ends the playback on the spot');
   assert.equal(w.rs.stallTicks, 0);
-  assert.equal(w.calls('cutEnd'), 0);
 });
 
 // Live play after the intro (finishIntro → rs.teardown() nulled rs.play, THEN the caller set rs.done = true)
@@ -308,14 +340,6 @@ test('stepReplayTick: the post-intro teardown state (rs.play=null, rs.done=true)
   h.rs.play = null; h.rs.done = true;
   assert.equal(stepReplayTick(h.deps), 'ok');
   assert.equal(h.calls('update'), 1);
-});
-
-test('shouldPlayIntro: server-authoritative gate — trace present + not headless', () => {
-  assert.equal(shouldPlayIntro('', true), true);              // new/RESET player (trace present) → plays the intro — the reset→cutscene guard
-  assert.equal(shouldPlayIntro('', false), false);            // progress advanced (no trace) → no intro
-  assert.equal(shouldPlayIntro('?debug', true), false);       // headless visual suite → playable Level 0
-  assert.equal(shouldPlayIntro('?bench=replay', true), false);// headless perf suite → playable Level 0
-  assert.equal(shouldPlayIntro('?tune', true), true);         // a non-debug/bench dev flag still plays
 });
 
 // ---------- traceLevelName: replaying archives recorded before the 0-based renumbering ----------

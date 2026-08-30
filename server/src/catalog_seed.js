@@ -670,7 +670,7 @@ export const LEVELS = [
       // server/src/netsim/room.test.js, server/src/seal/verify-run.test.js, and visual scenarios
       // 22/35/36/37. A gitignored S3 asset pulled by `npm run assets:pull`. RE-RECORD IT WHENEVER LEVEL-0'S
       // PACING CHANGES — see Step 9 of that plan.
-      introTrace: 'assets/recordings/level0-intro.6674d840.json',
+      introTrace: 'assets/recordings/level0-intro.9fc4402d.json',
       // The FINAL STAGE banner announces the last combat phase on every level. On the intro that instant is
       // the rocketeer's warp-in, which is exactly when line L3 speaks — two announcements over each other.
       // Stated as data so nothing in level-runner.js special-cases level 0.

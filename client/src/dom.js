@@ -28,6 +28,9 @@ export const el = {
   rocketBtn: byId('rocket-btn'),   // 🚀 button (gets a .ready class when reloaded)
   rocketFill: byId('rocket-fill'), // radial reload indicator on the rocket button
   perf: byId('perf'),           // fps / ms / draw-calls overlay
+  help: byId('help'),            // the permanent bottom-left controls cheatsheet (gets a touch variant)
+  introLine: byId('intro-line'), // the intro director's current line
+  introHelp: byId('intro-help'), // the intro's controls card, which flies into #help
   markers: byId('markers'),     // container for off-screen enemy edge arrows
   minimap: byId('minimap'),     // radar canvas
   // Main Window top bar: the credit balance beside the (inactive) "Ships" label — menus only

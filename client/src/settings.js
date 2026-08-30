@@ -17,6 +17,7 @@ const setMusic = document.getElementById('set-music');
 const setSfx = document.getElementById('set-sfx');
 const setMusicOn = document.getElementById('set-music-on');
 const setSfxOn = document.getElementById('set-sfx-on');
+const skipIntroBtn = document.getElementById('skip-intro');
 function renderSettingsUI() {
   const s = audio.getSettings();
   setMaster.value = Math.round(s.master * 100);
@@ -56,6 +57,10 @@ function openSettings() {
   if (G.gameStarted && G.player && G.player.alive && !levelRunner.won && !G.paused) {
     settingsPausedByGear = true; setPaused(true);
   }
+  // The intro is skippable from here and nowhere else: the gear is the one control that is always reachable
+  // and that pauses the fight on the way in, so a skip is always deliberate. main.js publishes the handler
+  // while the intro runs and clears it when the intro ends.
+  skipIntroBtn.style.display = typeof G.skipIntro === 'function' ? 'block' : 'none';
   settingsOverlay.classList.add('on');
 }
 function closeSettings() {
@@ -64,6 +69,8 @@ function closeSettings() {
   if (settingsPausedByGear) { settingsPausedByGear = false; setPaused(false); }
 }
 settingsBtn.addEventListener('click', openSettings);
+// closeSettings() runs FIRST so its setPaused(false) cannot un-pause the menu the skip is about to open.
+skipIntroBtn.addEventListener('click', () => { const go = G.skipIntro; closeSettings(); if (go) go(); });
 document.getElementById('settings-close').addEventListener('click', closeSettings);
 settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); }); // backdrop click closes
 setMaster.addEventListener('input', () => applyAudioChange({ master: setMaster.value / 100 }));

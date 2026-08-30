@@ -64,7 +64,8 @@ export function showWelcome(playerShips) {
 }
 
 // ---------- Localization (i18n) UI glue ----------
-// Every mounted EN/RU toggle host (welcome + settings + intro cutscene). Rebuilt on every language
+// Every mounted EN/RU toggle host (the welcome screen + the Settings modal — see DECISIONS §64, amended:
+// the intro's own host went with the cutscene). Rebuilt on every language
 // re-render (applyTranslations) so each host's active button reflects the active language.
 const langHosts = new Set();
 // Apply every [data-i18n] element's text (or innerHTML for [data-i18n-html]) for the active language.
@@ -94,12 +95,11 @@ export function applyTranslations(root = document) {
   }
   document.documentElement.lang = getLanguage();
   // Re-render every mounted EN/RU toggle so its active button matches the active language. Prune
-  // detached hosts (the intro cutscene host is removed on teardown) so the set doesn't leak.
+  // detached hosts (a host may be removed by whoever mounted it) so the set doesn't leak.
   for (const h of [...langHosts]) { if (h.isConnected) mountLangSwitch(h); else langHosts.delete(h); }
 }
 // Render the EN/RU buttons into `host` and register it so a later language re-render refreshes it.
-// stopPropagation: the intro cutscene overlay has a whole-overlay click→advance listener; a button
-// click must switch language WITHOUT advancing/skipping a card.
+// stopPropagation so a language click never doubles as whatever the surrounding overlay does with a click.
 export function mountLangSwitch(host) {
   if (!host) return;
   langHosts.add(host);
@@ -119,7 +119,7 @@ export function mountLangSwitch(host) {
 export async function setLanguage(lang) {
   await loadLanguage(lang, fetchJson);
   try { localStorage.setItem('lang', getLanguage()); } catch {}
-  applyTranslations(); // re-localizes static [data-i18n] chrome + the cutscene card + ALL toggle hosts
+  applyTranslations(); // re-localizes static [data-i18n] chrome + the intro's line/card + ALL toggle hosts
   setPaused(G.paused); // re-localize the pause button's aria-label/tooltip (JS-set, not data-i18n)
   localizeSettings(); // re-localize the settings gear + audio toggles
   localizeCredits(); // re-render the credits panel if it's open (chrome labels change)
@@ -130,7 +130,9 @@ export async function setLanguage(lang) {
   if (welcomeStaged) revealWelcomeNow(); // a language switch re-renders `.intro` (applyTranslations) — settle to full
 }
 // Mount the two static toggle hosts once at module init (both exist in index.html before this deferred
-// module runs). The dynamic intro-cutscene host is mounted from main.js when the overlay is built.
+// module runs). These two are the WHOLE surface (DECISIONS §64, amended): during the playable intro the
+// Settings gear is on screen throughout, so an RU-browser player who lands straight in the fight can reach
+// the toggle without a host of its own.
 // Every applyTranslations() (incl. bootstrap's initial localize) refreshes them, so the active button
 // reflects the loaded language on first paint.
 mountLangSwitch(document.getElementById('lang-switch'));   // welcome screen

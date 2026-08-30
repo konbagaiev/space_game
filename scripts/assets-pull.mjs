@@ -21,5 +21,5 @@ function pull(prefix, dest, ext) {
 
 pull(PREFIX.combat, DIR.combatServe, 'glb');       // combat models → client/assets/ships/
 pull(PREFIX.sounds, DIR.soundsServe, 'mp3');        // SFX mp3s → client/assets/sounds/
-pull(PREFIX.recordings, DIR.recordingsServe, 'json'); // input-replay traces (intro cutscene) → client/assets/recordings/
+pull(PREFIX.recordings, DIR.recordingsServe, 'json'); // input-replay traces (the canonical Level-0 trace) → client/assets/recordings/
 console.log('Done. Combat models + SFX + recordings are in place (same-origin).');

@@ -5495,3 +5495,49 @@ as unnatural jitter and one that reads as impact differ by a factor no one can n
 punch channels (a directional shove and a scale pop) ship at **0**, a `?dev` "Hit feel" panel exposes all of
 them, and whatever the maintainer tunes in a real fight becomes the committed default. Dead UI being worse
 than no UI, the panel has exactly the sliders that can do something.
+
+## 138. The intro is PLAYED, not watched — and its script is level data, not UI state
+
+The cutscene bought a guaranteed-good first 40 seconds at the price of a player who had not touched the
+controls when Level 1 started, plus a fragile machine (an S3 trace, a re-sim, a freeze, five taps) that a
+single gameplay change could desync — and it had already desynced three times. Replacing it with a live
+fight costs the guarantee and buys a tutorial: the new player learns to steer, to shoot, to launch a rocket
+and to dodge one, and learns the mission-end loop, because the intro now finishes through the same
+"Finish and Return → fly home → dock → Continue" path every other level uses.
+
+Two things made it safe to do.
+
+**ONE TIMELINE.** The beat timings live on the `level-0` descriptor (`intro.lineHold/lineFade/helpHold/
+helpFly` + `intro.beats`) and the *simulation* reads the derived floors off the same object
+(`phases[0].spawn.earliest = [3, 8.95]`, honoured by `stepSpawnGate`'s new `blocked` input). So the DOM never
+tells the sim when to spawn, the words and the fight cannot drift apart, and a recorded intro session
+replays exactly — in a browser, in a netsim room and in the headless referee alike. The floor FREEZES the
+spawn cooldown rather than draining it, so a 3 s floor can never leak into the 2–4 s warp-in duration the
+level runner hands the enemy.
+
+**ONE CLOCK.** `world.combatElapsed` — already in the digest, already zeroed by `reset()`. The director
+needed no new World state, all its timing is sim ticks rather than wall clock (so it cannot slide against
+the fight on a slow frame), and the death→Restart re-arm came for free: the clock going backwards IS the
+signal to reset the script.
+
+Rejected: a DOM-driven director (a recorded session would not reproduce), and a `levelTime` field of its own
+(a second clock to keep in step with the first). Also rejected: special-casing level 0 inside
+`level-runner.js` for the "FINAL STAGE" banner — it is a `finalStageBanner: false` field instead, because
+the reason to suppress it (the rocketeer's warp-in is when line L3 speaks) is a property of that level, not
+of the runner.
+
+**The known cost, stated plainly:** changing Level-0's *pacing* invalidates the canonical input trace that
+three determinism guards pin an outcome on (`server/tools/sim-replay.test.js`, `server/src/seal/verify-run.test.js`,
+`22-trace-replay`). It was re-recorded — mechanically, by prepending exactly 180 idle ticks, since
+`180 × 1/60` sums in floating point to `2.9999999999999942 < 3` and therefore leaves the first spawn on the
+same relative tick it had before — and that is the standing price of touching the intro's fight
+(cross-ref §73).
+
+**Amends §64.** The cutscene overlay was one of the three hosts of the EN/RU toggle, and it is gone. The
+surface is now the welcome screen and the Settings modal — which is what covers the RU-browser player who
+lands straight in the intro, since the gear is on screen and reachable throughout the fight (and opening it
+pauses the fight, which is also why Skip lives there and nowhere else: every screen edge during the intro is
+already HUD or a thumb control, and a skip must never be a stray tap).
+
+**Cross-ref §63.** The intro's one-time-ness is still `current_progress` alone — a reset replays it. The
+cutscene that decision was written about is simply no longer what gets replayed.

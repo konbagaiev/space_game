@@ -95,7 +95,7 @@ export function updateMenuCredits(balance = G.balance) {
 // ---------- Character progression HUD (docs/plans/2026-08-09-character-progression.md) ----------
 // The always-on bottom XP bar (fills toward the next level; previews the current run's unbanked XP live)
 // plus the free-skill-points badge on the Character menu item. Runs every frame — setText/setStyle skip
-// unchanged writes, so it's cheap. Hidden with no player data or during a cutscene/replay.
+// unchanged writes, so it's cheap. Hidden with no player data or during a replay.
 export function updateProgressionHud() {
   const prog = G.activeShip && G.activeShip.progression;
   const show = !!prog && !G.replayMode;

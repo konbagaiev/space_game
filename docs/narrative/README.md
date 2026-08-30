@@ -1,7 +1,7 @@
 # Narrative canon
 
 The home for **story canon, characters, and tone** — the reference future text content
-(briefings, cutscene lines, mission flavor, dialogue) is generated *from*, so the writing stays
+(briefings, the intro's spoken lines, mission flavor, dialogue) is generated *from*, so the writing stays
 consistent as the game grows.
 
 ## What this is / isn't

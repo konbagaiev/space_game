@@ -21,12 +21,59 @@
   #hpbar.with-shield { border-radius: 0 0 7px 7px; border-top: 0; margin-top: 0; } /* touch the shield bar above */
   #hpfill { height: 100%; width: 100%; background: linear-gradient(90deg,#ff5a5a,#c81e1e); transition: width .15s; } /* health = red */
   #hppct { margin-top: 4px; font: 700 14px system-ui, sans-serif; color: #cfe6ff; }
+  /* The bottom-left controls cheatsheet. `bottom: 26px` CLEARS THE XP BAR, which is a fixed 14px-tall bar at
+     bottom:6 spanning the middle 80% of the viewport — i.e. its top edge is 20px off the bottom, and this
+     line's own 20.8px line-height starts at 14 and used to run 6px into it. Invisible while #help was hidden
+     on touch; it is on screen there now (it carries `ui.help_touch`, and the intro's controls card flies
+     into it), so the overlap had to go, and it was worth fixing on desktop at the same time. */
   #help {
-    position: fixed; bottom: 14px; left: 18px;
+    position: fixed; bottom: 26px; left: 18px;
     font-family: system-ui, sans-serif; font-size: 13px; color: #7f93b5;
     pointer-events: none; line-height: 1.6;
   }
   #help b { color: #cfe6ff; }
+  /* The intro director's line, and the controls card that starts in the same slot.
+     THE BOTTOM BAND IS CROWDED. Every occupant, measured from the bottom edge:
+       #return-btn  — bottom:34, padding 12+12, line-height 1.2*16px = 19.2   →  top edge  77.2
+       #rocket-btn  — bottom:40, 84px tall                                    →  top edge 124
+       #fire-btn    — bottom:34, 96px tall (touch only)                       →  top edge 130
+       #event-log   — bottom:132, up to 4 kill lines of ~19px + 2px gaps      →  top edge ~214
+                      …and it is 240px wide at right:22, i.e. it spans x ∈ [vw-262, vw-22]
+     The slot sits at bottom:96 on desktop (19px of air above "Finish and Return", which appears at the same
+     instant as line L4) and bottom:150 on touch (20px above the FIRE button). Both clear the buttons.
+     #event-log is the one that cannot be cleared HORIZONTALLY: the card is centred with max-width
+     min(760px, 88vw), so its right edge passes x = vw-262 whenever the card is wider than vw-524 — true at
+     the 1280px suite viewport (760 > 756) and on every phone. And vertically the desktop card (bottom
+     96 → ~191 for two lines) runs straight into the log's 132→214 band. See below: during the intro the kill
+     log yields. Everything here is pointer-events:none, so none of it could steal a tap even if it did
+     overlap. */
+  #intro-line, #intro-help {
+    position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 7;
+    pointer-events: none; opacity: 0; display: none;
+    max-width: min(760px, 88vw); padding: 16px 22px; border-radius: 14px; text-align: center;
+    background: rgba(6,10,16,.82); border: 1px solid rgba(255,255,255,.14);
+    color: #eaf2ff; font: 500 clamp(15px,2.4vw,21px)/1.5 system-ui, sans-serif;
+    box-shadow: 0 10px 40px rgba(0,0,0,.5);
+  }
+  body.touch #intro-line, body.touch #intro-help { bottom: 150px; }
+  /* transform-origin: left top — flyIntroHelp() moves the card's LEFT/TOP onto #help's left/top and then
+     scales about that same corner. With any other origin the scale would drag the corner off the target. */
+  #intro-help { font-size: clamp(14px,2vw,18px); transform-origin: left top; }
+  #intro-help b { color: #cfe6ff; }
+  /* The flight into the corner: main.js measures the two rects, composes the translate+scale (KEEPING the
+     -50% centring inside it) and drives opacity itself. This class supplies ONLY the transition — putting
+     `opacity: 0` here would lose to the inline opacity main.js sets, and the card would never fade.
+     Cosmetic; nothing in the sim watches it. */
+  #intro-help.fly { transition: transform .45s cubic-bezier(.4,0,.2,1), opacity .45s ease; }
+  /* THE KILL LOG YIELDS DURING THE INTRO. #event-log occupies bottom 132→~214 at the right edge and the
+     line slot is 96→~191 (desktop) / 150→~245 (touch), so they overlap in both axes on the suite viewport
+     and on every phone — and the intro's lines fire AROUND KILLS, which is exactly when the log is full,
+     so this is the common case and not an edge one. Moving the log up puts it near the top of a landscape
+     phone; narrowing the card cannot separate them (they would only clear at a card width under ~280px).
+     So for the ~40 s of the intro the log is simply not drawn: one message at a time is the whole point of
+     a tutorial, and every kill is still reported by the floating "+xx" credit popup at the kill site and by
+     the HUD's credits + Destroyed counters. Scoped to the intro; every other level is untouched. */
+  body.intro #event-log { display: none; }
   #overlay {
     position: fixed; inset: 0; display: none;
     align-items: center; justify-content: center; flex-direction: column;
@@ -649,7 +696,7 @@
   .community-link:hover { opacity: 1; color: #cfe7ff; }
   #overlay .community-link { margin-top: 18px; }
   /* hide the in-game HUD while the welcome screen is up */
-  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #event-log, body.menu #markers, body.menu #oob-warn, body.menu #return-hint, body.menu #return-btn, body.menu #roam-nav, body.menu #banner, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay, body.menu #zoom { display: none; }
+  body.menu #hud, body.menu #help, body.menu #perf, body.menu #rocket-btn, body.menu #event-log, body.menu #markers, body.menu #oob-warn, body.menu #return-hint, body.menu #return-btn, body.menu #roam-nav, body.menu #banner, body.menu #minimap, body.menu #pause-btn, body.menu #pause-overlay, body.menu #zoom, body.menu #intro-line, body.menu #intro-help { display: none; }
   /* …and the touch flight controls (stick + FIRE). #rocket-btn/#zoom were hidden individually above but the
      #touch layer itself was not, so on a phone the FIRE button stayed live ON TOP of the base menu — it
      overlapped the Map view's object list and could be pressed while browsing the hangar. */

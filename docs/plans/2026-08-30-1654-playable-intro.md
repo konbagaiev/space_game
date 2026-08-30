@@ -572,7 +572,7 @@ suite can drive and observe this deterministically instead of racing it:
     get intro() { return intro && { fired: intro.fired, help: intro.help, view: intro.view }; },
     // The suite boots into level-0 for every scenario, so the director's line/card would sit in the bottom
     // band of every screenshot and every rect measurement, and #skip-intro would widen the settings modal
-    // that 14-reset-progress measures. Only 42-playable-intro is testing the director; everyone else asks
+    // that 14-reset-progress measures. Only 44-playable-intro is testing the director; everyone else asks
     // for the arena. THE SIMULATION IS NOT TOUCHED — the spawn floors still apply, because the suite must
     // fight the same level-0 production does. This silences the DOM half only.
     silenceIntro() { intro = null; G.skipIntro = null; updateIntro(); },
@@ -969,7 +969,7 @@ wall clock. Any fix built on `waitForTimeout` is therefore wrong twice over.
           return g.enemyCount > 0;
         }, null, { timeout: 20000 }).catch(() => {});           // a scenario that legitimately never spawns proceeds
         // …and hand every scenario the ARENA rather than the intro's chrome (see __game.silenceIntro).
-        // 42-playable-intro re-arms the director with its own page.goto.
+        // 44-playable-intro re-arms the director with its own page.goto.
         await page.evaluate(() => window.__game && window.__game.silenceIntro && window.__game.silenceIntro());
 ```
 
@@ -988,7 +988,7 @@ wall clock. Any fix built on `waitForTimeout` is therefore wrong twice over.
 | `10-mission-board` | a side mission, its own descriptor | safe |
 | `30-session-upload-on-hide` | uses `simulateIntroEnd()` then takes off | **safe, comment stale.** Its step-1 comment says "the recorder is armed by the take-off flow" — the intro is now recorded from boot, so update it. `skipIntro`'s `flushSession('quit')` adds one earlier POST; the scenario reads `posts[posts.length - 1]` (the post-hide one) and asserts `posts.length >= 1`, so both still hold. |
 | `29-intro-live-handoff` | `simulateIntroEnd()` seam | safe — and see 5d: this is why `skipIntro` has no level check |
-| `14-reset-progress` | opens Settings and asserts `boxH <= winH` (line 45) | **would break without `silenceIntro`**: a progress-0 player publishes `G.skipIntro`, so `#skip-intro` renders and the modal grows. The gate's `silenceIntro()` clears `G.skipIntro` before every scenario body, so the row is hidden here. `42` asserts the fit **with** the row visible (see Tests). |
+| `14-reset-progress` | opens Settings and asserts `boxH <= winH` (line 45) | **would break without `silenceIntro`**: a progress-0 player publishes `G.skipIntro`, so `#skip-intro` renders and the modal grows. The gate's `silenceIntro()` clears `G.skipIntro` before every scenario body, so the row is hidden here. `44` asserts the fit **with** the row visible (see Tests). |
 | `05`, `07`, `09`, `12-sell`, `15`, `18`, `21`, `32`, `33`, `34`, `96`, `97` | menu/map/roam scenarios; none reads the default wave | safe |
 | `22-trace-replay`, `35`, `36` | own `page.goto` with `?playback` | safe (and see Step 9) |
 
@@ -1015,7 +1015,7 @@ wall clock. Any fix built on `waitForTimeout` is therefore wrong twice over.
 - `22-trace-replay` (rewritten, Step 9c) — `kills === 4`, `won === true`.
 - `36-sim-divergence`, `37-netsim` (drop `&cutscene=1`), `35-playback-loads-samples` — must still pass.
 - `29-intro-live-handoff` — must still pass through the reworked seam.
-- **new** `client/visual/scenarios/42-playable-intro.mjs`. **Its clock discipline is the thing to get right.**
+- **new** `client/visual/scenarios/44-playable-intro.mjs`. **Its clock discipline is the thing to get right.**
   `__game.stepSim(n)` calls `update(BENCH_DT)` directly, but the **live rAF accumulator is stepping the sim
   at the same time** (`main.js:987` `const live = G.gameStarted && !BENCH && !REC && !rs.play &&
   !netsimDriving`), so a bare step count asserts against an unknown clock — real frames have already
@@ -1113,7 +1113,7 @@ card lands on it. Finally `/admin/sessions` shows the intro run and plays it bac
   - **Language switching** — the EN/RU toggle now has **two** hosts, not three: the welcome screen and the
     Settings modal (the cutscene host went with the cutscene). Fix wherever SUMMARY repeats §64's list.
   - **Client module layout (line 3227)** — `intro-director.js` in, `level0-cutscene.js` out.
-  - **Tests (line 3922)** — the new unit test + `42-playable-intro`, `22-intro-replay` → `22-trace-replay`,
+  - **Tests (line 3922)** — the new unit test + `44-playable-intro`, `22-intro-replay` → `22-trace-replay`,
     and the visual runner's new boot gate (it waits for the arena to have an enemy and calls
     `__game.silenceIntro()`, because every scenario boots into level-0).
   - Bump **`**Updated:**`** (line 6) and lead it with this change.
@@ -1171,7 +1171,7 @@ card lands on it. Finally `/admin/sessions` shows the intro run and plays it bac
   and do not "improve" it by repositioning `#event-log` globally (moving it up puts the kill log near the
   top of a landscape phone for the whole game, to fix 40 seconds of it).
 - **No** change to the visual suite beyond what Step 10b lists: the one central boot gate in `run.mjs`, the
-  new `42-playable-intro`, the rewritten `22`, and the named comment/URL edits. Do **not** rewrite scenarios
+  new `44-playable-intro`, the rewritten `22`, and the named comment/URL edits. Do **not** rewrite scenarios
   the sweep marks safe, and do **not** make the suite dodge the spawn floors by giving the harness a
   different level-0 — the whole value of the suite is that it fights the level production ships.
 - **No** generalisation of the director to other levels. It arms iff the served descriptor carries `intro`;

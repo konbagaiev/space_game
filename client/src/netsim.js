@@ -48,10 +48,10 @@ export function evalNetsim(search) {
 // This must be re-evaluated EVERY FRAME, not once at connect. Both reasons arrive after the socket is
 // already open, and both were shipped as bugs by checking too early:
 //
-//   'replay'      — `?record`, `?playback`, and the Level-0 intro cutscene, which rides the same machinery
+//   'replay'      — `?record` and `?playback`, which re-run the LOCAL simulation from a recorded trace
 //                   and is armed programmatically at bootstrap. They replay the LOCAL simulation from a
 //                   seed and a list of inputs and own the tick. A room alongside one steps a second,
-//                   invisible fight: the cutscene card froze the replay while the server kept simulating.
+//                   invisible fight: the replay owned the local tick while the server kept simulating too.
 //   'side-mission'— a side mission's descriptor is generated per player by `missions.js` and appears in no
 //                   room's level table, so there is nothing for a room to fight. The socket opens during
 //                   the MENU, when `activeMission` is still null, and the player picks the mission after —

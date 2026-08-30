@@ -3,8 +3,8 @@
 // The regression this guards: sample preloading used to fire only from the gesture handler (or from
 // bootstrap if a gesture had already happened). `?playback` is reached by NAVIGATION — the record page's
 // "Play it ▶" link — so the replay auto-started with zero buffers and every shot fell back to its
-// synthesized voice. Production never showed it: the intro cutscene opens on a "tap to begin" card, and
-// that tap loaded the samples before the first tick. So the fight sounded right in the shipped cutscene and
+// synthesized voice. Production never showed it: the old intro cutscene opened on a "tap to begin" card,
+// and that tap loaded the samples before the first tick. So the fight sounded right in that cutscene and
 // wrong the moment you replayed your own recording — which is exactly how it was reported.
 //
 // Asserted at the NETWORK layer on purpose: headless Chromium has no audio output, and the buffer cache is
@@ -18,7 +18,7 @@ export const name = 'playback-loads-samples';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 export default async function ({ page, assert, baseURL }) {
-  // Reuse the canonical intro trace the seed points at — same resolution as 22-intro-replay.
+  // Reuse the canonical Level-0 trace the seed points at — same resolution as 22-trace-replay.
   const seedSrc = fs.readFileSync(path.join(repoRoot, 'server/src/catalog_seed.js'), 'utf8');
   const m = seedSrc.match(/introTrace:\s*'([^']+)'/);
   assert.ok(m, 'catalog_seed.js level-0 descriptor carries an introTrace');
@@ -36,7 +36,7 @@ export default async function ({ page, assert, baseURL }) {
   page.on('response', onResponse);
   try {
     const origin = new URL(baseURL).origin;
-    // NO `&cutscene=1` — this is the bare replay page, the one with no tap-to-begin card. And deliberately
+    // The bare replay page — no `&finish`, nothing that could end the run early. And deliberately
     // no click/keypress anywhere below: introducing a gesture would re-hide the bug this pins.
     await page.goto(`${origin}/?playback&id=${encodeURIComponent(trace.id)}&debug`, { waitUntil: 'load' });
     await page.waitForFunction('!!(window.__replay && window.__replay.status().armed)', null, { timeout: 30000 });
