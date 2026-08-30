@@ -15,6 +15,7 @@
 import { Vec3 } from './vec.js';
 import { pointHitsShip } from './collision.js';
 import { applyShieldedDamage } from './components.js';
+import { emitHullHit } from './events.js';
 
 // A bullet: straight flight, no steering, culled by distance travelled rather than time.
 // `shooterVel` is the firing ship's velocity — bullets inherit it (rockets deliberately do not, §70).
@@ -147,6 +148,13 @@ export function despawnAt(world, kind, list, index) {
   return e;
 }
 
+// Which way a blast shoves its victim: from the detonation point toward the ship. Degenerate (the ship is
+// exactly on the blast point) falls back to the rocket's flight heading. Pure math — no state, no RNG.
+function blastHeading(r, ship) {
+  const dx = ship.pos.x - r.pos.x, dz = ship.pos.z - r.pos.z;
+  return (dx * dx + dz * dz) > 1e-6 ? Math.atan2(dx, dz) : (r.heading || 0);
+}
+
 // A rocket goes off: deal its blast damage, then say so. `dealDamage = false` is a rocket SHOT DOWN by
 // gunfire — it still makes the bang, it just does not hurt anyone.
 //
@@ -166,12 +174,16 @@ export function detonateRocket(world, r, dealDamage = true) {
           e.lastHitBy = r.fromAlly ? 'ally' : 'player'; // WHO gets paid for the kill (docs/plans/combat-ally.md §2.5)
           const dr = applyShieldedDamage(e, r.damage); // shield first, excess spills to the hull this tick
           if (dr.absorbed) world.events.emit({ type: 'enemyShieldHit', enemy: e, pos: r.pos.clone(), broke: dr.broke });
+          // The receiving end (hit-fx.js). One hullHit per victim — a splash that reaches three hulls
+          // flashes and punches all three; only the PLAYER's shudders the camera, so that stays once.
+          if (dr.toHull > 0) emitHullHit(world, e, 'enemy', r.pos.clone(), blastHeading(r, e), r.weaponClass, dr.toHull);
         }
       }
     } else {
       if (world.player && world.player.alive && pointHitsShip(world.player, r.pos, r.blastR)) {
         const dr = applyShieldedDamage(world.player, r.damage);
         if (dr.absorbed) world.events.emit({ type: 'shieldHit', pos: r.pos.clone(), broke: dr.broke });
+        if (dr.toHull > 0) emitHullHit(world, world.player, 'player', r.pos.clone(), blastHeading(r, world.player), r.weaponClass, dr.toHull);
       }
       // …and the third party. A blast splashes everyone hostile fire can reach, so the ally takes it too —
       // the loop is skipped entirely when there is no ally, which is every level that ships today.
@@ -182,6 +194,7 @@ export function detonateRocket(world, r, dealDamage = true) {
         if (!pointHitsShip(a, r.pos, r.blastR)) continue;
         const dr = applyShieldedDamage(a, r.damage);
         if (dr.absorbed) world.events.emit({ type: 'enemyShieldHit', enemy: a, pos: r.pos.clone(), broke: dr.broke });
+        if (dr.toHull > 0) emitHullHit(world, a, 'ally', r.pos.clone(), blastHeading(r, a), r.weaponClass, dr.toHull);
       }
     }
   }

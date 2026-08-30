@@ -2396,7 +2396,8 @@ sprite sheet (pre-rendered hex-shield frames played as a billboard).
 writes it and uses **no seeded RNG**, so record/playback + the intro cutscene stay bit-identical (the same
 rule that governs all cosmetic frame work, per the record/playback design). `applyPlayerDamage` was moved to
 `components.js` and made to return `{ absorbed, broke }` so the trigger contract is unit-tested rather than
-buried in the FX path. Scoped to the **base/starter shield** for now; higher shield tiers can diverge later.
+buried in the FX path (renamed `applyShieldedDamage` when enemies got shields too, and extended to
+`{ absorbed, broke, toHull }` by §137 — `absorbed` alone cannot tell you whether the hull was hurt). Scoped to the **base/starter shield** for now; higher shield tiers can diverge later.
 Cross-ref §66 (shield mechanics), §30 (keep it simple — no asset pipeline for a shader we can write).
 
 **Follow-up (2026-07-16): intercept the shot ON the sphere, not just draw the ripple there.** The FX above
@@ -2817,7 +2818,7 @@ one VRAM copy per instance) because there is no parsed-model cache — see the `
 precedent for the shape of that fix. Headers remove the network round trip; only an in-code cache removes the
 work.
 
-## 79. Ship models are parsed ONCE and cloned per spawn — so a live ship's materials must never be mutated
+## 79. Ship models are parsed ONCE and cloned per spawn — so a live ship's materials are CLONED PER INSTANCE
 
 **Problem.** `applyShipModel` called `gltfLoader.load(url, ...)` on **every spawn**, and nothing cached the
 result. The bytes came from the browser cache, but three.js re-ran the full pipeline each time: a new
@@ -2835,14 +2836,28 @@ can produce (`preloadLevelShipModels`). This is the same shape as `drops.js`'s `
 applied it to ships.
 
 **The constraint this creates.** `Object3D.clone(true)` shares **geometry and materials** with the template.
-That is the point — one GPU copy per ship *type* instead of per instance — but it means **mutating a live
-ship's material would leak to every other ship of that type**. Two existing paths deliberately mutate
-materials and must therefore keep cloning first: the `tint` recolour, and the ghost-battle `darken`/`opacity`
-readability treatment. Both already clone; do not "optimise" that away. Anything new that wants a per-ship
-visual state (a damage flash, a cloak, a team colour) must clone the material for that instance too.
+The geometry sharing is the point — one GPU copy per ship *type* instead of per instance — but the material
+sharing meant **mutating a live ship's material would leak to every other ship of that type**. Two paths
+already cloned before mutating (the `tint` recolour, and the ghost-battle `darken`/`opacity` readability
+treatment), and this section closed with: *anything new that wants a per-ship visual state (a damage flash,
+a cloak, a team colour) must clone the material for that instance too*.
+
+**AMENDED 2026-08-30 (§137): that case-by-case clone became ALWAYS-ON at attach.** The damage flash arrived,
+and it wants a per-ship visual state on *every* modelled ship, so `applyShipModel` now clones **every**
+material of **every** instance immediately before parenting the model, recording each one's baked
+`emissive`/`emissiveIntensity` in `group.userData.flashMats` for the flash to restore. The live clone path
+therefore **shares no materials at all**, and the per-path `tint` / ghost-battle clones are now redundant
+rather than load-bearing — harmless, and left in place. What is still **one copy per ship TYPE** is
+**geometry + textures + the compiled shader program**: a clone has identical parameters, so three.js reuses
+the program, and nothing is re-uploaded. The rule that survives is the one about the **template**: the
+cached template's materials must never be mutated — everything a live ship touches is its own copy.
 
 **Safe on teardown:** a dead enemy only disposes its attached exhaust plume (`sim.js`), never the model's
-geometry or materials, so sharing cannot leave another instance with disposed GPU resources.
+geometry or materials, so sharing cannot leave another instance with disposed GPU resources. This is also
+why the §137 per-instance material clones cost nothing: nothing frees them, so they are simply
+garbage-collected with the mesh — and nothing frees the shared compiled program either, which is what §83
+depends on. Do **not** add a dispose pass for them: a program dies with its last material, and freeing it
+would force a recompile on the next spawn.
 
 **Parsing is only half of it — the model must also be WARMED onto the GPU.** three.js uploads geometry and
 textures, and compiles a material's shader program, **lazily: on the first frame the object is actually
@@ -2857,9 +2872,12 @@ covers shaders only, hence the explicit texture pass. This mirrors `prewarmShade
 does the same for the FX materials but runs at startup, long before any ship model exists.
 
 **Guard:** `client/visual/scenarios/26-ship-model-cache.mjs` spawns two ships of one type and one of
-another, and asserts the pair shares a geometry set and a material set while remaining distinct scene
-objects, and that a different type does not. Mutation-verified: with the cache bypassed it fails on the
-shared-geometry assertion. The GPU warm itself has no headless guard — software WebGL does not reproduce
+another, and asserts the pair shares a **geometry** set while having **per-instance materials** (that
+assertion was inverted by §137, deliberately) and remaining distinct scene objects, and that a different
+type shares neither. Mutation-verified: with the cache bypassed it still fails, on the shared-geometry
+assertion **and** on the `parsed >= 2` cache-size floor — the two checks that actually catch a per-spawn
+re-parse. `42-hit-feel.mjs` covers the other direction, on screen: with the per-instance clone removed, the
+control ship brightens along with the one that was shot and the pixel assertion fails. The GPU warm itself has no headless guard — software WebGL does not reproduce
 the stall — so its verification is the field telemetry (`js.render` spikes on first-sighting frames).
 
 ## 80. Per-frame HUD overlays position via `transform`, and never write a DOM value that has not changed
@@ -5402,3 +5420,78 @@ The table is a property of the event catalogue, so it belongs with it.
 **Cost.** One more file `server/src/netsim/protocol.js` reaches across into `client/`, which reads oddly the
 first time. It is the direction the codebase already runs in, and it is re-exported from `protocol.js` so
 that file stays the one place the wire's shape is read from.
+
+## 137. A hit is felt on the RECEIVER — and `toHull > 0`, not `absorbed`, is what "felt" means
+
+**Problem.** Every signal in a firefight belonged to the SHOOTER: a muzzle flash at your barrel, a bolt
+leaving it, a spark where the bolt died. **Nothing on the ship you shot changed.** Combat read limp because
+the target never acknowledged being hit — you could empty a magazine into a pirate and the only evidence was
+a health bar ticking down.
+
+**Decision.** The simulation emits one new describing event, **`hullHit`** (`ship`, `target`, `pos`,
+`dirHeading`, `weaponClass`, `toHull`), from the six sites that already call `applyShieldedDamage`, and the
+renderer (`client/src/hit-fx.js`) turns it into three things: a **hull flash** on the victim, a **model
+punch** from rockets and the heavy cannon, and a **camera shudder** when a rocket reaches the player's hull.
+It is the one sim-side addition and it carries no new state — it describes damage that already happened.
+
+**(a) The predicate is `toHull > 0`, not `!absorbed`.** `applyShieldedDamage` returned `{ absorbed, broke }`
+and now returns `{ absorbed, broke, toHull }`. The third field exists because **`absorbed: true` does not
+mean nothing got through**: a shield that breaks spills the excess to the hull *in the same tick*. A Heavy
+rocket (power 80) into the player's Base shield (capacity 20) returns `{ absorbed: true, broke: true,
+toHull: 60 }` — the single biggest hit in the game. A naive `if (!absorbed)` would have silently skipped
+exactly the moment that most needs to be felt. **One predicate drives both the flash and the shudder**; a
+hit a shield absorbs entirely (`toHull === 0`) still gets only the existing cyan bubble ripple, and there is
+deliberately no shield-flash knob — it would be a control that could never fire (§30). One consequence is
+worth stating so nobody "fixes" it later: a pirate rocket (power 20) into a FULL Base shield (capacity 20)
+breaks it with **exactly 0 spilling**, so that hit is silent. The shield is then down for 10 s while rockets
+arrive every 4 s, so the *next* one is felt. First rocket strips the shield, second one hurts — that
+escalation reads well and is intended.
+
+**Guard for (a), and it has to be end-to-end.** Rewriting the six emit sites to the naive `if (!dr.absorbed)`
+leaves the whole client suite, the whole server suite and every other visual scenario **green** — the unit
+tests can pin the `{ absorbed, broke, toHull }` contract, but not what the call sites do with it. So
+`42-hit-feel.mjs` fires a real pirate rocket (power 20) into a **partial 10-point shield**: the shield
+BREAKS, 10 spills to the hull, `absorbed` comes back `true`, and the camera must still shudder. That is the
+one test that fails under the regression this section exists to warn about. A `reachedHull` predicate in
+`hit-fx-config.js` was tried and **deleted**: nothing in production called it (sim-core must not import a
+client render-config module), so it read like coverage of those call sites while guarding nothing — §30.
+
+**(b) Three punch rules are requirements, not tunables.** Per-shot weapon/camera recoil was cut from scope
+because it degenerates into constant jitter, and the punch is one bad decision away from the same fate. So:
+**instant displacement out with a smooth ease back** (easing out *and* back reads as jelly — `impulse01` is
+1 at t=0 and decays with a vanishing slope, so the model settles rather than wobbles); **refresh, never
+accumulate** (a new hit resets the impulse, it never sums with one in flight, so a burst cannot compound);
+and **a cooldown** (0.15 s), so the Triple spiral rocket's three real warheads punch once instead of
+vibrating the hull. These live in the THREE-free `hit-fx-config.js` and are unit-tested, precisely because
+they are the difference between "impact" and "noise".
+
+**(c) The punch rides the cosmetic child group, never the ship's transform.** It writes `bankGroup.position`
+and `bankGroup.scale` — the same child the wing bank already rolls, which "never affected hits"
+(`collision.js`) — and never `ship.pos`, `ship.heading` or `ship.scale`. `ship.scale` in particular is
+simulation state: it feeds the hitboxes *and* the muzzle offset, so shoving the model through it would move
+where bullets spawn and what they can hit. The shove is stored as a world yaw and rotated into the group's
+local frame **every frame**, so a ship that turns mid-punch keeps being shoved the way the shot travelled.
+
+**(d) Per-instance material clones — §79's case-by-case rule became always-on.** Catalog ships load with
+`tint: false`, so none of the existing clone paths ran for them: their materials came straight from the
+shared template, and setting `emissive` on one enemy would have flashed **every enemy of that type at once**.
+`applyShipModel` now clones every material of every instance at attach. §79 already blessed this ("anything
+new that wants a per-ship visual state must clone the material for that instance too"); all that changed is
+that it moved from case-by-case to always-on. **It costs nothing on the GPU**: a clone carries the same
+geometry and the same textures and has identical parameters, so three.js reuses the compiled program — and
+nothing disposes any of it, so there is no recompile risk (§83). The known limitation we chose to live with:
+where a material has an `emissiveMap`, three.js multiplies emissive by that map, so it glows only where the
+map is non-black (measured: 0 of the materials on either enemy hull, 2 of 15 on the player's). Nulling the
+map would "fix" it and force a **shader recompile mid-fight**, which is precisely the freeze §83 exists to
+prevent; the answer if a hull reads weak is to raise the intensity in the panel.
+
+**Render-only, and the intro proves it.** Nothing here writes entity state or draws from the seeded stream —
+all the randomness (the per-shot tracer look, the shudder angle) is the native `Math.random` on the render
+side, which §73 keeps out of the simulation. The Level-0 intro re-sim lands on the same tick (2474) with the
+same 4 kills and the same win. The recorded pilot now flashes and shudders on screen; that is accepted.
+
+**Every magnitude is a placeholder.** None of these numbers can be guessed from a desk — a shove that reads
+as unnatural jitter and one that reads as impact differ by a factor no one can name in advance. So both
+punch channels (a directional shove and a scale pop) ship at **0**, a `?dev` "Hit feel" panel exposes all of
+them, and whatever the maintainer tunes in a real fight becomes the committed default. Dead UI being worse
+than no UI, the panel has exactly the sliders that can do something.

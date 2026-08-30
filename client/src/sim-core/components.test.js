@@ -147,19 +147,20 @@ test('shieldRecharge: a large dt still refills to exactly capacity (no overshoot
   assert.deepEqual(shieldRecharge(0, 20, 10, 100, 0), { shieldValue: 20, accum: 0 });
 });
 
-// --- applyShieldedDamage: shield-first damage routing + the { absorbed, broke } contract the hit FX rely on ---
+// --- applyShieldedDamage: shield-first routing + the { absorbed, broke, toHull } contract the hit FX rely on ---
 // The shield-bubble FX (shield-fx.js) fires a ripple only when `absorbed` is true and a bigger flash when
-// `broke` is true, so these return values are load-bearing for the visual — guard them.
+// `broke` is true; the hull flash / model punch / camera shudder (hit-fx.js) fire on `toHull > 0`. All three
+// return values are load-bearing for the visual — guard them.
 test('applyShieldedDamage: a partial hit is fully absorbed by the shield (no hull damage, ripple only)', () => {
   const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 0, hp: 100 };
-  assert.deepEqual(applyShieldedDamage(p, 5), { absorbed: true, broke: false });
+  assert.deepEqual(applyShieldedDamage(p, 5), { absorbed: true, broke: false, toHull: 0 });
   assert.equal(p._shieldValue, 15);
   assert.equal(p.hp, 100);
 });
 
 test('applyShieldedDamage: an exact-capacity hit breaks the shield and resets its recharge timer', () => {
   const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 7, hp: 100 };
-  assert.deepEqual(applyShieldedDamage(p, 20), { absorbed: true, broke: true });
+  assert.deepEqual(applyShieldedDamage(p, 20), { absorbed: true, broke: true, toHull: 0 });
   assert.equal(p._shieldValue, 0);
   assert.equal(p._shieldRechargeAccum, 0); // timer reset on the breaking hit
   assert.equal(p.hp, 100);                 // exact break spills nothing
@@ -167,21 +168,31 @@ test('applyShieldedDamage: an exact-capacity hit breaks the shield and resets it
 
 test('applyShieldedDamage: an over-capacity hit breaks the shield and spills the excess to the hull', () => {
   const p = { shield: {}, _shieldValue: 20, _shieldRechargeAccum: 0, hp: 100 };
-  assert.deepEqual(applyShieldedDamage(p, 30), { absorbed: true, broke: true });
+  assert.deepEqual(applyShieldedDamage(p, 30), { absorbed: true, broke: true, toHull: 10 });
   assert.equal(p._shieldValue, 0);
   assert.equal(p.hp, 90); // 10 excess to hull
 });
 
 test('applyShieldedDamage: with no shield the full damage hits the hull (no ripple)', () => {
   const p = { shield: null, _shieldValue: 0, hp: 100 };
-  assert.deepEqual(applyShieldedDamage(p, 12), { absorbed: false, broke: false });
+  assert.deepEqual(applyShieldedDamage(p, 12), { absorbed: false, broke: false, toHull: 12 });
   assert.equal(p.hp, 88);
 });
 
 test('applyShieldedDamage: an already-broken shield (value 0) takes nothing; damage goes to the hull', () => {
   const p = { shield: {}, _shieldValue: 0, hp: 100 };
-  assert.deepEqual(applyShieldedDamage(p, 8), { absorbed: false, broke: false });
+  assert.deepEqual(applyShieldedDamage(p, 8), { absorbed: false, broke: false, toHull: 8 });
   assert.equal(p.hp, 92);
+});
+
+// The case the whole hit-feel feature turns on (DECISIONS §137). A Heavy rocket (power 80) into the
+// player's Base shield (capacity 20) is the single biggest hit in the game and it comes back
+// `absorbed: true` — so a naive `if (!absorbed)` would skip the loudest moment in combat. `toHull` is what
+// "did this HURT the ship?" actually reads.
+test('a shield that BREAKS still spills to the hull — absorbed is not "nothing got through"', () => {
+  const p = { shield: { capacity: 20 }, _shieldValue: 20, _shieldRechargeAccum: 0, hp: 100 };
+  assert.deepEqual(applyShieldedDamage(p, 80), { absorbed: true, broke: true, toHull: 60 });
+  assert.equal(p.hp, 40);
 });
 
 // --- Enemy shield split & lossless damage -----------------------------------------------------------
@@ -239,7 +250,7 @@ test('enemy shields: an exact-capacity hit breaks the shield without touching th
   const { shieldCap, hullMax } = enemyShieldSplit(150);
   const e = makeEnemy(150);
   e._shieldRechargeAccum = 4; // banked time from an earlier break must be cleared by the breaking hit
-  assert.deepEqual(applyShieldedDamage(e, shieldCap), { absorbed: true, broke: true });
+  assert.deepEqual(applyShieldedDamage(e, shieldCap), { absorbed: true, broke: true, toHull: 0 });
   assert.equal(e._shieldValue, 0);
   assert.equal(e._shieldRechargeAccum, 0);
   assert.equal(e.hp, hullMax);              // exact break spills nothing
