@@ -169,9 +169,9 @@ export const COMPONENTS = [
   // WHO IS DELIBERATELY *NOT* ON THESE ROWS:
   //   • the INTRO's ships — `Basic pirate ship` (218°/s) and `basic rocket pirate` (170°/s), the whole pool
   //     of level-0, which carries `introTrace`. They keep Scout thrusters and stay fast. That exclusion is
-  //     what keeps the recorded replay archive bit-identical (DECISIONS §73) — the intro cutscene and
-  //     `36-sim-divergence` both re-simulate that trace, and a turn-rate change to either ship would move
-  //     it. Do not "finish the job" by putting them on these rows without re-recording the cutscene.
+  //     what keeps the recorded replay archive bit-identical (DECISIONS §73) — the CANONICAL Level-0 trace
+  //     and `36-sim-divergence` both re-simulate that fight, and a turn-rate change to either ship would
+  //     move it. Do not "finish the job" by putting them on these rows without re-recording that trace.
   //   • the four CAPITALS — they already turn slower than 50 on mass alone (mini boss 21°/s, first boss
   //     25°/s, advanced medium 27°/s, second boss 31°/s), so there is nothing to lower.
   //   • the PLAYER, explicitly (115°/s at his starter mass 50).
@@ -640,19 +640,54 @@ export const SHIPS = [
 // 1, 6, 7, 71, 564), which is fine when nothing reads them and fatal once they mean the level number.
 // Adding a level means giving it the next id AND title; renumbering existing ones needs a migration
 // (db.js `levels_zero_based_ids` is the worked example).
+// ---- The Level-0 intro script (docs/plans/2026-08-30-1654-playable-intro.md) ----
+// These numbers are the ONLY copy. The client's director (client/src/intro-director.js) reads them off the
+// served descriptor to time its lines and the controls card, and the SIMULATION reads the derived floors
+// below through `spawn.earliest` — so the words and the fight cannot drift apart. All seconds, measured on
+// `world.combatElapsed` (the unpaused sim clock).
+const INTRO_LINE_HOLD = 3;     // a line is fully opaque this long…
+const INTRO_LINE_FADE = 2;     // …then fades over this long
+const INTRO_HELP_HOLD = 3.5;   // the controls card sits in the line slot this long (see the plan decision 12)
+const INTRO_HELP_FLY  = 0.45;  // …then flies/shrinks into the bottom-left #help cheatsheet
+// Enemy #1 warps in ON the opening line, not before it: the pilot gets three quiet seconds to read.
+const INTRO_FIRST_SPAWN = 3;
+// Enemy #2 may not arrive while the player is still reading the controls card. Derived, never typed twice.
+const INTRO_HELP_GONE = INTRO_LINE_HOLD + INTRO_LINE_FADE + INTRO_HELP_HOLD + INTRO_HELP_FLY; // 8.95
+
 export const LEVELS = [
-  // Level 0 — the intro patrol. Gentle, non-skippable FIRST level for new players
-  // (see docs/plans/2026-07-08-2224-intro-first-level.md).
+  // Level 0 — the intro ambush. Gentle FIRST level for new players, and it is PLAYED, not watched
+  // (docs/plans/2026-08-30-1654-playable-intro.md; originally docs/plans/2026-07-08-2224-intro-first-level.md).
   // Enemies warp in ONE AT A TIME (maxConcurrent 1) so it plays as a calm, recordable opener.
   // No boss, no reward, no briefing. On first launch the client auto-launches this level straight into
-  // the fight (no welcome screen / Take-off) — see the client bootstrap change (main.js) in the plan.
+  // the fight (no welcome screen / Take-off) and a scripted director speaks over it; Skip lives in the
+  // Settings gear.
   {
     id: 0, name: 'level-0', descriptor: {
       title: 'Level 0', xpReward: 0, map: 'home-system', // intro/tutorial: no XP bonus (no reward, per below)
-      // The canonical input-replay recording the intro CUTSCENE plays (a real Level-0 playthrough). Served
-      // same-origin from S3 via assets:pull (content-hashed → new recording = new URL). The client bootstrap
-      // plays this as the cutscene for a new player, then advances to Level 1. See docs/plans/2026-07-09-replay-record.md.
+      // THE CANONICAL RECORDED TRACE, not a cutscene any more. The client no longer fetches or plays it —
+      // the intro is a live fight (docs/plans/2026-08-30-1654-playable-intro.md). It stays here because it
+      // is the fixture seven determinism guards resolve their path from: server/tools/sim-replay.test.js,
+      // server/src/netsim/room.test.js, server/src/seal/verify-run.test.js, and visual scenarios
+      // 22/35/36/37. A gitignored S3 asset pulled by `npm run assets:pull`. RE-RECORD IT WHENEVER LEVEL-0'S
+      // PACING CHANGES — see Step 9 of that plan.
       introTrace: 'assets/recordings/level0-intro.6674d840.json',
+      // The FINAL STAGE banner announces the last combat phase on every level. On the intro that instant is
+      // the rocketeer's warp-in, which is exactly when line L3 speaks — two announcements over each other.
+      // Stated as data so nothing in level-runner.js special-cases level 0.
+      finalStageBanner: false,
+      // The scripted intro director (client/src/intro-director.js): the words, their timing, and the
+      // controls card. The SPAWN half of the same timeline is `phases[0].spawn.earliest` below.
+      intro: {
+        lineHold: INTRO_LINE_HOLD, lineFade: INTRO_LINE_FADE,
+        helpHold: INTRO_HELP_HOLD, helpFly: INTRO_HELP_FLY,
+        beats: [
+          { id: 'l0', on: 'start',                    textKey: 'ui.intro.l0' }, // "…something is moving to intercept"
+          { id: 'l1', on: 'spawn',  n: 2,             textKey: 'ui.intro.l1' }, // he wasn't alone → the rocket (F)
+          { id: 'l2', on: 'kill',   n: 2, delay: 2,   textKey: 'ui.intro.l2' }, // 2 s after the 2nd kill
+          { id: 'l3', on: 'spawn',  n: 4,             textKey: 'ui.intro.l3' }, // the rocketeer warps in
+          { id: 'l4', on: 'cleared',                  textKey: 'ui.intro.l4' }, // sector clear → Finish and Return
+        ],
+      },
       // What clears the mission. Stated as DATA so the rule lives in the simulation rather than in the
       // interface, and so a room and a headless referee reach it the same way the browser does — the
       // REWARD is granted the moment it holds, not when the pilot docks (DECISIONS §130). Every level
@@ -661,7 +696,12 @@ export const LEVELS = [
       phases: [
         {
           name: 'wave-1', // three basic pirates, one at a time (kill one -> the next warps in)
-          spawn: { maxConcurrent: 1, total: 3, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
+          // `earliest[n]` = the soonest `world.combatElapsed` at which the (n+1)-th spawn of this phase may
+          // happen. It is a FLOOR on top of the ordinary stagger, never a replacement for it: #1 waits for
+          // the opening line, #2 additionally waits for the controls card to have flown away. Index 2 is
+          // absent, so enemy #3 uses the plain randomized 2–4 s stagger like every other level.
+          spawn: { maxConcurrent: 1, total: 3, earliest: [INTRO_FIRST_SPAWN, INTRO_HELP_GONE],
+                   pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
           advanceWhen: { kills: 3 }
         },
         {
@@ -678,7 +718,7 @@ export const LEVELS = [
     id: 1, name: 'level-1', descriptor: {
       title: 'Level 1', xpReward: 500, map: 'home-system', // one-shot XP bonus on victory (client-summed, DECISIONS)
       lastKillDrop: { kind: 'weapon', refId: 5 },   // cosmetic reward drop on the last enemy (Machine Gun); server force-installs the real copy on victory
-      // Shown in the Main Window when the player reaches Level 1 (right after the Level 0 intro cutscene) — the
+      // Shown in the Main Window when the player reaches Level 1 (right after the Level 0 intro) — the
       // original "first flight" briefing (pirates in the home system + a fast ship). No `actions` (nothing to
       // install yet); the shop is still locked, so the Main Window shows just the briefing + Take off.
       briefing: { textKey: 'level.1.briefing' },

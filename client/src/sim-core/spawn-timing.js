@@ -19,8 +19,11 @@ export function nextSpawnDelay(rand = Math.random) {
 // replacements are staggered too, never instant). One spawn per call at most (staggered one at a time).
 // `rand` is the injectable RNG — the sim MUST pass `simRandom` (see sim.js); the `Math.random` default exists
 // for tests only (and for level-sim.js's headless projection, which injects its own).
-export function stepSpawnGate({ cooldown, dt, alive, maxConcurrent, capRemaining }, rand = Math.random) {
-  const wantSpawn = alive < maxConcurrent && (capRemaining == null || capRemaining > 0);
+export function stepSpawnGate({ cooldown, dt, alive, maxConcurrent, capRemaining, blocked = false }, rand = Math.random) {
+  // `blocked` — a script says "not yet" (level-0's `spawn.earliest` floors). Treated exactly like a full
+  // arena: the cooldown FREEZES rather than draining, so the floor can never leak into the delay that the
+  // level runner hands the enemy as its warp-in duration.
+  const wantSpawn = !blocked && alive < maxConcurrent && (capRemaining == null || capRemaining > 0);
   if (!wantSpawn) return { spawn: false, cooldown };  // arena full / budget spent → freeze the timer
   const cd = cooldown - dt;
   if (cd <= 0) return { spawn: true, cooldown: nextSpawnDelay(rand) };  // fire + arm the next 2..4 s

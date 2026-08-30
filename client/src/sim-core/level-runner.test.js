@@ -15,7 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld } from './world.js';
-import { startLevel, updateLevelRunner, clearMission, finishMission, checkArrival, winLevel,
+import { startLevel, updateLevelRunner, clearMission, finishMission, checkArrival, winLevel, enterPhase,
          winConditionMet, winConditionOf, DEFAULT_WIN_CONDITION } from './level-runner.js';
 import { LEVELS } from '../../../server/src/catalog_seed.js';
 
@@ -250,4 +250,121 @@ test('docking before the sector is cleared does nothing at all', () => {
   checkArrival(world);
   assert.equal(world.levelRunner.won, false, 'completeMission refuses, so the approach lands on nothing');
   assert.equal(world.levelRunner.cleared, false);
+});
+
+// ---------- `spawn.earliest`: the intro's spawn floors (docs/plans/2026-08-30-1654-playable-intro.md) ----------
+//
+// The playable Level-0 intro has to hold its first pirate until the opening line has been read (3 s) and its
+// second until the controls card has flown into the corner (8.95 s). Both are stated as DATA on the phase —
+// `spawn.earliest[n]` = the soonest `world.combatElapsed` at which the (n+1)-th spawn may happen — so the
+// same floors apply in a browser, in a netsim room and in the headless referee. Every other level omits the
+// field, and the tests above (which use level-2/level-4 descriptors) are the guard that nothing changed for
+// them.
+
+// A real World on a synthetic descriptor: one spawn phase with the given floors, a real catalog (so
+// spawnEnemy can build the pirate), and a stopped clock we advance by hand.
+async function floorWorld(earliest, { total = 3 } = {}) {
+  const { createSimWorld } = await import('../../../server/src/sim-host.js');
+  const world = createSimWorld({ levelName: 'level-0', seed: 11 });
+  const level = {
+    title: 'floor test', xpReward: 0, map: 'home-system', winCondition: { type: 'allEnemiesDead' },
+    phases: [
+      { name: 'wave-1', spawn: { maxConcurrent: 1, total, earliest, pool: [{ ship: 'Basic pirate ship', chance: 100 }] },
+        advanceWhen: { kills: total } },
+      { name: 'victory', event: 'win', delay: 0, textKey: 'level.0.victory' },
+    ],
+  };
+  world.catalog.level = level;
+  startLevel(world, level);
+  world.combatElapsed = 0;
+  return world;
+}
+
+// Step the runner `seconds` of sim, advancing the combat clock the way simTick does.
+function runFor(world, seconds) {
+  for (let i = 0; i < Math.round(seconds / DT); i++) { world.combatElapsed += DT; updateLevelRunner(world, DT); }
+}
+
+test('spawn.earliest holds the first spawn until the clock reaches the floor', async () => {
+  const world = await floorWorld([3]);
+  runFor(world, 2.9);
+  assert.equal(world.enemies.length, 0, 'nothing warps in while the opening line is still being read');
+  runFor(world, 0.2);                                   // crosses 3 s
+  assert.equal(world.enemies.length, 1, 'the first pirate arrives on the first tick at or after the floor');
+});
+
+// The constraint the `blocked` freeze exists for: `updateLevelRunner` stores `gate.cooldown` on the enemy as
+// its warp-in duration, so a floor that DRAINED the cooldown would hand the pirate a 3 s materialisation.
+test('an enemy released by a floor still materializes over the ordinary 2–4 s stagger', async () => {
+  const world = await floorWorld([3]);
+  runFor(world, 3.2);
+  const e = world.enemies[0];
+  assert.ok(e, 'it spawned');
+  assert.ok(e.spawnDur >= 2 && e.spawnDur <= 4, `spawnDur ${e.spawnDur} is the plain 2–4 s stagger, not the floor`);
+});
+
+test('earliest[1] holds the SECOND spawn even with the arena empty and the cooldown long drained', async () => {
+  const world = await floorWorld([3, 8.95]);
+  runFor(world, 3.2);
+  assert.equal(world.enemies.length, 1);
+  world.enemies.length = 0;                             // the player kills it immediately
+  world.kills = 1;
+  runFor(world, 5.7);                                   // now at ~8.9 s: arena empty, nothing else holding it
+  assert.equal(world.enemies.length, 0, 'the second pirate waits for the controls card to have flown away');
+  // The floor is a floor ON TOP of the ordinary stagger, not a replacement for it: once it lifts, the 2–4 s
+  // the gate froze still has to elapse. So the arrival is `max(floor, kill + 2..4)` and never earlier.
+  const floorAt = world.combatElapsed;
+  for (let i = 0; i < 60 * 6 && world.enemies.length === 0; i++) { world.combatElapsed += DT; updateLevelRunner(world, DT); }
+  assert.equal(world.enemies.length, 1, 'and arrives once the floor has lifted and the stagger has run out');
+  assert.ok(world.combatElapsed >= 8.95, `never before the floor (arrived at ${world.combatElapsed.toFixed(2)} s)`);
+  assert.ok(world.combatElapsed - floorAt <= 4.1, 'and within one stagger of it');
+});
+
+test('a spawn index BEYOND the earliest array is unfloored — the third pirate uses the plain stagger', async () => {
+  const world = await floorWorld([3, 8.95]);
+  runFor(world, 3.2); world.enemies.length = 0; world.kills = 1;
+  runFor(world, 5.8); world.enemies.length = 0; world.kills = 2;   // #2 arrived at 8.95 and died
+  const before = world.combatElapsed;
+  for (let i = 0; i < 60 * 6 && world.enemies.length === 0; i++) { world.combatElapsed += DT; updateLevelRunner(world, DT); }
+  assert.equal(world.enemies.length, 1, 'the third pirate arrives on the ordinary cooldown');
+  assert.ok(world.combatElapsed - before <= 4.1, `within the 2–4 s stagger, not a floor (waited ${(world.combatElapsed - before).toFixed(2)} s)`);
+});
+
+// ---------- `finalStageBanner: false` ----------
+
+test('entering the last combat phase fires FINAL STAGE — unless the descriptor says not to', () => {
+  const banners = (descriptorPatch) => {
+    const descriptor = { ...LEVELS.find((l) => l.name === 'level-2').descriptor, ...descriptorPatch };
+    const world = createWorld({});
+    world.catalog = { level: descriptor, levelName: 'level-2', shipByName: new Map() };
+    world.station = { pos: { x: 0, y: 0, z: 0 }, active: false };
+    world.player = { alive: true, pos: { x: 0, y: 0, z: 0 } };
+    startLevel(world, descriptor);
+    world.levelRunner.phaseIndex = descriptor.phases.length - 2;   // the last COMBAT phase
+    world.events.clear();
+    enterPhase(world);
+    return drain(world).filter((e) => e.type === 'banner').map((e) => e.key);
+  };
+  assert.deepEqual(banners({}), ['ui.banner.final_stage'], 'every ordinary level announces its last stage');
+  assert.deepEqual(banners({ finalStageBanner: false }), [],
+    'the intro suppresses it — that instant is when its own line L3 speaks');
+});
+
+// The shipped level-0 descriptor IS the intro's script. These pin the two halves of the one timeline
+// against each other, so nobody can retune the words without the fight following (or vice versa).
+test('the shipped level-0 descriptor carries an intro script whose floors match its beat timings', () => {
+  const d = LEVELS.find((l) => l.name === 'level-0').descriptor;
+  assert.ok(d.intro, 'level 0 carries the director script');
+  assert.equal(d.finalStageBanner, false, 'and suppresses the FINAL STAGE banner');
+  assert.deepEqual(d.intro.beats.map((b) => b.id), ['l0', 'l1', 'l2', 'l3', 'l4']);
+  const earliest = d.phases[0].spawn.earliest;
+  assert.equal(earliest[0], 3, 'the first pirate waits for the opening line');
+  // The second floor IS "the controls card has finished flying" — derived, never typed twice.
+  assert.equal(earliest[1], d.intro.lineHold + d.intro.lineFade + d.intro.helpHold + d.intro.helpFly);
+  assert.equal(earliest.length, 2, 'the third pirate is unfloored');
+  // Nothing else on the campaign carries a floor: the intro is the only scripted level.
+  for (const l of LEVELS) {
+    if (l.name === 'level-0') continue;
+    for (const ph of l.descriptor.phases) assert.equal(ph.spawn && ph.spawn.earliest, undefined, `${l.name}/${ph.name} is unscripted`);
+  }
 });
