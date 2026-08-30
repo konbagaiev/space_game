@@ -1,15 +1,15 @@
 // Regression guard for the intro→Level-1 dead-controls bug (docs/plans/2026-08-03-1246-record-all-sessions.md).
 //
 // Always-on recording unified live play onto the record/playback fixed-step accumulator, whose inner loop was
-// gated `while (… && !rs.done && …)`. At the real intro's end, cutsceneEnd()→finishIntro()→rs.teardown() reset
+// gated `while (… && !rs.done && …)`. At the intro's end, skipIntro()→finishIntro()→rs.teardown() reset
 // rs.done to false AND nulled rs.play, then the caller set `rs.done = true` AGAIN — so the first LIVE session
 // after the intro inherited a stale rs.done=true and the accumulator never stepped: the ship was off-center and
 // controls were dead until a page refresh (which builds a fresh rs). This ships the guard that would have caught
 // it: reproduce the exact post-intro state, take off into live Level 1, and assert the sim actually advances.
 //
-// The headless suites can't run the REAL auto-intro (shouldPlayIntro is gated off under ?debug), so we fire the
-// production intro-completion sequence via the __game.simulateIntroEnd() seam — it runs the actual
-// finishIntro()→teardown→welcome path AND leaves rs.done=true exactly like the accumulator caller does. The
+// The runner boots into the live intro and then silences its director, so we fire the production intro-END
+// sequence via the __game.simulateIntroEnd() seam — it runs the actual skipIntro()→finishIntro()→teardown→menu
+// path AND leaves rs.done=true exactly like the accumulator caller does. The
 // take-off below is then the real welcome/Main-Window flow (welcome.js takeOff / launchCampaign → beginLiveSession
 // → reset). Fix A (live ignores rs.done) makes assertion (a) pass; Fix B (take-off arms the recorder) makes (b).
 export const name = 'intro-live-handoff';

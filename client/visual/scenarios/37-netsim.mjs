@@ -248,14 +248,14 @@ export default async function ({ page, assert, shot, baseURL }) {
 
   // --- NETSIM MUST STAND ASIDE FOR A REPLAY ---
   //
-  // `?record`, `?playback` and the Level-0 intro cutscene (which rides the same machinery, armed at
+  // `?record` and `?playback` (which re-run the LOCAL sim from a recorded trace, armed at
   // bootstrap without the flag ever appearing in the URL) all replay the LOCAL sim deterministically and
-  // own the tick. Running a room alongside one stepped a second fight behind the frozen cutscene card:
+  // own the tick. Running a room alongside one stepped a second, invisible fight behind the replay:
   // the text came up, and the game underneath it did not stop. Asserted here with `?playback`, which is
   // the reachable form of the same collision.
   const trace = JSON.parse(fs.readFileSync(tracePath(), 'utf8'));
   await page.evaluate(([id, json]) => localStorage.setItem(`replay:${id}`, json), [trace.id, JSON.stringify(trace)]);
-  await page.goto(`${origin}/?playback&id=${encodeURIComponent(trace.id)}&cutscene=1&netsim=1&debug`, { waitUntil: 'load' });
+  await page.goto(`${origin}/?playback&id=${encodeURIComponent(trace.id)}&netsim=1&debug`, { waitUntil: 'load' });
   await page.waitForFunction('!!(window.__replay && window.__replay.status().armed)', null, { timeout: SLOW });
   await page.waitForTimeout(1500);
   const deferred = await page.evaluate(() => ({

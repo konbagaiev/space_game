@@ -136,10 +136,10 @@ test('a socket that dies during the handshake reports an error instead of a half
   assert.equal(errors.length, 1);
 });
 
-test('netsim defers to any record/playback session, the intro cutscene included', () => {
+test('netsim defers to any record/playback session', () => {
   // The intro rides the ?playback machinery, armed programmatically at bootstrap — so `playback` is truthy
   // without the flag ever appearing in the URL. Running a room alongside it stepped a second fight behind
-  // the frozen cutscene card, which is how it was found.
+  // the replay, which is how it was found.
   assert.equal(netsimDefersTo({ record: null, playback: null }), false, 'a plain session is netsim\'s to drive');
   assert.equal(netsimDefersTo({ record: null, playback: { id: 'x' } }), true, '?playback / the intro owns the tick');
   assert.equal(netsimDefersTo({ record: { level: 'level-0' }, playback: null }), true, '?record owns it too');

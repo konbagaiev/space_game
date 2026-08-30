@@ -350,10 +350,10 @@ export function inActivityZone(px, pz, zones, radius) {
 // THE replay-protection invariant, stated precisely: **the speed cap is never lifted for INPUT-DRIVEN
 // flight.** A replay reproduces the recorded INPUT stream, so any leg the player steers by hand must clamp
 // exactly as it did when recorded. An AUTOPILOT leg is not input-driven and is not reproduced from the
-// trace — the intro replayer literally freezes the trace index and zeroes the key state while the dock
-// autopilot flies home (`rs.cutReturning`, main.js) — so uncapping an autopilot leg cannot desync a replay.
-// Verified: lifting the cap for the dock leg leaves `22-intro-replay` byte-identical (kills=4,
-// cards=p0..p4, won=true, tick 2213/2730 unchanged). See DECISIONS §101.
+// trace — `?playback&finish` literally freezes the trace index and zeroes the key state while the dock
+// autopilot flies home (`rs.returning`, replay.js) — so uncapping an autopilot leg cannot desync a replay.
+// Verified: lifting the cap for the dock leg leaves `22-trace-replay` byte-identical (kills=4, won=true,
+// tick 2213/2730 unchanged at the time). See DECISIONS §101.
 //
 // Two legs are therefore uncapped, and only these:
 //   • roam + autopilot — cruising to a system destination, so crossing the system is not a chore;

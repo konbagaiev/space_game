@@ -3,7 +3,7 @@
 // A "recording" is NOT a movie of positions — it is the player's INPUT + the RNG seed. Playback re-runs the
 // REAL sim (the seeded gameplay stream from sim-random.js, fixed BENCH_DT step) from that input, so
 // everything is native: real bullet colors, smooth physics, real FX, real collisions. One mechanism, many
-// consumers (the Level-0 cutscene, a "watch the fight from another angle" viewer, video capture, …).
+// consumers (the canonical Level-0 determinism fixture, the admin session viewer, video capture, …).
 //
 // This module is the PURE, DOM-free, engine-free half — URL-flag parsing + the trace shape + the per-tick
 // input snapshot/apply. main.js owns the wiring (it holds update()/reset()/keys/the render loop). Keeping the
@@ -66,16 +66,18 @@ export function evalRecord(search) {
   return { level: normalizeLevelName(p.get('level')) };
 }
 
-// ?playback&id={id}  (or the shorthand ?playback={id}) → { id, cutscene } | null. URL-only. A missing id
+// ?playback&id={id}  (or the shorthand ?playback={id}) → { id, finish } | null. URL-only. A missing id
 // resolves to the most recent same-browser recording (main.js falls back to the 'last' dev-cache slot).
-// `&cutscene` (=1) overlays the level's scripted, event-driven text pauses (Level-0 intro cutscene).
+// `&finish` (=1) presses "Finish and Return" for the pilot when the sector clears, and stops the re-sim on
+// the victory overlay. A trace records keys and touch, never a MOUSE CLICK, so the button that ends a
+// mission is not in it and a winning replay would otherwise sit in a cleared sector forever.
 export function evalPlayback(search) {
   const p = new URLSearchParams(search || '');
   if (!p.has('playback')) return null;
   const v = p.get('playback');
   const id = (p.get('id') || (v && v !== '' && v !== '1' && v !== 'true' ? v : '') || '').trim();
-  const cutscene = p.has('cutscene') && !['0', 'false', 'off'].includes(p.get('cutscene'));
-  return { id: id || null, cutscene };
+  const finish = p.has('finish') && !['0', 'false', 'off'].includes(p.get('finish'));
+  return { id: id || null, finish };
 }
 
 // Snapshot the resolved input for ONE tick, exactly as the recorder captures it and the replayer re-applies it:
@@ -157,15 +159,14 @@ export function applyInput(tick, keys, touchAim) {
   }
 }
 
-// ~15 s of sim time at the fixed 1/60 step. Once the cutscene engages "return to base" (rs.cutReturning)
-// only a WIN ends it: rs.index is frozen and rs.done is never set, so a run that can never dock (dead
-// player, or a desync that leaves the ship unable to reach the station) loops forever. This bail-out ends
-// it through the normal path (cutsceneEnd → finishIntro) = "the intro stops early and you land on the
-// Level 1 briefing" instead of a dead screen.
+// ~15 s of sim time at the fixed 1/60 step. Once `?playback&finish` engages "return to base"
+// (rs.returning) only a WIN ends it: rs.index is frozen and rs.done is never set, so a run that can never
+// dock (dead player, or a desync that leaves the ship unable to reach the station) loops forever. This
+// bail-out ends the playback instead of leaving it on a dead screen.
 // The limit must clear a LEGITIMATE flight home: the station sits at [-10,-42,-10] (catalog_seed.js),
 // BASE_ARRIVE_RADIUS = 45 (autopilot-config.js:5) and PLAYER_MAX_SPEED = 30 (sim.js), so a fight that ends
-// ~200 u out is a ~7 s flight — 8 s would abort real intros. 15 s is ~2× the expected worst case.
-export const CUTSCENE_STALL_TICKS = 900;
+// ~200 u out is a ~7 s flight — 8 s would abort real runs. 15 s is ~2× the expected worst case.
+export const RETURN_HOME_STALL_TICKS = 900;
 
 // Assemble a trace object from the captured run. `seed` is the mulberry32 seed actually installed at record
 // start (the ONLY thing beyond input that determinism needs — the audit found no other non-seeded source in the
@@ -196,30 +197,27 @@ export function makeTrace({ id, level, seed, dt, shipId, loadout, components, sk
   };
 }
 
-// The live playback/cutscene session (the intro cutscene rides the ?playback machinery). Kept as ONE
-// object so the whole cluster is torn down together — a PARTIAL reset leaves animate() stuck in the
-// playback branch (the intro→Level-1 dead-screen bug this guards against). Unit-tested; main.js holds
-// exactly one instance. NOTE: `replayAcc`, the record vars, `G.replayMode`, and the cutscene-runtime
-// detail (cutFrozen/cutFired/cutQueue/… + overlay els) stay module-level in main.js — they are NOT part
-// of the return-to-live gate.
+// The live playback session. Kept as ONE object so the whole cluster is torn down together — a PARTIAL
+// reset leaves animate() stuck in the playback branch (the intro→Level-1 dead-screen bug this guards
+// against). Unit-tested; main.js holds exactly one instance. NOTE: `replayAcc`, the record vars and
+// `G.replayMode` stay module-level in main.js — they are NOT part of the return-to-live gate.
 export function makeReplaySession() {
   return {
-    play: null,          // was module `PLAY` — { id, cutscene } | null; the animate() gate
-    trace: null,         // was playTrace  — the loaded trace during ?playback / intro
+    play: null,          // was module `PLAY` — { id, finish } | null; the animate() gate
+    trace: null,         // was playTrace  — the loaded trace during ?playback
     armed: false,        // was playArmed  — step the trace only after the ship model has loaded
     index: 0,            // was playIndex  — next playback tick to apply
     done: false,         // was playDone   — trace exhausted (freezes the re-sim on the last frame)
-    cut: null,           // was CUT        — the LEVEL0_CUTSCENE script or null
-    cutDone: false,      // was cutDone    — after Skip / last pause: stop observing events
-    cutReturning: false, // was cutReturning — fight cleared → simulate "Return to base"
-    stallTicks: 0,       // consecutive RETURN-HOME ticks without a win (see CUTSCENE_STALL_TICKS)
+    autoFinish: false,   // ?playback&finish — press "Finish and Return" when the sector clears
+    returning: false,    // …and it has been pressed: the ship is flying home, input is muted
+    stallTicks: 0,       // consecutive RETURN-HOME ticks without a win (see RETURN_HOME_STALL_TICKS)
     get active() { return !!this.play; },
-    // Count one stepped tick. `returningNoWin` = rs.cutReturning is engaged and the level is still not won.
+    // Count one stepped tick. `returningNoWin` = the return home is engaged and the level is still not won.
     noteTick(returningNoWin) { this.stallTicks = returningNoWin ? this.stallTicks + 1 : 0; return this.stallTicks; },
-    stalled(limitTicks = CUTSCENE_STALL_TICKS) { return this.stallTicks >= limitTicks; },
+    stalled(limitTicks = RETURN_HOME_STALL_TICKS) { return this.stallTicks >= limitTicks; },
     teardown() {
       this.play = null; this.trace = null; this.armed = false; this.index = 0;
-      this.done = false; this.cut = null; this.cutDone = false; this.cutReturning = false;
+      this.done = false; this.autoFinish = false; this.returning = false;
       this.stallTicks = 0;
     },
   };
@@ -229,18 +227,19 @@ export function makeReplaySession() {
 // main.js: the fixed-timestep accumulator inside animate() and the synchronous window.__replay.step(n)
 // hook. It used to be written out twice ("mirror the accumulator" in the step() copy), so any edit to one
 // silently desynced the other. Everything OUTSIDE one tick stays with the caller: the replayAcc bookkeeping,
-// the `steps < 6` cap, the cutFrozen check, the record/playback HUD, and the post-loop cutsceneEnd().
+// the `steps < 6` cap and the record/playback HUD.
 //
 // Injected deps (this module stays DOM/engine-free and unit-testable):
-//   rs         — the makeReplaySession() object (play/trace/index/done/cut/cutDone/cutReturning + watchdog)
+//   rs         — the makeReplaySession() object (play/trace/index/done/autoFinish/returning + watchdog)
 //   keys       — the shared held-key map (mutated in place)
 //   touchAim   — the shared touch-steering state (mutated in place)
 //   dt         — the fixed step (BENCH_DT)
 //   update     — the sim step, called as update(dt)
 //   capture    — optional; called right after update() to snapshot this tick's input (record / live session)
-//   cutObserve — cutscene observer, called when rs.cut is set (may freeze, engage return-home, or end)
-//   cutEnd     — ends the cutscene (used by the return-home watchdog)
+//   onTick     — optional; called every tick after `capture` (the Level-0 intro director rides this)
+//   isCleared  — () => the sector is clear and the mission has not been ended yet
 //   isWon      — () => levelRunner.won
+//   finish     — presses "Finish and Return" (finishMission)
 // Returns 'ok' (tick ran) or 'stop' (caller must break out of its loop WITHOUT consuming time/steps).
 //
 // NOTE on the entry guard: the accumulator gated its loop with `!(rs.play && rs.done)` while step() used a
@@ -251,35 +250,31 @@ export function makeReplaySession() {
 // here on the accumulator's live-play-safe form, which is also the safe direction where they differ: a live
 // session that inherited a stale rs.done must keep stepping — the intro→Level-1 dead-controls bug, guarded by
 // visual/scenarios/29-intro-live-handoff.mjs. Pinned by a unit test (`rs.play=null, rs.done=true` → steps).
-export function stepReplayTick({ rs, keys, touchAim, dt, update, capture, cutObserve, cutEnd, isWon }) {
+export function stepReplayTick({ rs, keys, touchAim, dt, update, capture, onTick, isCleared, isWon, finish }) {
   if (rs.play && rs.done) return 'stop';            // playback finished — never step, never consume time
-  if (rs.cutReturning) {
+  if (rs.returning) {
     for (const c in keys) keys[c] = false; touchAim.active = false; // no recorded input → autopilot isn't cancelled (sim manual-input check)
   } else if (rs.play && rs.trace) {
     if (rs.index < rs.trace.ticks.length) applyInput(rs.trace.ticks[rs.index], keys, touchAim);
     else { rs.done = true; return 'stop'; }         // trace exhausted with the fight unfinished
   }
   update(dt);                                       // the seeded stream is opt-in inside the sim (sim-random.js)
-  if (rs.play && rs.trace && !rs.cutReturning) rs.index++;
+  if (rs.play && rs.trace && !rs.returning) rs.index++;
   if (capture) capture();
-  if (rs.cut) cutObserve();                         // may freeze (fire a pause), engage return-to-base, or end
-  // RETURN-HOME watchdog (see CUTSCENE_STALL_TICKS): while rs.cutReturning is engaged only a WIN ends the
-  // cutscene, so a run that can never dock would loop forever. Only that path reaches here — an EXHAUSTED
-  // trace returns 'stop' above and is ended by the caller's post-loop cutsceneEnd().
-  if (rs.cut && !rs.cutDone) {
-    rs.noteTick(rs.cutReturning && !isWon());
-    if (rs.stalled()) { cutEnd(); rs.done = true; return 'stop'; } // ends the intro via finishIntro()
+  if (onTick) onTick();                             // per-tick observer (the Level-0 intro director)
+  // ?playback&finish — press "Finish and Return" for the pilot when the sector clears, and stop the re-sim
+  // on the victory overlay. A trace cannot carry that click, so without this a winning replay never ends.
+  // The watchdog below is why the stall counter exists: while `returning` is engaged only a WIN ends the
+  // playback (rs.index is frozen and rs.done is never set), so a run that can never dock would loop forever.
+  if (rs.autoFinish && !rs.done) {
+    if (!rs.returning && isCleared()) {
+      rs.returning = true;
+      for (const c in keys) keys[c] = false; touchAim.active = false; // no input → the autopilot isn't cancelled
+      finish();
+    } else if (rs.returning && isWon()) { rs.done = true; return 'stop'; }
+    if (rs.noteTick(rs.returning && !isWon()) >= RETURN_HOME_STALL_TICKS) { rs.done = true; return 'stop'; }
   }
   return 'ok';
-}
-
-// Decide whether to auto-play the intro cutscene for this load. Server-authoritative: `introTrace` is
-// present ONLY on the level-0 descriptor served while current_progress===0 (a NEW or freshly-RESET
-// player), so hasIntroTrace is the real one-time gate — no client localStorage flag, so a genuine
-// progress reset replays the intro. Headless suites (?debug/?bench) always get the playable Level 0.
-export function shouldPlayIntro(search, hasIntroTrace) {
-  const headless = search.includes('debug') || search.includes('bench');
-  return !headless && !!hasIntroTrace;
 }
 
 // Validate a loaded trace before we drive the engine from it. Returns an array of problem strings (empty = ok),

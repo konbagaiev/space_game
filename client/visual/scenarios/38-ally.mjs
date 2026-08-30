@@ -1,6 +1,6 @@
 // The wingman, in an actual browser — the one thing no unit test and neither determinism oracle can see.
 //
-// `22-intro-replay` and `36-sim-divergence` prove the change is INERT with no ally. They exercise none of
+// `22-trace-replay` and `36-sim-divergence` prove the change is INERT with no ally. They exercise none of
 // his own code, because the Level-0 trace has no ally phase. This is the other side: turn the `?ally` dev
 // flag on and check he actually ARRIVES, gets a body in the scene, flies, FIGHTS and is drawn — and,
 // because a green simulation is not a green picture, that his hull really lands on screen where the

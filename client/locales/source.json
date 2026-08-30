@@ -607,33 +607,33 @@
     "source": "Ambush broken — you're through, Sentinel. Bring it in to the station.",
     "context": "Victory overlay subtitle after the intro level (Level 0). The intro is an AMBUSH on approach (not a patrol) — the rookie has survived it. Spoken by mission control, terse and forward-looking, sending them on to the station. Short. 'Sentinel' is the player's in-game title — keep it."
   },
-  "ui.cutscene.p0_intro": {
-    "source": "My first posting as a Vega Sentinel — fresh commission, a ship straight off the line, an easy hop out to the station. …Contact on approach. No transponder, no answer to my hails. It's swinging onto me with its guns already hot. So much for easy.",
-    "context": "Opening card of the Level-0 intro cutscene, shown BEFORE the fight starts (the player taps to begin). First-person narration by a rookie Vega Sentinel flying to a first posting, ambushed on approach by an unidentified hostile. Grounded and a little scared, NOT a quipping hero — keep that register."
+  "ui.intro.l0": {
+    "source": "First posting, fresh commission, an easy hop out to the station. \u2026Contact on approach \u2014 no transponder, no answer to my hails. Whatever that is, it's swinging onto me.",
+    "context": "Opening line of the PLAYABLE Level-0 intro, shown over the fight from the first second (the player is already flying). First-person narration by a rookie Vega Sentinel on the way to a first posting, ambushed on approach by something that looks like a pirate. Grounded and a little scared, NOT a quipping hero. Two short sentences."
   },
-  "ui.cutscene.p1_first_kill": {
-    "source": "Their fire's heavy but slow — slip aside and it sails past. First one's down on the cannon. …And he isn't alone out here. Rockets, then — bringing the pod online.",
-    "context": "Intro-cutscene pause line ~1s after the pilot destroys the FIRST pirate with the cannon. First-person; establishes you can dodge enemy fire, then — seeing there's more than one enemy — the pilot brings the ship's own rocket launcher online. Short."
+  "ui.intro.l1": {
+    "source": "He wasn't alone out here. Rockets, then \u2014 pod's live on F.",
+    "context": "Line fired when the SECOND pirate warps in, during the playable Level-0 intro. First-person; the pilot realizes there is more than one enemy and brings the ship's rocket launcher online. Teaches the rocket through the action, not as a tutorial instruction. 'F' is the keyboard binding and must stay as-is; on touch the player uses the on-screen rocket button, so do not translate 'F' into words. Very short."
   },
-  "ui.cutscene.p2_second_kill": {
-    "source": "There — second one, straight off a rocket. That's what they're for. …And they keep jumping in around me. How many are out here?",
-    "context": "Intro-cutscene pause line ~1s after the SECOND kill, which the player makes with a ROCKET. First-person; emphasize that the second enemy was downed by the player's own rocket, then grim realization that more keep arriving. Short."
+  "ui.intro.l2": {
+    "source": "That's two. \u2026How many more of these are out here?",
+    "context": "Line fired 2 s after the SECOND pirate is destroyed, during the playable Level-0 intro. First-person, wry and a little uneasy \u2014 the fight is not ending. Very short."
   },
-  "ui.cutscene.p3_rocketeer": {
-    "source": "This one hits back with rockets. A rocket only turns so hard, though — stay off its line and it can't corner with me. Keep moving.",
-    "context": "Intro-cutscene pause line ~1s after an ENEMY rocket pirate warps in. First-person; the enemy now fires rockets, and the pilot notes a rocket can be out-turned/outrun by staying off its line. Short."
+  "ui.intro.l3": {
+    "source": "This one hits back with rockets. A rocket only turns so hard \u2014 stay off its line, or put a round through it.",
+    "context": "Line fired when the rocket-armed pirate warps in (the last enemy of the playable Level-0 intro). First-person; the two answers to an incoming rocket are dodging it and shooting it down. Teaches through the action. Short."
   },
-  "ui.cutscene.p4_second_rocket": {
-    "source": "Another launch. This time I don't dodge — I put a cannon round straight through it. …Okay. I've got this.",
-    "context": "Intro-cutscene pause line ~1s after the enemy fires a SECOND rocket. First-person; this time the pilot shoots the incoming rocket down with the cannon instead of dodging — showing enemy rockets can be intercepted. End on shaky, earned confidence — no exclamation-mark bravado. Short."
+  "ui.intro.l4": {
+    "source": "Sector's quiet. Nothing left out here \u2014 take her home.",
+    "context": "Line fired the moment the last enemy of the intro dies and the 'Finish and Return' button appears at the bottom of the screen. First-person; points the player at ending the mission and flying home. Short."
   },
-  "ui.cutscene.skip": {
-    "source": "Skip",
-    "context": "Button (top-right) that skips the intro cutscene. One word, very short."
+  "ui.intro.skip": {
+    "source": "Skip the intro",
+    "context": "Button inside the Settings modal, shown only during the intro level, that ends the intro and moves the player straight to the first real mission briefing. Short."
   },
-  "ui.cutscene.tap": {
-    "source": "tap to continue",
-    "context": "Small affordance under a cutscene text card telling the player to tap/click to dismiss the card and continue. Short, lowercase."
+  "ui.help_touch": {
+    "source": "<b>Drag anywhere</b> \u2014 steer \u00b7 <b>FIRE</b> \u2014 shoot \u00b7 <b>\ud83d\ude80</b> \u2014 rocket",
+    "context": "TOUCH version of the on-screen controls cheatsheet (HTML), shown instead of ui.help on phones/tablets. The player steers by dragging ANYWHERE on the play area (the virtual stick spawns under the finger, wherever it lands) and taps the on-screen FIRE and rocket buttons. Keep the \ud83d\ude80 glyph and the word FIRE (it is the label printed on the button itself); translate the action words."
   },
   "level.1.victory": {
     "source": "Station's clear. Sharp flying for a rookie, Sentinel — we'll take it.",
@@ -641,7 +641,7 @@
   },
   "level.1.briefing": {
     "source": "You made it in — just in time, Sentinel, and in a ship like that, even better. We weren't expecting our relief to be a green cadet, but right now I'll take anything with guns in the air. Pirates are swarming the approach and my crews are pinned in the bays. Drive them off the station first — who you are and what they're after, we'll sort out once it's quiet.",
-    "context": "Main Window briefing shown when the player reaches Level 1 (right after the Level-0 intro cutscene) — the first real mission. Spoken by a station dispatcher/officer, relieved and a little wry, to the just-arrived rookie: thanks them for arriving in time in such a ship, then asks them to drive the pirates off the station FIRST and sort out the rest later. 'Sentinel' is the player's title; the ship is fast and nimble."
+    "context": "Main Window briefing shown when the player reaches Level 1 (right after the Level-0 intro) — the first real mission. Spoken by a station dispatcher/officer, relieved and a little wry, to the just-arrived rookie: thanks them for arriving in time in such a ship, then asks them to drive the pirates off the station FIRST and sort out the rest later. 'Sentinel' is the player's title; the ship is fast and nimble."
   },
   "level.2.briefing": {
     "source": "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. And now that you're back at the station, the hangar's open to you: the shop is yours to use between missions — kit out before you push on. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",

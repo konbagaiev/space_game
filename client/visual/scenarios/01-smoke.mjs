@@ -14,7 +14,8 @@ export default async function ({ page, assert, shot }) {
     };
   });
   assert.ok(info.hasCanvas, 'a WebGL canvas is present');
-  assert.equal(info.enemies, 1, 'the arena seeds one enemy immediately, then staggers the rest in');
+  assert.equal(info.enemies, 1, "the arena's first enemy has arrived — level-0 holds it until the intro's "
+    + 'opening line has been read (spawn.earliest), and the runner waits for it — then staggers the rest in');
   // GUARD (2026-08-19). The sim owns transforms as plain `Vec3` now, and `THREE.Object3D.lookAt` branches
   // on `x.isVector3`: handing it a Vec3 falls through to `set(v, undefined, undefined)` and NaNs the
   // camera's orientation — nothing renders, nothing throws, and every simulation-state assertion (kills,
