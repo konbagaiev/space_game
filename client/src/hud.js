@@ -13,6 +13,7 @@ import { cssColor } from './format.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 import { isDev } from './dev.js';
+import { lightStatus } from './engine-lights.js'; // ?lights=N fork: lit/pool readout on the dev line
 import { liveProgress } from './progression.js';
 
 const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the perf overlay (see dev.js)
@@ -167,9 +168,16 @@ export function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim
     // and does not on Performance, which has no overlay at all.
     const res = `${renderer.domElement.width}×${renderer.domElement.height}`;
     // In ?dev, append live JS-heap usage (Chrome only) so the tester can eyeball current RAM.
+    // REAL-LIGHT FORK READOUT (?lights=N). On screen rather than in the console because the question it
+    // answers — "is a light actually lit while I hold thrust?" — cannot be checked by pasting into a console
+    // with both hands on the controls. `lit/pool` plus the live power is the whole diagnosis at a glance.
+    const ls = lightStatus();
+    const lightSuffix = ls.pool
+      ? ` · lit ${ls.lit}/${ls.pool} pw ${Math.round(window.__lightPower || 0)} y ${Math.round(window.__lightY || 0)}`
+      : '';
     const devSuffix = DEV ? (performance.memory ? ` · ${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '') + ' ●dev' : '';
     const spd = ` · spd ${Math.round(speedNow)} pk ${Math.round(speedPeak)}`; // current speed + run peak (units/s)
-    setText(el.perf, t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + spd + devSuffix);
+    setText(el.perf, t('ui.perf', { fps: perfFps, ms, calls: r.calls, tris }) + ' · ' + res + spd + lightSuffix + devSuffix);
     perfAccum = 0; perfFrames = 0;
   }
 }
