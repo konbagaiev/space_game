@@ -25,6 +25,7 @@ import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, spawnRocketBurst, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust } from './exhaust-fx.js';
+import { update as updateEngineLights } from './engine-lights.js'; // REAL point lights on engines/rockets — a URL-flagged measurement fork (?lights=N), off by default
 import { hullFlash, punchShip, cameraShudder, updateHitFx, applyCameraShake, resetHitFx } from './hit-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { preloadLevelShipModels, attachEnemyBody, detachEnemyBody, attachAllyBody, detachAllyBody } from './ship-build.js';
@@ -678,6 +679,7 @@ export function settleView(dt = 0) {
   updateBackdropLayer();                   // the additive nebula layer: tracks the camera at a FRACTION of its motion (real parallax)
   updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
   updateSpeedField(G.player.pos.x, G.player.pos.z); // player-locked backdrop (view-only, no RNG)
+  updateEngineLights(camera, world.rockets);        // ?lights=N measurement fork — a no-op unless the flag is set
 }
 
 // ---------- Pause ----------

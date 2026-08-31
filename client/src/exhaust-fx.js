@@ -253,6 +253,13 @@ export function makePlume(cfg) {
       emitter.visible = v > 0.02;
     },
     resizeEmitter() { handle.setThrottle(lastThrottle); },   // ?tune: re-apply the new global size now
+    // Where this engine's LIGHT is, for the real-point-light fork (engine-lights.js). Reads the emitter's
+    // world position, which is the nozzle — the plume group is scene-parented and its matrix is current
+    // from the frame just drawn. Writes into the caller's vector; allocates nothing.
+    lightSample(out) {
+      emitter.getWorldPosition(out);
+      return { hex: emitterHex, throttle: lastThrottle };
+    },
     setGain(v) {                                 // ?tune "Post" folder: the live HDR plume lift
       uniforms.uGain.value = v;
       // The emitter carries the SAME lift as the flame, or the light and the thing emitting it disagree.
