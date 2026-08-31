@@ -340,6 +340,65 @@ The original design discussion is preserved below with its verdict. Several item
   `docs/plans/server-authoritative-sim.md`) or making trace verification work, which today it does not
   (§129). Also still client-authoritative: loot deposit, side-mission clears, and `/advance`.
 
+### The station is the frame-rate cliff (opened 2026-08-31)
+- **Measured, not suspected.** On a Redmi 15C (Mali-G52), two sessions with `?lights=0` and `?lights=16`:
+  without lights the game holds ~60 fps almost everywhere. With them it stays 50-60 while roaming — **and
+  falls only when the camera is CLOSE and the station fills the screen**. Fly away, or zoom out so the
+  station is small, and the frame recovers even though the station is still on screen.
+- **What that shape means.** The cost tracks LIT PIXELS, not object count: three evaluates every point
+  light for every fragment of every lit material, so a hull that covers half the screen pays for all of
+  them. The station is simply the largest lit surface in the game. (It also predates the lights — §23 had
+  already found these devices CPU-submit-bound; this is the fragment side of the same device.)
+- **Short-term mitigation is already in** (`post.lights` = High 16 / Balance 4 / Performance 0), so the
+  weakest devices pay nothing. That caps the damage; it does not fix the station.
+- **What to actually consider:** a cheaper material on the station's large flat panels (it does not need
+  full PBR to read); splitting it so only the near modules are lit-shaded; a distance/scale rule that drops
+  its lighting contribution when it dominates the frame; or simply fewer, larger meshes. Worth profiling
+  the station on its own before choosing — the fix depends on whether it is fill or submit that hurts, and
+  the two want opposite treatments.
+- Freezes on the first explosion were suspected during the same session and **did not reproduce** — no
+  action, recorded so it is not re-chased.
+
+### Ship CLASS as a first-class axis — light / medium / heavy / ultra-heavy / station (opened 2026-08-31)
+- **The concept already half-exists, in two fields with overlapping meanings.** `class` is documented in
+  `sim-core/ship-entity.js` as the **sound** class (`sfxFor('ship', class, …)`) and holds `fighter`,
+  `capital`, `player`, `combat`, `hangar`. `role` holds `fighter`, `medium`, `rocketeer`, `boss`, `boss2`,
+  `player` — closest to a ladder, but it **mixes mass with behaviour**: `medium` describes how big a hull
+  is, `rocketeer` describes what it carries. So neither field can be asked "how heavy is this ship?".
+- **What forced it into view:** the explosion-light work (`engine-lights.js`, `blastClass()`) needed to know
+  whether a death was small / medium / boss and had nothing to ask, so it classifies by **`sizeScale`
+  thresholds** (`medAt`, `bigAt`) — numbers tuned against catalog hull scales, which will silently
+  misclassify the first ship authored at 1.35. That is a placeholder standing in for a missing concept.
+- **The proposal:** one explicit `weightClass` on the ship row — `light` / `medium` / `heavy` /
+  `ultraHeavy` / `station` — orthogonal to `role` (behaviour) and to the sound class. Then blast power,
+  reach and duration, HP/mass expectations, and probably reward/XP curves read the class instead of
+  guessing from a scale number.
+- **Do it as data first, one consumer at a time.** Add the field, make `blastClass()` read it (falling back
+  to the size thresholds while the catalog is incomplete), and only then migrate `role`'s size-ish values
+  out. Renaming `class` itself is the risky part — it is the SFX key and is in recorded traces.
+- **`station` is the one that pays for itself early:** the Space Factory set-piece already exists and is not
+  a ship at all; it wants a class that means "does not move, does not die like a hull".
+
+### Dev pipeline — agent cost & context control (opened 2026-08-31)
+- **The `/feature-pipeline` agents need real spending guards.** The `2026-08-30-1507-expensive-look`
+  run consumed **274 M tokens**, of which **208 M (76%) went to two implementers** that ground in
+  place — one killed by a rate limit mid-run (its transcript unrecoverable, so it could not be
+  resumed), two others stopped only because the maintainer noticed them looping. Full analysis,
+  measured per-agent numbers and proposed measures: `docs/plans/agent-cost-and-context-control.md`.
+- **Cost is `turns × context`, not "how hard the agent thinks."** 97.6% of the spend is `cache_read`
+  — every turn re-reads the whole accumulated context. So the guards that matter are: an **attempt
+  budget per hypothesis** (two failures → record what was ruled out, then move on), a **context
+  ceiling** at which an agent must summarise and hand back rather than continue, and **not
+  delegating interactive browser/GPU diagnosis at all** (the orchestrator answered in ~3 calls what
+  cost an agent tens of millions).
+- **An agent that is stuck must SAY SO to the maintainer** — what it is attempting, what it has
+  ruled out, what it needs — instead of silently grinding. Today stopping is not one of its options.
+- **`docs/pipeline-runs.jsonl` understates cost by ~375×** (it logs `subagent_tokens`, which excludes
+  cache reads: 333 K logged vs 125.2 M actual for one agent). Every historical row is low by ~two
+  orders of magnitude. Fix the metric before trusting any trend in that log.
+- **Live-test earliest for render/feel work.** The visual pass was rebuilt from scratch after ten
+  minutes of real play showed the architecture was wrong — ~208 M had already been spent on it.
+
 ### Assets pipeline
 - Source vs runtime split, budgets, optimize step, CDN delivery — DECISIONS §14.
 - **Ship-model pipeline** — **no binaries in git**; S3 canonical. Local script builds (gltf-transform
