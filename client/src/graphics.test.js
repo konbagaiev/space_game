@@ -38,6 +38,20 @@ test('every tier caps live particles, tightening as the tier weakens (no renderS
   assert.equal(resolveTier('performance').renderScale, undefined);
 });
 
+test('Balance does NOT cut resolution or AA — only Performance does', () => {
+  // 2026-08-31 (DECISIONS §140): Balance shipped at pixelRatioCap 1.5 + antialias false, i.e. a blur every
+  // phone player saw. Resolution was measured useless on these devices twice — §23's 5.5-7x backbuffer cut
+  // moved fps by nothing, and the Redmi 15C lights session found the only slowdown tracking how much of the
+  // screen the STATION covered. Balance now renders like High and pays its difference in LIGHTING instead.
+  const hi = resolveTier('high'), ba = resolveTier('balance'), pe = resolveTier('performance');
+  assert.equal(ba.pixelRatioCap, hi.pixelRatioCap, 'Balance renders at full resolution, like High');
+  assert.equal(ba.antialias, true, 'and keeps the canvas MSAA — AA is edge quality, not fill rate');
+  assert.ok(pe.pixelRatioCap < ba.pixelRatioCap,
+    'Performance is the only tier that cuts pixels — the clean off-path, not a smaller expensive one');
+  // What actually separates High from Balance is the per-fragment lighting, not the image size.
+  assert.ok(hi.post.lights > ba.post.lights, 'the tiers differ in LIGHTS, not in resolution');
+});
+
 test('nebulaBake: High/Balance bake, Performance keeps the flat color', () => {
   const hi = resolveTier('high').nebulaBake;
   const ba = resolveTier('balance').nebulaBake;

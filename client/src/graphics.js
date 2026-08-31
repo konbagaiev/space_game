@@ -23,6 +23,13 @@ export const GRAPHICS_DEFAULT = 'high';
 // GE8320, Mali-G52), a 5.5-7× backbuffer-pixel cut moved fps by *nothing* (the weak-device bottleneck is
 // CPU draw-call submit + the GPU/compositor governor, NOT fragment fill rate), so it only blurred the
 // image for no gain. Resolution levers are a dead end here; see DECISIONS §23.
+// THE SAME CONCLUSION REACHED BALANCE ITSELF (2026-08-31): its `pixelRatioCap` was 1.5 and `antialias`
+// false — a blur every phone player saw, buying the fps that §23 had already measured as nothing and that
+// the Redmi 15C session confirmed from the other side (the only slowdown found tracked how much of the
+// screen the STATION covered, not the backbuffer size). Balance now renders at FULL resolution with AA,
+// exactly like High; what still separates the tiers is the per-fragment lighting (16 lights vs 4), the
+// additive overdraw and the bake sizes. If a device is short after that, take its lights DOWN before you
+// take its pixels — that is what Performance is for. See DECISIONS §140.
 // `post` = the REAL POINT LIGHTS on engines, rockets in flight and explosion flashes (the THREE wiring is
 // in engine-lights.js). `lights` is the size of the FIXED light pool, built once at boot: three bakes the
 // light count into every lit material's shader as `#define NUM_POINT_LIGHTS n`, so the pool can never grow
@@ -37,7 +44,7 @@ export const GRAPHICS_DEFAULT = 'high';
 // to the canvas with its own MSAA and no tone mapping. See DECISIONS §139.
 export const TIERS = {
   high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: 640, enemyShieldBubbles: 6, nebulaBake: { cube: 1024, octaves: 6 }, post: { lights: 16 } },
-  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: 480, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 }, post: { lights: 4 } },
+  balance:     { label: 'Balance',     pixelRatioCap: 2,   antialias: true,  starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: 480, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 }, post: { lights: 4 } },
   performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false, maxParticles: 300,      enemyShieldBubbles: 0, nebulaBake: null,                       post: null },
 };
 
