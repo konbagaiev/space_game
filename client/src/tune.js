@@ -120,9 +120,16 @@ function buildLightsFolder(gui) {
   // eye finds the blast it is over. These fire one ON DEMAND, at the player, with the CURRENT values — drag,
   // click, look, repeat. That loop is the whole reason this folder exists.
   const b = f.addFolder('Blast flashes');
-  b.add(BLAST, 'rocket', 0, 8000, 50).name('rocket blast');
-  b.add(BLAST, 'ship', 0, 20000, 100).name('ship blast (x size^2)');
-  b.add(BLAST, 'boss', 0, 60000, 500).name('boss blast (x size^2)');
+  // POWER: the useful band is small — at 10 units, 100 candela is already full white. Past ~1000 you are
+  // only clipping harder, which is why 8000 and 60000 looked identical.
+  b.add(BLAST, 'rocket', 0, 1500, 10).name('power: rocket');
+  b.add(BLAST, 'ship', 0, 3000, 20).name('power: ship (× size²)');
+  b.add(BLAST, 'boss', 0, 6000, 50).name('power: boss (× size²)');
+  // REACH: the hard cutoff. THIS is the knob that makes a boss detonation feel big — it decides how far
+  // away a hull can be and still be lit at all. Power cannot buy reach.
+  b.add(BLAST, 'reachRocket', 5, 120, 1).name('reach: rocket');
+  b.add(BLAST, 'reachShip', 5, 200, 1).name('reach: ship (× size)');
+  b.add(BLAST, 'reachBoss', 5, 400, 1).name('reach: boss (× size)');
   b.add(BLAST, 'dur', 0.05, 1.0, 0.01).name('duration BASE (s)');
   b.add(BLAST, 'durShip', 1, 8, 0.25).name('× duration: normal');
   b.add(BLAST, 'durMed', 1, 8, 0.25).name('× duration: medium');

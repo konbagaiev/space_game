@@ -67,10 +67,10 @@ const _cam = new THREE.Vector3();
 const cands = [];   // { x, y, z, hex, power } — refilled in place, never re-allocated per frame
 let candCount = 0;
 
-function pushCand(x, y, z, hex, power) {
+function pushCand(x, y, z, hex, power, dist) {
   if (power <= 0.001) return;                 // an idle engine emits nothing; do not spend a slot on it
-  const c = cands[candCount] || (cands[candCount] = { x: 0, y: 0, z: 0, hex: 0xffffff, power: 0, d2: 0 });
-  c.x = x; c.y = y; c.z = z; c.hex = hex; c.power = power;
+  const c = cands[candCount] || (cands[candCount] = { x: 0, y: 0, z: 0, hex: 0xffffff, power: 0, dist: 26, d2: 0 });
+  c.x = x; c.y = y; c.z = z; c.hex = hex; c.power = power; c.dist = dist;
   const dx = x - _cam.x, dy = y - _cam.y, dz = z - _cam.z;
   c.d2 = dx * dx + dy * dy + dz * dz;
   candCount++;
@@ -93,7 +93,7 @@ export function update(camera, rockets, dt = 0) {
     for (const r of rockets) {
       const p = r && r.pos;
       if (!p || r.alive === false) continue;
-      pushCand(p.x, p.y, p.z, ROCKET_HEX, window.__rocketPower);
+      pushCand(p.x, p.y, p.z, ROCKET_HEX, window.__rocketPower, engineReach);
     }
   }
 
@@ -112,11 +112,19 @@ export function update(camera, rockets, dt = 0) {
     l.position.set(c.x, c.y + window.__lightY, c.z);
     l.color.setHex(c.hex);
     l.intensity = c.power;
+    // REACH IS PER-SOURCE, and it is the knob that was missing. `distance` is a HARD cutoff — past it the
+    // contribution is exactly zero no matter how large `intensity` is. With one fixed 26-unit radius for
+    // the whole pool, a boss blast could not light anything further than a scout could, and raising its
+    // power only pushed already-saturated nearby surfaces further past white. Both of the maintainer's
+    // symptoms ("no change in brightness, no change in how far it reaches" between 8000 and 60000) were
+    // this one line.
+    l.distance = c.dist;
   }
 }
 
 const byDistance = (a, b) => a.d2 - b.d2;
 const ROCKET_HEX = 0xffa257;
+let engineReach = 26;   // engines/rockets-in-flight: a short radius; the ?tune 'distance' slider drives it
 
 // INTENSITY IS IN CANDELA AND FALLS OFF AS 1/d^2 (three r155+ is physically correct, `decay: 2`). The first
 // cut used 4.0 and was invisible: at 3 world units that contributes ~0.44 and at 8 units ~0.06, against a
@@ -142,7 +150,7 @@ window.__rocketPower = readNum('rocketpow', 150);
 function collectPlume(p) {
   const s = p.lightSample && p.lightSample(_pos);
   if (!s) return;
-  pushCand(_pos.x, _pos.y, _pos.z, s.hex, window.__lightPower * s.throttle);
+  pushCand(_pos.x, _pos.y, _pos.z, s.hex, window.__lightPower * s.throttle, engineReach);
 }
 
 // ---- TRANSIENT FLASHES: explosions are brief, very bright sources ----
@@ -152,7 +160,14 @@ function collectPlume(p) {
 // the §83 recompile. The falloff is quadratic-out, not linear — a linear fade reads as a lamp being turned
 // down, while a blast should be gone almost before you register it.
 export const BLAST = {
-  ship: 3000, boss: 12000, rocket: 1500,
+  // POWER IS IN CANDELA AND FALLS OFF AS 1/d^2, so the useful band is much smaller than it looks: at 10
+  // units, power 100 already contributes 1.0 — full white. The first cut shipped 3000/12000, which meant
+  // everything inside the radius was saturated and raising the number changed nothing visible. These are
+  // sized so a blast reads as bright without being clipped flat.
+  ship: 400, boss: 1200, rocket: 200,
+  // REACH, in world units — how far the flash can light anything at all (a hard cutoff, see update()).
+  // This, not power, is what makes a boss detonation feel big: it touches ships a scout's death cannot.
+  reachShip: 45, reachBoss: 110, reachRocket: 30,
   dur: 0.22,          // the BASE flash length; every ship class multiplies it (below)
   // How long the light lingers, by hull class — a bigger ship burns longer, not just brighter. Set from
   // live play: normal x2, medium x3, boss x5. `medAt`/`bigAt` are the sizeScale thresholds that sort a
@@ -171,11 +186,11 @@ export function blastDurMul(sizeScale = 1, isBoss = false) {
 }
 const flashes = [];   // { x, y, z, hex, peak, t, dur } — a small pool, reused in place
 
-export function addFlash(pos, peak, hex = 0xffb060, dur = BLAST.dur) {
+export function addFlash(pos, peak, hex = 0xffb060, dur = BLAST.dur, reach = BLAST.reachShip) {
   if (!POOL_SIZE || !pos || peak <= 0) return;      // flag off: explosions cost nothing
   let f = flashes.find((e) => e.t <= 0);
-  if (!f) { f = { x: 0, y: 0, z: 0, hex: 0, peak: 0, t: 0, dur: 1 }; flashes.push(f); }
-  f.x = pos.x; f.y = pos.y; f.z = pos.z; f.hex = hex; f.peak = peak; f.dur = dur; f.t = dur;
+  if (!f) { f = { x: 0, y: 0, z: 0, hex: 0, peak: 0, t: 0, dur: 1, reach: 45 }; flashes.push(f); }
+  f.x = pos.x; f.y = pos.y; f.z = pos.z; f.hex = hex; f.peak = peak; f.dur = dur; f.t = dur; f.reach = reach;
 }
 
 function collectFlashes(dt) {
@@ -184,7 +199,7 @@ function collectFlashes(dt) {
     f.t -= dt;
     if (f.t <= 0) continue;
     const k = f.t / f.dur;                          // 1 -> 0
-    pushCand(f.x, f.y, f.z, f.hex, f.peak * k * k); // quadratic out: a flash, not a dimmer
+    pushCand(f.x, f.y, f.z, f.hex, f.peak * k * k, f.reach); // quadratic out: a flash, not a dimmer
   }
 }
 
@@ -197,8 +212,8 @@ function collectFlashes(dt) {
 export const lightParams = () => ({
   get power() { return window.__lightPower; },   set power(v) { window.__lightPower = v; },
   get height() { return window.__lightY; },      set height(v) { window.__lightY = v; },
-  get distance() { return pool.length ? pool[0].distance : 26; },
-  set distance(v) { for (const l of pool) l.distance = v; },
+  get distance() { return engineReach; },
+  set distance(v) { engineReach = v; },   // per-frame now, so it survives a flash borrowing the same light
   get decay() { return pool.length ? pool[0].decay : 2; },
   set decay(v) { for (const l of pool) l.decay = v; },   // a uniform, not a #define — safe to change live
 });
