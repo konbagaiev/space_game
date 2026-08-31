@@ -132,27 +132,42 @@ function buildLightsFolder(gui) {
   // touched, and nothing here runs unless you press it.
   // Caveat worth knowing: the spawn draws from the seeded stream (§73), so do not record a trace in a
   // session where you have pressed this.
-  const RANGE = { count: 5, spacing: 14, size: 1.0 };
-  b.add(RANGE, 'count', 1, 10, 1).name('targets: count');
-  b.add(RANGE, 'spacing', 6, 40, 1).name('targets: spacing');
-  b.add(RANGE, 'size', 0.6, 3, 0.1).name('targets: size');
+  // Three ranks of three: small / medium / boss-sized. Size drives the blast (power scales as size^2), so
+  // this is the whole "does a big hull flash harder than a scout" question in one press.
+  const RANGE = { small: 1.0, medium: 1.8, boss: 2.8, spacing: 16, rowGap: 22 };
+  b.add(RANGE, 'small', 0.5, 2, 0.1).name('rank 1 size (small)');
+  b.add(RANGE, 'medium', 0.5, 4, 0.1).name('rank 2 size (medium)');
+  b.add(RANGE, 'boss', 0.5, 6, 0.1).name('rank 3 size (boss)');
+  b.add(RANGE, 'spacing', 6, 40, 1).name('spacing within a rank');
+  b.add(RANGE, 'rowGap', 10, 60, 1).name('gap between ranks');
   b.add({ fire: () => {
-    const def = CATALOG.enemyShips && CATALOG.enemyShips[0];
-    if (!def) return;
+    const defs = CATALOG.enemyShips || [];
+    if (!defs.length) return;
     const p = at();
-    for (let i = 0; i < RANGE.count; i++) {
-      const e = spawnEnemyShip(def);
-      if (!e) continue;
-      const x = p.x + (i - (RANGE.count - 1) / 2) * RANGE.spacing;
-      const z = p.z - 34;                       // a row ahead of the nose, inside comfortable gun range
-      e.pos.x = x; e.pos.z = z; e.pos.y = p.y;
-      e.vel && (e.vel.x = e.vel.z = 0);
-      e.maxSpeed = 0; e.acceleration = 0;       // frozen: it cannot close on you
-      e.mounts = [];                            // and disarmed: it cannot shoot back
-      if (RANGE.size !== 1) { e.sizeScale = (e.sizeScale || 1) * RANGE.size; e.scale = (e.scale || 1) * RANGE.size; }
-      if (e.mesh) { e.mesh.position.set(x, p.y, z); e.mesh.scale.setScalar(e.scale || 1); }
+    // Pick three DIFFERENT hulls where the catalog has them, so the ranks do not all look alike.
+    const pick = [defs[0], defs[Math.min(1, defs.length - 1)], defs[defs.length - 1]];
+    const sizes = [RANGE.small, RANGE.medium, RANGE.boss];
+    for (let r = 0; r < 3; r++) {
+      for (let i = 0; i < 3; i++) {
+        const e = spawnEnemyShip(pick[r]);
+        if (!e) continue;
+        const x = p.x + (i - 1) * RANGE.spacing * sizes[r];
+        const z = p.z - 34 - r * RANGE.rowGap;
+        e.pos.x = x; e.pos.z = z; e.pos.y = p.y;
+        if (e.vel) { e.vel.x = 0; e.vel.z = 0; }
+        e.maxSpeed = 0; e.acceleration = 0;   // frozen: it cannot close on you
+        // DISARMED, and BOTH of these are required. Firing walks `ship.groups`, which `makeEnemy`already built
+        // from `mounts` at spawn — so emptying `mounts` alone leaves the groups holding live weapon
+        // references and the targets shoot back (they did).
+        e.mounts = [];
+        e.groups = {};
+        const k = sizes[r];
+        e.sizeScale = (e.sizeScale || 1) * k;
+        e.scale = (e.scale || 1) * k;
+        if (e.mesh) { e.mesh.position.set(x, p.y, z); e.mesh.scale.setScalar(e.scale); }
+      }
     }
-  } }, 'fire').name('▶ spawn FROZEN targets');
+  } }, 'fire').name('▶ spawn 3+3+3 FROZEN targets');
   b.add({ fire: () => { for (const e of [...enemies]) { e.hp = 0; } } }, 'fire').name('▶ clear targets');
   b.add({ fire: () => spawnRocketBurst(at(), 4.5, 0xffb050) }, 'fire').name('▶ test ROCKET blast');
   b.add({ fire: () => spawnShipExplosion(at(), 0xff8030, 1) }, 'fire').name('▶ test SHIP blast (small)');
