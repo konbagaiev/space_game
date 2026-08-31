@@ -107,7 +107,7 @@ export function update(camera, rockets) {
     const l = pool[i];
     const c = i < candCount ? cands[i] : null;
     if (!c) { l.intensity = 0; l.position.y = PARK_Y; continue; }
-    l.position.set(c.x, c.y, c.z);
+    l.position.set(c.x, c.y + window.__lightY, c.z);
     l.color.setHex(c.hex);
     l.intensity = c.power;
   }
@@ -129,6 +129,12 @@ function readNum(key, dflt) {
   } catch { return dflt; }
 }
 window.__lightPower = readNum('lightpow', 120);
+// HEIGHT OFFSET, and it may be the whole ballgame. The camera is near-top-down (CAM_OFFSET 0,110,26), so it
+// sees mostly the TOP faces of a hull — while a nozzle light sits on the play plane at y~0 and illuminates
+// SIDES. A physically-correct light in the right place can therefore be almost invisible FROM THIS ANGLE.
+// `?lighty=N` lifts every source above the plane so the same light falls on the surfaces the camera can
+// actually see. If lifting it is what makes engines read, that is a finding about the camera, not the light.
+window.__lightY = readNum('lighty', 0);
 window.__rocketPower = readNum('rocketpow', 90);
 
 function collectPlume(p) {
