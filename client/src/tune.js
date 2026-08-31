@@ -146,12 +146,13 @@ function buildLightsFolder(gui) {
   // session where you have pressed this.
   // Three ranks of three: small / medium / boss-sized. Size drives the blast (power scales as size^2), so
   // this is the whole "does a big hull flash harder than a scout" question in one press.
-  const RANGE = { small: 1.0, medium: 1.8, boss: 2.8, spacing: 16, rowGap: 22 };
+  const RANGE = { small: 1.0, medium: 1.8, boss: 2.8, spacing: 16, rowGap: 22, hpMul: 1 };
   b.add(RANGE, 'small', 0.5, 2, 0.1).name('rank 1 size (small)');
   b.add(RANGE, 'medium', 0.5, 4, 0.1).name('rank 2 size (medium)');
   b.add(RANGE, 'boss', 0.5, 6, 0.1).name('rank 3 size (boss)');
   b.add(RANGE, 'spacing', 6, 40, 1).name('spacing within a rank');
   b.add(RANGE, 'rowGap', 10, 60, 1).name('gap between ranks');
+  b.add(RANGE, 'hpMul', 0.1, 5, 0.1).name('HP multiplier (× size²)');
   b.add({ fire: () => {
     const defs = CATALOG.enemyShips || [];
     if (!defs.length) return;
@@ -183,6 +184,12 @@ function buildLightsFolder(gui) {
         const k = sizes[r];
         e.fullScale = (e.fullScale || 1) * k;
         e.sizeScale = (e.sizeScale || 1) * k;
+        // HULL SCALES WITH SIZE TOO, or the rig lies about what it is showing: the first cut made a
+        // boss-sized target out of a scout hull, so it died to a single rocket and there was nothing to
+        // observe. Squared, matching how the blast itself scales — a 2.8 target takes roughly 8x the
+        // punishment, which is long enough to watch it burn and to keep shooting the rank around it.
+        const hp = Math.round((e.maxHp || 1) * k * k * RANGE.hpMul);
+        e.maxHp = hp; e.hp = hp;
         if (r === 2) e.role = 'boss';
         if (e.mesh) { e.mesh.position.set(x, p.y, z); e.mesh.scale.setScalar(e.fullScale); }
       }
