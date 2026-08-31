@@ -46,6 +46,12 @@ const shipPlumes = new Set();
 // separate levers on purpose — see the emitterBase note in makePlume — so this scales the light SOURCE
 // while `bloom.strength` scales how hard it is added. 1 = the shipped size.
 let emitterMul = 1;
+
+// Live probe offset on every ship's nozzle anchor, in hull-local Z (negative = further aft). 0 = the baked
+// value. Shifts the plume AND its light together, because they are the same nozzle.
+let nozzleZ = 0;
+export const getNozzleZ = () => nozzleZ;
+export const setNozzleZ = (v) => { nozzleZ = v; };
 export { shipPlumes };
 
 // ---- Shared baked glow texture (built once, lazily): soft round white core → transparent rim ----
@@ -386,7 +392,13 @@ function syncShipPlume(p, alpha) {
   m.getWorldQuaternion(_wq);        // hull's current world orientation (also refreshes its world matrix)
   if (alpha >= 1) p.obj.quaternion.copy(_wq);
   else p.obj.quaternion.slerp(_wq, alpha);
-  _wp.set(0, 0, p.tailZ);
+  // NOZZLE PROBE (?tune "Engine lights" -> nozzle Z). The baked `exhaust` anchor in catalog_seed.js is
+  // auto-generated as exactly -muzzle, i.e. MIRRORED from the gun rather than measured off the model — so on
+  // a hull whose engines sit further aft (or on the wings) the plume, and the light with it, start too far
+  // forward and read as coming from the ship's middle. This offset exists to FIND the right number live;
+  // once found it belongs in the model config (regenerate with `npm run assets:muzzle`, or override outside
+  // the auto markers — a hand edit inside them is overwritten).
+  _wp.set(0, 0, p.tailZ + nozzleZ);
   m.localToWorld(_wp);              // world-space nozzle (includes hull scale + position + rotation)
   p.obj.position.copy(_wp);
 }

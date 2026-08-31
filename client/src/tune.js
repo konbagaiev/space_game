@@ -9,6 +9,7 @@ import { glowParams, postStatus } from './postfx.js';
 import { POST_DEFAULTS } from './graphics.js';
 import { setGlobalEmitterScale, getEmitterScale, setGlobalExhaustGain } from './exhaust-fx.js';
 import { lightParams, lightStatus } from './engine-lights.js'; // ?lights=N fork
+import { getNozzleZ, setNozzleZ } from './exhaust-fx.js'; // live nozzle-anchor probe
 
 function dumpPalette() {
   const H = c => '0x' + c.getHexString();
@@ -106,6 +107,10 @@ function buildLightsFolder(gui) {
   f.add(p, 'decay', 1, 2.5, 0.05).name('decay (2 = physical, lower = reaches further)');
   f.add(p, 'distance', 5, 120, 1).name('distance (hard cutoff)');
   f.add(p, 'height', 0, 20, 0.5).name('height above the plane');
+  // Where the plume (and therefore its light) starts on the hull. See syncShipPlume for why the baked
+  // value is only a mirror of the muzzle and often lands short.
+  f.add({ nozzleZ: getNozzleZ() }, 'nozzleZ', -2.5, 1.0, 0.05)
+   .name('nozzle Z (− = further aft)').onChange(setNozzleZ);
   f.add({ note: `pool of ${st.pool}` }, 'note').name('pool').disable();
 }
 
