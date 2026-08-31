@@ -161,31 +161,41 @@ function collectPlume(p) {
 // down, while a blast should be gone almost before you register it.
 export const BLAST = {
   // POWER IS IN CANDELA AND FALLS OFF AS 1/d^2, so the useful band is much smaller than it looks: at 10
-  // units, power 100 already contributes 1.0 — full white. The first cut shipped 3000/12000, which meant
-  // everything inside the radius was saturated and raising the number changed nothing visible. These are
-  // sized so a blast reads as bright without being clipped flat.
-  // Dialed on the live test range: BOSS is the anchor at 2400 and the others keep the 1 : 2 : 6 ratio that
-  // was tuned with it. Power is per-source peak; the size^2 multiplier at the call site is on top.
-  ship: 800, boss: 2400, rocket: 400,
-  // REACH, in world units — how far the flash can light anything at all (a hard cutoff, see update()).
-  // This, not power, is what makes a boss detonation feel big: it touches ships a scout's death cannot.
-  reachShip: 45, reachBoss: 110, reachRocket: 30,
-  dur: 0.44,          // the BASE flash length; every ship class multiplies it (below). Doubled from 0.22 on live play.
-  // How long the light lingers, by hull class — a bigger ship burns longer, not just brighter. Set from
-  // live play: normal x2, medium x3, boss x5. `medAt`/`bigAt` are the sizeScale thresholds that sort a
-  // death into a class; the boss ROLE always takes `durBoss` whatever its size.
+  // units, power 100 already contributes 1.0 — full white. Dialed on the live test range: BOSS is the
+  // anchor at 2400 and the rest keep the ladder tuned with it. The size^2 multiplier is on top of these.
+  rocket: 400, ship: 800, med: 1400, boss: 2400,
+  // REACH, in world units — how far the flash can light anything at all (a HARD cutoff, see update()).
+  // This, not power, is what makes a big detonation feel big: it touches hulls a scout's death cannot.
+  reachRocket: 30, reachShip: 45, reachMed: 70, reachBoss: 110,
+  dur: 0.44,          // the BASE flash length; every class multiplies it (below)
+  // How long the light lingers, by hull class — a bigger ship burns longer, not just brighter.
   durShip: 2, durMed: 3, durBoss: 5,
+  // The class thresholds, in sizeScale. ONE pair for power, reach AND duration — see blastClass().
   medAt: 1.4, bigAt: 2.2,
 };
 
-// Duration multiplier for a hull of this size. Kept here (not at the call sites) so every explosion path
-// classifies the same way.
-export function blastDurMul(sizeScale = 1, isBoss = false) {
-  if (isBoss) return BLAST.durBoss;
-  if (sizeScale >= BLAST.bigAt) return BLAST.durBoss;
-  if (sizeScale >= BLAST.medAt) return BLAST.durMed;
-  return BLAST.durShip;
+// THE SINGLE CLASSIFIER. Power, reach and duration all read their tier from here, so a hull can never be
+// "medium" for one of them and "small" for another — which is exactly the kind of drift that makes a
+// later re-tune produce a result nobody can explain. `isBoss` (the entity's role) always wins over size:
+// a real boss must not be demoted because a level shipped it at a modest scale.
+export function blastClass(sizeScale = 1, isBoss = false) {
+  if (isBoss || sizeScale >= BLAST.bigAt) return 'boss';
+  if (sizeScale >= BLAST.medAt) return 'med';
+  return 'ship';
 }
+export function blastDurMul(sizeScale = 1, isBoss = false) {
+  const c = blastClass(sizeScale, isBoss);
+  return c === 'boss' ? BLAST.durBoss : c === 'med' ? BLAST.durMed : BLAST.durShip;
+}
+export function blastPower(sizeScale = 1, isBoss = false) {
+  const c = blastClass(sizeScale, isBoss);
+  return c === 'boss' ? BLAST.boss : c === 'med' ? BLAST.med : BLAST.ship;
+}
+export function blastReach(sizeScale = 1, isBoss = false) {
+  const c = blastClass(sizeScale, isBoss);
+  return c === 'boss' ? BLAST.reachBoss : c === 'med' ? BLAST.reachMed : BLAST.reachShip;
+}
+
 const flashes = [];   // { x, y, z, hex, peak, t, dur } — a small pool, reused in place
 
 export function addFlash(pos, peak, hex = 0xffb060, dur = BLAST.dur, reach = BLAST.reachShip) {

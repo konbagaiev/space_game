@@ -123,12 +123,14 @@ function buildLightsFolder(gui) {
   // POWER: the useful band is small — at 10 units, 100 candela is already full white. Past ~1000 you are
   // only clipping harder, which is why 8000 and 60000 looked identical.
   b.add(BLAST, 'rocket', 0, 1500, 10).name('power: rocket');
-  b.add(BLAST, 'ship', 0, 3000, 20).name('power: ship (× size²)');
+  b.add(BLAST, 'ship', 0, 3000, 20).name('power: small (× size²)');
+  b.add(BLAST, 'med', 0, 4000, 20).name('power: medium (× size²)');
   b.add(BLAST, 'boss', 0, 6000, 50).name('power: boss (× size²)');
   // REACH: the hard cutoff. THIS is the knob that makes a boss detonation feel big — it decides how far
   // away a hull can be and still be lit at all. Power cannot buy reach.
   b.add(BLAST, 'reachRocket', 5, 120, 1).name('reach: rocket');
-  b.add(BLAST, 'reachShip', 5, 200, 1).name('reach: ship (× size)');
+  b.add(BLAST, 'reachShip', 5, 200, 1).name('reach: small (× size)');
+  b.add(BLAST, 'reachMed', 5, 300, 1).name('reach: medium (× size)');
   b.add(BLAST, 'reachBoss', 5, 400, 1).name('reach: boss (× size)');
   b.add(BLAST, 'dur', 0.05, 2.0, 0.01).name('duration BASE (s)');
   b.add(BLAST, 'durShip', 1, 8, 0.25).name('× duration: normal');

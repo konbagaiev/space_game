@@ -19,7 +19,7 @@ import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: on
 import { attachShipExhaust } from './exhaust-fx.js';
 import { fxColor } from './postfx.js'; // HDR FX tints: a hue-preserving scalar lift, pinned to 1.0 with no composer (D18)
 import { markGlow } from './glow-layer.js';
-import { addFlash, BLAST, blastDurMul } from './engine-lights.js'; // real-light fork: a detonation is a brief, very bright source // muzzle flashes / bolts / blasts / rings are the intended glow sources
+import { addFlash, BLAST, blastDurMul, blastPower, blastReach } from './engine-lights.js'; // real-light fork: a detonation is a brief, very bright source // muzzle flashes / bolts / blasts / rings are the intended glow sources
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -202,7 +202,7 @@ export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, 
   const s = sizeScale; // scales every spatial dimension to the ship's size
   // A real light for the blast, scaled by the ship's size — a medium hull flashes harder than a scout.
   // No-op unless the ?lights fork is on.
-  addFlash(pos, BLAST.ship * s * s, exhaustColor, BLAST.dur * blastDurMul(s, false), BLAST.reachShip * s);
+  addFlash(pos, blastPower(s) * s * s, exhaustColor, BLAST.dur * blastDurMul(s), blastReach(s) * s);
   // Fireball: a single flipbook (sprite-sheet) quad — one draw call, one shared texture (flipbook-fx.js,
   // DECISIONS §72). The old CPU spark spray is GONE (DECISIONS §75); the death now reads as the flipbook
   // fireball + a soft expanding shockwave ring, both in the baked-texture/shader FX family.
@@ -228,7 +228,7 @@ const deferredBlasts = [];
 
 export function spawnBossExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
   const s = sizeScale;
-  addFlash(pos, BLAST.boss * s * s, exhaustColor, BLAST.dur * blastDurMul(s, true), BLAST.reachBoss * s);   // brighter, longer AND reaching much further
+  addFlash(pos, blastPower(s, true) * s * s, exhaustColor, BLAST.dur * blastDurMul(s, true), blastReach(s, true) * s);   // brighter, longer AND reaching much further
   const seed = bossBlastCount++;
   // Primary: an oversized fireball + a big expanding shockwave ring, right now.
   spawnFlipbookExplosion(pos, s * 1.4);
