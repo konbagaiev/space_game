@@ -72,10 +72,14 @@
       <h2 id="mw-mission-title"></h2>
       <!-- mission text with the granted-item showcase floated into its bottom-right corner (text wraps it);
            strut + canvas are floats, so they precede the text span in source for the wrap to work -->
-      <div id="mw-mission-desc">
-        <div id="mw-item-strut"></div>
-        <canvas id="mw-item"></canvas>
-        <span id="mw-mission-text"></span>
+      <!-- scroll host: #mw-mission-desc is the scroller; scroll-hint.js appends the two edge chevrons
+           here (a non-scrolling positioned parent, so they stay pinned to the panel's edges) -->
+      <div id="mw-mission-scroll">
+        <div id="mw-mission-desc">
+          <div id="mw-item-strut"></div>
+          <canvas id="mw-item"></canvas>
+          <span id="mw-mission-text"></span>
+        </div>
       </div>
       <div id="mw-mission-reward"></div>
       <!-- Mission actions. #mw-go LAUNCHES THE FIGHT for the active SIDE mission; it starts hidden and

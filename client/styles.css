@@ -392,7 +392,27 @@
   .mw-view.active { display: flex; flex-direction: column; }
   #mw-view-mission { gap: 10px; --gun-h: clamp(150px, 36%, 280px); }
   #mw-mission-title { font-size: 22px; margin: 0; }
-  #mw-mission-desc { flex: 1 1 auto; min-height: 3.5em; overflow-y: auto; font-size: 18px; line-height: 1.45; opacity: .92; padding-right: 8px; }
+  /* The briefing panel is wrapped in a non-scrolling host so the scroll chevrons can be pinned to its
+     edges (absolute children of the scroller itself would scroll away with the text). The host takes the
+     sizing the description used to carry; the description just fills it and scrolls. */
+  #mw-mission-scroll { position: relative; flex: 1 1 auto; min-height: 3.5em; display: flex; flex-direction: column; }
+  #mw-mission-desc { flex: 1 1 auto; min-height: 0; overflow-y: auto; font-size: 18px; line-height: 1.45; opacity: .92; padding-right: 8px; }
+  /* Scroll affordance (client/src/scroll-hint.js): a chevron at each clipped edge of a scrolling text
+     panel — pointing UP at the top when there is text above, DOWN at the bottom when there is text below.
+     Drawn as a square with two borders rotated 45deg (a quote-mark chevron, not a filled triangle); the
+     glow keeps it readable where a line of text passes underneath. `.scroll-host` is the non-scrolling
+     parent; the module toggles `.has-more-up` / `.has-more-down` on it. */
+  .scroll-host { position: relative; }
+  .scroll-hint {
+    position: absolute; left: 50%; width: 13px; height: 13px; margin-left: -6.5px;
+    border-right: 2px solid #cfe0ff; border-bottom: 2px solid #cfe0ff; border-radius: 1px;
+    pointer-events: none; opacity: 0; transition: opacity .18s ease;
+    filter: drop-shadow(0 0 3px rgba(5,8,18,.95));
+  }
+  .scroll-hint.up   { top: 5px;    transform: rotate(-135deg); }
+  .scroll-hint.down { bottom: 5px; transform: rotate(45deg); }
+  .scroll-host.has-more-up   > .scroll-hint.up   { opacity: .8; }
+  .scroll-host.has-more-down > .scroll-hint.down { opacity: .8; }
   #mw-mission-reward { color: #ffd86b; font-weight: 600; }
   /* Briefing item showcase pinned to the BOTTOM-RIGHT corner of the mission text, with the text wrapping
      around it. A 0-width strut floats right and reserves the TOP of the right column (so the text flows
@@ -639,6 +659,9 @@
   body.dev-desktop #mw-mission-desc, body.dev-desktop-lg #mw-mission-desc {
     display: flex; flex-direction: column; flex: 0 1 auto;
   }
+  /* B5 pins Take-off under the CONTENT on desktop, so the scroll host must be content-sized too —
+     otherwise the host would grow to fill the work zone and push Take-off back to the bottom. */
+  body.dev-desktop #mw-mission-scroll, body.dev-desktop-lg #mw-mission-scroll { flex: 0 1 auto; }
   body.dev-desktop #mw-mission-text, body.dev-desktop-lg #mw-mission-text { order: 1; }
   body.dev-desktop #mw-mission-desc.show-item #mw-item,
   body.dev-desktop-lg #mw-mission-desc.show-item #mw-item {

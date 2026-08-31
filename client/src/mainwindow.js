@@ -27,6 +27,7 @@ import { renderAccountBar, openAccount, shouldPromptAccount, getPlayerShips } fr
 import { updateMenuCredits } from './hud.js';
 import { requestFullscreen, showWelcome } from './welcome.js';
 import { typeText } from './typewriter.js';
+import { attachScrollHint } from './scroll-hint.js';
 import { beginLiveSession } from './main.js'; // arm the always-on session recorder at each campaign launch/retry (called on click; ESM cycle resolves by call time)
 
 const mainEl = document.getElementById('mainwin');
@@ -464,6 +465,11 @@ document.getElementById('mw-go').addEventListener('click', () => {
 document.getElementById('mw-mission-desc').addEventListener('click', () => {
   if (stagedActive) revealBriefingNow();
 });
+// A briefing longer than the panel (routinely on a phone) used to end mid-sentence at the edge with no
+// hint that it continues — mobile browsers hide the scrollbar until you drag. Chevrons at the clipped
+// edges say which way there is more; the module watches the scroll, the panel size and the content, so
+// the staged typewriter growing the text re-evaluates it as it types.
+attachScrollHint(document.getElementById('mw-mission-desc'));
 
 // Reload the side-mission board (offers + taken set + active), then re-render the board + detail.
 export async function refreshMissions() {
