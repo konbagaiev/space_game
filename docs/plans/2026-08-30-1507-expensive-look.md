@@ -4,7 +4,7 @@
 full-frame `EffectComposer` (bloom + ACES + grade + vignette). That was built, live-tested and thrown away;
 an additive glow overlay was built to replace it, live-tested and **also thrown away**. Decisions D1–D5, D7,
 D8, D9's HDR-gain half, D10, D12's 0.25 floor and D18 are all **VOID**. The measured reasons are in
-DECISIONS §138 — read that, not this brief, for why.
+DECISIONS §139 — read that, not this brief, for why.
 
 ### The end state
 
@@ -84,7 +84,7 @@ hull emissive floor and the larger dust.
 | D10 | **Hangar:** the `model-viewer.js` renderers get `toneMapping = ACESFilmicToneMapping` + the same exposure. **No** composer, no bloom there. |
 | D11 | **Backdrop:** ONE new layer. A second, coarser nebula bake (its **own** seed and noise scale — D17) mapped onto an **additive**, camera-tracking sphere with fractional parallax. It is built **`transparent: false`** so it lands in the **opaque** render list, `renderOrder:-3` puts it first *within that list*, and `depthTest:false` + `depthWrite:false` + additive blending make it incapable of occluding a system body or hiding the base cube's stars. The `transparent` flag is load-bearing, not cosmetic — see Blocking-1 reasoning in Step 5b. |
 | D12 | **Silhouette:** emissive floor on the cached ship template + exhaust HDR lift. **No fresnel/rim shader this pass.** The floor (0.25) is far below the bloom threshold (0.65) on purpose — a hull must **not** be a standing light source. *(Amended at merge time: `main`'s combat-hit-feel landed a **hull flash** that drives the same `emissive` to white at `intensity` 1.6 for 0.12 s, which does clear the threshold. That is not a contradiction — the STATIC floor never glows, a HIT does, and that is the intended read. See "What legitimately changes appearance" below.)* |
-| D13 | **Backdrop brightness ceiling — AMENDED 2026-08-30, the original promise is NOT met and never was.** The plan asked that the nebula's peak on-screen luminance stay below the dimmest lit hull facet, asserted numerically on a real rendered frame (`hullP25 >= 1.5 x bgP99`, whole sky). It was implemented in exactly that form and **measures 1.30x**. The measurement is kept; the *threshold* is not. **What ships is a REGRESSION FLOOR at `1.25x`** — just under the observed minimum — so the ratio can never silently get worse, plus the printed diagnostics. Why the ideal is not this feature's debt: the **pre-existing baked nebula cubemap** (shipped 2026-07-04) is **~95% of the sky peak**; this feature's parallax layer is ~4.5% and the stars ~0.1%, and **removing the layer entirely still fails 1.50x (~1.36x)**. No `backdrop.amp` value can meet it (sweep: 0.00 → 1.36x, 0.08 → 1.35x, 0.15 → 1.33x, 0.25 → 1.30x — the whole range is worth 0.05x and 0.19x is missing). Dimming the shipped cube was **rejected** (a look change to already-shipped art), and **raising the hulls was rejected too** — it pushes them toward the 0.65 bloom threshold and breaks **D12**, which requires that a hull never statically glow. `backdrop.amp` remains a live `?tune` knob. Maintainer's call; see DECISIONS §138(k). |
+| D13 | **Backdrop brightness ceiling — AMENDED 2026-08-30, the original promise is NOT met and never was.** The plan asked that the nebula's peak on-screen luminance stay below the dimmest lit hull facet, asserted numerically on a real rendered frame (`hullP25 >= 1.5 x bgP99`, whole sky). It was implemented in exactly that form and **measures 1.30x**. The measurement is kept; the *threshold* is not. **What ships is a REGRESSION FLOOR at `1.25x`** — just under the observed minimum — so the ratio can never silently get worse, plus the printed diagnostics. Why the ideal is not this feature's debt: the **pre-existing baked nebula cubemap** (shipped 2026-07-04) is **~95% of the sky peak**; this feature's parallax layer is ~4.5% and the stars ~0.1%, and **removing the layer entirely still fails 1.50x (~1.36x)**. No `backdrop.amp` value can meet it (sweep: 0.00 → 1.36x, 0.08 → 1.35x, 0.15 → 1.33x, 0.25 → 1.30x — the whole range is worth 0.05x and 0.19x is missing). Dimming the shipped cube was **rejected** (a look change to already-shipped art), and **raising the hulls was rejected too** — it pushes them toward the 0.65 bloom threshold and breaks **D12**, which requires that a hull never statically glow. `backdrop.amp` remains a live `?tune` knob. Maintainer's call; see DECISIONS §139(k). |
 | D14 | **Speed-field dust ~30% larger:** sizes `0.8 / 1.3 / 2.0` → **`1.04 / 1.69 / 2.6`**, in **both** `speed-field.js` defaults and the `home-system` map descriptor. |
 | D15 | **No randomness anywhere new.** The second nebula bake is driven by an **authored constant seed** (not `Math.random`, and never `simRandom` — DECISIONS §73). The parallax layer's per-frame update consumes zero randomness, like the speed-field wrap. |
 | D16 | **Do NOT run the A/B perf bench.** It is opt-in and takes 25–40 minutes. |
@@ -220,7 +220,7 @@ survives.
 ```js
 // Post-processing look constants (pure data — the THREE wiring is in postfx.js, the live sliders in
 // tune.js). These are STARTING POINTS: the maintainer dials them in a real build via ?tune and the dialed
-// numbers are pasted back here. See DECISIONS §138.
+// numbers are pasted back here. See DECISIONS §139.
 export const POST_DEFAULTS = {
   exposure: 1.15,        // ACES darkens midtones; >1 compensates
   bloom: { strength: 0.55, radius: 0.4, threshold: 0.65 }, // threshold MUST clear the dust — see BLOOM_DUST_MARGIN
@@ -640,7 +640,7 @@ the ghost skirmish carries the 0.25 floor uncompensated, which suits its current
 intent, and it cannot be checked headlessly because `ghostBattlePlan` disables ghosts under `?debug` on every
 tier. The line is kept and labelled defensive-only. **Also added, which this step missed:** the floor must be
 re-copied after the tint/accent passes re-assign `material.color`, or the wingman's repainted wings self-light
-in the pre-accent hue — see DECISIONS §138(j).)* `applyShipModel`'s readability treatment
+in the pre-accent hue — see DECISIONS §139(j).)* `applyShipModel`'s readability treatment
 (`ship-factory.js:152-160`) clones each material and multiplies **`m.color` only**. With an emissive floor
 in place, a ghost would keep its emissive at full strength while its albedo is scaled by `darken` (0.45) —
 brighter and flatter than the "distant decor" treatment intends, and the ghosts would fight the real ships
@@ -822,7 +822,7 @@ rather than tests:
    > but the shipped `FLOOR` is **1.25**, a *regression floor* just under the observed minimum rather than an
    > absolute ceiling. Observed spread across five runs: 1.2981 / 1.3040 / 1.3040 / 1.3040 / 1.3048 (~0.5%),
    > plus 1.2988 and 1.2996 in-suite. Mutation-checked: raising `backdrop.amp` to 0.45 trips it (1.213x),
-   > 0.35 does not (1.270x), so it bites at ~amp 0.40. See DECISIONS §138(k).
+   > 0.35 does not (1.270x), so it bites at ~amp 0.40. See DECISIONS §139(k).
 
 4. **Nothing is blown out at rest:** the share of pixels with all channels ≥ 250 is under ~0.5% on a frame
    with no explosion.
@@ -923,7 +923,7 @@ Pay particular attention to `31-speed-field`, `32-star-system`, `27-smoke-instan
 - [ ] `cd client && node visual/run.mjs 22-intro-replay` — green: **4 kills, cards p0..p4, win, tick 2474**.
 - [ ] `cd client && node visual/run.mjs 43-expensive-look` — green, and its four printed numbers are sane.
       Note the D13 line reads `ceiling ratio 1.30x (D13 ideal 1.50x, shipped regression floor 1.25x)` — the
-      ideal is knowingly not met and is not this feature's to fix (amended D13 row above; DECISIONS §138(k)).
+      ideal is knowingly not met and is not this feature's to fix (amended D13 row above; DECISIONS §139(k)).
 - [ ] `cd client && node visual/run.mjs 99-fill` — green; the blow-out and wash numbers printed and sane.
 - [ ] `cd client && npm run test:visual` — judged against a `main` baseline: the reliably-passing set still
       passes, **zero page errors**.
@@ -944,7 +944,7 @@ Pay particular attention to `31-speed-field`, `32-star-system`, `27-smoke-instan
       notes + the guard test may remain) and `grep -rn "OutputPass\|toneMapping" client/src/` — the only
       legitimate `toneMapping` assignment in the whole client is `model-viewer.js` (D10); the **main**
       renderer must never be assigned one (D3), and `OutputPass` must not appear at all (D2).
-- [ ] CHANGELOG bullet, SUMMARY sections updated to the end state, DECISIONS §138 added.
+- [ ] CHANGELOG bullet, SUMMARY sections updated to the end state, DECISIONS §139 added.
 
 ---
 

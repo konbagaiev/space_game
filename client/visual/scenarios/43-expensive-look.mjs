@@ -4,7 +4,7 @@
 // were deleted after live testing on a real GPU: first a full-frame EffectComposer (bloom + ACES), then an
 // additive glow overlay on its own render layer. What ships is the historical two-pass frame drawn STRAIGHT TO THE
 // CANVAS with its own MSAA and no tone mapping, real THREE.PointLights on engines/rockets/blasts
-// (engine-lights.js), and the PARALLAX BACKDROP LAYER this scenario measures (DECISIONS §138).
+// (engine-lights.js), and the PARALLAX BACKDROP LAYER this scenario measures (DECISIONS §139).
 //
 // Everything the backdrop layer adds is view-layer, which is exactly the class of change that passes every
 // logic assertion and ships INVISIBLE (DECISIONS §96, the first speed field). So this scenario reads the
@@ -252,7 +252,7 @@ export default async function ({ page, assert, shot, baseURL }) {
   //    composer, 1.155x on the frame that actually ships (the composer's exposure was flattering the hull,
   //    not the sky). What is asserted here is the same quantities, measured the same way, against a floor
   //    just under the measured value, so the ratio can never silently get WORSE. Maintainer's call,
-  //    2026-08-30, re-pinned 2026-08-31. See DECISIONS §138.
+  //    2026-08-30, re-pinned 2026-08-31. See DECISIONS §139.
   //
   //    WHY THE IDEAL IS NOT THIS FEATURE'S DEBT. Attributed on a real frame by switching contributors off:
   //      everything on 0.4770 | this layer at amp 0 -> 0.4555 | + star layers hidden -> 0.4549
@@ -286,7 +286,7 @@ export default async function ({ page, assert, shot, baseURL }) {
     + `switched fully OFF the sky peak is still ${r.skyP99Off.toFixed(4)} (ratio ~${(r.hullP25 / (r.skyP99Off || 1)).toFixed(3)}x), `
     + `so the layer contributes only ${(r.bgP99 - r.skyP99Off).toFixed(4)} of it and DIALLING backdrop.amp CANNOT FIX EITHER NUMBER — `
     + `the pre-existing baked nebula cubemap is ~95% of the sky peak. If THIS floor breaks, something made the `
-    + `backdrop brighter or the hulls darker; look there, not at backdrop.amp. See DECISIONS §138(k).`);
+    + `backdrop brighter or the hulls darker; look there, not at backdrop.amp. See DECISIONS §139(k).`);
 
   // 4. Nothing is blown out on a frame with no explosion.
   assert.ok(r.blownPct < 0.5, `nothing is blown out at rest (${r.blownPct.toFixed(3)}% of pixels at 250+ on all channels)`);

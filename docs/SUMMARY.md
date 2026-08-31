@@ -6,10 +6,10 @@
 **Updated:** 2026-08-31 (**The expensive look — REAL LIGHTS, a layered backdrop and bigger dust.** The frame
 is the historical two-pass one, drawn straight to the canvas with its own MSAA and **no tone mapping**: a
 full-frame `EffectComposer` and then an additive glow overlay were both built, live-tested and **deleted**
-(DECISIONS §138). What ships is a fixed, tier-gated pool of **real `THREE.PointLight`s** on engines, rockets
+(DECISIONS §139). What ships is a fixed, tier-gated pool of **real `THREE.PointLight`s** on engines, rockets
 in flight and explosion flashes (`engine-lights.js`, High 16 / Balance 4 / Performance 0); a second, coarser
 nebula bake riding an additive camera-tracking sphere in front of the baked cube for real parallax; a hull
-emissive floor that is wired but ships at **0**; and speed-field dust ~30% larger.) 2026-08-30 (**The target reacts — hull flash, model punch, camera shudder.**) 2026-08-26 (**The beam is bluer, and its impact flash is now the shared one** — it emits `bulletImpact` like
+emissive floor that is wired but ships at **0**; and speed-field dust ~30% larger.) 2026-08-30 (**The intro is a fight you fly** — Level 0 is a live, session-recorded campaign level with a scripted director speaking five first-person lines over it and a controls card that flies into the bottom-left cheatsheet; the cutscene, its S3 trace fetch and its tap-to-continue cards are deleted, `&cutscene` is now the generic `&finish`, and the beat timings live on the `level-0` descriptor beside the `spawn.earliest` floors the SIMULATION reads.) 2026-08-30 (**The target reacts — hull flash, model punch, camera shudder.**) 2026-08-26 (**The beam is bluer, and its impact flash is now the shared one** — it emits `bulletImpact` like
 every other weapon instead of drawing its own bloom.) 2026-08-25 (**The enemy charged beam — the pirate lancer, and the red telegraph that makes
 it fair.** A weakened enemy-only beam row (id 13: **power 45, maxRange 67, charge 1.0 s + cooldown 2.0 s
 → a 3.0 s cycle, 15 sustained DPS**) on a NEW beam-only ship, the **pirate lancer** — which turns at
@@ -277,6 +277,12 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 - `A`/`D` or `←`/`→` — turn the nose
 - `Space` — fire (primary weapon)
 - `F` — rocket (homing, 5 s cooldown)
+- The bottom-left **`#help` cheatsheet** carries these bindings (`ui.help`) — and on a touch device it
+  carries a **touch variant** instead (`ui.help_touch`: *drag anywhere* to steer · FIRE · 🚀 — the virtual
+  stick spawns under the finger wherever it lands, since `#stick-zone` is `inset: 0`), swapped once in
+  bootstrap on `Device.input === 'touch'`. It used to be hidden outright on touch; it is on screen there now
+  (the Level-0 intro's controls card flies into it, and a `display:none` target measures as a zero rect), and
+  it sits at `bottom: 26px` so it clears the always-on XP bar, whose top edge is 20px off the bottom.
 - `M` — **toggle the system-map overlay** (keyboard, so desktop by construction; works on a tablet with a
   keyboard attached). Gated exactly like the on-screen **Map** button: only **out of combat** (`G.roam` /
   return-to-base) — during a live fight the corner is the battle radar, there is no map to open, and since
@@ -477,7 +483,9 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   a grab pickup it logs `picked up {name}` tinted by the item's rarity **color** (fires for every collected
   drop, including the L1/L2 cosmetic reward drops). Module `client/src/eventlog.js` (`logEvent(text,color)` /
   `clearEventLog()`); called from `sim.js` (kill line + `clearEventLog()` in `reset()`) and `drops.js`
-  `collect()` (pickup line). Purely cosmetic — the fade is wall-clock, so it keeps fading while paused
+  `collect()` (pickup line). Drawn on **every** level including the Level-0 intro — it was briefly hidden
+  there while the intro's line shared this band with it, and came back when the line moved to the top of the
+  screen. Purely cosmetic — the fade is wall-clock, so it keeps fading while paused
   (DECISIONS §30, no per-frame integration). Strings `ui.log.killed` / `ui.log.picked_up` (EN+RU); the enemy
   ship name (kill line) and the component/weapon name (pickup line) render to players via the **English DB
   name** (unlocalized — a later i18n pass should localize these surfaces). Hidden on menus via `body.menu`.
@@ -508,8 +516,8 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
 ### Combat record/playback (input-replay) — `?record` / `?playback`
 A general, reusable mechanism to **record a fight and replay it on the real engine** (not a movie of
 positions — it captures the player's INPUT + the RNG seed, then re-runs the actual `sim`, so playback has
-real bullet colors, smooth physics, real FX and real collisions). Consumers: the Level-0 intro cutscene
-(built on top, next), "watch a fight from another angle", video capture. Files: `client/src/replay.js`
+real bullet colors, smooth physics, real FX and real collisions). Consumers: the canonical Level-0
+determinism fixture (below), the admin session viewer, "watch a fight from another angle", video capture. Files: `client/src/replay.js`
 (pure core — URL parsing, trace shape, snapshot/apply/validate, unit-tested) + wiring in `main.js`.
 - **Record:** `/?record=1&level={id}` (bare number → seed name `level-{id}`, so `?record=1&level=1` is the
   intro four-ship level; or pass a full name). Lands on the level with the **real ship idle**; a top bar
@@ -519,6 +527,10 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
 - **Playback:** `/?playback&id={id}` (or `?playback` alone = the last recording). Loads the trace, rebuilds
   the recorded ship, re-seeds, and re-sims the fight; holds on the idle frame until the model loads, then
   plays. A top bar shows `tick / total` + Restart.
+- **`&finish`** (`?playback&id=…&finish=1`, `rs.autoFinish`): **press "Finish and Return" for the pilot when
+  the sector clears**, and stop the re-sim on the victory overlay. A trace records keys and touch, never the
+  MOUSE CLICK that ends a mission, so without it a winning replay orbits a cleared sector forever. Opt-in and
+  generic — it replaced the old `&cutscene` flag, which did the same thing as a side effect.
 - **Trace format v3** (`{version:3, kind:'input-replay', id, level, seed, dt, shipId, tickCount,
   runs:[[{k,t}, repeatCount], …]}`): `k` = held key codes, `t` = `[heading,thrust]` when the touch stick is
   active (**quantized** to 1e-3 rad / 1e-2 before storage). That is the ENTIRE recording — the determinism
@@ -533,13 +545,13 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   renumbering (DECISIONS §102). A trace stores the level NAME it was recorded on, and every level moved
   down one that day, so a v1/v2 trace's stored name now points at the wrong level; **`traceLevelName(trace)`**
   shifts pre-v3 traces down one at the single boundary where a stored name is read (the playback level
-  fetch in `main.js` bootstrap + the cutscene match). Deliberately NOT a blanket alias in
+  fetch in `main.js` bootstrap). Deliberately NOT a blanket alias in
   `normalizeLevelName`: `level-1` is a valid CURRENT name, so aliasing it would break the live campaign to
   fix the archive. Nothing on S3 was rewritten — the intro asset is content-hashed, and every stored session
-  trace is equally affected. Guarded by `replay.test.js` + `22-intro-replay` (which caught the bug: playback
+  trace is equally affected. Guarded by `replay.test.js` + `22-trace-replay` (which caught the bug: playback
   had started re-simming "Level 1" with the intro's recorded input).
-- **Real-time pacing / ALL live play is now on the deterministic loop:** record, playback, `?bench`, the
-  intro cutscene AND **normal live play** advance the sim with a **fixed-timestep accumulator** (real elapsed
+- **Real-time pacing / ALL live play is now on the deterministic loop:** record, playback, `?bench` AND
+  **normal live play** advance the sim with a **fixed-timestep accumulator** (real elapsed
   time → whole `BENCH_DT` steps, capped at 6 steps/frame → slow-motion under load, never a corrupted tick),
   so a fight runs at true speed on any refresh rate. `TICK_HZ` (`bench.js`, default **60**) is the single
   tunable tick rate; `BENCH_DT = 1/TICK_HZ`. Live play is **seeded at level entry** (`beginLiveSession()` in
@@ -547,20 +559,22 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   tick — see **Session recordings** under Backend for the always-on funnel-analytics capture built on this.
   **One shared per-tick body:** the accumulator and the `window.__replay.step(n)` hook both call
   **`stepReplayTick()`** (`client/src/replay.js`, dependency-injected: `rs`/`keys`/`touchAim`/`dt`/`update` +
-  `capture`/`cutObserve`/`cutEnd`/`isWon` callbacks; returns `'ok'` or `'stop'`) — it holds the recorded-input
-  apply, `update(dt)`, the index advance, the per-tick capture, the cutscene observer and the return-home
-  watchdog. `animate()` keeps only the WRAPPER around it: `replayAcc`, the 6-step cap, the `cutFrozen` check,
-  the record/playback HUDs and the post-loop `cutsceneEnd()`. (The two drivers used to carry hand-written
-  copies of that body — "mirror the accumulator" — so an edit to one silently desynced replays.)
+  `capture`/`onTick`/`isCleared`/`isWon`/`finish` callbacks; returns `'ok'` or `'stop'`) — it holds the
+  recorded-input apply, `update(dt)`, the index advance, the per-tick capture, the per-tick `onTick` observer
+  (**the Level-0 intro director rides this**) and the `&finish` auto-finish + its return-home watchdog.
+  `animate()` keeps only the WRAPPER around it: `replayAcc`, the 6-step cap and the record/playback HUDs.
+  (The two drivers used to carry hand-written copies of that body — "mirror the accumulator" — so an edit to
+  one silently desynced replays.)
   The completion flag `rs.done` gates **playback/intro ONLY** — the same guard that opens `stepReplayTick`
   (`if (rs.play && rs.done) return 'stop'`) and still heads the accumulator's `while (… && !(rs.play &&
-  rs.done) …)`: live play (`rs.play===null`) must ignore it, because the intro's end leaves a stale
+  rs.done) …)`: live play (`rs.play===null`) must ignore it, because the intro's Skip path leaves a stale
   `rs.done=true` after `finishIntro()`→`rs.teardown()` — a live session inheriting it would never step (the
   intro→Level-1 dead-controls bug; guarded by `visual/scenarios/29-intro-live-handoff.mjs` and by a
   `replay.test.js` case on that exact torn-down state).
 - **Determinism isolation (load-bearing) — the seeded stream is OPT-IN (`client/src/sim-core/sim-random.js`).**
-  `simRandom()` is the sim's RNG: `seedSim(n)` installs a `mulberry32` stream (record start, playback/intro
-  arm, `?bench` bootstrap + per-trace, **and every live campaign session via `beginLiveSession()`**),
+  `simRandom()` is the sim's RNG: `seedSim(n)` installs a `mulberry32` stream (record start, playback arm,
+  `?bench` bootstrap + per-trace, **and every live campaign session via `beginLiveSession()` — the Level-0
+  intro included**),
   `seedSim(null)` clears it back to the native `Math.random` (called from `finishIntro()` and at the end of
   the dev `stopRecordSession()`), `isSimSeeded()` reports the state. **NB: under always-on recording live
   play is now seeded per session** — a stale seed lingering on the post-win/death menu is harmless (menu
@@ -580,27 +594,25 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   Accepted cosmetic cost: backdrop/decor layout now varies between two playbacks of the same trace.
   See DECISIONS §73.
 - **Two termination guards so a desynced re-sim can never dead-end.** (a) **Trace exhausted with the fight
-  unfinished** — `stepReplayTick` sets `rs.done` and returns `'stop'`, and `animate()`'s post-loop
-  `if (rs.play && rs.done && rs.cut && !rs.cutDone) cutsceneEnd();` ends the cutscene on that frame;
-  `__replay.step()` carries the same post-loop exit (it previously had none, so a stepped run of a
-  desynced trace returned forever with `cut().done === false`). (b) **Return-home stall** — while
-  `rs.cutReturning` is engaged only a WIN ends the cutscene (`rs.index` is frozen, `rs.done` never set), so a
-  run that can never dock would loop forever; a per-tick watchdog on the session
-  (`rs.noteTick(returningNoWin)` / `rs.stalled()` / `CUTSCENE_STALL_TICKS = 900` ≈ 15 s of sim time, in
-  `replay.js`) ends it through the normal `cutsceneEnd()` → `finishIntro()` path — the player lands on the
-  Level 1 briefing instead of a dead screen. Both loops (`animate()` and `__replay.step()`) carry both exits
-  because they run the **same** body (`stepReplayTick`) — they can no longer drift apart.
-  The watchdog masks nothing: the guard scenario asserts kills/cards/win, so a bailed-out run still fails.
-- **Guard test (`client/visual/scenarios/22-intro-replay.mjs`, in `npm run test:visual`).** Re-sims the
-  canonical intro trace named by the seed's `introTrace` and asserts **4 kills, cards `p0..p4` in order, and
-  `cut().won === true`** — so a stream-shifting change fails a test run instead of shipping a broken first
-  impression. It navigates to its own `?playback&id=…&cutscene=1&debug` url (the runner's base url has no
-  `?playback`), seeds the trace into `localStorage` (the server doesn't serve `/recordings/{id}.json`), waits
-  on `__replay.status().armed` (the ship `.glb` sets `noseZ`/`tailZ` = where bullets spawn, so stepping
-  earlier would change the sim), then fast-steps via `step()`/`advance()`. Needs `npm run assets:pull` (the
-  trace is a gitignored S3 asset) and hard-fails with that instruction when it is absent.
+  unfinished** — `stepReplayTick` sets `rs.done` and returns `'stop'`, freezing the re-sim on its last frame.
+  (b) **Return-home stall** — once `&finish` has engaged the flight home (`rs.returning`) only a WIN ends the
+  playback (`rs.index` is frozen, `rs.done` never set), so a run that can never dock would loop forever; a
+  per-tick watchdog on the session (`rs.noteTick(returningNoWin)` / `rs.stalled()` /
+  `RETURN_HOME_STALL_TICKS = 900` ≈ 15 s of sim time, in `replay.js`) sets `rs.done` and stops it. Both
+  drivers (`animate()` and `__replay.step()`) carry both exits because they run the **same** body
+  (`stepReplayTick`) — they can no longer drift apart. The watchdog masks nothing: the guard scenario asserts
+  kills + the win, so a bailed-out run still fails.
+- **Guard test (`client/visual/scenarios/22-trace-replay.mjs`, in `npm run test:visual`).** Re-sims the
+  canonical Level-0 trace named by the seed's `introTrace` and asserts **4 kills and `won === true`** — so a
+  stream-shifting change fails a test run instead of rotting the fixture three determinism guards pin an
+  outcome on. It navigates to its own `?playback&id=…&finish=1&debug` url (the runner's base url has no
+  `?playback`; `&finish` is what produces the dock), seeds the trace into `localStorage` (the server doesn't
+  serve `/recordings/{id}.json`), waits on `__replay.status().armed` (the ship `.glb` sets `noseZ`/`tailZ` =
+  where bullets spawn, so stepping earlier would change the sim), then fast-steps via `step()`. Needs
+  `npm run assets:pull` (the trace is a gitignored S3 asset) and hard-fails with that instruction when it is
+  absent.
 - **Second guard (`client/visual/scenarios/35-playback-loads-samples.mjs`).** Opens the BARE `?playback` page
-  (no `&cutscene=1`) and touches nothing, then asserts the `kinetic`/`cannon`/`rocket` mp3s were actually
+  (no `&finish`) and touches nothing, then asserts the `kinetic`/`cannon`/`rocket` mp3s were actually
   fetched — pinning that a replay reached by navigation still gets SAMPLED sfx rather than the synth
   fallback. Asserted at the network layer because headless Chromium has no audio out and the buffer cache is
   module-private. Deliberately gesture-free: adding a click re-hides the bug it exists for.
@@ -610,16 +622,16 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
 - **`window.__replay`** console/automation hook (under either flag): `begin()` (== Start), `stop()`,
   `step(n)` (synchronous sim stepping, bypasses rAF — for tests + a background tab that throttles rAF),
   `hash()` (state hash), `status()` (`{recording, armed, ticks, playIndex, playDone, total}` — `armed` is the
-  models-ready gate automation must wait on), `cut()`/`advance()` (cutscene state / dismiss a card). See
-  `docs/plans/2026-07-09-replay-record.md`.
-- **`makeReplaySession()` (`replay.js`)** — the playback/cutscene lifecycle state is one object (owned
-  fields `play`/`trace`/`armed`/`index`/`done`/`cut`/`cutDone`/`cutReturning`/`stallTicks`; the return-home
-  watchdog counters `noteTick()`/`stalled()` (+ the exported `CUTSCENE_STALL_TICKS`); an `active` getter = the
+  models-ready gate automation must wait on), `play()` (`{returning, done, won}` — the `&finish` lifecycle).
+  See `docs/plans/2026-07-09-replay-record.md`.
+- **`makeReplaySession()` (`replay.js`)** — the playback lifecycle state is one object (owned
+  fields `play`/`trace`/`armed`/`index`/`done`/`autoFinish`/`returning`/`stallTicks`; the return-home
+  watchdog counters `noteTick()`/`stalled()` (+ the exported `RETURN_HOME_STALL_TICKS`); an `active` getter = the
   `animate()` gate `!!rs.play`; a unit-tested `teardown()` that clears every field together). `main.js` holds
   exactly one instance (`rs`). Kept as one object so the whole cluster tears down atomically — a partial
   reset leaves `animate()` stuck in the playback branch (the intro→Take-off dead-screen bug `finishIntro`'s
-  `rs.teardown()` guards against). The record vars, `replayAcc`, `G.replayMode`, and the cutscene RUNTIME
-  detail (`cutFrozen`/`cutQueue`/counters/overlay els) stay module-level in `main.js`.
+  `rs.teardown()` guards against). The record vars, `replayAcc` and `G.replayMode` stay module-level in
+  `main.js`.
 - **READ-ONLY (`G.replayMode`).** A `?record`/`?playback` session must not mutate the server: `win()` gates
   `unlockNextLevel`/`bankRun`/`depositLoot`/funnel on `!G.replayMode`, so a (re)played win shows the victory
   overlay but never advances progress or banks credits.
@@ -628,30 +640,121 @@ real bullet colors, smooth physics, real FX and real collisions). Consumers: the
   via a `buildPlayerFor(ship, override)` param, so a later-unlocked weapon (e.g. the Machine Gun) never leaks
   into an intro-level replay.
 - **`settleView()`** (extracted from `sim.js update()`) frames the camera + sky/stars/planet on the player
-  right after `reset()`, so a frozen cutscene P0 frame doesn't jump when the re-sim's first tick runs.
+  right after `reset()`, so a playback's first still frame doesn't jump when the re-sim's first tick runs.
 
-### Level-0 intro cutscene (on the playback) — `?playback&id={id}&cutscene=1`
-Overlays the Level-0 pause SCRIPT on an input-replay playback (`client/src/level0-cutscene.js` = the script;
-runtime in `main.js`). Each beat is triggered by a **SIM EVENT** observed each playback tick (NOT a fixed
-tick — survives re-recording) and fires **~1s after** it: P0 = a pre-fight opening card (freeze until tap);
-P1/P2 = 1s after the 1st/2nd kill; P3 = 1s after the rocket pirate warps in; P4 = 1s after the rocketeer's
-2nd rocket. A **cutscene-local freeze** (`cutFrozen`, NOT `G.paused` → the combat Pause overlay never pops)
-halts the accumulator; a localized lower-third card (`ui.cutscene.p*`, EN+RU) + tap/Space/Enter to advance,
-Skip/Escape to end; `body.cutscene` hides the HUD. A **persistent EN/RU language toggle** sits top-left of the
-cutscene screen (mirroring the Skip button top-right, `#cutscene-lang.lang-switch`): tapping it switches language
-live and re-localizes the visible card in place (the card + tap/skip affordances are `[data-i18n]`) **without**
-advancing or skipping the cutscene — its host is a `<body>` sibling of `cutOverlayEl` (so button clicks don't
-bubble to the whole-overlay click→advance listener) and each button also `stopPropagation`s. It is created in
-`buildCutsceneOverlay()` and removed in `cutsceneEnd()`, so it exists only while the cutscene overlay is up (never
-on the playable-Level-0 fallback nor after take-off into live Level 1). On clearing the fight it **simulates the "Return to base"
-button** (`engageAutopilot` — a click, absent from the key trace) and flies home to the victory overlay. This
-is the mechanism the **real new-player intro** rides: bootstrap (`startIntroCutscene`) fetches the canonical recording named on the `level-0` descriptor's **`introTrace`** (an S3 asset, `assets/recordings/level0-intro.<hash>.json`, pulled same-origin by `assets:pull` + bundled into the itch build) and plays it as the cutscene; on finish/Skip **`finishIntro`** **tears down the playback/cutscene session** (`rs.teardown()` + clears `G.replayMode`) so `animate()` leaves the inert `if (REC || rs.play)` branch and returns to live `update(dt)` — then advances `current_progress` 1→2 (`unlockNextLevel`) and lands on the **Level 1 Main Window briefing** (`level.1.briefing`), where the subsequent **Take-off** runs the real Level-1 sim. The trigger is **server-authoritative** (`shouldPlayIntro(location.search, CATALOG.level.introTrace)`): the intro plays iff the served `level-0` descriptor carries `introTrace` — present ONLY while `current_progress===0` — and the load isn't headless (`?debug`/`?bench`). There is **no client localStorage flag**, so a genuine progress reset (server sets progress→0) **replays** the intro; the server progress advance is the sole one-time gate. Headless / no trace → the playable Level 0. Read-only (`G.replayMode`) — the advance is explicit, not via `win()`.
-**Failure fallback:** a re-sim that goes wrong never hangs — if the trace runs out with the fight unfinished the
-post-loop `cutsceneEnd()` fires that frame, and if the "return to base" flight can never dock the return-home
-watchdog (`CUTSCENE_STALL_TICKS` ≈ 15 s of sim time) ends it; both route through the normal
-`cutsceneEnd()` → `finishIntro()` path, so the player still advances 0→1 and lands on the Level 1 briefing
-(the intro just stops early). The committed guard scenario `22-intro-replay` is what keeps that from happening
-silently.
+### The scripted intro (Level 0) — a fight you FLY
+**The intro is an ordinary campaign level, played live.** A new (or freshly reset) player lands straight in
+the Level-0 ambush with the controls in their hands from the first second; over the fight a scripted
+**director** speaks five first-person lines and, once, flies a **controls card** into the bottom-left `#help`
+cheatsheet. There is no playback, no freeze, no tap-to-continue, and the client never fetches the canonical
+trace (that is now only a determinism fixture — see *Combat record/playback*). See DECISIONS §138.
+
+**One timeline, stated once, on the `level-0` descriptor** (`server/src/catalog_seed.js`) — the UI and the
+SIMULATION read the same object, so the words and the fight cannot drift apart:
+- `intro.lineHold` **3 s** fully opaque, `intro.lineFade` **2 s** linear fade. A beat that fires while a line
+  is up **replaces it immediately** (the fade restarts from full) — no queue.
+- `intro.helpHold` **3.5 s** the controls card sits in the line's slot, `intro.helpFly` **0.9 s** the flight
+  into `#help` — the card crosses the whole screen from the top-centre slot to the bottom-left cheatsheet, and
+  at 0.45 s that diagonal read as a jump rather than a journey. `styles.css`'s `.fly` transition carries the
+  same number.
+- `intro.beats`: `l0` on `start` · `l1` on the 2nd `spawn` · `l2` 2 s after the 2nd `kill` · `l3` on the 4th
+  `spawn` (the rocketeer) · `l4` on `cleared`. Text keys `ui.intro.l0…l4` (EN source + RU).
+- `phases[0].spawn.earliest = [3, 9.4]` — the SIM half of the same timeline (see *Level flow*).
+- `finalStageBanner: false` — the rocketeer's warp-in is when `l3` speaks, so the "FINAL STAGE" banner is
+  suppressed by data rather than by a special case in `level-runner.js`.
+
+Resulting clock: **0 s** L0 · **3 s** pirate #1 warps in · **5 s** the controls card takes the slot ·
+**8.5 s** it starts flying · **9.4 s** it is gone · then #2 (once #1 is dead) with L1 · L2 two seconds after
+the 2nd kill · the rocketeer with L3 · `cleared` → L4 + "Finish and Return".
+
+**The clock is `world.combatElapsed`** (sim ticks of unpaused combat, already in `worldDigest`) — never wall
+clock, never rAF deltas. That is what makes a recorded intro session replay exactly, and it resets to 0 in
+`reset()`, which is the whole of the death→**Restart re-arms every beat** contract.
+
+- **`client/src/intro-director.js`** — the state machine: pure, DOM-free, engine-free, so `node --test` loads
+  it (`intro-director.test.js`: the beat triggers, the fade, the card states, replacement, the restart
+  re-arm). `makeIntroDirector(script)` → `tick({t, kills, alive, cleared})` returns this tick's one-shot
+  commands (`line:<id>` / `help:hold|fly|done`), plus `view` (`{lineKey, lineAlpha, help}`) and `fired`.
+  `spawned` is derived by the caller as `kills + alive` — exact, and it needs nothing new in the World.
+- **`main.js`** — `introTick()` runs once per SIM TICK (it is the `onTick` dep of `stepReplayTick`, and
+  `__game.stepSim` calls it too); `updateIntro()` runs once per FRAME beside `updateBanner()` and writes
+  `#intro-line`. `showIntroHelp()`/`flyIntroHelp()` execute the card commands.
+- **DOM:** `#intro-line` + `#intro-help` (`index.html`, styled in `styles.css`), **top-centre** at
+  `top: max(14vh, 76px)`, `z-index: 7`. The slot sits above the ship and out of the fight (it started at the
+  bottom and moved here on the maintainer's live test — the bottom band already holds "Finish and Return",
+  the rocket/FIRE buttons and the kill log, and reading a line down there means looking away from your own
+  ship). **The offset and the WIDTH are both structural, and the width is the load-bearing one.** `top` is
+  `max(14vh, 76px)`: 14 % is the look, and the 76 px floor exists because the HUD block above it is a fixed
+  PIXEL height — on a 375 px-tall landscape phone 14vh is 52 px and cut 10 px into the HP bars, whose bottom
+  edge is 63. `width` is **explicit** (`min(760px, calc(100vw - 400px))`, and on touch the slot is centred in
+  the FREE BAND instead: `left: calc(50% + 67px); width: min(560px, calc(100vw - 266px))`). It has to be:
+  these boxes are `position: fixed; left: 50%` with no `right`, so a shrink-to-fit width can never exceed
+  **50vw** — a `max-width` above that is dead code and the left edge is simply `25vw`, which only clears the
+  radar's fixed 194 px right edge above ~776 px of viewport. That is how the first version of this shipped a
+  card painting over the battle radar on every phone narrower than an iPhone X: it cleared by 9 px at 812, by
+  1 px at 780, and overlapped by 10 px at 736 and 27 px at 667. With `width` set the left edge is
+  `50vw − w/2` for a KNOWN w, which is **≥ 200 px at every viewport width under both rules** — a proof rather
+  than a measurement. The touch rule shifts the centre right by 67 px because the left reserve must clear the
+  132 px radar and the right one only the 60 px zoom column; being 67 px off the screen's centre is the price
+  of being centred in the space that is actually free.
+  `44-playable-intro`'s `assertBand` checks non-intersection with the HUD's two corner blocks, the radar, the
+  gear, the pause button and the zoom column at **1280×800, 812×375, 736×414 and 667×375** — the phone widths
+  straddle the ~776 px boundary deliberately, because the escape was that both originally-asserted viewports
+  sat on the clearing side of it. (`#banner` shares the band at `top: 26%`
+  but cannot fire on the intro: FINAL STAGE is suppressed and the "N enemies left" milestones only fire at 10
+  and 5 remaining, against an enemyTotal of 4.) **Everything is `pointer-events: none`** — the player is
+  flying underneath, and `#stick-zone` is a full-screen `pointer-events:auto` layer, so an interactive
+  overlay here would swallow steering and fire taps. The card's flight is a FLIP: `main.js` measures both
+  rects and sets `transform: translate(calc(-50% + dx), dy) scale(s)` with `transform-origin: left top` — the
+  `-50%` must stay INSIDE the composed transform (the rect was measured with it applied) — and drives
+  `opacity` from JS, because the inline `opacity:1` would beat any `.fly` class rule. The `.fly` class
+  supplies only the transition. Both are negatively tested by `44-playable-intro`.
+- **Nothing in the HUD is taken away** — the intro is a level, not a cutscene. `body.intro` is still set by
+  `updateIntro` while a director is armed, but it is now only a state hook that tests read; no CSS hangs off
+  it. (It briefly hid `#event-log`, back when the line sat in the bottom band beside the kill log.)
+- **Skip lives in the Settings gear** (`#skip-intro`, `ui.intro.skip`, shown only while `G.skipIntro` is
+  published). The gear already **pauses the fight** when opened, so a skip takes two deliberate acts and can
+  never be a stray tap; every screen edge was already occupied by HUD or thumb controls. `skipIntro()`
+  flushes the abandoned session (`quit`), then calls `finishIntro()` — the SKIP path only, which advances
+  0 → 1 itself and lands on the briefing.
+- **Ending / progress.** Clearing it is the **normal win path** every other level uses, and it does not go
+  through `finishIntro()` at all: `cleared` → "Finish and Return" (`sim.js` `finishing` →
+  `commitLevelAdvance`) → autopilot home → dock → victory overlay (`loadAdvancedLevel`) → Continue → the
+  Level-1 briefing. The one-time gate is `level.name === 'level-0'` in bootstrap — the server serves that
+  descriptor only while `current_progress === 0`, so there is **no client flag and a genuine progress reset
+  replays the intro** (DECISIONS §63).
+- **The director cannot outlive its level, by construction.** `introArmed()` (`main.js`, consulted by both
+  `introTick` and `updateIntro`) drops the director the moment the SERVED descriptor stops carrying an
+  `intro` script, and clears `G.skipIntro` with it. That is not belt-and-braces: the win path advances the
+  campaign **in page** (`loadAdvancedLevel` swaps `CATALOG.level`, no reload), so a latched module flag
+  survived into Level 1, re-armed itself on that level's `reset()` — the clock going backwards is the
+  restart signal — and replayed the whole script over it, and left a Settings row that would have granted a
+  free level advance.
+- **It is session-recorded** like every other campaign level: bootstrap calls `beginLiveSession()` before
+  `reset()`, so the level new players actually drop off on finally reaches the funnel and `/admin/sessions`.
+- **Death is death.** Normal rules, normal Game-over overlay; **Restart** replays Level 0 with every beat
+  re-armed (the director sees `combatElapsed` go backwards and resets itself).
+- **`#help` has a touch variant** (`ui.help_touch`): bootstrap swaps the key once when `Device.input ===
+  'touch'`, so a phone no longer reads keyboard bindings — and the card that flies into it matches.
+
+#### ⚠ READ THIS BEFORE CHANGING ANY OF THE FOLLOWING — the intro breaks from the OTHER end
+
+The intro is coupled to systems that show no sign of it from their own side. Every row below is something
+that actually went wrong while building it, not a hypothetical. Full detail:
+`docs/plans/2026-08-30-1654-playable-intro.md`.
+
+| If you change… | The intro breaks like this | Do this |
+|---|---|---|
+| **Level-0 pacing** — `spawn.earliest`, the phase script, the pool, either intro ship's stats/turn rate | The canonical recorded trace no longer clears the level, and **three** determinism guards that pin its OUTCOME go red: `server/tools/sim-replay.test.js` (kills 4 / earned 250 / cleared), `server/src/seal/verify-run.test.js` (`TRUTH`), visual `22-trace-replay`. CI never sees it (the trace is a gitignored S3 asset and the tests `skip` when absent), so it rots silently until someone runs `assets:pull` | Re-record it — **Step 9 of the plan**. The cheap path is prepending idle ticks to the packed runs; when the first spawn moved to 3 s that was **exactly 180** ticks, because `180 × 1/60` sums to `2.9999999999999942 < 3` and so leaves the spawn on its original relative tick. 181 shifts the whole fight. Verify with `node server/tools/sim-replay.mjs <file> --json` and accept only on the six load-bearing fields; `loot` legitimately moves |
+| **The intro's timing numbers** (`intro.lineHold/lineFade/helpHold/helpFly` on the level-0 descriptor) | You have moved the FIGHT too, not just the words: `spawn.earliest[1]` is **derived** from them (`INTRO_HELP_GONE`), so a UI tweak retimes enemy #2. That is the design (one timeline, DECISIONS §138) — but it means the words and the fight cannot be tuned separately | Change the constant in `server/src/catalog_seed.js`, never a hard-coded copy, and re-run the trace check above. `styles.css`'s `.fly` transition duration must be edited to match `helpFly` by hand — CSS cannot read the descriptor |
+| **Anything about the default boot** of the visual suite | **Every one of the ~48 scenarios boots as a NEW player at progress 0 — i.e. into the intro.** The runner's boot gate (steps the sim until the arena holds an enemy) and `__game.silenceIntro()` exist ONLY for that. A pacing change is a change to the default boot of the whole suite | Keep the gate. Do not "fix" a scenario by giving the harness a different level-0 — the suite's value is that it fights the level production ships |
+| **`introArmed()`** (`main.js`) or the `intro` field on a served descriptor | The director outlives its level. This is not theoretical: a latched module flag survived the win (the advance is **in page**, no reload), re-armed on Level 1's `reset()` and replayed the whole script over it, and left a Settings "Skip the intro" row that granted a **free level advance** | Keep the lifetime tied to `CATALOG.level.intro`. Guarded by scenario 44's win step |
+| **`advanceDone()` / the order of `commitLevelAdvance` → `loadAdvancedLevel`** (`net.js`) | Re-opens the **free level** bug for every level, not just the intro: the level GET overtakes the advance POST, the tab reloads the level it just cleared, and clearing it again advances the account a second time and pays out the next level's reward | Leave the `await advanceDone()`. Guarded by scenario 44 docking instantly with the POST held 1.5 s |
+| **The TOP band** — adding/moving a fixed element near the top, or resizing `#minimap` | The line and the controls card live there and are opaque; a new neighbour is painted over (or paints over them) | Add it to `assertBand` in `44-playable-intro.mjs` and re-derive the slot's width. **Note the trap:** the radar overlap escaped because both asserted viewports sat on the clearing side of a ~776 px boundary — assert on BOTH sides of any boundary your arithmetic implies |
+| **`#help`** — moving, hiding, or hiding it on touch | It is the controls card's flight DESTINATION. A `display: none` target measures as a zero rect, so the card flies into the screen corner at minimum scale. It was hidden on touch for exactly this reason once | Keep it rendered whenever the intro can run. Guarded by scenario 44 at three phone widths |
+| **`#stick-zone` / the input layers, or the intro DOM** | Every intro node is `pointer-events: none` because the player is FLYING underneath them; `#stick-zone` is a full-screen `pointer-events: auto` layer. An interactive intro node swallows steering and fire | Keep `pointer-events: none`. Guarded by an `elementFromPoint` assertion in scenario 44 |
+| **`world.combatElapsed`, `reset()` zeroing it, or the digest** | The director's whole clock — and its restart contract (the clock going backwards IS the re-arm signal). Wall-clock timing would also desync a recorded intro session | Keep the director on sim ticks only |
+| **The i18n keys `ui.intro.l0`…`l4`, `ui.intro.skip`, `ui.help_touch`** | The lines are resolved by key at speak time; a rename shows the raw key on a new player's first screen | Rename in `source.json` AND `ru.json` AND the descriptor's `beats[].textKey` together |
 
 ## Ship model (DB-driven)
 Ships, components and weapons are **defined in the database** (`ships`, `components`, `weapons`); the
@@ -762,7 +865,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   stay fully invulnerable. Rockets keep their own `r.hp` and get no shield. Tuning knobs, all in one place:
   `ENEMY_SHIELD_FRACTION` + `ENEMY_SHIELD_RECHARGE_SEC` in `components.js` and the per-tier bubble cap
   `enemyShieldBubbles` in `graphics.js`. `G.enemyShieldRefills` counts completed refills per run (diagnostic,
-  reset in `reset()`, read via `__game.enemyShieldRefills` — used to triage an intro-replay divergence).
+  reset in `reset()`, read via `__game.enemyShieldRefills` — used to triage a trace-replay divergence).
   See DECISIONS §76.
 - **Shield-hit FX (`shield-fx.js`):** a cosmetic translucent **bubble** (a `ShaderMaterial` sphere of radius
   `SHIELD_RADIUS`, imported from `collision.js` so the drawn bubble and the interception hitbox are the same
@@ -773,8 +876,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **whole sphere flashes once** (`uReady` pulse). Damage sites call `spawnShieldHit(pos, broke)` (a thin
   wrapper in `projectiles.js` → `registerShieldImpact`) and the recharge-complete transition in `sim.js` calls
   `spawnShieldReady()`; the bubble is advanced once per rendered frame by `updateShieldBubble(dt)` in
-  `main.js`. **Pure render** — it reads sim state but never writes it and uses no seeded RNG, so record/playback
-  and the intro cutscene stay bit-identical. See DECISIONS §68.
+  `main.js`. **Pure render** — it reads sim state but never writes it and uses no seeded RNG, so record and
+  playback stay bit-identical. See DECISIONS §68.
   **Enemy bubbles** live in the same module as a small **pool**: an enemy gets **no idle rim** (the always-on
   Fresnel read stays player-exclusive) — its bubble is invisible until a hit is absorbed, then plays the same
   ~1 s ripple/flash and disappears. It is sized snug to the hull (`broadRadius(enemy) × 1.05`, i.e. the
@@ -821,7 +924,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   no acceleration moved. A future fighter at another mass needs a third row.
   **The intro's two ships are excluded on purpose** — level-0's pool is exactly `Basic pirate ship` +
   `basic rocket pirate` and level-0 carries `introTrace`, so slowing either would move the recorded replay
-  archive (§73). That exclusion is why this retune needed no re-recorded cutscene.
+  archive (§73). That exclusion is why this retune needed no re-recorded trace.
   A **required slot
   (hull/engine/thruster) may legitimately be empty** in the hangar (you can unequip it back into the
   stash) — the active ship then reports `launchable: false` + `missingRequired`, the **Take-off button
@@ -1396,8 +1499,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **Landing screen (reflects the current level)** — on load the homepage depends on the player's current
   level, a **three-way branch** (`main.js`): (1) the **intro ("Level 0", seed name `level-0`, served only
   while `current_progress === 0`) AUTO-LAUNCHES straight into the fight** — no welcome screen, no "Take off",
-  no menu gate: the ship is controllable immediately (flying the default player ship), the client just sets
-  `G.gameStarted = true` + calls `reset()`. Once the intro is cleared, the normal landing resumes: (2) if the
+  no menu gate: the ship is controllable immediately (flying the default player ship). The client arms the
+  **intro director** from `CATALOG.level.intro` and publishes `G.skipIntro` (the Settings Skip row), sets
+  `G.gameStarted = true`, then calls **`beginLiveSession()` before `reset()`** — so the intro is
+  session-recorded like every other campaign level and the seed is installed before `reset()` draws the
+  spawn RNG. See *The scripted intro (Level 0)*. Once the intro is cleared, the normal landing resumes: (2) if the
   level has a **briefing** (level 2+, i.e. "Level 2"–"Level 4"), the client lands on the **Main Window**
   showing that briefing (so a returning player sees *their* mission); (3) otherwise ("Level 1" / id 2, no
   briefing) it shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"),
@@ -1677,7 +1783,15 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   clear. `finishMission()` sweeps every crate still on the field into the run (the last enemy's drop appears
   at the instant the fight ends — no ship reaches it in time), emits `finishing`, and **engages the autopilot
   home**. The host deposits the loot and commits the campaign advance **server-side** on that event, so
-  reloading the tab mid-flight loses nothing. It refuses unless the sector is really cleared, so a stray tap
+  reloading the tab mid-flight loses nothing. **The two halves are ordered by a promise, not by hope:**
+  `commitLevelAdvance()` publishes its in-flight POST on `advancing` and `loadAdvancedLevel()` **`await`s
+  `advanceDone()`** before its `GET /level` — the same pattern as `bankingDone()` beside it. Without that the
+  GET could overtake the POST and hand the tab back the level it had just cleared while the server was
+  already on the next one: the player took off into the level they had finished, cleared it a second time,
+  and the second clear advanced the account AGAIN — a skipped level plus its reward drop. It is easiest to
+  hit on the intro (the home station is ~43 u from the arena centre against a 45 u arrival radius, so the
+  dock can land on the tick the button is pressed) but the race was there for every level. The stored promise
+  never rejects, so a failed advance still lets the read through — "on failure the same level replays". It refuses unless the sector is really cleared, so a stray tap
   cannot end a live fight. (3) **WON** — the ship arrives. `checkArrival` → `winLevel()`: overlay, sting,
   hangar, releasing a netsim room, and only now `loadAdvancedLevel()` — the descriptor, the map and the
   rebuilt ship, which need everything standing still (`buildPlayerFor` makes a fresh player at the spawn
@@ -1712,7 +1826,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   → the object nearest its fight centre; mission hosts are fixed anchors so a snapshot never goes stale); when
   it is **null** (no active mission target) both the gold pointer and the "Autopilot to Mission" button hide,
   leaving just "Return to Base". Same touch/click wiring split as `#return-btn` (DECISIONS §42), hidden on
-  menus/cutscene, EN + RU. The bar sits in the same bottom-center slot as `#return-btn`, which is safe because
+  menus, EN + RU. The bar sits in the same bottom-center slot as `#return-btn`, which is safe because
   roam (`G.roam`) and return-to-base (`G.returnToBase`) are never both true. Covered by `32-star-system`.
 - **Star system / navigation (roam).** Out of combat the game world is a **to-scale, flyable star system**
   you cross with an autopilot driven by a **system-map screen** (docs/plans/2026-08-09-1456-star-system-map.md).
@@ -1728,8 +1842,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     "Return to base" and clicking the station while roaming both fly home fast). Everything else clamps:
     all **manual** flight, and a **drop-grab** autopilot during a fight. The invariant is *"never lift the
     cap for INPUT-DRIVEN flight"* — a replay reproduces the recorded input stream, and an autopilot leg is
-    not part of it (the intro replayer freezes the trace index and zeroes input while the dock autopilot
-    flies home), which is why the dock leg can be uncapped with `22-intro-replay` byte-identical. The
+    not part of it (`?playback&finish` freezes the trace index and zeroes input while the dock autopilot
+    flies home), which is why the dock leg can be uncapped with `22-trace-replay` byte-identical. The
     autopilot **brakes once inside `ARRIVE_RADIUS`** instead of chasing its goal (without that, a fast
     arrival overshoots into a ~10 u/s orbit and an arrival prompt never fires); drops are excluded. The
     OOB warn/warp-back is disabled in roam. (`ZONE_RADIUS` / `inActivityZone` / `activityZoneCenters` remain
@@ -1848,10 +1962,18 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   played in order via the player's progress). Level order is `levels.id`, which since the 0-based
   renumbering (DECISIONS §102) IS the campaign number and matches both the row `name` and the displayed
   `title` — id 3 is `level-3` is "Level 3":
-  - **`level-0` (id 0) — "Level 0", the intro patrol:** the gentle, non-skippable FIRST level for new
-    players. **3 basic pirates one at a time** (`maxConcurrent 1`, kill one → the next warps in) → a single
-    **rocket pirate** finale → **Victory!** No boss, no reward, no briefing (enemyTotal **4**). On first
-    launch it auto-launches straight into the fight (see the Landing screen).
+  - **`level-0` (id 0) — "Level 0", the intro ambush:** the gentle FIRST level for new players, and it is
+    **played, not watched**. **3 basic pirates one at a time** (`maxConcurrent 1`, kill one → the next warps
+    in) → a single **rocket pirate** finale → **Victory!** No boss, no reward, no briefing (enemyTotal **4**).
+    On first launch it auto-launches straight into the fight (see the Landing screen), with the scripted
+    director talking over it and Skip in the Settings gear. Three fields make it the intro:
+    **`spawn.earliest: [3, 9.4]`** on `wave-1` — a FLOOR (in seconds of `world.combatElapsed`) on the first
+    two spawns, on top of the ordinary 2–4 s stagger, so pirate #1 waits for the opening line and #2 waits
+    for the controls card to have flown away; **`intro`** — the director script (see *The scripted intro*);
+    **`finalStageBanner: false`** — no "FINAL STAGE" banner, because that instant is when line `l3` speaks.
+    `introTrace` also lives here, but it is now purely the **canonical trace three determinism guards
+    re-simulate** (`sim-replay.test.js`, `seal/verify-run.test.js`, `22-trace-replay`) — the client never
+    fetches it. **Changing level-0's pacing invalidates it and it must be re-recorded.**
   - **`level-1` — "Level 1" (beginner):** fighters only (3 at a time) → after **6 kills** rocketeers
     join at 25% → at **12 kills** two last rocketeers appear, clear the field → **Victory!** No boss
     (enemyTotal **14**). Carries the Machine-Gun `lastKillDrop`.
@@ -1986,7 +2108,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 
 ## Visuals
 - **The frame is the historical two-pass one, drawn straight to the canvas** (`main.js animate()`, DECISIONS
-  §138): `renderer.info.reset()` → `clear()` → `render(skyScene, camera)` → `clearDepth()` →
+  §139): `renderer.info.reset()` → `clear()` → `render(skyScene, camera)` → `clearDepth()` →
   `render(scene, camera)`, with the canvas's own native MSAA (`WebGLRenderer({ antialias })` per tier) and
   **no tone mapping anywhere** (`renderer.toneMapping` is never assigned; the hangar's `model-viewer.js`
   matches by doing the same nothing). The `?bench` `fullFrame` duplicates the identical five lines, so the
@@ -1995,7 +2117,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   MSAA renders ~90-100% black on ANGLE Metal, routing the frame through one throws away the free canvas MSAA,
   ACES over-exposed lighting authored for direct sRGB output, and the overlay's screen-space blur could not
   scale with zoom. `graphics.test.js` asserts no `samples`/`superSample`/`bloom`/`glowScale` knob comes back.
-- **Glow is REAL POINT LIGHTS** (`client/src/engine-lights.js`, DECISIONS §138). A **fixed pool** of
+- **Glow is REAL POINT LIGHTS** (`client/src/engine-lights.js`, DECISIONS §139). A **fixed pool** of
   `THREE.PointLight`s, built once at module load and never grown, shrunk or disposed — three bakes the count
   into every lit material's shader (`#define NUM_POINT_LIGHTS`), so changing it at runtime recompiles every
   lit material (§83's stall). Unused lights are parked at `y = -100000` with `intensity 0`. Each frame
@@ -2147,7 +2269,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (`?debug&nebula`), which is how `43-expensive-look` gets the real backdrop while keeping `window.__game`.
   See DECISIONS §43.
 - **In front of the cube: ONE additive parallax nebula layer** (`buildBackdropLayer`/`updateBackdropLayer` in
-  `world.js`, DECISIONS §138). **The backdrop brightness ceiling (D13) is NOT met, and what ships is a
+  `world.js`, DECISIONS §139). **The backdrop brightness ceiling (D13) is NOT met, and what ships is a
   REGRESSION FLOOR, not a ceiling.** `43-expensive-look` measures the honest quantities on a real frame — the
   sky's 99th-percentile luminance (`bgP99`, whole sky) against the dimmer end of the lit hull (`hullP25`) —
   and reads **1.155x** where D13 asked for 1.50x. **It was already breached before this feature:**
@@ -2850,16 +2972,17 @@ first translation). See DECISIONS §10.
   `{en, ru}`. Persisted in `players.language` (migration 007, `TEXT NOT NULL DEFAULT 'en'`, no FK) **and**
   mirrored to `localStorage.lang`. On load the client adopts the server preference only when it's a real
   non-default choice (so it restores a chosen language after a `localStorage` clear without overriding a new
-  player's browser language). The **EN/RU toggle** appears in **three** places — the **welcome screen**
-  (`#lang-switch`), the **Settings modal** (`#settings-lang`, the only path once past the intro, reachable
-  anywhere incl. mid-fight since the gear pauses), and the **intro cutscene** (`#cutscene-lang`, a persistent
-  top-left toggle beside Skip, gone after take-off). All three share the `.lang-switch` two-button look and a
+  player's browser language). The **EN/RU toggle** appears in **two** places — the **welcome screen**
+  (`#lang-switch`) and the **Settings modal** (`#settings-lang`, reachable anywhere incl. mid-fight since the
+  gear pauses, which is also what covers an RU-browser player who lands straight in the playable intro; the
+  cutscene's own third host went with the cutscene — DECISIONS §64 as amended by §138). Both share the
+  `.lang-switch` two-button look and a
   **single re-localize entry point**: `applyTranslations()` re-renders every mounted toggle host from a small
   module-scoped registry (`langHosts` in `welcome.js`) so each host's active button matches the loaded language on
   first paint (bootstrap's initial `applyTranslations()`) **and** after a live switch (`setLanguage()`, which also
   calls it). `mountLangSwitch(host)` renders + registers a host from the pure `langButtons(current)` helper
   (`i18n.js`); detached hosts self-prune. Switching is live (no reload), re-rendering chrome + DB-sourced names +
-  the visible cutscene card. `POST /api/players/:id/language` (validates `en`/`ru`) stores it; `registerPlayer`
+  the intro director's visible line/card. `POST /api/players/:id/language` (validates `en`/`ru`) stores it; `registerPlayer`
   / active-ship return it.
 
 ## Backend
@@ -3435,8 +3558,8 @@ does **not** claim `isVector3`, and `01-smoke` asserts the camera's position and
 **`sim.js syncMeshes(dt)` is the one place sim state reaches the scene graph.** It runs once per tick inside
 `update()`, straight after the movement steps and *before* anything render-side (exhaust plumes, FX, camera)
 samples a hull pose, and copies `pos → mesh.position`, `heading → mesh.rotation.y`, `scale → mesh.scale`
-(plus the cosmetic `updateBank` wing roll). It also runs at the end of `reset()`, so a frozen pre-fight
-cutscene card is framed correctly. **The copy is strictly one-way** — nothing in the simulation reads a mesh
+(plus the cosmetic `updateBank` wing roll). It also runs at the end of `reset()`, so a still pre-fight
+frame is framed correctly. **The copy is strictly one-way** — nothing in the simulation reads a mesh
 back. Entities spawned later in a tick (`levelRunner` enemies, drops) seed their own mesh at spawn.
 
 Consequences that matter:
@@ -3651,7 +3774,7 @@ catalog straight from `server/src/catalog_seed.js` (with `enemyTotal` stamped on
 server does before serving it), places the home station from the map descriptor (docking decides a mission
 win, so the station is simulation state), builds the exact ship the trace recorded, and steps
 `sim-core/tick.js`. It reports `won false / returning true`, which is correct: winning needs the docking
-autopilot, and a trace records keys and touch, never a mouse click — in the browser the intro cutscene fakes
+autopilot, and a trace records keys and touch, never a mouse click — in the browser `?playback&finish` fakes
 that click, which is browser-only machinery a referee has no business reproducing. `runTrace(trace, …)` is
 exported, which is also the machinery for sealing the economy later (re-simulate a submitted session trace
 server-side and decide the reward there, instead of trusting `POST /api/games`).
@@ -3662,11 +3785,11 @@ same order, so bit-identical is the correct expectation and rounding would hide 
 `sim-random.js` counts its draws (`simRandomDraws()`, reset by `seedSim`).
 
 **`36-sim-divergence` is the standing guard.** It replays the same trace in a real browser (plain
-`?playback`, no cutscene) and in Node, and requires the digest, the summary AND the draw count to match —
-`hash=0x2a36f8d9`, `draws=38`, 3490 ticks each. The draw count is the half that names a culprit: a cosmetic
+`?playback`, no `&finish`) and in Node, and requires the digest, the summary AND the draw count to match —
+`hash=0x8d802ca2`, `draws=38`, 3670 ticks each. The draw count is the half that names a culprit: a cosmetic
 path reaching into the seeded gameplay stream (DECISIONS §73) shifts one host's stream and not the other's,
-and the test says so rather than reporting an opaque hash difference. `22-intro-replay` guards the cutscene
-path; this one guards the simulation.
+and the test says so rather than reporting an opaque hash difference. `22-trace-replay` guards the browser's
+end-to-end replay path; this one guards the simulation.
 
 ### Playing in a server-run room (`?netsim=1`)
 
@@ -3718,9 +3841,8 @@ invisible). A change of LEVEL reconnects instead, since the room is built around
 **netsim defers, per frame, and says why.** `netsimDeferReason({record, playback, sideMission})` returns
 `'replay'`, `'side-mission'` or null, and the loop consults it every frame — deferring drops the link and
 reconnects once the reason clears, rather than disabling netsim for the tab.
-- **`'replay'`** — `?record`, `?playback` and the Level-0 intro cutscene (which rides the same machinery,
-  armed programmatically at bootstrap) replay the local simulation deterministically and own the tick.
-  Without this the intro's frozen card sat over a server fight that kept running.
+- **`'replay'`** — `?record` and `?playback` replay the local simulation deterministically and own the tick.
+  Without this a replay ran a second, invisible fight against a server room that kept simulating.
 - **`'roam'`** — free flight is not a room fight. A room only knows how to run a level and starts one when
   told, so roaming with a room live meant the campaign level was being fought on the server while the player
   cruised: no fly-in countdown, and the roam nav bar over the combat HUD. Shared roam is a non-goal (plan §6).
@@ -4104,10 +4226,16 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   the `{version,seed,dt,shipId,level,loadout,components,skills,tickCount,runs}` trace shape + its run-length codec
   (`packTicks`/`unpackTicks`/`sameInput`/`hydrateTrace`/`traceTickCount`), per-tick input snapshot/apply
   (the touch aim is quantized in `snapshotInput`), validate, the
-  `makeReplaySession()` lifecycle object **incl. the return-home watchdog counters +
-  `CUTSCENE_STALL_TICKS`**, and **`stepReplayTick()`** — the ONE per-tick body both drivers in `main.js` run
+  `makeReplaySession()` lifecycle object **incl. the `&finish` auto-finish + the return-home watchdog
+  counters + `RETURN_HOME_STALL_TICKS`**, and **`stepReplayTick()`** — the ONE per-tick body both drivers in `main.js` run
   (the `animate()` accumulator and `window.__replay.step(n)`), dependency-injected so this module stays
-  DOM/engine-free; unit-tested in `replay.test.js`). The seeded-RNG isolation is its own leaf module,
+  DOM/engine-free; unit-tested in `replay.test.js`).
+- **The scripted Level-0 intro:** `intro-director.js` — the pure, DOM-free, engine-free state machine behind
+  the playable intro's five spoken lines and its controls card (`makeIntroDirector(script)` → per-sim-tick
+  `tick()` commands + a `view`; the script is data on the `level-0` descriptor). It imports nothing, so
+  `node --test` loads it (`intro-director.test.js`); `main.js` owns the single instance, ticks it from
+  `stepReplayTick`'s `onTick` and writes `#intro-line`/`#intro-help` from `updateIntro()`. (It replaced
+  `level0-cutscene.js`, deleted with the cutscene.) The seeded-RNG isolation is its own leaf module,
   **`sim-random.js`** (`simRandom`/`seedSim`/`isSimSeeded` + `mulberry32`, imports nothing, unit-tested in
   `sim-random.test.js`) — `main.js` only installs/clears the seed. The remaining engine wiring (accumulator
   pacing, the record/playback UI) is in `main.js`. See the record/playback subsection under Tools.
@@ -4140,6 +4268,17 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   mirrored here — it is not a pure function but what the six emit sites decide, so it is guarded where it
   lives: the `toHull` contract in `components.test.js` and the real break-with-spill rocket in
   `42-hit-feel`),
+  **the intro director** (`intro-director.test.js` — the eight rules the playable Level-0 intro rests on,
+  driven with a synthetic sim clock at 1/60 s: `l0` on the first tick, opaque for `lineHold` then a linear
+  fade to nothing at `lineHold+lineFade`; the card's `idle → hold → fly → done` walk with exactly one command
+  per transition; `l1` on `kills+alive === 2` whatever the split; `l2` two seconds AFTER the second kill, not
+  on the kill tick; `l3` on the 4th spawn and `l4` on `cleared`; a new beat REPLACING a mid-fade line in the
+  same tick; **the restart re-arm** — feeding `t = 0` after a finished run empties `fired` and speaks `l0`
+  again; and every beat firing at most once however long its trigger stays true. Plus, in
+  `sim-core/level-runner.test.js`, the SIM half of that timeline: `spawn.earliest` holds a spawn until the
+  floor, the released enemy still gets a plain 2–4 s `spawnDur` (the floor must never leak into the warp-in),
+  an index beyond the array is unfloored, `finalStageBanner: false` suppresses the banner, and the shipped
+  `level-0` descriptor's floors match its own beat timings),
   **enemy shields** (`enemyShieldSplit` is integer/exact and sums back to the catalog durability for every
   enemy hull; **damage-to-kill is LOSSLESS** — for all 6 durabilities × 5 per-hit powers the kill takes exactly
   `hitsToKill(d, perHit)` hits and `dealt − overkill === d`, the invariant the recorded intro depends on;
@@ -4154,14 +4293,15 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   handling, `effectiveGain` master×channel×toggle), **seeded sim RNG** (`sim-random.test.js`: same seed → same
   sequence, re-seeding rewinds, no seed installed → the native `Math.random`, and `seedSim(null)` really returns
   to live play — the teardown invariant), and the **return-home watchdog** (`replay.test.js`: `noteTick`
-  counts/resets, `stalled()` trips exactly at `CUTSCENE_STALL_TICKS`, `teardown()` clears every field), the
+  counts/resets, `stalled()` trips exactly at `RETURN_HOME_STALL_TICKS`, `teardown()` clears every field), the
   **shared per-tick body** (`replay.test.js` `stepReplayTick`: the entry guard stops a finished playback dead
   **but the post-intro teardown state `rs.play=null && rs.done=true` keeps stepping** — the live-play gate;
   an exhausted trace sets `rs.done` and never steps; a normal tick applies the recorded input, calls `update`
-  once with the passed `dt` and advances the index by one; `rs.cutReturning` releases every key and freezes
-  the index; the order is `update` → `capture` → `cutObserve`; live/record mode applies no trace input yet
-  still captures; and the watchdog fires `cutEnd` exactly at `CUTSCENE_STALL_TICKS`, or never while the level
-  is won), and
+  once with the passed `dt` and advances the index by one; `rs.returning` releases every key and freezes
+  the index; the order is `update` → `capture` → `onTick`; live/record mode applies no trace input yet
+  still captures; **`&finish` presses the button exactly once on the tick the sector clears and stops on the
+  win, and does nothing at all without the flag**; and the watchdog trips exactly at
+  `RETURN_HOME_STALL_TICKS`, or never while the level is won), and
   **character progression** (`client/src/progression.test.js`: the client XP-curve mirror agrees with
   `server/src/progression.js` for every level/threshold checked, and `liveProgress` fills, crosses a
   threshold, rolls through several levels in one haul, and no-ops without earned XP;
@@ -4351,10 +4491,11 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   arms only on a near-full drag and opens the confirm dialog; Cancel snaps it back; Confirm POSTs `/reset`),
   and **triple-spiral-rocket** (firing the id-11 spiral weapon spawns exactly 1 invisible leader + 3 visible
   warheads into the `rockets` pool, and the whole volley drains to 0 after homing + detonation — the leader
-  self-removes once its last child is gone, no leaked entries), and **intro-replay**
-  (`22-intro-replay.mjs`: re-sims the canonical Level-0 intro trace on its own `?playback&…&cutscene=1&debug`
-  url and asserts 4 kills / cards `p0..p4` / `won` — the guard against a seeded-stream shift desyncing the
-  cutscene; needs `npm run assets:pull` first, since the trace is a gitignored S3 asset), and
+  self-removes once its last child is gone, no leaked entries), and **trace-replay**
+  (`22-trace-replay.mjs`: re-sims the canonical Level-0 trace on its own `?playback&…&finish=1&debug`
+  url and asserts 4 kills / `won` — the guard against a seeded-stream shift rotting the fixture three
+  determinism guards pin an outcome on; needs `npm run assets:pull` first, since the trace is a gitignored
+  S3 asset), and
   **freighter-exhaust** (`24-freighter-exhaust.mjs`: launches the freighter mission, asserts its plume exists
   in the default `points` look, then flips the **global** mode to `flame` via `__game.exhaust.setGlobalExhaustMode`
   and asserts the flame mesh becomes visible on **both** the freighter plume **and** a thrusting ship plume).
@@ -4407,10 +4548,10 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   and **sim-divergence** (`36-sim-divergence.mjs`: replays the canonical Level-0 trace in a real browser on a
   plain `?playback&debug` url **and** headlessly in Node via `server/tools/sim-replay.mjs`, then asserts the
   two hosts agree on the world digest (`sim-core/digest.js`), on the run summary and on the seeded-RNG draw
-  count — `hash=0x2a36f8d9`, `draws=38`, 3490 ticks each. This is the standing proof that "one simulation,
+  count — `hash=0x8d802ca2`, `draws=38`, 3670 ticks each. This is the standing proof that "one simulation,
   two hosts" is true and not aspirational; the draw count is the half that names the culprit when a cosmetic
   path reaches into the gameplay stream. Negative-verified by adding one `simRandom()` call to the browser's
-  tick, which fails it with the draw mismatch. Needs `npm run assets:pull`, like 22-intro-replay),
+  tick, which fails it with the draw mismatch. Needs `npm run assets:pull`, like 22-trace-replay),
   and **ally** (`38-ally.mjs`: the one place the WINGMAN is seen in a browser — the two determinism oracles
   above deliberately exercise none of his code, because the Level-0 trace has no ally. It boots once with the
   flag OFF (`allies` stays empty — the "players see nothing" guarantee), then once on `?ally=wave-1`, and
@@ -4483,10 +4624,40 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   **`99-fill`** also gained two readability guards on the same frames it already measured: the peak
   blown-out share stays under **2%** and, on that peak frame, at least **60%** of pixels stay below luma 0.25
   — the frame must not become a white sheet when an FX retune spends its headroom on glow AREA.
+  and **the playable intro** (`44-playable-intro.mjs`: the ONE scenario that runs with the director armed.
+  It resets the shared throwaway player to progress 0, boots the intro on its own page, and then **freezes
+  the live accumulator** (`__game.setPaused(true)`) so `__game.stepSim` is the only driver and every timing
+  assertion reads `__game.combatElapsed` — never a step count, never a sleep. It asserts: the session
+  recorder is armed on `level-0`; L0 is on screen at full opacity and `elementFromPoint` at its own centre
+  returns the **canvas**, not the line (the `pointer-events:none` constraint); `enemyCount` 0 at 2.9 s and 1
+  at 3.1 s (the spawn floor, end to end); the card appears at 5 s and carries `.fly` at 8.5 s; the flight
+  **lands** — polled rects put it on `#help` within 4 px and its opacity under 0.05 — then is removed at
+  9.4 s; **the TOP band** — the line's rect intersects neither HUD corner block, nor the radar, the gear, the
+  pause button or the zoom column, asserted at **1280×800 and again at 812×375** with `body.touch` (where it
+  also pins the `76px` floor the slot falls back to, and that `#help` is on screen and clear of the XP bar;
+  that block guards the CSS band only — the runner's page is a desktop context, so `Device.hasTouch` is false
+  and `#fire-btn`/`#stick-zone` are never rendered, and it makes no vacuous assertion about them); that the
+  **kill log runs** on the intro like on every other level; the Settings **Skip** row is visible, the modal
+  still FITS with it (the only place that is checked with the row present), and clicking it lands on
+  `level-1`; that dying and pressing **Restart** re-arms `l0` **and takes the controls card off the screen**
+  (the director's `reset()` emits no command, so a card left up sat stacked on the re-armed line); and
+  finally **the WIN ending** — fight it to `cleared`, press "Finish and Return", **dock instantly from the
+  arena centre with the `/advance` POST held for 1.5 s** (the advance-race guard, below), and assert the tab
+  lands on `level-1`, the director is gone, `body.intro` is cleared, the Settings Skip row is gone, and a
+  take-off into Level 1 draws no intro line. Mutation-checked six ways: a bare `translate(dx,dy)` (dropping
+  the `-50%`), moving the fade to the `.fly` class rule, `pointer-events: auto`, reverting `introArmed()` to
+  a sticky module flag, removing the card takedown, and dropping `await advanceDone()` — each fails it).
+  **The runner's boot gate** (`visual/run.mjs`): every scenario boots the throwaway player into level-0, so
+  after the take-off click it now **steps the sim** to the state scenarios have always been handed (an arena
+  with an enemy — level-0 holds its first spawn for 3 s of sim), then calls **`__game.silenceIntro()`** so
+  the director's line/card are not in every screenshot and `#skip-intro` does not widen the modal
+  `14-reset-progress` measures. Stepping rather than waiting is deliberate: on software GL the sim runs
+  behind wall clock, so waiting for real frames cost ~5-20 s per scenario. The SIMULATION is untouched — the
+  spawn floors still apply, because the suite must fight the level production ships.
   Self-contained runner starts its own server + throwaway DB. Setup
   + run from `client/`:
   `npm install && npx playwright install chromium && npm run test:visual`; a single scenario:
-  `node visual/run.mjs 22-intro-replay` (optional argv name filter). A stable, growing suite for
+  `node visual/run.mjs 22-trace-replay` (optional argv name filter). A stable, growing suite for
   occasional larger releases. See `client/visual/README.md`.
 
 ## Project structure

@@ -10,7 +10,7 @@ import { evalNetsim, connectNetsim, netsimDeferReason, isUnroomableSideMission }
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
 import { createJerkProbe } from './netsim-jerk.js'; // ?netjerk: catch every break in the DRAWN motion
 import * as THREE from 'three';
-import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (cutscene text)
+import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (the intro director's lines)
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
 import { G, world, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, allies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, setZoom, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
@@ -28,7 +28,7 @@ import { shipModelCacheSize } from './ship-factory.js'; // ?debug diagnostic: ho
 import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateMissionMarker, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/gold mission pointer/enemy health bars/XP bar+skill badge)
-import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro cutscene → Level 1) + session-recording upload
+import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
 import { update, renderTick, setGrabTarget, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, finishMission, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
@@ -37,13 +37,13 @@ import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { allyDev, allyDevLevel, applyAllyDev } from './ally-dev.js'; // ?ally dev flag: the wingman's arrival phase (+ the level it forces)
 import { beamDev, lancerDev, lancerDevLevel, applyLancerDev } from './beam-dev.js'; // ?beam / ?lancer dev flags: the player's beam, the pirate lancer's spawn phase (+ the level it forces)
-import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, shouldPlayIntro, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
+import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
-import { LEVEL0_CUTSCENE } from './level0-cutscene.js'; // Level-0 intro cutscene pause script (event-driven), overlaid on ?playback&cutscene
+import { makeIntroDirector } from './intro-director.js'; // the scripted Level-0 intro (the script is data on the descriptor)
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
 import { showMain, launchMission, refreshMissions, enterRoam, missionOffers, activeMissionId, mainBriefing, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers + roam entry
 import { shopItemViewer, updateTakeoffGate, primeShopItemsSeen } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel + the launch gate (32-star-system drives it) + the "(new)"-marker baseline
-import { showWelcome, applyTranslations, welcomeStaged, mountLangSwitch } from './welcome.js'; // welcome screen + i18n UI glue
+import { showWelcome, applyTranslations, welcomeStaged } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
 import { recenterAndQuantize, MAX_GHOST_SHIPS, MAX_GHOST_BULLETS } from './ghost-battle-track.js'; // ?dev in-game backdrop recorder + synthetic bake
 
@@ -70,11 +70,10 @@ const benchRecord = [];       // captured per-tick { k:[codes], t:[heading,thrus
 // ?bench perf gate above). Both run the sim at the fixed BENCH_DT step so a tick maps 1:1 to a sim frame.
 // docs/plans/2026-07-09-replay-record.md. Zero overhead when neither flag is present.
 const REC = evalRecord(typeof location !== 'undefined' ? location.search : '');   // { level } | null
-// One session instance owns the PLAYBACK + CUTSCENE lifecycle state (extracted for a unit-tested teardown()).
-// The intro cutscene also SETS rs.play programmatically (bootstrap), reusing the ?playback machinery.
+// One session instance owns the PLAYBACK lifecycle state (extracted for a unit-tested teardown()).
 const rs = makeReplaySession();
 const sr = makeSessionRecorder(); // always-on live-session recorder (funnel analytics)
-rs.play = evalPlayback(typeof location !== 'undefined' ? location.search : ''); // { id, cutscene } | null
+rs.play = evalPlayback(typeof location !== 'undefined' ? location.search : ''); // { id, finish } | null
 // ---------- Server-run fight (?netsim) ----------
 // Opt-in and additive: with the flag the level is simulated by a server ROOM and this tab only sends input
 // and draws what comes back; without it nothing below runs and single-player is untouched (plan D1).
@@ -178,7 +177,7 @@ if (NETJERK) {
     + ' — dying writes the record to the server; __netsim.jerk.report() for the tally');
 }
 const ROAM = typeof location !== 'undefined' && location.search.includes('roam'); // ?roam dev sandbox: drop straight into the flyable star system (Stage 1 live-tuning)
-let introMode = false;        // true when bootstrap plays the intro cutscene for a new player (advance + Level-1 briefing on done)
+let introMode = false;        // the Level-0 intro is being ENDED by Skip (finishIntro's own guard: advance 0→1 + Level-1 briefing)
 if (REC || rs.play) G.replayMode = true; // dev record/playback sessions are READ-ONLY: the sim must not advance progress / bank credits / deposit loot on a (re)played win
 let recSeed = 0;              // mulberry32 seed installed at record start (captured into the trace)
 let recShipId = null;         // the player ship id used for the recording (rebuilt on playback)
@@ -193,21 +192,14 @@ let modelsReady = false;      // the player ship .glb has loaded (gates record S
 // FX + decor keep using the native Math.random, so an FX/decor change can never shift a recorded trace.
 // This module just installs (seedSim) and clears (seedSim(null)) the stream around a session — DECISIONS §73.
 
-// ---------- Level-0 intro cutscene (event-driven text pauses over ?playback&cutscene) ----------
-// Active only when ?playback carries &cutscene AND the loaded trace is the intro level. Observes sim EVENTS
-// each playback tick (kills / rocketeer warp-in / enemy rocket launches) and freezes the re-sim ~1s later to
-// show a localized lower-third card; tap resumes. The freeze is CUTSCENE-LOCAL (never touches G.paused, so the
-// combat "Paused" overlay is not popped). See level0-cutscene.js + docs/plans/2026-07-09-replay-record.md.
-// rs.cut / rs.cutDone / rs.cutReturning own the cutscene lifecycle gate (see makeReplaySession). The cutscene
-// RUNTIME detail below (freeze/queue/counters/overlay els) stays module-level — it is not part of the gate.
-let cutFrozen = false;        // cutscene-local freeze (halts the playback accumulator; NOT G.paused)
-const cutFired = new Set();   // pause ids already shown
-let cutQueue = [];            // scheduled pauses awaiting their +delay: [{ pause, atTick }]
-let cutPrevKills = 0;         // G.kills last tick (detect 0→1, 1→2 transitions)
-let cutRocketeerSeen = false; // the rocket pirate has warped in
-let cutEnemyRockets = 0;      // count of the rocketeer's launched (non-lead) rockets
-const cutSeenRockets = new WeakSet(); // rocket objects already counted (detect a NEW launch)
-let cutOverlayEl = null, cutCardEl = null, cutSkipEl = null, cutLangEl = null;
+// ---------- The scripted Level-0 intro (a fight you FLY, with a director talking over it) ----------
+// The intro is an ordinary campaign level, played live and session-recorded like every other one. Over it a
+// scripted director speaks five first-person lines and flies a controls card into the bottom-left #help
+// cheatsheet. The SCRIPT is data on the level descriptor (`CATALOG.level.intro`, server/src/catalog_seed.js);
+// the state machine is intro-director.js (pure, unit-tested); the SPAWN half of the same timeline is
+// `spawn.earliest` in sim-core/level-runner.js. See docs/plans/2026-08-30-1654-playable-intro.md.
+let intro = null;             // the director for THIS run, or null on every level that carries no `intro` script
+let introHelpFlown = false;   // the controls card's one-shot flight into #help has been started
 
 // musicForState/refreshMusic moved to src/sim.js (music follows the live game state). refreshMusic is
 // imported at the top; tryUnlockAudio below calls it on the first unlocking gesture.
@@ -275,7 +267,10 @@ addEventListener('keyup', e => { keys[e.code] = false; });
 if (Device.hasTouch) {
   // body.touch / .standalone / .no-fs-api are set by device.js (applyDevice); here we only wire the DOM.
   document.getElementById('touch').classList.add('on');
-  document.getElementById('help').style.display = 'none'; // keyboard hints not needed
+  // #help used to be HIDDEN here ("keyboard hints not needed"), which left a phone with no controls
+  // cheatsheet at all. It now carries a TOUCH variant instead (`ui.help_touch`, swapped in bootstrap), so it
+  // stays on screen — and it has to: the intro's controls card flies INTO it, and a display:none target
+  // measures as a zero rect, which would send the card to the corner of the screen at minimum scale.
 
   const zone = document.getElementById('stick-zone');
   const base = document.getElementById('stick-base');
@@ -882,7 +877,7 @@ if (isDev()) window.__backdrop = {
 // does not answer. That is the friendly behaviour and it is nearly free: `netsimActive` is the only thing
 // that routes the loop, so clearing it hands the fight back to the local sim mid-frame.
 // Leave the room and forget its ghosts, WITHOUT giving up on netsim: `netsimActive` stays true, so the
-// next frame that is not owned by a replay reconnects. Used when the intro cutscene arms after the socket
+// next frame that is not owned by a replay reconnects. Used when a replay session arms after the socket
 // has already opened.
 // Netsim became unavailable — the handshake failed, or the socket went away under us. There is NO permanent
 // failure state: this run continues on the local simulation and the next run tries again. A tab that
@@ -967,8 +962,8 @@ function animate() {
   const dt = (BENCH || REC || rs.play) ? BENCH_DT : Math.min(rawSec, 0.05); // bench/record/playback: fixed step for determinism; else clamped for sim stability
   const t0 = DEV ? performance.now() : 0;
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
-  // A record/playback session — the intro cutscene included — replays the LOCAL sim and owns the tick, so
-  // netsim stands aside for as long as one is running (see netsimDefersTo).
+  // A record/playback session replays the LOCAL sim and owns the tick, so netsim stands aside for as long
+  // as one is running (see netsimDefersTo).
   // Why a room is not driving this frame (null = it is). Re-decided every frame on purpose — see
   // netsimDeferReason; both reasons arrive AFTER the socket is already open.
   netDeferredBy = netsimDeferReason({
@@ -1080,7 +1075,7 @@ function animate() {
     // 2× because one fixed step ran per frame). Each tick stays a deterministic fixed dt; we capture (record)
     // or apply (playback) exactly one tick per step. Only runs once armed (record: after "Start"; playback:
     // once models loaded) — before that the ship sits idle with the real model on screen (no placeholder flash).
-    if ((recCapturing || rs.armed || live) && !G.paused && !G.mapOpen && !cutFrozen) {
+    if ((recCapturing || rs.armed || live) && !G.paused && !G.mapOpen) {
       replayAcc += Math.min(rawSec, 0.1); // clamp: after a stall/tab-throttle, don't fast-forward a huge burst
       let steps = 0;
       // The per-tick body is shared with window.__replay.step(n) (replay.js stepReplayTick) so the two
@@ -1092,23 +1087,23 @@ function animate() {
           if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
           if (live) sr.captureTick(snapshotInput(keys, touchAim)); // always-on: capture the real operator input per sim tick
         },
-        cutObserve: cutsceneObserve,
-        cutEnd: cutsceneEnd,
+        onTick: introTick,                          // the Level-0 intro director speaks off the SIM clock
+        isCleared: () => G.returnToBase && !levelRunner.won,
         isWon: () => levelRunner.won,
+        finish: finishMission,
       };
-      // `rs.done` (trace exhausted / intro ended) must gate PLAYBACK only, never live play. The intro's end
-      // path sets `rs.done = true` right AFTER cutsceneEnd()→finishIntro()→rs.teardown() already reset it to
-      // false + nulled rs.play, so a live session inheriting that stale `rs.done` would never step — the ship
-      // never centers and controls are dead until a refresh builds a fresh rs. Ignore rs.done when rs.play is
-      // null (live): for ?playback/intro rs.play is truthy so freeze-on-exhaustion is unchanged.
-      while (replayAcc >= BENCH_DT && steps < 6 && !(rs.play && rs.done) && !cutFrozen) {
+      // `rs.done` (trace exhausted) must gate PLAYBACK only, never live play. The Skip path sets
+      // `rs.done = true` right AFTER finishIntro()→rs.teardown() already reset it to false + nulled rs.play,
+      // so a live session inheriting that stale `rs.done` would never step — the ship never centers and
+      // controls are dead until a refresh builds a fresh rs. Ignore rs.done when rs.play is null (live):
+      // for ?playback rs.play is truthy so freeze-on-exhaustion is unchanged.
+      while (replayAcc >= BENCH_DT && steps < 6 && !(rs.play && rs.done)) {
         if (stepReplayTick(tickDeps) === 'stop') break; // exhausted trace / stalled return-home: no time consumed
         replayAcc -= BENCH_DT;
         steps++;
       }
       if (recCapturing) updateRecordHud();
       if (rs.play) updatePlaybackHud();
-      if (rs.play && rs.done && rs.cut && !rs.cutDone) cutsceneEnd(); // uncover the victory overlay when the fight ends
     }
   } else {
     if (!G.paused && !G.mapOpen) update(dt); // pause / open system map freezes the whole fight (enemies, bullets, cooldowns, repair, spawns)
@@ -1133,6 +1128,7 @@ function animate() {
   updateReturnHint();   // centered "return to base" HUD hint
   updateRoamNav();      // roam bottom-center nav: Return to Base + Autopilot to Mission
   updateBanner();       // transient centered milestone banner ("10 enemies left", "Final Stage")
+  updateIntro();        // the scripted Level-0 intro: push the director's current line into the DOM
   if (dockCursorOn && !stationClickable()) setDockCursor(false); // drop the dock cursor when the station stops being clickable (no raycast)
   if (grabCursorOn && !drops.length) setGrabCursor(false); // drop the grab cursor when the last chest is gone (no raycast)
   updateMiniMap();    // corner radar: arena bounds, player, enemies
@@ -1308,6 +1304,19 @@ if (location.search.includes('debug')) {
     get backdrop() { return { amp: backdropAmp() }; },
     setBackdropAmp,
     get levelName() { return CATALOG.levelName; },     // the SEED NAME (level-N) this tab resolved at boot
+    get combatElapsed() { return world.combatElapsed; }, // THE sim clock the director and the spawn floors share
+    get enemyCount() { return enemies.length; },         // cheaper than enemies.length for a waitForFunction
+    get gameStarted() { return G.gameStarted; },         // "is a fight running at all" (the runner's boot gate)
+    setPaused,                                           // freeze the LIVE accumulator so stepSim is the only driver
+    // Reads through `introArmed()`, so a test sees the director go away the instant its level does
+    // (the win path advances the level in page, with no reload).
+    get intro() { return introArmed() ? { fired: intro.fired, help: intro.help, view: intro.view } : null; },
+    // The suite boots into level-0 for every scenario, so the director's line/card would sit in the bottom
+    // band of every screenshot and every rect measurement, and #skip-intro would widen the settings modal
+    // that 14-reset-progress measures. Only 44-playable-intro is testing the director; everyone else asks
+    // for the arena. THE SIMULATION IS NOT TOUCHED — the spawn floors still apply, because the suite must
+    // fight the same level-0 production does. This silences the DOM half only.
+    silenceIntro() { intro = null; G.skipIntro = null; updateIntro(); },
     get needsSceneWarm() { return G.needsSceneWarm; }, // diagnostic: a level build is waiting to be compiled/uploaded
     get pendingAssets() { return G.pendingAssets; }, // diagnostic: essential .glb loads still in flight (veil gate)
     smokePool, // diagnostic: the instanced rocket-trail pool (live count + per-instance alphas)
@@ -1357,11 +1366,11 @@ if (location.search.includes('debug')) {
     get touchAim() { return touchAim; }, // touch steering state (active/heading/thrust) — assert tap-vs-drag in headless
     sessionRec: () => ({ active: sr.active, final: sr.final, ticks: sr.tickCount, runs: sr.runs.length, level: sr.level }), // always-on live-recorder state (funnel-analytics guard)
     // Regression seam for the intro→Level-1 dead-controls bug (docs/plans/2026-08-03-1246-record-all-sessions.md).
-    // The headless suites can't run the REAL auto-intro (shouldPlayIntro is gated off under ?debug), so this
-    // fires the production intro-completion sequence directly: finishIntro() (async → teardown → welcome) then
-    // leaves rs.done=true exactly as the accumulator caller does (main.js ~1256). A scenario then Takes off into
-    // live Level 1 and proves the accumulator still steps (Fix A) and the session is recorded (Fix B).
-    simulateIntroEnd() { introMode = true; cutsceneEnd(); rs.done = true; return { playDone: rs.done, playActive: !!rs.play }; },
+    // Fires the production intro-END sequence directly — the same skipIntro() the Settings row calls
+    // (finishIntro: async → teardown → menu) — and then leaves rs.done=true exactly as the accumulator caller
+    // does. A scenario then Takes off into live Level 1 and proves the accumulator still steps (Fix A) and the
+    // session is recorded (Fix B).
+    simulateIntroEnd() { skipIntro(); rs.done = true; return { playDone: rs.done, playActive: !!rs.play }; },
     // --- star-system roam / navigation hooks (32-star-system scenario) ---
     enterRoam, engagePointAutopilot,
     engageAutopilot,                                // what a click on the home station does
@@ -1374,7 +1383,7 @@ if (location.search.includes('debug')) {
     // Deterministic sim stepping for headless roam tests (software-GL rAF is too slow to advance the live
     // accumulator meaningfully in a few seconds). Steps update(dt) N times at the fixed sim step — same
     // fixed dt the live loop uses, so it exercises the real per-tick sim (autopilot, cap, arrival).
-    stepSim(n = 1) { for (let i = 0; i < n; i++) update(BENCH_DT); },
+    stepSim(n = 1) { for (let i = 0; i < n; i++) { update(BENCH_DT); introTick(); } },
     openSystemMap: openSystemMapScreen, closeSystemMap,
     // Re-place the camera + the whole sky backdrop for the CURRENT player position without stepping the sim
     // — lets 32-star-system teleport the ship and read the backdrop's response directly.
@@ -1633,8 +1642,8 @@ function stopRecordSession() {
 
 // Begin a real, recorded live session. Called by the launch/retry flows JUST BEFORE their reset() (reset()
 // draws the sim RNG for spawn timing, so the seed must be installed first — same ordering as
-// beginRecordCapture). No-op under ?record/?playback/?bench and during the intro cutscene: those own the
-// seed/loop, and a (re)played fight must never be re-recorded.
+// beginRecordCapture). No-op under ?record/?playback/?bench: those own the seed/loop, and a (re)played
+// fight must never be re-recorded. The LEVEL-0 INTRO is recorded like every other campaign level.
 export function beginLiveSession() {
   if (REC || rs.play || BENCH || G.replayMode) return;
   // A session that is still open here was ABANDONED (left mid-fight, then another level launched) — win/death
@@ -1705,15 +1714,11 @@ function startPlaybackSession(trace) {
   G.gameStarted = true;
   replayAcc = 0;
   reset();
-  settleView(); // frame the camera + sky on the (reset) player NOW, so the frozen P0 frame doesn't jump on play
-  // ?playback&cutscene on the intro level → overlay the event-driven Level-0 pauses (freeze + localized card)
-  // instead of the plain playback bar; the opening card (P0) freezes before the first tick until tapped.
-  if (rs.play.cutscene && traceLevelName(trace) === LEVEL0_CUTSCENE.level) {
-    rs.cut = LEVEL0_CUTSCENE;
-    cutsceneStart();
-  } else {
-    buildPlaybackUI(trace);
-  }
+  settleView(); // frame the camera + sky on the (reset) player NOW, so the first frame doesn't jump on play
+  // `?playback&finish` — press "Finish and Return" for the pilot when the sector clears (a trace cannot
+  // carry that mouse click), so a winning replay ends on the victory overlay instead of orbiting forever.
+  rs.autoFinish = !!(rs.play && rs.play.finish);
+  buildPlaybackUI(trace);
   // Hold on the idle frame until the real ship model has loaded, then start stepping the trace — so playback
   // opens on the real ship, not the placeholder. animate()'s accumulator only advances once rs.armed.
   watchModelsReady(() => { rs.armed = true; });
@@ -1772,33 +1777,16 @@ function updatePlaybackHud() {
   if (p) p.textContent = `${Math.min(rs.index, rs.trace.ticks.length)} / ${rs.trace.ticks.length}${rs.done ? ' ✓' : ''}`;
 }
 
-// Start the INTRO cutscene for a new player: fetch the canonical recording (a same-origin S3 asset named on
-// the level descriptor's `introTrace`), then reuse the playback machinery. READ-ONLY — the sim never advances
-// progress; the advance is explicit in finishIntro() when the cutscene ends. Returns false if the trace is
-// missing/invalid so bootstrap can fall back to the playable Level 0.
-async function startIntroCutscene() {
-  const url = CATALOG.level && CATALOG.level.introTrace;
-  if (!url) return false;
-  let trace = null;
-  try { trace = hydrateTrace(await (await fetch(url)).json()); } catch (e) { console.error('[intro] trace fetch failed', e); }
-  const problems = trace ? validateTrace(trace) : ['intro trace missing/unfetchable'];
-  if (problems.length) { console.error('[intro] invalid trace:', problems); return false; }
-  rs.trace = trace;
-  rs.play = { id: trace.id, cutscene: true };   // drive the playback accumulator + cutscene like ?playback&cutscene
-  introMode = true;
-  G.replayMode = true;                        // read-only — win() won't advance; finishIntro() does it explicitly
-  startPlaybackSession(trace);
-  return true;
-}
-// The intro cutscene finished (won or Skip) → advance the player 0→1 (server-authoritative, so the intro is
-// one-time + cross-device) and land on the Level 1 Main Window briefing (shop stays gated until unlocked).
+// The intro was SKIPPED → advance the player 0→1 (server-authoritative, so the intro is one-time +
+// cross-device) and land on the Level 1 Main Window briefing (shop stays gated until unlocked). Winning the
+// intro does NOT come here: that is the ordinary campaign win path in `sim.js`, which advances by itself.
 async function finishIntro() {
   if (!introMode) return;
   introMode = false;
-  // Tear down the playback/cutscene session so animate() leaves the (now-inert) `if (REC || rs.play)`
-  // branch and returns to live `else → update(dt)` — otherwise Take-off's reset() gets zero sim ticks
-  // (no player/enemies/input). Clear replayMode too so the REAL Level-1 win can advance/bank (sim.js
-  // gates its server effects on !G.replayMode).
+  G.skipIntro = null;      // the Settings row must not survive the intro
+  // Defensive no-ops on a LIVE intro (nothing is playing back any more), kept because the same three lines
+  // are what put animate() back on the live path from any state that ever set rs.play / a seeded stream /
+  // replayMode — and because a partial reset is exactly the bug that once left the post-intro controls dead.
   rs.teardown();
   seedSim(null); // clear the seeded stream too — live Level-1 play must run off the native RNG
   G.replayMode = false;
@@ -1810,108 +1798,124 @@ async function finishIntro() {
   else showWelcome(getPlayerShips());
 }
 
-// --- Level-0 cutscene runtime: event detection + freeze + localized card (see level0-cutscene.js) ---
-function cutsceneStart() {
-  buildCutsceneOverlay();
-  cutPrevKills = G.kills;                            // baseline (reset() zeroed kills)
-  const p0 = rs.cut.pauses.find((p) => p.on === 'opening');
-  if (p0) { cutFrozen = true; cutFired.add(p0.id); cutsceneShowCard(p0.textKey); } // opening card before the fight
+// Skip the whole intro: end it here and land on the Level-1 briefing (progress 0 → 1,
+// server-authoritative). This is the SKIP path ONLY — winning the intro ends it the way every other level
+// ends, through `sim.js`'s victory handler (`commitLevelAdvance` at "Finish and Return", then
+// `loadAdvancedLevel()` on the dock), and never comes through here. Reached from the Settings modal, which
+// has already paused the fight — so this can never be triggered by a stray tap while flying — and from the
+// simulateIntroEnd() test seam.
+//
+// The only guard is `introMode`, deliberately NOT a `CATALOG.levelName === 'level-0'` check: the test seam
+// runs on a shared throwaway player an earlier scenario may already have advanced past level-0, and a level
+// check there would hang both scenarios waiting for a menu that never opens. Reachability is enforced where
+// it belongs — the Settings row only exists while `G.skipIntro` is published, which happens only on the
+// level-0 branch of bootstrap.
+function skipIntro() {
+  if (introMode) return;
+  introMode = true;                 // finishIntro's own guard
+  intro = null; G.skipIntro = null;
+  el.introLine.style.display = 'none'; el.introHelp.style.display = 'none';
+  flushSession('quit');             // the abandoned intro session still reaches the funnel
+  G.gameStarted = false; G.roam = false;
+  document.body.classList.add('menu');
+  setPaused(false);
+  finishIntro();                    // advance 0 → 1, then showMain(level-1 briefing)
 }
-// Called each playback tick AFTER update(): detect sim events, schedule each pause ~delaySec later, fire the
-// earliest due one (which freezes the re-sim). Only one card at a time — the freeze halts further stepping.
-function cutsceneObserve() {
-  if (rs.cutDone) return;
-  const dueAt = rs.index + Math.round(rs.cut.delaySec / BENCH_DT);
-  const fresh = (id) => !cutFired.has(id) && !cutQueue.some((q) => q.pause.id === id);
-  if (G.kills !== cutPrevKills) {                    // kills: schedule the nth-kill pause(s)
-    for (let kn = cutPrevKills + 1; kn <= G.kills; kn++) {
-      const p = rs.cut.pauses.find((pp) => pp.on === 'kill' && pp.n === kn && fresh(pp.id));
-      if (p) cutQueue.push({ pause: p, atTick: dueAt });
+
+// --- The intro director's runtime half: one call per SIM TICK, one per FRAME ---
+// Nothing here can touch the simulation; the director only speaks. All of its timing comes off
+// `world.combatElapsed` (sim ticks), never the wall clock — so a recorded intro session replays identically.
+
+// THE DIRECTOR LIVES EXACTLY AS LONG AS THE SERVED DESCRIPTOR CARRIES ITS SCRIPT, and not one frame longer.
+// Deriving that from `CATALOG.level` instead of latching a module flag is what stops it outliving its level
+// BY CONSTRUCTION: the normal ending (clear → "Finish and Return" → dock) advances the campaign IN PAGE —
+// `sim.js` win → `loadAdvancedLevel()` swaps `CATALOG.level` with no reload — so a sticky `intro` survived
+// into Level 1, re-armed itself on that level's `reset()` (the clock going backwards is the restart signal),
+// replayed the whole script over it and left the Settings "Skip the intro" row live, where it would have
+// granted a free level advance. Checked from both
+// halves (the sim tick and the render frame), because either may run first in a frame.
+function introArmed() {
+  if (intro && !(CATALOG.level && CATALOG.level.intro)) { intro = null; G.skipIntro = null; }
+  return !!intro;
+}
+function introTick() {
+  if (!introArmed()) return;
+  for (const cmd of intro.tick({ t: world.combatElapsed, kills: G.kills,
+                                 alive: enemies.length, cleared: levelRunner.cleared })) {
+    if (cmd === 'help:hold') showIntroHelp();
+    else if (cmd === 'help:fly') flyIntroHelp();
+    else if (cmd === 'help:done') { el.introHelp.style.display = 'none'; }
+  }
+}
+// Once per FRAME: push the director's view into the DOM. Cheap and idempotent. `body.intro` is a state hook
+// for "a director is armed" — no CSS hangs off it any more (it used to hide the kill log, back when the line
+// sat in the bottom band with it), but it is what a test reads to see the director come and go.
+function updateIntro() {
+  const armed = introArmed();
+  document.body.classList.toggle('intro', armed);
+  if (!armed) {
+    // No director (every other level, and the moment Skip / silenceIntro ends this one): make sure BOTH
+    // nodes are gone and the card is back in its pre-flight state, so a later run starts clean.
+    if (el.introLine.style.display !== 'none') el.introLine.style.display = 'none';
+    if (el.introHelp.style.display !== 'none') {
+      el.introHelp.style.display = 'none';
+      el.introHelp.classList.remove('fly'); el.introHelp.style.transform = 'translateX(-50%)';
+      introHelpFlown = false;
     }
-    cutPrevKills = G.kills;
-  }
-  if (!cutRocketeerSeen && enemies.some((e) => e.name === rs.cut.rocketeerShip)) { // rocketeer warp-in
-    cutRocketeerSeen = true;
-    const p = rs.cut.pauses.find((pp) => pp.on === 'rocketeer' && fresh(pp.id));
-    if (p) cutQueue.push({ pause: p, atTick: dueAt });
-  }
-  for (const r of rockets) {                         // rocketeer rocket launches (skip spiral leaders + player)
-    if (r.lead || r.fromPlayer || cutSeenRockets.has(r)) continue;
-    cutSeenRockets.add(r); cutEnemyRockets++;
-    const p = rs.cut.pauses.find((pp) => pp.on === 'enemyRocket' && pp.n === cutEnemyRockets && fresh(pp.id));
-    if (p) cutQueue.push({ pause: p, atTick: dueAt });
-  }
-  if (cutQueue.length && rs.index >= cutQueue[0].atTick) {
-    const { pause } = cutQueue.shift();
-    cutFrozen = true; cutFired.add(pause.id); cutsceneShowCard(pause.textKey);
     return;
   }
-  // Fight cleared (all enemies down → G.returnToBase) → press "Complete mission" for the pilot. That is a
-  // CLICK, never captured in the key trace, so playback would otherwise sit in a cleared sector forever.
-  // Since DECISIONS §132 it ends the mission on the spot instead of flying home first, so the intro stops
-  // when the fight does — the cutscene's five cards all fire DURING the fight, and the flight home only ever
-  // existed because winning used to require docking. (`rs.cutReturning` keeps its name and its job: the
-  // one-shot latch that says the ending has been triggered.)
-  if (!rs.cutReturning && G.returnToBase && !levelRunner.won) {
-    rs.cutReturning = true;
-    for (const c in keys) keys[c] = false; touchAim.active = false;
-    finishMission();
-  } else if (rs.cutReturning && levelRunner.won) {
-    cutsceneEnd(); rs.done = true; // mission complete → stop the re-sim on the victory overlay
+  const v = intro.view;
+  // The controls card belongs to the 'hold' and 'fly' states only. A death-Restart drops the director
+  // straight back to 'idle' WITHOUT emitting a command (`reset()` only re-arms state), so nothing else
+  // would take a mid-flight card down — it sat stacked on the re-armed opening line, both illegible.
+  if (v.help === 'idle' && el.introHelp.style.display !== 'none') {
+    el.introHelp.style.display = 'none';
+    el.introHelp.classList.remove('fly'); el.introHelp.style.transform = 'translateX(-50%)';
+    introHelpFlown = false;
   }
+  if (!v.lineKey) { el.introLine.style.display = 'none'; return; }
+  if (el.introLine.getAttribute('data-i18n') !== v.lineKey) {
+    el.introLine.setAttribute('data-i18n', v.lineKey);       // so a live EN/RU switch re-localizes it in place
+    el.introLine.textContent = t(v.lineKey);
+  }
+  el.introLine.style.display = 'block';
+  el.introLine.style.opacity = String(v.lineAlpha);
 }
-function cutsceneAdvance() { // tap/click while a card is up → resume the re-sim
-  if (!cutFrozen) return;
-  cutFrozen = false; replayAcc = 0; cutsceneHideCard();
+// The controls card takes the line's slot the moment the opening line has gone.
+function showIntroHelp() {
+  introHelpFlown = false;
+  el.introHelp.classList.remove('fly');
+  el.introHelp.style.transition = 'none';
+  el.introHelp.style.transform = 'translateX(-50%)';   // the base state the rects below are measured in
+  const key = Device.input === 'touch' ? 'ui.help_touch' : 'ui.help';
+  el.introHelp.innerHTML = t(key);
+  el.introHelp.setAttribute('data-i18n', key);         // a live EN/RU switch re-localizes the card in place
+  el.introHelp.style.display = 'block';
+  el.introHelp.style.opacity = '1';
 }
-function cutsceneSkip() { // end the cutscene now (no more pauses); the playback plays out to the victory overlay
-  rs.cutDone = true; cutFrozen = false; cutQueue = [];
-  rs.cut.pauses.forEach((p) => cutFired.add(p.id));
-  cutsceneEnd();
-}
-function cutsceneEnd() { // tear down the overlay so the normal HUD / victory overlay show
-  rs.cutDone = true; cutFrozen = false; rs.cutReturning = false; cutsceneHideCard();
-  document.body.classList.remove('cutscene');
-  if (cutSkipEl) { cutSkipEl.remove(); cutSkipEl = null; }
-  if (cutLangEl) { cutLangEl.remove(); cutLangEl = null; }
-  if (introMode) finishIntro(); // real intro: advance 0→1 + land on the Level 1 briefing
-}
-function cutsceneShowCard(textKey) { if (cutOverlayEl) { cutCardEl.setAttribute('data-i18n', textKey); cutCardEl.textContent = t(textKey); cutOverlayEl.style.display = 'flex'; } }
-function cutsceneHideCard() { if (cutOverlayEl) cutOverlayEl.style.display = 'none'; }
-function buildCutsceneOverlay() {
-  const style = document.createElement('style');
-  style.textContent = `
-    body.cutscene #hud, body.cutscene #help, body.cutscene #perf, body.cutscene #rocket-btn, body.cutscene #event-log, body.cutscene #markers, body.cutscene #oob-warn, body.cutscene #return-hint, body.cutscene #return-btn, body.cutscene #roam-nav, body.cutscene #banner, body.cutscene #minimap, body.cutscene #pause-btn, body.cutscene #zoom { display: none !important; }
-    #cutscene-overlay { position: fixed; inset: 0; z-index: 99998; display: none; align-items: flex-end; justify-content: center; pointer-events: auto; }
-    #cutscene-card { max-width: min(760px, 88vw); margin: 0 0 12vh; padding: 20px 26px; background: rgba(6,10,16,.82); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; color: #eaf2ff; font: 500 clamp(15px,2.4vw,21px)/1.5 system-ui, sans-serif; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
-    #cutscene-tap { margin-top: 12px; font-size: 13px; opacity: .55; letter-spacing: .4px; }
-    #cutscene-skip { position: fixed; top: 14px; right: 16px; z-index: 99999; cursor: pointer; font: 600 13px system-ui, sans-serif; color: #eaf2ff; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 6px 12px; }
-    #cutscene-lang { position: fixed; top: 14px; left: 56px; z-index: 99999; display: flex; gap: 6px; }
-  `;
-  document.head.appendChild(style);
-  document.body.classList.add('cutscene');
-  cutOverlayEl = document.createElement('div');
-  cutOverlayEl.id = 'cutscene-overlay';
-  cutOverlayEl.innerHTML = `<div id="cutscene-card"><div id="cutscene-text"></div><div id="cutscene-tap" data-i18n="ui.cutscene.tap">${t('ui.cutscene.tap')}</div></div>`;
-  cutOverlayEl.addEventListener('click', cutsceneAdvance);
-  document.body.appendChild(cutOverlayEl);
-  cutCardEl = cutOverlayEl.querySelector('#cutscene-text');
-  cutSkipEl = document.createElement('button');
-  cutSkipEl.id = 'cutscene-skip'; cutSkipEl.setAttribute('data-i18n', 'ui.cutscene.skip'); cutSkipEl.textContent = t('ui.cutscene.skip');
-  cutSkipEl.addEventListener('click', (e) => { e.stopPropagation(); cutsceneSkip(); });
-  document.body.appendChild(cutSkipEl);
-  // A persistent EN/RU toggle beside Skip: a body sibling of cutOverlayEl (not a child), so its clicks
-  // don't bubble to the overlay's click→advance listener. Mounted via the shared registry so a live
-  // switch re-localizes the visible card in place; removed in cutsceneEnd() so it can't leak past the intro.
-  cutLangEl = document.createElement('div');
-  cutLangEl.id = 'cutscene-lang'; cutLangEl.className = 'lang-switch';
-  document.body.appendChild(cutLangEl);
-  mountLangSwitch(cutLangEl);
-  addEventListener('keydown', (e) => {
-    if (!rs.cut || rs.cutDone) return;
-    if (e.code === 'Escape') cutsceneSkip();
-    else if (cutFrozen && (e.code === 'Space' || e.code === 'Enter')) cutsceneAdvance();
-  });
+// The card flies into #help — the animation IS the lesson: "this is where the controls live from now on".
+// Screen-space by construction (two getBoundingClientRect calls), so no camera reasoning is involved.
+//
+// TWO THINGS HERE ARE LOAD-BEARING AND EASY TO GET WRONG:
+//  1. The `-50%` centring must stay INSIDE the composed transform. getBoundingClientRect() reports the card
+//     where it is ALREADY DRAWN, i.e. with translateX(-50%) applied, so a bare `translate(dx, dy)` drops the
+//     centring and the card jumps right by half its width the instant the flight starts.
+//  2. Opacity is driven from JS, not from the `.fly` class: showIntroHelp sets an inline `opacity: 1`, which
+//     beats any class rule — an `opacity: 0` inside `.fly` would never apply and the card would land on
+//     #help at full opacity and sit there.
+// Both are negatively tested by visual/scenarios/44-playable-intro.mjs.
+function flyIntroHelp() {
+  if (introHelpFlown) return;
+  introHelpFlown = true;
+  const a = el.introHelp.getBoundingClientRect(), b = el.help.getBoundingClientRect();
+  const s = Math.max(0.25, b.width / Math.max(1, a.width));
+  const dx = b.left - a.left, dy = b.top - a.top;
+  el.introHelp.style.transition = '';                  // hand the transition back to the .fly class rule
+  el.introHelp.classList.add('fly');
+  // KEEP the -50%: `a` was measured WITH it applied, so dx/dy are a delta on top of the centred position.
+  // transform-origin is left top (styles.css), so the scale shrinks the card onto the corner it just landed on.
+  el.introHelp.style.transform = `translate(calc(-50% + ${dx}px), ${dy}px) scale(${s})`;
+  el.introHelp.style.opacity = '0';                    // inline, so it actually wins (see note 2 above)
 }
 
 // Console / automation hook (only under the dev replay flags). Lets the maintainer stop from the console and
@@ -1938,36 +1942,28 @@ if (REC || rs.play) {
     // `armed` is the models-ready gate: the ship .glb sets mesh.userData.noseZ/tailZ (where bullets spawn), so
     // stepping before it resolves changes the sim — automated stepping MUST wait on it.
     status: () => ({ recording: recCapturing, armed: rs.armed, ticks: recTicks.length, playIndex: rs.index, playDone: rs.done, total: rs.trace ? rs.trace.ticks.length : 0 }),
-    // Cutscene state (for tests / console): is a card up, which pauses fired, the visible card text.
-    cut: () => ({ on: !!rs.cut, frozen: cutFrozen, done: rs.cutDone, returning: rs.cutReturning, won: levelRunner.won,
-      fired: [...cutFired], queued: cutQueue.length,
-      card: cutOverlayEl && cutOverlayEl.style.display === 'flex' ? cutCardEl.textContent : null }),
-    advance: () => cutsceneAdvance(),  // dismiss the current cutscene card (== tapping it)
-    state: { G, enemies, rockets, camera, camOffset }, // live sim refs (dev-flag only) — for forcing events + framing checks in cutscene tests
+    // The ?playback&finish lifecycle (for tests / console): has the sector cleared into a flight home, and
+    // did that flight end in a win. 22-trace-replay's terminal-state check reads this.
+    play: () => ({ returning: rs.returning, done: rs.done, won: levelRunner.won }),
+    state: { G, enemies, rockets, camera, camOffset }, // live sim refs (dev-flag only) — for forcing events + framing checks
     // Synchronous sim stepping WITHOUT the render/rAF — for automated determinism checks and console use (a
     // background tab throttles rAF to ~0, so live ticks stall). It no longer *mirrors* animate()'s sim block:
     // it runs the very same per-tick body (replay.js stepReplayTick), so the two drivers cannot drift apart.
-    // Uses whatever input is currently held (none under automation → a deterministic no-input run). Stops on a
-    // cutscene freeze (call advance() to continue), like the accumulator. The one deliberate difference is the
-    // `capture` callback: there is no live session under ?record/?playback, so this hook feeds recTicks only
-    // (never sr.captureTick) — which is exactly why capture is caller-supplied.
+    // Uses whatever input is currently held (none under automation → a deterministic no-input run). The one
+    // deliberate difference from the accumulator is the `capture` callback: there is no live session under
+    // ?record/?playback, so this hook feeds recTicks only (never sr.captureTick) — which is exactly why
+    // capture is caller-supplied.
     step(n = 1) {
       if (!isSimSeeded()) return this.status(); // record: not started yet (call begin() first); playback seeds on arm
       const tickDeps = {
         rs, keys, touchAim, dt: BENCH_DT, update,
         capture: () => { if (recCapturing) recTicks.push(snapshotInput(keys, touchAim)); },
-        cutObserve: cutsceneObserve,
-        cutEnd: cutsceneEnd,
+        onTick: introTick,
+        isCleared: () => G.returnToBase && !levelRunner.won,
         isWon: () => levelRunner.won,
+        finish: finishMission,
       };
-      for (let i = 0; i < n; i++) {
-        if (cutFrozen) break;                                 // a card is up — call advance() to continue
-        if (stepReplayTick(tickDeps) === 'stop') break;
-      }
-      // Mirror animate()'s post-loop exit: when the trace runs out with the fight unfinished, end the cutscene
-      // instead of returning a session that can never progress. Without this, a stepped run of a DESYNCED trace
-      // never terminates (the loop body is unreachable once rs.play && rs.done).
-      if (rs.play && rs.done && rs.cut && !rs.cutDone) cutsceneEnd();
+      for (let i = 0; i < n; i++) if (stepReplayTick(tickDeps) === 'stop') break;
       return this.status();
     },
   };
@@ -2048,8 +2044,7 @@ async function bootstrap() {
     // decodes fine), so gating this on a gesture bought nothing and cost us every sound on any page that
     // starts playing without one. That is exactly `?playback`: it is reached by NAVIGATION from the record
     // page's "Play it ▶" link, so no gesture ever lands on it, the replay auto-starts, and every shot fell
-    // back to its synth voice. The real intro cutscene hid the bug — its opening "tap to begin" card is a
-    // gesture before the first tick. Idempotent (already-decoded names are skipped), so the gesture handler
+    // back to its synth voice. Idempotent (already-decoded names are skipped), so the gesture handler
     // re-calling it is free.
     samplesLoaded = true;
     audio.preloadSamples(soundUrls);
@@ -2089,6 +2084,10 @@ async function bootstrap() {
     // position the camera once (update() doesn't run until take-off), then show the landing screen
     camera.position.copy(G.player.pos).add(camOffset);
     camera.lookAt(G.player.pos.x, G.player.pos.y, G.player.pos.z); // components — see settleView in sim.js
+    // #help has always rendered the KEYBOARD cheatsheet, on phones too (styles.css carries no body.touch
+    // rule for it) — visible nonsense on a device with no keys, and glaring now that the intro's controls
+    // card flies into it. Device.input is constant per session, so swapping the key once here is enough.
+    if (Device.input === 'touch') el.help.setAttribute('data-i18n', 'ui.help_touch');
     applyTranslations(); // localize all static [data-i18n] chrome for the active language
     // The intro ("Level 0", seed name 'level-0', served only while current_progress === 0) has NO menu
     // gate: drop the new player straight into the fight — ship visible + controllable at once, no welcome
@@ -2107,14 +2106,16 @@ async function bootstrap() {
     } else if (rs.play) {
       startPlaybackSession(rs.trace); // re-run the recorded fight on the real engine
     } else if (level.name === 'level-0') {
-      // Intro. Server-authoritative one-time gate: `introTrace` is on the level-0 descriptor the server
-      // serves ONLY while current_progress===1 (a NEW or freshly RESET player) → WATCH the CUTSCENE, then
-      // finishIntro advances to Level 1. A genuine progress reset REPLAYS the intro (no localStorage flag).
-      // Headless (?debug/?bench suites) or no recording → the PLAYABLE Level 0 (the arena the harnesses
-      // expect + ?dev re-record).
-      let started = false;
-      if (shouldPlayIntro(location.search, CATALOG.level.introTrace)) started = await startIntroCutscene();
-      if (!started) { document.body.classList.remove('menu'); G.gameStarted = true; reset(); }
+      // THE INTRO IS A FIGHT YOU FLY. The server serves the level-0 descriptor only while
+      // current_progress === 0 (a new or freshly reset player), so `level.name` is the whole one-time gate —
+      // no localStorage flag, so a genuine progress reset replays it (DECISIONS §63's rule survives its
+      // cutscene). It is an ordinary campaign level from here: recorded like any other session, advancing
+      // through the normal win path, with the scripted director talking over it.
+      if (CATALOG.level.intro) { intro = makeIntroDirector(CATALOG.level.intro); G.skipIntro = skipIntro; }
+      document.body.classList.remove('menu');
+      G.gameStarted = true;
+      beginLiveSession(); // arm the always-on recorder + seed the sim BEFORE reset() draws the spawn RNG
+      reset();
     } else if (CATALOG.level.briefing) {
       showMain(CATALOG.level.briefing);
     } else {

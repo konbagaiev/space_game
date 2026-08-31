@@ -7,7 +7,7 @@
 //   2. Launches headless Chromium (software WebGL via swiftshader) and opens the game
 //      with `?debug`, which exposes `window.__game` (see the hook in index.html).
 //   3. Runs every scenario in scenarios/ (auto-discovered, alphabetical). An optional argv filter runs a
-//      single one by (sub)name: `node visual/run.mjs 22-intro-replay`.
+//      single one by (sub)name: `node visual/run.mjs 22-trace-replay`.
 //   4. Each scenario asserts on SIMULATION STATE (counts, colors) — stable across machines —
 //      and also saves PNG frames to __screenshots__/ for a human to eyeball.
 //
@@ -76,7 +76,7 @@ async function main() {
       headless: true,
       args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
     });
-    // 3. discover scenarios (an optional argv filter runs just one: `node visual/run.mjs 22-intro-replay`)
+    // 3. discover scenarios (an optional argv filter runs just one: `node visual/run.mjs 22-trace-replay`)
     const only = process.argv[2] || '';
     const files = (await readdir(path.join(__dirname, 'scenarios')))
       .filter((f) => f.endsWith('.mjs') && f.includes(only))
@@ -115,7 +115,33 @@ async function main() {
           const w = document.getElementById('welcome');
           if (w && w.style.display !== 'none') document.getElementById('takeoff').click();
         });
-        await page.waitForTimeout(150);
+        // The arena may not have an enemy yet. Level-0 — the level the throwaway player boots into for
+        // EVERY scenario — now holds its first spawn until combatElapsed >= 3 s so the intro's opening line
+        // can be read (spawn.earliest). Scenarios have always been handed a live arena, so reach that STATE
+        // before handing the page over.
+        //
+        // We STEP THE SIM to it rather than waiting for real frames. Waiting works, but it costs ~5 s of
+        // wall clock per scenario on the harness's ~6 fps software GL (the accumulator caps at 6 steps per
+        // frame, so the sim clock runs BEHIND wall clock) — ~10-20 s each with four workers competing, which
+        // pushed the boot past the 8 s gate above. `stepSim` runs the same fixed-dt update() with no
+        // rendering, so it arrives at exactly the state the wait would have produced, in milliseconds.
+        // A sleep would be wrong twice over: it is both flaky and measured on the wrong clock.
+        await page.evaluate(() => {
+          const g = window.__game;
+          if (!g || !g.player || !g.gameStarted || g.levelRunner.won) return; // a menu or a finished fight
+          let guard = 0;
+          while (g.enemyCount === 0 && g.combatElapsed < 8 && guard++ < 1000) g.stepSim(1);
+        });
+        // …and a state wait as the safety net, for a boot slow enough that the fight had not started above.
+        await page.waitForFunction(() => {
+          const g = window.__game;
+          if (!g || !g.player) return false;
+          if (!g.gameStarted || g.levelRunner.won) return true; // a menu or a finished fight: nothing to wait for
+          return g.enemyCount > 0;
+        }, null, { timeout: 20000 }).catch(() => {});           // a scenario that legitimately never spawns proceeds
+        // …and hand every scenario the ARENA rather than the intro's chrome (see __game.silenceIntro).
+        // 44-playable-intro re-arms the director with its own page.goto.
+        await page.evaluate(() => window.__game && window.__game.silenceIntro && window.__game.silenceIntro());
         const booted = Date.now();
 
         const shot = async (label) => {

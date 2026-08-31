@@ -689,7 +689,7 @@ test('the pirate lancer turns at 50 deg/s, ties the other two slow fighters, and
 
   // THE SAFETY PROPERTY OF THAT RETUNE, AND THE REASON IT WAS ALLOWED TO SHIP HERE: the INTRO's two ships
   // are excluded and stay fast. Level-0's pool is exactly these two and level-0 carries `introTrace`, which
-  // the cutscene AND `36-sim-divergence` re-simulate — slowing either would move the recorded archive
+  // the canonical Level-0 trace AND `36-sim-divergence` re-simulate — slowing either would move the archive
   // (DECISIONS §73). If someone "finishes the job" by putting them on the 50 deg/s rows, this fails first
   // and says why, instead of the gates failing later with a bare hash mismatch.
   assert.ok(deg(byName('Basic pirate ship').turnRate) > 210,

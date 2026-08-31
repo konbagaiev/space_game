@@ -106,8 +106,9 @@ test('progress: current level is level-0 (the intro), and advancing unlocks the 
   const lvl1 = await getJson('/api/players/prog-2/level');
   assert.equal(lvl1.name, 'level-0');
   assert.ok(lvl1.descriptor.phases, 'returns the full descriptor');
-  // the served level-0 descriptor carries `introTrace` while progress===0 — the server-authoritative
-  // one-time gate the client's shouldPlayIntro() reads (a new/reset player replays the intro cutscene).
+  // the served level-0 descriptor carries `introTrace` while progress===0. The client no longer FETCHES it
+  // (the intro is a live fight since 2026-08-30) — it is the canonical determinism fixture, and it living on
+  // level-0 only is what these three assertions pin. `level.name === 'level-0'` is the client's intro gate.
   assert.ok(lvl1.descriptor.introTrace, 'level-0 (progress 0) carries introTrace');
 
   // clearing the intro unlocks level-1, then level-2
@@ -115,7 +116,7 @@ test('progress: current level is level-0 (the intro), and advancing unlocks the 
   assert.equal(a1.advanced, true);
   const lvl2 = await getJson('/api/players/prog-2/level');
   assert.equal(lvl2.name, 'level-1');
-  // once advanced, the served level has NO introTrace → shouldPlayIntro() is false → no intro replay.
+  // once advanced, the served level is not level-0 → no intro, and the fixture is not on the descriptor.
   assert.ok(!lvl2.descriptor.introTrace, 'level-1 (progress 2) has no introTrace');
 
   const a2 = await (await post('/api/players/prog-2/advance', {})).json();
@@ -156,8 +157,8 @@ test('reset: POST /reset wipes progress to the new-player baseline, keeps the ac
   // back to baseline: level-0, 1000 credits, games_played 0 — but the account row (and id) remain
   const resetLvl = await getJson('/api/players/reset-1/level');
   assert.equal(resetLvl.name, 'level-0');
-  // a RESET player is served an intro-capable level (introTrace present) → the client replays the intro
-  // cutscene (server-side half of the "reset → intro" guard; the client gate is shouldPlayIntro()).
+  // a RESET player is served level-0 again → the client REPLAYS the intro (as a live fight). This is the
+  // server-side half of the "reset → intro" guard (DECISIONS §63); the fixture rides along on the same row.
   assert.ok(resetLvl.descriptor.introTrace, 'reset player is served a level-0 descriptor with introTrace');
   const reg = await (await post('/api/players/register', { playerId: 'reset-1' })).json();
   assert.equal(reg.isNew, false);            // the player row was kept, not recreated

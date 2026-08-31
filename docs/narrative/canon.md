@@ -32,10 +32,11 @@ holding; learns the ropes in the intro fight. Full card: **`characters/player-se
 ## Story spine (as shipped)
 This is the *narrative* order; the actual strings are the source of truth — cross-referenced by key,
 not copied.
-- **Level 0 — intro cutscene** (`ui.cutscene.p0`–`p4`). The rookie, en route to their first posting,
-  is jumped by pirates on approach. Across the fight they learn the tools: dodge enemy fire → down a
-  second pirate with the ship's **rockets** → an enemy rocketeer's missiles can be **outrun** and
-  **shot down** with the cannon. Survives, reaches the station.
+- **Level 0 — the intro ambush, PLAYED** (`ui.intro.l0`–`l4`). The rookie, en route to their first
+  posting, is jumped by pirates on approach — and the player flies it from the first second, with the
+  pilot's own five lines spoken over the live fight (no cutscene, no pauses). Across the fight they
+  learn the tools: the ship's **rockets** for the ones that follow → an enemy rocketeer's missiles can
+  be **outrun** and **shot down** with the cannon. Survives, reaches the station.
 - **Level 1 — defend the station** (`level.1.briefing`, `level.1.victory`). A **station dispatcher**
   greets the just-arrived rookie ("you made it in just in time, and in a ship like that…") and asks
   them to clear the pirates off the station first, questions later. → After clearing, the player is

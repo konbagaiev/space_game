@@ -14,7 +14,7 @@ export function buildModelViewer(canvas, opts = {}) {
   const r = new THREE.WebGLRenderer({ canvas, antialias: G.gfx.antialias, alpha: true });
   r.setPixelRatio(Math.min(window.devicePixelRatio, G.gfx.pixelRatioCap));
   // NO TONE MAPPING HERE, and none in the fight either. The full-frame ACES pass was dropped with the
-  // composer (DECISIONS §138 "the pivot"): the game's lighting is authored for direct sRGB output, and ACES
+  // composer (DECISIONS §139 "the pivot"): the game's lighting is authored for direct sRGB output, and ACES
   // — which multiplies by exposure/0.6, a 1.67x lift — was what over-exposed the station and the ships. The
   // hangar matches the fight by doing exactly what the fight does: nothing.
   const sc = new THREE.Scene();

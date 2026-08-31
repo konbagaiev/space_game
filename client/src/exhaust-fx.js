@@ -194,7 +194,7 @@ export function makePlume(cfg) {
   // THREE.PointLight owned by engine-lights.js, and that light needs exactly one thing from here — the
   // nozzle's world position, which is `uOrigin` (the plume's own start point) taken through the plume
   // group's matrix. Tracked as two locals rather than a proxy object: the glow-emitter SPRITE that used to
-  // stand in for the light was deleted with the glow overlay (DECISIONS §138) — a real light needs no proxy.
+  // stand in for the light was deleted with the glow overlay (DECISIONS §139) — a real light needs no proxy.
   let lastThrottle = 0;
   let nozzleHex = cfg.palette.hot;   // the engine's hot colour: the tint the real light takes
 

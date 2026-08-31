@@ -6,7 +6,7 @@
 //    (assets/ships/<ship>.glb, no hash) are skipped — they live in the repo.
 //  - SFX in catalog_seed.js SOUNDS — content-hashed same-origin paths (assets/sounds/<name>.<hash>.mp3)
 //    under sfx/.
-//  - Input-replay traces on a LEVELS descriptor (`introTrace`, the Level-0 intro cutscene) — content-hashed
+//  - Input-replay traces on a LEVELS descriptor (`introTrace`, the canonical Level-0 trace) — content-hashed
 //    same-origin paths (assets/recordings/<name>.<hash>.json) under recordings/. A typo would ship a 404 intro.
 //  - MAPS descriptors — the `.glb` SET-PIECES (freighter / base station / space factory) and the star's
 //    `system.star.modelUrl`. These were an outright hole until 2026-08-10: models referenced from a map
@@ -69,7 +69,7 @@ for (const s of SOUNDS) {
   const key = soundKey(s.url);
   if (key) targets.push({ name: `sfx:${s.key}`, field: 'url', url: s.url, key });
 }
-// Input-replay traces named on a level descriptor (today: the Level-0 intro cutscene's `introTrace`).
+// Input-replay traces named on a level descriptor (today: the canonical Level-0 trace, `introTrace`).
 for (const l of LEVELS) {
   const key = traceKey(l.descriptor && l.descriptor.introTrace);
   if (key) targets.push({ name: `intro:${l.name}`, field: 'introTrace', url: l.descriptor.introTrace, key });

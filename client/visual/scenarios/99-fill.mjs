@@ -2,7 +2,7 @@
 // stays readable while it does. The failure mode to guard is an FX retune that turns a blast into a white
 // sheet: additive FX stack, so the glow AREA can grow even where each source's brightness is right. (The
 // guards below are deliberately kept general — they outlived the post chain and the glow overlay that
-// prompted them, both of which were built and then deleted; see DECISIONS §138.)
+// prompted them, both of which were built and then deleted; see DECISIONS §139.)
 export const name = '99-fill';
 export default async function ({ page, assert }) {
   await page.evaluate(() => {

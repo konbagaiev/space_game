@@ -34,7 +34,7 @@ export const GRAPHICS_DEFAULT = 'high';
 // it is tiered by how much per-fragment lighting a device pays, and Performance pays none (`post: null`),
 // which is the same conclusion §23 reached about weak phones: give them a clean off-path, not a smaller
 // version of the expensive one. There is no post-processing chain of any kind — the frame is drawn straight
-// to the canvas with its own MSAA and no tone mapping. See DECISIONS §138.
+// to the canvas with its own MSAA and no tone mapping. See DECISIONS §139.
 export const TIERS = {
   high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: 640, enemyShieldBubbles: 6, nebulaBake: { cube: 1024, octaves: 6 }, post: { lights: 16 } },
   balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: 480, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 }, post: { lights: 4 } },
@@ -43,7 +43,7 @@ export const TIERS = {
 
 // Shipped LOOK constants — pure data (the THREE wiring lives in world.js / ship-factory.js, the live sliders
 // in tune.js). Starting points: the maintainer dials them in a real build via ?tune and the dialed numbers
-// are pasted back here. See DECISIONS §138.
+// are pasted back here. See DECISIONS §139.
 // (Named LOOK_ rather than POST_ since 2026-08-31: there is no post-processing left to name it after. The
 // bloom/exposure/grade/vignette/HDR-gain blocks that used to live here were deleted with the glow overlay
 // and the composer before it — with nothing to turn a >1 colour into light, a value above 1.0 only clips at

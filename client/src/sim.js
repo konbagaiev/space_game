@@ -660,7 +660,7 @@ function stepCreditPopups(dt) {
 
 // Position the camera + sky backdrop (stars, the fixed-position star-system bodies) AND the player-locked
 // speed field on the player. Called at the end of every update(), AND once right after reset() by the
-// replay/cutscene start so a FROZEN pre-fight frame (the Level-0 opening card) is already correctly framed —
+// replay start so the first (still) frame of a playback is already correctly framed —
 // otherwise the camera/backdrop sit at the pre-reset spot and visibly JUMP when the re-sim's first tick runs.
 //
 // This is the VIEW layer: everything here is render-only and MUST stay out of the deterministic tick. The
@@ -777,7 +777,7 @@ export function reset({ keepPlayer = false, keepWorld = false } = {}) {
   // is a brand-new object by now, and a roam has to arm THAT one (see reset-world.js).
   startRun(world, { keepPlayer });
   // Push the fresh sim state into the scene graph NOW, before a single frame is drawn. reset() teleports
-  // the ship (and restores its full scale), and the very next thing a replay/cutscene start does is call
+  // the ship (and restores its full scale), and the very next thing a replay start does is call
   // settleView() to frame a FROZEN pre-fight card — with no sync the camera would sit at the new position
   // while the hull was still drawn at the old one. No test asserts on that frame, so it has to be reasoned
   // about rather than caught. dt=0 → the cosmetic bank is re-based without rolling the ship.

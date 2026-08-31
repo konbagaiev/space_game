@@ -12,10 +12,10 @@
 // (DECISIONS §73) shifts the browser's stream and not Node's; a state hash would just say "different",
 // while a draw-count mismatch says "something drew from the seeded stream that should not have".
 //
-// This runs PLAIN `?playback` — no `&cutscene`. The cutscene is browser-only machinery (it freezes on cards
+// This runs PLAIN `?playback` — no `&finish`. The auto-finish is browser-only machinery (it presses a button
 // and fakes a "Return to base" click that the trace cannot carry, since a trace records keys and touch, not
-// mouse), so it is not something a headless referee can or should reproduce. 22-intro-replay is the guard
-// for the cutscene path; this one is the guard for the SIMULATION.
+// mouse), so it is not something a headless referee can or should reproduce. 22-trace-replay is the guard
+// for the browser's end-to-end replay path; this one is the guard for the SIMULATION.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

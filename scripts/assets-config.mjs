@@ -15,7 +15,7 @@ export const PREFIX = {
   combat: 'ships-combat/',  // low-poly combat glbs (pulled onto the server at deploy, served same-origin)
   hangar: 'ships-hangar/',  // high-poly hangar glbs (served via CloudFront, lazy-loaded)
   sounds: 'sfx/',           // content-hashed SFX mp3s (pulled at deploy, served same-origin like combat)
-  recordings: 'recordings/',// content-hashed input-replay traces (intro cutscene) — pulled + served same-origin
+  recordings: 'recordings/',// content-hashed input-replay traces (the canonical Level-0 trace) — pulled + served same-origin
 };
 
 // Local working dirs — ALL gitignored (no binaries in git). Drop sources in `src` (models or sounds/*),
@@ -145,5 +145,5 @@ export const combatPath = (file) => `assets/ships/${file}`;
 export const hangarUrl = (file) => `${CDN}/${PREFIX.hangar}${file}`;
 // SFX are tiny and latency-sensitive → served same-origin (relative path), like combat models.
 export const soundPath = (file) => `assets/sounds/${file}`;
-// Input-replay traces (the intro cutscene) → served same-origin (relative path), pulled like combat/SFX.
+// Input-replay traces (the canonical Level-0 trace) → served same-origin (relative path), pulled like combat/SFX.
 export const recordingPath = (file) => `assets/recordings/${file}`;

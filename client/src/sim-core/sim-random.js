@@ -1,6 +1,6 @@
 // The SEEDED SIM RNG — the single source of randomness for GAMEPLAY draws (spawn timing, spawn positions,
 // which enemy spawns, enemy reload jitter, loot rolls). Deterministic input-replay (?record/?playback, the
-// Level-0 intro cutscene, the ?bench perf gate) reproduces a fight from (seed + per-tick input), which only
+// canonical Level-0 trace, the ?bench perf gate) reproduces a fight from (seed + per-tick input), which only
 // works if the seeded stream is consumed by the SIM and by nothing else.
 //
 // This is OPT-IN by design (DECISIONS §73): cosmetic code — explosion sparks, exhaust, smoke, shield/flipbook

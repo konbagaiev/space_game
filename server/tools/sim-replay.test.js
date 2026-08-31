@@ -52,8 +52,8 @@ test('the Level-0 trace replays to a cleared arena, headless', { skip }, () => {
   assert.equal(r.summary.cleared, true, 'the win condition was met and the reward granted');
   assert.equal(r.summary.returning, true, 'and the way home opened');
   // Still NOT won: `won` means DOCKED, docking needs the autopilot, and a trace records keys and touch,
-  // never a mouse click. The browser's cutscene fakes that click; a referee has no business reproducing
-  // it (see 36-sim-divergence). Nothing is earned there any more, so nothing is missed by not doing it.
+  // never a mouse click. The browser's `?playback&finish` fakes that click; a referee has no business
+  // reproducing it (see 36-sim-divergence). Nothing is earned there any more, so nothing is missed.
   assert.equal(r.summary.won, false);
   assert.ok(r.world.player.alive, 'the recorded run survives it');
 });

@@ -46,3 +46,31 @@ test('total-cap budget exhausted → no spawn even at cooldown 0', () => {
   const g = stepSpawnGate({ cooldown: 0, dt: 1, alive: 0, maxConcurrent: 3, capRemaining: 0 });
   assert.equal(g.spawn, false);
 });
+
+// `blocked` is the level-0 intro's `spawn.earliest` floor ("not before t seconds of combat"). It must
+// behave exactly like a FULL ARENA — freeze, never drain — or the floor would leak into the cooldown the
+// level runner hands the enemy as its warp-in duration, and a 3 s floor would become a 3 s materialisation.
+test('a BLOCKED gate never spawns and FREEZES the cooldown (the intro spawn floor)', () => {
+  const held = stepSpawnGate({ cooldown: 0, dt: 1 / 60, alive: 0, maxConcurrent: 1, capRemaining: 3, blocked: true });
+  assert.equal(held.spawn, false, 'a script floor holds the spawn even at cooldown 0 with an empty arena');
+  assert.equal(held.cooldown, 0, 'and the cooldown is untouched');
+
+  let cd = 2.5;
+  for (let i = 0; i < 600; i++) { // 10 s of blocked frames
+    const g = stepSpawnGate({ cooldown: cd, dt: 1 / 60, alive: 0, maxConcurrent: 1, capRemaining: 3, blocked: true });
+    assert.equal(g.spawn, false);
+    cd = g.cooldown;
+  }
+  assert.equal(cd, 2.5, 'ten seconds of being blocked drained nothing');
+
+  // …and the moment the floor lifts, the ordinary stagger resumes from exactly where it was.
+  const resumed = stepSpawnGate({ cooldown: cd, dt: 1 / 60, alive: 0, maxConcurrent: 1, capRemaining: 3, blocked: false });
+  assert.equal(resumed.spawn, false);
+  assert.ok(Math.abs(resumed.cooldown - (2.5 - 1 / 60)) < 1e-12, 'it drains again once unblocked');
+});
+
+test('blocked defaults to false — a phase with no floor behaves exactly as before', () => {
+  const g = stepSpawnGate({ cooldown: 0, dt: 1 / 60, alive: 0, maxConcurrent: 1, capRemaining: null }, () => 0);
+  assert.equal(g.spawn, true);
+  assert.equal(g.cooldown, SPAWN_DELAY_MIN);
+});

@@ -25,6 +25,10 @@
 <div id="help" data-i18n="ui.help" data-i18n-html>
   <b>W / ↑</b> — thrust · <b>S / ↓</b> — brake · <b>A / D</b> or <b>← →</b> — turn · <b>Space</b> — fire · <b>F</b> — rocket
 </div>
+<!-- Scripted intro (Level 0 only): the director's line, and the controls card that flies into #help.
+     Both are NON-INTERACTIVE (pointer-events:none) — the player is flying underneath them. -->
+<div id="intro-line"></div>
+<div id="intro-help" data-i18n-html></div>
 <div id="overlay">
   <h1 id="overlay-title" data-i18n="ui.overlay.gameover">Game over</h1>
   <p id="overlay-sub"></p>
@@ -206,6 +210,8 @@
       </div>
       <div class="set-note" data-i18n="ui.settings.reset.note">Wipes your level, credits, ships and upgrades. Your account and login stay.</div>
     </div>
+    <!-- Shown only while the scripted intro (Level 0) is running — main.js publishes G.skipIntro -->
+    <button id="skip-intro" class="ghost" data-i18n="ui.intro.skip" style="display:none">Skip the intro</button>
     <button id="credits-open" class="ghost" data-i18n="ui.credits.open">Credits</button>
     <button id="settings-close" class="ghost" data-i18n="ui.account.close">Close</button>
   </div>

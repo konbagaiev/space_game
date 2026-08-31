@@ -94,7 +94,9 @@ export function enterPhase(world) {
   // "Final Stage" banner: fire when entering the last combat phase — the one right before the
   // `event: 'win'` phase (the boss/finale on every level). Once per run.
   const next = lr.level && lr.level.phases[lr.phaseIndex + 1];
-  if (ph && !ph.event && next && next.event === 'win' && !world.firedBanners.has('final')) {
+  if (ph && !ph.event && next && next.event === 'win'
+      && lr.level.finalStageBanner !== false          // level 0's intro speaks its own line at that instant
+      && !world.firedBanners.has('final')) {
     world.firedBanners.add('final');
     showBanner(world, 'ui.banner.final_stage');
   }
@@ -244,9 +246,14 @@ export function updateLevelRunner(world, dt) {
   if (ph.spawn) {
     const cap = ph.spawn.total;
     const capRemaining = cap == null ? null : cap - lr.spawnedThisPhase;
+    // A phase may state the SOONEST moment each of its spawns is allowed (seconds of unpaused combat since
+    // the run began). Level 0's intro uses it to hold the first pirate until the opening line has been read
+    // and the second until the controls card has flown away; every other level omits the field entirely.
+    const floor = ph.spawn.earliest && ph.spawn.earliest[lr.spawnedThisPhase];
     const gate = stepSpawnGate({
       cooldown: lr.spawnCooldown, dt,
       alive: world.enemies.length, maxConcurrent: ph.spawn.maxConcurrent, capRemaining,
+      blocked: floor != null && world.combatElapsed < floor,
     }, simRandom);   // the spawn cooldown is a GAMEPLAY draw — inject the seeded stream explicitly
     lr.spawnCooldown = gate.cooldown;
     if (gate.spawn) {

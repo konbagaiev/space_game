@@ -86,7 +86,7 @@ export function buildTunePanel(GUI) {
 //
 // There are deliberately no glow / bloom / exposure / grade / vignette controls anywhere in this panel: the
 // full-frame composer and the additive glow overlay that followed it were both built, live-tested and
-// DELETED (DECISIONS §138). The frame is the plain two-pass one, straight to the canvas — there is no
+// DELETED (DECISIONS §139). The frame is the plain two-pass one, straight to the canvas — there is no
 // full-screen pass to hang a curve on, and the game's lighting is authored for direct sRGB output.
 //
 // NOTE: there are also deliberately NO dust `size` sliders here. Size sliders for all three speed-field

@@ -21,8 +21,10 @@ export default async function ({ page, assert, shot }) {
   const uploads = [];
   page.on('request', (r) => { if (r.url().includes('/api/sessions')) uploads.push({ method: r.method(), body: r.postData() }); });
 
-  // 1. Get a LIVE recorded session going: the runner's ?debug page is already in the Level-0 fight, but the
-  //    recorder is armed by the take-off flow, so drive the real one (same seam scenario 29 uses).
+  // 1. Get a LIVE recorded session going on a level of our own. The runner's ?debug page is already in the
+  //    recorded Level-0 intro; end it through the real Skip path (the same seam scenario 29 uses) and take
+  //    off into Level 1, so this scenario owns the session it is about to hide the tab on. skipIntro's own
+  //    `flushSession('quit')` adds one earlier POST, which is why the assertions below read the LAST one.
   await page.evaluate(() => window.__game.simulateIntroEnd());
   await page.waitForFunction(() => {
     const vis = (id) => { const e = document.getElementById(id); return e && getComputedStyle(e).display !== 'none'; };

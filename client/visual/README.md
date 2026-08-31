@@ -26,12 +26,12 @@ From `client/`:
 npm install                       # once: installs playwright (dev dependency)
 npx playwright install chromium   # once: downloads the browser binary
 npm run test:visual
-node visual/run.mjs 22-intro-replay   # optional argv filter: run just the scenario(s) whose filename matches
+node visual/run.mjs 22-trace-replay   # optional argv filter: run just the scenario(s) whose filename matches
 ```
 
 Some scenarios need the gitignored S3 assets — run `npm run assets:pull` from the repo root first.
-`22-intro-replay` (the Level-0 intro cutscene guard: re-sims the canonical trace and asserts 4 kills, cards
-`p0..p4`, win) hard-fails with that instruction if the recording is missing.
+`22-trace-replay` (the determinism guard on the canonical Level-0 trace: re-sims it and asserts 4 kills +
+a win) hard-fails with that instruction if the recording is missing.
 
 The runner (`visual/run.mjs`) is self-contained: it starts its own game server on an isolated
 port with a throwaway Postgres DB `spacegame_test` (your real `spacegame` DB is untouched), runs every scenario in
@@ -57,8 +57,16 @@ The page is freshly reloaded (clean state) before each scenario. The runner alre
 scenario if the page logs any JS error during it, so you don't need to check for that yourself.
 
 A scenario may also navigate on its own (it receives `baseURL`) when it needs different URL flags than the
-runner's `?debug` — see `21-language-initial-ru.mjs` (reload) and `22-intro-replay.mjs` (its own
-`?playback&…&cutscene=1&debug` url). Clean up any `localStorage` you write, so the next scenario starts neutral.
+runner's `?debug` — see `21-language-initial-ru.mjs` (reload) and `22-trace-replay.mjs` (its own
+`?playback&…&finish=1&debug` url). Clean up any `localStorage` you write, so the next scenario starts neutral.
+
+Before handing a scenario the page, the runner **waits for the arena to hold an enemy** and then calls
+`__game.silenceIntro()`. Level 0 — the level the throwaway player boots into for every scenario — holds its
+first spawn until 3 s of SIM have passed (the intro's opening line), and runs a scripted director over the
+fight; the gate gives every scenario the live arena it has always been handed, without the intro's chrome in
+its screenshots or its rect measurements. Only `44-playable-intro.mjs` re-arms the director, with its own
+`page.goto`. Expect ~5 s of extra wall clock per scenario because of the wait — the sim runs behind wall
+clock on software GL.
 
 Keep assertions **state-based and tolerant** (counts, ranges, colors) so they stay stable; use the
 screenshots for the subjective "does it look right" part.

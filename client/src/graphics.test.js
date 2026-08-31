@@ -64,7 +64,7 @@ test('post: High/Balance carry a real-light pool, Performance carries none', () 
   // NO `samples`/`superSample` KNOB MAY COME BACK HERE, and no bloom/glow buffer either. The frame is drawn
   // straight to the canvas, so AA is the canvas's own MSAA again (`antialias` above) — which is exactly what
   // the abandoned full-frame composer threw away, and what supersampling was rejected for buying back at
-  // 2.25x the fill (DECISIONS §138).
+  // 2.25x the fill (DECISIONS §139).
   for (const t of ['high', 'balance']) {
     assert.equal(resolveTier(t).post.samples, undefined, `${t}: AA is the canvas's, not a render target's`);
     assert.equal(resolveTier(t).post.superSample, undefined, `${t}: no supersampling`);
@@ -78,7 +78,7 @@ test('the hull emissive floor is a floor, not a light', () => {
   // The mechanism stays wired because it is the value hit-fx's hull flash restores to — that flash
   // deliberately drives the same emissive to white at HIT_FX.flash.intensity (1.6) for 0.12 s, which is a
   // HIT lighting up, not a hull standing there glowing.
-  assert.equal(LOOK_DEFAULTS.hullEmissive, 0, 'the emissive floor ships OFF (see DECISIONS §138)');
+  assert.equal(LOOK_DEFAULTS.hullEmissive, 0, 'the emissive floor ships OFF (see DECISIONS §139)');
   assert.ok(LOOK_DEFAULTS.hullEmissive < 1,
     'and can never be raised to a self-lit hull without failing here first');
 });

@@ -26,7 +26,7 @@ export const OOB_WARN_DELAY = 2.0;   // seconds outside before the HUD warning s
 export const OOB_RETURN_TIME = 30.0; // seconds outside before the auto warp-back
 
 // The single tunable sim tick rate. ALL sim stepping — live play, ?record/?playback, ?bench, the Level-0
-// cutscene, the headless referee and a netsim room — advances at this fixed step, so a tick maps 1:1 across
+// canonical trace, the headless referee and a netsim room — advances at this fixed step, so a tick maps 1:1 across
 // every host and every recording. It lives here rather than beside the ?bench flag because **both hosts
 // must agree on it or they are not running the same simulation**: integration is dt-dependent
 // (`vel *= 1 - DRAG*dt`, thrust accumulation, `spawnAge`), so 30 Hz in Node against 60 Hz in the browser
