@@ -679,7 +679,7 @@ export function settleView(dt = 0) {
   updateBackdropLayer();                   // the additive nebula layer: tracks the camera at a FRACTION of its motion (real parallax)
   updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
   updateSpeedField(G.player.pos.x, G.player.pos.z); // player-locked backdrop (view-only, no RNG)
-  updateEngineLights(camera, world.rockets);        // ?lights=N measurement fork — a no-op unless the flag is set
+  updateEngineLights(camera, world.rockets, dt);        // ?lights=N measurement fork — a no-op unless the flag is set
 }
 
 // ---------- Pause ----------

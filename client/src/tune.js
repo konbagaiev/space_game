@@ -10,6 +10,8 @@ import { POST_DEFAULTS } from './graphics.js';
 import { setGlobalEmitterScale, getEmitterScale, setGlobalExhaustGain } from './exhaust-fx.js';
 import { lightParams, lightStatus } from './engine-lights.js'; // ?lights=N fork
 import { getNozzleZ, setNozzleZ } from './exhaust-fx.js'; // live nozzle-anchor probe
+import { BLAST } from './engine-lights.js';
+import { spawnShipExplosion, spawnBossExplosion, spawnRocketBurst } from './projectiles.js';
 
 function dumpPalette() {
   const H = c => '0x' + c.getHexString();
@@ -111,6 +113,21 @@ function buildLightsFolder(gui) {
   // value is only a mirror of the muzzle and often lands short.
   f.add({ nozzleZ: getNozzleZ() }, 'nozzleZ', -2.5, 1.0, 0.05)
    .name('nozzle Z (− = further aft)').onChange(setNozzleZ);
+  // --- BLAST FLASHES, and the buttons that make them tunable at all ---
+  // An explosion lasts ~0.2 s, so it cannot be judged by dragging a slider and watching: by the time the
+  // eye finds the blast it is over. These fire one ON DEMAND, at the player, with the CURRENT values — drag,
+  // click, look, repeat. That loop is the whole reason this folder exists.
+  const b = f.addFolder('Blast flashes');
+  b.add(BLAST, 'rocket', 0, 8000, 50).name('rocket blast');
+  b.add(BLAST, 'ship', 0, 20000, 100).name('ship blast (x size^2)');
+  b.add(BLAST, 'boss', 0, 60000, 500).name('boss blast (x size^2)');
+  b.add(BLAST, 'dur', 0.05, 1.0, 0.01).name('duration (s)');
+  const at = () => { const p = G.player && G.player.pos; return p ? { x: p.x, y: p.y, z: p.z } : { x: 0, y: 0, z: 0 }; };
+  b.add({ fire: () => spawnRocketBurst(at(), 4.5, 0xffb050) }, 'fire').name('▶ test ROCKET blast');
+  b.add({ fire: () => spawnShipExplosion(at(), 0xff8030, 1) }, 'fire').name('▶ test SHIP blast (small)');
+  b.add({ fire: () => spawnShipExplosion(at(), 0xff8030, 1.8) }, 'fire').name('▶ test SHIP blast (medium)');
+  b.add({ fire: () => spawnBossExplosion(at(), 0xff8030, 2.4) }, 'fire').name('▶ test BOSS blast');
+
   f.add({ note: `pool of ${st.pool}` }, 'note').name('pool').disable();
 }
 

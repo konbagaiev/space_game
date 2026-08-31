@@ -78,7 +78,7 @@ function pushCand(x, y, z, hex, power) {
 
 // `rockets` is passed in rather than imported so this module stays free of the state bag (and so a test or
 // a scenario can drive it with a stub).
-export function update(camera, rockets) {
+export function update(camera, rockets, dt = 0) {
   if (!POOL_SIZE) return;                    // flag off: not one line of per-frame work
   _cam.copy(camera.position);
   candCount = 0;
@@ -96,6 +96,8 @@ export function update(camera, rockets) {
       pushCand(p.x, p.y, p.z, ROCKET_HEX, window.__rocketPower);
     }
   }
+
+  collectFlashes(dt);   // explosions last, but they out-power everything so the sort promotes them anyway
 
   // Nearest-first: with more sources than slots, the ones next to the camera are the ones worth lighting.
   // A partial selection would be cheaper, but `cands` is a couple of dozen entries at most — the sort is
@@ -128,19 +130,45 @@ function readNum(key, dflt) {
     return Number.isFinite(n) && n >= 0 ? n : dflt;
   } catch { return dflt; }
 }
-window.__lightPower = readNum('lightpow', 120);
+window.__lightPower = readNum('lightpow', 300);
 // HEIGHT OFFSET, and it may be the whole ballgame. The camera is near-top-down (CAM_OFFSET 0,110,26), so it
 // sees mostly the TOP faces of a hull — while a nozzle light sits on the play plane at y~0 and illuminates
 // SIDES. A physically-correct light in the right place can therefore be almost invisible FROM THIS ANGLE.
 // `?lighty=N` lifts every source above the plane so the same light falls on the surfaces the camera can
 // actually see. If lifting it is what makes engines read, that is a finding about the camera, not the light.
 window.__lightY = readNum('lighty', 0);
-window.__rocketPower = readNum('rocketpow', 90);
+window.__rocketPower = readNum('rocketpow', 150);
 
 function collectPlume(p) {
   const s = p.lightSample && p.lightSample(_pos);
   if (!s) return;
   pushCand(_pos.x, _pos.y, _pos.z, s.hex, window.__lightPower * s.throttle);
+}
+
+// ---- TRANSIENT FLASHES: explosions are brief, very bright sources ----
+// A detonation is the one place a light should genuinely overpower everything for a moment, so these peak
+// far above an engine and fall off fast. They are NOT extra lights: a flash competes for the same fixed
+// pool as the engines (nearest-to-camera wins), which is what keeps NUM_POINT_LIGHTS constant and avoids
+// the §83 recompile. The falloff is quadratic-out, not linear — a linear fade reads as a lamp being turned
+// down, while a blast should be gone almost before you register it.
+export const BLAST = { ship: 3000, boss: 12000, rocket: 1500, dur: 0.22 };
+const flashes = [];   // { x, y, z, hex, peak, t, dur } — a small pool, reused in place
+
+export function addFlash(pos, peak, hex = 0xffb060, dur = BLAST.dur) {
+  if (!POOL_SIZE || !pos || peak <= 0) return;      // flag off: explosions cost nothing
+  let f = flashes.find((e) => e.t <= 0);
+  if (!f) { f = { x: 0, y: 0, z: 0, hex: 0, peak: 0, t: 0, dur: 1 }; flashes.push(f); }
+  f.x = pos.x; f.y = pos.y; f.z = pos.z; f.hex = hex; f.peak = peak; f.dur = dur; f.t = dur;
+}
+
+function collectFlashes(dt) {
+  for (const f of flashes) {
+    if (f.t <= 0) continue;
+    f.t -= dt;
+    if (f.t <= 0) continue;
+    const k = f.t / f.dur;                          // 1 -> 0
+    pushCand(f.x, f.y, f.z, f.hex, f.peak * k * k); // quadratic out: a flash, not a dimmer
+  }
 }
 
 // ---- live knobs (?tune "Engine lights") ----

@@ -18,7 +18,8 @@ import { tracerLook } from './hit-fx-config.js'; // per-class + per-shot tracer 
 import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
 import { fxColor } from './postfx.js'; // HDR FX tints: a hue-preserving scalar lift, pinned to 1.0 with no composer (D18)
-import { markGlow } from './glow-layer.js'; // muzzle flashes / bolts / blasts / rings are the intended glow sources
+import { markGlow } from './glow-layer.js';
+import { addFlash, BLAST } from './engine-lights.js'; // real-light fork: a detonation is a brief, very bright source // muzzle flashes / bolts / blasts / rings are the intended glow sources
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -199,6 +200,9 @@ function spawnShockRing(pos, y, maxScale, life, color) {
 
 export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, ringY = BULLET_PLANE_Y) {
   const s = sizeScale; // scales every spatial dimension to the ship's size
+  // A real light for the blast, scaled by the ship's size — a medium hull flashes harder than a scout.
+  // No-op unless the ?lights fork is on.
+  addFlash(pos, BLAST.ship * s * s, exhaustColor);
   // Fireball: a single flipbook (sprite-sheet) quad — one draw call, one shared texture (flipbook-fx.js,
   // DECISIONS §72). The old CPU spark spray is GONE (DECISIONS §75); the death now reads as the flipbook
   // fireball + a soft expanding shockwave ring, both in the baked-texture/shader FX family.
@@ -224,6 +228,7 @@ const deferredBlasts = [];
 
 export function spawnBossExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
   const s = sizeScale;
+  addFlash(pos, BLAST.boss * s * s, exhaustColor, BLAST.dur * 1.6);   // the big one: brighter AND longer
   const seed = bossBlastCount++;
   // Primary: an oversized fireball + a big expanding shockwave ring, right now.
   spawnFlipbookExplosion(pos, s * 1.4);
@@ -264,6 +269,7 @@ export function clearDeferredBlasts() { deferredBlasts.length = 0; }
 // blastTimeScale) — see catalog_seed.js. timeScale scales every lifetime (<1 = quicker burst).
 // Reuses the same particle pools + tier gating as the ship burst (no sim.js changes needed).
 export function spawnRocketBurst(pos, blastVis = 4.5, tint = 0xffb050, timeScale = 1, bright = 1.6) {
+  addFlash(pos, BLAST.rocket * (blastVis / 4.5), tint, BLAST.dur * 0.8);   // smaller, faster than a hull death
   // A rocket detonation is the SAME flipbook fireball as a ship death (unified FX, DECISIONS §75) — just
   // smaller, faster and BRIGHTER with a white-hot tint — plus the same soft expanding ring. The look is
   // fully WEAPON-DRIVEN: size (`blastVisual`), speed (`blastTimeScale`), ring/accent color (`blastTint`)
