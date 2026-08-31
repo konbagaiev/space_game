@@ -161,10 +161,18 @@ function buildLightsFolder(gui) {
         // references and the targets shoot back (they did).
         e.mounts = [];
         e.groups = {};
+        // THREE fields, and each one does a different job — setting the wrong one is why the first cut
+        // spawned nine identical small hulls:
+        //   fullScale — the VISIBLE size. `e.scale` is useless here: step-enemies.js rewrites it every frame
+        //               from `fullScale` during the spawn-grow animation, so an assignment to it is erased.
+        //   sizeScale — what the `kill` event carries, i.e. what sizes the DEATH EXPLOSION (and with it the
+        //               blast flash, which scales as size^2).
+        //   role      — 'boss' routes the death through spawnBossExplosion instead of the ship one.
         const k = sizes[r];
+        e.fullScale = (e.fullScale || 1) * k;
         e.sizeScale = (e.sizeScale || 1) * k;
-        e.scale = (e.scale || 1) * k;
-        if (e.mesh) { e.mesh.position.set(x, p.y, z); e.mesh.scale.setScalar(e.scale); }
+        if (r === 2) e.role = 'boss';
+        if (e.mesh) { e.mesh.position.set(x, p.y, z); e.mesh.scale.setScalar(e.fullScale); }
       }
     }
   } }, 'fire').name('▶ spawn 3+3+3 FROZEN targets');
