@@ -3,6 +3,58 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-31
+
+- **Two glow systems went in; the real one stayed. The expensive look now ships as REAL LIGHTS.**
+  [2026-08-30-1507-expensive-look]
+  Yesterday's entry describes a full-frame `EffectComposer` (bloom + ACES) and, after it, an additive glow
+  overlay. **Both were live-tested on a real GPU and a Redmi 15C, and both are now DELETED** — this entry is
+  the end state and supersedes them. `client/src/postfx.js` and `client/src/glow-layer.js` are gone, with
+  every `markGlow`/`GLOW_LAYER` call site, the `?glow=` URL flag and the `?tune` "Post" folder.
+  **The frame is the historical two-pass one again**, drawn straight to the canvas in `animate()`
+  (`info.reset` → `clear` → sky scene → `clearDepth` → combat scene) and duplicated verbatim in the `?bench`
+  `fullFrame`, with the canvas's own native MSAA and **no tone mapping anywhere**. Why, in one line each: a
+  composer with a multisampled target renders the frame **90–100% black** on ANGLE Metal / Apple M1 Pro (no
+  GL error, 4-sample support reported; it needs both the MSAA and the bloom pass, and a 240-frame table is in
+  DECISIONS §138) — and routing the frame through a composer is exactly what throws away the free canvas MSAA
+  in the first place, which supersampling only buys back at 2.25× the fill. ACES multiplies by
+  `exposure / 0.6`, and the lighting was authored for direct sRGB output, so it over-exposed the station and
+  every hull. The overlay that replaced it blurred a fixed number of BUFFER texels — a fixed size on
+  SCREEN — while its sources are sized in WORLD units, so the ship sat inside its own halo when zoomed out,
+  and a sub-texel source made the separable 5-tap kernel reproduce it once per tap instead of smearing it:
+  the "vertical stripes like a diffraction grating".
+  **What ships instead: a fixed, tier-gated pool of real `THREE.PointLight`s** (`client/src/engine-lights.js`)
+  on engine nozzles, rockets in flight, and explosion flashes — world-space by construction, so it scales
+  with zoom and needs no proxy sprite, no threshold and no blur. Tier knob `post.lights`: **High 16 /
+  Balance 4 / Performance 0**, measured on a Redmi 15C (Mali-G52) where 0 lights holds ~60 fps and 16 drops
+  worst *zoomed in at the station* — the cost tracks LIT PIXELS, because three evaluates every point light
+  for every fragment of every lit material. The pool is built ONCE and never grows or shrinks (the count is
+  a `#define` in every lit material's shader — changing it recompiles them all, §83's stall); `?lights=N`
+  still overrides it, and the `?tune` "Engine lights" folder (power / decay / distance / height / nozzle-Z
+  probe / blast power-reach-duration tiers / a frozen 3×3 test range) is the live tuning rig.
+  **Every HDR gain above 1.0 is gone** — `fxGain`, `exhaustGain`, `postGain`, `fxColor`/`hdrColor` and the
+  plume's `uGain` uniform, plus the plume's glow-emitter sprite and the "engine light SIZE/BRIGHTNESS"
+  sliders. They existed only to push a source past a bloom threshold that no longer exists; with nothing
+  mapping HDR back to the display, a value above 1.0 just clips per channel and shifts hue. **Muzzle flashes,
+  explosions, rings, bolts and the beam discharge are back to their authored colours on every tier.**
+  **Kept:** the additive **parallax backdrop layer** (it is geometry in the sky scene, not a screen-space
+  pass) with its own `?tune` folder; the **hull emissive floor** mechanism, which ships at **0** (at 0.25 it
+  flattened hulls and killed their glint) and is the documented value hit-fx's flash restores to; the ~30%
+  **larger speed-field dust**; and the `?debug&nebula` opt-in flag.
+  **Tests:** `graphics.test.js` now pins the `post: { lights }` shape per tier, that the emissive floor ships
+  at 0, that no `samples`/`superSample`/`bloom`/`glowScale` knob can come back, and the backdrop layer's
+  geometry sanity. `43-expensive-look` drops the composer-liveness assertion (there is no composer) and keeps
+  what still exists — the layer's differential contribution and the backdrop-vs-hull ratio — **re-pinned on
+  the frame that actually ships**: the D13 regression floor moves 1.25× → **1.11×** and a
+  `hullLit >= 120` silhouette count is added, because the old numbers were calibrated against the ACES
+  build whose 1.67× exposure flattered the hull. Confirmed a calibration drift, not a regression: the same
+  measurement on the pre-deletion tree reads 1.155× too. Mutation-checked (`backdrop.amp` 1.00 and 1.50
+  fail). `38-ally` now pins the wing emissive floor at its shipped intensity instead of "greater than zero".
+  **Docs:** DECISIONS **§138** rewritten end-to-end as the end state, preserving every measured finding (the
+  black-frame table, the MSAA/supersampling cost, the ACES exposure maths, the 5-tap kernel's stripe
+  mechanism, the Redmi ladder, and the fixed-pool/§83 rule); SUMMARY's Visuals, backdrop, `?tune`, tiers,
+  module-layout and test sections rewritten to match.
+
 ## 2026-08-30
 
 - **The expensive look — post-processing, a layered backdrop and readable silhouettes.**

@@ -23,8 +23,6 @@
 // All of it is cosmetic and RNG-free, hence replay-neutral (DECISIONS §73).
 import * as THREE from 'three';
 import { scene } from './engine.js';
-import { fxColor } from './postfx.js'; // the DISCHARGE's HDR lift — hue-preserving, pinned to 1.0 with no composer (D18)
-import { markGlow } from './glow-layer.js'; // the DISCHARGE quads are glow sources; the sight deliberately is not
 import { world } from './state.js';
 import { Vec3 } from './sim-core/vec.js';
 import { beamMuzzle, corridorEnds, beamGroupOf, beamWeaponOf, beamCandidate, corridorRadOf, chargeTimeOf } from './sim-core/beam.js';
@@ -355,19 +353,8 @@ function ensureBolts() {
   bolts = [];
   for (let i = 0; i < BOLT_POOL; i++) {
     bolts.push({
-      // THE DISCHARGE ONLY is lifted into HDR (fxGain.bolt) so the strike clears the bloom threshold and
-      // glows. A scalar multiply, so main's deliberately-authored blue keeps its exact HUE — the green
-      // sight and the blue shot stay two different hues (DECISIONS §135), which is the whole point of the
-      // split. The SIGHT, the charge bead and the charge dust are deliberately NOT lifted: they are thin
-      // 1 px lines and a permanent on-screen aid, and a glowing aiming aid would compete with the shot it
-      // exists to predict.
-      // The GLOW's colour is set PER SHOT in spawnBeamBolt (the pool is round-robin and the tint is the
-      // weapon's), so its lift is applied THERE — a lift baked in here would be overwritten by the first
-      // shot. Only the white-hot CORE, which is never retinted, can take it at build time.
-      // Both discharge quads go on the GLOW LAYER (the sight, the bead and the charge dust deliberately do
-      // NOT — an aiming aid that blooms would compete with the shot it exists to predict).
-      glow: markGlow(makeQuad(CHARGE_COLOR, 'beamBolt')),                   // the wide coloured halo (retinted per shot)
-      core: markGlow(makeQuad(fxColor(0xffffff, 'bolt'), 'beamBoltCore')),  // the white-hot centre, a hair above it in Y
+      glow: makeQuad(CHARGE_COLOR, 'beamBolt'),   // the wide coloured halo (retinted per shot)
+      core: makeQuad(0xffffff, 'beamBoltCore'),   // the white-hot centre, a hair above it in Y
       boltLife: 0,
     });
   }
@@ -597,11 +584,7 @@ export function spawnBeamBolt(from, to, ownShot = false, color = 0) {
   // the pirates' row fires red, because it is the same gun. The pool is round-robin and shared, so the tint
   // is set PER SHOT: the same quad draws a lancer's bolt now and yours a second later. The CORE stays white
   // either way — it is the hot centre, not a hue (§0e).
-  // …and the per-shot tint is where the HDR lift goes (fxGain.bolt): setting the hex here would otherwise
-  // overwrite the lift the pool was built with, so the discharge would stop clearing the bloom threshold
-  // the moment anything fired. `fxColor` is a SCALAR multiply, so the weapon's authored hue is untouched
-  // (D9), and it resolves to exactly 1.0 with no composer (D18).
-  b.glow.material.color.copy(fxColor(color || CHARGE_COLOR, 'bolt'));
+  b.glow.material.color.setHex(color || CHARGE_COLOR);
 
   spanQuad(b.glow, from, to, BOLT_GLOW_WIDTH, from.y + 0.02);
   spanQuad(b.core, from, to, BOLT_CORE_WIDTH, from.y + 0.04);  // a hair higher: it must win the blend

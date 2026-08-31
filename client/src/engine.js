@@ -62,13 +62,6 @@ document.body.appendChild(renderer.domElement);
 export const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1300);
 export const CAM_OFFSET = new THREE.Vector3(0, 110, 26); // fixed camera offset from the ship
 
-// Subscribers run right AFTER the renderer has been sized, with the logical game size (w, h). The glow
-// overlay (postfx.js) is the only one today: it owns offscreen buffers sized as a fraction of the canvas,
-// which must follow it. Declared HERE, above applyOrientation, because the module calls applyOrientation()
-// immediately below — a `const` declared after it would throw a TDZ ReferenceError at boot. postfx imports
-// engine and never the other way round, so there is no cycle.
-export const onResize = [];
-
 // Toggle the portrait→landscape rotation and size the renderer/camera to the logical game dimensions.
 // Called at boot and on every resize/orientationchange (the only place we size the renderer).
 export function applyOrientation() {
@@ -79,7 +72,6 @@ export function applyOrientation() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
-  for (const fn of onResize) fn(w, h);
 }
 applyOrientation(); // correct the initial portrait sizing before the first frame
 

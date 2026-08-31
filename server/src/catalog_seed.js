@@ -976,8 +976,8 @@ export const MAPS = [
       // (grey 0x6b6f78, soft star-glow sprite) was invisible, and the second (big near-white) read as white
       // blobs, which space does not have. The field now has its OWN hard-edged dot sprite, so a 1-2 unit
       // speck at a natural tone is clearly visible — see speed-field.js SPEED_FIELD_DEFAULTS.
-      // Sizes are ~30% up on that pass (0.8/1.3/2.0 → 1.04/1.69/2.6): the post chain's bloom threshold sits
-      // ABOVE this field's luma on purpose (it must stay dust, not sparks), so SIZE is the only speed cue.
+      // Sizes are ~30% up on that pass (0.8/1.3/2.0 → 1.04/1.69/2.6): the field is deliberately dim ROCK
+      // rather than sparks (DECISIONS §96), so SIZE is the only speed cue it has.
       speedField: {
         color: 0xd2ccc1,
         layers: [

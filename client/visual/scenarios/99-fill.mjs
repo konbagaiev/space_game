@@ -1,7 +1,8 @@
-// Explosion screen coverage per frame — how much of the screen one ship death paints, and (since the post
-// chain landed) whether the graded frame stays readable while it does. The composed frame has real bloom and
-// an ACES curve, so the failure mode to guard is a FX retune that turns a blast into a white sheet: the
-// glow AREA grows even where the source brightness is right.
+// Explosion screen coverage per frame — how much of the screen one ship death paints, and whether the frame
+// stays readable while it does. The failure mode to guard is an FX retune that turns a blast into a white
+// sheet: additive FX stack, so the glow AREA can grow even where each source's brightness is right. (The
+// guards below are deliberately kept general — they outlived the post chain and the glow overlay that
+// prompted them, both of which were built and then deleted; see DECISIONS §138.)
 export const name = '99-fill';
 export default async function ({ page, assert }) {
   await page.evaluate(() => {
@@ -41,9 +42,8 @@ export default async function ({ page, assert }) {
   const peakIdx = r.blown.indexOf(peakBlown);
   console.log(`      blown-out (all channels 250+) per frame: ${r.blown.join('%  ')}%`);
   console.log(`      still dark (luma < 0.25) per frame:      ${r.dark.join('%  ')}%`);
-  // A BLOWN-OUT CEILING and a WASH FLOOR. The retune's rule (D8) is that source brightness goes UP and glow
-  // AREA does not: an FX change that clears these is spending its headroom on area, which is the thing that
-  // turns a graded frame into a white patch.
+  // A BLOWN-OUT CEILING and a WASH FLOOR. Space is mostly black and must stay that way: an FX change that
+  // trips either of these has spent its headroom on AREA, which is what turns a frame into a white patch.
   assert.ok(peakBlown < 2, `the peak frame is not blown out (${peakBlown}% of pixels at 250+ on all channels)`);
   assert.ok(r.dark[peakIdx] >= 60,
     `even the brightest frame is still mostly dark space (${r.dark[peakIdx]}% below luma 0.25)`);

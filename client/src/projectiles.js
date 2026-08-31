@@ -17,9 +17,7 @@ import { makeBolt } from './bolt-fx.js';
 import { tracerLook } from './hit-fx-config.js'; // per-class + per-shot tracer length/brightness (Math.random)
 import { makeParticlePool } from './particle-pool.js'; // instanced FX pools: one draw call per particle KIND
 import { attachShipExhaust } from './exhaust-fx.js';
-import { fxColor } from './postfx.js'; // HDR FX tints: a hue-preserving scalar lift, pinned to 1.0 with no composer (D18)
-import { markGlow } from './glow-layer.js';
-import { addFlash, BLAST, blastDurMul, blastPower, blastReach } from './engine-lights.js'; // real-light fork: a detonation is a brief, very bright source // muzzle flashes / bolts / blasts / rings are the intended glow sources
+import { addFlash, BLAST, blastDurMul, blastPower, blastReach } from './engine-lights.js'; // a detonation is a brief, very bright REAL light
 
 // applyShieldedDamage (shield-first damage routing) lives in components.js alongside absorbDamage —
 // it's pure shield logic; keeping it there makes it unit-testable without pulling in the FX/engine deps.
@@ -64,7 +62,6 @@ export function attachBulletBody(b) {
     m = new THREE.Mesh(bulletGeo, new THREE.MeshBasicMaterial({ color: b.projectileColor }));
   }
   m.position.set(b.pos.x, b.pos.y, b.pos.z);
-  markGlow(m);   // both bodies: the tracer quad AND the plain sphere a low class gets
   scene.add(m);
   b.mesh = m;
 }
@@ -102,16 +99,13 @@ function flashTexture() {
 
 function spawnMuzzleFlash(pos, color, scale = 1) {
   const mat = new THREE.MeshBasicMaterial({
-    // fxColor lifts the weapon's own tint ABOVE 1.0 in linear HDR so the flash clears the bloom threshold
-    // and actually glows. A scalar multiply, so the hue is untouched (D9); 1.0 with no composer (D18).
-    map: flashTexture(), color: fxColor(color, 'muzzle'), transparent: true, opacity: 1,
+    map: flashTexture(), color, transparent: true, opacity: 1,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   const m = new THREE.Mesh(flashQuadGeo, mat);
   m.position.copy(pos);
   m.rotation.x = -Math.PI / 2;                // flat on the combat plane, read face-on by the top-down cam
   m.renderOrder = 2;                          // over the ship hull (additive, no depth write)
-  markGlow(m);
   scene.add(m);
   explosions.push({ mesh: m, life: 0.06, maxLife: 0.06, maxScale: 1.19 * scale }); // 1.19 ≈ 30% smaller than the old 1.7 sphere flash; scaled by the weapon's bolt size
 }
@@ -131,13 +125,12 @@ export function spawnExplosion(pos, maxScale = 3, life = EXPLOSION_LIFE, color =
   // glowing fiery sphere: additive blending + fade-out (life/color tunable so the same
   // primitive serves a quick hit-flash and a slower, layered ship-death fireball).
   const mat = new THREE.MeshBasicMaterial({
-    color: fxColor(color, 'explosion'), transparent: true, opacity: 1,
+    color, transparent: true, opacity: 1,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   const m = new THREE.Mesh(explosionGeo, mat);
   m.position.copy(pos);
   m.scale.setScalar(0.6);
-  markGlow(m);
   scene.add(m);
   explosions.push({ mesh: m, life, maxLife: life, maxScale });
 }
@@ -187,13 +180,12 @@ export const ringKeepAliveMaterial = () => new THREE.MeshBasicMaterial({
 // pool so sim.update()'s shockwave loop grows its scale + fades it. Shared by ship death + rocket burst.
 function spawnShockRing(pos, y, maxScale, life, color) {
   const mat = new THREE.MeshBasicMaterial({
-    map: ringTexture(), color: fxColor(color, 'ring'), transparent: true, opacity: 0.9,
+    map: ringTexture(), color, transparent: true, opacity: 0.9,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide,
   });
   const ring = new THREE.Mesh(ringQuadGeo, mat);
   ring.position.copy(pos); ring.position.y = y; // flat on the combat plane (a below-plane ghost passes its own depth)
   ring.rotation.x = -Math.PI / 2;
-  markGlow(ring);
   scene.add(ring);
   shockwaves.push({ mesh: ring, life, maxLife: life, maxScale });
 }
@@ -201,7 +193,7 @@ function spawnShockRing(pos, y, maxScale, life, color) {
 export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, ringY = BULLET_PLANE_Y) {
   const s = sizeScale; // scales every spatial dimension to the ship's size
   // A real light for the blast, scaled by the ship's size — a medium hull flashes harder than a scout.
-  // No-op unless the ?lights fork is on.
+  // No-op where the tier carries no light pool (Performance, or ?lights=0).
   addFlash(pos, blastPower(s) * s * s, exhaustColor, BLAST.dur * blastDurMul(s), blastReach(s) * s);
   // Fireball: a single flipbook (sprite-sheet) quad — one draw call, one shared texture (flipbook-fx.js,
   // DECISIONS §72). The old CPU spark spray is GONE (DECISIONS §75); the death now reads as the flipbook
@@ -308,12 +300,6 @@ const spiralRocketGeo = new THREE.ConeGeometry(0.34, 2.0, 6);
 export function attachRocketBody(r) {
   const holder = new THREE.Group();
   if (!r.lead) {
-    // NO HDR LIFT HERE, deliberately — this is the ONE site the retune had to give back at the pivot. The
-    // warhead body is an OPAQUE MeshBasicMaterial, not an additive sprite: an additive glow source clipping
-    // at 1.0 merely saturates its hot core, but an opaque >1 colour clips PER CHANNEL at the 8-bit sRGB
-    // write and SHIFTS ITS HUE — exactly what D18 exists to prevent. Now that the base frame is written
-    // straight to the canvas on every tier, that would happen on High too. The warhead is also not one of
-    // the intended glow sources (its exhaust plume and its blast are); it is a solid object.
     const mat = new THREE.MeshBasicMaterial({ color: r.projectileColor });
     const m = new THREE.Mesh(r.spiralOf ? spiralRocketGeo : rocketGeo, mat);
     m.rotation.x = Math.PI / 2; // cone points along +Z

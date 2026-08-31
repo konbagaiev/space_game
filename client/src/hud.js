@@ -13,7 +13,7 @@ import { cssColor } from './format.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
 import { isDev } from './dev.js';
-import { lightStatus } from './engine-lights.js'; // ?lights=N fork: lit/pool readout on the dev line
+import { lightStatus } from './engine-lights.js'; // real point lights: used/pool readout on the dev perf line
 import { liveProgress } from './progression.js';
 
 const DEV = isDev(); // ?dev → append live JS-heap usage + ●dev tag to the perf overlay (see dev.js)
@@ -162,18 +162,16 @@ export function updatePerf(sec) { // `sec` = the RAW frame interval (not the sim
     // Append the real backbuffer size (CSS size × pixelRatio) — the actual pixels the GPU fills. Lets a
     // tester confirm whether a tier change moved the pixel count at all (a weak phone often reports
     // devicePixelRatio ~1, so the pixelRatioCap can be a no-op there). A sub-1 `renderScale` knob was tried
-    // and REMOVED in 2026-06-27 — it moved fps by nothing on two real GPUs (DECISIONS §23), which is why
-    // the glow overlay is tiered by PASS COUNT instead. `calls` therefore now INCLUDES the overlay's extra
-    // submits on High/Balance (a second, glow-layer-only pass over the scene + 4 blur passes + 1 composite)
-    // and does not on Performance, which has no overlay at all.
+    // and REMOVED in 2026-06-27 — it moved fps by nothing on two real GPUs (DECISIONS §23). `calls` is the
+    // plain two-pass frame's submit count: there is no post-processing chain to inflate it.
     const res = `${renderer.domElement.width}×${renderer.domElement.height}`;
     // In ?dev, append live JS-heap usage (Chrome only) so the tester can eyeball current RAM.
-    // REAL-LIGHT FORK READOUT (?lights=N). On screen rather than in the console because the question it
-    // answers — "is a light actually lit while I hold thrust?" — cannot be checked by pasting into a console
-    // with both hands on the controls. `lit/pool` plus the live power is the whole diagnosis at a glance.
+    // REAL-LIGHT READOUT. On screen rather than in the console because the question it answers — "is a
+    // light actually lit while I hold thrust?" — cannot be checked by pasting into a console with both hands
+    // on the controls. `lit/pool` plus the live power is the whole diagnosis at a glance.
     const ls = lightStatus();
     const lightSuffix = ls.pool
-      ? ` · lit ${ls.lit}/${ls.pool} pw ${Math.round(window.__lightPower || 0)} y ${Math.round(window.__lightY || 0)}`
+      ? ` · lit ${ls.used}/${ls.pool} pw ${Math.round(window.__lightPower || 0)} y ${Math.round(window.__lightY || 0)}`
       : '';
     const devSuffix = DEV ? (performance.memory ? ` · ${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : '') + ' ●dev' : '';
     const spd = ` · spd ${Math.round(speedNow)} pk ${Math.round(speedPeak)}`; // current speed + run peak (units/s)

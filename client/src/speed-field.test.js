@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { WRAP_SAFE_RADIUS, SPEED_FIELD_DEFAULTS, SPEED_FIELD_RANGES, SPEED_TUNE_KEY,
-  MIN_CONTRAST, BG_LUMA, layerLuma, contrastRatio, linearLuma601,
+  MIN_CONTRAST, BG_LUMA, layerLuma, contrastRatio,
   wrapDelta, wrapField, scatterLayer, scatterColors, normalizeSpeedField,
   loadSpeedTune, saveSpeedTune } from './speed-field.js';
 
@@ -217,18 +217,6 @@ test('visibility budget: size and contrast together clear the floor, and sizes f
     assert.ok(budget >= 5, `layer ${i} visibility budget ${budget.toFixed(1)} is at/below the invisible pass`);
     assert.ok(l.size >= lo && l.size <= hi, `layer ${i} size ${l.size} must fit SPEED_FIELD_RANGES.size`);
   }
-});
-
-test('linearLuma601: the LINEAR luma the bloom high-pass actually thresholds on', () => {
-  // NOT interchangeable with layerLuma() above. layerLuma is a perceptual sRGB proxy for the CONTRAST floor;
-  // this is the exact quantity three's LuminosityHighPassShader computes over the linear HDR frame
-  // (dot(rgb, vec3(0.299, 0.587, 0.114))), and it is what decides whether the dust glows.
-  assert.ok(Math.abs(linearLuma601(SPEED_FIELD_DEFAULTS.color) - 0.6079) < 0.001,
-    `the shipped dust colour lands at ~0.608 linear (got ${linearLuma601(SPEED_FIELD_DEFAULTS.color)})`);
-  assert.equal(linearLuma601(0x000000), 0);
-  assert.ok(Math.abs(linearLuma601(0xffffff) - 1) < 1e-9, 'white is 1.0 linear');
-  // Strictly monotonic in brightness, and always below the sRGB value (linearisation darkens midtones).
-  assert.ok(linearLuma601(0x808080) < 0.5, 'mid grey is DARKER in linear than in sRGB');
 });
 
 test('normalizeSpeedField does not clamp the shipped defaults away', () => {

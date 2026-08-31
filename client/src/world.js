@@ -15,8 +15,7 @@ import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME } from './sim-core/consts.js';
 import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
-import { POST_DEFAULTS } from './graphics.js'; // the parallax backdrop layer's shipped constants (amp/follow/offsetMax/radius)
-import { markGlow } from './glow-layer.js'; // the star's corona + the bright-star layer are glow sources
+import { LOOK_DEFAULTS } from './graphics.js'; // the parallax backdrop layer's shipped constants (amp/follow/offsetMax/radius)
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -165,10 +164,6 @@ function makeStars(count, radius, brightFraction = 0.02) {
       depthWrite: false,      // creep onto the planet disk (the transparency gotcha in DECISIONS §5)
     }));
     bright.renderOrder = -1;
-    // The bright ~2% have carried the comment "bright core blooms over the dark backdrop" since DECISIONS §4
-    // and never actually bloomed, because nothing bloomed. On the glow layer they finally do. The DIM
-    // majority stays off it: those are meant to be points, not lights.
-    markGlow(bright);
     group.add(bright);
   }
   return group;
@@ -344,7 +339,7 @@ const NEBULA2_FALLBACK = { seed: 41, scale: 2.0, thLow: 0.55, thHigh: 0.78, glow
 const _bdOffset = new THREE.Vector3();
 const _bdLastCam = new THREE.Vector3();
 const _bdDelta = new THREE.Vector3();
-let backdropFollow = POST_DEFAULTS.backdrop.follow;
+let backdropFollow = LOOK_DEFAULTS.backdrop.follow;
 
 // Build the layer (called only from the bakeNebula branch of buildMap, so it inherits both of that gate's
 // conditions for free: no layer on Performance, none under ?debug unless the `nebula` flag is passed).
@@ -355,7 +350,7 @@ function buildBackdropLayer(nb, bake, override) {
   // the cube's stars and its base colour would lift the whole sky. Only the nebula wisps may survive.
   G.backdropRT = makeNebulaSky(nb2, { cube: Math.max(128, bake.cube >> 1),
                                       octaves: Math.max(3, bake.octaves - 1) });
-  const geo = new THREE.SphereGeometry(POST_DEFAULTS.backdrop.radius, 32, 16);
+  const geo = new THREE.SphereGeometry(LOOK_DEFAULTS.backdrop.radius, 32, 16);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthTest: false, depthWrite: false,   // can never depth-reject a body, and never writes depth itself
@@ -363,7 +358,7 @@ function buildBackdropLayer(nb, bake, override) {
     blending: THREE.AdditiveBlending, fog: false,
     uniforms: {
       uCube: { value: G.backdropRT.texture },
-      uAmp: { value: POST_DEFAULTS.backdrop.amp },
+      uAmp: { value: LOOK_DEFAULTS.backdrop.amp },
       uLift: { value: 1 },
     },
     vertexShader: BACKDROP_VERT, fragmentShader: BACKDROP_FRAG,
@@ -410,7 +405,7 @@ export function updateBackdropLayer() {
   const mesh = G.backdropMesh;
   if (!mesh) return;
   _bdOffset.add(_bdDelta.subVectors(camera.position, _bdLastCam).multiplyScalar(1 - backdropFollow));
-  _bdOffset.clampLength(0, POST_DEFAULTS.backdrop.offsetMax);
+  _bdOffset.clampLength(0, LOOK_DEFAULTS.backdrop.offsetMax);
   _bdLastCam.copy(camera.position);
   mesh.position.copy(camera.position).sub(_bdOffset);
 }
@@ -581,7 +576,6 @@ function makeStarMesh(spec) {
       blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
     }));
     s.scale.setScalar(spec.size * widthInR);
-    markGlow(s);   // the corona is an intended glow source (postfx's additive overlay)
     g.add(s);
   };
   coronaLayer(spec.halo, spec.haloColor ?? spec.color); // broad outer bloom, added first (drawn behind)

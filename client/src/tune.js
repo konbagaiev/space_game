@@ -5,10 +5,8 @@
 import { scene, skyScene, combatAmbient, sun } from './engine.js';
 import { G } from './state.js';
 import { buildMap, backdropAmp, setBackdropAmp, getBackdropFollow, setBackdropFollow } from './world.js';
-import { glowParams, postStatus } from './postfx.js';
-import { POST_DEFAULTS } from './graphics.js';
-import { setGlobalEmitterScale, getEmitterScale, setGlobalExhaustGain } from './exhaust-fx.js';
-import { lightParams, lightStatus } from './engine-lights.js'; // ?lights=N fork
+import { LOOK_DEFAULTS } from './graphics.js';
+import { lightParams, lightStatus } from './engine-lights.js'; // the real point lights (tier pool / ?lights=N)
 import { getNozzleZ, setNozzleZ } from './exhaust-fx.js'; // live nozzle-anchor probe
 import { BLAST } from './engine-lights.js';
 import { spawnShipExplosion, spawnBossExplosion, spawnRocketBurst } from './projectiles.js';
@@ -36,12 +34,10 @@ function dumpPalette() {
     combatAmbient: { color: H(combatAmbient.color), intensity: combatAmbient.intensity },
     combatSun: { color: H(sun.color), intensity: sun.intensity },
   });
-  // The dialed post values, ready to paste back into graphics.js POST_DEFAULTS.
-  const g = glowParams();
-  console.log('— client/src/graphics.js  POST_DEFAULTS —', postStatus().active ? {
-    bloom: { strength: g.strength, radius: g.radius, threshold: g.threshold, knee: g.knee },
+  // The dialed look values, ready to paste back into graphics.js LOOK_DEFAULTS.
+  console.log('— client/src/graphics.js  LOOK_DEFAULTS —', backdropAmp() != null ? {
     backdrop: { amp: backdropAmp(), follow: getBackdropFollow() },
-  } : '(no glow overlay on this tier — nothing to dump)');
+  } : '(no parallax backdrop layer on this tier / under ?debug — nothing to dump)');
 }
 
 export function buildTunePanel(GUI) {
@@ -78,31 +74,30 @@ export function buildTunePanel(GUI) {
   // Ocean is a baked texture (makePlanetTexture), so it only re-tints on a full rebuild.
   gui.add({ rebuild: () => { if (G.currentMapDescriptor) buildMap(G.currentMapDescriptor); } }, 'rebuild')
      .name('↻ Rebuild planet (re-bake ocean)');
-  buildPostFolder(gui);
+  buildBackdropFolder(gui);
   buildLightsFolder(gui);
 
   gui.add({ dump: dumpPalette }, 'dump').name('⤓ Dump palette → console');
 }
 
-// The post-processing folder: the additive GLOW OVERLAY's live knobs. Every control writes STRAIGHT to the
-// shared params object postfx.js reads each frame, so a drag is instant (no rebuild). Absent on Performance,
-// where there is no overlay to tune.
+// THE REAL POINT LIGHTS. The pool size comes from the quality tier (`post.lights`) and `?lights=N` overrides
+// it; with no pool the folder says so rather than showing dead sliders. Every control writes straight to the
+// live light state, so a drag is felt on the next frame.
 //
-// There are deliberately no exposure / grade / vignette controls: those lived in the full-frame pass that
-// was dropped at the pivot (DECISIONS §138). The frame is written straight to the canvas now — there is no
+// There are deliberately no glow / bloom / exposure / grade / vignette controls anywhere in this panel: the
+// full-frame composer and the additive glow overlay that followed it were both built, live-tested and
+// DELETED (DECISIONS §138). The frame is the plain two-pass one, straight to the canvas — there is no
 // full-screen pass to hang a curve on, and the game's lighting is authored for direct sRGB output.
 //
 // NOTE: there are also deliberately NO dust `size` sliders here. Size sliders for all three speed-field
 // layers already exist in the ?dev Backdrop → "Speed field" folder; they write the live material.size AND
 // persist to localStorage, and theirs is the panel buildMap re-applies. A second, non-persisted set writing
 // the same number would be two panels with two behaviours for one value (DECISIONS §30).
-// The REAL point-light fork (?lights=N). Absent the flag there is no pool and the folder says so rather
-// than showing dead sliders.
 function buildLightsFolder(gui) {
   const st = lightStatus();
-  const f = gui.addFolder('Engine lights (?lights=N)');
+  const f = gui.addFolder('Engine lights');
   if (!st.pool) {
-    f.add({ note: 'off — reload with ?lights=8 or ?lights=16' }, 'note').name('status').disable();
+    f.add({ note: 'no light pool on this tier — reload with ?lights=8 or ?lights=16' }, 'note').name('status').disable();
     return;
   }
   const p = lightParams();
@@ -206,32 +201,21 @@ function buildLightsFolder(gui) {
   f.add({ note: `pool of ${st.pool}` }, 'note').name('pool').disable();
 }
 
-function buildPostFolder(gui) {
-  const f = gui.addFolder('Post (glow overlay)');
-  const st = postStatus();
-  if (!st.active) {
-    f.add({ note: 'no glow overlay on this quality tier (Performance)' }, 'note').name('status').disable();
+function buildBackdropFolder(gui) {
+  // The PARALLAX BACKDROP LAYER — the second, coarser nebula bake on an additive camera-tracking sphere
+  // (world.js). It is independent of everything else the "expensive look" pass tried: it survived the
+  // composer and the glow overlay because it is geometry in the sky scene, not a screen-space pass.
+  // It only exists where the nebula is baked (not on Performance, and not under ?debug without `nebula`).
+  const f = gui.addFolder('Backdrop (parallax nebula layer)');
+  if (backdropAmp() == null) {
+    f.add({ note: 'no parallax layer here (Performance tier / ?debug without &nebula)' }, 'note').name('status').disable();
     return;
   }
-  const g = glowParams();
-  f.add(g, 'strength', 0, 3, 0.01).name('glow strength (0 = off)');
-  f.add(g, 'radius', 0.2, 4, 0.05).name('glow radius (blur texels)');
-  // The SHIPPED threshold (0.65) is guarded by a unit test: it must stay above the speed-field dust's linear
-  // luma (0.607). Since the pivot the dust is not on the glow layer at all, so dialing below it is safe to
-  // TRY — but the margin still ships, so a future re-tint of the dust fails a test instead of relying on the
-  // layer. What dialing this down really does is let dimmer FX into the glow.
-  f.add(g, 'threshold', 0.10, 1.20, 0.01).name('threshold (dust luma 0.61)');
-  f.add(g, 'knee', 0, 1, 0.01).name('threshold knee (soft edge)');
-  f.add({ exhaustGain: POST_DEFAULTS.exhaustGain }, 'exhaustGain', 1, 3, 0.05)
-   .name('engine light BRIGHTNESS').onChange(setGlobalExhaustGain);
-  // SIZE, separate from brightness. The blur is a fixed number of glow-buffer TEXELS, i.e. a fixed size on
-  // SCREEN, while the emitter is sized in WORLD units — so zooming out shrinks the ship but not the halo,
-  // and far enough out the ship sits inside its own glow. That is what this knob is for.
-  f.add({ engineLightSize: getEmitterScale() }, 'engineLightSize', 0.1, 3, 0.05)
-   .name('engine light SIZE').onChange(setGlobalEmitterScale);
-  f.add({ amp: backdropAmp() ?? POST_DEFAULTS.backdrop.amp }, 'amp', 0, 1.5, 0.01)
+  // `amp` is the backdrop's brightness AND its ceiling knob: the sky must never out-brighten a lit hull.
+  // 43-expensive-look measures exactly this number against the hull, so a dialed value belongs back in
+  // LOOK_DEFAULTS.backdrop — dump it and paste it.
+  f.add({ amp: backdropAmp() ?? LOOK_DEFAULTS.backdrop.amp }, 'amp', 0, 1.5, 0.01)
    .name('backdrop amp').onChange(setBackdropAmp);
   f.add({ follow: getBackdropFollow() }, 'follow', 0.60, 1.00, 0.005)
    .name('backdrop follow (1 = skybox)').onChange(setBackdropFollow);
-  f.add({ note: `glow buffer at ${Math.round(st.scale * 100)}% of the canvas` }, 'note').name('overlay').disable();
 }

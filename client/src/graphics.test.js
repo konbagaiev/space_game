@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import {
   resolveTier, loadTier, saveTier,
   GRAPHICS_STORAGE_KEY, GRAPHICS_DEFAULT, TIERS,
-  POST_DEFAULTS, BLOOM_DUST_MARGIN, postGain,
+  LOOK_DEFAULTS,
 } from './graphics.js';
-import { SPEED_FIELD_DEFAULTS, linearLuma601 } from './speed-field.js';
 
 // A tiny localStorage-like store backed by a Map (only get/setItem are used).
 function makeStore(seed = {}) {
@@ -47,69 +46,51 @@ test('nebulaBake: High/Balance bake, Performance keeps the flat color', () => {
   assert.equal(resolveTier('performance').nebulaBake, null);
 });
 
-test('post: High/Balance run the glow overlay, Performance runs none', () => {
-  // Tiered by PASS COUNT, not resolution: §23 measured that cutting backbuffer pixels 5.5-7x moved fps by
-  // nothing on real weak phones, so the only lever that protects one is "add no overlay at all".
-  assert.deepEqual(resolveTier('high').post, { bloom: true, glowScale: 0.50, lights: 16 });
-  assert.deepEqual(resolveTier('balance').post, { bloom: true, glowScale: 0.35, lights: 4 });
-  assert.equal(resolveTier('performance').post, null);
-  // Balance keeps the glow but pays less fill for it.
-  assert.ok(resolveTier('balance').post.glowScale < resolveTier('high').post.glowScale);
+test('post: High/Balance carry a real-light pool, Performance carries none', () => {
+  // `post` is the REAL POINT LIGHTS (engine-lights.js), not a post-processing chain — there is no chain.
+  // The pool size is baked into every lit material's shader (#define NUM_POINT_LIGHTS), so it is decided
+  // here, once, before the first material compiles.
+  assert.deepEqual(resolveTier('high').post, { lights: 16 });
+  assert.deepEqual(resolveTier('balance').post, { lights: 4 });
+  assert.equal(resolveTier('performance').post, null,
+    'Performance runs no lights at all — the one clean off-path (§23)');
 
-  // REAL POINT LIGHTS, tiered from a MEASURED result rather than a guess (Redmi 15C / Mali-G52,
-  // 2026-08-31): 0 lights held ~60 fps, 16 dropped — and the drop was worst ZOOMED IN AT THE STATION and
-  // mild once the station shrank on screen. Three evaluates every point light for every fragment of every
-  // lit material, so the cost tracks LIT PIXELS. Hence the ladder below, and hence Performance pays none.
+  // MEASURED, not guessed (Redmi 15C / Mali-G52, 2026-08-31): 0 lights held ~60 fps; 16 dropped, and the
+  // drop was worst ZOOMED IN AT THE STATION and mild once the station shrank on screen. Three evaluates
+  // every point light for every fragment of every lit material, so the cost tracks LIT PIXELS.
   assert.ok(resolveTier('high').post.lights > resolveTier('balance').post.lights,
     'a weaker tier must never carry MORE per-fragment lighting than a stronger one');
-  assert.equal(resolveTier('performance').post, null,
-    'Performance runs no overlay and no lights — the one clean off-path (§23)');
-  // NO `samples`/`superSample` KNOB MAY COME BACK HERE. The frame is drawn straight to the canvas, so AA is
-  // the canvas's own MSAA again (`antialias` above) — which is exactly what the abandoned full-frame chain
-  // threw away, and what supersampling was rejected for buying back at 2.25x the fill (DECISIONS §138(l)).
+
+  // NO `samples`/`superSample` KNOB MAY COME BACK HERE, and no bloom/glow buffer either. The frame is drawn
+  // straight to the canvas, so AA is the canvas's own MSAA again (`antialias` above) — which is exactly what
+  // the abandoned full-frame composer threw away, and what supersampling was rejected for buying back at
+  // 2.25x the fill (DECISIONS §138).
   for (const t of ['high', 'balance']) {
-    assert.equal(resolveTier(t).post.samples, undefined, `${t}: AA is the canvas's, not the overlay's`);
+    assert.equal(resolveTier(t).post.samples, undefined, `${t}: AA is the canvas's, not a render target's`);
     assert.equal(resolveTier(t).post.superSample, undefined, `${t}: no supersampling`);
+    assert.equal(resolveTier(t).post.bloom, undefined, `${t}: there is no bloom/glow pass any more`);
+    assert.equal(resolveTier(t).post.glowScale, undefined, `${t}: and no glow buffer to scale`);
   }
 });
 
-test('the glow threshold clears the speed-field dust (it must not glow)', () => {
-  // BELT AND BRACES. Since the pivot to a glow LAYER the dust cannot bloom at all — it is never rendered
-  // into the glow buffer — but the numeric margin is still asserted, so a future re-tint that brightens the
-  // dust fails a test instead of quietly depending on the layer membership.
-  // The overlay thresholds on the LINEAR Rec.601 luma of the glow buffer. The speed field is
-  // an opaque, unlit, near-white-grey dot at opacity 1.0 — its linear luma is ~0.608, which is the highest
-  // value in the frame that must NOT bloom. Below the threshold the field turns into sparks, re-opening
-  // DECISIONS §96's settled "dim rocks, not stars". The margin is thin, hence this assertion.
-  const dust = linearLuma601(SPEED_FIELD_DEFAULTS.color);
-  assert.ok(Math.abs(dust - 0.6079) < 0.001, `the dust's linear luma is ~0.608 (got ${dust})`);
-  assert.ok(POST_DEFAULTS.bloom.threshold >= dust * BLOOM_DUST_MARGIN,
-    `bloom threshold ${POST_DEFAULTS.bloom.threshold} must clear the dust (${dust}) by >= ${BLOOM_DUST_MARGIN}x`);
+test('the hull emissive floor is a floor, not a light', () => {
+  // It SHIPS AT 0 (the floor is off): at 0.25 it flattened hulls and killed their glint on a real screen.
+  // The mechanism stays wired because it is the value hit-fx's hull flash restores to — that flash
+  // deliberately drives the same emissive to white at HIT_FX.flash.intensity (1.6) for 0.12 s, which is a
+  // HIT lighting up, not a hull standing there glowing.
+  assert.equal(LOOK_DEFAULTS.hullEmissive, 0, 'the emissive floor ships OFF (see DECISIONS §138)');
+  assert.ok(LOOK_DEFAULTS.hullEmissive < 1,
+    'and can never be raised to a self-lit hull without failing here first');
 });
 
-test('the hull emissive floor stays below the glow threshold (a hull is not a standing light)', () => {
-  // NECESSARY, NOT SUFFICIENT: this proves only that the EMISSIVE TERM ALONE cannot reach the threshold —
-  // the shaded result is emissive + direct + ambient + env. The real proof that a hull does not glow at rest
-  // is the rendered frame (visual/scenarios/43-expensive-look.mjs + a human looking at it).
-  // It is about the STATIC floor only. hit-fx's hull flash deliberately drives the same emissive to white at
-  // HIT_FX.flash.intensity (1.6) for 0.12 s AND puts the hull on the glow layer for that time — a hit blooms,
-  // by design.
-  assert.ok(POST_DEFAULTS.hullEmissive < POST_DEFAULTS.bloom.threshold,
-    `emissive floor ${POST_DEFAULTS.hullEmissive} must stay under the bloom threshold ${POST_DEFAULTS.bloom.threshold}`);
-});
-
-test('postGain pins every HDR gain to 1 without the overlay (no clipping, no hue shift)', () => {
-  // With no overlay nothing turns >1 light into glow and the frame goes straight to an 8-bit sRGB canvas, so
-  // a >1 colour only clamps PER CHANNEL: 0xffb050 x 1.5 clips R and G but not B — a flat white patch AND a
-  // hue shift. So on Performance every gain must resolve to exactly 1.
-  assert.equal(postGain(false, 1.6), 1);
-  assert.equal(postGain(true, 1.6), 1.6);
-  assert.equal(postGain(false, POST_DEFAULTS.exhaustGain), 1);
-  for (const [k, g] of Object.entries(POST_DEFAULTS.fxGain)) {
-    assert.ok(g > 1, `${k}: an HDR gain is above 1 by design (it must clear the bloom threshold)`);
-    assert.equal(postGain(!!resolveTier('performance').post, g), 1, `${k} is pinned to 1 on Performance`);
-    assert.equal(postGain(!!resolveTier('high').post, g), g, `${k} is spent on High`);
-  }
+test('the parallax backdrop layer keeps its geometry sane', () => {
+  // radius + offsetMax must stay inside camera.far (1300, engine.js) or the layer leaves the frustum, and
+  // the sphere's near wall must stay outside the camera-locked star sphere (stars.radius 400).
+  const { amp, follow, offsetMax, radius } = LOOK_DEFAULTS.backdrop;
+  assert.ok(amp > 0, 'the layer ships visible (amp 0 would be a silently invisible feature)');
+  assert.ok(follow > 0 && follow < 1, 'follow 1 would make it a skybox, follow 0 a world-fixed wall');
+  assert.ok(radius + offsetMax < 1300, 'the layer stays inside camera.far');
+  assert.ok(radius - offsetMax > 400, 'and its near wall stays outside the camera-locked star sphere');
 });
 
 test('resolveTier falls back to the default for an unknown name', () => {

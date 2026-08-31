@@ -19,8 +19,6 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G } from './state.js';
 import { EXHAUST_DEFAULTS, SHIP_DEFAULTS, hash, plumeCfg, decayThrottle, derivePalette } from './exhaust-config.js';
-import { POST_DEFAULTS, postGain } from './graphics.js'; // the HDR plume lift — gated on the composer (D18)
-import { GLOW_LAYER } from './glow-layer.js'; // the plume's LIGHT rides a glow-layer-only emitter (see below)
 
 // Re-export the pure seams so callers/tests can reach them from the FX module too.
 export { EXHAUST_DEFAULTS, SHIP_DEFAULTS, hash, plumeCfg, decayThrottle, derivePalette };
@@ -41,11 +39,6 @@ export const getActiveFreighterPlume = () => activeFreighterPlume;
 
 // Every live ship plume — the GLOBAL mode toggle fans out to these, and updateShipExhaust advances them.
 const shipPlumes = new Set();
-
-// GLOBAL multiplier on every plume's glow-emitter size (?tune "Post" folder). Size and BRIGHTNESS are
-// separate levers on purpose — see the emitterBase note in makePlume — so this scales the light SOURCE
-// while `bloom.strength` scales how hard it is added. 1 = the shipped size.
-let emitterMul = 1;
 
 // Live probe offset on every ship's nozzle anchor, in hull-local Z (negative = further aft). 0 = the baked
 // value. Shifts the plume AND its light together, because they are the same nozzle.
@@ -102,14 +95,14 @@ const POINTS_VERT = /* glsl */`
 const POINTS_FRAG = /* glsl */`
   uniform sampler2D map;
   uniform vec3 uColHot, uColMid, uColEnd;
-  uniform float uThrottle, uSoft, uGain;
+  uniform float uThrottle, uSoft;
   varying float vT;
   void main() {
     vec3 col = vT < 0.5 ? mix(uColHot, uColMid, vT / 0.5)
                         : mix(uColMid, uColEnd, (vT - 0.5) / 0.5);
     float tex = texture2D(map, gl_PointCoord).a;
     float tailFade = 1.0 - vT;                          // dim toward the far tail
-    gl_FragColor = vec4(col * uGain, tex * uThrottle * uSoft * tailFade);
+    gl_FragColor = vec4(col, tex * uThrottle * uSoft * tailFade);
   }
 `;
 
@@ -130,7 +123,7 @@ const FLAME_VERT = /* glsl */`
   }
 `;
 const FLAME_FRAG = /* glsl */`
-  uniform float uTime, uSpeed, uThrottle, uSoft, uGain;
+  uniform float uTime, uSpeed, uThrottle, uSoft;
   uniform vec3 uColHot, uColMid, uColEnd;
   varying vec2 vUv;
   void main() {
@@ -149,7 +142,7 @@ const FLAME_FRAG = /* glsl */`
     float body = 1.0 - t;                               // fade toward the tip
     float a = (0.5 * edge + 1.3 * core) * body * n * uThrottle * uSoft;
     col += uColHot * core * 0.7 * body;                 // additive white-hot center → reads as intense
-    gl_FragColor = vec4(col * uGain, max(0.0, a));
+    gl_FragColor = vec4(col, max(0.0, a));
   }
 `;
 
@@ -171,12 +164,6 @@ export function makePlume(cfg) {
     uLen: { value: cfg.len }, uSize: { value: cfg.size }, uSpeed: { value: cfg.speed },
     uSpread: { value: cfg.spread }, uTurb: { value: cfg.turbulence }, uThrottle: { value: 1 },
     uSoft: { value: cfg.softness },
-    // HDR lift: uColHot/Mid/End are already LINEAR (colVec goes through THREE.Color.set, i.e.
-    // ColorManagement), so a gain above 1 pushes the white-hot core past 1.0 and makes the engine an actual
-    // BLOOM SOURCE — which is the whole point of the plume in the new render path. ONE scalar on all three
-    // palette stops, so no hue changes (D9). It MUST go through postGain: with no composer there is no
-    // headroom above 1.0, and a >1 value would clip per channel at the 8-bit sRGB write (D18).
-    uGain: { value: postGain(!!G.gfx.post, POST_DEFAULTS.exhaustGain) },
     uOrigin: { value: new THREE.Vector3(0, 0, 0) },
     uColHot: { value: colVec(cfg.palette.hot) },
     uColMid: { value: colVec(cfg.palette.mid) },
@@ -203,39 +190,13 @@ export function makePlume(cfg) {
   const flameMesh = new THREE.Mesh(flameGeo, flameMat);
   flameMesh.frustumCulled = false;
   obj.add(flameMesh);
-  // --- the plume's LIGHT, separated from the plume itself ---
-  // THE PLUME IS DELIBERATELY *NOT* ON THE GLOW LAYER. It used to be, and it was wrong: the flame is a long,
-  // thin, turbulence-animated shape, and the glow buffer is a quarter of the canvas. A thin bright streak
-  // sampled that coarsely aliases ALONG ITS LENGTH, so the maintainer saw "vertical stripes, like a
-  // diffraction grating" that swept as the ship rotated, and shimmered because the turbulence moves every
-  // frame. Blur cannot repair detail the buffer never resolved.
-  //
-  // So the plume renders ONLY in the main frame, at full canvas resolution with the canvas's own MSAA, where
-  // it is crisp — and what the overlay sees instead is this: a compact, camera-facing emitter at the nozzle,
-  // the same shape a bullet presents. A round sprite downsamples cleanly and has no orientation to alias,
-  // which is exactly why bullets already read well and the plume did not.
-  //
-  // `layers.set` (not `enable`) is load-bearing: it puts the emitter on the glow layer ONLY, so it is never
-  // drawn into the visible frame — it is a light source, not a sprite the player sees.
-  const emitter = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowTexture(),
-    color: new THREE.Color().setHex(cfg.palette.hot).multiplyScalar(postGain(!!G.gfx.post, POST_DEFAULTS.exhaustGain)),
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-  }));
-  emitter.layers.set(GLOW_LAYER);
-  emitter.frustumCulled = false;
-  obj.add(emitter);
-  // Sized from the plume's own width, not its length: the light is a ball at the nozzle, not a copy of the
-  // flame. Scaled by throttle each frame in update(), so an idle engine emits nothing.
-  // SIZE AND BRIGHTNESS ARE DIFFERENT LEVERS — do not shrink this to dim the glow, lower `bloom.strength`.
-  // The blur kernel samples at +/-1.385 and +/-3.231 TEXELS of the glow buffer. That integrates smoothly
-  // only while the source covers several texels; a sub-texel source is reproduced once per tap instead,
-  // and because the last pass of each level is vertical the leftover comb reads as VERTICAL STRIPES in the
-  // engine's colour, one per nozzle, screen-aligned no matter how the ship is turned (live test 2026-08-31 —
-  // this got WORSE when the emitter was halved to dim it, which is the tell).
-  const emitterBase = Math.max(1.2, (cfg.size || 1) * 3.0);
-  let lastThrottle = 0;               // re-applied when the global emitter size is dialed live
-  let emitterHex = cfg.palette.hot;   // tracked so a palette change and a gain change can each re-tint alone
+  // WHERE THIS PLUME'S LIGHT IS. The plume draws itself in the frame; the LIGHT it casts is a real
+  // THREE.PointLight owned by engine-lights.js, and that light needs exactly one thing from here — the
+  // nozzle's world position, which is `uOrigin` (the plume's own start point) taken through the plume
+  // group's matrix. Tracked as two locals rather than a proxy object: the glow-emitter SPRITE that used to
+  // stand in for the light was deleted with the glow overlay (DECISIONS §138) — a real light needs no proxy.
+  let lastThrottle = 0;
+  let nozzleHex = cfg.palette.hot;   // the engine's hot colour: the tint the real light takes
 
   const handle = {
     obj,
@@ -250,30 +211,19 @@ export function makePlume(cfg) {
       flameMesh.visible = (m === 'flame');
     },
     setThrottle(v) {
-      lastThrottle = v;
+      lastThrottle = v;                 // an idle engine casts no light — engine-lights.js reads this
       uniforms.uThrottle.value = v;
-      // The emitter IS the throttle, visually: an idle engine must emit no light at all, or a parked ship
-      // sits in a permanent halo. Scale (not opacity) so a fading engine shrinks its glow as well as dims it.
-      const k = emitterBase * emitterMul * v;
-      emitter.scale.set(k, k, k);
-      emitter.visible = v > 0.02;
     },
-    resizeEmitter() { handle.setThrottle(lastThrottle); },   // ?tune: re-apply the new global size now
-    // Where this engine's LIGHT is, for the real-point-light fork (engine-lights.js). Reads the emitter's
-    // world position, which is the nozzle — the plume group is scene-parented and its matrix is current
-    // from the frame just drawn. Writes into the caller's vector; allocates nothing.
+    // Where this engine's LIGHT is, for the real point lights (engine-lights.js). `uOrigin` is the nozzle in
+    // the plume group's own space, and the group is scene-parented with a matrix current from the frame just
+    // drawn. Writes into the caller's vector; allocates nothing.
     lightSample(out) {
-      emitter.getWorldPosition(out);
-      return { hex: emitterHex, throttle: lastThrottle };
-    },
-    setGain(v) {                                 // ?tune "Post" folder: the live HDR plume lift
-      uniforms.uGain.value = v;
-      // The emitter carries the SAME lift as the flame, or the light and the thing emitting it disagree.
-      emitter.material.color.setHex(emitterHex).multiplyScalar(v);
+      out.copy(uniforms.uOrigin.value);
+      obj.localToWorld(out);
+      return { hex: nozzleHex, throttle: lastThrottle };
     },
     setOrigin(vec3, spread) {
-      uniforms.uOrigin.value.copy(vec3);
-      emitter.position.copy(vec3);   // the light sits AT the nozzle, wherever the plume was told to start
+      uniforms.uOrigin.value.copy(vec3);   // the light sits AT the nozzle, wherever the plume starts
       if (spread != null) uniforms.uSpread.value = spread;
     },
     applyCfg(c) {
@@ -286,8 +236,7 @@ export function makePlume(cfg) {
       if (c.palette) {
         if (c.palette.hot != null) {
           uniforms.uColHot.value.copy(colVec(c.palette.hot));
-          emitterHex = c.palette.hot;
-          emitter.material.color.setHex(emitterHex).multiplyScalar(uniforms.uGain.value);
+          nozzleHex = c.palette.hot;   // …and the real light re-tints with it
         }
         if (c.palette.mid != null) { uniforms.uColMid.value.copy(colVec(c.palette.mid)); handle.colorHex = c.palette.mid; }
         if (c.palette.end != null) uniforms.uColEnd.value.copy(colVec(c.palette.end));
@@ -300,7 +249,7 @@ export function makePlume(cfg) {
       pointsGeo = buildPointsGeo(c.count);
       pointsMesh = new THREE.Points(pointsGeo, pointsMat);
       pointsMesh.frustumCulled = false;
-      obj.add(pointsMesh);   // NOT marked: the plume never enters the glow buffer, the nozzle emitter does
+      obj.add(pointsMesh);
       handle.meshes.points = pointsMesh;
       handle.applyCfg(c);
       handle.setMode(handle.mode);
@@ -343,23 +292,6 @@ export function setGlobalExhaustMode(v) {
   currentMode = v;
   activeFreighterPlume?.setMode(v);
   for (const p of shipPlumes) p.setMode(v);
-}
-
-// GLOBAL exhaust HDR gain — the ?tune "Post" folder's live knob, fanned out to every live plume. The
-// SHIPPED value comes from POST_DEFAULTS.exhaustGain through postGain (D18); this only exists so the
-// maintainer can dial it in a real build. A plume attaching later reads the shipped value, not this one.
-// Live emitter-size knob. A plume attaching later reads `emitterMul` through setThrottle, so new ships
-// inherit the dialed value without a rebuild.
-export function setGlobalEmitterScale(v) {
-  emitterMul = v;
-  activeFreighterPlume?.resizeEmitter();
-  for (const p of shipPlumes) p.resizeEmitter();
-}
-export const getEmitterScale = () => emitterMul;
-
-export function setGlobalExhaustGain(v) {
-  activeFreighterPlume?.setGain(v);
-  for (const p of shipPlumes) p.setGain(v);
 }
 
 // ---- Freighter helper: build a full-throttle plume from spec.exhaust merged over EXHAUST_DEFAULTS. ----

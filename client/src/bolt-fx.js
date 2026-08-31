@@ -4,8 +4,6 @@
 // own tint material (disposed on bullet despawn, like the old sphere). One draw call per shot — no
 // costlier than the sphere it replaces, just prettier. Pure factory: the caller adds it to the scene.
 import * as THREE from 'three';
-import { fxColor } from './postfx.js'; // HDR bolt tint: a hue-preserving scalar lift, pinned to 1.0 with no composer (D18)
-import { markGlow } from './glow-layer.js'; // a tracer is an intended glow source (the additive overlay in postfx.js)
 
 // ---- Tunables (edit + reload to retune live) ----
 const BOLT_LEN = 2.4;   // world length along the travel direction
@@ -65,9 +63,7 @@ export function makeBolt(color, vel, scale = 1, look = null) {
   const lenMul = look && look.len != null ? look.len : scale;
   const bright = look && look.bright != null ? look.bright : 1;
   const mat = new THREE.MeshBasicMaterial({
-    // Pushed above 1.0 in linear HDR so the bolt clears the bloom threshold and reads as an energy bolt
-    // with a real glow rather than a flat bright quad. Scalar → hue preserved (D9).
-    map: boltTexture(), color: fxColor(color, 'bolt'), transparent: true,
+    map: boltTexture(), color, transparent: true,
     blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
   });
   if (bright !== 1) mat.color.multiplyScalar(bright); // additive blend: a linear brightness scale
@@ -80,6 +76,5 @@ export function makeBolt(color, vel, scale = 1, look = null) {
   m.quaternion.setFromRotationMatrix(_basis);
   m.scale.set(BOLT_LEN * lenMul, BOLT_WID * scale, 1);
   m.renderOrder = 2;                             // draw over opaque ships/hull (additive, no depth write)
-  markGlow(m);                                   // an intended glow source: the overlay re-renders it small + blurred
   return m;
 }

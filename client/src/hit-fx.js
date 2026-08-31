@@ -19,7 +19,6 @@
 import * as THREE from 'three';
 import { G, enemies, allies } from './state.js';
 import { HIT_FX, makeImpulse, refreshImpulse, ageImpulse } from './hit-fx-config.js';
-// NOTE: no glow-layer import. The hull is never a glow source — see updateFlash for why.
 
 // ---------- the camera shudder (module state: there is exactly one camera) ----------
 const shakeSt = makeImpulse();
@@ -62,17 +61,6 @@ function updateFlash(ship, dt) {
   const mats = ship.mesh.userData.flashMats || [];
   if (v > 0) {
     for (const f of mats) { f.mat.emissive.setHex(HIT_FX.flash.color); f.mat.emissiveIntensity = HIT_FX.flash.intensity * v; }
-    // THE HULL DELIBERATELY DOES *NOT* JOIN THE GLOW LAYER. It did at first, and on a real screen the whole
-    // silhouette lit up — the ship read as a lamp rather than as a ship being hit ("корабль сильно ярко
-    // мигает", live test 2026-08-31). The light of an impact is already there and is already compact: the
-    // `bulletImpact` hit sprite (flipbook-fx.js spawnHitSprite) is on the glow layer and sits exactly AT the
-    // point of impact, which is the same small, round, camera-facing shape that makes bullets read well.
-    // Lighting the hull on top of it was redundant, and a whole silhouette is the one shape the glow buffer
-    // handles worst.
-    //
-    // So the split is: the EMISSIVE FLASH below stays exactly as hit-feel authored it (white, intensity 1.6,
-    // 0.12 s) and does the "the target reacted" job on the model, at full canvas resolution. The LIGHT comes
-    // from the impact point. Do not re-add markGlow here — and note hit-feel's own numbers are untouched.
     st.dirty = true;
   } else if (st.dirty) {
     // Put back exactly what the artist baked, not a guess at "off".

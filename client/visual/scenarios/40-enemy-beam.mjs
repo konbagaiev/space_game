@@ -31,13 +31,12 @@ const PLAYER_GREEN = 0x5ad17f;
 const DISCHARGE_BLUE = 0x3d8bff;   // the shot's hue — the telegraph must NOT be this
 const LANCER_RANGE = 67;
 
-// THE BOLT GLOW IS A LINEAR-HDR COLOUR. postfx lifts the discharge above 1.0 (fxGain.bolt) so it clears the
-// bloom threshold and actually glows, which makes `Color.getHex()` useless on it: getHex() converts back to
-// sRGB and CLAMPS at 255, so 0xff6b4a lifted reports 0xff7d57 — a "wrong colour" that is really the right
-// colour with more light in it. The lift is a SCALAR multiply, so the HUE is exactly preserved, and the hue
-// is what these assertions are about (the weapon's red vs the player's blue). Everything else this scenario
-// reads — the three sight lines, the charge dust, the bead — is deliberately NOT lifted and still compares
-// hexes directly.
+// THE BOLT GLOW IS ASSERTED BY HUE, NOT BY HEX. What matters here is the weapon's red against the player's
+// blue, and a hue test survives any brightness treatment of the discharge while still failing loudly on a
+// real recolour — which an exact-hex compare gets backwards. (It was introduced when the discharge was
+// briefly lifted into HDR by a glow pass; the pass is gone, the assertion is kept because it asks the better
+// question.) Everything else this scenario reads — the three sight lines, the charge dust, the bead — is a
+// plain authored hex and is compared directly.
 const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 const hueOf = ({ r, g, b }) => { const m = Math.max(r, g, b) || 1; return [r / m, g / m, b / m]; };
 const hexHue = (hex) => hueOf({ r: srgbToLinear(((hex >> 16) & 255) / 255),

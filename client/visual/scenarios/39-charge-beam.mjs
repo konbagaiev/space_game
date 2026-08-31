@@ -23,16 +23,14 @@ export const name = '39-charge-beam';
 const SIGHT_GREEN = 0x5ad17f;
 const DISCHARGE_BLUE = 0x3d8bff;   // the bolt + muzzle bead (taken bluer twice on 2026-08-26)
 
-// THE DISCHARGE IS NOW A LINEAR-HDR COLOUR. postfx lifts it above 1.0 (fxGain.bolt) so the strike clears the
-// bloom threshold and actually glows — which means `Color.getHex()` is no longer usable on it: getHex()
-// converts back to sRGB and CLAMPS to 0..255, so every lifted colour reports 0xffffff and an exact-hex
-// assertion would either fail or, worse, pass on white. What the sight/shot split protects is the HUE, so
-// that is what is asserted: the linear colour normalized by its brightest channel. The lift is a SCALAR
-// multiply, so the authored blue's hue survives it exactly — which is the property this checks.
-// The bolt GLOW is retinted per shot, so a pool entry that has never fired still carries the unlifted hex;
-// normalizing by the brightest channel makes the assertion true of both, which is why it is a hue test and
-// not a brightness one. The SIGHT, the muzzle BEAD and the charge DUST are not lifted at all, so their
-// assertions above still compare hexes directly.
+// THE DISCHARGE IS ASSERTED BY HUE, NOT BY HEX, and it stays that way. What the sight/shot split protects
+// (DECISIONS §135) is the HUE — the green announcement against the blue strike — so that is what is
+// measured: the material's linear colour normalized by its brightest channel. That form survives any
+// brightness treatment of the discharge (a per-shot retint, an additive scale) and fails loudly on an actual
+// recolour, which an exact-hex compare gets backwards. (It was introduced when the discharge was briefly
+// lifted into HDR by a glow pass; the pass is gone, the assertion is kept because it asks the better
+// question.) The SIGHT, the muzzle BEAD and the charge DUST are plain authored hexes and are compared
+// directly above.
 const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 const hueOf = ({ r, g, b }) => { const m = Math.max(r, g, b) || 1; return [r / m, g / m, b / m]; };
 const hexHue = (hex) => hueOf({ r: srgbToLinear(((hex >> 16) & 255) / 255),

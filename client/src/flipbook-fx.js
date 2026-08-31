@@ -19,9 +19,7 @@
 //   updateFlipbooks(dt)                      — advance every live blast; called from sim.update()
 import * as THREE from 'three';
 import { scene } from './engine.js';
-import { flipbooks, G } from './state.js';
-import { POST_DEFAULTS, postGain } from './graphics.js'; // the fireball's HDR lift — gated on the composer (D18)
-import { markGlow } from './glow-layer.js'; // the fireball is an intended glow source (postfx's additive overlay)
+import { flipbooks } from './state.js';
 
 // ---- Tunables (edit + reload to retune live; these become GUI sliders in a later pass) ----
 const COLS = 8, ROWS = 8;              // sprite-sheet grid → COLS*ROWS animation frames
@@ -151,14 +149,7 @@ function makeMaterial(size, tint) {
       map: { value: ensureSheet() },   // SHARED texture — referenced, never cloned
       uCols: { value: COLS }, uRows: { value: ROWS }, uFrames: { value: FRAMES },
       uFrame: { value: 0 }, uOpacity: { value: 1 }, uSize: { value: size },
-      // The fireball is THE bloom source among the FX: uTint is lifted above 1.0 in linear HDR so the core
-      // clears the bloom threshold and glows instead of being a flat bright patch. A SCALAR on whatever tint
-      // the caller passed, so an authored tint (rocket-burst white-hot, SHIELD_HIT_TINT cyan) keeps its
-      // ratios and its hue (D9). It MUST go through postGain: with no composer a >1 value clips per channel
-      // at the 8-bit sRGB write (D18). This is also where spawnRocketBurst's `fireTint` gets its lift — the
-      // gain is applied ONCE, here, so callers must not pre-multiply it.
-      uTint: { value: (tint ? tint.clone() : new THREE.Vector3(1, 1, 1))
-        .multiplyScalar(postGain(!!G.gfx.post, POST_DEFAULTS.fxGain.explosion)) },
+      uTint: { value: tint ? tint.clone() : new THREE.Vector3(1, 1, 1) }, // default: the baked orange fire, untinted
     },
     vertexShader: VERT, fragmentShader: FRAG,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -175,7 +166,6 @@ export function spawnFlipbookExplosion(pos, sizeScale = 1, tint = null, speed = 
   m.renderOrder = 3;             // draw over ships/bullets (additive, no depth write)
   // A small deterministic per-blast frame skew so simultaneous deaths don't animate in lockstep.
   const skew = (spawnCount++ % 5) * 0.6;
-  markGlow(m);   // the fireball is THE glow source among the FX
   scene.add(m);
   flipbooks.push({ mesh: m, mat, frame: skew, fps: FPS * speed }); // speed > 1 → quicker (e.g. rocket blast)
 }
@@ -204,7 +194,6 @@ export function spawnHitSprite(pos, sizeScale = 1, tint = null) {
   m.position.copy(pos);
   m.renderOrder = 3;
   const skew = (spawnCount++ % 5) * 0.6;
-  markGlow(m);
   scene.add(m);
   flipbooks.push({ mesh: m, mat, frame: skew, fps: HIT_FPS });
 }

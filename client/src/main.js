@@ -14,10 +14,9 @@ import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t 
 import { audio, tracksFor } from './sound-routing.js'; // audio engine + DB-driven music routing (bootstrap)
 import { G, world, bullets, explosions, sparks, shockwaves, rockets, smoke, enemies, allies, setPieces, soundMap, CATALOG, keys, touchAim } from './state.js'; // shared state bag + entity collections + catalog + input
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, setZoom, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
-import { renderFrame, postStatus, postTargets, glowParams } from './postfx.js'; // THE frame: the historical two-pass render, plus the additive glow overlay where a tier has one
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers, backdropAmp, setBackdropAmp } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap + the parallax backdrop's ?debug knobs
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers, backdropAmp, setBackdropAmp } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap + the parallax backdrop layer's live knobs
 import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { spawnRocket as spawnRocketInto, spawnBullet as spawnBulletInto } from './sim-core/spawn.js'; // take the World explicitly — __game wraps them below
@@ -809,10 +808,6 @@ function prewarmShaders() {
     }
     renderer.compile(skyScene, camera);
     renderer.compile(scene, camera);
-    // No overlay warm is needed here: the glow overlay's own shaders (one blur + one composite) compile on
-    // the first renderFrame(), which is the very first animate() frame — long before any fight. Don't add
-    // one. The GLOW-LAYER geometry compiles with the base frame: it is the same objects and, because the
-    // combat lights are on the layer too, the same shader programs (see postfx.js createOverlay).
   } catch { /* best-effort — shader warmup must never break startup or a level load */ }
 }
 
@@ -1173,9 +1168,12 @@ function animate() {
     prewarmShaders();
     el.levelWarm.classList.remove('on');
   }
-  // The whole frame — the historical two passes (sky → combat) straight to the canvas, plus the additive
-  // glow overlay on the tiers that have one. It resets renderer.info itself. See postfx.js.
-  renderFrame();
+  // two passes: first the sky backdrop (with its own light), then combat on top
+  renderer.info.reset();
+  renderer.clear();
+  renderer.render(skyScene, camera);
+  renderer.clearDepth();
+  renderer.render(scene, camera);
   const t3 = DEV ? performance.now() : 0; // end of render submit (GPU exec is async — this is CPU submit cost)
   updatePerf(rawSec); // perf metrics use the RAW interval (clamped dt would cap fps/ms on slow devices)
   if (DEV) devPerf.frame(rawSec, t0, t1, t2, t3);
@@ -1303,19 +1301,12 @@ if (location.search.includes('debug')) {
                                              // number the ?ally dev flag exists to produce (nothing else on
                                              // screen reveals it, by design; docs/plans/combat-ally.md §3)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
-    // Glow-overlay state + the parallax backdrop's live brightness. `active` is the ONLY honest liveness
-    // check for the overlay: "no page errors" is equally true when createOverlay() threw and the frame
-    // silently fell back to the bare two-pass path. `glow` (the live knobs) / `setBackdropAmp` + `renderOnce` let a
-    // scenario measure either of them DIFFERENTIALLY on a FROZEN scene.
-    get postfx() { return { ...postStatus(), amp: backdropAmp() }; },
-    get postTargets() { return postTargets(); }, // GL ground truth: real canvas samples / buffer sizes
+    // The parallax backdrop layer's live brightness (null until the layer is built — it only exists where
+    // the nebula is baked). `amp` + `setBackdropAmp` are what let 43-expensive-look measure the layer
+    // DIFFERENTIALLY on a frozen scene: the same frame with the layer off and on, which is the only honest
+    // way to prove a backdrop is actually contributing light.
+    get backdrop() { return { amp: backdropAmp() }; },
     setBackdropAmp,
-    get glow() { return glowParams(); },   // the LIVE overlay knobs (strength/radius/threshold/knee)
-    // Render one more frame RIGHT NOW, synchronously, without advancing anything. Two back-to-back calls
-    // with one knob changed in between are the same scene rendered twice, so a pixel diff isolates that knob
-    // exactly — which is what makes "does the overlay actually reach the canvas?" answerable at all
-    // (43-expensive-look). Never called by the game itself.
-    renderOnce: () => renderFrame(),
     get levelName() { return CATALOG.levelName; },     // the SEED NAME (level-N) this tab resolved at boot
     get needsSceneWarm() { return G.needsSceneWarm; }, // diagnostic: a level build is waiting to be compiled/uploaded
     get pendingAssets() { return G.pendingAssets; }, // diagnostic: essential .glb loads still in flight (veil gate)
@@ -1431,7 +1422,13 @@ if (isBench()) {
     updateHud(); updateMarkers(); updateDropMarkers(); updateMissionMarker(); updateCreditPopups();
     updateEnemyHealthBars(); updateOobWarning(); updateReturnArrow(); updateReturnHint(); updateRoamNav(); updateMiniMap();
     const t2 = performance.now();
-    renderFrame();   // the SAME entry point animate() uses — the bench must measure the real, composed frame
+    // The SAME four lines animate() draws — the bench must measure the real frame, and there is no shared
+    // entry point to route it through: the frame is these two passes, straight to the canvas.
+    renderer.info.reset();
+    renderer.clear();
+    renderer.render(skyScene, camera);
+    renderer.clearDepth();
+    renderer.render(scene, camera);
     const t3 = performance.now();
     return { update: t1 - t0, dom: t2 - t1, render: t3 - t2, total: t3 - t0,
              draws: renderer.info.render.calls, tris: renderer.info.render.triangles };

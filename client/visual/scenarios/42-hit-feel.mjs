@@ -186,17 +186,14 @@ export default async function ({ page, assert, shot }) {
   // Both together also prove B did NOT brighten — the shared-material bug caught ON SCREEN, not just by uuid.
   //
   // MEASURED ON B's BRIGHT-PIXEL FRACTION, NOT ON ITS CROP MEAN, and the difference matters. This guard asks
-  // one question: "did B's OWN materials flash too?" — the shared-material bug. A crop MEAN cannot ask that
-  // any more, because since the post chain landed (DECISIONS §138) the frame is bloomed: A's 1.6-intensity
-  // flash spreads a soft glow over ~±100 full-res px, and when an earlier scenario in the same browser has
-  // restored a wider `camZoom` the two ships sit close enough on screen that the glow reaches B's crop and
-  // lifts its mean by ~3.4/255 (it did, reproducibly, at the 27 px crop; verified by rebuilding with
-  // `bloom.strength = 0`, which makes the old form pass). That is a GLOBAL POST-PROCESS EFFECT, not a
-  // per-material flash, so a mean-based guard was answering a different question from the one it asks.
-  // A real flash on B would put a BODY of genuinely bright pixels inside its silhouette — that is exactly
-  // what it does to A (+10.7% of the crop above the 160 threshold). A bloom bleed is diffuse and low-level
-  // and almost none of it crosses that threshold. So the guard is B's bright-pixel fraction, before vs
-  // after, which is bloom-independent and still fails loudly on the bug it exists to catch.
+  // exactly one question: "did B's OWN materials flash too?" — the shared-material bug. A crop MEAN cannot
+  // ask that, because ANY diffuse light spilling from A lifts B's mean without a single one of B's materials
+  // changing: it did so reproducibly at the 27 px crop (~3.4/255) while a glow pass was briefly in the frame,
+  // and a wider `camZoom` restored by an earlier scenario in the same browser is enough to bring the two
+  // ships that close. A real flash on B would instead put a BODY of genuinely bright pixels inside its
+  // silhouette — which is exactly what it does to A (+10.7% of the crop above the 160 threshold). So the
+  // guard is B's bright-pixel fraction, before vs after: indifferent to spill, and still loud on the bug it
+  // exists to catch.
   const bFracBefore = base.b.bright / base.b.n, bFracAfter = lit.b.bright / lit.b.n;
   console.log(`      control B bright fraction ${(bFracBefore * 100).toFixed(2)}% → ${(bFracAfter * 100).toFixed(2)}%`
     + ` (A gained ${(dBrightFrac * 100).toFixed(1)}%)`);
