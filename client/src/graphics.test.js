@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   resolveTier, loadTier, saveTier,
   GRAPHICS_STORAGE_KEY, GRAPHICS_DEFAULT, TIERS,
+  LOOK_DEFAULTS,
 } from './graphics.js';
 
 // A tiny localStorage-like store backed by a Map (only get/setItem are used).
@@ -43,6 +44,53 @@ test('nebulaBake: High/Balance bake, Performance keeps the flat color', () => {
   assert.deepEqual(hi, { cube: 1024, octaves: 6 });
   assert.deepEqual(ba, { cube: 512, octaves: 4 });
   assert.equal(resolveTier('performance').nebulaBake, null);
+});
+
+test('post: High/Balance carry a real-light pool, Performance carries none', () => {
+  // `post` is the REAL POINT LIGHTS (engine-lights.js), not a post-processing chain — there is no chain.
+  // The pool size is baked into every lit material's shader (#define NUM_POINT_LIGHTS), so it is decided
+  // here, once, before the first material compiles.
+  assert.deepEqual(resolveTier('high').post, { lights: 16 });
+  assert.deepEqual(resolveTier('balance').post, { lights: 4 });
+  assert.equal(resolveTier('performance').post, null,
+    'Performance runs no lights at all — the one clean off-path (§23)');
+
+  // MEASURED, not guessed (Redmi 15C / Mali-G52, 2026-08-31): 0 lights held ~60 fps; 16 dropped, and the
+  // drop was worst ZOOMED IN AT THE STATION and mild once the station shrank on screen. Three evaluates
+  // every point light for every fragment of every lit material, so the cost tracks LIT PIXELS.
+  assert.ok(resolveTier('high').post.lights > resolveTier('balance').post.lights,
+    'a weaker tier must never carry MORE per-fragment lighting than a stronger one');
+
+  // NO `samples`/`superSample` KNOB MAY COME BACK HERE, and no bloom/glow buffer either. The frame is drawn
+  // straight to the canvas, so AA is the canvas's own MSAA again (`antialias` above) — which is exactly what
+  // the abandoned full-frame composer threw away, and what supersampling was rejected for buying back at
+  // 2.25x the fill (DECISIONS §139).
+  for (const t of ['high', 'balance']) {
+    assert.equal(resolveTier(t).post.samples, undefined, `${t}: AA is the canvas's, not a render target's`);
+    assert.equal(resolveTier(t).post.superSample, undefined, `${t}: no supersampling`);
+    assert.equal(resolveTier(t).post.bloom, undefined, `${t}: there is no bloom/glow pass any more`);
+    assert.equal(resolveTier(t).post.glowScale, undefined, `${t}: and no glow buffer to scale`);
+  }
+});
+
+test('the hull emissive floor is a floor, not a light', () => {
+  // It SHIPS AT 0 (the floor is off): at 0.25 it flattened hulls and killed their glint on a real screen.
+  // The mechanism stays wired because it is the value hit-fx's hull flash restores to — that flash
+  // deliberately drives the same emissive to white at HIT_FX.flash.intensity (1.6) for 0.12 s, which is a
+  // HIT lighting up, not a hull standing there glowing.
+  assert.equal(LOOK_DEFAULTS.hullEmissive, 0, 'the emissive floor ships OFF (see DECISIONS §139)');
+  assert.ok(LOOK_DEFAULTS.hullEmissive < 1,
+    'and can never be raised to a self-lit hull without failing here first');
+});
+
+test('the parallax backdrop layer keeps its geometry sane', () => {
+  // radius + offsetMax must stay inside camera.far (1300, engine.js) or the layer leaves the frustum, and
+  // the sphere's near wall must stay outside the camera-locked star sphere (stars.radius 400).
+  const { amp, follow, offsetMax, radius } = LOOK_DEFAULTS.backdrop;
+  assert.ok(amp > 0, 'the layer ships visible (amp 0 would be a silently invisible feature)');
+  assert.ok(follow > 0 && follow < 1, 'follow 1 would make it a skybox, follow 0 a world-fixed wall');
+  assert.ok(radius + offsetMax < 1300, 'the layer stays inside camera.far');
+  assert.ok(radius - offsetMax > 400, 'and its near wall stays outside the camera-locked star sphere');
 });
 
 test('resolveTier falls back to the default for an unknown name', () => {

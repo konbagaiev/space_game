@@ -777,19 +777,23 @@ didn't move. Two hypotheses survive: **(1)** the device's `devicePixelRatio` is 
 `min(DPR, 1)` are *identical* — the cap never reduced pixels — or **(2)** the frame is **CPU-bound** (the
 per-frame `update` + the DOM HUD/markers/minimap work, or the fixed two-pass overhead), where resolution
 is irrelevant. The change tests both, measurement-first:
-- **`renderScale`** (tier knob, Performance 0.7; 1.0 = off on High/Balance) multiplies into
-  `setPixelRatio`, rendering the backbuffer **below native** and letting the browser upscale the
-  full-size canvas. It is the **only** lever that bites *below* a pixelRatioCap of 1, so under hypothesis
-  (1) it is the first genuine fill-rate test. Chosen over a second render-target sky pass (a "Lever B" in
-  the plan) because it is one multiply, zero new GL objects, and no risk of a stale-sky parallax judder —
-  build the costlier sky throttle only if idle fps stays low *after* this.
+- **`renderScale` — TRIED AND REMOVED (2026-06-27); this bullet is a FINDING, not a live knob.** It was a
+  tier knob (Performance 0.7; 1.0 = off on High/Balance) multiplying into `setPixelRatio`, rendering the
+  backbuffer **below native** and letting the browser upscale the full-size canvas — the only lever that
+  bites *below* a pixelRatioCap of 1, and therefore the first genuine fill-rate test of hypothesis (1). It
+  answered the question and the answer was **no**: measured on two real GPUs (PowerVR GE8320, Mali-G52) a
+  5.5–7× backbuffer-pixel cut moved fps by *nothing*, so it only blurred the image. **Resolution levers are
+  a dead end here** — the wall is CPU draw-call submit plus the GPU/compositor governor, not fragment fill.
+  The knob is gone from `client/src/graphics.js` and `graphics.test.js` asserts it stays gone. This finding
+  is why §138's real-light pool is tiered by **per-fragment cost** (and by giving the weakest tier a clean
+  off-path), never by resolution.
 - **`maxParticles`** (Performance 300; `Infinity` off on High/Balance) is a hard ceiling on live additive
   particles (exhaust trail + sparks) — new emits are skipped over budget. Cuts both overdraw and
   per-frame JS, so it also helps under hypothesis (2). Layered on top of the existing `particleScale`.
-- **Resolution readout:** the perf overlay now appends the real backbuffer size
-  (`renderer.domElement.width×height` = CSS × pixelRatio × renderScale). A tester can now see whether a
-  tier/renderScale change moved the pixel count *at all* — directly distinguishing hypothesis (1) from
-  (2). Both knobs (and a possible 4th "Potato" tier) stay deferred-until-measured; see
+- **Resolution readout:** the perf overlay appends the real backbuffer size
+  (`renderer.domElement.width×height` = CSS × pixelRatio — `renderScale` is no longer in that product). A
+  tester can see whether a tier change moved the pixel count *at all* — directly distinguishing hypothesis
+  (1) from (2). A possible 4th "Potato" tier stays deferred-until-measured; see
   `docs/plans/perf-low-end-phones.md`.
 
 **Follow-up #2 (2026-06-25): a `?dev` perf monitor + `perf_samples` telemetry — we were flying blind.** A
@@ -5569,3 +5573,173 @@ radius. The fix is the one already in the file (`bankingDone()`): publish the in
 the read. Worth recording because the lesson generalises — **"these two async calls happen far apart in
 time" is a claim about the WORLD, not about the code**, and a new level, a shorter map or a faster ship
 falsifies it silently.
+## 139. Two glow systems were built for the "expensive look" — and the one that shipped is REAL LIGHTS
+
+The game reads by light, silhouette and glow, not by polygon count. This pass went after that look three
+times: a **full-frame `EffectComposer`** (bloom + ACES), then an **additive glow overlay** on its own render
+layer, and finally a **fixed pool of real `THREE.PointLight`s**. The first two were built, live-tested on a
+real GPU and a Redmi 15C, and **deleted**. Everything below is the reasoning that survived, including the
+measurements — those are the expensive part of this work and they must not vanish with the code.
+
+**What ships (2026-08-31):**
+
+- The frame is the **historical two-pass one**, drawn **straight to the canvas**: `renderer.info.reset()` →
+  `clear()` → `render(skyScene, camera)` → `clearDepth()` → `render(scene, camera)`, in `main.js animate()`
+  and duplicated verbatim in the `?bench` `fullFrame`. Native canvas MSAA (`WebGLRenderer({ antialias })`),
+  **no tone mapping**, no offscreen buffer, no full-screen pass of any kind.
+- **Glow is real point lights** (`client/src/engine-lights.js`): a fixed pool on engine nozzles, rockets in
+  flight and explosion flashes. Tier knob `post.lights` — High 16 / Balance 4 / Performance 0 — with
+  `?lights=N` as an override and a `?tune` "Engine lights" folder (power / decay / distance / height /
+  nozzle Z / blast power-reach-duration tiers / a frozen test range).
+- The **parallax backdrop layer** stays (see (e) below). The **hull emissive floor** stays wired and ships at
+  **0** (see (d)). FX colours are the **authored** ones — every HDR gain above 1.0 is gone (see (c)).
+
+**(a) A composer with MSAA renders BLACK on ANGLE Metal, and routing the frame through one throws away the
+MSAA you already had.** Measured on the maintainer's machine (macOS Chrome, ANGLE Metal, Apple M1 Pro, WebGL2,
+`MAX_SAMPLES` 4, RGBA16F reporting 4-sample support, **no GL error**), 240-frame controlled runs changing one
+variable at a time, reporting the share of the frame that came out black:
+
+| bloomScale | RT samples | frame black |
+|---|---|---|
+| 0.5 | 0 | 0.0% |
+| 1.0 | 0 | 0.0% |
+| 0.5 | 4 | **100.0%** |
+| 1.0 | 4 | **90–94%** |
+| — (bloom pass OFF) | 4 | 0.1% |
+
+It needs **both** the multisampled target and the bloom pass. Moving the MSAA onto the scene pass's own
+target and resolving into a plain buffer did not help (93% black); forcing a framebuffer unbind between
+passes did not help. So on that hardware a composer cannot have MSAA — and a composer is precisely what
+**discards the free canvas MSAA the game already had**. Supersampling was tried as the replacement and
+rejected: it buys back at **2.25× the fill** what used to cost nothing. `graphics.test.js` asserts no
+`samples` / `superSample` knob comes back.
+
+**(b) ACES over-exposed everything, because the lighting was authored for direct sRGB output.** three's
+`ACESFilmicToneMapping` multiplies by `toneMappingExposure / 0.6` — a 1.67× lift at exposure 1.0 before the
+curve. The scene's lights (sun 1.68, combat ambient 1.2, plus a PMREM environment) were dialled in over years
+against a straight sRGB write, so switching a filmic curve on top blew the base station's white modules into
+featureless blobs. **`renderer.toneMapping` is `NoToneMapping` everywhere, including the hangar**
+(`model-viewer.js` does nothing either, so the two match by doing the same nothing), and
+`43-expensive-look` asserts it. Related and still true if a chain ever returns: three's `OutputPass` reads
+`renderer.toneMapping` at *render* time and sets `material.needsUpdate` on a mismatch, so toggling the mode
+per frame would recompile a shader **every frame** — own the curve in your own pass or not at all.
+
+**(c) An HDR gain is a property of the thing that maps HDR back to the display. With nothing doing that, a
+gain above 1.0 is only clipping.** Pushing a source above 1.0 in linear HDR is what makes it bloom — but only
+where a threshold/blur/composite exists to turn that extra light into glow. With the overlay deleted, a >1
+colour merely clamps **per channel** at the 8-bit sRGB write: `0xffb050 × 1.5` clips R and G but not B, which
+is both a flat white patch **and a hue shift**. So `POST_DEFAULTS.fxGain`, `exhaustGain`, `postGain()`,
+`fxColor()`/`hdrColor()` and the plume's `uGain` uniform were **all deleted**, and every FX is back to the
+colour its author chose. (The mechanism was right while it lasted: brightness was only ever changed by a
+**scalar multiply** on an existing colour, never by a new hex, so no hue ever moved.)
+
+**(d) The hull emissive floor is kept, wired, and set to 0.** Each ship `.glb` template gets a one-time
+emissive equal to its own base colour (`ship-factory.js applyHullEmissiveFloor`), so a hull need never go
+fully black against the backdrop. At the planned 0.25 it **flattened the hulls and killed their glint** on a
+real screen, so it ships at **0** — live but off. It is not deleted, for two reasons: it is the value §137's
+hull flash **restores to** (`applyShipModel` clones every material per instance and `flashMats` captures the
+baked emissive; the floor is applied to the template FIRST so the captured value IS the floor), and turning it
+back on is a one-line experiment. Two placement traps are worth keeping recorded: it must **not** live in
+`applyShipModel`'s tint traverse (that block is `if (tint)` and every ship with a real `.glb` loads with
+`tint: false` — a silent no-op that passes every test), and a value copied from `color` is **lost wherever
+`color` is later re-assigned**, which is why the tint and accent passes re-copy it (`floorMark`/`reFloor`,
+keyed on `emissive.equals(color)` — the floor's own signature — rather than on a `userData` tag). Without
+that, the wingman's accent-repainted `Wings_` materials would self-light in the *player's* hull hue and wash
+the blue out of the only thing that distinguishes the two ships; `38-ally` asserts the wing emissive hue and
+the shipped intensity.
+
+**(e) The parallax backdrop layer survived both deletions, because it is geometry, not a screen-space pass.**
+A second, coarser nebula bake on an **additive, camera-tracking sphere** in front of the fixed cube
+(`world.js buildBackdropLayer`). Three things about it are load-bearing:
+
+- **It is not a skybox, and the guarantee rests on the OPAQUE RENDER LIST — not on `renderOrder`.** three
+  splits a scene into two render lists (an object goes to the transparent list iff `material.transparent ===
+  true`) and draws **all** opaque objects before **any** transparent one; `renderOrder` only sorts *within* a
+  list. Every ecliptic body — star core, planets, moons, the dim star layer — is opaque. A `transparent: true`
+  backdrop sphere would therefore be drawn **after** all of them and, being full-screen, additive and
+  depth-test-free, would wash nebula over the planet disks and the terminator and slide across them as the
+  player flies. Hence `transparent: false`, which lands it in the opaque list where `renderOrder: -3` draws it
+  first; additive blending survives that flag (three forces `NoBlending` only for `NormalBlending` +
+  `transparent: false`), and `depthTest/depthWrite: false` mean it can never occlude or depth-reject a body.
+- **Its own seed and its own noise scale** (`NEBULA2_FALLBACK`). The obvious `{ ...baseNebula, octaves: n-1 }`
+  is wrong in a way that passes every test: an fbm truncated to `n-1` octaves is literally the first `n-1`
+  terms of the same sum, so the coarse wisps land exactly on the base cube's and the composite is "the
+  existing nebula × ~1.35" — the invisible-first-speed-field failure of §96 in new numbers.
+- **Parallax accumulated from the camera DELTA and clamped**, never from `|camPos|`: the star system spans
+  ~21 000 u and Level 4 fights 11 200–16 800 u out, so an absolute-position formula would drift the sphere's
+  centre thousands of units off, the camera would exit it, and the backdrop would simply vanish.
+
+**(f) The backdrop-vs-hull ceiling (D13) is NOT met, was already breached before this feature, and ships as a
+REGRESSION FLOOR.** D13 promised "the nebula's peak on-screen luminance stays below the dimmest lit hull
+facet", tested as `hullP25 >= 1.5 × bgP99` on a real frame. Implemented in exactly that form in
+`43-expensive-look`, it measured **1.30x** on the composer build and measures **1.155x** on the frame that
+actually ships (the composer's 1.67× exposure was flattering the hull, not the sky). Attributed on a real
+frame by switching each contributor off in turn (whole-sky p99, ship box excluded):
+
+| sky peak (p99) | |
+|---|---|
+| everything on | **0.4770** |
+| this feature's parallax layer at `amp` 0 | 0.4555 |
+| …and the bright/dim star layers hidden too | 0.4549 |
+| …and the baked nebula cubemap removed | **0.0000** |
+
+The **baked procedural nebula cubemap — shipped 2026-07-04, long before this change — is ~95% of the sky
+peak**; the parallax layer is ~4.5% and the stars ~0.1%. Deleting this feature's layer outright would still
+fail 1.50x. The two ways to reach the ideal were both rejected by the maintainer: *dimming the baked cube* is
+a look change to already-shipped art nobody asked for, and *raising the hulls* is worse — a hull must not
+become a standing light source (which is also why the emissive floor ships at 0). **What ships is the same
+measurement** — whole-sky `bgP99` against `hullP25` — against a **regression floor just under the observed
+value** (1.11x, re-pinned 2026-08-31 from 1.25x when the composer's numbers were retired), plus a
+`hullLit >= 120` silhouette count. Mutation-checked on the shipped frame by raising `backdrop.amp` through
+its real `?tune` range: 0.25 → 155 lit px pass, 0.60 → 140 pass, 1.00 → 105 **fail**, 1.50 → 29 **fail**. The
+sweep also exposed which half does the work: the RATIO is partly self-normalising (`hullLit` is the ship
+pixels above `bgP99`, so raising the sky leaves a brighter subset behind), and the COUNT is the sensitive
+one. **Lowering a threshold is not the same act as weakening a metric, and only the first has happened
+here** — an earlier cut asserted `hullP50 >= 1.5 × ringP95` (the *median* facet against a 130 px *local*
+annulus) and passed with 16% headroom on the very frame the honest form rejects.
+
+**(g) Why the glow OVERLAY was deleted too, after it fixed the composer's problems.** The overlay re-rendered
+only objects on a glow layer into a small buffer, thresholded and blurred them once H+V, and added the result
+over the finished frame — cheap, MSAA-preserving, and with "the dust must not glow" made structural (the
+speed field was simply not on the layer) rather than numeric. It still lost, for a reason no tuning could
+reach: **the blur is a fixed number of BUFFER TEXELS, i.e. a fixed size on SCREEN, while its sources are sized
+in WORLD units.** Zoom out and the ship shrinks but the halo does not — the ship ends up sitting inside its
+own glow spot — and the source shrinks toward sub-texel size, where the separable 5-tap kernel (taps at
+±1.385 and ±3.231 steps) stops smearing and instead **reproduces the source once per tap**. Because the last
+pass is vertical, the leftover comb reads as **vertical stripes like a diffraction grating**, screen-aligned
+however the ship is turned. It got *worse* when the emitter was halved to dim it, which is the tell: dimming
+by SIZE is what causes it, so brightness and size had to be separate knobs. A real light has none of this by
+construction — it is world-space, needs no proxy sprite, no threshold and no blur — so the correct move was to
+remove the artifact class, not to keep tuning around it. Related casualties of the same deletion: the plume's
+glow-emitter sprite (`lightSample()` survives it, reading the nozzle straight off `uOrigin` through the plume
+group's matrix), the `?glow=` URL flag and the `?tune` "Post" folder.
+
+**(h) The light pool is FIXED, built once, and tiered from a measured device result.** three bakes the light
+count into every lit material's shader as `#define NUM_POINT_LIGHTS n`, so adding or removing a light
+**recompiles every lit material in the scene** — exactly §83's field-observed stall (program count 14 → 33,
+one frame at 2082 ms, "I don't even want to play after 5 seconds"). So lights are never created, destroyed or
+disposed at runtime: they are parked below the play plane at intensity 0, then moved, re-tinted and faded.
+The count is decided before the first material compiles, which is why `?lights=N` needs a reload.
+The ladder is measured, not guessed — **Redmi 15C (Mali-G52), 2026-08-31: 0 lights holds ~60 fps; 16 drops,
+worst ZOOMED IN at the station and mild once the station is small on screen.** That shape is the whole
+finding: three evaluates every point light for every fragment of every lit material (`light.distance` zeroes
+the contribution past its radius but the maths still runs — there is no per-object light culling in the
+standard material), so **the cost tracks LIT PIXELS**, not light count alone. Hence High 16 / Balance 4 /
+Performance **0**, which is also §23's conclusion about weak phones: give them a clean off-path, not a
+smaller version of the expensive thing. Blast flashes compete for the same fixed pool rather than adding to
+it, and `reach` (the hard `distance` cutoff) — not power — is what makes a big detonation feel big; raising
+power alone only pushes already-saturated near surfaces further past white, which is why 8000 and 60000
+looked identical.
+
+**(i) Tiering is by pass count / per-fragment cost, never by resolution.** §23 measured on two real GPUs that
+a 5.5–7× backbuffer-pixel cut moved fps by *nothing*: weak devices are bound by CPU draw-call submit and the
+GPU/compositor governor, not by fragment fill. `renderScale` was removed for that reason and `graphics.test.js`
+asserts it stays gone.
+
+**(j) The speed-field dust reads by SIZE, and that is now the only thing it can read by.** Sizes went up ~30%
+in this pass (0.8/1.3/2.0 → 1.04/1.69/2.6, in both `speed-field.js` and the `home-system` descriptor). While
+a bloom threshold existed it was deliberately set at 0.65, above the dust's 0.6079 linear Rec.601 luma, so
+the field could never turn into sparks (§96's settled "dim rocks, not stars"); with no threshold anywhere the
+rule is structural instead of numeric, and the `linearLuma601` helper that existed only to police it was
+deleted with the rest.
+

@@ -4,12 +4,23 @@
 // where each value goes (seed vs. hardcoded). See docs/plans/color-tuning.md.
 import { scene, skyScene, combatAmbient, sun } from './engine.js';
 import { G } from './state.js';
-import { buildMap } from './world.js';
+import { buildMap, backdropAmp, setBackdropAmp, getBackdropFollow, setBackdropFollow } from './world.js';
+import { LOOK_DEFAULTS } from './graphics.js';
+import { lightParams, lightStatus } from './engine-lights.js'; // the real point lights (tier pool / ?lights=N)
+import { getNozzleZ, setNozzleZ } from './exhaust-fx.js'; // live nozzle-anchor probe
+import { BLAST } from './engine-lights.js';
+import { spawnShipExplosion, spawnBossExplosion, spawnRocketBurst } from './projectiles.js';
+import { spawnEnemyShip } from './ship-build.js';
+import { CATALOG, enemies } from './state.js';
 
 function dumpPalette() {
   const H = c => '0x' + c.getHexString();
+  // With the nebula baked, skyScene.background is a CUBE TEXTURE, not a Color — H() would throw on it
+  // (Texture has no getHexString). The flat colour only exists on the ?debug / Performance path.
+  const bgLabel = skyScene.background && skyScene.background.isColor
+    ? H(skyScene.background) : '(baked nebula cube)';
   console.log('— catalog_seed.js  MAPS home-system.descriptor —', {
-    background: H(skyScene.background),
+    background: bgLabel,
     sky: {
       ambient: { color: H(G.skyAmbient.color), intensity: G.skyAmbient.intensity },
       // `pos` is NOT dumped from the live light: it is re-aimed from the star every frame, so the live
@@ -23,6 +34,10 @@ function dumpPalette() {
     combatAmbient: { color: H(combatAmbient.color), intensity: combatAmbient.intensity },
     combatSun: { color: H(sun.color), intensity: sun.intensity },
   });
+  // The dialed look values, ready to paste back into graphics.js LOOK_DEFAULTS.
+  console.log('— client/src/graphics.js  LOOK_DEFAULTS —', backdropAmp() != null ? {
+    backdrop: { amp: backdropAmp(), follow: getBackdropFollow() },
+  } : '(no parallax backdrop layer on this tier / under ?debug — nothing to dump)');
 }
 
 export function buildTunePanel(GUI) {
@@ -30,8 +45,11 @@ export function buildTunePanel(GUI) {
   const hx = c => '#' + c.getHexString();
 
   const bg = gui.addFolder('Space backdrop');
-  const bgC = { background: hx(skyScene.background), fog: hx(scene.fog.color) };
-  bg.addColor(bgC, 'background').onChange(v => skyScene.background.set(v));
+  // Same cube-texture guard as dumpPalette: when the nebula is baked the background is a Texture, and both
+  // `hx()` and `.set(v)` throw on it. The picker stays visible but inert on that path.
+  const bgIsColor = !!(skyScene.background && skyScene.background.isColor);
+  const bgC = { background: bgIsColor ? hx(skyScene.background) : '#000000', fog: hx(scene.fog.color) };
+  bg.addColor(bgC, 'background').onChange(v => { if (skyScene.background && skyScene.background.isColor) skyScene.background.set(v); });
   bg.addColor(bgC, 'fog').onChange(v => scene.fog.color.set(v));
   bg.add(scene.fog, 'near', 0, 600);
   bg.add(scene.fog, 'far', 100, 1200);
@@ -56,5 +74,148 @@ export function buildTunePanel(GUI) {
   // Ocean is a baked texture (makePlanetTexture), so it only re-tints on a full rebuild.
   gui.add({ rebuild: () => { if (G.currentMapDescriptor) buildMap(G.currentMapDescriptor); } }, 'rebuild')
      .name('↻ Rebuild planet (re-bake ocean)');
+  buildBackdropFolder(gui);
+  buildLightsFolder(gui);
+
   gui.add({ dump: dumpPalette }, 'dump').name('⤓ Dump palette → console');
+}
+
+// THE REAL POINT LIGHTS. The pool size comes from the quality tier (`post.lights`) and `?lights=N` overrides
+// it; with no pool the folder says so rather than showing dead sliders. Every control writes straight to the
+// live light state, so a drag is felt on the next frame.
+//
+// There are deliberately no glow / bloom / exposure / grade / vignette controls anywhere in this panel: the
+// full-frame composer and the additive glow overlay that followed it were both built, live-tested and
+// DELETED (DECISIONS §139). The frame is the plain two-pass one, straight to the canvas — there is no
+// full-screen pass to hang a curve on, and the game's lighting is authored for direct sRGB output.
+//
+// NOTE: there are also deliberately NO dust `size` sliders here. Size sliders for all three speed-field
+// layers already exist in the ?dev Backdrop → "Speed field" folder; they write the live material.size AND
+// persist to localStorage, and theirs is the panel buildMap re-applies. A second, non-persisted set writing
+// the same number would be two panels with two behaviours for one value (DECISIONS §30).
+function buildLightsFolder(gui) {
+  const st = lightStatus();
+  const f = gui.addFolder('Engine lights');
+  if (!st.pool) {
+    f.add({ note: 'no light pool on this tier — reload with ?lights=8 or ?lights=16' }, 'note').name('status').disable();
+    return;
+  }
+  const p = lightParams();
+  f.add(p, 'power', 0, 800, 5).name('power (overall level)');
+  // See the note in engine-lights.js: decay is the knob for "reach a neighbour without frying my own tail".
+  f.add(p, 'decay', 1, 2.5, 0.05).name('decay (2 = physical, lower = reaches further)');
+  f.add(p, 'distance', 5, 120, 1).name('distance (hard cutoff)');
+  f.add(p, 'height', 0, 20, 0.5).name('height above the plane');
+  // Where the plume (and therefore its light) starts on the hull. See syncShipPlume for why the baked
+  // value is only a mirror of the muzzle and often lands short.
+  f.add({ nozzleZ: getNozzleZ() }, 'nozzleZ', -2.5, 1.0, 0.05)
+   .name('nozzle Z (− = further aft)').onChange(setNozzleZ);
+  // --- BLAST FLASHES, and the buttons that make them tunable at all ---
+  // An explosion lasts ~0.2 s, so it cannot be judged by dragging a slider and watching: by the time the
+  // eye finds the blast it is over. These fire one ON DEMAND, at the player, with the CURRENT values — drag,
+  // click, look, repeat. That loop is the whole reason this folder exists.
+  const b = f.addFolder('Blast flashes');
+  // POWER: the useful band is small — at 10 units, 100 candela is already full white. Past ~1000 you are
+  // only clipping harder, which is why 8000 and 60000 looked identical.
+  b.add(BLAST, 'rocket', 0, 1500, 10).name('power: rocket');
+  b.add(BLAST, 'ship', 0, 3000, 20).name('power: small (× size²)');
+  b.add(BLAST, 'med', 0, 4000, 20).name('power: medium (× size²)');
+  b.add(BLAST, 'boss', 0, 6000, 50).name('power: boss (× size²)');
+  // REACH: the hard cutoff. THIS is the knob that makes a boss detonation feel big — it decides how far
+  // away a hull can be and still be lit at all. Power cannot buy reach.
+  b.add(BLAST, 'reachRocket', 5, 120, 1).name('reach: rocket');
+  b.add(BLAST, 'reachShip', 5, 200, 1).name('reach: small (× size)');
+  b.add(BLAST, 'reachMed', 5, 300, 1).name('reach: medium (× size)');
+  b.add(BLAST, 'reachBoss', 5, 400, 1).name('reach: boss (× size)');
+  b.add(BLAST, 'dur', 0.05, 2.0, 0.01).name('duration BASE (s)');
+  b.add(BLAST, 'durShip', 1, 8, 0.25).name('× duration: normal');
+  b.add(BLAST, 'durMed', 1, 8, 0.25).name('× duration: medium');
+  b.add(BLAST, 'durBoss', 1, 12, 0.25).name('× duration: boss');
+  b.add(BLAST, 'medAt', 1.0, 3.0, 0.1).name('size ≥ this = medium');
+  b.add(BLAST, 'bigAt', 1.0, 4.0, 0.1).name('size ≥ this = boss');
+  const at = () => { const p = G.player && G.player.pos; return p ? { x: p.x, y: p.y, z: p.z } : { x: 0, y: 0, z: 0 }; };
+
+  // A TEST RANGE, which is a better rig than the buttons below it: real hulls, real deaths, real spacing,
+  // and YOU pick the moment by shooting them. Frozen entirely THROUGH DATA — the spawn is the normal one,
+  // and then the entity's own speed/acceleration are zeroed and its mounts emptied. Nothing in sim-core is
+  // touched, and nothing here runs unless you press it.
+  // Caveat worth knowing: the spawn draws from the seeded stream (§73), so do not record a trace in a
+  // session where you have pressed this.
+  // Three ranks of three: small / medium / boss-sized. Size drives the blast (power scales as size^2), so
+  // this is the whole "does a big hull flash harder than a scout" question in one press.
+  const RANGE = { small: 1.0, medium: 1.8, boss: 2.8, spacing: 16, rowGap: 22, hpMul: 1 };
+  b.add(RANGE, 'small', 0.5, 2, 0.1).name('rank 1 size (small)');
+  b.add(RANGE, 'medium', 0.5, 4, 0.1).name('rank 2 size (medium)');
+  b.add(RANGE, 'boss', 0.5, 6, 0.1).name('rank 3 size (boss)');
+  b.add(RANGE, 'spacing', 6, 40, 1).name('spacing within a rank');
+  b.add(RANGE, 'rowGap', 10, 60, 1).name('gap between ranks');
+  b.add(RANGE, 'hpMul', 0.1, 5, 0.1).name('HP multiplier (× size²)');
+  b.add({ fire: () => {
+    const defs = CATALOG.enemyShips || [];
+    if (!defs.length) return;
+    const p = at();
+    // Pick three DIFFERENT hulls where the catalog has them, so the ranks do not all look alike.
+    const pick = [defs[0], defs[Math.min(1, defs.length - 1)], defs[defs.length - 1]];
+    const sizes = [RANGE.small, RANGE.medium, RANGE.boss];
+    for (let r = 0; r < 3; r++) {
+      for (let i = 0; i < 3; i++) {
+        const e = spawnEnemyShip(pick[r]);
+        if (!e) continue;
+        const x = p.x + (i - 1) * RANGE.spacing * sizes[r];
+        const z = p.z - 34 - r * RANGE.rowGap;
+        e.pos.x = x; e.pos.z = z; e.pos.y = p.y;
+        if (e.vel) { e.vel.x = 0; e.vel.z = 0; }
+        e.maxSpeed = 0; e.acceleration = 0;   // frozen: it cannot close on you
+        // DISARMED, and BOTH of these are required. Firing walks `ship.groups`, which `makeEnemy`already built
+        // from `mounts` at spawn — so emptying `mounts` alone leaves the groups holding live weapon
+        // references and the targets shoot back (they did).
+        e.mounts = [];
+        e.groups = {};
+        // THREE fields, and each one does a different job — setting the wrong one is why the first cut
+        // spawned nine identical small hulls:
+        //   fullScale — the VISIBLE size. `e.scale` is useless here: step-enemies.js rewrites it every frame
+        //               from `fullScale` during the spawn-grow animation, so an assignment to it is erased.
+        //   sizeScale — what the `kill` event carries, i.e. what sizes the DEATH EXPLOSION (and with it the
+        //               blast flash, which scales as size^2).
+        //   role      — 'boss' routes the death through spawnBossExplosion instead of the ship one.
+        const k = sizes[r];
+        e.fullScale = (e.fullScale || 1) * k;
+        e.sizeScale = (e.sizeScale || 1) * k;
+        // HULL SCALES WITH SIZE TOO, or the rig lies about what it is showing: the first cut made a
+        // boss-sized target out of a scout hull, so it died to a single rocket and there was nothing to
+        // observe. Squared, matching how the blast itself scales — a 2.8 target takes roughly 8x the
+        // punishment, which is long enough to watch it burn and to keep shooting the rank around it.
+        const hp = Math.round((e.maxHp || 1) * k * k * RANGE.hpMul);
+        e.maxHp = hp; e.hp = hp;
+        if (r === 2) e.role = 'boss';
+        if (e.mesh) { e.mesh.position.set(x, p.y, z); e.mesh.scale.setScalar(e.fullScale); }
+      }
+    }
+  } }, 'fire').name('▶ spawn 3+3+3 FROZEN targets');
+  b.add({ fire: () => { for (const e of [...enemies]) { e.hp = 0; } } }, 'fire').name('▶ clear targets');
+  b.add({ fire: () => spawnRocketBurst(at(), 4.5, 0xffb050) }, 'fire').name('▶ test ROCKET blast');
+  b.add({ fire: () => spawnShipExplosion(at(), 0xff8030, 1) }, 'fire').name('▶ test SHIP blast (small)');
+  b.add({ fire: () => spawnShipExplosion(at(), 0xff8030, 1.8) }, 'fire').name('▶ test SHIP blast (medium)');
+  b.add({ fire: () => spawnBossExplosion(at(), 0xff8030, 2.4) }, 'fire').name('▶ test BOSS blast');
+
+  f.add({ note: `pool of ${st.pool}` }, 'note').name('pool').disable();
+}
+
+function buildBackdropFolder(gui) {
+  // The PARALLAX BACKDROP LAYER — the second, coarser nebula bake on an additive camera-tracking sphere
+  // (world.js). It is independent of everything else the "expensive look" pass tried: it survived the
+  // composer and the glow overlay because it is geometry in the sky scene, not a screen-space pass.
+  // It only exists where the nebula is baked (not on Performance, and not under ?debug without `nebula`).
+  const f = gui.addFolder('Backdrop (parallax nebula layer)');
+  if (backdropAmp() == null) {
+    f.add({ note: 'no parallax layer here (Performance tier / ?debug without &nebula)' }, 'note').name('status').disable();
+    return;
+  }
+  // `amp` is the backdrop's brightness AND its ceiling knob: the sky must never out-brighten a lit hull.
+  // 43-expensive-look measures exactly this number against the hull, so a dialed value belongs back in
+  // LOOK_DEFAULTS.backdrop — dump it and paste it.
+  f.add({ amp: backdropAmp() ?? LOOK_DEFAULTS.backdrop.amp }, 'amp', 0, 1.5, 0.01)
+   .name('backdrop amp').onChange(setBackdropAmp);
+  f.add({ follow: getBackdropFollow() }, 'follow', 0.60, 1.00, 0.005)
+   .name('backdrop follow (1 = skybox)').onChange(setBackdropFollow);
 }

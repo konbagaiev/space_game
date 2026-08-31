@@ -32,6 +32,9 @@ export const G = {
   skySun: null,               // sky-scene directional light (the terminator source)
   currentMapDescriptor: null, // last descriptor passed to buildMap() (?tune "Rebuild" button)
   nebulaRT: null,             // WebGLCubeRenderTarget of the baked nebula sky (disposed + rebuilt by buildMap); null on the flat-color (Performance/?debug) path
+  backdropRT: null,           // SECOND, coarser nebula bake — the additive camera-tracking parallax layer in front of the cube (world.js); null wherever nebulaRT is
+  backdropMesh: null,         // the parallax layer's sphere (skyScene, opaque list, renderOrder -3)
+  backdropMat: null,          // its ShaderMaterial — uAmp is the ?tune/scenario knob, uLift rides the star wash
   mapSetpieces: [],           // the current map's set-piece specs (reset() rebuilds them fresh each run)
   // (arenaDrift moved onto the World — it is simulation state; see sim-core/world.js)
   // --- run/account scalars (read by the HUD; written by the loop, level runner, bank + account flows) ---

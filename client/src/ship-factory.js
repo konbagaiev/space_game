@@ -12,6 +12,7 @@ import { BULLET_PLANE_Y, G } from './state.js'; // the canonical combat plane ev
 import { scene, renderer, camera } from './engine.js'; // needed to warm a freshly parsed model onto the GPU
 import { SHIP_GROUP_SCALE } from './sim-core/consts.js'; // the group's uniform world scale is SIM state (hitboxes + muzzle scale with it)
 import { shipModelCfg } from './sim-core/ship-config.js';
+import { LOOK_DEFAULTS } from './graphics.js'; // the hull emissive floor (pure data; the THREE wiring is here)
 export { shipModelCfg }; // moved to sim-core (it is catalog data, not rendering); re-exported for existing importers
 
 // Build the spec applyShipModel/makeShip consume from a resolved shipModelCfg (mc). null url → primitive.
@@ -56,6 +57,56 @@ const shipModelCache = new Map();
 // `compile()` handles shaders, not texture uploads. Mirrors `prewarmShaders()` in main.js, which does the
 // same for the FX materials at startup but runs long before any ship model exists.
 const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap'];
+// Self-lit floor so a hull is never a black hole against the backdrop. The combat glbs ship with NO emissive
+// at all (verified: every enemy material is a flat baseColorFactor with no textures; only the player's
+// PaletteMaterial001/002 carry an emissiveFactor + emissiveMap), and their material names (`07_-_Default`,
+// `black_mat_for_body`, `body_color_2`, `PaletteMaterial00N`) identify no engine or trim to hook — so this is
+// a UNIFORM floor, not a per-part tint. Same trick as drops.js's normalizeGreen.
+// Hue-safe: the emissive copies the material's OWN base colour, so nothing is recoloured.
+// IT SHIPS AT 0, i.e. wired but OFF: at 0.25 the floor flattened the hulls and killed their glint on a real
+// screen. The mechanism stays because it is the value hit-fx's hull flash RESTORES TO (see below), and
+// because turning it back on is a one-line experiment. Whatever it is set to it must stay a FLOOR: a hull
+// must never be a standing light source — engines and weapons are the light in this game.
+//
+// It is applied ONCE to the shared TEMPLATE, before warmModel and before any clone is served, and it draws
+// no randomness. THE ORDERING IS THE POINT, and it is not (any longer) about §79's "never mutate a live
+// ship's material": §137 amended that, and applyShipModel now clones every material PER INSTANCE so the hit
+// flash can light one ship alone. What matters is that the floor must be on the template BEFORE that clone,
+// because the clone is what `flashMats` captures as the baked value the flash RESTORES TO — put the floor
+// after it and every flashed hull would settle back to black.
+// It must also NOT live in applyShipModel's tint traverse: that block is `if (tint)` and EVERY ship with a
+// real .glb loads with `tint: false`, so the natural-looking spot would ship a silent no-op that passes
+// every test.
+// (A hull therefore does light up while it is being hit — the flash is white at intensity 1.6. That is
+// hit-fx's effect, by design; the STATIC floor below is what must never reach it.)
+function applyHullEmissiveFloor(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (!m || !m.emissive) continue;                                 // not a lit material
+      if (m.emissiveMap || m.emissive.getHex() !== 0x000000) continue; // the artist already authored a glow — leave it
+      m.emissive.copy(m.color);   // emissive === color IS the floor's signature — see floorMark/reFloor below
+      m.emissiveIntensity = LOOK_DEFAULTS.hullEmissive;
+    }
+  });
+}
+
+// Re-point a material's emissive FLOOR at its (just re-assigned) base colour.
+//
+// applyHullEmissiveFloor copies `emissive` from `color` on the shared TEMPLATE; any per-instance pass that
+// RE-ASSIGNS `color` afterwards would therefore leave the hull self-lighting in the hue it used to be. On the
+// wingman that is not academic: his whole visual identity is the accent repaint of the `Wings_` materials, so
+// with the floor turned up the repainted wings would glow in the PLAYER's hull colour and wash the accent out
+// of the one thing that tells the two ships apart. (The ally's colour identity has been an escaped defect in
+// this project before — it does not get to be implicit, even while the floor ships at 0.)
+//
+// `emissive.equals(color)` BEFORE the re-assignment is the floor's own signature: applyHullEmissiveFloor is
+// the only thing that sets them equal, and it deliberately skips any material whose artist authored a glow.
+// Testing the state directly rather than tagging `userData` keeps this independent of what three's
+// Material.clone() copies. Call it as `const f = floorMark(m); m.color.set(x); reFloor(m, f);`
+const floorMark = (m) => !!(m && m.emissive && m.color && m.emissive.equals(m.color));
+const reFloor = (m, hadFloor) => { if (hadFloor) m.emissive.copy(m.color); };
+
 function warmModel(root) {
   try {
     const holder = new THREE.Group();
@@ -86,6 +137,7 @@ export function requestShipModel(url, cb) {
   G.pendingAssets++; // hold the level-load veil up until this model is here (DECISIONS §84)
   gltfLoader.load(url, (gltf) => {
     entry.scene = gltf.scene;
+    applyHullEmissiveFloor(entry.scene); // BEFORE warmModel and before any clone is served to a waiter
     warmModel(entry.scene); // compile + upload NOW, not on the first frame this ship type is drawn
     for (const w of entry.waiters) w(entry.scene.clone(true));
     entry.waiters.length = 0;
@@ -123,7 +175,12 @@ function applyShipModel(group, spec, color) {
       if (o.isMesh && o.material) {
         o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach((m) => m.color && m.color.set(color));
+        mats.forEach((m) => {
+          if (!m.color) return;
+          const hadFloor = floorMark(m);   // the emissive floor must follow the recolour, not the old hue
+          m.color.set(color);
+          reFloor(m, hadFloor);
+        });
       }
     });
     // ACCENT TINT: recolour only the materials whose NAME starts with `accent.prefix`, leaving the rest of
@@ -146,7 +203,10 @@ function applyShipModel(group, spec, color) {
       o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
       const cloned = Array.isArray(o.material) ? o.material : [o.material];
       cloned.forEach((m) => {
-        if (m && typeof m.name === 'string' && m.name.startsWith(accent.prefix) && m.color) m.color.set(accent.color);
+        if (!(m && typeof m.name === 'string' && m.name.startsWith(accent.prefix) && m.color)) return;
+        const hadFloor = floorMark(m);   // …so the wingman's wings self-light in the ACCENT green, not the
+        m.color.set(accent.color);       //    player hull's colour they were cloned from
+        reFloor(m, hadFloor);
       });
     });
     // Ghost-battle readability treatment: darken + fade + fog so the ghost skirmish reads as distant decor.
@@ -158,6 +218,17 @@ function applyShipModel(group, spec, color) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => {
           if (darken && m.color) m.color.multiplyScalar(darken);
+          // DEFENSIVE ONLY — `darken` HAS NO CALLER TODAY, and neither does the line above it. The ghost
+          // battle used to pass 0.45 here, but it was over-dimmed into invisibility and now ships at
+          // `opacity: 0.9` with no darken at all (ghost-battle.js builds its spec with `opacity` only; the
+          // 0.45 survives as history in ghost-battle-track.js's GHOST_TUNE comment).
+          // The line stays because `darken` is still a supported applyShipModel option: if anyone re-enables
+          // it WITH the emissive floor turned up, dimming the albedo while leaving the emissive at full
+          // strength is exactly the flat, too-bright result they would not be expecting. Keeping only the
+          // colour half would leave that trap armed.
+          // NOTE it cannot be verified by the visual suite: ghostBattlePlan disables the ghost battle under
+          // `?debug` on every tier, so no headless frame can ever contain a ghost.
+          if (darken && m.emissive) m.emissive.multiplyScalar(darken);
           if (opacity != null) { m.transparent = true; m.opacity = opacity; }
           m.fog = true;
         });

@@ -3,8 +3,140 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-08-31
+
+- **Two glow systems went in; the real one stayed. The expensive look now ships as REAL LIGHTS.**
+  [2026-08-30-1507-expensive-look]
+  Yesterday's entry describes a full-frame `EffectComposer` (bloom + ACES) and, after it, an additive glow
+  overlay. **Both were live-tested on a real GPU and a Redmi 15C, and both are now DELETED** — this entry is
+  the end state and supersedes them. `client/src/postfx.js` and `client/src/glow-layer.js` are gone, with
+  every `markGlow`/`GLOW_LAYER` call site, the `?glow=` URL flag and the `?tune` "Post" folder.
+  **The frame is the historical two-pass one again**, drawn straight to the canvas in `animate()`
+  (`info.reset` → `clear` → sky scene → `clearDepth` → combat scene) and duplicated verbatim in the `?bench`
+  `fullFrame`, with the canvas's own native MSAA and **no tone mapping anywhere**. Why, in one line each: a
+  composer with a multisampled target renders the frame **90–100% black** on ANGLE Metal / Apple M1 Pro (no
+  GL error, 4-sample support reported; it needs both the MSAA and the bloom pass, and a 240-frame table is in
+  DECISIONS §138) — and routing the frame through a composer is exactly what throws away the free canvas MSAA
+  in the first place, which supersampling only buys back at 2.25× the fill. ACES multiplies by
+  `exposure / 0.6`, and the lighting was authored for direct sRGB output, so it over-exposed the station and
+  every hull. The overlay that replaced it blurred a fixed number of BUFFER texels — a fixed size on
+  SCREEN — while its sources are sized in WORLD units, so the ship sat inside its own halo when zoomed out,
+  and a sub-texel source made the separable 5-tap kernel reproduce it once per tap instead of smearing it:
+  the "vertical stripes like a diffraction grating".
+  **What ships instead: a fixed, tier-gated pool of real `THREE.PointLight`s** (`client/src/engine-lights.js`)
+  on engine nozzles, rockets in flight, and explosion flashes — world-space by construction, so it scales
+  with zoom and needs no proxy sprite, no threshold and no blur. Tier knob `post.lights`: **High 16 /
+  Balance 4 / Performance 0**, measured on a Redmi 15C (Mali-G52) where 0 lights holds ~60 fps and 16 drops
+  worst *zoomed in at the station* — the cost tracks LIT PIXELS, because three evaluates every point light
+  for every fragment of every lit material. The pool is built ONCE and never grows or shrinks (the count is
+  a `#define` in every lit material's shader — changing it recompiles them all, §83's stall); `?lights=N`
+  still overrides it, and the `?tune` "Engine lights" folder (power / decay / distance / height / nozzle-Z
+  probe / blast power-reach-duration tiers / a frozen 3×3 test range) is the live tuning rig.
+  **Every HDR gain above 1.0 is gone** — `fxGain`, `exhaustGain`, `postGain`, `fxColor`/`hdrColor` and the
+  plume's `uGain` uniform, plus the plume's glow-emitter sprite and the "engine light SIZE/BRIGHTNESS"
+  sliders. They existed only to push a source past a bloom threshold that no longer exists; with nothing
+  mapping HDR back to the display, a value above 1.0 just clips per channel and shifts hue. **Muzzle flashes,
+  explosions, rings, bolts and the beam discharge are back to their authored colours on every tier.**
+  **Kept:** the additive **parallax backdrop layer** (it is geometry in the sky scene, not a screen-space
+  pass) with its own `?tune` folder; the **hull emissive floor** mechanism, which ships at **0** (at 0.25 it
+  flattened hulls and killed their glint) and is the documented value hit-fx's flash restores to; the ~30%
+  **larger speed-field dust**; and the `?debug&nebula` opt-in flag.
+  **Tests:** `graphics.test.js` now pins the `post: { lights }` shape per tier, that the emissive floor ships
+  at 0, that no `samples`/`superSample`/`bloom`/`glowScale` knob can come back, and the backdrop layer's
+  geometry sanity. `43-expensive-look` drops the composer-liveness assertion (there is no composer) and keeps
+  what still exists — the layer's differential contribution and the backdrop-vs-hull ratio — **re-pinned on
+  the frame that actually ships**: the D13 regression floor moves 1.25× → **1.11×** and a
+  `hullLit >= 120` silhouette count is added, because the old numbers were calibrated against the ACES
+  build whose 1.67× exposure flattered the hull. Confirmed a calibration drift, not a regression: the same
+  measurement on the pre-deletion tree reads 1.155× too. Mutation-checked (`backdrop.amp` 1.00 and 1.50
+  fail). `38-ally` now pins the wing emissive floor at its shipped intensity instead of "greater than zero".
+  **Docs:** DECISIONS **§138** rewritten end-to-end as the end state, preserving every measured finding (the
+  black-frame table, the MSAA/supersampling cost, the ACES exposure maths, the 5-tap kernel's stripe
+  mechanism, the Redmi ladder, and the fixed-pool/§83 rule); SUMMARY's Visuals, backdrop, `?tune`, tiers,
+  module-layout and test sections rewritten to match.
+
 ## 2026-08-30
 
+- **The expensive look — post-processing, a layered backdrop and readable silhouettes.**
+  [2026-08-30-1507-expensive-look]
+  **The frame is now composed, not just drawn.** A new `client/src/postfx.js` wraps the historical two-pass
+  frame (sky scene → depth clear → combat scene, DECISIONS §5, reproduced verbatim as a custom
+  `SceneRenderPass`) in an `EffectComposer`: the scene renders **linear HDR into a `HalfFloatType` target** →
+  **bloom** → one custom pass doing colour grade → **ACES filmic tonemapping** → vignette → sRGB encode.
+  `renderer.toneMapping` stays `NoToneMapping` permanently (tonemapping before bloom would make the bloom
+  threshold meaningless), and three's `OutputPass` is deliberately unused because it would recompile a shader
+  every frame. `renderFrame()` is the single frame entry point, shared by `animate()` and the `?bench`
+  harness so the two can never drift. **Emissive ship parts, engines and weapon fire now GLOW instead of
+  being flat bright patches**, and the picture gains real black (measured in open space: the 5th-percentile
+  luma drops from 0.126 to 0.049) with FEWER clipped-white pixels than before (>0.95 luma: 1.44% → 0.32% of
+  the frame) — the filmic curve doing its job.
+  **Tier-gated by PASS COUNT, not resolution** (new `post` knob in `graphics.js`): High
+  `{bloom, bloomScale 1.0, samples 4}`, Balance `{bloom, bloomScale 0.5, samples 0}`, **Performance `null` —
+  no composer is built at all**, ~14 fewer full-screen draw submits per frame. That follows §23's measured
+  finding that weak phones are CPU-submit-bound, not fill-bound.
+  **Performance keeps its FX EXACTLY as they were.** Every `>1.0` HDR gain is read through the new
+  `postGain`/`fxColor` helpers, which resolve to exactly 1.0 with no composer — without one, a >1 colour
+  clips per channel at the 8-bit sRGB write, which both flattens the effect and shifts its hue
+  (`0xffb050 × 1.5` clips R and G but not B). So muzzle flashes, explosions, rings, bolts and the beam
+  discharge are lifted into HDR (×1.2–1.6, always a hue-preserving scalar) only where a composer exists.
+  The beam's lift goes on its **per-shot** tint (`spawnBeamBolt`), not on the pool it is built from — the
+  glow is retinted from the weapon's `projectileColor` on every discharge, so a build-time lift would have
+  been erased by the first shot. `main`'s deliberately-authored discharge blue `0x3d8bff` is untouched: a
+  scalar multiply moves brightness, never hue.
+  **Backdrop depth: one new additive parallax nebula layer.** A cubemap background is sampled by view
+  DIRECTION only, so it can never parallax. A second, coarser bake — with its **own constant seed and its own
+  noise scale**, because an `octaves-1` truncation of the same fbm would composite the existing wisps onto
+  themselves — now rides a camera-tracking sphere at `follow` 0.94, accumulating from the camera *delta* and
+  clamped, so the layer keeps parallax alive at Level 4's 11 000–16 800 u from the origin instead of sliding
+  off the sphere. It is built `transparent: false` on purpose: three draws the whole opaque list before any
+  transparent object, so that flag (not `renderOrder`) is what guarantees the planets, moons and star always
+  paint over it and it never becomes a skybox. It rides the star-proximity lift with the cube.
+  **Silhouettes:** every ship `.glb` template gets a one-time **emissive floor** (0.25 of its own base colour,
+  applied to the shared cache before any clone is served) so a hull never goes fully black — deliberately far
+  below the bloom threshold, because a hull must not be a standing light. The floor also **follows a
+  per-instance recolour**: the tint and accent passes re-assign `material.color` after the template was
+  floored, so both re-copy the emissive — otherwise the wingman's accent-repainted wings would self-light in
+  the player's hull hue and wash out the blue that tells the two ships apart (`38-ally` now asserts it).
+  The ghost-battle `darken` also dims the emissive with the albedo, but that path is **defensive only** —
+  nothing passes `darken` any more, so the ghost skirmish carries the floor uncompensated. It composes with the same-day hit-feel change: the per-instance material
+  clone captures the floor as the value the **hull flash restores to**, so a flashed hull settles back to the
+  floor rather than to black, and the flash itself (white at intensity 1.6) now clears the bloom threshold —
+  a hit BLOOMS, briefly and by design, while the static hull still does not. The engine plume carries an HDR `uGain` so the white-hot core is a real bloom source.
+  Both the floor and the larger dust apply on **every** tier.
+  **The speed-field dust is ~30% larger** (sizes 0.8/1.3/2.0 → **1.04/1.69/2.6**, changed in both the client
+  defaults and the `home-system` map descriptor). Speed reads by SIZE: the bloom threshold (0.65) sits
+  deliberately **above** the dust's linear luma (0.6079) so the field can never turn into sparks, guarded by
+  a unit test that derives the luma from the shipped colour.
+  **The hangar and briefing model viewers** now apply the same ACES curve + exposure, so a ship reads the
+  same in the hangar as in the fight (no bloom there — only the curve is shared).
+  **Tooling/tests:** a `Post` folder in the `?tune` panel writing straight to the live uniforms (exposure,
+  bloom strength/radius/threshold, vignette, grade, exhaust gain, backdrop amp/follow) plus a `POST_DEFAULTS`
+  dump; two long-standing `?tune` crashes fixed (with the nebula baked `skyScene.background` is a cube
+  Texture, and both the colour picker and the palette dump threw on it); a new opt-in `?debug&nebula` flag
+  that turns the bake + parallax layer back on for testing without losing the `window.__game` hooks; a new
+  visual scenario `43-expensive-look` that measures the composed frame with `gl.readPixels` (composer
+  liveness, the backdrop layer's contribution measured DIFFERENTIALLY, the backdrop-vs-hull brightness
+  ceiling, and a blow-out ceiling); two new readability guards in `99-fill`; four new unit tests in
+  `graphics.test.js` + one in `speed-field.test.js`.
+  **D13's backdrop brightness ceiling turned out to be unmet — and to have been unmet before this feature —
+  so it ships as a REGRESSION FLOOR (DECISIONS §138(k)).** Measuring it honestly for the first time
+  (`hullP25` vs the whole sky's `bgP99`) reads **1.30x** where D13 asked for 1.50x. Attribution on a real
+  frame: sky p99 0.4770 all on → 0.4555 with this feature's parallax layer at `amp` 0 → 0.4549 with the star
+  layers hidden → **0.0000 with the baked nebula cubemap removed**. The pre-existing cubemap (shipped
+  2026-07-04) is **~95% of the sky peak**; this feature's layer is ~4.5%, and deleting it outright still
+  fails 1.50x. Dimming shipped backdrop art was rejected, and so was raising the hulls — that pushes them
+  toward the 0.65 bloom threshold and breaks D12 (a hull must not statically glow). So the scenario keeps the
+  honest measurement and pins it at **≥ 1.25x**, just under the observed minimum (five runs span
+  1.2981–1.3048), so the ratio cannot silently get worse; mutation-checked (`amp` 0.45 trips it at 1.213x).
+  `backdrop.amp` stays a live `?tune` knob.
+  **`42-hit-feel`'s control-ship guard was reformulated** (bright-pixel FRACTION instead of crop MEAN): with
+  real bloom in the frame, a global post-process glow from the flashed ship reaches the control ship's crop
+  and lifted its mean past a tolerance written for an unbloomed frame. The guard exists to prove the control's
+  own materials did not flash, which a bright-pixel count answers and a mean no longer can. Mutation-checked.
+  **Docs:** new DECISIONS **§138** (§137 was taken by the same-day hit-feel change); DECISIONS §23's
+  `renderScale` follow-up rewritten in the past tense as the *finding* it became
+  (the knob was removed in 2026-06-27), the matching stale comment in `hud.js` corrected, and `99-fill`'s two
+  Russian console lines translated to English.
 - **The intro is a fight you fly.** [2026-08-30-1654-playable-intro]
   Level 0 is no longer a replayed cutscene: the player controls the ship from the first second while a
   scripted **director** speaks five first-person lines over the live fight and flies a **controls card**

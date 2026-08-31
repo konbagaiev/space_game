@@ -353,7 +353,7 @@ function ensureBolts() {
   bolts = [];
   for (let i = 0; i < BOLT_POOL; i++) {
     bolts.push({
-      glow: makeQuad(CHARGE_COLOR, 'beamBolt'),   // the wide coloured halo
+      glow: makeQuad(CHARGE_COLOR, 'beamBolt'),   // the wide coloured halo (retinted per shot)
       core: makeQuad(0xffffff, 'beamBoltCore'),   // the white-hot centre, a hair above it in Y
       boltLife: 0,
     });

@@ -1031,12 +1031,14 @@ export const MAPS = [
       // (grey 0x6b6f78, soft star-glow sprite) was invisible, and the second (big near-white) read as white
       // blobs, which space does not have. The field now has its OWN hard-edged dot sprite, so a 1-2 unit
       // speck at a natural tone is clearly visible — see speed-field.js SPEED_FIELD_DEFAULTS.
+      // Sizes are ~30% up on that pass (0.8/1.3/2.0 → 1.04/1.69/2.6): the field is deliberately dim ROCK
+      // rather than sparks (DECISIONS §96), so SIZE is the only speed cue it has.
       speedField: {
         color: 0xd2ccc1,
         layers: [
-          { count: 760, size: 0.8, radius: 620, depth: 10,  depthVar: 16, opacity: 1.00 },
-          { count: 220, size: 1.3, radius: 620, depth: 90,  depthVar: 40, opacity: 0.95 },
-          { count: 110, size: 2.0, radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
+          { count: 760, size: 1.04, radius: 620, depth: 10,  depthVar: 16, opacity: 1.00 },
+          { count: 220, size: 1.69, radius: 620, depth: 90,  depthVar: 40, opacity: 0.95 },
+          { count: 110, size: 2.6,  radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
         ],
       },
       // Mission set-pieces live in ONE shared world at FIXED positions — they exist on every level/mission;

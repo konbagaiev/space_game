@@ -39,6 +39,12 @@ export const getActiveFreighterPlume = () => activeFreighterPlume;
 
 // Every live ship plume — the GLOBAL mode toggle fans out to these, and updateShipExhaust advances them.
 const shipPlumes = new Set();
+
+// Live probe offset on every ship's nozzle anchor, in hull-local Z (negative = further aft). 0 = the baked
+// value. Shifts the plume AND its light together, because they are the same nozzle.
+let nozzleZ = 0;
+export const getNozzleZ = () => nozzleZ;
+export const setNozzleZ = (v) => { nozzleZ = v; };
 export { shipPlumes };
 
 // ---- Shared baked glow texture (built once, lazily): soft round white core → transparent rim ----
@@ -184,6 +190,13 @@ export function makePlume(cfg) {
   const flameMesh = new THREE.Mesh(flameGeo, flameMat);
   flameMesh.frustumCulled = false;
   obj.add(flameMesh);
+  // WHERE THIS PLUME'S LIGHT IS. The plume draws itself in the frame; the LIGHT it casts is a real
+  // THREE.PointLight owned by engine-lights.js, and that light needs exactly one thing from here — the
+  // nozzle's world position, which is `uOrigin` (the plume's own start point) taken through the plume
+  // group's matrix. Tracked as two locals rather than a proxy object: the glow-emitter SPRITE that used to
+  // stand in for the light was deleted with the glow overlay (DECISIONS §139) — a real light needs no proxy.
+  let lastThrottle = 0;
+  let nozzleHex = cfg.palette.hot;   // the engine's hot colour: the tint the real light takes
 
   const handle = {
     obj,
@@ -197,9 +210,20 @@ export function makePlume(cfg) {
       pointsMesh.visible = (m === 'points');
       flameMesh.visible = (m === 'flame');
     },
-    setThrottle(v) { uniforms.uThrottle.value = v; },
+    setThrottle(v) {
+      lastThrottle = v;                 // an idle engine casts no light — engine-lights.js reads this
+      uniforms.uThrottle.value = v;
+    },
+    // Where this engine's LIGHT is, for the real point lights (engine-lights.js). `uOrigin` is the nozzle in
+    // the plume group's own space, and the group is scene-parented with a matrix current from the frame just
+    // drawn. Writes into the caller's vector; allocates nothing.
+    lightSample(out) {
+      out.copy(uniforms.uOrigin.value);
+      obj.localToWorld(out);
+      return { hex: nozzleHex, throttle: lastThrottle };
+    },
     setOrigin(vec3, spread) {
-      uniforms.uOrigin.value.copy(vec3);
+      uniforms.uOrigin.value.copy(vec3);   // the light sits AT the nozzle, wherever the plume starts
       if (spread != null) uniforms.uSpread.value = spread;
     },
     applyCfg(c) {
@@ -210,7 +234,10 @@ export function makePlume(cfg) {
       if (c.turbulence != null) uniforms.uTurb.value = c.turbulence;
       if (c.softness != null) uniforms.uSoft.value = c.softness;
       if (c.palette) {
-        if (c.palette.hot != null) uniforms.uColHot.value.copy(colVec(c.palette.hot));
+        if (c.palette.hot != null) {
+          uniforms.uColHot.value.copy(colVec(c.palette.hot));
+          nozzleHex = c.palette.hot;   // …and the real light re-tints with it
+        }
         if (c.palette.mid != null) { uniforms.uColMid.value.copy(colVec(c.palette.mid)); handle.colorHex = c.palette.mid; }
         if (c.palette.end != null) uniforms.uColEnd.value.copy(colVec(c.palette.end));
       }
@@ -297,7 +324,13 @@ function syncShipPlume(p, alpha) {
   m.getWorldQuaternion(_wq);        // hull's current world orientation (also refreshes its world matrix)
   if (alpha >= 1) p.obj.quaternion.copy(_wq);
   else p.obj.quaternion.slerp(_wq, alpha);
-  _wp.set(0, 0, p.tailZ);
+  // NOZZLE PROBE (?tune "Engine lights" -> nozzle Z). The baked `exhaust` anchor in catalog_seed.js is
+  // auto-generated as exactly -muzzle, i.e. MIRRORED from the gun rather than measured off the model — so on
+  // a hull whose engines sit further aft (or on the wings) the plume, and the light with it, start too far
+  // forward and read as coming from the ship's middle. This offset exists to FIND the right number live;
+  // once found it belongs in the model config (regenerate with `npm run assets:muzzle`, or override outside
+  // the auto markers — a hand edit inside them is overwritten).
+  _wp.set(0, 0, p.tailZ + nozzleZ);
   m.localToWorld(_wp);              // world-space nozzle (includes hull scale + position + rotation)
   p.obj.position.copy(_wp);
 }

@@ -8,6 +8,8 @@
 //
 // The player never touches the controls here, so every kill in this scenario is HIS. That makes it the
 // cheapest possible check of the economy split: the kill counter climbs and the credits do not.
+import { LOOK_DEFAULTS } from '../../src/graphics.js'; // the shipped hull-emissive floor (pure data, no THREE)
+
 export const name = '38-ally';
 
 // Boot a fresh page on a given query string and get past the welcome screen — the runner's own boot, redone
@@ -106,12 +108,15 @@ export default async function ({ page, assert, shot }) {
   const livery = await page.evaluate(() => {
     const g = window.__game;
     const scan = (mesh) => {
-      const out = { wing: [], other: [] };
+      const out = { wing: [], other: [], wingEmissive: [] };
       mesh.traverse((o) => {
         if (!o.isMesh || !o.material) return;
         for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
           if (!m || !m.color) continue;
-          (String(m.name || '').startsWith('Wings_') ? out.wing : out.other).push(m.color.getHex());
+          const isWing = String(m.name || '').startsWith('Wings_');
+          (isWing ? out.wing : out.other).push(m.color.getHex());
+          // The SELF-LIT hue, not just the painted one — see the emissive assertion below.
+          if (isWing && m.emissive) out.wingEmissive.push({ hex: m.emissive.getHex(), i: m.emissiveIntensity });
         }
       });
       return out;
@@ -121,6 +126,21 @@ export default async function ({ page, assert, shot }) {
   });
   assert.ok(livery.ally.wing.length, 'the model really does carry a Wings_-prefixed material');
   for (const c of livery.ally.wing) assert.equal(c, 0x2f6bff, 'the wingman\'s wings are repainted blue');
+  // …AND THEIR SELF-LIT COLOUR FOLLOWS THE REPAINT TOO.
+  // The hull emissive floor (ship-factory.js applyHullEmissiveFloor, DECISIONS §139) is applied to the
+  // shared TEMPLATE, where it copies each material's emissive from its base colour. The accent repaint then
+  // RE-ASSIGNS that base colour per instance — so without the explicit re-copy (floorMark/reFloor) the
+  // repainted wings would self-light in the PLAYER's hull hue instead of the accent, and the moment the
+  // floor's INTENSITY is turned up that would wash the blue out of the one thing that distinguishes the two
+  // ships on screen. The floor currently SHIPS AT 0 (LOOK_DEFAULTS.hullEmissive — it flattened hulls at
+  // 0.25), so the intensity assertion below pins that shipped value rather than "greater than zero": the
+  // wiring is what is being guarded, and it has to be right before anyone turns the floor back on.
+  for (const e of livery.ally.wingEmissive) {
+    assert.equal(e.hex, 0x2f6bff, 'the wing emissive FLOOR follows the accent repaint, not the pre-accent hue');
+    assert.equal(e.i, LOOK_DEFAULTS.hullEmissive,
+      `the floor carries the shipped intensity (got ${e.i}, expected ${LOOK_DEFAULTS.hullEmissive})`);
+    assert.ok(e.i < 0.65, 'and it is a FLOOR, never a standing light source');
+  }
   assert.ok(livery.ally.other.length, 'and the rest of his hull exists');
   assert.ok(!livery.ally.other.includes(0x2f6bff), 'but is NOT repainted — the accent is wings-only');
   // The no-op half. The player flies the same .glb: his wings must be whatever the artist baked.

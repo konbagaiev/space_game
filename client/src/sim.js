@@ -19,12 +19,13 @@ import * as THREE from 'three';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, allies, setPieces, CATALOG, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, buildSetPiece } from './world.js';
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, updateBackdropLayer, buildSetPiece } from './world.js';
 import { shortestAngleDelta } from './sim-core/steering.js';
 import { audio, sfxFor } from './sound-routing.js';
 import { spawnExplosion, spawnShipExplosion, spawnBossExplosion, updateDeferredBlasts, clearDeferredBlasts, emitExhaust, spawnSmoke, smokePool, spawnShieldHit, spawnEnemyShieldHit, spawnRocketBurst, HIT_FLASH_SCALE, attachBulletBody, detachBulletBody, attachRocketBody, detachRocketBody } from './projectiles.js';
 import { updateFlipbooks, spawnHitSprite, SHIELD_HIT_TINT } from './flipbook-fx.js';
 import { updateShipExhaust } from './exhaust-fx.js';
+import { update as updateEngineLights } from './engine-lights.js'; // REAL point lights on engines/rockets — a URL-flagged measurement fork (?lights=N), off by default
 import { hullFlash, punchShip, cameraShudder, updateHitFx, applyCameraShake, resetHitFx } from './hit-fx.js';
 import { spawnShieldReady, clearEnemyShieldBubbles } from './shield-fx.js';
 import { preloadLevelShipModels, attachEnemyBody, detachEnemyBody, attachAllyBody, detachAllyBody } from './ship-build.js';
@@ -675,8 +676,10 @@ export function settleView(dt = 0) {
   camera.lookAt(G.player.pos.x, G.player.pos.y, G.player.pos.z);
   applyCameraShake(camera);       // render-only shudder; AFTER lookAt = pure translation, no view swing
   G.stars.position.copy(camera.position); // stars: an infinitely distant backdrop stuck to the camera (no parallax)
+  updateBackdropLayer();                   // the additive nebula layer: tracks the camera at a FRACTION of its motion (real parallax)
   updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
   updateSpeedField(G.player.pos.x, G.player.pos.z); // player-locked backdrop (view-only, no RNG)
+  updateEngineLights(camera, world.rockets, dt);        // ?lights=N measurement fork — a no-op unless the flag is set
 }
 
 // ---------- Pause ----------

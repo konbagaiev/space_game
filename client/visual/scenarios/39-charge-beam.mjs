@@ -23,6 +23,21 @@ export const name = '39-charge-beam';
 const SIGHT_GREEN = 0x5ad17f;
 const DISCHARGE_BLUE = 0x3d8bff;   // the bolt + muzzle bead (taken bluer twice on 2026-08-26)
 
+// THE DISCHARGE IS ASSERTED BY HUE, NOT BY HEX, and it stays that way. What the sight/shot split protects
+// (DECISIONS §135) is the HUE — the green announcement against the blue strike — so that is what is
+// measured: the material's linear colour normalized by its brightest channel. That form survives any
+// brightness treatment of the discharge (a per-shot retint, an additive scale) and fails loudly on an actual
+// recolour, which an exact-hex compare gets backwards. (It was introduced when the discharge was briefly
+// lifted into HDR by a glow pass; the pass is gone, the assertion is kept because it asks the better
+// question.) The SIGHT, the muzzle BEAD and the charge DUST are plain authored hexes and are compared
+// directly above.
+const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const hueOf = ({ r, g, b }) => { const m = Math.max(r, g, b) || 1; return [r / m, g / m, b / m]; };
+const hexHue = (hex) => hueOf({ r: srgbToLinear(((hex >> 16) & 255) / 255),
+                                g: srgbToLinear(((hex >> 8) & 255) / 255),
+                                b: srgbToLinear((hex & 255) / 255) });
+const sameHue = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 0.02);
+
 export default async function ({ page, assert, shot, baseURL }) {
   // Re-boot this page with the dev flag on: the beam is gated at level-4 and costs 5500, so neither this
   // scenario nor an early playable build can reach it through the shop.
@@ -326,21 +341,25 @@ export default async function ({ page, assert, shot, baseURL }) {
   const bolts = await page.evaluate(() => {
     const out = [];
     window.__game.scene.traverse((o) => {
-      if (o.name === 'beamBolt') out.push({ name: o.name, color: o.material.color.getHex() });
+      // `beamFlash` is gone (the impact rides `bulletImpact` now), so only the glow quads are read here.
+      const c = o.material && o.material.color;
+      if (o.name === 'beamBolt') out.push({ name: o.name, rgb: { r: c.r, g: c.g, b: c.b } });
     });
     return out;
   });
   assert.ok(bolts.length >= 2, `the discharge really pooled its objects (${bolts.length} found)`);
   for (const b of bolts) {
-    assert.equal(b.color, DISCHARGE_BLUE, `${b.name} carries the discharge blue (0x3d8bff)`);
-    assert.notEqual(b.color, SIGHT_GREEN, 'the shot is a DIFFERENT hue from the green sight that announced it');
+    assert.ok(sameHue(hueOf(b.rgb), hexHue(DISCHARGE_BLUE)), `${b.name} carries the discharge blue (0x3d8bff), got ${JSON.stringify(b.rgb)}`);
+    assert.ok(!sameHue(hueOf(b.rgb), hexHue(SIGHT_GREEN)), 'the shot is a DIFFERENT hue from the green sight that announced it');
   }
   // The core is deliberately WHITE rather than the discharge hue — it is the hot centre of the glow, and
-  // giving it the same cyan would flatten the two quads into one colour and lose the "hot core" read.
-  const coreColor = await page.evaluate(() => {
+  // giving it the same blue would flatten the two quads into one colour and lose the "hot core" read.
+  const core = await page.evaluate(() => {
     let c = null;
-    window.__game.scene.traverse((o) => { if (o.name === 'beamBoltCore') c = o.material.color.getHex(); });
+    window.__game.scene.traverse((o) => { if (o.name === 'beamBoltCore') c = { r: o.material.color.r, g: o.material.color.g, b: o.material.color.b }; });
     return c;
   });
-  assert.equal(coreColor, 0xffffff, 'the core is white-hot, brighter than the glow around it');
+  assert.ok(sameHue(hueOf(core), [1, 1, 1]), `the core is white-hot, brighter than the glow around it (got ${JSON.stringify(core)})`);
+  assert.ok(Math.max(core.r, core.g, core.b) >= Math.max(...Object.values(bolts[0].rgb)),
+    'and it is at least as bright as the glow it sits inside');
 }

@@ -1,3 +1,8 @@
+// Explosion screen coverage per frame — how much of the screen one ship death paints, and whether the frame
+// stays readable while it does. The failure mode to guard is an FX retune that turns a blast into a white
+// sheet: additive FX stack, so the glow AREA can grow even where each source's brightness is right. (The
+// guards below are deliberately kept general — they outlived the post chain and the glow overlay that
+// prompted them, both of which were built and then deleted; see DECISIONS §139.)
 export const name = '99-fill';
 export default async function ({ page, assert }) {
   await page.evaluate(() => {
@@ -12,16 +17,34 @@ export default async function ({ page, assert }) {
     const gl = g.renderer.getContext(), W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
     const grab = () => { const b = new Uint8Array(W*H*4); gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,b); return b; };
     const changed = (a,b) => { let n=0; for (let i=0;i<W*H;i++) if (Math.abs(a[i*4]-b[i*4])+Math.abs(a[i*4+1]-b[i*4+1])+Math.abs(a[i*4+2]-b[i*4+2])>8) n++; return n; };
-    let base = null, out = [], f = 0;
+    // Two readability numbers per frame, on the SAME buffer read: how much of it is blown out (all three
+    // channels at 250+) and how much is still DARK (luma below 0.25). A frame can be "covered" by an
+    // explosion and still read fine; it cannot if it is a white sheet.
+    const blownPct = (b) => { let n=0; for (let i=0;i<b.length;i+=4) if (b[i]>=250&&b[i+1]>=250&&b[i+2]>=250) n++; return 100*n/(W*H); };
+    const darkPct = (b) => { let n=0; for (let i=0;i<b.length;i+=4) if ((0.2126*b[i]+0.7152*b[i+1]+0.0722*b[i+2])/255 < 0.25) n++; return 100*n/(W*H); };
+    let base = null, out = [], blown = [], dark = [], f = 0;
     const tick = () => {
       if (base === null) { base = grab(); g.spawnShipExplosion(g.player.pos.clone(), 0xff8030, 1); }
-      else { out.push(+(100*changed(base, grab())/(W*H)).toFixed(1)); }
-      if (++f > 14) return resolve({ W, H, cover: out });
+      else {
+        const b = grab();
+        out.push(+(100*changed(base, b)/(W*H)).toFixed(1));
+        blown.push(+blownPct(b).toFixed(2));
+        dark.push(+darkPct(b).toFixed(1));
+      }
+      if (++f > 14) return resolve({ W, H, cover: out, blown, dark });
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }));
-  console.log('      экран', r.W+'x'+r.H, '— доля экрана, закрашенная взрывом, по кадрам:');
+  console.log('      screen', r.W+'x'+r.H, '— share of the screen painted by the explosion, per frame:');
   console.log('      ', r.cover.join('%  ') + '%');
-  assert.ok(true);
+  const peakBlown = Math.max(...r.blown);
+  const peakIdx = r.blown.indexOf(peakBlown);
+  console.log(`      blown-out (all channels 250+) per frame: ${r.blown.join('%  ')}%`);
+  console.log(`      still dark (luma < 0.25) per frame:      ${r.dark.join('%  ')}%`);
+  // A BLOWN-OUT CEILING and a WASH FLOOR. Space is mostly black and must stay that way: an FX change that
+  // trips either of these has spent its headroom on AREA, which is what turns a frame into a white patch.
+  assert.ok(peakBlown < 2, `the peak frame is not blown out (${peakBlown}% of pixels at 250+ on all channels)`);
+  assert.ok(r.dark[peakIdx] >= 60,
+    `even the brightest frame is still mostly dark space (${r.dark[peakIdx]}% below luma 0.25)`);
 }

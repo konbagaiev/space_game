@@ -31,6 +31,19 @@ const PLAYER_GREEN = 0x5ad17f;
 const DISCHARGE_BLUE = 0x3d8bff;   // the shot's hue — the telegraph must NOT be this
 const LANCER_RANGE = 67;
 
+// THE BOLT GLOW IS ASSERTED BY HUE, NOT BY HEX. What matters here is the weapon's red against the player's
+// blue, and a hue test survives any brightness treatment of the discharge while still failing loudly on a
+// real recolour — which an exact-hex compare gets backwards. (It was introduced when the discharge was
+// briefly lifted into HDR by a glow pass; the pass is gone, the assertion is kept because it asks the better
+// question.) Everything else this scenario reads — the three sight lines, the charge dust, the bead — is a
+// plain authored hex and is compared directly.
+const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const hueOf = ({ r, g, b }) => { const m = Math.max(r, g, b) || 1; return [r / m, g / m, b / m]; };
+const hexHue = (hex) => hueOf({ r: srgbToLinear(((hex >> 16) & 255) / 255),
+                                g: srgbToLinear(((hex >> 8) & 255) / 255),
+                                b: srgbToLinear((hex & 255) / 255) });
+const sameHue = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 0.02);
+
 export default async function ({ page, assert, shot, baseURL }) {
   // `?lancer` swaps wave-1's spawn pool for 100% pirate lancers (and clamps concurrency to 2); `level=4`
   // pins the level so the flight does not depend on this throwaway account's campaign progress.
@@ -232,12 +245,12 @@ export default async function ({ page, assert, shot, baseURL }) {
     let bolt = null;
     g.scene.traverse((o) => {
       if (o.name === 'beamBolt' && o.visible && !bolt) {
-        bolt = { isMesh: !!o.isMesh, width: o.scale.x, len: o.scale.z, color: o.material.color.getHex() };
+        bolt = { isMesh: !!o.isMesh, width: o.scale.x, len: o.scale.z, rgb: { r: o.material.color.r, g: o.material.color.g, b: o.material.color.b } };
       }
     });
     if (!bolt) g.scene.traverse((o) => {   // it may already have faded out; fall back to any pooled quad
       if (o.name === 'beamBolt' && !bolt) {
-        bolt = { isMesh: !!o.isMesh, width: o.scale.x, len: o.scale.z, color: o.material.color.getHex() };
+        bolt = { isMesh: !!o.isMesh, width: o.scale.x, len: o.scale.z, rgb: { r: o.material.color.r, g: o.material.color.g, b: o.material.color.b } };
       }
     });
 
@@ -290,9 +303,9 @@ export default async function ({ page, assert, shot, baseURL }) {
   // the hue travels on the event and the renderer never asks which side fired. Hand the lancer's row to the
   // wingman and his beam is red too; `sim-core/beam.test.js` pins exactly that.
   assert.ok(run.bolt, 'the lancer\'s discharge was drawn');
-  assert.equal(run.bolt.color, HOSTILE_ORANGE,
-    `a hostile bolt carries the telegraph's red, not the shot blue (got 0x${(run.bolt.color || 0).toString(16)})`);
-  assert.notEqual(run.bolt.color, DISCHARGE_BLUE, 'and is explicitly not the friendly hue');
+  assert.ok(sameHue(hueOf(run.bolt.rgb), hexHue(HOSTILE_ORANGE)),
+    `a hostile bolt carries the telegraph's red, not the shot blue (got ${JSON.stringify(run.bolt.rgb)})`);
+  assert.ok(!sameHue(hueOf(run.bolt.rgb), hexHue(DISCHARGE_BLUE)), 'and is explicitly not the friendly hue');
 
   const dust = run.reading.dust;
   assert.ok(dust, 'a charging lancer pulls dust into its muzzle, like the player does');

@@ -40,10 +40,12 @@ export const SPEED_FIELD_DEFAULTS = {
   // Weighted toward the NEAR layer: the close specks are the ones that actually sweep past and sell speed,
   // the deep ones barely move and mostly add clutter. So density climbs as the layers come closer and the
   // far layers are thinned out, with every size pulled down to fine-grain.
+  // Sizes are ~30% larger than the first shipped pass (0.8/1.3/2.0): SPEED READS VIA SIZE, never via glow.
+  // The field is deliberately dim ROCK, not sparks (DECISIONS §96), so size is the only speed cue there is.
   layers: [
-    { count: 760, size: 0.8, radius: 620, depth: 10,  depthVar: 16, opacity: 1.00 },
-    { count: 220, size: 1.3, radius: 620, depth: 90,  depthVar: 40, opacity: 0.95 },
-    { count: 110, size: 2.0, radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
+    { count: 760, size: 1.04, radius: 620, depth: 10,  depthVar: 16, opacity: 1.00 },
+    { count: 220, size: 1.69, radius: 620, depth: 90,  depthVar: 40, opacity: 0.95 },
+    { count: 110, size: 2.6,  radius: 620, depth: 220, depthVar: 60, opacity: 0.82 },
   ],
 };
 

@@ -3,7 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-30 (**The intro is a fight you fly** — Level 0 is a live, session-recorded campaign level with a scripted director speaking five first-person lines over it and a controls card that flies into the bottom-left cheatsheet; the cutscene, its S3 trace fetch and its tap-to-continue cards are deleted, `&cutscene` is now the generic `&finish`, and the beat timings live on the `level-0` descriptor beside the `spawn.earliest` floors the SIMULATION reads.) 2026-08-30 (**The target reacts — hull flash, model punch, camera shudder.**) 2026-08-26 (**The beam is bluer, and its impact flash is now the shared one** — it emits `bulletImpact` like
+**Updated:** 2026-08-31 (**The expensive look — REAL LIGHTS, a layered backdrop and bigger dust.** The frame
+is the historical two-pass one, drawn straight to the canvas with its own MSAA and **no tone mapping**: a
+full-frame `EffectComposer` and then an additive glow overlay were both built, live-tested and **deleted**
+(DECISIONS §139). What ships is a fixed, tier-gated pool of **real `THREE.PointLight`s** on engines, rockets
+in flight and explosion flashes (`engine-lights.js`, High 16 / Balance 4 / Performance 0); a second, coarser
+nebula bake riding an additive camera-tracking sphere in front of the baked cube for real parallax; a hull
+emissive floor that is wired but ships at **0**; and speed-field dust ~30% larger.) 2026-08-30 (**The intro is a fight you fly** — Level 0 is a live, session-recorded campaign level with a scripted director speaking five first-person lines over it and a controls card that flies into the bottom-left cheatsheet; the cutscene, its S3 trace fetch and its tap-to-continue cards are deleted, `&cutscene` is now the generic `&finish`, and the beat timings live on the `level-0` descriptor beside the `spawn.earliest` floors the SIMULATION reads.) 2026-08-30 (**The target reacts — hull flash, model punch, camera shudder.**) 2026-08-26 (**The beam is bluer, and its impact flash is now the shared one** — it emits `bulletImpact` like
 every other weapon instead of drawing its own bloom.) 2026-08-25 (**The enemy charged beam — the pirate lancer, and the red telegraph that makes
 it fair.** A weakened enemy-only beam row (id 13: **power 45, maxRange 67, charge 1.0 s + cooldown 2.0 s
 → a 3.0 s cycle, 15 sustained DPS**) on a NEW beam-only ship, the **pirate lancer** — which turns at
@@ -403,8 +409,11 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   the actual pixels the GPU fills). FPS/frame-ms use the **raw rAF interval**
   (`clock.getDelta()` before the sim's `0.05`s clamp), so they stay accurate below 20 fps instead of
   saturating at the clamp. A proxy for hardware load; the resolution lets a tester confirm whether a
-  tier/`renderScale` change actually moved the pixel count (a weak phone often reports `devicePixelRatio`
-  ~1, making the pixel-ratio cap a no-op). **Dev-only:** the overlay is a diagnostic tool, hidden by
+  tier change actually moved the pixel count (a weak phone often reports `devicePixelRatio`
+  ~1, making the pixel-ratio cap a no-op; the sub-1 `renderScale` knob that used to be in this product was
+  removed in 2026-06-27, DECISIONS §23). `calls` is the plain two-pass frame's submit count — there is no
+  post-processing chain to inflate it. Where the tier carries a real-light pool the line also appends
+  **`lit N/POOL pw P y Y`** (lights in use / pool size, and the live power + height knobs). **Dev-only:** the overlay is a diagnostic tool, hidden by
   default (`#perf { display: none }`) and shown only under the **`?dev` flag** — CSS reveals it via
   `body.devmode:not(.menu) #perf`. `client/src/dev.js` / `isDev()` is the single source of truth for `?dev`
   (it also gates the `devPerf` perf telemetry in `main.js`, the `window.__backdrop` hooks and the
@@ -2098,6 +2107,57 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   item). The list refreshes whenever the Main Window is shown (`refreshMissions`).
 
 ## Visuals
+- **The frame is the historical two-pass one, drawn straight to the canvas** (`main.js animate()`, DECISIONS
+  §139): `renderer.info.reset()` → `clear()` → `render(skyScene, camera)` → `clearDepth()` →
+  `render(scene, camera)`, with the canvas's own native MSAA (`WebGLRenderer({ antialias })` per tier) and
+  **no tone mapping anywhere** (`renderer.toneMapping` is never assigned; the hangar's `model-viewer.js`
+  matches by doing the same nothing). The `?bench` `fullFrame` duplicates the identical five lines, so the
+  bench measures the real frame. **There is no post-processing chain**: a full-frame `EffectComposer`
+  (bloom + ACES) and then an additive glow overlay were both built, live-tested and deleted — a composer with
+  MSAA renders ~90-100% black on ANGLE Metal, routing the frame through one throws away the free canvas MSAA,
+  ACES over-exposed lighting authored for direct sRGB output, and the overlay's screen-space blur could not
+  scale with zoom. `graphics.test.js` asserts no `samples`/`superSample`/`bloom`/`glowScale` knob comes back.
+- **Glow is REAL POINT LIGHTS** (`client/src/engine-lights.js`, DECISIONS §139). A **fixed pool** of
+  `THREE.PointLight`s, built once at module load and never grown, shrunk or disposed — three bakes the count
+  into every lit material's shader (`#define NUM_POINT_LIGHTS`), so changing it at runtime recompiles every
+  lit material (§83's stall). Unused lights are parked at `y = -100000` with `intensity 0`. Each frame
+  `update()` (called from `settleView`, i.e. the VIEW layer — no randomness, no sim state, replay-neutral
+  §73) collects candidates and assigns the **nearest to the camera** to the pool:
+  - **engines** — every live plume, at the nozzle (`lightSample()` reads `uOrigin` through the plume group's
+    matrix), tinted with the engine's hot palette colour and scaled by throttle, so an idle engine emits
+    nothing; power `?lightpow` (default 300), reach 26 u;
+  - **rockets in flight** — a smaller always-on source at the body (`?rocketpow`, default 150);
+  - **blast flashes** — a detonation is a brief, very bright source that competes for the SAME pool
+    (`addFlash`, quadratic-out falloff). Power, reach AND duration all read their tier from ONE classifier
+    (`blastClass`: `sizeScale >= 2.2` or `role: 'boss'` → boss, `>= 1.4` → medium, else small) so a hull can
+    never be "medium" for one and "small" for another. Power `rocket 400 / ship 800 / med 1400 / boss 2400`
+    (× `size²`), **reach** `30 / 45 / 70 / 110` u (× size) — reach, not power, is what makes a big detonation
+    feel big, because `distance` is a hard cutoff — base duration 0.44 s × `2 / 3 / 5` by class.
+  **Tier knob `gfx.post.lights`: High 16 / Balance 4 / Performance 0 (`post: null`)**, measured on a Redmi
+  15C (Mali-G52): 0 lights holds ~60 fps, 16 drops — worst zoomed in at the station, mild when it is small on
+  screen, because the cost tracks LIT PIXELS. **`?lights=N`** overrides the pool size for measurement (needs
+  a reload, by construction). Intensity is in candela with `decay: 2` (physically correct 1/d²), which is why
+  the numbers are large: at 3 u a power of 4 contributes ~0.44 against a 1.68 sun and a 1.2 ambient.
+- **Silhouette: a hull emissive floor that is wired but ships at 0.** Every ship `.glb` template gets
+  `applyHullEmissiveFloor` (`ship-factory.js`) **once, on the shared cached template, before `warmModel` and
+  before any clone is served** — each lit material with no authored emissive gets `emissive = its own base
+  colour` at `emissiveIntensity = LOOK_DEFAULTS.hullEmissive`, which **is 0**: at the planned 0.25 the floor
+  flattened the hulls and killed their glint on a real screen. It is kept live because it is the value
+  §137's hull flash **restores to** (`applyShipModel` clones every material per instance and `flashMats`
+  captures the baked emissive — the floor is applied to the template first, so the captured value IS the
+  floor) and because turning it back on is a one-line experiment. Two traps are guarded: it must NOT live in
+  `applyShipModel`'s tint traverse (that block is `if (tint)` and every ship with a real `.glb` loads with
+  `tint: false` — a silent no-op), and a value copied from `color` is lost wherever `color` is re-assigned,
+  so the tint and accent passes re-copy it (`floorMark`/`reFloor`, keyed on `emissive.equals(color)` — the
+  floor's own signature — not on a `userData` tag). Without that the wingman's accent-repainted `Wings_`
+  materials would self-light in the *player's* hull hue; `38-ally` asserts the emissive hue and the shipped
+  intensity. The **ghost-battle `darken`** multiplies the emissive alongside the albedo, but that path is
+  **defensive only — nothing passes `darken` today** (`ghost-battle.js` ships `opacity: 0.9` alone), and it
+  cannot be checked headlessly (`ghostBattlePlan` disables ghosts under `?debug`).
+  **FX colours are the ones their authors chose.** Every HDR gain above 1.0 (`fxGain`, `exhaustGain`,
+  `postGain`, `fxColor`/`hdrColor`, the plume's `uGain`) was deleted with the overlay: with nothing mapping
+  HDR back to the display, a value above 1.0 only clamps per channel at the 8-bit sRGB write, which flattens
+  the effect AND shifts its hue.
 - **The Charged beam's sight and discharge** (`client/src/beam-fx.js`; the look was settled by flying a
   throwaway spike and is reproduced, not re-tuned). While a beam is mounted the player sees **three thin
   lines from the hull, always on**: the centre and the two corridor edges, drawn from `sim-core/beam.js`'s
@@ -2205,7 +2265,50 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `prewarmShaders`), so the headless visual suite's backdrop is unchanged. The bake `ShaderMaterial` uses
   `side: BackSide` + `depthTest/depthWrite: false` (load-bearing — the engine runs `autoClear = false` and
   `CubeCamera.update` doesn't clear depth between faces). The previous cube RT is disposed on every
-  rebuild (`G.nebulaRT`). See DECISIONS §43.
+  rebuild (`G.nebulaRT`). Under `?debug` the bake can be turned back ON with the opt-in **`nebula`** flag
+  (`?debug&nebula`), which is how `43-expensive-look` gets the real backdrop while keeping `window.__game`.
+  See DECISIONS §43.
+- **In front of the cube: ONE additive parallax nebula layer** (`buildBackdropLayer`/`updateBackdropLayer` in
+  `world.js`, DECISIONS §139). **The backdrop brightness ceiling (D13) is NOT met, and what ships is a
+  REGRESSION FLOOR, not a ceiling.** `43-expensive-look` measures the honest quantities on a real frame — the
+  sky's 99th-percentile luminance (`bgP99`, whole sky) against the dimmer end of the lit hull (`hullP25`) —
+  and reads **1.155x** where D13 asked for 1.50x. **It was already breached before this feature:**
+  attribution on a real frame gives sky p99 **0.4770** all on → **0.4555** with this layer at `amp` 0 →
+  **0.4549** with the star layers hidden too → **0.0000** with the baked nebula cubemap removed. So the
+  **pre-existing baked cubemap (shipped 2026-07-04) is ~95% of the sky peak**, this layer ~4.5% and the stars
+  ~0.1%; **deleting this layer outright would still fail 1.50x**. Reaching it would mean dimming shipped
+  backdrop art, or raising hulls — **and raising hulls is rejected because a hull must not become a standing
+  light source** (the same reason the emissive floor ships at 0). So the scenario asserts
+  `hullP25 >= 1.11 x bgP99` plus `hullLit >= 120` silhouette pixels: the same measurement, pinned just under
+  the observed value (1.153/1.155/1.155 across three runs, and 1.155 on the pre-deletion tree — the earlier
+  1.30x/1.25x pair was measured on the ACES composer build, whose 1.67x exposure flattered the hull).
+  Mutation-checked by raising `amp` through its real `?tune` range: 0.60 passes, 1.00 and 1.50 fail.
+  `amp` remains a live `?tune` knob.
+  A cubemap background is sampled by view DIRECTION only, so it is incapable of
+  parallax by construction. So a **second, coarser bake** (half the cube size, one fewer octave) is mapped
+  onto a `SphereGeometry(900, 32, 16)` `ShaderMaterial` that tracks the camera at a **fraction** of its
+  motion. It has its **own constant seed and its own noise scale** (`NEBULA2_FALLBACK = { seed 41, scale 2.0,
+  thLow 0.55, thHigh 0.78, glow 0.5 }`, per-map overridable via `sky.nebula2`; the threshold band starts
+  ABOVE the fbm's ~0.48 median on purpose, so ~a quarter of the sky carries a mass and the rest stays black —
+  a band starting below it lights everything and the layer reads as FOG) — required, because an
+  `octaves-1` truncation of the same fbm is literally the first n-1 terms of the same sum and would composite
+  the base cube's wisps onto themselves; a different seed puts the masses in different directions and the
+  lower scale makes them ~1.8× larger. `starB: 0` + `base: [0,0,0]` are forced so only the wisps survive (the
+  layer is additive — its own stars would double the cube's and its base colour would lift the whole sky).
+  **Brightness `amp` 0.25**, `uLift` driven by `applyStarLift` so the layer brightens with the cube as you
+  approach the star. **Parallax:** `follow` **0.94** — the offset is accumulated from the camera **delta**
+  (never from `|camPos|`, which would drift the sphere thousands of units off in a 21 000-unit system and
+  make the backdrop vanish) and clamped to `offsetMax` **250**, so parallax stays alive wherever you fight and
+  merely saturates after ~4 km in one direction. Radius 900 + offset 250 keeps the sphere inside
+  `camera.far` 1300 and its near wall (650) outside the camera-locked star sphere (400). Reset to zero
+  offset + the current camera position on every `buildMap`; RT/geometry/material disposed there too.
+  **It is NOT a skybox, and that guarantee rests on the RENDER LIST, not on `renderOrder`:** three draws the
+  whole **opaque** list before any transparent object and `renderOrder` only sorts *within* a list, so the
+  material is built **`transparent: false`** (load-bearing) — which puts it in the opaque list where
+  `renderOrder: -3` draws it first, ahead of `G.stars` (-1) and every system body. `AdditiveBlending` still
+  applies (three forces `NoBlending` only for `NormalBlending` + `transparent: false`), and
+  `depthTest: false` + `depthWrite: false` mean it can never occlude or depth-reject a planet, moon or star.
+  Gated inside the same `bakeNebula` branch, so Performance and plain `?debug` get no layer at all.
 - Background in 3 layers: stars (varying brightness, a static backdrop) → the **player-locked speed-field**
   (parallax) → the **star-system backdrop bodies** (a star + 4 planets). **Stars are two point layers
   (`makeStars`):** the dim majority (small opaque points, power-law brightness — many faint, few less faint)
@@ -2216,7 +2319,12 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   (High/Balance, non-`?debug`) this moving parallax layer is thinned to **0.4×** count.
 - **The parallax layer is a PLAYER-LOCKED WRAPPING SPEED FIELD** (`THREE.Points`, DECISIONS §96) — its only
   job is to sell motion, so the ship never reads as floating in place. A **fixed pool of ~1090 point sprites
-  in 3 depth layers** (760/220/110 at sizes 0.8/1.3/2.0 world units, sunk to y ≈ −10/−90/−220 with a
+  in 3 depth layers** (760/220/110 at sizes **1.04/1.69/2.6** world units — ~30% larger than the first
+  shipped pass, because **speed reads via SIZE, never via glow**: the field is deliberately dim rock and
+  nothing in the renderer can turn it into sparks (§96), which leaves size as the only speed cue. The sizes
+  live in BOTH `SPEED_FIELD_DEFAULTS` and the `home-system` map
+  descriptor (`catalog_seed.js`), since `normalizeSpeedField` only falls back to the client defaults for
+  MISSING keys — sunk to y ≈ −10/−90/−220 with a
   16/40/60 depth spread, opacity 1.0/0.95/0.82), **one draw call per layer**, sprite = the field's **own**
   crisp procedural canvas dot (`getSpeedDotTexture`, no image asset), tint = the descriptor's
   `speedField.color` (`0xd2ccc1`, a warm rock grey) times a per-point 0.55–1.0 brightness jitter.
@@ -2377,7 +2485,23 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **"Rebuild planet"** button re-bakes the ocean texture (it's a baked canvas map, so it only re-tints on
   rebuild), and **"Dump palette → console"** prints a labeled `0x`-hex snapshot saying where each value
   goes (sky/background live in the `home-system` map descriptor in `catalog_seed.js`; fog + combat lights
-  are currently hardcoded in `client/index.html`). **Never shipped to players:** lil-gui is
+  are currently hardcoded in `client/index.html`). A **`Backdrop (parallax nebula layer)`** folder drives the
+  layer's two live uniforms — `amp` (its brightness, and the backdrop ceiling knob 43-expensive-look measures)
+  and `follow` (1 = a skybox, no parallax) — or says the layer does not exist here (Performance / `?debug`
+  without `&nebula`); the dump prints them as a `LOOK_DEFAULTS` block ready to paste back into `graphics.js`.
+  An **`Engine lights`** folder drives the real point lights: `power`, `decay` (2 = physical, lower reaches
+  further), `distance` (the hard cutoff), `height` above the plane, a **`nozzle Z`** probe (the baked
+  `exhaust` anchor is auto-generated as exactly `-muzzle`, i.e. mirrored from the gun rather than measured off
+  the model, so on some hulls the plume — and its light — start too far forward), and a **`Blast flashes`**
+  sub-folder with every power/reach/duration tier plus buttons that fire one blast on demand and spawn a
+  **frozen test range** (3 ranks of 3 disarmed, immobile enemies at small/medium/boss size, HP scaled by
+  size²) — an explosion lasts ~0.2 s, so it cannot be judged by dragging a slider and watching. There are
+  deliberately **no glow/bloom/exposure/grade/vignette controls**: those belonged to the deleted composer and
+  overlay. **There are deliberately no dust `size` sliders here either** — those already exist in the `?dev` Backdrop → "Speed field" folder, which persists to
+  localStorage and is the panel `buildMap` re-applies (two panels for one number would be §30's problem).
+  Two long-standing crashes are also guarded: with the nebula baked, `skyScene.background` is a cube
+  **Texture**, so both the background colour picker and `dumpPalette` used to throw; they now check `isColor`
+  and the dump prints `(baked nebula cube)`. **Never shipped to players:** lil-gui is
   dynamically imported only inside the `?tune` guard, so the default build doesn't fetch it and is
   unchanged. Mirrors the `?debug` dev-hook convention. See `docs/plans/color-tuning.md` and DECISIONS §21.
 - **Mission set-pieces (procedural decor).** The descriptor can carry a **`setpieces`** array — large
@@ -2621,7 +2745,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **(1) a hull flash** — an emissive wash over the victim's own (per-instance) materials, on **every** ship:
   enemies, the wingman and your own hull. Defaults `color` white, `intensity` 1.6, `dur` 0.12 s. Materials
   carrying an `emissiveMap` glow only where that map is non-black (2 of 15 on the player hull, 0 on the two
-  enemy hulls), which is accepted — changing a map slot would force a shader recompile (§83).
+  enemy hulls), which is accepted — changing a map slot would force a shader recompile (§83). It restores to
+  the values `flashMats` captured at attach, which since the emissive floor landed is **that floor** (see
+  Silhouette above) — 0 today, and whatever the floor is set to if it is ever turned back up.
   **(2) a model punch** from **rockets and the heavy cannon only**, never from plain bullets: a directional
   `shove` (group-local units, along the world yaw the impact pushes toward) and/or a `pop` (a fraction of
   scale), **both shipping at 0** pending live tuning in the panel. It rides the ship's cosmetic
@@ -2818,7 +2944,12 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   reloads the page** so the whole preset (antialias — a `WebGLRenderer` constructor arg — + pixel ratio +
   star/particle density) applies cleanly from startup, no half-applied state (server-side progress is
   untouched). The selector sits below its label (the 3 buttons share one row). The tier knob table lives
-  in `graphics.js` (pure, tested).
+  in `graphics.js` (pure, tested). Also **`post`** — the real-light pool (High `{ lights: 16 }` / Balance
+  `{ lights: 4 }` / Performance **`null`**, i.e. no lights at all). It is tiered by **per-fragment cost**, not
+  resolution (§23 measured resolution levers as a dead end): three evaluates every point light for every
+  fragment of every lit material, so the cost tracks LIT PIXELS — measured on a Redmi 15C, 0 lights holds
+  ~60 fps and 16 drops, worst zoomed in at the station. `graphics.js` also holds **`LOOK_DEFAULTS`** (the
+  shipped look constants: the `hullEmissive` floor and the parallax `backdrop` block).
 
 ## Localization (i18n)
 English is the **source of truth**; other languages are a derived layer. **EN + RU** today (RU is the
@@ -4016,11 +4147,15 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   scalars `kills`/`earned`/`balance` + the backend/funnel scalars `playerId`/`banked`/`gameStartTime`/
   `gameStartSent`/`quitSent`/`pendingBriefing` + the selection scalars `activeShip`/`currentShipName`/
   `activeMission` + `SPAWN_GROW_TIME`), `engine.js` (`renderer`/`scene`/`skyScene`/
-  `camera`/lights + orientation + zoom), `dom.js` (the single fail-loud `el` inventory of shared
+  `camera`/lights + orientation + zoom), `engine-lights.js` (the fixed, tier-gated pool of real
+  `THREE.PointLight`s on engines/rockets/blast flashes + the `BLAST` tiers and the `blastClass` classifier —
+  the frame itself lives in `main.js animate()`, there is no render-path module), `dom.js` (the single
+  fail-loud `el` inventory of shared
   index.html nodes — HUD readouts + the result `overlay`; a missing id throws on boot).
 - **Domains (browser-only, touch the scene):** `world.js` (arena + sky/star-system bodies
-  (`buildSystemBodies`/`updateSystemBodies`)/player-locked speed field (`makeSpeedField`/`updateSpeedField`/
-  `disposeSpeedField`/`speedFieldLayers`)/set-pieces + `buildMap`), `systemmap-ui.js` (the shared navigation
+  (`buildSystemBodies`/`updateSystemBodies`)/the baked nebula cube + the additive parallax backdrop layer
+  (`buildBackdropLayer`/`updateBackdropLayer`/`setBackdropAmp`)/player-locked speed field
+  (`makeSpeedField`/`updateSpeedField`/`disposeSpeedField`/`speedFieldLayers`)/set-pieces + `buildMap`), `systemmap-ui.js` (the shared navigation
   component `mountSystemNav` + the `openSystemMap` overlay + the "Start mission?" prompt), `map-view.js`
   (the PURE pan/zoom transform behind that map — `toScreen`/`toWorld`/`panByScreen`/`zoomAtScreen`/`pickAt`,
   with the zoom + centre clamps), `ship-factory.js`
@@ -4107,6 +4242,16 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
 - Because the client uses ES modules, it must be **served over http** (not opened as `file://`).
 
 ## Tests (built-in `node:test`, no deps)
+- **Look constants** — `client/src/graphics.test.js`: the `post` knob per tier (High `{lights: 16}` /
+  Balance `{lights: 4}` / Performance `null`, and a weaker tier may never carry MORE per-fragment lighting
+  than a stronger one); a guard that **no `samples`/`superSample`/`bloom`/`glowScale` knob comes back** (AA is
+  the canvas's own MSAA again — a composer threw that away and supersampling was rejected for buying it back
+  at 2.25× the fill); the **hull emissive floor ships at 0** and can never be raised to a self-lit hull
+  without failing here first; and the parallax backdrop's geometry sanity (`radius + offsetMax` inside
+  `camera.far` 1300, near wall outside the camera-locked star sphere, `amp > 0` so the layer is never
+  silently invisible, `0 < follow < 1`). **No unit test may import `world.js` or `ship-factory.js`** —
+  `node --test` cannot resolve the browser importmap's `three`, which is exactly why these constants live in
+  `graphics.js` (and why the visual scenarios can import that one file directly).
 - **Client logic** — `client/src/*.test.js`: drive derivation (engine + mass, incl. the grab slot + the
   mass-neutral 48+2=50 baseline), balance, repair-drone
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), **shield**
@@ -4320,7 +4465,10 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   run directly).
 - **Visual / e2e** — `client/visual/` (Playwright headless, **not in CI**): boots the real game and
   asserts on simulation state (particle counts, size ratios, exhaust colors) via a `?debug`-gated
-  `window.__game` hook; saves frames to `__screenshots__/` for review (no pixel diffing). Scenarios:
+  `window.__game` hook; saves frames to `__screenshots__/` for review (no pixel diffing). `?debug` also
+  SKIPS the nebula bake so the suite's backdrop never moves — the opt-in **`nebula`** flag (`?debug&nebula`)
+  turns the bake and the parallax backdrop layer back on for the one scenario that measures them, and every
+  other scenario omits it and is byte-identical. Scenarios:
   smoke, ship-explosion, **exhaust-trail** (each thrusting enemy grows an **attached exhaust plume**
   (`mesh.userData.exhaustPlume`) in its engine color that fades in with thrust — the plume model, not the
   old `g.trail` pool), combat, **hangar-shop** (unlock the shop, render the bay +
@@ -4455,6 +4603,27 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   liveness and the ghost count in the message, because a bare timeout here reads as "the wire is broken".
   Mutation-checked: removing `beamCharge: ['ship']` from `EVENT_ENTITY_REFS` leaves **40 passing and 41
   failing**, which is exactly why both exist),
+  and **the backdrop against the hull** (`43-expensive-look.mjs`, measured on a REAL rendered frame via
+  `gl.readPixels` inside a `requestAnimationFrame`. Runs on its OWN url `?debug&nebula` — the opt-in flag that
+  turns the nebula bake and the parallax layer back on while keeping `window.__game`, which the world→screen
+  projection needs. It clears the enemies and moves the ship OFF the base station (whose white modules would
+  otherwise BE the "hull" it measures) and hides the speed-field dust (deliberately bright rock — leaving it
+  in would make the sky ceiling a measurement of the dust). Four assertions, two of them written so the
+  obvious formulation cannot pass on a broken frame: (1) the renderer never tone-maps (the deleted ACES pass
+  must not come back — it multiplies by exposure/0.6 and over-exposes lighting authored for direct sRGB) and
+  the parallax layer exists; (2) the layer really CONTRIBUTES, measured DIFFERENTIALLY (`setBackdropAmp(0)` vs
+  the shipped amp in one frame sequence, **relative** sky-mean lift ≥ 3%, measured +4.9%) — an absolute floor
+  is already satisfied by the cube and the stars; (3) the backdrop ceiling (D13) — the dimmer end of the lit
+  hull (`hullP25`) against the sky's peak over the WHOLE sky (`bgP99`), asserted at **≥ 1.11×** plus
+  **≥ 120 lit hull pixels**, as a **regression floor** rather than D13's unmet 1.50× ceiling (measured 1.155×;
+  the pre-existing baked cubemap is ~95% of the sky peak, so the ideal was already breached before this
+  feature). The weaker `hullP50` vs a 130 px ring's p95 was tried and rejected: it passes with 16% headroom on
+  the same frame. Mutation-checked by raising `backdrop.amp`: 0.60 passes, 1.00 and 1.50 fail, and the sweep
+  shows the pixel COUNT is the sensitive half (the ratio is partly self-normalising); (4) under 0.5% of the
+  frame is blown out at rest. All numbers are printed for retuning).
+  **`99-fill`** also gained two readability guards on the same frames it already measured: the peak
+  blown-out share stays under **2%** and, on that peak frame, at least **60%** of pixels stay below luma 0.25
+  — the frame must not become a white sheet when an FX retune spends its headroom on glow AREA.
   and **the playable intro** (`44-playable-intro.mjs`: the ONE scenario that runs with the director armed.
   It resets the shared throwaway player to progress 0, boots the intro on its own page, and then **freezes
   the live accumulator** (`__game.setPaused(true)`) so `__game.stepSim` is the only driver and every timing

@@ -16,7 +16,7 @@ import { G, world, bullets, explosions, sparks, shockwaves, rockets, smoke, enem
 import { scene, skyScene, camera, renderer, camOffset, toGame, gameW, gameH, applyOrientation, zoomBy, setZoom, tickZoom } from './engine.js'; // engine singletons + orientation + zoom
 import { Device } from './device.js'; // device capabilities (input/form axes + fullscreen/standalone flags)
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
-import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap
+import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers, backdropAmp, setBackdropAmp } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap + the parallax backdrop layer's live knobs
 import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
 import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { spawnRocket as spawnRocketInto, spawnBullet as spawnBulletInto } from './sim-core/spawn.js'; // take the World explicitly — __game wraps them below
@@ -1297,6 +1297,12 @@ if (location.search.includes('debug')) {
                                              // number the ?ally dev flag exists to produce (nothing else on
                                              // screen reveals it, by design; docs/plans/combat-ally.md §3)
     get shipModelsParsed() { return shipModelCacheSize(); }, // diagnostic: distinct ship glbs parsed (cache size — must NOT grow per spawn)
+    // The parallax backdrop layer's live brightness (null until the layer is built — it only exists where
+    // the nebula is baked). `amp` + `setBackdropAmp` are what let 43-expensive-look measure the layer
+    // DIFFERENTIALLY on a frozen scene: the same frame with the layer off and on, which is the only honest
+    // way to prove a backdrop is actually contributing light.
+    get backdrop() { return { amp: backdropAmp() }; },
+    setBackdropAmp,
     get levelName() { return CATALOG.levelName; },     // the SEED NAME (level-N) this tab resolved at boot
     get combatElapsed() { return world.combatElapsed; }, // THE sim clock the director and the spawn floors share
     get enemyCount() { return enemies.length; },         // cheaper than enemies.length for a waitForFunction
@@ -1425,6 +1431,8 @@ if (isBench()) {
     updateHud(); updateMarkers(); updateDropMarkers(); updateMissionMarker(); updateCreditPopups();
     updateEnemyHealthBars(); updateOobWarning(); updateReturnArrow(); updateReturnHint(); updateRoamNav(); updateMiniMap();
     const t2 = performance.now();
+    // The SAME four lines animate() draws — the bench must measure the real frame, and there is no shared
+    // entry point to route it through: the frame is these two passes, straight to the canvas.
     renderer.info.reset();
     renderer.clear();
     renderer.render(skyScene, camera);
