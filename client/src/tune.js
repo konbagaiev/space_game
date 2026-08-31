@@ -130,7 +130,7 @@ function buildLightsFolder(gui) {
   b.add(BLAST, 'reachRocket', 5, 120, 1).name('reach: rocket');
   b.add(BLAST, 'reachShip', 5, 200, 1).name('reach: ship (× size)');
   b.add(BLAST, 'reachBoss', 5, 400, 1).name('reach: boss (× size)');
-  b.add(BLAST, 'dur', 0.05, 1.0, 0.01).name('duration BASE (s)');
+  b.add(BLAST, 'dur', 0.05, 2.0, 0.01).name('duration BASE (s)');
   b.add(BLAST, 'durShip', 1, 8, 0.25).name('× duration: normal');
   b.add(BLAST, 'durMed', 1, 8, 0.25).name('× duration: medium');
   b.add(BLAST, 'durBoss', 1, 12, 0.25).name('× duration: boss');

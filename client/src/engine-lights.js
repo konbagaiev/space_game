@@ -168,7 +168,7 @@ export const BLAST = {
   // REACH, in world units — how far the flash can light anything at all (a hard cutoff, see update()).
   // This, not power, is what makes a boss detonation feel big: it touches ships a scout's death cannot.
   reachShip: 45, reachBoss: 110, reachRocket: 30,
-  dur: 0.22,          // the BASE flash length; every ship class multiplies it (below)
+  dur: 0.44,          // the BASE flash length; every ship class multiplies it (below). Doubled from 0.22 on live play.
   // How long the light lingers, by hull class — a bigger ship burns longer, not just brighter. Set from
   // live play: normal x2, medium x3, boss x5. `medAt`/`bigAt` are the sizeScale thresholds that sort a
   // death into a class; the boss ROLE always takes `durBoss` whatever its size.
