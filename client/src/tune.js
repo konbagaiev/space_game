@@ -12,6 +12,8 @@ import { lightParams, lightStatus } from './engine-lights.js'; // ?lights=N fork
 import { getNozzleZ, setNozzleZ } from './exhaust-fx.js'; // live nozzle-anchor probe
 import { BLAST } from './engine-lights.js';
 import { spawnShipExplosion, spawnBossExplosion, spawnRocketBurst } from './projectiles.js';
+import { spawnEnemyShip } from './ship-build.js';
+import { CATALOG, enemies } from './state.js';
 
 function dumpPalette() {
   const H = c => '0x' + c.getHexString();
@@ -123,6 +125,35 @@ function buildLightsFolder(gui) {
   b.add(BLAST, 'boss', 0, 60000, 500).name('boss blast (x size^2)');
   b.add(BLAST, 'dur', 0.05, 1.0, 0.01).name('duration (s)');
   const at = () => { const p = G.player && G.player.pos; return p ? { x: p.x, y: p.y, z: p.z } : { x: 0, y: 0, z: 0 }; };
+
+  // A TEST RANGE, which is a better rig than the buttons below it: real hulls, real deaths, real spacing,
+  // and YOU pick the moment by shooting them. Frozen entirely THROUGH DATA — the spawn is the normal one,
+  // and then the entity's own speed/acceleration are zeroed and its mounts emptied. Nothing in sim-core is
+  // touched, and nothing here runs unless you press it.
+  // Caveat worth knowing: the spawn draws from the seeded stream (§73), so do not record a trace in a
+  // session where you have pressed this.
+  const RANGE = { count: 5, spacing: 14, size: 1.0 };
+  b.add(RANGE, 'count', 1, 10, 1).name('targets: count');
+  b.add(RANGE, 'spacing', 6, 40, 1).name('targets: spacing');
+  b.add(RANGE, 'size', 0.6, 3, 0.1).name('targets: size');
+  b.add({ fire: () => {
+    const def = CATALOG.enemyShips && CATALOG.enemyShips[0];
+    if (!def) return;
+    const p = at();
+    for (let i = 0; i < RANGE.count; i++) {
+      const e = spawnEnemyShip(def);
+      if (!e) continue;
+      const x = p.x + (i - (RANGE.count - 1) / 2) * RANGE.spacing;
+      const z = p.z - 34;                       // a row ahead of the nose, inside comfortable gun range
+      e.pos.x = x; e.pos.z = z; e.pos.y = p.y;
+      e.vel && (e.vel.x = e.vel.z = 0);
+      e.maxSpeed = 0; e.acceleration = 0;       // frozen: it cannot close on you
+      e.mounts = [];                            // and disarmed: it cannot shoot back
+      if (RANGE.size !== 1) { e.sizeScale = (e.sizeScale || 1) * RANGE.size; e.scale = (e.scale || 1) * RANGE.size; }
+      if (e.mesh) { e.mesh.position.set(x, p.y, z); e.mesh.scale.setScalar(e.scale || 1); }
+    }
+  } }, 'fire').name('▶ spawn FROZEN targets');
+  b.add({ fire: () => { for (const e of [...enemies]) { e.hp = 0; } } }, 'fire').name('▶ clear targets');
   b.add({ fire: () => spawnRocketBurst(at(), 4.5, 0xffb050) }, 'fire').name('▶ test ROCKET blast');
   b.add({ fire: () => spawnShipExplosion(at(), 0xff8030, 1) }, 'fire').name('▶ test SHIP blast (small)');
   b.add({ fire: () => spawnShipExplosion(at(), 0xff8030, 1.8) }, 'fire').name('▶ test SHIP blast (medium)');
