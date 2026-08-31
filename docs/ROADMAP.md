@@ -340,6 +340,24 @@ The original design discussion is preserved below with its verdict. Several item
   `docs/plans/server-authoritative-sim.md`) or making trace verification work, which today it does not
   (§129). Also still client-authoritative: loot deposit, side-mission clears, and `/advance`.
 
+### Stop cutting RESOLUTION on Balance — it buys nothing and costs sharpness (opened 2026-08-31)
+- **Proposal:** raise Balance's `pixelRatioCap` from **1.5 to 2** (i.e. no reduction), leaving High
+  untouched. Balance is the tier a phone opens in by default, so this is the image most players see.
+- **Why:** resolution is not where these devices hurt. §23 already measured it — a 5.5-7x backbuffer-pixel
+  cut moved fps by **nothing** on a PowerVR GE8320 and a Mali-G52, which is why the `renderScale` knob was
+  removed in 2026-06-27. This session's Redmi 15C run says the same from the other direction: the only
+  slowdown found was **next to the station with 16 lights**, and it tracked how much of the screen the
+  station covered, not the backbuffer size. Everywhere else the device held ~60 fps at full resolution.
+- **The honest counter-argument, so it is not discovered as a surprise:** the light cost IS fragment-shaped
+  (three evaluates every point light for every lit fragment), so resolution is the one lever that would
+  genuinely reduce it. But Balance already pays the cheaper version of that lever — it carries **4 lights
+  instead of 16** — and cutting pixels on top blurs the whole image to relieve a cost that has already been
+  cut by 4x. If a device is still short after that, take the lights to 0 before taking the pixels.
+- **Not part of this:** `antialias: false` on Balance is a different knob (edge quality, not resolution) and
+  is cheap on the canvas path. Leave it until there is a measurement that says otherwise.
+- **How to check it landed:** on a real phone, compare Balance before/after against High — text and hull
+  edges should stop looking soft, with no fps change away from the station.
+
 ### The station is the frame-rate cliff (opened 2026-08-31)
 - **Measured, not suspected.** On a Redmi 15C (Mali-G52), two sessions with `?lights=0` and `?lights=16`:
   without lights the game holds ~60 fps almost everywhere. With them it stays 50-60 while roaming — **and
