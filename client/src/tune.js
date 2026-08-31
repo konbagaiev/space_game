@@ -123,7 +123,12 @@ function buildLightsFolder(gui) {
   b.add(BLAST, 'rocket', 0, 8000, 50).name('rocket blast');
   b.add(BLAST, 'ship', 0, 20000, 100).name('ship blast (x size^2)');
   b.add(BLAST, 'boss', 0, 60000, 500).name('boss blast (x size^2)');
-  b.add(BLAST, 'dur', 0.05, 1.0, 0.01).name('duration (s)');
+  b.add(BLAST, 'dur', 0.05, 1.0, 0.01).name('duration BASE (s)');
+  b.add(BLAST, 'durShip', 1, 8, 0.25).name('× duration: normal');
+  b.add(BLAST, 'durMed', 1, 8, 0.25).name('× duration: medium');
+  b.add(BLAST, 'durBoss', 1, 12, 0.25).name('× duration: boss');
+  b.add(BLAST, 'medAt', 1.0, 3.0, 0.1).name('size ≥ this = medium');
+  b.add(BLAST, 'bigAt', 1.0, 4.0, 0.1).name('size ≥ this = boss');
   const at = () => { const p = G.player && G.player.pos; return p ? { x: p.x, y: p.y, z: p.z } : { x: 0, y: 0, z: 0 }; };
 
   // A TEST RANGE, which is a better rig than the buttons below it: real hulls, real deaths, real spacing,

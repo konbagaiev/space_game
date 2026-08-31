@@ -151,7 +151,24 @@ function collectPlume(p) {
 // pool as the engines (nearest-to-camera wins), which is what keeps NUM_POINT_LIGHTS constant and avoids
 // the §83 recompile. The falloff is quadratic-out, not linear — a linear fade reads as a lamp being turned
 // down, while a blast should be gone almost before you register it.
-export const BLAST = { ship: 3000, boss: 12000, rocket: 1500, dur: 0.22 };
+export const BLAST = {
+  ship: 3000, boss: 12000, rocket: 1500,
+  dur: 0.22,          // the BASE flash length; every ship class multiplies it (below)
+  // How long the light lingers, by hull class — a bigger ship burns longer, not just brighter. Set from
+  // live play: normal x2, medium x3, boss x5. `medAt`/`bigAt` are the sizeScale thresholds that sort a
+  // death into a class; the boss ROLE always takes `durBoss` whatever its size.
+  durShip: 2, durMed: 3, durBoss: 5,
+  medAt: 1.4, bigAt: 2.2,
+};
+
+// Duration multiplier for a hull of this size. Kept here (not at the call sites) so every explosion path
+// classifies the same way.
+export function blastDurMul(sizeScale = 1, isBoss = false) {
+  if (isBoss) return BLAST.durBoss;
+  if (sizeScale >= BLAST.bigAt) return BLAST.durBoss;
+  if (sizeScale >= BLAST.medAt) return BLAST.durMed;
+  return BLAST.durShip;
+}
 const flashes = [];   // { x, y, z, hex, peak, t, dur } — a small pool, reused in place
 
 export function addFlash(pos, peak, hex = 0xffb060, dur = BLAST.dur) {
