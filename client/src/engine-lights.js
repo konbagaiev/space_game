@@ -164,7 +164,9 @@ export const BLAST = {
   // units, power 100 already contributes 1.0 — full white. The first cut shipped 3000/12000, which meant
   // everything inside the radius was saturated and raising the number changed nothing visible. These are
   // sized so a blast reads as bright without being clipped flat.
-  ship: 400, boss: 1200, rocket: 200,
+  // Dialed on the live test range: BOSS is the anchor at 2400 and the others keep the 1 : 2 : 6 ratio that
+  // was tuned with it. Power is per-source peak; the size^2 multiplier at the call site is on top.
+  ship: 800, boss: 2400, rocket: 400,
   // REACH, in world units — how far the flash can light anything at all (a hard cutoff, see update()).
   // This, not power, is what makes a boss detonation feel big: it touches ships a scout's death cannot.
   reachShip: 45, reachBoss: 110, reachRocket: 30,
