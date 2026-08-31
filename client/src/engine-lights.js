@@ -68,7 +68,7 @@ const cands = [];   // { x, y, z, hex, power } — refilled in place, never re-a
 let candCount = 0;
 
 function pushCand(x, y, z, hex, power) {
-  if (power <= 0.02) return;                 // an idle engine emits nothing; do not spend a slot on it
+  if (power <= 0.001) return;                 // an idle engine emits nothing; do not spend a slot on it
   const c = cands[candCount] || (cands[candCount] = { x: 0, y: 0, z: 0, hex: 0xffffff, power: 0, d2: 0 });
   c.x = x; c.y = y; c.z = z; c.hex = hex; c.power = power;
   const dx = x - _cam.x, dy = y - _cam.y, dz = z - _cam.z;
@@ -93,7 +93,7 @@ export function update(camera, rockets) {
     for (const r of rockets) {
       const p = r && r.pos;
       if (!p || r.alive === false) continue;
-      pushCand(p.x, p.y, p.z, ROCKET_HEX, ROCKET_POWER);
+      pushCand(p.x, p.y, p.z, ROCKET_HEX, window.__rocketPower);
     }
   }
 
@@ -115,13 +115,26 @@ export function update(camera, rockets) {
 
 const byDistance = (a, b) => a.d2 - b.d2;
 const ROCKET_HEX = 0xffa257;
-const ROCKET_POWER = 3.0;
-const ENGINE_POWER = 4.0;   // scaled by throttle
+
+// INTENSITY IS IN CANDELA AND FALLS OFF AS 1/d^2 (three r155+ is physically correct, `decay: 2`). The first
+// cut used 4.0 and was invisible: at 3 world units that contributes ~0.44 and at 8 units ~0.06, against a
+// 1.68 sun, a 1.2 ambient AND a PMREM environment. So the numbers have to be large to read at all — and
+// because "how bright is right" is exactly what this fork exists to find out, both are LIVE:
+//   ?lightpow=N  engine power (default 120)   ·   ?rocketpow=N  rocket power (default 90)
+// and `window.__lightPower` / `__rocketPower` can be poked from the console mid-fight.
+function readNum(key, dflt) {
+  try {
+    const n = Number.parseFloat(new URLSearchParams(window.location.search).get(key) ?? '');
+    return Number.isFinite(n) && n >= 0 ? n : dflt;
+  } catch { return dflt; }
+}
+window.__lightPower = readNum('lightpow', 120);
+window.__rocketPower = readNum('rocketpow', 90);
 
 function collectPlume(p) {
   const s = p.lightSample && p.lightSample(_pos);
   if (!s) return;
-  pushCand(_pos.x, _pos.y, _pos.z, s.hex, ENGINE_POWER * s.throttle);
+  pushCand(_pos.x, _pos.y, _pos.z, s.hex, window.__lightPower * s.throttle);
 }
 
 // Diagnostic for the ?dev overlay / the console: what the fork is actually doing this frame.

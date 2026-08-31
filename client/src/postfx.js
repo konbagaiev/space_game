@@ -95,8 +95,17 @@ const BLACK = new THREE.Color(0, 0, 0);
 
 // The live look knobs, shared with the ?tune "Post" folder and with the visual scenario. Mutated in place so
 // a slider drag is felt on the next frame with no rebuild.
+// `?glow=0` silences the overlay from the URL. Needed to judge the real-point-light fork (engine-lights.js)
+// on its own: with the overlay running, its halo is what you see, and no amount of real light changes that.
+function glowFromUrl(dflt) {
+  try {
+    const n = Number.parseFloat(new URLSearchParams(window.location.search).get('glow') ?? '');
+    return Number.isFinite(n) && n >= 0 ? n : dflt;
+  } catch { return dflt; }
+}
+
 const glow = {
-  strength: POST_DEFAULTS.bloom.strength,
+  strength: glowFromUrl(POST_DEFAULTS.bloom.strength),
   radius: POST_DEFAULTS.bloom.radius,
   threshold: POST_DEFAULTS.bloom.threshold,
   knee: POST_DEFAULTS.bloom.knee,
