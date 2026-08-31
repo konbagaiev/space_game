@@ -33,8 +33,8 @@ export const GRAPHICS_DEFAULT = 'high';
 // test shows Balance losing frames, the correct follow-up is moving Balance to `post: null`, NOT shrinking
 // the glow buffer further. See DECISIONS §138.
 export const TIERS = {
-  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: 640, enemyShieldBubbles: 6, nebulaBake: { cube: 1024, octaves: 6 }, post: { bloom: true, glowScale: 0.50 } },
-  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: 480, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 }, post: { bloom: true, glowScale: 0.35 } },
+  high:        { label: 'High',        pixelRatioCap: 2,   antialias: true,  starScale: 1.0,  particleScale: 1.0, envMap: true,  maxParticles: 640, enemyShieldBubbles: 6, nebulaBake: { cube: 1024, octaves: 6 }, post: { bloom: true, glowScale: 0.50, lights: 16 } },
+  balance:     { label: 'Balance',     pixelRatioCap: 1.5, antialias: false, starScale: 0.6,  particleScale: 0.6, envMap: true,  maxParticles: 480, enemyShieldBubbles: 3, nebulaBake: { cube: 512,  octaves: 4 }, post: { bloom: true, glowScale: 0.35, lights: 4 } },
   performance: { label: 'Performance', pixelRatioCap: 1,   antialias: false, starScale: 0.35, particleScale: 0.4, envMap: false, maxParticles: 300,      enemyShieldBubbles: 0, nebulaBake: null,                       post: null },
 };
 

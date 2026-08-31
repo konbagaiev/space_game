@@ -31,20 +31,32 @@
 // free), so a pool of 16 is roughly 17x the per-fragment lighting maths. That is the number to measure.
 import * as THREE from 'three';
 import { scene } from './engine.js';
+import { G } from './state.js';
 import { shipPlumes, getActiveFreighterPlume } from './exhaust-fx.js';
 
 const MAX_POOL = 32;
 
-// Parsed ONCE. `?lights=N`; anything unparseable or absent is 0 = off.
-function readFlag() {
+// Pool size, decided ONCE at load (the count is baked into every lit material's shader, so it cannot change
+// later without the §83 recompile). `?lights=N` overrides for measurement; otherwise it comes from the
+// QUALITY TIER.
+//
+// The tier numbers are from a real device, not a guess — measured on a Redmi 15C (Mali-G52), 2026-08-31:
+// at 0 lights the game holds ~60 fps; at 16 it drops, and the drop is worst ZOOMED IN NEXT TO THE STATION
+// and mild once the station is small on screen. That shape is the tell: three evaluates every point light
+// for every fragment of every lit material, so the cost tracks LIT PIXELS, not light count alone. Hence
+// High 16 / Balance 4 / Performance 0 — the weakest devices, which §23 already showed are the ones with no
+// headroom, pay nothing at all.
+function readPool() {
   try {
     const raw = new URLSearchParams(window.location.search).get('lights');
     const n = Number.parseInt(raw ?? '', 10);
-    return Number.isFinite(n) ? Math.max(0, Math.min(MAX_POOL, n)) : 0;
-  } catch { return 0; }
+    if (Number.isFinite(n)) return Math.max(0, Math.min(MAX_POOL, n));   // explicit override, for measuring
+  } catch { /* fall through to the tier */ }
+  const post = G.gfx && G.gfx.post;
+  return Math.max(0, Math.min(MAX_POOL, (post && post.lights) || 0));
 }
 
-export const POOL_SIZE = readFlag();
+export const POOL_SIZE = readPool();
 
 // The pool itself. Parked far below the play plane at intensity 0 so an unused light is invisible but still
 // present in the shader — which is the honest thing to measure, since its cost is paid whether or not it

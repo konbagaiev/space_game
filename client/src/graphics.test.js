@@ -50,11 +50,20 @@ test('nebulaBake: High/Balance bake, Performance keeps the flat color', () => {
 test('post: High/Balance run the glow overlay, Performance runs none', () => {
   // Tiered by PASS COUNT, not resolution: §23 measured that cutting backbuffer pixels 5.5-7x moved fps by
   // nothing on real weak phones, so the only lever that protects one is "add no overlay at all".
-  assert.deepEqual(resolveTier('high').post, { bloom: true, glowScale: 0.50 });
-  assert.deepEqual(resolveTier('balance').post, { bloom: true, glowScale: 0.35 });
+  assert.deepEqual(resolveTier('high').post, { bloom: true, glowScale: 0.50, lights: 16 });
+  assert.deepEqual(resolveTier('balance').post, { bloom: true, glowScale: 0.35, lights: 4 });
   assert.equal(resolveTier('performance').post, null);
   // Balance keeps the glow but pays less fill for it.
   assert.ok(resolveTier('balance').post.glowScale < resolveTier('high').post.glowScale);
+
+  // REAL POINT LIGHTS, tiered from a MEASURED result rather than a guess (Redmi 15C / Mali-G52,
+  // 2026-08-31): 0 lights held ~60 fps, 16 dropped — and the drop was worst ZOOMED IN AT THE STATION and
+  // mild once the station shrank on screen. Three evaluates every point light for every fragment of every
+  // lit material, so the cost tracks LIT PIXELS. Hence the ladder below, and hence Performance pays none.
+  assert.ok(resolveTier('high').post.lights > resolveTier('balance').post.lights,
+    'a weaker tier must never carry MORE per-fragment lighting than a stronger one');
+  assert.equal(resolveTier('performance').post, null,
+    'Performance runs no overlay and no lights — the one clean off-path (§23)');
   // NO `samples`/`superSample` KNOB MAY COME BACK HERE. The frame is drawn straight to the canvas, so AA is
   // the canvas's own MSAA again (`antialias` above) — which is exactly what the abandoned full-frame chain
   // threw away, and what supersampling was rejected for buying back at 2.25x the fill (DECISIONS §138(l)).
