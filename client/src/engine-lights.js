@@ -143,6 +143,21 @@ function collectPlume(p) {
   pushCand(_pos.x, _pos.y, _pos.z, s.hex, window.__lightPower * s.throttle);
 }
 
+// ---- live knobs (?tune "Engine lights") ----
+// `power` and `falloff` do DIFFERENT things and the difference matters when the ask is "a bit brighter but
+// don't blow it out". Intensity is divided by d^2, so raising POWER brightens what is CLOSE far more than
+// what is far: the ship's own tail saturates long before a passing hull gets brighter. Softening DECAY
+// (2 = physical, 1 = linear) flattens that curve instead — the near surface gains little, the neighbour you
+// fly past gains a lot. So: power for overall level, decay for reach, distance for the hard cutoff.
+export const lightParams = () => ({
+  get power() { return window.__lightPower; },   set power(v) { window.__lightPower = v; },
+  get height() { return window.__lightY; },      set height(v) { window.__lightY = v; },
+  get distance() { return pool.length ? pool[0].distance : 26; },
+  set distance(v) { for (const l of pool) l.distance = v; },
+  get decay() { return pool.length ? pool[0].decay : 2; },
+  set decay(v) { for (const l of pool) l.decay = v; },   // a uniform, not a #define — safe to change live
+});
+
 // Diagnostic for the ?dev overlay / the console: what the fork is actually doing this frame.
 export const lightStatus = () => ({
   pool: POOL_SIZE,

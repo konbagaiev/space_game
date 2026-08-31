@@ -8,6 +8,7 @@ import { buildMap, backdropAmp, setBackdropAmp, getBackdropFollow, setBackdropFo
 import { glowParams, postStatus } from './postfx.js';
 import { POST_DEFAULTS } from './graphics.js';
 import { setGlobalEmitterScale, getEmitterScale, setGlobalExhaustGain } from './exhaust-fx.js';
+import { lightParams, lightStatus } from './engine-lights.js'; // ?lights=N fork
 
 function dumpPalette() {
   const H = c => '0x' + c.getHexString();
@@ -73,6 +74,7 @@ export function buildTunePanel(GUI) {
   gui.add({ rebuild: () => { if (G.currentMapDescriptor) buildMap(G.currentMapDescriptor); } }, 'rebuild')
      .name('↻ Rebuild planet (re-bake ocean)');
   buildPostFolder(gui);
+  buildLightsFolder(gui);
 
   gui.add({ dump: dumpPalette }, 'dump').name('⤓ Dump palette → console');
 }
@@ -89,6 +91,24 @@ export function buildTunePanel(GUI) {
 // layers already exist in the ?dev Backdrop → "Speed field" folder; they write the live material.size AND
 // persist to localStorage, and theirs is the panel buildMap re-applies. A second, non-persisted set writing
 // the same number would be two panels with two behaviours for one value (DECISIONS §30).
+// The REAL point-light fork (?lights=N). Absent the flag there is no pool and the folder says so rather
+// than showing dead sliders.
+function buildLightsFolder(gui) {
+  const st = lightStatus();
+  const f = gui.addFolder('Engine lights (?lights=N)');
+  if (!st.pool) {
+    f.add({ note: 'off — reload with ?lights=8 or ?lights=16' }, 'note').name('status').disable();
+    return;
+  }
+  const p = lightParams();
+  f.add(p, 'power', 0, 800, 5).name('power (overall level)');
+  // See the note in engine-lights.js: decay is the knob for "reach a neighbour without frying my own tail".
+  f.add(p, 'decay', 1, 2.5, 0.05).name('decay (2 = physical, lower = reaches further)');
+  f.add(p, 'distance', 5, 120, 1).name('distance (hard cutoff)');
+  f.add(p, 'height', 0, 20, 0.5).name('height above the plane');
+  f.add({ note: `pool of ${st.pool}` }, 'note').name('pool').disable();
+}
+
 function buildPostFolder(gui) {
   const f = gui.addFolder('Post (glow overlay)');
   const st = postStatus();
