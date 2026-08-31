@@ -23,12 +23,41 @@ The orchestrator gives you the **plan path** (`docs/plans/<id>.md`) and the **ab
 3. **Write/adjust tests** for the new behavior. Server tests run against Postgres (`npm test`
    drops+recreates a local `spacegame_test`); the data layer is the single `server/src/db.js` (PostgreSQL).
 4. **Run the suites and make them pass:** `cd client && node --test`, `cd server && npm test`. Paste the
-   results in your report — never claim green without running.
+   results in your report — never claim green without running. The full visual suite is **not** part of
+   this — see the test budget below.
 5. **Update the docs** as part of the change (CLAUDE.md docs-workflow): edit the relevant `SUMMARY.md`
    section(s) to match the new reality and bump its `Updated:` date; add a CHANGELOG bullet under today's
    date tagged `[<id>]`; add a DECISIONS entry only if there was a real trade-off.
 6. If the plan changes a ship/weapon **model or a sound**, STOP and flag in your report whether
    `client/assets/CREDITS.md` needs to change (per CLAUDE.md) — don't decide silently.
+
+## Test budget — the full visual suite is OPT-IN, ASK FIRST
+
+**Always run** (they are fast and they are the floor): `cd <worktree>/client && node --test` and
+`cd <worktree>/server && npm test`. If your change touches the sim (damage, collision, gameplay RNG,
+stepping), also run the single replay guard `cd <worktree>/client && node visual/run.mjs 22-intro-replay`.
+
+**Never run the full visual suite on your own initiative.** `npm run test:visual` is 49 Playwright
+scenarios and takes ~20-30 minutes of wall clock; it stalls the pipeline and it is one of the two things
+that has actually burned this project's token budget. If you believe the change needs it, **say so in your
+report and ask the orchestrator to ask the maintainer** — then wait. Running a **single named scenario**
+that is directly about your change (`node visual/run.mjs <name>`, ~1 min) is fine and encouraged; a full
+sweep, a re-run "to be sure", or a from-scratch `main` baseline worktree is not yours to start.
+
+## Attempt budget — two tries, then stop and say so
+
+- **Two failed attempts at the same hypothesis is the limit.** Write down what you tried and what it ruled
+  out, then either take a genuinely different approach or escalate. Never a third identical attempt.
+- **Never loop a browser.** Relaunching Playwright/Chrome in a cycle of navigate → screenshot → probe →
+  tweak → repeat is the most expensive thing you can do here: cost is `turns x context`, and one agent doing
+  exactly this ground for 36 minutes and 125 M tokens before a human noticed
+  (`docs/plans/agent-cost-and-context-control.md`). **Interactive browser/GPU/live-app diagnosis is the
+  orchestrator's job, not yours** — it can look directly. You get handed the FIX, not the HUNT.
+- **Being stuck is a REPORT, not a state to work through.** If you cannot make progress — a test you cannot
+  get green, a render you cannot explain, a plan step that does not match the code — stop and return a
+  report saying: what you are trying to achieve, what you attempted, what each attempt ruled out, what you
+  need (a decision, a look at a real screen, a missing fact). That is a successful outcome for you; silently
+  grinding is not. The orchestrator will take it to the maintainer.
 
 ## Output (your final message)
 
@@ -72,3 +101,7 @@ report what changed per finding. Don't introduce unrelated changes.
   and caught real ambiguity. The gap: you reported eyeballing the screenshots and concluded "field density
   comparable" for a field that was in fact invisible. If you claim to have looked at a frame, describe what
   you saw in it; if a render is too ambiguous to judge, say so instead of confirming. DECISIONS §96 amendment.
+  **Amended 2026-08-31:** the baseline half of that praise is now **opt-in** — a from-scratch pre-change
+  full-suite run costs ~20-30 min and is the maintainer's call, not yours (see the test budget above). The
+  habit that survives unchanged: never assert "those were already failing" without evidence — say you don't
+  know and ask for the baseline run.

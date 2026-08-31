@@ -1632,6 +1632,21 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     level is parsed from the descriptor `title` ("Level N"); it plays **once per landing** (switching to
     a bay view / launching / re-selecting the row after settles to full, no replay). **L4+ and side missions
     stay instant** (no staging). Shared typewriter: `client/src/typewriter.js`.
+  - **Scroll affordance on the briefing** (`client/src/scroll-hint.js`). A briefing longer than the panel
+    (routine on a phone, where the browser hides the scrollbar until you drag) used to end mid-sentence at
+    the edge with nothing saying it continued. `#mw-mission-desc` now sits inside a non-scrolling host
+    (`#mw-mission-scroll`, `position: relative`), and the module appends **two chevrons** to that host:
+    **`.scroll-hint.up`** at the top edge while there is text above, **`.scroll-hint.down`** at the bottom
+    while there is text below, **neither** when the text fits or the view is hidden. They are quote-mark
+    chevrons drawn in CSS (a 13px box with two 2px borders, rotated 45°/-135°, `#cfe0ff` at .8 opacity with
+    a dark drop-shadow so they read over text), `pointer-events: none`, fading in over .18 s. The host
+    carries the state as `.has-more-up` / `.has-more-down`. `hintState({scrollTop,scrollHeight,clientHeight})`
+    is the pure decision (2px slack so sub-pixel layout can't light a chevron pointing at nothing) and is
+    unit-tested; `attachScrollHint(el, host)` is the wiring — a `scroll` listener, `window.resize`, a
+    `ResizeObserver` on the panel and a `MutationObserver` on its subtree (the staged typewriter rewrites
+    the text every frame), all coalesced into one read per rAF. Wired once at `mainwindow.js` import.
+    Guarded by `client/visual/scenarios/45-briefing-scroll-hint.mjs` (phone viewport: down-only at the top,
+    up-only at the end, neither at 1440×900) — an outcome test on the painted chevron, not on the DOM node.
   - **Desktop (PC) form polish** (`docs/plans/2026-07-01-1933-device-profiles-desktop-polish.md`,
     device-profiles iteration 1) — additive CSS scoped to `body.dev-desktop` / `body.dev-desktop-lg` only
     (phone/tablet + the `@media (max-width:760px)` mobile override are untouched): the briefing **title is 32px**
@@ -1641,7 +1656,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     `order: 2`, `align-self: center`, 55% width) so **Take-off then sits under the item**; the **ship-stats strip
     uses ×2 fonts** (k 16 / v 20 / d 12px) and **fits on one line** (measured at 1440×900, scrollWidth == clientWidth
     → the borderless 2×2 grid fallback stays unused); and **Take-off follows the content** (`#mw-mission-desc`
-    `flex: 0 1 auto`, still scrolling when the text is genuinely long). Mobile/touch layout is unchanged.
+    **and its scroll host** `flex: 0 1 auto`, still scrolling when the text is genuinely long). Mobile/touch layout is unchanged.
 - **The gold "(new)" trail — state model (DECISIONS §111).** The pure logic lives in
   **`client/src/shop-markers.js`** (unit-tested by `shop-markers.test.js`); `shop.js` keeps all
   `localStorage`/DOM I/O. **Two independent marker keys, per player, plus one housekeeping key:**
@@ -2928,14 +2943,20 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   the weak-device bottleneck is NOT fragment fill rate** — a 5.5-7× backbuffer-pixel cut moved fps by
   nothing; it's **CPU draw-call submit + the GPU/compositor thermal governor**. So the resolution levers
   are largely cosmetic-quality knobs, not perf knobs (a sub-1 `renderScale` was tried and **removed** — it
-  only blurred the image for no fps gain). Per tier: **pixel-ratio cap** (2 / 1.5 / 1), **antialias** (on /
-  off / off), **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales rocket-burst spark
+  only blurred the image for no fps gain). **Balance stopped cutting resolution on 2026-08-31** (DECISIONS
+  §140): it renders at **full pixel ratio with AA, exactly like High** — the 1.5 cap + `antialias: false` it
+  used to carry was a blur every phone player saw, buying fps that had been measured as nothing twice. What
+  separates High from Balance now is the **lighting** (16 vs 4 lights), the additive overdraw and the bake
+  sizes; **Performance is the only tier that cuts pixels**. Per tier: **pixel-ratio cap** (2 / 2 / 1),
+  **antialias** (on / on / off), **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales rocket-burst spark
   count, drops the rocket's middle fireball layer + skips shockwave rings below 0.5, and scales the
   per-ship exhaust plume's particle count once at attach), and **maxParticles** (∞ / ∞ /
   **300** — a hard ceiling on live additive particles, now just **sparks + rocket smoke**
   (`liveParticles() = sparks + smoke`; the engine exhaust is a fixed-cost attached plume, not counted, and
   ship-death sparks are gone — §74/§75); new emits skip over budget, capping per-frame JS / draw-call submit).
-  maxParticles is **off (∞) on High & Balance**.
+  maxParticles is **finite on every tier — 640 / 480 / 300** (it used to be ∞ on High and Balance, an
+  unbounded resource on the two tiers most people play; the caps sit at or under the instanced pool's own
+  capacity).
   Also **`enemyShieldBubbles`** (**6 / 3 / 0**) — how many enemy shield-hit bubbles may be on screen at once;
   **0 on Performance means the effect is off entirely and no bubble mesh or material is ever created** (the
   pool's shared unit `SphereGeometry` is still built at module import, as on every tier; the HP-bar shield
@@ -4268,6 +4289,11 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   mirrored here — it is not a pure function but what the six emit sites decide, so it is guarded where it
   lives: the `toHull` contract in `components.test.js` and the real break-with-spill rocket in
   `42-hit-feel`),
+  **the scroll affordance** (`scroll-hint.test.js` — `hintState` is the whole decision the briefing
+  chevrons make: a panel whose text fits shows neither; clipped at the top shows DOWN only; the middle
+  shows both; the very end shows UP only; sub-pixel slack (2 px) never lights a chevron pointing at
+  nothing; and a not-yet-laid-out panel — `clientHeight` 0 while its view is `display:none` — shows
+  nothing),
   **the intro director** (`intro-director.test.js` — the eight rules the playable Level-0 intro rests on,
   driven with a synthetic sim clock at 1/60 s: `l0` on the first tick, opaque for `lineHold` then a linear
   fade to nothing at `lineHold+lineFade`; the card's `idle → hold → fly → done` walk with exactly one command
@@ -4647,6 +4673,14 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   take-off into Level 1 draws no intro line. Mutation-checked six ways: a bare `translate(dx,dy)` (dropping
   the `-50%`), moving the fade to the `.fly` class rule, `pointer-events: auto`, reverting `introArmed()` to
   a sticky module flag, removing the card takedown, and dropping `await advanceDone()` — each fails it).
+  and **the briefing scroll affordance** (`45-briefing-scroll-hint.mjs`: lands on Level 2 at a **760×360
+  phone viewport**, skips the staged typewriter, and asserts the chevron the player actually sees — at the
+  top of a clipped briefing the DOWN chevron is **painted** (opacity > .3, ≥ 8 px, centred on the panel and
+  within 40 px of its bottom edge, in a light colour against the dark panel) while the UP one is invisible;
+  scrolled to the end the pair **swaps**; and at 1440×900, where the same text fits, **neither** shows. It
+  waits on the host's `.has-more-*` classes rather than a fixed sleep — the granted-item showcase floats in
+  after its model loads and re-triggers the hint, so a timed read lands mid-fade. Mutation-checked by
+  dropping the `attachScrollHint` call: it fails).
   **The runner's boot gate** (`visual/run.mjs`): every scenario boots the throwaway player into level-0, so
   after the take-off click it now **steps the sim** to the state scenarios have always been handed (an arena
   with an enemy — level-0 holds its first spawn for 3 s of sim), then calls **`__game.silenceIntro()`** so

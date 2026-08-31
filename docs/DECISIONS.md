@@ -5743,3 +5743,91 @@ the field could never turn into sparks (§96's settled "dim rocks, not stars"); 
 rule is structural instead of numeric, and the `linearLuma601` helper that existed only to police it was
 deleted with the rest.
 
+
+---
+
+## 140. Balance stops cutting RESOLUTION — the blur every phone player saw bought nothing
+
+**Date:** 2026-08-31 · **Change:** `client/src/graphics.js` — Balance `pixelRatioCap` 1.5 → **2**,
+`antialias` false → **true**. High and Performance are untouched.
+
+Balance is the tier a touch device opens in on its first run, so its image is the one most players see. It
+was rendering at ~56% of the backbuffer pixels of High, with the canvas MSAA off. Both were there as
+performance measures, and neither is one on these devices:
+
+- **§23 already measured it, on two real GPUs.** A 5.5–7× backbuffer-pixel cut moved fps by *nothing* on a
+  PowerVR GE8320 and a Mali-G52 — the bottleneck is CPU draw-call submit and the GPU/compositor thermal
+  governor, not fragment fill. That is why the sub-1 `renderScale` knob was removed in 2026-06-27, and
+  `graphics.test.js` asserts it stays gone.
+- **The 2026-08-31 Redmi 15C session says the same from the other direction.** The only slowdown found in a
+  full session was next to the station with 16 lights, and it tracked **how much of the screen the station
+  covered**, not the backbuffer size. Everywhere else the device held ~60 fps at full resolution.
+
+**The honest counter-argument, recorded so it is not rediscovered as a surprise:** the point-light cost IS
+fragment-shaped — three evaluates every point light for every lit fragment — so resolution is the one lever
+that would genuinely reduce it. But Balance already pays the cheaper version of that lever: **4 lights
+instead of 16**. Cutting pixels on top blurs the entire image to relieve a cost that has already been cut
+4×. Hence the ordering rule this entry establishes: **if a device is still short, take its lights down
+before you take its pixels** — and if that is not enough, it belongs on Performance, which cuts pixels (cap
+1), AA, `envMap`, the nebula bake and all lighting together. §23's conclusion generalized: give a weak
+device a clean off-path, not a blurry version of the expensive one.
+
+**AA is kept deliberately, and it is a different knob.** `antialias: false` is edge quality, not fill rate,
+and the canvas's own MSAA is nearly free on the direct-to-canvas path — which is exactly what §139's
+abandoned full-frame composer threw away and what supersampling was rejected for buying back at 2.25× the
+fill. Text and hull edges on Balance stop looking soft at no measured cost.
+
+**What still separates the tiers** after this: per-fragment lighting (16 / 4 / none), additive overdraw
+(star + particle density), the nebula bake size, `envMap`, `maxParticles` and enemy shield bubbles. Not the
+image size — only Performance cuts that. `graphics.test.js` now guards the shape: Balance's cap equals
+High's, its AA is on, Performance is the only tier below them, and High still carries more lights than
+Balance.
+
+---
+
+## 141. The expensive suites are opt-in for agents, and the HUNT is never delegated
+
+**Date:** 2026-08-31 · **Change:** `.claude/agents/feature-implementer.md`, `.claude/agents/code-reviewer.md`,
+`.claude/agents/feature-planner.md`, `.claude/skills/feature-pipeline/SKILL.md` (new Stage 6.6),
+`docs/plans/multi-agent-pipeline.md`.
+
+The `2026-08-30-1507-expensive-look` run burned **274 M tokens**, 76% of it in two implementers that ground
+in place — one for 36 minutes relaunching a browser in a loop, stopped by the maintainer noticing rather
+than by any guard. Measured from the transcripts, **97.6% of the spend is `cache_read`**: cost is
+`turns × context`, not how hard an agent thinks. Full analysis:
+`docs/plans/agent-cost-and-context-control.md`.
+
+**The rules, and why each is a rule rather than advice:**
+
+**(a) No agent starts the 49-scenario visual suite or a from-scratch `main` baseline worktree.** Both are
+methodologically correct and both are ~20-30 minutes of wall clock that stalls the pipeline; the reviewer's
+baseline rebuild was a large fraction of its own 24 M. A **single named scenario** about the change (~1 min)
+stays encouraged — it is the cheap half and it catches the real defects. The sweep becomes **Stage 6.6**,
+run by the orchestrator on the maintainer's explicit yes, with the perf gate's posture: one line naming the
+cost, default skip. The planner may no longer plan the suite as a step; it names scenarios instead.
+
+**(b) Two attempts at the same hypothesis, then stop and report.** Nothing bounded a retry before, so
+"keep trying" was always available and always cheap-looking per turn. Explicitly: **never loop a browser**
+— navigate → screenshot → probe → tweak → repeat is the exact shape that produced 125 M tokens in one
+agent.
+
+**(c) Being stuck is a required REPORT, not a state to work through.** An agent must say what it is
+attempting, what it ruled out and what it needs. This is the piece the analysis called out as missing: an
+agent kept working because stopping was not one of its options. The orchestrator must take that to the
+maintainer rather than sending the agent back in with encouragement, and must stop one it sees grinding.
+
+**(d) Interactive diagnosis stays with the orchestrator — delegate the FIX, not the HUNT.** Browser/GPU/
+live-app investigation is many short turns against a growing context, the worst possible subagent task; the
+orchestrator answered in ~3 direct calls what cost an agent tens of millions.
+
+**The trade-off, stated plainly:** this buys cost control with **later** visual feedback — a render or
+layout regression that only the sweep would catch now waits for a maintainer's yes, and the sweep is
+baseline-flaky on ~6 scenarios anyway, so it was never a clean pass/fail signal. That is accepted because
+the cheap guards remain always-on (the unit suites, and `22-intro-replay` on any sim change), because a
+targeted scenario covers the change actually being made, and because the live test — a human on a real
+device — was already the thing that caught what the suites missed (§96, and the pivot that made this run
+expensive in the first place).
+
+**Not done here** (needs machinery, not rules — §30): fixing the run-log metric, which still records
+`subagent_tokens` and understates cost by ~375×, and a measured context ceiling with automatic hand-back.
+Until the metric is fixed, no trend in `docs/pipeline-runs.jsonl` should be believed.

@@ -64,7 +64,7 @@ intake → worktree → planner(questions) → ASK MAINTAINER → planner(plan)
        → REVIEW GATE (maintainer approve / request-changes / stop)
        → implementer → [reviewer ⇄ implementer]×≤3 → PASS
        → HUMAN CODE REVIEW (maintainer diff walkthrough → approve / request-changes)
-       → PERF A/B GATE (node client/bench/run.mjs; A=merge-base, B=worktree)
+       → VISUAL SUITE GATE (opt-in, ask first) → PERF A/B GATE (opt-in; A=merge-base, B=worktree)
        → retro (metrics) → deploy? → DEPLOY/park → LIVE TEST → satisfaction + self-improve
        → persist run record (docs/pipeline-runs.jsonl)
 ```
@@ -85,6 +85,21 @@ runs `node client/bench/run.mjs` from the worktree. Then:
 It is **CPU-only** (the `js.*` buckets); a green gate is not "no weak-phone regression" — the GPU/fill-rate
 half stays with real-device `?dev` (§23). It is a **documented stage the orchestrator runs**, not a GitHub
 Actions job.
+
+**COST CONTROL: the two expensive suites are opt-in, and the HUNT is never delegated (2026-08-31).** Agent
+cost is `turns x context` — 97.6% of a run's tokens are cache reads, so an agent taking hundreds of short
+turns against a growing context is the expensive failure mode, not a "hard" task. The
+`2026-08-30-1507-expensive-look` run burned 274 M tokens with 76% of it in two implementers that ground in
+place, one for 36 minutes relaunching a browser in a loop until the maintainer noticed
+(`docs/plans/agent-cost-and-context-control.md`). Three rules now sit in the agent files and the skill:
+- **No agent starts the 49-scenario visual suite (~20-30 min) or a from-scratch `main` baseline worktree.**
+  A single named scenario about its own change: yes, always. The sweep is a **maintainer-asked gate** the
+  orchestrator runs (Stage 6.6), sitting beside the perf gate with the same posture: ask, default skip.
+  The `22-intro-replay` guard stays always-on for sim changes; it is one scenario, not the suite.
+- **Two attempts at the same hypothesis, then the agent stops and reports** what it tried and what that
+  ruled out. Being stuck is a message to the maintainer, not a state to work through.
+- **Interactive diagnosis stays with the orchestrator** — a browser, a GPU frame, "why does it look wrong"
+  is answered in a handful of direct calls by whoever can look. Agents get the FIX, not the HUNT.
 
 **Agent feedback comes *after* a live test, not before.** Passing automated suites does not prove the
 feature works for a human on a real device (esp. touch/feel/visual changes). So the retro asks only the

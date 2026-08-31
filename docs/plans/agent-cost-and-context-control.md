@@ -1,6 +1,8 @@
 # Agent cost & context control — what the 2026-08-30 visual pass exposed
 
-**Status:** problem statement + proposed measures. Nothing implemented yet.
+**Status:** **partly implemented 2026-08-31** — the three cheap behavioural measures landed in the agent
+definitions and the orchestrator skill (see §6). The measurement fixes (the run-log metric) and the context
+ceiling are still open.
 **Trigger:** the `2026-08-30-1507-expensive-look` pipeline run burned through a Max
 subscription's limits in a single session, and two of its agents ground in place for tens of
 minutes without producing a result.
@@ -109,3 +111,34 @@ neighbouring system, each of which would have shipped silently:
 
 The failure was not the review layers. It was that **none of them could see a moving frame on a
 real GPU**, and that nothing bounded what an agent could spend looking for one.
+
+
+---
+
+## 6. What landed 2026-08-31 (and what did not)
+
+Implemented, in `.claude/agents/*.md` + `.claude/skills/feature-pipeline/SKILL.md` +
+`docs/plans/multi-agent-pipeline.md`:
+
+- **The full visual suite is opt-in for everyone.** `feature-implementer` and `code-reviewer` are forbidden
+  from starting `npm run test:visual` (49 scenarios, ~20-30 min) or building a from-scratch `main` baseline
+  worktree; a **single named scenario** about the change stays encouraged (~1 min). The sweep became
+  **Stage 6.6**, a maintainer-asked gate the orchestrator runs itself, with the same posture as the perf
+  gate: one line naming the cost, default skip. `feature-planner` may no longer plan the suite as a step —
+  it names specific scenarios instead.
+- **An attempt budget.** Two failed attempts at the same hypothesis, then the agent writes down what was
+  ruled out and stops. Never a third identical attempt. Explicitly: **never loop a browser**.
+- **"I am stuck" is a required report, not a last resort** — what it is trying, what it attempted, what
+  each attempt ruled out, what it needs. The orchestrator must take that to the maintainer rather than
+  sending the agent back in, and must stop an agent it sees grinding past the budget.
+- **The HUNT is not delegated.** Interactive browser/GPU/live-app diagnosis stays with the orchestrator,
+  which can look directly; agents receive the fix, not the investigation.
+
+Still open (deliberately, per DECISIONS §30 — these need machinery, the above needed only rules):
+
+- **The run-log metric** still records `subagent_tokens` and so still understates cost by ~375×. Nothing
+  here fixes §2.2; every trend in `docs/pipeline-runs.jsonl` remains unusable until it does.
+- **A context ceiling with automatic hand-back** — there is no measurement of an agent's accumulated
+  context in-flight, so the ceiling is currently the orchestrator's judgement (many turns, no new
+  information → stop it), not a number.
+- **Live-test-earliest for render/feel work** is guidance in the roadmap, not a stage in the pipeline.

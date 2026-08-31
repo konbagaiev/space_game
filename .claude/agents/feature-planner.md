@@ -45,6 +45,10 @@ You'll receive the maintainer's answers. Write the plan to `docs/plans/<id>.md`.
   Respect SUMMARY's file map; prefer modular files over piling logic into `index.html`.
 - **Tests** — what to add/change and how to run them (`client && node --test`, `server && npm test`;
   server tests run against Postgres (`npm test` drops+recreates a local `spacegame_test`); the single data layer is `db.js`).
+  **Never plan "run the full visual suite" as a step** — it is 49 Playwright scenarios / ~20-30 min and is
+  opt-in, the maintainer's call at the pipeline's visual gate. Name the **specific scenarios** the change
+  needs instead (plus `22-intro-replay` whenever the sim is touched), so the implementer runs minutes, not
+  half an hour.
 - **Docs to update** — the exact SUMMARY section(s), a CHANGELOG bullet, and a DECISIONS entry **only if**
   there's a real trade-off.
 - **Out of scope / non-goals** — to keep the implementer from gold-plating (DECISIONS §30).

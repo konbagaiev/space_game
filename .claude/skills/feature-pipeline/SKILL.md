@@ -22,6 +22,26 @@ Stage 11 — so build the run record in memory as you go.
 
 ---
 
+## Cost control — read this before spawning anything
+
+Agent cost is `turns x context`, not "how hard the agent thinks": 97.6% of a run's tokens are cache reads,
+so an agent taking hundreds of short turns against a growing context is the expensive failure mode. The
+`2026-08-30-1507-expensive-look` run burned 274 M tokens, 76% of it in two implementers that ground in
+place — one for 36 minutes relaunching a browser in a loop, stopped only because the maintainer noticed.
+Full analysis: `docs/plans/agent-cost-and-context-control.md`. Three rules follow from it:
+
+1. **You never delegate the HUNT, only the FIX.** Interactive diagnosis — driving the real app, a browser,
+   a GPU frame, "why does it look wrong on screen" — stays with you. You can answer it in a handful of
+   direct tool calls; an agent pays for the whole context on every one of hundreds of turns.
+2. **The full visual suite is opt-in, everywhere.** No agent may start `npm run test:visual` (49 Playwright
+   scenarios, ~20-30 min) or build a from-scratch `main` baseline worktree on its own; both agent files say
+   so. When one asks for it, that is a question for the maintainer — see Stage 6.6.
+3. **A stuck agent is a message to the maintainer, not a retry.** If an agent reports it is stuck (what it
+   tried, what it ruled out, what it needs), do NOT immediately send it back in with encouragement. Take it
+   to the maintainer with the agent's own account, and get a decision. Two failed attempts at the same
+   hypothesis is the agents' stated limit; if you notice one grinding past that — many turns, no new
+   information — stop it yourself (`TaskStop`) and surface it.
+
 ## Stage 0 — Intake
 
 - Get the feature description (skill argument, else ask). Propose a short kebab **slug** and confirm it.
@@ -172,6 +192,23 @@ code lives, what it touches, why it's placed there).
     → it fixes + re-runs tests → continue the **same** `code-reviewer` agent to re-check (increment
     `reviewRounds`) → **re-show this walkthrough**.
   - Record the decision + how many human rounds in the run-log `human_review`.
+
+## Stage 6.6 — Visual suite gate — **OPT-IN, ASK FIRST**
+
+The 49-scenario Playwright suite (`cd <worktree>/client && npm run test:visual`) is the pipeline's other
+20-30 minute stall, and it is baseline-flaky on ~6 scenarios, so a raw pass/fail count is not the signal —
+judge it by the reliably-passing set plus zero page errors.
+
+**Default: don't run it.** Ask the maintainer, one line naming the cost, with **skip** as the default —
+and run it only on an explicit yes. Worth proposing a yes when the diff touches the render path, HUD/UI
+layout, or anything whose failure is only visible in a frame; not worth it for server logic, tooling, docs,
+or pure sim changes already covered by the always-on `22-intro-replay` guard.
+
+If the maintainer says yes, **run it yourself** (no agent) from the worktree and report the reliably-passing
+set + any page errors. Record `visual-suite-ran` or `visual-suite-skipped` in the run record's `flags[]`.
+
+A named single scenario is not this gate — agents may run one directly and should when it is about their
+change.
 
 ## Stage 6.7 — Perf A/B gate (after human review, before commit) — **OPT-IN, ASK FIRST**
 

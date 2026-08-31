@@ -340,8 +340,11 @@ The original design discussion is preserved below with its verdict. Several item
   `docs/plans/server-authoritative-sim.md`) or making trace verification work, which today it does not
   (§129). Also still client-authoritative: loot deposit, side-mission clears, and `/advance`.
 
-### Stop cutting RESOLUTION on Balance — it buys nothing and costs sharpness (opened 2026-08-31)
-- **Proposal:** raise Balance's `pixelRatioCap` from **1.5 to 2** (i.e. no reduction), leaving High
+### Stop cutting RESOLUTION on Balance — ✅ SHIPPED 2026-08-31 (DECISIONS §140)
+- **Done:** Balance now renders at `pixelRatioCap` **2** with `antialias: true` — full resolution and AA,
+  exactly like High; `graphics.test.js` guards the shape (Balance's cap equals High's, Performance is the
+  only tier below them). What follows was the case for it, kept as the record.
+- **Proposal (as opened):** raise Balance's `pixelRatioCap` from **1.5 to 2** (i.e. no reduction), leaving High
   untouched. Balance is the tier a phone opens in by default, so this is the image most players see.
 - **Why:** resolution is not where these devices hurt. §23 already measured it — a 5.5-7x backbuffer-pixel
   cut moved fps by **nothing** on a PowerVR GE8320 and a Mali-G52, which is why the `renderScale` knob was
@@ -416,6 +419,44 @@ The original design discussion is preserved below with its verdict. Several item
   orders of magnitude. Fix the metric before trusting any trend in that log.
 - **Live-test earliest for render/feel work.** The visual pass was rebuilt from scratch after ten
   minutes of real play showed the architecture was wrong — ~208 M had already been spent on it.
+- **✅ Landed 2026-08-31 (the behavioural half).** In `.claude/agents/*` + the pipeline skill: the full
+  visual suite and the `main`-baseline worktree are **opt-in** (Stage 6.6, maintainer asked); a **two-attempt
+  budget** per hypothesis with "never loop a browser"; **"I am stuck" as a required report** the orchestrator
+  must take to the maintainer instead of re-dispatching; and **the HUNT is never delegated** — interactive
+  browser/GPU diagnosis stays with the orchestrator. **Still open:** the run-log metric (still understates by
+  ~375×), a measured context ceiling with automatic hand-back, and making live-test-earliest an actual stage.
+  See `docs/plans/agent-cost-and-context-control.md` §6.
+
+### Scroll affordance on the briefing — ✅ SHIPPED 2026-08-31 (chevrons at the clipped edges)
+- **The problem, on a phone.** The briefing body (`#mw-mission-desc`, `client/styles.css:395`, markup
+  `client/index.html:75`) is a plain `overflow-y: auto` viewport. When the text is longer than the short
+  phone work zone it simply ends mid-sentence at the panel edge — no scrollbar (mobile browsers hide it
+  until you drag), no fade, nothing. Players read the visible half and take off, so the mission's actual
+  instructions never land.
+- **Shipped:** quote-mark **chevrons** (not filled triangles — the maintainer's call) at the clipped edges
+  of `#mw-mission-desc`: one pointing UP at the top while there is text above, one pointing DOWN at the
+  bottom while there is text below, neither when the text fits. `client/src/scroll-hint.js` +
+  `.scroll-hint` in `styles.css`, guarded by `45-briefing-scroll-hint.mjs` on a phone viewport.
+- **Still open from this entry:** the same affordance on the other silently-clipped viewports below (the
+  module is generic — `attachScrollHint(el)` — so each is a one-line wiring), and the fade-gradient variant
+  if the chevrons alone read too quietly on a real phone.
+- **Where the same shape already exists** (do it once, reuse): the start-screen intro `#welcome-scroll`
+  (`:131`), the mission list `.mission-board` (`:237`), the left menu `#mw-menu` (`:195`), `.lp-scroll`
+  (`:316`) and `.sysnav-list` (`:436`) are all the same "silently clipped viewport" — worth a single
+  `scrollHint(el)` helper (a `scroll` + `ResizeObserver` listener toggling `.can-scroll-up` /
+  `.can-scroll-down` classes on the container, arrows drawn as `::before`/`::after`) rather than five
+  bespoke widgets.
+- **Watch the staged reveal.** On campaign levels 1-3 the briefing is TYPED OUT (`typewriter.js`, staged
+  reveal in `mainwindow.js` `startStagedReveal`, DECISIONS-era plan
+  `docs/plans/2026-07-05-1641-briefing-staged-reveal.md`) — the content grows for several seconds after the
+  panel opens, so the indicator has to re-evaluate while text is being appended, not once on open. The
+  bottom-right item showcase (`:397`, `.show-item`) also reflows the text.
+- **Design call worth making deliberately:** arrows are the explicit read; a **fade-out gradient** at the
+  clipped edge is the quieter one and needs no glyph. Cheapest honest answer is probably *both* — a soft
+  mask that says "there is more" plus a small arrow that says "you can drag" — but pick it while looking at
+  a real phone, not from the desktop layout where nothing overflows.
+- **How to check it landed:** on a phone (or the `?dev` phone form), open a long briefing — Level 3's — and
+  confirm the ▼ shows on open, disappears when scrolled to the end, and never shows on a briefing that fits.
 
 ### Assets pipeline
 - Source vs runtime split, budgets, optimize step, CDN delivery — DECISIONS §14.
@@ -480,11 +521,10 @@ The original design discussion is preserved below with its verdict. Several item
   only the critic caught it). Go back over recorded planner sessions and tighten its discovery/plan-write:
   exhaustive consumer sweeps for any *removal*, tighter time budget, fewer round-trips. Data source:
   `docs/pipeline-runs.jsonl` + the agent transcripts.
-- **Feature-pipeline: make the visual/UI test run OPTIONAL.** The visual-scenario harness (software-WebGL)
-  dominates implementer wall-clock (~27 min on the exhaust run) and is baseline-flaky on ~6 scenarios. Make
-  running the visual suite an opt-in gate (like the perf A/B gate) — default to the fast unit suite +
-  the mandatory replay guard, and only run the broader visual scenarios on request or when the change is
-  visual. Keep the intro replay guard (`22-intro-replay`) always-on.
+- ~~**Feature-pipeline: make the visual/UI test run OPTIONAL.**~~ **✅ DONE 2026-08-31.** No agent may start
+  the 49-scenario suite or a from-scratch `main` baseline worktree; a single named scenario stays
+  encouraged. The sweep is now **Stage 6.6**, a maintainer-asked gate the orchestrator runs, with the perf
+  gate's posture (ask, default skip). `22-intro-replay` stays always-on for sim changes.
 - Daily/repeatable missions for retention.
 - Leaderboards.
 - More ship classes / visual variety.

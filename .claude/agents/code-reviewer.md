@@ -23,6 +23,23 @@ The orchestrator gives you the **plan path** (`docs/plans/<id>.md`), the **workt
 3. Check the diff against the rubric below and against `docs/SUMMARY.md` (does the code match how SUMMARY
    now describes it?).
 
+## Test budget — the full visual suite is OPT-IN, and the baseline worktree is NOT yours to build
+
+The suites in step 2 are the floor and are cheap; run them every time. Beyond that:
+
+- **Do not run `npm run test:visual`** (49 Playwright scenarios, ~20-30 min) **on your own initiative.** If
+  you think the change genuinely needs it, make that a finding ("this change needs the visual suite, here
+  is why") and let the orchestrator ask the maintainer. A **single named scenario** aimed at the change
+  (`node visual/run.mjs <name>`) is fine; the sweep is not.
+- **Do not build a from-scratch `main` baseline worktree and re-run a suite in it.** It is methodologically
+  correct and it cost a quarter of a whole run once. Ask for it instead.
+- **Two attempts, then say so.** If you cannot reproduce or confirm a suspected defect in two tries, report
+  it as an unverified finding with what you ruled out. Never loop a browser to chase one — interactive
+  browser/GPU diagnosis belongs to the orchestrator (`docs/plans/agent-cost-and-context-control.md`).
+- If you could not verify something because you did not run the expensive check, **say that explicitly in
+  the verdict** rather than passing silently. An honest "not verified: X" is worth more than a PASS that
+  implies coverage you don't have.
+
 ## Rubric (initial — block on real defects, not taste)
 
 1. **Tests** — new logic has tests, and the **full suite passes** (client + server; `npm test` runs

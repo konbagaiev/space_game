@@ -5,6 +5,45 @@
 
 ## 2026-08-31
 
+- **A briefing that doesn't fit now SAYS so — chevrons at the clipped edges.** On a phone the mission
+  briefing simply ended mid-sentence at the panel edge: mobile browsers hide the scrollbar until you drag,
+  so players read the visible half and took off. `#mw-mission-desc` now sits in a non-scrolling host
+  (`#mw-mission-scroll`) and `client/src/scroll-hint.js` puts a **quote-mark chevron at each clipped edge** —
+  pointing UP at the top while there is text above, DOWN at the bottom while there is text below, and
+  neither when the text fits. Drawn in CSS (a 13 px box with two borders, rotated), `pointer-events: none`,
+  fading in over .18 s. The decision is a pure function (`hintState`, 2 px slack so sub-pixel layout can't
+  light a chevron pointing at nothing, unit-tested in `scroll-hint.test.js`); the wiring coalesces scroll,
+  resize, a `ResizeObserver` and a `MutationObserver` into one read per frame — the last one is why the
+  hint keeps up with the staged briefing typewriter, which rewrites the text every frame. New visual
+  scenario `45-briefing-scroll-hint.mjs` asserts the chevron as PAINTED (opacity, size, position on the
+  panel, light-on-dark) at a 760×360 phone viewport, that the pair swaps at the end of the scroll, and that
+  a briefing which fits shows nothing; mutation-checked by dropping the wiring. The module is generic —
+  the welcome intro, the mission list and the left menu are the same silently-clipped shape and can be
+  wired later.
+- **Balance stops cutting resolution — and keeps AA (DECISIONS §140).** The tier a phone opens in by
+  default rendered at `pixelRatioCap` 1.5 with `antialias: false`; it now renders at **2 with AA, exactly
+  like High**. Resolution was measured useless on these devices twice — §23's 5.5-7× backbuffer cut moved
+  fps by nothing, and the 2026-08-31 Redmi 15C session found the only slowdown tracking how much of the
+  screen the **station** covered, not the backbuffer size. Balance already pays the cheaper version of the
+  fragment lever (4 lights instead of 16), so cutting pixels on top only blurred the whole image; the
+  ordering rule is now explicit — take a struggling device's LIGHTS down before its PIXELS, and if that is
+  not enough it belongs on Performance, the only tier that cuts resolution. Text and hull edges on Balance
+  stop looking soft. Guarded in `graphics.test.js`.
+- **Pipeline agents: the expensive suites are opt-in, and a stuck agent must SAY so (DECISIONS §141).**
+  After a run that burned 274 M tokens with two implementers grinding in place — one for 36 minutes
+  relaunching a browser in a loop — `feature-implementer` and `code-reviewer` may no longer start the
+  49-scenario visual suite (~20-30 min) or build a from-scratch `main` baseline worktree; a single named
+  scenario about their own change stays encouraged, and `feature-planner` names scenarios instead of
+  planning the sweep. The suite became **Stage 6.6** of `/feature-pipeline`: a maintainer-asked gate the
+  orchestrator runs itself, same posture as the perf gate (ask, default skip). Also new in the agent
+  contracts: a **two-attempt budget** per hypothesis with "never loop a browser", **"I am stuck" as a
+  required report** the orchestrator takes to the maintainer instead of re-dispatching, and **the HUNT is
+  never delegated** — interactive browser/GPU diagnosis stays with the orchestrator, which can look
+  directly. `docs/plans/agent-cost-and-context-control.md` §6 records what landed and what did not (the
+  run-log metric still understates cost by ~375×).
+- **Roadmap:** the scroll affordance, the Balance resolution item and the "make the visual run optional"
+  backlog entry are marked shipped; the dev-pipeline cost section records the behavioural half as landed.
+
 - **Two glow systems went in; the real one stayed. The expensive look now ships as REAL LIGHTS.**
   [2026-08-30-1507-expensive-look]
   Yesterday's entry describes a full-frame `EffectComposer` (bloom + ACES) and, after it, an additive glow
