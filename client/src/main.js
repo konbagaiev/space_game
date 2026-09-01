@@ -1321,6 +1321,10 @@ if (location.search.includes('debug')) {
     get combatElapsed() { return world.combatElapsed; }, // THE sim clock the director and the spawn floors share
     get enemyCount() { return enemies.length; },         // cheaper than enemies.length for a waitForFunction
     get gameStarted() { return G.gameStarted; },         // "is a fight running at all" (the runner's boot gate)
+    // The CACHED logical game size (engine.js). Exposed so 48-hud-viewport-cache can prove the cache
+    // TRACKS a resize rather than merely never being read (a frozen cache passes a zero-read test).
+    get gameW() { return gameW(); },
+    get gameH() { return gameH(); },
     setPaused,                                           // freeze the LIVE accumulator so stepSim is the only driver
     // Reads through `introArmed()`, so a test sees the director go away the instant its level does
     // (the win path advances the level in page, with no reload).

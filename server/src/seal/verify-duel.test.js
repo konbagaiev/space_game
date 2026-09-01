@@ -3,7 +3,7 @@
 //
 // BE HONEST ABOUT WHAT THIS PROVES. The claim these tests compare against is produced by the same Node
 // referee, so what is proved here is the MECHANISM — admission, the comparison and its ordering, the notes,
-// persistence. The browser ↔ Node half is proved by `client/visual/scenarios/48-duel-referee.mjs`, and that
+// persistence. The browser ↔ Node half is proved by `client/visual/scenarios/49-duel-referee.mjs`, and that
 // is the test that would catch a real cross-host divergence.
 //
 // AND ONE GAP, NAMED RATHER THAN LEFT TO BE REDISCOVERED: every fixture here is an idle DEATH, so the

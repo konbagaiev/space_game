@@ -193,7 +193,7 @@ test("flush()'s payload carries the anchor the fight was sealed at", () => {
   assert.deepEqual(out.anchor, { tick: 300, hash: 0xdeadbeef, draws: 12 });
 });
 
-// snapshotTrace() is what the ?debug hook and 48-duel-referee read: it must be PURE — no closing, no
+// snapshotTrace() is what the ?debug hook and 49-duel-referee read: it must be PURE — no closing, no
 // re-sending bookkeeping, nothing a live session would notice.
 test('snapshotTrace() reads the recording without closing or advancing anything', () => {
   const sr = makeSessionRecorder();

@@ -5,6 +5,18 @@
 
 ## 2026-09-01
 
+- **The HUD stopped forcing a synchronous layout every frame.** [2026-09-01-1848-hud-viewport-cache]
+  `gameW()`/`gameH()` read `window.innerWidth`/`innerHeight` on every call, and five per-frame HUD updaters
+  called them interleaved with their own style writes — so each read flushed style + layout mid-frame
+  (measured on a Redmi 15C: **1.82 forced recalcs and 0.99 ms per frame**, about two thirds of the `js.dom`
+  the game reports). The two values are now a **cache** refreshed in `applyOrientation()`, which was already
+  the single choke point for boot/resize/orientationchange; `toGame()` uses it too, so a pointer event no
+  longer forces layout either. **No fps change is expected** — that frame is GPU-bound and the ~1 ms goes
+  into GPU wait; what this buys is less main-thread jitter and a `js.dom` number that measures DOM work
+  instead of self-inflicted layout. Guarded by `client/visual/scenarios/48-hud-viewport-cache.mjs` (zero
+  viewport reads across 8 real frames + the markers land on the *new* edge box after a resize; negative-tested
+  against the old live-read accessors, which it catches at **64 reads over 8 frames**).
+
 - **The duel referee — the server re-simulates a duel and says what actually happened.**
   [2026-09-01-1845-duel-referee] A `?duel` session is now **verifiable**. Its trace carries the one
   parameter that defines the room (`room: { kind:'duel', aces:N }`), the browser publishes a **digest of the
@@ -14,9 +26,9 @@
   `/admin/sessions`, beside a new `js_engine` column recording the browser engine that ran the simulation
   (a cross-engine float difference is the last honest explanation for a `disagree`, and `36-sim-divergence`
   only ever proved Chromium ↔ Node). **Nothing binds to a verdict** — no credits, no XP, no progression, no
-  gate; that is DECISIONS §129's own rule and §149 restates it. For a player the user-visible effect is
+  gate; that is DECISIONS §129's own rule and §150 restates it. For a player the user-visible effect is
   exactly zero.
-  - **The anchor is the end of the FIGHT, not the end of the trace** (§149). A mission ends twice (§130),
+  - **The anchor is the end of the FIGHT, not the end of the trace** (§150). A mission ends twice (§130),
     and the second ending needs a mouse click and a dock that an input trace cannot carry — so digesting the
     final state would have marked **every honest winning duel `disagree`**. Both hosts now digest at the
     first tick where `levelRunner.cleared || !player.alive`.
@@ -46,7 +58,7 @@
     without it it plays out all **3670** / `0x8d802ca2`. Every duel fixture is an idle death, which
     `runTrace` already broke on, so that guard is the only thing that would notice the option regressing —
     and a regression would silently turn every honest WON duel into a `disagree`.
-  - New: `client/src/engine-id.js`, `server/src/seal/verify-duel.js`, `client/visual/scenarios/48-duel-referee.mjs`
+  - New: `client/src/engine-id.js`, `server/src/seal/verify-duel.js`, `client/visual/scenarios/49-duel-referee.mjs`
     (the browser ↔ Node oracle for a **live-recorded** duel — 36 only ever proved a `?playback` re-run of a
     committed asset). Measured cost of a verdict: ~2-10 ms of server CPU for a ~520-tick duel, run on
     `setImmediate` after the 204 so an upload never waits for it.

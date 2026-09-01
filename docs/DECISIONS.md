@@ -6232,7 +6232,32 @@ above both says why. Measured after the split: interception went **up**, not dow
 shot out of the air against 4 before, with an ace engaged on 18.6 % of ticks against 13 %.
 
 
-## 149. A duel is judged at the moment the FIGHT ends, not when the trace does — and a verdict is a fact, not a debt
+## 149. The logical game size is a CACHE refreshed at the choke point, not a live viewport read
+
+`gameW()`/`gameH()` read `window.innerWidth`/`innerHeight` on every call, and five per-frame HUD updaters
+called them interleaved with style writes → a forced synchronous style+layout flush mid-frame (Redmi 15C,
+2026-09-01: 1.82 forced recalcs and 0.99 ms per frame; `docs/plans/hud-viewport-layout-thrash.md`).
+
+Options: **(a)** keep the live read — never stale, but every caller pays a layout flush; **(b)** cache it
+and refresh in `applyOrientation()` — one read per resize, but a missed refresh puts every HUD marker in
+the wrong place; **(c)** read once per frame at the top of `animate()` — still one forced layout per
+frame, and it adds a new ordering rule for anyone writing HUD code.
+
+Chose **(b)**. `applyOrientation()` is already the only place the renderer is sized and is already bound
+to `resize` + `orientationchange` (`main.js`), so there is no second refresh path to keep in sync — the
+cache cannot go stale without the renderer going stale with it, which is a failure we would see instantly.
+The residual staleness risk is bought back with a guard
+(`client/visual/scenarios/48-hud-viewport-cache.mjs`) that asserts **both** halves: zero live reads in
+steady state, *and* a real resize moving the edge markers onto the new viewport's edge box — because a
+frozen cache passes a zero-read test perfectly. The guard was negative-tested against the old live-read
+accessors: it catches them at 64 reads over 8 frames.
+
+**Not a perf claim.** The frame is GPU-bound (renderer main thread 36 % busy vs the GPU process's 66 %,
+117 long tasks against 9), so the ~1 ms goes into GPU wait and fps is expected to be unchanged. The
+reason is code correctness: the main thread stops doing work it invented for itself, and `js.dom`
+measures DOM work again.
+
+## 150. A duel is judged at the moment the FIGHT ends, not when the trace does — and a verdict is a fact, not a debt
 
 `docs/plans/2026-09-01-1845-duel-referee.md`. **Supersedes nothing in §129 — it is the first thing that
 satisfies it.**

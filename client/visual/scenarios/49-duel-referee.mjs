@@ -18,7 +18,7 @@ import { runTrace } from '../../../server/tools/sim-replay.mjs';
 import { verifyDuel } from '../../../server/src/seal/verify-duel.js';
 import { duelAnchorReached } from '../../src/sim-core/duel-config.js';
 
-export const name = '48-duel-referee';
+export const name = '49-duel-referee';
 
 // Boot a fresh page on a given query string and get past whichever launch screen this level lands on.
 // (Copied from 47-duel-room.mjs rather than imported: scenarios do not depend on each other.)

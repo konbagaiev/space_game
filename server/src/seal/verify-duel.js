@@ -27,7 +27,7 @@
 //
 // The standing proof that cross-host bit-identity is achievable at all is `36-sim-divergence` (browser and
 // Node agreeing on the full digest AND the draw count for the canonical Level-0 trace);
-// `48-duel-referee` is that same guard applied to a LIVE duel.
+// `49-duel-referee` is that same guard applied to a LIVE duel.
 import { runTrace } from '../../tools/sim-replay.mjs';
 import { classifyTrace } from './verify-run.js';
 import { traceTickCount } from '../../../client/src/replay.js';
