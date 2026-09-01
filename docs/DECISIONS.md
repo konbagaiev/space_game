@@ -5783,6 +5783,38 @@ image size — only Performance cuts that. `graphics.test.js` now guards the sha
 High's, its AA is on, Performance is the only tier below them, and High still carries more lights than
 Balance.
 
+### Amendment, 2026-09-01 — the decision stands, but the FIRST reason above is wrong
+
+The entry is kept as written because the conclusion survived; the reasoning did not, and reusing it would
+mislead the next person. Corrected by controlled measurement (fixed camera pose, real GPU timing via
+`EXT_disjoint_timer_query_webgl2`, which works in headed Chrome; the harness is described in ROADMAP):
+
+- **Resolution is NOT free on this scene — it is the single strongest GPU lever we have found.** Dropping
+  the pixel-ratio cap 2 → 1 cut GPU frame time by **67%**, and 2 → 1.5 by **40%** — *at every light count
+  (16 and 4) and in both framings (station filling the frame and station small)*. The sky pass scales
+  perfectly linearly with pixels (~0.4 ms per megapixel), i.e. it is pure fill with no geometry component.
+- **§23's "pixels move fps by nothing" is obsolete, not false.** It was measured when the scene carried ONE
+  directional light and the frame was CPU-submit-bound; pixels genuinely did not matter then. Sixteen point
+  lights made the frame fragment-bound, and the lever came back. Any future argument that cites §23 about
+  resolution must first check whether the frame is still submit-bound.
+- **So why does the decision stand?** Because it was re-tested on the real phone (Redmi 15C, 2026-09-01)
+  with a `?res=N` fork that lowers the cap while KEEPING antialiasing — the one combination the tier table
+  cannot express, since Performance turns both off together. Verdict from the maintainer: the frame rate
+  does improve, and **the image degrades badly — far more than the frames are worth.** Lowering resolution
+  is rejected on IMAGE QUALITY, which is a much stronger and more durable reason than "it buys nothing".
+- **The ordering rule is therefore unchanged and now measured, not assumed: take the LIGHTS down before you
+  take the pixels.** Light count outranks every material change too — with the base station filling the
+  frame, 16 lights cost 2.20 ms of GPU time against 0.69 ms at 4 and 0.54 ms at 0, while the most extreme
+  material change (unlit station) saved only 1.03 ms at 16 lights.
+- **Where the budget actually went, and where the next work belongs:** at Balance the *sky pass* is **~half
+  the GPU frame** (1.25-1.71 ms against 1.57 ms for combat across runs) and is paid on every frame of every
+  level regardless of lights, station or zoom. It is **5 draw calls**, and the only item in it that
+  measures is `skyScene.background` — the already-baked nebula cubemap (§43) — at **0.39-0.60 ms**, i.e. one
+  full-screen textured fill. *An earlier draft of this amendment claimed the sky stacked two full-screen
+  layers (nebula + a parallax `backdropMesh` from `world.js:360-371`); a deep inventory disproved it — that
+  mesh is in the **combat** scene, not the sky, and no ShaderMaterial is present in the sky at all.
+  Re-baking the nebula as a 2D image would save nothing: the cost is the fill, not what is sampled.*
+
 ---
 
 ## 141. The expensive suites are opt-in for agents, and the HUNT is never delegated
@@ -5916,3 +5948,159 @@ fifteen units away that the player could plainly see — noise that also devalue
 built for. The roam nav bar's "Return to Base" button and the system map are how you get home now. Earlier
 entries that mention the arrow in the present tense are dated records of what shipped then; read this clause
 first.
+
+---
+## 144. The base station shipped 1.55 MB of UNCOMPRESSED textures — the preset that said 256 did nothing at all
+
+> Renumbered from §142 at merge: the parallel `2026-08-31-1515-ship-weight-class` run landed first and took
+> §142/§143, so this entry and the measurement-method entry became §144/§145.
+
+**Date:** 2026-08-31 · **Change:** `scripts/assets-config.mjs`, `scripts/assets-build.mjs`,
+`scripts/assets-config.test.mjs` (new), root `package.json` + `.github/workflows/ci-cd.yml`,
+`server/src/catalog_seed.js`, `client/src/station-mat.js` (new) + `client/src/world.js`,
+`client/visual/scenarios/46-base-station.mjs` (new), `client/assets/CREDITS.md`.
+
+### The trap
+
+gltf-transform's `optimize` performs its texture **resize inside the `textureCompress` stage**. So
+`--texture-size 256 --texture-compress false` keeps the source resolution and says nothing about it.
+`PRESET.combat` had carried `textureSize: 256` since the pipeline was written, and for every combat model
+without a `textureCompress` override it had never resized a single texel. The base station is where that
+bill came due: four **1024² PNGs** (baseColor 634 KB, normal 617 KB, metallicRoughness 205 KB, emissive
+42 KB) shipped **verbatim from the source**, uncompressed, on an object of **2 723 triangles in one draw
+call** — a **1 588 268 B** download. With `textureCompress` unset, *both* halves of that stage are skipped:
+no resize AND no compression. Rebuilding the source with the *old* preset reproduces the shipped file
+byte-for-byte, which is the proof that the asset did go through the pipeline and the pipeline did nothing to
+it.
+
+**The fix is a THROW, not a second resize pass.** Making `--texture-size` work for uncompressed builds is
+one line of blast radius and six models of consequence: ~6 combat models (enemies, freighter, `machine_gun`,
+`repair_drone`) would re-hash, each needing a catalog edit, an S3 push, a look check and an itch republish
+(§37). So this change fixes the ONE model whose download was worth more than the rest combined, deletes the
+lying default, and
+makes the combination **impossible to configure silently** — `checkPreset()` throws at build time, a unit
+test pins it, and the repo-root `npm test` finally runs in CI (which also un-orphans
+`assets-hitboxes.test.mjs`). The rest is a ROADMAP follow-up, and while auditing it we found the
+neighbouring knob is decorative too: `simplifyRatio` is read only as `p.simplifyRatio < 1 ? 'true' :
+'false'`, so its numeric value never reaches the CLI. Same class of bug, smaller stakes, deliberately out
+of scope.
+
+### FORMAT is the fix. RESOLUTION is deliberately left alone.
+
+The station ships at its **full 1024²**, in **WebP**: **1 588 268 B → 276 404 B**, the same pixels, ~5.7x
+less to download. VRAM is unchanged at 21.3 MiB, because VRAM follows dimensions, not file format.
+
+That is the opposite of what this entry originally decided (256², 1.33 MiB of VRAM), and the reversal was
+earned by measurement, in this order:
+
+1. **Texture size was measured to move fps by nothing.** A fixed-pose GPU-timer sweep (§145) and a
+   phone A/B both say so: the bottleneck is per-light ALU, and a texture fetch happens once per fragment
+   regardless of light count. So smaller maps buy **only** VRAM.
+2. **Nothing says we need that VRAM.** No measurement in this session attributes any cost to it.
+3. **The maintainer looked at the frames and said no.** 256² visibly smears the solar-panel cell grid, which
+   is the model's signature detail and the one thing you park against while docking; 512² softens it. With
+   the fps argument gone, the whole price of shrinking was image quality for a benefit nobody could measure.
+4. **WebP at 1024² costs nothing visible.** Measured per-pixel against the PNG original: mean difference
+   **1.37/255 (0.5%)**, 1.2% of pixels off by more than 8, 0.2% by more than 16. The emissive map's lit
+   windows survive intact — peak 219.9 / lit fraction 0.413%, against 215.9 / 0.415% on the PNG.
+
+**What the download win is actually for** — and it is not fps: the first load on a weak phone overruns the
+**9 s** `WARM_MAX_WAIT_MS` asset budget, so the level starts with procedural placeholders while the real
+models trickle in (a real, reported bug — see ROADMAP). 1.3 MB off the critical path shortens that window.
+
+### Why the material is a FLAG rather than a choice
+
+The maintainer refused to pick a material from a description, and the two obvious "cheap shading" moves are
+both **measured** to be risky on this specific asset:
+
+- **The hull is not closed.** Welded by position: 1 414 verts, 2 723 tris, 4 157 unique edges, of which
+  **147 are boundary edges (3.5%)** plus one non-manifold edge. `side = FrontSide` is therefore not a free
+  win — it can punch visible holes.
+- **The normal map carries real relief.** Mean deviation from flat 14/127, RMS 31.3; **22.8% of texels
+  deviate meaningfully, 17.3% strongly.** Dropping it visibly flattens roughly a fifth of the surface.
+- **`scene.environment` is a RoomEnvironment PMREM on High *and* Balance.** With metalness at
+  (map-modulated) 1, a large part of what currently lights this hull is that IBL reflection — and
+  `MeshPhongMaterial` / `MeshBasicMaterial` do not read `scene.environment` at all. A material-class swap is
+  **not** a neutral simplification; it **re-lights** the station.
+
+None of that is settled by argument. So `?stationmat=<rung>` ships **off by default** with four cumulative
+rungs (`standard` / `lean` / `phong` / `basic`), to be measured on the real device against `?lights=16` and
+`?lights=0`. A URL flag rather than a `?tune` slider (D7): lil-gui is unusable on the phone where the
+measurement happens and a perf run wants a clean boot — the same pattern as `?lights=N` / `?beam` / `?ally`.
+No tier gating (§30). `basic` has no emissive slot, so the lit windows go dark on that rung: that is the
+measurement floor, documented at the flag rather than treated as a bug.
+
+**Why `lean` is first on the ladder, and the number behind it.** Rasterizing the hull into a 318×321 grid
+along the game camera's axis (`CAM_OFFSET (0,110,26)`, ~13° off vertical) and counting triangle layers per
+covered cell gives **2.84 layers per covered pixel (max 19) with `DoubleSide`, 1.41 with `FrontSide`** —
+backface culling alone removes **exactly 50%** of rasterized fragments. The layer histogram says why:
+**74.6%** of covered pixels have exactly 2 layers (the front and back of a single shell — the `DoubleSide`
+penalty), 15.9% have 4, 4.9% have 6, 4.1% have 8+. So the cost is
+`screen area × 2.84 layers × (16 lights of full GGX + IBL + 4 texture fetches)`, which is the shape of the
+measured cliff, and the cheapest rung to try first is the one that halves the layer count. **Caveat kept
+deliberately:** *rasterized* is not *shaded* — Mali's early-Z / Forward Pixel Kill removes some occluded
+fragments, so the real shading multiplier sits somewhere between 1.41 and 2.84. That is another reason the
+answer is measured on the device rather than computed here.
+
+### The lit windows, and why an existence test would not have caught it
+
+The emissive map is **~99.5% black** — small lit windows on a dark hull. Two things can put them out:
+`optimize`'s solid-texture pruner flattening it (hence `pruneSolidTextures: false`, and the structural check
+that all four texture slots survive), and — the one nothing structural catches — **a 4× downsample averaging
+16 texels into 1 on a mostly-black map, followed by lossy WebP**. A present-but-dark map passes every
+existence test and ships a station with its windows out. So the scenario **measures** it: Rec.709 peak and
+the fraction of texels ≥ 128, floors at 160 / 0.20% against measured 219.9 / 0.413% (shipped 1024² WebP) and
+215.9 / 0.415% (the 1024² source). A **fraction** rather than a count, so the same assertion holds at 256²,
+512² or 1024².
+
+**Cross-references:** §139 (real lights — the cliff this is adjacent to; do not re-propose
+post-processing), §140 (Balance keeps resolution — do not reopen `pixelRatioCap`), §37 (an itch republish is
+required after any content-hash change), §30 (smallest thing that works; no tier gating, no speculative
+generality), §23 (draw-call submit is the *other* weak-phone bottleneck — not this object's, which is one
+draw call).
+
+---
+
+## 145. GPU cost is MEASURED on a parked pose with the driver's timer — never derived from geometry
+
+**Date:** 2026-09-01 · **Provisional number** — renumbered from §143 at merge, where main had already taken 142/143.
+**Applies to:** any "why is this slow / what should I optimize" question about the render path.
+
+Three GPU-cost conclusions were produced by reasoning this session, and **all three were wrong**. Each was
+internally consistent, each survived review, and each died to a ten-minute measurement:
+
+1. *"Backface culling is the big win — the hull rasterizes 2.84 layers per covered pixel, so culling removes
+   50% of fragments."* Measured: **4%**. Tile-based GPUs (Mali, Apple) discard hidden layers in hardware
+   **before shading**. Depth complexity is a *rasterization* metric; you pay for what is SHADED.
+2. *"Shrinking the textures 16× will not move fps."* Then a phone reading suggested it did (17 → 23 fps),
+   and that was conceded. Measured properly: it does **not** — both builds bottom out at ~22 fps. The
+   concession was made on a number eyeballed off a fluctuating counter.
+3. *"§23 proved resolution is not a perf lever here."* Measured: cutting the pixel-ratio cap 2 → 1 cuts GPU
+   frame time **67%**. §23 was right for its scene (one light, submit-bound) and obsolete for this one.
+
+**The rule.** Do not derive fill cost from geometry, from object counts, or from a previous era's
+measurement. **Park the pose and read the driver's own timer.**
+
+**How, concretely** (all of it works today, no new dependencies):
+
+- `EXT_disjoint_timer_query_webgl2` is available in **headed** Chrome (verified on an M1 Pro via ANGLE
+  Metal, `GPU_DISJOINT_EXT` false). Wrap `renderer.render` and issue **one query per render call** — the
+  frame is two passes, so this splits **sky** from **combat** for free.
+- **Freeze and pose by hand.** `__game.setPaused(true)` skips `update()`, and the camera follow lives
+  *inside* it (`main.js:2085`), so a paused camera never moves — place it yourself:
+  `camera.position = player.pos + CAM_OFFSET(0,110,26) * zoom`, then `lookAt(player.pos)`. Change **one
+  factor at a time** and re-measure a known configuration **last** to quantify drift (an early run drifted
+  5% on an unchanged scene; anything smaller than the drift is noise).
+- **Free play cannot answer these questions.** A rung comparison across three flown sessions was really a
+  comparison of three flight paths: the effect only exists while the object is on screen, so a session
+  spent further from it reports a "win" that is just a different mix of frames. The `perf_samples`
+  telemetry (`?dev`) is still the right tool for *the phone*, but read it by **cause**, not by fps — split
+  frames into GPU-bound (frame time ≫ JS) and CPU-bound (high `js.total` + `longTasks`), or a script stall
+  will be filed as a shading problem. That exact confusion happened here.
+- **Check the quality tier before trusting any device number.** There is no hardware auto-detection
+  (`loadTier`), so a phone can be sitting on High from an old manual choice — as the Redmi 15C was for
+  every measurement in this session.
+
+**Cross-refs:** §23 (submit-bound, the *previous* era), §58 (the CPU A/B bench — different question, CPU
+only), §139 (no post-processing, which is why the frame is two plain passes and easy to time), §140 + its
+amendment (resolution rejected on image quality, not on cost), §144 (the station's textures).

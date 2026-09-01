@@ -16,6 +16,7 @@ import { SPEED_FIELD_RANGES, normalizeSpeedField, scatterLayer, scatterColors,
          wrapField, loadSpeedTune, saveSpeedTune, WRAP_SAFE_RADIUS } from './speed-field.js'; // pure speed-field math/defaults/tune
 import { isDev } from './dev.js'; // ?dev gate: only a dev's stored speed-field tune overrides the descriptor
 import { LOOK_DEFAULTS } from './graphics.js'; // the parallax backdrop layer's shipped constants (amp/follow/offsetMax/radius)
+import { stationMat } from './station-mat.js'; // ?stationmat: base-station shading measurement fork (off by default)
 
 // ---------- Arena ----------
 // There is no visible floor - ships hover in open space.
@@ -839,6 +840,15 @@ function asteroidMat(src, fog) { const m = src.clone(); m.fog = fog; return m; }
 // Pure render decor in the COMBAT scene: never in a gameplay array, never collidable, never sent to the
 // server. The pure math/defaults/clamping live in speed-field.js.
 let speedField = null;                                 // { spec, layers: [{ points, pos, half }] }
+
+// `?speedfield=0|off|false` disables the field entirely (see buildMap). Absent or anything else → on, so
+// this is a strict no-op for every real player. Read per call, not cached, because buildMap re-runs.
+function speedFieldEnabled() {
+  try {
+    const v = new URLSearchParams(window.location.search).get('speedfield');
+    return !(v === '0' || v === 'off' || v === 'false');
+  } catch { return true; }
+}
 // The live spec the ?dev folder binds to. Mutated IN PLACE by buildMap (never replaced) so the panel's
 // sliders — built once at boot — keep pointing at the current values across level/map switches.
 const speedFieldSpec = normalizeSpeedField(undefined); // starts at SPEED_FIELD_DEFAULTS
@@ -1233,12 +1243,50 @@ function makeFreighter(spec) {
 //     halfHeight ≈ 14, seed y = -28, top ≈ -14. ✓
 const STATION_LEN = { 'base-station': 100, 'space-factory': 120 };
 
+// Apply a ?stationmat rung to the base station's materials. BASE STATION ONLY (the space factory's look is
+// settled and its textures are already 256 WebP). Called from inside the glb onLoad, BEFORE the model is
+// parented and before G.needsSceneWarm is raised, so prewarmShaders()'s renderer.compile() sees the final
+// material and the very first frame that draws the station draws THIS one — no first-frame recompile hitch.
+// See station-mat.js for why the ladder exists and what each rung costs.
+function applyStationMat(model, rung) {
+  if (rung === 'standard') return;              // strict no-op for every real player
+  model.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const wasArray = Array.isArray(o.material);
+    const mats = wasArray ? o.material : [o.material];
+    const next = mats.map((m) => {
+      m.side = THREE.FrontSide;
+      m.normalMap = null;
+      if (rung === 'lean') { m.needsUpdate = true; return m; } // removing a map changes the shader program
+      // Read every value off the old material BEFORE disposing it, and CLONE the Colors — the new material
+      // must not hold a reference into one that is about to be disposed. Keys are only set when they
+      // exist: three's setValues() warns on an explicit `undefined`.
+      const shared = {
+        name: m.name, map: m.map, side: THREE.FrontSide, fog: m.fog,
+        transparent: m.transparent, opacity: m.opacity,
+      };
+      if (m.color) shared.color = m.color.clone();
+      const out = rung === 'phong'
+        ? new THREE.MeshPhongMaterial({ ...shared,
+            ...(m.emissive ? { emissive: m.emissive.clone() } : {}),
+            emissiveMap: m.emissiveMap, emissiveIntensity: m.emissiveIntensity, shininess: 30 })
+        // MeshBasicMaterial has NO emissive slot — the lit windows go dark here. That is the floor, on purpose.
+        : new THREE.MeshBasicMaterial(shared);
+      m.dispose();                               // construct first, then dispose: the values are read above
+      return out;
+    });
+    o.material = wasArray ? next : next[0];
+  });
+}
+
 function makeStationModel(spec) {
   const g = new THREE.Group();
   const len = STATION_LEN[spec.type] ?? 100;
   if (spec.modelUrl) G.pendingAssets++; // hold the level-load veil until the set-piece is here (DECISIONS §84)
   if (spec.modelUrl) gltfLoader.load(spec.modelUrl, (gltf) => {
     const model = gltf.scene;
+    // Before the pivot is parented and before needsSceneWarm: the swapped material is what gets compiled.
+    if (spec.type === 'base-station') applyStationMat(model, stationMat());
     const box = new THREE.Box3().setFromObject(model);
     const size3 = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
@@ -1383,7 +1431,16 @@ export function buildMap(descriptor) {
   // `d.speedField` only (falls back to the defaults when missing); the legacy `d.asteroids` shim was retired.
   disposeSpeedField();                       // buildMap re-runs per level/map switch — the old ring LEAKED here
   const base = normalizeSpeedField(d.speedField);
-  speedField = makeSpeedField(applySpeedFieldSpec(isDev() ? loadSpeedTune(window.localStorage, base) : base));
+  // `?speedfield=0` — MEASUREMENT FORK, off by default (same shape as ?lights=N / ?res=N). The field is the
+  // three additive dust layers whose ONLY job is to sell motion; this skips BUILDING them, so they cost no
+  // draw calls at all rather than being built and hidden.
+  // Why it needs a flag instead of a bench toggle: the layers are far too cheap to attribute on a desktop
+  // GPU — hiding them there made the frame measure *slower*, because at ~1.5 ms of work an M1 downclocks
+  // (ROADMAP: "measurement floor ~0.3 ms per pass"). They can only be judged on a real phone, where the GPU
+  // is saturated, and a phone is driven by typing a URL.
+  speedField = speedFieldEnabled()
+    ? makeSpeedField(applySpeedFieldSpec(isDev() ? loadSpeedTune(window.localStorage, base) : base))
+    : null;
 
   // mission set-pieces (decor in the combat scene), fixed in this shared world; remembered so each run
   // rebuilds them fresh (resets the cruising freighter)

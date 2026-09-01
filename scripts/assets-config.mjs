@@ -35,7 +35,12 @@ export const DIR = {
 // so both load in-game; inspect either in a web glTF viewer (see the pipeline doc).
 export const PRESET = {
   // combat: smallest possible runtime download — heavy decimation + meshopt geometry compression.
-  combat: { simplifyRatio: 0.2, simplifyError: 0.04, textureSize: 256, compress: 'meshopt', textureCompress: false, instance: false },
+  // NO DEFAULT `textureSize`, deliberately: gltf-transform performs the resize INSIDE its textureCompress
+  // stage, so `--texture-size` is a silent no-op whenever `--texture-compress false`. A preset that wants
+  // smaller textures must opt into `textureCompress` as well (see PRESET_OVERRIDES) — and `checkPreset`
+  // below throws if it forgets. This is how base_station shipped 4x 1024 PNGs (21.3 MiB of VRAM) under a
+  // preset that said 256.
+  combat: { simplifyRatio: 0.2, simplifyError: 0.04, compress: 'meshopt', textureCompress: false, instance: false },
   // hangar: keep detail; meshopt + WebP for the (larger) CloudFront download.
   hangar: { simplifyRatio: 1.0, simplifyError: 0.0, textureSize: 1024, compress: 'meshopt', textureCompress: 'webp', instance: true },
 };
@@ -61,6 +66,29 @@ export const PRESET_OVERRIDES = {
     // docs/plans/ship-model-pipeline.md.
     combat: { textureSize: 128, textureCompress: 'webp', flattenMaterials: { keepTexturedAbove: 34 } },
     hangar: { textureSize: 512 },                          // showcase detail, ~1.7 MB on CDN — full material set, never flattened
+  },
+  // Base-station set-piece (the return-to-base target, normalized to 100 u). Its source ships four 1024²
+  // PNGs — baseColor 634 KB, normal 617 KB, metallicRoughness 205 KB, emissive 42 KB — which is 21.3 MiB of
+  // VRAM with mips, ~54% of the VRAM of every model in the game put together, against 2 723 triangles in a
+  // SINGLE draw call. It is fill/bandwidth-bound, never submit-bound. It had no entry here at all, so it
+  // inherited `textureCompress: false` and the base preset's texture size did nothing (see PRESET.combat):
+  // this is the model that exposed that trap.
+  // 256 (not 128, which the metal box uses) for the same reason as space_factory: normalized to 100 u this
+  // thing fills a large part of the frame when you dock, where 128px panels read as mush.
+  // `pruneSolidTextures: false` protects the emissive map — mostly black with small lit windows, exactly the
+  // low-contrast shape optimize's solid-texture heuristic likes to flatten, and flattening it would make the
+  // whole hull glow.
+  base_station: {
+    // FULL 1024 RESOLUTION, kept deliberately: this is the one model the player parks against (docking), and
+    // its solar-panel cell grid is its signature detail — 256 visibly smears it, 512 softens it. Texture size
+    // was MEASURED to move fps by nothing (DECISIONS §140 amendment), so smaller maps would buy only VRAM,
+    // which no measurement says we need. What this override IS for is the FORMAT: the source ships four
+    // uncompressed 1024² PNGs (1.55 MB) and `textureCompress: 'webp'` takes the download to ~270 KB at the
+    // SAME pixel dimensions — measured mean per-pixel loss 1.37/255 (0.5%), 0.2% of pixels off by >16.
+    // Download matters for a reported bug: the first load on a weak phone overruns the 9 s asset wait and the
+    // level starts with placeholders (ROADMAP).
+    combat: { textureSize: 1024, textureCompress: 'webp', pruneSolidTextures: false },
+    hangar: { textureSize: 1024, textureCompress: 'webp', pruneSolidTextures: false }, // never shown in a menu; same treatment
   },
   // Shared equipment-drop model (metal box). The source (703 KB) is texture-dominated, and a drop is tiny on
   // a top-down screen → shrink textures hard (128px → WebP) for a KB-scale combat build. See
@@ -139,6 +167,19 @@ export const PRESET_OVERRIDES = {
 };
 // Merge the base preset for `kind` with any override for this source base name.
 export const presetFor = (base, kind) => ({ ...PRESET[kind], ...(PRESET_OVERRIDES[base]?.[kind]) });
+
+// The preset trap this file exists to prevent: gltf-transform's `optimize` performs its texture RESIZE
+// inside the textureCompress stage, so `--texture-size N --texture-compress false` silently keeps the
+// source resolution. Called by assets-build before every optimize() and asserted over every preset by
+// scripts/assets-config.test.mjs.
+export function checkPreset(p, label = 'preset') {
+  if (p && p.textureSize != null && p.textureCompress === false) {
+    throw new Error(`${label}: textureSize ${p.textureSize} with textureCompress:false — gltf-transform `
+      + 'resizes inside the textureCompress stage, so the resize would be a SILENT no-op. Set '
+      + "textureCompress (e.g. 'webp') or drop textureSize.");
+  }
+  return p;
+}
 
 // A run-on-S3 URL for a combat/hangar object. Combat is served same-origin (relative path); hangar via CDN.
 export const combatPath = (file) => `assets/ships/${file}`;

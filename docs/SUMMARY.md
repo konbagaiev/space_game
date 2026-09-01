@@ -3,7 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-31 (**A finished mission can always be closed, and the homing arrow is gone.** Firing on
+**Updated:** 2026-09-01 (**The base station stops eating half the game's texture memory.** Its combat glb is
+rebuilt at four **1024² WebP** maps — full resolution kept, 1.55 MB → **270 KB** of download, with no
+look change. The cause was a pipeline trap: gltf-transform resizes **inside** its `textureCompress` stage, so
+`PRESET.combat`'s `textureSize: 256` had always been a silent no-op; `checkPreset` now **throws** on that
+combination and the repo-root `npm test` runs it in CI. Shipped alongside is **`?stationmat=<rung>`**, an
+off-by-default measurement fork (`standard` / `lean` / `phong` / `basic`) for the base station's shading —
+DECISIONS §144.) 2026-08-31 (**A finished mission can always be closed, and the homing arrow is gone.** Firing on
 the way home cancels the autopilot (§39) — and used to leave the mission permanently unclosable: the
 "Finish and Return" button refused every further press and hand-flying to the station did nothing. The button
 now re-engages the flight (without re-running the one-shot settlement) and, once it has been pressed, arriving
@@ -1131,7 +1137,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   assets:build` (gltf-transform via npx → a content-hashed **combat** + **hangar** glb per `assets-src/*.glb`,
   or pass base names to build a subset, e.g. `assets:build enemy_1_orange`;
   default `PRESET.combat`/`hangar` in `assets-config.mjs`, with optional per-source **`PRESET_OVERRIDES`**
-  merged by `presetFor` — combat geometry is **meshopt-compressed** to stay light for battle) /
+  merged by `presetFor` — combat geometry is **meshopt-compressed** to stay light for battle; see the
+  **texture-size trap** below) /
   **`assets:materials`** (`scripts/assets-sample-materials.mjs` — samples every material of a source model
   into the committed sidecar `assets-src/<base>.materials.json`: the LINEAR-averaged base colour, the mean
   metalness/roughness off the MR map, an emissive mean when the map actually lights up, and `spread` = how
@@ -1147,6 +1154,22 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   station, space factory) and the star's `system.star.modelUrl`. That last lane was a hole: a bad hash on a
   set-piece or the sun shipped a 404 and the object silently vanished (or fell back to a flat sphere) with
   nothing failing the deploy.
+  **The texture-size trap, and the guard that now closes it (DECISIONS §144).** gltf-transform's `optimize`
+  performs its texture **resize inside the `textureCompress` stage**, so `--texture-size N` is a **silent
+  no-op** whenever `--texture-compress` is `false`. `PRESET.combat` therefore carries **no default
+  `textureSize`** — the `256` it used to declare never resized anything, and that is how the base station
+  shipped four UNCOMPRESSED 1024² PNGs (a 1.55 MB download) under a preset that
+  read 256. A model that wants smaller combat textures opts in **per model** in `PRESET_OVERRIDES` with
+  `textureCompress` **and** `textureSize` together (`player` 128 WebP, `metal_box` 128 WebP, `space_factory`
+  256 WebP, `sun` 512 WebP, `asteroids` 256 WebP, **`base_station` 1024 WebP** — full resolution, the
+  override is there for the FORMAT). The exported
+  **`checkPreset(preset, label)`** in `assets-config.mjs` **throws** on the half-configured combination and
+  is called by `assets-build.mjs` before every `optimize()`; `--texture-size` is omitted from the CLI when
+  unset. Pinned by `scripts/assets-config.test.mjs` (run via the repo-root **`npm test`** =
+  `node --test "scripts/**/*.test.mjs"`, which also finally runs the previously-orphaned
+  `assets-hitboxes.test.mjs`; both are a CI step in the `test` job). **Still open:** `--texture-size` remains
+  a no-op for the ~6 combat models with no `textureCompress` override, and `simplifyRatio` is read only as a
+  boolean (`p.simplifyRatio < 1`) so its numeric value never reaches the CLI — both are ROADMAP follow-ups.
   **Material flattening (combat only, `scripts/assets-flatten.mjs`, DECISIONS §77).** A model opts in with
   `flattenMaterials: { keepTexturedAbove: N }` in its **combat** preset. Before `optimize`, every material is
   replaced by flat factors read from the `assets:materials` sidecar, so `optimize --palette` can merge the
@@ -2183,6 +2206,20 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   screen, because the cost tracks LIT PIXELS. **`?lights=N`** overrides the pool size for measurement (needs
   a reload, by construction). Intensity is in candela with `decay: 2` (physically correct 1/d²), which is why
   the numbers are large: at 3 u a power of 4 contributes ~0.44 against a 1.68 sun and a 1.2 ambient.
+- **`?stationmat=<rung>` — the BASE STATION's shading measurement fork, OFF by default** (`station-mat.js`,
+  applied in `world.js`'s `applyStationMat` inside the glb `onLoad`, before the model is parented so
+  `prewarmShaders()` compiles the final material). Base station only — the space factory is untouched. Read
+  once at import time from the URL, like `?lights=N` / `?ally`; no tier gating, no `?tune` slider (the
+  measurement happens on a phone where lil-gui is unusable). Rungs are **cumulative**:
+  `standard` (default, or `0`/`off`/`false`) = today's material, a strict no-op; `lean` = `side = FrontSide`
+  + `normalMap = null`, still `MeshStandardMaterial` so the `scene.environment` IBL survives; `phong` =
+  `lean` + `MeshPhongMaterial` (Blinn-Phong per light instead of GGX, and **no IBL**); `basic` =
+  `MeshBasicMaterial`, zero lighting maths — the measurement floor, and since `MeshBasicMaterial` has **no
+  emissive slot the station's lit windows go dark on that rung** (expected, not a bug). An unknown value
+  `console.warn`s the valid rungs and falls all the way back to `standard`. Nothing here is promoted to a
+  default: the two obvious cheap moves are both risky on this asset (147 of its 4 157 edges are **boundary
+  edges**, so `FrontSide` can punch holes; 22.8% of its normal-map texels carry **real relief**), which is
+  why it is a fork to measure rather than a decision — DECISIONS §144.
 - **Silhouette: a hull emissive floor that is wired but ships at 0.** Every ship `.glb` template gets
   `applyHullEmissiveFloor` (`ship-factory.js`) **once, on the shared cached template, before `warmModel` and
   before any clone is served** — each lit material with no authored emissive gets `emissive = its own base
@@ -2721,7 +2758,20 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
       the freighter** (`-48`) so it reads clearly top-down; the model is tall (y ≈ 0.78 of its longest axis)
       so its **top lands at ~y = -2.9**. `buildSetPiece` stashes it on `G.baseStation = { obj, active }` so
       the sim/HUD/click code can find it; it's the clickable autopilot target for the return-to-base flow
-      (see Level flow / Victory).
+      (see Level flow / Victory). **Budget:** 2 723 triangles in a **single draw call** with **one**
+      material (`Space_Station_Mat2K`, `doubleSided`, metalness/roughness 1 modulated by the MR map, lit
+      largely by the RoomEnvironment PMREM on High and Balance) carrying four **1024² WebP** maps (baseColor
+      / normal / metallicRoughness / emissive) — an **~86 KB** glb and **~1.3 MiB** of VRAM. It is therefore
+      **fill-bound, never submit-bound**: it is the game's measured weak-phone frame-rate cliff (ROADMAP)
+      precisely when it fills the screen. Its depth complexity along the camera axis is **2.84 rasterized
+      layers per covered pixel** (max 19, because the hull is `doubleSided`) — but that number does NOT
+      predict cost: backface culling saves 4% and dropping the normal map 2%, since tile-based GPUs discard
+      hidden layers before shading (DECISIONS §145). The lever is the per-light BRDF. Until 2026-09-01 the
+      model also shipped the source's four **uncompressed 1024² PNGs** (a 1.55 MB download) because
+      `PRESET.combat`'s `textureSize: 256` was a silent no-op (see Asset pipeline); it now ships **1024²
+      WebP** at 270 KB — same pixels, the resolution is kept deliberately.
+      `client/visual/scenarios/46-base-station.mjs` guards the download size + WebP format and measures that the emissive
+      map's lit windows survived the downsample.
     - **`space-factory`** — the **Space Factory** navigation destination, ~two screens up-left of the home
       planet. `space_factory_combat` (CC-BY 4.0 "Sci-Fi Space Station: Rotor Nexus" by rivetech), len
       **120** (a step up from the home station, ~85% of the frame height at its depth), `spin` 0.02 rad/s,
@@ -2972,14 +3022,28 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   (`client/src/credits-data.test.js`) fails CI if the committed module is stale (`credits:build --check`
   mirrors the `assets:check` guard). Chrome labels are i18n (`ui.credits.*`, EN+RU); attribution content
   (authors/titles/URLs/licenses) stays literal.
-- **Graphics quality tiers (`client/src/graphics.js`, DECISIONS §23).** A 3-way selector —
-  **High / Balance / Performance** — for weak phones. **Note (measured on two GPUs, see DECISIONS §23):
-  the weak-device bottleneck is NOT fragment fill rate** — a 5.5-7× backbuffer-pixel cut moved fps by
-  nothing; it's **CPU draw-call submit + the GPU/compositor thermal governor**. So the resolution levers
-  are largely cosmetic-quality knobs, not perf knobs (a sub-1 `renderScale` was tried and **removed** — it
-  only blurred the image for no fps gain). **Balance stopped cutting resolution on 2026-08-31** (DECISIONS
+- **Graphics quality tiers (`client/src/graphics.js`, DECISIONS §23, §140 + its 2026-09-01 amendment).** A
+  3-way selector — **High / Balance / Performance** — for weak phones. **There is no hardware
+  auto-detection at all:** `loadTier` returns the saved `localStorage` value, else **`balance` on touch**,
+  else `high` — so a device pinned to High by an old manual choice is *not* what a new player gets, and any
+  device measurement must state which tier it ran on.
+  **What the frame is bound by (measured 2026-09-01, fixed pose + real GPU timing):** the frame is
+  **fragment-bound**, and the cost order is **light count ≫ material ≫ geometry/textures**. With the base
+  station filling the screen: 16 lights = 2.20 ms of GPU time, 4 = 0.69 ms, 0 = 0.54 ms; the most extreme
+  material change (unlit station) saves 1.03 ms at 16 lights; backface culling saves 4% and dropping a
+  normal map 2% (tile-based GPUs discard hidden layers before shading, so overdraw counts mislead);
+  **texture size moves fps by nothing** (it is a VRAM/download lever only). At Balance the **sky pass is
+  52% of the GPU frame** and is pure fill (~0.4 ms/Mpx, no geometry component) — see ROADMAP.
+  **Resolution IS a strong perf lever — and is deliberately not used.** Cutting the pixel-ratio cap 2 → 1
+  cuts GPU frame time **67%** (2 → 1.5: 40%) at every light count and framing. It is rejected on **image
+  quality**: re-tested on the real phone with a `?res=N` fork that lowers the cap while KEEPING AA, the
+  picture degrades far more than the frames are worth. §23's older "pixels move fps by nothing" was true of
+  the **pre-lights, submit-bound** scene and must not be cited about resolution today. The ordering rule
+  stands, now measured: **take the lights down before the pixels.** (A sub-1 `renderScale` knob was tried
+  and **removed** in 2026-06-27; `graphics.test.js` asserts it stays gone.)
+  **Balance stopped cutting resolution on 2026-08-31** (DECISIONS
   §140): it renders at **full pixel ratio with AA, exactly like High** — the 1.5 cap + `antialias: false` it
-  used to carry was a blur every phone player saw, buying fps that had been measured as nothing twice. What
+  used to carry was a blur every phone player saw. What
   separates High from Balance now is the **lighting** (16 vs 4 lights), the additive overdraw and the bake
   sizes; **Performance is the only tier that cuts pixels**. Per tier: **pixel-ratio cap** (2 / 2 / 1),
   **antialias** (on / on / off), **star density** ×(1 / .6 / .35), **particle density** ×(1 / .6 / .4 — scales rocket-burst spark
@@ -3533,7 +3597,8 @@ first translation). See DECISIONS §10.
   `/v2`) served by a second container still shares this container's `/api` + DB for free, because
   `/api` carries no subpath prefix — see `docs/plans/v2-experimental-branch.md` + DECISIONS §72.
 - **CI/CD:** `.github/workflows/ci-cd.yml`. On every push/PR (incl. PR merges) it runs the client +
-  server test job (server tests against a `postgres:16` service container). On push to **`main`** the
+  **asset-pipeline** + server test job (client `node --test`; then a repo-root `npm ci` + `npm test` for
+  `scripts/`; then the server suite against a `postgres:16` service container). On push to **`main`** the
   `deploy` job runs: SSH (`DEPLOY_SSH_KEY`/`DEPLOY_HOST`/`DEPLOY_USER`) → **`node scripts/assets-check.mjs`**
   (deploy guard: every model + SFX referenced in code must exist on S3) → **`assets-pull.mjs`** (pulls the
   combat models into `client/assets/ships/` + SFX into `client/assets/sounds/`, gitignored, so they get
@@ -4454,13 +4519,26 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   bullet/rocket combination that ships today; `netsim-world.test.js` adds that a wire `beamFire` hydrates
   `from`/`to` back into real `Vec3`s, that a `beamCharge` carrying `shipId` **hydrates to the ghost that id
   names** (consuming the raw id), that an unknown id resolves to `null` rather than throwing, and that the
-  player's own ref-less charge comes through with no `ship` key at all.
+  player's own ref-less charge comes through with no `ship` key at all;
+  `station-mat.test.js` covers the `?stationmat=` rung parser (absent / `standard` / `0` / `off` / `false`
+  all mean the default and must warn about **nothing**; each rung and an upper-case one resolve to
+  themselves; a typo **and a bare `?stationmat`** fall back to `standard` **and** warn once, naming every
+  rung — a measurement flag that silently does nothing is the exact bug this feature fixed).
   Run: `cd client && npm test`. **Bench gate** —
   `client/src/bench.test.js` (`evalBench` sticky tri-state + `mulberry32` determinism, still importable from
   `bench.js` which re-exports it from `sim-random.js`) +
   `client/bench/stats.test.js` (median + bootstrap-CI verdicts: the 2% boundary is strict/FLAT, +2.5%→
   REGRESSION, −11%→IMPROVED, a `load.draws` bump flags) run under the same `node --test`; the browser A/B
   runner `node bench/run.mjs` is a separate manual command (forks Chromium + a server), **not** in `npm test`.
+- **Asset pipeline** — repo-root **`npm test`** (`node --test "scripts/**/*.test.mjs"`), also a CI step in
+  the `test` job (preceded by a root `npm ci`, which the `@gltf-transform/*` devDependencies need).
+  `scripts/assets-config.test.mjs` asserts every shipped `PRESET × PRESET_OVERRIDES` combination passes
+  `checkPreset`, negative-tests the guard (`{ textureSize, textureCompress: false }` throws, and the message
+  names the offending file), allows the legitimate `textureCompress: false` with no size, pins that
+  `PRESET.combat` carries **no** `textureSize`, and deep-equals the `base_station` combat preset.
+  `scripts/assets-hitboxes.test.mjs` (previously orphaned — nothing ran it) rides along; its
+  model-surface-coverage test **skips cleanly** when the gitignored combat glbs are absent, which is the CI
+  case.
 - **Backend API** — `server/src/server.test.js` (52): register / record game + credit banking / history /
   validation / health / serves client / ships + weapons + components + maps + levels catalog + active ship +
   player progress (current level + advance) + **progress reset** (per-player → new-player baseline, unknown→404) +
@@ -4730,6 +4808,19 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   waits on the host's `.has-more-*` classes rather than a fixed sleep — the granted-item showcase floats in
   after its model loads and re-triggers the hint, so a timed read lands mid-fade. Mutation-checked by
   dropping the `attachScrollHint` call: it fails).
+  and **the base station's texture budget, its lit windows and the `?stationmat` ladder**
+  (`46-base-station.mjs` — the first coverage of the glb base station at all; `09-mission-setpieces` covers
+  only the procedural set-pieces, and `42-hit-feel`/`43-expensive-look` deliberately fly away from it). It
+  navigates itself once per rung (so it re-calls `silenceIntro()` — the rung frames ARE a review artefact)
+  and waits on the parented glb, never a clock. Asserts: the **default** rung is a strict no-op
+  (`MeshStandardMaterial`, `side === DoubleSide`, `normalMap` present); **every** decoded map is **≤ 256²**
+  (the regression test for the whole feature — mutation-checked by pointing the seed back at the old
+  `529dee5e` glb, which fails it with `map is 1024x1024`); the emissive map is present **and measured** —
+  Rec.709 peak ≥ 160 and lit fraction ≥ 0.20% (measured 219.9 / 0.413% on the shipped build, 215.9 / 0.415% on the
+  1024² source), because a present-but-dark map is exactly what a 4× downsample of a 99.5%-black texture
+  plus lossy WebP produces and an existence check is blind to it; and one boot per rung for `lean` /
+  `phong` / `basic` plus a `nonsense` value that must fall **all the way** back (no half-applied
+  `FrontSide`). Four screenshots, one per rung.
   **The runner's boot gate** (`visual/run.mjs`): every scenario boots the throwaway player into level-0, so
   after the take-off click it now **steps the sim** to the state scenarios have always been handed (an arena
   with an enemy — level-0 holds its first spawn for 3 s of sim), then calls **`__game.silenceIntro()`** so

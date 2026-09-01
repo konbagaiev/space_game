@@ -1107,7 +1107,7 @@ export const MAPS = [
         // under the plane (ships fly over it — no collision handling). See DECISIONS §39.
         {
           type: 'base-station', pos: [-10, -42, -10], scale: 1.0, spin: 0.03, // just up-left of the arena center (screen top-left = -z/-x)
-          modelUrl: 'assets/ships/base_station_combat.529dee5e.glb',
+          modelUrl: 'assets/ships/base_station_combat.3c798188.glb',
           yaw: 0, // a station has no "nose"; 0 reads fine top-down
         },
         // Space Factory — an industrial ring station roughly two screens up-left of the home planet
