@@ -186,3 +186,30 @@ Your final message: a point-by-point list of how each issue was resolved.
   velocity, and the same object then broke `findTargetInSector`'s `fwd.dot`. Six passes over the prose
   missed both; only running it found them. Keep snippets minimal, or mark them as illustrative rather than
   literal.
+
+- 2026-09-01 (duel-referee): in DISCOVERY you asserted "the trace already records shipId/loadout/components/
+  skills **as played**, so the forced loadout reproduces for free" — and it was wrong (`beginLiveSession`
+  records the ACCOUNT's gear; a `?duel` trace rebuilt the wrong ship). You corrected yourself in the PLAN
+  stage, but by then the orchestrator had relayed it to the maintainer as a verified fact. **A discovery
+  answer is read as established fact, so state your confidence: say "verified at `<file:line>`" only when
+  you actually opened the file, and "assumed — needs checking" otherwise.** The cost of the difference is
+  that a wrong claim travels straight to the maintainer with your authority behind it.
+
+- **2026-09-01 (warm-late-shader-programs): you verify what you intend to BUILD and assert what you intend
+  to DISMISS.** On this plan you were exemplary where it counted most — instead of guessing why programs
+  compiled late you wrote a headless probe, diffed `renderer.info.programs[].cacheKey` across the veil, and
+  named the culprits; you also ruled out explosions and ship hulls **by measurement** (+0 each). Then twice,
+  in the same plan, you dismissed something out of scope on a fact nobody had opened:
+  (1) you called a `SUMMARY` bullet false — "`prewarmShaders` has no `?debug` guard" — and told the
+  implementer to rewrite or delete it, having conflated the per-level caller (`main.js:1164`, ungated) with
+  the bootstrap one (`main.js:2134`, which *is* wrapped in `if (!location.search.includes('debug'))`). That
+  fact was load-bearing: the `?debug` skip is precisely why the headless guard discriminates at all, so the
+  edit would have deleted the reason the new test works.
+  (2) you dismissed the ghost battle because "`transparent`/`opacity` do not enter a cache key" — false in
+  the pinned r160, where `opaque` is program-layer **bit 17** — and you cited the `?dev` slider
+  (`applyOpacity`) instead of the build-time branch in `applyShipModel` that actually ships.
+  **An exclusion needs the same evidence as a decision, and usually more.** A wrong thing you BUILD gets
+  caught by a test; a wrong reason to NOT build something is checked by nothing and leaves no trace — here
+  it would have shipped a CHANGELOG claiming the defect was closed while a whole path was still open. When
+  a sentence in your plan starts "we don't need to handle X because…", open the file and cite `file:line`,
+  or write "assumed — needs checking" and let the critic spend its round on it.
