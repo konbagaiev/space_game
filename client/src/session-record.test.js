@@ -138,3 +138,72 @@ test('the recorder carries the run\'s skill allocation into the trace', () => {
   for (let i = 0; i < 300; i++) bare.captureTick({ k: [], t: null });
   assert.equal(bare.flush('win', { durationMs: 1000, kills: 0 }).trace.skills, null);
 });
+
+// ---------- the duel referee's two additions: the ROOM and the ANCHOR ----------
+// (docs/plans/2026-09-01-1845-duel-referee.md §S5)
+
+test('begin({ room }) carries the room onto the trace, and a plain session carries null', () => {
+  const sr = makeSessionRecorder();
+  sr.begin({ seed: 1, level: 'level-1', shipId: 1, room: { kind: 'duel', aces: 2 }, dt: 1 / 60 });
+  for (let i = 0; i < 200; i++) sr.captureTick(snap());
+  assert.deepEqual(sr.snapshotTrace().room, { kind: 'duel', aces: 2 });
+  const out = sr.flush('death', { durationMs: 4000, kills: 0 });
+  assert.deepEqual(out.trace.room, { kind: 'duel', aces: 2 });
+  assert.deepEqual(out.room, { kind: 'duel', aces: 2 }, 'and on the payload, for the route that labels the row');
+
+  const plain = makeSessionRecorder();
+  plain.begin({ seed: 1, level: 'level-1', shipId: 1, dt: 1 / 60 });
+  for (let i = 0; i < 200; i++) plain.captureTick(snap());
+  const p = plain.flush('win', { durationMs: 4000, kills: 1 });
+  assert.equal(p.trace.room, null);
+  assert.equal(p.anchor, null, 'no room → no digest was ever taken');
+});
+
+// The FIRST tick at which the fight settled is the anchor; a later tick is a different fight state, and a
+// second seal would silently replace the thing the referee is comparing against.
+test('sealAnchor keeps the FIRST seal and ignores every one after it', () => {
+  const sr = makeSessionRecorder();
+  sr.begin({ seed: 1, level: 'level-1', room: { kind: 'duel', aces: 2 }, dt: 1 / 60 });
+  const first = sr.sealAnchor({ tick: 640, hash: 0x8d802ca2, draws: 38 });
+  assert.deepEqual(first, { tick: 640, hash: 0x8d802ca2, draws: 38 });
+  assert.deepEqual(sr.sealAnchor({ tick: 900, hash: 1, draws: 2 }), first);
+  assert.deepEqual(sr.anchor, first);
+});
+
+// The seal site (main.js flushSession) runs at the top of a FINAL flush, so it must not depend on the
+// recorder still being open — and a fresh begin() must clear it, or the next session inherits a stale one.
+test('sealAnchor works on a closed recorder, and begin() resets it', () => {
+  const sr = makeSessionRecorder();
+  sr.begin({ seed: 1, level: 'level-1', room: { kind: 'duel', aces: 2 }, dt: 1 / 60 });
+  for (let i = 0; i < 200; i++) sr.captureTick(snap());
+  sr.flush('death', { durationMs: 4000, kills: 0 });
+  assert.equal(sr.active, false);
+  assert.deepEqual(sr.sealAnchor({ tick: 200, hash: 7, draws: 3 }), { tick: 200, hash: 7, draws: 3 });
+  sr.begin({ seed: 2, level: 'level-1', dt: 1 / 60 });
+  assert.equal(sr.anchor, null);
+  assert.equal(sr.room, null);
+});
+
+test("flush()'s payload carries the anchor the fight was sealed at", () => {
+  const sr = makeSessionRecorder();
+  sr.begin({ seed: 1, level: 'level-1', room: { kind: 'duel', aces: 2 }, dt: 1 / 60 });
+  for (let i = 0; i < 300; i++) sr.captureTick(snap());
+  sr.sealAnchor({ tick: 300, hash: 0xdeadbeef, draws: 12 });
+  const out = sr.flush('death', { durationMs: 5000, kills: 0 });
+  assert.deepEqual(out.anchor, { tick: 300, hash: 0xdeadbeef, draws: 12 });
+});
+
+// snapshotTrace() is what the ?debug hook and 48-duel-referee read: it must be PURE — no closing, no
+// re-sending bookkeeping, nothing a live session would notice.
+test('snapshotTrace() reads the recording without closing or advancing anything', () => {
+  const sr = makeSessionRecorder();
+  sr.begin({ seed: 5, level: 'level-1', shipId: 1, dt: 1 / 60 });
+  for (let i = 0; i < 250; i++) sr.captureTick(snap());
+  const t = sr.snapshotTrace();
+  assert.equal(traceTickCount(t), 250);
+  assert.equal(sr.active, true);
+  assert.equal(sr.final, false);
+  assert.equal(sr.sentTicks, 0);
+  for (let i = 0; i < 50; i++) sr.captureTick(thrust());
+  assert.equal(traceTickCount(sr.snapshotTrace()), 300, 'and it re-reads the recording as it grows');
+});

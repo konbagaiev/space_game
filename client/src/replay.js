@@ -8,6 +8,11 @@
 // This module is the PURE, DOM-free, engine-free half — URL-flag parsing + the trace shape + the per-tick
 // input snapshot/apply. main.js owns the wiring (it holds update()/reset()/keys/the render loop). Keeping the
 // pure half here makes it unit-testable and keeps the trace format in one documented place.
+//
+// The one sim-core import is a CONSTANT: the ceiling on a duel room's ace count, used to validate the
+// optional `room` a trace can carry (docs/plans/2026-09-01-1845-duel-referee.md §S4). sim-core is
+// host-neutral by contract, so this stays loadable in Node and in a tab alike.
+import { ACE_COUNT_MAX } from './sim-core/ace.js';
 
 // The trace format version we WRITE. Bump on any breaking shape change so a stale recording is rejected
 // loudly. v2 stores the ticks RUN-LENGTH PACKED (`runs` + `tickCount`) instead of a flat `ticks` array —
@@ -176,7 +181,7 @@ export const RETURN_HOME_STALL_TICKS = 900;
 // Takes EITHER a flat `ticks` array (dev ?record, tests) or already-packed `runs` (+ `tickCount`) straight
 // from the live recorder, and always emits the packed v2 shape. The runs are copied, so a recorder that
 // keeps capturing after a provisional upload cannot mutate a trace already handed to the transport.
-export function makeTrace({ id, level, seed, dt, shipId, loadout, components, skills, ticks, runs, tickCount }) {
+export function makeTrace({ id, level, seed, dt, shipId, loadout, components, skills, room, ticks, runs, tickCount }) {
   const packed = runs ? runs.map((r) => [r[0], r[1]]) : packTicks(ticks);
   return {
     version: TRACE_VERSION,
@@ -192,6 +197,12 @@ export function makeTrace({ id, level, seed, dt, shipId, loadout, components, sk
     // different ship and diverges immediately (see the v4 note at the top) — null means "none spent",
     // which is also how every pre-v4 trace has to be read.
     skills: skills || null,
+    // The ROOM this fight was fought in, when it was not the plain level: `{ kind:'duel', aces:N }`.
+    // `level` stays the catalog level the room was built over, so `buildCatalog` still resolves it and
+    // `classifyTrace` still works. Optional and additive: **TRACE_VERSION stays 4** (DECISIONS §125's
+    // version marker is for shape changes that break a reader; a trace without `room` reads exactly as it
+    // always did). See docs/plans/2026-09-01-1845-duel-referee.md §S4.
+    room: room || null,
     tickCount: Number.isFinite(tickCount) ? tickCount : packed.reduce((n, r) => n + r[1], 0),
     runs: packed,                    // [[tickSnapshot, repeatCount], …] — hydrateTrace() expands it at load
   };
@@ -235,8 +246,8 @@ export function makeReplaySession() {
 //   touchAim   — the shared touch-steering state (mutated in place)
 //   dt         — the fixed step (BENCH_DT)
 //   update     — the sim step, called as update(dt)
-//   capture    — optional; called right after update() to snapshot this tick's input (record / live session)
-//   onTick     — optional; called every tick after `capture` (the Level-0 intro director rides this)
+//   capture    — optional; called right BEFORE update() to snapshot this tick's input (record / live session)
+//   onTick     — optional; called every tick after update() (the Level-0 intro director rides this)
 //   isCleared  — () => the sector is clear and the mission has not been ended yet
 //   isWon      — () => levelRunner.won
 //   finish     — presses "Finish and Return" (finishMission)
@@ -258,9 +269,15 @@ export function stepReplayTick({ rs, keys, touchAim, dt, update, capture, onTick
     if (rs.index < rs.trace.ticks.length) applyInput(rs.trace.ticks[rs.index], keys, touchAim);
     else { rs.done = true; return 'stop'; }         // trace exhausted with the fight unfinished
   }
+  // CAPTURE BEFORE THE TICK, not after — and that ordering is the invariant, not an accident. `update()`
+  // drains the sim events, and the `cleared`/`death` handlers flush the session from inside that drain, so
+  // capturing afterwards meant the uploaded trace was always MISSING the tick on which the fight ended and
+  // a re-simulation stopped one tick short of the outcome it was supposed to judge
+  // (docs/plans/2026-09-01-1845-duel-referee.md §3.1a). The snapshot is identical either way: nothing in
+  // sim-core writes `keys`/`touchAim` (step-player.js and steering.js only read them).
+  if (capture) capture();
   update(dt);                                       // the seeded stream is opt-in inside the sim (sim-random.js)
   if (rs.play && rs.trace && !rs.returning) rs.index++;
-  if (capture) capture();
   if (onTick) onTick();                             // per-tick observer (the Level-0 intro director)
   // ?playback&finish — press "Finish and Return" for the pilot when the sector clears, and stop the re-sim
   // on the victory overlay. A trace cannot carry that click, so without this a winning replay never ends.
@@ -289,6 +306,13 @@ export function validateTrace(t) {
   if (!t.level) problems.push('level missing');
   // `skills` is optional (absent in v1–v3) but must be an object when present: it rebuilds the ship.
   if (t.skills != null && typeof t.skills !== 'object') problems.push('skills is present but not an object');
+  // `room` is optional too (absent on every campaign session). When present it rebuilds a NON-standard
+  // fight, so it has to be exactly the one shape we know how to rebuild.
+  if (t.room != null) {
+    const r = t.room;
+    if (typeof r !== 'object' || r.kind !== 'duel') problems.push('room is present but not a duel room');
+    else if (!Number.isInteger(r.aces) || r.aces < 1 || r.aces > ACE_COUNT_MAX) problems.push(`room.aces ${r.aces} is out of range (1..${ACE_COUNT_MAX})`);
+  }
   // Either shape is accepted: v1's flat `ticks`, or v2's packed `runs`. Both must be non-empty.
   if (Array.isArray(t.ticks)) { if (t.ticks.length === 0) problems.push('ticks is empty'); }
   else if (Array.isArray(t.runs)) {

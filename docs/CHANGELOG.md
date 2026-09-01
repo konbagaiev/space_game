@@ -5,6 +5,52 @@
 
 ## 2026-09-01
 
+- **The duel referee — the server re-simulates a duel and says what actually happened.**
+  [2026-09-01-1845-duel-referee] A `?duel` session is now **verifiable**. Its trace carries the one
+  parameter that defines the room (`room: { kind:'duel', aces:N }`), the browser publishes a **digest of the
+  World at the instant the FIGHT ended**, and the server replays the uploaded input headlessly through
+  `sim-core` and compares the full `worldDigest` hash **and** the seeded draw count. The result — `agree` /
+  `disagree` / `unverifiable` — lands in new `verdict` / `verdict_note` columns and shows as a column on
+  `/admin/sessions`, beside a new `js_engine` column recording the browser engine that ran the simulation
+  (a cross-engine float difference is the last honest explanation for a `disagree`, and `36-sim-divergence`
+  only ever proved Chromium ↔ Node). **Nothing binds to a verdict** — no credits, no XP, no progression, no
+  gate; that is DECISIONS §129's own rule and §149 restates it. For a player the user-visible effect is
+  exactly zero.
+  - **The anchor is the end of the FIGHT, not the end of the trace** (§149). A mission ends twice (§130),
+    and the second ending needs a mouse click and a dock that an input trace cannot carry — so digesting the
+    final state would have marked **every honest winning duel `disagree`**. Both hosts now digest at the
+    first tick where `levelRunner.cleared || !player.alive`.
+  - **The build gate is live on the real path.** `/api/config` now returns a top-level `build`, the client
+    stamps it on `G.buildVersion` and echoes it on the session upload, so a tab left open across a deploy is
+    refused as `build-drift` instead of judged on the wrong code. Before this, `game_version` was stamped by
+    the server at receipt and §129's gate was a dead branch.
+  - **A pre-existing off-by-one that dropped the FINAL tick of EVERY recorded session is fixed.**
+    `stepReplayTick` captured the tick's input *after* `update()`, but `update()` drains the sim events and
+    the `cleared`/`death` handlers flush the session from inside that drain — so every uploaded trace was
+    missing the tick on which the level was cleared or the player died, and any re-simulation stopped one
+    tick short of the outcome it was there to judge. (Very likely part of why the 2026-08-21 campaign survey
+    measured 20% agreement; re-measuring the campaign is a separate slice.) Existing traces are untouched
+    bytes and replay identically.
+  - **The `death` handler now flushes the session before it banks the run**, matching `cleared`. `bankRun()`
+    sets `world.banked`, which is inside the digest, so banking first sealed a World the headless referee
+    could never reach — measured as a hash-only disagreement on an otherwise bit-identical fight.
+  - **The recorder records the ship that was actually flown.** Under `?duel` the player flies a forced
+    starter kit, and the trace recorded the *account's* gear — telling a re-simulation to rebuild the wrong
+    ship. `beginLiveSession` now wraps its loadout/components/skills through `duelBuild` (a strict no-op with
+    the flag off). `?beam` has the same hole; it is named in SUMMARY and left alone here.
+  - **The room transform moved into `sim-core`** (`client/src/sim-core/duel-config.js`, re-exported from
+    `duel-dev.js`), so `createSimWorld({ duel })` can rebuild a duel server-side. `?playback` of a duel trace
+    now rebuilds the room from the recording, so the admin ▶ play link shows the fight that was fought.
+  - `runTrace` gains `stopWhen` (and a `duel` room hop). Guarded against the committed Level-0 trace, which
+    is the only run in the repo that CLEARS: with `stopWhen` it stops at tick **2657** / `0x38d48dac`,
+    without it it plays out all **3670** / `0x8d802ca2`. Every duel fixture is an idle death, which
+    `runTrace` already broke on, so that guard is the only thing that would notice the option regressing —
+    and a regression would silently turn every honest WON duel into a `disagree`.
+  - New: `client/src/engine-id.js`, `server/src/seal/verify-duel.js`, `client/visual/scenarios/48-duel-referee.mjs`
+    (the browser ↔ Node oracle for a **live-recorded** duel — 36 only ever proved a `?playback` re-run of a
+    committed asset). Measured cost of a verdict: ~2-10 ms of server CPU for a ~520-tick duel, run on
+    `setImmediate` after the 204 so an upload never waits for it.
+
 - **The Sentinel pilot now shoots rockets out of the air.** [duel-room] The wingman and the duel room's
   aces both get **point defence**: the nose swings onto an incoming rocket and the gun shoots it down —
   but **only while the ship they are charging is beyond gun range, or there is nothing to charge at all**

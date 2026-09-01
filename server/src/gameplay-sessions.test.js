@@ -182,3 +182,123 @@ test('GET /admin/sessions: admin disabled (env unset) → 404', async () => {
     process.env.ADMIN_USER = savedUser; process.env.ADMIN_PASSWORD = savedPass;
   }
 });
+
+// ---------- the duel referee (docs/plans/2026-09-01-1845-duel-referee.md) ----------
+
+const { recordSessionVerdict } = await import('./datastore.js');
+const { makeTrace } = await import('../../client/src/replay.js');
+const { DUEL_LOADOUT, DUEL_COMPONENTS } = await import('../../client/src/duel-dev.js');
+const { duelAnchorReached } = await import('../../client/src/sim-core/duel-config.js');
+const { runTrace } = await import('../tools/sim-replay.mjs');
+
+// An all-idle duel against two aces: the fight settles on the death anchor in about nine seconds of sim.
+const duelTrace = (ticks = 1800) => makeTrace({
+  id: null, level: 'level-1', seed: 12345, dt: 1 / 60, shipId: 1,
+  loadout: DUEL_LOADOUT, components: DUEL_COMPONENTS, skills: null,
+  room: { kind: 'duel', aces: 2 }, runs: [[{ k: [], t: null }, ticks]], tickCount: ticks,
+});
+const honestAnchor = (trace) => {
+  const r = runTrace(trace, { stopWhen: duelAnchorReached });
+  return { tick: r.ticksRun, hash: r.hash, draws: r.draws };
+};
+const rowById = async (id) => (await getAdminSessions(500)).find((r) => r.id === id);
+// The referee runs on setImmediate AFTER the 204, so the row is written a beat later. Poll rather than
+// sleep a fixed amount — the re-simulation itself is ~10 ms.
+const waitForVerdict = async (id, ms = 5000) => {
+  for (let t = 0; t < ms; t += 25) {
+    const row = await rowById(id);
+    if (row && row.verdict) return row;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return rowById(id);
+};
+
+test('POST /api/sessions: a duel session is labelled duel:level-N and records its JS engine', async () => {
+  const id = 'gs-duel-label';
+  const r = await post('/api/sessions', { id, trace: duelTrace(300), level: 'level-1', outcome: 'death',
+    durationMs: 5000, kills: 0, engine: 'WebKit/18.2' });   // no anchor → the referee does not run
+  assert.equal(r.status, 204);
+  const row = await rowById(id);
+  assert.ok(row, 'the row was written');
+  assert.equal(row.level, 'duel:level-1',
+    'a duel is not a campaign run and must not sit in the campaign funnel under a level it did not play');
+  assert.equal(row.jsEngine, 'WebKit/18.2');
+  assert.equal(row.verdict, null, 'no anchor claimed → nothing to judge');
+});
+
+test('POST /api/sessions: a campaign session is untouched — plain level, no verdict', async () => {
+  const id = 'gs-campaign-plain';
+  const r = await post('/api/sessions', { id, trace: packedTrace(200), level: 'level-0', outcome: 'win',
+    durationMs: 4000, kills: 2, engine: 'Chromium/140.0.0.0' });
+  assert.equal(r.status, 204);
+  const row = await rowById(id);
+  assert.equal(row.level, 'level-0');
+  assert.equal(row.verdict, null);
+  assert.equal(row.verdictNote, null);
+  assert.equal(row.jsEngine, 'Chromium/140.0.0.0');
+});
+
+// THE WIRING, end to end through the real route: upload a genuine duel with an honest anchor and the build
+// this process is, and the referee's verdict lands on the row on its own. This is the guard on the
+// setImmediate hop — an import that is never CALLED looks exactly like a working feature otherwise.
+test('POST /api/sessions: an honest duel gets an `agree` verdict written onto its row', async () => {
+  const id = 'gs-duel-agree';
+  const trace = duelTrace();
+  const anchor = honestAnchor(trace);
+  const r = await post('/api/sessions', { id, trace, level: 'level-1', outcome: 'death', durationMs: 9000,
+    kills: 0, anchor, gameVersion: 'testsha1234', engine: 'Chromium/140.0.0.0' });
+  assert.equal(r.status, 204);
+  const row = await waitForVerdict(id);
+  assert.equal(row.verdict, 'agree', `note=${row.verdictNote}`);
+  assert.match(row.verdictNote, /^kills=/);
+});
+
+// The build gate is live on this process (SENTRY_RELEASE is set at the top of this file), and a page that
+// never learned its build sends null — which must fail to `unverifiable`, not to a judgement. §129's
+// failure mode is an honest player being robbed.
+test('POST /api/sessions: a duel with no build echo is refused rather than judged', async () => {
+  const id = 'gs-duel-nobuild';
+  const trace = duelTrace();
+  const r = await post('/api/sessions', { id, trace, level: 'level-1', outcome: 'death', durationMs: 9000,
+    kills: 0, anchor: honestAnchor(trace) });                 // gameVersion omitted
+  assert.equal(r.status, 204);
+  const row = await waitForVerdict(id);
+  assert.equal(row.verdict, 'unverifiable');
+  assert.equal(row.verdictNote, 'build-unknown');
+});
+
+test('recordSessionVerdict writes the two columns onto an existing row', async () => {
+  await recordSession({ id: 'gs-verdict', playerId: null, level: 'duel:level-1', outcome: 'death',
+    durationMs: 1000, kills: 0, s3Key: 'recordings/sessions/gs-verdict.json', gameVersion: 'testsha1234' });
+  await recordSessionVerdict({ id: 'gs-verdict', verdict: 'disagree', note: 'draws 41≠38 (kills=0 hp=-3 t=528)' });
+  const row = await rowById('gs-verdict');
+  assert.equal(row.verdict, 'disagree');
+  assert.equal(row.verdictNote, 'draws 41≠38 (kills=0 hp=-3 t=528)');
+});
+
+// A session can be uploaded twice (provisional flush when the tab is hidden, then the final one), and the
+// referee's answer is written asynchronously in between. The upsert must not wipe it.
+test('a re-upload of the same session id does NOT erase an existing verdict', async () => {
+  const id = 'gs-verdict-keep';
+  await recordSession({ id, playerId: null, level: 'duel:level-1', outcome: 'death', durationMs: 1000,
+    kills: 0, s3Key: `recordings/sessions/${id}.json`, gameVersion: 'testsha1234', jsEngine: 'Gecko/133.0' });
+  await recordSessionVerdict({ id, verdict: 'agree', note: 'kills=0 hp=-32 t=528' });
+  await recordSession({ id, playerId: null, level: 'duel:level-1', outcome: 'death', durationMs: 9500,
+    kills: 0, s3Key: `recordings/sessions/${id}.json`, gameVersion: 'testsha1234', jsEngine: 'Gecko/133.0' });
+  const row = await rowById(id);
+  assert.equal(row.durationMs, 9500, 'the re-upload did land');
+  assert.equal(row.verdict, 'agree', 'and it left the verdict alone');
+  assert.equal(row.verdictNote, 'kills=0 hp=-32 t=528');
+});
+
+test('GET /admin/sessions renders the verdict and engine cells, one <td> per header', async () => {
+  const html = await (await get('/admin/sessions', adminAuth)).text();
+  assert.match(html, /<th data-col="7">verdict<\/th>/);
+  assert.match(html, /<th data-col="8">engine<\/th>/);
+  assert.match(html, /<th data-col="9">watch<\/th>/, 'watch stays last, or the sort script points at the wrong column');
+  const headers = (html.match(/<th[ >]/g) || []).length;
+  const firstRow = html.split('<tbody>')[1].split('</tr>')[0];
+  assert.equal((firstRow.match(/<td[ >]/g) || []).length, headers,
+    'every row must carry exactly as many cells as there are headers');
+  assert.match(html, /disagree|agree|unverifiable/, 'a verdict actually reaches the page');
+});

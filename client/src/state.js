@@ -59,6 +59,11 @@ export const G = {
     } catch { return null; }
   })(),
                               //   (no unlockNextLevel/bankRun/depositLoot/funnel on a replayed win). Set in main.js.
+  // The deploy commit that served this page (/api/config → `build`, stamped by initSentry). Echoed on every
+  // session upload so the server can refuse to judge a trace recorded on a different build (DECISIONS §129).
+  // null until the config fetch lands, or forever if it failed — the server then records `build-unknown`
+  // and refuses to judge, which is the correct direction to fail.
+  buildVersion: null,
   gameStartTime: performance.now(), // run start (for the recorded game duration)
   gameStartSent: false,       // game_start funnel event fires once per page-load session (the funnel's top)
   quitSent: false,            // quit funnel event fires once per session when the player leaves

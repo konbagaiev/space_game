@@ -435,12 +435,18 @@ function applySimEvent(ev) {
       spawnShipExplosion(G.player.pos, G.player.engine.exhaust.color, 1, G.player.weightClass); // tinted by engine exhaust
       audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
       track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
-      // Both are no-ops when the mission was already CLEARED (shot down on the flight home): `G.banked`
-      // guards the bank and the recorder is closed after its final flush. That is the point of §130 — the
-      // reward was secured at the last kill and the way home cannot take it back. Loot the grab pulled in
-      // AFTER the clear is lost, though, the same as anything unbanked has always been.
-      if (G.netDriving) refreshAfterRoomBank(); else bankRun(); // the room banks its own runs (§131)
+      // FLUSH BEFORE BANKING — the same order the `cleared` case above uses, and now for a reason rather
+      // than by accident: `bankRun()` sets `world.banked`, which is part of `worldDigest`, and the duel
+      // referee seals its anchor digest at the top of `flushSession` (…-duel-referee.md §3.1). Banking
+      // first meant the browser sealed a World carrying `banked: true` while the headless referee — which
+      // has no account to bank into — could only ever reach `false`, so every honest duel death disagreed
+      // on the hash alone. Both are fire-and-forget and neither reads the other's state, so the order is
+      // free. (Both are also no-ops when the mission was already CLEARED — shot down on the flight home:
+      // `G.banked` guards the bank and the recorder is closed after its final flush. That is the point of
+      // §130 — the reward was secured at the last kill and the way home cannot take it back. Loot the grab
+      // pulled in AFTER the clear is lost, though, the same as anything unbanked has always been.)
       G.flushSession && G.flushSession('death'); // upload the recorded session (funnel analytics)
+      if (G.netDriving) refreshAfterRoomBank(); else bankRun(); // the room banks its own runs (§131)
       el.overlayTitle.textContent = t('ui.overlay.ship_destroyed');
       el.overlaySub.textContent = t('ui.gameover.sub', { kills: G.kills, credits: G.earned });
       el.restart.textContent = t('ui.button.restart'); // a loss retries the level

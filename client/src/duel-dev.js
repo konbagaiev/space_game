@@ -24,18 +24,22 @@
 // simulation spawns no ace, runs no ace step and draws no extra randomness.
 //
 // CAVEATS, both inherited from being a dev flag:
-//   • it changes the FIGHT, and campaign sessions are recorded — a `?duel` session re-simulates into a
-//     divergence in `server/tools/verify-sessions.mjs`. Expected, not a bug.
+//   • it changes the FIGHT, and campaign sessions are recorded — so a `?duel` session's row is labelled
+//     `duel:level-N` (server.js POST /api/sessions), which makes `classifyTrace` report `level-mismatch`
+//     and the campaign survey (`server/tools/verify-sessions.mjs`) count it as `unverifiable` rather than
+//     re-simulating it into a false disagreement. A duel is not a campaign run and must not pollute that
+//     survey; it is judged on its OWN terms by the duel referee, whose verdict is the `verdict` column on
+//     /admin/sessions (docs/plans/2026-09-01-1845-duel-referee.md).
 //   • an ace pays no credits and no XP, but its death still rolls the normal 20 % loot drop, which is
 //     deposited on victory. Fly the room on a throwaway local player.
 import { ACE_COUNT_DEFAULT, ACE_COUNT_MAX } from './sim-core/ace.js';
 import { normalizeLevelName } from './replay.js';
+import { DUEL_PHASES, withDuelRoom } from './sim-core/duel-config.js';
 
-// The room's phase script. One fighting phase, then the win phase every level ends on.
-export const DUEL_PHASES = (n) => ([
-  { name: 'duel', aces: n, advanceWhen: { allCleared: true } },
-  { name: 'victory', event: 'win', delay: 1.5, text: 'Sparring complete' },
-]);
+// Moved to sim-core so the SERVER can rebuild a duel from a recorded trace (the headless referee and a
+// netsim room build the fight from the same module the tab does). Re-exported here because this file is
+// still the one place the ?duel flag is described, and every existing importer reads them from it.
+export { DUEL_PHASES, withDuelRoom };
 
 // The level `?duel` builds the room over when `&level=` is absent. Level 0 is the playable intro and its
 // director is timed against a phase script this flag deletes — see the header.
@@ -86,21 +90,12 @@ export function applyDuelDev(descriptor) {
   return DUEL_DEV ? withDuelRoom(descriptor, DUEL_DEV.count) : descriptor;
 }
 
-// The transform itself, pure and flag-free so it can be tested without a URL. Non-mutating: a NEW
-// descriptor with a NEW phases array (`buildCatalog` shallow-copies a level, so its `phases` array is
-// shared with the module-level seed — the same trap `withAllyAt` documents).
-export function withDuelRoom(descriptor, count) {
-  if (!descriptor) return descriptor;
-  const n = Math.max(1, Math.min(ACE_COUNT_MAX, count | 0));
-  return {
-    ...descriptor,
-    title: `Duel — ${n} ace${n === 1 ? '' : 's'}`,
-    xpReward: 0,
-    enemyTotal: n,
-    finalStageBanner: false,   // a two-ship room has no "final stage" to announce
-    briefing: undefined, lastKillDrop: undefined, introTrace: undefined, intro: undefined,
-    phases: DUEL_PHASES(n),
-  };
+// ?playback of a DUEL trace: the URL carries no ?duel, so rebuild the room from the recording itself.
+// Without this the admin "▶ play" link on a duel row replays the plain base level and shows a different
+// fight — which is exactly the row a maintainer clicks when investigating a `disagree`.
+export function applyTraceRoom(descriptor, trace) {
+  const room = trace && trace.room;
+  return (room && room.kind === 'duel') ? withDuelRoom(descriptor, room.aces) : descriptor;
 }
 
 // Force the player's ship. A no-op with the flag off — the SAME object comes back out, so `buildPlayerFor`

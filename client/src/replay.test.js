@@ -266,10 +266,33 @@ test('stepReplayTick: rs.returning clears the input and freezes the trace index 
   assert.equal(h.rs.index, 0);           // the index is frozen while flying home
 });
 
-test('stepReplayTick: the per-tick order is update → capture → onTick', () => {
+// CAPTURE COMES FIRST, and that is the invariant, not an accident: `update()` drains the sim events and
+// the `cleared`/`death` handlers flush the session from inside that drain, so a capture afterwards misses
+// the tick that ended the fight (docs/plans/2026-09-01-1845-duel-referee.md §3.1a).
+test('stepReplayTick: the per-tick order is capture → update → onTick', () => {
   const h = tickHarness();
   assert.equal(stepReplayTick(h.deps), 'ok');
-  assert.deepEqual(h.log, ['update:' + (1 / 60), 'capture', 'onTick']);
+  assert.deepEqual(h.log, ['capture', 'update:' + (1 / 60), 'onTick']);
+});
+
+// The REGRESSION GUARD for §3.1a, stated as the invariant the bug violated: a session whose fight ends on
+// tick k uploads a trace containing k ticks. The fake `update` stands in for the sim event drain — on the
+// third tick it "clears the level" and flushes the session, exactly the way sim.js does from renderTick —
+// and the flush must see all THREE captured ticks, not two. Before the fix it saw two: the tick that ended
+// the fight was captured after the flush had already built and uploaded the trace, so the referee's
+// re-simulation stopped one tick short of the outcome it was there to judge.
+test('stepReplayTick: a fight that ends on tick k uploads a trace containing k ticks (§3.1a)', () => {
+  let captured = 0, flushedAt = null, ticks = 0;
+  const h = tickHarness({
+    capture: () => { captured++; },
+    update: () => {
+      ticks++;
+      if (ticks === 3) flushedAt = captured;   // the `cleared` handler flushing from inside the drain
+    },
+  });
+  for (let i = 0; i < 3; i++) assert.equal(stepReplayTick(h.deps), 'ok');
+  assert.equal(flushedAt, 3,
+    `the flush must see the tick the fight ended on (saw ${flushedAt} of 3 captured ticks)`);
 });
 
 // ?playback&finish — a trace records keys and touch, never the MOUSE CLICK that ends a mission, so a
@@ -380,4 +403,38 @@ test('a trace carries the skill allocation the run was played with', () => {
   assert.equal(none.skills, null);
   assert.equal(validateTrace(none).length, 0);
   assert.deepEqual(validateTrace({ ...none, skills: 'three' }), ['skills is present but not an object']);
+});
+
+// ---------- the ROOM a fight was fought in (docs/plans/2026-09-01-1845-duel-referee.md §S4) ----------
+
+test('makeTrace round-trips the room, and a plain campaign session records room: null', () => {
+  const duel = makeTrace({ level: 'level-1', seed: 1, dt: 1 / 60, room: { kind: 'duel', aces: 2 },
+    ticks: [{ k: [], t: null }] });
+  assert.deepEqual(duel.room, { kind: 'duel', aces: 2 });
+  const plain = makeTrace({ level: 'level-1', seed: 1, dt: 1 / 60, ticks: [{ k: [], t: null }] });
+  assert.equal(plain.room, null);
+});
+
+test('hydrateTrace preserves the room while unpacking the runs', () => {
+  const packed = makeTrace({ level: 'level-1', seed: 1, dt: 1 / 60, room: { kind: 'duel', aces: 3 },
+    runs: [[{ k: [], t: null }, 5]], tickCount: 5 });
+  const t = hydrateTrace(packed);
+  assert.deepEqual(t.room, { kind: 'duel', aces: 3 });
+  assert.equal(t.ticks.length, 5);
+});
+
+test('validateTrace accepts a good room and rejects a malformed one', () => {
+  const base = makeTrace({ level: 'level-1', seed: 1, dt: 1 / 60, ticks: [{ k: [], t: null }] });
+  assert.deepEqual(validateTrace({ ...base, room: { kind: 'duel', aces: 2 } }), []);
+  assert.match(validateTrace({ ...base, room: { kind: 'x' } })[0] || '', /not a duel room/);
+  assert.match(validateTrace({ ...base, room: { kind: 'duel', aces: 0 } })[0] || '', /out of range/);
+  assert.match(validateTrace({ ...base, room: { kind: 'duel', aces: 99 } })[0] || '', /out of range/);
+  assert.match(validateTrace({ ...base, room: { kind: 'duel', aces: 1.5 } })[0] || '', /out of range/);
+});
+
+// An optional, additive field is backward-compatible: a trace WITHOUT `room` reads exactly as it always
+// did, so there is nothing for a reader to break on. Bumping the version is a decision (DECISIONS §125's
+// marker is for shape changes that break a reader), so pin it rather than letting it drift.
+test('TRACE_VERSION is still 4 — the room is additive, not a shape change', () => {
+  assert.equal(TRACE_VERSION, 4);
 });

@@ -18,7 +18,10 @@
 // Usage:
 //   node server/tools/sim-replay.mjs <trace.json> [--ticks N] [--json]
 //
-// The trace format is documented in client/src/replay.js (`makeTrace`): input + seed, never positions.
+// The trace format is documented in client/src/replay.js (`makeTrace`): input + seed, never positions. A
+// trace may also name the ROOM it was fought in (`room: { kind:'duel', aces:N }`) — the world is then
+// rebuilt with that room, or a re-simulation would judge a fight that never happened
+// (docs/plans/2026-09-01-1845-duel-referee.md).
 // See docs/plans/server-authoritative-sim.md (Slice C).
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -35,11 +38,19 @@ export { buildCatalog, stationFor } from '../src/sim-host.js';
 
 // Replay `trace` to the end (or to `maxTicks`) and return the digest plus how it finished.
 // `onTick(world, i)` is an escape hatch for tests that need to look mid-run.
-export function runTrace(trace, { maxTicks = Infinity, onTick = null } = {}) {
+// `stopWhen(world, i)` ends the loop at a caller-chosen moment IN ADDITION to the default win/death break —
+// the duel referee stops at the end of the FIGHT rather than the end of the trace, so the digest computed
+// after the loop is the anchor digest and `ticksRun` is the anchor tick (…-duel-referee.md §3.1). Callers
+// that pass nothing are bit-for-bit unchanged.
+// `duel` overrides the room the world is built with; it defaults to whatever the trace itself names.
+export function runTrace(trace, { maxTicks = Infinity, onTick = null, stopWhen = null, duel = undefined } = {}) {
   const t = hydrateTrace(trace);
+  const room = duel !== undefined ? duel
+    : (t.room && t.room.kind === 'duel' ? { aces: t.room.aces } : null);
   const world = createSimWorld({
     levelName: traceLevelName(t),
     seed: t.seed,
+    duel: room,   // the `?duel` sparring room this fight was actually fought in, or null (every campaign run)
     // SKILLS INCLUDED. A run played with points spent is a different ship — engine power, weapon damage,
     // shield capacity, and via Maneuver's dodge whether the hostile-hit roll draws from the seeded stream
     // at all. Re-simulating without them is re-simulating somebody else's fight (trace v4; older traces
@@ -57,6 +68,7 @@ export function runTrace(trace, { maxTicks = Infinity, onTick = null } = {}) {
     world.events.drain(() => {}); // a headless referee has nothing to do with them; a room broadcasts them
     if (onTick) onTick(world, i);
     if (!world.player.alive || world.levelRunner.won) { i++; break; }
+    if (stopWhen && stopWhen(world, i)) { i++; break; }   // stop at the END OF THE FIGHT (…-duel-referee.md §3.1)
   }
   return { world, ticksRun: i, ticksTotal: ticks.length, ...worldDigest(world) };
 }

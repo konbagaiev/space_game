@@ -3,7 +3,13 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-09-01 (**The Sentinel pilot fires as far as its gun fires, and shoots rockets out of the air** — the wingman and the duel
+**Updated:** 2026-09-01 (**The duel referee — the server re-simulates a duel and says what actually happened.** A `?duel`
+session's trace now carries the room it was fought in, the browser publishes a digest of the World at the instant the
+FIGHT ended, and the server replays the uploaded input headlessly and writes an `agree`/`disagree`/`unverifiable`
+**verdict** — plus the JS engine that ran the browser's sim — onto `/admin/sessions`. **Nothing binds to a verdict**
+(DECISIONS §149/§129). The client now echoes its build so §129's drift gate is live on the real path, and a
+pre-existing off-by-one that dropped the FINAL tick of **every** recorded session is fixed.) Previously:
+(**The Sentinel pilot fires as far as its gun fires, and shoots rockets out of the air** — the wingman and the duel
 room's aces now shoot out to the WEAPON's own reach (140 u) instead of the AI band's 45 — 25 → 46 shots in
 the same minute of fighting, and the change lives in the pilot because `GUN.ai` is shared with the pirates
 (DECISIONS §148). They also swing the nose onto an **incoming rocket** and shoot it down, but only while
@@ -433,7 +439,7 @@ out because they are arguments to a flow, not switches.
 | `?dev` | the perf overlay + `?dev` telemetry, the Backdrop panel, the `●dev` HUD suffix (`dev.js`) |
 | `?debug` | exposes `window.__game` (the test/inspection hook the whole visual suite drives) |
 | `?tune` | the lil-gui palette / lighting / blast panel, incl. the **frozen test range** (`tune.js`) |
-| `?duel[=N]` | **the sparring room**: fight N ships flown by the wingman's own pilot (default 2, max 6). Forces your build to the starter kit, and Take off drops you straight into the fight. See Gameplay → "The duel room" |
+| `?duel[=N]` | **the sparring room**: fight N ships flown by the wingman's own pilot (default 2, max 6). Forces your build to the starter kit, and Take off drops you straight into the fight. A duel session is **re-simulated server-side and given a verdict** (nothing binds). See Gameplay → "The duel room" |
 | `?ally[=phase]` | the Sentinel wingman arrives on that phase (default `clear-out`) |
 | `?lancer[=phase]` | that phase's spawn pool becomes 100 % pirate lancers |
 | `?beam` | mount the Charged beam in the player's gun slot |
@@ -452,13 +458,14 @@ out because they are arguments to a flow, not switches.
 | `?netjerk` | diagnostic: report every break in the DRAWN motion under netsim |
 
 **They compose, with one exception that does NOT: `?duel` and `?netsim` must not be used together.** The
-duel room is a purely local tool — its descriptor transform lives in `client/src/duel-dev.js` and is never
-forwarded on the netsim handshake (`?ally`, `?lancer` and `?beam` are). Measured: `?duel&netsim=1` joins a
-room running the plain level and leaves **two fights superimposed** — 2 aces spawned by the tab's own
-runner plus the room's real pirates as ghosts, 4 ships on screen against an `enemyTotal` of 2, and a
-loadout forced only in the tab while the room flies the account's real ship. Making it work would mean
-moving the transform into `sim-core` (where `withAllyAt` and `lancer-config` live for exactly this reason)
-and adding the handshake hop; not done, because the room is not what the sparring arena is for.
+flag is never forwarded on the netsim handshake (`?ally`, `?lancer` and `?beam` are). Measured:
+`?duel&netsim=1` joins a room running the plain level and leaves **two fights superimposed** — 2 aces
+spawned by the tab's own runner plus the room's real pirates as ghosts, 4 ships on screen against an
+`enemyTotal` of 2, and a loadout forced only in the tab while the room flies the account's real ship.
+The transform itself now lives in **`client/src/sim-core/duel-config.js`** (moved there for the duel
+referee, beside `withAllyAt` and `withLancersAt`) and `createSimWorld({ duel })` applies it server-side, so
+what is left to make the combination work is the **handshake hop** plus a server-side `aces` path — not
+done, because the room is not what the sparring arena is for.
 
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
   HUD. Pausing **freezes the whole fight** (the render loop skips the sim `update` — enemies, bullets,
@@ -1553,7 +1560,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     Deliberately **no** off-screen edge arrow (it would read as "threat over there"), no name label, no HUD
     panel and no player-facing copy at all.
 - **The duel room (`?duel`) — sparring against the wingman's own pilot.** A dev-only arena
-  (`client/src/duel-dev.js` + `sim-core/ace.js`; brief `docs/plans/duel-room.md`) where the player fights N
+  (`client/src/duel-dev.js` for the flag + `client/src/sim-core/duel-config.js` for the descriptor
+  transform + `sim-core/ace.js`; briefs `docs/plans/duel-room.md` and
+  `docs/plans/2026-09-01-1845-duel-referee.md`) where the player fights N
   **aces**: ships built from the wingman's exact hull and gear and flown by **the same pilot code**
   (`step-ally.js flySentinel`), pointed at the player. `?duel` = **2** aces, `?duel=N` = N (clamped to 6),
   `?duel=0|false|off` (or absent) = off; `&level=N` builds the room over that level instead of the default
@@ -1596,8 +1605,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **The aces shoot your rockets down** — point defence is part of the shared pilot (see the wingman
     above, DECISIONS §147), so an ace swats an incoming rocket whenever you are outside its 45 u gun range.
     Measured live: well over a third of the player's rockets never arrive.
-  - **NOT usable with `?netsim=1`.** The transform is client-side (`duel-dev.js`) and is not forwarded on
-    the handshake, so the room runs the plain level while the tab runs the duel: measured, that is 4 ships
+  - **A duel session is recorded, and JUDGED.** The trace carries `room: { kind:'duel', aces:N }`, the
+    recorder writes the **forced** loadout/components/skills (not the account's — `duelBuild` now wraps
+    `beginLiveSession`'s fields, or the recording would be of a fight nobody fought), the row is labelled
+    `duel:level-N`, and the server re-simulates it and writes a **verdict**. See "Run verification" under
+    Backend. `?playback` of a duel trace rebuilds the room from the recording (`applyTraceRoom`), so the
+    admin ▶ play link shows the fight that was actually fought.
+  - **NOT usable with `?netsim=1`.** The flag is not forwarded on the handshake, so the room runs the plain
+    level while the tab runs the duel: measured, that is 4 ships
     on screen (2 aces from the tab's own runner + 2 pirate ghosts from the room) against an `enemyTotal`
     of 2, with the forced loadout applied only in the tab. See the dev-flag table in Tools.
   - **With the flag off nothing changes:** no ace, no ace step (`stepAces` returns on the first scan), no
@@ -3420,8 +3435,27 @@ first translation). See DECISIONS §10.
   /api/sessions`. The **server** uploads the trace to S3 (`server/src/s3.js` — hand-rolled SigV4 PutObject,
   no `@aws-sdk`, keyed `recordings/sessions/<uuid>.json`; **no-ops without AWS creds** so `npm test` stays
   green) and writes a metadata row to the **`gameplay_sessions`** table (`id`, nullable `player_id`, `level`,
-  `outcome` win|death|quit, `duration_ms`, `kills`, `s3_key`, `game_version`, `created_at`; indexes
-  `idx_gsessions_created`/`idx_gsessions_player`).
+  `outcome` win|death|quit, `duration_ms`, `kills`, `s3_key`, `game_version`, `verdict`, `verdict_note`,
+  `js_engine`, `created_at`; indexes `idx_gsessions_created`/`idx_gsessions_player`). The upload body also
+  carries `gameVersion` (the build that served the page — the drift gate), `engine` (`jsEngine()`) and, for
+  a duel, `anchor`; `verdict`/`verdict_note` are written **only** by the referee and are deliberately absent
+  from `recordSession`'s upsert, so a re-upload cannot erase one.
+  **A trace may name the ROOM it was fought in** — `room: { kind:'duel', aces:N }`, optional and additive,
+  so `TRACE_VERSION` stays **4** — and `trace.level` stays the catalog level the room was built over, which
+  is what keeps `buildCatalog` and `classifyTrace` working. `?beam`'s `beamLoadout` still has the hole
+  `duelBuild` just lost: **a `?beam` session records the account's gear rather than the beam that was
+  flown**. Known, named here, not fixed.
+  **The capture order was off by one, in EVERY recorded session, until 2026-09-01.** `stepReplayTick` called
+  `capture()` *after* `update(dt)` — but `update()` drains the sim events and the `cleared`/`death` handlers
+  flush the session from inside that drain, so the uploaded trace was always missing **the tick on which the
+  level was cleared or the player died**, and any re-simulation stopped one tick short of the outcome it was
+  meant to judge. `capture()` now runs immediately before `update(dt)`; the snapshot is identical either way
+  (nothing in `sim-core` writes `keys`/`touchAim`), so existing traces replay unchanged. Pinned by
+  `replay.test.js` ("the per-tick order is capture → update → onTick" + the k-ticks regression guard) and,
+  in a real browser, by `48-duel-referee`'s `anchor.tick === trace.tickCount`.
+  **`death` now flushes BEFORE it banks** (`sim.js`), matching the `cleared` case: `bankRun()` sets
+  `world.banked`, which is inside `worldDigest`, so banking first sealed a duel's anchor on a World the
+  headless referee could never reach. Both calls are fire-and-forget, so the order is free.
   **A trace must carry the SKILL allocation or the replay is fiction (v4, DECISIONS §125).** Skills change
   engine power, weapon damage, shield capacity and — through Maneuver's `dodge` — whether the hostile-hit
   roll draws from the seeded gameplay stream at all, so a run replayed on a skill-less ship diverges within
@@ -3473,8 +3507,13 @@ first translation). See DECISIONS §10.
 - **Admin sessions (`GET /admin/sessions`, `server/src/admin.js`):** same Basic-Auth guard + shared page
   shell/sort script, cross-linked from `/admin`. Lists every recorded gameplay session (newest first, cap
   500 via `getAdminSessions`): created, player (id short or `anon`), level, outcome, duration, kills,
-  game_version (+ **✓/✗** whether it matches the current deploy `SENTRY_RELEASE`), and a **▶ play** link
+  game_version (+ **✓/✗** whether it matches the current deploy `SENTRY_RELEASE`), **verdict** (the duel
+  referee's answer, hover for the note; empty on every campaign row), **engine** (the JS engine family +
+  version that ran the browser's simulation, e.g. `Chromium/140.0.0.0`), and a **▶ play** link
   (`/?playback&id=<id>`) that streams the trace from `GET /api/sessions/:id/trace` and re-sims it.
+  A duel row's level reads `duel:level-1`. Re-simulating one costs **~2-10 ms** of server CPU (measured on
+  a ~520-tick duel, logged per verdict as `[referee] duel <id> <verdict> (<note>) in <ms> ms`), and it runs
+  on `setImmediate` **after** the 204 so an upload never waits for it.
 - **Run verification (`server/src/seal/verify-run.js`, `server/tools/verify-sessions.mjs`) — MEASURING ONLY,
   nothing is enforced.** `POST /api/games` is still client-authoritative: the browser says what it earned
   and the server banks it. `verifyRun({ trace, claim, build })` is the other half being built up — it
@@ -3496,6 +3535,46 @@ first translation). See DECISIONS §10.
   recording captures a stub under `?netsim=1` (so the admin replay viewer plays a 5-second stub for those).
   **That defect is PARKED** (§6): the flag is a manual opt-in, so no production session is affected, and the
   fix — the ROOM writes the trace — waits for real multiplayer sessions.
+- **The duel referee (`server/src/seal/verify-duel.js`) — the first thing that actually re-simulates a live
+  session and writes down what it found** (`docs/plans/2026-09-01-1845-duel-referee.md`, DECISIONS §149).
+  Scope is **`?duel` sessions only**; campaign rows are untouched. A duel trace carries
+  `room: { kind:'duel', aces:N }`, so `runTrace` rebuilds the same room server-side
+  (`createSimWorld({ duel })`), replays the uploaded input, and compares the **full `worldDigest` hash AND
+  the `simRandom()` draw count** — the same strict pair `36-sim-divergence` uses. `verifyDuel` returns
+  `agree` / `disagree` / `unverifiable` / `error` plus a readable note, `verifyDuelSession` persists it via
+  `recordSessionVerdict`, and `POST /api/sessions` calls it on `setImmediate` after the 204.
+  - **The anchor is the end of the FIGHT, not the end of the trace.** Both hosts digest at the first tick
+    where `world.levelRunner.cleared || !world.player.alive` (`duelAnchorReached`, `sim-core/duel-config.js`;
+    Node via `runTrace(trace, { stopWhen })`, the browser by sealing at the top of `flushSession`). `won`
+    is unusable: it needs the "Finish and Return" click and the dock, which a trace cannot carry, so
+    digesting the final state would mark **every** honest winning duel `disagree`.
+  - **Why the strict digest is legitimate here** where §129 says it is the wrong oracle for money:
+    `withDuelRoom` drops `lastKillDrop`, so `step-enemies.js`'s `ownsReward` branch — the account-dependent
+    one with the differing draw counts — is unreachable and the loot roll is a single seeded draw. An ace
+    also pays 0/0, so comparing the reward would be comparing `0 === 0`.
+  - **Admission** reuses `classifyTrace` (v4+, not truncated, a catalog level, the claim's level matches,
+    the build gate) and adds `not-a-duel` / `bad-room` / `no-anchor-claim` / `too-long`
+    (`DUEL_VERIFY_MAX_TICKS = 12000`, ~3.3 min). The **build gate is now live on the real path**: the client
+    learns its deploy commit from `/api/config` → `build` (stamped onto `G.buildVersion` by `initSentry`,
+    before the Sentry early-out) and echoes it on the session POST, so a tab left open across a deploy is
+    refused as `build-drift` instead of judged on the wrong code. `null` → `build-unknown`, also refused.
+  - **The referee finds the anchor itself** and never derives the stop point from `claim.anchor.tick` — the
+    client does not grade its own homework — and it does **not** require the trace to end at the anchor, so
+    a trace carrying extra ticks still verifies.
+  - **What a `disagree` MEANS to whoever reads /admin/sessions.** A verdict says whether **this server,
+    running this build, re-simulating the input the browser uploaded, ended up in the same world state at
+    the same tick**. `agree` means the two hosts simulated the same fight. `disagree` means they did not —
+    and in order of likelihood that is: (1) a bug in the simulation or in this mechanism; (2) a
+    **cross-engine floating-point difference**, which is why the JS engine is recorded next to it
+    (`client/src/engine-id.js`; `Math.sin`/`atan2`/`hypot`/`pow` are implementation-defined and
+    `36-sim-divergence` only proves Chromium ↔ Node — nothing has ever proved WebKit or Gecko); (3) a build
+    the gate failed to catch; and only then (4) someone tampering with a trace that pays nothing.
+    **Nothing may bind money, XP or progression to a verdict until the disagreement rate on honest players
+    has been measured** — DECISIONS §129's own rule, written after a survey of 74 production sessions found
+    20% agreement and not one cheat. The reward model for duels is deliberately deferred.
+  - **Guarded by `48-duel-referee`** (browser ↔ Node on a LIVE-recorded duel) and
+    `server/src/seal/verify-duel.test.js` (the mechanism, on a real idle duel: admission, comparison order,
+    notes, persistence).
 - **Health / uptime** — `GET /api/health` is the monitoring endpoint (UptimeRobot, the Docker
   healthcheck, the CI smoke check all use it). It touches the DB (via `stats`), so it reflects DB
   outages, not just process liveness: **200** `{ ok:true, status:"ok", backend, uptimeSec, players,
@@ -4046,12 +4125,31 @@ summary. Positions are hashed unrounded on purpose: both hosts run the same code
 same order, so bit-identical is the correct expectation and rounding would hide an early divergence.
 `sim-random.js` counts its draws (`simRandomDraws()`, reset by `seedSim`).
 
+`runTrace(trace, { maxTicks, onTick, stopWhen, duel })` — `stopWhen(world, i)` ends the loop at a
+caller-chosen moment **in addition to** the default win/death break, so the digest computed after the loop
+is the digest at THAT moment (the duel referee stops at `duelAnchorReached`); `duel` overrides the room the
+world is built with and defaults to whatever `trace.room` names. Callers that pass neither are bit-for-bit
+unchanged, which is what `36-sim-divergence` re-proves. **`stopWhen` is guarded by the Level-0 trace**
+(`sim-replay.test.js`): with `stopWhen: duelAnchorReached` it stops at **tick 2657** with `cleared: true` and
+hash `0x38d48dac`, where the default run plays out all **3670** ticks to `0x8d802ca2`. That is deliberately
+where the guard lives — every duel fixture is an idle DEATH, which `runTrace`'s pre-existing
+`!player.alive` break ends on its own, so nothing else in the suite ever stops on `cleared`, and a
+regression would silently turn every honest WON duel into a `disagree`.
+
 **`36-sim-divergence` is the standing guard.** It replays the same trace in a real browser (plain
 `?playback`, no `&finish`) and in Node, and requires the digest, the summary AND the draw count to match —
 `hash=0x8d802ca2`, `draws=38`, 3670 ticks each. The draw count is the half that names a culprit: a cosmetic
 path reaching into the seeded gameplay stream (DECISIONS §73) shifts one host's stream and not the other's,
 and the test says so rather than reporting an opaque hash difference. `22-trace-replay` guards the browser's
 end-to-end replay path; this one guards the simulation.
+
+**`48-duel-referee` is the duel-flavoured oracle beside it, and it proves the half 36 cannot.** 36 only ever
+replays a **committed asset through `?playback`**. 48 boots `?debug&duel`, freezes the accumulator, drives
+the **live** loop with `__game.stepLive(n)` (the very same per-tick body `animate()` runs — `liveTickDeps()`
+— so a scenario produces a REAL recorded session instead of ticks the recorder never saw), lets the idle
+player die, and requires Node to reach the same anchor tick, draw count and hash from the trace alone, then
+`verifyDuel` to say `agree`. Different level (`level-1`), different driver, a fresh per-session seed. It
+also asserts `anchor.tick === trace.tickCount` — the capture-order guard in a real browser.
 
 ### Playing in a server-run room (`?netsim=1`)
 
@@ -4990,7 +5088,11 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   grace is over, the hits land, and `earned` is 0 in every sample. Finally, on a fresh boot, it **holds the
   rocket trigger for 60 s of sim** and asserts an ace really engages an incoming rocket and shoots at
   least one out of the air — the reachability check for point defence, which no fixture can give: a rule
-  that is never satisfied in play passes every structural test and does nothing on screen.
+  that is never satisfied in play passes every structural test and does nothing on screen.)
+  and **the duel referee** (`48-duel-referee.mjs` — a LIVE-recorded duel re-simulated in Node and judged;
+  see "The headless referee and the divergence oracle". It uploads a genuine session to the harness server,
+  so a `duel:level-1` row appearing in `spacegame_test` after a visual run is expected, not a bug.)
+
   **The runner's boot gate** (`visual/run.mjs`): every scenario boots the throwaway player into level-0, so
   after the take-off click it now **steps the sim** to the state scenarios have always been handed (an arena
   with an enemy — level-0 holds its first spawn for 3 s of sim), then calls **`__game.silenceIntro()`** so

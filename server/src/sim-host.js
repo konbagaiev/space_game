@@ -26,6 +26,7 @@ import { Vec3 } from '../../client/src/sim-core/vec.js';
 import { withAllyAt } from '../../client/src/sim-core/ally-config.js';
 import { withLancersAt } from '../../client/src/sim-core/lancer-config.js';
 import { withBeamGun } from '../../client/src/sim-core/beam-config.js';
+import { withDuelRoom } from '../../client/src/sim-core/duel-config.js';
 
 // The catalog the client assembles from `/api` at boot (main.js), built here straight from the seed the
 // server would have served. Same shape, same keys — `world.catalog` is the only way the sim reaches it.
@@ -102,15 +103,20 @@ export function buildShip(catalog, { shipId = null, loadout = null, components =
 // `beam` — mount the player's Charged beam (the ?beam dev flag). It has to be honoured HERE and not only in
 // the browser: the room builds the authoritative player, so a client-only swap gave the two ends different
 // weapons and drew an aiming sight over a ship that was firing a machine gun.
-// The headless referee (`server/tools/sim-replay.mjs`) passes NONE of the three, so a re-simulated trace is
-// unchanged.
+// `duel` — the `?duel` sparring room as `{ aces: N }`, or null. Rebuilt server-side so a duel trace can be
+// re-simulated by the referee (docs/plans/2026-09-01-1845-duel-referee.md).
+// The headless referee (`server/tools/sim-replay.mjs`) passes `duel` when the trace it is replaying carries
+// a room, and NONE of the other three — so a re-simulated campaign trace is unchanged.
 export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, host = noopHost, ally = null,
-                                 lancer = null, beam = false } = {}) {
+                                 lancer = null, beam = false, duel = null } = {}) {
   const catalog = buildCatalog(levelName);
-  // Both transforms COPY: `buildCatalog` shares the seed's `phases` array, so mutating it in place would
+  // Every transform COPIES: `buildCatalog` shares the seed's `phases` array, so mutating it in place would
   // give every room in this process an ally (or a wave of lancers).
   if (ally) catalog.level = withAllyAt(catalog.level, ally);
   if (lancer) catalog.level = withLancersAt(catalog.level, lancer);
+  // `duel` is LAST: it replaces the phase script the other two edit — the same ordering the client applies
+  // in main.js (`applyDuelDev(applyLancerDev(applyAllyDev(...)))`).
+  if (duel) catalog.level = withDuelRoom(catalog.level, duel.aces);
   const world = createWorld({ host });
   world.catalog = catalog;
   world.station = stationFor(catalog.level.map);

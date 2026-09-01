@@ -34,14 +34,22 @@ export function makeSessionRecorder() {
     final: false,        // a terminal (win/death) flush already went out → this session is closed
     id: null,            // client-minted, stable across the session's provisional + final uploads
     seed: 0, level: null, shipId: null, loadout: null, components: null, skills: null, dt: 0,
+    // The ROOM this session was fought in, when it was not the plain level: `{ kind:'duel', aces:N }`, else
+    // null (every campaign session). It travels on the trace, so a re-simulation rebuilds the same fight.
+    room: null,
+    // The digest of the World at the instant the FIGHT ended — the duel referee's comparison point
+    // (docs/plans/2026-09-01-1845-duel-referee.md §3.1). null until sealed, and null forever on a session
+    // with no room: nothing pays for a digest it will not use.
+    anchor: null,
     runs: [],            // [[tickSnapshot, repeatCount], …]
     tickCount: 0,
     sentTicks: 0,        // tickCount at the last provisional upload — never re-send an unchanged trace
-    begin({ seed, level, shipId, loadout, components, skills, dt }) {
+    begin({ seed, level, shipId, loadout, components, skills, room, dt }) {
       this.active = true; this.final = false; this.id = newSessionId();
       this.seed = seed >>> 0; this.level = normalizeLevelName(level);
       this.shipId = shipId ?? null; this.loadout = loadout || null; this.components = components || null;
       this.skills = skills || null; // the allocation in force — a replay rebuilds a different ship without it
+      this.room = room || null; this.anchor = null;
       this.dt = dt; this.runs = []; this.tickCount = 0; this.sentTicks = 0;
     },
     captureTick(snapshot) {
@@ -54,7 +62,27 @@ export function makeSessionRecorder() {
       }
       this.tickCount++;
     },
-    // Returns { id, trace, level, outcome, durationMs, kills } to POST, or null if nothing should be sent.
+    // The fight ended — freeze what the World looked like at that instant
+    // (docs/plans/2026-09-01-1845-duel-referee.md §3.1). Once per session: the FIRST tick at which the
+    // fight settled is the anchor, and a later tick is a different fight state. It does not consult
+    // `active`/`final` — the caller decides when to seal, and the sim's own `cleared`/`death` event flushes
+    // the session from inside the very tick that settles it, which closes the recorder in the same breath.
+    sealAnchor({ tick, hash, draws }) {
+      if (this.anchor) return this.anchor;
+      this.anchor = { tick: tick | 0, hash: hash >>> 0, draws: draws | 0 };
+      return this.anchor;
+    },
+    // The trace as it stands RIGHT NOW — pure, mutates nothing, closes nothing. `flush()` uses it, and so
+    // can a test or the `?debug` hook that wants to read what has been recorded without ending the session.
+    snapshotTrace() {
+      return makeTrace({
+        id: this.id, level: this.level, seed: this.seed, dt: this.dt,
+        shipId: this.shipId, loadout: this.loadout, components: this.components, skills: this.skills,
+        room: this.room, runs: this.runs, tickCount: this.tickCount,
+      });
+    },
+    // Returns { id, trace, level, outcome, durationMs, kills, room, anchor } to POST, or null if nothing
+    // should be sent.
     // `final` closes the session (win/death); a provisional flush leaves the recorder running, so a player
     // who backgrounds the tab and comes back still ends up with ONE complete row under the same id.
     flush(outcome, { durationMs = 0, kills = 0 } = {}, { final = true } = {}) {
@@ -66,12 +94,9 @@ export function makeSessionRecorder() {
       if (final) { this.final = true; this.active = false; }
       if (this.tickCount < MIN_SESSION_TICKS) return null; // trivial bounce → drop
       this.sentTicks = this.tickCount;
-      const trace = makeTrace({
-        id: this.id, level: this.level, seed: this.seed, dt: this.dt,
-        shipId: this.shipId, loadout: this.loadout, components: this.components, skills: this.skills,
-        runs: this.runs, tickCount: this.tickCount,
-      });
-      return { id: this.id, trace, level: this.level, outcome, durationMs, kills };
+      const trace = this.snapshotTrace();
+      return { id: this.id, trace, level: this.level, outcome, durationMs, kills,
+        room: this.room, anchor: this.anchor };
     },
   };
 }
