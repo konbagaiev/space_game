@@ -63,6 +63,26 @@
     committed asset). Measured cost of a verdict: ~2-10 ms of server CPU for a ~520-tick duel, run on
     `setImmediate` after the 204 so an upload never waits for it.
 
+- **The first loot drop, the first absorbed hit and a level's last kill stop hitching.**
+  [2026-09-01-1911-warm-late-shader-programs] The level-start warm only reached what was in the scene when
+  it ran, so a handful of surfaces still compiled their shaders **after** the veil dropped, in front of the
+  player. They are now created as their **real singletons in the real scene** before `prewarmShaders()`
+  runs — the **loot crate + its halo sprite + the grab pull line**, **both shield bubbles**, the level's
+  **reward drop model** (which now holds the veil like a ship model and is compiled by `warmModel` on
+  arrival), and the **ghost battle's transparent hull variant** (a different program from the combat hull it
+  clones, because `transparent` is part of three's program cache key) — plus one throwaway forced draw that
+  uploads their geometry buffers, since `renderer.compile()` builds programs only. What is *measured*: the
+  four late programs the headless probe could name (**33 → 37 during play** on level-0) are warmed and
+  asserted at zero by the new `50-warm-completeness` guard, which attributes every live crate/halo/line/
+  bubble material back to a program that already existed at veil-down rather than counting `compile()`
+  calls. The ghost-battle path is fixed by the same mechanism but is **invisible to the suite** (`?debug`
+  disables ghosts), so it is verified on the phone via the new `__game.programKeys()` hook — the device's
+  32 → 42 is **not** claimed as closed by a test that structurally cannot see part of it. The guard also
+  pins the **buffer** uploads per surface (a drop spawn, an absorbed hit: 0 geometries, 0 textures);
+  three *pre-existing* uploads that this change does not own — ship hull buffers, `rocketGeo` and the
+  explosion FX quads — are measured, logged and written up as an unbuilt follow-up brief
+  (`docs/plans/warm-geometry-buffer-uploads.md`). No gameplay, balance or visual change; tick counts and
+  `WARM_MAX_WAIT_MS` are untouched (`22-trace-replay` unchanged).
 - **The Sentinel pilot now shoots rockets out of the air.** [duel-room] The wingman and the duel room's
   aces both get **point defence**: the nose swings onto an incoming rocket and the gun shoots it down —
   but **only while the ship they are charging is beyond gun range, or there is nothing to charge at all**

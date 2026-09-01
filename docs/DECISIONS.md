@@ -3039,11 +3039,76 @@ showing the veil and compiling in the same frame paints nothing. The frame that 
 only raises the veil and returns; the next frame does the work and lowers it. The veil fades in after a
 90 ms delay, so a machine that finishes the warm in a frame or two never shows it.
 
-**Verification is field telemetry, not a headless test.** Software WebGL does not reproduce the stall and
-compiles almost everything at bootstrap, so the same probe reports "1 program compiled during play" on both
-the old and the new code. `client/visual/scenarios/28-scene-warm.mjs` therefore pins the **wiring** — reset
-raises the request, a frame consumes it, the rig stays undisposed — which is the part that can break
-silently. The effect itself is read from `perf_samples`: `gpu.programs` at combat start versus 15 s in.
+**Verification — CORRECTED 2026-09-01.** This paragraph used to read *"Software WebGL does not reproduce the
+stall and compiles almost everything at bootstrap, so the same probe reports '1 program compiled during play'
+on both the old and the new code"*. The second half is wrong: the visual suite opens the game with `?debug`,
+and the **bootstrap** prewarm is explicitly skipped under that flag (`main.js`), so nothing is pre-compiled at
+boot there — a **cacheKey DIFF across the veil does discriminate** headlessly, and it is how the amendment
+below was measured (33 → 37 programs, 35 → 41 geometries, 30 → 33 textures during play on `level-0`, every
+program attributable to a named loot or shield material). Phrase the claim as **the DIFF, not the SET**:
+`getProgramCacheKeyParameters` also pushes `precision` and `outputColorSpace`, which are capability-derived,
+so the absolute key *strings* are not portable between backends — but every material on a given backend
+carries the same values for those, so *which keys appear after the veil that were not there before* is
+backend-independent. What remains true is the narrower claim the sentence was reaching for: software WebGL
+does not reproduce the **stall**, i.e. the wall-clock cost, so **timing** is still field-only, read from
+`perf_samples` (`gpu.programs` at combat start versus 15 s in). `client/visual/scenarios/28-scene-warm.mjs`
+pins the **wiring** (reset raises the request, a frame consumes it, the rig stays undisposed);
+`50-warm-completeness.mjs` pins the **completeness** (see below), with the blind spot that `?debug` disables
+the ghost battle.
+
+**Amendment, 2026-09-01 — finish the warm: warm the OBJECT, not a stand-in.** The warm was still incomplete,
+because `renderer.compile()` only reaches what is in the scene **at that moment**: a real phone measured
+204 ms and 66 ms main-thread blocks with the veil already **down** and the live program count climbing
+32 → 42. The gap was found by **diffing the `renderer.info.programs` cacheKeys across the veil** and
+attributing each new key back to a live material (`renderer.properties.get(m).currentProgram`) — not by
+guessing. Every one was a surface that enters the scene only during a fight: the loot crate template, the
+drop halo `SpriteMaterial`, the grab pull line, and the shield bubbles.
+
+- **The rule.** If a surface can appear during a fight, its **real singleton must exist in the real `scene`
+  before the warm runs** — created from `prewarmShaders()`, with this level's lights and fog in place. A
+  program key depends on the render state at compile time, so warming a look-alike in a throwaway scene (or
+  before the lights exist) compiles a **different** program: the count still grows and a test that counts
+  `compile()` calls still passes. Warming the real object also satisfies the keep-alive rule above for free.
+- **`compile()` uses `scene.traverse`, not `traverseVisible`** (verified in the pinned r160 build), so
+  `visible === false` is not an obstacle — "create it early and leave it invisible" is a correct warm.
+- **Warming a surface must never make it APPEAR** — the trap this rule was written for, caught at review.
+  The player's shield bubble was previously *built by the first absorbed hit*, so "the mesh does not exist
+  yet" silently carried the gameplay meaning "no idle rim yet". Creating it at warm time therefore put a
+  permanent faint rim on the ship from level start, and — because the bootstrap prewarm runs two frames into
+  boot, while the MENU is up — around the idle ship on the welcome screen too. The fix is an explicit
+  `armed` flag set by the two functions that used to create it, not a decision to stop warming it. When a
+  warm moves an object's construction earlier, look for whatever *state* its late construction was
+  encoding, and re-express that state explicitly.
+- **`compile()` covers PROGRAMS ONLY.** A geometry's buffers are uploaded in `projectObject`, behind the
+  per-object frustum test, and `visible === false` returns early for the whole subtree — so anything hidden or
+  parked off-camera is compiled but never uploaded, and the upload lands on its first live appearance. The
+  warm therefore ends with **one throwaway `renderer.render(scene, camera)`** with the warmed roots forced
+  `visible = true, frustumCulled = false` (restored in a `finally`, or a throw would leave permanent
+  off-screen draw calls), and textures need an explicit `renderer.initTexture()`.
+- **The reward drop model joins `G.pendingAssets`** (§84-consistent: the veil waits for it, capped at the
+  same 9 s) and is compiled by `warmModel` on arrival instead of on the last kill of the level. Caveat worth
+  knowing: it is a **cross-origin CloudFront** URL, so on a cold cache it carries its own DNS/TLS — bounded by
+  the cap, zero on a warm cache, and not fetched at all when the player already owns the reward.
+- **The ghost battle needed the same raise.** `applyShipModel` sets `transparent/opacity/fog` on every ghost
+  hull, and `opaque` is bit 17 of three's program cache key — a ghost hull is a *different* program from the
+  combat hull it clones. The ghosts usually arrive through `requestShipModel`'s cache fast path, which does
+  **not** hold the veil, so `ghost-battle.js` raises `G.needsSceneWarm` once after its meshes are built. It is
+  invisible to the suite by construction (`ghostBattlePlan` returns `enabled: false` under `?debug`), so it is
+  verified on the phone with `__game.programKeys()`, on the **first** fight of a fresh page load.
+- **The guard is an attribution check, not a call count.** `50-warm-completeness` asserts each named surface
+  is FOUND (so it cannot pass vacuously over a crate the Grab already collected), then **hard zero** new
+  programs after the veil, then that every live crate/halo/line/bubble material draws with a program that was
+  already in the veil-down key set. The **buffer** half is asserted **per surface** (a drop spawn, an absorbed
+  hit: 0 geometries, 0 textures), never as a whole-fight total — a total measures surfaces the warm does not
+  own and moves with an emergent fight, so it is printed as a measurement instead. Not covered: the reward
+  model (level-0 has no `lastKillDrop`; a committed test must not depend on the CDN), the ghost battle
+  (above), and three pre-existing uploads that remain — ship hull buffers (`warmModel` compiles a template but
+  never DRAWS it), `rocketGeo`, and the explosion FX quads. Those are written up, with the trap that the FX
+  warm rig carries **stand-in** geometries rather than the ones the real effects draw, in the unbuilt
+  `docs/plans/warm-geometry-buffer-uploads.md`.
+- **Deliberately NOT warmed:** `fallbackBox` / `greenFallbackBox` (`drops.js`). They exist only when a `.glb`
+  failed or has not landed, and one of them is `dispose()`d by design — warming them would ADD a program that
+  otherwise never exists.
 
 ## 84. The level-load veil waits for the ASSETS too, not just the shader warm
 

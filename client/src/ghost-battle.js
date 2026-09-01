@@ -69,6 +69,13 @@ export async function buildGhostBattle() {
     group.add(mesh); ghostMeshes.push(mesh);
     return { data: sh, mesh, dead: false, wasVisible: false };
   });
+  // The ghost hulls are a DIFFERENT program from the combat hulls they clone: applyShipModel sets
+  // transparent/opacity/fog on them, and `opaque` is part of three's program cache key. They arrive
+  // asynchronously — usually through requestShipModel's cache fast path, which does NOT hold the veil — so
+  // ask for a warm now rather than let them compile on their first draw, mid-fight. Same late-arrival
+  // pattern as the set-piece loaders (world.js) and the crate (drops.js). Raised ONCE, after the loop:
+  // per-mesh would buy a veil raise/lower cycle (and a full prewarmShaders()) per model that lands late.
+  if (G.gameStarted) G.needsSceneWarm = true;
 
   // ?dev live-opacity: traverse the (possibly late-loaded) ghost meshes' materials + set opacity/transparent.
   const applyOpacity = (v) => { for (const m of ghostMeshes) m.traverse((o) => { if (o.isMesh && o.material) {

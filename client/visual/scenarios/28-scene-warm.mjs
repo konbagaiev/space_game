@@ -47,7 +47,9 @@ export default async function ({ page, assert }) {
   // which is what made programs recompile mid-fight (live count sawing 37<->40).
   const rig = await page.evaluate(() => {
     let found = null;
-    window.__game.scene.traverse((o) => { if (o.isGroup && o.position.y === -100000) found = o; });
+    // By NAME: the loot warm (drops.js `dropWarmRig`) parks a second group at the same y = -100000, so a
+    // coordinate match would find whichever came last. See 50-warm-completeness.
+    window.__game.scene.traverse((o) => { if (o.name === 'fxWarmRig') found = o; });
     return found ? { children: found.children.length, disposed: found.children.some((c) => !c.material) } : null;
   });
   assert.ok(rig && rig.children >= 2, 'the FX warm rig stays in the scene for the session');

@@ -18,14 +18,14 @@ import { Device } from './device.js'; // device capabilities (input/form axes + 
 import { TAP_SLOP, exceedsSlop } from './tap-gesture.js'; // touch tap-vs-drag classification (pure, unit-tested)
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, buildMap, speedFieldLayers, backdropAmp, setBackdropAmp } from './world.js'; // arena + sky/planet/speed field/setpieces + buildMap + the parallax backdrop layer's live knobs
 import { keepAliveMaterial as flipbookKeepAliveMaterial } from './flipbook-fx.js'; // one material held for the session so its program is never freed
-import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnEnemyShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
+import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo, spawnEnemyShieldHit, spawnShieldHit, smokePool, ringKeepAliveMaterial } from './projectiles.js'; // FX exposed to __game + geos reused by prewarmShaders
 import { spawnRocket as spawnRocketInto, spawnBullet as spawnBulletInto } from './sim-core/spawn.js'; // take the World explicitly — __game wraps them below
 import { HIT_FX } from './hit-fx-config.js'; // ?debug hook: the live hit-feel tunables a scenario drives
-import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples
+import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots, warmShieldBubbles } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples + their level-start warm
 import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { shipModelCacheSize } from './ship-factory.js'; // ?debug diagnostic: how many ship glbs have been parsed
-import { drops, spawnDrop, pickLoot } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook
+import { drops, spawnDrop, pickLoot, warmDropAssets } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook + the level-start warm of the crate/halo/pull line
 import { el } from './dom.js'; // single fail-loud inventory of shared index.html nodes
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateMissionMarker, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/gold mission pointer/enemy health bars/XP bar+skill badge)
 import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro → Level 1) + session-recording upload
@@ -793,6 +793,7 @@ function prewarmShaders() {
   try {
     if (!warmRig) {
       warmRig = new THREE.Group();
+      warmRig.name = 'fxWarmRig';   // named so a test can find it without matching on a parked y coordinate
       const addMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }); // explosions/flashes/shockwave
       const fogMat = new THREE.MeshBasicMaterial({ color: 0xffffff }); // bullets/rockets (opaque, scene fog on)
       // Ship-death FX: measured as the one effect still compiling on first use (+3 programs), and it
@@ -803,8 +804,29 @@ function prewarmShaders() {
       warmRig.position.y = -100000; // off-camera; culled every frame, never disposed
       scene.add(warmRig);
     }
+    // Surfaces that used to compile DURING PLAY, on their first appearance (measured 2026-09-01): the loot
+    // crate + its halo + the grab line, and the shield bubbles. They are created here — as the REAL
+    // singletons, invisible or parked — so the compile below sees them with this level's lights and fog and
+    // produces the exact program key the live draw will ask for.
+    const warmRoots = [...warmShieldBubbles(), ...warmDropAssets()];
     renderer.compile(skyScene, camera);
     renderer.compile(scene, camera);
+    // compile() makes programs; three uploads a geometry's buffers only when the object is actually DRAWN,
+    // and everything warmed above is hidden or parked off-camera, so it would be culled out of every frame.
+    // Draw ONE throwaway pass with those objects forced on — the veil is up and the real clear+render
+    // follows immediately, so nothing reaches the player — then restore. More work in the veil frame, not
+    // more veil frames.
+    const forced = [];
+    try {
+      for (const root of warmRoots) root.traverse((o) => {
+        if (!o.isMesh && !o.isLine && !o.isSprite && !o.isPoints) return;
+        forced.push([o, o.frustumCulled, o.visible]);
+        o.frustumCulled = false; o.visible = true;
+      });
+      if (forced.length) renderer.render(scene, camera);
+    } finally {  // a throw here must not leave the rig permanently visible + unculled for the session
+      for (const [o, fc, vis] of forced) { o.frustumCulled = fc; o.visible = vis; }
+    }
   } catch { /* best-effort — shader warmup must never break startup or a level load */ }
 }
 
@@ -1287,6 +1309,13 @@ if (location.search.includes('debug')) {
     // combat), and reasoning about fill cost needs to walk both scenes and read renderer.info.
     scene, skyScene, renderer, camera, enemies, allies, bullets, rockets,
     explosions, sparks, shockwaves, smoke,
+    // Field probe for the level-start warm: dump the live shader-program cache keys. Snapshot once when the
+    // veil drops and again a few seconds into the fight — anything in the second list that is not in the
+    // first compiled DURING PLAY. Needs `debug` in the URL; on a phone that means `?dev&debug`.
+    programKeys: () => renderer.info.programs.map((p) => p.cacheKey),
+    spawnShieldHit,   // test hook: PLAYER shield ripple — signature is (pos, broke = false)
+    spawnDrop,        // test hook: place a crate at an EXACT position (spawnTestDrop jitters near the ship,
+                      // which puts it inside Grab range and lets stepDrops collect it mid-assertion)
     // Exhaust FX debug hooks: the GLOBAL (a)/(b) look toggle + read the current mode / live freighter plume.
     exhaust: {
       setGlobalExhaustMode,
@@ -1342,12 +1371,12 @@ if (location.search.includes('debug')) {
     get speedFieldLayers() { return speedFieldLayers(); }, // diagnostic: the wrapping backdrop layers (31-speed-field)
     // Stress hook: spawn a metal-box drop near the player carrying a random real item. Measure on a phone
     // with `?dev` — start a fight, run `for (let i=0;i<40;i++) __game.spawnTestDrop()`, watch the perf FPS.
-    spawnTestDrop(item) {
+    spawnTestDrop(item, special = false) {
       const p = G.player; if (!p) return null;
       const items = [{ kind: 'component', refId: 6 }, { kind: 'component', refId: 9 }, { kind: 'weapon', refId: 9 }, { kind: 'weapon', refId: 4 }];
       const chosen = item || items[(Math.random() * items.length) | 0]; // optional explicit item → deterministic (tests)
       const pos = p.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 30, 0, (Math.random() - 0.5) * 30));
-      spawnDrop(pos, chosen);
+      spawnDrop(pos, chosen, special); // `special` → the green haloed REWARD body (the by-hand reward-warm check)
       return chosen;
     },
     pickLoot, // expose for tests (loot-pool selection off an enemy)
@@ -2179,8 +2208,15 @@ async function bootstrap() {
     // first take-off. The user spends seconds on the menu, so a deferred compile is invisible.
     // Skipped under the `?debug` inspection hook: `renderer.compile` is very slow on the headless visual
     // suite's software GL (swiftshader) and would flake its startup-sensitive scenarios. Prewarm is
-    // perf-only and behaviorally inert (it compiles shaders that would compile lazily anyway), so there's
-    // nothing for the suite to test, and headless can't measure the benefit. Real users always get it.
+    // perf-only and changes no simulation or UI state (it compiles shaders that would compile lazily
+    // anyway), so there's nothing for the suite to test, and headless can't measure the benefit. Real users
+    // always get it.
+    //   Not quite "behaviorally inert" any more, and the difference is worth stating because THIS caller
+    // runs while the MENU is up: prewarmShaders now also creates the loot/shield singletons and issues ONE
+    // throwaway `renderer.render(scene)` to force their geometry uploads. Everything it forces visible is
+    // restored in the same call (a `finally`), and the shield bubble stays hidden until the shield actually
+    // absorbs something (`armed`, shield-fx.js), so nothing persists past that frame — but it is one extra
+    // draw, not zero. Keep it that way: anything created here must be invisible/parked by default.
     if (!location.search.includes('debug')) requestAnimationFrame(() => requestAnimationFrame(prewarmShaders));
 
     // Dev-only palette tuning panel; lil-gui is fetched only here so players never download it.

@@ -107,7 +107,10 @@ function applyHullEmissiveFloor(root) {
 const floorMark = (m) => !!(m && m.emissive && m.color && m.emissive.equals(m.color));
 const reFloor = (m, hadFloor) => { if (hadFloor) m.emissive.copy(m.color); };
 
-function warmModel(root) {
+// Shared GPU warm, exported: the loot crate and the level's reward drop model go through this same helper
+// (drops.js → warmDropAssets / requestRewardModel), so every parsed .glb is compiled + uploaded against the
+// REAL scene once, not on the frame it first appears.
+export function warmModel(root) {
   try {
     const holder = new THREE.Group();
     holder.position.y = -100000; // compile ignores culling; this only guards against a stray rendered frame
