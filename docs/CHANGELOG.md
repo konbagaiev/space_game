@@ -5,6 +5,19 @@
 
 ## 2026-09-01
 
+- **The level-start warm can no longer fail silently, and says so in telemetry.** Field telemetry from a
+  Redmi 15C (session `3459872f`, level-2, on the shipped fix) showed live shader programs still climbing
+  **35 → 45 during play** — +7 when the first enemy appeared, +2 when the first drop appeared — with
+  main-thread blocks of 1004 ms and 626 ms. `prewarmShaders()` wrapped its whole body in ONE silent
+  `try/catch` (a warm failure must never cost a level load), and the newly added setup call sat *before* the
+  two `renderer.compile()` calls — so a throw in setup skipped the compiles entirely and left the level
+  **colder than with no warm at all**, with no trace anywhere. The function is now four independent stages
+  (`rig` / `roots` / `compile` / `upload`); a stage that throws is counted, named, published in the `?dev`
+  perf sample as `warm`, exposed as `__game.warmErrors()`, and **asserted at zero** by
+  `50-warm-completeness` (mutation-checked: forcing a setup throw now fails the guard with
+  `roots=1 last=roots: …` instead of passing). This is instrumentation, not yet a fix for the growth
+  itself — the device measurement above is unexplained and stays open.
+
 - **The HUD stopped forcing a synchronous layout every frame.** [2026-09-01-1848-hud-viewport-cache]
   `gameW()`/`gameH()` read `window.innerWidth`/`innerHeight` on every call, and five per-frame HUD updaters
   called them interleaved with their own style writes — so each read flushed style + layout mid-frame

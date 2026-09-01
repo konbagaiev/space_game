@@ -740,6 +740,10 @@ const devPerf = (() => {
         load: { enemies: enemies.length, drops: drops.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
         heap: heapMB(), // JS heap (MB) — Chrome only; null elsewhere
         gpu: gpuRes(),  // live three.js programs/geometries/textures — a jump here IS the stall's cause
+        // Per-stage level-warm failures (all zero = the warm ran in full). A non-zero `roots` with a zero
+        // `compile` is the case worth catching: setup threw but the compiles still ran. A non-zero `compile`
+        // means the level was never warmed at all, which no other signal in this sample would reveal.
+        warm: warmErrors(),
         // main-thread blocks >50 ms in THIS sample window: >0 on a freeze frame = our thread (script/GC);
         // 0 on a freeze frame = the stall happened outside it (compositor / GPU process / thermal).
         longTasks: { n: longTasks, ms: r1(longTaskMs) },
@@ -789,8 +793,21 @@ let warmRig = null;
 let warmDeferred = false; // the veil is up; do the blocking compile on the NEXT frame (see animate)
 let warmDeadline = 0;
 const WARM_MAX_WAIT_MS = 9000; // cap on waiting for assets — a stuck download must not block the game
+// Per-stage failure counters, surfaced in the `?dev` perf sample (`warm`). The catch below is deliberately
+// silent — a warm failure must never cost a level load — but ONE silent catch around the whole function let
+// a throw in the SETUP stage skip the two `renderer.compile` calls entirely, which would leave a level
+// COLDER than with no warm at all and leave no trace anywhere. Each stage now fails on its own, and says so.
+const warmErr = { rig: 0, roots: 0, compile: 0, upload: 0, last: null };
+export function warmErrors() { return warmErr; } // read by the ?dev perf sampler (and __game under ?debug)
+function warmStage(name, fn) {
+  try { return fn(); } catch (e) {
+    warmErr[name]++;
+    warmErr.last = `${name}: ${String((e && e.message) || e).slice(0, 100)}`;
+    return null;
+  }
+}
 function prewarmShaders() {
-  try {
+  warmStage('rig', () => {
     if (!warmRig) {
       warmRig = new THREE.Group();
       warmRig.name = 'fxWarmRig';   // named so a test can find it without matching on a parked y coordinate
@@ -804,13 +821,16 @@ function prewarmShaders() {
       warmRig.position.y = -100000; // off-camera; culled every frame, never disposed
       scene.add(warmRig);
     }
-    // Surfaces that used to compile DURING PLAY, on their first appearance (measured 2026-09-01): the loot
-    // crate + its halo + the grab line, and the shield bubbles. They are created here — as the REAL
-    // singletons, invisible or parked — so the compile below sees them with this level's lights and fog and
-    // produces the exact program key the live draw will ask for.
-    const warmRoots = [...warmShieldBubbles(), ...warmDropAssets()];
-    renderer.compile(skyScene, camera);
-    renderer.compile(scene, camera);
+  });
+  // Surfaces that used to compile DURING PLAY, on their first appearance (measured 2026-09-01): the loot
+  // crate + its halo + the grab line, and the shield bubbles. They are created here — as the REAL
+  // singletons, invisible or parked — so the compile below sees them with this level's lights and fog and
+  // produces the exact program key the live draw will ask for. Its OWN stage on purpose: it touches parsed
+  // .glbs and renderer.initTexture, and a throw here must not cost us the compiles that follow.
+  const warmRoots = warmStage('roots', () => [...warmShieldBubbles(), ...warmDropAssets()]) || [];
+  // The reason this function exists. Never let anything above skip it.
+  warmStage('compile', () => { renderer.compile(skyScene, camera); renderer.compile(scene, camera); });
+  warmStage('upload', () => {
     // compile() makes programs; three uploads a geometry's buffers only when the object is actually DRAWN,
     // and everything warmed above is hidden or parked off-camera, so it would be culled out of every frame.
     // Draw ONE throwaway pass with those objects forced on — the veil is up and the real clear+render
@@ -827,7 +847,7 @@ function prewarmShaders() {
     } finally {  // a throw here must not leave the rig permanently visible + unculled for the session
       for (const [o, fc, vis] of forced) { o.frustumCulled = fc; o.visible = vis; }
     }
-  } catch { /* best-effort — shader warmup must never break startup or a level load */ }
+  });
 }
 
 // ---- In-game backdrop recorder (?dev authoring tool). Captures a live-played battle → downloads a committed
@@ -1313,6 +1333,7 @@ if (location.search.includes('debug')) {
     // veil drops and again a few seconds into the fight — anything in the second list that is not in the
     // first compiled DURING PLAY. Needs `debug` in the URL; on a phone that means `?dev&debug`.
     programKeys: () => renderer.info.programs.map((p) => p.cacheKey),
+    warmErrors,       // per-stage prewarmShaders failures; all zero means the warm ran in full
     spawnShieldHit,   // test hook: PLAYER shield ripple — signature is (pos, broke = false)
     spawnDrop,        // test hook: place a crate at an EXACT position (spawnTestDrop jitters near the ship,
                       // which puts it inside Grab range and lets stepDrops collect it mid-assertion)

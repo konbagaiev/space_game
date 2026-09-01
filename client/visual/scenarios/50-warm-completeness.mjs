@@ -62,6 +62,19 @@ export default async function ({ page, assert, shot }) {
       && !document.getElementById('levelwarm').classList.contains('on');
   }, null, { timeout: 20000 });
 
+  // The warm must have run IN FULL. `prewarmShaders` swallows its own exceptions on purpose — a warm
+  // failure must never cost a level load — so a stage that throws is otherwise completely silent, and the
+  // assertions below would still pass on a build whose compiles never ran (every surface simply compiles
+  // during play, which on a fast desktop GPU costs too little to fail anything). Field telemetry from a
+  // Redmi 15C on 2026-09-01 showed programs still climbing 35 -> 45 DURING PLAY on shipped code, which is
+  // exactly what a silently-skipped compile stage looks like. Per-stage counters, asserted here.
+  const warmFail = await page.evaluate(() => window.__game.warmErrors && window.__game.warmErrors());
+  assert.ok(warmFail, 'the ?debug build must expose __game.warmErrors() (per-stage prewarmShaders failures)');
+  assert.equal(warmFail.rig + warmFail.roots + warmFail.compile + warmFail.upload, 0,
+    `prewarmShaders threw and swallowed it — the level was warmed only partially, or not at all. `
+    + `rig=${warmFail.rig} roots=${warmFail.roots} compile=${warmFail.compile} upload=${warmFail.upload}; `
+    + `last=${warmFail.last}`);
+
   // --- the warm must not CHANGE anything, only pre-pay for it. The player's shield bubble is the trap:
   // before this warm existed the mesh was built by the first absorbed hit, so "no bubble yet" implicitly
   // meant "no idle rim yet". Creating it at warm time put a permanent faint rim on the ship from level
@@ -92,6 +105,7 @@ export default async function ({ page, assert, shot }) {
     + `(visible=${bubbleBefore.visible}, any impact registered=${bubbleBefore.hitYet}). Warming a surface `
     + `must not make it appear — see \`armed\` in shield-fx.js.`);
   console.log(`      shield bubble at veil-down: exists=true visible=${bubbleBefore.visible} (impacts so far: ${bubbleBefore.hitYet ? 'yes' : 'none'})`);
+
 
   // The crate .glb is loaded at module import and is NOT counted in pendingAssets, so give the warm a
   // bounded moment to have parked it (halo + crate template => >= 2 children). Deliberately swallowed: a
