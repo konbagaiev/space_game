@@ -99,9 +99,13 @@ preset override) downscales the textures to 128px WebP + meshopt-compresses the 
 > (http://creativecommons.org/licenses/by/4.0/).
 
 The **base station** set-piece (`base_station_combat`) is **"Low Poly space station."** by **MisterH**
-(Sketchfab, **CC-BY 4.0** — attribution required, so this entry must stay while in use). It sits at the
-world origin `(0,0)` below the combat plane as the return-to-base target; `assets:build` decimates/meshopt-
-compresses it into `base_station_combat`.
+(Sketchfab, **CC-BY 4.0** — attribution required, so this entry must stay while in use). It sits at
+`(-10,-10)` below the combat plane as the return-to-base target; `assets:build` decimates/meshopt-
+compresses it into `base_station_combat` and shrinks its four 1024² PNG maps (baseColor / normal /
+metallicRoughness / emissive) to **256px WebP**, with `pruneSolidTextures: false` protecting the emissive
+map (it is ~99.5% black — small lit windows — and the solid-texture pruner would flatten it and make the
+whole hull glow). Result: a ~270 KB combat glb instead of 1.55 MB, at the SAME 1024² resolution — the
+solar-panel detail is untouched.
 
 **Required attribution (use verbatim, e.g. in an in-game credits screen):**
 

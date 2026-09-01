@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DIR, presetFor, combatPath, hangarUrl } from './assets-config.mjs';
+import { DIR, presetFor, combatPath, hangarUrl, checkPreset } from './assets-config.mjs';
 import { flattenMaterials } from './assets-flatten.mjs';
 
 const GLTF = ['--yes', '@gltf-transform/cli@^4']; // npx package (downloaded on first use)
@@ -20,10 +20,15 @@ const hash8 = (file) => createHash('sha256').update(fs.readFileSync(file)).diges
 function optimize(input, output, p) {
   // gltf-transform `optimize`: dedup/weld + optional mesh simplification + geometry + texture compression.
   // `compress`/`textureCompress` can be false to keep plain (uncompressed) geometry/textures.
+  // NOTE the stage ordering: the texture RESIZE happens INSIDE gltf-transform's textureCompress stage, so
+  // `--texture-size N` does nothing at all while `--texture-compress false`. `checkPreset` throws on that
+  // half-configured combination rather than letting it ship silently (it is how base_station shipped four
+  // 1024² PNGs under a preset that said 256), and `--texture-size` is omitted entirely when unset.
+  checkPreset(p, path.basename(input));
   sh([...GLTF, 'optimize', input, output,
     '--compress', String(p.compress),                  // 'meshopt' | false
     '--texture-compress', String(p.textureCompress),    // 'webp' | false (keep original format)
-    '--texture-size', String(p.textureSize),
+    ...(p.textureSize != null ? ['--texture-size', String(p.textureSize)] : []),
     '--instance', String(p.instance ?? true),           // EXT_mesh_gpu_instancing
     // `optimize` prunes textures it deems single-color by default; low-contrast rock/asteroid diffuse maps
     // can trip that heuristic and get baked to a flat baseColorFactor (losing all surface detail). Let a

@@ -372,13 +372,132 @@ The original design discussion is preserved below with its verdict. Several item
   already found these devices CPU-submit-bound; this is the fragment side of the same device.)
 - **Short-term mitigation is already in** (`post.lights` = High 16 / Balance 4 / Performance 0), so the
   weakest devices pay nothing. That caps the damage; it does not fix the station.
-- **What to actually consider:** a cheaper material on the station's large flat panels (it does not need
-  full PBR to read); splitting it so only the near modules are lit-shaded; a distance/scale rule that drops
-  its lighting contribution when it dominates the frame; or simply fewer, larger meshes. Worth profiling
-  the station on its own before choosing — the fix depends on whether it is fill or submit that hurts, and
-  the two want opposite treatments.
+- **FILL OR SUBMIT? — ANSWERED (2026-08-31): fill/bandwidth, never submit.** The base station is
+  **1 mesh / 1 primitive / 1 draw call / 1 material / 2 723 triangles**. There is nothing to batch and
+  nothing to cull; "fewer, larger meshes" is a non-move here. Two measurements pin the shape of the cost:
+  - **Depth complexity along the game camera's axis** (`CAM_OFFSET (0,110,26)`, ~13° off vertical),
+    rasterizing the hull into a 318×321 grid and counting triangle layers per covered cell: **2.84 layers
+    per covered pixel (max 19) with today's `DoubleSide`, 1.41 with `FrontSide`** — backface culling alone
+    removes **exactly 50%** of rasterized fragments. Histogram: **74.6%** of covered pixels are 2 layers
+    (front + back of a single shell — the `DoubleSide` penalty), 15.9% are 4, 4.9% are 6, 4.1% are 8+.
+    So the cost is `screen area × 2.84 layers × (16 lights of full GGX + IBL + 4 texture fetches)`.
+    *Caveat:* **rasterized is not shaded** — Mali's early-Z / Forward Pixel Kill removes some occluded
+    fragments, so the real shading multiplier sits between 1.41 and 2.84. This is why the flag's rungs are
+    ordered as they are: `lean` (which is exactly the culling change) is first.
+  - **CORRECTION (2026-09-01): the depth-complexity number did NOT predict the cost, and the rung ordering
+    above is wrong.** Measured on a fixed pose with real GPU timing, backface culling saves **4%** and
+    dropping the normal map **2%** — separately and together. Tile-based GPUs (Mali, Apple) discard those
+    hidden layers in hardware *before shading*, so counting rasterized fragments over-predicts: you pay for
+    what is SHADED. The lever is the per-light BRDF, not the overdraw — `phong` saves 36% and `basic` 46%
+    at 16 lights, and simply running 4 lights instead of 16 beats all of them (2.20 ms → 0.69 ms with the
+    station filling the frame). **Do not re-derive fill cost from geometry; park the pose and read the
+    driver's timer.**
+  - **Its DOWNLOAD was the other half, and is FIXED.** It shipped four **uncompressed 1024² PNGs**
+    (1 588 268 B) because `PRESET.combat`'s `textureSize: 256` was a silent no-op — with `textureCompress`
+    unset, gltf-transform skips resize *and* compression together. Now four **1024² WebP**: **276 404 B**,
+    the same pixels, ~5.7x less to download. **Resolution is kept at full 1024 deliberately** — texture size
+    was measured to move fps by nothing, so shrinking would buy only VRAM, and 256² visibly smears the
+    solar-panel grid the player docks against. VRAM is therefore unchanged (21.3 MiB). The win is the first
+    load, which overruns the 9 s asset budget on a weak phone. See DECISIONS §144.
+- **The SHADING question is still open, and is now measurable rather than arguable.** `?stationmat=<rung>`
+  ships off by default with four cumulative rungs — `standard` / `lean` (`FrontSide` + no normal map, still
+  `MeshStandardMaterial`) / `phong` (Blinn-Phong, no IBL) / `basic` (`MeshBasicMaterial`, the floor).
+  **The measurement to run on the Redmi 15C**, same spot (docked, zoomed in so the station fills the frame),
+  `?dev` fps readout, one reload per run: `?lights=16` alone → `&stationmat=lean` → `phong` → `basic`, then
+  the same four at `?lights=0` to separate per-light ALU from the constant per-fragment cost. `basic` is the
+  floor: whatever it does not recover is not in the station's shading at all.
+  **Neither cheap move is free, and both reasons are measured:** 147 of the hull's 4 157 edges are
+  **boundary edges** (3.5%), so `FrontSide` can punch visible holes rather than just halving fragments; and
+  22.8% of the normal map's texels carry **real relief** (17.3% strongly), so dropping it visibly flattens
+  roughly a fifth of the surface. On top of that, `scene.environment` is a RoomEnvironment PMREM on High
+  **and** Balance, and Phong/Basic do not read it at all — a material swap **re-lights** this metalness-1
+  hull rather than just simplifying it.
+- **Still worth considering, unchanged:** splitting the mesh so only the near modules are lit-shaded, or a
+  distance/scale rule that drops its lighting contribution when it dominates the frame.
 - Freezes on the first explosion were suspected during the same session and **did not reproduce** — no
   action, recorded so it is not re-chased.
+- **Deferred follow-up 1 — the remaining ~18 MiB of model VRAM.** `--texture-size` is still a no-op for
+  every combat model with no `textureCompress` override (`checkPreset` now throws if one *declares* a size
+  without compression, but the models that declare nothing simply keep their source maps). Making it work
+  would re-hash ~6 models (enemies, freighter, `machine_gun`, `repair_drone`), each needing a catalog edit,
+  an S3 push, a look check and an itch republish — a feature of its own. *Audit the neighbouring knob in the
+  same pass:* `simplifyRatio` is read only as a boolean switch (`p.simplifyRatio < 1 ? 'true' : 'false'`,
+  `scripts/assets-build.mjs`), so its numeric value never reaches the CLI — every `0.2` in the presets is
+  decorative too. Same class of bug, smaller stakes.
+- **Deferred follow-up 2 — superseded hashes accumulate in `client/assets/ships/`.** `assets:pull` syncs the
+  whole `ships-combat/` prefix with **no `--delete`** (`scripts/assets-pull.mjs`) and `build:itch` copies
+  the entire `client/assets` directory (`scripts/build-itch.mjs`), so every stale build rides along in the
+  Docker image and in the itch ZIP against its size limit. A general cleanup is worth doing once; the
+  base station's own superseded object is handled by hand as part of §144's deploy.
+
+### The SKY PASS is half the GPU frame, and nobody has looked at it (opened 2026-09-01)
+
+- **The biggest single item in the frame, and it is not the station.** With the base station filling the
+  screen at Balance's 4 lights, the frame splits **sky 1.71 ms / combat 1.57 ms** — the backdrop is **52%**
+  of GPU time. Unlike the station it is paid on **every frame of every level**, and it does not vary with
+  light count, station coverage or zoom.
+- **It is PURE FILL — no geometry component at all.** Across a resolution sweep it scales perfectly
+  linearly with pixels: 1.67 / 0.91 / 0.63 / 0.38 / 0.19 / 0.11 ms at 4.10 / 2.30 / 1.60 / 1.02 / 0.58 /
+  0.26 Mpx — a flat **~0.4 ms per megapixel** at every point. Hiding individual sky objects (stars, the
+  system bodies) changes nothing measurable.
+- **It is 5 draw calls, and only ONE of them measures.** A deep inventory of the sky scene: 2 `Points`
+  layers (stars) and a handful of small `Mesh`es (the system bodies / star model) — hiding any of them
+  individually is lost in noise. Removing `skyScene.background` saves **0.39-0.60 ms**, which is exactly the
+  price of one full-screen textured fill (~0.146 ms/Mpx). The nebula is **already baked** to a cubemap once
+  at map build (`world.js:1379`, DECISIONS §43), so re-baking it as a 2D image would save nothing — the cost
+  is painting every pixel, not what is sampled while painting.
+- **CORRECTED (2026-09-01):** an earlier version of this entry claimed the sky stacked **two** full-screen
+  layers — the nebula plus the parallax `backdropMesh` (`world.js:360-371`) — and recommended merging them
+  for a free ~0.6 ms. **That was wrong**, inferred from a `skyScene.add(mesh)` call without checking it runs
+  on this map. The inventory found **no ShaderMaterial in the sky scene at all**: the parallax backdrop and
+  the three dust `Points` layers live in the **combat** scene (all `frustumCulled: false`, the transparent
+  quad at opacity 0.4). There is no stacked-layer waste to reclaim in the sky pass.
+- **The remaining sky question:** the background fill is ~a third of the pass; what the other ~two thirds
+  are is still unattributed, because per-object deltas sit under the measurement floor (below).
+- **The speed field — MEASURED AND CLOSED (2026-09-01): leave it alone.** The three dust `Points` layers in
+  the combat scene exist only to sell motion, and the maintainer's verdict on playing without them is that
+  the game *needs* them. They are also not where the cost is. Measured on the Redmi 15C via `?speedfield=0`
+  (skips BUILDING them, so they cost no draw calls at all — the two sessions are identifiable in
+  `perf_samples` by draw count, 32.8 with vs 28.2 without): **GPU wait 17.0 ms vs 15.3 ms — ~1.7 ms, ~10%**,
+  against a 30 ms frame. The much larger fps gap in the raw numbers (31.5 → 57.8 p50) is an artefact: the
+  first session is 13 samples including level start, the second 40 samples of settled play.
+  - **They cannot be measured on a Mac at all.** Hiding them there made the frame measure *slower*
+    (1.59 → 1.93 ms) with a clean drift check either side — the signature of GPU **power management**: at
+    ~1.5 ms of work an M1 downclocks, so removing work raises per-frame GPU time. **Measurement floor on
+    that machine: ~0.3 ms per pass.** Small effects must go to the phone.
+  - **"Merge it into the main scene" is a non-move — it is already there.** The field is three `Points`
+    objects added to the *combat* scene and drawn in the combat pass; there is no separate pass. (An earlier
+    draft of this entry confused it with the parallax backdrop.) The only real merge available is collapsing
+    its **three draw calls into one** — per-vertex size + alpha in a custom shader, as the exhaust already
+    does — worth ~2 of ~30 draws (~7% of submit, which *is* the §23 bottleneck) at the price of rewriting
+    the field off `PointsMaterial` and re-tuning its look. Not judged worth it.
+- **Method note, reusable:** all of the above came from a fixed-pose harness with real GPU timing
+  (`EXT_disjoint_timer_query_webgl2`, available in headed Chrome; one query per render call splits sky from
+  combat). Free-play sessions cannot answer these questions — the frame changes with where the player flew,
+  which silently turned an earlier rung comparison into a comparison of two different flight paths.
+
+### The level RUNS while the load veil is up — you get shot in the dark (opened 2026-09-01)
+
+- **Reported from a real first load on prod**, weak phone (Mali-G52), Level 0: a long dark screen, then the
+  "Preparing the sector..." veil — but **the level had already started**. The ship was the procedural
+  placeholder (cone/box/sphere), it swapped to the real model a moment later, the base station appeared
+  seconds after that, and **enemies were already shooting at the player while the loading screen was still
+  up**.
+- **Diagnosed, not guessed.** In `client/src/main.js` the sim step `update(dt)` runs at ~line 1109, while the
+  veil gate sits at ~line 1162 — so the `return` that holds the loading screen skips **only the render**.
+  The world keeps ticking underneath it: enemies spawn, close in and fire at a player who can neither see
+  nor act. This is a gameplay gate that was never there, not a rendering bug.
+- **The second half is the 9 s cap.** `WARM_MAX_WAIT_MS = 9000` (`main.js:789`) bounds the wait for
+  `G.pendingAssets`, deliberately, so a wedged download can never lock anyone out (DECISIONS §84). On a weak
+  phone's first load that cap is genuinely reached, which is why the placeholders and the late station are
+  *working as designed*. The cap is fine; being shot during it is not.
+- **Why it is not a one-line fix, and must not be bolted onto an unrelated branch:** freezing the sim while
+  the veil is up changes the TICK COUNT of the opening seconds, and tick counts are what recorded sessions
+  and the input-replay traces are keyed to (`replay.js`, the Level-0 intro trace, `22-trace-replay`). It
+  needs its own plan covering what a paused-during-load level does to a recording and to the intro handoff.
+- **Priority argument:** this is the first thing a brand-new player on a weak phone experiences, which puts
+  it above the station's frame rate. Related but not a fix: §144 cuts the base station's download from
+  1.55 MB to 86 KB, which shortens the window without closing it.
 
 ### Ship CLASS as a first-class axis — light / medium / heavy / ultra-heavy / station (opened 2026-08-31)
 - **FIRST RUNG DONE 2026-08-31** (DECISIONS §142): `stats.weightClass` is on all 10 ship rows, the

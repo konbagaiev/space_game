@@ -13,8 +13,17 @@
 > `catalog_seed.js` → commit). See DECISIONS §14.
 >
 > **Compression policy (combat is light for battle first):** **combat glbs are built as small as possible**
-> — aggressive decimation (`--simplify`) **+ meshopt geometry compression** + 256px textures (the ship is
-> tiny on a top-down screen, so heavy simplification is invisible). **Hangar** glbs keep full detail with
+> — aggressive decimation (`--simplify`) **+ meshopt geometry compression** (the ship is tiny on a top-down
+> screen, so heavy simplification is invisible). **Combat has NO default texture size**, and that is
+> deliberate: gltf-transform performs the texture **resize inside its `textureCompress` stage**, so
+> `--texture-size` does **nothing** while `--texture-compress` is `false` — which is the combat default. A
+> model that wants smaller combat textures opts in **per model** in `PRESET_OVERRIDES` with
+> `textureCompress` *and* `textureSize` **together** (e.g. `player` 128 WebP, `space_factory` /
+> `base_station` 1024 WebP). `checkPreset()` in `scripts/assets-config.mjs` **throws** at build time on the
+> half-configured case, and `scripts/assets-config.test.mjs` (repo-root `npm test`) pins it. This paragraph
+> used to claim "+ 256px textures" for every combat build; that was false for years and is how the base
+> station shipped four UNCOMPRESSED 1024² PNGs (1.55 MB of download) — see DECISIONS §144.
+> **Hangar** glbs keep full detail with
 > **meshopt + WebP**. Both use meshopt, so both need the client's `setMeshoptDecoder` (wired) to load.
 > **Viewing/inspecting a glb on macOS:** drag it into a browser viewer — `gltf-viewer.donmccurdy.com`,
 > `gltf.report`, `sandbox.babylonjs.com`, or `modelviewer.dev/editor` (all support meshopt/Draco/KTX2); or

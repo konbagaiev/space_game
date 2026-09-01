@@ -3,8 +3,62 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-09-01
+
+- **The frame's GPU budget, measured for the first time — and three of our own conclusions overturned.**
+  [2026-08-31-1533-station-gpu-cost] Built a fixed-pose harness reading the driver's own GPU clock
+  (`EXT_disjoint_timer_query_webgl2`, one query per render call, so the sky and combat passes are timed
+  separately) and swept one factor at a time. Results, station filling the frame: **light count dominates
+  everything** (16 lights 2.20 ms / 4 lights 0.69 / none 0.54), the most extreme material change saves
+  1.03 ms, **backface culling saves 4% and dropping a normal map 2%** — not the 50% predicted from the
+  hull's 2.84 rasterized layers, because tile-based GPUs discard hidden layers before shading — and
+  **texture size moves fps by nothing**. Cutting the pixel-ratio cap 2 → 1 cuts GPU frame time **67%** at
+  every light count and framing, so resolution *is* a strong lever; re-tested on the real phone via a new
+  `?res=N` fork (lowers the cap while KEEPING antialiasing — the one combination the tier table cannot
+  express) it was **rejected on image quality**, which replaces §140's now-obsolete "it buys nothing"
+  reasoning. Biggest open item found: at Balance the **sky pass is 52% of the GPU frame**, pure fill
+  (~0.4 ms/Mpx, no geometry component), painting the screen ~2.8 times over. Docs: DECISIONS **§145** (the
+  measurement method and why free-play sessions cannot answer these questions), the **§140 amendment**,
+  SUMMARY's graphics-tier section corrected in place (it still claimed the weak-device bottleneck is not
+  fill rate), and two new ROADMAP entries — the sky pass, and **the level running under the load veil**
+  (the sim ticks while the loading screen is up, so a new player on a weak phone is shot at in the dark).
+
 ## 2026-08-31
 
+- **The base station stops eating half the game's texture memory — and a build preset that lied for months
+  can no longer lie silently.** `[2026-08-31-1533-station-gpu-cost]` The base station's combat glb shipped
+  the source's four **uncompressed 1024² PNGs** (baseColor / normal / metallicRoughness / emissive) shipped
+  verbatim, against 2 723 triangles in a *single* draw call. It is rebuilt at four **1024² WebP** maps —
+  full resolution kept deliberately, since texture size was measured to move fps by nothing and 256² smears
+  the solar-panel grid you dock against — for **1 588 268 B →
+  88 068 B (~86 KB)** of download — an 18× smaller file — with **no look change** (same material, same
+  `doubleSided`, same normal map, `pruneSolidTextures: false` protecting the 99.5%-black emissive map so the
+  lit windows survive; measured Rec.709 peak 215.9 → **204.4** and lit fraction 0.415% → **0.375%**).
+  **The cause was a pipeline trap:** gltf-transform's `optimize` performs its texture **resize inside the
+  `textureCompress` stage**, so `--texture-size N` is a **silent no-op** while `--texture-compress` is
+  `false` — which is the combat default. `PRESET.combat` had declared `textureSize: 256` for its whole life
+  and it had never resized anything. That key is now gone (a no-op removed changes no existing build output,
+  so no other model's hash moved), a `base_station` entry in `PRESET_OVERRIDES` opts into `256` **with**
+  `textureCompress: 'webp'`, and the new exported **`checkPreset()`** in `scripts/assets-config.mjs`
+  **throws** at build time on the half-configured combination — called by `assets-build.mjs` before every
+  `optimize()`, which also stops passing `--texture-size undefined`. The guard is pinned by a new
+  `scripts/assets-config.test.mjs`, run by a new **repo-root `npm test`**
+  (`node --test "scripts/**/*.test.mjs"`) that is now a **CI step** in the `test` job — which also finally
+  runs the previously-orphaned `scripts/assets-hitboxes.test.mjs` (it skips cleanly when the gitignored glbs
+  are absent, i.e. in CI). Also shipped, **off by default**: **`?stationmat=<rung>`**
+  (`client/src/station-mat.js` + `applyStationMat` in `world.js`), a base-station-only shading **measurement
+  fork** with four cumulative rungs — `standard` (a strict no-op), `lean` (`FrontSide` + no normal map,
+  still `MeshStandardMaterial` so the IBL survives), `phong` (Blinn-Phong, **no** `scene.environment` IBL)
+  and `basic` (`MeshBasicMaterial`, the floor — and it has no emissive slot, so the lit windows go dark on
+  that rung, expected). An unknown value warns and falls all the way back. Nothing about the station's look
+  is decided here: the two obvious cheap moves are both risky on this asset (147 of its 4 157 edges are
+  boundary edges → `FrontSide` can punch holes; 22.8% of its normal-map texels carry real relief), so the
+  flag exists to be **measured on the Redmi 15C** — `?lights=16` alone → `&stationmat=lean` → `phong` →
+  `basic`, then the same four at `?lights=0`. **Honest expectation:** the texture change is a memory and
+  download win and is expected to move fps by roughly nothing (the cliff is per-light ALU, and a texture
+  fetch happens once per fragment regardless of light count). New visual scenario `46-base-station.mjs`
+  (the first coverage of this model at all) guards the download size + WebP format — mutation-checked against the old glb, which fails it at 1 551 KB —
+  and *measures* the emissive map rather than testing that it exists. DECISIONS §144.
 - **Fixed: firing on the way home could leave a finished mission impossible to close.** After clearing a
   sector and pressing "Finish and Return", a single shot cancelled the flight home (any control input does —
   DECISIONS §39, deliberately kept), and from there the mission was **stuck open**: the button refused every

@@ -27,6 +27,13 @@ jobs:
           node-version: '23'
       - name: Client logic tests
         run: cd client && node --test
+      # Asset-pipeline guards (scripts/): the preset honesty check + the hitbox test. `npm ci` at the repo
+      # root is needed because assets-hitboxes.test.mjs imports @gltf-transform/*; that test skips cleanly
+      # when the (gitignored) combat glbs are absent, which is always the CI case.
+      - name: Install asset-pipeline deps
+        run: npm ci
+      - name: Asset pipeline tests
+        run: npm test
       - name: Install server deps
         run: cd server && npm ci
       - name: Server API tests (Postgres)

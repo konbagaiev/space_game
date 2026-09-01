@@ -39,7 +39,22 @@ export function toGame(clientX, clientY) {
 }
 
 export const renderer = new THREE.WebGLRenderer({ antialias: G.gfx.antialias });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, G.gfx.pixelRatioCap));
+// `?res=N` — MEASUREMENT FORK for the resolution question, off by default (same shape as ?lights=N).
+// It overrides ONLY the pixel-ratio cap and leaves `antialias` on whatever the tier chose, so the one
+// combination the tier table cannot express — LOW RESOLUTION *WITH* ANTIALIASING — becomes testable on a
+// real phone. (Performance turns both off together; Balance/High turn both on together.)
+// Why that combination is worth a look: MSAA resolves in tile memory on the mobile TBDR GPUs this game
+// actually struggles on, so it is far cheaper there than the resolution it would buy back — measured on an
+// M1 (also TBDR), dropping the cap 2 -> 1 cut GPU frame time 67% at every light count and framing.
+// Absent or unparseable -> the tier's own cap, i.e. a strict no-op.
+const resFlag = (() => {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('res');
+    const n = Number.parseFloat(raw ?? '');
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 4) : null;
+  } catch { return null; }
+})();
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, resFlag ?? G.gfx.pixelRatioCap));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.info.autoReset = false; // count load across both render passes
 
