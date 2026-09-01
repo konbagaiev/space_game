@@ -348,8 +348,13 @@ export async function restoreSession() {
 // from /api/config — loaded from the CDN on demand (no build step; nothing shipped when disabled).
 // Best-effort: any failure here must never break the game. See docs/plans/monitoring.md.
 export async function initSentry() {
-  let cfg = null;
-  try { cfg = (await (await fetch(API_BASE + '/api/config')).json()).sentry; } catch { return; }
+  let all = null;
+  try { all = await (await fetch(API_BASE + '/api/config')).json(); } catch { return; }
+  // The deploy commit that served this page — the session upload sends it back so the referee can refuse a
+  // trace recorded on a different build (DECISIONS §129; docs/plans/2026-09-01-1845-duel-referee.md §S8).
+  // Stamped BEFORE the Sentry early-out: Sentry is off on every local box, and the build gate must not be.
+  G.buildVersion = all.build || null;
+  const cfg = all.sentry;
   if (!cfg || !cfg.dsn || window.Sentry) return;
   await new Promise((resolve) => {
     const s = document.createElement('script');

@@ -6256,3 +6256,60 @@ accessors: it catches them at 64 reads over 8 frames.
 117 long tasks against 9), so the ~1 ms goes into GPU wait and fps is expected to be unchanged. The
 reason is code correctness: the main thread stops doing work it invented for itself, and `js.dom`
 measures DOM work again.
+
+## 150. A duel is judged at the moment the FIGHT ends, not when the trace does — and a verdict is a fact, not a debt
+
+`docs/plans/2026-09-01-1845-duel-referee.md`. **Supersedes nothing in §129 — it is the first thing that
+satisfies it.**
+
+**The anchor.** A mission ends TWICE (§130). The arena empties → `clearMission` fires → `levelRunner.cleared`
+and the reward is decided; only later does the player press "Finish and Return", fly home and dock, and only
+docking sets `levelRunner.won`. **That button and that dock are not in the input trace** — a trace records
+keys and touch, never a mouse click (§129: "a headless referee can never win"). So at the end of a *winning*
+duel the browser's World carries `won`, `finishing`, `returningToBase` and an engaged autopilot, and the
+referee's carries none of them; every one of those fields is inside `worldDigest` (`lr` and `ap`). Digesting
+the final state would have marked **100 % of honest winning duels `disagree`**. `cleared` and death are
+different in kind: both are decided inside `sim-core` as a pure consequence of the fight, with nobody
+clicking anything, so a tab, a netsim room and a headless referee all reach them on the same tick. Hence
+`duelAnchorReached(world) = cleared || !player.alive`, evaluated at the **end of the tick** on both sides —
+Node through `runTrace`'s new `stopWhen`, the browser by sealing at the top of `flushSession`, which the
+sim's own `cleared`/`death` event calls from inside the very tick that settles it.
+
+**Why the FULL digest here, where §129 says it is the wrong oracle for money.** §129's objection is real and
+stands: the last kill's reward drop is gated on `ownsReward`, which reads account state a trace does not
+carry and whose two branches consume a different number of RNG draws. **That branch cannot be reached in a
+duel.** `withDuelRoom` drops `lastKillDrop`, and `step-enemies.js` reads
+`if (lkd && isLastKillDrop(…) && !ownsReward(…))` — `lkd` is `undefined`, JS short-circuits, `ownsReward` is
+never called, and the kill falls through to a single seeded `simRandom()` draw. The duel's loot roll is
+therefore fully deterministic from the seed. The alternative oracle — credits and XP — is worthless here for
+the opposite reason: an ace pays `0/0`, so the comparison would be `0 === 0`.
+
+**Why the JS engine is recorded.** Once build drift is gated, the only remaining *honest* explanation for a
+`disagree` is a cross-engine floating-point difference. `Math.sin`, `Math.atan2`, `Math.hypot` and `Math.pow`
+are implementation-defined in ECMAScript, and `36-sim-divergence` only ever proved **Chromium ↔ Node** —
+nothing in this project has ever compared WebKit or Gecko against Node. Without the engine beside the
+verdict the first `disagree` is uninterpretable: a cheat, a sim bug, or just Safari? The column stores the
+engine **family + version**, not the User-Agent: it is a technical fact about the machine that produced a
+trace, not a profile of the player.
+
+**The off-by-one this uncovered, in ALL session recording.** `stepReplayTick` captured the tick's input
+*after* `update(dt)` — but `update()` drains the sim events, and the `cleared`/`death` handlers flush the
+session from inside that drain. So **every recorded session's uploaded trace was missing its final tick**:
+the tick on which the level was cleared or the player died. For the referee that is fatal rather than
+cosmetic (the re-simulation runs out one tick short of the anchor and reports `no-anchor` on every honest
+clear), and it is very likely part of why the 2026-08-21 campaign survey measured 20 % agreement —
+`verifyRun` returns `win-not-earned` for a claimed win whose re-simulation never set `cleared`, which is
+precisely what a trace missing its last tick produces. The fix is one line and it is content-neutral:
+nothing in `sim-core` writes `keys`/`touchAim`, so the snapshot is identical taken before or after the tick.
+The same class of bug bit once more in the same change: `bankRun()` sets `world.banked`, which is inside the
+digest, and the `death` handler banked *before* it flushed — so a duel death sealed a World the referee could
+never reach. Both handlers now flush first. **The lesson worth keeping: when two hosts must agree on a state,
+the observation point has to be a moment the SIM defines, and every client-only write that lands between the
+sim's decision and the observation is a divergence waiting to be blamed on the simulation.**
+
+**Nothing binds.** No credits, no XP, no progression and no gate reads a verdict, and none may until the
+disagreement rate on honest players has been measured. That is §129's own rule, written after a survey of 74
+production sessions found 20 % agreement and not one cheat; a mechanism with that error rate does not catch
+cheats, it robs honest players. The reward model for duels is deliberately deferred by the maintainer. What
+this change buys is the thing §129 asked for and nobody had built: **a verdict recorded long before it is
+allowed to bind, on a subject short enough that drift has no room to compound.**

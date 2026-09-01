@@ -196,6 +196,12 @@ function renderPage(players, levels) {
 
 // Render the /admin/sessions page: every recorded gameplay session (newest first) with a ▶ play link
 // (/?playback&id=…) and a ✓/✗ marker on whether the recorded game_version matches the current deploy.
+//
+// `verdict` is the DUEL REFEREE's answer (docs/plans/2026-09-01-1845-duel-referee.md): the server
+// re-simulated this session's input trace and compared the world at the end of the FIGHT. Empty for every
+// campaign row, and NOTHING BINDS TO IT. Hover for the note (the tick/draw/hash difference, or the shape of
+// the fight that agreed). `engine` is the JS engine that ran the browser's simulation — the last honest
+// explanation for a `disagree` once build drift is gated, since 36-sim-divergence only proves Chromium↔Node.
 function renderSessionsPage(sessions, currentVersion) {
   const rows = sessions.map((s) => {
     const v = s.gameVersion || '';
@@ -209,10 +215,13 @@ function renderSessionsPage(sessions, currentVersion) {
       <td data-sort="${s.durationMs}" class="num">${fmtDur(s.durationMs)}</td>
       <td data-sort="${s.kills}" class="num">${s.kills}</td>
       <td title="${esc(v)}"><code>${esc(v.slice(0, 8))}</code>${match}</td>
+      <td title="${esc(s.verdictNote || '')}">${esc(s.verdict || '')}</td>
+      <td class="device" title="${esc(s.jsEngine || '')}">${esc((s.jsEngine || '').slice(0, 20))}</td>
       <td><a href="/?playback&id=${esc(s.id)}" target="_blank" rel="noopener">▶ play</a></td>
     </tr>`;
   }).join('');
-  const headers = ['created', 'player', 'level', 'outcome', 'duration', 'kills', 'version', 'watch'];
+  // `watch` stays LAST and the data-col indices stay contiguous, or the header sort script breaks.
+  const headers = ['created', 'player', 'level', 'outcome', 'duration', 'kills', 'version', 'verdict', 'engine', 'watch'];
   const ths = headers.map((h, i) => `<th data-col="${i}">${esc(h)}</th>`).join('');
   return pageShell({
     title: 'Vega Sentinels — sessions',

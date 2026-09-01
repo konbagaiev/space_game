@@ -13,6 +13,7 @@ import { buildPlayerFor } from './ship-build.js';
 import { applyAllyDev } from './ally-dev.js';
 import { applyDuelDev } from './duel-dev.js'; // ?duel (dev): rebuild the level as the sparring room
 import { sendSession } from './session-transport.js'; // pure beacon-vs-fetch routing (unit-tested; the no-keepalive win/death fix)
+import { jsEngine } from './engine-id.js'; // the JS engine family+version that ran this simulation (referee §3.2)
 
 // TEMP client → server debug log (fire-and-forget). Prints to the server console via /api/clientlog so
 // on-device flows can be diagnosed without devtools. Remove with the intro-advance debugging.
@@ -135,8 +136,15 @@ export function refreshAfterRoomBank() {
 // `navigator.sendBeacon` and its ~64KB cap — now a genuine last resort rather than the main mobile path, and
 // one that run-length-packed traces mostly fit inside anyway (~24× smaller; see replay.js packTicks).
 // `id` is minted by the client so a provisional upload and the later final one UPSERT the same row.
-export function postSession({ id, trace, level, outcome, durationMs, kills }, { beacon = false } = {}) {
-  const body = JSON.stringify({ id, playerId: G.playerId || null, trace, level, outcome, durationMs, kills });
+// `room` is deliberately NOT destructured here even though sr.flush() returns it: it already travels inside
+// the trace, and the referee must have exactly one authority for it — a second copy on the body could
+// disagree with `trace.room` and there is no rule for which would win.
+export function postSession({ id, trace, level, outcome, durationMs, kills, anchor }, { beacon = false } = {}) {
+  const body = JSON.stringify({ id, playerId: G.playerId || null, trace, level, outcome, durationMs, kills,
+    anchor: anchor || null,                 // the client's claim about the end of the FIGHT (duel only)
+    gameVersion: G.buildVersion || null,    // the build that served this page — the drift gate (DECISIONS §129)
+    engine: jsEngine(),                     // Chromium/… | WebKit/… | Gecko/… — see …-duel-referee.md §3.2
+  });
   try {
     sendSession(API_BASE + '/api/sessions', body, beacon, {
       fetch: (...a) => fetch(...a),

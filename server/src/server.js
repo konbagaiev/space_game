@@ -11,10 +11,11 @@ import { migrate, registerPlayer, setPlayerLanguage, getCurrentLevel, advancePro
   setResetToken, consumeResetToken, deleteSessionsForPlayer,
   getStash, buyItem, sellItem, equipItem, unequipItem, depositLoot, getAdminPlayers,
   getMissionState, takeMission, deferMission, activateMission, clearMission, spendSkillPoint,
-  recordSession, getAdminSessions, getSessionS3Key } from './datastore.js';
+  recordSession, recordSessionVerdict, getAdminSessions, getSessionS3Key } from './datastore.js';
 import { hashPassword, verifyPassword, newSessionToken, hashToken, makeRequireAuth, setSessionCookie, clearSessionCookie, sessionTokenFromReq, RESEND_THROTTLE_MS } from './auth.js';
 import { generateMissions } from './missions.js';
 import { mountAdmin } from './admin.js';
+import { verifyDuelSession } from './seal/verify-duel.js'; // the duel referee (docs/plans/2026-09-01-1845-duel-referee.md) — records a verdict, binds nothing
 import { sendVerificationEmail, verificationUrl, sendPasswordResetEmail, passwordResetUrl } from './ses.js';
 import { putTrace, getTrace } from './s3.js';
 import { createTicketStore } from './netsim/tickets.js';
@@ -495,6 +496,11 @@ export async function createApp() {
   // enable Sentry without a build step or a hardcoded DSN; null when unset (client skips Sentry).
   app.get('/api/config', (req, res) => {
     res.json({
+      // The deploy commit that served this page. TOP-LEVEL on purpose: `sentry` is null whenever
+      // SENTRY_DSN_WEB is unset — which is every local dev box — so nesting it there would make the field
+      // unreachable exactly where the feature is developed. The client echoes it back on the session
+      // upload so the referee can refuse a trace recorded on a different build (DECISIONS §129).
+      build: process.env.SENTRY_RELEASE || null,
       sentry: process.env.SENTRY_DSN_WEB ? {
         dsn: process.env.SENTRY_DSN_WEB,
         environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'production',
@@ -549,6 +555,15 @@ export async function createApp() {
     const b = req.body || {};
     const { trace, level, outcome, durationMs, kills } = b;
     const playerId = (typeof b.playerId === 'string' && b.playerId) ? b.playerId : null;
+    // The three fields the duel referee needs, all optional and all sanitized to a shape the DB and the
+    // comparison can hold: the JS engine that ran the browser's simulation, the build that served the page
+    // (the drift gate — §129), and the client's claim about the end of the FIGHT.
+    const str64 = (v) => (typeof v === 'string' && v ? v.slice(0, 64) : null);
+    const engine = str64(b.engine);
+    const gameVersion = str64(b.gameVersion);
+    const a = b.anchor;
+    const anchor = (a && typeof a === 'object' && Number.isInteger(a.tick) && Number.isInteger(a.hash)
+      && Number.isInteger(a.draws)) ? { tick: a.tick, hash: a.hash >>> 0, draws: a.draws } : null;
     if (!trace || typeof trace !== 'object') return res.status(400).end();
     // Both trace shapes are accepted: v1's flat `ticks`, v2's run-length packed `runs` + `tickCount`.
     const ticks = Array.isArray(trace.ticks) ? trace.ticks.length
@@ -564,13 +579,34 @@ export async function createApp() {
     // additionally refuses to cross player_id boundaries (see recordSession).
     const id = (typeof b.id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(b.id)) ? b.id : crypto.randomUUID();
     const s3Key = `recordings/sessions/${id}.json`;
+    // A `?duel` session is NOT a campaign run and must not sit in the campaign funnel under a level name it
+    // did not play, so its row is labelled `duel:level-N`. `trace.level` itself stays the base level, which
+    // is what keeps `classifyTrace` and `buildCatalog` working.
+    const duel = (trace.room && trace.room.kind === 'duel') ? trace.room : null;
+    const rowLevel = duel ? `duel:${level}` : level;
+    let written = false;
     try {
       // Row FIRST: its player_id guard is what decides whether this upload may claim `id` at all. Writing S3
       // first would let a colliding id overwrite another player's trace even though their row was protected.
-      const { written } = await recordSession({ id, playerId, level, outcome, durationMs, kills, s3Key, gameVersion: GAME_VERSION });
+      ({ written } = await recordSession({ id, playerId, level: rowLevel, outcome, durationMs, kills, s3Key,
+        gameVersion: GAME_VERSION, jsEngine: engine }));
       if (written) await putTrace(s3Key, JSON.stringify(trace));       // no-op when creds absent (row still written)
     } catch { /* best-effort telemetry */ }
     res.status(204).end();
+    // THE REFEREE RUNS AFTER THE RESPONSE: re-simulating a fight is synchronous CPU, and a session upload
+    // must never wait on it. setImmediate lets the 204 actually leave before the loop blocks. Duels only,
+    // and only with an anchor — a provisional flush mid-fight has none, and the final upload overwrites the
+    // row anyway. `?duel` is dev-only and cannot be combined with `?netsim=1` (docs/plans/duel-room.md §8),
+    // so this can never block a live 60 Hz room — the hazard verify-sessions.mjs's header warns about.
+    // GAME_VERSION is null on a local box (no SENTRY_RELEASE) and classifyTrace's gate reads
+    // `if (build && …)`, so the drift check is off locally and on in production. Deliberate: the feature
+    // must be developable locally, and locally there is no deploy to drift from.
+    if (written && duel && anchor) {
+      setImmediate(() => {
+        verifyDuelSession({ id, trace, claim: { level, gameVersion, anchor }, build: GAME_VERSION,
+          save: recordSessionVerdict }).catch(() => {});
+      });
+    }
   }));
 
   // Serve a session's trace for admin playback (/?playback&id=…). INTENTIONALLY UNAUTHENTICATED: a trace

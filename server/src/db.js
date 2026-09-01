@@ -63,6 +63,9 @@ async function renumberLevelsZeroBased() {
       const parkedId = r.rows[0].id;
       await client.query('UPDATE players SET current_progress = $1 WHERE current_progress = $2', [newId, parkedId]);
       await client.query('UPDATE levels SET id = $1, name = $2 WHERE id = $3', [newId, newName, parkedId]);
+      // NB for a FUTURE level rename: a `?duel` session's level is stored PREFIXED (`duel:level-1`), so an
+      // exact-match rewrite like this one would silently miss it. Harmless here — this migration is a
+      // one-shot guarded by `migrations_pg` and was applied long before any duel row could exist.
       await client.query('UPDATE gameplay_sessions SET level = $1 WHERE level = $2', [newName, oldName]);
     }
     // Anything still parked is a level row this MAP does not know (a hand-added or long-removed level).
@@ -265,10 +268,22 @@ export async function migrate() {
       kills        INTEGER NOT NULL DEFAULT 0,
       s3_key       TEXT    NOT NULL,
       game_version TEXT,
+      -- The referee's verdict on a ?duel session (docs/plans/2026-09-01-1845-duel-referee.md): the server
+      -- re-simulated the uploaded input trace and compared the world digest at the end of the FIGHT.
+      -- NULL for every campaign row, and NOTHING BINDS TO IT — no credits, no XP, no gate (DECISIONS 129).
+      -- js_engine is the engine family+version that ran the browser's simulation, recorded because a
+      -- cross-engine float difference is the last honest explanation for a disagreement.
+      verdict      TEXT,
+      verdict_note TEXT,
+      js_engine    TEXT,
       created_at   BIGINT  NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_gsessions_created ON gameplay_sessions(created_at);
     CREATE INDEX IF NOT EXISTS idx_gsessions_player  ON gameplay_sessions(player_id);
+    -- …and the same three for tables that already exist in production (the CREATE above only runs once).
+    ALTER TABLE gameplay_sessions ADD COLUMN IF NOT EXISTS verdict      TEXT;
+    ALTER TABLE gameplay_sessions ADD COLUMN IF NOT EXISTS verdict_note TEXT;
+    ALTER TABLE gameplay_sessions ADD COLUMN IF NOT EXISTS js_engine    TEXT;
 
     -- hangar shop + stash (docs/plans/hangar-shop.md). Player inventory (qty model), keyed by
     -- (player_id, kind, ref_id); kind ∈ {component, weapon} → components.id / weapons.id. The shop
@@ -742,27 +757,42 @@ export async function getPerfSamples(sessionId = null, limit = 500) {
 // Returns `{ id, written }` — `written:false` means the player_id guard rejected the upsert, which the route
 // uses to skip the S3 write too (otherwise a colliding id could overwrite another player's TRACE even though
 // its row survived).
-export async function recordSession({ id, playerId, level, outcome, durationMs, kills, s3Key, gameVersion }) {
+// `verdict`/`verdict_note` are deliberately ABSENT from the upsert's SET list: the referee writes them
+// asynchronously after the response, and a later re-upload of the same session id must not erase them.
+export async function recordSession({ id, playerId, level, outcome, durationMs, kills, s3Key, gameVersion, jsEngine }) {
   const { rowCount } = await pool.query(
-    `INSERT INTO gameplay_sessions (id, player_id, level, outcome, duration_ms, kills, s3_key, game_version, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `INSERT INTO gameplay_sessions (id, player_id, level, outcome, duration_ms, kills, s3_key, game_version, js_engine, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      ON CONFLICT (id) DO UPDATE SET
        level = EXCLUDED.level, outcome = EXCLUDED.outcome, duration_ms = EXCLUDED.duration_ms,
-       kills = EXCLUDED.kills, s3_key = EXCLUDED.s3_key, game_version = EXCLUDED.game_version
+       kills = EXCLUDED.kills, s3_key = EXCLUDED.s3_key, game_version = EXCLUDED.game_version,
+       js_engine = EXCLUDED.js_engine
      WHERE gameplay_sessions.player_id IS NOT DISTINCT FROM EXCLUDED.player_id`,
-    [id, playerId ?? null, level, outcome, durationMs | 0, kills | 0, s3Key, gameVersion ?? null, Date.now()]);
+    [id, playerId ?? null, level, outcome, durationMs | 0, kills | 0, s3Key, gameVersion ?? null,
+     jsEngine ?? null, Date.now()]);
+  return { id, written: rowCount > 0 };
+}
+
+// The duel referee's answer, written after the upload has already been answered with a 204.
+export async function recordSessionVerdict({ id, verdict, note }) {
+  const { rowCount } = await pool.query(
+    'UPDATE gameplay_sessions SET verdict = $2, verdict_note = $3 WHERE id = $1',
+    [id, verdict ?? null, note ?? null]);
   return { id, written: rowCount > 0 };
 }
 
 // Recent sessions for the /admin/sessions page (newest first).
 export async function getAdminSessions(limit = 500) {
   const { rows } = await pool.query(
-    `SELECT id, player_id, level, outcome, duration_ms, kills, s3_key, game_version, created_at
+    `SELECT id, player_id, level, outcome, duration_ms, kills, s3_key, game_version,
+            verdict, verdict_note, js_engine, created_at
      FROM gameplay_sessions ORDER BY created_at DESC LIMIT $1`, [limit]);
   return rows.map((r) => ({
     id: r.id, playerId: r.player_id ?? null, level: r.level, outcome: r.outcome,
     durationMs: Number(r.duration_ms), kills: Number(r.kills), s3Key: r.s3_key,
-    gameVersion: r.game_version ?? null, createdAt: Number(r.created_at),
+    gameVersion: r.game_version ?? null, verdict: r.verdict ?? null,
+    verdictNote: r.verdict_note ?? null, jsEngine: r.js_engine ?? null,
+    createdAt: Number(r.created_at),
   }));
 }
 

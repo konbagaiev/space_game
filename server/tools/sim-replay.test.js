@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTrace, buildCatalog, stationFor } from './sim-replay.mjs';
 import { LEVELS } from '../src/catalog_seed.js';
+import { duelAnchorReached } from '../../client/src/sim-core/duel-config.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const INTRO = LEVELS.find((l) => l.name === 'level-0').descriptor.introTrace;
@@ -98,4 +99,29 @@ test('the skill allocation is part of the run — re-simulating without it is a 
   assert.notEqual(quick.hash, base.hash, 'a faster ship flies the same inputs somewhere else entirely');
   assert.ok(Math.abs(quick.summary.px - base.summary.px) > 10,
     `and ends up far away (${base.summary.px} → ${quick.summary.px})`);
+});
+
+// THE `stopWhen` OPTION, which the duel referee's whole "anchor at the end of the FIGHT" design rests on
+// (docs/plans/2026-09-01-1845-duel-referee.md §3.1). Every duel fixture in
+// `server/src/seal/verify-duel.test.js` — and scenario 48 — is an idle DEATH, where `runTrace`'s
+// pre-existing `!world.player.alive` break fires first, so none of them ever stops on `cleared` and none of
+// them would notice this option disappearing. This trace is the only committed run that CLEARS, so it is
+// the only coverage the `cleared` half of the anchor can get without a winnable duel fixture.
+//
+// What a regression here would look like in production: an honest WON duel would run to the end of its
+// trace instead of stopping at the clear, and report `tick <traceLen>≠<claim>` → `disagree` — the
+// 100 %-false-disagree failure §3.1 exists to prevent, silently, on every winning duel.
+test('stopWhen stops at the END OF THE FIGHT, where the default run plays the trace out', { skip }, () => {
+  const full = runTrace(trace);
+  const anchored = runTrace(trace, { stopWhen: duelAnchorReached });
+
+  assert.equal(full.ticksRun, 3670, 'the default run still plays the whole trace out');
+  assert.equal(anchored.ticksRun, 2657,
+    `stopWhen must break the tick the arena cleared, not at the end of the trace (got ${anchored.ticksRun})`);
+  assert.equal(anchored.summary.cleared, true, 'and it stopped BECAUSE the fight settled');
+  assert.ok(anchored.world.player.alive,
+    'on the cleared branch specifically — the death branch is the one every duel fixture exercises');
+  assert.equal(anchored.hash, 0x38d48dac, 'the digest returned is the ANCHOR digest, not the final one');
+  assert.notEqual(anchored.hash, full.hash, 'which is a different world from the end of the trace');
+  assert.equal(full.hash, 0x8d802ca2, '…and the default path is untouched (36-sim-divergence\'s constant)');
 });

@@ -26,12 +26,15 @@ Each is a strict no-op with the flag off — the same object comes back out.
 
 | what | where | effect |
 |---|---|---|
-| the LEVEL | `duel-dev.js applyDuelDev` → `withDuelRoom` | the fetched descriptor's phases are replaced by `[{ name:'duel', aces:N, advanceWhen:{allCleared:true} }, { name:'victory', event:'win' }]`; map and combat centre are kept, `briefing`/`lastKillDrop`/`introTrace`/`intro`/`xpReward` are dropped |
+| the LEVEL | `duel-dev.js applyDuelDev` → `withDuelRoom` (**the transform itself lives in `client/src/sim-core/duel-config.js`** since the duel referee, re-exported from `duel-dev.js`) | the fetched descriptor's phases are replaced by `[{ name:'duel', aces:N, advanceWhen:{allCleared:true} }, { name:'victory', event:'win' }]`; map and combat centre are kept, `briefing`/`lastKillDrop`/`introTrace`/`intro`/`xpReward` are dropped |
 | the SHIP | `duel-dev.js duelBuild`, called in `ship-build.js buildPlayerFor` | forces **Basic kinetic id 1 + Rocket id 3**, **Basic hull id 1 (100 HP)**, **Repair drone id 12**, base shield/grab, **no skills** |
 | the LAUNCH | `mainwindow.js takeOff` → `launchCampaign({ direct: true })` | a cold-start `reset()` into combat instead of `enterRoam(null)` |
 
 `applyDuelDev` is applied in all three places a level descriptor enters the catalog (`main.js`, `net.js`,
 `account.js`) and runs **last**, after `applyAllyDev`/`applyLancerDev`, because it discards what they write.
+`main.js` additionally wraps it in **`applyTraceRoom`**, so `?playback` of a duel trace rebuilds the room
+from the recording itself (the URL carries no `?duel`) — the admin ▶ play link on a duel row would otherwise
+replay the plain base level.
 
 ## 3. The ace
 
@@ -157,21 +160,28 @@ rockets shot out of the air against 4, an ace engaged on 18.6 % of ticks against
 - **Loot still drops.** An ace pays no credits or XP, but its death rolls the ordinary 20 % drop, deposited
   on victory. Suppressing it would mean a dev branch inside `stepEnemyDeaths`. Fly the room on a throwaway
   local player — the same caveat `?ally` carries.
-- **A `?duel` session re-simulates into a divergence** in `server/tools/verify-sessions.mjs`, like every
-  other dev flag that changes the fight. Expected, not a bug.
+- **A `?duel` session is judged on its own terms** (`docs/plans/2026-09-01-1845-duel-referee.md`). Its row is
+  labelled `duel:level-N`, so the campaign survey (`server/tools/verify-sessions.mjs`) reports it as
+  `unverifiable` (`level-mismatch`) rather than re-simulating it into a false disagreement — a duel is not a
+  campaign run and must not pollute that survey. Where it *is* judged is the **`verdict` column on
+  `/admin/sessions`**, written by `server/src/seal/verify-duel.js`. The trace carries
+  `room: { kind:'duel', aces:N }` and the forced loadout, so the referee rebuilds the same room and the same
+  ship. **Nothing binds to a verdict.**
 - **`?duel` must NOT be combined with `?netsim=1`** — and it fails messily rather than cleanly, so this is
   worth knowing before someone tries it. `?ally`, `?lancer` and `?beam` are forwarded on the netsim
-  handshake (`netsim.js wsUrl` → `createRoom` → `createSimWorld`); `?duel` is not, because its descriptor
-  transform lives in `client/src/duel-dev.js`, client-side. **Measured** (`?debug&duel&netsim=1`, local
+  handshake (`netsim.js wsUrl` → `createRoom` → `createSimWorld`); `?duel` is not — the flag is read from
+  `location.search` and never travels. **Measured** (`?debug&duel&netsim=1`, local
   server): the tab joins a room running the plain `level-1`, and both fights run at once — **4 ships on
   screen** (2 aces spawned by the tab's own level runner + 2 `Basic pirate ship` ghosts streamed from the
   room) against an `enemyTotal` of 2, with `duelBuild` forcing the loadout only in the tab while the room
   flies the account's real ship.
-  **To make it work** the transform has to move into `sim-core` — which is exactly where `ally-config.js
-  withAllyAt` and `lancer-config.js` live, and for exactly this reason, since a server cannot read
-  `location.search` — plus the handshake hop and a server-side `aces` path. `spawnAces` and `stepAces` are
-  already in `sim-core` and RNG-free, so the simulation half needs nothing. Not done: the sparring room is
-  a local tool, and a half-forwarded dev flag is worse than an absent one.
+  **THE `sim-core` MOVE IS DONE.** `DUEL_PHASES` + `withDuelRoom` now live in
+  `client/src/sim-core/duel-config.js` beside `ally-config.js withAllyAt` and `lancer-config.js`, and
+  `createSimWorld({ duel: { aces: N } })` applies them server-side (the duel referee rebuilds a whole duel
+  from a trace this way). `spawnAces` and `stepAces` were already in `sim-core` and RNG-free. **What is
+  left** is the handshake hop — `netsim.js wsUrl` carrying the flag, `createRoom` passing `duel` through —
+  plus a server-side `aces` path for the room's own player build. Deliberately not done: the sparring room
+  is a local tool, and a half-forwarded dev flag is worse than an absent one.
   **Cheap alternative if it keeps catching people:** refuse the combination at boot (a console error and
   one of the two ignored), which is a few lines in `main.js` where both flags are already read.
 - **The aces do not hold fire for each other.** `friend: null`, so an ace will put a tracer through the
