@@ -157,3 +157,36 @@ add are `explosion +0g/+0t`, a first rocket `+0`, and a first-appearance of a sh
 - `docs/SUMMARY.md` — the **Shader/GPU warm** bullet: what the forced-draw pass now covers, and the fact that
   the FX rig carries the REAL geometries.
 - `docs/DECISIONS.md` — **amend §83** (it already owns the warm), do not open a new entry.
+
+
+---
+
+## Addendum 2026-09-02 — what the FIELD found after this brief was written
+
+The `?dev` perf telemetry was extended twice (`gpu.late`) to name, not just count, every program that
+compiles after the warm, attributed to the object that draws it. Four sessions on a Redmi 15C across all
+three tiers then produced the same list every time, in ROAM, with **zero enemies**:
+
+| attributed to | what it is |
+|---|---|
+| `Points/ShaderMaterial/transparent` (`22,23,…`) | **the engine exhaust plume, points mode** — `pointsMat`, `client/src/exhaust-fx.js:176` |
+| `Mesh/ShaderMaterial/transparent` (`20,21,…`) | **the engine exhaust plume, flame mode** — `flameMat`, `client/src/exhaust-fx.js:185` |
+| `? :: physical,STANDARD,…,false,false,…` | unattributed: no live object drew with it at sample time |
+| `? :: physical,STANDARD,…,uv,uv,…` | unattributed, textured variant |
+
+**The exhaust is the actionable one.** `prewarmShaders`'s rig holds explosion, bullet, flipbook and ring
+materials — *not* the exhaust. Both plume programs therefore compile the first time a ship applies thrust,
+which is an EVENT mid-play rather than a level boundary, and is the best current match for the
+maintainer's field report of a freeze that was "a reaction to something" rather than a steady cost.
+Warming it is the same shape as the loot/shield fix: build the real plume material early and let
+`prewarmShaders`' compile reach it. Note both modes must be warmed — `setGlobalExhaustMode` can switch
+between them — and the material is per-plume while the *program* is shared, so one held instance suffices
+(DECISIONS §83 keep-alive).
+
+**Not chased further, deliberately.** In the four sessions above the compile landed on frames of 3.3 ms and
+5.1 ms — it did NOT reproduce the freeze, and the maintainer confirmed three further sessions with no
+freeze. So this is a named, measured, non-urgent residual, not a live incident.
+
+**Explicitly NOT a bug (do not "fix" it):** fps dropping while the station fills the screen on the `high`
+tier is accepted behaviour — the frame is fill-bound and the 16-light tier is the known lever
+(DECISIONS §139 and the station GPU-cost run). Do not confuse it with the event-triggered stalls above.
