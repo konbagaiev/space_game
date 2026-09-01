@@ -104,7 +104,8 @@ export async function buildGhostBattle() {
         if (!s.dead && s.wasVisible) { s.dead = true;
           // real small-pirate explosion, RING pinned to the ghost's own below-plane depth (_wp.y ≈ GHOST_TUNE.y),
           // NOT the combat plane — so no phantom ring appears where the player fights.
-          s.mesh.getWorldPosition(_wp); spawnShipExplosion(_wp, GHOST_EXHAUST, GHOST_TUNE.scale, _wp.y); }
+          // null weightClass: a decorative ghost carries no catalog identity, so the blast falls back to size.
+          s.mesh.getWorldPosition(_wp); spawnShipExplosion(_wp, GHOST_EXHAUST, GHOST_TUNE.scale, null, _wp.y); }
         s.mesh.visible = false; s.wasVisible = false; continue;
       }
       if (!born || visible >= plan.maxConcurrent) { s.mesh.visible = false; s.wasVisible = false; continue; }

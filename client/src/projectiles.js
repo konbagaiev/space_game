@@ -190,11 +190,15 @@ function spawnShockRing(pos, y, maxScale, life, color) {
   shockwaves.push({ mesh: ring, life, maxLife: life, maxScale });
 }
 
-export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, ringY = BULLET_PLANE_Y) {
+// `weightClass` = the dead hull's MASS tier (sim-core/ship-classes.js), which chooses the blast profile;
+// null (a decorative ghost, an old trace) falls back to the sizeScale thresholds. It sits BEFORE `ringY`
+// deliberately — ringY is the rarely-passed one (ghost-battle.js alone).
+export function spawnShipExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, weightClass = null, ringY = BULLET_PLANE_Y) {
   const s = sizeScale; // scales every spatial dimension to the ship's size
-  // A real light for the blast, scaled by the ship's size — a medium hull flashes harder than a scout.
-  // No-op where the tier carries no light pool (Performance, or ?lights=0).
-  addFlash(pos, blastPower(s) * s * s, exhaustColor, BLAST.dur * blastDurMul(s), blastReach(s) * s);
+  // A real light for the blast: the CLASS picks the base, the ship's SIZE still scales it — a medium hull
+  // flashes harder than a scout. No-op where the tier carries no light pool (Performance, or ?lights=0).
+  const w = weightClass;
+  addFlash(pos, blastPower(s, false, w) * s * s, exhaustColor, BLAST.dur * blastDurMul(s, false, w), blastReach(s, false, w) * s);
   // Fireball: a single flipbook (sprite-sheet) quad — one draw call, one shared texture (flipbook-fx.js,
   // DECISIONS §72). The old CPU spark spray is GONE (DECISIONS §75); the death now reads as the flipbook
   // fireball + a soft expanding shockwave ring, both in the baked-texture/shader FX family.
@@ -218,9 +222,9 @@ const BOSS_SECONDARY_TINT = new THREE.Vector3(1.6, 1.45, 0.6);
 // Deferred blasts fired later by updateDeferredBlasts(dt): { t (remaining delay), pos, size, color, ring, tint }.
 const deferredBlasts = [];
 
-export function spawnBossExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1) {
+export function spawnBossExplosion(pos, exhaustColor = 0xff8030, sizeScale = 1, weightClass = null) {
   const s = sizeScale;
-  addFlash(pos, blastPower(s, true) * s * s, exhaustColor, BLAST.dur * blastDurMul(s, true), blastReach(s, true) * s);   // brighter, longer AND reaching much further
+  addFlash(pos, blastPower(s, true, weightClass) * s * s, exhaustColor, BLAST.dur * blastDurMul(s, true, weightClass), blastReach(s, true, weightClass) * s);   // brighter, longer AND reaching much further
   const seed = bossBlastCount++;
   // Primary: an oversized fireball + a big expanding shockwave ring, right now.
   spawnFlipbookExplosion(pos, s * 1.4);

@@ -86,6 +86,7 @@ export function makePlayer(catalog, active) {
     color: s.color,
     hitBoxes: mc.hitBoxes, broadR: mc.broadR, // per-part OBB hitbox (null on primitives → single-sphere fallback)
     class: s.class,                   // sound class (DB) → drives explode/hit SFX via sfxFor('ship', class, …)
+    weightClass: s.weightClass,       // MASS tier (sim-core/ship-classes.js) → picks the death-blast profile
     hull, engine, thruster, repair, grab, shield, // `repair` = repair-drone stats (or null); `grab` = tractor stats (or null); `shield` = base-shield stats { capacity, rechargeSec } or null — all feed mass
     _repairAccum: 0,                  // seconds banked toward the next repair tick (held for repairTick)
     _shieldValue: shield ? shield.capacity : 0, // current absorption remaining (starts full & active)
@@ -133,7 +134,7 @@ export function makeEnemyShell(catalog, shipDef) {
   const { shieldCap, hullMax } = enemyShieldSplit(hull.durability); // 1/3 shield + 2/3 hull; total unchanged
   const e = {
     name: shipDef.name, // DB ship name (English) — shown in the event-log kill line
-    role: s.role, class: s.class, color: s.color, sizeScale: mc.scale, reward: s.reward || 0, xp: s.xp || 0,
+    role: s.role, class: s.class, weightClass: s.weightClass, color: s.color, sizeScale: mc.scale, reward: s.reward || 0, xp: s.xp || 0,
     dodge: s.dodge || 0, // dodge % (all current enemies = 0 → always hit; future enemies may dodge)
     modelUrl: shipDef.modelUrl, // the host builds the body from this + `mc`
     modelCfg: mc,

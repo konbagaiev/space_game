@@ -381,6 +381,13 @@ The original design discussion is preserved below with its verdict. Several item
   action, recorded so it is not re-chased.
 
 ### Ship CLASS as a first-class axis — light / medium / heavy / ultra-heavy / station (opened 2026-08-31)
+- **FIRST RUNG DONE 2026-08-31** (DECISIONS §142): `stats.weightClass` is on all 10 ship rows, the
+  `SHIP_CLASSES` table lives in `client/src/sim-core/ship-classes.js` and owns each class's blast profile,
+  and the **explosion light** — the one consumer wired in that iteration — reads the class instead of the
+  `sizeScale` thresholds (which stay as the fallback for older traces/wire payloads). `ultraHeavy` and
+  `station` are declared but unused, with no invented numbers. **Still open:** migrating `role`'s size-ish
+  values out, reward/XP curves per class, expected mass bands, equipment/mount restrictions, and any second
+  consumer (marker colours, audio loudness, minimap, fireball size all still classify their own way).
 - **The concept already half-exists, in two fields with overlapping meanings.** `class` is documented in
   `sim-core/ship-entity.js` as the **sound** class (`sfxFor('ship', class, …)`) and holds `fighter`,
   `capital`, `player`, `combat`, `hangar`. `role` holds `fighter`, `medium`, `rocketeer`, `boss`, `boss2`,
@@ -396,7 +403,8 @@ The original design discussion is preserved below with its verdict. Several item
   guessing from a scale number.
 - **Do it as data first, one consumer at a time.** Add the field, make `blastClass()` read it (falling back
   to the size thresholds while the catalog is incomplete), and only then migrate `role`'s size-ish values
-  out. Renaming `class` itself is the risky part — it is the SFX key and is in recorded traces.
+  out. Renaming `class` itself is the risky part — it is the SFX key and is in recorded traces. *(The first
+  half of this shipped; migrating `role` has not.)*
 - **`station` is the one that pays for itself early:** the Space Factory set-piece already exists and is not
   a ship at all; it wants a class that means "does not move, does not die like a hull".
 

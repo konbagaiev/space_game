@@ -68,10 +68,12 @@ export const EVENT_FIELDS = {
   detonate:         ['pos', 'weaponClass', 'blastVis', 'blastTint', 'blastTime', 'blastBright'],
   // `byAlly` — the wingman landed the killing blow. Without it a room's client would write his kills into
   // the player's own event log (docs/plans/combat-ally.md).
-  kill:             ['pos', 'isBoss', 'exhaustColor', 'sizeScale', 'role', 'shipClass', 'reward', 'xp', 'byAlly', 'name'],
+  // `weightClass` — the dead hull's MASS tier, which picks its explosion-light profile (client/src/blast.js).
+  // Without it on the wire a ghost death in a room silently classifies by the old sizeScale fallback.
+  kill:             ['pos', 'isBoss', 'exhaustColor', 'sizeScale', 'role', 'shipClass', 'weightClass', 'reward', 'xp', 'byAlly', 'name'],
   // The wingman was destroyed. Carries only what the explosion needs — he is worth nothing, so there is no
   // reward field to leak and nothing for a client to bank.
-  allyDown:         ['pos', 'exhaustColor', 'sizeScale', 'shipClass'],
+  allyDown:         ['pos', 'exhaustColor', 'sizeScale', 'shipClass', 'weightClass'],
   warpFlash:        ['pos'],
   banner:           ['key', 'params', 'dur'],
   bannerClear:      [],

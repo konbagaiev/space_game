@@ -5,6 +5,33 @@
 
 ## 2026-08-31
 
+- **Fixed: firing on the way home could leave a finished mission impossible to close.** After clearing a
+  sector and pressing "Finish and Return", a single shot cancelled the flight home (any control input does —
+  DECISIONS §39, deliberately kept), and from there the mission was **stuck open**: the button refused every
+  further press, and flying back to the station by hand did nothing, because arrival demanded an engaged
+  autopilot. The only escape was clicking the station with the mouse, which nothing told the player. Now the
+  button **re-engages** the flight home instead of refusing (without re-sweeping the salvage or re-committing
+  the campaign advance — those still happen exactly once), and once the button has been pressed **arriving at
+  the station counts however you got there**. The `canDock` invariant is untouched for every other case:
+  proximity still ends nothing on its own, and a chest-aimed autopilot still cannot win a mission. See
+  DECISIONS §143.
+
+- **Removed the blue homing arrow that pointed at the base station.** It appeared from the first frame after
+  take-off — the condition had no distance gate — aiming at a station 15 units away and plainly on screen.
+  The roam nav bar's "Return to Base" button and the system map have replaced it; `updateReturnArrow` and its
+  geometry are gone from `sim.js`, along with the file's now-unused `three` import.
+
+- **Ship weight class as a first-class data axis.** Every ship row now states `stats.weightClass`
+  (`light`/`medium`/`heavy`; `ultraHeavy`/`station` declared for later), described by `SHIP_CLASSES`
+  (`client/src/sim-core/ship-classes.js`), which owns each class's explosion-blast profile. The blast flash
+  reads the class instead of guessing from `sizeScale` thresholds (those remain as the fallback for older
+  traces and wire payloads, with `isBoss` between the two); the field travels on the `kill`/`allyDown` events
+  and across the netsim wire, and the seed refuses to load a ship whose class is not declared. The `?tune`
+  blast folder is now generated from the class table, so adding a class needs no code edit. The tiers +
+  classifier moved out of the three-importing `engine-lights.js` into a pure `client/src/blast.js` (re-exported
+  from the old path) so they can be unit-tested. **No visible change** — all 10 ships classify exactly as
+  before, asserted ship-by-ship by `client/src/blast.test.js`. See DECISIONS §142.
+
 - **A briefing that doesn't fit now SAYS so — chevrons at the clipped edges.** On a phone the mission
   briefing simply ended mid-sentence at the panel edge: mobile browsers hide the scrollbar until you drag,
   so players read the visible half and took off. `#mw-mission-desc` now sits in a non-scrolling host
