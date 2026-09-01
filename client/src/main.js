@@ -706,7 +706,12 @@ const devPerf = (() => {
   // Both are diagnostic only and cost nothing per frame: counters read once per sample.
   const gpuRes = () => {
     const m = renderer.info.memory, p = renderer.info.programs;
-    return { programs: p ? p.length : null, geometries: m.geometries, textures: m.textures };
+    const r = { programs: p ? p.length : null, geometries: m.geometries, textures: m.textures };
+    // Only present when something actually compiled after the warm — the sample stays its old size on a
+    // healthy frame. Truncated and capped: this is a name, not a shader dump.
+    const late = lateProgramKeys();
+    if (late && late.length) r.late = late.slice(0, 4).map((k) => k.slice(0, 70));
+    return r;
   };
   let longTasks = 0, longTaskMs = 0;
   try {
@@ -798,6 +803,19 @@ const WARM_MAX_WAIT_MS = 9000; // cap on waiting for assets — a stuck download
 // a throw in the SETUP stage skip the two `renderer.compile` calls entirely, which would leave a level
 // COLDER than with no warm at all and leave no trace anywhere. Each stage now fails on its own, and says so.
 const warmErr = { rig: 0, roots: 0, compile: 0, upload: 0, last: null };
+// The set of program cache keys that existed the moment the warm finished. Anything the renderer holds
+// LATER that is not in here compiled DURING PLAY — which is the whole defect this system exists to prevent.
+// Counting them (gpu.programs) told us it still happens on a real phone but never what they were, and the
+// headless guard is structurally blind to the two biggest suspects (the ghost battle is disabled under
+// `?debug`; a cached ship model is only warmed on the level that first parsed it). So the ?dev sampler
+// NAMES them: `gpu.late` carries the offending keys, truncated, straight off the device.
+let progBaseline = null;
+export function lateProgramKeys() {
+  if (!progBaseline) return null;
+  const late = [];
+  for (const p of renderer.info.programs) if (!progBaseline.has(p.cacheKey)) late.push(p.cacheKey);
+  return late;
+}
 export function warmErrors() { return warmErr; } // read by the ?dev perf sampler (and __game under ?debug)
 function warmStage(name, fn) {
   try { return fn(); } catch (e) {
@@ -848,6 +866,9 @@ function prewarmShaders() {
       for (const [o, fc, vis] of forced) { o.frustumCulled = fc; o.visible = vis; }
     }
   });
+  // Re-armed on EVERY warm (a mid-fight late-arrival raise included), so `late` always means "compiled since
+  // the most recent warm", never "since the session started".
+  progBaseline = new Set(renderer.info.programs.map((p) => p.cacheKey));
 }
 
 // ---- In-game backdrop recorder (?dev authoring tool). Captures a live-played battle → downloads a committed

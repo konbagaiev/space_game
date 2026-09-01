@@ -5,6 +5,17 @@
 
 ## 2026-09-01
 
+- **The `?dev` perf telemetry now NAMES the shader programs that compile during play, not just counts them.**
+  Field data from a Redmi 15C showed live programs still climbing after the veil (+7 the moment the first
+  enemy appears on **level-2**), and the count alone could not say what they were — while the headless guard
+  is structurally blind to the two leading suspects: the ghost battle is disabled under `?debug`, and a ship
+  model already in `shipModelCache` takes `requestShipModel`'s synchronous fast path
+  (`ship-factory.js:131-137`), which returns a clone **without** calling `warmModel` and without raising
+  `pendingAssets` — so a hull is only ever warmed against the scene of the level that first parsed it.
+  `prewarmShaders()` now snapshots its program keys as it finishes, and any key the renderer holds later
+  appears in the perf sample as `gpu.late` (capped at 4, truncated to 70 chars, absent entirely on a healthy
+  frame). Diagnosis only; no gameplay or render change.
+
 - **The level-start warm can no longer fail silently, and says so in telemetry.** Field telemetry from a
   Redmi 15C (session `3459872f`, level-2, on the shipped fix) showed live shader programs still climbing
   **35 → 45 during play** — +7 when the first enemy appeared, +2 when the first drop appeared — with
