@@ -710,7 +710,7 @@ const devPerf = (() => {
     // Only present when something actually compiled after the warm — the sample stays its old size on a
     // healthy frame. Truncated and capped: this is a name, not a shader dump.
     const late = lateProgramKeys();
-    if (late && late.length) r.late = late.slice(0, 4).map((k) => k.slice(0, 70));
+    if (late && late.length) r.late = late.slice(0, 10);
     return r;
   };
   let longTasks = 0, longTaskMs = 0;
@@ -810,11 +810,30 @@ const warmErr = { rig: 0, roots: 0, compile: 0, upload: 0, last: null };
 // `?debug`; a cached ship model is only warmed on the level that first parsed it). So the ?dev sampler
 // NAMES them: `gpu.late` carries the offending keys, truncated, straight off the device.
 let progBaseline = null;
+// A truncated cache key names a SHADER; it does not name the thing on screen that asked for it, and the
+// distinguishing flags sit past the truncation anyway. So attribute each late program back to a live object
+// by walking both scenes and matching `renderer.properties.get(material).currentProgram` — the same method
+// the headless probe used to name the loot surfaces. Runs at most once per second, and only when something
+// actually compiled late, so it costs nothing on a healthy frame.
 export function lateProgramKeys() {
   if (!progBaseline) return null;
-  const late = [];
-  for (const p of renderer.info.programs) if (!progBaseline.has(p.cacheKey)) late.push(p.cacheKey);
-  return late;
+  const late = new Map();
+  for (const p of renderer.info.programs) if (!progBaseline.has(p.cacheKey)) late.set(p.cacheKey, null);
+  if (!late.size) return [];
+  const attribute = (obj) => obj.traverse((o) => {
+    if (!o.material) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      const cp = renderer.properties.get(m).currentProgram;
+      if (!cp || !late.has(cp.cacheKey) || late.get(cp.cacheKey)) continue;
+      // Nearest named ancestor: the mesh itself is usually an anonymous .glb node, while the group we add
+      // to the scene carries the name that identifies the FEATURE (dropWarmRig, fxWarmRig, a set-piece...).
+      let named = o, hops = 0;
+      while (named && !named.name && hops++ < 6) named = named.parent;
+      late.set(cp.cacheKey, `${(named && named.name) || o.type}/${m.type}${m.transparent ? '/transparent' : ''}`);
+    }
+  });
+  try { attribute(scene); attribute(skyScene); } catch { /* diagnostic only — never break a frame */ }
+  return [...late].map(([k, who]) => `${who || '?'} :: ${k.slice(0, 110)}`);
 }
 export function warmErrors() { return warmErr; } // read by the ?dev perf sampler (and __game under ?debug)
 function warmStage(name, fn) {
