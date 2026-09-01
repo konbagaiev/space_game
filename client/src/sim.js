@@ -15,7 +15,6 @@
 // This sits at the TOP of the dependency graph — it touches almost everything — so it imports the leaves
 // (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported only by the
 // composition root (the inline script / main). It never imports the loop's callers.
-import * as THREE from 'three';
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, allies, setPieces, CATALOG, creditPopups } from './state.js';
 import { scene, camera, camOffset } from './engine.js';
 import { Device } from './device.js';
@@ -113,33 +112,13 @@ export const engagePointAutopilot = (pos, mission = null) => (world.onCommand
   : engagePointAutopilotIn(world, pos, mission));
 export const cancelAutopilot = () => (world.onCommand ? command({ cancel: true }) : cancelAutopilotIn(world));
 
-// ---------- Homing arrow + HUD hint (world-space arrow + DOM hint) ----------
-let returnArrow = null;
-function ensureReturnArrow() {
-  if (returnArrow) return returnArrow;
-  const g = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color: 0x4aa3ff, transparent: true, opacity: 0.4, fog: false, depthWrite: false });
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 7, 8), mat);
-  shaft.rotation.x = Math.PI / 2; shaft.position.z = 3.5;   // cylinder axis Y → lay along +Z
-  const head = new THREE.Mesh(new THREE.ConeGeometry(1.1, 3, 10), mat);
-  head.rotation.x = Math.PI / 2; head.position.z = 8.5;
-  g.add(shaft, head); g.visible = false; scene.add(g);
-  return (returnArrow = g);
-}
-// The homing arrow, pointing at the station. Still shown in a cleared sector: flying home is one of the two
-// ways to end a mission (DECISIONS §132), so the direction is real information, not an instruction.
-export function updateReturnArrow() {
-  const on = (G.returnToBase || G.roam) && G.player && G.player.alive && !levelRunner.won && G.baseStation;
-  if (!on) { if (returnArrow) returnArrow.visible = false; return; }
-  const a = ensureReturnArrow();
-  const st = G.baseStation.pos, pos = G.player.pos;
-  a.position.set(pos.x, 2.5, pos.z);                        // anchored to the ship, just above the plane
-  a.rotation.y = Math.atan2(st.x - pos.x, st.z - pos.z);    // point at the station (heading convention)
-  a.visible = true;
-}
-// The cleared-sector prompt and its button. The button ENDS the mission outright (DECISIONS §132) rather
-// than flying the ship home, so unlike the old "Return to base" it stays up for as long as the mission is
-// open — including while the ship IS flying home under autopilot, where it is the shortcut past the trip.
+// ---------- The cleared-sector prompt and its button (DOM hint) ----------
+// The button SETTLES the mission (DECISIONS §132) — salvage swept, campaign advance committed — and then
+// flies the ship home; arrival closes it. So it stays up for as long as the mission is open, including
+// while the ship IS flying home under autopilot. Pressing it again once the autopilot has been cancelled
+// (firing does that, §39) RE-ENGAGES the flight home rather than refusing — the settlement itself is
+// one-shot. And since §143, arriving hand-flown closes the mission too, so a cancelled autopilot is no
+// longer a dead end.
 export function updateReturnHint() {
   const show = G.returnToBase && G.player && G.player.alive && !levelRunner.won
     && el.overlay.style.display === 'none';
@@ -356,7 +335,7 @@ function applySimEvent(ev) {
     // simply vanished would read as a bug. Same explosion + boom an enemy of his size gets; no credit popup,
     // because he was never worth anything.
     case 'allyDown':
-      spawnShipExplosion(ev.pos, ev.exhaustColor, ev.sizeScale);
+      spawnShipExplosion(ev.pos, ev.exhaustColor, ev.sizeScale, ev.weightClass);
       audio.sfx.explosion(ev.sizeScale, sfxFor('ship', ev.shipClass, 'explode'), 1.5);
       break;
     case 'warpFlash':      spawnExplosion(ev.pos); break;
@@ -371,8 +350,8 @@ function applySimEvent(ev) {
       break;
     }
     case 'kill': {
-      if (ev.isBoss) spawnBossExplosion(ev.pos, ev.exhaustColor, ev.sizeScale);
-      else spawnShipExplosion(ev.pos, ev.exhaustColor, ev.sizeScale);
+      if (ev.isBoss) spawnBossExplosion(ev.pos, ev.exhaustColor, ev.sizeScale, ev.weightClass);
+      else spawnShipExplosion(ev.pos, ev.exhaustColor, ev.sizeScale, ev.weightClass);
       // Per-size loudness: medium ships + bosses +50% louder; small ships 70% quieter.
       const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(ev.role);
       audio.sfx.explosion(ev.sizeScale, sfxFor('ship', ev.shipClass, 'explode'), louderBoom ? 1.5 : 0.3);
@@ -453,7 +432,7 @@ function applySimEvent(ev) {
       break;
     }
     case 'death': {
-      spawnShipExplosion(G.player.pos, G.player.engine.exhaust.color, 1); // tinted by engine exhaust
+      spawnShipExplosion(G.player.pos, G.player.engine.exhaust.color, 1, G.player.weightClass); // tinted by engine exhaust
       audio.sfx.explosion(1.5, sfxFor('ship', G.player.class, 'explode')); audio.sfx.jingle(false); refreshMusic(); // sampled boom + loss sting, back to menu music
       track('player_death', { level: currentLevelLabel(), kills: G.kills }); // funnel: where players die
       // Both are no-ops when the mission was already CLEARED (shot down on the flight home): `G.banked`

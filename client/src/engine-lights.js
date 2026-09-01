@@ -33,6 +33,10 @@ import * as THREE from 'three';
 import { scene } from './engine.js';
 import { G } from './state.js';
 import { shipPlumes, getActiveFreighterPlume } from './exhaust-fx.js';
+// The blast tiers + classifier live in a three-free module so they can be unit-tested (blast.js).
+// Re-exported here because this is the import path every consumer already uses.
+export { BLAST, blastClass, blastPower, blastReach, blastDurMul } from './blast.js';
+import { BLAST, blastReach } from './blast.js';
 
 const MAX_POOL = 32;
 
@@ -171,46 +175,13 @@ function collectPlume(p) {
 // pool as the engines (nearest-to-camera wins), which is what keeps NUM_POINT_LIGHTS constant and avoids
 // the §83 recompile. The falloff is quadratic-out, not linear — a linear fade reads as a lamp being turned
 // down, while a blast should be gone almost before you register it.
-export const BLAST = {
-  // POWER IS IN CANDELA AND FALLS OFF AS 1/d^2, so the useful band is much smaller than it looks: at 10
-  // units, power 100 already contributes 1.0 — full white. Dialed on the live test range: BOSS is the
-  // anchor at 2400 and the rest keep the ladder tuned with it. The size^2 multiplier is on top of these.
-  rocket: 400, ship: 800, med: 1400, boss: 2400,
-  // REACH, in world units — how far the flash can light anything at all (a HARD cutoff, see update()).
-  // This, not power, is what makes a big detonation feel big: it touches hulls a scout's death cannot.
-  reachRocket: 30, reachShip: 45, reachMed: 70, reachBoss: 110,
-  dur: 0.44,          // the BASE flash length; every class multiplies it (below)
-  // How long the light lingers, by hull class — a bigger ship burns longer, not just brighter.
-  durShip: 2, durMed: 3, durBoss: 5,
-  // The class thresholds, in sizeScale. ONE pair for power, reach AND duration — see blastClass().
-  medAt: 1.4, bigAt: 2.2,
-};
-
-// THE SINGLE CLASSIFIER. Power, reach and duration all read their tier from here, so a hull can never be
-// "medium" for one of them and "small" for another — which is exactly the kind of drift that makes a
-// later re-tune produce a result nobody can explain. `isBoss` (the entity's role) always wins over size:
-// a real boss must not be demoted because a level shipped it at a modest scale.
-export function blastClass(sizeScale = 1, isBoss = false) {
-  if (isBoss || sizeScale >= BLAST.bigAt) return 'boss';
-  if (sizeScale >= BLAST.medAt) return 'med';
-  return 'ship';
-}
-export function blastDurMul(sizeScale = 1, isBoss = false) {
-  const c = blastClass(sizeScale, isBoss);
-  return c === 'boss' ? BLAST.durBoss : c === 'med' ? BLAST.durMed : BLAST.durShip;
-}
-export function blastPower(sizeScale = 1, isBoss = false) {
-  const c = blastClass(sizeScale, isBoss);
-  return c === 'boss' ? BLAST.boss : c === 'med' ? BLAST.med : BLAST.ship;
-}
-export function blastReach(sizeScale = 1, isBoss = false) {
-  const c = blastClass(sizeScale, isBoss);
-  return c === 'boss' ? BLAST.reachBoss : c === 'med' ? BLAST.reachMed : BLAST.reachShip;
-}
-
+// HOW BRIGHT / HOW FAR / HOW LONG is not decided here: it comes from the dead ship's WEIGHT CLASS, in the
+// three-free blast.js (re-exported above), so it can be unit-tested against the catalog.
 const flashes = [];   // { x, y, z, hex, peak, t, dur } — a small pool, reused in place
 
-export function addFlash(pos, peak, hex = 0xffb060, dur = BLAST.dur, reach = BLAST.reachShip) {
+// Default `reach` = light's base (45) — the tiers live in blast.js now, so there is no BLAST.reachShip
+// to name. Dormant today: all three callers pass `reach` explicitly.
+export function addFlash(pos, peak, hex = 0xffb060, dur = BLAST.dur, reach = blastReach()) {
   if (!POOL_SIZE || !pos || peak <= 0) return;      // flag off: explosions cost nothing
   let f = flashes.find((e) => e.t <= 0);
   if (!f) { f = { x: 0, y: 0, z: 0, hex: 0, peak: 0, t: 0, dur: 1, reach: 45 }; flashes.push(f); }

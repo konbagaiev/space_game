@@ -133,7 +133,7 @@ export function stepEnemyDeaths(world) {
       // adapter runs this entity is already spliced out of `enemies`.
       world.events.emit({
         type: 'kill', pos: e.pos.clone(), isBoss, exhaustColor: e.engine.exhaust.color,
-        sizeScale: e.sizeScale || 1, role: e.role, shipClass: e.class,
+        sizeScale: e.sizeScale || 1, role: e.role, shipClass: e.class, weightClass: e.weightClass ?? null,
         reward: byAlly ? 0 : reward, xp: byAlly ? 0 : xp, byAlly, name: e.name,
       });
 

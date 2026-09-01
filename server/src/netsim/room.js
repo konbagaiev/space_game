@@ -120,7 +120,10 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
   // internals, repeated. `room.test.js` asserts no snapshot ever carries it.
   function describe(kind, id, e) {
     if (kind === 'enemy') {
-      return { id, kind, name: e.name, shipClass: e.class, color: e.color,
+      // `weightClass` rides along for WIRE SYMMETRY and is unread today: the client never reads
+      // desc.role/sizeScale/shipClass either — spawnGhost rebuilds the enemy through makeEnemyShell from its
+      // own catalog, so the ghost already has the mass tier. The load-bearing copy is the `kill` EVENT field.
+      return { id, kind, name: e.name, shipClass: e.class, weightClass: e.weightClass, color: e.color,
                fullScale: e.fullScale, maxHp: e.maxHp, role: e.role, sizeScale: e.sizeScale };
     }
     // The WINGMAN. Same shape as an enemy minus the role — the client resolves the model from the NAME plus

@@ -30,7 +30,7 @@ import { el } from './dom.js'; // single fail-loud inventory of shared index.htm
 import { updateHud, updateMarkers, updateMiniMap, updatePerf, updateCreditPopups, updateDropMarkers, updateMissionMarker, updateEnemyHealthBars, updateProgressionHud } from './hud.js'; // per-frame HUD draws (readouts/markers/radar/perf/credit popups/off-screen loot arrows/gold mission pointer/enemy health bars/XP bar+skill badge)
 import { fetchJson, track, currentLevelLabel, registerBoot, unlockNextLevel, postSession, clientLog } from './net.js'; // JSON fetch (bootstrap) + funnel telemetry (community/pagehide listeners) + boot register (referrer capture) + progress advance (intro → Level 1) + session-recording upload
 import { API_BASE } from './api-base.js'; // /api prefix (empty same-origin, prod origin on the itch build)
-import { update, renderTick, setGrabTarget, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, finishMission, updateReturnArrow, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
+import { update, renderTick, setGrabTarget, levelRunner, refreshMusic, warpPlayerToCenter, updateOobWarning, engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot, finishMission, updateReturnHint, updateRoamNav, updateBanner, setPaused, togglePause, autoPauseOnBlur, reset, settleView } from './sim.js'; // the simulation loop + level runner + music + pause + restart + return-to-base + roam nav + milestone banner + camera/sky settle
 import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.js'; // system-map overlay (out-of-combat mini-map tap → freeze + pick a destination)
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './sim-core/system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
@@ -1124,7 +1124,6 @@ function animate() {
   updateCreditPopups(); // floating "+xx" gold credit popups at kill sites
   updateEnemyHealthBars(); // translucent red health bars above damaged enemies
   updateOobWarning(); // soft-boundary "left the battlefield" warning + countdown
-  updateReturnArrow();  // world-space blue homing arrow toward the base station (return-to-base)
   updateReturnHint();   // centered "return to base" HUD hint
   updateRoamNav();      // roam bottom-center nav: Return to Base + Autopilot to Mission
   updateBanner();       // transient centered milestone banner ("10 enemies left", "Final Stage")
@@ -1429,7 +1428,7 @@ if (isBench()) {
     update(dt);
     const t1 = performance.now();
     updateHud(); updateMarkers(); updateDropMarkers(); updateMissionMarker(); updateCreditPopups();
-    updateEnemyHealthBars(); updateOobWarning(); updateReturnArrow(); updateReturnHint(); updateRoamNav(); updateMiniMap();
+    updateEnemyHealthBars(); updateOobWarning(); updateReturnHint(); updateRoamNav(); updateMiniMap();
     const t2 = performance.now();
     // The SAME four lines animate() draws — the bench must measure the real frame, and there is no shared
     // entry point to route it through: the frame is these two passes, straight to the canvas.

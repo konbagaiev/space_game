@@ -242,6 +242,109 @@ test('proximity alone never ends a mission — the autopilot has to be flying yo
   assert.equal(world.levelRunner.won, false, 'and neither is arriving at a crate that happens to be here');
 });
 
+// ---------- THE SOFT-LOCK, and why the button and the trip home both had to change ----------
+//
+// Live-tested 2026-08-31: clear the sector, press "Finish and Return", then FIRE ONCE. Firing cancels the
+// autopilot (DECISIONS §39, deliberately kept) — and from there the mission could not be closed at all. The
+// button refused every press after the first, and flying home by hand did nothing because arrival demanded
+// an engaged autopilot. The only escape was clicking the station with the mouse, which no player could know.
+// See DECISIONS §143. Each test below was negative-tested against the pre-fix code.
+
+test('SOFT-LOCK: the button RE-ENGAGES after the flight home was interrupted', () => {
+  const { world } = atWinPhase();
+  clearMission(world);
+  world.events.drain(() => {});
+
+  assert.equal(finishMission(world), true, 'the first press settles it and starts the flight');
+  assert.equal(world.autopilot.active, true);
+
+  // …and then the player fires, which cancels the autopilot (step-player.js does this; here, directly).
+  world.autopilot.active = false; world.autopilot.target = null;
+
+  assert.equal(finishMission(world), true, 'pressing it again must WORK, not refuse');
+  assert.equal(world.autopilot.active, true, 'and it must actually put the ship back on course');
+  assert.equal(world.autopilot.target.kind, 'station');
+  assert.equal(world.levelRunner.won, false, 'still not closed — the ship has to get home');
+});
+
+test('SOFT-LOCK: the one-shot settlement happens exactly ONCE across both presses', () => {
+  const { world } = atWinPhase();
+  clearMission(world);
+  world.events.drain(() => {});
+  // A crate no ship could reach: `collectAll` banks it, and must not be re-run into a double deposit.
+  world.drops.push({ pos: { x: 4000, y: 0.8, z: 4000 }, item: { kind: 'weapon', refId: 5 },
+                     weight: 1, inRange: 0, special: false, alive: true });
+
+  finishMission(world);
+  const afterFirst = world.pendingLoot.length;
+  const firstEvents = drain(world).filter((e) => e.type === 'finishing');
+  assert.equal(firstEvents.length, 1, 'the host is told to commit the advance on the first press');
+  assert.equal(world.drops.length, 0, 'and the field is swept');
+
+  world.autopilot.active = false; world.autopilot.target = null;   // fired → autopilot cancelled
+  world.drops.push({ pos: { x: 4000, y: 0.8, z: 4000 }, item: { kind: 'weapon', refId: 5 },
+                     weight: 1, inRange: 0, special: false, alive: true });
+  assert.equal(finishMission(world), true);
+  assert.equal(drain(world).filter((e) => e.type === 'finishing').length, 0,
+    'the SECOND press must not ask the host to commit the campaign advance again');
+  assert.equal(world.pendingLoot.length, afterFirst,
+    'and it must not re-sweep — only the autopilot is re-engaged');
+  assert.equal(world.drops.length, 1, 'the crate dropped after the settlement stays on the field');
+});
+
+test('SOFT-LOCK: after pressing the button, arriving HAND-FLOWN closes the mission', () => {
+  const { world } = atWinPhase();
+  clearMission(world);
+  finishMission(world);                                     // settled; the reward is already banked
+  world.autopilot.active = false; world.autopilot.target = null;   // …then he fired, cancelling the flight
+
+  world.player.pos.x = world.station.pos.x; world.player.pos.z = world.station.pos.z;  // flew home by hand
+  checkArrival(world);
+  assert.equal(world.levelRunner.won, true, 'getting there is what matters once the button has been pressed');
+});
+
+// ---------- the invariants the fix must NOT have loosened ----------
+
+test('SOFT-LOCK guard: an UNCLEARED level still cannot be finished, or closed by proximity', () => {
+  const { world } = atWinPhase();
+  world.levelRunner.winPending = 99;
+  world.enemies = [{ alive: true }];
+  assert.equal(finishMission(world), false, 'no early exit from a live fight');
+  assert.equal(finishMission(world), false, 'and pressing it twice does not become one');
+  assert.equal(world.levelRunner.finishing, false);
+
+  world.player.pos.x = world.station.pos.x; world.player.pos.z = world.station.pos.z;
+  checkArrival(world);
+  assert.equal(world.levelRunner.won, false, 'and sitting on the station mid-fight ends nothing');
+});
+
+test('SOFT-LOCK guard: a chest-aimed autopilot still cannot win a mission', () => {
+  const { world } = atWinPhase();
+  clearMission(world);                                       // cleared, but the button was NEVER pressed
+  world.player.pos.x = world.station.pos.x; world.player.pos.z = world.station.pos.z;
+  world.autopilot.active = true; world.autopilot.target = { kind: 'drop' };
+  checkArrival(world);
+  assert.equal(world.levelRunner.won, false, 'a crate run that happens to pass the station is not docking');
+  assert.equal(world.levelRunner.finishing, false, 'and it settles nothing either');
+});
+
+// NOTE ON WHAT THIS PROVES: `finishMission`'s own `lr.won` guard is BELT-AND-BRACES here — `engageAutopilot`
+// (step-player.js:115) independently refuses once `won` is true, so deleting either one alone still leaves a
+// closed mission closed. Mutation-checked and reported as such: this asserts the composed contract at the
+// button's boundary, not a single line.
+test('SOFT-LOCK guard: a mission already WON does not re-open on another press', () => {
+  const { world } = atWinPhase();
+  clearMission(world);
+  finishMission(world);
+  world.player.pos.x = world.station.pos.x; world.player.pos.z = world.station.pos.z;
+  checkArrival(world);
+  assert.equal(world.levelRunner.won, true);
+
+  world.autopilot.active = false; world.autopilot.target = null;
+  assert.equal(finishMission(world), false, 'a closed mission stays closed');
+  assert.equal(world.autopilot.active, false, 'and nothing flies anywhere');
+});
+
 test('docking before the sector is cleared does nothing at all', () => {
   const { world } = atWinPhase();
   world.enemies = [{ alive: true }];

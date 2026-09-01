@@ -38,7 +38,7 @@
 import { stepSpawnGate } from './spawn-timing.js';
 import { simRandom } from './sim-random.js';
 import { spawnEnemy } from './ship-entity.js';
-import { canDock } from './autopilot-config.js';
+import { canDock, BASE_ARRIVE_RADIUS } from './autopilot-config.js';
 import { engageAutopilot } from './step-player.js';
 import { showBanner, clearBanner } from './events.js';
 import { collectAll } from './drops-sim.js';
@@ -167,12 +167,30 @@ export function clearMission(world) {
 // Flying home and docking — the same act as the button, reached the scenic way. Requires an ENGAGED
 // autopilot whose target is the STATION (`canDock`), so proximity alone never ends a mission and a
 // chest-aimed autopilot never can; any control input cancels the dock, and the player re-taps to resume.
+//
+// ONE EXCEPTION, and it is what un-sticks the soft-lock (DECISIONS §143): once `finishing` is true the
+// player has ALREADY pressed "Finish and Return" — the sector is cleared, the reward is banked, the salvage
+// is swept and the advance is committed. The trip home is all that is left, so ARRIVING COUNTS, autopilot or
+// not. Firing cancels the autopilot (DECISIONS §39, deliberately kept), and before this a player who shot
+// once on the way home could not close the mission at all: the button refused a second press and flying
+// home by hand did nothing.
+//
+// The relaxation is gated STRICTLY on `finishing`, so `canDock` still decides every other case — proximity
+// alone still ends nothing, and a chest-aimed autopilot still can never win a mission.
+//
+// NO "settled" CHECK, on purpose. `checkStationArrival` (step-player.js) requires `vel <= 0.6` because it
+// PARKS the ship and holds it still under a prompt; this closes the mission and shows the victory overlay,
+// where nothing needs the ship stationary. Requiring a near-stop here would also be a second trap: a player
+// hand-flying home at full speed can cross a 45-unit radius in well under a second, and nothing on the HUD
+// would tell him he has to brake.
 export function checkArrival(world) {
   const p = world.player;
   if (!world.station || !p || !p.alive) return;
   const s = world.station.pos;
   const dx = p.pos.x - s.x, dz = p.pos.z - s.z;
-  if (!canDock(world.autopilot, Math.hypot(dx, dz))) return;
+  const dist = Math.hypot(dx, dz);
+  const arrived = world.levelRunner.finishing ? dist <= BASE_ARRIVE_RADIUS : canDock(world.autopilot, dist);
+  if (!arrived) return;
   // A player who flew home WITHOUT pressing the button settles the mission on arrival instead — same two
   // steps, just both at once, which is safe because the ship has stopped. If that is REFUSED the sector is
   // not cleared, and arriving must close nothing: `updateLevelRunner` only calls this once the fight is
@@ -189,10 +207,27 @@ export function checkArrival(world) {
 // arrival closes the mission — a journey, not a teleport.
 //
 // Refuses before the sector is cleared: there is no early exit from a mission, and a button that sometimes
-// ended a live fight would be a bug waiting to be found by a stray tap.
+// ended a live fight would be a bug waiting to be found by a stray tap. A mission already `won` cannot be
+// re-opened either.
+//
+// PRESSED AGAIN AFTER THE FLIGHT WAS INTERRUPTED, it RE-ENGAGES (DECISIONS §143). Firing cancels the
+// autopilot (§39), and the button used to refuse every press after the first — so one shot on the way home
+// left the player with a dead button and no way to close the mission. The second press re-engages the
+// autopilot and reports success; it does NOT redo the one-shot settlement. `collectAll` and the `finishing`
+// event belong to the moment the player decided, and they already happened: sweeping again would be a
+// no-op at best, and a second `finishing` would ask the host to commit the same campaign advance twice.
 export function finishMission(world) {
   const lr = world.levelRunner;
-  if (!lr.cleared || lr.won || lr.finishing) return false;
+  if (!lr.cleared || lr.won) return false;
+  if (lr.finishing) {
+    // Already settled. Nothing to do while the ship is still on its way; if the trip was interrupted, put
+    // it back on course. `engageAutopilot` re-checks alive/won/returnToBase itself.
+    // `canDock` with the distance term neutralised = "engaged AND aimed at the station", reusing the one
+    // predicate rather than a second copy of it that could drift.
+    if (canDock(world.autopilot, 0)) return false;   // the flight home is already under way
+    engageAutopilot(world);
+    return world.autopilot.active;                   // false only if the ship cannot fly (dead)
+  }
   lr.finishing = true;
   collectAll(world);   // the wreckage is yours — see drops-sim.collectAll
   world.events.emit({ type: 'finishing' });

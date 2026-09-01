@@ -435,7 +435,7 @@ export function stepAllyDeaths(world) {
     world.events.emit({
       type: 'allyDown', pos: a.pos.clone(),
       exhaustColor: a.engine && a.engine.exhaust ? a.engine.exhaust.color : a.color,
-      sizeScale: a.sizeScale || 1, shipClass: a.class,
+      sizeScale: a.sizeScale || 1, shipClass: a.class, weightClass: a.weightClass ?? null,
     });
     despawnAt(world, 'ally', allies, i);   // sets alive = false and releases the host's body
   }

@@ -3,7 +3,18 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-08-31 (**The expensive look — REAL LIGHTS, a layered backdrop and bigger dust.** The frame
+**Updated:** 2026-08-31 (**A finished mission can always be closed, and the homing arrow is gone.** Firing on
+the way home cancels the autopilot (§39) — and used to leave the mission permanently unclosable: the
+"Finish and Return" button refused every further press and hand-flying to the station did nothing. The button
+now re-engages the flight (without re-running the one-shot settlement) and, once it has been pressed, arriving
+at the station counts however you got there; `canDock` is unchanged for every other case (DECISIONS §143). The
+world-space blue arrow that pointed at the base station is **deleted** — it showed from the first frame after
+take-off with no distance gate; the roam nav bar's "Return to Base" button and the system map are how you get
+home.) 2026-08-31 (**Ship weight class is a first-class data axis.** Every ship row states
+`stats.weightClass` (`light`/`medium`/`heavy`, with `ultraHeavy`/`station` declared for later), described by
+`SHIP_CLASSES` in `client/src/sim-core/ship-classes.js`, which owns each class's explosion-blast profile. The
+blast flash reads the class instead of guessing from `sizeScale`; those thresholds survive only as the
+fallback for data that predates the field. No visible change — see DECISIONS §142.) 2026-08-31 (**The expensive look — REAL LIGHTS, a layered backdrop and bigger dust.** The frame
 is the historical two-pass one, drawn straight to the canvas with its own MSAA and **no tone mapping**: a
 full-frame `EffectComposer` and then an additive glow overlay were both built, live-tested and **deleted**
 (DECISIONS §139). What ships is a fixed, tier-gated pool of **real `THREE.PointLight`s** on engines, rockets
@@ -762,8 +773,12 @@ client fetches them on startup (`bootstrap()`) and assembles every ship from tha
 derivation (`deriveDrive`/`shipMass` in `client/src/sim-core/components.js`) stays client-side. A ship is a
 **hull + an engine + maneuvering thrusters** (referenced by id in the ship's `components` field) plus
 **mounted weapons** (`stats.mounts`). `stats` (JSON) also carry **fire `groups`** (named channels — a
-key for the player, an AI range/aim rule for enemies), `role`, `color`, and a `model` block (per-ship
-model presentation — see the Visual model section). A `mount` = a
+key for the player, an AI range/aim rule for enemies), `role`, `color`, **`weightClass`** and a `model`
+block (per-ship model presentation — see the Visual model section). **`weightClass` is the ship's MASS
+tier** — a third axis, orthogonal to `role` (behaviour) and `class` (the SFX/sound class): `light` (all the
+1.0-scale hulls + the player), `medium` (the 2.0-scale capitals) and `heavy` (both bosses), with
+`ultraHeavy` and `station` declared-but-unused. The classes and what each one owns live in
+`client/src/sim-core/ship-classes.js`; the seed refuses to load a ship whose class is not declared there. A `mount` = a
 weapon id, its `group`, a lateral `offset` (side-by-side fire), a `delay` (staggered volley); a ship
 can mount several of the same weapon (the mini-boss has two rocket launchers). The player's active ship
 + its loadout/components overrides come from `player_ships` (see Backend).
@@ -1772,9 +1787,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `sim-core/level-runner.js` runs for **every** mission, campaign L1–4 and the three side missions alike,
   off the `win` phase in the descriptor's script (whose `delay` still runs first, so the boss explosion
   plays out). It lifts the **OOB warp-back** (`&& !G.returnToBase`, so a side mission fought far from
-  `(0,0)` can fly home), shows a translucent **blue homing arrow** (`updateReturnArrow`, anchored to the
-  ship, re-pointed at the station each frame) and a centred HUD hint (`updateReturnHint`, i18n
-  `ui.return.hint`), and makes the **base station clickable** (`G.baseStation.active`).
+  `(0,0)` can fly home), shows a centred HUD hint (`updateReturnHint`, i18n `ui.return.hint`), and makes
+  the **base station clickable** (`G.baseStation.active`). **There is no homing arrow** — the world-space
+  blue arrow that used to point at the station is gone (it fired from the first frame after take-off, with
+  no distance gate, at a station 15 u away and plainly in view); the way home is the **"Return to Base"**
+  button on the roam nav bar and the **system map**.
   Flying home is one of the two ways to end it, and no longer mandatory. Clicking/tapping the station (on
   touch a **slop-gated tap** — a <10px single-finger gesture — through the shared `engageObjectAt` pick, not
   a raw touch-anywhere) calls `engageAutopilot()` (sets `G.autopilot.active` + phase `brake0` +
@@ -1786,7 +1803,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `BASE_ARRIVE_RADIUS`, unit-tested) fires **only when the target is the station** — a chest-aimed autopilot
   is structurally incapable of ending a mission. **Proximity alone never ends one**, and any control input
   cancels the dock (clears `active` + `target`) so a cancelled/manual approach doesn't complete (re-tap to
-  resume).
+  resume). **ONE exception, and only one:** once the player has pressed "Finish and Return"
+  (`levelRunner.finishing`), arriving within `BASE_ARRIVE_RADIUS` closes the mission **with or without an
+  engaged autopilot** — the reward is already banked and the salvage already swept at that point, so the trip
+  home is all that is left. `canDock` still decides every other case. Pressing the button **again** after the
+  flight was interrupted (firing cancels the autopilot, DECISIONS §39) **re-engages** it and returns true
+  instead of refusing, without re-running the one-shot settlement. Both are the fix for a real soft-lock —
+  see DECISIONS §143.
   **A mission ends in TWO moments, not one (DECISIONS §130, §132).** (1) **CLEARED** — the level's `winCondition`
   holds (`{ type: 'allEnemiesDead' }` on every campaign level and side mission today, stated on the
   descriptor). `clearMission()` in `sim-core/level-runner.js` doubles the credits, adds the one-shot
@@ -1811,8 +1834,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   hangar, releasing a netsim room, and only now `loadAdvancedLevel()` — the descriptor, the map and the
   rebuilt ship, which need everything standing still (`buildPlayerFor` makes a fresh player at the spawn
   point, so mid-flight it would teleport the ship out from under its own autopilot). Flying home WITHOUT
-  pressing settles and closes in one go; `canDock` still requires an ENGAGED station autopilot, so proximity
-  alone finishes nothing. In a room the press travels as `{kind:'finish'}` and the room flies the ship home
+  pressing settles and closes in one go; for that route `canDock` still requires an ENGAGED station
+  autopilot, so proximity alone finishes nothing. **After** the button has been pressed the requirement is
+  distance alone (§143), which is what lets a player who fired on the way home still get in. In a room the press travels as `{kind:'finish'}` and the room flies the ship home
   itself; the salvage swept at the press gets its own money-free economy report. An unreadable `winCondition` can never be met — no payout on a
   rule we cannot evaluate.
   A **bottom-center "Return to base" pill button** (`#return-btn`, i18n `ui.return.button`, shown/hidden in
@@ -2144,10 +2168,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **rockets in flight** — a smaller always-on source at the body (`?rocketpow`, default 150);
   - **blast flashes** — a detonation is a brief, very bright source that competes for the SAME pool
     (`addFlash`, quadratic-out falloff). Power, reach AND duration all read their tier from ONE classifier
-    (`blastClass`: `sizeScale >= 2.2` or `role: 'boss'` → boss, `>= 1.4` → medium, else small) so a hull can
-    never be "medium" for one and "small" for another. Power `rocket 400 / ship 800 / med 1400 / boss 2400`
-    (× `size²`), **reach** `30 / 45 / 70 / 110` u (× size) — reach, not power, is what makes a big detonation
-    feel big, because `distance` is a hard cutoff — base duration 0.44 s × `2 / 3 / 5` by class.
+    (`blastClass` in `client/src/blast.js`), so a hull can never be "medium" for one and "small" for another.
+    The tier comes from the dead ship's **`weightClass`**, carried on the `kill`/`allyDown` event, and each
+    class owns its own profile in `SHIP_CLASSES` (`sim-core/ship-classes.js`): **`light` 800 / 45 u / ×2**,
+    **`medium` 1400 / 70 / ×3**, **`heavy` 2400 / 110 / ×5**; the rocket detonation is a WEAPON blast, not a
+    class (`400 / 30`, on `BLAST`). Resolution order: a `weightClass` with a blast block → else `isBoss`
+    (the role) → else the old `sizeScale` thresholds (`>= 2.2` heavy, `>= 1.4` medium), which are kept as the
+    **fallback** for data that predates the field (recorded traces, an older server's wire, the `?tune` rig)
+    and are reached by no catalog ship. Power is × `size²`, **reach** × size — reach, not power, is what
+    makes a big detonation feel big, because `distance` is a hard cutoff — base duration 0.44 s × the class's
+    multiplier.
   **Tier knob `gfx.post.lights`: High 16 / Balance 4 / Performance 0 (`post: null`)**, measured on a Redmi
   15C (Mali-G52): 0 lights holds ~60 fps, 16 drops — worst zoomed in at the station, mild when it is small on
   screen, because the cost tracks LIT PIXELS. **`?lights=N`** overrides the pool size for measurement (needs
@@ -2508,9 +2538,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   further), `distance` (the hard cutoff), `height` above the plane, a **`nozzle Z`** probe (the baked
   `exhaust` anchor is auto-generated as exactly `-muzzle`, i.e. mirrored from the gun rather than measured off
   the model, so on some hulls the plume — and its light — start too far forward), and a **`Blast flashes`**
-  sub-folder with every power/reach/duration tier plus buttons that fire one blast on demand and spawn a
+  sub-folder whose per-class power/reach/duration sliders are **generated from `SHIP_CLASSES`** (a new class
+  row grows its own three sliders with no edit to `tune.js`; a class with no blast block gets none), plus the
+  rocket tier and the base duration on `BLAST` and the `medAt`/`bigAt` thresholds labelled **fallback-only**
+  (no catalog ship reaches them). It also has buttons that fire one blast on demand and spawn a
   **frozen test range** (3 ranks of 3 disarmed, immobile enemies at small/medium/boss size, HP scaled by
-  size²) — an explosion lasts ~0.2 s, so it cannot be judged by dragging a slider and watching. There are
+  size²) — the range **clears `weightClass`** on its targets on purpose, so faking hull sizes through
+  `sizeScale` keeps exercising that fallback path — an explosion lasts ~0.2 s, so it cannot be judged by dragging a slider and watching. There are
   deliberately **no glow/bloom/exposure/grade/vignette controls**: those belonged to the deleted composer and
   overlay. **There are deliberately no dust `size` sliders here either** — those already exist in the `?dev` Backdrop → "Speed field" folder, which persists to
   localStorage and is the panel `buildMap` re-applies (two panels for one number would be §30's problem).
@@ -3737,7 +3771,8 @@ see this tick's puffs.
 `SPAWN_GROW_TIME`, the soft boundary's `ARENA`/`OOB_WARN_DELAY`/`OOB_RETURN_TIME`, and `TICK_HZ`/`SIM_DT` —
 the fixed sim step both hosts must agree on or they are not running the same simulation, DECISIONS §118;
 `bench.js` re-exports it as `BENCH_DT`), `events.js`,
-`world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, `targeting.js`, `drops-sim.js`,
+`world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, **`ship-classes.js`** (the `SHIP_CLASSES`
+weight-class table — mass tiers as data; each row owns its explosion-blast profile), `targeting.js`, `drops-sim.js`,
 `system-map.js`, `digest.js`, **`beam-config.js`** (`withBeamGun` — the pure, unconditional "swap the gun
 mount for the Charged beam" transform behind `?beam`; host-neutral because a netsim ROOM has to apply the
 same swap and cannot read `location.search`), the wingman — **`ally-config.js`** (his loadout + every `ALLY_*` tuning
@@ -4169,8 +4204,11 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `gameStartSent`/`quitSent`/`pendingBriefing` + the selection scalars `activeShip`/`currentShipName`/
   `activeMission` + `SPAWN_GROW_TIME`), `engine.js` (`renderer`/`scene`/`skyScene`/
   `camera`/lights + orientation + zoom), `engine-lights.js` (the fixed, tier-gated pool of real
-  `THREE.PointLight`s on engines/rockets/blast flashes + the `BLAST` tiers and the `blastClass` classifier —
-  the frame itself lives in `main.js animate()`, there is no render-path module), `dom.js` (the single
+  `THREE.PointLight`s on engines/rockets/blast flashes — the frame itself lives in `main.js animate()`, there
+  is no render-path module; it **re-exports `blast.js`**, so every existing import path keeps working),
+  `blast.js` (three-free, and unit-tested for it: the `BLAST` constants + the `blastClass`/`blastPower`/
+  `blastReach`/`blastDurMul` classifier that turns a ship's weight class into how bright/far/long its death
+  flashes), `dom.js` (the single
   fail-loud `el` inventory of shared
   index.html nodes — HUD readouts + the result `overlay`; a missing id throws on boot).
 - **Domains (browser-only, touch the scene):** `world.js` (arena + sky/star-system bodies
@@ -4273,7 +4311,13 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   silently invisible, `0 < follow < 1`). **No unit test may import `world.js` or `ship-factory.js`** —
   `node --test` cannot resolve the browser importmap's `three`, which is exactly why these constants live in
   `graphics.js` (and why the visual scenarios can import that one file directly).
-- **Client logic** — `client/src/*.test.js`: drive derivation (engine + mass, incl. the grab slot + the
+- **Client logic** — `client/src/*.test.js`: the **ship weight class** (`blast.test.js`: every catalog ship
+  states a class that is both declared in `SHIP_CLASSES` and actually tuned, and the three classes the
+  fallback ladder names as literals keep their blast block; a golden table pins each ship's
+  peak/reach/duration so the class-driven answer stays byte-identical to the old `sizeScale` one on both the
+  boss and the non-boss call path; the fallback degrades for an unknown/untuned class instead of throwing;
+  and the `× size²` / `× size` scaling is asserted to still live at the `projectiles.js` call sites),
+  drive derivation (engine + mass, incl. the grab slot + the
   mass-neutral 48+2=50 baseline), balance, repair-drone
   regen (`repairTick`: per-interval heal, multi-tick, 80% cap, no-op cases, mass), **shield**
   (`absorbDamage` partial/exact-break/overflow-spill + `shieldRecharge` no-op-while-active / bank-dt /
@@ -4304,7 +4348,12 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `sim-core/level-runner.test.js`, the SIM half of that timeline: `spawn.earliest` holds a spawn until the
   floor, the released enemy still gets a plain 2–4 s `spawnDur` (the floor must never leak into the warp-in),
   an index beyond the array is unfloored, `finalStageBanner: false` suppresses the banner, and the shipped
-  `level-0` descriptor's floors match its own beat timings),
+  `level-0` descriptor's floors match its own beat timings; plus **the mission-finish soft-lock** (§143): the
+  button re-engages after the flight home was interrupted, the one-shot settlement — `collectAll` + the
+  `finishing` event — happens exactly once across both presses, arriving hand-flown closes a mission the
+  player already finished, and the guards that must NOT have loosened: an uncleared level can still be
+  neither finished nor closed by proximity, a chest-aimed autopilot still cannot win, and a won mission does
+  not re-open),
   **enemy shields** (`enemyShieldSplit` is integer/exact and sums back to the catalog durability for every
   enemy hull; **damage-to-kill is LOSSLESS** — for all 6 durabilities × 5 per-hit powers the kill takes exactly
   `hitsToKill(d, perHit)` hits and `dealt − overkill === d`, the invariant the recorded intro depends on;

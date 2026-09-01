@@ -9,6 +9,7 @@ import { LOOK_DEFAULTS } from './graphics.js';
 import { lightParams, lightStatus } from './engine-lights.js'; // the real point lights (tier pool / ?lights=N)
 import { getNozzleZ, setNozzleZ } from './exhaust-fx.js'; // live nozzle-anchor probe
 import { BLAST } from './engine-lights.js';
+import { SHIP_CLASSES } from './sim-core/ship-classes.js'; // the weight-class table the per-class sliders are generated from
 import { spawnShipExplosion, spawnBossExplosion, spawnRocketBurst } from './projectiles.js';
 import { spawnEnemyShip } from './ship-build.js';
 import { CATALOG, enemies } from './state.js';
@@ -118,21 +119,24 @@ function buildLightsFolder(gui) {
   // POWER: the useful band is small — at 10 units, 100 candela is already full white. Past ~1000 you are
   // only clipping harder, which is why 8000 and 60000 looked identical.
   b.add(BLAST, 'rocket', 0, 1500, 10).name('power: rocket');
-  b.add(BLAST, 'ship', 0, 3000, 20).name('power: small (× size²)');
-  b.add(BLAST, 'med', 0, 4000, 20).name('power: medium (× size²)');
-  b.add(BLAST, 'boss', 0, 6000, 50).name('power: boss (× size²)');
-  // REACH: the hard cutoff. THIS is the knob that makes a boss detonation feel big — it decides how far
-  // away a hull can be and still be lit at all. Power cannot buy reach.
   b.add(BLAST, 'reachRocket', 5, 120, 1).name('reach: rocket');
-  b.add(BLAST, 'reachShip', 5, 200, 1).name('reach: small (× size)');
-  b.add(BLAST, 'reachMed', 5, 300, 1).name('reach: medium (× size)');
-  b.add(BLAST, 'reachBoss', 5, 400, 1).name('reach: boss (× size)');
   b.add(BLAST, 'dur', 0.05, 2.0, 0.01).name('duration BASE (s)');
-  b.add(BLAST, 'durShip', 1, 8, 0.25).name('× duration: normal');
-  b.add(BLAST, 'durMed', 1, 8, 0.25).name('× duration: medium');
-  b.add(BLAST, 'durBoss', 1, 12, 0.25).name('× duration: boss');
-  b.add(BLAST, 'medAt', 1.0, 3.0, 0.1).name('size ≥ this = medium');
-  b.add(BLAST, 'bigAt', 1.0, 4.0, 0.1).name('size ≥ this = boss');
+  // PER WEIGHT CLASS, GENERATED FROM THE TABLE (sim-core/ship-classes.js). Adding a class row there makes
+  // its three sliders appear here with no edit — that is what "extensible by data" has to mean at the one
+  // place the maintainer would feel it. A class with no blast block is not tuned yet and gets no sliders.
+  // REACH is the knob that makes a boss detonation feel big: it decides how far a hull can be and still be
+  // lit at all (a hard cutoff). Power cannot buy reach.
+  for (const [id, cls] of Object.entries(SHIP_CLASSES)) {
+    if (!cls.blast) continue;
+    b.add(cls.blast, 'power', 0, 6000, 50).name(`power: ${id} (× size²)`);
+    b.add(cls.blast, 'reach', 5, 400, 1).name(`reach: ${id} (× size)`);
+    b.add(cls.blast, 'durMul', 1, 12, 0.25).name(`× duration: ${id}`);
+  }
+  // FALLBACK ONLY: no catalog ship reaches these any more (every ship states its weightClass). They still
+  // decide the tier for data that predates the field — old traces, an older server's wire, and the frozen
+  // test range below, which nulls the class on purpose.
+  b.add(BLAST, 'medAt', 1.0, 3.0, 0.1).name('fallback only: size ≥ this = medium');
+  b.add(BLAST, 'bigAt', 1.0, 4.0, 0.1).name('fallback only: size ≥ this = heavy');
   const at = () => { const p = G.player && G.player.pos; return p ? { x: p.x, y: p.y, z: p.z } : { x: 0, y: 0, z: 0 }; };
 
   // A TEST RANGE, which is a better rig than the buttons below it: real hulls, real deaths, real spacing,
@@ -171,16 +175,21 @@ function buildLightsFolder(gui) {
         // references and the targets shoot back (they did).
         e.mounts = [];
         e.groups = {};
-        // THREE fields, and each one does a different job — setting the wrong one is why the first cut
+        // FOUR fields, and each one does a different job — setting the wrong one is why the first cut
         // spawned nine identical small hulls:
         //   fullScale — the VISIBLE size. `e.scale` is useless here: step-enemies.js rewrites it every frame
         //               from `fullScale` during the spawn-grow animation, so an assignment to it is erased.
         //   sizeScale — what the `kill` event carries, i.e. what sizes the DEATH EXPLOSION (and with it the
         //               blast flash, which scales as size^2).
         //   role      — 'boss' routes the death through spawnBossExplosion instead of the ship one.
+        //   weightClass — the MASS tier, which normally OVERRIDES sizeScale when picking the blast profile.
         const k = sizes[r];
         e.fullScale = (e.fullScale || 1) * k;
         e.sizeScale = (e.sizeScale || 1) * k;
+        // The rig fakes hull SIZE. Keeping the ship's real weightClass would pin every rank to its catalog
+        // tier and the three rows would flash alike; nulling it routes them through the sizeScale fallback,
+        // which is exactly the path this rig exists to eyeball.
+        e.weightClass = null;
         // HULL SCALES WITH SIZE TOO, or the rig lies about what it is showing: the first cut made a
         // boss-sized target out of a scout hull, so it died to a single rocket and there was nothing to
         // observe. Squared, matching how the blast itself scales — a 2.8 target takes roughly 8x the
