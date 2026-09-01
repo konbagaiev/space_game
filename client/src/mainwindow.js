@@ -10,6 +10,7 @@
 // resolves the cycle at runtime (edges fire on user actions, not at module init). `missionOffers`/
 // `mainBriefing`/`mwItem` are `export let` so the ?debug __game hook can read them live.
 import { G, CATALOG } from './state.js';
+import { duelDev } from './duel-dev.js';   // ?duel: Take off drops you straight into the sparring room
 import { el } from './dom.js';
 import { t } from './i18n.js';
 import { fetchJson, clientLog } from './net.js';
@@ -75,9 +76,13 @@ export function showMain(briefing) {
 // fights at the origin, which is the base neighbourhood, so you spawn already inside its zone and the
 // countdown runs immediately. Uniform on purpose — "take off, then the mission starts when you reach it"
 // should not quietly become "the mission is already running" depending on which level you are on.
-function launchCampaign({ engage = false } = {}) {
+// `direct` — skip roam and start the fight here and now, on a cold world (set-pieces rebuilt, ship placed
+// at the level's centre). Only the `?duel` sparring room asks for it: a test room you have to fly to across
+// the system every time is a test room that stops being used. It is NOT `engage`, which means "you flew
+// here, so keep the ship and the world exactly as they are".
+function launchCampaign({ engage = false, direct = false } = {}) {
   const lvl = CATALOG.level;
-  if (!engage) {
+  if (!engage && !direct) {
     clientLog('takeoff:campaign-travel', { level: lvl && lvl.title, center: (lvl && lvl.center) || null });
     enterRoam(null);                   // spawns at the base with no enemies + arms the mission zone
     return;
@@ -331,7 +336,11 @@ function canTakeOff() {
   const a = G.activeShip;
   return !a || a.launchable !== false;
 }
-function takeOff() { if (canTakeOff()) enterRoam(null); }
+function takeOff() {
+  if (!canTakeOff()) return;
+  if (duelDev()) { launchCampaign({ direct: true }); return; }  // ?duel: straight into the sparring room
+  enterRoam(null);
+}
 // (The gate is reflected on every launch control by shop.js updateTakeoffGate — one place, so selling a
 // hull in the Loadout greys the mission launch, the global Take off and the map's autopilot together.)
 document.getElementById('mw-takeoff').addEventListener('click', takeOff);

@@ -15,10 +15,16 @@
 // position, mirroring where the player already sat. It returns at once when `world.allies` is empty, which
 // is every level that ships today, so the order it adds is inert there.
 //
+// `stepAces` sits with it rather than inside `stepEnemyAI`, because an ace IS a hostile ship flown by the
+// wingman's pilot: it must move on the friendly side's rules (before the stand-off AI reads positions) and
+// `stepEnemyAI` must leave it alone. It too returns at once when there is none, which is every level that
+// ships — only the `?duel` dev room spawns them.
+//
 // See docs/plans/server-authoritative-sim.md (Slice B3d/C).
 import { stepPlayer, stepPlayerDeath } from './step-player.js';
 import { stepEnemyAI, stepEnemyDeaths } from './step-enemies.js';
 import { stepAlly, stepAllyDeaths } from './step-ally.js';
+import { stepAces } from './ace.js';
 import { stepBullets, stepRockets } from './step-projectiles.js';
 import { stepDrops } from './drops-sim.js';
 import { updateLevelRunner } from './level-runner.js';
@@ -35,6 +41,7 @@ export function simTick(world, dt) {
 
   if (alive) stepPlayer(world, dt); // repair/shield, control or autopilot, speed cap, arena drift + soft boundary, firing
   stepAlly(world, dt);              // the friendly ship that is not the player (winds down on his own if the player is gone)
+  stepAces(world, dt);              // …and the HOSTILE ships flown by that same pilot (the ?duel room only)
   stepEnemyAI(world, dt);           // …which cuts the engines and holds fire once the player is gone
   stepBullets(world, dt);
   stepRockets(world, dt);

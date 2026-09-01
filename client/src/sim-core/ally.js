@@ -14,7 +14,11 @@ import { ALLY_SHIP_NAME, ALLY_COMPONENTS, ALLY_MOUNTS, ALLY_COLOR, ALLY_ARRIVE_B
 // (gun: range 45 / aimTol 0.25, rocket: range 80 / aimTol 0.40) his fire rule reads.
 // Draws NOTHING from the seeded stream — see the RNG guarantee in the plan/DECISIONS §73.
 // Takes the catalog, not the World, because the netsim client builds this same shell from a wire descriptor.
-export function makeAlly(catalog) {
+// THE HULL BOTH SENTINEL PILOTS FLY. Split out of `makeAlly` for the DUEL ROOM's ace (`ace.js`), which is
+// the same ship with the same gear pointed the other way: one build, so re-arming the wingman re-arms the
+// thing you spar against and the two can never quietly drift into different fights. It sets everything that
+// is true of the SHIP and nothing that is true of a SIDE — no `isAlly`, no colour, no target bookkeeping.
+export function makeSentinelHull(catalog) {
   const shipDef = catalog.shipByName.get(ALLY_SHIP_NAME);
   if (!shipDef) return null;
   const a = makePlayer(catalog, {
@@ -24,14 +28,23 @@ export function makeAlly(catalog) {
     skills: null,           // no skills → dodge 0 → a hostile hit never rolls the seeded stream
   });
   a.name = shipDef.name;
-  a.color = ALLY_COLOR;     // the livery: one number against the same .glb (§2 "already free")
   a.radius = 2.6 * (a.sizeScale || 1); // health-bar/minimap anchor (makePlayer has no `radius`; enemies do)
-  a.isAlly = true;
-  a.target = null;          // the enemy he is charging
+  a.target = null;          // the ship he is charging
   a.passArmed = false;      // the current target is BEHIND him: the re-search (and the retreat check) are armed
-  a.retreating = false;     // opening the gap to the nearest ENEMY (ALLY_BREAK_OFF_DIST) so the drone can
-                            // work — he is STILL a valid enemy target while he does it
+  a.retreating = false;     // opening the gap so the drone can work
+  a.intercept = null;       // the incoming ROCKET he is shooting down (point defence, step-ally.js 4d)
   a.thrusting = false;
+  return a;
+}
+
+export function makeAlly(catalog) {
+  const a = makeSentinelHull(catalog);
+  if (!a) return null;
+  a.color = ALLY_COLOR;     // the livery: one number against the same .glb (§2 "already free")
+  a.isAlly = true;
+  // (`target` / `passArmed` / `retreating` / `thrusting` are the shared hull's — see makeSentinelHull. The
+  //  retreat opens the gap to the nearest ENEMY (ALLY_BREAK_OFF_DIST) so the drone can work; he is STILL a
+  //  valid enemy target while he does it.)
   return a;
 }
 

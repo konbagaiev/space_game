@@ -6104,3 +6104,130 @@ measurement. **Park the pose and read the driver's own timer.**
 **Cross-refs:** §23 (submit-bound, the *previous* era), §58 (the CPU A/B bench — different question, CPU
 only), §139 (no post-processing, which is why the frame is two plain passes and easy to time), §140 + its
 amendment (resolution rejected on image quality, not on cost), §144 (the station's textures).
+
+## 146. The duel room's ace is an ENEMY flown by the wingman's pilot — one pilot, two sides
+
+**The ask:** a room to fight two of the ally bots we had just built and tested.
+
+**The trap in it:** an "enemy version of the wingman" invites a copy — take `step-ally.js`, point it the
+other way, and now there are two pilots. They would drift apart on the first tuning pass, and the room
+would stop being a test of the wingman and become a test of the fork. The room's entire value is that the
+thing you spar against is the thing that flies beside you.
+
+**So the pilot is shared, and the SIDE is a parameter.** `stepAlly`'s body became
+`flySentinel(world, ship, dt, ctx)` with `ctx = { foes, friend, side, leash, canFire }`. The wingman is
+`{ foes: world.enemies, friend: world.player, side: 'ally', leash: ALLY_TARGET_LEASH, canFire: true }` —
+the code that was already there, with every constant, comment and test still describing him. An ace is the
+same call with the player as its foe, `friend: null` and `side: 'enemy'`. Three consequences fall out of
+those three fields rather than out of branches: no friend means the §2.6 "never a tracer through your hull"
+gate is skipped (hostile ships already shoot past each other and cannot hurt each other), `side: 'enemy'`
+makes `updateGroups` spawn hostile projectiles and hands the rockets the ship it is flying at, and
+`canFire` lets the caller impose the shared 5 s `ENEMY_FIRE_GRACE` the wingman never had.
+
+**And the ace lives in `world.enemies`, not in a third list.** This is the decision that made the feature
+small. Being an enemy buys, with no code at all: the player's bullets and rockets hitting it, collision
+against its real hitboxes, the health bar, the shield bubble, the minimap marker, the death explosion,
+`world.kills`, `enemyTotal`, the `allEnemiesDead` win condition, "Finish and Return", and the whole
+settle-the-run path. A `world.duelists` list would have needed each of those wired by hand, and every one
+of them is a place to be subtly wrong. The cost is exactly one field: `e.pilot`, tested as plain
+truthiness by `stepEnemyAI` ("this ship has a pilot step of its own — leave it alone"), so that module
+needs to know nothing about who those pilots are. No shipped level spawns one, so the test is false for
+every enemy in the game today.
+
+**What it deliberately does NOT do.** It does not suppress the loot roll in `stepEnemyDeaths`: a dev branch
+inside the shipped death path is worse than the caveat "fly the room on a throwaway local player", which
+`?ally` already carries for recorded sessions. It pays `reward: 0, xp: 0` because that costs nothing — the
+fields are already read from the entity.
+
+**The bug this shape did not prevent, and which only PLAY found.** Two aces spawned symmetrically flew as
+one ship: identical, fully deterministic pilots given mirror-image starting conditions produce mirror-image
+flight forever. They held the same distance to the player tick for tick and fired their rockets in the same
+frame — 2 x 60 power arriving together, a guaranteed one-shot on the 100 HP hull the room hands the player.
+The fix is an echelon at the arrival (each ace 14 u further out and 0.35 s slower to form), which is still
+RNG-free. **The general lesson is worth keeping: determinism plus symmetry is a formation, not a fight.**
+Any future feature that spawns several copies of one deterministic pilot has to break its own symmetry at
+the arrival, because nothing downstream ever will.
+
+## 147. The Sentinel pilot shoots rockets out of the air — but only when it has nothing better to shoot
+
+A bullet has always destroyed an opposite-side rocket (`step-projectiles.js`: within 2.4 u it takes the
+bullet's damage and detonates at 0 hp). **Nothing in the game had ever aimed at one.** The player could do
+it by hand; no AI tried. The wingman/ace pilot now does, deliberately.
+
+**The gate is "nothing better to shoot", and it is the maintainer's rule.** A rocket is engaged only while
+the ship the pilot is charging is **beyond its own gun range**, or there is no ship to charge at all
+(escorting). Turning the nose onto a rocket costs the pass — the gun is nose-fixed, so aiming *is*
+manoeuvring — and giving up a shot you already have to swat a rocket is a bad trade every time. The
+threshold is `engageBand(ship)` — the max `ai.range` over the ship's ballistic groups, **45 u**.
+
+> **Amended the same day by §148.** That sentence originally read "the same number the fire gate already
+> uses, so the two cannot drift apart". It no longer is: the fire gate now uses the WEAPON's reach (140 u)
+> and point defence keeps the AI band (45 u). They are two different questions — "can my shot get there?"
+> and "is that ship close enough to be worth shooting at instead?" — and keeping them as one number would
+> have silently killed this feature, because a ship is almost always within 140 u and the acquisition
+> condition would essentially never be true again.
+
+**Once committed it is HELD** until the rocket is gone or out of reach — even if the ship comes back into
+range. Two reasons, and the second is the one that would have bitten in play: a commitment reads as a
+decision rather than a twitch, and re-deciding every tick against a distance that oscillates across the
+threshold would dither the nose between ship and rocket at 148°/s.
+
+**Gun only.** A homing rocket is never fired at a rocket: a 5 s reload spent on a target that will be gone
+in under a second, and the seeker only looks for ships anyway. This falls out of the existing per-group
+rule rather than bending it — the fire gate already asks every question "of the path THIS group's
+projectile actually takes", so point defence just changes *what a ballistic group is asked about*.
+
+**It defends itself and its friend only.** A rocket homing on a third ship is somebody else's problem, and
+turning onto one would throw a pass away for nothing. A rocket whose target died is still live and still
+lethal, so it stays in the pool.
+
+**A retreating pilot does not intercept.** It holds fire entirely — a wingman leaving the fight is leaving
+the fight (§134), and an exception here would make "he stopped shooting" stop meaning anything.
+
+**The limit, measured and accepted:** the turn rate is the binding constraint. At 1.16 rad/s a beam-on
+rocket 20 u out, closing at 12+ u/s, **arrives before the nose can come round**. Interception is a real
+capability with a real miss rate, not a shield. Measured in a live duel (60 s, both aces, player holding
+the trigger): 13 player rockets fired, **4 shot out of the air**, 3 detonating on a hull, 6 expiring at
+max range, with an ace engaged on 13 % of ticks. That is the number to compare against if the behaviour is
+ever tuned.
+
+## 148. The Sentinel pilot fires from the WEAPON's range, not the AI's band — and that splits one number in two
+
+**The report:** "I had a feeling he doesn't fire the gun when the target is within reach."
+
+**Measured before changing anything** — 60 s of a real duel, one ace, 3600 ticks: it had a target on
+**every** tick, was aimed on **66 %** of them, was inside the gun group's `ai.range` on **63 %**, both at
+once on **31 %**, and fired on essentially all of those. **The predicate was correct.** The cause was the
+data:
+
+| group | `ai.range` | `ai.aimTol` | the weapon's own `maxRange` |
+|---|---|---|---|
+| `GUN` | **45** | 0.25 | Heavy cannon **140** |
+| `ROCKET` | **80** | 0.40 | Rocket 150 |
+
+It held the gun to a third of the barrel's reach while launching rockets from 80 u with a tolerance nearly
+twice as wide — so it fought with rockets and the gun read as broken. Worth recording that the feeling was
+right and the diagnosis it implied was wrong: nothing was failing to fire, a number was too small.
+
+**The fix is the maintainer's rule: fire from whatever range the weapon allows.** `groupReach(g)` is the
+**minimum** `maxRange` over a group's ballistic mounts — the minimum, because one trigger fires every mount
+in the group, so the honest question is "does the whole volley reach?" rather than "does the longest
+barrel?". Measured effect in the same duel: **25 → 46 shots** in 60 s.
+
+**Why it lives in the pilot and not in the catalog.** `GUN.ai` in `catalog_seed.js` is **shared with the
+pirate ships**. Raising it there would have rebalanced every enemy in the game as a side effect of fixing
+the wingman — the kind of change that looks like one line and is not. `stepEnemyAI` is untouched, so no
+pirate's behaviour moved.
+
+**BALLISTIC GROUPS ONLY.** The rocket group keeps `ai.range` 80 against the rocket's 150. How far a homing
+weapon should be launched from is a different balance question and was not asked; a homing rocket fired
+from 150 u nearly always connects, which is a real difficulty change rather than a fix.
+
+**And the number it used to share had to be split.** Point defence (§147) asks "is the ship I am charging
+too far to be worth shooting at?" — it was reading the same `ai.range`. Left as one number, the answer
+after this change would be "never" (a ship is essentially always within 140 u) and the interception
+feature built the same day would have quietly stopped working. So `groupReach` (the weapon: can my shot
+get there?) and `engageBand` (the AI band: is that ship my priority?) are now separate, and the comment
+above both says why. Measured after the split: interception went **up**, not down — 5 of 13 player rockets
+shot out of the air against 4 before, with an ace engaged on 18.6 % of ticks against 13 %.
+

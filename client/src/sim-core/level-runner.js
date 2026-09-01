@@ -9,6 +9,9 @@
 // the phase spawns him (`sim-core/ally.js spawnAlly`, which refuses a second). No seeded level carries the
 // field today; the `?ally` dev flag injects it into Level 4 and Level 5 will set it for real.
 //
+// …and **`aces: N`** — "N ships flying that same wingman pilot warp in AHEAD of you, hostile". The `?duel`
+// sparring room is built out of exactly one phase carrying it. No seeded level carries it either.
+//
 // ── A mission ends in TWO moments, not one (DECISIONS §130) ─────────────────────────────────────────────
 // They used to be the same moment and it cost more than it looked:
 //
@@ -43,6 +46,7 @@ import { engageAutopilot } from './step-player.js';
 import { showBanner, clearBanner } from './events.js';
 import { collectAll } from './drops-sim.js';
 import { spawnAlly } from './ally.js';
+import { spawnAces } from './ace.js';
 
 // The runner's mutable state for one fight. Lives on the World (see world.js).
 export function createLevelRunnerState() {
@@ -104,6 +108,9 @@ export function enterPhase(world) {
   // starts" — the same data-driven shape the enemy waves use, so Level 5 sets one field and nothing else
   // (docs/plans/combat-ally.md). No level in the seed carries it today; the ?ally dev flag injects it.
   if (ph && ph.ally) spawnAlly(world);   // refuses a second one
+  // …and its hostile twin: `aces: N` = "N ships flying the wingman's own pilot warp in ahead of you". The
+  // `?duel` sparring room is the only thing that writes it (client/src/duel-dev.js); no seeded level does.
+  if (ph && ph.aces) spawnAces(world, ph.aces);
   if (ph && ph.event === 'win') {
     // defer by `delay` seconds so the boss explosion can play out before the reward lands
     lr.winTextKey = ph.textKey; lr.winText = ph.text; // i18n key (+ English fallback)

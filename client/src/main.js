@@ -37,6 +37,7 @@ import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
 import { allyDev, allyDevLevel, applyAllyDev } from './ally-dev.js'; // ?ally dev flag: the wingman's arrival phase (+ the level it forces)
 import { beamDev, lancerDev, lancerDevLevel, applyLancerDev } from './beam-dev.js'; // ?beam / ?lancer dev flags: the player's beam, the pirate lancer's spawn phase (+ the level it forces)
+import { duelDevLevel, applyDuelDev } from './duel-dev.js'; // ?duel dev flag: the sparring room (+ the level it is built over)
 import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { makeIntroDirector } from './intro-director.js'; // the scripted Level-0 intro (the script is data on the descriptor)
@@ -2024,7 +2025,7 @@ async function bootstrap() {
     // `?lancer&level=N` force one too (same `level` param, same normalization — a dev test flight must not
     // depend on campaign progress, and Level 3 and Level 4 have identical phase NAMES, so aiming at one and
     // landing on the other was invisible from the URL). Otherwise the player's progress level.
-    const devLevel = allyDevLevel() || lancerDevLevel();
+    const devLevel = allyDevLevel() || lancerDevLevel() || duelDevLevel();
     const levelUrl = REC ? `/api/levels/${REC.level}`
       : rs.play ? `/api/levels/${traceLevelName(rs.trace)}`  // pre-v3 traces name the pre-renumbering level
       : devLevel ? `/api/levels/${devLevel}`
@@ -2054,9 +2055,10 @@ async function bootstrap() {
     for (const c of components) CATALOG.components.set(c.id, c);
     CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
     for (const s of ships) CATALOG.shipByName.set(s.name, s);
-    // ?ally / ?lancer (dev): inject the wingman's arrival phase and/or swap a phase's pool for pirate
-    // lancers. The two COMPOSE, and each is a strict no-op with its own flag off (the same object back out).
-    CATALOG.level = applyLancerDev(applyAllyDev(level.descriptor));
+    // ?ally / ?lancer / ?duel (dev): inject the wingman's arrival phase, swap a phase's pool for pirate
+    // lancers, and/or replace the whole script with the sparring room. Each is a strict no-op with its own
+    // flag off (the same object back out); `?duel` runs last because it discards what the others wrote.
+    CATALOG.level = applyDuelDev(applyLancerDev(applyAllyDev(level.descriptor)));   // ?duel is LAST: it replaces the phase script the other two edit
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
 
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map
