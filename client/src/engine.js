@@ -31,11 +31,23 @@ scene.fog = new THREE.Fog(0x0a1624, FOG_NEAR, FOG_FAR);
 // camera and all screen-space math use (swapped when rotated); `toGame(x,y)` maps a pointer's viewport
 // coords into game space (inverse of the CSS transform). applyOrientation() (defined below the camera)
 // flips this on resize/orientation change. The rotation flag lives on G (read by the reset-slider code too).
-export const gameW = () => G.rotated ? window.innerHeight : window.innerWidth;
-export const gameH = () => G.rotated ? window.innerWidth : window.innerHeight;
+//
+// The logical game size is CACHED, not read live. `window.innerWidth/innerHeight` are layout-inducing
+// reads, and five per-frame HUD functions call this pair interleaved with their own style writes, which
+// forced a synchronous style+layout flush mid-frame (measured on a real phone: 1.82 forced recalcs and
+// 0.99 ms per frame — docs/plans/hud-viewport-layout-thrash.md). applyOrientation() below is the single
+// choke point for boot/resize/orientationchange, so it is the ONE place that reads the viewport.
+// Initialized here (rather than left at 0) so a caller that runs before the boot-time applyOrientation()
+// still gets a real size: G.rotated is not set yet at module-eval, and unrotated is the correct answer
+// for that instant. See DECISIONS §149.
+let _gameW = window.innerWidth, _gameH = window.innerHeight;
+export const gameW = () => _gameW;
+export const gameH = () => _gameH;
 // Inverse of CSS `transform: translateX(100vw) rotate(90deg); transform-origin: top left` → game coords.
+// Reads the CACHE too (when rotated the game height IS the raw window width), so a pointer event never
+// forces layout either.
 export function toGame(clientX, clientY) {
-  return G.rotated ? { x: clientY, y: window.innerWidth - clientX } : { x: clientX, y: clientY };
+  return G.rotated ? { x: clientY, y: gameH() - clientX } : { x: clientX, y: clientY };
 }
 
 export const renderer = new THREE.WebGLRenderer({ antialias: G.gfx.antialias });
@@ -83,10 +95,14 @@ export function applyOrientation() {
   applyDevice();                                                  // recompute form axis + body classes
   G.rotated = Device.hasTouch && window.innerHeight > window.innerWidth; // touch device held in portrait
   document.body.classList.toggle('rot', G.rotated);
-  const w = gameW(), h = gameH();
-  camera.aspect = w / h;
+  // The viewport read on THIS path, once per resize (applyDevice() and the G.rotated test above read it
+  // too — ~5 reads per resize, all outside the frame; what the cache removes is the ~10 reads PER FRAME).
+  // MUST be after G.rotated is set — the two swap on it.
+  _gameW = G.rotated ? window.innerHeight : window.innerWidth;
+  _gameH = G.rotated ? window.innerWidth  : window.innerHeight;
+  camera.aspect = _gameW / _gameH;
   camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
+  renderer.setSize(_gameW, _gameH);
 }
 applyOrientation(); // correct the initial portrait sizing before the first frame
 

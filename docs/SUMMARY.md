@@ -3,7 +3,11 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-09-01 (**The Sentinel pilot fires as far as its gun fires, and shoots rockets out of the air** — the wingman and the duel
+**Updated:** 2026-09-01 (**The HUD stopped forcing a synchronous layout every frame** — `gameW()`/`gameH()` are
+now a cache refreshed in `applyOrientation()`, the single choke point, instead of a live
+`window.innerWidth`/`innerHeight` read on every one of the ~10 per-frame HUD calls; `toGame()` reads it too.
+No fps change expected (the frame is GPU-bound) — guarded by `48-hud-viewport-cache`
+(DECISIONS §149).) 2026-09-01 (**The Sentinel pilot fires as far as its gun fires, and shoots rockets out of the air** — the wingman and the duel
 room's aces now shoot out to the WEAPON's own reach (140 u) instead of the AI band's 45 — 25 → 46 shots in
 the same minute of fighting, and the change lives in the pilot because `GUN.ai` is shared with the pirates
 (DECISIONS §148). They also swing the nose onto an **incoming rocket** and shoot it down, but only while
@@ -372,14 +376,21 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   past the physical screen and `screen.orientation.lock` is unsupported on iOS Safari, so a CSS rotation is
   the only cross-browser way to render horizontally on a portrait screen. `applyOrientation()` (called at
   boot + on every `resize`/`orientationchange`) toggles the class and is the **single place** the
-  renderer/camera are sized — to `gameW()/gameH()` (innerHeight/innerWidth swapped when rotated). It now also
+  renderer/camera are sized — to `gameW()/gameH()` (innerHeight/innerWidth swapped when rotated).
+  `gameW()`/`gameH()` return a **cached** logical size, not a live viewport read: `applyOrientation()` is the
+  one place that reads `window.innerWidth`/`innerHeight` and writes the cache (right after `G.rotated` is
+  set — the two swap on it). `window.innerWidth`/`innerHeight` are layout-inducing reads, and five per-frame
+  HUD updaters called them interleaved with their own style writes, forcing a synchronous style+layout flush
+  mid-frame (DECISIONS §149). The cache is initialized at module-eval (`window.innerWidth`/`innerHeight`,
+  unrotated) so a call before the boot-time `applyOrientation()` still gets a real size. It now also
   calls `applyDevice()` (from `client/src/device.js`) **first**, so the reactive **form** axis
   (`dev-phone|dev-tablet|dev-desktop|dev-desktop-lg`) recomputes on every resize/orientationchange (this
   iteration only re-sets the body classes on a form change; full resize-driven layout adaptation of every
   screen is a deferred iteration 2 — see DECISIONS §34). Because a
   `transform` makes `position:fixed` children relative to `<body>`, the whole HUD/menus/buttons rotate with
   it for free. `toGame(clientX,clientY)` maps pointer/touch coords into the rotated game space (used by the
-  steering stick and the reset-progress slider); pinch distance is rotation-invariant so it needs no mapping.
+  steering stick and the reset-progress slider) and reads that same cache, so a pointer event forces no
+  layout either; pinch distance is rotation-invariant so it needs no mapping.
   When auto-rotate is on and the user turns the phone to real landscape, `rotated` becomes false and the
   native landscape viewport takes over seamlessly. Desktop is unaffected (`rotated` is touch-only).
 - **Mobile menus & Full screen:** the **welcome** screen is a **fixed grid** (scrollable greeting/intro
@@ -431,7 +442,7 @@ out because they are arguments to a flow, not switches.
 | flag | what it does |
 |---|---|
 | `?dev` | the perf overlay + `?dev` telemetry, the Backdrop panel, the `●dev` HUD suffix (`dev.js`) |
-| `?debug` | exposes `window.__game` (the test/inspection hook the whole visual suite drives) |
+| `?debug` | exposes `window.__game` (the test/inspection hook the whole visual suite drives; incl. the `gameW`/`gameH` getters that read the cached logical size) |
 | `?tune` | the lil-gui palette / lighting / blast panel, incl. the **frozen test range** (`tune.js`) |
 | `?duel[=N]` | **the sparring room**: fight N ships flown by the wingman's own pilot (default 2, max 6). Forces your build to the starter kit, and Take off drops you straight into the fight. See Gameplay → "The duel room" |
 | `?ally[=phase]` | the Sentinel wingman arrives on that phase (default `clear-out`) |
@@ -4409,7 +4420,8 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   scalars `kills`/`earned`/`balance` + the backend/funnel scalars `playerId`/`banked`/`gameStartTime`/
   `gameStartSent`/`quitSent`/`pendingBriefing` + the selection scalars `activeShip`/`currentShipName`/
   `activeMission` + `SPAWN_GROW_TIME`), `engine.js` (`renderer`/`scene`/`skyScene`/
-  `camera`/lights + orientation + zoom), `engine-lights.js` (the fixed, tier-gated pool of real
+  `camera`/lights + orientation + zoom; the logical game size `gameW()`/`gameH()` is a **cache** refreshed at
+  the `applyOrientation()` choke point, never a live `window.innerWidth` read), `engine-lights.js` (the fixed, tier-gated pool of real
   `THREE.PointLight`s on engines/rockets/blast flashes — the frame itself lives in `main.js animate()`, there
   is no render-path module; it **re-exports `blast.js`**, so every existing import path keeps working),
   `blast.js` (three-free, and unit-tested for it: the `BLAST` constants + the `blastClass`/`blastPower`/
@@ -4429,7 +4441,8 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `buildPlayerFor` + enemy spawning + fire groups), `drops.js` (loot drops + the Grab tractor sim: the
   `drops[]`/`pendingLoot` arrays, `spawnDrop`/`updateDrops`/`collect` + the pooled blue pull line + the
   victory `takeLoot`/`clearDrops`), `sound-routing.js` (the `audio` engine instance + `tracksFor`/`sfxFor`),
-  `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf`), `net.js`
+  `hud.js` (the per-frame draws `updateHud`/`updateMarkers`/`updateMiniMap`/`updatePerf` — they read the
+  **cached** `gameW()`/`gameH()`, so the overlay pass no longer forces a layout flush), `net.js`
   (backend identity/banking/progression + funnel telemetry: `fetchJson`/`bankRun`/`track`/
   `currentLevelLabel`/`unlockNextLevel`/`depositLoot`), `sim.js` (the per-frame `update(dt)` — now a short TABLE
   OF CONTENTS that calls the module-local per-section steppers in execution order: `stepPlayer` (repair/
@@ -4991,6 +5004,19 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   rocket trigger for 60 s of sim** and asserts an ace really engages an incoming rocket and shoots at
   least one out of the air — the reachability check for point defence, which no fixture can give: a rule
   that is never satisfied in play passes every structural test and does nothing on screen.
+  and **the HUD's viewport cache** (`48-hud-viewport-cache.mjs` — the guard for DECISIONS §149. It shadows
+  `window.innerWidth`/`innerHeight` with counting getters that delegate to the originals (own properties on
+  `window`, so a read from ANY caller in the page counts — that is what makes a *sixth* HUD updater written
+  against the live viewport fail the suite), self-checks that the counter is really installed, then freezes
+  the fight and seeds one enemy far off-screen so an edge arrow is placed every frame. **Case 1:** **zero**
+  `innerWidth`/`innerHeight` reads across **8 real rAF frames** (chained `requestAnimationFrame`, never
+  `stepSim` — the HUD updaters live in `animate()`'s DOM block), with an **anti-vacuity** check that the
+  seeded enemy's arrow actually moved inside the counted window, because a zero-read assertion over frames
+  that ran no HUD code passes trivially. **Case 2:** `page.setViewportSize` to 900×600, then `__game.gameW/
+  gameH` must track it, the resize path must show a **positive** read count (proof the refresh came from a
+  fresh window read, not a frozen cache), and every visible `#markers .marker` must sit inside the new
+  viewport on its **0.92 edge box** — a frozen cache would place a right-edge arrow at 1228.8 px, off screen.
+  Negative-tested against the old live-read accessors: **64 reads over 8 frames**.)
   **The runner's boot gate** (`visual/run.mjs`): every scenario boots the throwaway player into level-0, so
   after the take-off click it now **steps the sim** to the state scenarios have always been handed (an arena
   with an enemy — level-0 holds its first spawn for 3 s of sim), then calls **`__game.silenceIntro()`** so

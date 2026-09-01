@@ -5,6 +5,18 @@
 
 ## 2026-09-01
 
+- **The HUD stopped forcing a synchronous layout every frame.** [2026-09-01-1848-hud-viewport-cache]
+  `gameW()`/`gameH()` read `window.innerWidth`/`innerHeight` on every call, and five per-frame HUD updaters
+  called them interleaved with their own style writes — so each read flushed style + layout mid-frame
+  (measured on a Redmi 15C: **1.82 forced recalcs and 0.99 ms per frame**, about two thirds of the `js.dom`
+  the game reports). The two values are now a **cache** refreshed in `applyOrientation()`, which was already
+  the single choke point for boot/resize/orientationchange; `toGame()` uses it too, so a pointer event no
+  longer forces layout either. **No fps change is expected** — that frame is GPU-bound and the ~1 ms goes
+  into GPU wait; what this buys is less main-thread jitter and a `js.dom` number that measures DOM work
+  instead of self-inflicted layout. Guarded by `client/visual/scenarios/48-hud-viewport-cache.mjs` (zero
+  viewport reads across 8 real frames + the markers land on the *new* edge box after a resize; negative-tested
+  against the old live-read accessors, which it catches at **64 reads over 8 frames**).
+
 - **The Sentinel pilot now shoots rockets out of the air.** [duel-room] The wingman and the duel room's
   aces both get **point defence**: the nose swings onto an incoming rocket and the gun shoots it down —
   but **only while the ship they are charging is beyond gun range, or there is nothing to charge at all**
