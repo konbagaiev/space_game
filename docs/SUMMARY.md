@@ -3,7 +3,18 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-09-01 (**The base station stops eating half the game's texture memory.** Its combat glb is
+**Updated:** 2026-09-01 (**The Sentinel pilot fires as far as its gun fires, and shoots rockets out of the air** — the wingman and the duel
+room's aces now shoot out to the WEAPON's own reach (140 u) instead of the AI band's 45 — 25 → 46 shots in
+the same minute of fighting, and the change lives in the pilot because `GUN.ai` is shared with the pirates
+(DECISIONS §148). They also swing the nose onto an **incoming rocket** and shoot it down, but only while
+the ship they are charging is outside the 45 u band; held once committed, gun only, never during a retreat
+(DECISIONS §147).) 2026-09-01 (**A duel room: spar against the wingman's own pilot.** `?duel` builds a dev-only
+arena where you fight N **aces** — the Sentinel wingman's exact hull and gear flown by **the same pilot
+code**, pointed at you — with your build forced to the starter kit (Basic kinetic + Rocket, 100 HP hull,
+Repair drone). `stepAlly` was generalised into `flySentinel(world, ship, dt, ctx)` so the two sides share
+one pilot instead of forking it, and an ace is an ordinary **enemy** carrying `e.pilot`, which buys the
+health bar, the win condition and the whole settle path for free. Found by flying it: two symmetric aces
+flew as ONE ship and volleyed a one-shot kill, so they now arrive echeloned — DECISIONS §146.) 2026-09-01 (**The base station stops eating half the game's texture memory.** Its combat glb is
 rebuilt at four **1024² WebP** maps — full resolution kept, 1.55 MB → **270 KB** of download, with no
 look change. The cause was a pipeline trap: gltf-transform resizes **inside** its `textureCompress` stage, so
 `PRESET.combat`'s `textureSize: 256` had always been a silent no-op; `checkPreset` now **throws** on that
@@ -405,6 +416,50 @@ fighting on a plane. Opens in a browser with no installation (Three.js from a CD
   standalone → `body.standalone` hides both (no chrome to hide).
 
 ## Tools
+
+### Every dev URL flag, in one place
+
+The index, because the detail for each one lives with the system it belongs to and nothing listed the set.
+**No flag turns itself on for the next load** (DECISIONS §81): the URL alone decides whether a flag is
+active, nothing about that is stored, and a plain URL is always the shipped game — so diagnostics can never
+end up stuck on the live site. (Some of the PANELS a flag opens do persist their own dialled values —
+`?dev`'s Backdrop speed-field sliders write localStorage — but that is a tuning value, not the mode.)
+Enumerated from the `URLSearchParams` reads across `client/src/`, so this is the whole set rather than a
+selection; account/replay plumbing params (`ticket`, `id`, `finish`, `seed`, `reset`, `verified`) are left
+out because they are arguments to a flow, not switches.
+
+| flag | what it does |
+|---|---|
+| `?dev` | the perf overlay + `?dev` telemetry, the Backdrop panel, the `●dev` HUD suffix (`dev.js`) |
+| `?debug` | exposes `window.__game` (the test/inspection hook the whole visual suite drives) |
+| `?tune` | the lil-gui palette / lighting / blast panel, incl. the **frozen test range** (`tune.js`) |
+| `?duel[=N]` | **the sparring room**: fight N ships flown by the wingman's own pilot (default 2, max 6). Forces your build to the starter kit, and Take off drops you straight into the fight. See Gameplay → "The duel room" |
+| `?ally[=phase]` | the Sentinel wingman arrives on that phase (default `clear-out`) |
+| `?lancer[=phase]` | that phase's spawn pool becomes 100 % pirate lancers |
+| `?beam` | mount the Charged beam in the player's gun slot |
+| `?netsim[=level]` | play the level in a **server-run room** instead of in the tab |
+| `?record=1&level=N` | record an input trace for that level |
+| `?playback[=id]` | replay a recorded trace (`&finish=1` to run it to the dock) |
+| `&level=N` | a MODIFIER, not a flag: forces the level `?record` / `?ally` / `?lancer` / `?duel` build on |
+| `?bench` | the perf benchmark harness |
+| `?roam` | drop straight into the flyable star system (roam sandbox) |
+| `?lights=N` | override the real-light pool size (measurement fork) |
+| `?res=N` | override the pixel-ratio cap, keeping AA (measurement fork) |
+| `?stationmat=<rung>` | base-station shading fork: `standard` \| `lean` \| `phong` \| `basic` |
+| `?speedfield=0` | turn the dust speed-field off (measurement fork) |
+| `?nebula` | opt-in on top of `?debug`: keep the nebula bake + parallax layer |
+| `?hitboxes` | draw the per-part OBB hitboxes |
+| `?netjerk` | diagnostic: report every break in the DRAWN motion under netsim |
+
+**They compose, with one exception that does NOT: `?duel` and `?netsim` must not be used together.** The
+duel room is a purely local tool — its descriptor transform lives in `client/src/duel-dev.js` and is never
+forwarded on the netsim handshake (`?ally`, `?lancer` and `?beam` are). Measured: `?duel&netsim=1` joins a
+room running the plain level and leaves **two fights superimposed** — 2 aces spawned by the tab's own
+runner plus the room's real pirates as ghosts, 4 ships on screen against an `enemyTotal` of 2, and a
+loadout forced only in the tab while the room flies the account's real ship. Making it work would mean
+moving the transform into `sim-core` (where `withAllyAt` and `lancer-config` live for exactly this reason)
+and adding the handshake hop; not done, because the room is not what the sparring arena is for.
+
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
   HUD. Pausing **freezes the whole fight** (the render loop skips the sim `update` — enemies, bullets,
   rockets, cooldowns, repair-drone regen and spawns all stop; the frozen frame keeps rendering) and the
@@ -1420,6 +1475,41 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     settling 60 u back. *Known:* coming at you from a standing start facing away, his 26 u turn radius puts
     him into a slow bounded orbit rather than onto the hold point; it is idle/healing behaviour and is left
     for a live judgement.
+  - **He shoots rockets out of the air** (`engageBand` + `nearestThreatRocket` in `step-ally.js`, step
+    4d; DECISIONS §147). A bullet has always destroyed an opposite-side rocket (`step-projectiles.js`:
+    within **2.4 u** it takes the bullet's damage and detonates at 0 hp) — nothing had ever AIMED at one.
+    He engages one **only while the ship he is charging is beyond his own gun range (45 u), or he has no
+    ship to charge at all** (escorting): the gun is nose-fixed, so aiming *is* manoeuvring, and giving up a
+    shot he already has to swat a rocket is a bad trade. The threshold is `engageBand` — the max `ai.range`
+    over his BALLISTIC groups — deliberately **not** the 140 u his gun now reaches (see the bullet below):
+    at 140 u a bullet spends two seconds in flight and the target has moved, and keying off the reach would
+    mean the condition is never true and no rocket is ever intercepted. Once committed the
+    intercept is **held** (`a.intercept`) until the rocket is gone or out of reach, even if the ship comes
+    back into range, so the nose cannot dither across the threshold at 148°/s. **Gun only** — a 5 s homing
+    reload spent on a target gone in a second is a waste, and it falls out of the existing per-group rule
+    rather than bending it: a ballistic group is simply asked about the ROCKET while the rest are asked
+    about the ship. He defends **himself and his friend** only (a rocket homing on a third ship is not his
+    problem; one whose target died is still live and stays in the pool), and a **retreating** pilot does
+    not intercept at all — he holds fire, full stop. **The limit is the turn rate:** at 1.16 rad/s a
+    beam-on rocket 20 u out closing at 12+ u/s arrives before the nose comes round, so this is a real
+    capability with a real miss rate. Measured in a live duel (60 s, two aces, player on the trigger):
+    13 rockets fired, **5 shot out of the air**, 1 reaching a hull, 6 expiring at max range; an ace engaged
+    on **18.6 %** of ticks.
+  - **His gun fires as far as the GUN fires — not as far as the AI band says** (`groupReach` in
+    `step-ally.js`; DECISIONS §148). `GUN.ai` (`catalog_seed.js`) is `{ range: 45, aimTol: 0.25 }` while the
+    Heavy cannon's own `maxRange` is **140**, and `ROCKET.ai` is `{ range: 80, aimTol: 0.40 }` — so he used
+    to fight with rockets and the gun read as dead. He now shoots out to **`groupReach(g)`, the MINIMUM
+    `maxRange` over the group's ballistic mounts** (minimum because one trigger fires the whole volley).
+    **Ballistic groups only:** the rocket group keeps its 80 u band, since how far to launch a homing weapon
+    is a separate balance question. It lives in the PILOT, not in the catalog, because `GUN.ai` is **shared
+    with the pirate ships** — raising it there would rebalance every enemy in the game; `stepEnemyAI` is
+    untouched. Measured over 60 s of a real duel: **25 → 46 shots**. (The predicate was never broken —
+    before the change he had a target every tick, was aimed on 66 % of them, inside 45 u on 63 %, both at
+    once on **31 %**, and fired on essentially all of those. A number was too small, not a rule.)
+    **This split one number in two**, and the pair must stay apart: `groupReach` answers "can my shot get
+    there?" (140) and **`engageBand`** answers "is that ship close enough to be my priority?" (the 45 u
+    `ai.range`). Point defence keys off the BAND — left as one number it could never acquire a rocket
+    again, because a ship is essentially always inside 140 u.
   - **He breaks off at ≤25 % hull with the shield down, the instant the damage lands** — mid-charge or not —
     and flies **directly away from the nearest ENEMY** until that gap reaches `ALLY_BREAK_OFF_DIST` **120 u**,
     holds there while the drone works, and **rejoins at ≥40 % hull with the shield full**.
@@ -1462,6 +1552,57 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **On screen (A4):** hull + shield bars from the same pool the enemies use, and a green minimap dot.
     Deliberately **no** off-screen edge arrow (it would read as "threat over there"), no name label, no HUD
     panel and no player-facing copy at all.
+- **The duel room (`?duel`) — sparring against the wingman's own pilot.** A dev-only arena
+  (`client/src/duel-dev.js` + `sim-core/ace.js`; brief `docs/plans/duel-room.md`) where the player fights N
+  **aces**: ships built from the wingman's exact hull and gear and flown by **the same pilot code**
+  (`step-ally.js flySentinel`), pointed at the player. `?duel` = **2** aces, `?duel=N` = N (clamped to 6),
+  `?duel=0|false|off` (or absent) = off; `&level=N` builds the room over that level instead of the default
+  **`level-1`** (Level 0 is the playable intro, whose director is timed against a phase script the flag
+  deletes). Not sticky, URL only.
+  - **An ace is an ENEMY.** It lives in `world.enemies`, so it inherits the player's fire hitting it, its
+    health bar and shield bubble, the minimap marker, the death explosion, `world.kills`, the
+    `allEnemiesDead` win condition and the HUD's killed/total **with no special case anywhere**. The only
+    two places that know about it are `stepEnemyAI`, which **skips any enemy carrying `e.pilot`** ("this
+    ship has a pilot step of its own"), and `stepAces` (`sim-core/ace.js`), which flies it in `tick.js`
+    immediately after `stepAlly`. It is worth **`reward: 0, xp: 0`** — a sparring room must not pay a real
+    account — though its death still rolls the ordinary 20 % loot drop, so fly the room on a throwaway
+    local player (the same caveat `?ally` carries about recorded sessions re-simulating into a divergence).
+  - **One pilot, two sides.** `stepAlly` was generalised into **`flySentinel(world, ship, dt, ctx)`**, where
+    `ctx` is `{ foes, friend, side, leash, canFire }`. The wingman is
+    `{ foes: world.enemies, friend: world.player, side: 'ally' }` — byte-for-byte the behaviour he had — and
+    an ace is `{ foes: [the player, + any wingman], friend: null, side: 'enemy' }`. `friend: null` skips the
+    §2.6 "never a tracer through your hull" gate (hostile ships already shoot past each other), `side:
+    'enemy'` makes its shots damage the player and hands its rockets the ship it is flying at, and `canFire`
+    holds it silent through the shared **5 s `ENEMY_FIRE_GRACE`** every hostile ship obeys. Sharing the code
+    rather than copying it is the whole point: the room tests the wingman, not a fork of him.
+  - **Arrival is deterministic and RNG-free** (like `spawnAlly`): a phase carrying **`aces: N`** warps them
+    in ahead of the player's nose, facing him, `ACE_SPAWN_DIST` **90 u** out and `ACE_SPAWN_SPREAD` **40 u**
+    apart — and **echeloned**: each is `ACE_SPAWN_STAGGER` **14 u** further out and `ACE_WARP_STAGGER`
+    **0.35 s** slower to form than the last. *That stagger is not decoration.* Measured in the browser
+    without it, two identical ships flown by identical deterministic code held the **same distance to the
+    player tick for tick** for the whole fight and volleyed their rockets in the same frame — 2 × 60 power
+    landing at once, which one-shot the 100 HP starter hull.
+  - **What you fly against it:** the flag also forces the player's build (`duelBuild` in `buildPlayerFor`)
+    to the starter kit — **Basic kinetic id 1 + Rocket id 3, Basic hull id 1 (100 HP), Repair drone id 12**,
+    base shield/grab, **no skills** — so the duel is the same fight on any account. The ace is the wingman:
+    **200 HP, Heavy cannon id 6 + Rocket id 3, repair drone, shield**, and it **retreats at ≤25 % hull to
+    heal** exactly as he does. Two of them against the starter hull is a hard fight by construction.
+  - **Take off goes straight into it.** `mainwindow.js takeOff` calls `launchCampaign({ direct: true })`
+    under the flag instead of `enterRoam(null)` — a test room you have to fly across the system to reach is
+    a test room that stops being used. The ace's **wings are repainted red** (`ACE_ACCENT_COLOR 0xd93025`
+    over the same `Wings_` materials the wingman's blue uses; the per-entity `e.accent` field is read by
+    `attachEnemyBody`, `null` for every catalog enemy) and its minimap dot is `ACE_COLOR 0xff5a4a` — without
+    a repaint it would be pixel-identical to your own ship.
+  - **The aces shoot your rockets down** — point defence is part of the shared pilot (see the wingman
+    above, DECISIONS §147), so an ace swats an incoming rocket whenever you are outside its 45 u gun range.
+    Measured live: well over a third of the player's rockets never arrive.
+  - **NOT usable with `?netsim=1`.** The transform is client-side (`duel-dev.js`) and is not forwarded on
+    the handshake, so the room runs the plain level while the tab runs the duel: measured, that is 4 ships
+    on screen (2 aces from the tab's own runner + 2 pirate ghosts from the room) against an `enemyTotal`
+    of 2, with the forced loadout applied only in the tab. See the dev-flag table in Tools.
+  - **With the flag off nothing changes:** no ace, no ace step (`stepAces` returns on the first scan), no
+    phase carries `aces`, `applyDuelDev`/`duelBuild` hand the very same objects back, and not one extra
+    seeded RNG draw — the Level-0 intro trace still replays bit-identically.
 - **Grab & loot drops** (`client/src/drops.js` + `drops-config.js`; docs/plans/2026-07-03-1412-grab-tractor-drops.md).
   On each enemy kill there's a **20 %** chance (`DROP_CHANCE`) to drop **one** item — chosen uniformly from
   the enemy's **non-hull** components (engine, thruster) **+** its mounted weapons (the real catalog id +
@@ -4470,7 +4611,24 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   nose still on the player, flaw and all), and that he **dies** cleanly: out of
   `world.allies`, `alive` false, one `allyDown` event carrying no reward, and `kills`/`earned`/`earnedXp`/
   `drops` all untouched; `ally-dev.test.js`: the `?ally` flag's URL-only parsing, the `level` param, the two
-  composing, and that `withAllyAt` never mutates the level it is given), and
+  composing, and that `withAllyAt` never mutates the level it is given), **the duel room's ace**
+  (`sim-core/ace.test.js`, 10, driven against the REAL catalog via `server/src/sim-host.js buildCatalog`:
+  it carries the wingman's 200 HP hull, drone and shield but `reward`/`xp` **0**; the arrival draws **not
+  one** value from the seeded stream and leaves the two staggered in range and in warp time; `stepEnemyAI`
+  **does not move it** while it still flies an ordinary pirate in the same tick; `stepAces` closes on the
+  player and picks him as its target; it is **inert** with no ace in the world; the wingman still charges
+  it; it holds fire through `ENEMY_FIRE_GRACE` and its bullets are hostile; and its death settles through
+  `stepEnemyDeaths` — counted in `kills`, paying 0 credits and 0 XP; plus **7 on point
+  defence**: it turns onto an incoming rocket and actually **destroys** it — driven through `stepBullets`
+  so the interception is proven, not just the aim — it does **not** break a shot it already has, it
+  **holds** the intercept once committed, it ignores a rocket chasing a third ship and one of its own
+  side, a **retreating** pilot never intercepts, and **the wingman does it while ESCORTING**, which is the
+  "no enemy in reach but a rocket is" case; and **4 on the firing range** — the two
+  numbers staying apart (`groupReach` 140 vs `engageBand` 45), a shot taken at **100 u** where the old band
+  held fire, none at 200 u, and the rocket group keeping its own band) and `duel-dev.test.js` (the `?duel`
+  flag's URL-only parsing and clamp, and that `withDuelRoom` produces a level the runner can actually
+  finish — an `aces: N` phase that only advances on an empty arena, then the win phase — without mutating
+  the seed descriptor), and
   **the Charged beam** (`sim-core/beam.test.js`, 28: the **hull-aware corridor in both directions** — a
   target 4° off the nose at 45 u is hittable because an EDGE line crosses its hull even though its centre
   bearing is outside ±2° (the same test asserts that bearing, so it states the difference from a
@@ -4821,6 +4979,18 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   plus lossy WebP produces and an existence check is blind to it; and one boot per rung for `lean` /
   `phong` / `basic` plus a `nonsense` value that must fall **all the way** back (no half-applied
   `FrontSide`). Four screenshots, one per rung.
+  and **the duel room** (`47-duel-room.mjs` — the `?duel` sparring arena end to end, because no unit test
+  can see a level assemble itself. Flag OFF: no enemy carries a pilot and the account still flies its own
+  level with its own phase script. Flag ON: the descriptor is `duel:2` + the win phase, Take off lands in
+  combat rather than roam (`roam === false`), both aces are in the world at tick 0 with **200 HP**, the red
+  livery, a body parented in the scene and 40+ u of separation, and the player is holding the forced
+  **Basic kinetic + Repair drone** on a 100 HP hull. Then 30 samples of the fight: they fly (never above the
+  player's 30 u/s cap), they charge the PLAYER, each mesh sits on its sim position, **their two ranges
+  diverge** (the guard on the echelon — without it they flew as one ship), hostile fire exists once the
+  grace is over, the hits land, and `earned` is 0 in every sample. Finally, on a fresh boot, it **holds the
+  rocket trigger for 60 s of sim** and asserts an ace really engages an incoming rocket and shoots at
+  least one out of the air — the reachability check for point defence, which no fixture can give: a rule
+  that is never satisfied in play passes every structural test and does nothing on screen.
   **The runner's boot gate** (`visual/run.mjs`): every scenario boots the throwaway player into level-0, so
   after the take-off click it now **steps the sim** to the state scenarios have always been handed (an arena
   with an enemy — level-0 holds its first spawn for 3 s of sim), then calls **`__game.silenceIntro()`** so

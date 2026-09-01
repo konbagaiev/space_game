@@ -30,7 +30,10 @@ function warnMissingWeight() {
 }
 
 const DRAG = 1.8;           // friction (enemies)
-const ENEMY_FIRE_GRACE = 5; // seconds at run start during which enemies move/aim but hold fire
+// Seconds at run start during which enemies move/aim but hold fire. Exported because the duel room's
+// aces obey it too (`sim-core/ace.js`) — they are hostile ships, and a fight that opens under fire
+// before the player has moved is a different fight.
+export const ENEMY_FIRE_GRACE = 5;
 
 function forwardVec(heading) {
   // nose points in +Z when heading=0 (math lives in steering.js)
@@ -41,6 +44,14 @@ function forwardVec(heading) {
 export function stepEnemyAI(world, dt) {
   const player = world.player;
   for (const e of world.enemies) {
+    // NOT EVERY HOSTILE SHIP IS FLOWN FROM HERE. `e.pilot` means "this ship has a pilot step of its own"
+    // — today only the duel room's ace (`sim-core/ace.js`), which is an enemy in every other respect (it is
+    // shot, it dies, it counts, it pays out through `stepEnemyDeaths` below) but is flown by the WINGMAN's
+    // pilot in the step immediately before this one. Letting the stand-off AI touch it too would give it
+    // two conflicting sets of controls in one tick. The field is deliberately read as a plain truthiness
+    // test rather than compared to a name, so this module needs to know nothing about who those pilots are.
+    // No shipped level spawns one, so it is false for every enemy in the game today.
+    if (e.pilot) continue;
     // spawn animation: grow from a dot to full size over the enemy's warp duration (ease-out). While
     // warping the enemy is invulnerable + can't fire + isn't homing-targetable (guards below); the
     // duration is its stagger interval so "the delay IS the arrival animation" (DECISIONS §54).

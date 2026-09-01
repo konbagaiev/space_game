@@ -5,6 +5,77 @@
 
 ## 2026-09-01
 
+- **The Sentinel pilot now shoots rockets out of the air.** [duel-room] The wingman and the duel room's
+  aces both get **point defence**: the nose swings onto an incoming rocket and the gun shoots it down —
+  but **only while the ship they are charging is beyond gun range, or there is nothing to charge at all**
+  (a rocket is never worth turning away from a shot you already have). Once committed the intercept is
+  **held** until the rocket is gone, so the nose cannot dither across the range threshold; it is **gun
+  only** (a 5 s homing reload spent on a target gone in a second is a waste); it defends **itself and its
+  friend** only; and a **retreating** pilot still holds fire completely. The threshold is not a new
+  constant — it is the max `ai.range` over the ship's ballistic groups, the same number the fire gate
+  already uses. Bullets have always destroyed opposite-side rockets (`step-projectiles.js`); nothing had
+  ever aimed at one.
+  Measured in a live duel (60 s, both aces, player holding the trigger): **13 rockets fired, 4 shot out of
+  the air**, 3 reaching a hull, 6 expiring — an ace engaged on 13 % of ticks. The binding limit is the
+  **turn rate**: at 1.16 rad/s a beam-on rocket 20 u out arrives before the nose comes round, so this is a
+  real capability with a real miss rate, not a shield. DECISIONS **§147**; 7 new tests in
+  `sim-core/ace.test.js` plus a live-fire section in the `47-duel-room` visual scenario.
+
+- **Every dev URL flag is listed in one place at last.** [duel-room] The detail for each flag lived with the
+  system it belongs to and **nothing listed the set**, so a mode could ship fully documented and still be
+  undiscoverable. `docs/SUMMARY.md` → Tools now opens with a table of all 20 (`?dev`, `?debug`, `?tune`,
+  `?duel`, `?ally`, `?lancer`, `?beam`, `?netsim`, `?record`/`?playback`, `&level=`, `?bench`, `?roam`,
+  `?lights`, `?res`, `?stationmat`, `?speedfield`, `?nebula`, `?hitboxes`, `?netjerk`), enumerated from the
+  `URLSearchParams` reads in `client/src/` rather than from memory, and README points at it.
+  Recorded there too: **`?duel` and `?netsim=1` must not be combined**, and — measured, not assumed — the
+  combination fails messily. The tab joins a room running the plain level while applying the duel
+  descriptor locally, so **two fights run superimposed**: 4 ships on screen (2 aces from the tab's own
+  runner + 2 pirate ghosts from the room) against an `enemyTotal` of 2, with the forced loadout applied
+  only in the tab. `?ally`/`?lancer`/`?beam` are forwarded on the handshake because their transforms live
+  in `sim-core`; `?duel`'s is client-side. Left as a documented limit — the sparring room is a local tool.
+
+- **The Sentinel pilot now fires from the WEAPON's range, not the AI's band — the gun stops looking
+  broken.** [duel-room] Reported as "he doesn't fire the gun when the target is in reach". Measured first,
+  over 60 s of a real duel (one ace, 3600 ticks): it had a target every tick, was aimed on 66 % of them,
+  inside the gun group's `ai.range` on 63 %, both at once on **31 %** — and fired on essentially all of
+  those. **The predicate was correct; the number was too small.** `GUN.ai.range` is **45** while the Heavy
+  cannon's own `maxRange` is **140**, and the ROCKET group engages at **80 u with a 0.40 rad tolerance**
+  against the gun's 0.25 — so the pilot fought with rockets and the gun read as dead.
+  The pilot now shoots out to `groupReach(g)`, the **minimum `maxRange` over the group's ballistic mounts**
+  (minimum, because one trigger fires the whole volley). **Ballistic groups only** — the rocket group keeps
+  its 80 u band, since how far to launch a homing weapon is a separate balance question. It lives in the
+  pilot, not the catalog, because `GUN.ai` is **shared with the pirate ships**: raising it there would have
+  rebalanced every enemy in the game. `stepEnemyAI` is untouched.
+  Measured effect: **25 → 46 shots** in the same 60 s. And the change forced one number to become two —
+  point defence's "is that ship too far to be worth shooting at?" still reads the 45 u **band**
+  (`engageBand`), or it would never acquire a rocket again; interception in fact went **up**, 5 of 13
+  player rockets shot out of the air against 4, engaged on 18.6 % of ticks against 13 %. DECISIONS
+  **§148** (and an amendment to §147). 4 new tests.
+
+- **A duel room: spar against the wingman's own pilot (`?duel`).** [duel-room] A dev-only arena where the
+  player fights **N aces** — ships built from the Sentinel wingman's exact hull and gear (200 HP, Heavy
+  cannon + homing rocket, repair drone, shield) and flown by **the same pilot code**, pointed at you.
+  `?duel` = two of them, `?duel=N` = N (max 6), `&level=N` builds the room over another level (default
+  `level-1`). Take off drops you straight into the fight instead of into roam, and the flag forces the
+  player's build to the starter kit — **Basic kinetic + Rocket, 100 HP Basic hull, Repair drone**, no
+  skills — so the duel is the same fight on any account.
+  To share the pilot rather than fork it, `stepAlly` was generalised into **`flySentinel(world, ship, dt,
+  ctx)`** with `ctx = { foes, friend, side, leash, canFire }`; the wingman is the same call it always made,
+  and an ace is that call with the player as its foe, no friend to hold fire for, and `side: 'enemy'`.
+  An **ace is an ordinary enemy** in `world.enemies` — shot, killed, counted, ended by `allEnemiesDead`,
+  drawn with a health bar and a minimap dot with no special case anywhere. Two places learned about it:
+  `stepEnemyAI` skips any enemy carrying `e.pilot` ("it has a pilot step of its own"), and the new
+  `sim-core/ace.js stepAces` flies it. It pays **0 credits and 0 XP** (a dev room must not pay a real
+  account) and its wings are repainted red over the same materials the wingman's blue uses.
+  Found by flying it, not by reading it: two aces arriving symmetrically **flew as one ship** — identical
+  range to the player tick for tick, rockets volleyed in the same frame, 2 × 60 power one-shotting the
+  100 HP hull. They now arrive **echeloned** (14 u further out and 0.35 s slower to form, each) which breaks
+  the lockstep for good, still with no RNG.
+  With the flag off nothing moves: no ace, no ace step, no extra seeded draw, and the Level-0 intro trace
+  still replays bit-identically. Docs: SUMMARY (Gameplay + Tests + visual scenarios), DECISIONS **§146**,
+  brief `docs/plans/duel-room.md`. Tests: `sim-core/ace.test.js` (10), `duel-dev.test.js` (9), visual
+  `47-duel-room.mjs`.
+
 - **The frame's GPU budget, measured for the first time — and three of our own conclusions overturned.**
   [2026-08-31-1533-station-gpu-cost] Built a fixed-pose harness reading the driver's own GPU clock
   (`EXT_disjoint_timer_query_webgl2`, one query per render call, so the sky and combat passes are timed

@@ -35,6 +35,15 @@ to run the client alone (without the API), use any static server, e.g.
 `npx serve client` or `python3 -m http.server -d client`. Backend calls then fail silently
 (no registration/history).
 
+## Dev URL flags
+
+The game takes a number of development-only URL flags — `?dev` (perf overlay), `?debug` (the
+`window.__game` hook), `?tune` (the palette panel), `?duel` (the sparring room, fight the wingman's own
+pilot), `?ally`, `?lancer`, `?beam`, `?netsim`, `?record` / `?playback`, and a handful of measurement
+forks. **None of them is sticky** — the URL alone decides, so a plain http://localhost:4000 is always the
+shipped game. The full table is in [`docs/SUMMARY.md`](docs/SUMMARY.md) → **Tools → "Every dev URL flag,
+in one place"**.
+
 ## Documentation
 
 Key decisions, reasons, and parameters to tweak are in [`docs/DECISIONS.md`](docs/DECISIONS.md).
