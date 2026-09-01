@@ -20,6 +20,15 @@ const impactStart = new Array(MAX_IMPACTS).fill(-999); // far in the past → fi
 const impactBroke = new Array(MAX_IMPACTS).fill(0);
 
 let bubble = null, mat = null, time = 0, writeIdx = 0, readyStart = -999;
+// The bubble MESH now exists from the level-start warm on (warmShieldBubbles, below) — its ShaderMaterial
+// used to compile mid-fight, on the first absorbed hit. But EXISTING and being SHOWN are different things:
+// the idle Fresnel rim is a gameplay cue that appears when the player's shield first absorbs something, and
+// before the warm it was implicit in "the mesh has not been built yet". Making the mesh early without this
+// flag put a permanent faint rim on the ship from level start — and, because the bootstrap prewarm runs
+// while the MENU is up, around the idle ship on the welcome screen too. `armed` restores the old behaviour
+// exactly: it is set by the two functions that used to CREATE the bubble (registerShieldImpact,
+// spawnShieldReady) and never cleared, so the rim shows from the first absorbed hit of the session onward.
+let armed = false;
 
 const vert = /* glsl */`
   varying vec3 vN;   // world-space normal
@@ -94,6 +103,7 @@ function ensureBubble() {
 // the ripple center is the direction from the ship center to that point. No RNG → replay-safe.
 export function registerShieldImpact(worldPos, broke = false) {
   ensureBubble();
+  armed = true;         // first absorbed hit of the session: the bubble may show from here on (see `armed`)
   const p = G.player && G.player.pos;
   if (!p) return;
   const dir = impactDir[writeIdx];
@@ -109,6 +119,7 @@ export function registerShieldImpact(worldPos, broke = false) {
 // replay-safe.
 export function spawnShieldReady() {
   ensureBubble();
+  armed = true;      // the other function that used to CREATE the bubble — see `armed`
   readyStart = time; // kick the whole-sphere flash (decays in updateShieldBubble)
 }
 
@@ -116,9 +127,11 @@ export function spawnShieldReady() {
 // (faint while the shield is up, off while broken). dtSec is the real frame delta (0 while paused).
 export function updateShieldBubble(dtSec) {
   time += dtSec;         // module clock: ALWAYS advances (the enemy bubbles share it; see updateEnemyShieldBubbles)
-  if (!bubble) return;   // no player bubble built yet (player never hit) — nothing else to do
+  if (!bubble) return;   // no player bubble built yet (no warm has run) — nothing else to do
   const pl = G.player;
-  const show = !!(pl && pl.alive && pl.shield);
+  // `armed`: the mesh exists from the warm, but the rim only ever appears once the shield has actually
+  // absorbed something — the pre-warm behaviour, when "no bubble yet" carried this meaning implicitly.
+  const show = armed && !!(pl && pl.alive && pl.shield);
   bubble.visible = show;
   if (!show) return;
   bubble.position.copy(pl.pos);
@@ -217,3 +230,16 @@ export function clearEnemyShieldBubbles() {
 
 // Diagnostic accessor for the headless tests (exposed on window.__game under ?debug) — the live slot array.
 export function enemyShieldSlots() { return enemySlots; }
+
+// Build the bubble meshes BEFORE the fight so prewarmShaders' renderer.compile(scene) reaches them:
+// measured 2026-09-01 as one ShaderMaterial program compiling mid-fight, on the first absorbed hit. The
+// player and enemy bubbles share ONE program (identical shader source, see makeBubbleMaterial), so warming
+// either would cover the compile; both are built because each mesh also carries its own one-shot geometry
+// upload. Both are permanent and never disposed, so the program can never be freed again (DECISIONS §83).
+// `visible === false` is fine: renderer.compile() walks the scene with traverse(), not traverseVisible().
+export function warmShieldBubbles() {
+  ensureBubble();
+  const cap = (G.gfx && G.gfx.enemyShieldBubbles) || 0;   // Performance tier: 0 -> allocate nothing, as today
+  if (cap > 0 && enemySlots.length === 0) makeEnemySlot();
+  return cap > 0 ? [bubble, enemySlots[0].mesh] : [bubble];
+}

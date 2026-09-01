@@ -7,9 +7,9 @@
 //
 // Pure math (pullSpeed, pickLoot) lives here / in drops-config.js so it's node-testable without THREE.
 import * as THREE from 'three';
-import { scene } from './engine.js';
+import { scene, renderer } from './engine.js';           // renderer: initTexture for the halo's CanvasTexture
 import { G, CATALOG, drops, world } from './state.js';
-import { gltfLoader } from './ship-factory.js';          // meshopt-wired GLTFLoader
+import { gltfLoader, warmModel } from './ship-factory.js'; // meshopt-wired GLTFLoader + the shared GPU warm
 import { DROP_MODEL_URL, DROP_CHANCE, ROTATE_PERIOD, WEIGHT_FALLBACK,
          REWARD_TINT, REWARD_HALO_SIZE, DROP_HALO_SIZE, pickLoot, rewardOwned } from './sim-core/drops-config.js';
 import { t } from './i18n.js';
@@ -30,8 +30,30 @@ let line = null;                    // single shared blue pull line (pooled)
 const tmp = new THREE.Vector3();    // scratch — no per-frame allocation
 let warned = false;
 
+// A permanent group parked off-camera holding the surfaces the loot system compiles from: one halo sprite
+// plus the crate / reward TEMPLATES. It is never removed and nothing in it is ever disposed — THREE frees a
+// compiled program when its last material is disposed (DECISIONS §83), so this is the keep-alive holder.
+// The templates live here too: `warmModel` unparents what it compiles (ship-factory.js), and an unparented
+// template can never be DRAWN, which is what the buffer-upload pass in prewarmShaders() needs.
+let dropWarmRig = null;
+function ensureDropWarmRig() {
+  if (dropWarmRig) return dropWarmRig;
+  dropWarmRig = new THREE.Group();
+  dropWarmRig.name = 'dropWarmRig'; // named so a test can find it without guessing at coordinates
+  dropWarmRig.position.y = -100000; // off-camera and frustum-culled; costs nothing per frame
+  scene.add(dropWarmRig);           // never removed: a disposed last material frees the program (§83)
+  addHalo(dropWarmRig, 0xffffff, DROP_HALO_SIZE); // the SAME constructor a live drop uses -> the same program key
+  return dropWarmRig;
+}
+
 // load the shared model once (fallback: a small metallic box until it arrives / if it fails)
-gltfLoader.load(DROP_MODEL_URL, (g) => { template = normalize(g.scene); }, undefined, () => {});
+gltfLoader.load(DROP_MODEL_URL, (g) => {
+  template = normalize(g.scene);
+  // If a fight is already running, the level warm has been and gone — ask for another one so the crate is
+  // compiled behind a veil rather than on the first drop. Gated on gameStarted on purpose: warming against
+  // the menu scene would compile a DIFFERENT program key (different lights) and buy us nothing.
+  if (G.gameStarted) G.needsSceneWarm = true;
+}, undefined, () => {});
 
 // Center a model on its bounding-box center and scale its longest axis to ~2.5 world units (a drop reads
 // as a small crate on the top-down screen). Returns the object ready to clone per drop.
@@ -78,11 +100,13 @@ function warnMissing() {
 
 // item = { kind:'component'|'weapon', refId }. The weight is looked up HERE — reading the catalog is the
 // client's job — and carried on the entity, so the pull never needs a lookup again.
-export function spawnDrop(pos, item) {
+// `special` (the green haloed reward body) defaults to false — today's behaviour for every caller. It is
+// exposed so the by-hand reward-warm check can spawn a reward crate without playing a level to its last kill.
+export function spawnDrop(pos, item, special = false) {
   if (!item) return;
   const cat = item.kind === 'component' ? CATALOG.components.get(item.refId) : CATALOG.weapons.get(item.refId);
   const weight = (cat && cat.weight) || (warnMissing(), WEIGHT_FALLBACK);
-  if (!spawnDropIn(world, pos, item, weight)) console.warn('drops: cap reached, skipping');
+  if (!spawnDropIn(world, pos, item, weight, special)) console.warn('drops: cap reached, skipping');
 }
 
 // ---------- Special (L1/L2 reward) drops: green model + halo, cosmetic (no stash deposit) ----------
@@ -165,11 +189,23 @@ function requestRewardModel(url, targetLen, cb) {
   }
   entry = { model: null, waiters: cb ? [cb] : [] };
   rewardModelCache.set(url, entry);
+  // Hold the level-load veil until the reward model is here (DECISIONS §84). NOTE the counter is also
+  // raised OUTSIDE the level warm: `buildRewardObj` calls this mid-fight when the last-kill reward spawns
+  // and the model was never cached (a failed/skipped preload). Both callbacks decrement, so it is bounded —
+  // but a fetch that never settles would then hold every SUBSEQUENT level's veil up to the 9 s cap
+  // (WARM_MAX_WAIT_MS), never longer. Same shape as requestShipModel.
+  G.pendingAssets++;
   gltfLoader.load(url, (g) => {
-    entry.model = normalizeGreen(g.scene, targetLen);   // GREEN emissive + scaled, kept as a template (never in-scene)
+    entry.model = normalizeGreen(g.scene, targetLen);   // GREEN emissive + scaled, kept as a template
+    warmModel(entry.model);        // compile + upload NOW, not on the last kill of the level
     for (const w of entry.waiters) w(entry.model.clone(true));
     entry.waiters.length = 0;
-  }, undefined, () => { rewardModelCache.delete(url); entry.waiters.length = 0; }); // let a later attempt retry
+    G.pendingAssets--;
+  }, undefined, () => {
+    rewardModelCache.delete(url);  // let a later attempt retry
+    entry.waiters.length = 0;
+    G.pendingAssets--;             // a failure must not wedge the veil
+  });
 }
 
 // Warm the reward model at level start so the last-kill spawn is hitch-free (no CloudFront fetch/parse mid-frame).
@@ -177,6 +213,21 @@ export function preloadRewardModel(reward) {
   if (!reward) return;
   const spec = rewardModelSpec(reward);
   if (spec && spec.url) requestRewardModel(spec.url, spec.targetLen, null);
+}
+
+// Compile + upload everything the loot system can put on screen BEFORE the fight, not on the first drop.
+// Measured 2026-09-01 (headless program-key diff, docs/plans/2026-09-01-1911-warm-late-shader-programs.md):
+// the first crate compiled THREE programs during live play — the crate's MeshStandardMaterial, the halo
+// SpriteMaterial and the pull line's LineBasicMaterial. Called from prewarmShaders(), i.e. with the level's
+// lights and fog already in `scene`, which is what makes the compiled key the one the live draw will use.
+export function warmDropAssets() {
+  const rig = ensureDropWarmRig();
+  renderer.initTexture(ensureHaloTexture());   // compile() covers shaders only; the halo's CanvasTexture needs this
+  if (template && template.parent !== rig) { warmModel(template); rig.add(template); }   // the crate .glb
+  for (const e of rewardModelCache.values()) {                                           // this level's reward .glb
+    if (e.model && e.model.parent !== rig) { warmModel(e.model); rig.add(e.model); }
+  }
+  return [ensureLine(), rig];   // roots for the buffer-upload pass in prewarmShaders()
 }
 
 // The cosmetic reward drop (the level's `lastKillDrop`) is spawned by the simulation now
@@ -257,6 +308,7 @@ function ensureLine() {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
   line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x4db6ff }));
+  line.name = 'grabPullLine';   // named so a test can tell it from the arena border (also a THREE.Line)
   line.frustumCulled = false;
   line.visible = false;
   scene.add(line);
