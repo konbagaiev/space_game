@@ -75,6 +75,34 @@ export default async function ({ page, assert, shot }) {
     + `rig=${warmFail.rig} roots=${warmFail.roots} compile=${warmFail.compile} upload=${warmFail.upload}; `
     + `last=${warmFail.last}`);
 
+  // The engine exhaust: both plume modes must be COMPILED by the warm and neither may be drawn. Field
+  // telemetry (Redmi 15C, 2026-09-02, every tier) named these two as the last programs still compiling
+  // during play — on first THRUST, i.e. on an event rather than a level boundary. `makePlume` sets
+  // `frustumCulled = false` on both meshes, so a warm plume left visible would cost two draw calls every
+  // frame for the whole session; that is the shield-rim mistake in a more expensive form, hence both halves.
+  const exhaust = await page.evaluate(() => {
+    const g = window.__game;
+    const m = g.warmExhaustMeshes && g.warmExhaustMeshes();
+    if (!m) return { built: false };
+    const key = (o) => {
+      const cp = g.renderer.properties.get(o.material).currentProgram;
+      return cp ? cp.cacheKey : null;
+    };
+    return {
+      built: true,
+      pointsKey: key(m.points), flameKey: key(m.flame),
+      pointsVisible: m.points.visible, flameVisible: m.flame.visible,
+      type: `${m.points.type}/${m.flame.type}`,
+    };
+  });
+  assert.equal(exhaust.built, true, 'the level warm must build the parked exhaust plume (warmExhaust)');
+  assert.ok(exhaust.pointsKey, `the exhaust POINTS plume must be compiled by the warm, not on first thrust (type=${exhaust.type})`);
+  assert.ok(exhaust.flameKey, 'the exhaust FLAME plume must be compiled by the warm — setGlobalExhaustMode can switch to it at any time');
+  assert.equal(exhaust.pointsVisible || exhaust.flameVisible, false,
+    'the parked warm plume must stay invisible: makePlume sets frustumCulled=false, so a visible one is two '
+    + 'draw calls EVERY frame for the whole session. Warming a surface must never make it appear or cost a draw.');
+  console.log(`      exhaust warm: both plume programs compiled, both meshes hidden (${exhaust.type})`);
+
   // --- the warm must not CHANGE anything, only pre-pay for it. The player's shield bubble is the trap:
   // before this warm existed the mesh was built by the first absorbed hit, so "no bubble yet" implicitly
   // meant "no idle rim yet". Creating it at warm time put a permanent faint rim on the ship from level

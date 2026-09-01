@@ -426,3 +426,38 @@ export function buildExhaustPanel(GUI) {
     hint.note = activeFreighterPlume ? 'freighter plume live' : 'no freighter (play the freighter mission)';
   }, 250);
 }
+
+// ---- Level-start warm ---------------------------------------------------------------------------------
+// The two plume programs (points mode + flame mode) used to compile the first time a ship applied THRUST —
+// an event mid-play, not a level boundary. Field telemetry from a Redmi 15C on 2026-09-02 named them
+// exactly, on every graphics tier, via `gpu.late`: `Points/ShaderMaterial/transparent` (pointsMat) and
+// `Mesh/ShaderMaterial/transparent` (flameMat). See docs/plans/warm-geometry-buffer-uploads.md (addendum).
+//
+// Both modes are built because `setGlobalExhaustMode` can switch between them at any time, and each mode is
+// its own program (different shader source). The plume is a REAL one from `makePlume` — the same
+// constructor every ship uses — so the compiled program is the one the live draw asks for; a look-alike
+// would compile a different key. The palette and count are uniforms/geometry size, neither of which enters
+// a program cache key, so any ship-shaped cfg warms the right programs.
+//
+// It is never removed and never disposed: THREE frees a program when its last material is disposed
+// (DECISIONS §83), and every real plume disposes its materials when its ship dies.
+//
+// BOTH MESHES STAY `visible = false` FOREVER. `makePlume` sets `frustumCulled = false` on them (a real
+// plume's origin can sit far from its body), so a visible warm plume would be submitted as two draw calls
+// every frame for the whole session even parked off-camera. Warming a surface must never make it appear,
+// and must never cost a draw — check `load.draws` in the ?dev perf sample if you change this.
+let warmPlume = null;
+export function warmExhaust() {
+  if (!warmPlume) {
+    warmPlume = makePlume({ ...SHIP_DEFAULTS, palette: derivePalette(0xffffff) });
+    warmPlume.obj.name = 'exhaustWarmRig';   // named so a test can find it without guessing at coordinates
+    warmPlume.obj.position.y = -100000;      // off-camera as well, belt and braces
+    warmPlume.meshes.points.visible = false;
+    warmPlume.meshes.flame.visible = false;
+    scene.add(warmPlume.obj);
+  }
+  return [warmPlume.obj];
+}
+
+// Diagnostic for the headless guard: the parked warm plume's two meshes (or null before the first warm).
+export function warmExhaustMeshes() { return warmPlume ? warmPlume.meshes : null; }

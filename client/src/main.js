@@ -22,7 +22,7 @@ import { spawnShipExplosion, emitExhaust, liveParticles, bulletGeo, explosionGeo
 import { spawnRocket as spawnRocketInto, spawnBullet as spawnBulletInto } from './sim-core/spawn.js'; // take the World explicitly — __game wraps them below
 import { HIT_FX } from './hit-fx-config.js'; // ?debug hook: the live hit-feel tunables a scenario drives
 import { updateShieldBubble, updateEnemyShieldBubbles, enemyShieldSlots, warmShieldBubbles } from './shield-fx.js'; // player shield bubble (faint idle rim + ripple-on-hit) + the pooled enemy hit-ripples + their level-start warm
-import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks
+import { setGlobalExhaustMode, getCurrentMode, getActiveFreighterPlume, updateShipExhaust, warmExhaust, warmExhaustMeshes } from './exhaust-fx.js'; // exhaust global look toggle + debug hooks + the level-start warm of both plume modes
 import { buildPlayerFor, spawnEnemyShip, spawnEnemy } from './ship-build.js'; // build the player (bootstrap) + enemy spawns exposed to __game
 import { shipModelCacheSize } from './ship-factory.js'; // ?debug diagnostic: how many ship glbs have been parsed
 import { drops, spawnDrop, pickLoot, warmDropAssets } from './drops.js'; // loot drops: count for the perf readout + the ?debug stress hook + the level-start warm of the crate/halo/pull line
@@ -864,7 +864,7 @@ function prewarmShaders() {
   // singletons, invisible or parked — so the compile below sees them with this level's lights and fog and
   // produces the exact program key the live draw will ask for. Its OWN stage on purpose: it touches parsed
   // .glbs and renderer.initTexture, and a throw here must not cost us the compiles that follow.
-  const warmRoots = warmStage('roots', () => [...warmShieldBubbles(), ...warmDropAssets()]) || [];
+  const warmRoots = warmStage('roots', () => [...warmShieldBubbles(), ...warmDropAssets(), ...warmExhaust()]) || [];
   // The reason this function exists. Never let anything above skip it.
   warmStage('compile', () => { renderer.compile(skyScene, camera); renderer.compile(scene, camera); });
   warmStage('upload', () => {
@@ -875,8 +875,10 @@ function prewarmShaders() {
     // more veil frames.
     const forced = [];
     try {
+      // EVERY node, not just the drawable ones: `projectObject` returns early on an invisible object and
+      // skips its WHOLE SUBTREE, so forcing a hidden mesh while its parent Group stays hidden uploads
+      // nothing. (The exhaust warm plume is exactly that shape — a hidden group over two hidden meshes.)
       for (const root of warmRoots) root.traverse((o) => {
-        if (!o.isMesh && !o.isLine && !o.isSprite && !o.isPoints) return;
         forced.push([o, o.frustumCulled, o.visible]);
         o.frustumCulled = false; o.visible = true;
       });
@@ -1374,6 +1376,7 @@ if (location.search.includes('debug')) {
     // first compiled DURING PLAY. Needs `debug` in the URL; on a phone that means `?dev&debug`.
     programKeys: () => renderer.info.programs.map((p) => p.cacheKey),
     warmErrors,       // per-stage prewarmShaders failures; all zero means the warm ran in full
+    warmExhaustMeshes, // the parked warm plume's two meshes — the guard checks both are compiled and hidden
     spawnShieldHit,   // test hook: PLAYER shield ripple — signature is (pos, broke = false)
     spawnDrop,        // test hook: place a crate at an EXACT position (spawnTestDrop jitters near the ship,
                       // which puts it inside Grab range and lets stepDrops collect it mid-assertion)

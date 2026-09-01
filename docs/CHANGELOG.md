@@ -3,6 +3,22 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-09-02
+
+- **The engine exhaust no longer compiles its shaders on the player's first thrust.** With the loot and
+  shield surfaces closed, `?dev` telemetry (extended to NAME late programs, not just count them) reported
+  the same two every session on a Redmi 15C, on all three tiers: the plume's **points** and **flame**
+  `ShaderMaterial`s (`exhaust-fx.js:176`/`:185`), which the warm rig never held. They compiled the first
+  time any ship applied thrust — an EVENT mid-play rather than a level boundary, which is the shape of
+  stall the maintainer kept reporting. `warmExhaust()` now parks one real `makePlume` in the scene at level
+  warm so `prewarmShaders`' compile reaches both modes (both, because `setGlobalExhaustMode` can switch at
+  any time). Both meshes stay **hidden forever**: `makePlume` sets `frustumCulled = false`, so a visible
+  warm plume would cost two draw calls every frame for the session. Guarded by `50-warm-completeness` and
+  mutation-checked in both directions — removing the warm fails it, and leaving the plume visible fails it.
+  Also fixed in the same pass: the warm's buffer-upload draw forced only *drawable* nodes visible, but
+  `projectObject` skips an invisible object's whole subtree, so a hidden group over hidden meshes uploaded
+  nothing; it now forces every node and restores every node.
+
 ## 2026-09-01
 
 - **The `?dev` perf telemetry now NAMES the shader programs that compile during play, not just counts them.**
