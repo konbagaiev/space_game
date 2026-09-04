@@ -16,6 +16,14 @@
 > Read first: `docs/plans/server-authoritative-sim.md` §0 and its §4 bullet; `docs/DECISIONS.md` §125
 > (trace v4), §129 (what Phase 0 measured), §30 (keep processes simple), §73 (seeded-RNG contract).
 >
+> **2026-09-04 — independent evidence for this plan's central move, from the opposite direction.** The
+> re-simulation route was tried again in a narrow, favourable case (a bot duel: short fight, no
+> `lastKillDrop`, verified on the serving build — `docs/plans/2026-09-01-1845-duel-referee.md`). Its first
+> production session measured what neither Phase 0 nor this plan knew: **the player's browser and the
+> server's Node do not agree bit-for-bit** — three engines, three world hashes on one honest trace
+> (DECISIONS §151). That is a second, independent reason why "let the room do the bookkeeping" beats
+> "re-simulate what the client uploaded", and it applies to any future oracle of that shape.
+>
 > **This plan changed direction on 2026-08-22, and the reason is worth reading before the design.** The
 > original plan was to re-simulate a submitted input trace and compare its reward to the claim. Phase 0
 > measured that idea against production and it does not hold up (§3.1). The replacement is not a better

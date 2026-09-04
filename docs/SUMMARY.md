@@ -3,7 +3,14 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-09-04 (**The level-start warm now also covers the engine exhaust, and can no longer fail silently.** Both plume modes (points + flame) are compiled by a parked real `makePlume` — they used to compile on a ship's FIRST THRUST, an event mid-play. `prewarmShaders()` is now four independent stages (`rig`/`roots`/`compile`/`upload`) so a throw in setup can no longer skip the compiles, with per-stage failures published in the `?dev` perf sample as `warm` and asserted at zero by the guard; the sample's `gpu.late` also NAMES any program that compiles after the warm, attributed to the object that draws it.) Previously: 2026-09-01 (**The level-start warm now covers the surfaces that used to compile mid-fight.** The loot
+**Updated:** 2026-09-04 (**The browser and Node do NOT agree bit-for-bit, and the duel's validation is on
+notice.** The first production duel — an honest death — came back `disagree`: the same trace re-simulated to
+**three hashes on three engines** (both Nodes identical, two Chromium versions each different) while ticks,
+draws, kills and hp all agreed. So `36-sim-divergence` is a **sample, not a proof** — it pins one trace
+against one browser build — and any oracle comparing two independent simulations is hostage to the player's
+browser. Nothing was harmed: §150 binds nothing. The strict digest stays for now while the `js_engine`
+column collects data; **the server-run room is the likely answer**, because there the second host does not
+exist. DECISIONS §151.) Previously: 2026-09-04 (**The level-start warm now also covers the engine exhaust, and can no longer fail silently.** Both plume modes (points + flame) are compiled by a parked real `makePlume` — they used to compile on a ship's FIRST THRUST, an event mid-play. `prewarmShaders()` is now four independent stages (`rig`/`roots`/`compile`/`upload`) so a throw in setup can no longer skip the compiles, with per-stage failures published in the `?dev` perf sample as `warm` and asserted at zero by the guard; the sample's `gpu.late` also NAMES any program that compiles after the warm, attributed to the object that draws it.) Previously: 2026-09-01 (**The level-start warm now covers the surfaces that used to compile mid-fight.** The loot
 crate, its halo sprite, the grab pull line, both shield bubbles, the level's reward drop model and the ghost
 battle's transparent hull variant are created as their REAL singletons in the REAL scene before
 `prewarmShaders()` runs, and one throwaway forced draw uploads their geometry buffers — `renderer.compile()`
@@ -3580,14 +3587,29 @@ first translation). See DECISIONS §10.
   - **What a `disagree` MEANS to whoever reads /admin/sessions.** A verdict says whether **this server,
     running this build, re-simulating the input the browser uploaded, ended up in the same world state at
     the same tick**. `agree` means the two hosts simulated the same fight. `disagree` means they did not —
-    and in order of likelihood that is: (1) a bug in the simulation or in this mechanism; (2) a
-    **cross-engine floating-point difference**, which is why the JS engine is recorded next to it
-    (`client/src/engine-id.js`; `Math.sin`/`atan2`/`hypot`/`pow` are implementation-defined and
-    `36-sim-divergence` only proves Chromium ↔ Node — nothing has ever proved WebKit or Gecko); (3) a build
-    the gate failed to catch; and only then (4) someone tampering with a trace that pays nothing.
+    and in order of likelihood that is: (1) a **cross-engine floating-point difference** — MEASURED on the
+    very first production duel and now the leading cause, not a theoretical one (DECISIONS §151), which is
+    why the JS engine is recorded next to it (`client/src/engine-id.js`); (2) a bug in the simulation or in
+    this mechanism; (3) a build the gate failed to catch; and only then (4) someone tampering with a trace
+    that pays nothing.
+    **What was actually measured** between Node v23 and Chromium 149, bit for bit: `Math.sin` differs on
+    ~2.7 % of sampled arguments and `Math.pow` on ~10.8 %, while `cos`, `atan2`, `hypot`, `sqrt` and `tan`
+    were **identical** — so the older wording here, which named `atan2`/`hypot` as the suspects, was wrong
+    about which functions drift. **And "`sin` differs" does NOT by itself explain it:** `Math.sin` lives in
+    `steering.js headingToDir`, which the Level-0 intro trace hammers just as hard while still agreeing
+    bit-for-bit. The guilty call site is NOT established; do not repeat the easy conclusion. On the duel
+    trace the divergence enters between tick 150 and 200, in ordinary flight.
     **Nothing may bind money, XP or progression to a verdict until the disagreement rate on honest players
     has been measured** — DECISIONS §129's own rule, written after a survey of 74 production sessions found
     20% agreement and not one cheat. The reward model for duels is deliberately deferred.
+  - **THE APPROACH ITSELF IS UNDER REVIEW (DECISIONS §151).** The first production duel — an honest death —
+    came back `disagree` because the player's Chromium and the server's Node do not agree bit-for-bit. Any
+    oracle built on comparing two independent simulations is hostage to the player's browser build, so the
+    live options are: keep the strict digest and bind nothing (**where it sits today**, deliberately, while
+    the `js_engine` column accumulates data); judge on ticks + draws + summary and keep the hash as a note
+    (all of those agreed on the diverging session); or **move the duel into a server-run room**, where there
+    is no second host to agree with and the problem does not exist rather than being mitigated. The room is
+    the likely answer, and §151 records why none of the work below is wasted if it wins.
   - **Guarded by `49-duel-referee`** (browser ↔ Node on a LIVE-recorded duel) and
     `server/src/seal/verify-duel.test.js` (the mechanism, on a real idle duel: admission, comparison order,
     notes, persistence).
@@ -4159,8 +4181,18 @@ path reaching into the seeded gameplay stream (DECISIONS §73) shifts one host's
 and the test says so rather than reporting an opaque hash difference. `22-trace-replay` guards the browser's
 end-to-end replay path; this one guards the simulation.
 
+> **IT IS A SAMPLE, NOT A PROOF — and the difference is now measured, not theoretical (2026-09-01,
+> DECISIONS §151).** It pins ONE trace against ONE browser build. The first real production duel session
+> re-simulated to **three different hashes on three engines** while every other field agreed (1321 ticks,
+> 38 draws, 0 kills, hp -16): Node v23 locally **and** the prod Node both `0x48e69457`, Chromium 152
+> `0x9e248945`, Chromium 149 (this suite's own Playwright build) `0x99ab099d`. So the referee is
+> deterministic across machines and Node versions, while **two minor versions of the SAME browser disagree
+> with each other and with Node.** A green 36 therefore does not mean "the browser and Node agree"; it
+> means they agreed on that trace, on the Chromium the suite happens to ship. **Never treat it as a
+> licence to bind anything to a digest comparison.**
+
 **`49-duel-referee` is the duel-flavoured oracle beside it, and it proves the half 36 cannot.** 36 only ever
-replays a **committed asset through `?playback`**. 48 boots `?debug&duel`, freezes the accumulator, drives
+replays a **committed asset through `?playback`**. 49 boots `?debug&duel`, freezes the accumulator, drives
 the **live** loop with `__game.stepLive(n)` (the very same per-tick body `animate()` runs — `liveTickDeps()`
 — so a scenario produces a REAL recorded session instead of ticks the recorder never saw), lets the idle
 player die, and requires Node to reach the same anchor tick, draw count and hash from the trace alone, then

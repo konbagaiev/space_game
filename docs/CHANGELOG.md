@@ -3,6 +3,32 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-09-04
+
+- **Measured: the browser and Node do NOT agree bit-for-bit — the duel's validation is on notice, and the
+  room is back on the table.** [duel-referee] The first production `?duel` session, an honest death played
+  by the maintainer, came back **`disagree`**. Re-simulating the same uploaded trace gave **three different
+  world hashes on three engines** while every other field agreed (1321 ticks, 38 seeded draws, 0 kills,
+  hp -16): the prod Node and a laptop Node both `0x48e69457`, the maintainer's Chromium 152 `0x9e248945`,
+  the visual suite's Chromium 149 `0x99ab099d`. **The referee is deterministic across machines and Node
+  versions; two minor versions of the same browser are not.** Nothing was harmed — DECISIONS §150 binds
+  nothing to a verdict, and the `js_engine` column added for exactly this reason attributed it on the first
+  session.
+  Bit-comparing the two engines: `Math.sin` differs on ~2.7 % of sampled arguments and `Math.pow` on
+  ~10.8 %, while `cos`, `atan2`, `hypot`, `sqrt` and `tan` are identical — which **corrects** §150's own
+  wording, that had named `atan2`/`hypot` as suspects. The guilty call site is **not** established and the
+  obvious answer is refuted: `Math.sin` lives in `headingToDir`, which the Level-0 intro trace hammers just
+  as hard while still agreeing bit-for-bit.
+  **Docs only, no code changed.** The consequence for a guard we trusted is written down: `36-sim-divergence`
+  is **a sample, not a proof** — it pins one trace against one browser build, so a green run never meant
+  "the browser and Node agree" in general. DECISIONS **§151** records the three ways out and why the
+  server-run **room** is the likely answer (there is no second host to agree with, so the problem does not
+  exist rather than being mitigated — the same conclusion `seal-the-economy.md` reached for the campaign
+  economy on 2026-08-22), plus why none of the referee work is wasted if the room wins: the duel descriptor
+  already lives in `sim-core`, `spawnAces`/`stepAces` are RNG-free and headless, the trace carries `room`,
+  and the three latent bugs the referee uncovered are unconditional fixes. Also fixed a stale
+  `48-duel-referee` reference left by the parallel-run renumbering (it is `49-`).
+
 ## 2026-09-02
 
 - **The engine exhaust no longer compiles its shaders on the player's first thrust.** With the loot and

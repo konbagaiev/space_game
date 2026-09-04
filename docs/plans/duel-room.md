@@ -167,6 +167,11 @@ rockets shot out of the air against 4, an ace engaged on 18.6 % of ticks against
   `/admin/sessions`**, written by `server/src/seal/verify-duel.js`. The trace carries
   `room: { kind:'duel', aces:N }` and the forced loadout, so the referee rebuilds the same room and the same
   ship. **Nothing binds to a verdict.**
+- **The ROOM is now the likely answer for VALIDATING a duel, not just a nice-to-have (DECISIONS §151).**
+  The referee route shipped (`docs/plans/2026-09-01-1845-duel-referee.md`) and its first production session
+  measured the thing that undermines it: the player's browser and the server's Node do not agree
+  bit-for-bit, so an oracle comparing two independent simulations is hostage to the player's browser build.
+  A room has no second host to agree with. If duels ever need to pay anything, read §151 before choosing.
 - **`?duel` must NOT be combined with `?netsim=1`** — and it fails messily rather than cleanly, so this is
   worth knowing before someone tries it. `?ally`, `?lancer` and `?beam` are forwarded on the netsim
   handshake (`netsim.js wsUrl` → `createRoom` → `createSimWorld`); `?duel` is not — the flag is read from

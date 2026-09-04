@@ -6378,3 +6378,58 @@ production sessions found 20 % agreement and not one cheat; a mechanism with tha
 cheats, it robs honest players. The reward model for duels is deliberately deferred by the maintainer. What
 this change buys is the thing §129 asked for and nobody had built: **a verdict recorded long before it is
 allowed to bind, on a subject short enough that drift has no room to compound.**
+
+## 151. The browser and Node do NOT agree bit-for-bit — so the duel's validation is on notice, and the room is back on the table
+
+**Measured on the first real production duel** (2026-09-01, an honest death played by the maintainer). The
+same uploaded input trace re-simulated to **three different `worldDigest` hashes on three engines**, while
+every other field agreed — 1321 ticks, 38 seeded draws, 0 kills, hp -16, same outcome:
+
+| host | hash |
+|---|---|
+| Node v23 on a laptop **and** the prod Node | `0x48e69457` — identical |
+| Chromium 152 (the maintainer's Chrome) | `0x9e248945` |
+| Chromium 149 (the visual suite's Playwright build) | `0x99ab099d` |
+
+So **the referee is deterministic across machines and Node versions**, and **two minor versions of the same
+browser disagree with each other and with Node.** The verdict on that session was `disagree`, and the player
+was honest. Nothing was harmed only because §150 binds nothing to a verdict.
+
+**What was measured about the cause, and what was NOT.** Bit for bit between Node v23 and Chromium 149:
+`Math.sin` differs on ~2.7 % of sampled arguments and `Math.pow` on ~10.8 %; `cos`, `atan2`, `hypot`, `sqrt`
+and `tan` are identical. (That corrects §150's own wording, which named `atan2`/`hypot` among the suspects.)
+On the duel trace the divergence enters between tick 150 and 200, in ordinary flight. **The guilty call site
+is NOT established, and the obvious answer is refuted:** `Math.sin` lives in `steering.js headingToDir`,
+which the Level-0 intro trace hammers just as hard while still agreeing bit-for-bit. Anyone continuing this
+must start from that contradiction, not from "sin differs".
+
+**The first casualty is a guard we trusted.** `36-sim-divergence` asserts browser == Node on ONE trace
+against ONE browser build. It is green, and it is **a sample, not a proof** of cross-engine determinism — it
+was quietly doing less than its name promised, and no amount of it passing would have caught this. Its
+SUMMARY entry now says so.
+
+**Therefore: validating a bot duel by comparing two independent simulations is on notice.** Any oracle built
+on a full-precision digest is hostage to whichever browser the player happens to run, and the failure mode
+is the one this project refuses to accept — an honest player marked as a cheat (§125, §129). Three ways out,
+and the third is the one to beat:
+
+1. **Keep the strict digest, bind nothing** (the current state, chosen deliberately). It costs nothing and
+   accumulates engine data through the `js_engine` column. It cannot become a payment gate.
+2. **Judge on ticks + draws + summary, keep the hash as a note.** Every one of those agreed on the diverging
+   session, so an honest cross-engine run would read `agree`. Cheaper than (3), but it is a weaker claim —
+   it says "the two hosts agree about the OUTCOME", not "they ran the same fight".
+3. **Move the duel into a server-run ROOM** — the likely answer. A room has no second host to agree with:
+   the server *is* the simulation, the client sends input and draws what it is told, and there is no digest
+   comparison, no float-determinism requirement and no engine dependency. **The whole class of problem
+   disappears instead of being mitigated.** This is the same conclusion `docs/plans/seal-the-economy.md`
+   reached on 2026-08-22 for the campaign economy ("the room already simulated the fight — let it do the
+   bookkeeping itself"), arrived at again from the opposite direction. Its costs are unchanged and real: a
+   socket per duel, snapshot bandwidth, and prediction/latency.
+
+**None of the work done for the referee is wasted if (3) wins**, and that is worth stating plainly because it
+is why (1) is a fine place to sit meanwhile: the duel descriptor now lives in `sim-core/duel-config.js`
+(which is exactly what a room needs to rebuild a duel), `spawnAces`/`stepAces` are RNG-free and already run
+headless, the trace carries `room`, and the three latent bugs the referee uncovered — the dropped final tick
+in **every** recorded session, the trace recording the account's gear instead of the ship flown, and the
+death path banking before flushing — are unconditional fixes that outlive whichever oracle wins.
+
