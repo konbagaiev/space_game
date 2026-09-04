@@ -169,7 +169,7 @@ Two reasons it comes before Phase 5 rather than after:
   birth**. That dissolves the problem rather than scheduling it: no campaign-wide rebalance, no recorded
   replay moves, and the new enemies are tuned against corrected aim from their first playtest. Whatever
   carries the correction must therefore be **opt-in per ship or per enemy type**, never a change to the
-  shared path. `22-intro-replay` must still hold at tick 2474.
+  shared path. `22-trace-replay` must still hold at tick 2474.
 - [x] ~~The wingman's escort orbits instead of converging from a standing start.~~ **ACCEPTED, not a defect
   (maintainer, 2026-08-23).** Reversing from rest, the closing-speed rule reads a circling ship as "not
   closing" and keeps thrusting, so he drifts outward (80 u → orbiting 40–95 u over ~40 s) instead of settling
@@ -651,7 +651,7 @@ The original design discussion is preserved below with its verdict. Several item
 - ~~**Feature-pipeline: make the visual/UI test run OPTIONAL.**~~ **✅ DONE 2026-08-31.** No agent may start
   the 49-scenario suite or a from-scratch `main` baseline worktree; a single named scenario stays
   encouraged. The sweep is now **Stage 6.6**, a maintainer-asked gate the orchestrator runs, with the perf
-  gate's posture (ask, default skip). `22-intro-replay` stays always-on for sim changes.
+  gate's posture (ask, default skip). `22-trace-replay` stays always-on for sim changes.
 - Daily/repeatable missions for retention.
 - Leaderboards.
 - More ship classes / visual variety.
