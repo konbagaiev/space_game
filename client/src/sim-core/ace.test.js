@@ -210,28 +210,47 @@ function incoming(world, at, from, { fromPlayer = true } = {}) {
 // already roughly points. That matters, because the turn is the binding constraint: at 1.16 rad/s a beam-on
 // rocket 20 u out closing at 12+ u/s arrives BEFORE the nose can come round. Interception is a real
 // capability with a real limit, not a guarantee.
-test('an ace whose target is TOO FAR turns onto an incoming rocket and shoots it down', () => {
-  const w = fight();
-  const ace = spawnAces(w, 1)[0];
-  ace.warping = false; ace.spawnAge = ace.spawnDur;
-  ace.pos.set(0, 0.6, 90);            // 90 u from the player: well beyond the gun's 45 u engagement range
-  ace.heading = Math.PI;              // nose on the player
-  const rocket = incoming(w, ace, { x: 20, z: 55 });   // 40 u out, 30° off the nose — inside gun range
+// A RATE OVER SEEDS, not a single run. Each intercept shot now carries a ~50 % dispersion against the
+// rocket's 2.4 u kill radius (ALLY_PD_JITTER), and the engagement gives him 2-3 shots — so one seed is a
+// ~12 % coin flip and asserting on it would be a lottery. What this test was really for is the CAPABILITY:
+// he acquires, he turns, he opens fire. That half is asserted on EVERY run; the kill is a band.
+test('an ace whose target is TOO FAR turns onto an incoming rocket and shoots it down (a RATE now)', () => {
+  const SEEDS = 20;
+  let opened = 0, killed = 0, unhurt = 0;
+  for (let s = 1; s <= SEEDS; s++) {
+    seedSim(s);
+    const w = fight();
+    const ace = spawnAces(w, 1)[0];
+    ace.warping = false; ace.spawnAge = ace.spawnDur;
+    ace.pos.set(0, 0.6, 90);            // 90 u from the player: well beyond the gun's 45 u engagement range
+    ace.heading = Math.PI;              // nose on the player
+    const rocket = incoming(w, ace, { x: 20, z: 55 });   // 40 u out, 30° off the nose — inside gun range
 
-  stepAces(w, DT);
-  assert.equal(ace.intercept, rocket, 'the rocket is acquired: nothing else is in reach');
-
-  // Fly it out. `stepBullets` is what actually destroys the rocket, so the whole loop has to run.
-  let shot = false;
-  for (let i = 0; i < 60 * 6 && w.rockets.length; i++) {
     stepAces(w, DT);
-    stepBullets(w, DT);
-    stepRockets(w, DT);
-    if (w.bullets.length) shot = true;
+    assert.equal(ace.intercept, rocket, 'the rocket is acquired: nothing else is in reach');
+
+    // Fly it out. `stepBullets` is what actually destroys the rocket, so the whole loop has to run.
+    let shot = false;
+    for (let i = 0; i < 60 * 6 && w.rockets.length; i++) {
+      stepAces(w, DT);
+      stepBullets(w, DT);
+      stepRockets(w, DT);
+      if (w.bullets.length) shot = true;
+    }
+    if (shot) opened++;
+    // SHOT DOWN, not merely gone: only an intercepting bullet takes a rocket's hp down
+    // (`step-projectiles.js`). A rocket that reached the hull or ran out of range leaves hp intact.
+    if (rocket.hp <= 0) { killed++; if (ace.hp === ace.maxHp) unhurt++; }
   }
-  assert.ok(shot, 'it opened fire on the rocket');
-  assert.equal(w.rockets.length, 0, 'and the rocket is gone — shot down, not merely aimed at');
-  assert.equal(ace.hp, ace.maxHp, 'without taking the hit itself');
+  seedSim(null);
+  assert.equal(opened, SEEDS, 'it opened fire on the rocket every single time — the capability half');
+  // A BAND, because a per-shot miss chance is the reason this is no longer a yes/no: he spends ~1.9 shots
+  // per engagement here at ~50 % each, so some rockets get through and reach him. Measured over 60 seeds:
+  // 73 % shot down. The seeds are FIXED, so this is deterministic rather than a lottery — only a change to
+  // the pilot moves it.
+  assert.ok(killed >= 0.55 * SEEDS && killed <= 0.95 * SEEDS,
+    `and shoots it down most of the time (${killed}/${SEEDS}; design point 75-88 %)`);
+  assert.equal(unhurt, killed, 'and when it kills the rocket it does not take the hit itself');
 });
 
 test('a rocket is NEVER worth turning away from a shot the pilot already has', () => {
@@ -301,27 +320,39 @@ test('a RETREATING pilot holds fire — it does not break off to intercept', () 
 // THE WINGMAN'S HALF, and the case the maintainer asked for first: no enemy to fight at all, but a rocket
 // is inbound at the player. He escorts, sees it, and shoots it down.
 test('the wingman intercepts while ESCORTING — no enemy in reach, but a rocket is', () => {
-  const w = fight();
-  const ally = makeAce(CATALOG);
-  delete ally.pilot; ally.isAlly = true;
-  ally.pos.set(0, 0.6, 12); ally.heading = 0;   // holding station ahead of the player, facing out
-  ally.warping = false; ally.spawnAge = ally.spawnDur;
-  w.allies.push(ally);
-  assert.equal(w.enemies.length, 0, 'nothing to fight — he is escorting');
-  // Inbound at the PLAYER from out in front, which is where the enemies would be — and so roughly where
-  // the wingman's nose already is. See the note on the ace's test above: the turn is the binding limit.
-  const rocket = incoming(w, w.player, { x: 12, z: 50 }, { fromPlayer: false });
+  // Same treatment as the ace's intercept above, and for the same reason: a rocket that gets through is now
+  // an expected outcome rather than a bug, so the player's hull is asserted only on the runs where the
+  // rocket actually died.
+  const SEEDS = 20;
+  let opened = 0, killed = 0, playerClean = 0;
+  for (let s = 1; s <= SEEDS; s++) {
+    seedSim(s);
+    const w = fight();
+    const ally = makeAce(CATALOG);
+    delete ally.pilot; ally.isAlly = true;
+    ally.pos.set(0, 0.6, 12); ally.heading = 0;   // holding station ahead of the player, facing out
+    ally.warping = false; ally.spawnAge = ally.spawnDur;
+    w.allies.push(ally);
+    assert.equal(w.enemies.length, 0, 'nothing to fight — he is escorting');
+    // Inbound at the PLAYER from out in front, which is where the enemies would be — and so roughly where
+    // the wingman's nose already is. See the note on the ace's test above: the turn is the binding limit.
+    const rocket = incoming(w, w.player, { x: 12, z: 50 }, { fromPlayer: false });
 
-  stepAlly(w, DT);
-  assert.equal(ally.intercept, rocket, 'he defends the player from it');
-  let shot = false;
-  for (let i = 0; i < 60 * 6 && w.rockets.length; i++) {
-    stepAlly(w, DT); stepBullets(w, DT); stepRockets(w, DT);
-    if (w.bullets.length) shot = true;
+    stepAlly(w, DT);
+    assert.equal(ally.intercept, rocket, 'he defends the player from it');
+    let shot = false;
+    for (let i = 0; i < 60 * 6 && w.rockets.length; i++) {
+      stepAlly(w, DT); stepBullets(w, DT); stepRockets(w, DT);
+      if (w.bullets.length) shot = true;
+    }
+    if (shot) opened++;
+    if (rocket.hp <= 0) { killed++; if (w.player.hp === w.player.maxHp) playerClean++; }
   }
-  assert.ok(shot, 'he opened fire');
-  assert.equal(w.rockets.length, 0, 'and the player is not hit');
-  assert.equal(w.player.hp, w.player.maxHp);
+  seedSim(null);
+  assert.equal(opened, SEEDS, 'he opened fire every time');
+  assert.ok(killed >= 0.55 * SEEDS && killed <= 0.95 * SEEDS,
+    `and the rocket dies most of the time (${killed}/${SEEDS}; design point 75-88 %)`);
+  assert.equal(playerClean, killed, 'and on those runs the player is never hit');
 });
 
 // ---------- the gun shoots as far as the GUN shoots ----------

@@ -11,7 +11,8 @@
 //      phase carrying `aces: N` plus the usual `event: 'win'` phase. It keeps the level's map and combat
 //      centre, so the room is fought in a real place with real scenery;
 //   2. the SHIP — `duelBuild` forces the player's loadout and components (the starter kinetic + the basic
-//      Repair drone), so the duel is the same fight whatever the account has equipped;
+//      Repair drone) and clears `skills`, so the duel is the same fight whatever the account has equipped
+//      or trained (see the skills caveat below — it decides whether a fleeing ace can be caught);
 //   3. the LAUNCH — `mainwindow.js takeOff` drops you straight into the fight instead of into roam. A
 //      sparring room you have to fly to is a sparring room you stop using.
 //
@@ -23,7 +24,7 @@
 // NOT STICKY (DECISIONS §81): the URL alone decides, nothing is stored, and with the flag absent the
 // simulation spawns no ace, runs no ace step and draws no extra randomness.
 //
-// CAVEATS, both inherited from being a dev flag:
+// CAVEATS, all inherited from being a dev flag:
 //   • it changes the FIGHT, and campaign sessions are recorded — so a `?duel` session's row is labelled
 //     `duel:level-N` (server.js POST /api/sessions), which makes `classifyTrace` report `level-mismatch`
 //     and the campaign survey (`server/tools/verify-sessions.mjs`) count it as `unverifiable` rather than
@@ -32,6 +33,15 @@
 //     /admin/sessions (docs/plans/2026-09-01-1845-duel-referee.md).
 //   • an ace pays no credits and no XP, but its death still rolls the normal 20 % loot drop, which is
 //     deposited on victory. Fly the room on a throwaway local player.
+//   • YOU HAVE NO SKILLS IN HERE, and one consequence is worth stating outright. `duelBuild` passes
+//     `skills: null` (see it below) so the room is the same fight whatever the account has trained — which
+//     also means no Mobility (+5 %/pt max speed), no dodge and no damage talents. Both hulls therefore sit
+//     on exactly `PLAYER_MAX_SPEED`, so **you can neither out-run nor catch a pilot flying the same hull**.
+//     It bites on the ace's RETREAT: that runs at full thrust for the arena border and keeps full thrust
+//     past it while the pursuer holds the gap under ~68 u (step-ally.js 4a, DECISIONS §154), so chasing a
+//     fleeing ace is unwinnable on speed BY CONSTRUCTION and ends only when your own out-of-bounds rule
+//     warps you back to the arena centre after `OOB_RETURN_TIME` 30 s. This is deliberate and is a property
+//     of this room alone: in a campaign fight your Mobility does apply, so a chase there is not symmetric.
 import { ACE_COUNT_DEFAULT, ACE_COUNT_MAX } from './sim-core/ace.js';
 import { normalizeLevelName } from './replay.js';
 import { DUEL_PHASES, withDuelRoom } from './sim-core/duel-config.js';
@@ -101,6 +111,11 @@ export function applyTraceRoom(descriptor, trace) {
 // Force the player's ship. A no-op with the flag off — the SAME object comes back out, so `buildPlayerFor`
 // is unchanged for every normal build. Skills are dropped on purpose: the duel is about the flying, and a
 // skilled account would be sparring against an unskilled ace.
+//
+// `skills: null` IS WHY A FLEEING ACE CANNOT BE CAUGHT IN HERE, and the chain is intact rather than broken:
+// `skills.mobility` → `mobilityMul = 1 + 0.05·pts` (`components.js`) → `p.maxSpeedMul` (`ship-entity.js`) →
+// `PLAYER_MAX_SPEED × maxSpeedMul` (`step-player.js`). It is simply fed `null` here, so both hulls sit on
+// exactly 30 u/s. See the skills caveat in the header for what that means for the retreat.
 export function duelBuild(build) {
   if (!DUEL_DEV) return build;
   return { ...build, loadout: DUEL_LOADOUT, components: DUEL_COMPONENTS, skills: null };

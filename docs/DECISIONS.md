@@ -6458,3 +6458,233 @@ deferred flash and a picture that arrived after the damage. It looked right and 
 maintainer preferred the strike. The lever for "the cannon should feel faster" is the row's
 `projectileSpeed`, which is a balance and replay change, not a render one.
 
+
+## 153. The pilot misses by misreading the BEARING, measured against the hull it can actually hit — and "the second shot lands" is a consequence of τ, not a rule
+
+**The Sentinel pilot — `flySentinel`, flown by the Level-4 wingman and by every `?duel` ace — put its
+bullets exactly where it meant to, every single shot.** It now carries a human tracking error. Five things
+about how, each of which had a wrong-looking obvious alternative.
+
+**(1) The error is on the PERCEIVED BEARING, not on the nose.** The fire gate (`step-ally.js`, the `at`
+argument to the `updateGroups` predicate) judges the projectile's *real* path against the vector it is
+handed. Perturb the **nose** and the gate sees the shot as misaligned and **holds fire** — the mechanic
+silently inverts into "he stops shooting" instead of "he misses". Perturb the **bearing** and the same gate
+honestly reports "on target" while the bullet flies past, which is the behaviour that was asked for. The
+perceived vector feeds the nose, the come-about exit **and** the gate, so all three agree on one fiction.
+The **range** is deliberately left true: `dist` still drives `groupReach`, `engageBand` and the §2.6
+player-safety gate, so he misjudges *where*, not *how far*.
+
+**(2) The yardstick is the hull a bullet can actually hit — `broadRadius` is the wrong ruler and it is
+wrong by up to 2.7×.** `broadRadius` (`collision.js`) is the broad-phase **enclosing sphere**; the narrow
+phase tests per-part OBBs, and a top-down shot only ever crosses the hull at `BULLET_PLANE_Y`. Sweeping a
+`segmentHitsShip` probe laterally past each hull at that plane over the whole circle of headings gives the
+**contiguous hit half-width**:
+
+| hull | `broadRadius` | narrowest half-width | ratio |
+|---|---|---|---|
+| Basic player ship (both pilots FLY it; an ace SHOOTS at it) | 4.318 | 1.86 | 0.431 |
+| Basic pirate / pirate gunner / pirate lancer | 4.153 | 1.74 | 0.419 |
+| basic + advanced rocket pirate | 4.001 | 1.96 | 0.490 |
+| **pirate mini boss / advanced medium pirate** | **7.567** | **2.82** | **0.373 ← the floor** |
+| first + second pirate boss | 11.983 | 6.60 | 0.551 |
+
+The binding hull is an ordinary `world.enemies` row, not an exotic case, and **the measurement has to cover
+every row**: both `server/src/sim-host.js` and `client/src/main.js` build `enemyShips` as `type === 'enemy'`
+with **no level filter**, and a three-hull sample suggests ~0.42 and is wrong. So the error is scaled by
+`ALLY_AIM_HIT_FRAC (0.35) × broadRadius`, and a test in `server/src/ally-sim.test.js` re-measures all ten
+hulls on every run — a re-exported model, a new `lift`, a new enemy or a re-scaled hull would otherwise
+break "a settled solution lands" with every other test still green.
+**The first draft of this feature scaled against `broadRadius` itself** and would have put ±2.16 u of
+range-independent error against a 1.86 u player hull and ±3.78 u against a 2.82 u mini boss: **~13 % of
+SETTLED shots lost on the player hull and ~25 % on the mini boss**, breaking the one promise the feature is
+not allowed to break, on the `?duel` surface the maintainer live-tests.
+
+**(3) The randomness is a PRIVATE per-pilot `mulberry32`, never `simRandom()`.** The seeded stream's DRAW
+COUNT is half the browser↔Node divergence oracle and half the duel referee's verdict (§73, §151); a pilot
+that rolled from it would move both every time it acquired a target. The private stream is keyed from two
+**integers** both hosts have — the seed the run installed (`simSeed()`, a new getter, not a draw) and the
+pilot's spawn ordinal (wingman 0, aces 1..N) — because a float-derived seed would hand the browser and the
+referee different PILOTS off a 1-ULP difference. **It is keyed to the seed and re-derived when that
+changes**, not merely created lazily: laziness alone assumes every pilot's first draw happens after the
+run's seed is installed, and in the browser it does not — the duel room spawns its aces inside `startRun`,
+before take-off calls `beginLiveSession`. `49-duel-referee` caught exactly that.
+
+**(4) The FIRST shot's miss rate is MEASURED, and the SECOND shot's guarantee is the thing that caps it.**
+Two numbers, and the first draft of this entry confused them, so read them apart.
+
+*The miss rate is measured, never derived.* How often the opening round at a freshly acquired target actually
+misses a real hull is a sweep of `segmentHitsShip(ship, p0, p1)` with **no pad** — the exact swept call
+`stepBullets` makes — over the target's headings and over the acquisition-tick error distribution. The range
+cancels (`d · tan(err) ≈ d · (j + k) · ALLY_AIM_HIT_FRAC · broadRadius / d`), so one figure per hull is
+meaningful. At `ALLY_AIM_KICK` **2.30**: **18.3 %** against an ordinary pirate, **17.9 %** against the mini
+boss / advanced medium pirate, **18.4 %** against either boss, **14.3 %** against the wide-hulled rocket
+pirates, **20.2 %** against the Basic player ship an ace shoots at — **17.6 % mean** over all ten hulls.
+`ALLY_AIM_KICK` was **2.00** and measured **11.2 % mean**, which the maintainer live-tested in `?duel` and
+called too weak; ~18 % is the number he asked for, and 2.30 is where the sweep lands it. **The
+`P(|j + k| > 1)` figure — 50 % at KICK 2.00, 56.5 % at 2.30 — is NOT a miss rate and must never be published
+as one.** It is the chance the error leaves the *narrowest aspect of the narrowest hull*; a real hull is
+wider than its worst aspect at nearly every heading and its per-part boxes catch a round past a gap, so that
+bound is about three times the truth. It was quoted as "the first shot misses exactly 50 %" in the first
+draft of this feature and that was wrong. The rate is now pinned as an outcome in
+`server/src/ally-sim.test.js` ("THE FIRST SHOT ... against a real hull"), which is also where to re-run the
+sweep; the yardstick bound stays as an angle test in `step-ally.test.js`, retitled to say what it is.
+
+*The coupling that caps the kick: "the second shot lands" is τ against the Heavy cannon's 0.6 s
+`fireCooldown` and nothing else.* The kick decays with `ALLY_AIM_TAU_SEC` 0.30 s; one cooldown is 36 ticks at
+60 Hz, over which it falls to `2.30 × 0.9444³⁶ = 0.2938`, and against the `ALLY_AIM_JITTER` 0.70 standing
+offset that is **0.9938 < 1** — the second shot is on the hull at the worst aspect of the worst hull.
+**The headroom is 0.006, where at KICK 2.00 it was 0.045**: the bound is
+`ALLY_AIM_KICK < (1 − ALLY_AIM_JITTER)/0.127747 = 2.3484`, and 2.30 sits 2 % under it. That shrink is the
+price of the first-shot rate and it is recorded rather than hidden — the guarantee is still a **proof**, not
+a probability, but it has no slack. **So it is asserted from live inputs on all four sides rather than
+guarded by a warning:** `server/src/ally-sim.test.js` imports `ALLY_AIM_KICK`, `ALLY_AIM_JITTER` and
+`ALLY_AIM_TAU_SEC`, and derives the decay COUNT from the gun's real `fireCooldown` off the built ally. That
+last one was the escape — `fireCooldown` is a catalog row nothing else here reads, the real margin is a
+single tick (the pilot's rounds leave 36 ticks apart, so the second shot gets 37 decays and a residual of
+0.1207, but at **35** decays the bound is violated at 1.0111), and weapon 6 moving from 0.6 s to 0.583 s
+would have broken "the second shot lands" with every test green. Verified by mutating the built weapon in
+memory: 0.6 s → 36 ticks → 0.9938 passes; 0.583 s → 35 ticks → 1.0111 fails. **Buying slack back means shortening
+`ALLY_AIM_TAU_SEC`, and τ is SHARED with the tracking lag** — a faster decay also makes a manoeuvring
+target's lag error appear and disappear sooner (the steady-state lag is unchanged; only the transient is) and
+it would leave the 0.3-0.5 s window the maintainer specified. Not done, deliberately.
+`ALLY_AIM_MAX` was **not** raised either: at KICK 2.30 the jitter + kick peak is exactly 3.00, so the cap
+clips nothing but its own boundary, and the two collateral margins measured against it were re-checked and
+did not move — 0.109 rad of possible error at `driftFireCase`'s 40 u against the 0.08 rad the rocket-gate
+test has spare (which is why that fixture pins the error to zero, and now needs to more than before), and
+0.145 rad at the §2.6 fixture's 30 u, still far inside the 0.35 rad fire-block cone.
+**Hand this pilot one of the catalog's 0.12-0.18 s kinetics and its first three or four shots would miss
+instead**, with no test on the current weapon showing it — which is why the coupling is written down here and
+asserted as arithmetic in both test files.
+*Rejected: an explicit one-off snap-shot flag consumed by the first shot.* It is simpler to read in code
+and it was turned down on purpose — one continuous decaying mechanic reads as a human settling his aim, a
+flag reads as a rule the player can learn to count.
+
+**(5) Point defence carries its own constant AND the closing correction.** A rocket homing *at* the pilot
+has almost no line-of-sight rate, so the tracking lag would contribute nothing; one homing on his friend
+crosses faster than anything in the game. So the intercept is a pure random dispersion against the rocket's
+own kill radius (`ROCKET_INTERCEPT_RADIUS`, 2.4 u). **It must be sized where the bullet MEETS the rocket,
+not where the error was computed:** the bullet leaves at 65 u/s while the rocket closes at 12-37, so they
+meet at 0.64-0.84 of the acquisition range and the effective tolerance is `(2.4/d) × (s + v_close)/s`.
+Sizing it against the naive `2.4/d` would have delivered a **~73 %** per-shot hit rate where **50 %** was
+agreed. `v_close` is the CLOSING component along the line of sight, not `|vel|`, for the same reason.
+
+**(6) What this feature does and does not change, so nobody re-litigates it.** It does **not** make fast
+crossers harder — they were already un-hittable, because `aimWithDrift` corrects the *shooter's* drift and
+deliberately does not LEAD: a target crossing at 30 u/s at 40 u needs 18.5 u of lead against a 1.8-3.9 u
+hittable half-width, so every one of those shots missed before this existed. Flight time owns that regime
+and still does. What the feature adds is that the **first** shot is fallible and the **close** fight is
+fallible: the tracking error is `LAG × v_perp` and range-INDEPENDENT, while the un-led flight-time error is
+`v_perp × d / 65` and grows with range, so inside `0.17 × 65 = 11 u` the tracking error is the dominant
+reason a shot misses. Any claim of the form "N % of crossing shots now miss" is describing yesterday.
+
+**One block for both pilots, no `ctx` knob.** The duel room exists to spar against the wingman's own flying;
+a pilot that can be tuned apart from the thing it tests is not that. On Level-4 balance: the wingman there
+is a test harness rather than tuned content, and he got *stronger* when `aimWithDrift` shipped — a tracking
+error is a correction back toward where he already was.
+
+## 154. A retreating pilot runs to the arena EDGE, floored by the break-off gap
+
+**A break-off that stops 120 u from the threat reads as "he wandered off a bit".** At 30 u/s the pilot's
+kinematic stopping distance is `v²/2a = 900/17.4 = 51.7 u`, so `approachThrust` cut the engine at a gap of
+~68 u and he coasted the rest: no dash, no sense of leaving. He now runs at **full thrust for the ±`ARENA`
+boundary**, braking only on that same stopping distance so he arrives with ~0 speed, and heals there.
+
+**The destination is `max(borderRemaining, ALLY_BREAK_OFF_DIST − gap)`, and the floor is the previous
+retreat bug's lesson applied in advance.** A border-only rule guarantees nothing about the distance to the
+thing shooting at him — exactly the failure the centre-relative `ALLY_RETREAT_DIST` had. `borderRemaining`
+is a ray/box slab test (`edgeRemaining`) recomputed every tick, so a drifting zone is followed for free, and
+**`?roam` forces it to 0** — the arena boundary is meaningless there, the same reason `step-player.js` skips
+the out-of-bounds rule — which degrades the max() to exactly the old rule with no extra branch.
+
+**Each destination is judged on its OWN arrival speed, and they are not the same number.** The 120 u floor
+is a distance to a MOVING threat, so it is judged on the rate the GAP is opening (a pursuer matching his
+course means the gap is not opening, however fast he flies — the escort's rule, for the escort's reason).
+The border is a fixed line in world space, so it is judged on his own GROUND speed along the escape course;
+using the gap rate there would brake him up to ~116 u early against a threat that is itself fleeing.
+
+**Being chased falls out of the max() with no extra mechanic.** Once he is past the border, `border` is 0
+and `remaining` is `120 − gap`, and `approachThrust` holds full thrust while `remaining > 51.7 + 0.5` — i.e.
+while the pursuer keeps the gap under ~68 u. A pursuer matching his 30 u/s cap does exactly that, so he
+keeps running straight past the boundary; one that falls behind lets the gap open past 68 u, at which point
+he is achieving the break-off anyway and brakes into the hold. **The chase self-resolves and that is
+accepted, not designed around:** the pilot has no out-of-bounds rule and never did, but the **player** does
+— 30 s continuous outside ±`ARENA` warps you back to the centre.
+**And in `?duel` that warp-back is the ONLY way the chase ends**, which is worth knowing before anyone files
+it as a bug: the room forces `skills: null` (`duel-dev.js duelBuild`, so the fight is the same on any
+account), so the player has no Mobility (+5 %/pt max speed) and both hulls sit on exactly `PLAYER_MAX_SPEED`
+30 — the pursuit is unwinnable on speed **by construction, in that room only**. The talent chain is intact
+(`skills.mobility` → `mobilityMul` → `maxSpeedMul` → `PLAYER_MAX_SPEED × maxSpeedMul`); it is simply fed
+`null` there. In a campaign fight Mobility applies and the chase is not symmetric. Left exactly as it is
+(maintainer, 2026-09-11): nothing about the room or the cap was changed to accommodate the retreat.
+
+**The cost, stated in full, because it is the trade.** `ARENA` is 360, so from a typical engagement ~100 u
+off-centre the border is **260 u** away straight out along an axis and up to **~609 u** on a diagonal:
+**9-20 s** of running, then ~**40 s** of healing (the drone's 1 HP/s from 25 % to 40 % of a 200 HP hull, plus
+the 10 s shield refill), then much the same **9-20 s** back. **Roughly 50-80 s of total absence**, about a
+minute longer than the old hold. That is the point of the feature — a wingman leaving reads as leaving —
+and it is the thing to revisit first if Level 5 ever depends on him being there.
+
+## 155. A per-pilot SEQUENTIAL stream turns a 1-ULP difference into a different pilot — so the duel referee's digest comparison no longer covers a duel that carries one
+
+**Measured, not inferred.** `49-duel-referee` compares a LIVE-recorded duel against a Node re-simulation
+and demands the same anchor tick, the same seeded-draw count **and the same world digest**. On the tree
+before the Sentinel pilot's human aim it passed **4 runs out of 4**. With the aim it passes **2 out of 7**,
+and **every** failure is `world digests differ` — `duelAnchorReached`, `ticksRun` and `draws` agree on every
+run, including the failing ones.
+
+**The mechanism is the one the feature's own brief predicted (§3.4), confirmed by running the guard rather
+than reasoning about it.** The pilot's aim error draws from a **private per-pilot sequential `mulberry32`**
+(DECISIONS §153, decision 8) — never from the shared seeded stream, which is why `draws` still matches. A
+sequential stream makes every float threshold in the pilot a **stream-alignment** threshold: a 1-ULP
+difference that flips a target re-pick, a snap switch or a come-about exit also flips a **draw**, and from
+that tick on the two hosts are running *different pilots* rather than the same pilot one ULP apart. That is
+the amplification. The browser and Node were already known not to agree bit-for-bit in general (§151, which
+put this oracle "on notice"); this change turned a last-ULP disagreement into a whole-fight one.
+
+**The bisection, as the evidence.** Four cheap experiments, each one scenario run:
+
+| experiment | result | what it ruled out |
+|---|---|---|
+| all five new `ALLY_AIM_*`/`ALLY_PD_*` constants set to `0.00`, every new code path intact | **passes** | nothing structural in the new code is host-dependent |
+| `aimHitAngle` frozen to a constant (so `broadRadius`/`scale` cannot differ), point defence off | **fails** | it is not a host-specific hull or scale value |
+| `signed()` frozen to a constant — the trajectory still genuinely perturbed, but **zero private draws** | **passes** | it is the STREAM, not float noise from a changed flight path |
+| `Math.cos`/`sin`/`atan2` removed from the new aim path (sqrt-normalised rotation + cross-product bearing rate) | **fails** | the new transcendental call sites are not the culprit; **reverted**, so the code matches the approved formula |
+
+**A real bug fell out of it and is fixed.** `pilotRandom` created its stream lazily, on the first draw, which
+assumed every pilot's first draw happens after the run's seed is installed. In the **browser** it does not:
+the duel room spawns its aces inside `startRun`, **before** take-off calls `beginLiveSession`. So the browser
+built its ace's stream off the unseeded `?? 0` fallback while the Node referee built one off the trace's
+seed — two different pilots by construction, on every duel. The stream is now **keyed to the seed and
+re-derived when that changes**, with a regression test in `client/src/sim-core/step-ally.test.js`. No unit
+test would have found this; the bit-for-bit oracle did, which is the argument for keeping one.
+
+**The decision: DEFERRED, deliberately — and say plainly what that costs: 49's hash check is now DORMANT.**
+Not "suspended for some rooms": the scenario's room is fixed at two aces (it asserts
+`trace.room` deepEquals `{ kind: 'duel', aces: 2 }`), and an ace is a pilot-flown ship, so the digest
+comparison is skipped on **every** run. The two hashes are printed, never compared — a conditional that
+"still demands bit-identity for a room with no ace" would be dead code and was removed rather than left to
+read as coverage. **`36-sim-divergence` is therefore the only live cross-host digest guard in the suite**,
+and it is a `?playback` of a committed pilot-free trace — a sample, not a proof (§151).
+What 49 still enforces, unchanged: `anchor.tick === trace.tickCount`, the room shape, `duelAnchorReached`,
+`ticksRun`, `draws`, and that the referee's verdict is `agree` or a `disagree` whose note is the **hash line
+and nothing else** — so `no-anchor`, a tick mismatch, a draw mismatch, `unverifiable` and `error` all still
+fail loudly (negative-tested by making the referee report a tick disagreement instead, which turns the
+scenario red). **`verify-duel.js` itself is NOT relaxed** — it still returns `disagree` on a digest mismatch,
+because a verdict is a recorded fact (§150) and redefining it is part of the deferred question, not of this
+change.
+
+**If it is picked up, the two named options.**
+1. **(Recommended) Make the pilot's randomness stream-position-independent** — a stateless hash of
+   `(seed, spawn ordinal, tick, slot)` instead of a sequential draw, where `slot` distinguishes the kick from
+   the jitter from the point-defence roll. A flipped re-pick then perturbs **one tick's** value instead of
+   every value after it, so a 1-ULP divergence stays a 1-ULP divergence and the digest comparison becomes
+   sound again. It changes §153's decision 8, which is why it was not done here.
+2. **Move the duel into a server-run room** (§151's own preferred answer): there is no second host to agree
+   with, so the problem does not exist rather than being mitigated.
+
+**What it costs meanwhile:** a duel that carries a pilot-flown ship — which is every `?duel`, and therefore
+every run of 49 — is **no longer covered by any bit-for-bit comparison**. Ticks, draws, the anchor and the
+referee's verdict shape still are, and the only remaining live cross-host digest guard is
+`36-sim-divergence`. Nothing is bound to a verdict (§150), so nothing is at risk; what is lost is a detector
+— and it is the detector that caught the seeding bug above, which is the argument for picking option 1 up
+rather than leaving it.

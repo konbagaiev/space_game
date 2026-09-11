@@ -25,15 +25,24 @@
 // a charge" is retired (see `shouldRetreat`). He can still die; that is not protection, it is a chance.
 //
 // DRAWS NOTHING FROM THE SEEDED STREAM (DECISIONS §73): no dodge (skills are null → dodge 0, so
-// `resolveHostileBulletHit` never rolls), no spawn ring, no reload jitter (that is enemy-only).
+// `resolveHostileBulletHit` never rolls), no spawn ring, no reload jitter (that is enemy-only). The pilot's
+// human AIM ERROR is random, and it is still true: it draws from a PRIVATE per-pilot mulberry32 seeded from
+// two integers both hosts have (see `pilotRandom`), never from `simRandom()`. A private stream, not no
+// randomness — `simRandomDraws()` is half the divergence oracle and half the duel referee's verdict.
 import { Vec3 } from './vec.js';
 import { repairTick, shieldRecharge } from './components.js';
 import { headingToDir, shortestAngleDelta, steerToward, inForwardSector } from './steering.js';
 import { updateGroups } from './ship-entity.js';
 import { PLAYER_MAX_SPEED, brakeVel } from './step-player.js';
+import { ARENA } from './consts.js';
+import { broadRadius } from './collision.js';
+import { ROCKET_INTERCEPT_RADIUS } from './step-projectiles.js';
+import { mulberry32, simSeed } from './sim-random.js';
 import {
   ALLY_BEHIND_ANGLE, ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_FIRE_BLOCK_HALF_ANGLE, ALLY_TARGET_LEASH,
   ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC, ALLY_BREAK_OFF_DIST, ALLY_ESCORT_DIST, ALLY_ESCORT_BAND,
+  ALLY_AIM_HIT_FRAC, ALLY_AIM_LAG_SEC, ALLY_AIM_TAU_SEC, ALLY_AIM_JITTER, ALLY_AIM_JITTER_SEC,
+  ALLY_AIM_KICK, ALLY_AIM_MAX, ALLY_PD_JITTER, ALLY_PD_JITTER_SEC,
 } from './ally-config.js';
 import { despawnAt } from './spawn.js';
 
@@ -42,6 +51,46 @@ import { despawnAt } from './spawn.js';
 const planarDist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 // The heading that points from `pos` at `e` — same convention as forwardVec/touchAim: atan2(dx, dz).
 const angleTo = (pos, e) => Math.atan2(e.pos.x - pos.x, e.pos.z - pos.z);
+
+// ---------- The pilot's OWN randomness ----------
+//
+// NEVER the shared seeded stream (DECISIONS §73), whose draw count is half the divergence oracle and half
+// the duel referee's verdict. Seeded from two INTEGERS both hosts have: the seed this run installed and the
+// pilot's spawn ordinal. Integers on purpose — a float-derived seed would give the browser and the referee
+// different PILOTS off a 1-ULP difference (DECISIONS §151). Lazy, so the plain-object unit tests (and any
+// pilot built before a seed was installed) just work.
+//
+// `simSeed() ?? 0` is only reachable on genuinely UNSEEDED paths: live play installs a `Date.now()>>>0`
+// seed at `beginLiveSession`, and playback, the admin replayer, `?bench` and the server referee all install
+// the trace's own. On such a path every pilot with the same ordinal would fly an identical aim stream every
+// run, which is the right degradation for a run that has no determinism contract at all.
+//
+// THE STREAM IS RE-DERIVED WHEN THE INSTALLED SEED CHANGES, and that is not a nicety — `49-duel-referee`
+// failed on it. Lazy creation alone silently assumes every pilot's FIRST DRAW happens after the run's seed
+// is installed. In the BROWSER it does not: the duel room spawns its aces inside `startRun`, which runs
+// before take-off calls `beginLiveSession`, so the browser's ace built its stream off the unseeded
+// fallback while the Node referee built one off the trace's seed — two different pilots, one digest
+// mismatch, and the bit-for-bit oracle correctly refused it. Keying the stream to the seed makes "the
+// pilot's randomness comes from the seed the RUN installed" a fact rather than an assumption about call
+// order. A seed is installed exactly once per deterministic run, so this re-derives at most once.
+export function pilotRandom(a) {
+  const seed = ((simSeed() ?? 0) ^ Math.imul(a._aimOrdinal | 0, 0x9E3779B1)) >>> 0;
+  if (a._aimSeed !== seed) { a._aimSeed = seed; a._aimRng = mulberry32(seed); }
+  return a._aimRng();
+}
+const signed = (a) => pilotRandom(a) * 2 - 1;   // uniform in (-1, 1)
+
+// Rotate a planar unit vector by `e` radians in the convention that matches `heading = atan2(x, z)`:
+// rotating by +e RAISES the bearing. (Not a matrix and not `steerToward` — this is a perception offset
+// applied to a unit vector, not a control input.)
+//
+// NO NEW TRANSCENDENTAL BEYOND sin/cos, which `headingToDir` already calls every tick. `Math.atan` is
+// deliberately not used anywhere in this feature — it would be a NEW implementation-defined function on a
+// path the duel referee compares bit-for-bit between Chromium and Node (DECISIONS §151).
+const rotateUnit = (u, e) => {
+  const c = Math.cos(e), s = Math.sin(e);
+  return { x: u.x * c + u.z * s, z: -u.x * s + u.z * c };
+};
 
 // Nearest enemy by hull CENTRE, skipping the ones still forming. `leash` is a PLAYER-relative filter:
 // `Infinity` (the shipped default) means "nearest to HIMSELF", which is literal §2d; a finite value only
@@ -220,6 +269,94 @@ export function aimWithDrift(u, vel, speed) {
   return { x: u.x * alongN - (px / p) * across, z: u.z * alongN - (pz / p) * across, solved: true };
 }
 
+// ---------- THE HUMAN AIM: a tracking error on the PERCEIVED bearing ----------
+//
+// The constants, the yardstick and every derivation live in `ally-config.js`; this is the mechanism.
+//
+// WHAT IS PERTURBED IS THE BEARING. Everything downstream — the nose, the come-about exit and the FIRE GATE
+// — reads the vector these two functions return, which is what makes him MISS rather than HOLD FIRE: the
+// gate honestly reports "on target" while the bullet flies past. The RANGE is not perturbed; he misjudges
+// where, not how far, so `groupReach`, `engageBand` and `holdFireForPlayer` are untouched.
+//
+// The error is measured in units of the target's HITTABLE half-width at the bullet plane
+// (`ALLY_AIM_HIT_FRAC × broadRadius`) — NOT of `broadRadius`, which is the enclosing sphere and overstates a
+// real hull by up to 2.7× at the worst aspect (see the measured table in ally-config.js).
+//
+// NO NEW TRANSCENDENTAL IN THE HOT PATH beyond sin/cos: `thetaHit` is the small-angle ratio rather than
+// `Math.atan` (within 1.5 % at every range that matters, and `Math.atan` would be a NEW
+// implementation-defined function — §151 measured `Math.sin` differing on 2.7 % of arguments between two
+// Chromium minors). `Math.sin`/`Math.cos` are already called every tick by `headingToDir`.
+
+// The angular half-width of what a bullet actually has to hit, at this range.
+export function aimHitAngle(target, dist) {
+  return Math.min((ALLY_AIM_HIT_FRAC * broadRadius(target)) / Math.max(dist, 1), 0.30);
+}
+
+// The pilot's PERCEIVED unit vector to `target`: the true unit vector `u`, rotated by a signed tracking
+// error. Owns the per-pilot aim state (all created lazily, so the plain-object unit tests keep working):
+//
+//   _aimTarget   the entity the bearing history belongs to (identity check)
+//   _aimBearing  last tick's TRUE bearing to that entity, radians
+//   _aimRate     the SMOOTHED bearing rate, rad/s
+//   _aimKick     a decaying random offset, in hit half-widths
+//   _aimJitter   a held random offset, same units, re-rolled on a timer
+//   _aimJitterT  seconds until the next jitter re-roll
+//
+// The lag is SIGNED TO TRAIL: a rising bearing produces a negative error, so the burst falls behind a target
+// that is pulling away. The line-of-sight rate includes HIS OWN crossing motion, deliberately — the framing
+// is "if he had to swing his hull to get the nose on target there is a chance to miss".
+export function perceivedBearing(a, target, u, dist, dt) {
+  const thetaHit = aimHitAngle(target, dist);
+  const bearing = Math.atan2(u.x, u.z);
+  const decay = Math.min(1, dt / ALLY_AIM_TAU_SEC);
+  if (a._aimJitterT == null) { a._aimJitter = ALLY_AIM_JITTER * signed(a); a._aimJitterT = ALLY_AIM_JITTER_SEC; }
+  if (a._aimTarget !== target) {
+    // ACQUISITION — a fresh target, a snap switch, a re-pick, or the come-about exit (which clears
+    // `_aimTarget`). The kick is re-rolled, the rate history is thrown away and NO rate is computed this
+    // tick: the bearing to a brand-new target has no history to differentiate against.
+    a._aimTarget = target;
+    a._aimKick = ALLY_AIM_KICK * signed(a);
+    a._aimRate = 0;
+  } else {
+    const rate = shortestAngleDelta(a._aimBearing, bearing) / dt;
+    a._aimRate += (rate - a._aimRate) * decay;
+    // THE KICK IS FRESH ON THE ACQUISITION TICK and decays from the NEXT one, which is what makes both
+    // halves of the promise exact rather than approximate: the first shot carries the full ±ALLY_AIM_KICK
+    // (measured: it misses a real hull ~18 % of the time — see ally-config.js, and note that is NOT the
+    // `P(|j+k| > 1)` yardstick figure), and one 0.6 s `fireCooldown` later — 36 ticks — it is down to
+    // ALLY_AIM_KICK × 0.9444^36 = 0.2939, so 0.2939 + 0.70 = 0.9938 < 1 and the second shot lands.
+    // Decaying it on the acquisition tick too would quietly shift both numbers.
+    a._aimKick -= a._aimKick * decay;
+  }
+  a._aimBearing = bearing;
+  a._aimJitterT -= dt;
+  if (a._aimJitterT <= 0) { a._aimJitter = ALLY_AIM_JITTER * signed(a); a._aimJitterT = ALLY_AIM_JITTER_SEC; }
+  const cap = ALLY_AIM_MAX * thetaHit;
+  let err = -ALLY_AIM_LAG_SEC * a._aimRate + (a._aimJitter + a._aimKick) * thetaHit;
+  if (err > cap) err = cap; else if (err < -cap) err = -cap;
+  return rotateUnit(u, err);
+}
+
+// He is aiming at no ship this tick (escorting, retreating, the player dead): drop the bearing history, so
+// the next acquisition cannot differentiate a fake rate spike off a stale `_aimBearing`. Made explicit
+// rather than left to the identity check, which would not fire if he re-picks the SAME ship.
+export function clearAimTarget(a) { a._aimTarget = null; }
+
+// POINT DEFENCE's own error: a pure random dispersion against the rocket's kill radius, corrected for the
+// fact that the bullet meets the rocket WELL SHORT of the range the error was computed at (ally-config.js).
+// `vClose` is the rocket's CLOSING component along the line of sight, not its speed: a rocket homing on the
+// FRIEND crosses instead of closing, so |vel| would overstate how quickly the two meet and inflate the
+// tolerance. One dot product, clamped at 0 (a rocket opening away simply gets the uncorrected tolerance).
+export function perceivedIntercept(a, rocket, u, dist, speed, dt) {
+  a._pdTimer = (a._pdTimer ?? 0) - dt;
+  if (a._pdTimer <= 0) { a._pdJitter = ALLY_PD_JITTER * signed(a); a._pdTimer = ALLY_PD_JITTER_SEC; }
+  const rv = rocket.vel;
+  const vClose = rv ? Math.max(0, -(rv.x * u.x + rv.z * u.z)) : 0;
+  const s = speed > 0 ? speed : 1;
+  const thetaPD = Math.min((ROCKET_INTERCEPT_RADIUS / Math.max(dist, 1)) * ((s + vClose) / s), 0.30);
+  return rotateUnit(u, (a._pdJitter || 0) * thetaPD);
+}
+
 // Where a bullet fired down `fwd` will ACTUALLY travel, as a unit {x,z} — the thing to judge the shot on.
 // Returns null if the shot has no direction at all (a ship somehow moving backwards faster than it fires).
 export function bulletDir(fwd, vel, speed) {
@@ -239,6 +376,25 @@ export function bulletDir(fwd, vel, speed) {
 export function approachThrust(closingSpeed, remaining, accel) {
   const v = Math.max(0, closingSpeed);           // opening (negative) needs no braking allowance at all
   return remaining > (v * v) / (2 * accel) + 0.5 ? 1 : 0;
+}
+
+// How far a ray from `pos` along the unit (dx,dz) can run before it leaves the ±`half` square centred on
+// `c` — the ARENA box. 0 when he is already outside it (which reads as "he has reached the edge") or when
+// the ray has no direction at all. Recomputed every tick, so a DRIFTING zone (`world.arenaDrift`) is
+// followed for free. A standard ray/box slab test: the nearer of the two wall crossings.
+export function edgeRemaining(pos, dx, dz, c, half) {
+  const px = pos.x - (c ? c.x : 0), pz = pos.z - (c ? c.z : 0);
+  if (Math.abs(px) >= half || Math.abs(pz) >= half) return 0;   // already out: the border is behind him
+  let t = Infinity;
+  if (Math.abs(dx) > 1e-9) {
+    const tx = ((dx > 0 ? half : -half) - px) / dx;
+    if (tx >= 0 && tx < t) t = tx;
+  }
+  if (Math.abs(dz) > 1e-9) {
+    const tz = ((dz > 0 ? half : -half) - pz) / dz;
+    if (tz >= 0 && tz < t) t = tz;
+  }
+  return Number.isFinite(t) ? t : 0;
 }
 
 // Which muzzle speed the NOSE is optimised for: the ship's BALLISTIC (non-homing) mounts. A ship with no
@@ -341,6 +497,7 @@ export function flySentinel(world, a, dt, ctx) {
     brakeVel(a.vel, a.acceleration, dt);
     a.pos.addScaledVector(a.vel, dt);
     a.thrusting = false;
+    clearAimTarget(a);   // no ship aimed at → no bearing history to differentiate against next time
     return;
   }
 
@@ -356,6 +513,10 @@ export function flySentinel(world, a, dt, ctx) {
   // The thing he is running FROM. Deliberately unleashed (`Infinity`): `ALLY_TARGET_LEASH` is about which
   // enemies are worth ENGAGING and has nothing to say about which one is currently shooting at him.
   const threat = a.retreating ? nearestEnemyTo(a.pos, foes, friend, Infinity) : null;
+  // NO TARGET, NO DRIFT. He aims at no ship while he is leaving, so the bearing history is dropped rather
+  // than left stale: a kept `_aimBearing` would differentiate into a huge fake rate spike on the tick he
+  // rejoins and picks a target again.
+  if (a.retreating) clearAimTarget(a);
 
   if (a.retreating && threat) {
     // 4a. BREAKING OFF — measured from the THREAT, never from the arena centre.
@@ -372,19 +533,45 @@ export function flySentinel(world, a, dt, ctx) {
     //     normally already past it. `70 − d` went negative, `approachThrust` correctly returned 0 (he
     //     has no reverse), and he stopped dead in the middle of the fight: retreating, holding fire,
     //     going nowhere. See ally-config.js.
+    //
+    //     HE RUNS FOR THE ARENA EDGE, floored by the break-off gap (DECISIONS §154). A break-off that
+    //     stopped 120 u from the threat read as "he wandered off a bit": at 30 u/s his stopping distance
+    //     is v²/2a = 900/17.4 = 51.7 u, so he cut thrust at a gap of ~68 u and coasted — no dash. The
+    //     destination is now `max(borderRemaining, ALLY_BREAK_OFF_DIST − gap)`: the arena boundary, but
+    //     never stopping closer than 120 u to the thing shooting at him. A border-only rule guarantees
+    //     nothing about that distance, which is the previous retreat bug's lesson applied in advance.
+    //
+    //     `?roam` forces the border to 0 — the arena boundary is meaningless there (the same reason
+    //     `step-player.js` skips the OOB rule) — so the max() degrades to exactly the old rule with no
+    //     extra branch.
+    //
+    //     WHICH SPEED THE ARRIVAL IS JUDGED ON depends on WHICH DESTINATION IS BINDING, and they are not
+    //     the same number. The 120 u floor is a distance to a MOVING threat, so it is judged on the rate
+    //     the GAP is opening (a pursuer matching his course means the gap is not opening, however fast he
+    //     flies) — the ESCORT case, for the escort's reason; a NEGATIVE value is clamped to 0 by
+    //     `approachThrust`, which is right, because full thrust is all he can do about it. The BORDER is a
+    //     fixed line in world space, so it is judged on his own GROUND speed along the escape course.
+    //     Using `opening` for the border would brake up to ~116 u early against a threat that is fleeing.
+    //
+    //     BEING CHASED FALLS OUT OF THE max(), with no extra mechanic. Once he is past the border,
+    //     `border` is 0 and `remaining = 120 − gap`, and `approachThrust` holds full thrust while
+    //     `remaining > 51.7 + 0.5` — i.e. while the pursuer keeps the gap under ~68 u. One matching his
+    //     30 u/s cap does exactly that, so he keeps running straight past the boundary; one that falls
+    //     behind lets the gap open past 68 u, at which point he is achieving the break-off anyway and
+    //     brakes into the hold. The chase self-resolves through the PLAYER's own out-of-bounds rule
+    //     (`step-player.js`: 30 s continuous outside ±ARENA warps him back to the centre) — accepted, not
+    //     designed around. The pilot himself has no OOB rule and never did.
     const ax = a.pos.x - threat.pos.x, az = a.pos.z - threat.pos.z;
     const gap = Math.hypot(ax, az);
     desired = gap > 1e-6 ? Math.atan2(ax, az) : a.heading;   // away from it, not outward from anywhere
-    // THE DESTINATION MOVES, so this is the ESCORT case and not the old stationary-point one: what the
-    // arrival rule needs is the rate at which the remaining distance is being eaten, and here that is the
-    // rate the GAP IS OPENING — the component of (his velocity − the enemy's) along the away vector.
-    // Ground speed would be wrong for the same reason it was wrong for the escort: a pursuer matching his
-    // course means the gap is not opening at all, however fast he is flying. A NEGATIVE value (still
-    // being closed on) is clamped to 0 by approachThrust, which is exactly right — full thrust is all he
-    // can do about it.
     const tvx = threat.vel ? threat.vel.x : 0, tvz = threat.vel ? threat.vel.z : 0;
     const opening = gap > 1e-6 ? ((a.vel.x - tvx) * ax + (a.vel.z - tvz) * az) / gap : 0;
-    thrust = approachThrust(opening, ALLY_BREAK_OFF_DIST - gap, a.acceleration);
+    const border = (world.roam || gap <= 1e-6)
+      ? 0 : edgeRemaining(a.pos, ax / gap, az / gap, world.arenaCenter, ARENA);
+    const gapRemaining = ALLY_BREAK_OFF_DIST - gap;
+    const remaining = Math.max(border, gapRemaining);
+    const alongCourse = gap > 1e-6 ? (a.vel.x * ax + a.vel.z * az) / gap : 0;
+    thrust = approachThrust(border > gapRemaining ? alongCourse : opening, remaining, a.acceleration);
   } else if (a.retreating) {
     // 4a′. Retreating with NOTHING TO RUN FROM. The arena is empty, so there is no gap to open and no
     //      direction that means anything; flying off into blank space would just take him off the map.
@@ -413,16 +600,29 @@ export function flySentinel(world, a, dt, ctx) {
         // accelerate off at whatever angle it happens to sit at, instead of coming about first.
         if (next && next !== a.target) { a.target = next; if (next === snap) a.passArmed = false; }
       }
-      // COME ABOUT ENDS when the nose reaches the target: stop braking, charge again, already able to fire.
-      if (a.passArmed && a.target
-          && Math.abs(shortestAngleDelta(a.heading, angleTo(a.pos, a.target))) <= ALLY_TURN_EXIT_ANGLE) {
-        a.passArmed = false;
-      }
+      // (The come-about exit used to be decided HERE, against the TRUE bearing. It moved down into the
+      //  geometry block below, because it is now judged on the PERCEIVED bearing — see there.)
     }
     if (a.target) {
       const tx = a.target.pos.x - a.pos.x, tz = a.target.pos.z - a.pos.z;
       dist = Math.hypot(tx, tz);
-      toTarget = dist > 1e-6 ? { x: tx / dist, z: tz / dist } : { x: Math.sin(a.heading), z: Math.cos(a.heading) };
+      const trueDir = dist > 1e-6
+        ? { x: tx / dist, z: tz / dist } : { x: Math.sin(a.heading), z: Math.cos(a.heading) };
+      // WHERE HE THINKS THE TARGET IS. Everything from here on — the nose, the come-about exit and the
+      // fire gate (`at`, below) — reads the perceived vector, which is what makes him MISS rather than
+      // HOLD FIRE. TARGET SELECTION above stays on the TRUE bearing (`nearestEnemyTo`, `aimedEnemy`, the
+      // >120° behind-arm): those are questions about geometry, not about aim, and perturbing them would
+      // make the manoeuvre state machine flap.
+      toTarget = perceivedBearing(a, a.target, trueDir, dist, dt);
+      // COME ABOUT ENDS when the nose reaches WHERE HE THINKS THE TARGET IS: stop braking, charge again,
+      // already able to fire. Judged on the perceived bearing, not the true one — the nose converges on
+      // the perceived vector, so a true-bearing test could sit up to ALLY_AIM_MAX·thetaHit outside the
+      // 0.25 rad exit angle and never fire: the come-about would never end.
+      if (a.passArmed
+          && Math.abs(shortestAngleDelta(a.heading, Math.atan2(toTarget.x, toTarget.z))) <= ALLY_TURN_EXIT_ANGLE) {
+        a.passArmed = false;
+        clearAimTarget(a);   // …and coming out of a reversal is an ACQUISITION: re-roll on the next tick
+      }
       // THE NOSE IS AIMED FOR THE GUN, not at the target. His bullets inherit his velocity, and he is
       // almost always drifting across his own line of fire, so pointing the nose AT the enemy is what
       // makes him miss (see aimWithDrift). The rocket group is unaffected by the choice — it launches
@@ -437,6 +637,7 @@ export function flySentinel(world, a, dt, ctx) {
       wantsFire = true;
     } else {
       escorting = true;   // 4c. NOTHING TO FIGHT: escort (the shared block below)
+      clearAimTarget(a);
     }
   }
 
@@ -492,11 +693,23 @@ export function flySentinel(world, a, dt, ctx) {
   } else {
     a.intercept = null;
   }
+  // A NEW ROCKET IS A NEW ROLL. The dispersion is held on the pilot and re-rolled on its own timer, so the
+  // commitment to one rocket has to reset it — including when the intercept ends (to null), or a rocket
+  // acquired later would inherit the last one's scatter.
+  const pdTarget = a.intercept || null;
+  if (pdTarget !== (a._pdTarget || null)) {
+    a._pdTarget = pdTarget;
+    a._pdJitter = pdTarget ? ALLY_PD_JITTER * signed(a) : 0;
+    a._pdTimer = ALLY_PD_JITTER_SEC;
+  }
   if (a.intercept) {
     const ix = a.intercept.pos.x - a.pos.x, iz = a.intercept.pos.z - a.pos.z;
     const id = Math.hypot(ix, iz);
     if (id > 1e-6) {
-      interceptDir = { x: ix / id, z: iz / id };
+      // The PERCEIVED rocket, for the same reason the ship gets one: the fire gate judges the shot against
+      // the vector it is handed, so the scatter has to be in that vector or he would hold fire instead of
+      // missing. `interceptDist` stays the TRUE distance — the range gates are not perturbed.
+      interceptDir = perceivedIntercept(a, a.intercept, { x: ix / id, z: iz / id }, id, gunSpeed(a), dt);
       interceptDist = id;
       const aim = aimWithDrift(interceptDir, a.vel, gunSpeed(a));
       desired = Math.atan2(aim.x, aim.z);   // the nose goes on the ROCKET; the thrust decision is untouched

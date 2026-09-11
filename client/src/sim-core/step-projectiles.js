@@ -28,6 +28,10 @@ const _bulletP0 = new Vec3(); // reused: a bullet's pre-move position for the sw
 const SPIRAL_RADIUS = 1.4;  // orbit radius around the leader axis (world units)
 const SPIRAL_ANGULAR = 6;   // rad/s — how fast the warheads corkscrew
 
+// How close a BULLET has to come to a rocket to take it out of the air. The Sentinel pilot's point
+// defence is calibrated against this number (step-ally.js), so the two must not drift apart.
+export const ROCKET_INTERCEPT_RADIUS = 2.4;
+
 export function stepBullets(world, dt) {
   // --- projectiles ---
   for (let i = world.bullets.length - 1; i >= 0; i--) {
@@ -94,7 +98,7 @@ export function stepBullets(world, dt) {
         const r = world.rockets[j];
         if (r.lead) continue;                        // the invisible spiral leader has no hp — not shootable
         if (r.fromPlayer === b.fromPlayer) continue; // only world.rockets of the opposite side
-        if (b.pos.distanceTo(r.pos) < 2.4) {
+        if (b.pos.distanceTo(r.pos) < ROCKET_INTERCEPT_RADIUS) {
           r.hp -= b.damage;
           if (r.hp <= 0) { detonateRocket(world, r, false); if (r.spiralOf) r.spiralOf.children--; despawnAt(world, 'rocket', world.rockets, j); } // destroyed (a spiral warhead frees its leader slot)
           hit = true; break;                                                 // else it survives, takes another

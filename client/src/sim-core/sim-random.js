@@ -32,10 +32,22 @@ let rand = null; // null = live play (native Math.random); a function = a seeded
 // path that reached into simRandom() shows up here as a count mismatch long before it shows up as a desync
 // somebody has to debug. Reset by seedSim, which is called exactly once per deterministic run.
 let draws = 0;
+// The integer this run was seeded with (or null when nothing is installed) — see simSeed() below.
+let seedValue = null;
 
 // Install (or clear) the seeded stream. seedSim(n) → deterministic; seedSim(null) → back to native.
 // Called at record start, at playback/intro arm, by the ?bench replayer, and cleared on teardown.
-export function seedSim(seed) { rand = (seed == null) ? null : mulberry32(seed >>> 0); draws = 0; }
+export function seedSim(seed) {
+  seedValue = (seed == null) ? null : (seed >>> 0);
+  rand = (seed == null) ? null : mulberry32(seed >>> 0);
+  draws = 0;
+}
+
+// The seed this run was started with, or null when nothing is installed. NOT a draw and NOT a random
+// source: it exists so a sim entity can derive its OWN private, deterministic stream (the Sentinel pilot's
+// aim error, step-ally.js) without touching the shared gameplay stream — DECISIONS §73 rules the STREAM,
+// and a per-entity mulberry32 seeded from this value consumes none of it.
+export function simSeed() { return seedValue; }
 
 // One gameplay random in [0,1). Falls back to Math.random when no seed is installed (normal play).
 export function simRandom() { draws++; return rand ? rand() : Math.random(); }

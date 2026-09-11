@@ -11,15 +11,19 @@ import { Vec3 } from './vec.js';
 import { createWorld } from './world.js';
 import {
   stepAlly, stepAllyDeaths, nearestEnemyTo, aimedEnemy, holdFireForPlayer, shouldRetreat, shouldRejoin,
-  approachThrust, aimWithDrift, bulletDir, gunSpeed, isBallistic,
+  approachThrust, aimWithDrift, bulletDir, gunSpeed, isBallistic, perceivedBearing, aimHitAngle,
+  edgeRemaining, pilotRandom,
 } from './step-ally.js';
 import { nearestHostileTarget } from './targeting.js';
 import { stepEnemyAI } from './step-enemies.js';
 import { shortestAngleDelta } from './steering.js';
 import { PLAYER_MAX_SPEED } from './step-player.js';
+import { ARENA } from './consts.js';
+import { broadRadius } from './collision.js';
 import {
   ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC, ALLY_ESCORT_DIST,
-  ALLY_BREAK_OFF_DIST,
+  ALLY_BREAK_OFF_DIST, ALLY_AIM_HIT_FRAC, ALLY_AIM_LAG_SEC, ALLY_AIM_TAU_SEC, ALLY_AIM_JITTER,
+  ALLY_AIM_KICK, ALLY_AIM_MAX, ALLY_AIM_JITTER_SEC,
 } from './ally-config.js';
 import { seedSim, simRandomDraws } from './sim-random.js';
 
@@ -42,7 +46,14 @@ function ally(over = {}) {
 }
 
 function enemy(x, z, over = {}) {
-  return Object.assign({ pos: new Vec3(x, 0.6, z), vel: new Vec3(), warping: false, alive: true, hp: 30, maxHp: 30 }, over);
+  return Object.assign({
+    pos: new Vec3(x, 0.6, z), vel: new Vec3(), warping: false, alive: true, hp: 30, maxHp: 30,
+    // A REALISTIC BROAD RADIUS, because the pilot's aim error is scaled by it: with no `hitBoxes`,
+    // `broadRadius` falls back to LEGACY_R × sizeScale = 2.6 × 1.6 = 4.16 u ≈ the real Basic pirate's 4.153.
+    // Do NOT fake `hitBoxes: [{}]` to get there — `broadRadius` would be right and the NARROW phase would
+    // throw (collision.js reads `b.c.x`) the moment a projectile was stepped against it.
+    sizeScale: 1.6,
+  }, over);
 }
 
 // A World with the ally in it and nothing that needs a catalog. `stepAlly` reads only these fields.
@@ -197,8 +208,16 @@ test('the come-about BRAKES AND TURNS TOGETHER, then re-accelerates the moment t
   // Run the turn to completion, then check he charges again.
   for (let i = 0; i < 60 * 6 && a.passArmed; i++) stepAlly(w, DT);
   assert.equal(a.passArmed, false, 'the come-about ends when the nose reaches the target');
-  const gap = Math.abs(shortestAngleDelta(a.heading, Math.atan2(e.pos.x - a.pos.x, e.pos.z - a.pos.z)));
-  assert.ok(gap <= ALLY_TURN_EXIT_ANGLE + 1e-6, 'and it ends INSIDE the exit angle — already able to fire');
+  // THE EXIT IS JUDGED ON THE PERCEIVED BEARING now, not the true one (step-ally.js): the nose converges on
+  // where he THINKS the target is, so measured against the TRUE bearing it can end up to the aim error
+  // outside the exit angle. Testing the true bearing to within 1e-6 would demand the come-about end on a
+  // bearing the nose is not converging on — and a true-bearing EXIT would never fire at all.
+  const dxE = e.pos.x - a.pos.x, dzE = e.pos.z - a.pos.z;
+  const gap = Math.abs(shortestAngleDelta(a.heading, Math.atan2(dxE, dzE)));
+  const aimSlack = ALLY_AIM_MAX * aimHitAngle(e, Math.hypot(dxE, dzE));
+  assert.ok(gap <= ALLY_TURN_EXIT_ANGLE + aimSlack + 1e-6,
+    `the nose ends inside the exit angle OF WHERE HE THINKS THE TARGET IS (${gap.toFixed(3)} rad against `
+    + `${(ALLY_TURN_EXIT_ANGLE + aimSlack).toFixed(3)})`);
   // The very next tick lights the engine again. NOT `|vel|` — he comes out of the reversal still carrying
   // a few u/s of OLD-direction drift (braking outlasts the turn), so thrusting along the new nose bleeds
   // that off first and the SPEED briefly falls. What must grow is the component ALONG the nose.
@@ -360,13 +379,81 @@ test('…and it works when he is ALREADY beyond the old centre-relative 70 u', (
   assert.ok(gapTo(a, e) > before, 'and the gap grew');
 });
 
-test('he settles AT the break-off distance instead of running for ever', () => {
+// How far outside the ±ARENA box he is, on whichever axis is furthest out. `< ARENA` is inside the zone,
+// `> ARENA` is past the border.
+const boxDist = (a, w) => Math.max(Math.abs(a.pos.x - w.arenaCenter.x), Math.abs(a.pos.z - w.arenaCenter.z));
+
+test('he runs to the ARENA EDGE and comes to rest there (the 120 u hold is now a FLOOR)', () => {
+  // THE RETIRED RULE, kept in view: this used to assert `gap ∈ ALLY_BREAK_OFF_DIST ± 15` with `vel < 3`.
+  // Stopping 120 u from the threat read as "he wandered off a bit" — at 30 u/s his stopping distance is
+  // 51.7 u, so he cut thrust at a gap of ~68 u and coasted. He now runs at full thrust for the boundary and
+  // brakes on his own kinematic stopping distance, so he ARRIVES there with ~0 speed (DECISIONS §154). The
+  // 120 u is still honoured, as the floor in `max(border, 120 − gap)`.
   const { a, e, w } = breakingOff({ centreDist: 100, enemyGap: 20 });
   for (let i = 0; i < 60 * 30; i++) stepAlly(w, DT);   // 30 s: long past arrival
+  // WHICH WALL he reaches is not the contract and must not be asserted: he breaks off mid-charge with the
+  // nose ON the enemy, so the ~2.7 s reversal swings the away-vector round and he leaves on whatever axis
+  // the turn resolves to (measured: +Z from this fixture, not the naive +X). The contract is the BOX.
+  assert.ok(Math.abs(boxDist(a, w) - ARENA) < 25,
+    `he arrives AT the arena border (furthest axis ${boxDist(a, w).toFixed(1)} u against ARENA ${ARENA})`);
+  assert.ok(a.vel.length() < 3, `and comes to rest there (speed ${a.vel.length().toFixed(2)} u/s)`);
+  assert.ok(gapTo(a, e) > ALLY_BREAK_OFF_DIST,
+    `with the 120 u floor still honoured (gap ${gapTo(a, e).toFixed(1)} u)`);
+});
+
+test('CHASED, he flies straight past the border — the max() is the whole mechanic', () => {
+  // No extra rule: once he is outside, `border` is 0 and `remaining` is `120 − gap`, and `approachThrust`
+  // holds full thrust while the pursuer keeps the gap under ~68 u. A pursuer matching his 30 u/s cap does
+  // exactly that. (The chase self-resolves through the PLAYER's own 30 s out-of-bounds warp-back.)
+  const { a, e, w } = breakingOff({ centreDist: 100, enemyGap: 20 });
+  // He breaks off mid-charge with the nose ON the enemy, so the first ~2.7 s are the reversal and a pursuer
+  // already at his own top speed simply rams him — the pre-existing price of leaving the instant the
+  // threshold is crossed, recorded by the OUTRUNS test above. Give the chase three seconds to start, which
+  // is the realistic case (an enemy holds a 14-22 u stand-off band; it does not open at 30 u/s from 20 u).
+  for (let i = 0; i < 180; i++) stepAlly(w, DT);
+  let worst = Infinity;
+  for (let i = 0; i < 60 * 30; i++) {
+    const dx = a.pos.x - e.pos.x, dz = a.pos.z - e.pos.z, d = Math.hypot(dx, dz) || 1;
+    e.vel.set((dx / d) * PLAYER_MAX_SPEED, 0, (dz / d) * PLAYER_MAX_SPEED);   // matched to his own cap
+    e.pos.addScaledVector(e.vel, DT);
+    stepAlly(w, DT);
+    worst = Math.min(worst, gapTo(a, e));
+  }
+  assert.ok(boxDist(a, w) > ARENA,
+    `he is past the boundary rather than parked on it (${boxDist(a, w).toFixed(1)} u against ARENA ${ARENA})`);
+  assert.ok(worst > 1, `and the pursuer never closed to contact (worst gap ${worst.toFixed(1)} u)`);
+});
+
+test('in ?roam the border is meaningless, so the OLD rule is exactly what is left', () => {
+  // `borderRemaining` is forced to 0 in roam — the same reason `step-player.js` skips the out-of-bounds
+  // rule there — so `max(border, 120 − gap)` degrades to the retired rule with no extra branch. This is the
+  // assertion pair retired above, kept alive where it still applies.
+  const { a, e, w } = breakingOff({ centreDist: 100, enemyGap: 20 });
+  w.roam = true;
+  for (let i = 0; i < 60 * 30; i++) stepAlly(w, DT);
   const gap = gapTo(a, e);
   assert.ok(gap > ALLY_BREAK_OFF_DIST - 15 && gap < ALLY_BREAK_OFF_DIST + 15,
     `he holds around ALLY_BREAK_OFF_DIST (gap ${gap.toFixed(1)} u)`);
   assert.ok(a.vel.length() < 3, `and comes to rest there (speed ${a.vel.length().toFixed(2)} u/s)`);
+});
+
+test('edgeRemaining: the ray/box slab test the retreat steers on', () => {
+  const c = new Vec3(0, 0, 0);
+  const at = (x, z) => new Vec3(x, 0.6, z);
+  assert.ok(Math.abs(edgeRemaining(at(0, 0), 1, 0, c, ARENA) - ARENA) < 1e-9, 'from the centre along +x');
+  // Diagonally from inside: the NEARER slab wins. From (300, 0) on a 45° course the +x wall is
+  // (360 − 300)/0.7071 = 84.85 u away and the +z wall is 360/0.7071 = 509 u — so 84.85.
+  const k = Math.SQRT1_2;
+  assert.ok(Math.abs(edgeRemaining(at(300, 0), k, k, c, ARENA) - (ARENA - 300) / k) < 1e-6,
+    'the nearer of the two walls');
+  assert.equal(edgeRemaining(at(ARENA + 10, 0), 1, 0, c, ARENA), 0, 'already outside → 0 (he has arrived)');
+  // A ray with no direction at all cannot reach any wall — the only way, from INSIDE the box, that neither
+  // axis produces a crossing.
+  assert.equal(edgeRemaining(at(0, 0), 0, 0, c, ARENA), 0, 'no direction → 0');
+  // A DRIFTING zone is followed for free, because this is recomputed every tick against `world.arenaCenter`.
+  const drifted = new Vec3(50, 0, 0);
+  assert.ok(Math.abs(edgeRemaining(at(0, 0), 1, 0, drifted, ARENA) - (ARENA + 50)) < 1e-9,
+    'a drifted centre shifts the answer by exactly the drift');
 });
 
 test('he OUTRUNS a pursuer — breaking contact is a race he wins, not a claim in a comment', () => {
@@ -483,17 +570,40 @@ test('nearestHostileTarget is world.player VERBATIM when there is no ally', () =
 // ---------- the RNG guarantee (DECISIONS §73) ----------
 
 test('ZERO RNG: 600 ticks of a fight WITH an ally draw nothing from the seeded stream', () => {
+  // HIS AIM IS RANDOM AND THIS IS STILL TRUE, which is the whole point of the private per-pilot stream
+  // (`step-ally.js pilotRandom`): the shared seeded stream's DRAW COUNT is half the browser↔Node divergence
+  // oracle and half the duel referee's verdict, so a pilot that rolled `simRandom()` would move both. The
+  // fight below therefore covers every path that draws: an acquisition, a target switch, a re-pick after a
+  // death, an intercept commitment — and the count still does not move.
   const a = ally();
+  a.groups = { gun: { name: 'gun', ai: { range: 45, aimTol: 0.25 }, mounts: [{ weapon: { type: 'bullet', projectileSpeed: 65 } }], reload: 0.6, cooldown: 0, pending: [] } };
+  a.mounts = a.groups.gun.mounts;
   const enemies = [enemy(0, 60), enemy(-30, 20), enemy(45, -50, { warping: true })];
   const w = fight({ allies: [a], enemies });
+  w.player.pos.set(0, 0.6, -300);          // far behind: the §2.6 gate is not the variable here
   seedSim(12345);
   const before = simRandomDraws();
+  let intercepted = false, switched = 0, lastTarget = null;
   for (let i = 0; i < 600; i++) {
+    if (i === 100) {
+      // A hostile rocket homing on HIM, 20 u out, while every ship is outside the 45 u engagement band —
+      // so he commits to the intercept (a PD re-roll).
+      for (const e of enemies) e.pos.set(e.pos.x * 4, 0.6, e.pos.z * 4);
+      w.rockets.push({ pos: new Vec3(a.pos.x + 20, 0.6, a.pos.z), vel: new Vec3(-12, 0, 0),
+                       fromPlayer: false, target: a, hp: 10 });
+    }
+    if (i === 150) w.rockets.length = 0;                        // …and the commitment ends (another re-roll)
+    if (i === 200) enemies[2].warping = false;                  // the third one finishes forming
+    if (i === 400) enemies.splice(enemies.indexOf(a.target), 1);  // and the one he was CHARGING dies: he re-picks
     stepAlly(w, DT);
-    if (i === 200) enemies[2].warping = false;                 // the third one finishes forming
-    if (i === 400) enemies.splice(0, 1);                        // and one dies: he re-picks
+    if (a.intercept) intercepted = true;
+    if (a.target && a.target !== lastTarget) { switched++; lastTarget = a.target; }
   }
+  assert.ok(a._aimRng, 'his private stream really was used — otherwise this proves nothing');
+  assert.ok(intercepted, 'and the intercept path really was entered');
+  assert.ok(switched >= 2, `and he re-picked at least once (${switched} acquisitions)`);
   assert.equal(simRandomDraws(), before, 'stepAlly consumes no gameplay randomness at all');
+  seedSim(null);
 });
 
 // ---------- AIMING A GUN WHOSE BULLETS INHERIT THE SHOOTER'S VELOCITY ----------
@@ -620,7 +730,12 @@ test('the ALLY in flight: his bullet flies at a stationary enemy while he drifts
   const fwd = { x: Math.sin(a.heading), z: Math.cos(a.heading) };
   const bd = bulletDir(fwd, a.vel, HEAVY_CANNON_SPEED);
   const off = Math.abs(shortestAngleDelta(angleOf(bd), angleOf(u)));
-  assert.ok(off < 0.02, `his SHOT is on the enemy (off by ${off.toFixed(4)} rad)`);
+  // He carries a standing jitter now, so an EXACT-bearing pin is no longer the contract — the contract is
+  // that the shot still lands ON THE HULL. `aimWithDrift`'s own exactness is pinned by the pure test above,
+  // which does not go through the pilot at all, so nothing is lost here.
+  const thetaHit = aimHitAngle(e, Math.hypot(e.pos.x - a.pos.x, e.pos.z - a.pos.z));
+  assert.ok(off <= thetaHit,
+    `his SHOT is on the enemy HULL (off by ${off.toFixed(4)} rad against a ${thetaHit.toFixed(4)} half-width)`);
   // And the nose is genuinely NOT on the enemy — which is the point, and what the old gate would have vetoed.
   const noseOff = Math.abs(shortestAngleDelta(a.heading, angleOf(u)));
   assert.ok(noseOff > 0.15, `while the nose is canted off it by ${noseOff.toFixed(3)} rad`);
@@ -648,4 +763,192 @@ test('an ENEMY is left alone: it still points its nose at the player, flaw and a
   const bd = bulletDir({ x: Math.sin(e.heading), z: Math.cos(e.heading) }, e.vel, HEAVY_CANNON_SPEED);
   assert.ok(Math.abs(shortestAngleDelta(angleOf(bd), angleOf(u))) > 0.15,
     'so its shot still misses while it drifts — the known flaw, left for the balance pass');
+});
+
+// ---------- THE HUMAN AIM: a tracking error on the PERCEIVED bearing ----------
+//
+// These measure the aim ANGLE against `thetaHit`, the angular half-width of what a bullet actually has to
+// hit. The OUTCOME half — real bullets fired at real catalog hulls, and the guard that keeps
+// `ALLY_AIM_HIT_FRAC` honest against model drift — lives in `server/src/ally-sim.test.js`, where a catalog
+// exists.
+//
+// TWO RULES KEEP THESE FROM BECOMING LOTTERIES (and they are not optional):
+//   1. `seedSim` is PROCESS-GLOBAL and `pilotRandom` reads it lazily, so without care the seed an earlier
+//      test left installed would decide the outcome here — TEST ORDER would become a hidden input. Every
+//      test below installs its own seed before the first step, and every STATISTICAL one aggregates over K
+//      pilot seeds so no single stream can carry it.
+//   2. A test about a GATE pins the aim error to zero; a test about the AIM lets it run.
+
+// Drive `perceivedBearing` directly at a target we place ourselves, and report the signed error between the
+// PERCEIVED bearing and the TRUE one, in `thetaHit` units. The pilot sits at the origin: the geometry is the
+// only variable, exactly as the pinned-pose fixtures above do it.
+function aimRun({ seed, ordinal = 0, placeAt, ticks, skip = 0, prime = null }) {
+  seedSim(seed);
+  const a = ally({ _aimOrdinal: ordinal });
+  const t = enemy(0, 40);
+  const out = [];
+  for (let i = 0; i < ticks; i++) {
+    const p = placeAt(i * DT);
+    t.pos.set(p.x, 0.6, p.z);
+    const dx = t.pos.x - a.pos.x, dz = t.pos.z - a.pos.z;
+    const dist = Math.hypot(dx, dz);
+    const u = { x: dx / dist, z: dz / dist };
+    if (i === 0 && prime) prime(a, t, u, dist);
+    const seen = perceivedBearing(a, t, u, dist, DT);
+    if (i >= skip) {
+      out.push({
+        err: shortestAngleDelta(Math.atan2(u.x, u.z), Math.atan2(seen.x, seen.z)),
+        thetaHit: aimHitAngle(t, dist),
+      });
+    }
+  }
+  seedSim(null);
+  return out;
+}
+
+const circleAt = (radius, rate) => (t) => ({ x: radius * Math.sin(rate * t), z: radius * Math.cos(rate * t) });
+
+test('a SETTLED solution lands EVERY shot — the promise this feature is not allowed to break', () => {
+  // The first ~1.5 s are skipped BY DESIGN: the acquisition kick is the first-shot rule, pinned by its own
+  // tests below. What is asserted here is the steady state — once the kick has decayed, the standing jitter
+  // alone can never take the shot off the hull, at any aspect. That is `ALLY_AIM_JITTER × ALLY_AIM_HIT_FRAC
+  // = 0.245` of broadRadius against a measured narrowest half-width of 0.374 (ally-config.js).
+  let worst = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    for (const r of aimRun({ seed, placeAt: () => ({ x: 0, z: 40 }), ticks: 720, skip: 120 })) {
+      worst = Math.max(worst, Math.abs(r.err) / r.thetaHit);
+      assert.ok(Math.abs(r.err) <= r.thetaHit,
+        `settled shot off the hull on seed ${seed}: ${(Math.abs(r.err) / r.thetaHit).toFixed(3)} half-widths`);
+    }
+  }
+  assert.ok(worst <= ALLY_AIM_JITTER + 1e-6,
+    `and the steady-state error IS the standing jitter (worst ${worst.toFixed(3)} half-widths)`);
+});
+
+test('a CROSSING target drags the aim, and it LAGS — it never leads', () => {
+  // PINNED UNSATURATED, on purpose. A 10 u/s crossing (0.25 rad/s at 40 u) puts the lag term at
+  // `m = LAG × 10 / hitR ≈ 1.17` half-widths, well inside the ALLY_AIM_MAX 3.00 cap, so the clamp is idle
+  // and this assertion genuinely pins the coefficient. A 30 u/s crossing would give m ≈ 3.5 against a cap
+  // of 3.0: the clamp would be active and the band could not tell LAG 0.17 from 0.20 — it would only catch
+  // a sign flip or a dead smoothing filter. That saturated case is the CAP test's job, not this one.
+  //
+  // This pins the MECHANISM, never a miss rate: `aimWithDrift` deliberately does not lead a moving target,
+  // so a fast crosser at range already missed before this feature existed (flight time, not aim).
+  const RATE = 0.25, RADIUS = 40;
+  const hitR = ALLY_AIM_HIT_FRAC * broadRadius(enemy(0, 0));
+  const expected = -(ALLY_AIM_LAG_SEC * RATE * RADIUS) / hitR;   // in thetaHit units; negative = it TRAILS
+  let sum = 0, n = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    for (const r of aimRun({ seed, placeAt: circleAt(RADIUS, RATE), ticks: 720, skip: 120 })) {
+      sum += r.err / r.thetaHit; n++;
+    }
+  }
+  const mean = sum / n;
+  assert.ok(mean < 0, `the aim TRAILS a target whose bearing is rising (mean ${mean.toFixed(3)} half-widths)`);
+  assert.ok(Math.abs(mean - expected) <= 0.25 * Math.abs(expected),
+    `and by LAG × v_perp / hitR (${mean.toFixed(3)} against ${expected.toFixed(3)} half-widths)`);
+});
+
+test('the CAP holds, on a settled solution and on a hard crossing alike', () => {
+  for (const placeAt of [() => ({ x: 0, z: 40 }), circleAt(40, 0.75)]) {
+    for (let seed = 1; seed <= 20; seed++) {
+      for (const r of aimRun({ seed, placeAt, ticks: 600 })) {
+        assert.ok(Math.abs(r.err) <= ALLY_AIM_MAX * r.thetaHit + 1e-9,
+          `a miss reads as "passed close by", never as "shot off into space" `
+          + `(${(Math.abs(r.err) / r.thetaHit).toFixed(2)} half-widths)`);
+      }
+    }
+  }
+});
+
+test('his private stream is keyed to the RUN\'s seed, even if he drew before it was installed', () => {
+  // THE DUEL REFEREE CAUGHT THIS, and no unit test would have. `pilotRandom` is lazy, and the design
+  // assumed every pilot's first draw happens after the run's seed is installed. In the BROWSER it does not:
+  // the duel room spawns its aces inside `startRun`, which runs before take-off calls `beginLiveSession` —
+  // so the browser's ace built its stream off the unseeded fallback while the Node referee built one off
+  // the trace's seed, and `49-duel-referee` failed on the world digest. The stream is therefore keyed to
+  // the seed and re-derived when it changes.
+  const early = ally({ _aimOrdinal: 0 });
+  seedSim(null);
+  pilotRandom(early);                       // an idle pre-take-off frame: he draws with no seed installed
+  seedSim(4242);
+  const after = [pilotRandom(early), pilotRandom(early), pilotRandom(early)];
+
+  const fresh = ally({ _aimOrdinal: 0 });
+  seedSim(4242);                            // …the other host, which never stepped him before the seed
+  const clean = [pilotRandom(fresh), pilotRandom(fresh), pilotRandom(fresh)];
+  seedSim(null);
+  assert.deepEqual(after, clean, 'installing the run seed re-derives his stream from it');
+});
+
+test('two pilots with different ordinals fly different fights, and the SAME one reproduces', () => {
+  // The ordinal is the only input that separates two pilots' aim streams (ally.js makeSentinelHull).
+  const fly = (ordinal, seed) => {
+    seedSim(seed);
+    const a = ally({ _aimOrdinal: ordinal });
+    const w = fight({ allies: [a], enemies: [enemy(0, 60)] });
+    w.player.pos.set(0, 0.6, -300);
+    for (let i = 0; i < 120; i++) stepAlly(w, DT);   // 2 s
+    seedSim(null);
+    return a.heading;
+  };
+  assert.notEqual(fly(0, 99), fly(1, 99), 'the wingman and an ace do not fly one shared stream');
+  assert.equal(fly(3, 99), fly(3, 99), 'and the same ordinal on the same seed reproduces bit-for-bit');
+});
+
+test('THE COUPLING: one `fireCooldown` of decay, and the SECOND shot lands', () => {
+  // (1) The arithmetic, so it fails loudly if a constant moves. 36 ticks at 60 Hz IS the Heavy cannon's
+  //     0.6 s `fireCooldown` — the promise is a coupling to THAT weapon and to nothing else, and one of the
+  //     catalog's 0.12-0.18 s kinetics in this pilot's hands would miss its first three or four shots
+  //     instead, with no test on the current weapon showing it (DECISIONS §153).
+  const decayed = ALLY_AIM_KICK * Math.pow(1 - (1 / 60) / ALLY_AIM_TAU_SEC, 36);
+  assert.ok(decayed + ALLY_AIM_JITTER < 1,
+    `KICK × 0.9444^36 + JITTER must stay under one hit half-width (got ${(decayed + ALLY_AIM_JITTER).toFixed(3)})`);
+
+  // (2) The behaviour, worst case: the full kick and the full standing jitter, same sign, against a
+  //     stationary target. One cooldown later the shot is on the hull.
+  const worstCase = (a, t, u) => {
+    a._aimTarget = t; a._aimBearing = Math.atan2(u.x, u.z); a._aimRate = 0;
+    a._aimKick = ALLY_AIM_KICK; a._aimJitter = ALLY_AIM_JITTER; a._aimJitterT = ALLY_AIM_JITTER_SEC;
+  };
+  const run = aimRun({ seed: 4242, placeAt: () => ({ x: 0, z: 40 }), ticks: 36, prime: worstCase });
+  const last = run[run.length - 1];
+  assert.ok(Math.abs(last.err) <= last.thetaHit,
+    `the second shot lands (${(Math.abs(last.err) / last.thetaHit).toFixed(3)} half-widths)`);
+  assert.ok(Math.abs(run[0].err) > run[0].thetaHit, 'while the first one, on the kick, does not');
+});
+
+test('the FIRST shot at a newly acquired target leaves the WORST-ASPECT yardstick about half the time', () => {
+  // READ THE TITLE CAREFULLY: this is `P(|j + k| > 1)` in `thetaHit` units — the chance the acquisition error
+  // exceeds the NARROWEST aspect of the narrowest hull — and it is **not a miss rate**. A real hull is wider
+  // than its worst aspect at almost every heading and its per-part boxes catch a round past a gap, so the
+  // real first-shot miss rate is about a third of this: **~18 %**, measured with `segmentHitsShip` against
+  // real catalog hulls in `server/src/ally-sim.test.js` ("THE FIRST SHOT ... against a real hull"), which is
+  // the number that was tuned and the number the docs quote. What THIS test is for is the internal bound —
+  // that the kick genuinely leaves the yardstick often, and by construction rather than by luck.
+  let misses = 0, shots = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    seedSim(seed);
+    const a = ally();
+    const targets = [enemy(0, 40), enemy(0, 40)];   // two DISTINCT entities at the same place: a re-pick
+    for (let k = 0; k < 10; k++) {
+      const t = targets[k % 2];
+      // 60 ticks of settling between acquisitions, which is longer than ALLY_AIM_JITTER_SEC — so the
+      // standing offset is re-rolled at least once and consecutive samples are independent.
+      for (let i = 0; i < 60; i++) {
+        const seen = perceivedBearing(a, t, { x: 0, z: 1 }, 40, DT);
+        if (i === 0) {
+          shots++;
+          if (Math.abs(shortestAngleDelta(0, Math.atan2(seen.x, seen.z))) > aimHitAngle(t, 40)) misses++;
+        }
+      }
+    }
+    seedSim(null);
+  }
+  assert.equal(shots, 200);
+  const rate = misses / shots;
+  assert.ok(rate >= 0.40 && rate <= 0.70,
+    `the first shot leaves the worst-aspect yardstick about half the time (got ${(rate * 100).toFixed(0)} %; `
+    + 'at ALLY_AIM_KICK 2.30 the closed form is 56.5 %. This is NOT the miss rate — that is ~18 %, pinned in '
+    + 'server/src/ally-sim.test.js)');
 });
