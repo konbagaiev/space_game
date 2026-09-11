@@ -6433,3 +6433,28 @@ headless, the trace carries `room`, and the three latent bugs the referee uncove
 in **every** recorded session, the trace recording the account's gear instead of the ship flown, and the
 death path banking before flushing — are unconditional fixes that outlive whichever oracle wins.
 
+## 152. The tracer look belongs to the CANNON class, not to every bullet and not to the beam
+
+**Context.** The maintainer brought a top-down-shooter reference (2026-09-06): rounds drawn as a bright head
+with a long tail that thins and dims behind it. A tracer was first built for the Charged beam — a
+render-side flight at 220 u/s with the impact flash deferred until the bolt landed — flown, and reverted the
+same session: the beam keeps its full-reach strike that fades over a second. The look then went to the
+bullets, and the question was which.
+
+**Decision.** `class: 'cannon'` only — the player's Heavy cannon and the Second Boss's Advanced pirate
+cannon. Kinetic rounds (every machine gun, the pirates' and the first boss's included) keep the capsule.
+Picked by the weapon row's `class` in `bolt-fx.js` (`TRACER`), so a future cannon row gets it for free and a
+future class opts in with one entry.
+
+**Why not everything.** A machine gun fires 5–10 rounds a second; ten-unit streaks at that rate would fill
+the screen and the boss's two slow, heavy shots would stop reading as different from a gunner's spray. The
+tracer's job is to make the HEAVY round legible — long, slow, dangerous — and that needs the light rounds to
+stay short. It is the same reason the cannon already had its own `cannonLen`/`cannonBright` and a 2× hit
+flash: the class is the unit of visual weight.
+
+**Why the beam went back.** With a projectile that really flies, a tracer is honest: the sprite is where
+the hit will be. The beam has no flight — the hit is resolved on the release tick — so its tracer needed a
+deferred flash and a picture that arrived after the damage. It looked right and read wrong, and the
+maintainer preferred the strike. The lever for "the cannon should feel faster" is the row's
+`projectileSpeed`, which is a balance and replay change, not a render one.
+

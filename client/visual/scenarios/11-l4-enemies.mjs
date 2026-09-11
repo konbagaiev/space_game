@@ -44,4 +44,38 @@ export default async function ({ page, assert, shot }) {
 
   await page.waitForTimeout(1200); // let them grow-in (warp) + the camera settle
   await shot('l4-enemies');
+
+  // THE SECOND BOSS'S CANNON FIRES A TRACER (maintainer, 2026-09-06): every `class: 'cannon'` round — this
+  // boss's Advanced pirate cannon and the player's Heavy cannon — is drawn head-and-tail (`bolt-fx.js`
+  // `TRACER`), while a kinetic round keeps the capsule. Step the SIM until the boss has fired, then read the
+  // named meshes: the shape is asserted on the texture and the drawn proportions, not on "a mesh exists".
+  const fire = await page.evaluate(() => {
+    const g = window.__game;
+    const p = g.player;
+    const sb = g.enemies.find((e) => e.role === 'boss2') || g.enemies.find((e) => e.mounts && e.mounts.length === 5);
+    let tracer = null, capsule = null, ticks = 0;
+    for (let i = 0; i < 900 && !tracer; i++) {
+      // Hold the boss 16 u off the player's nose so its gun is in range and on target the whole time.
+      if (sb) { sb.pos.x = p.pos.x + 16; sb.pos.z = p.pos.z + 6; sb.vel.x = 0; sb.vel.z = 0; }
+      p.vel.x = 0; p.vel.z = 0;
+      g.stepSim(1); ticks++;
+      g.scene.traverse((o) => {
+        if (o.name === 'tracer:cannon' && !tracer) tracer = { len: o.scale.x, wid: o.scale.y, tex: o.material.map && o.material.map.name, w: o.material.map && o.material.map.image.width };
+        if (o.name === 'bolt' && !capsule) capsule = { len: o.scale.x, wid: o.scale.y, tex: o.material.map && o.material.map.name };
+      });
+    }
+    return { tracer, capsule, ticks, boss: !!sb };
+  });
+  assert.ok(fire.boss, 'the second boss is still in the fight');
+  assert.ok(fire.tracer, `the boss's cannon fired a TRACER within ${fire.ticks} ticks`);
+  assert.equal(fire.tracer.tex, 'tracer', 'drawn with the head-and-tail tracer texture, not the capsule');
+  assert.ok(fire.tracer.len >= 7 && fire.tracer.len <= 14,
+    `a long round — ~10.5 u ± the per-shot jitter (drawn ${fire.tracer.len.toFixed(1)})`);
+  assert.ok(fire.tracer.len / fire.tracer.wid > 7,
+    `and thin: length/width > 7 (${(fire.tracer.len / fire.tracer.wid).toFixed(1)}), so it reads as a streak, not a slug`);
+  if (fire.capsule) {
+    assert.notEqual(fire.capsule.tex, 'tracer', 'a kinetic round still draws the capsule');
+    assert.ok(fire.capsule.len < fire.tracer.len, 'and is the shorter of the two');
+  }
+  await shot('cannon-tracer');
 }

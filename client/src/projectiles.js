@@ -56,7 +56,7 @@ export function attachBulletBody(b) {
   let m;
   const boltScale = BOLT_SCALE[b.class];
   if (boltScale) {
-    m = makeBolt(b.projectileColor, b.vel, boltScale, tracerLook(b.class));
+    m = makeBolt(b.projectileColor, b.vel, boltScale, tracerLook(b.class), b.class); // the class also picks tracer vs capsule
     spawnMuzzleFlash(b.pos, b.projectileColor, boltScale); // the flash keeps the class heft, unjittered
   } else {
     m = new THREE.Mesh(bulletGeo, new THREE.MeshBasicMaterial({ color: b.projectileColor }));

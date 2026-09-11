@@ -54,6 +54,16 @@ export default async function ({ page, assert, shot, baseURL }) {
     return !v || v.style.display === 'none' || getComputedStyle(v).opacity === '0';
   }, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
+  // THE FIRST ENEMY MUST EXIST before the sight has anything to paint. Since Level 0 became a flown fight
+  // (2026-08-30) the first spawn sits behind a `spawn.earliest` floor, and this scenario — which used to
+  // take `g.enemies[0]` on faith — broke on it. Step the SIM, never the wall clock (the same idiom as
+  // `40-enemy-beam`): a scenario that sleeps is testing the CPU.
+  for (let i = 0; i < 60; i++) {
+    if (await page.evaluate(() => window.__game.enemies.length > 0)) break;
+    await page.evaluate(() => window.__game.stepSim(30));
+    await page.waitForTimeout(60);
+  }
+  await page.waitForFunction('window.__game.enemies.length > 0', null, { timeout: 15000 });
 
   // 1. IT MOUNTS — the real catalog row, in the ship's existing `gun` group, on the existing Space trigger.
   //    No new slot and no new key: the beam IS the primary weapon while it is fitted.

@@ -3,6 +3,26 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-09-11
+
+- **Cannon rounds are TRACERS — a bright head with a thinning, fading tail.** [bolt-fx] After a top-down
+  shooter reference from the maintainer, every `class: 'cannon'` bullet — the player's **Heavy cannon** and
+  the Second Boss's **Advanced pirate cannon** — now draws a head-and-tail tracer instead of the symmetric
+  capsule: a solid round head with a halo at the front, a wedge tail behind it closing to a point and
+  fading to nothing, on its own once-uploaded canvas (`TRACER` in `client/src/bolt-fx.js`). Base 5.5 × 0.6 u,
+  which the existing `cannonLen` 1.9 and `BOLT_SCALE` 1.7 take to **~10.5 × 1.0 u** per shot (with the
+  per-shot jitter). Kinetic rounds keep the capsule; the Charged beam is untouched (a tracer was tried on
+  it in this session and the maintainer kept the fading strike — DECISIONS §152). **The projectile itself
+  is unchanged** — same `projectileSpeed`, range, hit test and muzzle flash — so replays are bit-identical
+  (§73). `makeBolt` takes the weapon class as a fifth argument and names its mesh `bolt` / `tracer:<class>`.
+  Scenario 11 now steps the sim until the Second Boss fires and asserts the tracer texture and its drawn
+  proportions (length 7–14 u, length/width > 7), and that a kinetic round beside it is still the shorter
+  capsule.
+- **Scenario 39 waits for the first enemy.** [visual] `39-charge-beam` had been failing on main at its
+  aiming block — `g.enemies[0]` was undefined — since Level 0's `spawn.earliest` floor (2026-08-30). It now
+  steps the sim until an enemy exists, the same idiom as `40-enemy-beam`. Its bolt assertions had not been
+  running since that floor landed.
+
 ## 2026-09-04
 
 - **Measured: the browser and Node do NOT agree bit-for-bit — the duel's validation is on notice, and the

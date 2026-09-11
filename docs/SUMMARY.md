@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-09-04 (**The browser and Node do NOT agree bit-for-bit, and the duel's validation is on
+**Updated:** 2026-09-11 (**Cannon rounds are TRACERS — the Heavy cannon and the Second Boss's Advanced pirate cannon draw a bright head with a thinning, fading tail (~10.5 × 1.0 u); kinetic rounds keep the capsule, the beam is unchanged.**) 2026-09-04 (**The browser and Node do NOT agree bit-for-bit, and the duel's validation is on
 notice.** The first production duel — an honest death — came back `disagree`: the same trace re-simulated to
 **three hashes on three engines** (both Nodes identical, two Chromium versions each different) while ticks,
 draws, kills and hp all agreed. So `36-sim-divergence` is a **sample, not a proof** — it pins one trace
@@ -2997,12 +2997,22 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `liveParticles()` no longer counts exhaust (only sparks + rocket smoke). Plumes are disposed on ship
   **death/reset** (`disposeShipExhaust`) and on **player ship-swap** (`ship-build.js buildPlayerFor`).
 - **Gun fire visual** (`bolt-fx.js`): kinetic **and cannon** bullets render as a **travel-aligned additive bolt**
-  laid flat on the combat plane, instead of the old flat opaque sphere. The bolt texture is a **crisp
-  bright capsule core** (a near-opaque rounded-rect drawn on the shared, once-uploaded canvas) wrapped in
-  a **faint soft halo** — a clearly-outlined body + thin fog rim, rather than the earlier radial gradient
-  that read as a mutable oval up close. Base body size `BOLT_LEN` 2.4 × `BOLT_WID` 0.7 world units,
-  with the WIDTH multiplied by the weapon class's `BOLT_SCALE` (`projectiles.js`) — **kinetic 1, cannon
-  1.7**, so a Heavy cannon slug is the same bolt with more heft (matching its 2× `HIT_FLASH_SCALE`).
+  laid flat on the combat plane, instead of the old flat opaque sphere. **Two shapes, picked by weapon
+  class** (`makeBolt`'s `weaponClass`, passed from `attachBulletBody`): a KINETIC round is the **capsule** —
+  a **crisp bright capsule core** (a near-opaque rounded-rect drawn on the shared, once-uploaded canvas)
+  wrapped in a **faint soft halo**, a clearly-outlined body + thin fog rim, rather than the earlier radial
+  gradient that read as a mutable oval up close; a **CANNON round is a TRACER** (maintainer, 2026-09-06,
+  from a top-down-shooter reference; `TRACER` in `bolt-fx.js`, one entry: `cannon`) — a **solid round
+  head** at the front with a halo, and a **wedge tail** behind it that closes to a point while a gradient
+  fades it to nothing, on its own once-uploaded 512×48 canvas (aspect ≈ the world aspect, so the head stays
+  round on screen). The meshes are named `bolt` / `tracer:<class>` for the scenarios. Both rows of
+  `class: 'cannon'` draw it: the player's **Heavy cannon** and the Second Boss's **Advanced pirate
+  cannon** (the first boss's Pirate machine guns are kinetic and keep the capsule). **Nothing about the
+  projectile changes** — its `projectileSpeed`, range, hit test and muzzle flash are as they were; only the
+  sprite differs (DECISIONS §152). Base body size `BOLT_LEN` 2.4 × `BOLT_WID` 0.7 world units for the
+  capsule and **5.5 × 0.6 for the tracer**, with the WIDTH multiplied by the weapon class's `BOLT_SCALE`
+  (`projectiles.js`) — **kinetic 1, cannon 1.7** — so a Heavy cannon tracer lands at **~10.5 × 1.0 u**
+  once `cannonLen` (below) is applied (matching its 2× `HIT_FLASH_SCALE` in heft).
   **Length and brightness no longer come from `BOLT_SCALE`:** every shot draws its own from
   `HIT_FX.tracer` (`hit-fx-config.js` `tracerLook`) — a per-class base (`kineticLen`/`cannonLen`,
   `kineticBright`/`cannonBright`) times a symmetric per-shot **jitter** (`jitterLen`/`jitterBright`), so a
@@ -4942,7 +4952,11 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `#mw-ship-col`, no cards or ship-stats in the work zone, no `#mw-ship` canvas — and the **two-column
   collapse** on Character), **l4-enemies**
   (the Advanced medium pirate + Second Boss build with the right **total effective HP** — `hp` (hull) +
-  `shield.capacity` = 300 / 550, since enemy shields split the pool — plus tint/mounts/derived drive), and
+  `shield.capacity` = 300 / 550, since enemy shields split the pool — plus tint/mounts/derived drive; it then
+  holds the boss 16 u off the player's nose and steps the sim until it FIRES, to assert the **cannon
+  TRACER** — the round is drawn with the `tracer` texture, 7–14 u long (the ~10.5 u base plus the per-shot
+  jitter) at a length/width over 7, and a kinetic round beside it is still the shorter capsule. It is the
+  only place either bullet SHAPE is asserted in a browser), and
   **audio** (the settings gear opens the audio modal; the Master slider + Music toggle reach the engine and
   persist to `localStorage`; the gear hides during a live fight), **ship-bank** (the player rolls into a turn,
   capped ≤20°, eases back to level on release, opposite turns bank opposite ways, enemies have a bank group),
@@ -5022,7 +5036,10 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   assertion is a share, not an instant). The player never touches the controls, so every kill is his: the
   kill counter climbs and `earned` stays 0, which is the economy split end to end),
   and **charge-beam** (`39-charge-beam.mjs`: the only place the Charged beam is seen in a browser. Boots
-  `?beam`, asserts the real catalog row mounts into the real `gun` group on `Space` with the rocket slot
+  `?beam` and **steps the sim until the first enemy exists** — it took `g.enemies[0]` on faith until
+  2026-09-11, and had been failing on main since Level 0 grew a `spawn.earliest` floor (2026-08-30), which
+  is why none of its bolt assertions had run; the wait is `40-enemy-beam`'s idiom, stepping the SIM rather
+  than the wall clock. It asserts the real catalog row mounts into the real `gun` group on `Space` with the rocket slot
   untouched; that the three NAMED sight objects (`beamSightCentre`, two `beamSightEdge`) and the
   `beamReticle` are drawn while aiming; **that the LOOK survived the port** — one green `#5ad17f` hue and
   one opacity on all three lines, the centre distinguished only by a longer `dashSize`, all three
