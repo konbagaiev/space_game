@@ -3,6 +3,84 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-09-11
+
+- **The Sentinel pilot aims like a person now — and a retreat actually leaves the fight.**
+  [2026-09-11-1033-pilot-human-aim-and-retreat] `flySentinel` (the Level-4 wingman **and** every `?duel`
+  ace — one shared block of constants, no per-side knob) no longer puts its bullets exactly where it means
+  to. Its **perceived BEARING** to the target lags the true one while the line of sight swings, carries a
+  small standing offset re-rolled on a timer, and is kicked by a random amount the instant it acquires a
+  target. The error is on the bearing, not the nose and not the range: the fire gate judges the real
+  projectile path against the vector it is handed, so he **misses** instead of holding fire, and every range
+  gate (`groupReach`, `engageBand`, §2.6) is untouched.
+  **What actually changes on screen, honestly:** the **first shot at a newly acquired target misses a real
+  hull ~18 % of the time** — nothing made him miss it before, at any range or aspect — while **a settled
+  solution still lands every shot**, guaranteed by construction against the narrowest aspect of every hull in
+  the catalog. That 18 % is MEASURED, not derived: `segmentHitsShip` with no pad (the swept call `stepBullets`
+  actually makes) against every catalog hull over a full sweep of target headings and acquisition errors —
+  18.3 % vs an ordinary pirate, 17.9 % vs the mini boss, 18.4 % vs either boss, 14.3 % vs the wide-hulled
+  rocket pirates, **20.2 % vs the Basic player ship an ace shoots at**, 17.6 % mean. `ALLY_AIM_KICK` is 2.30,
+  set from that sweep after 2.00 read as too weak in live `?duel` play (it measured 11.2 % mean) — the cost is
+  that the second-shot guarantee's headroom fell from 0.045 to 0.006 (still a proof, no slack left).
+  **The ~56 % figure that is easy to reach for is not a miss rate:** `P(|j + k| > 1)` is the chance the error
+  leaves the *narrowest aspect of the narrowest hull*, and a real hull is wider than its worst aspect nearly
+  everywhere — roughly three times the real rate. It is pinned as an angle, never published as a miss.
+  A target that makes him swing his hull costs him hits in the **close** fight, where the range-independent
+  tracking lag (`LAG × v_perp`) outweighs the un-led flight-time error inside ~11 u. A **fast crosser at
+  range was already un-hittable before this change** — `aimWithDrift` corrects the shooter's drift and
+  deliberately does not LEAD, so 30 u/s at 40 u needs 18.5 u of lead against a 1.8-3.9 u hull. Flight time,
+  not aim; the plan's original "70 % of crossing shots now miss" framing was already true yesterday.
+  **Point defence** gets its own dispersion, ~**50 % per shot**, measured where the bullet actually MEETS
+  the rocket (0.64-0.84 of the range the error was computed at — sizing it at the naive range would have
+  delivered 73 %). A closing rocket allows 2-3 shots, so most still die and some get through.
+  **The yardstick, and it is the fact the next reader will need:** `broadRadius` is the broad-phase
+  enclosing sphere and **overstates a real hull by up to 2.7×** at the bullet plane. Measured over all nine
+  enemy rows plus the Sentinel hull, the contiguous hit half-width runs **0.373-0.551 of `broadRadius`**
+  (floor: `pirate mini boss` / `advanced medium pirate`). Scaling the error against `broadRadius` itself
+  would have lost ~13 % of *settled* shots on the player hull and ~25 % on the mini boss. A test re-measures
+  all ten on every run.
+  **The retreat now leaves.** A broken-off pilot used to coast to a stop 120 u from the threat, which read
+  as "he wandered off a bit" (at 30 u/s his stopping distance is 51.7 u, so he cut thrust at a gap of ~68 u).
+  He now runs at **full thrust for the arena boundary**, braking only on his own kinematic stopping distance
+  so he arrives with ~0 speed and heals there — floored by `max(border, 120 − gap)`, so he never stops
+  closer than 120 u to the thing shooting at him. Chase him and he keeps going straight past the border,
+  with no extra mechanic: the max() does it. `?roam` forces the border to 0 and degrades to exactly the old
+  rule. Cost, accepted: **50-80 s** of total absence (9-20 s out, ~40 s healing, 9-20 s back).
+  **In `?duel` this makes a fleeing ace uncatchable, deliberately:** the room forces `skills: null`
+  (`duel-dev.js duelBuild`), so the player has no Mobility (+5 %/pt max speed) and both hulls sit on exactly
+  `PLAYER_MAX_SPEED` 30 — the chase ends only when the *player's* own out-of-bounds rule warps him back to
+  the arena centre after 30 s. The talent chain is intact and works in a campaign fight, where a chase is
+  therefore not symmetric; nothing was changed to accommodate this.
+  **The randomness is a PRIVATE per-pilot `mulberry32`**, keyed to the run's installed seed and the pilot's
+  spawn ordinal — **zero draws from the shared seeded stream** (DECISIONS §73), so `simRandomDraws()`, half
+  the divergence oracle and half the duel referee's verdict, does not move. Also fixed on the way: the
+  private stream was created lazily at the first draw, which in the BROWSER happens before take-off installs
+  the live session's seed (the duel room spawns its aces inside `startRun`) — it is now keyed to the seed and
+  re-derived if that changes, so both hosts build the same pilot.
+  `stepEnemyAI` is untouched (DECISIONS §134). DECISIONS **§153**, **§154**.
+- **The duel referee's digest comparison no longer covers a duel that carries a pilot — deferred,
+  deliberately, and written down.** [2026-09-11-1033-pilot-human-aim-and-retreat] `49-duel-referee` went from
+  **4/4 green to 2/7** with the pilot's human aim, and every failure was `world digests differ` while
+  `duelAnchorReached`, `ticksRun` and `draws` agreed on every run. Diagnosed by bisection (constants at 0 →
+  passes; frozen `aimHitAngle` → fails; a frozen random value with the trajectory still perturbed but **no**
+  private draws → passes; removing `sin`/`cos`/`atan2` from the new aim path → still fails, reverted): a
+  **private per-pilot SEQUENTIAL stream** makes every float threshold in the pilot a stream-alignment
+  threshold, so a 1-ULP difference that flips a target re-pick or a come-about exit also flips a *draw* and
+  the hosts diverge by a whole PILOT rather than by an ULP — exactly the §3.4 prediction, found by running
+  the guard instead of reasoning about it. **A real bug fell out and is fixed:** the duel room spawns its aces
+  inside `startRun`, **before** take-off calls `beginLiveSession`, so the browser built its ace's stream off
+  the unseeded fallback while the Node referee used the trace's seed; the stream is now keyed to the seed and
+  re-derived if it changes, with a regression test. No unit test would have caught that — the oracle did.
+  **The oracle question stays deferred** (§151 already had it "on notice") and `verify-duel.js` is
+  **unchanged** — a verdict is a recorded fact (§150). Only the scenario was relaxed, and the honest word for
+  the result is **dormant**: its room is fixed at two aces, so the digest check is skipped on **every** run
+  (the two hashes are printed, never compared) and **`36-sim-divergence` is now the only live cross-host
+  digest guard in the suite**. 49 still enforces the anchor, the room shape, `ticksRun`, `draws`, and that
+  the referee's verdict is `agree` or a `disagree` whose note is the hash line and nothing else — negative-
+  tested by making the referee report a tick disagreement instead, which turns it red. DECISIONS **§155**
+  records the measurement, the bisection, and the two named fixes if it is picked up (a stateless hash of
+  `(seed, ordinal, tick, slot)`, or the server-run room).
+
 ## 2026-09-04
 
 - **Measured: the browser and Node do NOT agree bit-for-bit — the duel's validation is on notice, and the

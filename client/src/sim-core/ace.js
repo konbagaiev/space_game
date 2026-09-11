@@ -18,7 +18,9 @@
 // carries.
 //
 // DRAWS NOTHING FROM THE SEEDED STREAM on the way in: the spawn geometry below is derived from the
-// player's own position and heading, with no RNG at all — exactly like `spawnAlly` (DECISIONS §73).
+// player's own position and heading, with no RNG at all — exactly like `spawnAlly` (DECISIONS §73). Its
+// human aim error is random but draws from a PRIVATE per-pilot mulberry32 (`step-ally.js pilotRandom`),
+// keyed by the run's seed and the spawn ordinal passed in below — a private stream, not no randomness.
 import { BULLET_PLANE_Y } from './consts.js';
 import { headingToDir } from './steering.js';
 import { makeSentinelHull } from './ally.js';
@@ -56,8 +58,8 @@ export const ACE_WARP_STAGGER = 0.35;  // …and this much slower to form, so th
 
 // One ace's numbers. The wingman's hull, gear and gun (`makeSentinelHull`) with a hostile identity bolted
 // on: the fields `stepEnemyDeaths`, the loot roll and the kill line read off an enemy.
-export function makeAce(catalog) {
-  const e = makeSentinelHull(catalog);
+export function makeAce(catalog, ordinal = 0) {
+  const e = makeSentinelHull(catalog, ordinal);
   if (!e) return null;
   e.pilot = ACE_PILOT;
   e.name = ACE_NAME;
@@ -81,7 +83,10 @@ export function spawnAces(world, count) {
   const rx = d.z, rz = -d.x;   // the nose's right-hand perpendicular, in the plane
   const out = [];
   for (let i = 0; i < n; i++) {
-    const e = makeAce(world.catalog);
+    // ORDINAL `i + 1`, never 0: 0 belongs to the wingman, and a `?duel` fought with `?ally` on would
+    // otherwise put two pilots on one aim stream — two identical pilots flying one fight is exactly the
+    // lockstep ACE_SPAWN_STAGGER exists to break.
+    const e = makeAce(world.catalog, i + 1);
     if (!e) break;
     const lateral = (i - (n - 1) / 2) * ACE_SPAWN_SPREAD;
     const ahead = ACE_SPAWN_DIST + i * ACE_SPAWN_STAGGER;

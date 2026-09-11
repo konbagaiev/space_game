@@ -12,13 +12,16 @@ import { ALLY_SHIP_NAME, ALLY_COMPONENTS, ALLY_MOUNTS, ALLY_COLOR, ALLY_ARRIVE_B
 // he carries REAL components (a 200 HP hull, a repair drone, a catalog shield) rather than an enemy's
 // derived 1/3-shield split, and the player ship row's fire groups already carry the `ai` rules
 // (gun: range 45 / aimTol 0.25, rocket: range 80 / aimTol 0.40) his fire rule reads.
-// Draws NOTHING from the seeded stream — see the RNG guarantee in the plan/DECISIONS §73.
+// Draws NOTHING from the seeded stream — see the RNG guarantee in the plan/DECISIONS §73. His human aim
+// error IS random, and that guarantee still holds: it comes from a PRIVATE per-pilot mulberry32
+// (`step-ally.js pilotRandom`) seeded from the run's own seed and the spawn ordinal below, so it consumes
+// none of the shared stream whose draw count is half the divergence oracle.
 // Takes the catalog, not the World, because the netsim client builds this same shell from a wire descriptor.
 // THE HULL BOTH SENTINEL PILOTS FLY. Split out of `makeAlly` for the DUEL ROOM's ace (`ace.js`), which is
 // the same ship with the same gear pointed the other way: one build, so re-arming the wingman re-arms the
 // thing you spar against and the two can never quietly drift into different fights. It sets everything that
 // is true of the SHIP and nothing that is true of a SIDE — no `isAlly`, no colour, no target bookkeeping.
-export function makeSentinelHull(catalog) {
+export function makeSentinelHull(catalog, ordinal = 0) {
   const shipDef = catalog.shipByName.get(ALLY_SHIP_NAME);
   if (!shipDef) return null;
   const a = makePlayer(catalog, {
@@ -33,6 +36,11 @@ export function makeSentinelHull(catalog) {
   a.passArmed = false;      // the current target is BEHIND him: the re-search (and the retreat check) are armed
   a.retreating = false;     // opening the gap so the drone can work
   a.intercept = null;       // the incoming ROCKET he is shooting down (point defence, step-ally.js 4d)
+  // THE ONLY INPUT THAT SEPARATES TWO PILOTS' AIM STREAMS. An integer, on purpose: `pilotRandom` mixes it
+  // with the run's installed seed, and a float-derived seed would hand the browser and the Node referee
+  // different PILOTS off a 1-ULP difference (DECISIONS §151). The wingman is 0; the duel room's aces are
+  // 1..N (`ace.js`), so an ace can never share a stream with a wingman in a `?duel` fought with `?ally` on.
+  a._aimOrdinal = ordinal | 0;
   a.thrusting = false;
   return a;
 }

@@ -60,13 +60,17 @@ export default async function ({ page, assert, shot }) {
   // comparable to the visible half-extent, so he is EXPECTED to leave the frame mid-reversal. What must not
   // happen is that he is never in it.
   const samples = [];
-  for (let i = 0; i < 12; i++) {
-    await stepSim(page, 90);   // 1.5 s per sample, 18 s of fight in all
+  // 16 samples, not 12. The pilot carries a human aim error now (first-shot misses, and misses in the close
+  // fight where a target makes him swing his hull), so he is materially less lethal per second — and the
+  // ECONOMY SPLIT assertion at the bottom needs a fight to have actually happened. If it ever stops finding
+  // one, extend this window further; do NOT weaken the assertion.
+  for (let i = 0; i < 16; i++) {
+    await stepSim(page, 90);   // 1.5 s per sample, 24 s of fight in all
     samples.push(await page.evaluate(() => {
       const g = window.__game, a = g.allies[0];
       const v = a.mesh.position.clone().project(g.camera);   // the MESH, not the sim: this is the picture
       return {
-        n: g.allies.length, hp: a.hp, warping: a.warping,
+        n: g.allies.length, hp: a.hp, warping: a.warping, retreating: !!a.retreating,
         speed: Math.hypot(a.vel.x, a.vel.z),
         meshAtSim: Math.hypot(a.mesh.position.x - a.pos.x, a.mesh.position.z - a.pos.z),
         x: v.x, y: v.y, z: v.z,
@@ -95,10 +99,17 @@ export default async function ({ page, assert, shot }) {
 
   // ON SCREEN. A ship the simulation is flying can still be drawn nowhere at all, and every assertion above
   // would pass. `|ndc| < 1` on both axes with z < 1 is "inside the frame, in front of the camera".
-  const onScreen = alive.filter((s) => s.z < 1 && Math.abs(s.x) < 1 && Math.abs(s.y) < 1);
-  assert.ok(onScreen.length >= alive.length / 3,
-    `his hull is drawn inside the frame most of the time (${onScreen.length}/${alive.length} samples; `
-    + `ndc ys ${alive.map((s) => s.y.toFixed(1)).join(' ')})`);
+  //
+  // A RETREATING wingman is excluded, by design: a break-off now runs at full thrust for the ARENA BORDER
+  // (up to ~609 u away) and heals there, so he is legitimately off frame for most of a minute. Including
+  // those samples would assert that a feature we deliberately built does not happen. The `framed.length`
+  // guard is what stops that exclusion from turning this into a silent vacuous pass.
+  const framed = alive.filter((s) => !s.retreating);
+  assert.ok(framed.length, `he was not retreating for the whole window (${alive.length} live samples)`);
+  const onScreen = framed.filter((s) => s.z < 1 && Math.abs(s.x) < 1 && Math.abs(s.y) < 1);
+  assert.ok(onScreen.length >= framed.length / 3,
+    `his hull is drawn inside the frame most of the time (${onScreen.length}/${framed.length} samples; `
+    + `ndc ys ${framed.map((s) => s.y.toFixed(1)).join(' ')})`);
 
   // THE WING LIVERY — the only thing that separates him from the PLAYER on screen. He flies the player's
   // own `player_combat` .glb, and catalog ships are built with `tint: false`, so his `color` reaches the

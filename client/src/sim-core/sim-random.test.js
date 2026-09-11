@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { mulberry32, seedSim, simRandom, isSimSeeded } from './sim-random.js';
+import { mulberry32, seedSim, simRandom, simRandomDraws, simSeed, isSimSeeded } from './sim-random.js';
 
 // The seeded stream is process-global (one module instance), so every test that installs a seed clears it
 // again — the teardown invariant this module exists to guarantee.
@@ -58,4 +58,18 @@ test('seedSim(null) really returns to live play (the teardown invariant)', () =>
     assert.equal(isSimSeeded(), false);
     assert.equal(simRandom(), 0.4242);      // back on the native RNG
   });
+});
+
+// THE SEED IS READABLE, so a sim entity can derive its OWN private stream from it (the Sentinel pilot's aim
+// error, step-ally.js) without touching the shared one. Reading it must cost nothing: it is not a draw.
+test('simSeed reports the installed seed, and reading it is NOT a draw', () => {
+  seedSim(7);
+  assert.equal(simSeed(), 7);
+  const before = simRandomDraws();
+  assert.equal(simSeed(), 7);
+  assert.equal(simRandomDraws(), before, 'reading the seed does not move the draw count (§73)');
+  seedSim(4294967295);
+  assert.equal(simSeed(), 4294967295, 'stored as an unsigned 32-bit integer, like the stream itself');
+  seedSim(null);
+  assert.equal(simSeed(), null, 'and null in an unseeded (live-play) run');
 });
