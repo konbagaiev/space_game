@@ -213,3 +213,11 @@ Your final message: a point-by-point list of how each issue was resolved.
   it would have shipped a CHANGELOG claiming the defect was closed while a whole path was still open. When
   a sentence in your plan starts "we don't need to handle X because…", open the file and cite `file:line`,
   or write "assumed — needs checking" and let the critic spend its round on it.
+
+- **2026-09-11 (pilot-human-aim-and-retreat): you sampled THREE rows to pick a constant the guard checks
+  against TEN.** The plan's `ALLY_AIM_HIT_FRAC = 0.40` was justified by measuring three catalog hulls and
+  concluding "under all of them, with margin". The real floor was 0.374, on `pirate mini boss` /
+  `advanced medium pirate` — hulls you never sampled — so the very guard test the plan invented would have
+  been red on arrival. Before quoting a bound, enumerate **every row the guard will iterate** and measure
+  all of them: here `enemyShips` is built as `type === 'enemy'` with **no level filter**, so "the hulls this
+  level fights" was never the relevant set. A three-of-ten sample suggested ~0.42 and was wrong.

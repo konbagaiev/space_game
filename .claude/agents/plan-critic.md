@@ -131,3 +131,15 @@ perfection beyond that is not the bar.
   they could be seen against the background they render on. When the feature's entire purpose is perceptual,
   add that to the rubric: what colour, at what opacity, on what background, with which sprite — and demand
   the numbers, the way you'd demand any other absolute value. DECISIONS §96 amendment.
+
+- **2026-09-11 (pilot-human-aim-and-retreat): you read a constant off the SEED ROW, not off the built
+  entity, and raised it as a blocking issue.** You quoted `broadR: 2.001 / 2.097` from
+  `server/src/catalog_seed.js` against the plan's 2.181 / 2.307 — but `client/src/sim-core/ship-config.js`
+  adds `Math.abs(lift)` and lifts every hitbox's `c.y`, so the plan was right and the numbers you derived
+  from it (a false ~84 % miss rate, a false `ALLY_AIM_HIT_FRAC` floor) were all wrong. Your own hit-width
+  probe had the same defect for the same reason: it swept un-lifted boxes. **Build the value the way the SIM
+  builds it** — through the real builder, on a real world — before calling a plan's number fabricated.
+  In the same review you also inverted `v_ref = hitR / LAG` and told the planner a shrinking `hitR` RAISES
+  the crossing speed that costs a hit. Re-derive a direction claim before shipping it as blocking.
+  **What you did right, and should keep doing:** when the planner pushed back on both, you re-checked at the
+  source and conceded plainly. That is the behaviour — the lesson is only to check there first.

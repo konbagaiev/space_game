@@ -105,3 +105,16 @@ report what changed per finding. Don't introduce unrelated changes.
   full-suite run costs ~20-30 min and is the maintainer's call, not yours (see the test budget above). The
   habit that survives unchanged: never assert "those were already failing" without evidence — say you don't
   know and ask for the baseline run.
+
+- **2026-09-11 (pilot-human-aim-and-retreat): you shipped a headline number that was an internal yardstick,
+  not the thing a player experiences — and no test you wrote could tell the difference.** The docs, the
+  DECISIONS entry and the config comment all said "the first shot at a new target misses ~50 % of the time".
+  That 50 % was `P(|err| > thetaHit)`, the chance the error leaves the **narrowest aspect of the narrowest
+  hull** — an angle. Measured through `segmentHitsShip` (the call bullets actually make) against real hulls,
+  the real miss rate was **~12 %**, four times smaller, and the maintainer found it by flying the build.
+  Every test you wrote compared an aim angle to a yardstick, and the settled-lands test deliberately threw
+  the acquisition shots away, so the headline behaviour had no end-to-end coverage at all.
+  **When a plan states a player-facing RATE, measure that rate the way the game resolves it, before writing
+  it into any doc** — and pin it as an outcome test, negative-tested against the old constant. You did
+  exactly this on the retune (11 520 samples/hull, band, negative test) — the lesson is to do it the first
+  time, not after a live test contradicts the docs.
