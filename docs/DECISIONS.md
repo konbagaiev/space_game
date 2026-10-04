@@ -6688,3 +6688,45 @@ referee's verdict shape still are, and the only remaining live cross-host digest
 `36-sim-divergence`. Nothing is bound to a verdict (§150), so nothing is at risk; what is lost is a detector
 — and it is the detector that caught the seeding bug above, which is the argument for picking option 1 up
 rather than leaving it.
+
+## 156. A pilot owns its human error — one profile for every ship it flies
+
+**The problem: one pilot behaved as two.** The reload stagger (`+ U(0,1) × 0.5 s` per volley) lived in
+`updateGroups` and was keyed to the SIDE: `side === 'enemy' ? simRandom() * 0.5 : 0`. `flySentinel` flies the
+wingman (side `'ally'`) and every `?duel` ace (side `'enemy'`) with the same code, so the identical pilot
+fired ~30 % less often as an ace than as the wingman, and only the ace drew the stagger from the shared seeded
+stream. The bot brawl (§157) makes that visible as a lopsided fight between two identical teams.
+
+**The choice: the stagger is the pilot's, from a separate private stream.**
+- `flySentinel` passes `updateGroups` an 8th argument, a `reloadStagger` closure; `updateGroups` uses it when
+  present and otherwise keeps the old side rule verbatim. Passing it in (instead of `ship-entity.js`
+  importing pilot code) avoids an import cycle and stores no function on an entity, so netsim snapshots and
+  `digest.js` are untouched.
+- The draw comes from `pilotReloadRandom`, a **second** per-pilot `mulberry32` keyed exactly like the aim
+  stream XOR `PILOT_RELOAD_SALT`. Sharing the aim stream would have interleaved reload draws with aim draws
+  and shifted every §153 calibration for no reason; with a separate stream the aim sequence is bit-for-bit
+  what it was.
+- **Catalog enemies stay on the shared stream**, untouched, so every campaign trace (the Level-0 intro
+  fixture, `22-trace-replay`, `36-sim-divergence`, the session survey) stays bit-identical — no shipped level
+  spawns a pilot.
+- The pilot's knobs are gathered into one frozen object, `SENTINEL_PILOT` (`ally-config.js`), and the old
+  `ALLY_AIM_*`/`ALLY_PD_*` names are aliases of it. There is **no `ctx.profile`** until a second pilot exists
+  (§30).
+
+**What it costs.** The wingman now staggers: on the 0.6 s Heavy cannon his mean cooldown goes 0.60 → 0.85 s
+(about −29 % sustained cadence, the cadence an ace already had). Measured on the point-defence fixture
+(1000 engagements): the per-shot intercept rate did not move (0.353 → 0.347), but fewer shots fit inside a
+rocket's ~1.5 s approach, so the share of closing rockets he shoots down drops from 86 % to 75 %. "The second
+shot lands" (§153) is unaffected: it bounds the MINIMUM gap of one `fireCooldown`, and the stagger only
+lengthens gaps.
+
+**Old duel rows.** No `TRACE_VERSION` bump (it marks trace format, not per-build behaviour — the §153 aim
+change set that precedent). Stored verdicts stay as recorded, since the referee runs once at upload; a manual
+re-run under this build classifies them as `build-drift` → unverifiable, never a false `disagree`. Admin ▶
+play of an old duel re-simulates on current code and so shows a different fight, which is accepted.
+
+**The referee's `draws` check is now weaker for a duel: it counts only loot rolls**, since an ace no longer
+draws its stagger from the shared stream. And the reload stream is one more private SEQUENTIAL stream, so
+§155's caveat (a 1-ULP flip becomes a different pilot, so the duel digest is not a bit-for-bit guard) now
+covers it too. Measured: `49-duel-referee` passed 3/3 runs with ticks and draws (0) agreeing on every run;
+the digest differed on all three, as §155 already accepts.

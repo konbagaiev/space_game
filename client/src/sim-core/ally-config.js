@@ -85,19 +85,9 @@ export const ALLY_TARGET_LEASH = Infinity; // engage only enemies within this of
 //
 // Everything below is expressed in units of `thetaHit`: |err| ≤ 1 means the shot is on the hull at EVERY
 // aspect.
-export const ALLY_AIM_HIT_FRAC = 0.35; // what fraction of broadRadius a bullet must actually be within at the
-                                       // BULLET PLANE. Measured floor over every hull the pilot shoots at is
-                                       // 0.373 (pirate mini boss / advanced medium pirate); the rest run
-                                       // 0.42-0.55. 0.35 sits under the floor with room for a model
-                                       // re-export to move it a little (the floor is grid-sensitive: 0.373
-                                       // at 1.25° steps, 0.378 at 2.5°).
-export const ALLY_AIM_LAG_SEC    = 0.17; // his aim TRAILS the target by this much of its crossing motion
-export const ALLY_AIM_TAU_SEC    = 0.30; // smoothing/decay time constant for the rate AND the acquisition kick
-export const ALLY_AIM_JITTER     = 0.70; // standing offset, in hit half-widths (±), re-rolled on a timer
-export const ALLY_AIM_JITTER_SEC = 0.80; // …how often it is re-rolled
-export const ALLY_AIM_KICK       = 2.30; // acquisition kick, in hit half-widths (±). TUNED TO A MEASUREMENT,
-                                        // not derived — see "THE FIRST SHOT" below.
-export const ALLY_AIM_MAX        = 3.00; // hard cap on the TOTAL error, in hit half-widths
+// The seven aim knobs themselves (ALLY_AIM_HIT_FRAC 0.35, _LAG_SEC 0.17, _TAU_SEC 0.30, _JITTER 0.70,
+// _JITTER_SEC 0.80, _KICK 2.30, _MAX 3.00) are fields of `SENTINEL_PILOT` below — the pilot's human error
+// lives in ONE object — and are re-exported under these names as aliases of it.
 //
 // WHY THOSE NUMBERS:
 //
@@ -194,15 +184,62 @@ export const ALLY_AIM_MAX        = 3.00; // hard cap on the TOTAL error, in hit 
 // would have delivered a ~73 % per-shot hit rate, not the 50 % that was agreed — so the closing factor is
 // carried explicitly rather than absorbed into the constant, and the hit rate is then independent of the
 // rocket's speed.
-export const ALLY_PD_JITTER     = 2.00; // intercept scatter, in units of the CLOSING-corrected tolerance:
-                                        // a shot lands iff |err| ≤ that tolerance, so with U uniform in
-                                        // (−1, 1) the per-shot hit rate is 1/2.00 = 50 %.
-export const ALLY_PD_JITTER_SEC = 0.30; // …re-rolled this often — shorter than the 0.6 s gun cooldown, so
-                                        // consecutive shots at one rocket are independent rolls.
-// ROCKET-LEVEL OUTCOME: a rocket is only acquired inside `engageBand` 45 u and covers that stretch in ~1.5 s,
-// so the 0.6 s cooldown gives him 2-3 shots → 1 − 0.5ⁿ = 75-88 % of the rockets he gets more than one shot at
-// still die; one he gets a single shot at is a coin flip. (Before this change, measured live: 13 rockets
+// The two point-defence knobs (ALLY_PD_JITTER 2.00, ALLY_PD_JITTER_SEC 0.30) are fields of `SENTINEL_PILOT`
+// below, re-exported under these names.
+// ROCKET-LEVEL OUTCOME: a rocket is only acquired inside `engageBand` 45 u and covers that stretch in ~1.5 s.
+// With the pilot's reload stagger (cooldown 0.6 + U(0, 0.5) s, mean 0.85 s — `reloadStaggerSec` below) that
+// buys him 2 shots most of the time and 3 sometimes. MEASURED (server/src/ally-sim.test.js "POINT DEFENCE in
+// a CLOSING engagement", 1000 engagements, 2026-10-04): 0.347 kills per shot, 2.16 shots per rocket, 75 % of
+// rockets shot down (it was 86 % before the stagger, at 2.43 shots per rocket — the per-shot rate did not
+// move). The per-shot rate sits under the 50 % design point because the fire gate's 0.25 rad `aimTol` lets a
+// round leave while the nose is still swinging. (Before this PD rule existed, measured live: 13 rockets
 // fired, 5 shot down, 6 never engaged, 1 reaching a hull — ~71 % of the ones he engaged.)
+
+// ---------- THE SENTINEL PILOT: his human error, in one object ----------
+//
+// The Sentinel pilot's human error, in one place: every ship `flySentinel` flies — the wingman, every `?duel`
+// ace, every `?brawl` bot — reads THIS. A different pilot is a second profile, threaded through
+// `flySentinel`'s ctx when it exists (not before — §30). The reasoning behind each number is the two long
+// blocks above (THE HUMAN AIM, Point defence) and the reload stagger note below.
+export const SENTINEL_PILOT = Object.freeze({
+  aimHitFrac: 0.35,   // what fraction of broadRadius a bullet must actually be within at the BULLET PLANE.
+                      // Measured floor over every hull the pilot shoots at is 0.373 (pirate mini boss /
+                      // advanced medium pirate); the rest run 0.42-0.55. 0.35 sits under the floor with room
+                      // for a model re-export to move it a little (the floor is grid-sensitive: 0.373 at
+                      // 1.25° steps, 0.378 at 2.5°).
+  aimLagSec: 0.17,    // his aim TRAILS the target by this much of its crossing motion
+  aimTauSec: 0.30,    // smoothing/decay time constant for the rate AND the acquisition kick
+  aimJitter: 0.70,    // standing offset, in hit half-widths (±), re-rolled on a timer
+  aimJitterSec: 0.80, // …how often it is re-rolled
+  aimKick: 2.30,      // acquisition kick, in hit half-widths (±). TUNED TO A MEASUREMENT, not derived — see
+                      // "THE FIRST SHOT" above.
+  aimMax: 3.00,       // hard cap on the TOTAL error, in hit half-widths
+  pdJitter: 2.00,     // intercept scatter, in units of the CLOSING-corrected tolerance: a shot lands iff
+                      // |err| ≤ that tolerance, so with U uniform in (−1, 1) the per-shot hit rate is
+                      // 1/2.00 = 50 %.
+  pdJitterSec: 0.30,  // …re-rolled this often — shorter than the 0.6 s gun cooldown, so consecutive shots at
+                      // one rocket are independent rolls.
+  reloadStaggerSec: 0.5, // RELOAD STAGGER: each volley's cooldown is `reload + U(0, 1) × this`, drawn from the
+                      // pilot's OWN second private stream (`pilotReloadRandom`, step-ally.js) — never the
+                      // shared one. Same size as the catalog enemies' shared-stream stagger, so a pilot fires
+                      // like any other hostile; it used to belong to the SIDE (enemy-only), which made the
+                      // `?duel` ace fire ~30 % less often than the identical wingman (DECISIONS §156). On the
+                      // 0.6 s Heavy cannon the mean cooldown is 0.85 s.
+});
+// Salt for the reload stream so it never coincides with the aim stream of the same pilot (step-ally.js
+// `pilotReloadRandom`). Any odd 32-bit constant would do; this one is fixed so both hosts agree.
+export const PILOT_RELOAD_SALT = 0x5F3759DF;
+
+// The old names, kept as aliases of the profile so no test or tool import changes.
+export const ALLY_AIM_HIT_FRAC = SENTINEL_PILOT.aimHitFrac;
+export const ALLY_AIM_LAG_SEC = SENTINEL_PILOT.aimLagSec;
+export const ALLY_AIM_TAU_SEC = SENTINEL_PILOT.aimTauSec;
+export const ALLY_AIM_JITTER = SENTINEL_PILOT.aimJitter;
+export const ALLY_AIM_JITTER_SEC = SENTINEL_PILOT.aimJitterSec;
+export const ALLY_AIM_KICK = SENTINEL_PILOT.aimKick;
+export const ALLY_AIM_MAX = SENTINEL_PILOT.aimMax;
+export const ALLY_PD_JITTER = SENTINEL_PILOT.pdJitter;
+export const ALLY_PD_JITTER_SEC = SENTINEL_PILOT.pdJitterSec;
 
 // ---------- Retreat & station-keeping ----------
 export const ALLY_RETREAT_HP_FRAC = 0.25; // breaks off at ≤25% hull WITH the shield down, the INSTANT the

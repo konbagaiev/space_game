@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-09-11 (**The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-04 (**The Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -1551,7 +1551,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     and the pilot's spawn ordinal (wingman 0, aces 1..N) — **zero draws from the shared seeded stream**
     (§73). It is re-derived if the installed seed changes, because in the browser a duel ace can be spawned
     before take-off installs the session's seed. **The ace flies identical numbers**: one block, no `ctx`
-    knob, because the duel room is a test of the wingman's own flying.
+    knob, because the duel room is a test of the wingman's own flying. **That block is one frozen profile
+    object, `SENTINEL_PILOT`** (`ally-config.js`), which every ship `flySentinel` flies reads — wingman, every
+    `?duel` ace, every `?brawl` bot; the old `ALLY_AIM_*`/`ALLY_PD_*` exports are aliases of its fields. A
+    second pilot would be a second profile threaded through the ctx when it exists (DECISIONS §156).
+  - **The pilot owns his reload stagger** (DECISIONS §156). Each volley's cooldown is `reload + U(0,1) ×
+    SENTINEL_PILOT.reloadStaggerSec (0.5)`, drawn from a **second private stream** (`pilotReloadRandom`,
+    same keying as the aim stream XOR `PILOT_RELOAD_SALT`, so the aim sequence and every §153 calibration
+    are unchanged). `flySentinel` hands it to `updateGroups` as an 8th `reloadStagger` argument. The wingman
+    and an ace therefore fire on **identical schedules** (the stagger used to belong to the enemy SIDE, so
+    an ace fired ~30 % less often than the wingman) and a pilot-flown ship takes **zero** shared draws. On the
+    0.6 s Heavy cannon the mean cooldown is 0.85 s. Point defence: the per-shot intercept rate did not move
+    (measured 0.347 over 1000 engagements), but fewer shots fit in a rocket's ~1.5 s approach, so **75 %**
+    of closing rockets now die (was 86 %).
   - **What he does:** charges the enemy nearest **to himself** (`ALLY_TARGET_LEASH` is `Infinity`; make it
     finite to keep him near the player), fires when the SHOT is on, **flies through the hull** (deliberate —
     there is no ship-to-ship collision and no lateral pass offset), then brakes and comes about. He re-picks
@@ -1591,8 +1603,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     leaves at 65 u/s while the rocket closes at 12-37, so they meet at 0.64-0.84 of the range the error was
     computed at, and the tolerance carries `(s + v_close)/s` explicitly — sizing it at the naive range would
     have delivered ~73 % hits where 50 % was agreed. A rocket is only acquired inside `engageBand` 45 u and
-    covers that in ~1.5 s, so the 0.6 s cooldown allows **2-3 shots**: most closing rockets still die and
-    some get through, which is the agreed trade.
+    covers that in ~1.5 s, so the 0.6 s cooldown plus the pilot's 0-0.5 s reload stagger allows **2 shots,
+    sometimes 3**: measured over 1000 engagements, 0.347 kills per shot and **75 %** of closing rockets shot
+    down (86 % before the stagger); some get through, which is the agreed trade.
   - **His gun fires as far as the GUN fires — not as far as the AI band says** (`groupReach` in
     `step-ally.js`; DECISIONS §148). `GUN.ai` (`catalog_seed.js`) is `{ range: 45, aimTol: 0.25 }` while the
     Heavy cannon's own `maxRange` is **140**, and `ROCKET.ai` is `{ range: 80, aimTol: 0.40 }` — so he used
@@ -1694,7 +1707,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     §2.6 "never a tracer through your hull" gate (hostile ships already shoot past each other), `side:
     'enemy'` makes its shots damage the player and hands its rockets the ship it is flying at, and `canFire`
     holds it silent through the shared **5 s `ENEMY_FIRE_GRACE`** every hostile ship obeys. Sharing the code
-    rather than copying it is the whole point: the room tests the wingman, not a fork of him.
+    rather than copying it is the whole point: the room tests the wingman, not a fork of him. **An ace
+    fires on the wingman's schedule** — the reload stagger is the PILOT's (`SENTINEL_PILOT.reloadStaggerSec`,
+    a private second stream; see the wingman above, DECISIONS §156), not the enemy side's — so an ace draws
+    **nothing** from the shared seeded stream; a duel's only shared draws are loot rolls.
   - **Arrival is deterministic and RNG-free** (like `spawnAlly`): a phase carrying **`aces: N`** warps them
     in ahead of the player's nose, facing him, `ACE_SPAWN_DIST` **90 u** out and `ACE_SPAWN_SPREAD` **40 u**
     apart — and **echeloned**: each is `ACE_SPAWN_STAGGER` **14 u** further out and `ACE_WARP_STAGGER`
@@ -4128,8 +4144,11 @@ emit a `fire` event ({ weaponClass, isRocket, fromPlayer }) instead of playing a
 detonations still sound). **`updateGroups`/`fireMount` take a three-valued `side`** (`'player' | 'ally' |
 'enemy'`) rather than an `isPlayer` boolean, and the split matters: the PROJECTILE's `fromPlayer` means
 *"fired by the friendly side"* (player **or** ally) while the `fire` EVENT's means *"it was YOUR shot"*, so
-the wingman's guns are silent. Only an enemy draws the reload jitter (`side === 'enemy'`), which is what
-keeps every recorded trace bit-identical. A second flag `fromAlly` rides the projectile purely so an ally
+the wingman's guns are silent. **Reload stagger:** a catalog enemy (no pilot) draws it from the shared
+stream (`side === 'enemy' ? simRandom() × 0.5`), exactly as always, which is what keeps every recorded
+campaign trace bit-identical; a pilot-flown ship (`flySentinel`: wingman, ace, brawl bot) passes its own
+`reloadStagger` closure as `updateGroups`' 8th argument and draws nothing shared; the player passes nothing
+and has no stagger. A second flag `fromAlly` rides the projectile purely so an ally
 kill can pay nothing; it never crosses the wire. Target selection is `sim-core/targeting.js`:
 `findTargetInSector` for the rocket seeker, and **`nearestHostileTarget`** — who a HOSTILE ship is fighting,
 the nearer of the player and the allies — both pure scans over the World's combatants. With no ally,
@@ -4878,6 +4897,10 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   inside 20 u — both halves fail against the ground-speed rule), that crossing 25 % hull **breaks the charge
   on that very tick** (the inverse of the retired "low health never interrupts a charge") and that the
   threshold and the shield clause are exactly as specified,
+  that **the pilot owns his reload stagger** (a wingman and an ace with one ordinal fire on IDENTICAL ticks
+  with zero shared draws — negative-tested against the old side rule; a catalog enemy still takes exactly
+  one `simRandom() × 0.5`; the player none; reload draws never shift the aim stream; every
+  `ALLY_AIM_*`/`ALLY_PD_*` alias equals its frozen `SENTINEL_PILOT` field),
   that **he DIES and is gone for the rest of the mission**, that a **RETREATING ally is still a valid enemy target** (the 2026-08-23 veto), and
   that 600 ticks of a fight with an ally draw **zero** seeded randomness, that the break-off is measured **from
   the threat** (the gap to the enemy grows, it works when he is already past the retired centre-relative
@@ -5063,7 +5086,8 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   bullets on **every** shot, run at a `pirate gunner`'s narrowest heading, at its widest, and against the
   `advanced medium pirate` — the hull that BINDS `ALLY_AIM_HIT_FRAC` — so it fails if the yardstick ever
   regresses to `broadRadius`; **point defence in a closing engagement** spends more than one round per
-  rocket and lands 35-65 % of them (measured 0.376), killing 55-95 % of the rockets (measured 0.88); and
+  rocket and lands 30-65 % of them (measured 0.347 over 1000 engagements), killing 55-95 % of the rockets
+  (measured 0.75); and
   **the yardstick guard** re-measures the contiguous hit half-width at the bullet plane over 144 headings
   for all **nine** enemy rows plus the Sentinel hull and asserts `ALLY_AIM_HIT_FRAC × broadRadius` still fits
   inside every one (measured floor 0.373 — a re-exported model, a new `lift` or a new enemy would otherwise

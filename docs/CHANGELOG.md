@@ -3,6 +3,19 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-04
+
+- **The Sentinel pilot owns its reload stagger: wingman and aces now fire alike.**
+  [2026-10-04-2001-bot-brawl-load-test] The 0-0.5 s reload stagger used to belong to the enemy SIDE, so a
+  `?duel` ace fired ~30 % less often than the identical wingman and drew it from the shared seeded stream.
+  It now belongs to the pilot: every ship `flySentinel` flies draws it from its own second private stream
+  (`pilotReloadRandom`), so the wingman's Heavy-cannon cadence drops slightly (mean cooldown 0.60 → 0.85 s;
+  measured: 75 % of closing rockets shot down, was 86 %, per-shot rate unchanged) and aces take **zero**
+  shared draws. The pilot's human-error knobs are one frozen `SENTINEL_PILOT` profile in `ally-config.js`;
+  the `ALLY_AIM_*`/`ALLY_PD_*` exports are aliases. Catalog enemies keep the shared-stream stagger, so every
+  campaign trace replays bit-identically. The point-defence test now samples 1000 engagements (its 40-seed
+  sample was noisier than its band). DECISIONS §156.
+
 ## 2026-09-11
 
 - **The Sentinel pilot aims like a person now — and a retreat actually leaves the fight.**

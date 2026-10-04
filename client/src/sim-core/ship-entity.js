@@ -236,7 +236,10 @@ function fireMount(world, ship, mount, fwd, side, rocketTarget) {
 // mounts, each after its own `delay` (so two launchers fire one after the other).
 // `side` is 'player' | 'ally' | 'enemy'. `rocketTarget` is only read for an ENEMY's rockets — whoever its
 // shooter is flying at — because a friendly rocket resolves its own seeker target from the nose sector.
-export function updateGroups(world, ship, fwd, side, dt, wantsFire, rocketTarget = null) {
+// `reloadStagger` is an optional `() => seconds` the CALLER owns: a pilot-flown ship (`flySentinel`) passes
+// its pilot's own stagger, drawn from a private per-pilot stream. The beam branch ignores it (no Sentinel
+// carries a beam).
+export function updateGroups(world, ship, fwd, side, dt, wantsFire, rocketTarget = null, reloadStagger = null) {
   for (const g of Object.values(ship.groups)) {
     // A BEAM group has its own tick: a charge that spans ticks, and a hitscan instead of a projectile. A
     // branch here rather than a fourth call site is what makes "any weapon on any ship" keep meaning what it
@@ -248,9 +251,11 @@ export function updateGroups(world, ship, fwd, side, dt, wantsFire, rocketTarget
       if (g.pending[i].t <= 0) { fireMount(world, ship, g.pending[i].mount, fwd, side, rocketTarget); g.pending.splice(i, 1); }
     }
     if (g.mounts.length && g.cooldown <= 0 && wantsFire(g)) {
-      // Only ENEMIES stagger their reloads, and only they draw for it. The player and the ally consume no
-      // randomness here, which is what keeps every recorded trace bit-identical (DECISIONS §73).
-      g.cooldown = g.reload + (side === 'enemy' ? simRandom() * 0.5 : 0); // (GAMEPLAY: shifts when their bullets exist)
+      // RELOAD STAGGER. Catalog enemies stagger on the SHARED stream, exactly as before — every campaign trace
+      // stays bit-identical (DECISIONS §73). A pilot-flown ship (wingman, `?duel` ace, `?brawl` bot) passes
+      // its pilot's own stagger and draws NOTHING shared (DECISIONS §156). The player passes nothing and has
+      // no stagger.
+      g.cooldown = g.reload + (reloadStagger ? reloadStagger() : (side === 'enemy' ? simRandom() * 0.5 : 0)); // (GAMEPLAY: shifts when their bullets exist)
       for (const m of g.mounts) g.pending.push({ mount: m, t: m.delay });
     }
   }

@@ -245,11 +245,11 @@ test('an ace whose target is TOO FAR turns onto an incoming rocket and shoots it
   seedSim(null);
   assert.equal(opened, SEEDS, 'it opened fire on the rocket every single time — the capability half');
   // A BAND, because a per-shot miss chance is the reason this is no longer a yes/no: he spends ~1.9 shots
-  // per engagement here at ~50 % each, so some rockets get through and reach him. Measured over 60 seeds:
-  // 73 % shot down. The seeds are FIXED, so this is deterministic rather than a lottery — only a change to
-  // the pilot moves it.
+  // per engagement here at ~50 % each, so some rockets get through and reach him. MEASURED (2026-10-04):
+  // 13/20 shot down, unchanged by the pilot-owned reload stagger (an ace already staggered; DECISIONS §156).
+  // The seeds are FIXED, so this is deterministic rather than a lottery — only a change to the pilot moves it.
   assert.ok(killed >= 0.55 * SEEDS && killed <= 0.95 * SEEDS,
-    `and shoots it down most of the time (${killed}/${SEEDS}; design point 75-88 %)`);
+    `and shoots it down most of the time (${killed}/${SEEDS}; measured 13/20)`);
   assert.equal(unhurt, killed, 'and when it kills the rocket it does not take the hit itself');
 });
 
@@ -351,7 +351,8 @@ test('the wingman intercepts while ESCORTING — no enemy in reach, but a rocket
   seedSim(null);
   assert.equal(opened, SEEDS, 'he opened fire every time');
   assert.ok(killed >= 0.55 * SEEDS && killed <= 0.95 * SEEDS,
-    `and the rocket dies most of the time (${killed}/${SEEDS}; design point 75-88 %)`);
+    // MEASURED (2026-10-04): 13/20 since the wingman's reload stagger (DECISIONS §156); 15/20 before it.
+    `and the rocket dies most of the time (${killed}/${SEEDS}; measured 13/20)`);
   assert.equal(playerClean, killed, 'and on those runs the player is never hit');
 });
 
