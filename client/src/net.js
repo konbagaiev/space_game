@@ -12,6 +12,7 @@ import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
 import { applyAllyDev } from './ally-dev.js';
 import { applyDuelDev } from './duel-dev.js'; // ?duel (dev): rebuild the level as the sparring room
+import { brawlActive } from './brawl-dev.js'; // ?brawl: a load test sends no funnel events
 import { sendSession } from './session-transport.js'; // pure beacon-vs-fetch routing (unit-tested; the no-keepalive win/death fix)
 import { jsEngine } from './engine-id.js'; // the JS engine family+version that ran this simulation (referee §3.2)
 
@@ -201,6 +202,7 @@ export const currentLevelLabel = () => G.activeMission ? ('mission:' + (G.active
 // Fire-and-forget a gameplay event. `quit` uses sendBeacon so it survives tab close; others use fetch
 // with keepalive. Never throws, never blocks gameplay (the endpoint is best-effort server-side too).
 export function track(type, data) {
+  if (brawlActive()) return; // ?brawl is a load test, not play: it must never reach the funnel
   if (!G.playerId) return;
   const payload = JSON.stringify({ playerId: G.playerId, type, data });
   try {

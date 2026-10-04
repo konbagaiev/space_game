@@ -5,6 +5,19 @@
 
 ## 2026-10-04
 
+- **A bot brawl you can run on a phone (`?brawl`).** [2026-10-04-2001-bot-brawl-load-test] A repeatable
+  load test: two teams of N Sentinel bots (1-30, default 20), all flown by the Sentinel pilot, fight over the
+  home station while you watch — the camera follows the middle of the fight (clamped to 55 u around the
+  station), a tap follows one bot, another tap goes back. A bare `?brawl` shows a setup panel (bots per
+  side, graphics tier, Start — which reloads into `?brawl=<n>&tier=<t>`). A run lasts 60 s of wall time or
+  until a side is wiped out, with a fixed seed (same fight on the same JS engine), and ends on a card:
+  avg/p95/worst frame ms and FPS overall and per 10-sim-second window ("window 0 = full load"), sim seconds
+  reached and the sim/wall ratio, station-in-frame %, a fight fingerprint, tier/N/build/engine. `?brawl`
+  alone turns on `/api/perf` telemetry (`scene:'brawl'` per-second rows plus one `kind:'brawl-result'`).
+  It pays nothing, records no session and never meets the referee. New modules `sim-core/brawl.js`,
+  `brawl-dev.js`, `brawl-stats.js`, `brawl-host.js`; the camera, speed field, star-system fade and arena
+  border now read a `G.viewTarget` seam (null outside the brawl). New visual scenario `51-bot-brawl`.
+  DECISIONS §157.
 - **The Sentinel pilot owns its reload stagger: wingman and aces now fire alike.**
   [2026-10-04-2001-bot-brawl-load-test] The 0-0.5 s reload stagger used to belong to the enemy SIDE, so a
   `?duel` ace fired ~30 % less often than the identical wingman and drew it from the shared seeded stream.

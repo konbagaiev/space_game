@@ -1282,3 +1282,47 @@
     box-shadow: 0 2px 8px rgba(0,0,0,.35);
   }
   body.menu #map-btn { display: none !important; }
+
+/* ---------- ?brawl (dev load test): setup panel + result card, and the spectator's hidden controls ----------
+   Both panels are fixed + inset:0 so they follow the rotated landscape body like every other overlay, and sit
+   at z-index 11 — above #stick-zone/#touch (5-6) and the result #overlay (10), under the settings gear (13). */
+.brawl-panel {
+  position: fixed; inset: 0; z-index: 11; display: none; align-items: center; justify-content: center;
+  pointer-events: auto; background: rgba(5,6,13,.78); color: #e8f1ff; font-family: system-ui, sans-serif;
+  /* Keep the box clear of the settings gear (top-left, y 11..47) and the XP bar (bottom 6..20 px): on a
+     ~390 px-tall landscape phone the card scrolls inside its box instead of running under either. */
+  padding: 54px 12px 26px; box-sizing: border-box;
+}
+.brawl-panel.on { display: flex; }
+.brawl-box {
+  max-width: min(94%, 760px); max-height: 100%; box-sizing: border-box; overflow: auto; padding: 14px 18px; border-radius: 10px;
+  background: rgba(16,22,40,.92); border: 1px solid rgba(140,175,255,.35); text-align: center;
+}
+.brawl-box h1 { font-size: 20px; margin: 0 0 10px; }
+.brawl-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0; }
+.brawl-row button, #brawl-tiers button, .brawl-actions button {
+  cursor: pointer; min-width: 40px; padding: 8px 12px; font-size: 16px; border-radius: 7px;
+  border: 1px solid rgba(140,175,255,.45); background: rgba(30,44,80,.8); color: #e8f1ff;
+}
+#brawl-tiers { display: flex; gap: 6px; }
+#brawl-tiers button.on { background: #5b86e5; color: #02101f; font-weight: 700; }
+#brawl-n { min-width: 2.5em; font-size: 22px; font-weight: 700; }
+.brawl-main { background: linear-gradient(90deg,#36d1dc,#5b86e5) !important; color: #02101f !important; font-weight: 700; }
+#brawl-start { margin-top: 8px; padding: 10px 40px; font-size: 18px; }
+#brawl-build { margin: 10px 0 0; font-size: 12px; opacity: .7; }
+.brawl-actions { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+.brawl-card-body table { margin: 0 0 8px; border-collapse: collapse; font-size: 12px; }
+.brawl-card-body th, .brawl-card-body td { padding: 2px 8px; text-align: left; }
+.brawl-kv th { opacity: .7; font-weight: 600; }
+.brawl-win th { border-bottom: 1px solid rgba(140,175,255,.35); }
+.brawl-note { font-size: 11px; opacity: .7; margin: 4px 0 0; }
+/* The spectator only watches: hide the INPUT controls (the HUD, radar, markers, health bars and event log
+   stay). #stick-zone stays live, because taps travel through it (tap-to-follow). Hiding #pause-overlay stops
+   a tap from accidentally unpausing; an auto-pause still freezes the sim and marks the run interrupted. */
+body.brawl #fire-btn, body.brawl #rocket-btn, body.brawl #zoom, body.brawl #pause-btn,
+body.brawl #pause-overlay, body.brawl #stick-base, body.brawl #stick-knob, body.brawl #help,
+body.brawl #fullscreen-btn { display: none !important; }
+/* The result card puts its two tables side by side when they fit; otherwise the per-window table comes
+   first (brawl-host.js), so a landscape phone sees it without scrolling. */
+.brawl-card-body { display: flex; flex-wrap: wrap; gap: 4px 18px; justify-content: center; align-items: flex-start; }
+.brawl-card-body .brawl-note { flex-basis: 100%; }

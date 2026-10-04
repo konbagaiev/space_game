@@ -677,12 +677,14 @@ function buildSystemBodies(sys, oceanHex) {
 //   • fades a body in by distance from the camera, so flying toward one brings it up smoothly instead of
 //     popping it into existence the moment it crosses camera.far. Fully faded-out bodies are hidden, which
 //     is also what keeps the far side of the system free (at the base you see planet 2 and nothing else).
-export function updateSystemBodies() {
+// `ship` is where the view is: the player's ship by default; `settleView` passes its view target, which is
+// the ship except under a spectator mode (?brawl), where the parked spectator would otherwise fade the
+// home planet and its moons away. The player may not exist yet (buildMap runs before the ship is built) —
+// the base sits at the origin, so that is the right stand-in: it places the hangar backdrop exactly as the
+// player will first see it.
+export function updateSystemBodies(ship = (G.player && G.player.pos) ? G.player.pos : ORIGIN) {
   if (!G.systemBodies || !G.sky) return;
   const now = Date.now();
-  // The player may not exist yet (buildMap runs before the ship is built) — the base sits at the origin, so
-  // that is the right stand-in: it places the hangar backdrop exactly as the player will first see it.
-  const ship = (G.player && G.player.pos) ? G.player.pos : ORIGIN;
   for (const b of G.systemBodies) {
     const rp = bodyRenderPos(b.name, now);
     b.mesh.position.set(rp.x, rp.y, rp.z);

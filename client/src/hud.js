@@ -449,7 +449,9 @@ export function updateMiniMap() {
   }
 
   // player as a heading triangle (red while out of bounds), clamped to the radar edge so it stays
-  // visible even when the ship flies far outside the boundary
+  // visible even when the ship flies far outside the boundary. Skipped under a spectator view (?brawl): the
+  // parked spectator ship would sit pinned to the radar edge as a phantom.
+  if (G.viewTarget) return;
   const px = Math.max(6, Math.min(S - 6, toX(G.player.pos.x)));
   const py = Math.max(6, Math.min(S - 6, toY(G.player.pos.z)));
   const fx = Math.sin(G.player.heading), fz = Math.cos(G.player.heading); // forward dir (headingToDir)

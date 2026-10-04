@@ -6730,3 +6730,41 @@ draws its stagger from the shared stream. And the reload stream is one more priv
 §155's caveat (a 1-ULP flip becomes a different pilot, so the duel digest is not a bit-for-bit guard) now
 covers it too. Measured: `49-duel-referee` passed 3/3 runs with ticks and draws (0) agreeing on every run;
 the digest differed on all three, as §155 already accepts.
+
+## 157. The brawl measures 60 s of WALL time over the home station
+
+**What the maintainer wanted:** one repeatable number for "how does a heavy fight run on this phone",
+against production, with nothing else in the frame changing between runs. `?brawl` is that: N v N Sentinel
+bots over the home station, a fixed seed, a result card and `/api/perf` rows (brief
+`docs/plans/2026-10-04-2001-bot-brawl-load-test.md`).
+
+**Wall time, compared in SIM time.** The run lasts 60 s of wall-clock time (the maintainer's call — a phone
+test should take a known minute), not 60 s of simulation. A slow phone therefore simulates less: the loop
+runs at most 6 fixed steps per frame and clamps the accumulator at 0.1 s/frame. So the card reports **sim
+seconds reached** and the **sim/wall ratio**, and everything comparative — the fingerprint (alive per side
+every 10 sim-s) and the per-window frame statistics — is keyed to sim time. Two devices are compared over the
+windows both reached, and **window 0 ("full load", every bot alive) is the headline**. The brawl's clock stops
+on the wipe-out tick itself, so "sim seconds reached" does not depend on how many ticks a frame ran.
+Determinism is claimed for the **same JS engine only** (§151): Android Chrome (V8) and an iPhone
+(JavaScriptCore) can diverge, and the card says so under the fingerprint.
+
+**Over the home station, because that is the worst frame:** the station's fill cost plus the bots
+(memory: the station is fill-bound). The camera's centre mode follows the eased centroid of the fighting ships,
+but **clamped to 55 u around the station**: with the camera's fixed offset `(0,110,26)` and a 55° FOV, the
+station centre projects inside the frame at 60 u screen-up, at 60 u screen-down (the worst direction, NDC
+y −0.93) and at 80 u sideways, but leaves it at 80 u screen-down — so 55 u keeps it on screen in every
+direction. Without the clamp the prototype's centroid wandered 198-685 u away. The run measures the
+station-in-frame % instead of trusting this. *Flagged design call:* in centre mode a long chase can leave the
+frame; a tap follows any bot, unclamped.
+
+**A reload per run, deliberately.** The light pool is baked into the lit shaders at boot, so a tier change
+needs a reload anyway; Start always reloads into `?brawl=<n>&tier=<t>`, which also gives every run an
+identical fresh page. The tier param applies to that page load only and is never saved (§81).
+
+**A parked spectator plus a view-target seam, instead of special cases in the simulation.** The player ship
+stays alive (a dead player winds every pilot down, `flySentinel` step 3) and is parked 5000 u away, never
+stepped and out of every bot's reach. What would otherwise follow the ship — the camera, the speed field,
+the star-system fade (planet 2 would vanish), the arena border, the radar triangle — reads `G.viewTarget`
+first. The alternative, a "no player" mode in the sim, would have touched projectile and pilot code that the
+campaign shares; this touches only render readers. Red deaths go through a brawl-only `stepBrawlRedDeaths`
+(the `allyDown` FX event and nothing else) so no loot roll, kill, credit or shared draw happens.

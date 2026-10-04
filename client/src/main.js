@@ -38,6 +38,8 @@ import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry)
 import { allyDev, allyDevLevel, applyAllyDev } from './ally-dev.js'; // ?ally dev flag: the wingman's arrival phase (+ the level it forces)
 import { beamDev, lancerDev, lancerDevLevel, applyLancerDev } from './beam-dev.js'; // ?beam / ?lancer dev flags: the player's beam, the pirate lancer's spawn phase (+ the level it forces)
 import { duelDevLevel, applyDuelDev, applyTraceRoom, duelBuild, duelDev } from './duel-dev.js'; // ?duel dev flag: the sparring room (+ the level it is built over, the forced ship, and the room a duel TRACE was fought in)
+import { brawlActive, brawlDev, brawlDevLevel, applyBrawlDev } from './brawl-dev.js'; // ?brawl: the bot-brawl phone load test (flag + the level it is built over)
+import { startBrawl, showBrawlSetup, brawlFrame, brawlTap, brawlDebugState } from './brawl-host.js'; // ?brawl: setup panel, run, spectator camera, result card
 import { duelAnchorReached } from './sim-core/duel-config.js'; // the instant a duel's FIGHT ended — the referee's comparison point
 import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
@@ -57,6 +59,8 @@ let soundUrls = {};                 // logical key → same-origin url (fed to a
 
 // Graphics quality tier lives in G.gfx (built in state.js, read by engine.js at construction).
 const DEV = isDev(); // ?dev → record per-frame perf samples to the server (see devPerf / dev.js)
+const BRAWL = brawlActive(); // ?brawl → the bot-brawl load test (brawl-dev.js); never sticky
+const PERF = DEV || BRAWL;   // per-frame perf sampling + /api/perf telemetry: ?dev, or a brawl run by itself
 
 // ---------- Benchmark harness (?bench): deterministic replay perf gate ----------
 // BENCH is the sticky ?bench mode ('record' | 'replay') this load, or null (off — zero overhead for players).
@@ -342,6 +346,7 @@ if (Device.hasTouch) {
   }, { passive: false });
   zone.addEventListener('touchmove', e => {
     if (pinching && e.targetTouches.length === 2) {
+      if (BRAWL) { e.preventDefault(); return; } // ?brawl: the zoom is fixed at gameplay zoom (comparable runs)
       const d = pinchD(e.targetTouches[0], e.targetTouches[1]);
       if (d > 0 && pinchDist > 0) { zoomBy(pinchDist / d); pinchDist = d; } // fingers apart (d↑) => zoom in
       e.preventDefault(); return;
@@ -407,6 +412,7 @@ if (Device.hasTouch) {
 const ZOOM_WHEEL = 1.12, ZOOM_BTN = 1.25;
 renderer.domElement.addEventListener('wheel', e => {
   e.preventDefault();
+  if (BRAWL) return; // ?brawl: the zoom is fixed at gameplay zoom, so runs are comparable
   zoomBy(e.deltaY < 0 ? 1/ZOOM_WHEEL : ZOOM_WHEEL); // scroll up = zoom in (closer)
 }, { passive: false });
 // Mouse-only: on touch the +/- buttons fire on `touchstart` (in the touch block above). Binding `click`
@@ -466,6 +472,8 @@ function dropUnderPointer(e) {
 // over the base station on overlap. Used by BOTH the desktop click handler and the touch tap (a slop-gated
 // single-finger tap). Returns true if it engaged an autopilot. (Rotation handled by eventNdc → toGame.)
 function engageObjectAt(e) {
+  // ?brawl: the player only watches — a tap follows a bot, or goes back to the centre of the fight.
+  if (BRAWL && world.brawl) { brawlTap(eventNdc(e)); return true; }
   // 1) a chest under the pointer wins (works in combat AND return-to-base)
   const drop = dropUnderPointer(e);
   if (drop) { engageDropAutopilot(drop); return true; }
@@ -662,8 +670,15 @@ window.addEventListener('blur', autoPauseOnBlur);
 // (fps + frame-time p50/p95/max + the JS breakdown + scene load + a device/GPU passport), batched to the
 // server every ~5s (and on tab hide via sendBeacon). Off — zero overhead — for normal players.
 // Read: if JS `total` ≪ frame `p50`, the frame isn't CPU-bound → external/GPU. See docs/plans/perf-low-end-phones.md.
+// The ?brawl slice of a per-second perf sample: where the run is, trimmed to what a query needs.
+function brawlTelemetry() {
+  const b = brawlDebugState();
+  if (!b) return null;
+  return { n: b.n, armed: b.armed, ended: b.ended, simSec: b.simSec, wallSec: b.wallSec, ratio: b.ratio,
+           alive: b.alive, stationInFramePct: b.stationInFramePct, cam: b.cam, interrupted: b.interrupted };
+}
 const devPerf = (() => {
-  if (!DEV) return { frame() {} };
+  if (!PERF) return { frame() {}, pushResult() {} };
   const sessionId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random();
   // Device passport — captured once. The real GPU name is the single most useful field for a weak phone.
   let gpu = 'unknown', gpuVendor = 'unknown';
@@ -720,13 +735,15 @@ const devPerf = (() => {
     }).observe({ type: 'longtask', buffered: false });
   } catch { /* not supported (Safari/Firefox) → the fields stay 0 and simply carry no signal */ }
 
-  function flush(beacon) {
+  // `keepalive` caps the body at ~64 KB in Chrome; it is only worth having when the page may be going away.
+  // The brawl's result flush happens with the page staying OPEN (the card), so it passes keepalive=false.
+  function flush(beacon, keepalive = true) {
     if (!outbox.length || !G.playerId) return;
     const body = JSON.stringify({ playerId: G.playerId, sessionId, samples: outbox });
     outbox = [];
     try {
       if (beacon && navigator.sendBeacon) navigator.sendBeacon(API_BASE + '/api/perf', new Blob([body], { type: 'application/json' }));
-      else fetch(API_BASE + '/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+      else fetch(API_BASE + '/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive }).catch(() => {});
     } catch {}
   }
   function finalizeBucket(now) {
@@ -736,13 +753,15 @@ const devPerf = (() => {
       const totals = bucket.map((f) => f.total).sort((a, b) => a - b);
       const p50 = pct(frameMs, 50);
       outbox.push({
-        t: Date.now(), scene: !G.gameStarted ? 'menu' : (G.paused ? 'paused' : 'combat'),
+        t: Date.now(), scene: world.brawl ? 'brawl' : (!G.gameStarted ? 'menu' : (G.paused ? 'paused' : 'combat')),
         fps: r1(bucket.length / elapsed), frames: bucket.length,
         frameMs: { p50: r1(p50), p95: r1(pct(frameMs, 95)), max: r1(frameMs[frameMs.length - 1]) },
         js: { update: r1(mean(bucket.map((f) => f.update))), dom: r1(mean(bucket.map((f) => f.dom))),
               render: r1(mean(bucket.map((f) => f.render))), total: r1(mean(totals)), totalP95: r1(pct(totals, 95)) },
         jank: frameMs.filter((m) => m > 1.5 * p50).length,
-        load: { enemies: enemies.length, drops: drops.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
+        load: { enemies: enemies.length, allies: allies.length, drops: drops.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
+        // ?brawl: where the run is. Filter on `brawl.ended` to drop the seconds the result card sat open.
+        ...(world.brawl ? { brawl: brawlTelemetry() } : {}),
         heap: heapMB(), // JS heap (MB) — Chrome only; null elsewhere
         gpu: gpuRes(),  // live three.js programs/geometries/textures — a jump here IS the stall's cause
         // Per-stage level-warm failures (all zero = the warm ran in full). A non-zero `roots` with a zero
@@ -763,6 +782,8 @@ const devPerf = (() => {
   document.addEventListener('visibilitychange', () => { if (document.hidden) flushNow(); });
   window.addEventListener('pagehide', flushNow);
   return {
+    // The brawl's one result sample (`kind: 'brawl-result'`), sent at once — the page stays open on the card.
+    pushResult(obj) { outbox.push(obj); flush(false, false); lastFlush = performance.now(); },
     // `sec` is the RAW (unclamped) frame interval — frameMs must reflect true frame time, not the sim's
     // clamped dt (which saturates at 50ms and would hide every frame slower than 20fps).
     frame(sec, t0, t1, t2, t3) {
@@ -1066,7 +1087,7 @@ function animate() {
   requestAnimationFrame(animate);
   const rawSec = clock.getDelta();        // true frame interval (unclamped) — for the perf metrics
   const dt = (BENCH || REC || rs.play) ? BENCH_DT : Math.min(rawSec, 0.05); // bench/record/playback: fixed step for determinism; else clamped for sim stability
-  const t0 = DEV ? performance.now() : 0;
+  const t0 = PERF ? performance.now() : 0;
   tickZoom(dt); // ease the camera zoom toward its target every frame (independent of the pause freeze)
   // A record/playback session replays the LOCAL sim and owns the tick, so netsim stands aside for as long
   // as one is running (see netsimDefersTo).
@@ -1213,7 +1234,9 @@ function animate() {
   // mid-record can't accumulate dt/elapsed, record frozen duplicate frames, or auto-stop during a pause.
   if (bdRec && !G.paused) backdropCapture(dt);
   if (HITBOXES_DEBUG) syncHitBoxes(scene, G.player, enemies); // dev-only hitbox wireframe overlay
-  const t1 = DEV ? performance.now() : 0; // end of sim
+  // ?brawl: arm once the level-load veil is down, then measure every frame and end the run on time/wipe-out.
+  if (BRAWL && world.brawl) brawlFrame(rawSec, !G.needsSceneWarm && !warmDeferred);
+  const t1 = PERF ? performance.now() : 0; // end of sim
   updateHud();
   if (NETSIM) updateNetBadge(); // which simulation is actually running this fight
   updateProgressionHud(); // always-on bottom XP bar + free-skill-points badge on the Character menu item
@@ -1234,7 +1257,7 @@ function animate() {
   if (ROAM) updateRoamReadout(); // ?roam dev sizing/zone/backdrop readout (never built in the shipped path)
   updateShieldBubble(G.paused ? 0 : Math.min(rawSec, 0.05)); // advances the shared FX clock + tracks the ship (frozen while paused)
   updateEnemyShieldBubbles(); // enemy hit-ripples (pooled, tier-capped) — MUST run after updateShieldBubble (shared clock)
-  const t2 = DEV ? performance.now() : 0; // end of DOM overlays
+  const t2 = PERF ? performance.now() : 0; // end of DOM overlays
   // A level was just (re)built: compile its materials and upload its textures NOW, in one hit, rather than
   // letting them trickle in over the first seconds of the fight (sim.reset sets the flag).
   //
@@ -1268,9 +1291,9 @@ function animate() {
   renderer.render(skyScene, camera);
   renderer.clearDepth();
   renderer.render(scene, camera);
-  const t3 = DEV ? performance.now() : 0; // end of render submit (GPU exec is async — this is CPU submit cost)
+  const t3 = PERF ? performance.now() : 0; // end of render submit (GPU exec is async — this is CPU submit cost)
   updatePerf(rawSec); // perf metrics use the RAW interval (clamped dt would cap fps/ms on slow devices)
-  if (DEV) devPerf.frame(rawSec, t0, t1, t2, t3);
+  if (PERF) devPerf.frame(rawSec, t0, t1, t2, t3);
 }
 
 // ---------- Restart (reset) moved to src/sim.js ----------
@@ -1474,6 +1497,7 @@ if (location.search.includes('debug')) {
     get earned() { return G.earned; },   // credits earned this run
     get balance() { return G.balance; }, // persistent account balance
     get kills() { return G.kills; },
+    get brawl() { return brawlDebugState(); },          // ?brawl run state (null without one)
     get touchAim() { return touchAim; }, // touch steering state (active/heading/thrust) — assert tap-vs-drag in headless
     sessionRec: () => ({ active: sr.active, final: sr.final, ticks: sr.tickCount, runs: sr.runs.length, level: sr.level }), // always-on live-recorder state (funnel-analytics guard)
     // Regression seam for the intro→Level-1 dead-controls bug (docs/plans/2026-08-03-1246-record-all-sessions.md).
@@ -1764,7 +1788,7 @@ function stopRecordSession() {
 // beginRecordCapture). No-op under ?record/?playback/?bench: those own the seed/loop, and a (re)played
 // fight must never be re-recorded. The LEVEL-0 INTRO is recorded like every other campaign level.
 export function beginLiveSession() {
-  if (REC || rs.play || BENCH || G.replayMode) return;
+  if (REC || rs.play || BENCH || G.replayMode || BRAWL) return; // ?brawl records nothing and never meets the referee
   // A session that is still open here was ABANDONED (left mid-fight, then another level launched) — win/death
   // already closed theirs. Ship it before begin() throws the ticks away, or that drop-off never leaves a row.
   // Runs before reset(), which is what re-stamps G.gameStartTime, so the duration is still the OLD session's.
@@ -2165,7 +2189,7 @@ async function bootstrap() {
     // `?lancer&level=N` force one too (same `level` param, same normalization — a dev test flight must not
     // depend on campaign progress, and Level 3 and Level 4 have identical phase NAMES, so aiming at one and
     // landing on the other was invisible from the URL). Otherwise the player's progress level.
-    const devLevel = allyDevLevel() || lancerDevLevel() || duelDevLevel();
+    const devLevel = allyDevLevel() || lancerDevLevel() || duelDevLevel() || brawlDevLevel();
     const levelUrl = REC ? `/api/levels/${REC.level}`
       : rs.play ? `/api/levels/${traceLevelName(rs.trace)}`  // pre-v3 traces name the pre-renumbering level
       : devLevel ? `/api/levels/${devLevel}`
@@ -2200,8 +2224,9 @@ async function bootstrap() {
     // flag off (the same object back out); `?duel` runs last because it discards what the others wrote.
     // …and under ?playback of a DUEL trace the URL carries no ?duel at all, so the room is rebuilt from
     // the recording itself — otherwise the admin "▶ play" link on a duel row replays the plain base level.
-    CATALOG.level = applyTraceRoom(applyDuelDev(applyLancerDev(applyAllyDev(level.descriptor))),   // ?duel is LAST: it replaces the phase script the other two edit
-                                   rs.play ? rs.trace : null);
+    // ?brawl wraps everything: it replaces the whole script with the bot-brawl room (a strict no-op off).
+    CATALOG.level = applyBrawlDev(applyTraceRoom(applyDuelDev(applyLancerDev(applyAllyDev(level.descriptor))),   // ?duel is LAST of these: it replaces the phase script the other two edit
+                                   rs.play ? rs.trace : null));
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
 
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map
@@ -2249,6 +2274,9 @@ async function bootstrap() {
       enterRecordMode(); // idle on the real ship; "Start recording" begins capture from tick 0
     } else if (rs.play) {
       startPlaybackSession(rs.trace); // re-run the recorded fight on the real engine
+    } else if (BRAWL) {
+      // ?brawl: a count in the URL starts the run at once; a bare ?brawl shows the setup panel.
+      if (brawlDev().n) startBrawl({ pushResult: (r) => devPerf.pushResult(r) }); else showBrawlSetup();
     } else if (level.name === 'level-0') {
       // THE INTRO IS A FIGHT YOU FLY. The server serves the level-0 descriptor only while
       // current_progress === 0 (a new or freshly reset player), so `level.name` is the whole one-time gate —

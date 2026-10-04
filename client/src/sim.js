@@ -36,6 +36,7 @@ import { PLAYER_MAX_SPEED, warpPlayerToCenter as warpPlayerToCenterIn,
 import { startLevel, updateLevelRunner, winLevel, finishMission as finishMissionIn, resetLevelRunnerState, currentPhase } from './sim-core/level-runner.js';
 import { clearAndPlaceRun, startRun } from './sim-core/reset-world.js';
 import { simTick as simTickIn } from './sim-core/tick.js';
+import { brawlTick } from './sim-core/brawl.js'; // ?brawl: the bot brawl's tick replaces the campaign tick (inert without world.brawl)
 import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
 import { drawBeamSight, startBeamCharge, startHostileBeamCharge, spawnBeamBolt, hideBeamFx } from './beam-fx.js';
 import { track, currentLevelLabel, bankRun, commitLevelAdvance, loadAdvancedLevel, depositLoot,
@@ -505,7 +506,7 @@ world.host = {
 //
 // The game half is `sim-core/tick.js` now and takes the World; this binds it to THIS tab's fight and keeps
 // the grab target for renderTick. Kept exported under its own name — the ?debug hooks step it directly.
-export function simTick(dt) { grabTarget = simTickIn(world, dt); }
+export function simTick(dt) { grabTarget = world.brawl ? brawlTick(world, dt) : simTickIn(world, dt); }
 
 // Whatever the Grab is currently pulling, handed from simTick to renderTick. Presentation only. Under
 // `?netsim` the Grab runs in the room, so the target arrives in a snapshot instead — main.js sets it.
@@ -516,7 +517,8 @@ export function setGrabTarget(t) { grabTarget = t; }
 // approaches the wall, brightest while outside. Pure presentation derived from where the ship IS — it used
 // to be written from inside stepPlayer, which meant the simulation was setting a material's opacity.
 function drawArenaBorder() {
-  const p = world.player.pos;
+  // The VIEW target, not the ship: under ?brawl the spectator ship is parked far away (G.viewTarget).
+  const p = G.viewTarget ? G.viewTarget() : world.player.pos;
   arenaBorder.line.position.set(arenaCenter.x, 0, arenaCenter.z);
   const dxc = p.x - arenaCenter.x, dzc = p.z - arenaCenter.z;
   const edge = Math.max(Math.abs(dxc), Math.abs(dzc));
@@ -652,18 +654,22 @@ function stepCreditPopups(dt) {
 // star-system backdrop placement and the speed-field wrap both draw no randomness and touch no sim state
 // (DECISIONS §73/§96/§98).
 export function settleView(dt = 0) {
+  // What the view is framed on: the player's ship, unless a spectator mode (?brawl) installed a view target
+  // — a reused THREE.Vector3 on the bullet plane (brawl-host.js). Every reader below that shapes the
+  // picture uses it, so a parked spectator ship cannot fade the planets or drag the dust away.
+  const tgt = G.viewTarget ? G.viewTarget() : G.player.pos;
   // camera: rigidly attached to the player (no lag/floating), fixed angle (does NOT rotate with the ship's turn)
-  camera.position.copy(G.player.pos).add(camOffset);
+  camera.position.copy(tgt).add(camOffset);
   // Components, NOT the vector: THREE's Object3D.lookAt branches on `x.isVector3` and silently falls
   // through to `set(x, undefined, undefined)` for anything else — which NaNs the camera's quaternion and
   // renders nothing, with no error thrown. A sim-core Vec3 is duck-compatible with everything that merely
   // READS x/y/z (`copy`, `Matrix4.compose`, …) but not with THREE APIs that type-test. See vec.js.
-  camera.lookAt(G.player.pos.x, G.player.pos.y, G.player.pos.z);
+  camera.lookAt(tgt.x, tgt.y, tgt.z);
   applyCameraShake(camera);       // render-only shudder; AFTER lookAt = pure translation, no view swing
   G.stars.position.copy(camera.position); // stars: an infinitely distant backdrop stuck to the camera (no parallax)
   updateBackdropLayer();                   // the additive nebula layer: tracks the camera at a FRACTION of its motion (real parallax)
-  updateSystemBodies();                    // star + 4 planets + moons: fixed bodies, group rides camera − parallax
-  updateSpeedField(G.player.pos.x, G.player.pos.z); // player-locked backdrop (view-only, no RNG)
+  updateSystemBodies(tgt);                 // star + 4 planets + moons: fixed bodies, group rides camera − parallax
+  updateSpeedField(tgt.x, tgt.z);          // player-locked backdrop (view-only, no RNG)
   updateEngineLights(camera, world.rockets, dt);        // ?lights=N measurement fork — a no-op unless the flag is set
 }
 

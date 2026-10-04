@@ -646,14 +646,15 @@ test('POINT DEFENCE in a CLOSING engagement: ~50 % per shot, and most rockets st
   // (2431 shots; 569 × 2, 431 × 3): the PER-SHOT rate did not move — the stagger is not an aim change — but
   // a slower gun gets fewer shots at a rocket inside the ~1.5 s it spends in the band, so fewer rockets die.
   // (The old comment's "0.376 per shot, 0.88 per rocket" was a 40-seed sample; the true per-shot rate was
-  // already ~0.35 on 1000, so the floor below moved from 0.35 to 0.30 on that MEASUREMENT, not to make room.)
+  // already ~0.35 on 1000, so the floor below moved from 0.35 to 0.33 on that MEASUREMENT — the seeds are fixed,
+  // so 0.347 is deterministic and 0.33 leaves room only for a real change to the pilot, not for noise.)
   // The per-shot figure sits BELOW the formula's 0.50 and that is honest rather than a defect: the
   // fire gate opens as soon as the shot is within the group's 0.25 rad `aimTol`, so a round can leave while
   // the nose is still swinging onto the perturbed aim. The dispersion is the dominant term (before it, this
   // fixture's rockets died to the first shot every time) but it is not the only one.
   const perShot = killed / fired;
   assert.ok(fired > SEEDS, `he spends more than one round per rocket (${fired} over ${SEEDS} engagements)`);
-  assert.ok(perShot >= 0.30 && perShot <= 0.65,
+  assert.ok(perShot >= 0.33 && perShot <= 0.65,
     `about half his intercept shots connect (${perShot.toFixed(3)} kills per shot, design point 0.50)`);
   const perRocket = killed / engaged;
   assert.ok(perRocket >= 0.55 && perRocket <= 0.95,

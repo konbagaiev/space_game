@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-04 (**The Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-04 (**A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -475,6 +475,7 @@ out because they are arguments to a flow, not switches.
 | `?debug` | exposes `window.__game` (the test/inspection hook the whole visual suite drives; incl. the `gameW`/`gameH` getters that read the cached logical size) |
 | `?tune` | the lil-gui palette / lighting / blast panel, incl. the **frozen test range** (`tune.js`) |
 | `?duel[=N]` | **the sparring room**: fight N ships flown by the wingman's own pilot (default 2, max 6). Forces your build to the starter kit, and Take off drops you straight into the fight. A duel session is **re-simulated server-side and given a verdict** (nothing binds). See Gameplay → "The duel room" |
+| `?brawl[=N]` | **the bot brawl — a phone load test** (`brawl-dev.js`): N v N Sentinel bots (1-30, default 20) fight over the home station while you watch; a bare `?brawl` shows the setup panel. `&tier=high\|balance\|performance` runs that page load on that tier (never saved); `&sec=N` overrides the 60 s wall-clock limit (10-300). Turns on `/api/perf` telemetry by itself. See "The bot brawl" below |
 | `?ally[=phase]` | the Sentinel wingman arrives on that phase (default `clear-out`) |
 | `?lancer[=phase]` | that phase's spawn pool becomes 100 % pirate lancers |
 | `?beam` | mount the Charged beam in the player's gun slot |
@@ -1753,6 +1754,59 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **With the flag off nothing changes:** no ace, no ace step (`stepAces` returns on the first scan), no
     phase carries `aces`, `applyDuelDev`/`duelBuild` hand the very same objects back, and not one extra
     seeded RNG draw — the Level-0 intro trace still replays bit-identically.
+- **The bot brawl (`?brawl`) — a phone load test.** (`client/src/sim-core/brawl.js` the fight,
+  `client/src/brawl-dev.js` the flag, `client/src/brawl-stats.js` the numbers, `client/src/brawl-host.js` the
+  setup panel / camera / measurement / card; brief `docs/plans/2026-10-04-2001-bot-brawl-load-test.md`,
+  DECISIONS §157.) Two teams of N Sentinel bots (1-30, default 20) fight each other over the **home station**
+  (`BRAWL_CENTER = ANCHORS.base`, front ranks ±60 u, 5-wide grids) while the player only watches.
+  - **Sides:** blue is `world.allies` (`makeAlly`), red is `world.enemies` (`makeAce`); every bot is flown by
+    `flySentinel` with `{ foes: <other list>, friend: null, side, leash: Infinity, canFire: true }`, so the two
+    teams are literally the same pilot (`SENTINEL_PILOT`, including his own reload stagger, §156) and the
+    fight is symmetric. `simTick` routes to `brawlTick` only when `world.brawl` exists (set only by
+    `spawnBrawl`); `tick.js`, `stepAlly`, `stepAces` and `flySentinel` are untouched.
+  - **The spectator** is the real player ship, ALIVE (a dead player would wind every pilot down), parked
+    `BRAWL_SPECTATOR_PARK` 5000 u east and never stepped. Every render reader of the player position that
+    shapes the picture goes through **`G.viewTarget`** (a reused `THREE.Vector3` on the bullet plane): the
+    camera position + `lookAt`, `updateSpeedField`, `updateSystemBodies(ship)` (or planet 2 and its moons
+    would fade out) and `drawArenaBorder`; the radar skips the player triangle while it is set.
+  - **Determinism:** `seedSim(BRAWL_SEED = 20261004)` right before spawning, ordinals blue `1+2i` / red
+    `2+2i`; a brawl takes **zero** shared draws, so the same JS engine simulates the same fight tick for tick.
+    **Different engines are not promised to agree** (V8 vs JavaScriptCore, §151) — the card says so.
+  - **Length:** **60 s of WALL time** (`&sec=` 10-300), or earlier when a side is wiped out; the brawl clock
+    stops on the wipe-out tick itself. A slow phone simulates less (the loop runs at most 6 steps per frame),
+    so the card reports **sim-seconds reached** and the **sim/wall ratio**, and the fingerprint (alive per side
+    every 10 sim-s) and the per-window stats are keyed to SIM time: compare devices over the windows both
+    reached. **Window 0 is "full load"** (every bot alive). No respawn.
+  - **Camera:** centre mode eases (τ 0.4 s) toward the mean of the living ships that are neither retreating
+    nor warping, at zoom 1, **clamped to `BRAWL_CAM_LEASH` 55 u around the station** (inside that radius the
+    station's centre stays on screen in every direction); a tap/click follows the bot nearest the point
+    (within 25 u), a second tap — or that bot dying — returns to centre. Pinch/wheel zoom is off, and the
+    zoom-1 framing is set with `setZoom(1, false)` — it never overwrites the player's saved `camZoom`.
+  - **Arming and measurement:** the run arms on the first frame after the level-load veil drops; frames
+    before it are not counted. Every armed frame records the raw frame interval, the sim tick, the ships
+    inside the camera frustum, and whether the station's bounding sphere (computed lazily on that first
+    frame; `null` = "unknown" if the model has no meshes) is in the frustum.
+  - **The card** (`#brawl-card`, z-index 11): N, tier, build, resolution/DPR, JS engine; wall s, sim s
+    reached, sim/wall, ended-by; overall avg/p95/worst ms + FPS; the per-window table (avg/p95/worst ms,
+    mean ships in frame, blue v red alive); station-in-frame %; INTERRUPTED (tab hidden or paused — rerun);
+    kills per side and survivors; Run again (reload) / Setup. **Setup** (`#brawl-setup`, a bare `?brawl`):
+    a −/+ stepper (no phone keyboard), a tier picker defaulting to the saved tier, the build stamp + "Hard-
+    refresh after a deploy", and Start, which **always reloads** into `?brawl=<n>&tier=<t>` (the light pool
+    is baked into shaders at boot, and a reload gives every run an identical fresh page).
+  - **Telemetry:** `?brawl` alone turns devPerf on (`PERF = DEV || BRAWL`). Per-second samples carry
+    `scene: 'brawl'`, `load.allies`, and a `brawl` field (`n, armed, ended, simSec, wallSec, ratio, alive,
+    stationInFramePct, cam, interrupted`); the run's end pushes one `kind: 'brawl-result'` sample at once
+    (a plain fetch — the page stays open on the card).
+  - **What it never does:** no `beginLiveSession` (no session row, no referee), `track()` is a no-op, no
+    `cleared`/`death`, no kills/credits/XP/loot (red deaths go through `stepBrawlRedDeaths`, which emits only
+    the `allyDown` FX event; `stepEnemyDeaths` is never called), and the level is `withBrawlRoom(level-1)`:
+    `xpReward: 0`, no briefing/intro/lastKillDrop, one inert phase, `center` on the station. `body.brawl`
+    hides only the INPUT controls (fire/rocket/zoom/pause, the pause overlay, the stick visuals, the
+    keyboard help line, the touch fullscreen button); the HUD, radar, markers, health bars and event log stay.
+    Both panels are padded clear of the settings gear and the XP bar and scroll inside their box on a
+    ~390 px-tall landscape phone; the card shows the per-window table first.
+  - **After a deploy, hard-refresh on the phone** — client modules have fixed names. No asset or content hash
+    changes, so no `/publish-itch` is needed for it.
 - **Grab & loot drops** (`client/src/drops.js` + `drops-config.js`; docs/plans/2026-07-03-1412-grab-tractor-drops.md).
   On each enemy kill there's a **20 %** chance (`DROP_CHANCE`) to drop **one** item — chosen uniformly from
   the enemy's **non-hull** components (engine, thruster) **+** its mounted weapons (the real catalog id +
@@ -3797,7 +3851,12 @@ first translation). See DECISIONS §10.
     forever; see the Perf-overlay bullet + DECISIONS §81.) Write-only over HTTP (no public read); analyze
     with plain SQL over `perf_samples` (the key tell: if `js.total` ≪ `frameMs.p50` the frame isn't
     CPU-bound → external/GPU-governed). Not wiped by a player reset. See DECISIONS §23 +
-    `docs/plans/perf-low-end-phones.md`.
+    `docs/plans/perf-low-end-phones.md`. **`?brawl` turns the same sampler on by itself** (the bot-brawl
+    load test, see "The bot brawl" above): its per-second rows carry `scene:'brawl'` and a `brawl` field, and
+    each run ends with one `kind:'brawl-result'` row —
+    `SELECT sample FROM perf_samples WHERE sample->>'kind'='brawl-result' ORDER BY id DESC LIMIT 5;`. Use
+    the per-second rows only where `(sample->'brawl'->>'ended')::bool IS NOT TRUE` (after the end they
+    measure a result card, not the fight).
   - **Frame-pacing probe (`/raf-probe.html`) — the PLATFORM baseline, with the game out of the way.**
     Standalone, dependency-free single page (no modules/imports, so it measures the device and not our
     bundle), served static from the client root; nothing in the game links to it. Three ~3 s phases:
@@ -4115,7 +4174,8 @@ callbacks, `paused`/`gameStarted`/`mapOpen`, and the HUD banner.
 **The tick has two halves, and the first one lives in `sim-core`.** `sim.js` `update(dt)` = `simTick(dt)`
 then `renderTick(dt)`, and it keeps that name and signature because the fixed-step accumulator, the replay
 stepper and the `?debug` hooks all call it. `simTick` is a one-line bind of **`sim-core/tick.js`
-`simTick(world, dt)`** — the module a server runs — which advances the combat clock and then calls, in this
+`simTick(world, dt)`** (or, only when `world.brawl` is set, of `sim-core/brawl.js brawlTick` — the `?brawl`
+load test's own tick) — the module a server runs — which advances the combat clock and then calls, in this
 order: `stepPlayer`, **`stepAlly`**, `stepEnemyAI`, `stepBullets`, `stepRockets`, `stepEnemyDeaths`,
 **`stepAllyDeaths`**, `stepDrops`, `updateLevelRunner`, `stepPlayerDeath` (`stepAlly` returns immediately
 when `world.allies` is empty — the friendly side moves before the hostile side reads its position — and
@@ -4887,6 +4947,15 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   independence / negative-clamp; `collision.test.js` dodge: `dodgeRoll` gates damage, is consulted **only
   after a geometric connect** (a miss never rolls → replay determinism), and skips shield absorption on an
   evade; `progression.test.js`: the curve, cumulative thresholds, derived level, and unspent-points math),
+  and **the bot brawl** (`sim-core/brawl.test.js`, against the real catalog: the layout is N v N with
+  distinct non-zero ordinals, blue west / red east, the spectator ≥4900 u out and zero draws, the count
+  clamped; the run is inert until armed and again once ended; two fresh 20v20 runs are identical for 60 sim-s
+  — fingerprint, ticks, kills, every survivor — with **0** shared draws; a 1v1 runs to a wipe-out whose clock
+  stops on that tick, with no kills/credits/XP/drops, an unhurt spectator and one `allyDown` per death; the
+  view centre's exclusions, fallbacks and 55 u clamp; the tap rule; `withBrawlRoom` non-mutating.
+  `brawl-dev.test.js`: the flag parse — off values, bare `?brawl` = setup, count/tier/sec clamps, identity
+  when off. `brawl-stats.test.js`: frame summary with the floor-index p95, the 600-tick windows keyed to the
+  tick at frame end with the partial tail flagged, the end rule, the sim/wall ratio and the card text),
   and **the wingman** (`sim-core/step-ally.test.js`: target selection by distance to the ALLY, the
   finite-vs-`Infinity` leash, the snap cone, the "never fire through the player" rule, both retreat
   thresholds needing BOTH conditions, the pass arming at >120°, and — the regressions this file exists for —
@@ -5086,7 +5155,7 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   bullets on **every** shot, run at a `pirate gunner`'s narrowest heading, at its widest, and against the
   `advanced medium pirate` — the hull that BINDS `ALLY_AIM_HIT_FRAC` — so it fails if the yardstick ever
   regresses to `broadRadius`; **point defence in a closing engagement** spends more than one round per
-  rocket and lands 30-65 % of them (measured 0.347 over 1000 engagements), killing 55-95 % of the rockets
+  rocket and lands 33-65 % of them (measured 0.347 over 1000 engagements), killing 55-95 % of the rockets
   (measured 0.75); and
   **the yardstick guard** re-measures the contiguous hit half-width at the bullet plane over 144 headings
   for all **nine** enemy rows plus the Sentinel hull and asserts `ALLY_AIM_HIT_FRAC × broadRadius` still fits
@@ -5337,6 +5406,17 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   rocket trigger for 60 s of sim** and asserts an ace really engages an incoming rocket and shoots at
   least one out of the air — the reachability check for point defence, which no fixture can give: a rule
   that is never satisfied in play passes every structural test and does nothing on screen.
+  and **the bot brawl** (`51-bot-brawl.mjs` — `?debug&brawl=1&tier=performance&sec=300`, stepped with
+  `stepSim` after a pause: both bots have bodies, red in the hostile livery, the spectator stays parked and
+  unhurt, and — PERCEPTION, through the live camera — the station and a ship project inside the frame and
+  planet 2 is still visible (negative-tested: dropping the view target from `updateSystemBodies` fails it);
+  a click on the blue bot follows it and a second click returns to centre; the run ends into an on-screen
+  card above the controls showing sim/wall, p95 and "full load", honestly flagged INTERRUPTED; after arming
+  the only POSTs are `/api/perf`, nothing reaches events/sessions/games, and exactly one `brawl-result`
+  sample leaves; a saved `camZoom` survives the run and a wheel input during it. On an 800×390 touch
+  viewport the setup panel and a 9-window card (a 5v5 stepped to its wipe-out) stay on screen and overlap
+  neither the settings gear, the XP bar nor the fullscreen button. A bare `?brawl` shows the setup panel with
+  a working stepper; the flag off leaves no trace),
   and **the HUD's viewport cache** (`48-hud-viewport-cache.mjs` — the guard for DECISIONS §149. It shadows
   `window.innerWidth`/`innerHeight` with counting getters that delegate to the originals (own properties on
   `window`, so a read from ANY caller in the page counts — that is what makes a *sixth* HUD updater written
