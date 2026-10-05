@@ -5,6 +5,19 @@
 
 ## 2026-10-05
 
+- **The Sentinel pilot: engage range from himself, a cornered last stand, and no more orbiting.** One pilot
+  change for every ship it flies (wingman, `?duel` aces, `?brawl` bots), maintainer-requested after watching
+  the brawl bots circle the station. (1) He engages foes within `SENTINEL_PILOT.engageRange` **150 u of
+  himself** and drops a target beyond that — replacing the per-caller `leash` (the wingman's
+  `ALLY_TARGET_LEASH`, the brawl's 100 u-from-the-station leash and its target drop); a pilot with nothing to
+  escort (a duel ace) still hunts the nearest foe anywhere. (2) **Cornered:** a retreating pilot at or past
+  the arena edge whose nearest threat is inside the 120 u gap and flying at him (> 5 u/s) turns and fights
+  that ship; if it dies or falls back he resumes healing. A fleeing duel ace is therefore no longer
+  uncatchable. (3) A **still** escort point (a parked player, the brawl's station) is arrived at and stopped
+  on: he brakes off sideways drift and thrusts only nose-on — the old rule settled into a stable orbit
+  ~75-93 u out. Brawl, same seed: centroid within 55 u of the station 92 / 78 / 52 % at 5v5 / 20v20 / 50v50,
+  0 shared draws. Tests: step-ally anchor/range/cornered/stop tests, brawl centroid bound; 778 client + 288
+  server pass; visual 51, 38, 49 pass.
 - **The bot brawl now goes up to 50 v 50** (was 30). `BRAWL_N_MAX` 30 → 50 (setup stepper and `?brawl=N` clamp).
   Headless, same seed: 50v50 sim cost ~0.06 ms/tick avg, 1.5 ms worst; the fight thins to 12v9 by 10 sim-s, so
   the first window is still the full-load number.

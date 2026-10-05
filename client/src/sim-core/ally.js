@@ -35,6 +35,7 @@ export function makeSentinelHull(catalog, ordinal = 0) {
   a.target = null;          // the ship he is charging
   a.passArmed = false;      // the current target is BEHIND him: the re-search (and the retreat check) are armed
   a.retreating = false;     // opening the gap so the drone can work
+  a.cornered = null;        // retreating, but caught at the arena edge: the pursuer he turned to fight
   a.intercept = null;       // the incoming ROCKET he is shooting down (point defence, step-ally.js 4d)
   // THE ONLY INPUT THAT SEPARATES TWO PILOTS' AIM STREAMS. An integer, on purpose: `pilotRandom` mixes it
   // with the run's installed seed, and a float-derived seed would hand the browser and the Node referee

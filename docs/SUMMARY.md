@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-05 (**The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-05 (**The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -1565,14 +1565,19 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     0.6 s Heavy cannon the mean cooldown is 0.85 s. Point defence: the per-shot intercept rate did not move
     (measured 0.347 over 1000 engagements), but fewer shots fit in a rocket's ~1.5 s approach, so **75 %**
     of closing rockets now die (was 86 %).
-  - **What he does:** charges the enemy nearest **to himself** (`ALLY_TARGET_LEASH` is `Infinity`; make it
-    finite to keep him near the player), fires when the SHOT is on, **flies through the hull** (deliberate —
+  - **What he does:** charges the enemy nearest **to himself, within `SENTINEL_PILOT.engageRange` 150 u of
+    himself** (maintainer, 2026-10-05 — the pilot's own rule for every Sentinel-flown ship; the old per-caller
+    `leash` / `ALLY_TARGET_LEASH` is gone) and lets a target go once it is further than that; a pilot with
+    nothing to escort (a `?duel` ace) instead hunts the nearest foe anywhere. He fires when the SHOT is on, **flies through the hull** (deliberate —
     there is no ship-to-ship collision and no lateral pass offset), then brakes and comes about. He re-picks
     once the target is >120° behind (`ALLY_BEHIND_ANGLE`), snapping straight onto anything already inside the
     0.25 rad aim cone. **He never fires through your hull** — and that is judged per weapon group on the path
     the projectile really takes (below), not on the nose. With nothing to fight he escorts toward
     `ALLY_ESCORT_DIST` ~10 u of you, judged on the **closing** speed so he holds formation instead of
-    settling 60 u back. *Known:* coming at you from a standing start facing away, his 26 u turn radius puts
+    settling 60 u back. **A STILL escort point is arrived at and stopped on** (anchor speed < 1 u/s —
+    `ALLY_ESCORT_STILL_SPEED`): he brakes off sideways drift > 3 u/s, thrusts only with the nose within 0.2
+    rad, and brakes onto the 10 u ring — chasing a fixed point with nose-thrust used to put him in a stable
+    orbit ~75-93 u out. *Known:* coming at you from a standing start facing away, his 26 u turn radius puts
     him into a slow bounded orbit rather than onto the hold point; it is idle/healing behaviour and is left
     for a live judgement.
   - **He shoots rockets out of the air** (`engageBand` + `nearestThreatRocket` in `step-ally.js`, step
@@ -1637,13 +1642,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     escape course (using the gap rate there would brake up to ~116 u early against a fleeing threat).
     **In `?roam` the border is forced to 0** — the boundary is meaningless there, the same reason
     `step-player.js` skips the out-of-bounds rule — so the max() degrades to exactly the old rule with no
-    extra branch. **Chase him and he keeps running straight past the border**, with no extra mechanic: once
-    outside, `border` is 0 and `remaining` is `120 − gap`, which holds full thrust while the pursuer keeps
-    the gap under ~68 u. He has no out-of-bounds rule; the **player** does (30 s continuous outside ±`ARENA`
-    warps you back to the centre), so the chase self-resolves. **In `?duel` that is the ONLY way it ends:**
-    the room forces `skills: null`, so the player has no Mobility bonus and both hulls sit on exactly 30 u/s
-    — the pursuit is unwinnable on speed by construction, in that room only. In a campaign fight Mobility
-    applies and the chase is not symmetric. **The cost, accepted:** `ARENA` is 360, so
+    extra branch. **Chase him to the edge and he turns and fights — CORNERED** (maintainer, 2026-10-05): at or
+    past the arena border, with the nearest threat still inside the 120 u gap AND flying at him faster than
+    `ALLY_CORNER_CHASE` 5 u/s (its own velocity along the line to him — not the gap rate, so his own leftover
+    charge momentum is not mistaken for a chase), he sets `a.cornered` to that ship and fights it (it is his
+    only target; point defence is back on). He stays `retreating`: if the pursuer dies or falls back past
+    120 u he goes back to healing; healed (`shouldRejoin`) he is simply back in. `?roam` never corners. This
+    replaces "chased, he keeps running straight past the border", which in `?duel` made a fleeing ace
+    uncatchable. **The cost, accepted:** `ARENA` is 360, so
     from a typical engagement ~100 u off-centre the border is 260 u away and up to ~609 u on a diagonal —
     **9-20 s** of running, ~**40 s** healing (1 HP/s from 25 % to 40 % of 200 HP, plus the 10 s shield
     refill), 9-20 s back: **50-80 s of total absence**, about a minute longer than the old hold.
@@ -1702,8 +1708,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     account — though its death still rolls the ordinary 20 % loot drop, so fly the room on a throwaway
     local player (the same caveat `?ally` carries about recorded sessions re-simulating into a divergence).
   - **One pilot, two sides.** `stepAlly` was generalised into **`flySentinel(world, ship, dt, ctx)`**, where
-    `ctx` is `{ foes, friend, side, leash, canFire }` (plus an optional `anchor`, the leash origin and
-    hold-station point, defaulting to `friend` — only the `?brawl` bots set it). The wingman is
+    `ctx` is `{ foes, friend, side, canFire }` (plus an optional `anchor`, the hold-station point when
+    nothing is in his 150 u engage range, defaulting to `friend` — only the `?brawl` bots set it). The wingman is
     `{ foes: world.enemies, friend: world.player, side: 'ally' }` — byte-for-byte the behaviour he had — and
     an ace is `{ foes: [the player, + any wingman], friend: null, side: 'enemy' }`. `friend: null` skips the
     §2.6 "never a tracer through your hull" gate (hostile ships already shoot past each other), `side:
@@ -1725,11 +1731,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     base shield/grab, **no skills** — so the duel is the same fight on any account. The ace is the wingman:
     **200 HP, Heavy cannon id 6 + Rocket id 3, repair drone, shield**, and it **retreats at ≤25 % hull to
     heal** exactly as he does. Two of them against the starter hull is a hard fight by construction.
-    **`skills: null` makes a FLEEING ACE UNCATCHABLE IN THIS ROOM, and that is deliberate.** No skills means
-    no Mobility (+5 %/pt max speed), so both hulls sit on exactly `PLAYER_MAX_SPEED` 30 — and the ace's
-    break-off runs at full thrust for the arena border and keeps full thrust past it while you hold the gap
-    under ~68 u (see the wingman's break-off above). So the chase is unwinnable on speed by construction and
-    ends only when **your own** out-of-bounds rule warps you back to the arena centre after 30 s. The talent
+    **A fleeing ace is no longer uncatchable** (2026-10-05): both hulls sit on exactly `PLAYER_MAX_SPEED` 30
+    (no skills → no Mobility), so you cannot close the gap on speed — but chase it to the arena edge and it is
+    CORNERED and turns to fight you (see the wingman's break-off above). The talent
     chain is intact, not broken — `skills.mobility` → `mobilityMul` (`components.js`) → `maxSpeedMul`
     (`ship-entity.js`) → `PLAYER_MAX_SPEED × maxSpeedMul` (`step-player.js`) — it is just fed `null` here.
     In a campaign fight your Mobility does apply, so a chase there is **not** symmetric.
@@ -1761,21 +1765,20 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   DECISIONS §157.) Two teams of N Sentinel bots (1-50, default 20) fight each other over the **home station**
   (`BRAWL_CENTER = ANCHORS.base`, front ranks ±60 u, 5-wide grids) while the player only watches.
   - **Sides:** blue is `world.allies` (`makeAlly`), red is `world.enemies` (`makeAce`); every bot is flown by
-    `flySentinel` with `{ foes: <other list>, friend: null, anchor: <station>, side, leash: 100, canFire: true }`, so the two
+    `flySentinel` with `{ foes: <other list>, friend: null, anchor: <station>, side, canFire: true }`, so the two
     teams are literally the same pilot (`SENTINEL_PILOT`, including his own reload stagger, §156) and the
     fight is symmetric. `simTick` routes to `brawlTick` only when `world.brawl` exists (set only by
     `spawnBrawl`); `tick.js`, `stepAlly` and `stepAces` are untouched.
-  - **The fight is held over the station** (maintainer, 2026-10-05). Each bot's ctx carries
-    `anchor: <the station point>` (a new optional `flySentinel` ctx field: the leash origin and the hold-station
-    point, defaulting to `friend`, so the wingman and the aces are unchanged; `friend` stays null, so neither
-    the §2.6 tracer gate nor point defence treats the point as a ship) and `leash: BRAWL_FIGHT_LEASH` (100 u);
-    and the brawl drops a bot's target the moment it is beyond that leash, so nobody chases a retreating ship
-    to the arena edge. With nothing to fight a bot flies back to the station, where the other side's idle bots
-    also are — so no stall fallback is needed. Measured headless through a camera-frustum equivalent (20v20,
-    same seed): the fighting centroid is within 55 u of the station on **87 %** of ticks (12 % before) and
-    within 100 u on 100 % (25 %); ships in frame run ~5-7 per 10-s window from 30 s on, where they were **0**.
-    30v30: 65 % / 96 %. Small fights stay quieter on screen: in a 5v5 both sides spend long stretches healing
-    at the arena edge (the pilot's own retreat), so ~1 of 4 survivors is in frame then.
+  - **Where the fight happens.** Each bot engages foes within the pilot's own **150 u of himself**
+    (`SENTINEL_PILOT.engageRange`) and, with nobody in range, flies back over the station and **stops** there
+    (`anchor: <the station point>`, a still anchor — see the wingman's escort; `friend` stays null, so neither
+    the §2.6 tracer gate nor point defence treats the point as a ship). Idle bots of both sides therefore
+    gather over the station. A retreating bot chased to the arena edge is CORNERED and fights its pursuer.
+    Measured headless (same seed): the fighting centroid within 55 u of the station on **92 / 78 / 52 %** of
+    ticks at 5v5 / 20v20 / 50v50. *Known lull:* the pilot heals ~40 s at the arena edge after a break-off and
+    the station-side bots do not chase that far, so a fight can sit idle (e.g. 20v20 at 5v3 from 20 s to 60 s)
+    until the healers rejoin. (The 2026-10-05 first cut — a 100 u leash measured from the station, plus
+    dropping targets that left it — was replaced the same day by the pilot's own range.)
   - **The spectator** is the real player ship, ALIVE (a dead player would wind every pilot down), parked
     `BRAWL_SPECTATOR_PARK` 5000 u east and never stepped. Every render reader of the player position that
     shapes the picture goes through **`G.viewTarget`** (a reused `THREE.Vector3` on the bullet plane): the
@@ -4968,10 +4971,12 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   — fingerprint, ticks, kills, every survivor — with **0** shared draws; a 1v1 runs to a wipe-out whose clock
   stops on that tick, with no kills/credits/XP/drops, an unhurt spectator and one `allyDown` per death; the
   view centre's exclusions, fallbacks and 55 u clamp; the tap rule; `withBrawlRoom` non-mutating; and the
-  melee stays over the station — the 20v20 fighting centroid inside the 55 u camera leash on ≥75 % of ticks
-  (measured 87 %) and inside 100 u on ≥95 % (100 %), negative-tested: unleashed, the same seed is inside 55 u
-  less than half the time (12 %). `step-ally.test.js` adds `ctx.anchor`: the leash is measured from it, he
-  flies back to it with nothing to fight, and engages once a foe is inside.
+  melee stays over the station — the 20v20 fighting centroid inside the 55 u camera leash on ≥70 % of ticks
+  (measured 78 %) and inside 150 u on ≥90 %. `step-ally.test.js`: the engage range is measured from HIMSELF
+  (a foe 170 u out is not picked, one ~108 u out is, one that leaves 150 u is dropped); with nothing in range
+  he flies to a still anchor and STOPS (< 0.5 u/s, within the escort ring); an ace with no anchor hunts the
+  player 600 u away; and CORNERED — a matched-speed pursuer chases him to the arena edge, he turns on it, and
+  when it dies he heals again rather than picking a new fight.
   `brawl-dev.test.js`: the flag parse — off values, bare `?brawl` = setup, count/tier/sec clamps, identity
   when off. `brawl-stats.test.js`: frame summary with the floor-index p95, the 600-tick windows keyed to the
   tick at frame end with the partial tail flagged, the end rule, the sim/wall ratio and the card text),

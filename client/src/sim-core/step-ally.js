@@ -40,8 +40,9 @@ import { broadRadius } from './collision.js';
 import { ROCKET_INTERCEPT_RADIUS } from './step-projectiles.js';
 import { mulberry32, simSeed } from './sim-random.js';
 import {
-  ALLY_BEHIND_ANGLE, ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_FIRE_BLOCK_HALF_ANGLE, ALLY_TARGET_LEASH,
+  ALLY_BEHIND_ANGLE, ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_FIRE_BLOCK_HALF_ANGLE,
   ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC, ALLY_BREAK_OFF_DIST, ALLY_ESCORT_DIST, ALLY_ESCORT_BAND,
+  ALLY_ESCORT_STILL_SPEED, ALLY_ESCORT_SLIP, ALLY_ESCORT_ALIGN, ALLY_CORNER_CHASE,
   SENTINEL_PILOT, PILOT_RELOAD_SALT,
 } from './ally-config.js';
 import { despawnAt } from './spawn.js';
@@ -442,11 +443,12 @@ export const isBallistic = (g) => (g.mounts || []).some((m) => m.weapon && m.wea
 //   foes    the ships it may charge and shoot at
 //   friend  the ship it must never put a tracer through (§2.6), and the one it escorts with nothing to do
 //   side    'ally' | 'enemy' — what `updateGroups` makes of its shots (who they damage, and their sound)
-//   leash   only engage foes within this of the ANCHOR (Infinity = "nearest to myself", the shipped rule)
-//   anchor  optional: what the leash is measured from and where he holds station with nothing to fight —
-//           anything with `pos`/`vel`. Defaults to `friend`, so the wingman and the aces are unchanged. The
-//           `?brawl` bots pass the home station here (and no friend), which keeps the melee over it without
-//           arming the §2.6 tracer gate or the point-defence "defended" list for a point in space.
+//   anchor  optional: where he holds station with nothing to fight — anything with `pos`/`vel`. Defaults
+//           to `friend`. The `?brawl` bots pass the home station here (and no friend), so with nobody in
+//           range they gather over it, without arming the §2.6 tracer gate or the point-defence "defended"
+//           list for a point in space.
+//   (WHO he engages is the pilot's own rule, not a ctx value: foes within `SENTINEL_PILOT.engageRange` of
+//    HIMSELF — the old per-caller `leash` is gone, maintainer 2026-10-05.)
 //   canFire a hard gate the caller owns: the duel room's aces hold fire through the opening grace, exactly
 //           as every other hostile ship does, while the wingman has never had one
 //
@@ -462,7 +464,7 @@ export function stepAlly(world, dt) {
   if (!world.allies.length) return;   // no ally in this fight: nothing below runs, nothing draws
   for (const a of world.allies) {
     flySentinel(world, a, dt, {
-      foes: world.enemies, friend: world.player, side: 'ally', leash: ALLY_TARGET_LEASH, canFire: true,
+      foes: world.enemies, friend: world.player, side: 'ally', canFire: true,
     });
   }
 }
@@ -472,8 +474,11 @@ export function flySentinel(world, a, dt, ctx) {
   const player = world.player;
   const foes = ctx.foes;
   const friend = ctx.friend || null;   // the wingman has the player; an ace has nobody to protect
-  const anchor = ctx.anchor || friend; // leash origin + escort point (the brawl's station; else the friend)
-  const leash = ctx.leash ?? Infinity;
+  const anchor = ctx.anchor || friend; // escort point (the brawl's station; else the friend)
+  const range = SENTINEL_PILOT.engageRange;
+  // Who to pick: the nearest foe within his engage range of HIMSELF; with nothing to escort (an ace), the
+  // nearest foe anywhere — coasting to a stop while the player runs away is not a fight.
+  const pick = () => nearestEnemyTo(a.pos, foes, a, range) || (anchor ? null : nearestEnemyTo(a.pos, foes, null, Infinity));
   // 1. Warp-in grow — the same rule enemies get (DECISIONS §54): the delay IS the arrival animation.
   if (a.spawnAge < a.spawnDur) {
     a.spawnAge = Math.min(a.spawnDur, a.spawnAge + dt);
@@ -524,15 +529,24 @@ export function flySentinel(world, a, dt, ctx) {
   // already a fighting tick.
   if (a.retreating && shouldRejoin(a)) a.retreating = false;
 
-  // The thing he is running FROM. Deliberately unleashed (`Infinity`): `ALLY_TARGET_LEASH` is about which
+  // CORNERED (maintainer, 2026-10-05): a retreating pilot who reaches the arena edge with a pursuer still
+  // inside the break-off gap turns round and fights THAT ship — to the death of one of them. If the pursuer
+  // dies or falls back past the gap, he goes back to healing; healed (`shouldRejoin`), he is simply back in.
+  if (a.cornered && (!a.retreating || !foes.includes(a.cornered)
+      || planarDist(a.pos, a.cornered.pos) > ALLY_BREAK_OFF_DIST)) {
+    a.cornered = null; a.target = null; a.passArmed = false;
+  }
+  const fleeing = a.retreating && !a.cornered;
+
+  // The thing he is running FROM. Deliberately unleashed (`Infinity`): his engage range is about which
   // enemies are worth ENGAGING and has nothing to say about which one is currently shooting at him.
-  const threat = a.retreating ? nearestEnemyTo(a.pos, foes, friend, Infinity) : null;
+  const threat = fleeing ? nearestEnemyTo(a.pos, foes, friend, Infinity) : null;
   // NO TARGET, NO DRIFT. He aims at no ship while he is leaving, so the bearing history is dropped rather
   // than left stale: a kept `_aimBearing` would differentiate into a huge fake rate spike on the tick he
   // rejoins and picks a target again.
-  if (a.retreating) clearAimTarget(a);
+  if (fleeing) clearAimTarget(a);
 
-  if (a.retreating && threat) {
+  if (fleeing && threat) {
     // 4a. BREAKING OFF — measured from the THREAT, never from the arena centre.
     //
     //     Fly DIRECTLY AWAY from the nearest enemy (recomputed every tick: as he runs, the nearest one
@@ -586,7 +600,15 @@ export function flySentinel(world, a, dt, ctx) {
     const remaining = Math.max(border, gapRemaining);
     const alongCourse = gap > 1e-6 ? (a.vel.x * ax + a.vel.z * az) / gap : 0;
     thrust = approachThrust(border > gapRemaining ? alongCourse : opening, remaining, a.acceleration);
-  } else if (a.retreating) {
+    // At (or past) the edge, still inside the gap, and the threat is FLYING AT HIM (its own velocity toward
+    // him — judged on the threat, not on the gap, so his own leftover charge momentum is not mistaken for
+    // a chase): nowhere left to run — turn and fight it from the next tick. A threat that merely sits inside
+    // the gap is not a chase.
+    const chase = gap > 1e-6 ? (tvx * ax + tvz * az) / gap : 0;   // (ax, az) points from it to him
+    if (!world.roam && gap > 1e-6 && border <= 0 && gap < ALLY_BREAK_OFF_DIST && chase > ALLY_CORNER_CHASE) {
+      a.cornered = threat; a.target = threat; a.passArmed = false;
+    }
+  } else if (fleeing) {
     // 4a′. Retreating with NOTHING TO RUN FROM. The arena is empty, so there is no gap to open and no
     //      direction that means anything; flying off into blank space would just take him off the map.
     //      Hold station on the player instead and heal there — he still does not fire (`wantsFire` stays
@@ -594,8 +616,13 @@ export function flySentinel(world, a, dt, ctx) {
     escorting = true;
   } else {
     // 4b. THE PASS. Target bookkeeping first, then geometry against the FINAL target.
+    if (a.cornered) a.target = a.cornered;   // cornered: that pursuer and nobody else
     if (a.target && !foes.includes(a.target)) { a.target = null; a.passArmed = false; }
-    if (!a.target) { a.target = nearestEnemyTo(a.pos, foes, anchor, leash); a.passArmed = false; }
+    // Out of his engage range → let it go (and its aim history: the next pick is a fresh acquisition).
+    if (a.target && !a.cornered && anchor && planarDist(a.pos, a.target.pos) > range) {
+      a.target = null; a.passArmed = false; clearAimTarget(a);
+    }
+    if (!a.target) { a.target = pick(); a.passArmed = false; }
     if (a.target) {
       const d0 = shortestAngleDelta(a.heading, angleTo(a.pos, a.target));
       if (!a.passArmed && Math.abs(d0) > ALLY_BEHIND_ANGLE) {
@@ -603,11 +630,11 @@ export function flySentinel(world, a, dt, ctx) {
         // (The retreat used to be decided here and nowhere else — "low health never interrupts a charge".
         //  That rule is retired: it is taken the instant the threshold is crossed, at the top of the step.)
       }
-      if (a.passArmed && a.target) {
+      if (a.passArmed && a.target && !a.cornered) {
         // Re-search, armed. Either something swung round into a shot he could take RIGHT NOW, or somebody
         // else is simply nearer after the pass.
         const snap = aimedEnemy(a.pos, a.heading, foes, ALLY_SNAP_ANGLE);
-        const near = nearestEnemyTo(a.pos, foes, anchor, leash);
+        const near = pick();
         const next = snap || (near !== a.target ? near : null);
         // A SNAP target is already inside the aim cone, so §2d's "switch to that one and accelerate at
         // it" applies at once: end the come-about. A merely NEARER one does not end it — he would
@@ -673,6 +700,13 @@ export function flySentinel(world, a, dt, ctx) {
       ? ((a.vel.x - anchor.vel.x) * tx + (a.vel.z - anchor.vel.z) * tz) / pd
       : 0;
     thrust = remaining > ALLY_ESCORT_BAND ? approachThrust(closing, remaining, a.acceleration) : 0;
+    // A STILL anchor is arrived at and stopped on (see ALLY_ESCORT_STILL_SPEED): brake off any sideways
+    // drift, thrust only with the nose on it, and brake onto the ring — no orbit, no pulsing.
+    if (thrust > 0 && Math.hypot(anchor.vel.x, anchor.vel.z) < ALLY_ESCORT_STILL_SPEED) {
+      const sp2 = a.vel.x * a.vel.x + a.vel.z * a.vel.z;
+      const slip = Math.sqrt(Math.max(0, sp2 - closing * closing));
+      if (slip > ALLY_ESCORT_SLIP || Math.abs(shortestAngleDelta(a.heading, desired)) > ALLY_ESCORT_ALIGN) thrust = 0;
+    }
   } else if (escorting) {
     // NOBODY TO ESCORT — an ace with an empty arena, which the duel room reaches only in the instant
     // between the last foe dying and the level ending. Coast to a stop where he is rather than flying at
@@ -696,7 +730,7 @@ export function flySentinel(world, a, dt, ctx) {
   //     The nose is aimed with the same `aimWithDrift` correction the ship gets — a rocket is a small,
   //     fast target and the shooter's own drift is exactly what would make the shot miss it.
   let interceptDir = null, interceptDist = Infinity;
-  if (!a.retreating) {
+  if (!fleeing) {
     const pdRange = engageBand(a);
     const held = a.intercept && pdRange > 0 && world.rockets.includes(a.intercept)
       && planarDist(a.pos, a.intercept.pos) <= pdRange ? a.intercept : null;

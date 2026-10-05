@@ -117,7 +117,7 @@ export function stepAces(world, dt) {
     if (e.pilot !== ACE_PILOT) continue;
     if (!foes) foes = hostileFoes(world);
     flySentinel(world, e, dt, {
-      foes, friend: null, side: 'enemy', leash: Infinity,
+      foes, friend: null, side: 'enemy',
       canFire: world.combatElapsed >= ENEMY_FIRE_GRACE,
     });
   }

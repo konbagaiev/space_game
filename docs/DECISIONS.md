@@ -6786,3 +6786,34 @@ the star-system fade (planet 2 would vanish), the arena border, the radar triang
 first. The alternative, a "no player" mode in the sim, would have touched projectile and pilot code that the
 campaign shares; this touches only render readers. Red deaths go through a brawl-only `stepBrawlRedDeaths`
 (the `allyDown` FX event and nothing else) so no loot roll, kill, credit or shared draw happens.
+
+## 158. The pilot decides how far he looks for a fight — measured from himself — and a cornered pilot fights
+
+**Date:** 2026-10-05. **Context:** watching `?brawl`, the maintainer saw bots circling the station. Two
+causes: (a) the brawl's 100 u leash was measured from the STATION, so a bot with no foe near the station
+went to "escort", and (b) escorting a still point with nose-thrust is a stable orbit (the inward thrust is a
+centripetal force; sideways velocity is never braked) — measured 75-93 u out, forever.
+
+**Decision (maintainer):** for EVERY Sentinel-flown ship — one pilot (§156) —
+1. **Engage range is the pilot's, from himself:** `SENTINEL_PILOT.engageRange = 150` (just past the Heavy
+   cannon's 140 u reach). It replaces the per-caller `ctx.leash` (wingman `ALLY_TARGET_LEASH = Infinity`, the
+   brawl's 100 u-from-the-station leash + target drop of §157). A target further than 150 u is dropped. A
+   pilot with no anchor (a duel ace) falls back to the nearest foe anywhere — otherwise a player running
+   >150 u away would leave the aces coasting to a stop, which is not a duel.
+2. **Cornered:** retreating, at/past the arena edge, nearest threat inside `ALLY_BREAK_OFF_DIST` (120 u) and
+   flying AT him faster than `ALLY_CORNER_CHASE` (5 u/s, the threat's own velocity along the line to him).
+   He fights that ship until it dies or falls back past 120 u, then resumes healing. *Why the threat's
+   velocity and not the gap rate:* on the tick he breaks off he is still carrying his charge momentum toward
+   the threat, so the gap is closing even against a static one — a gap-rate test cornered him instantly
+   (caught by `ally-sim.test.js` "if the fire then stops, he survives", on a map whose arena centre is far
+   from the fight). *Trade-off accepted:* a fleeing duel ace (§149 era: "uncatchable by construction") can
+   now be forced into a last stand at the edge.
+3. **A still escort point is arrived at and stopped on** (anchor speed < 1 u/s): brake while sideways drift
+   > 3 u/s or the nose is > 0.2 rad off, thrust only nose-on, brake onto the 10 u ring. A moving anchor (the
+   flying player) keeps the closing-speed rule unchanged.
+
+**Rejected:** keeping the station-measured leash with a bigger radius (still makes the escort orbit, and at
+120 u the melee already drifted to a 54 u median). **Known consequence:** after a break-off the healer sits
+~40 s at the edge and station-side bots do not chase 150 u+ to it, so brawls have idle lulls until healers
+rejoin. No catalog-enemy or campaign trace changes (only pilot-flown ships take these paths).
+

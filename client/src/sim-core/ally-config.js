@@ -35,9 +35,6 @@ export const ALLY_TURN_EXIT_ANGLE = 0.25; // COME ABOUT ends here: nose within t
                                           // and charge again (same 0.25 as aimTol, so he exits the turn already
                                           // able to fire). The come-about itself is brake + steer together.
 export const ALLY_FIRE_BLOCK_HALF_ANGLE = 0.35; // hold fire while the PLAYER is this close to the line and nearer
-export const ALLY_TARGET_LEASH = Infinity; // engage only enemies within this of the PLAYER. Infinity = literal §2d
-                                           // (nearest to HIMSELF). A finite value is the one-number fix if live
-                                           // play shows him wandering off frame — see §3 of combat-ally.md.
 
 // ---------- THE HUMAN AIM: a tracking error on the PERCEIVED bearing ----------
 //
@@ -219,6 +216,11 @@ export const SENTINEL_PILOT = Object.freeze({
                       // 1/2.00 = 50 %.
   pdJitterSec: 0.30,  // …re-rolled this often — shorter than the 0.6 s gun cooldown, so consecutive shots at
                       // one rocket are independent rolls.
+  engageRange: 150,   // HOW FAR HE LOOKS FOR A FIGHT, measured from HIMSELF (maintainer, 2026-10-05): he picks
+                      // only foes within this, and drops a target that gets further away. Nothing in range →
+                      // he escorts his anchor (the player / the brawl's station); a pilot with nothing to
+                      // escort (a `?duel` ace) hunts the nearest foe anywhere instead of coasting to a stop.
+                      // 150 sits just past the Heavy cannon's 140 u reach. Replaces the old ctx `leash`.
   reloadStaggerSec: 0.5, // RELOAD STAGGER: each volley's cooldown is `reload + U(0, 1) × this`, drawn from the
                       // pilot's OWN second private stream (`pilotReloadRandom`, step-ally.js) — never the
                       // shared one. Same size as the catalog enemies' shared-stream stagger, so a pilot fires
@@ -265,7 +267,18 @@ export const ALLY_REJOIN_HP_FRAC = 0.40;  // rejoins at ≥40% hull WITH the shi
 // 10.5-15.75 for every Level-4 enemy, so opening this gap is a race he wins. Raise it if the live test still
 // shows him shot at while healing — one constant, no new mechanic.
 export const ALLY_BREAK_OFF_DIST = 120;
+// CORNERED (maintainer, 2026-10-05): at the arena edge with a threat still inside ALLY_BREAK_OFF_DIST that is
+// flying AT him faster than this (u/s, its own velocity along the line to him) — a chase — he stops running
+// and fights THAT ship. 5 u/s: well under every hull's top speed, well over a ship drifting on its stand-off.
+export const ALLY_CORNER_CHASE = 5;
 export const ALLY_ESCORT_DIST = 10;       // station-keeping distance with no enemy anywhere (§2d)
+// A STILL anchor (a parked player, the brawl's station) is ARRIVED AT AND STOPPED ON, not chased: chasing a
+// fixed point with nose-thrust puts him in a stable ORBIT (~75-93 u out, measured), because his sideways
+// velocity is never braked and the inward thrust is exactly a centripetal force. Below this anchor speed he
+// kills any sideways drift first, turns in place, flies straight in and brakes onto the station-keeping ring.
+export const ALLY_ESCORT_STILL_SPEED = 1;   // u/s — the anchor counts as "standing still" below this
+export const ALLY_ESCORT_SLIP = 3;          // u/s of sideways drift tolerated before he brakes to kill it
+export const ALLY_ESCORT_ALIGN = 0.2;       // rad — he only thrusts in once the nose is this close to the anchor
 export const ALLY_ESCORT_BAND = 2;        // …and the deadband: he only re-thrusts past ESCORT_DIST + this,
                                           // so he settles instead of pulsing the engine on the spot
 // (`ALLY_MIN_HP` lived here and pinned his hull at 1. REMOVED 2026-08-23: the maintainer reversed §2.4 after

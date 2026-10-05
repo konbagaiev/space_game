@@ -25,7 +25,7 @@ import { PLAYER_MAX_SPEED } from './step-player.js';
 import { ARENA } from './consts.js';
 import { broadRadius } from './collision.js';
 import {
-  ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC, ALLY_ESCORT_DIST,
+  ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC, ALLY_ESCORT_DIST, ALLY_ESCORT_BAND,
   ALLY_BREAK_OFF_DIST, ALLY_AIM_HIT_FRAC, ALLY_AIM_LAG_SEC, ALLY_AIM_TAU_SEC, ALLY_AIM_JITTER,
   ALLY_AIM_KICK, ALLY_AIM_MAX, ALLY_AIM_JITTER_SEC, ALLY_PD_JITTER, ALLY_PD_JITTER_SEC, SENTINEL_PILOT,
 } from './ally-config.js';
@@ -83,7 +83,7 @@ test('nearestEnemyTo skips a WARPING enemy (untouchable while forming, §54)', (
   assert.equal(nearestEnemyTo(new Vec3(0, 0.6, 0), [forming, formed], player), formed);
 });
 
-test('a finite ALLY_TARGET_LEASH only admits enemies near the PLAYER; Infinity ignores it', () => {
+test('nearestEnemyTo: a finite leash only admits enemies near the given origin; Infinity ignores it', () => {
   const player = { pos: new Vec3(0, 0.6, 0) };
   const nearAlly = enemy(60, 0);   // 10 u from the ally, 60 u from the player
   const nearPlayer = enemy(5, 0);  // 65 u from the ally, 5 u from the player
@@ -166,10 +166,11 @@ test('once armed, a NEARER second enemy takes the target', () => {
 
 test('he accelerates PAST the enemy terminal speed and settles at PLAYER_MAX_SPEED, never above', () => {
   const a = ally();
-  const e = enemy(0, 100000);           // far ahead: he charges in a straight line for the whole test
+  const e = enemy(0, 140);              // ahead, inside his 150 u engage range…
   const w = fight({ allies: [a], enemies: [e] });
   let peak = 0;
   for (let i = 0; i < 60 * 5; i++) {    // 5 s of sim time
+    e.pos.z = a.pos.z + 140;            // …and kept there, so he charges in a straight line the whole test
     stepAlly(w, DT);
     peak = Math.max(peak, a.vel.length());
   }
@@ -405,27 +406,32 @@ test('he runs to the ARENA EDGE and comes to rest there (the 120 u hold is now a
     `with the 120 u floor still honoured (gap ${gapTo(a, e).toFixed(1)} u)`);
 });
 
-test('CHASED, he flies straight past the border — the max() is the whole mechanic', () => {
-  // No extra rule: once he is outside, `border` is 0 and `remaining` is `120 − gap`, and `approachThrust`
-  // holds full thrust while the pursuer keeps the gap under ~68 u. A pursuer matching his 30 u/s cap does
-  // exactly that. (The chase self-resolves through the PLAYER's own 30 s out-of-bounds warp-back.)
+test('CORNERED: chased to the border with the pursuer inside the gap, he turns and fights it — then heals again', () => {
+  // Maintainer, 2026-10-05: "if a bot runs off past the map edge to heal and is chased, it turns round and
+  // fights to the end". The pursuer matches his 30 u/s cap, so he cannot open the 120 u gap; at the edge he
+  // stops running and takes THAT ship on. When it dies he is still under the rejoin bar, so he goes back to
+  // healing rather than picking a new fight.
   const { a, e, w } = breakingOff({ centreDist: 100, enemyGap: 20 });
-  // He breaks off mid-charge with the nose ON the enemy, so the first ~2.7 s are the reversal and a pursuer
-  // already at his own top speed simply rams him — the pre-existing price of leaving the instant the
-  // threshold is crossed, recorded by the OUTRUNS test above. Give the chase three seconds to start, which
-  // is the realistic case (an enemy holds a 14-22 u stand-off band; it does not open at 30 u/s from 20 u).
-  for (let i = 0; i < 180; i++) stepAlly(w, DT);
-  let worst = Infinity;
-  for (let i = 0; i < 60 * 30; i++) {
+  for (let i = 0; i < 180; i++) stepAlly(w, DT);   // the reversal (see the OUTRUNS test)
+  let cornered = false, fired = false;
+  for (let i = 0; i < 60 * 30 && !cornered; i++) {
     const dx = a.pos.x - e.pos.x, dz = a.pos.z - e.pos.z, d = Math.hypot(dx, dz) || 1;
     e.vel.set((dx / d) * PLAYER_MAX_SPEED, 0, (dz / d) * PLAYER_MAX_SPEED);   // matched to his own cap
     e.pos.addScaledVector(e.vel, DT);
     stepAlly(w, DT);
-    worst = Math.min(worst, gapTo(a, e));
+    if (a.cornered) cornered = true;
   }
-  assert.ok(boxDist(a, w) > ARENA,
-    `he is past the boundary rather than parked on it (${boxDist(a, w).toFixed(1)} u against ARENA ${ARENA})`);
-  assert.ok(worst > 1, `and the pursuer never closed to contact (worst gap ${worst.toFixed(1)} u)`);
+  assert.ok(cornered, 'he was cornered');
+  assert.equal(a.cornered, e, 'by THAT pursuer');
+  assert.ok(boxDist(a, w) >= ARENA - 1, `at the arena edge (${boxDist(a, w).toFixed(1)} u against ARENA ${ARENA})`);
+  e.vel.set(0, 0, 0);
+  for (let i = 0; i < 60 * 3; i++) { stepAlly(w, DT); if (a.target === e) fired = true; }
+  assert.ok(fired, 'and he turns on it: it is his target while he is cornered');
+  assert.equal(a.retreating, true, 'still officially retreating (hull under the rejoin bar)');
+  w.enemies.length = 0;                             // the pursuer dies
+  stepAlly(w, DT);
+  assert.equal(a.cornered, null, 'with the pursuer gone he is no longer cornered…');
+  assert.equal(a.target, null, '…and picks no new fight: he heals');
 });
 
 test('in ?roam the border is meaningless, so the OLD rule is exactly what is left', () => {
@@ -592,7 +598,7 @@ test('ZERO RNG: 600 ticks of a fight WITH an ally draw nothing from the seeded s
     if (i === 100) {
       // A hostile rocket homing on HIM, 20 u out, while every ship is outside the 45 u engagement band —
       // so he commits to the intercept (a PD re-roll).
-      for (const e of enemies) e.pos.set(e.pos.x * 4, 0.6, e.pos.z * 4);
+      for (const e of enemies) e.pos.set(e.pos.x * 2, 0.6, e.pos.z * 2);
       w.rockets.push({ pos: new Vec3(a.pos.x + 20, 0.6, a.pos.z), vel: new Vec3(-12, 0, 0),
                        fromPlayer: false, target: a, hp: 10 });
     }
@@ -975,7 +981,7 @@ function volleySchedule(pilot, side, ticks = 600) {
   dummy.warping = false; dummy.spawnAge = dummy.spawnDur = 1;
   pilot.pos.set(0, 0.6, 0); pilot.heading = 0;
   pilot.warping = false; pilot.spawnAge = pilot.spawnDur = 1; pilot.scale = pilot.fullScale;
-  const ctx = { foes: [dummy], friend: null, side, leash: Infinity, canFire: true };
+  const ctx = { foes: [dummy], friend: null, side, canFire: true };
   const gun = pilot.groups.gun;
   const starts = [];
   for (let t = 0; t < ticks; t++) {
@@ -1060,23 +1066,35 @@ test('PROFILE: every ALLY_AIM_*/ALLY_PD_* alias is its SENTINEL_PILOT field, and
   assert.equal(SENTINEL_PILOT.reloadStaggerSec, 0.5);
 });
 
-test('ctx.anchor: the leash is measured from it and he holds station on it — with NO friend, so no §2.6 gate', () => {
+test('engage range is measured from HIMSELF; with nothing in range he flies to the anchor and STOPS — no §2.6 gate', () => {
   const anchor = { pos: { x: 0, y: 0.6, z: 0 }, vel: { x: 0, y: 0, z: 0 }, alive: true };
   const w = createWorld(); w.catalog = CAT;
   w.player = { pos: new Vec3(0, 0.6, -500), vel: new Vec3(), heading: 0, alive: true, class: 'player', hp: 100, maxHp: 100 };
   const p = makeAce(CAT, 3);
   p.pos.set(80, 0.6, 0); p.heading = 0; p.warping = false; p.spawnAge = p.spawnDur = 1; p.scale = p.fullScale;
   const far = makeSentinelHull(CAT, 98);
-  far.pos.set(200, 0.6, 0); far.warping = false; far.spawnAge = far.spawnDur = 1;
-  const ctx = { foes: [far], friend: null, anchor, side: 'enemy', leash: 100, canFire: true };
+  far.pos.set(80 + SENTINEL_PILOT.engageRange + 20, 0.6, 0); far.warping = false; far.spawnAge = far.spawnDur = 1;
+  const ctx = { foes: [far], friend: null, anchor, side: 'enemy', canFire: true };
   flySentinel(w, p, DT, ctx);
-  assert.equal(p.target, null, 'a foe 200 u from the anchor is outside a 100 u leash, though only 120 u from him');
-  // (Closest approach, not the final distance: from a standing start facing away his 26 u turn radius puts
-  // him into the escort's known slow orbit around the hold point — see SUMMARY, the wingman's escort.)
-  let closest = Infinity;
-  for (let i = 0; i < 600; i++) { flySentinel(w, p, DT, ctx); closest = Math.min(closest, Math.hypot(p.pos.x, p.pos.z)); }
-  assert.ok(closest < 30, `with nothing to fight he flies back to the anchor (closest ${closest.toFixed(1)} u, from 80)`);
-  far.pos.set(50, 0.6, 0);
+  assert.equal(p.target, null, 'a foe beyond his engage range of HIMSELF is not picked');
+  for (let i = 0; i < 60 * 20; i++) { far.pos.set(p.pos.x + SENTINEL_PILOT.engageRange + 20, 0.6, p.pos.z); flySentinel(w, p, DT, ctx); }
+  const d = Math.hypot(p.pos.x, p.pos.z);
+  // A STILL anchor is arrived at and stopped on — the old chase-a-point rule orbited it ~75-93 u out.
+  assert.ok(d < ALLY_ESCORT_DIST + ALLY_ESCORT_BAND + 3, `he arrives over the still anchor (${d.toFixed(1)} u)`);
+  assert.ok(p.vel.length() < 0.5, `and stops there instead of orbiting (${p.vel.length().toFixed(2)} u/s)`);
+  far.pos.set(p.pos.x + 100, 0.6, p.pos.z + 40);    // ~108 u from him — inside range, wherever the anchor is
   flySentinel(w, p, DT, ctx);
-  assert.equal(p.target, far, 'and engages the moment a foe is inside the leash');
+  assert.equal(p.target, far, 'and engages the moment a foe is inside his range');
+  far.pos.set(p.pos.x + SENTINEL_PILOT.engageRange + 30, 0.6, p.pos.z);
+  flySentinel(w, p, DT, ctx);
+  assert.equal(p.target, null, 'and lets it go once it is beyond his range');
+});
+
+test('a pilot with NOTHING to escort (a duel ace) hunts the nearest foe anywhere rather than coasting to a stop', () => {
+  const w = createWorld(); w.catalog = CAT;
+  w.player = { pos: new Vec3(0, 0.6, 600), vel: new Vec3(), heading: 0, alive: true, class: 'player', hp: 100, maxHp: 100 };
+  const p = makeAce(CAT, 3);
+  p.pos.set(0, 0.6, 0); p.heading = 0; p.warping = false; p.spawnAge = p.spawnDur = 1; p.scale = p.fullScale;
+  flySentinel(w, p, DT, { foes: [w.player], friend: null, side: 'enemy', canFire: true });
+  assert.equal(p.target, w.player, 'the player 600 u away is still his target');
 });
