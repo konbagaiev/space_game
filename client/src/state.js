@@ -8,6 +8,7 @@
 // (Reassigned scalars can't live here as plain `const`/`let` — they go in the mutable
 // state bag G below, introduced as the domains that own them are split out.)
 import { loadTier, resolveTier } from './graphics.js';
+import { brawlTierOverride } from './brawl-dev.js'; // ?brawl&tier=… runs THIS page load on that tier (never saved)
 import { Device } from './device.js';
 import { makeClientId } from './client-id.js';
 import { createWorld } from './sim-core/world.js';
@@ -18,7 +19,11 @@ import { SPAWN_GROW_TIME, BULLET_PLANE_Y } from './sim-core/consts.js';
 // `const` object can). Write `G.x = …`; read `G.x`. Scalars are promoted onto G as the domains
 // that own them are split out — start with what the engine needs at construction.
 export const G = {
-  gfx: resolveTier(loadTier(window.localStorage, Device.hasTouch)), // current graphics quality knobs (tier switch reloads the page)
+  gfx: resolveTier(brawlTierOverride() || loadTier(window.localStorage, Device.hasTouch)), // current graphics quality knobs (tier switch reloads the page)
+  // Where the VIEW is framed, when it is not the player's ship: null normally; under ?brawl a function
+  // returning a reused THREE.Vector3 on the bullet plane (brawl-host.js). Read by settleView, the arena
+  // border and the radar triangle.
+  viewTarget: null,
   rotated: false,                                               // portrait-phone 90° rotation currently active
   // The active player ship. It LIVES on the World (sim-core/world.js) — the simulation needs it and cannot
   // reach this file in Node — but every call site says `G.player`, so this proxies rather than duplicates.

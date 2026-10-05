@@ -6688,3 +6688,101 @@ referee's verdict shape still are, and the only remaining live cross-host digest
 `36-sim-divergence`. Nothing is bound to a verdict (§150), so nothing is at risk; what is lost is a detector
 — and it is the detector that caught the seeding bug above, which is the argument for picking option 1 up
 rather than leaving it.
+
+## 156. A pilot owns its human error — one profile for every ship it flies
+
+**The problem: one pilot behaved as two.** The reload stagger (`+ U(0,1) × 0.5 s` per volley) lived in
+`updateGroups` and was keyed to the SIDE: `side === 'enemy' ? simRandom() * 0.5 : 0`. `flySentinel` flies the
+wingman (side `'ally'`) and every `?duel` ace (side `'enemy'`) with the same code, so the identical pilot
+fired ~30 % less often as an ace than as the wingman, and only the ace drew the stagger from the shared seeded
+stream. The bot brawl (§157) makes that visible as a lopsided fight between two identical teams.
+
+**The choice: the stagger is the pilot's, from a separate private stream.**
+- `flySentinel` passes `updateGroups` an 8th argument, a `reloadStagger` closure; `updateGroups` uses it when
+  present and otherwise keeps the old side rule verbatim. Passing it in (instead of `ship-entity.js`
+  importing pilot code) avoids an import cycle and stores no function on an entity, so netsim snapshots and
+  `digest.js` are untouched.
+- The draw comes from `pilotReloadRandom`, a **second** per-pilot `mulberry32` keyed exactly like the aim
+  stream XOR `PILOT_RELOAD_SALT`. Sharing the aim stream would have interleaved reload draws with aim draws
+  and shifted every §153 calibration for no reason; with a separate stream the aim sequence is bit-for-bit
+  what it was.
+- **Catalog enemies stay on the shared stream**, untouched, so every campaign trace (the Level-0 intro
+  fixture, `22-trace-replay`, `36-sim-divergence`, the session survey) stays bit-identical — no shipped level
+  spawns a pilot.
+- The pilot's knobs are gathered into one frozen object, `SENTINEL_PILOT` (`ally-config.js`), and the old
+  `ALLY_AIM_*`/`ALLY_PD_*` names are aliases of it. There is **no `ctx.profile`** until a second pilot exists
+  (§30).
+
+**What it costs.** The wingman now staggers: on the 0.6 s Heavy cannon his mean cooldown goes 0.60 → 0.85 s
+(about −29 % sustained cadence, the cadence an ace already had). Measured on the point-defence fixture
+(1000 engagements): the per-shot intercept rate did not move (0.353 → 0.347), but fewer shots fit inside a
+rocket's ~1.5 s approach, so the share of closing rockets he shoots down drops from 86 % to 75 %. "The second
+shot lands" (§153) is unaffected: it bounds the MINIMUM gap of one `fireCooldown`, and the stagger only
+lengthens gaps.
+
+**Old duel rows.** No `TRACE_VERSION` bump (it marks trace format, not per-build behaviour — the §153 aim
+change set that precedent). Stored verdicts stay as recorded, since the referee runs once at upload; a manual
+re-run under this build classifies them as `build-drift` → unverifiable, never a false `disagree`. Admin ▶
+play of an old duel re-simulates on current code and so shows a different fight, which is accepted.
+
+**The referee's `draws` check is now weaker for a duel: it counts only loot rolls**, since an ace no longer
+draws its stagger from the shared stream. And the reload stream is one more private SEQUENTIAL stream, so
+§155's caveat (a 1-ULP flip becomes a different pilot, so the duel digest is not a bit-for-bit guard) now
+covers it too. Measured: `49-duel-referee` passed 3/3 runs with ticks and draws (0) agreeing on every run;
+the digest differed on all three, as §155 already accepts.
+
+## 157. The brawl measures 60 s of WALL time over the home station
+
+**What the maintainer wanted:** one repeatable number for "how does a heavy fight run on this phone",
+against production, with nothing else in the frame changing between runs. `?brawl` is that: N v N Sentinel
+bots over the home station, a fixed seed, a result card and `/api/perf` rows (brief
+`docs/plans/2026-10-04-2001-bot-brawl-load-test.md`).
+
+**Wall time, compared in SIM time.** The run lasts 60 s of wall-clock time (the maintainer's call — a phone
+test should take a known minute), not 60 s of simulation. A slow phone therefore simulates less: the loop
+runs at most 6 fixed steps per frame and clamps the accumulator at 0.1 s/frame. So the card reports **sim
+seconds reached** and the **sim/wall ratio**, and everything comparative — the fingerprint (alive per side
+every 10 sim-s) and the per-window frame statistics — is keyed to sim time. Two devices are compared over the
+windows both reached, and **window 0 ("full load", every bot alive) is the headline**. The brawl's clock stops
+on the wipe-out tick itself, so "sim seconds reached" does not depend on how many ticks a frame ran.
+Determinism is claimed for the **same JS engine only** (§151): Android Chrome (V8) and an iPhone
+(JavaScriptCore) can diverge, and the card says so under the fingerprint.
+
+**Over the home station, because that is the worst frame:** the station's fill cost plus the bots
+(memory: the station is fill-bound). The camera's centre mode follows the eased centroid of the fighting ships,
+but **clamped to 55 u around the station**: with the camera's fixed offset `(0,110,26)` and a 55° FOV, the
+station centre projects inside the frame at 60 u screen-up, at 60 u screen-down (the worst direction, NDC
+y −0.93) and at 80 u sideways, but leaves it at 80 u screen-down — so 55 u keeps it on screen in every
+direction. Without the clamp the prototype's centroid wandered 198-685 u away. The run measures the
+station-in-frame % instead of trusting this. *Flagged design call:* in centre mode a long chase can leave the
+frame; a tap follows any bot, unclamped.
+
+**The fight itself is held over the station (maintainer, 2026-10-05), not the camera.** The 55 u clamp alone
+kept the station in frame but lost the fight: in a 5v5 the ships in frame fell to 0 from ~30 sim-s, because a
+pilot keeps his target through a whole pass and chases a fleeing ship to the arena edge. The camera leash and
+tap-to-follow are unchanged; instead each bot is given the station as its `anchor` — a new optional
+`flySentinel` ctx value (leash origin + hold-station point, defaulting to `friend`, so the wingman and the
+aces are byte-for-byte unchanged and the pilot stays one shared function) — with a 100 u `leash`, and the
+brawl drops a target that leaves the leash. A fixed point as `friend` was rejected: `friend` also drives the
+§2.6 hold-fire gate (bots would hold fire across the station's centre) and the point-defence "defended" list.
+**L from measurement** (headless, a THREE frustum at the real camera geometry, 20v20, same seed): 100 u puts
+the fighting centroid within 55 u on 87 % of ticks (12 % before) and within 100 u on 100 % (25 %), with ~5-7
+ships in frame per window where there were 0. 60-80 u packed both teams onto the station point and the rocket
+blasts killed them together (at 40 u the whole 20v20 died in 5.6 s); 120 u let the centroid drift to a 54 u
+median. **No stall fallback:** the anchor is shared, so every pilot with nothing to fight flies to the same
+point and meets the other side there. A first draft unleashed a team whenever no foe was inside the leash;
+that fired as soon as the fight drifted and undid the leash entirely, so it was dropped. Small fights remain
+quiet on screen during the pilot's own heal-at-the-edge retreats (a 5v5 shows ~1 of 4 survivors then), which
+is the pilot's behaviour and is left alone.
+
+**A reload per run, deliberately.** The light pool is baked into the lit shaders at boot, so a tier change
+needs a reload anyway; Start always reloads into `?brawl=<n>&tier=<t>`, which also gives every run an
+identical fresh page. The tier param applies to that page load only and is never saved (§81).
+
+**A parked spectator plus a view-target seam, instead of special cases in the simulation.** The player ship
+stays alive (a dead player winds every pilot down, `flySentinel` step 3) and is parked 5000 u away, never
+stepped and out of every bot's reach. What would otherwise follow the ship — the camera, the speed field,
+the star-system fade (planet 2 would vanish), the arena border, the radar triangle — reads `G.viewTarget`
+first. The alternative, a "no player" mode in the sim, would have touched projectile and pilot code that the
+campaign shares; this touches only render readers. Red deaths go through a brawl-only `stepBrawlRedDeaths`
+(the `allyDown` FX event and nothing else) so no loot roll, kill, credit or shared draw happens.

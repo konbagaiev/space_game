@@ -20,7 +20,9 @@
 // DRAWS NOTHING FROM THE SEEDED STREAM on the way in: the spawn geometry below is derived from the
 // player's own position and heading, with no RNG at all — exactly like `spawnAlly` (DECISIONS §73). Its
 // human aim error is random but draws from a PRIVATE per-pilot mulberry32 (`step-ally.js pilotRandom`),
-// keyed by the run's seed and the spawn ordinal passed in below — a private stream, not no randomness.
+// keyed by the run's seed and the spawn ordinal passed in below — a private stream, not no randomness —
+// and so does its reload stagger (`pilotReloadRandom`, a second private stream). An ace draws NOTHING from
+// the shared stream any more (DECISIONS §156).
 import { BULLET_PLANE_Y } from './consts.js';
 import { headingToDir } from './steering.js';
 import { makeSentinelHull } from './ally.js';

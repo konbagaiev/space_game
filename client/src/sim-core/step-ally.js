@@ -25,9 +25,10 @@
 // a charge" is retired (see `shouldRetreat`). He can still die; that is not protection, it is a chance.
 //
 // DRAWS NOTHING FROM THE SEEDED STREAM (DECISIONS §73): no dodge (skills are null → dodge 0, so
-// `resolveHostileBulletHit` never rolls), no spawn ring, no reload jitter (that is enemy-only). The pilot's
-// human AIM ERROR is random, and it is still true: it draws from a PRIVATE per-pilot mulberry32 seeded from
-// two integers both hosts have (see `pilotRandom`), never from `simRandom()`. A private stream, not no
+// `resolveHostileBulletHit` never rolls), no spawn ring, and his reload stagger is his own too — a second
+// private stream (`pilotReloadRandom`). The pilot's human AIM ERROR is random, and it is still true: it
+// draws from a PRIVATE per-pilot mulberry32 seeded from two integers both hosts have (see `pilotRandom`),
+// never from `simRandom()`. A private stream, not no
 // randomness — `simRandomDraws()` is half the divergence oracle and half the duel referee's verdict.
 import { Vec3 } from './vec.js';
 import { repairTick, shieldRecharge } from './components.js';
@@ -41,8 +42,7 @@ import { mulberry32, simSeed } from './sim-random.js';
 import {
   ALLY_BEHIND_ANGLE, ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_FIRE_BLOCK_HALF_ANGLE, ALLY_TARGET_LEASH,
   ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC, ALLY_BREAK_OFF_DIST, ALLY_ESCORT_DIST, ALLY_ESCORT_BAND,
-  ALLY_AIM_HIT_FRAC, ALLY_AIM_LAG_SEC, ALLY_AIM_TAU_SEC, ALLY_AIM_JITTER, ALLY_AIM_JITTER_SEC,
-  ALLY_AIM_KICK, ALLY_AIM_MAX, ALLY_PD_JITTER, ALLY_PD_JITTER_SEC,
+  SENTINEL_PILOT, PILOT_RELOAD_SALT,
 } from './ally-config.js';
 import { despawnAt } from './spawn.js';
 
@@ -79,6 +79,15 @@ export function pilotRandom(a) {
   return a._aimRng();
 }
 const signed = (a) => pilotRandom(a) * 2 - 1;   // uniform in (-1, 1)
+
+// The pilot's RELOAD STAGGER stream: a separate stream so the aim sequence (and every §153 calibration) is
+// unchanged. Same keying and same re-derive-on-seed-change rule as `pilotRandom`, XOR a fixed salt; integers
+// only (§151). Drawn once per volley, by the closure `flySentinel` hands `updateGroups`.
+export function pilotReloadRandom(a) {
+  const seed = ((simSeed() ?? 0) ^ Math.imul(a._aimOrdinal | 0, 0x9E3779B1) ^ PILOT_RELOAD_SALT) >>> 0;
+  if (a._reloadSeed !== seed) { a._reloadSeed = seed; a._reloadRng = mulberry32(seed); }
+  return a._reloadRng();
+}
 
 // Rotate a planar unit vector by `e` radians in the convention that matches `heading = atan2(x, z)`:
 // rotating by +e RAISES the bearing. (Not a matrix and not `steerToward` — this is a perception offset
@@ -289,7 +298,7 @@ export function aimWithDrift(u, vel, speed) {
 
 // The angular half-width of what a bullet actually has to hit, at this range.
 export function aimHitAngle(target, dist) {
-  return Math.min((ALLY_AIM_HIT_FRAC * broadRadius(target)) / Math.max(dist, 1), 0.30);
+  return Math.min((SENTINEL_PILOT.aimHitFrac * broadRadius(target)) / Math.max(dist, 1), 0.30);
 }
 
 // The pilot's PERCEIVED unit vector to `target`: the true unit vector `u`, rotated by a signed tracking
@@ -308,14 +317,14 @@ export function aimHitAngle(target, dist) {
 export function perceivedBearing(a, target, u, dist, dt) {
   const thetaHit = aimHitAngle(target, dist);
   const bearing = Math.atan2(u.x, u.z);
-  const decay = Math.min(1, dt / ALLY_AIM_TAU_SEC);
-  if (a._aimJitterT == null) { a._aimJitter = ALLY_AIM_JITTER * signed(a); a._aimJitterT = ALLY_AIM_JITTER_SEC; }
+  const decay = Math.min(1, dt / SENTINEL_PILOT.aimTauSec);
+  if (a._aimJitterT == null) { a._aimJitter = SENTINEL_PILOT.aimJitter * signed(a); a._aimJitterT = SENTINEL_PILOT.aimJitterSec; }
   if (a._aimTarget !== target) {
     // ACQUISITION — a fresh target, a snap switch, a re-pick, or the come-about exit (which clears
     // `_aimTarget`). The kick is re-rolled, the rate history is thrown away and NO rate is computed this
     // tick: the bearing to a brand-new target has no history to differentiate against.
     a._aimTarget = target;
-    a._aimKick = ALLY_AIM_KICK * signed(a);
+    a._aimKick = SENTINEL_PILOT.aimKick * signed(a);
     a._aimRate = 0;
   } else {
     const rate = shortestAngleDelta(a._aimBearing, bearing) / dt;
@@ -330,9 +339,9 @@ export function perceivedBearing(a, target, u, dist, dt) {
   }
   a._aimBearing = bearing;
   a._aimJitterT -= dt;
-  if (a._aimJitterT <= 0) { a._aimJitter = ALLY_AIM_JITTER * signed(a); a._aimJitterT = ALLY_AIM_JITTER_SEC; }
-  const cap = ALLY_AIM_MAX * thetaHit;
-  let err = -ALLY_AIM_LAG_SEC * a._aimRate + (a._aimJitter + a._aimKick) * thetaHit;
+  if (a._aimJitterT <= 0) { a._aimJitter = SENTINEL_PILOT.aimJitter * signed(a); a._aimJitterT = SENTINEL_PILOT.aimJitterSec; }
+  const cap = SENTINEL_PILOT.aimMax * thetaHit;
+  let err = -SENTINEL_PILOT.aimLagSec * a._aimRate + (a._aimJitter + a._aimKick) * thetaHit;
   if (err > cap) err = cap; else if (err < -cap) err = -cap;
   return rotateUnit(u, err);
 }
@@ -349,7 +358,7 @@ export function clearAimTarget(a) { a._aimTarget = null; }
 // tolerance. One dot product, clamped at 0 (a rocket opening away simply gets the uncorrected tolerance).
 export function perceivedIntercept(a, rocket, u, dist, speed, dt) {
   a._pdTimer = (a._pdTimer ?? 0) - dt;
-  if (a._pdTimer <= 0) { a._pdJitter = ALLY_PD_JITTER * signed(a); a._pdTimer = ALLY_PD_JITTER_SEC; }
+  if (a._pdTimer <= 0) { a._pdJitter = SENTINEL_PILOT.pdJitter * signed(a); a._pdTimer = SENTINEL_PILOT.pdJitterSec; }
   const rv = rocket.vel;
   const vClose = rv ? Math.max(0, -(rv.x * u.x + rv.z * u.z)) : 0;
   const s = speed > 0 ? speed : 1;
@@ -433,7 +442,11 @@ export const isBallistic = (g) => (g.mounts || []).some((m) => m.weapon && m.wea
 //   foes    the ships it may charge and shoot at
 //   friend  the ship it must never put a tracer through (§2.6), and the one it escorts with nothing to do
 //   side    'ally' | 'enemy' — what `updateGroups` makes of its shots (who they damage, and their sound)
-//   leash   only engage foes within this of `friend` (Infinity = "nearest to myself", the shipped rule)
+//   leash   only engage foes within this of the ANCHOR (Infinity = "nearest to myself", the shipped rule)
+//   anchor  optional: what the leash is measured from and where he holds station with nothing to fight —
+//           anything with `pos`/`vel`. Defaults to `friend`, so the wingman and the aces are unchanged. The
+//           `?brawl` bots pass the home station here (and no friend), which keeps the melee over it without
+//           arming the §2.6 tracer gate or the point-defence "defended" list for a point in space.
 //   canFire a hard gate the caller owns: the duel room's aces hold fire through the opening grace, exactly
 //           as every other hostile ship does, while the wingman has never had one
 //
@@ -459,6 +472,7 @@ export function flySentinel(world, a, dt, ctx) {
   const player = world.player;
   const foes = ctx.foes;
   const friend = ctx.friend || null;   // the wingman has the player; an ace has nobody to protect
+  const anchor = ctx.anchor || friend; // leash origin + escort point (the brawl's station; else the friend)
   const leash = ctx.leash ?? Infinity;
   // 1. Warp-in grow — the same rule enemies get (DECISIONS §54): the delay IS the arrival animation.
   if (a.spawnAge < a.spawnDur) {
@@ -581,7 +595,7 @@ export function flySentinel(world, a, dt, ctx) {
   } else {
     // 4b. THE PASS. Target bookkeeping first, then geometry against the FINAL target.
     if (a.target && !foes.includes(a.target)) { a.target = null; a.passArmed = false; }
-    if (!a.target) { a.target = nearestEnemyTo(a.pos, foes, friend, leash); a.passArmed = false; }
+    if (!a.target) { a.target = nearestEnemyTo(a.pos, foes, anchor, leash); a.passArmed = false; }
     if (a.target) {
       const d0 = shortestAngleDelta(a.heading, angleTo(a.pos, a.target));
       if (!a.passArmed && Math.abs(d0) > ALLY_BEHIND_ANGLE) {
@@ -593,7 +607,7 @@ export function flySentinel(world, a, dt, ctx) {
         // Re-search, armed. Either something swung round into a shot he could take RIGHT NOW, or somebody
         // else is simply nearer after the pass.
         const snap = aimedEnemy(a.pos, a.heading, foes, ALLY_SNAP_ANGLE);
-        const near = nearestEnemyTo(a.pos, foes, friend, leash);
+        const near = nearestEnemyTo(a.pos, foes, anchor, leash);
         const next = snap || (near !== a.target ? near : null);
         // A SNAP target is already inside the aim cone, so §2d's "switch to that one and accelerate at
         // it" applies at once: end the come-about. A merely NEARER one does not end it — he would
@@ -650,13 +664,13 @@ export function flySentinel(world, a, dt, ctx) {
   //     to hold; he would settle ~62 u back, off the frame, and no constant could fix it (the 52 falls out
   //     of v²/2a). NOT `enemyThrustFactor` either, whose -0.6 band is a REVERSE the player does not have
   //     (DECISIONS §113).
-  if (escorting && friend) {
-    const tx = friend.pos.x - a.pos.x, tz = friend.pos.z - a.pos.z;
+  if (escorting && anchor) {
+    const tx = anchor.pos.x - a.pos.x, tz = anchor.pos.z - a.pos.z;
     const pd = Math.hypot(tx, tz);
     desired = pd > 1e-6 ? Math.atan2(tx, tz) : a.heading;
     const remaining = pd - ALLY_ESCORT_DIST;
     const closing = pd > 1e-6                       // >0 closing, <0 opening; 0 when flying in formation
-      ? ((a.vel.x - friend.vel.x) * tx + (a.vel.z - friend.vel.z) * tz) / pd
+      ? ((a.vel.x - anchor.vel.x) * tx + (a.vel.z - anchor.vel.z) * tz) / pd
       : 0;
     thrust = remaining > ALLY_ESCORT_BAND ? approachThrust(closing, remaining, a.acceleration) : 0;
   } else if (escorting) {
@@ -699,8 +713,8 @@ export function flySentinel(world, a, dt, ctx) {
   const pdTarget = a.intercept || null;
   if (pdTarget !== (a._pdTarget || null)) {
     a._pdTarget = pdTarget;
-    a._pdJitter = pdTarget ? ALLY_PD_JITTER * signed(a) : 0;
-    a._pdTimer = ALLY_PD_JITTER_SEC;
+    a._pdJitter = pdTarget ? SENTINEL_PILOT.pdJitter * signed(a) : 0;
+    a._pdTimer = SENTINEL_PILOT.pdJitterSec;
   }
   if (a.intercept) {
     const ix = a.intercept.pos.x - a.pos.x, iz = a.intercept.pos.z - a.pos.z;
@@ -782,7 +796,10 @@ export function flySentinel(world, a, dt, ctx) {
     // The last argument: a HOSTILE rocket is handed the ship its shooter is flying at, the same rule
     // `stepEnemyAI` follows. A FRIENDLY one resolves its own seeker target from the nose sector
     // (`fireMount`), so the wingman passes null and nothing about his rockets changes.
-  }, ctx.side === 'enemy' ? a.target : null);
+  }, ctx.side === 'enemy' ? a.target : null,
+  // THE PILOT'S RELOAD STAGGER — his own, from his second private stream, whichever side he flies for. The
+  // wingman, every ace and every brawl bot therefore fire on the same schedule and draw nothing shared.
+  () => pilotReloadRandom(a) * SENTINEL_PILOT.reloadStaggerSec);
 }
 
 // The wingman dies. Deliberately separate from the damage that killed him — several steps can bring hp to 0

@@ -115,8 +115,11 @@ const CAM_DIST0 = CAM_OFFSET.length();         // camera→ship distance at zoom
 const clampZoom = z => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 let camZoom = 1;        // current (animated) zoom
 let camZoomTarget = 1;  // where zoom is easing toward
-export function setZoom(z){
+// `persist = false` sets the zoom for this page only (the ?brawl load test frames every run at zoom 1 and
+// must not overwrite the player's saved zoom).
+export function setZoom(z, persist = true){
   camZoomTarget = clampZoom(z);
+  if (!persist) return;
   try { localStorage.setItem('camZoom', camZoomTarget.toFixed(3)); } catch {}
 }
 export function zoomBy(f){ setZoom(camZoomTarget * f); }

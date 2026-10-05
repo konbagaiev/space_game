@@ -12,8 +12,12 @@ import { createWorld } from './world.js';
 import {
   stepAlly, stepAllyDeaths, nearestEnemyTo, aimedEnemy, holdFireForPlayer, shouldRetreat, shouldRejoin,
   approachThrust, aimWithDrift, bulletDir, gunSpeed, isBallistic, perceivedBearing, aimHitAngle,
-  edgeRemaining, pilotRandom,
+  edgeRemaining, pilotRandom, pilotReloadRandom, flySentinel,
 } from './step-ally.js';
+import { makeAlly, makeSentinelHull } from './ally.js';
+import { makeAce } from './ace.js';
+import { updateGroups } from './ship-entity.js';
+import { buildCatalog } from '../../../server/src/sim-host.js';
 import { nearestHostileTarget } from './targeting.js';
 import { stepEnemyAI } from './step-enemies.js';
 import { shortestAngleDelta } from './steering.js';
@@ -23,9 +27,9 @@ import { broadRadius } from './collision.js';
 import {
   ALLY_SNAP_ANGLE, ALLY_TURN_EXIT_ANGLE, ALLY_RETREAT_HP_FRAC, ALLY_REJOIN_HP_FRAC, ALLY_ESCORT_DIST,
   ALLY_BREAK_OFF_DIST, ALLY_AIM_HIT_FRAC, ALLY_AIM_LAG_SEC, ALLY_AIM_TAU_SEC, ALLY_AIM_JITTER,
-  ALLY_AIM_KICK, ALLY_AIM_MAX, ALLY_AIM_JITTER_SEC,
+  ALLY_AIM_KICK, ALLY_AIM_MAX, ALLY_AIM_JITTER_SEC, ALLY_PD_JITTER, ALLY_PD_JITTER_SEC, SENTINEL_PILOT,
 } from './ally-config.js';
-import { seedSim, simRandomDraws } from './sim-random.js';
+import { seedSim, simRandom, simRandomDraws } from './sim-random.js';
 
 const DT = 1 / 60;
 
@@ -951,4 +955,128 @@ test('the FIRST shot at a newly acquired target leaves the WORST-ASPECT yardstic
     `the first shot leaves the worst-aspect yardstick about half the time (got ${(rate * 100).toFixed(0)} %; `
     + 'at ALLY_AIM_KICK 2.30 the closed form is 56.5 %. This is NOT the miss rate — that is ~18 %, pinned in '
     + 'server/src/ally-sim.test.js)');
+});
+
+// ---------- THE PILOT OWNS HIS RELOAD STAGGER (DECISIONS §156) ----------
+// The stagger used to belong to the SIDE (`updateGroups`: `side === 'enemy' ? simRandom() * 0.5 : 0`), so a
+// `?duel` ace fired ~30 % less often than the identical wingman and drew it from the shared stream. It is
+// now the pilot's: one profile, one private second stream, the same schedule whichever side he flies for.
+
+const CAT = buildCatalog('level-1');
+
+// One Sentinel, 40 u short of a stationary Sentinel dummy dead ahead, flown for `ticks` with his own ctx.
+// Returns the ticks on which his GUN group started a volley (its cooldown jumped up).
+function volleySchedule(pilot, side, ticks = 600) {
+  const w = createWorld();
+  w.catalog = CAT;
+  w.player = { pos: new Vec3(0, 0.6, -500), vel: new Vec3(), heading: 0, alive: true, class: 'player', hp: 100, maxHp: 100 };
+  const dummy = makeSentinelHull(CAT, 99);
+  dummy.pos.set(0, 0.6, 40); dummy.heading = Math.PI;
+  dummy.warping = false; dummy.spawnAge = dummy.spawnDur = 1;
+  pilot.pos.set(0, 0.6, 0); pilot.heading = 0;
+  pilot.warping = false; pilot.spawnAge = pilot.spawnDur = 1; pilot.scale = pilot.fullScale;
+  const ctx = { foes: [dummy], friend: null, side, leash: Infinity, canFire: true };
+  const gun = pilot.groups.gun;
+  const starts = [];
+  for (let t = 0; t < ticks; t++) {
+    const before = gun.cooldown;
+    flySentinel(w, pilot, DT, ctx);
+    if (gun.cooldown > before) starts.push(t);
+    dummy.hp = dummy.maxHp;                     // never killed: the target is not the variable
+    w.bullets.length = 0; w.rockets.length = 0; // nothing is stepped; nothing needs to fly
+  }
+  return { starts, reload: gun.reload };
+}
+
+test('SAME PILOT, SAME SCHEDULE: a wingman and an ace with one ordinal fire on identical ticks, drawing nothing shared', () => {
+  const wing = makeAlly(CAT); wing._aimOrdinal = 7;
+  const ace = makeAce(CAT, 7);
+  seedSim(4242);
+  const d0 = simRandomDraws();
+  const ws = volleySchedule(wing, 'ally');
+  const d1 = simRandomDraws();
+  seedSim(4242);
+  const as = volleySchedule(ace, 'enemy');
+  const d2 = simRandomDraws();
+  seedSim(null);
+  assert.ok(ws.starts.length >= 5, `he really was firing (${ws.starts.length} volleys in 10 s)`);
+  assert.deepEqual(as.starts, ws.starts, 'the ace fires on exactly the wingman\'s schedule');
+  const gaps = ws.starts.slice(1).map((t, i) => (t - ws.starts[i]) * DT);
+  assert.ok(gaps.some((g) => g > ws.reload + 2 * DT),
+    `the stagger is really there — some gap exceeds the ${ws.reload} s reload (${gaps.map((g) => g.toFixed(2)).join(', ')})`);
+  assert.equal(d1, d0, 'the wingman draws nothing from the shared stream');
+  assert.equal(d2, 0, 'nor does the ace (seedSim resets the count)');
+});
+
+test('a CATALOG enemy still staggers on the shared stream, exactly as before', () => {
+  const w = createWorld();
+  w.catalog = CAT;
+  const e = makeSentinelHull(CAT, 3);   // any ship with a gun group; no reloadStagger is passed
+  e.pos.set(0, 0.6, 0);
+  const g = e.groups.gun; g.cooldown = 0;
+  seedSim(777); const r = simRandom(); seedSim(777);
+  updateGroups(w, e, { x: 0, y: 0, z: 1 }, 'enemy', DT, (grp) => grp === g);
+  assert.equal(g.cooldown, g.reload + r * 0.5, 'reload + simRandom() × 0.5, the same draw');
+  assert.equal(simRandomDraws(), 1, 'and exactly one shared draw');
+  seedSim(null);
+});
+
+test('the PLAYER still has no stagger and draws nothing', () => {
+  const w = createWorld();
+  w.catalog = CAT;
+  const p = makeSentinelHull(CAT, 0);
+  const g = p.groups.gun; g.cooldown = 0;
+  seedSim(777);
+  updateGroups(w, p, { x: 0, y: 0, z: 1 }, 'player', DT, (grp) => grp === g);
+  assert.equal(g.cooldown, g.reload);
+  assert.equal(simRandomDraws(), 0);
+  seedSim(null);
+});
+
+test('STREAM ISOLATION: reload draws do not shift the pilot\'s aim sequence', () => {
+  seedSim(4242);
+  const p1 = { _aimOrdinal: 5 }, p2 = { _aimOrdinal: 5 };
+  const plain = [], mixed = [];
+  for (let i = 0; i < 5; i++) plain.push(pilotRandom(p1));
+  for (let i = 0; i < 5; i++) { pilotReloadRandom(p2); mixed.push(pilotRandom(p2)); pilotReloadRandom(p2); }
+  assert.deepEqual(mixed, plain, 'the aim stream is untouched by reload draws');
+  const p3 = { _aimOrdinal: 5 };
+  assert.notEqual(pilotReloadRandom(p3), plain[0], 'and the reload stream is a different stream (salted)');
+  assert.equal(simRandomDraws(), 0, 'neither touches the shared stream');
+  seedSim(null);
+});
+
+test('PROFILE: every ALLY_AIM_*/ALLY_PD_* alias is its SENTINEL_PILOT field, and the profile is frozen', () => {
+  assert.ok(Object.isFrozen(SENTINEL_PILOT));
+  assert.equal(ALLY_AIM_HIT_FRAC, SENTINEL_PILOT.aimHitFrac);
+  assert.equal(ALLY_AIM_LAG_SEC, SENTINEL_PILOT.aimLagSec);
+  assert.equal(ALLY_AIM_TAU_SEC, SENTINEL_PILOT.aimTauSec);
+  assert.equal(ALLY_AIM_JITTER, SENTINEL_PILOT.aimJitter);
+  assert.equal(ALLY_AIM_JITTER_SEC, SENTINEL_PILOT.aimJitterSec);
+  assert.equal(ALLY_AIM_KICK, SENTINEL_PILOT.aimKick);
+  assert.equal(ALLY_AIM_MAX, SENTINEL_PILOT.aimMax);
+  assert.equal(ALLY_PD_JITTER, SENTINEL_PILOT.pdJitter);
+  assert.equal(ALLY_PD_JITTER_SEC, SENTINEL_PILOT.pdJitterSec);
+  assert.equal(SENTINEL_PILOT.reloadStaggerSec, 0.5);
+});
+
+test('ctx.anchor: the leash is measured from it and he holds station on it — with NO friend, so no §2.6 gate', () => {
+  const anchor = { pos: { x: 0, y: 0.6, z: 0 }, vel: { x: 0, y: 0, z: 0 }, alive: true };
+  const w = createWorld(); w.catalog = CAT;
+  w.player = { pos: new Vec3(0, 0.6, -500), vel: new Vec3(), heading: 0, alive: true, class: 'player', hp: 100, maxHp: 100 };
+  const p = makeAce(CAT, 3);
+  p.pos.set(80, 0.6, 0); p.heading = 0; p.warping = false; p.spawnAge = p.spawnDur = 1; p.scale = p.fullScale;
+  const far = makeSentinelHull(CAT, 98);
+  far.pos.set(200, 0.6, 0); far.warping = false; far.spawnAge = far.spawnDur = 1;
+  const ctx = { foes: [far], friend: null, anchor, side: 'enemy', leash: 100, canFire: true };
+  flySentinel(w, p, DT, ctx);
+  assert.equal(p.target, null, 'a foe 200 u from the anchor is outside a 100 u leash, though only 120 u from him');
+  // (Closest approach, not the final distance: from a standing start facing away his 26 u turn radius puts
+  // him into the escort's known slow orbit around the hold point — see SUMMARY, the wingman's escort.)
+  let closest = Infinity;
+  for (let i = 0; i < 600; i++) { flySentinel(w, p, DT, ctx); closest = Math.min(closest, Math.hypot(p.pos.x, p.pos.z)); }
+  assert.ok(closest < 30, `with nothing to fight he flies back to the anchor (closest ${closest.toFixed(1)} u, from 80)`);
+  far.pos.set(50, 0.6, 0);
+  flySentinel(w, p, DT, ctx);
+  assert.equal(p.target, far, 'and engages the moment a foe is inside the leash');
 });

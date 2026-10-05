@@ -167,6 +167,25 @@
   <div id="mw-credits"><span id="mw-credits-val">0</span> <span data-i18n="ui.mainwin.credits_unit">cr.</span></div>
   <div id="mw-ships" data-i18n="ui.mainwin.ships" aria-disabled="true">Ships</div>
 </div>
+<!-- ?brawl (dev load test, brawl-host.js): the setup panel (a bare ?brawl) and the result card. English
+     only and not localized — a measurement tool, like the perf overlay. -->
+<div id="brawl-setup" class="brawl-panel">
+  <div class="brawl-box">
+    <h1>Bot brawl</h1>
+    <div class="brawl-row"><span>Bots per side</span>
+      <button id="brawl-minus" aria-label="Fewer bots">−</button><span id="brawl-n">20</span><button id="brawl-plus" aria-label="More bots">+</button></div>
+    <div class="brawl-row"><span>Graphics</span><div id="brawl-tiers"></div></div>
+    <button id="brawl-start" class="brawl-main">Start</button>
+    <p id="brawl-build"></p>
+  </div>
+</div>
+<div id="brawl-card" class="brawl-panel">
+  <div class="brawl-box">
+    <h1>Bot brawl — result</h1>
+    <div class="brawl-card-body"></div>
+    <div class="brawl-actions"><button id="brawl-again" class="brawl-main">Run again</button><button id="brawl-setup-btn">Setup</button></div>
+  </div>
+</div>
 <button id="pause-btn" aria-label="Pause" title="Pause">⏸</button>
 <div id="pause-overlay">
   <div class="pause-title" data-i18n="ui.pause.paused">Paused</div>

@@ -3,6 +3,41 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-05
+
+- **The bot brawl's fight stays over the home station.** [2026-10-04-2001-bot-brawl-load-test] Each bot now
+  gets the station as an `anchor` (a new optional `flySentinel` ctx value — the wingman and duel aces are
+  unchanged) with a 100 u engagement leash, and drops a target that leaves it, so nobody chases a retreating
+  ship to the arena edge. 20v20: the fighting centroid is within the camera's 55 u leash on 87 % of ticks
+  (12 % before) and ships stay in frame (~5-7 per window, was 0 after 30 s). Still deterministic with zero
+  shared draws; the seeded outcomes changed (1v1 now ends at ~129 s). DECISIONS §157.
+
+## 2026-10-04
+
+- **A bot brawl you can run on a phone (`?brawl`).** [2026-10-04-2001-bot-brawl-load-test] A repeatable
+  load test: two teams of N Sentinel bots (1-30, default 20), all flown by the Sentinel pilot, fight over the
+  home station while you watch — the camera follows the middle of the fight (clamped to 55 u around the
+  station), a tap follows one bot, another tap goes back. A bare `?brawl` shows a setup panel (bots per
+  side, graphics tier, Start — which reloads into `?brawl=<n>&tier=<t>`). A run lasts 60 s of wall time or
+  until a side is wiped out, with a fixed seed (same fight on the same JS engine), and ends on a card:
+  avg/p95/worst frame ms and FPS overall and per 10-sim-second window ("window 0 = full load"), sim seconds
+  reached and the sim/wall ratio, station-in-frame %, a fight fingerprint, tier/N/build/engine. `?brawl`
+  alone turns on `/api/perf` telemetry (`scene:'brawl'` per-second rows plus one `kind:'brawl-result'`).
+  It pays nothing, records no session and never meets the referee. New modules `sim-core/brawl.js`,
+  `brawl-dev.js`, `brawl-stats.js`, `brawl-host.js`; the camera, speed field, star-system fade and arena
+  border now read a `G.viewTarget` seam (null outside the brawl). New visual scenario `51-bot-brawl`.
+  DECISIONS §157.
+- **The Sentinel pilot owns its reload stagger: wingman and aces now fire alike.**
+  [2026-10-04-2001-bot-brawl-load-test] The 0-0.5 s reload stagger used to belong to the enemy SIDE, so a
+  `?duel` ace fired ~30 % less often than the identical wingman and drew it from the shared seeded stream.
+  It now belongs to the pilot: every ship `flySentinel` flies draws it from its own second private stream
+  (`pilotReloadRandom`), so the wingman's Heavy-cannon cadence drops slightly (mean cooldown 0.60 → 0.85 s;
+  measured: 75 % of closing rockets shot down, was 86 %, per-shot rate unchanged) and aces take **zero**
+  shared draws. The pilot's human-error knobs are one frozen `SENTINEL_PILOT` profile in `ally-config.js`;
+  the `ALLY_AIM_*`/`ALLY_PD_*` exports are aliases. Catalog enemies keep the shared-stream stagger, so every
+  campaign trace replays bit-identically. The point-defence test now samples 1000 engagements (its 40-seed
+  sample was noisier than its band). DECISIONS §156.
+
 ## 2026-09-11
 
 - **The Sentinel pilot aims like a person now — and a retreat actually leaves the fight.**

@@ -14,6 +14,7 @@ import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
 import { applyAllyDev } from './ally-dev.js';
 import { applyDuelDev } from './duel-dev.js'; // ?duel (dev): rebuild the level as the sparring room
+import { applyBrawlDev } from './brawl-dev.js'; // ?brawl: rebuild the level as the bot-brawl room
 import { levelRunner } from './sim.js';
 import { t } from './i18n.js';
 import { showMain } from './mainwindow.js';
@@ -279,7 +280,7 @@ async function reloadPlayerWorld() {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
     }
-    CATALOG.level = applyDuelDev(applyAllyDev(level.descriptor)); // ?ally/?duel re-inject here too, or it would stop working after a login
+    CATALOG.level = applyBrawlDev(applyDuelDev(applyAllyDev(level.descriptor))); // ?ally/?duel/?brawl re-inject here too, or it would stop working after a login
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
     const active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
     G.activeShip = active;
