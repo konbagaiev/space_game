@@ -85,6 +85,24 @@ export default async function ({ page, assert, shot }) {
   }
   await shot('bot-brawl-mid');
 
+  // ONE PASS FOR DOUBLE-SIDED SHIP MATERIALS (DECISIONS §159): three.js draws a transparent DoubleSide
+  // material twice and bumps its version before each pass, which re-runs getProgram per ship per frame. Every
+  // ship body must carry `forceSinglePass`, and over a few rendered frames no ship material's version moves.
+  const glass = await page.evaluate(async () => {
+    const g = window.__game, mats = new Set();
+    for (const s of [...g.allies, ...g.enemies]) if (s.mesh) s.mesh.traverse((o) => {
+      if (o.isMesh && o.material) for (const m of [].concat(o.material)) mats.add(m);
+    });
+    const twoPass = [...mats].filter((m) => m.side === 2 && !m.forceSinglePass).map((m) => m.name || m.type);
+    const sum = () => [...mats].reduce((a, m) => a + m.version, 0);
+    const v0 = sum();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r))));
+    return { n: mats.size, doubleSided: [...mats].filter((m) => m.side === 2).length, twoPass, bumps: sum() - v0 };
+  });
+  assert.ok(glass.n > 0 && glass.doubleSided > 0, `the ship bodies really carry double-sided materials (${JSON.stringify(glass)})`);
+  assert.deepEqual(glass.twoPass, [], 'no double-sided ship material is drawn in two passes');
+  assert.equal(glass.bumps, 0, 'and no ship material is re-versioned (= getProgram re-run) on a plain rendered frame');
+
   // ---- tap-to-follow: click the blue bot, then anywhere ----
   const now = await probe(page);
   const blue = now.ships.find((s) => s.side === 'blue' && !s.warping && s.onScreen);

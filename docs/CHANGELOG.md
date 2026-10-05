@@ -5,6 +5,15 @@
 
 ## 2026-10-05
 
+- **Ship canopy glass draws in one pass — −27 % render CPU in a 50v50 brawl, no visible change.** Found by
+  profiling the `?brawl` load test: the player hull's canopy material (`PaletteMaterial002`, also flown by
+  the wingman, duel aces and brawl bots) is transparent + DoubleSide, which three.js renders in two passes
+  with a `needsUpdate` before each — `setProgram` → `getProgram`/`getParameters` twice per ship per frame
+  (~10 000 material re-versions per 2 s at 50v50). `ship-factory.js applySinglePassDoubleSide` sets
+  `forceSinglePass` on every DoubleSide ship material at template load, before the GPU warm, on ALL graphics
+  tiers. A/B on the same frozen frame: 0 px changed at gameplay zoom, 11 of 5.5 M px at max zoom. Render CPU
+  at full load 7.1 → 5.2 ms avg (p95 9.7 → 7.2) on an M1 Pro. `51-bot-brawl` now asserts no two-pass ship
+  material and no material re-versioning across rendered frames (fails without the fix).
 - **The Sentinel pilot: engage range from himself, a cornered last stand, and no more orbiting.** One pilot
   change for every ship it flies (wingman, `?duel` aces, `?brawl` bots), maintainer-requested after watching
   the brawl bots circle the station. (1) He engages foes within `SENTINEL_PILOT.engageRange` **150 u of

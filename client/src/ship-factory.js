@@ -91,6 +91,26 @@ function applyHullEmissiveFloor(root) {
   });
 }
 
+// ONE PASS FOR DOUBLE-SIDED MATERIALS (DECISIONS §159). three.js draws a material that is BOTH transparent and
+// DoubleSide in TWO passes (back faces, then front) and sets `material.needsUpdate = true` before each — so
+// every such mesh re-runs `getProgram`/`getParameters` twice per frame and costs an extra draw call. The
+// player hull's canopy glass (`PaletteMaterial002` in `player_combat`, flown by the player, the wingman, every
+// duel ace and every brawl bot) is one: in a 50v50 brawl that was ~10 000 program re-checks per 2 s and ~27 %
+// of the render CPU at full load. `forceSinglePass` draws it once, DoubleSide. Measured A/B on the same frozen
+// brawl frame: 0 pixels changed at gameplay zoom, 11 of 5.5 M at the closest zoom — so it is on for EVERY
+// graphics tier (maintainer, 2026-10-05), not a quality knob. Set on every DoubleSide material, transparent or
+// not (an opaque one is unaffected; a later `transparent = true`, e.g. the ghost battle's fade, stays single-
+// pass because `Material.clone()` copies the flag). Runs on the TEMPLATE before `warmModel`, so the single-pass
+// program is the one compiled at load, never mid-fight.
+function applySinglePassDoubleSide(root) {
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (m.side === THREE.DoubleSide) m.forceSinglePass = true;
+    }
+  });
+}
+
 // Re-point a material's emissive FLOOR at its (just re-assigned) base colour.
 //
 // applyHullEmissiveFloor copies `emissive` from `color` on the shared TEMPLATE; any per-instance pass that
@@ -141,6 +161,7 @@ export function requestShipModel(url, cb) {
   gltfLoader.load(url, (gltf) => {
     entry.scene = gltf.scene;
     applyHullEmissiveFloor(entry.scene); // BEFORE warmModel and before any clone is served to a waiter
+    applySinglePassDoubleSide(entry.scene); // likewise: the single-pass program is the one the warm compiles
     warmModel(entry.scene); // compile + upload NOW, not on the first frame this ship type is drawn
     for (const w of entry.waiters) w(entry.scene.clone(true));
     entry.waiters.length = 0;

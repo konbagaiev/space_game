@@ -6817,3 +6817,31 @@ centripetal force; sideways velocity is never braked) — measured 75-93 u out, 
 ~40 s at the edge and station-side bots do not chase 150 u+ to it, so brawls have idle lulls until healers
 rejoin. No catalog-enemy or campaign trace changes (only pilot-flown ships take these paths).
 
+## 159. Double-sided ship materials are drawn in ONE pass, on every graphics tier
+
+**Date:** 2026-10-05. **Context:** profiling the `?brawl` load test (50v50, M1 Pro) showed the main thread
+~fully busy at full load, 56 % of it in `renderer.render`, and most of that in `setProgram` →
+`getProgram`/`getParameters`. A trap on `material.version` named the cause: three.js r160 `renderObject`
+draws any material that is `transparent && side === DoubleSide && !forceSinglePass` in two passes (BackSide,
+then FrontSide) and sets `material.needsUpdate = true` before each, so the program lookup re-runs twice per
+mesh per frame (plus one extra draw call). The player hull's canopy glass, `PaletteMaterial002`, is such a
+material and is on every Sentinel-flown ship.
+
+**Decision:** set `forceSinglePass = true` on every `DoubleSide` ship material on the cached template, before
+`warmModel` (`ship-factory.js applySinglePassDoubleSide`), for **all** tiers.
+
+**Why all tiers and not a `balance`-only knob** (the maintainer first proposed balance, and asked to see
+before/after first): the A/B on the same frozen brawl frame, flag toggled at runtime, changed **0 pixels** at
+gameplay zoom and **11 of 5.5 M** at the closest zoom (17 ships in frame, verified the flag took effect: 34 →
+0 canopy re-versions per frame). Seen top-down, the glass's back faces add nothing. A knob that changes
+nothing visible is not a quality setting. Measured: render CPU at full load 7.1 → 5.2 ms avg, p95 9.7 → 7.2
+(two runs each).
+
+**Why on the template before the warm:** the single-pass DoubleSide program is a different program from the
+two BackSide/FrontSide ones; toggling it mid-fight compiled it on the next frame (a 50-60 ms frame in the A/B
+runs). Set at load, the warm compiles it.
+
+**Scope:** ship models only (`requestShipModel`). Other `.glb`s (station, drops) are single instances and
+were not measured to matter. Guard: `51-bot-brawl` asserts no ship material is two-pass and none re-versions
+across rendered frames — negative-tested (fails with the call commented out).
+

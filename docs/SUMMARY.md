@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-05 (**The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-05 (**Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -1076,6 +1076,16 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   nothing disposes them; they are garbage-collected with the mesh. The shared **template's** materials must
   still never be touched — everything a live ship mutates is its own copy (the `tint` recolour and the
   ghost-battle `darken`/`opacity` treatment clone as well, now redundantly but harmlessly).
+  **Double-sided ship materials draw in ONE pass, on every graphics tier** (`applySinglePassDoubleSide`,
+  run on the template right after `applyHullEmissiveFloor` and before `warmModel`; DECISIONS §159). three.js
+  draws a material that is transparent AND `DoubleSide` twice (back, then front) and sets `needsUpdate` before
+  each pass, so each such mesh re-ran `getProgram`/`getParameters` twice a frame and paid an extra draw. The
+  player hull's canopy glass (`PaletteMaterial002`) is one — flown by the player, the wingman, every duel ace
+  and every brawl bot. Every `DoubleSide` ship material now carries `forceSinglePass = true` (`Material.clone()`
+  copies it, so per-instance clones keep it). Measured on a 50v50 brawl (M1 Pro, Chrome, high): render CPU at
+  full load **7.1 → 5.2 ms avg, p95 9.7 → 7.2** (−27 %); the same frozen frame A/B changed 0 pixels at
+  gameplay zoom and 11 of 5.5 M at the closest zoom. Guarded by `51-bot-brawl` (no two-pass ship material, no
+  ship-material version bump across rendered frames; negative-tested).
   (DECISIONS §79 + §137; guard `visual/scenarios/26-ship-model-cache.mjs`; `?debug` exposes
   `__game.shipModelsParsed` = the cache size, which must stay a per-TYPE count.)
   **Per-ship model
