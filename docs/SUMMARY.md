@@ -475,7 +475,7 @@ out because they are arguments to a flow, not switches.
 | `?debug` | exposes `window.__game` (the test/inspection hook the whole visual suite drives; incl. the `gameW`/`gameH` getters that read the cached logical size) |
 | `?tune` | the lil-gui palette / lighting / blast panel, incl. the **frozen test range** (`tune.js`) |
 | `?duel[=N]` | **the sparring room**: fight N ships flown by the wingman's own pilot (default 2, max 6). Forces your build to the starter kit, and Take off drops you straight into the fight. A duel session is **re-simulated server-side and given a verdict** (nothing binds). See Gameplay → "The duel room" |
-| `?brawl[=N]` | **the bot brawl — a phone load test** (`brawl-dev.js`): N v N Sentinel bots (1-50, default 20) fight over the home station while you watch; a bare `?brawl` shows the setup panel. `&tier=high\|balance\|performance` runs that page load on that tier (never saved); `&sec=N` overrides the 60 s wall-clock limit (10-300). Turns on `/api/perf` telemetry by itself. See "The bot brawl" below |
+| `?brawl[=N]` | **the bot brawl — a phone load test** (`brawl-dev.js`): N v N Sentinel bots (1-100, default 20; ranks 10 wide above 50) fight over the home station while you watch; a bare `?brawl` shows the setup panel. `&tier=high\|balance\|performance` runs that page load on that tier (never saved); `&sec=N` overrides the 60 s wall-clock limit (10-300). Turns on `/api/perf` telemetry by itself. See "The bot brawl" below |
 | `?ally[=phase]` | the Sentinel wingman arrives on that phase (default `clear-out`) |
 | `?lancer[=phase]` | that phase's spawn pool becomes 100 % pirate lancers |
 | `?beam` | mount the Charged beam in the player's gun slot |
@@ -1772,7 +1772,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
 - **The bot brawl (`?brawl`) — a phone load test.** (`client/src/sim-core/brawl.js` the fight,
   `client/src/brawl-dev.js` the flag, `client/src/brawl-stats.js` the numbers, `client/src/brawl-host.js` the
   setup panel / camera / measurement / card; brief `docs/plans/2026-10-04-2001-bot-brawl-load-test.md`,
-  DECISIONS §157.) Two teams of N Sentinel bots (1-50, default 20) fight each other over the **home station**
+  DECISIONS §157.) Two teams of N Sentinel bots (1-100, default 20; 5-wide ranks up to 50 a side, 10-wide above, so a 100-ship team is not 20 ranks deep) fight each other over the **home station**
   (`BRAWL_CENTER = ANCHORS.base`, front ranks ±60 u, 5-wide grids) while the player only watches.
   - **Sides:** blue is `world.allies` (`makeAlly`), red is `world.enemies` (`makeAce`); every bot is flown by
     `flySentinel` with `{ foes: <other list>, friend: null, anchor: <station>, side, canFire: true }`, so the two

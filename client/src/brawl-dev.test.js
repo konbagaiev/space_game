@@ -13,8 +13,8 @@ test('a bare ?brawl shows the setup panel (n: null) with the defaults', () => {
   assert.deepEqual(evalBrawlDev('?debug&brawl'), { n: null, tier: null, sec: 60 });
 });
 
-test('n clamps to 1..50; a garbage or negative count falls back to 20', () => {
-  assert.equal(evalBrawlDev('?brawl=99').n, 50);
+test('n clamps to 1..100; a garbage or negative count falls back to 20', () => {
+  assert.equal(evalBrawlDev('?brawl=999').n, 100);
   assert.equal(evalBrawlDev('?brawl=1').n, 1);
   assert.equal(evalBrawlDev('?brawl=12').n, 12);
   assert.equal(evalBrawlDev('?brawl=-3').n, 20);

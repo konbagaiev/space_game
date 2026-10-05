@@ -32,12 +32,17 @@ import { SIM_DT, TICK_HZ, BULLET_PLANE_Y } from './consts.js';
 
 export const BRAWL_SEED = 20261004;
 export const BRAWL_N_MIN = 1;
-export const BRAWL_N_MAX = 50;
+export const BRAWL_N_MAX = 100;
 export const BRAWL_N_DEFAULT = 20;
 // Fought over the HOME STATION: the worst-case frame is the station plus the bots.
 export const BRAWL_CENTER = ANCHORS.base;
 export const BRAWL_FRONT_GAP = 60;      // each team's front rank sits this far from the centre
-export const BRAWL_COLS = 5;            // ships per rank
+export const BRAWL_COLS = 5;            // ships per rank (up to BRAWL_WIDE_FROM ships a side)
+// Above 50 a side the ranks go 10 wide, or a 100-ship team would stand 20 ranks (~290 u) deep and its back
+// half would spend the opening ten seconds flying in. Up to 50 the layout — and so every recorded
+// fingerprint — is unchanged.
+export const BRAWL_WIDE_FROM = 51;
+export const BRAWL_COLS_WIDE = 10;
 export const BRAWL_SPACING = 12;        // lateral and rank spacing inside a team's grid
 export const BRAWL_SPECTATOR_PARK = 5000; // the (alive, never stepped) player ship is parked this far east
 export const BRAWL_WINDOW_TICKS = 10 * TICK_HZ; // one stats/fingerprint window = 10 sim-seconds
@@ -80,9 +85,10 @@ export function spawnBrawl(world, n) {
   const p = world.player;
   if (p) { p.pos.set(C.x + BRAWL_SPECTATOR_PARK, Y, C.z); p.vel.set(0, 0, 0); }
   const cat = world.catalog;
+  const cols = n >= BRAWL_WIDE_FROM ? BRAWL_COLS_WIDE : BRAWL_COLS;
   for (let i = 0; i < n; i++) {
-    const row = Math.floor(i / BRAWL_COLS), col = i % BRAWL_COLS;
-    const lat = (col - (BRAWL_COLS - 1) / 2) * BRAWL_SPACING + (row % 2) * (BRAWL_SPACING / 2);
+    const row = Math.floor(i / cols), col = i % cols;
+    const lat = (col - (cols - 1) / 2) * BRAWL_SPACING + (row % 2) * (BRAWL_SPACING / 2);
     const depth = row * BRAWL_SPACING;
     const a = makeAlly(cat);
     a._aimOrdinal = 1 + 2 * i;

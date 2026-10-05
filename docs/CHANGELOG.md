@@ -5,6 +5,10 @@
 
 ## 2026-10-05
 
+- **The bot brawl goes up to 100 v 100** (was 50). `BRAWL_N_MAX` 50 → 100; above 50 a side the ranks are 10
+  wide instead of 5 (`BRAWL_WIDE_FROM` / `BRAWL_COLS_WIDE`), so a 100-ship team is 10 ranks deep, not 20. Up
+  to 50 the layout and every fingerprint are unchanged (50v50 re-checked). Headless 100v100 sim: ~1.3 ms per
+  tick over the first 10 s, 0.4 ms average, 0 shared draws.
 - **Ship canopy glass draws in one pass — −27 % render CPU in a 50v50 brawl, no visible change.** Found by
   profiling the `?brawl` load test: the player hull's canopy material (`PaletteMaterial002`, also flown by
   the wingman, duel aces and brawl bots) is transparent + DoubleSide, which three.js renders in two passes
