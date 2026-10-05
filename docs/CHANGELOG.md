@@ -5,6 +5,9 @@
 
 ## 2026-10-05
 
+- **The bot brawl now goes up to 50 v 50** (was 30). `BRAWL_N_MAX` 30 → 50 (setup stepper and `?brawl=N` clamp).
+  Headless, same seed: 50v50 sim cost ~0.06 ms/tick avg, 1.5 ms worst; the fight thins to 12v9 by 10 sim-s, so
+  the first window is still the full-load number.
 - **The bot brawl's fight stays over the home station.** [2026-10-04-2001-bot-brawl-load-test] Each bot now
   gets the station as an `anchor` (a new optional `flySentinel` ctx value — the wingman and duel aces are
   unchanged) with a 100 u engagement leash, and drops a target that leaves it, so nobody chases a retreating

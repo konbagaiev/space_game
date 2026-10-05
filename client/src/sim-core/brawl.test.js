@@ -47,7 +47,7 @@ test('LAYOUT: N v N, ace-tagged red worth nothing, distinct ordinals, blue west 
   assert.ok(d >= 4900, `the spectator is parked ${d.toFixed(0)} u away`);
   assert.equal(simRandomDraws(), 0, 'the layout draws nothing');
   const w2 = createWorld(); w2.catalog = CAT; w2.player = makeSentinelHull(CAT, 999);
-  assert.equal(spawnBrawl(w2, 99).n, BRAWL_N_MAX, '99 clamps to 30');
+  assert.equal(spawnBrawl(w2, 99).n, BRAWL_N_MAX, '99 clamps to 50');
   const w3 = createWorld(); w3.catalog = CAT; w3.player = makeSentinelHull(CAT, 999);
   assert.equal(spawnBrawl(w3, 0).n, 1, '0 clamps to 1');
   seedSim(null);

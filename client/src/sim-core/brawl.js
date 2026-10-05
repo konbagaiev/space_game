@@ -32,7 +32,7 @@ import { SIM_DT, TICK_HZ, BULLET_PLANE_Y } from './consts.js';
 
 export const BRAWL_SEED = 20261004;
 export const BRAWL_N_MIN = 1;
-export const BRAWL_N_MAX = 30;
+export const BRAWL_N_MAX = 50;
 export const BRAWL_N_DEFAULT = 20;
 // Fought over the HOME STATION: the worst-case frame is the station plus the bots.
 export const BRAWL_CENTER = ANCHORS.base;
