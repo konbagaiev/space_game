@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-04 (**A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-05 (**The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -1702,7 +1702,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     account — though its death still rolls the ordinary 20 % loot drop, so fly the room on a throwaway
     local player (the same caveat `?ally` carries about recorded sessions re-simulating into a divergence).
   - **One pilot, two sides.** `stepAlly` was generalised into **`flySentinel(world, ship, dt, ctx)`**, where
-    `ctx` is `{ foes, friend, side, leash, canFire }`. The wingman is
+    `ctx` is `{ foes, friend, side, leash, canFire }` (plus an optional `anchor`, the leash origin and
+    hold-station point, defaulting to `friend` — only the `?brawl` bots set it). The wingman is
     `{ foes: world.enemies, friend: world.player, side: 'ally' }` — byte-for-byte the behaviour he had — and
     an ace is `{ foes: [the player, + any wingman], friend: null, side: 'enemy' }`. `friend: null` skips the
     §2.6 "never a tracer through your hull" gate (hostile ships already shoot past each other), `side:
@@ -1760,10 +1761,21 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   DECISIONS §157.) Two teams of N Sentinel bots (1-30, default 20) fight each other over the **home station**
   (`BRAWL_CENTER = ANCHORS.base`, front ranks ±60 u, 5-wide grids) while the player only watches.
   - **Sides:** blue is `world.allies` (`makeAlly`), red is `world.enemies` (`makeAce`); every bot is flown by
-    `flySentinel` with `{ foes: <other list>, friend: null, side, leash: Infinity, canFire: true }`, so the two
+    `flySentinel` with `{ foes: <other list>, friend: null, anchor: <station>, side, leash: 100, canFire: true }`, so the two
     teams are literally the same pilot (`SENTINEL_PILOT`, including his own reload stagger, §156) and the
     fight is symmetric. `simTick` routes to `brawlTick` only when `world.brawl` exists (set only by
-    `spawnBrawl`); `tick.js`, `stepAlly`, `stepAces` and `flySentinel` are untouched.
+    `spawnBrawl`); `tick.js`, `stepAlly` and `stepAces` are untouched.
+  - **The fight is held over the station** (maintainer, 2026-10-05). Each bot's ctx carries
+    `anchor: <the station point>` (a new optional `flySentinel` ctx field: the leash origin and the hold-station
+    point, defaulting to `friend`, so the wingman and the aces are unchanged; `friend` stays null, so neither
+    the §2.6 tracer gate nor point defence treats the point as a ship) and `leash: BRAWL_FIGHT_LEASH` (100 u);
+    and the brawl drops a bot's target the moment it is beyond that leash, so nobody chases a retreating ship
+    to the arena edge. With nothing to fight a bot flies back to the station, where the other side's idle bots
+    also are — so no stall fallback is needed. Measured headless through a camera-frustum equivalent (20v20,
+    same seed): the fighting centroid is within 55 u of the station on **87 %** of ticks (12 % before) and
+    within 100 u on 100 % (25 %); ships in frame run ~5-7 per 10-s window from 30 s on, where they were **0**.
+    30v30: 65 % / 96 %. Small fights stay quieter on screen: in a 5v5 both sides spend long stretches healing
+    at the arena edge (the pilot's own retreat), so ~1 of 4 survivors is in frame then.
   - **The spectator** is the real player ship, ALIVE (a dead player would wind every pilot down), parked
     `BRAWL_SPECTATOR_PARK` 5000 u east and never stepped. Every render reader of the player position that
     shapes the picture goes through **`G.viewTarget`** (a reused `THREE.Vector3` on the bullet plane): the
@@ -1772,6 +1784,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **Determinism:** `seedSim(BRAWL_SEED = 20261004)` right before spawning, ordinals blue `1+2i` / red
     `2+2i`; a brawl takes **zero** shared draws, so the same JS engine simulates the same fight tick for tick.
     **Different engines are not promised to agree** (V8 vs JavaScriptCore, §151) — the card says so.
+  - **Seeded outcomes (BRAWL_SEED, same JS engine):** 20v20 alive per side 7v7, 7v5, 7v5, 7v4, 7v4, 7v4 at
+    10-60 s (blue wins 7v0 at ~138 s); 5v5 3v2 then 2v2; 1v1 both retreat to heal at ~10 s and it ends at
+    ~129 s. Pinned for determinism (identical twice, 0 shared draws), not for these values.
   - **Length:** **60 s of WALL time** (`&sec=` 10-300), or earlier when a side is wiped out; the brawl clock
     stops on the wipe-out tick itself. A slow phone simulates less (the loop runs at most 6 steps per frame),
     so the card reports **sim-seconds reached** and the **sim/wall ratio**, and the fingerprint (alive per side
@@ -4952,7 +4967,11 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   clamped; the run is inert until armed and again once ended; two fresh 20v20 runs are identical for 60 sim-s
   — fingerprint, ticks, kills, every survivor — with **0** shared draws; a 1v1 runs to a wipe-out whose clock
   stops on that tick, with no kills/credits/XP/drops, an unhurt spectator and one `allyDown` per death; the
-  view centre's exclusions, fallbacks and 55 u clamp; the tap rule; `withBrawlRoom` non-mutating.
+  view centre's exclusions, fallbacks and 55 u clamp; the tap rule; `withBrawlRoom` non-mutating; and the
+  melee stays over the station — the 20v20 fighting centroid inside the 55 u camera leash on ≥75 % of ticks
+  (measured 87 %) and inside 100 u on ≥95 % (100 %), negative-tested: unleashed, the same seed is inside 55 u
+  less than half the time (12 %). `step-ally.test.js` adds `ctx.anchor`: the leash is measured from it, he
+  flies back to it with nothing to fight, and engages once a foe is inside.
   `brawl-dev.test.js`: the flag parse — off values, bare `?brawl` = setup, count/tier/sec clamps, identity
   when off. `brawl-stats.test.js`: frame summary with the floor-index p95, the 600-tick windows keyed to the
   tick at frame end with the partial tail flagged, the end rule, the sim/wall ratio and the card text),
@@ -5410,11 +5429,12 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `stepSim` after a pause: both bots have bodies, red in the hostile livery, the spectator stays parked and
   unhurt, and — PERCEPTION, through the live camera — the station and a ship project inside the frame and
   planet 2 is still visible (negative-tested: dropping the view target from `updateSystemBodies` fails it);
-  a click on the blue bot follows it and a second click returns to centre; the run ends into an on-screen
+  a click on the blue bot follows it and a second click returns to centre; after 10 more sim-s the scenario
+  zeroes red's hull through the debug hook (this seed's 1v1 runs ~129 s), and the run ends into an on-screen
   card above the controls showing sim/wall, p95 and "full load", honestly flagged INTERRUPTED; after arming
   the only POSTs are `/api/perf`, nothing reaches events/sessions/games, and exactly one `brawl-result`
   sample leaves; a saved `camZoom` survives the run and a wheel input during it. On an 800×390 touch
-  viewport the setup panel and a 9-window card (a 5v5 stepped to its wipe-out) stay on screen and overlap
+  viewport the setup panel and an 8-window card (a 5v5 stepped 72 s, then ended via the hook) stay on screen and overlap
   neither the settings gear, the XP bar nor the fullscreen button. A bare `?brawl` shows the setup panel with
   a working stepper; the flag off leaves no trace),
   and **the HUD's viewport cache** (`48-hud-viewport-cache.mjs` — the guard for DECISIONS §149. It shadows

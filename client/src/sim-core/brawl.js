@@ -9,7 +9,8 @@
 //     The two-sided damage model already does the rest: friendly fire is off both ways, ally-side shots
 //     damage only `world.enemies`, hostile shots damage only the player and the allies.
 //   • Every bot is flown by `flySentinel` — the same pilot as the wingman and the duel aces — with ctx
-//     `{ foes: <the other list>, friend: null, side, leash: Infinity, canFire: true }`. The pilot's human
+//     `{ foes: <the other list>, friend: null, anchor: <the station>, side, leash: BRAWL_FIGHT_LEASH,
+//     canFire: true }` — the anchor keeps the melee over the station (see BRAWL_FIGHT_LEASH). The pilot's human
 //     error and his reload stagger are his own (SENTINEL_PILOT, DECISIONS §156), so the two teams are
 //     literally identical pilots and the fight is symmetric with no brawl-only switch.
 //   • THE SPECTATOR is the real player ship, ALIVE, parked `BRAWL_SPECTATOR_PARK` u east of the fight and
@@ -23,7 +24,7 @@
 //     JavaScriptCore) are NOT promised to agree (§151).
 import { makeAlly } from './ally.js';
 import { makeAce } from './ace.js';
-import { flySentinel, stepAllyDeaths } from './step-ally.js';
+import { flySentinel, stepAllyDeaths, clearAimTarget } from './step-ally.js';
 import { stepBullets, stepRockets } from './step-projectiles.js';
 import { despawnAt } from './spawn.js';
 import { ANCHORS } from './system-map.js';
@@ -43,6 +44,19 @@ export const BRAWL_WINDOW_TICKS = 10 * TICK_HZ; // one stats/fingerprint window 
 // The camera's centre-mode target is clamped to this radius around the station, which keeps the station's
 // centre inside the frame in every direction (the projection table in the plan's §Placement).
 export const BRAWL_CAM_LEASH = 55;
+// THE FIGHT IS KEPT OVER THE STATION (maintainer, 2026-10-05). Each pilot is handed the station as his
+// ANCHOR (a `flySentinel` ctx value): he only picks foes within `BRAWL_FIGHT_LEASH` of it, and with nothing
+// to fight he flies back to it. On top of that the brawl DROPS a pilot's target the moment it is beyond the
+// leash, because a pilot otherwise keeps his target through a whole pass and chases a fleeing (retreating)
+// ship to the arena edge, dragging the melee with him. MEASURED (headless, camera-frustum equivalent,
+// DECISIONS §157), 20v20: the fighting centroid within 55 u of the station 87 % of ticks (12 % before),
+// within 100 u 100 % (25 %); ships in frame ~5-7 per window from 30 s on, where it was 0. 100 beat 60-80
+// (a tighter ring packs both teams onto the station point and the rocket blasts wipe them out together;
+// at 40 the whole 20v20 died in 5.6 s) and 120 (the centroid drifts out to a 54 u median).
+// NO STALL FALLBACK IS NEEDED: the anchor is SHARED, so every pilot with nothing to fight flies to the same
+// point and finds the other side there; one outside the leash is either retreating (it rejoins at 40 % hull)
+// or on its way back.
+export const BRAWL_FIGHT_LEASH = 100;
 
 const clampN = (n) => Math.max(BRAWL_N_MIN, Math.min(BRAWL_N_MAX, (n | 0) || BRAWL_N_MIN));
 
@@ -92,7 +106,8 @@ export function spawnBrawl(world, n) {
     world.enemies.push(e);
     world.host.onSpawn('enemy', e);
   }
-  world.brawl = { n, armed: false, ended: false, ticks: 0, killsByBlue: 0, killsByRed: 0, fingerprint: [] };
+  world.brawl = { n, armed: false, ended: false, ticks: 0, killsByBlue: 0, killsByRed: 0, fingerprint: [],
+                  leash: BRAWL_FIGHT_LEASH };
   return world.brawl;
 }
 
@@ -115,6 +130,12 @@ export function stepBrawlRedDeaths(world) {
   return removed;
 }
 
+// The pilots' anchor: a fixed point at the home station (never a ship — `friend` stays null, so neither
+// the §2.6 tracer gate nor point defence treats a point in space as something to protect).
+const STATION_ANCHOR = Object.freeze({ pos: Object.freeze({ x: BRAWL_CENTER.x, y: BULLET_PLANE_Y, z: BRAWL_CENTER.z }),
+                                       vel: Object.freeze({ x: 0, y: 0, z: 0 }), alive: true });
+const outside = (s, L) => Math.hypot(s.pos.x - BRAWL_CENTER.x, s.pos.z - BRAWL_CENTER.z) > L;
+
 // One brawl tick. Inert until the host arms it, and again once it has ended. Returns null (no grab target).
 export function brawlTick(world, dt) {
   const b = world.brawl;
@@ -124,8 +145,14 @@ export function brawlTick(world, dt) {
   // make "sim-seconds reached" depend on the frame rate.
   if (brawlOver(world)) return null;
   world.combatElapsed += dt;
-  for (const a of world.allies) flySentinel(world, a, dt, { foes: world.enemies, friend: null, side: 'ally', leash: Infinity, canFire: true });
-  for (const e of world.enemies) flySentinel(world, e, dt, { foes: world.allies, friend: null, side: 'enemy', leash: Infinity, canFire: true });
+  const L = b.leash;
+  // A target that has left the leash is dropped (and the aim history with it, so the next pick is a fresh
+  // acquisition): the pilot re-picks inside the leash, or flies back to the station.
+  for (const list of [world.allies, world.enemies]) for (const s of list) {
+    if (s.target && outside(s.target, L)) { s.target = null; s.passArmed = false; clearAimTarget(s); }
+  }
+  for (const a of world.allies) flySentinel(world, a, dt, { foes: world.enemies, friend: null, anchor: STATION_ANCHOR, side: 'ally', leash: L, canFire: true });
+  for (const e of world.enemies) flySentinel(world, e, dt, { foes: world.allies, friend: null, anchor: STATION_ANCHOR, side: 'enemy', leash: L, canFire: true });
   stepBullets(world, dt);
   stepRockets(world, dt);
   b.killsByBlue += stepBrawlRedDeaths(world);

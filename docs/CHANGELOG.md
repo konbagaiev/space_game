@@ -3,6 +3,15 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-05
+
+- **The bot brawl's fight stays over the home station.** [2026-10-04-2001-bot-brawl-load-test] Each bot now
+  gets the station as an `anchor` (a new optional `flySentinel` ctx value — the wingman and duel aces are
+  unchanged) with a 100 u engagement leash, and drops a target that leaves it, so nobody chases a retreating
+  ship to the arena edge. 20v20: the fighting centroid is within the camera's 55 u leash on 87 % of ticks
+  (12 % before) and ships stay in frame (~5-7 per window, was 0 after 30 s). Still deterministic with zero
+  shared draws; the seeded outcomes changed (1v1 now ends at ~129 s). DECISIONS §157.
+
 ## 2026-10-04
 
 - **A bot brawl you can run on a phone (`?brawl`).** [2026-10-04-2001-bot-brawl-load-test] A repeatable

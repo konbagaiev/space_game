@@ -442,7 +442,11 @@ export const isBallistic = (g) => (g.mounts || []).some((m) => m.weapon && m.wea
 //   foes    the ships it may charge and shoot at
 //   friend  the ship it must never put a tracer through (§2.6), and the one it escorts with nothing to do
 //   side    'ally' | 'enemy' — what `updateGroups` makes of its shots (who they damage, and their sound)
-//   leash   only engage foes within this of `friend` (Infinity = "nearest to myself", the shipped rule)
+//   leash   only engage foes within this of the ANCHOR (Infinity = "nearest to myself", the shipped rule)
+//   anchor  optional: what the leash is measured from and where he holds station with nothing to fight —
+//           anything with `pos`/`vel`. Defaults to `friend`, so the wingman and the aces are unchanged. The
+//           `?brawl` bots pass the home station here (and no friend), which keeps the melee over it without
+//           arming the §2.6 tracer gate or the point-defence "defended" list for a point in space.
 //   canFire a hard gate the caller owns: the duel room's aces hold fire through the opening grace, exactly
 //           as every other hostile ship does, while the wingman has never had one
 //
@@ -468,6 +472,7 @@ export function flySentinel(world, a, dt, ctx) {
   const player = world.player;
   const foes = ctx.foes;
   const friend = ctx.friend || null;   // the wingman has the player; an ace has nobody to protect
+  const anchor = ctx.anchor || friend; // leash origin + escort point (the brawl's station; else the friend)
   const leash = ctx.leash ?? Infinity;
   // 1. Warp-in grow — the same rule enemies get (DECISIONS §54): the delay IS the arrival animation.
   if (a.spawnAge < a.spawnDur) {
@@ -590,7 +595,7 @@ export function flySentinel(world, a, dt, ctx) {
   } else {
     // 4b. THE PASS. Target bookkeeping first, then geometry against the FINAL target.
     if (a.target && !foes.includes(a.target)) { a.target = null; a.passArmed = false; }
-    if (!a.target) { a.target = nearestEnemyTo(a.pos, foes, friend, leash); a.passArmed = false; }
+    if (!a.target) { a.target = nearestEnemyTo(a.pos, foes, anchor, leash); a.passArmed = false; }
     if (a.target) {
       const d0 = shortestAngleDelta(a.heading, angleTo(a.pos, a.target));
       if (!a.passArmed && Math.abs(d0) > ALLY_BEHIND_ANGLE) {
@@ -602,7 +607,7 @@ export function flySentinel(world, a, dt, ctx) {
         // Re-search, armed. Either something swung round into a shot he could take RIGHT NOW, or somebody
         // else is simply nearer after the pass.
         const snap = aimedEnemy(a.pos, a.heading, foes, ALLY_SNAP_ANGLE);
-        const near = nearestEnemyTo(a.pos, foes, friend, leash);
+        const near = nearestEnemyTo(a.pos, foes, anchor, leash);
         const next = snap || (near !== a.target ? near : null);
         // A SNAP target is already inside the aim cone, so §2d's "switch to that one and accelerate at
         // it" applies at once: end the come-about. A merely NEARER one does not end it — he would
@@ -659,13 +664,13 @@ export function flySentinel(world, a, dt, ctx) {
   //     to hold; he would settle ~62 u back, off the frame, and no constant could fix it (the 52 falls out
   //     of v²/2a). NOT `enemyThrustFactor` either, whose -0.6 band is a REVERSE the player does not have
   //     (DECISIONS §113).
-  if (escorting && friend) {
-    const tx = friend.pos.x - a.pos.x, tz = friend.pos.z - a.pos.z;
+  if (escorting && anchor) {
+    const tx = anchor.pos.x - a.pos.x, tz = anchor.pos.z - a.pos.z;
     const pd = Math.hypot(tx, tz);
     desired = pd > 1e-6 ? Math.atan2(tx, tz) : a.heading;
     const remaining = pd - ALLY_ESCORT_DIST;
     const closing = pd > 1e-6                       // >0 closing, <0 opening; 0 when flying in formation
-      ? ((a.vel.x - friend.vel.x) * tx + (a.vel.z - friend.vel.z) * tz) / pd
+      ? ((a.vel.x - anchor.vel.x) * tx + (a.vel.z - anchor.vel.z) * tz) / pd
       : 0;
     thrust = remaining > ALLY_ESCORT_BAND ? approachThrust(closing, remaining, a.acceleration) : 0;
   } else if (escorting) {

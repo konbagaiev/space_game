@@ -100,12 +100,12 @@ export default async function ({ page, assert, shot }) {
     assert.fail(`no on-screen, formed blue bot to click (${JSON.stringify(now.ships)})`);
   }
 
-  // ---- run it out (cap 60 sim-s), then the card ----
-  for (let i = 0; i < 120; i++) {
-    const n = await page.evaluate(() => Math.min(window.__game.allies.length, window.__game.enemies.length));
-    if (n === 0) break;
-    await stepSim(page, 30);
-  }
+  // ---- end it, then the card ----
+  // This seed's 1v1 now runs ~129 sim-s (both pilots retreat to heal), so after a further 10 s of real
+  // stepping the scenario ends the fight itself through the debug hook: red's hull to 0, and the brawl's
+  // own death step takes it from there (allyDown, no kill, wipe-out on that tick).
+  for (let i = 0; i < 20; i++) await stepSim(page, 30);
+  await page.evaluate(() => { for (const e of window.__game.enemies) e.hp = 0; window.__game.stepSim(1); });
   await page.waitForFunction('window.__game.brawl.ended && window.__game.brawl.cardVisible', null, { timeout: 5000 });
   const card = await page.evaluate(() => {
     const el = document.getElementById('brawl-card');
@@ -166,22 +166,19 @@ export default async function ({ page, assert, shot }) {
       assert.deepEqual(su.overlaps, [], `phone setup panel overlaps nothing (${JSON.stringify(su)})`);
       assert.ok(su.box[0] >= 0 && su.box[1] >= 0 && su.box[2] <= su.vw && su.box[3] <= su.vh, 'and is on screen');
       await phone.screenshot({ path: 'visual/__screenshots__/51-bot-brawl__phone-setup.png' });
-      // 5 v 5 is wiped out at 85 sim-s (brawl.test.js / the plan's prototype) → 9 windows, the most the
-      // card will ever show at 60 s of wall time on a fast device being 6-7.
+      // Step 72 sim-s of a 5 v 5 (small chunks with a real frame after each: a window row is built from the
+      // FRAMES that ended inside it, so the page must draw at least once per window), then end it through
+      // the debug hook → a full 8-window card.
       await phone.goto(`${base}?debug&brawl=5&tier=performance&sec=300`, { waitUntil: 'load' });
       await phone.waitForFunction('!!(window.__game && window.__game.brawl && window.__game.brawl.armed)', null, { timeout: 30000 });
       await phone.evaluate(() => window.__game.setPaused(true));
-      // Small chunks with a real frame after each: a window row is built from the FRAMES that ended inside
-      // it, so a stepping driver must let the page draw at least once per window.
-      for (let i = 0; i < 60; i++) {
-        const done = await phone.evaluate(() => new Promise((res) => {
-          const g = window.__game;
-          if (!g.allies.length || !g.enemies.length) return res(true);
-          g.stepSim(150);
-          requestAnimationFrame(() => requestAnimationFrame(() => res(false)));
+      for (let i = 0; i < 29; i++) {
+        await phone.evaluate(() => new Promise((res) => {
+          window.__game.stepSim(150);
+          requestAnimationFrame(() => requestAnimationFrame(() => res()));
         }));
-        if (done) break;
       }
+      await phone.evaluate(() => { for (const e of window.__game.enemies) e.hp = 0; window.__game.stepSim(1); });
       await phone.waitForFunction('window.__game.brawl.cardVisible', null, { timeout: 30000 });
       const rows = await phone.evaluate(() => document.querySelectorAll('#brawl-card .brawl-win tr').length - 1);
       assert.ok(rows >= 7, `a full window table (${rows} rows)`);

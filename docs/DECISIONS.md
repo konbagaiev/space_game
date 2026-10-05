@@ -6757,6 +6757,24 @@ direction. Without the clamp the prototype's centroid wandered 198-685 u away. T
 station-in-frame % instead of trusting this. *Flagged design call:* in centre mode a long chase can leave the
 frame; a tap follows any bot, unclamped.
 
+**The fight itself is held over the station (maintainer, 2026-10-05), not the camera.** The 55 u clamp alone
+kept the station in frame but lost the fight: in a 5v5 the ships in frame fell to 0 from ~30 sim-s, because a
+pilot keeps his target through a whole pass and chases a fleeing ship to the arena edge. The camera leash and
+tap-to-follow are unchanged; instead each bot is given the station as its `anchor` — a new optional
+`flySentinel` ctx value (leash origin + hold-station point, defaulting to `friend`, so the wingman and the
+aces are byte-for-byte unchanged and the pilot stays one shared function) — with a 100 u `leash`, and the
+brawl drops a target that leaves the leash. A fixed point as `friend` was rejected: `friend` also drives the
+§2.6 hold-fire gate (bots would hold fire across the station's centre) and the point-defence "defended" list.
+**L from measurement** (headless, a THREE frustum at the real camera geometry, 20v20, same seed): 100 u puts
+the fighting centroid within 55 u on 87 % of ticks (12 % before) and within 100 u on 100 % (25 %), with ~5-7
+ships in frame per window where there were 0. 60-80 u packed both teams onto the station point and the rocket
+blasts killed them together (at 40 u the whole 20v20 died in 5.6 s); 120 u let the centroid drift to a 54 u
+median. **No stall fallback:** the anchor is shared, so every pilot with nothing to fight flies to the same
+point and meets the other side there. A first draft unleashed a team whenever no foe was inside the leash;
+that fired as soon as the fight drifted and undid the leash entirely, so it was dropped. Small fights remain
+quiet on screen during the pilot's own heal-at-the-edge retreats (a 5v5 shows ~1 of 4 survivors then), which
+is the pilot's behaviour and is left alone.
+
 **A reload per run, deliberately.** The light pool is baked into the lit shaders at boot, so a tier change
 needs a reload anyway; Start always reloads into `?brawl=<n>&tier=<t>`, which also gives every run an
 identical fresh page. The tier param applies to that page load only and is never saved (§81).

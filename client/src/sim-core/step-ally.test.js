@@ -1059,3 +1059,24 @@ test('PROFILE: every ALLY_AIM_*/ALLY_PD_* alias is its SENTINEL_PILOT field, and
   assert.equal(ALLY_PD_JITTER_SEC, SENTINEL_PILOT.pdJitterSec);
   assert.equal(SENTINEL_PILOT.reloadStaggerSec, 0.5);
 });
+
+test('ctx.anchor: the leash is measured from it and he holds station on it — with NO friend, so no §2.6 gate', () => {
+  const anchor = { pos: { x: 0, y: 0.6, z: 0 }, vel: { x: 0, y: 0, z: 0 }, alive: true };
+  const w = createWorld(); w.catalog = CAT;
+  w.player = { pos: new Vec3(0, 0.6, -500), vel: new Vec3(), heading: 0, alive: true, class: 'player', hp: 100, maxHp: 100 };
+  const p = makeAce(CAT, 3);
+  p.pos.set(80, 0.6, 0); p.heading = 0; p.warping = false; p.spawnAge = p.spawnDur = 1; p.scale = p.fullScale;
+  const far = makeSentinelHull(CAT, 98);
+  far.pos.set(200, 0.6, 0); far.warping = false; far.spawnAge = far.spawnDur = 1;
+  const ctx = { foes: [far], friend: null, anchor, side: 'enemy', leash: 100, canFire: true };
+  flySentinel(w, p, DT, ctx);
+  assert.equal(p.target, null, 'a foe 200 u from the anchor is outside a 100 u leash, though only 120 u from him');
+  // (Closest approach, not the final distance: from a standing start facing away his 26 u turn radius puts
+  // him into the escort's known slow orbit around the hold point — see SUMMARY, the wingman's escort.)
+  let closest = Infinity;
+  for (let i = 0; i < 600; i++) { flySentinel(w, p, DT, ctx); closest = Math.min(closest, Math.hypot(p.pos.x, p.pos.z)); }
+  assert.ok(closest < 30, `with nothing to fight he flies back to the anchor (closest ${closest.toFixed(1)} u, from 80)`);
+  far.pos.set(50, 0.6, 0);
+  flySentinel(w, p, DT, ctx);
+  assert.equal(p.target, far, 'and engages the moment a foe is inside the leash');
+});
