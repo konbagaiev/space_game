@@ -1,4 +1,4 @@
-# Server-run bot brawl (`?brawl` over `?netsim`) + server load monitoring
+# Server-run bot brawl (`?netbrawl`) + server load monitoring
 
 > **Status: BRIEF, not started (2026-10-06).** Written to be executed by a fresh session (ideally through
 > `/feature-pipeline`). Everything needed is in this file plus the documents it names; nothing depends on the
@@ -6,8 +6,8 @@
 
 ## Goal
 
-Run the existing **bot brawl** load test (`?brawl`, N v N Sentinel bots over the home station) with the bots
-**simulated by the server** instead of in the tab — the tab only renders what a server ROOM sends — and
+Run the existing **bot brawl** load test (`?brawl`, N v N Sentinel bots over the home station) at its own URL,
+**`?netbrawl`**, with the bots **simulated by the server** instead of in the tab — the tab only renders what a server ROOM sends — and
 **measure what that costs the server**: CPU per tick, event-loop health, memory and network bytes per
 client. The question it answers for the roadmap: *can one server host a fight of ~200 ships, with some ships
 flown by bots and some by people, and what does that cost per room and per client?* (Today's answer from
@@ -31,10 +31,15 @@ in the brawl. Measure first; those come after the numbers (see "Next" at the bot
 
 ## Decisions (settled — do not re-ask)
 
-1. **Flag:** `?brawl=N&netsim=1` (and a bare `?brawl&netsim=1` → setup panel, whose Start keeps `netsim=1`).
-   The client forwards `brawl=N` on the handshake (`client/src/netsim.js wsUrl`, next to `ally`/`lancer`/
-   `beam`); `socket.js` reads it and passes `brawl: n` to `createRoom` → `createSimWorld`. Without
-   `netsim` the brawl stays exactly the local brawl of today.
+1. **A SEPARATE URL (maintainer, 2026-10-06): `?netbrawl=N`** — and a bare `?netbrawl` shows the same setup
+   panel, whose Start reloads into `?netbrawl=<n>&tier=<t>`. It is its own dev flag (parsed next to `?brawl`
+   in `client/src/brawl-dev.js`, e.g. `evalBrawlDev` returning `{ …, server: true }`, never sticky), NOT
+   `?brawl&netsim=1`: one link to hand a tester, and `?brawl` (the local, in-tab brawl) stays byte-for-byte
+   what it is today. `?netbrawl` implies the netsim connection by itself — the tester does not add
+   `netsim=1`. The client forwards `brawl=N` on the handshake (`client/src/netsim.js wsUrl`, next to `ally`/
+   `lancer`/`beam`); `socket.js` reads it and passes `brawl: n` to `createRoom` → `createSimWorld`. The setup
+   panel and the result card say which mode ran ("Simulated by: this tab" / "server room"), and the result
+   sample carries `server: true`, so the two are never mixed up in `perf_samples`.
 2. **The room runs `brawlTick`, not `simTick`, when `world.brawl` exists** — the same routing `client/src/
    sim.js simTick` already does locally. `createSimWorld({ brawl })` applies `withBrawlRoom` to the level
    descriptor, `seedSim(BRAWL_SEED)`, `spawnBrawl(world, n)`, and the room arms it (`world.brawl.armed = true`)
@@ -90,9 +95,11 @@ in the brawl. Measure first; those come after the numbers (see "Next" at the bot
    enforce decision 6, measure `JSON.stringify(snap).length` in `send()` (`:189`) into the room's stats.
 5. `server/src/netsim/protocol.js` — document the `brawl` and `srv` blocks; the event allowlist test must
    stay green (the `hit` event already carries `pos`, vec-serialized via `VEC_FIELDS`).
-6. `client/src/netsim.js wsUrl` (`:95`) — forward `brawl`; `client/src/brawl-dev.js` — let `?netsim`
-   compose with `?brawl` (today `?duel&netsim` is documented as NOT composing — brawl must, so add it to the
-   URL-flag table with the rule). `brawl-host.js` Start preserves `netsim=1`.
+6. `client/src/brawl-dev.js` — parse `?netbrawl` (same clamps as `?brawl`; `?brawl` and `?netbrawl`
+   together → `?netbrawl` wins, documented); `client/src/netsim.js` — `?netbrawl` turns the netsim path on
+   by itself (`evalNetsim` or its caller) and `wsUrl` (`:95`) forwards `brawl`. `brawl-host.js` Start keeps
+   the flag it was opened with (`netbrawl` vs `brawl`). Add a `?netbrawl[=N]` row to the SUMMARY URL-flag
+   table.
 7. `client/src/brawl-host.js` / `brawl-stats.js` — under netsim read alive/kills/ticks/ended from the
    snapshot's `brawl` block; add the server columns to the card and `srv` to the perf sample
    (`client/src/main.js` `finalizeBucket`, the `brawl` slice at `:673`).
@@ -107,7 +114,8 @@ in the brawl. Measure first; those come after the numbers (see "Next" at the bot
   brawl room is refused.
 - driver stats: a unit test with a fake clock (`now`/`setIntervalFn` are already injectable, `:21`) — `srv`
   appears once per second with plausible fields; `ticks` drops below 60 when `stepOnce` is made slow.
-- Client: `brawl-dev.test.js` (flag composes with netsim), `brawl-stats.test.js` (card renders server columns).
+- Client: `brawl-dev.test.js` (`?netbrawl` parses, implies netsim, `?brawl` unchanged and still local;
+  both together → netbrawl), `brawl-stats.test.js` (card renders server columns and the mode line).
 - One visual scenario, `52-bot-brawl-netsim`, modelled on `client/visual/scenarios/37-netsim.mjs` /
   `41-enemy-beam-netsim.mjs`: N = 2 over a real local room; the card appears with server columns; no
   `/api/games`, `/api/sessions` or `/api/events` request. Run only it, `22-trace-replay` and `36-sim-divergence`
@@ -115,7 +123,8 @@ in the brawl. Measure first; those come after the numbers (see "Next" at the bot
 
 ## Live test (after deploy)
 
-1. Desktop and phone: `https://vega.tenony.com/?brawl=20&netsim=1`, then 50, then 100 (hard refresh first).
+1. Desktop and phone: `https://vega.tenony.com/?netbrawl=20`, then 50, then 100 (hard refresh first; a bare
+   `?netbrawl` opens the setup panel).
    Compare each card with the LOCAL brawl at the same N: the client should be *cheaper* (no sim), the server
    columns show what moved.
 2. On the VPS (`ssh root@178.104.91.144 -i ~/.ssh/do_cs`): `docker stats` on the app container during a 100v100
