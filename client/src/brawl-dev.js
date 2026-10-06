@@ -62,5 +62,13 @@ export function brawlDevLevel() { return BRAWL_DEV ? BRAWL_LEVEL : null; }
 export function applyBrawlDev(descriptor, dev = BRAWL_DEV) {
   return dev ? withBrawlRoom(descriptor) : descriptor;
 }
+// The setup panel's typed bot count: digits only, clamped to BRAWL_N_MIN..BRAWL_N_MAX. Anything that is not a
+// number (empty, letters, a minus sign) keeps `fallback` — the count the panel already showed — so a stray
+// keystroke never resets the choice. Pure; brawl-host.js calls it on Enter / blur / Start.
+export function parseBrawlCount(text, fallback = BRAWL_N_DEFAULT) {
+  const s = String(text ?? '').trim();
+  if (!/^[0-9]+$/.test(s)) return fallback;
+  return Math.max(BRAWL_N_MIN, Math.min(BRAWL_N_MAX, Number.parseInt(s, 10)));
+}
 // The tier this page load runs on, when the URL names one (never saved). Null otherwise.
 export function brawlTierOverride() { return BRAWL_DEV ? BRAWL_DEV.tier : null; }

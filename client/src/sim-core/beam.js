@@ -288,7 +288,7 @@ function fireBeam(world, ship, g, fwd, side, w, range, halfRad) {
       // ship). `applyShieldedDamage` reports no contact point, unlike the hostile resolver, so it is
       // derived here against the same OBBs a bullet collides with.
       hullEntryToward(_impact, target, _shotFrom, _shotTo);
-      world.events.emit({ type: 'hit', target: 'enemy' });
+      world.events.emit({ type: 'hit', target: 'enemy', pos: _impact.clone() });
     } else {
       // A hostile beam routes through the SAME shield-then-hull resolver a hostile bullet uses (§76), so the
       // shield catches it on the bubble and the impact lands on the sphere rather than the hull inside it.
@@ -321,7 +321,7 @@ function fireBeam(world, ship, g, fwd, side, w, range, halfRad) {
             ? { type: 'shieldHit', pos: _shotTo.clone(), broke: res.damageResult.broke }
             : { type: 'enemyShieldHit', enemy: target, pos: _shotTo.clone(), broke: res.damageResult.broke });
         }
-        world.events.emit({ type: 'hit', target: target === world.player ? 'player' : 'ally', shipClass: target.class });
+        world.events.emit({ type: 'hit', target: target === world.player ? 'player' : 'ally', shipClass: target.class, pos: _impact.clone() });
       }
     }
   }

@@ -54,7 +54,7 @@ export function stepBullets(world, dt) {
           // …and the RECEIVING end of the shot: a hull hit is what the target reacts to (hit-fx.js). A shield
           // that broke and spilled counts, which is why the test is toHull, not !absorbed (DECISIONS §137).
           if (dr.toHull > 0) emitHullHit(world, e, 'enemy', b.pos.clone(), Math.atan2(b.vel.x, b.vel.z), b.class, dr.toHull);
-          hit = true; world.events.emit({ type: 'hit', target: 'enemy' }); break;
+          hit = true; world.events.emit({ type: 'hit', target: 'enemy', pos: b.pos.clone() }); break;
         }
       }
     } else {
@@ -73,7 +73,7 @@ export function stepBullets(world, dt) {
           if (res.impact) b.pos.copy(res.impact); // shield up → stop the bullet ON the sphere so its hit-flash lands there, not at the hull inside
           if (res.damageResult.absorbed) world.events.emit({ type: 'shieldHit', pos: b.pos.clone(), broke: res.damageResult.broke }); // cyan ripple where the shot connects with the shield
           if (res.damageResult.toHull > 0) emitHullHit(world, world.player, 'player', b.pos.clone(), Math.atan2(b.vel.x, b.vel.z), b.class, res.damageResult.toHull);
-          world.events.emit({ type: 'hit', target: 'player', shipClass: world.player.class }); // sampled impact when OUR ship is struck
+          world.events.emit({ type: 'hit', target: 'player', shipClass: world.player.class, pos: b.pos.clone() }); // sampled impact when OUR ship is struck
         }
       } else if (world.allies.length) {
         // The third party. Player first, then allies, in list order — deterministic, and skipped entirely
@@ -86,7 +86,7 @@ export function stepBullets(world, dt) {
           if (ra.impact) b.pos.copy(ra.impact);
           if (ra.damageResult.absorbed) { absorbed = true; world.events.emit({ type: 'enemyShieldHit', enemy: a, pos: b.pos.clone(), broke: ra.damageResult.broke }); }
           if (ra.damageResult.toHull > 0) emitHullHit(world, a, 'ally', b.pos.clone(), Math.atan2(b.vel.x, b.vel.z), b.class, ra.damageResult.toHull);
-          world.events.emit({ type: 'hit', target: 'ally', shipClass: a.class });
+          world.events.emit({ type: 'hit', target: 'ally', shipClass: a.class, pos: b.pos.clone() });
           break;
         }
       }

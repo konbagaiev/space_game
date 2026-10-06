@@ -3,8 +3,27 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-06
+
+- **Brawl setup: type the bot count.** The −/+ stepper gains a numeric text field (`#brawl-n`): Enter, blur
+  or Start commits it, clamped to 1-100 (`brawl-dev.js parseBrawlCount`); anything that is not a number keeps
+  the count already shown. Tests: `brawl-dev.test.js`, `51-bot-brawl` (type 37, 500 → 100, junk, Start →
+  `?brawl=42`).
+- **Docs: the brawl performance findings and a brief for a server-run brawl.**
+  `docs/plans/2026-10-06-brawl-perf-findings.md` records every measurement of the 2026-10-04…06 load-test work
+  (device limits, the CPU-bound peak at ~3300 draw calls, 14 draws per ship, ~148 MB/s of garbage at 100v100,
+  a new material per projectile) and ranks what is still open.
+  `docs/plans/2026-10-06-server-brawl-load-test.md` is the self-contained brief for running the brawl in a
+  `?netsim` room with per-room server metrics (step ms, ticks/s, snapshot bytes, event-loop delay, CPU).
+
 ## 2026-10-05
 
+- **Battle sounds come only from what is on screen, and the radar is opaque.** Hits on other ships, rocket
+  detonations and ship deaths now play only when their source is inside the camera frame (+ a 0.15-NDC
+  margin), judged through the live camera so the zoom counts (`earshot.js`, `sim.js audible`); your own
+  shots and hits on your hull always play. `hit` events carry `pos`. Following one brawl bot, 16 of 17 battle
+  sounds were off screen and dropped. The minimap is now a solid dark panel (was 82 % opacity over a 26 %
+  background), so starfield specks no longer show through and pass for contacts. Tests: `earshot.test.js`.
 - **The bot brawl goes up to 100 v 100** (was 50). `BRAWL_N_MAX` 50 → 100; above 50 a side the ranks are 10
   wide instead of 5 (`BRAWL_WIDE_FROM` / `BRAWL_COLS_WIDE`), so a 100-ship team is 10 ranks deep, not 20. Up
   to 50 the layout and every fingerprint are unchanged (50v50 re-checked). Headless 100v100 sim: ~1.3 ms per

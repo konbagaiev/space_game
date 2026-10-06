@@ -20,7 +20,8 @@
 // The event catalogue. Documented here rather than in a type system so there is one place to read what
 // the simulation can say — the server will answer to the same list.
 //
-//   { type: 'hit',             target: 'enemy'|'player'|'ally', shipClass }  a bullet connected (impact SFX)
+//   { type: 'hit',             target: 'enemy'|'player'|'ally', shipClass, pos }  a bullet connected (impact
+//                                                                       SFX; `pos` gates it to what is on screen)
 //   { type: 'bulletImpact',    pos, weaponClass, absorbed }            hit-flash where a bullet died
 //   { type: 'hullHit',         ship, target, pos, dirHeading, weaponClass, toHull }   a PROJECTILE's damage
 //                                                                       reached this ship's HULL. Emitted

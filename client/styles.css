@@ -1263,11 +1263,13 @@
   /* Corner radar: arena bounds + player + type-colored enemy dots. Non-interactive (touches pass through).
      Sits in the top-left cluster directly UNDER the shield/health bars and their % readout, left-aligned
      with them: #hud's 18px padding + the 44px inset that clears the settings gear = 62px; the bars stack
-     to y≈63 (14 padding + 4 + 10 shield + 14 health + 4 + ~16 percent), so 72px leaves a small gap. */
+     to y≈63 (14 padding + 4 + 10 shield + 14 health + 4 + ~16 percent), so 72px leaves a small gap.
+     OPAQUE on purpose (maintainer, 2026-10-05): with a see-through panel the starfield showed through and
+     its specks read as radar contacts. Every dot on it must be a real object. */
   #minimap {
     position: fixed; left: 62px; top: 72px; z-index: 4;
-    width: 132px; height: 132px; pointer-events: none; opacity: .82;
-    background: rgba(8,12,24,.26); border: 1px solid rgba(120,150,210,.2); border-radius: 8px;
+    width: 132px; height: 132px; pointer-events: none;
+    background: rgb(8,12,24); border: 1px solid rgba(120,150,210,.2); border-radius: 8px;
   }
   /* Out-of-combat Map button — occupies the (now hidden) mini-map corner while roaming; toggled by main.js.
      z-6 like #rocket-btn / #return-btn: the full-screen #stick-zone lives inside #touch at z-5 and comes
@@ -1306,7 +1308,11 @@
 }
 #brawl-tiers { display: flex; gap: 6px; }
 #brawl-tiers button.on { background: #5b86e5; color: #02101f; font-weight: 700; }
-#brawl-n { min-width: 2.5em; font-size: 22px; font-weight: 700; }
+#brawl-n {
+  width: 2.6em; padding: 4px 2px; font: 700 22px/1.2 system-ui, sans-serif; text-align: center; color: #e8f1ff;
+  background: rgba(8,14,30,.9); border: 1px solid rgba(140,175,255,.45); border-radius: 7px;
+}
+#brawl-n:focus { outline: 2px solid #5b86e5; outline-offset: 1px; }
 .brawl-main { background: linear-gradient(90deg,#36d1dc,#5b86e5) !important; color: #02101f !important; font-weight: 700; }
 #brawl-start { margin-top: 8px; padding: 10px 40px; font-size: 18px; }
 #brawl-build { margin: 10px 0 0; font-size: 12px; opacity: .7; }

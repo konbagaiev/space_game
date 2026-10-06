@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-05 (**Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-06 (**The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -630,6 +630,8 @@ done, because the room is not what the sparring arena is for.
   that the player can wander out of bounds). Shows the **arena boundary** square (±360), the **player** as a
   heading triangle (clamped to the radar edge so it stays visible when far out, red while out of bounds), and
   **enemies** as dots tinted by type color (`updateMiniMap`). Hidden on menus and while a result overlay is up.
+  **Fully opaque** (`background: rgb(8,12,24)`, no element opacity — 2026-10-05): it used to be see-through
+  (`opacity .82` over a 26 % panel), so starfield specks showed inside it and read as radar contacts.
 
 ### Combat record/playback (input-replay) — `?record` / `?playback`
 A general, reusable mechanism to **record a fight and replay it on the real engine** (not a movie of
@@ -1818,7 +1820,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     reached, sim/wall, ended-by; overall avg/p95/worst ms + FPS; the per-window table (avg/p95/worst ms,
     mean ships in frame, blue v red alive); station-in-frame %; INTERRUPTED (tab hidden or paused — rerun);
     kills per side and survivors; Run again (reload) / Setup. **Setup** (`#brawl-setup`, a bare `?brawl`):
-    a −/+ stepper (no phone keyboard), a tier picker defaulting to the saved tier, the build stamp + "Hard-
+    a −/+ stepper **plus a typed count** (`#brawl-n`, a numeric text field: committed on Enter / blur / Start,
+    clamped to 1-100 by `brawl-dev.js parseBrawlCount`; junk keeps the count already shown), a tier picker defaulting to the saved tier, the build stamp + "Hard-
     refresh after a deploy", and Start, which **always reloads** into `?brawl=<n>&tier=<t>` (the light pool
     is baked into shaders at boot, and a reload gives every run an identical fresh page).
   - **Telemetry:** `?brawl` alone turns devPerf on (`PERF = DEV || BRAWL`). Per-second samples carry
@@ -3296,6 +3299,14 @@ opening settings). Graph: sources → `sfxGain` / `musicGain` → master → a `
   **explosion(size, kind?)** (ship death — sized to `sizeScale`; a `kind` plays a sample — `shipBoom` for
   medium/large ships, `blast` for small ships + rocket detonation), **uiClick** (every `<button>` via a
   capturing handler), and a **jingle** (ascending major on victory / descending minor on death).
+- **Battle sounds are EARSHOT-gated (2026-10-05, DECISIONS §160).** Every world-positioned battle sound —
+  a hit on anyone else's hull, a rocket detonation, a ship's death (`kill`, `allyDown`) — plays only if its
+  source projects inside the camera frame plus a 0.15-NDC margin (`client/src/earshot.js inEarshotNdc`,
+  wired as `audible(pos)` in `sim.js applySimEvent`). Projected through the live camera, so it follows the
+  zoom. Hits on YOUR hull and your own shots always play; an event with no `pos` (an older room event) is
+  heard as before. The `hit` event now carries `pos` (the impact point) for this. Measured: following one
+  brawl bot, 16 of 17 battle sounds were off screen and dropped; a 100v100 melee at gameplay zoom is almost
+  all on screen and keeps its sound.
 - **Sampled SFX layer — DB-driven routing** (`docs/plans/sound-classes-and-mapping.md`). `audio.preloadSamples(map)`
   fetches + decodes content-hashed mp3s into a buffer cache; `audio.sfx.shoot/rocket/hit/explosion(kind)`
   plays the named sample as a `BufferSource` on `sfxGain` (subtle per-shot pitch jitter), **falling back to
@@ -5451,7 +5462,8 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   sample leaves; a saved `camZoom` survives the run and a wheel input during it. On an 800×390 touch
   viewport the setup panel and an 8-window card (a 5v5 stepped 72 s, then ended via the hook) stay on screen and overlap
   neither the settings gear, the XP bar nor the fullscreen button. A bare `?brawl` shows the setup panel with
-  a working stepper; the flag off leaves no trace),
+  a working stepper and typed count (Enter commits, 500 → 100, junk keeps the count, Start carries a typed
+  but uncommitted 42 into `?brawl=42`); the flag off leaves no trace),
   and **the HUD's viewport cache** (`48-hud-viewport-cache.mjs` — the guard for DECISIONS §149. It shadows
   `window.innerWidth`/`innerHeight` with counting getters that delegate to the originals (own properties on
   `window`, so a read from ANY caller in the page counts — that is what makes a *sixth* HUD updater written

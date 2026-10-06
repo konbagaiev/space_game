@@ -6845,3 +6845,16 @@ runs). Set at load, the warm compiles it.
 were not measured to matter. Guard: `51-bot-brawl` asserts no ship material is two-pass and none re-versions
 across rendered frames — negative-tested (fails with the call commented out).
 
+## 160. Battle sounds play only for what is on screen
+
+**Date:** 2026-10-05. **Context:** in the 100v100 brawl (and any big fight) every hit, detonation and death
+anywhere in the arena played — hundreds of voices a second from ships nowhere near the screen.
+
+**Decision (maintainer):** a world-positioned battle sound plays only if its source projects inside the
+camera frame plus a thin margin (0.15 NDC, ~7.5 % of the screen each side), checked through the live
+camera — so it follows the zoom. The player's own shots and hits on the player's hull are exempt.
+
+**Alternatives:** a fixed radius from the view centre (simpler, but ignores the zoom: zoomed out you would
+see explosions you cannot hear); distance attenuation inside the frame (more work; can come later on top of
+this gate). **Trade-off accepted:** a fight just off screen is silent — the edge arrows and radar carry it.
+

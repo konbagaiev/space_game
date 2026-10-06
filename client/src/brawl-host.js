@@ -18,7 +18,7 @@ import {
   spawnBrawl, brawlOver, brawlSimSec, brawlViewCentre, nextCameraMode,
 } from './sim-core/brawl.js';
 import { windowStats, brawlShouldEnd, buildBrawlResult, formatBrawlCard } from './brawl-stats.js';
-import { brawlDev } from './brawl-dev.js';
+import { brawlDev, parseBrawlCount } from './brawl-dev.js';
 import { TIER_ORDER, TIERS } from './graphics.js';
 import { jsEngine } from './engine-id.js';
 
@@ -61,7 +61,7 @@ export function showBrawlSetup() {
   const tiersEl = root.querySelector('#brawl-tiers');
   const buildEl = root.querySelector('#brawl-build');
   const draw = () => {
-    nEl.textContent = String(n);
+    if (document.activeElement !== nEl) nEl.value = String(n);   // never rewrite the field while it is being typed in
     for (const b of tiersEl.querySelectorAll('button')) b.classList.toggle('on', b.dataset.tier === tier);
     buildEl.textContent = `Build ${G.buildVersion || 'unknown'} · Hard-refresh after a deploy`;
   };
@@ -75,7 +75,14 @@ export function showBrawlSetup() {
   }
   root.querySelector('#brawl-minus').onclick = () => { n = Math.max(BRAWL_N_MIN, n - 1); draw(); };
   root.querySelector('#brawl-plus').onclick = () => { n = Math.min(BRAWL_N_MAX, n + 1); draw(); };
-  root.querySelector('#brawl-start').onclick = () => { location.assign(`?brawl=${n}&tier=${tier}${preserved()}`); };
+  // The count can also be TYPED (maintainer, 2026-10-06): committed on Enter, on blur and on Start, clamped
+  // to the brawl's range; anything that is not a number keeps the count already shown (parseBrawlCount).
+  const commit = () => { n = parseBrawlCount(nEl.value, n); nEl.value = String(n); };
+  nEl.onchange = commit;
+  nEl.onblur = commit;
+  nEl.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') { commit(); nEl.blur(); } };  // keep game keys out of it
+  nEl.onfocus = () => nEl.select();
+  root.querySelector('#brawl-start').onclick = () => { commit(); location.assign(`?brawl=${n}&tier=${tier}${preserved()}`); };
   root.classList.add('on');
   draw();
   setTimeout(draw, 1500);                      // the build stamp arrives with /api/config, maybe after boot

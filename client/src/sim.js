@@ -16,7 +16,9 @@
 // (state, engine, world, projectiles, ship-build, net, hud-less) and is itself imported only by the
 // composition root (the inline script / main). It never imports the loop's callers.
 import { G, bullets, explosions, sparks, shockwaves, rockets, smoke, flipbooks, enemies, allies, setPieces, CATALOG, creditPopups } from './state.js';
+import { Vector3 } from 'three';
 import { scene, camera, camOffset } from './engine.js';
+import { inEarshotNdc } from './earshot.js'; // battle SFX only for what is on screen (+ a thin margin)
 import { Device } from './device.js';
 import { ARENA, OOB_WARN_DELAY, OOB_RETURN_TIME, arenaCenter, arenaBorder, updateSystemBodies, updateSpeedField, updateBackdropLayer, buildSetPiece } from './world.js';
 import { shortestAngleDelta } from './sim-core/steering.js';
@@ -250,12 +252,24 @@ export function syncMeshes(dt = 0) {
 // build ends and move this number with it.
 const BEAM_CHARGE_CLIP_SEC = 1.0;
 
+// Is a world-space sound source within earshot — i.e. on screen, plus a thin margin (earshot.js)? Projected
+// through the live camera, so it follows the zoom. A source with no position (an older/room event that does
+// not carry one) is heard, which is what every sound did before this gate existed.
+const _ear = new Vector3();
+function audible(pos) {
+  if (!pos) return true;
+  _ear.set(pos.x, pos.y || 0, pos.z).project(camera);
+  return inEarshotNdc(_ear.x, _ear.y, _ear.z);
+}
+
 function applySimEvent(ev) {
   switch (ev.type) {
     case 'hit':
       // OUR OWN hull struck → the ship-class sampled impact. Anything else — an enemy, or the wingman's
       // hull ('ally') — gets the generic zap: only the player's own ship is worth a sampled sound.
-      audio.sfx.hit(ev.target === 'player' ? sfxFor('ship', ev.shipClass, 'hit') : undefined);
+      // Hits on OUR hull are always heard; anyone else's only when it lands on screen (earshot.js).
+      if (ev.target === 'player') audio.sfx.hit(sfxFor('ship', ev.shipClass, 'hit'));
+      else if (audible(ev.pos)) audio.sfx.hit();
       break;
     case 'bulletImpact':
       spawnHitSprite(ev.pos, (HIT_FLASH_SCALE[ev.weaponClass] ?? 0.8) * (ev.absorbed ? 0.7 : 1),
@@ -329,7 +343,7 @@ function applySimEvent(ev) {
     case 'smoke':          spawnSmoke(ev.pos); break;
     case 'detonate':
       spawnRocketBurst(ev.pos, ev.blastVis, ev.blastTint, ev.blastTime, ev.blastBright); // flipbook fireball + ring
-      audio.sfx.explosion(0.7, sfxFor('weapon', ev.weaponClass, 'explode'), 0.3); // 70% quieter than a ship
+      if (audible(ev.pos)) audio.sfx.explosion(0.7, sfxFor('weapon', ev.weaponClass, 'explode'), 0.3); // 70% quieter than a ship; on-screen only
       break;
     // THE WINGMAN WENT DOWN. The FX is the entire announcement: no banner, no log line and no new string —
     // player-facing copy for him is out of scope (docs/plans/combat-ally.md §2) — but a friendly ship that
@@ -337,7 +351,7 @@ function applySimEvent(ev) {
     // because he was never worth anything.
     case 'allyDown':
       spawnShipExplosion(ev.pos, ev.exhaustColor, ev.sizeScale, ev.weightClass);
-      audio.sfx.explosion(ev.sizeScale, sfxFor('ship', ev.shipClass, 'explode'), 1.5);
+      if (audible(ev.pos)) audio.sfx.explosion(ev.sizeScale, sfxFor('ship', ev.shipClass, 'explode'), 1.5);
       break;
     case 'warpFlash':      spawnExplosion(ev.pos); break;
     case 'evade':
@@ -355,7 +369,7 @@ function applySimEvent(ev) {
       else spawnShipExplosion(ev.pos, ev.exhaustColor, ev.sizeScale, ev.weightClass);
       // Per-size loudness: medium ships + bosses +50% louder; small ships 70% quieter.
       const louderBoom = ['medium', 'boss', 'advanced_medium_pirate', 'boss2'].includes(ev.role);
-      audio.sfx.explosion(ev.sizeScale, sfxFor('ship', ev.shipClass, 'explode'), louderBoom ? 1.5 : 0.3);
+      if (audible(ev.pos)) audio.sfx.explosion(ev.sizeScale, sfxFor('ship', ev.shipClass, 'explode'), louderBoom ? 1.5 : 0.3);
       if (ev.reward > 0) { // floating "+xx" green popup at the kill site (cosmetic feedback)
         creditPopups.push({ pos: ev.pos, amount: ev.reward, life: 2.0, maxLife: 2.0 });
       }

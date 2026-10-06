@@ -217,7 +217,7 @@ export default async function ({ page, assert, shot }) {
     const el = document.getElementById('brawl-setup');
     const r = el.querySelector('.brawl-box').getBoundingClientRect();
     return {
-      n: document.getElementById('brawl-n').textContent,
+      n: document.getElementById('brawl-n').value,
       tiers: [...document.querySelectorAll('#brawl-tiers button')].map((b) => b.dataset.tier),
       onTier: document.querySelector('#brawl-tiers button.on')?.dataset.tier,
       inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
@@ -229,6 +229,15 @@ export default async function ({ page, assert, shot }) {
   assert.ok(setup.onTier, 'the saved tier is preselected');
   assert.ok(setup.inside && setup.z >= 10, 'the panel is on screen, above the controls');
   assert.equal(setup.brawl, null, 'and no run has started');
+  // The count can also be TYPED: Enter commits, out-of-range clamps, junk keeps the last count, Start uses it.
+  await page.fill('#brawl-n', '37'); await page.press('#brawl-n', 'Enter');
+  assert.equal(await page.inputValue('#brawl-n'), '37', 'a typed count is taken');
+  await page.fill('#brawl-n', '500'); await page.press('#brawl-n', 'Enter');
+  assert.equal(await page.inputValue('#brawl-n'), '100', 'and clamped to the max');
+  await page.fill('#brawl-n', 'abc'); await page.press('#brawl-n', 'Enter');
+  assert.equal(await page.inputValue('#brawl-n'), '100', 'junk keeps the count already shown');
+  await page.fill('#brawl-n', '42');
+  await Promise.all([page.waitForURL(/[?&]brawl=42&/), page.click('#brawl-start')]);   // typed, NOT committed: Start commits it
 
   // ---- flag OFF: nothing of it exists ----
   await page.goto(`${base}?debug`, { waitUntil: 'load' });

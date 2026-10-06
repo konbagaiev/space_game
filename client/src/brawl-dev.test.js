@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalBrawlDev, applyBrawlDev, brawlActive, brawlDevLevel, brawlTierOverride } from './brawl-dev.js';
+import { parseBrawlCount, evalBrawlDev, applyBrawlDev, brawlActive, brawlDevLevel, brawlTierOverride } from './brawl-dev.js';
 
 test('off for a missing flag and for 0/false/off', () => {
   assert.equal(evalBrawlDev(''), null);
@@ -36,4 +36,16 @@ test('with the flag off (node has no location) everything is inert and applyBraw
   const x = { phases: [] };
   assert.equal(applyBrawlDev(x), x, 'the SAME object back');
   assert.notEqual(applyBrawlDev(x, { n: 5 }), x, '…and a brawl room when on');
+});
+
+test('parseBrawlCount: digits are clamped to 1..100; anything else keeps the count already shown', () => {
+  assert.equal(parseBrawlCount('37', 20), 37);
+  assert.equal(parseBrawlCount(' 64 ', 20), 64);
+  assert.equal(parseBrawlCount('500', 20), 100, 'over the top clamps to the max');
+  assert.equal(parseBrawlCount('0', 20), 1, 'zero clamps to the min');
+  assert.equal(parseBrawlCount('', 37), 37, 'an emptied field keeps the last count');
+  assert.equal(parseBrawlCount('abc', 37), 37);
+  assert.equal(parseBrawlCount('-5', 37), 37, 'a minus sign is not a digit');
+  assert.equal(parseBrawlCount('4.5', 37), 37);
+  assert.equal(parseBrawlCount(undefined), 20, 'no fallback given → the default');
 });
