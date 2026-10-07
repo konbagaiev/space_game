@@ -641,3 +641,22 @@ test('an ally the room stops listing is despawned when the render clock reaches 
   assert.equal(world.allies.length, 0, 'gone from the list…');
   assert.equal(attached.length, 0, '…and his body released through the host');
 });
+
+test('an ACE descriptor (the brawl\'s red team) builds a ghost through makeAce — hull, colour and the red wing accent', () => {
+  const { world, attached } = clientWorld();
+  const st = createNetState();
+  deliver(world, st, snapOf({
+    spawns: [{ id: 3, kind: 'enemy', name: 'Sentinel duelist', ace: 1, maxHp: 77, fullScale: 1, sizeScale: 1 }],
+    enemies: [[3, 1, 2, 0, 77, 1, 0]],
+  }));
+  assert.equal(world.enemies.length, 1, 'the ghost exists (it was null before: the name is not a catalog ship)');
+  assert.equal(attached.length, 1);
+  const e = world.enemies[0];
+  assert.equal(e.accent.prefix, 'Wings_');
+  assert.equal(e.name, 'Sentinel duelist');
+  assert.equal(e.maxHp, 77);
+  // …and without the flag the same unknown name still draws nothing.
+  const w2 = clientWorld();
+  applySnapshot(w2.world, createNetState(), snapOf({ spawns: [{ id: 1, kind: 'enemy', name: 'Sentinel duelist' }] }));
+  assert.equal(w2.world.enemies.length, 0);
+});

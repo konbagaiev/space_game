@@ -6,7 +6,7 @@
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
 import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
-import { evalNetsim, connectNetsim, netsimDeferReason, isUnroomableSideMission } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
+import { evalNetsim, netsimForBrawl, netBadgeReason, connectNetsim, netsimDeferReason, isUnroomableSideMission } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
 import { createJerkProbe } from './netsim-jerk.js'; // ?netjerk: catch every break in the DRAWN motion
 import * as THREE from 'three';
@@ -39,7 +39,10 @@ import { allyDev, allyDevLevel, applyAllyDev } from './ally-dev.js'; // ?ally de
 import { beamDev, lancerDev, lancerDevLevel, applyLancerDev } from './beam-dev.js'; // ?beam / ?lancer dev flags: the player's beam, the pirate lancer's spawn phase (+ the level it forces)
 import { duelDevLevel, applyDuelDev, applyTraceRoom, duelBuild, duelDev } from './duel-dev.js'; // ?duel dev flag: the sparring room (+ the level it is built over, the forced ship, and the room a duel TRACE was fought in)
 import { brawlActive, brawlDev, brawlDevLevel, applyBrawlDev } from './brawl-dev.js'; // ?brawl: the bot-brawl phone load test (flag + the level it is built over)
-import { startBrawl, showBrawlSetup, brawlFrame, brawlTap, brawlDebugState } from './brawl-host.js'; // ?brawl: setup panel, run, spectator camera, result card
+import {
+  startBrawl, showBrawlSetup, brawlFrame, brawlTap, brawlDebugState,
+  brawlInputAllowed, brawlNetSnapshot, brawlLinkLost, brawlLinkClosed,
+} from './brawl-host.js'; // ?brawl: setup panel, run, spectator camera, result card
 import { duelAnchorReached } from './sim-core/duel-config.js'; // the instant a duel's FIGHT ended — the referee's comparison point
 import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
@@ -59,7 +62,7 @@ let soundUrls = {};                 // logical key → same-origin url (fed to a
 
 // Graphics quality tier lives in G.gfx (built in state.js, read by engine.js at construction).
 const DEV = isDev(); // ?dev → record per-frame perf samples to the server (see devPerf / dev.js)
-const BRAWL = brawlActive(); // ?brawl → the bot-brawl load test (brawl-dev.js); never sticky
+const BRAWL = brawlActive(); // ?brawl / ?netbrawl → the bot-brawl load test (brawl-dev.js); never sticky
 const PERF = DEV || BRAWL;   // per-frame perf sampling + /api/perf telemetry: ?dev, or a brawl run by itself
 
 // ---------- Benchmark harness (?bench): deterministic replay perf gate ----------
@@ -85,7 +88,9 @@ rs.play = evalPlayback(typeof location !== 'undefined' ? location.search : ''); 
 // and draws what comes back; without it nothing below runs and single-player is untouched (plan D1).
 // Slice D has no client-side prediction, so the local ship answers the controls about 100 ms late — that is
 // expected, and it is the baseline Slice E is measured against.
-const NETSIM = evalNetsim(typeof location !== 'undefined' ? location.search : ''); // { level, seed } | null
+// `?netbrawl=N` implies netsim by itself and adds `brawl: N` (the room runs the bot brawl); a bare ?netbrawl
+// (the setup panel) opens no socket.
+const NETSIM = netsimForBrawl(evalNetsim(typeof location !== 'undefined' ? location.search : ''), brawlDev()); // { level, seed, brawl? } | null
 const netsimActive = !!NETSIM; // the flag is on. NEVER cleared — an unavailable room is per-run (netDown), not forever
 // `?netjerk` — a diagnostic that watches the poses renderNet writes and reports every break in them, with
 // the delivery fingerprint at that instant. Read it from the console: `__netsim.jerk.report()`. Off by
@@ -117,6 +122,8 @@ let netDrawing = true;      // this tab is still RENDERING — true even on the 
 let netFlying = false;      // this tab is at the CONTROLS — false in a menu, on the map, or when hidden
 let netDown = false;        // the socket died under us: local for THIS run, retry on the next one
 let netDownRunAt = null;    // the run it died in (G.gameStartTime), so the retry waits for a different one
+let netSrvLatest = null;    // the room's newest per-second `srv` load block; copied into the next ?dev perf sample
+let netSrvLast = null;      // …and the newest one, kept for `__netsim.lastSrv` (never cleared by the sampler)
 const netState = createNetState();
 // Write the whole probe record to a file the maintainer can send on. Called automatically the moment the
 // ship dies — "when it lags badly, let it kill me" is a far better trigger than remembering to type
@@ -675,7 +682,8 @@ function brawlTelemetry() {
   const b = brawlDebugState();
   if (!b) return null;
   return { n: b.n, armed: b.armed, ended: b.ended, simSec: b.simSec, wallSec: b.wallSec, ratio: b.ratio,
-           alive: b.alive, stationInFramePct: b.stationInFramePct, cam: b.cam, interrupted: b.interrupted };
+           alive: b.alive, stationInFramePct: b.stationInFramePct, cam: b.cam, interrupted: b.interrupted,
+           server: !!b.server };
 }
 const devPerf = (() => {
   if (!PERF) return { frame() {}, pushResult() {} };
@@ -762,6 +770,9 @@ const devPerf = (() => {
         load: { enemies: enemies.length, allies: allies.length, drops: drops.length, particles: liveParticles(), draws: renderer.info.render.calls, tris: renderer.info.render.triangles },
         // ?brawl: where the run is. Filter on `brawl.ended` to drop the seconds the result card sat open.
         ...(world.brawl ? { brawl: brawlTelemetry() } : {}),
+        // Under netsim: the room's own load for the last second (`srv`, server driver.js) — CPU, step and
+        // snapshot cost, bytes, event loop. One table, both ends of the link.
+        ...(netSrvLatest ? { srv: netSrvLatest } : {}),
         heap: heapMB(), // JS heap (MB) — Chrome only; null elsewhere
         gpu: gpuRes(),  // live three.js programs/geometries/textures — a jump here IS the stall's cause
         // Per-stage level-warm failures (all zero = the warm ran in full). A non-zero `roots` with a zero
@@ -773,6 +784,7 @@ const devPerf = (() => {
         longTasks: { n: longTasks, ms: r1(longTaskMs) },
         res: `${renderer.domElement.width}x${renderer.domElement.height}`, device,
       });
+      netSrvLatest = null;   // each srv block goes into at most one sample
     }
     bucket = []; bucketStart = now;
     longTasks = 0; longTaskMs = 0; // per-window counters
@@ -1003,6 +1015,21 @@ function goLocal(why) {
 
 // A click-to-fly intent on its way to the room. A clicked DROP is a server entity, so it travels as the
 // network id the room knows it by — the local object means nothing over there.
+// ?netbrawl's link went away (a refused join, a dropped socket, the room's backstop). There is NO local
+// fallback for a brawl: `brawlLinkLost` either puts the setup panel back with the reason (before the run
+// armed) or ends the run on the spot as `link-lost`. The ghosts are NOT cleared, so the last picture stays
+// behind the card. The planned general reconnect for every room replaces this (2026-10-06 server-brawl plan,
+// "Next").
+function netBrawlDown({ code = null, reason = '' } = {}) {
+  netLink = null; netStarted = false; netConnecting = false;
+  brawlLinkLost({ code, reason });
+}
+
+// The card is up: say `bye` and close (silently — close() detaches the handlers first). No clearNet.
+function endNetBrawlLink() {
+  if (netLink) { try { netLink.close(); } catch {} netLink = null; netStarted = false; }
+}
+
 function sendNetCommand(cmd) {
   if (!netLink) return;
   if (cmd.kind === 'drop') {
@@ -1027,7 +1054,9 @@ function dropNetsim() {
 
 async function startNetsim() {
   netConnecting = true;
-  const bail = (err) => goLocal(String((err && err.message) || err));
+  const bail = NETSIM.brawl
+    ? (err) => netBrawlDown({ code: null, reason: (err && (err.code || err.message)) || 'socket error' })
+    : (err) => goLocal(String((err && err.message) || err));
   try {
     // The room must fight the level this tab has already BUILT — same map, same set-pieces, same arena
     // centre — or the two disagree about where the world is. `CATALOG.levelName` is the seed name the
@@ -1040,18 +1069,26 @@ async function startNetsim() {
       ally: allyDev()?.phase || null,   // ?ally (dev): ask the room to run the wingman on that phase
       lancer: lancerDev()?.phase || null, // ?lancer (dev): ask the room to fly that phase against pirate lancers
       beam: beamDev() || null,            // ?beam (dev): the ROOM must mount the beam too, or it flies the real gun
+      brawl: NETSIM.brawl || null,        // ?netbrawl: the room runs the bot brawl (N per side)
       onWelcome: (w) => {
         netState.welcome = w;
         netState.jerk?.mark('welcome', { tick: w.tick, level: w.level, snapshotEvery: w.snapshotEvery }, perfNow());
         console.info(`[netsim] room joined: level=${w.level} seed=${w.seed} dt=${w.dt} snapshotEvery=${w.snapshotEvery}`);
         if (w.level !== level) console.warn(`[netsim] the room is fighting ${w.level}, this tab built ${level}`);
       },
-      onSnapshot: (snap) => { netState.ack = snap.ack; if (!netsimPaused) applySnapshot(world, netState, snap, performance.now()); },
+      onSnapshot: (snap) => {
+        netState.ack = snap.ack;
+        if (!netsimPaused) applySnapshot(world, netState, snap, performance.now());
+        brawlNetSnapshot(snap);              // ?netbrawl: the mirror's brawl block + the srv samples (no-op otherwise)
+        if (snap.srv) { netSrvLatest = snap.srv; netSrvLast = snap.srv; }
+      },
       // An UNEXPECTED close (server restarted, network died) is not a permanent verdict on netsim. Fall
       // back to the local simulation so the fight carries on rather than freezing — the World is already
       // populated and `simTick` can just continue it — and try again at the next run. Reconnect proper is
       // a documented non-goal for this cut; silently dying until a page reload is worse than the non-goal.
-      onClose: (ev) => goLocal(`socket closed (${ev && ev.code})`),
+      onClose: NETSIM.brawl
+        ? (ev) => netBrawlDown({ code: ev ? ev.code : null, reason: ev && ev.reason ? ev.reason : `closed ${ev ? ev.code : '?'}` })
+        : (ev) => goLocal(`socket closed (${ev && ev.code})`),
       // Before the handle exists this is a handshake failure; after, a dying socket. Same answer either way.
       onError: bail,
     });
@@ -1125,7 +1162,9 @@ function animate() {
     // that would not answer); a level change is the one case that has to reconnect and eat it.
     const wantLevel = NETSIM.level || CATALOG.levelName;
     if (netLink && netLevel !== wantLevel) dropNetsim();
-    if (!netConnecting && !netLink && wantLevel) startNetsim();
+    // ?netbrawl: once its link is gone (bye at the card, or lost) it stays gone — reconnecting would open a
+    // NEW brawl room.
+    if (!netConnecting && !netLink && wantLevel && !(NETSIM.brawl && brawlLinkClosed())) startNetsim();
     // Begin — or begin AGAIN — only when a run actually starts, so a room does not spawn into an empty
     // hangar while the player reads a briefing.
     if (netLink && G.gameStarted && netRunAt !== G.gameStartTime) {
@@ -1181,7 +1220,8 @@ function animate() {
     //                  "is a fight running" therefore stopped the game dead at the exact moment it had the
     //                  most to say.
     const roomIdle = !fightLive;
-    const flying = fightLive && !G.paused && !G.mapOpen && !hidden;
+    // ?netbrawl: no input until the tab has armed its run (the room arms on the first input), none after the card.
+    const flying = fightLive && !G.paused && !G.mapOpen && !hidden && brawlInputAllowed();
     const drawing = !G.paused && !G.mapOpen && !netsimPaused;
     netRoomIdle = roomIdle; netDrawing = drawing; netFlying = flying; // on __netsim: never one flag
     if (netLink && roomIdle !== netRoomPaused) {
@@ -1334,12 +1374,11 @@ function updateNetBadge() {
   }
   // Green ONLY while a room is actually driving this tab; amber for every flavour of "you are local".
   const driving = netsimActive && !netDeferredBy && !!netLink && netStarted && !netRoomPaused;
-  const reason = netDeferredBy ? `local · ${netDeferredBy}`
-    : netDown ? 'local · disconnected'
-    : !netLink ? (netConnecting ? 'connecting…' : 'local · no room')
-    : !netStarted ? 'room joined'
-    : netRoomPaused ? 'room idle'   // joined, but no fight to step — an overlay or a menu is up
-    : `room · ${netState.welcome ? netState.welcome.level : '?'}`;
+  const reason = netBadgeReason({
+    deferredBy: netDeferredBy, down: netDown, link: !!netLink, connecting: netConnecting,
+    started: netStarted, roomPaused: netRoomPaused, level: netState.welcome ? netState.welcome.level : null,
+    brawlClosed: !!(NETSIM.brawl && brawlLinkClosed()),   // ?netbrawl: the room ran it; the link closed at the card
+  });
   const colour = driving ? '#4dff88' : '#ffb454';
   netBadgeEl.style.color = colour;
   netBadgeEl.style.border = `1px solid ${colour}`;
@@ -1353,6 +1392,8 @@ if (NETSIM) {
   window.__netsim = {
     get active() { return netsimActive; },
     get connected() { return !!netLink; },
+    get brawl() { return NETSIM.brawl || null; },   // ?netbrawl: bots per side in this room, else null
+    get lastSrv() { return netSrvLast; },            // the room's newest `srv` load block
     get started() { return netStarted; },
     get deferredBy() { return netDeferredBy; }, // why we are on the LOCAL sim right now (null = we are not)
     get down() { return netDown; },             // the socket died; local until the next run
@@ -2276,7 +2317,11 @@ async function bootstrap() {
       startPlaybackSession(rs.trace); // re-run the recorded fight on the real engine
     } else if (BRAWL) {
       // ?brawl: a count in the URL starts the run at once; a bare ?brawl shows the setup panel.
-      if (brawlDev().n) startBrawl({ pushResult: (r) => devPerf.pushResult(r) }); else showBrawlSetup();
+      // ?netbrawl: picks resolve by NETWORK id, and the card closes the link (bye).
+      if (brawlDev().n) {
+        startBrawl({ pushResult: (r) => devPerf.pushResult(r),
+                     ...(NETSIM?.brawl ? { idOf: (s) => netState.idOf.get(s), closeLink: endNetBrawlLink } : {}) });
+      } else showBrawlSetup();
     } else if (level.name === 'level-0') {
       // THE INTRO IS A FIGHT YOU FLY. The server serves the level-0 descriptor only while
       // current_progress === 0 (a new or freshly reset player), so `level.name` is the whole one-time gate —

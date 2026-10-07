@@ -18,6 +18,22 @@
 // ---------- Downstream (room → client) ----------
 //   { type: 'welcome', tick, dt, level, run }     once, on join
 //   { type: 'snap', … }                           see `snapshot()` in room.js
+//   { type: 'error', error, … }                   a refused join, then a close (e.g. `error: 'brawl-busy'`,
+//                                                 `max: 2`, close 4002 — the bot-brawl room cap)
+//
+// Two optional blocks ride on a snapshot (docs/plans/2026-10-06-1530-server-brawl.md):
+//   brawl — ONLY in a bot-brawl room (`?netbrawl`, `sim-core/brawl.js brawlBlock`), on every snapshot:
+//           { n, armed, ended, ticks, alive: [blue, red], killsByBlue, killsByRed, fp }
+//           `ticks` = brawl sim ticks since arming (the one source of truth for sim seconds); `ended` = a side
+//           was wiped out, or the room's backstop fired; `fp` = the whole fingerprint, [simSec, blue, red] per
+//           10 sim-seconds (at most 30 rows).
+//   srv   — EVERY room, on the first snapshot after each 1 s measurement window closes (driver.js):
+//           { t, ticks, behind, stepMs: { avg, p95, max }, snapMs: { avg, max }, snapBytes: { sum, max },
+//             snapPerSec, bufMax, proc: { loopP50, loopP99, loopMax, load1, load5, cores, cpuPct, rssMB, heapMB,
+//                                         rooms, brawlRooms, clients } }
+//           ms throughout; `behind` = ticks dropped to the catch-up cap this window; `bufMax` = the largest
+//           socket send buffer seen (bytes); everything under `proc` is the PROCESS, not this room.
+// A bot-brawl room's enemy spawn descriptors carry `ace: 1` (a Sentinel ace, built client-side by `makeAce`).
 //
 // Entity rows are positional arrays with a documented column order. Not for the bytes — binary/delta
 // encoding is an explicit non-goal for this cut — but because a snapshot is the one message that repeats

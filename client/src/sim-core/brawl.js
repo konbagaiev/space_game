@@ -34,6 +34,15 @@ export const BRAWL_SEED = 20261004;
 export const BRAWL_N_MIN = 1;
 export const BRAWL_N_MAX = 100;
 export const BRAWL_N_DEFAULT = 20;
+// The level the brawl is built over (the room keeps its map, centres on the station). Here rather than in
+// `brawl-dev.js` because the SERVER builds the same world for `?netbrawl` (`sim-host.js createSimWorld`), and
+// `brawl-dev.js` imports `graphics.js`. `brawl-dev.js` re-exports these, so its importers are unchanged.
+export const BRAWL_LEVEL = 'level-1';
+// The run's wall-clock limit (`&sec=`), clamped to this range. The server derives the brawl room's backstop
+// from the max (`socket.js BRAWL_ROOM_MAX_MS`).
+export const BRAWL_SEC_DEFAULT = 60;
+export const BRAWL_SEC_MIN = 10;
+export const BRAWL_SEC_MAX = 300;
 // Fought over the HOME STATION: the worst-case frame is the station plus the bots.
 export const BRAWL_CENTER = ANCHORS.base;
 export const BRAWL_FRONT_GAP = 60;      // each team's front rank sits this far from the centre
@@ -55,7 +64,9 @@ export const BRAWL_CAM_LEASH = 55;
 // SHARED, so idle pilots of both sides meet over it. (An earlier version measured a 100 u leash from the
 // station and dropped targets that left it — replaced by the pilot's own range, DECISIONS §157.)
 
-const clampN = (n) => Math.max(BRAWL_N_MIN, Math.min(BRAWL_N_MAX, (n | 0) || BRAWL_N_MIN));
+// The bot count, clamped to BRAWL_N_MIN..BRAWL_N_MAX (a non-number is the minimum). Exported for the server's
+// handshake (`socket.js`), which must accept exactly the counts a local run would.
+export const clampBrawlN = (n) => Math.max(BRAWL_N_MIN, Math.min(BRAWL_N_MAX, (n | 0) || BRAWL_N_MIN));
 
 // The level the brawl is fought on: the descriptor it is built over, emptied of every campaign promise.
 // Non-mutating, like `withDuelRoom`. `center` puts `world.arenaCenter` on the station, so the pilot's
@@ -80,7 +91,7 @@ function warpIn(s) {
 
 // Lay the two teams out and park the spectator. The ONLY place `world.brawl` is set. Draws no randomness.
 export function spawnBrawl(world, n) {
-  n = clampN(n);
+  n = clampBrawlN(n);
   const C = BRAWL_CENTER, Y = BULLET_PLANE_Y;
   const p = world.player;
   if (p) { p.pos.set(C.x + BRAWL_SPECTATOR_PARK, Y, C.z); p.vel.set(0, 0, 0); }
@@ -134,9 +145,11 @@ const STATION_ANCHOR = Object.freeze({ pos: Object.freeze({ x: BRAWL_CENTER.x, y
                                        vel: Object.freeze({ x: 0, y: 0, z: 0 }), alive: true });
 
 // One brawl tick. Inert until the host arms it, and again once it has ended. Returns null (no grab target).
+// A `server: true` brawl is the TAB's mirror of a server room's fight (`?netbrawl`, `brawl-net.js`): it is
+// filled from snapshots and must never be stepped here.
 export function brawlTick(world, dt) {
   const b = world.brawl;
-  if (!b || !b.armed || b.ended) return null;
+  if (!b || b.server || !b.armed || b.ended) return null;
   // A wiped-out side stops the clock HERE, on the tick it happened, not when the host next looks: the host
   // only checks once per frame, and up to six ticks (or a `stepSim` chunk) can run in between, which would
   // make "sim-seconds reached" depend on the frame rate.
@@ -156,6 +169,17 @@ export function brawlTick(world, dt) {
 }
 
 export const brawlOver = (world) => !world.allies.length || !world.enemies.length;
+
+// The `brawl` block a server room puts on every snapshot (`server/src/netsim/room.js takeSnapshot`), or null
+// without a brawl. `fp` is the WHOLE fingerprint: snapshots only go out on even room ticks while `ticks`
+// counts from an arbitrary arming tick, so a client could not rebuild the 10-sim-second rows itself. The
+// server's `ticks` is the one source of truth for sim seconds under `?netbrawl`.
+export function brawlBlock(world) {
+  const b = world.brawl; if (!b) return null;
+  return { n: b.n, armed: b.armed, ended: b.ended, ticks: b.ticks,
+           alive: [world.allies.length, world.enemies.length],
+           killsByBlue: b.killsByBlue, killsByRed: b.killsByRed, fp: b.fingerprint };
+}
 export const brawlSimSec = (world) => (world.brawl ? world.brawl.ticks * SIM_DT : 0);
 
 // Where the centre-mode camera looks: the mean of the living ships that are neither retreating nor warping

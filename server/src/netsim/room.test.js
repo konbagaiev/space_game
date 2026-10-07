@@ -16,7 +16,10 @@ import { EVENT_FIELDS, wireEvent } from './protocol.js';
 import { runTrace } from '../../tools/sim-replay.mjs';
 import { hydrateTrace } from '../../../client/src/replay.js';
 import { LEVELS } from '../catalog_seed.js';
-import { buildCatalog } from '../sim-host.js';
+import { buildCatalog, createSimWorld } from '../sim-host.js';
+import { brawlTick } from '../../../client/src/sim-core/brawl.js';
+import { seedSim, simRandomDraws } from '../../../client/src/sim-core/sim-random.js';
+import { SIM_DT } from '../../../client/src/sim-core/consts.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const INTRO = LEVELS.find((l) => l.name === 'level-0').descriptor.introTrace;
@@ -568,4 +571,108 @@ test('a room with no economy hook still runs — the seam is optional, not load-
   for (let i = 0; i < 5; i++) room.stepOnce();
   assert.equal(room.world.levelRunner.cleared, true, 'the fight concluded regardless');
   assert.equal(room.banked, false);
+});
+
+// --- the bot-brawl room (`?netbrawl`, docs/plans/2026-10-06-1530-server-brawl.md) ---
+
+test('BRAWL: a brawl room fights exactly the headless brawl (same engine), and pays nothing', () => {
+  // The reference: the pure brawl, built the way the server builds it, armed by hand and stepped headless.
+  const ref = createSimWorld({ levelName: 'level-1', brawl: 5 });
+  ref.brawl.armed = true;
+  for (let i = 0; i < 3600; i++) brawlTick(ref, SIM_DT);
+  const refFp = ref.brawl.fingerprint.map((r) => r.slice());
+  const refKills = [ref.brawl.killsByBlue, ref.brawl.killsByRed];
+  assert.equal(simRandomDraws(), 0, 'the headless brawl draws nothing from the shared stream');
+  assert.equal(refFp.length, 6, 'six 10-sim-second windows');
+
+  // The room: created, then `start` (= restart) re-spawns the brawl; the first input arms it.
+  const spy = [];
+  const room = createRoom({ brawl: 5, onEconomy: (r) => spy.push(r) });
+  room.restart(null);
+  for (let i = 0; i < 3600; i++) { room.pushInput([{ t: i, k: [] }]); room.stepOnce(); }
+  const b = room.world.brawl;
+  assert.deepEqual(b.fingerprint, refFp, 'the room\'s fight is the headless fight, window for window');
+  assert.equal(b.killsByBlue, refKills[0]);
+  assert.equal(b.killsByRed, refKills[1]);
+  assert.equal(b.ticks, 3600, 'armed on the first input and stepped every tick after');
+  assert.equal(simRandomDraws(), 0, 'no shared draws in the room either');
+  assert.equal(spy.length, 0, 'a brawl room never reports an economy event');
+  assert.equal(room.banked, false);
+  seedSim(null);
+});
+
+test('BRAWL: restart re-spawns a fresh, un-armed brawl with fresh ids; red rides as an ace', () => {
+  const room = createRoom({ brawl: 5 });
+  const before = new Set(room.takeSnapshot().spawns.map((s) => s.id));
+  assert.equal(before.size, 10, 'createSimWorld spawned both teams already');
+  room.restart({ x: 1, z: 2, h: 0 });   // a pose is ignored
+  const w = room.world;
+  assert.equal(w.allies.length, 5);
+  assert.equal(w.enemies.length, 5);
+  assert.equal(w.brawl.armed, false);
+  assert.equal(w.brawl.ended, false);
+  const spawns = room.takeSnapshot().spawns.filter((s) => s.kind === 'ally' || s.kind === 'enemy');
+  assert.equal(spawns.length, 10, 'exactly the 10 new ships, none of the stale descriptors');
+  for (const s of spawns) assert.ok(!before.has(s.id), `id ${s.id} is from before the restart`);
+  for (const s of spawns.filter((x) => x.kind === 'enemy')) assert.equal(s.ace, 1, 'red carries ace: 1');
+  for (const s of spawns.filter((x) => x.kind === 'ally')) assert.equal(s.ace, undefined, 'blue does not');
+  assert.ok(Math.abs(w.player.pos.x - 1) > 1000, 'the spectator stays parked; the pose is ignored');
+  seedSim(null);
+});
+
+test('BRAWL: the first real input arms the room — an empty queue never does', () => {
+  const room = createRoom({ brawl: 2 });
+  room.restart(null);
+  for (let i = 0; i < 30; i++) room.stepOnce();
+  assert.equal(room.world.brawl.armed, false, 'no input, no fight');
+  assert.equal(room.world.brawl.ticks, 0);
+  room.pushInput([{ t: 0, k: [] }]);
+  room.stepOnce();
+  assert.equal(room.world.brawl.armed, true);
+  assert.equal(room.world.brawl.ticks, 1, 'and that very tick is the first brawl tick');
+  seedSim(null);
+});
+
+test('BRAWL: the snapshot carries the brawl block, 2N ship rows and no hitBoxes; a campaign snapshot has no block', () => {
+  const room = createRoom({ brawl: 4 });
+  room.restart(null);
+  room.pushInput([{ t: 0, k: [] }]);
+  for (let i = 0; i < 4; i++) room.stepOnce();
+  const s = room.takeSnapshot();
+  assert.deepEqual(Object.keys(s.brawl).sort(),
+    ['alive', 'armed', 'ended', 'fp', 'killsByBlue', 'killsByRed', 'n', 'ticks']);
+  assert.equal(s.brawl.n, 4);
+  assert.equal(s.brawl.armed, true);
+  assert.deepEqual(s.brawl.alive, [4, 4]);
+  assert.equal(s.allies.length + s.enemies.length, 8);
+  const json = JSON.stringify(s);
+  assert.ok(!json.includes('hitBoxes'), 'no collision geometry on the wire');
+  assert.equal(room.welcome().brawl, 4);
+
+  const camp = createRoom({ seed: 3 });
+  camp.stepOnce(); camp.stepOnce();
+  const cs = camp.takeSnapshot();
+  assert.ok(!('brawl' in cs), 'a campaign snapshot gains no brawl key');
+  assert.equal(camp.welcome().brawl, null);
+  seedSim(null);
+});
+
+test('BRAWL: a wipe-out sets ended on the snapshot; endBrawl() sets it too', () => {
+  const room = createRoom({ brawl: 1 });
+  room.restart(null);
+  let ended = false;
+  for (let i = 0; i < 20000 && !ended; i++) {
+    room.pushInput([{ t: i, k: [] }]);
+    room.stepOnce();
+    if (room.dueForSnapshot()) ended = room.takeSnapshot().brawl.ended;
+  }
+  assert.ok(ended, 'a 1 v 1 ends with one side wiped out');
+  const s = room.takeSnapshot().brawl;
+  assert.ok(s.alive[0] === 0 || s.alive[1] === 0, 'and one side really is gone');
+
+  const r2 = createRoom({ brawl: 2 });
+  assert.equal(r2.takeSnapshot().brawl.ended, false);
+  r2.endBrawl();
+  assert.equal(r2.takeSnapshot().brawl.ended, true, 'the backstop path');
+  seedSim(null);
 });

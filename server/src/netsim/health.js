@@ -13,7 +13,7 @@
 // driving the same room saw none — and the machine turned out to be running at a load average of 17.6 on
 // ten cores, with Spotlight indexing, a VM and an agent competing. Guessing at that from the game's own
 // numbers had already cost most of a day.
-import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import os from 'node:os';
 
 const NS = 1e6; // the histogram is in nanoseconds; everything here is milliseconds
@@ -27,7 +27,33 @@ export function createHealth({ resolution = 10 } = {}) {
   // rather than zero. Subtracting it is what turns the number into "how late was the loop".
   const ms = (ns) => +Math.max(0, ns / NS - resolution).toFixed(1);
 
+  // THE PROCESS SAMPLER (docs/plans/2026-10-06-1530-server-brawl.md, Decision 16). Once it runs it is the ONLY
+  // caller of `sample()`: every room's per-second `srv.proc` block and the driver's stall warning read the
+  // cached `latest()` instead, because `sample()` resets the one shared histogram and two readers would zero
+  // each other's window. CPU, RSS, heap, event loop and load are all PROCESS figures, not a room's.
+  let latest = null, timer = null, lastCpu = process.cpuUsage(), lastAt = performance.now();
+
   return {
+    // Start sampling every `intervalMs` (idempotent; the timer never keeps the process alive).
+    startSampler(intervalMs = 1000) {
+      if (timer) return;
+      lastCpu = process.cpuUsage(); lastAt = performance.now();
+      timer = setInterval(() => {
+        const plain = { ...this.sample() };   // spread copies the getter's VALUE; drop it, keep the numbers
+        delete plain.oversubscribed;
+        const now = performance.now(), cpu = process.cpuUsage(lastCpu);
+        const m = process.memoryUsage();
+        latest = { ...plain,
+                   cpuPct: +((((cpu.user + cpu.system) / 1000) / Math.max(1e-6, now - lastAt)) * 100).toFixed(1),
+                   rssMB: Math.round(m.rss / 1048576), heapMB: Math.round(m.heapUsed / 1048576) };
+        lastCpu = process.cpuUsage(); lastAt = now;
+      }, intervalMs);
+      timer.unref?.();
+    },
+    // The most recent sampler reading, or null before the first one (or with the sampler off).
+    latest() { return latest; },
+    get sampling() { return !!timer; },
+
     // A reading of the last window, and a reset so the next one is independent. Milliseconds throughout.
     sample() {
       const s = {
@@ -45,13 +71,15 @@ export function createHealth({ resolution = 10 } = {}) {
     },
 
     // One line, for a log where it has to sit next to a stall.
+    // With the sampler running it formats the cached reading — calling `sample()` here would reset the
+    // window every room's `srv` block is reading.
     line() {
-      const s = this.sample();
+      const s = (timer && latest) || this.sample();
       return `event loop p50 ${s.loopP50} ms p99 ${s.loopP99} max ${s.loopMax}; `
         + `load ${s.load1}/${s.load5} on ${s.cores} cores${s.load1 > s.cores ? ' — OVERSUBSCRIBED' : ''}`;
     },
 
-    stop() { loop.disable(); },
+    stop() { if (timer) { clearInterval(timer); timer = null; } loop.disable(); },
   };
 }
 

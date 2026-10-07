@@ -56,4 +56,27 @@ test('armed, it writes the record to disk and says where', async () => {
   delete process.env.NETJERK_SINK;
 });
 
+test('the sink stamps the process sampler\'s cached reading and never resets the shared histogram', async () => {
+  process.env.NETJERK_SINK = '1';
+  const { health } = await import('./health.js');
+  const h = health();
+  h.startSampler(20);
+  for (let i = 0; i < 50 && !h.latest(); i++) await new Promise((r) => setTimeout(r, 10));
+  assert.ok(h.latest(), 'the sampler produced a reading');
+  const { server, base } = await appOn();
+  try {
+    const res = await post(base, record({ level: 'level-3' }));
+    assert.equal(res.status, 200);
+    const { file } = await res.json();
+    const back = JSON.parse(await fsp.readFile(file, 'utf8'));
+    // Only the sampler's cached reading carries cpuPct; a fresh `sample()` (which would reset the window
+    // every room's `srv.proc` reads) does not.
+    assert.equal(typeof back.server.cpuPct, 'number', 'the sink used the cached reading, not sample()');
+    await fsp.rm(file, { force: true });
+  } finally {
+    server.close();
+    delete process.env.NETJERK_SINK;
+  }
+});
+
 after(async () => { delete process.env.NETJERK_SINK; });

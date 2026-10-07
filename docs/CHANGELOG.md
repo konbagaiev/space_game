@@ -5,6 +5,33 @@
 
 ## 2026-10-06
 
+- **A server-run bot brawl (`?netbrawl`) and in-process server load metrics** [2026-10-06-1530-server-brawl].
+  `?netbrawl=N` runs the same N v N bot brawl in a **server netsim room**; the tab only renders it (same
+  setup panel and card, "Simulated by: server room"; `?netbrawl` wins over `?brawl`, implies netsim, and a
+  bare `?netbrawl` opens no socket). The room steps `brawlTick` instead of `simTick`, re-spawns the brawl on
+  `start`, and arms on the tab's first input — which the tab sends only after the ghosts arrived and the
+  scene was re-warmed. No economy, no `loadShip`. **Server metrics:** every room's driver measures, once per
+  wall second, step ms avg/p95/max, snapshot build+stringify+send ms and bytes, snapshots/s, ticks/s,
+  ticks dropped behind, the largest socket buffer, plus process CPU %, RSS, heap, event-loop p50/p99/max and
+  load (a new process-wide health sampler, so rooms no longer reset each other's event-loop window), and
+  sends it as `srv` on the next snapshot. The card shows server rows and three per-window columns; the tab
+  copies `srv` into its `/api/perf` sample (`SELECT sample->'srv' FROM perf_samples WHERE sample ? 'srv'`);
+  every 10 s each room logs one JSON line `evt: 'netsim-room'`. **Abuse guard:** at most 2 brawl rooms per
+  process (a third join: `brawl-busy`, close 4002, shown on the setup panel), `n` clamped 1..100, a 330 s
+  backstop (final `ended` snapshot, close 4001), and an 8 MB send-buffer cap that terminates a hopeless link.
+  A lost link ends the run as `link-lost` with the close code — no local fallback. New
+  `server/tools/brawl-capacity.mjs` measures rooms per core at N = 20/50/100 in-process. Tests: `room.test.js`
+  (a Node room fights exactly the headless brawl), new `driver.test.js`, `health.test.js`,
+  `socket-brawl.test.js`, `brawl-net.test.js`, extended client tests, and visual `52-bot-brawl-netsim`.
+  DECISIONS §161.
+- **Review fixes for the server-run brawl** [2026-10-06-1530-server-brawl]. The `?netjerk` dev sink now
+  stamps the process sampler's cached reading (`health().latest() || health().sample()`) instead of calling
+  `sample()`, which reset the shared event-loop window every room's `srv.proc` reads. After a `?netbrawl` link
+  closes at the card the netsim badge reads "room closed" instead of the misleading "local · no room" (pure
+  `netsim.js netBadgeReason`, unit-tested; guard for the sink in `netjerk-sink.test.js`).
+- **Netsim aces render** [2026-10-06-1530-server-brawl]. A Sentinel ace's name ('Sentinel duelist') is not a
+  catalog ship, so a netsim client drew nothing for it. The room's enemy spawn descriptor now carries
+  `ace: 1` and the client builds the ghost with `makeAce` (hull, red livery, `Wings_` accent).
 - **Brawl setup: type the bot count.** The −/+ stepper gains a numeric text field (`#brawl-n`): Enter, blur
   or Start commits it, clamped to 1-100 (`brawl-dev.js parseBrawlCount`); anything that is not a number keeps
   the count already shown. Tests: `brawl-dev.test.js`, `51-bot-brawl` (type 37, 500 → 100, junk, Start →

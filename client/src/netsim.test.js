@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalNetsim, wsUrl, createUplink, connectNetsim, netsimDefersTo, netsimDeferReason, INPUT_BATCH, isUnroomableSideMission } from './netsim.js';
+import { evalNetsim, netsimForBrawl, netBadgeReason, wsUrl, createUplink, connectNetsim, netsimDefersTo, netsimDeferReason, INPUT_BATCH, isUnroomableSideMission } from './netsim.js';
 import { SIM_DT } from './sim-core/consts.js';
 import { snapshotInput } from './replay.js';
 
@@ -253,4 +253,29 @@ test('a player without ?netsim is not thrown at when a side mission is active', 
   // …while an explicit `?netsim=level-2` names a campaign level, and a mission alongside it does not.
   assert.equal(isUnroomableSideMission({ level: 'level-2', seed: null }, { id: 'side-research' }), false);
   assert.equal(isUnroomableSideMission({ level: 'level-2', seed: null }, null), false);
+});
+
+test('?netbrawl implies netsim with a brawl count — and only with a count (a bare one opens no socket)', () => {
+  assert.deepEqual(netsimForBrawl(null, { n: 4, server: true }), { level: null, seed: null, brawl: 4 });
+  assert.equal(netsimForBrawl(null, { n: null, server: true }), null, 'the setup panel takes no cap slot');
+  const ns = { level: 'level-2', seed: 7 };
+  assert.equal(netsimForBrawl(ns, { n: 4, server: false }), ns, 'a local ?brawl leaves netsim alone');
+  assert.equal(netsimForBrawl(ns, null), ns);
+  assert.deepEqual(netsimForBrawl(ns, { n: 4, server: true }), { level: 'level-2', seed: 7, brawl: 4 });
+});
+
+test('wsUrl carries brawl=N only when asked', () => {
+  assert.equal(new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't', brawl: 4 })).searchParams.get('brawl'), '4');
+  assert.equal(new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't' })).searchParams.has('brawl'), false);
+});
+
+test('the badge says "room closed" after a ?netbrawl link closed — never "local · no room" for a server-run result', () => {
+  assert.equal(netBadgeReason({ link: false, brawlClosed: true }), 'room closed');
+  assert.equal(netBadgeReason({ link: false }), 'local · no room', 'without a closed brawl link: unchanged');
+  assert.equal(netBadgeReason({ link: false, connecting: true }), 'connecting…');
+  assert.equal(netBadgeReason({ deferredBy: 'replay', brawlClosed: true }), 'local · replay');
+  assert.equal(netBadgeReason({ down: true }), 'local · disconnected');
+  assert.equal(netBadgeReason({ link: true }), 'room joined');
+  assert.equal(netBadgeReason({ link: true, started: true, roomPaused: true }), 'room idle');
+  assert.equal(netBadgeReason({ link: true, started: true, level: 'level-1' }), 'room · level-1');
 });

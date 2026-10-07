@@ -6,6 +6,13 @@
 //   &sec=N                       the wall-clock limit, clamped 10..300 (default 60) — for tests and soaks
 //   ?brawl=0 | false | off       off (and no `brawl` param at all is off)
 //
+//   ?netbrawl[=N]                the SAME fight, simulated by a SERVER ROOM (the tab only renders the snapshots
+//                                it receives, and the card adds the server's own load numbers). Same panel, same
+//                                clamps, same `tier`/`sec`; Start reloads into `?netbrawl=N`. It implies the
+//                                netsim connection by itself (never add `netsim=1`), and a bare `?netbrawl`
+//                                opens NO socket. If both flags are present, `?netbrawl` WINS. Never sticky.
+//   ?netbrawl=0 | false | off    off (falls through to `?brawl`, if any)
+//
 // WHAT IT DOES: two teams of N bots, all flown by the Sentinel pilot (`flySentinel`), fight over the home
 // station while the player only watches. The camera follows the middle of the fight (a tap follows one bot,
 // another tap goes back). It lasts 60 s of WALL time — or less if a side is wiped out — and then shows a
@@ -25,21 +32,27 @@
 // usual reason a fix "does not work". The setup panel shows the build so that can be checked.
 //
 // Must NOT import `state.js` — `state.js` imports this file (for the tier override).
-import { BRAWL_N_MIN, BRAWL_N_MAX, BRAWL_N_DEFAULT, withBrawlRoom } from './sim-core/brawl.js';
+import {
+  BRAWL_N_MIN, BRAWL_N_MAX, BRAWL_N_DEFAULT, BRAWL_LEVEL, BRAWL_SEC_DEFAULT, BRAWL_SEC_MIN, BRAWL_SEC_MAX,
+  withBrawlRoom,
+} from './sim-core/brawl.js';
 import { TIER_ORDER } from './graphics.js';
 
-export const BRAWL_LEVEL = 'level-1';  // the map it is built over (the room keeps its map, centres on the station)
-export const BRAWL_SEC_DEFAULT = 60;
-export const BRAWL_SEC_MIN = 10;
-export const BRAWL_SEC_MAX = 300;
+// Moved into the pure `sim-core/brawl.js` (the server builds the same brawl for `?netbrawl`); re-exported so
+// every importer of this file is unchanged.
+export { BRAWL_LEVEL, BRAWL_SEC_DEFAULT, BRAWL_SEC_MIN, BRAWL_SEC_MAX };
 
-// Pure + storage-free: the URL alone decides. Returns `{ n, tier, sec }` or null. `n` is null for a bare
-// `?brawl` (show the setup panel).
+// Pure + storage-free: the URL alone decides. Returns `{ n, tier, sec, server }` or null. `n` is null for a
+// bare `?brawl` / `?netbrawl` (show the setup panel). `?netbrawl` is read FIRST and wins over `?brawl`
+// (`server: true`); an "off" `?netbrawl` falls through to `?brawl`.
 export function evalBrawlDev(search) {
   const p = new URLSearchParams(search || '');
-  const v = p.get('brawl');
+  const off = (x) => x === '0' || x === 'false' || x === 'off';
+  const nv = p.get('netbrawl');
+  const server = nv != null && !off(nv);
+  const v = server ? nv : p.get('brawl');
   if (v == null) return null;
-  if (v === '0' || v === 'false' || v === 'off') return null;
+  if (off(v)) return null;
   let n = null;
   if (v !== '') {
     const k = Number.parseInt(v, 10);
@@ -49,7 +62,7 @@ export function evalBrawlDev(search) {
   const tier = TIER_ORDER.includes(t) ? t : null;
   const s = Number.parseInt(p.get('sec'), 10);
   const sec = Number.isFinite(s) ? Math.max(BRAWL_SEC_MIN, Math.min(BRAWL_SEC_MAX, s)) : BRAWL_SEC_DEFAULT;
-  return { n, tier, sec };
+  return { n, tier, sec, server };
 }
 
 const BRAWL_DEV = evalBrawlDev(typeof location !== 'undefined' ? location.search : '');

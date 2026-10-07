@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-06 (**The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -476,6 +476,7 @@ out because they are arguments to a flow, not switches.
 | `?tune` | the lil-gui palette / lighting / blast panel, incl. the **frozen test range** (`tune.js`) |
 | `?duel[=N]` | **the sparring room**: fight N ships flown by the wingman's own pilot (default 2, max 6). Forces your build to the starter kit, and Take off drops you straight into the fight. A duel session is **re-simulated server-side and given a verdict** (nothing binds). See Gameplay → "The duel room" |
 | `?brawl[=N]` | **the bot brawl — a phone load test** (`brawl-dev.js`): N v N Sentinel bots (1-100, default 20; ranks 10 wide above 50) fight over the home station while you watch; a bare `?brawl` shows the setup panel. `&tier=high\|balance\|performance` runs that page load on that tier (never saved); `&sec=N` overrides the 60 s wall-clock limit (10-300). Turns on `/api/perf` telemetry by itself. See "The bot brawl" below |
+| `?netbrawl[=N]` | **the same bot brawl, simulated by a SERVER ROOM** (`brawl-dev.js` + `brawl-net.js`): same panel, clamps, `tier`/`sec`; the card adds the server's own load numbers. **Wins over `?brawl`** if both are present; **implies netsim by itself** (never add `netsim=1`); a bare `?netbrawl` is the setup panel and opens **no socket** until a count is chosen (Start reloads into `?netbrawl=<n>&tier=<t>`). Never sticky. See "The bot brawl" → "Server-run" |
 | `?ally[=phase]` | the Sentinel wingman arrives on that phase (default `clear-out`) |
 | `?lancer[=phase]` | that phase's spawn pool becomes 100 % pirate lancers |
 | `?beam` | mount the Charged beam in the player's gun slot |
@@ -1836,6 +1837,52 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     keyboard help line, the touch fullscreen button); the HUD, radar, markers, health bars and event log stay.
     Both panels are padded clear of the settings gear and the XP bar and scroll inside their box on a
     ~390 px-tall landscape phone; the card shows the per-window table first.
+  - **Server-run (`?netbrawl=N`)** (`client/src/brawl-net.js` the tab mirror, `server/src/netsim/*` the room;
+    plan `docs/plans/2026-10-06-1530-server-brawl.md`, DECISIONS §161). The same fight runs in a **netsim room**
+    and the tab only renders it. Both the setup panel (`#brawl-mode`) and the card say **"Simulated by: this
+    tab" / "server room"**, and the result carries `server: true|false`.
+    - *The room* (`createRoom({ brawl: N })` → `createSimWorld({ brawl })`): forces `BRAWL_LEVEL`
+      (`'level-1'`, now in `sim-core/brawl.js`, re-exported by `brawl-dev.js` with `BRAWL_SEC_*`), ignores
+      `ally`/`lancer`/`duel`, applies `withBrawlRoom`, then `seedSim(BRAWL_SEED)` + `spawnBrawl`. It steps
+      **`brawlTick` instead of `simTick`** while `world.brawl` exists, and marks `ended` the tick
+      `brawlOver` holds. The client's `start` calls `restart()`, which in a brawl room discards the stale
+      spawn descriptors, re-seeds and **re-spawns** the brawl (`clearAndPlaceRun` empties the ship lists but
+      leaves `world.brawl`); `pose` is ignored. Skips `loadShip`; gets **no economy sink**; never banks.
+    - *Arming handshake:* the room spawns on `start`; when the first ghosts are attached the tab sets
+      `G.needsSceneWarm` (the ally and ace hulls compile behind the veil — the brawl level's inert phase warms
+      no enemy types); the tab arms its own wall clock when that warm is done and **only then sends input**
+      (`brawlInputAllowed`); the **room arms on that first real input**. So the 60 s wall clock and the
+      server's sim ticks start together.
+    - *The mirror:* `world.brawl = makeBrawlMirror(n)` (`server: true`), filled from each snapshot's `brawl`
+      block `{ n, armed, ended, ticks, alive:[blue,red], killsByBlue, killsByRed, fp }` and **never stepped**
+      (`brawlTick` returns early on `b.server`). `fp` is the whole fingerprint, because snapshots go out
+      only on even room ticks: the server's `ticks` is the one source of truth for sim seconds. The room's
+      `armed`/`ended` land in `serverArmed`/`serverEnded`; the mirror's own `armed`/`ended` are the tab's.
+      Survivors come from the room's `alive`. If the room ends the run with both sides alive (its backstop),
+      `endedBy` is `'server'`.
+    - *Ships are ghosts:* pick/follow resolve by **network id** (`netState.idOf`) — ghosts have no
+      `_aimOrdinal`. Red bots are aces named `'Sentinel duelist'`, not a catalog ship, so their spawn
+      descriptor carries **`ace: 1`** and `spawnGhost` rebuilds them with `makeAce` (hull, red livery,
+      `Wings_` accent) — before this, every netsim ace was invisible.
+    - *Server numbers on the card:* rows "Server step ms avg / p95 / max", "Server ticks/s (min)", "Down KB/s
+      avg / max", "Server CPU % avg (process)", "Event loop p99 max ms", "Snapshot KB max" (and "Link closed
+      (code)" after a lost link), plus three window columns `srv step p95`, `KB/s`, `loop p99`
+      (`brawl-stats.js serverWindowStats` / `summarizeSrv`). `srv` samples from before the ROOM armed are
+      dropped (they would dilute the averages).
+    - *Lifetime:* at the card the tab sends `bye` and closes the link, and never reconnects (a reconnect would
+      open a NEW brawl room). **There is no local fallback**: a refused join (`brawl-busy`) or any failure
+      before arming puts the setup panel back with the reason (`#brawl-error`); a link lost during the run
+      ends it on the spot as `endedBy: 'link-lost'` with the close code (4001 backstop, 4002 cap, 1006 a
+      terminated slow link). That is one function (`brawlLinkLost`, main.js `netBrawlDown`), to be replaced
+      by a general reconnect for all rooms (separate, planned). The last picture stays behind the card.
+    - *Determinism:* a Node room's fight equals `sim-core/brawl.js` run headless in Node (same N, same seed —
+      `room.test.js`). Never compare with a browser run (§151). **Known limitation:** the seeded stream is
+      process-global. Two brawl rooms share `BRAWL_SEED` and do not disturb each other, but a **campaign**
+      room created while a brawl runs calls `seedSim(<its seed>)`, which re-keys the brawl pilots
+      (`pilotRandom` re-keys on a seed change), so that brawl stops matching the headless run. The reverse
+      too: creating or restarting a brawl room re-seeds a running campaign room's shared stream — harmless
+      (live rooms carry no determinism contract; already true between two campaign rooms), it only matters
+      for an offline fingerprint comparison.
   - **After a deploy, hard-refresh on the phone** — client modules have fixed names. No asset or content hash
     changes, so no `/publish-itch` is needed for it.
 - **Grab & loot drops** (`client/src/drops.js` + `drops-config.js`; docs/plans/2026-07-03-1412-grab-tractor-drops.md).
@@ -3895,7 +3942,13 @@ first translation). See DECISIONS §10.
     each run ends with one `kind:'brawl-result'` row —
     `SELECT sample FROM perf_samples WHERE sample->>'kind'='brawl-result' ORDER BY id DESC LIMIT 5;`. Use
     the per-second rows only where `(sample->'brawl'->>'ended')::bool IS NOT TRUE` (after the end they
-    measure a result card, not the fight).
+    measure a result card, not the fight). **Under netsim** (`?netbrawl`, or `?netsim` with `?dev`) a
+    per-second row also carries **`srv`** — the room's own load for the last second, exactly the driver's
+    block (see "Playing in a server-run room" → "Bot-brawl rooms and the room's own load"); `brawl.server`
+    says which side simulated; the `brawl-result` row carries `server`, `srv` (the run summary:
+    `stepAvg/stepP95/stepMax/ticksMin/behind/kbpsAvg/kbpsMax/snapKbMax/cpuAvg/loopP99Max/rssMaxMB/bufMaxKB`),
+    `serverWindows` and `closeCode`. E.g.
+    `SELECT sample->'srv' FROM perf_samples WHERE sample ? 'srv' ORDER BY id DESC LIMIT 60;`.
   - **Frame-pacing probe (`/raf-probe.html`) — the PLATFORM baseline, with the game out of the way.**
     Standalone, dependency-free single page (no modules/imports, so it measures the device and not our
     bundle), served static from the client root; nothing in the game links to it. Three ~3 s phases:
@@ -4749,7 +4802,9 @@ locally** rather than leaving a ship that will not answer.
 
 **You can SEE which simulation is running.** With `?netsim` on, a small badge sits under the wordmark:
 green `NETSIM ● room · level-N` while a room is driving, amber `NETSIM ○ local · <reason>` otherwise
-(`replay`, `side-mission`, `disconnected`, `no room`, `connecting…`). It exists because the flag is URL-only and
+(`replay`, `side-mission`, `disconnected`, `no room`, `connecting…`); after a `?netbrawl` link closes (bye at
+the card, or lost) it reads amber `NETSIM ○ room closed` instead, since that result WAS server-run (text from
+the pure `netsim.js netBadgeReason`, unit-tested). It exists because the flag is URL-only and
 not sticky, so it is easy to be on the local path without noticing — three playtests in a row reported
 "netsim feels great" while actually local, which is the report that cannot be acted on. Never shown without
 the flag.
@@ -4768,6 +4823,47 @@ ship, and a fresh run comes back green on its own.
 first question about a server-run fight is always "am I connected". It reports `connected`, `tick`, `ack`,
 `behind` (how far the room's acknowledgement trails the input sent), `welcome` and `lastSent`, and
 `__netsim.pause()` / `.resume()` freeze the world on its last known state.
+
+**Bot-brawl rooms and the room's own load (`?netbrawl`, `srv`).** (Plan
+`docs/plans/2026-10-06-1530-server-brawl.md`, DECISIONS §161; the tab side is under Gameplay → "The bot
+brawl" → "Server-run".)
+- *Handshake:* `brawl=N` on the socket URL (sent by `connectNetsim({ brawl })` when `?netbrawl=N`), parsed
+  and clamped to 1..100 (`clampBrawlN`) **synchronously, before the first await**; a non-number means no
+  brawl. `welcome.brawl` echoes it (null otherwise). A brawl room forces `level-1`, skips `loadShip`, gets no
+  economy sink.
+- *Cap:* **`MAX_BRAWL_ROOMS = 2`** per process; a third brawl join gets `{ type: 'error', error:
+  'brawl-busy', max: 2 }` and close **4002**. The slot is released exactly once (`release()`) from teardown,
+  a failed `createRoom` and a join that throws. Campaign rooms are not counted against it.
+- *Backstop:* **`BRAWL_ROOM_MAX_MS = (BRAWL_SEC_MAX + 30) × 1000` = 330 s** after creation, armed or not: a
+  final snapshot with `brawl.ended: true`, then close **4001** `brawl-expired`.
+- *Slow-link guard:* before every brawl snapshot, if `ws.bufferedAmount > BRAWL_MAX_BUFFERED` (**8 MB**,
+  ~4 s of a 100 v 100 room's peak ~1.9 MB/s) the driver stops and the socket is **terminated** (not
+  closed — a close frame would queue behind the backlog and hold the slot for up to ~30 s); the client sees
+  1006, the server logs `[netsim] slow link: brawl room …`. Without it one slow or malicious client could
+  grow the send buffer until the container (`mem_limit 1g`) is OOM-killed. Campaign rooms are unaffected.
+- *`srv` — every room, not only brawls* (`driver.js`): once per wall second the driver closes a window and
+  the next snapshot carries `srv = { t, ticks, behind, stepMs:{avg,p95,max}, snapMs:{avg,max},
+  snapBytes:{sum,max}, snapPerSec, bufMax, proc:{…} }` — `stepMs` times each `stepOnce` (`performance.now`);
+  `snapMs` = `takeSnapshot` + `JSON.stringify` (once; `send` returns its length for the byte count) +
+  `ws.send`; `behind` = ticks dropped to the catch-up cap that second; `bufMax` = the largest
+  `ws.bufferedAmount` seen. `proc` is the **process**: the cached health reading (`loopP50/loopP99/loopMax`,
+  `load1/load5`, `cores`, `cpuPct`, `rssMB`, `heapMB`) plus `rooms`, `brawlRooms`, `clients`. A (re)start
+  opens a fresh window, so a paused room's idle time is not one long second. The client reads `srv` only
+  when present (`__netsim.lastSrv`); campaign netsim ignores it unless `?dev` perf is on, which copies it
+  into the per-second sample.
+- *Process health sampler:* `health().startSampler()` (once, in `attachNetsim`; unref'd) samples every 1 s
+  and caches `latest()`. It is then the **only** caller of `sample()` (which resets the shared event-loop
+  histogram); `line()` — the stall warning — formats the cached reading, so two rooms can no longer zero
+  each other's window.
+- *Log line:* every 10th window per room the driver logs one JSON line through the socket's logger,
+  `{ evt: 'netsim-room', room, brawl, tick, …srv, max10: { stepMs, snapBytes } }` (to stdout → the Loki
+  stack). `join`/`leave` lines carry `brawl=N|-`.
+- *Capacity:* `node server/tools/brawl-capacity.mjs [--n 20,50,100] [--k 1,2,4,8] [--sec 60]` steps K brawl
+  rooms of N v N round-robin in-process (no sockets: framing and kernel send cost excluded) and prints per
+  (N, K) the step / snapshot cost, snapshot KB, KB/s per client, ms of process time per wall second per room
+  and **rooms per core** (avg- and p95-based), for the whole run and for the first 10 sim-s (full load).
+  Bounded at K × N ≤ 800. Measured on the dev Mac (busy, load ~14), K = 1, 12 sim-s: N = 20 ≈ 9 ms/s/room (~100 rooms/core),
+  N = 100 ≈ 46 ms/s/room at full load (~21 rooms/core), ~1 MB/s per client at N = 100.
 
 **Guards.** `client/src/netsim-world.test.js` covers reconciliation in Node; `server/src/netsim/*.test.js`
 cover the room, the protocol allowlist, the tickets and the socket end to end — including that a room asked
@@ -5000,7 +5096,13 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   when it dies he heals again rather than picking a new fight.
   `brawl-dev.test.js`: the flag parse — off values, bare `?brawl` = setup, count/tier/sec clamps, identity
   when off. `brawl-stats.test.js`: frame summary with the floor-index p95, the 600-tick windows keyed to the
-  tick at frame end with the partial tail flagged, the end rule, the sim/wall ratio and the card text),
+  tick at frame end with the partial tail flagged, the end rule, the sim/wall ratio and the card text;
+  `?netbrawl`: the flag wins over `?brawl` with `server: true`, `serverWindowStats`/`summarizeSrv`, the card's
+  "Simulated by" row and the three server columns, `link-lost` + close code; `brawl-net.test.js`: the mirror —
+  `applyBrawlBlock` never touches the tab's armed/ended, `pushSrv` drops pre-arm samples and is bounded, a
+  mirror is never stepped by `brawlTick`, the error text; `netsim.test.js`: `netsimForBrawl` (no socket for a
+  bare `?netbrawl`) and `wsUrl` `brawl=N`; `netsim-world.test.js`: an `ace: 1` descriptor builds a ghost with
+  the `Wings_` accent, an unknown name without it still draws nothing),
   and **the wingman** (`sim-core/step-ally.test.js`: target selection by distance to the ALLY, the
   finite-vs-`Infinity` leash, the snap cone, the "never fire through the player" rule, both retreat
   thresholds needing BOTH conditions, the pass arming at >120°, and — the regressions this file exists for —
@@ -5220,6 +5322,21 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   ally — the one input no guard read, and the margin is a single tick (0.583 s instead of 0.6 s gives n = 35
   and 1.0111 > 1). The same test pins the no-clip `KICK + JITTER <= ALLY_AIM_MAX` and the settled-lands
   `JITTER × HIT_FRAC <= 0.373`.
+- **A bot-brawl room** — `server/src/netsim/room.test.js` (5 `BRAWL:` tests): a 5 v 5 room (restart, then
+  3600 × input+step) has the SAME fingerprint and kills as `createSimWorld({ brawl: 5 })` stepped headless
+  with `brawlTick`, 0 shared draws, no economy call, never banked; `restart` re-spawns 10 fresh ids (red
+  `ace: 1`, blue not), un-armed, pose ignored; the first real input arms it (an empty queue never does); the
+  snapshot's `brawl` keys, 2N rows, no `hitBoxes`, and a campaign snapshot has no `brawl` key; a 1 v 1 wipe-out
+  and `endBrawl()` both set `ended`. `driver.test.js` (fake clock): `srv` on exactly one snapshot per second
+  with ~60 ticks / ~30 snapshots / ~30 000 bytes and the injected `proc`; a 40 ms step gives `ticks < 60` and
+  `behind > 0`; the JSON log line once per 10 windows; `start()` opens a fresh window. `health.test.js`: the
+  sampler caches numeric `cpuPct/rssMB/heapMB/loopP99`, starts one timer, `stop()` clears it.
+  `socket-brawl.test.js` (own listeners, for the test-only `brawlMaxMs` / `onSession` / `createRoomFn`
+  options): the `brawl=999 → 100` / `abc → null` clamp; the cap (third join `brawl-busy` + 4002, a campaign
+  room still joins, a freed slot is reused); the backstop (final `ended` snapshot, 4001, slot released); the
+  slow-link guard (stubbed `bufferedAmount` → 1006, no snapshot sent, slot released, logged once; a campaign
+  room is never cut); a throwing join leaks no slot (mutation-checked: dropping the `release()` there, or
+  closing instead of terminating, fails these); `srv` and the `brawl` block arrive on a started room.
 - **A room runs the wingman** — `server/src/netsim/ally-room.test.js` (7): the room emits a `kind: 'ally'`
   spawn descriptor with no `hitBoxes`, its `allies` rows are the documented width, an ally room is
   deterministic across a re-run with the same seed and inputs, a room WITHOUT the flag sends `allies: []`
@@ -5464,6 +5581,13 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   neither the settings gear, the XP bar nor the fullscreen button. A bare `?brawl` shows the setup panel with
   a working stepper and typed count (Enter commits, 500 → 100, junk keeps the count, Start carries a typed
   but uncommitted 42 into `?brawl=42`); the flag off leaves no trace),
+  and **the server-run bot brawl** (`52-bot-brawl-netsim.mjs` — against the real local server, no `stepSim`:
+  `?debug&netbrawl=2&tier=performance&sec=10` connects a room by itself, arms with four ghosts that have
+  bodies (red with the `Wings_` accent), `__netsim.brawl === 2`, `srv` samples arrive, the card says "server
+  room" with the `srv step p95` column, a `/api/perf` sample carried the room's `srv` block, exactly one
+  `brawl-result`, nothing but `/api/perf` after arming, and the link closes at the card and stays closed;
+  a bare `?netbrawl` shows the panel reading "Simulated by: server room" with no `__netsim` at all, and
+  Start reloads into `?netbrawl=3`),
   and **the HUD's viewport cache** (`48-hud-viewport-cache.mjs` — the guard for DECISIONS §149. It shadows
   `window.innerWidth`/`innerHeight` with counting getters that delegate to the originals (own properties on
   `window`, so a read from ANY caller in the page counts — that is what makes a *sixth* HUD updater written

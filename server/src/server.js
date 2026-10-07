@@ -137,8 +137,10 @@ export async function createApp() {
       const file = path.join(sinkDir, name);
       // Stamp what the MACHINE was doing on the way in. The client cannot see it, and a stall report without
       // it has cost a day of looking in the wrong place already.
+      // The process sampler's cached reading when it runs (attachNetsim starts it): `sample()` resets the
+      // shared event-loop histogram every room's `srv.proc` reads, so it is only the fallback.
       const { health } = await import('./netsim/health.js');
-      const record = { ...body, server: { at: new Date().toISOString(), ...health().sample() } };
+      const record = { ...body, server: { at: new Date().toISOString(), ...(health().latest() || health().sample()) } };
       await fsp.writeFile(file, JSON.stringify(record));
       const n = (a) => (Array.isArray(a) ? a.length : 0);
       console.log(`[netjerk] ${name}: ${n(body.events)} breaks, ${n(body.arrivals)} packets, `

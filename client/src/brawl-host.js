@@ -7,6 +7,13 @@
 // radar triangle) asks it first, so the spectator ship can sit parked 5000 u away while the picture is
 // framed on the fight. It returns a reused THREE.Vector3 on the bullet plane — never a plain {x,z} and
 // never a sim Vec3, because THREE's `lookAt` type-tests its argument (the NaN-camera trap, vec.js).
+//
+// `?netbrawl` (docs/plans/2026-10-06-1530-server-brawl.md): the SAME panel, camera, measurement and card, but
+// the fight runs in a server room. This tab spawns nothing; `world.brawl` is a never-stepped MIRROR
+// (`brawl-net.js`) filled from the snapshots, the ships are netsim ghosts, a pick is by network id, and the
+// run arms only once the ghosts have arrived AND been warmed (the room arms on the tab's first input, which
+// main.js holds back until then — `brawlInputAllowed`). A lost link ends the run on the spot
+// (`brawlLinkLost`); there is no local fallback.
 import * as THREE from 'three';
 import { G, world } from './state.js';
 import { camera, renderer, setZoom } from './engine.js';
@@ -17,7 +24,10 @@ import {
   BRAWL_SEED, BRAWL_CENTER, BRAWL_N_MIN, BRAWL_N_MAX, BRAWL_N_DEFAULT, BRAWL_WINDOW_TICKS,
   spawnBrawl, brawlOver, brawlSimSec, brawlViewCentre, nextCameraMode,
 } from './sim-core/brawl.js';
-import { windowStats, brawlShouldEnd, buildBrawlResult, formatBrawlCard } from './brawl-stats.js';
+import {
+  windowStats, brawlShouldEnd, buildBrawlResult, formatBrawlCard, serverWindowStats, summarizeSrv,
+} from './brawl-stats.js';
+import { makeBrawlMirror, applyBrawlBlock, pushSrv, brawlNetErrorText } from './brawl-net.js';
 import { brawlDev, parseBrawlCount } from './brawl-dev.js';
 import { TIER_ORDER, TIERS } from './graphics.js';
 import { jsEngine } from './engine-id.js';
@@ -39,6 +49,11 @@ let interrupted = false;
 let result = null;
 let cardVisible = false;
 let onResult = null;
+// How a ship is named for a pick/follow: its pilot ordinal locally, its network id under ?netbrawl (ghosts
+// carry no `_aimOrdinal`).
+let idOf = (s) => s._aimOrdinal;
+let closeLink = null;         // ?netbrawl: main.js's "send bye and close" (Decision 10a)
+let linkClosed = false;       // ?netbrawl: the link is gone (closed by us at the card, or lost)
 const frustum = new THREE.Frustum();
 const projView = new THREE.Matrix4();
 const _p = new THREE.Vector3();
@@ -51,10 +66,17 @@ const preserved = () => {
   return s;
 };
 
-// ---------- the setup panel (a bare `?brawl`) ----------
-export function showBrawlSetup() {
+const paramName = () => (brawlDev()?.server ? 'netbrawl' : 'brawl');
+
+// ---------- the setup panel (a bare `?brawl` / `?netbrawl`) ----------
+// `error` — a ?netbrawl join that failed before the run armed (the server's brawl cap, an unreachable room).
+export function showBrawlSetup({ error = '' } = {}) {
   const root = document.getElementById('brawl-setup');
   if (!root) return;
+  const modeEl = root.querySelector('#brawl-mode');
+  if (modeEl) modeEl.textContent = `Simulated by: ${brawlDev()?.server ? 'server room' : 'this tab'}`;
+  const errEl = root.querySelector('#brawl-error');
+  if (errEl) { errEl.textContent = error || ''; errEl.hidden = !error; }
   let n = BRAWL_N_DEFAULT;
   let tier = G.gfx.name;                       // the SAVED tier (state.js resolved it at boot)
   const nEl = root.querySelector('#brawl-n');
@@ -82,7 +104,7 @@ export function showBrawlSetup() {
   nEl.onblur = commit;
   nEl.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') { commit(); nEl.blur(); } };  // keep game keys out of it
   nEl.onfocus = () => nEl.select();
-  root.querySelector('#brawl-start').onclick = () => { commit(); location.assign(`?brawl=${n}&tier=${tier}${preserved()}`); };
+  root.querySelector('#brawl-start').onclick = () => { commit(); location.assign(`?${paramName()}=${n}&tier=${tier}${preserved()}`); };
   root.classList.add('on');
   draw();
   setTimeout(draw, 1500);                      // the build stamp arrives with /api/config, maybe after boot
@@ -90,7 +112,8 @@ export function showBrawlSetup() {
 
 // ---------- the run ----------
 // `pushResult` is devPerf's — the one `/api/perf` sink, owned by main.js.
-export function startBrawl({ pushResult } = {}) {
+// `idOf` / `closeLink` are ?netbrawl's (main.js passes the network-id lookup and its link closer).
+export function startBrawl({ pushResult, idOf: idOfNet = null, closeLink: closeNet = null } = {}) {
   const dev = brawlDev();
   onResult = pushResult || null;
   document.body.classList.remove('menu');
@@ -98,16 +121,25 @@ export function startBrawl({ pushResult } = {}) {
   G.activeMission = null;
   G.gameStarted = true;
   reset();
-  // Spawned in the SAME frame as reset(), so the level warm that reset() requested compiles the bots too.
-  seedSim(BRAWL_SEED);
-  spawnBrawl(world, dev.n);
+  if (dev.server) {
+    // The ROOM spawns the bots; this tab only mirrors the fight (never stepped — brawlTick skips it).
+    world.brawl = makeBrawlMirror(dev.n);
+    idOf = idOfNet || ((s) => s._aimOrdinal);
+    closeLink = closeNet;
+    linkClosed = false;
+  } else {
+    // Spawned in the SAME frame as reset(), so the level warm that reset() requested compiles the bots too.
+    idOf = (s) => s._aimOrdinal;
+    seedSim(BRAWL_SEED);
+    spawnBrawl(world, dev.n);
+  }
   setZoom(1, false);            // gameplay zoom for this run only — the saved zoom is untouched
   mode = { kind: 'centre' }; followId = null;
   _view.set(BRAWL_CENTER.x, BULLET_PLANE_Y, BRAWL_CENTER.z);
   G.viewTarget = () => _view;
 }
 
-const shipById = (id) => [...world.allies, ...world.enemies].find((s) => s._aimOrdinal === id && s.alive !== false) || null;
+const shipById = (id) => [...world.allies, ...world.enemies].find((s) => idOf(s) === id && s.alive !== false) || null;
 
 function computeStationSphere() {
   const obj = G.baseStation && G.baseStation.obj;
@@ -124,6 +156,15 @@ export function brawlFrame(rawSec, warmDone) {
   const b = world.brawl;
   if (!b) return;
   if (!b.armed) {
+    if (b.server && !b.ghostsSeen) {
+      // ?netbrawl: wait for the room's ships to arrive, then re-warm the scene so the ally and ace hulls
+      // compile behind the veil (the brawl level's inert phase warmed no enemy types). The run arms when that
+      // warm is done — and only then does main.js start sending input, which is what arms the ROOM.
+      if (world.allies.length + world.enemies.length === 0) return;
+      b.ghostsSeen = true;
+      G.needsSceneWarm = true;
+      return;
+    }
     if (!warmDone) return;                     // frames behind the veil are not the fight
     b.armed = true;
     t0 = performance.now();
@@ -155,7 +196,9 @@ export function brawlFrame(rawSec, warmDone) {
   if (stationKnown) { stationFrames++; if (frustum.intersectsSphere(stationSphere)) stationHits++; }
   if (document.hidden || G.paused) interrupted = true;
   const wallMs = performance.now() - t0;
-  const endedBy = brawlShouldEnd({ wallMs, secLimit: brawlDev().sec, over: brawlOver(world) });
+  let endedBy = brawlShouldEnd({ wallMs, secLimit: brawlDev().sec, over: b.server ? !!b.serverEnded : brawlOver(world) });
+  // The room ended it while both sides still stand: its backstop fired.
+  if (endedBy === 'wipeout' && b.server && b.alive[0] > 0 && b.alive[1] > 0) endedBy = 'server';
   if (endedBy) finish(endedBy, wallMs / 1000);
 }
 
@@ -163,25 +206,70 @@ function stationPct() {
   return stationKnown && stationFrames ? Math.round((stationHits / stationFrames) * 1000) / 10 : null;
 }
 
-function finish(endedBy, wallSec) {
+function finish(endedBy, wallSec, { closeCode = null } = {}) {
   const b = world.brawl;
   b.ended = true;
   const fp = b.fingerprint;
   const windows = windowStats(samples, BRAWL_WINDOW_TICKS).map((w) => ({
     ...w,
-    alive: fp[w.w] ? [fp[w.w][1], fp[w.w][2]] : [world.allies.length, world.enemies.length],
+    alive: fp[w.w] ? [fp[w.w][1], fp[w.w][2]] : (b.server ? b.alive.slice() : [world.allies.length, world.enemies.length]),
   }));
   result = buildBrawlResult({
     n: b.n, tier: G.gfx.name, build: G.buildVersion,
     res: `${renderer.domElement.width}x${renderer.domElement.height}`, dpr: renderer.getPixelRatio(),
     wallSec, simSec: brawlSimSec(world), frameMs, windows, fingerprint: fp,
     killsByBlue: b.killsByBlue, killsByRed: b.killsByRed,
-    survivors: { blue: world.allies.length, red: world.enemies.length },
+    // Under ?netbrawl the room's count, not the ghosts this tab happens to still be drawing.
+    survivors: b.server ? { blue: b.alive[0], red: b.alive[1] } : { blue: world.allies.length, red: world.enemies.length },
     stationInFramePct: stationPct(), interrupted, endedBy, engine: jsEngine(),
+    server: !!b.server,
+    srv: b.server ? summarizeSrv(b.srv) : null,
+    serverWindows: b.server ? serverWindowStats(b.srv, BRAWL_WINDOW_TICKS) : null,
+    closeCode,
   });
   try { onResult && onResult(result); } catch {}
+  // ?netbrawl: the card is up, so the room has nothing left to do — say `bye` (Decision 10a). Silent: the
+  // link's close() detaches its handlers first, so this is not mistaken for a lost link.
+  if (b.server && closeLink && !linkClosed) { linkClosed = true; try { closeLink(); } catch {} }
   showCard(result);
 }
+
+// ---------- ?netbrawl: the wire ----------
+// Input is held back until the TAB has armed (ghosts seen, scene warmed) and stops at the card: the room arms
+// on the first input, so this is what starts the server's clock at the same moment as the tab's.
+export function brawlInputAllowed() {
+  const b = world.brawl;
+  return !b || !b.server || (b.armed && !b.ended);
+}
+
+// Fold a snapshot's `brawl` and `srv` blocks into the mirror (a no-op for anything but a ?netbrawl run).
+export function brawlNetSnapshot(snap) {
+  const b = world.brawl;
+  if (!b || !b.server || !snap) return;
+  if (snap.brawl) applyBrawlBlock(b, snap.brawl);
+  if (snap.srv) pushSrv(b, snap.srv);
+}
+
+// THE one link-loss path (Decision 11). Before the run armed: back to the setup panel with the reason (the
+// server's brawl cap, an unreachable room). During the run: end it NOW, with what was measured, as
+// `endedBy: 'link-lost'` and the close code. Idempotent. A later general reconnect for every room replaces
+// this (docs/plans/2026-10-06-1530-server-brawl.md "Next").
+export function brawlLinkLost({ code = null, reason = '' } = {}) {
+  const b = world.brawl;
+  const wasClosed = linkClosed;
+  linkClosed = true;
+  if (!b || !b.server || wasClosed) return;
+  if (!b.armed) {
+    const card = document.getElementById('brawl-card');
+    if (card) card.classList.remove('on');
+    showBrawlSetup({ error: brawlNetErrorText(reason || (code != null ? `closed ${code}` : '')) });
+    return;
+  }
+  if (!b.ended) finish('link-lost', (performance.now() - t0) / 1000, { closeCode: code });
+}
+
+// Whether the ?netbrawl link is gone for good (main.js must not open a new room).
+export function brawlLinkClosed() { return linkClosed; }
 
 function showCard(r) {
   const root = document.getElementById('brawl-card');
@@ -195,7 +283,7 @@ function showCard(r) {
     // phone the box scrolls, so whatever comes first is what is seen without scrolling.
     `<table class="brawl-win">${head}${body}</table><table class="brawl-kv">${rows}</table><p class="brawl-note">${esc(c.note)}</p>`;
   root.querySelector('#brawl-again').onclick = () => location.reload();
-  root.querySelector('#brawl-setup-btn').onclick = () => location.assign(`?brawl${preserved()}`);
+  root.querySelector('#brawl-setup-btn').onclick = () => location.assign(`?${paramName()}${preserved()}`);
   root.classList.add('on');
   cardVisible = true;
 }
@@ -214,8 +302,10 @@ export function brawlTap(ndc) {
       let best = PICK_RADIUS;
       for (const s of [...world.allies, ...world.enemies]) {
         if (s.alive === false || s.warping) continue;
+        const id = idOf(s);
+        if (id == null) continue;
         const d = Math.hypot(s.pos.x - _hit.x, s.pos.z - _hit.z);
-        if (d <= best) { best = d; picked = s._aimOrdinal; }
+        if (d <= best) { best = d; picked = id; }
       }
     }
   }
@@ -234,12 +324,16 @@ export function brawlDebugState() {
     ...b,
     fingerprint: b.fingerprint.slice(),
     simSec, wallSec, ratio: wallSec > 0 ? Math.round((simSec / wallSec) * 100) / 100 : 0,
-    alive: [world.allies.length, world.enemies.length],
+    alive: b.server ? b.alive.slice() : [world.allies.length, world.enemies.length],
     cam: mode.kind, followId,
     stationInFramePct: stationPct(),
     frames: samples.length,
     windows: result ? result.windows : null,
     cardVisible, interrupted,
     result,
+    server: !!b.server,
+    srvCount: b.srv ? b.srv.length : 0,
+    lastSrv: b.srv && b.srv.length ? b.srv[b.srv.length - 1] : null,
+    linkClosed,
   };
 }

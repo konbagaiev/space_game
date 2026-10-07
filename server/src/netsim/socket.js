@@ -13,6 +13,8 @@
 import { WebSocketServer } from 'ws';
 import { createRoom } from './room.js';
 import { createDriver } from './driver.js';
+import { health } from './health.js';
+import { clampBrawlN, BRAWL_SEC_MAX } from '../../../client/src/sim-core/brawl.js';
 
 export const WS_PATH = '/ws';
 // A room with nobody on the other end is a leak, and liveness is measured at the TRANSPORT, not in the game
@@ -30,6 +32,20 @@ export const PING_EVERY_MS = 10_000;
 export const IDLE_TIMEOUT_MS = 30_000;
 // A cap on concurrent rooms — one box, 60 Hz each. Small on purpose for a first cut; raise by measurement.
 export const MAX_ROOMS = 32;
+// BOT-BRAWL ROOMS (`?netbrawl=N`, docs/plans/2026-10-06-1530-server-brawl.md). A load test anyone can open
+// with an anonymous ticket, so it is capped: at most this many at once per process (a third join gets
+// `{ type: 'error', error: 'brawl-busy' }` and close 4002), …
+export const MAX_BRAWL_ROOMS = 2;
+// …each closed by the server this long after it was created, armed or not (a final `ended` snapshot, then
+// close 4001 `brawl-expired`) — the longest run a tab can ask for plus 30 s of spawn, warm and card…
+export const BRAWL_ROOM_MAX_MS = (BRAWL_SEC_MAX + 30) * 1000;
+// …and THE SLOW-LINK GUARD. A 100 v 100 room peaks at ~1.9 MB/s per client and `send()` has no backpressure;
+// the ticket is anonymous and inbound input keeps resetting the idle close. One slow or malicious client
+// could therefore grow this process's send buffer until the container (prod `mem_limit 1g`) is OOM-killed,
+// taking every room with it. Past this many unsent bytes (~4 s of peak output) a brawl room's socket is
+// TERMINATED — not closed: a close frame would queue behind the very megabytes that tripped the guard and
+// hold the cap slot for up to ~30 s. The client sees an abnormal close (1006). Campaign rooms are untouched.
+export const BRAWL_MAX_BUFFERED = 8 * 1024 * 1024;
 
 // `loadShip(playerId)` resolves the player's ACTIVE ship from the account — read server-side on purpose.
 // The room used to build the catalog's default starter ship for everyone, so a netsim run ignored every
@@ -56,10 +72,20 @@ export function makeEconomySink({ playerId, level, bankRun, log = console }) {
   };
 }
 
+// Test-only options, both defaulting to production behaviour: `onSession(session)` is called once a session
+// exists (a test stubs `session.ws.bufferedAmount` through it), and `createRoomFn` replaces `createRoom` (a test
+// makes a join throw). `brawlMaxMs` shortens the brawl backstop for a test.
 export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = null, log = console,
-                                          pingEveryMs = PING_EVERY_MS, idleTimeoutMs = IDLE_TIMEOUT_MS } = {}) {
+                                          pingEveryMs = PING_EVERY_MS, idleTimeoutMs = IDLE_TIMEOUT_MS,
+                                          brawlMaxMs = BRAWL_ROOM_MAX_MS, onSession = null,
+                                          createRoomFn = createRoom } = {}) {
   const wss = new WebSocketServer({ noServer: true });
   const sessions = new Set();
+  let brawlRooms = 0;   // brawl rooms holding a slot (counted from the join, released exactly once)
+  let roomSeq = 0;      // a per-process room id, for the log lines
+  // The process health sampler: ONE reader of the shared event-loop histogram, so every room's `srv.proc`
+  // and the stall warning read the same cached window instead of resetting each other's (health.js).
+  health().startSampler();
 
   httpServer.on('upgrade', (req, socket, head) => {
     let url;
@@ -69,7 +95,8 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
     if (!redeemed) return destroy(socket, 401);
     if (sessions.size >= MAX_ROOMS) return destroy(socket, 503);
     wss.handleUpgrade(req, socket, head, (ws) => {
-      log.info?.(`[netsim] join player=${redeemed.playerId} origin=${req.headers.origin || '-'}`);
+      log.info?.(`[netsim] join player=${redeemed.playerId} origin=${req.headers.origin || '-'} `
+        + `brawl=${url.searchParams.get('brawl') || '-'}`);
       open(ws, redeemed, url.searchParams);
     });
   });
@@ -86,6 +113,24 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
       try { msg = JSON.parse(data); } catch { return; } // a malformed frame is dropped, never fatal
       deliver(msg);
     });
+
+    // ?netbrawl: the cap is checked and the slot TAKEN synchronously, before the first await — two joins
+    // awaiting side by side must not both pass the check. `release` gives it back exactly once, from every
+    // exit path (teardown, a failed createRoom, and a join that throws anywhere), or two failures would lock
+    // `?netbrawl` out until the process restarts.
+    const brawlRaw = Number.parseInt(params.get('brawl'), 10);
+    const brawl = Number.isFinite(brawlRaw) && brawlRaw > 0 ? clampBrawlN(brawlRaw) : null;
+    if (brawl) {
+      if (brawlRooms >= MAX_BRAWL_ROOMS) {
+        send(ws, { type: 'error', error: 'brawl-busy', max: MAX_BRAWL_ROOMS });
+        log.info?.(`[netsim] brawl refused player=${playerId}: ${brawlRooms} brawl rooms already running`);
+        return ws.close(4002, 'brawl rooms full');
+      }
+      brawlRooms++;
+    }
+    let counted = !!brawl;
+    const release = () => { if (counted) { counted = false; brawlRooms--; } };
+    const id = ++roomSeq;
 
     (async () => {
       const levelName = params.get('level') || 'level-0';
@@ -104,7 +149,8 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
       // the catalog default, which is what every room used to fly.
       let ship = {};
       try {
-        const active = loadShip ? await loadShip(playerId) : null;
+        // A brawl room skips the account read: its spectator ship never moves, so the catalog default does.
+        const active = (loadShip && !brawl) ? await loadShip(playerId) : null;
         if (active && active.ship) {
           ship = { shipId: active.ship.id, loadout: active.loadout, components: active.components,
                    skills: active.progression && active.progression.skills };
@@ -113,17 +159,41 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
 
       let room;
       try {
-        room = createRoom({ levelName, seed, ship, ally, lancer, beam,
-          onEconomy: makeEconomySink({ playerId, level: levelName, bankRun, log }) });
+        // A brawl room gets NO economy sink at all — it never pays, belt and braces (it also emits nothing
+        // that would: the parked spectator is never stepped).
+        room = createRoomFn({ levelName, seed, ship, ally, lancer, beam, brawl,
+          onEconomy: brawl ? null : makeEconomySink({ playerId, level: levelName, bankRun, log }) });
       } catch (err) {
+        release();
         // An unknown level is the client's mistake, not a crash: say so and close.
         send(ws, { type: 'error', error: String(err.message || err) });
         return ws.close(1008, 'bad room');
       }
 
-      const driver = createDriver(room, { onSnapshot: (snap) => send(ws, snap) });
-      const session = { ws, room, driver, playerId, lastSeen: Date.now() };
+      // The slow-link guard (BRAWL_MAX_BUFFERED), checked before every brawl snapshot. `driver` is read
+      // lazily, so the closure can stop it.
+      let driver = null;
+      let slow = false;
+      const onSnapshot = (snap) => {
+        if (brawl && (slow || ws.bufferedAmount > BRAWL_MAX_BUFFERED)) {
+          if (!slow) {
+            slow = true;
+            log.warn?.(`[netsim] slow link: brawl room ${id} player=${playerId} buffered=${ws.bufferedAmount} — closing`);
+            driver?.stop();
+            try { ws.terminate(); } catch {}   // NOT close(): see BRAWL_MAX_BUFFERED
+          }
+          return 0;
+        }
+        return send(ws, snap);
+      };
+      driver = createDriver(room, {
+        onSnapshot, label: id, log,
+        bufferedAmount: () => ws.bufferedAmount,
+        procStats: () => ({ rooms: sessions.size, brawlRooms, clients: sessions.size }),
+      });
+      const session = { ws, room, driver, playerId, brawl, id, lastSeen: Date.now() };
       sessions.add(session);
+      onSession?.(session);
 
       send(ws, { ...room.welcome(), seed, playerId });
       // The room does NOT start stepping on join. A client connects while the player is still on a menu —
@@ -161,15 +231,30 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
       // like the suite is still working.
       idle.unref?.();
 
+      // The brawl BACKSTOP: a brawl room closes itself BRAWL_ROOM_MAX_MS after it was created, armed or not,
+      // with a final snapshot that says `ended`.
+      const expire = brawl ? setTimeout(() => {
+        room.endBrawl();
+        try { send(ws, room.takeSnapshot()); } catch {}
+        ws.close(4001, 'brawl-expired');
+      }, brawlMaxMs) : null;
+      expire?.unref?.();
+
+      let gone = false;
       const teardown = () => {
         clearInterval(idle);
+        if (expire) clearTimeout(expire);
         driver.stop();
         sessions.delete(session);
-        log.info?.(`[netsim] leave player=${playerId} ticks=${room.tick} behind=${driver.behind}`);
+        release();
+        if (gone) return;   // `close` and `error` can both arrive
+        gone = true;
+        log.info?.(`[netsim] leave player=${playerId} brawl=${brawl ?? '-'} ticks=${room.tick} behind=${driver.behind}`);
       };
       ws.on('close', teardown);
       ws.on('error', teardown);
     })().catch((err) => {
+      release();
       log.warn?.(`[netsim] join failed for ${playerId}: ${err && err.message}`);
       try { ws.close(1011, 'join failed'); } catch {}
     });
@@ -177,6 +262,7 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
 
   return {
     get rooms() { return sessions.size; },
+    get brawlRooms() { return brawlRooms; },
     // Stop every room — used by the tests, and by a graceful shutdown.
     closeAll(code = 1001, reason = 'server closing') {
       for (const s of [...sessions]) { s.driver.stop(); try { s.ws.close(code, reason); } catch {} }
@@ -186,8 +272,12 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
   };
 }
 
+// Stringified ONCE; the length is returned so the driver can count the bytes it sent (0 when not open).
 function send(ws, obj) {
-  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
+  if (ws.readyState !== ws.OPEN) return 0;
+  const s = JSON.stringify(obj);
+  ws.send(s);
+  return s.length;
 }
 
 function destroy(socket, status) {

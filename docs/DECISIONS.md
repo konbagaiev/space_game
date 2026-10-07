@@ -6858,3 +6858,41 @@ camera — so it follows the zoom. The player's own shots and hits on the player
 see explosions you cannot hear); distance attenuation inside the frame (more work; can come later on top of
 this gate). **Trade-off accepted:** a fight just off screen is silent — the edge arrows and radar carry it.
 
+
+## 161. Server load metrics ride the snapshot and `perf_samples`; a brawl room is capped at 2 per process and 330 s
+
+**Date:** 2026-10-06. **Context:** the bot brawl was our repeatable load test, but it only measured the TAB.
+`?netbrawl=N` (plan `docs/plans/2026-10-06-1530-server-brawl.md`) runs the same fight in a server netsim room
+so the server's cost can be measured — step time, snapshot cost and bytes, event loop, CPU, memory.
+
+**Decision.**
+- **Where the numbers go:** the driver measures per room, once per wall second, and the next snapshot carries
+  them as `srv`. The tab shows them on the card and copies them into its existing `/api/perf` sample, so
+  the analysis stays ONE SQL table (`perf_samples`) with both ends of the link in the same row. The server
+  also logs one JSON line per room every 10 s (`evt: 'netsim-room'`) for the Loki stack. Every room gets it,
+  not only brawls — one code path, near-free.
+- **Process health is sampled once per second for the whole process and cached** (`health().startSampler()`).
+  `sample()` resets the one shared event-loop histogram, so per-room sampling would have two rooms zeroing
+  each other's window (and the stall warning was already doing it).
+- **Abuse guard:** at most 2 concurrent brawl rooms per process, `n` clamped to 1..100, a 330 s backstop
+  (`BRAWL_SEC_MAX + 30`), and an 8 MB send-buffer cap per brawl room that **terminates** the socket. The
+  ticket is anonymous, `send()` has no backpressure and inbound input keeps resetting the idle close, so one
+  slow client could otherwise grow the process to the container's 1 GB limit and take every room with it.
+  Terminate rather than close (maintainer, review gate): a close frame queues behind the very backlog that
+  tripped the guard and would hold the cap slot for up to ~30 s.
+- **The tab arms before the server.** The room spawns on `start`; the tab re-warms the scene when the first
+  ghosts arrive (the brawl level warms no enemy types), arms its wall clock when the warm is done, and only
+  then sends input — and the room arms on the first input. So both clocks start when the tab is actually
+  watching, and the card's first window is not polluted by late shader compiles. The alternative (the room
+  arms on `start`) would have the server fighting for several seconds while the tab sat behind the veil.
+- **No local fallback** for `?netbrawl`: a lost link ends the run as `link-lost` (one function, to be replaced
+  by a general reconnect for all rooms). Falling back would silently turn a server measurement into a tab one.
+
+**Alternatives rejected:** a `/api/metrics` endpoint or Prometheus (a second pipeline to run and join against
+the client rows, for one load test — DECISIONS §30); per-room health sampling (resets the shared histogram);
+dropping snapshots under backpressure (a protocol change; `bufMax` measures the pressure, the guard only
+closes a hopeless link).
+
+**Known limitation:** the seeded stream is process-global, so a campaign room created during a brawl re-keys
+the brawl's pilots (and a brawl room re-seeds a running campaign room) — only an offline fingerprint
+comparison notices. Not fixed here.

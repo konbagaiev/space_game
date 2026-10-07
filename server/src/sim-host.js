@@ -27,6 +27,7 @@ import { withAllyAt } from '../../client/src/sim-core/ally-config.js';
 import { withLancersAt } from '../../client/src/sim-core/lancer-config.js';
 import { withBeamGun } from '../../client/src/sim-core/beam-config.js';
 import { withDuelRoom } from '../../client/src/sim-core/duel-config.js';
+import { BRAWL_LEVEL, BRAWL_SEED, withBrawlRoom, spawnBrawl, clampBrawlN } from '../../client/src/sim-core/brawl.js';
 
 // The catalog the client assembles from `/api` at boot (main.js), built here straight from the seed the
 // server would have served. Same shape, same keys — `world.catalog` is the only way the sim reaches it.
@@ -107,16 +108,27 @@ export function buildShip(catalog, { shipId = null, loadout = null, components =
 // re-simulated by the referee (docs/plans/2026-09-01-1845-duel-referee.md).
 // The headless referee (`server/tools/sim-replay.mjs`) passes `duel` when the trace it is replaying carries
 // a room, and NONE of the other three — so a re-simulated campaign trace is unchanged.
+// `brawl` — the bot brawl's count per side (`?netbrawl=N`, a server-run room), or null. It forces the level
+// to `BRAWL_LEVEL`, replaces the script with the inert brawl room, seeds `BRAWL_SEED` and spawns both teams
+// UN-ARMED (the room arms the fight on the client's first input). It wins over `ally`, `lancer` and `duel`,
+// which are ignored. The world is stepped with `brawlTick`, never `simTick` (room.js).
 export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, host = noopHost, ally = null,
-                                 lancer = null, beam = false, duel = null } = {}) {
+                                 lancer = null, beam = false, duel = null, brawl = null } = {}) {
+  if (brawl) levelName = BRAWL_LEVEL;
   const catalog = buildCatalog(levelName);
   // Every transform COPIES: `buildCatalog` shares the seed's `phases` array, so mutating it in place would
   // give every room in this process an ally (or a wave of lancers).
-  if (ally) catalog.level = withAllyAt(catalog.level, ally);
-  if (lancer) catalog.level = withLancersAt(catalog.level, lancer);
-  // `duel` is LAST: it replaces the phase script the other two edit — the same ordering the client applies
-  // in main.js (`applyDuelDev(applyLancerDev(applyAllyDev(...)))`).
-  if (duel) catalog.level = withDuelRoom(catalog.level, duel.aces);
+  //
+  // `brawl` replaces the whole script like `duel` does, and wins over all three: with it set, none of the
+  // others is applied.
+  if (brawl) catalog.level = withBrawlRoom(catalog.level);
+  else {
+    if (ally) catalog.level = withAllyAt(catalog.level, ally);
+    if (lancer) catalog.level = withLancersAt(catalog.level, lancer);
+    // `duel` is LAST: it replaces the phase script the other two edit — the same ordering the client applies
+    // in main.js (`applyDuelDev(applyLancerDev(applyAllyDev(...)))`).
+    if (duel) catalog.level = withDuelRoom(catalog.level, duel.aces);
+  }
   const world = createWorld({ host });
   world.catalog = catalog;
   world.station = stationFor(catalog.level.map);
@@ -127,5 +139,8 @@ export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, hos
   seedSim(seed);
   clearAndPlaceRun(world);
   startRun(world);
+  // The brawl spawns from its own fixed seed, after the run has started — the order the browser uses
+  // (`brawl-host.js startBrawl`: reset(), then seedSim + spawnBrawl).
+  if (brawl) { seedSim(BRAWL_SEED); spawnBrawl(world, clampBrawlN(brawl)); }
   return world;
 }
