@@ -42,6 +42,15 @@ export function evalNetsim(search) {
   return { level, seed };
 }
 
+// `?netbrawl=N` (brawl-dev.js) implies the netsim connection by itself: the bot brawl runs in a SERVER room
+// (docs/plans/2026-10-06-1530-server-brawl.md). `dev` is `brawlDev()`. Only with a COUNT — a bare `?netbrawl`
+// is the setup panel and must open no socket (a socket would take one of the server's two brawl slots).
+// Returns the netsim descriptor with `brawl: N` added, or `netsim` unchanged.
+export function netsimForBrawl(netsim, dev) {
+  if (dev && dev.server && dev.n) return { ...(netsim || { level: null, seed: null }), brawl: dev.n };
+  return netsim;
+}
+
 // Why netsim is NOT driving this frame — or null when it is. Returns a reason string, so the console
 // handle can answer "why am I not in a room" without anyone reading the loop.
 //
@@ -72,6 +81,20 @@ export function netsimDeferReason({ record, playback, sideMission, roam }) {
   return null;
 }
 
+// The netsim badge's text after the dot (main.js updateNetBadge). Pure, so the one rule that is easy to get
+// wrong is testable: once a `?netbrawl` link was closed on purpose (bye at the card) or lost, the run WAS
+// server-run — "local · no room" would read as if this tab had simulated it.
+export function netBadgeReason({ deferredBy = null, down = false, link = false, connecting = false,
+                                 started = false, roomPaused = false, level = null, brawlClosed = false } = {}) {
+  if (deferredBy) return `local · ${deferredBy}`;
+  if (down) return 'local · disconnected';
+  if (!link && brawlClosed) return 'room closed';
+  if (!link) return connecting ? 'connecting…' : 'local · no room';
+  if (!started) return 'room joined';
+  if (roomPaused) return 'room idle';   // joined, but no fight to step — an overlay or a menu is up
+  return `room · ${level || '?'}`;
+}
+
 // Back-compat shorthand for the boolean form.
 export function netsimDefersTo(state) { return netsimDeferReason(state) !== null; }
 
@@ -92,7 +115,7 @@ export function isUnroomableSideMission(netsim, activeMission) {
 // Build the socket URL from the page's origin (or the configured API base), swapping the scheme. Kept pure
 // so the mapping http→ws / https→wss is testable; getting it wrong on the itch build would be a silent
 // mixed-content failure with no error worth reading.
-export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally, lancer, beam }) {
+export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally, lancer, beam, brawl }) {
   const base = apiBase || origin;
   const u = new URL('/ws', base);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -109,6 +132,8 @@ export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally, l
   // cross the wire because the ROOM builds the player: without it the server flies the account's real gun
   // while this tab draws a beam sight over it, which is what the aiming lines are there NOT to do.
   if (beam) u.searchParams.set('beam', '1');
+  // `brawl` = bots per side: the room runs the bot brawl instead of the level (`?netbrawl`).
+  if (brawl) u.searchParams.set('brawl', String(brawl));
   return u.toString();
 }
 
@@ -165,7 +190,8 @@ export function createUplink({ send, batch = INPUT_BATCH }) {
 //
 // Failure is quiet and total: if the ticket or the socket fails there is no half-connected state to reason
 // about, `onError` fires once, and the caller decides what the player sees.
-export async function connectNetsim({ playerId, level, seed, ally = null, lancer = null, beam = null, origin = location.origin,
+export async function connectNetsim({ playerId, level, seed, ally = null, lancer = null, beam = null, brawl = null,
+                                      origin = location.origin,
                                       onWelcome, onSnapshot, onClose, onError,
                                       fetchFn = fetch, WebSocketImpl = WebSocket } = {}) {
   let res;
@@ -178,7 +204,7 @@ export async function connectNetsim({ playerId, level, seed, ally = null, lancer
   if (!res.ok) { onError?.(new Error(`ws-ticket ${res.status}`)); return null; }
   const { ticket } = await res.json();
 
-  const ws = new WebSocketImpl(wsUrl({ origin, ticket, level, seed, ally, lancer, beam }));
+  const ws = new WebSocketImpl(wsUrl({ origin, ticket, level, seed, ally, lancer, beam, brawl }));
   // Attached BEFORE the socket opens: the room sends `welcome` the instant the upgrade completes, so a
   // handler installed on `open` races it and loses the message.
   ws.onmessage = (ev) => {
@@ -186,7 +212,8 @@ export async function connectNetsim({ playerId, level, seed, ally = null, lancer
     try { msg = JSON.parse(ev.data); } catch { return; }
     if (msg.type === 'welcome') onWelcome?.(msg);
     else if (msg.type === 'snap') onSnapshot?.(msg);
-    else if (msg.type === 'error') onError?.(new Error(msg.error));
+    // A refused join (`brawl-busy`, an unknown level) — `code` carries the machine-readable reason.
+    else if (msg.type === 'error') onError?.(Object.assign(new Error(msg.error), { code: msg.error }));
   };
   ws.onclose = (ev) => onClose?.(ev);
   ws.onerror = (err) => onError?.(err);

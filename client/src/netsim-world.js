@@ -24,6 +24,7 @@ import { Vec3 } from './sim-core/vec.js';
 import { EVENT_ENTITY_REFS } from './sim-core/events.js';
 import { makeEnemyShell } from './sim-core/ship-entity.js';
 import { makeAlly } from './sim-core/ally.js';
+import { makeAce } from './sim-core/ace.js';
 import { shortestAngleDelta } from './sim-core/steering.js';
 import { BULLET_PLANE_Y, SIM_DT } from './sim-core/consts.js';
 
@@ -118,7 +119,14 @@ export function createNetState() {
 // simulation makes, so the browser attaches the same mesh it would for a local spawn.
 function spawnGhost(world, desc) {
   let e;
-  if (desc.kind === 'enemy') {
+  if (desc.kind === 'enemy' && desc.ace) {
+    // A Sentinel ACE (the bot brawl's red team). Its name ('Sentinel duelist') is not a catalog ship, so
+    // the lookup below would draw nothing. The SAME constructor the sim uses gives the hull, the colour and
+    // the red `Wings_` accent; the ordinal only keys the pilot's private streams, which a ghost never uses.
+    e = makeAce(world.catalog, 0);
+    if (!e) return null;
+    e.maxHp = desc.maxHp ?? e.maxHp;
+  } else if (desc.kind === 'enemy') {
     const shipDef = world.catalog.shipByName.get(desc.name);
     if (!shipDef) return null; // an unknown ship name is the server's bug; drawing nothing beats crashing
     e = makeEnemyShell(world.catalog, shipDef);

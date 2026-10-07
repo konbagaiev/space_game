@@ -35,6 +35,9 @@ import { engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutop
   from '../../../client/src/sim-core/step-player.js';
 import { finishMission } from '../../../client/src/sim-core/level-runner.js';
 import { wireEvent } from './protocol.js';
+import { seedSim } from '../../../client/src/sim-core/sim-random.js';
+import { BRAWL_SEED, brawlTick, brawlOver, brawlBlock, spawnBrawl } from '../../../client/src/sim-core/brawl.js';
+import { ACE_PILOT } from '../../../client/src/sim-core/ace.js';
 
 // Ticks between snapshots. 2 → 30 Hz at TICK_HZ 60. The SIM rate is not negotiable across hosts
 // (DECISIONS §118); the SNAPSHOT rate is the knob that actually costs bandwidth and is tuned on its own.
@@ -79,7 +82,7 @@ const EMPTY_INPUT = { k: [], t: null };
 export const INPUT_HOLD_TICKS = 30;
 
 export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapshotEvery = SNAPSHOT_EVERY,
-                             onEconomy = null, ally = null, lancer = null, beam = false } = {}) {
+                             onEconomy = null, ally = null, lancer = null, beam = false, brawl = null } = {}) {
   const ids = new WeakMap();   // entity → network id. WeakMap: the sim never learns it has one.
   let nextId = 1;
   const spawnQueue = [];       // static descriptions of entities the client has not been told about yet
@@ -94,7 +97,12 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
     onWarmLevel() {}, // a server parses no models
   };
 
-  const world = createSimWorld({ levelName, seed, ship, host, ally, lancer, beam });
+  // `brawl` (N per side) makes this a BOT-BRAWL room (`?netbrawl`, docs/plans/2026-10-06-1530-server-brawl.md):
+  // the world is stepped with `brawlTick` instead of `simTick`, the fight is armed by the client's first
+  // input, and it never reports an economy event (the player is parked and never stepped, so nothing emits
+  // `cleared`/`death`; the socket also passes no sink).
+  const world = createSimWorld({ levelName, seed, ship, host, ally, lancer, beam, brawl });
+  const brawlN = world.brawl ? world.brawl.n : null;
 
   const queue = [];            // pending client input snapshots, oldest first
   let lastInput = EMPTY_INPUT; // repeated across a short gap: one late packet must not stutter a held key
@@ -123,8 +131,12 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       // `weightClass` rides along for WIRE SYMMETRY and is unread today: the client never reads
       // desc.role/sizeScale/shipClass either — spawnGhost rebuilds the enemy through makeEnemyShell from its
       // own catalog, so the ghost already has the mass tier. The load-bearing copy is the `kill` EVENT field.
+      // `ace: 1` — a Sentinel ace (the brawl's red team, the duel room's sparring partners). Its NAME is not a
+      // catalog ship, so the client could not resolve it and drew nothing; with the flag it rebuilds the ghost
+      // through the same `makeAce` the sim uses (hull, colour and the red wing accent).
       return { id, kind, name: e.name, shipClass: e.class, weightClass: e.weightClass, color: e.color,
-               fullScale: e.fullScale, maxHp: e.maxHp, role: e.role, sizeScale: e.sizeScale };
+               fullScale: e.fullScale, maxHp: e.maxHp, role: e.role, sizeScale: e.sizeScale,
+               ace: e.pilot === ACE_PILOT ? 1 : undefined };
     }
     // The WINGMAN. Same shape as an enemy minus the role — the client resolves the model from the NAME plus
     // the catalog it already has (it builds the ghost through the very same `makeAlly`); only the COLOUR is
@@ -216,12 +228,16 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       }
       const next = queue.shift();
       if (next) { lastInput = next; ack = next.t; sinceInput = 0; } else sinceInput++;
+      // A brawl room arms on the first REAL input (never a repeated one): the tab sends none until its own
+      // scene warm is done, so the room's sim clock and the tab's wall clock start together (Decision 18).
+      if (world.brawl && !world.brawl.armed && next) world.brawl.armed = true;
       // Held across a short gap, released across a long one. A client that has gone quiet is not flying.
       const applied = sinceInput > INPUT_HOLD_TICKS ? EMPTY_INPUT : lastInput;
       // `applyInput` takes the recorded tick shape: `{ k, t }` where `t` is the touch aim.
       applyInput({ k: applied.k, t: applied.a }, world.input.keys, world.input.touchAim);
       // simTick hands back whatever the Grab is pulling — presentation only, but only the room knows it.
-      grabTarget = simTick(world, SIM_DT);
+      grabTarget = world.brawl ? brawlTick(world, SIM_DT) : simTick(world, SIM_DT);
+      if (world.brawl && world.brawl.armed && !world.brawl.ended && brawlOver(world)) world.brawl.ended = true;
       tick++;
       // Every event is stamped with the tick it happened on. The client draws the whole world at
       // `renderTick − delay`, so an event played when its PACKET lands fires against a picture a tenth of a
@@ -292,6 +308,9 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         autopilot: { active: world.autopilot.active, phase: world.autopilot.phase,
                      kind: world.autopilot.target ? world.autopilot.target.kind : null },
         events,
+        // The bot brawl's state (`sim-core/brawl.js brawlBlock`) — only in a brawl room, so a campaign
+        // snapshot is byte-identical to what it was.
+        ...(world.brawl ? { brawl: brawlBlock(world) } : {}),
       };
     },
 
@@ -336,6 +355,13 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         world.player.vel.set(pose.vx || 0, 0, pose.vz || 0);
       }
       startRun(world, { keepPlayer: !!pose });
+      // A BRAWL room re-spawns its brawl: `clearAndPlaceRun` emptied the ally/enemy lists but left
+      // `world.brawl`, which would read as "over" before it began. The stale descriptors go first so the
+      // fresh spawns survive; the seed is the brawl's own, and `pose` is ignored (the spectator is parked).
+      if (brawlN) {
+        spawnQueue.length = 0;
+        seedSim(BRAWL_SEED); spawnBrawl(world, brawlN);
+      }
       queue.length = 0; lastInput = EMPTY_INPUT; ack = null; sinceInput = 0;
       pendingEvents = [];
       // A retry is a NEW run: re-arm the payout and re-stamp the clock, or the second fight in this room
@@ -343,6 +369,9 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
       banked = false; salvaged = false; runStartTick = tick;
       return tick;
     },
+
+    // The brawl room's backstop (`socket.js`): mark the fight over so the final snapshot says so.
+    endBrawl() { if (world.brawl) world.brawl.ended = true; },
 
     // Sent once on join: everything static about this fight.
     welcome() {
@@ -353,6 +382,7 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
         enemyTotal: world.enemyTotal,
         station: world.station ? { x: world.station.pos.x, y: world.station.pos.y, z: world.station.pos.z } : null,
         arena: { x: world.arenaCenter.x, z: world.arenaCenter.z },
+        brawl: brawlN,   // the bot count per side in a brawl room, else null
       };
     },
 

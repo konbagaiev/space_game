@@ -9,8 +9,8 @@ test('off for a missing flag and for 0/false/off', () => {
 });
 
 test('a bare ?brawl shows the setup panel (n: null) with the defaults', () => {
-  assert.deepEqual(evalBrawlDev('?brawl'), { n: null, tier: null, sec: 60 });
-  assert.deepEqual(evalBrawlDev('?debug&brawl'), { n: null, tier: null, sec: 60 });
+  assert.deepEqual(evalBrawlDev('?brawl'), { n: null, tier: null, sec: 60, server: false });
+  assert.deepEqual(evalBrawlDev('?debug&brawl'), { n: null, tier: null, sec: 60, server: false });
 });
 
 test('n clamps to 1..100; a garbage or negative count falls back to 20', () => {
@@ -48,4 +48,17 @@ test('parseBrawlCount: digits are clamped to 1..100; anything else keeps the cou
   assert.equal(parseBrawlCount('-5', 37), 37, 'a minus sign is not a digit');
   assert.equal(parseBrawlCount('4.5', 37), 37);
   assert.equal(parseBrawlCount(undefined), 20, 'no fallback given → the default');
+});
+
+test('?netbrawl: the same flag simulated by a server room — it wins over ?brawl, and off falls through', () => {
+  assert.deepEqual(evalBrawlDev('?netbrawl=12'), { n: 12, tier: null, sec: 60, server: true });
+  assert.deepEqual(evalBrawlDev('?netbrawl'), { n: null, tier: null, sec: 60, server: true }, 'bare = setup panel');
+  for (const v of ['0', 'false', 'off']) assert.equal(evalBrawlDev(`?netbrawl=${v}`), null);
+  const both = evalBrawlDev('?brawl=5&netbrawl=7');
+  assert.equal(both.n, 7); assert.equal(both.server, true);
+  assert.equal(evalBrawlDev('?brawl=5').server, false);
+  assert.deepEqual(evalBrawlDev('?netbrawl=off&brawl=5'), { n: 5, tier: null, sec: 60, server: false });
+  assert.equal(evalBrawlDev('?netbrawl=999&tier=performance&sec=20').n, 100, 'the same clamps');
+  assert.equal(evalBrawlDev('?netbrawl=4&tier=performance&sec=20').tier, 'performance');
+  assert.equal(evalBrawlDev('?netbrawl=4&sec=20').sec, 20);
 });

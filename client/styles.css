@@ -1316,6 +1316,9 @@
 .brawl-main { background: linear-gradient(90deg,#36d1dc,#5b86e5) !important; color: #02101f !important; font-weight: 700; }
 #brawl-start { margin-top: 8px; padding: 10px 40px; font-size: 18px; }
 #brawl-build { margin: 10px 0 0; font-size: 12px; opacity: .7; }
+#brawl-mode { margin: 0 0 4px; font-size: 13px; opacity: .8; }
+#brawl-error { margin: 8px 0 0; font-size: 14px; color: #ff8a7a; }
+#brawl-error[hidden] { display: none; }
 .brawl-actions { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
 .brawl-card-body table { margin: 0 0 8px; border-collapse: collapse; font-size: 12px; }
 .brawl-card-body th, .brawl-card-body td { padding: 2px 8px; text-align: left; }
