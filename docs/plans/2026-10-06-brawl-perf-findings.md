@@ -74,8 +74,54 @@
    veil. Warm the brawl's hulls before arming.
 6. **Measurement artefact** — stop the per-frame sampler before building the result card (#7 above).
 
+## 6. Server-run brawl (`?netbrawl`) — what it costs the server (prod, 2026-10-07)
+
+Built by `docs/plans/2026-10-06-1530-server-brawl.md` (DECISIONS §161). The same N v N fight, simulated by a
+netsim room on the prod VPS (AMD EPYC-Rome, 4 vCPU, node 23, container `mem_limit 1g`); the tab only renders.
+Numbers are the room's own `srv` block (per wall second, one client per room) from `perf_samples`, plus the
+`evt: 'netsim-room'` log lines.
+
+| N | client | step avg / p95, whole run | step avg / p95, peak second | ticks/s (min) | KB/s per client avg / peak | event loop p99 max | CPU % of a core avg / peak |
+|---|---|---|---|---|---|---|---|
+| 20 | M1 Chrome | 0.17 / 1.04 ms | 0.69 / 1.04 ms | 59 | 66 / 426 | 1.7 ms | 3.6 / 12 |
+| 50 | headless only (VPS) | 0.08 / 0.49 ms | 0.36 / 0.80 ms (first 10 s) | — | 158 / 526 (first 10 s) | — | — |
+| 100 | M1 Chrome | 0.73 / 7.0 ms | 4.55 / 7.0 ms | 59 | 355 / 1807 | 9.6 ms | 8.2 / 38 |
+| 100 | Adreno 750 phone | 0.85 / 10.15 ms | 6.32 / 10.15 ms | 59 | 357 / 1851 | 11.6 ms | 11.3 / 77 |
+
+- **The server keeps up.** `behind = 0` in every run, 59-61 ticks/s, socket send buffer always 0, RSS ≤ 144 MB.
+- **The client got cheaper.** 100v100 over the network: the phone held 59.9 fps (p95 18.6 ms), the M1 ~98 fps —
+  compare §2, where the same fight simulated in the tab was the limit.
+- **The fight is front-loaded.** The peak is sim-seconds 3-8 (~70-90 alive a side); by 20 s ~25 a side are left,
+  so the 60 s average is 5-10× below the peak.
+- **Headless under-reports the live peak by ~3-5×.** `brawl-capacity.mjs` on the same VPS gives N = 100 first
+  10 s at 1.11 / 2.83 ms per step; the live room peaked at 4.5-6.3 ms avg. Not investigated (candidates: a cold
+  JIT in the process's first big room, WebSocket framing, a shared vCPU). Plan with the live figures.
+
+Headless `node server/tools/brawl-capacity.mjs --n 20,50,100 --k 1,2` on the VPS (first 10 sim-s, K = 1):
+N = 20 → 19.6 ms of process time per wall second per room (50 rooms/core avg, 18 p95); N = 50 → 26.1 ms
+(38 / 18); N = 100 → 75.4 ms (13 / 5). The M1 is ~2× faster than the VPS on the same tool.
+
+**Rooms per core (from the live numbers):**
+
+| N | started together (peak) | staggered starts (60 s average) |
+|---|---|---|
+| 20 | ~8 | ~25 |
+| 50 | ~4-5 (headless peak × 4) | ~12-15 |
+| 100 | **1-2** | ~9-12 |
+
+So the 4-vCPU box carries ~4-8 simultaneous 100v100 rooms; the 2-brawl-rooms-per-process cap is far inside it.
+
+**The real limit is bandwidth, not CPU.** 100v100 sends 355 KB/s per client on average and **1.8 MB/s at the
+peak** (snapshots up to 66 KB, 30/s, JSON, every projectile a row) — 7-60× the 30-50 KB/s target. Next, in this
+order (the brief's "Next"): projectiles as fire/hit events instead of rows, ship deltas + interest management,
+a compact binary encoding — then humans in the brawl. A general netsim reconnect is briefed separately in
+`docs/plans/2026-10-06-netsim-reconnect.md`.
+
 ## 5. Where the numbers came from
 
 Prod sessions (`perf_samples`), 2026-10-05: M1 `b91b0c71…` (50v50), `f055cd78…`, `4b82d216…`, `5b0cb0d1…`,
 `2cb5a541…`, `3e68c5c0…` (100v100); Adreno 750 `99f84a0e…` (50v50), `72b221ae…`, `3e8de69b…`, `6fad0d49…`
 (100v100). Local profiles: M1 Pro, Chrome via Playwright `--use-angle=metal`, `?debug&brawl=N&tier=high`.
+Server-run brawl (§6), prod 2026-10-07, build `4ed714e`: phone 100v100 player `7da9b345…`, M1 20v20 and
+100v100 player `cbbbc5ce…` (`perf_samples` with `srv`, `kind: 'brawl-result'` with `server: true`); headless
+`brawl-capacity.mjs` run inside the app container.

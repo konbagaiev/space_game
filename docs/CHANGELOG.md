@@ -3,6 +3,16 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-07
+
+- **The server-run brawl measured on prod** (docs). Live `?netbrawl` runs at 20 and 100 (M1 Chrome, Adreno 750
+  phone) plus `brawl-capacity.mjs` inside the prod container: the room keeps up at 100v100 (59-61 ticks/s,
+  nothing dropped, send buffer 0), the peak second costs up to 6.3 ms per step / 77 % of a core, ~1-2
+  simultaneous 100v100 rooms per core; the limit is bandwidth — 355 KB/s per client on average, 1.8 MB/s at
+  the peak. Written up in `docs/plans/2026-10-06-brawl-perf-findings.md` §6 and the SUMMARY netsim section.
+- **New brief: netsim reconnect** (`docs/plans/2026-10-06-netsim-reconnect.md`) — a room survives a dropped
+  link for 15 s and the client resyncs; split out of the server-brawl run by the maintainer, not started.
+
 ## 2026-10-06
 
 - **A server-run bot brawl (`?netbrawl`) and in-process server load metrics** [2026-10-06-1530-server-brawl].

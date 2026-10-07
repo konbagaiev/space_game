@@ -1,6 +1,7 @@
 # Server-run bot brawl (`?netbrawl`) + server load monitoring
 
-> **Status: BRIEF, not started (2026-10-06).** Written to be executed by a fresh session (ideally through
+> **Status: DONE (deployed 2026-10-07, plan `2026-10-06-1530-server-brawl.md`; live numbers in
+> `2026-10-06-brawl-perf-findings.md` §6).** Original status: BRIEF (2026-10-06). Written to be executed by a fresh session (ideally through
 > `/feature-pipeline`). Everything needed is in this file plus the documents it names; nothing depends on the
 > conversation that produced it.
 
