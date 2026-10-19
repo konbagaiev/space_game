@@ -5,6 +5,10 @@
 
 ## 2026-10-19
 
+- **The Mobility skill card says what it does** (client i18n). "+5% engine & thruster speed · +5% max speed"
+  → "+5% acceleration & turn rate · +5% top speed cap per point" (Russian
+  updated to match). Checked headlessly that the cap really lifts: 0/1/5/10 points top out at
+  30/31.5/37.5/45 u/s on Level 1, so Mobility is what lets you out-run or catch the 30 u/s Sentinel pilots.
 - **Take off sits in the middle of the screen on Character and Craft** (client CSS). With no right column the
   launch bar was centred in the work zone, so it sat right of the screen centre; `#mw-launch` is now shifted
   left by half the left column + gap on the two-column stages. Missions and Loadout are unchanged.

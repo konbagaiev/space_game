@@ -221,7 +221,7 @@
   "ui.skill.maneuver.name": "Манёвренность",
   "ui.skill.maneuver.desc": "+{dodge}% шанс уворота за очко",
   "ui.skill.mobility.name": "Мобильность",
-  "ui.skill.mobility.desc": "+{mobility}% скорость двигателей · +{mobility}% макс. скорость за очко",
+  "ui.skill.mobility.desc": "+{mobility}% разгон и поворот · +{mobility}% к потолку скорости за очко",
   "ui.evade": "УВОРОТ",
   "ui.levelup": "Новый уровень",
   "ui.shop.tab.ship": "Корабль",

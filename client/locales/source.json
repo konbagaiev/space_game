@@ -888,8 +888,8 @@
     "context": "Name of the mobility skill card on the Character screen. One word."
   },
   "ui.skill.mobility.desc": {
-    "source": "+{mobility}% engine & thruster speed · +{mobility}% max speed per point",
-    "context": "Effect of one point in the Mobility skill. {mobility} is a number (used twice); keep the % signs."
+    "source": "+{mobility}% acceleration & turn rate · +{mobility}% top speed cap per point",
+    "context": "Effect of one point in the Mobility skill. {mobility} is a number (used twice); keep the % signs. The second part raises the ship's hard top-speed limit (the cap), not just speed."
   },
   "ui.evade": {
     "source": "EVADE",
