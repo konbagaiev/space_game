@@ -147,3 +147,52 @@ Snapshot size will likely dominate (every bullet is a row in every snapshot, 30 
 numbers in hand: projectiles as fire/hit events instead of rows, ship deltas + interest management, a compact
 binary encoding, then humans in the brawl (prediction, lag compensation — `server-authoritative-sim.md` Slice
 E). Target to aim for: ≤ 30-50 KB/s per client in a 200-ship fight.
+
+### Deferred: many receivers in one room (fan-out load test)
+
+> **Status: PLANNED, not scheduled (maintainer, 2026-10-07: "add it to the plan, don't build it now").**
+> Run through `/feature-pipeline` when picked up.
+
+**Why.** Every number in `2026-10-06-brawl-perf-findings.md` §6 is for **one client per room**, so the server
+itself only ever sent ~1.8 MB/s at the peak. With people flying the ships, every client gets the full snapshot
+(no deltas, no interest management today), so outbound traffic multiplies by the client count. For a 100v100
+room with 200 human clients that is ~200 × 1.8 MB/s ≈ **360 MB/s ≈ 2.9 Gbit/s at the peak** and ~200 × 355 KB/s
+≈ 71 MB/s ≈ 570 Mbit/s averaged over the fight. That is probably more than the VPS port carries (the virtio
+NIC reports no speed — `/sys/class/net/eth0/speed` = -1; check the Hetzner plan for port speed and the monthly
+traffic quota). The CPU side also scales: 30 snapshots/s × M sockets of `ws.send` + kernel framing, even if
+the JSON is stringified once. Nobody has measured what breaks first.
+
+**What it answers.** For N = 100, at which receiver count M does the room break, and what breaks first:
+server CPU, event loop, socket send buffers (`bufMax`, the `BRAWL_MAX_BUFFERED` terminate), or the NIC.
+Re-run the same ladder after deltas/interest management land to measure the win.
+
+**Pieces (none exist yet):**
+
+1. **Spectators in a brawl room.** Today a room has exactly one player (`server/src/netsim/socket.js:10`
+   "ONE player per room"), and `MAX_BRAWL_ROOMS = 2` (`socket.js:38`), so M clients cannot share one fight.
+   Add a watch join (`?netbrawl` + `&watch=<roomId>`, or the equivalent socket message) that attaches an
+   extra receive-only socket to a running brawl room. The room stringifies each snapshot **once** and sends
+   the same string to every receiver (today `send()` stringifies per call, `socket.js:278`; snapshots also
+   carry per-client acks — spectators get none). Cap spectators with a constant; on prod, enable only behind a
+   dev flag. The slow-link guard applies per receiver.
+2. **Load generator `server/tools/netbrawl-swarm.mjs`**, built on `server/tools/netsim-load.mjs` (one
+   synthetic client: ticket, join, measure snapshot arrival; depends only on `ws`). It opens M sockets to one
+   room. Receivers **do not JSON.parse** (we simulate receiving, not rendering). Each one records the
+   snapshot inter-arrival p50/p95/max, bytes, and disconnects (close codes).
+3. **Where to run it.** Not from the maintainer's Mac — a home downlink cannot absorb hundreds of MB/s.
+   - Step 1: on the VPS over localhost. This measures server CPU, serialization, and the kernel without the
+     NIC.
+   - Step 2: from a throwaway Hetzner Cloud box in the same location, for about an hour. This measures real
+     NIC throughput.
+4. **What to record.**
+   - The room's `srv` block: step ms, `snapMs`, event-loop p99, CPU %, `bufMax`.
+   - Host network throughput (`sar -n DEV 1`, or `/proc/net/dev` deltas).
+   - Client-side inter-arrival p95 and drops.
+   - Ladder: M = 1 / 10 / 50 / 100 / 200 at N = 100.
+5. **Safety.** The VPS is shared: Postgres, logging, and other sites run on it. Run at a quiet hour, keep every
+   run time-boxed (the 330 s brawl backstop already bounds a room), do the localhost step first, and stop the
+   ladder at the first step where `bufMax` grows or the event-loop p99 passes ~20 ms.
+
+**Output.** A table (M → server CPU %, event-loop p99, `bufMax`, NIC MB/s, client p95 inter-arrival, drops),
+appended to `2026-10-06-brawl-perf-findings.md` as a new section, with SUMMARY's netsim capacity lines
+updated to match.

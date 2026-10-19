@@ -22,6 +22,10 @@
   the peak. Written up in `docs/plans/2026-10-06-brawl-perf-findings.md` §6 and the SUMMARY netsim section.
 - **New brief: netsim reconnect** (`docs/plans/2026-10-06-netsim-reconnect.md`) — a room survives a dropped
   link for 15 s and the client resyncs; split out of the server-brawl run by the maintainer, not started.
+- **Planned: a many-receivers (fan-out) load test for the server brawl** (docs). Added to
+  `docs/plans/2026-10-06-server-brawl-load-test.md` "Next": spectator sockets in one brawl room plus a
+  `netbrawl-swarm.mjs` generator, to find at which client count a 100v100 room breaks (CPU, send buffers or
+  the NIC). With 200 full-snapshot clients the peak would be ~360 MB/s (~2.9 Gbit/s). Not scheduled.
 
 ## 2026-10-06
 
