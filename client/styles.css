@@ -431,6 +431,14 @@
      "Autopilot to destination" inside the navigation component's action row. */
   #mw-launch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 8px; }
   #mainwin.map-open #mw-launch { display: none; }
+  /* Two-column stages (Character / Craft — no right column): centering in the work zone would put Take off
+     right of the screen centre, so shift it left by half the left column + half the 14px gap. Column widths
+     mirror the #mainwin grid templates (18% of the 28px-padded content width, 240px / 160px-phone min). */
+  #mainwin:not(.missions-open):not(.bay-open) #mw-launch {
+    --mw-left-col: max(240px, calc((100vw - 28px) * .18));
+    transform: translateX(calc(var(--mw-left-col) / -2 - 7px));
+  }
+  body.dev-phone #mainwin:not(.missions-open):not(.bay-open) #mw-launch { --mw-left-col: max(160px, calc((100vw - 28px) * .18)); }
   #mw-takeoff-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
   /* ---- Shared star-system navigation component (systemmap-ui.mountSystemNav) ---- */
   /* Map pinned LEFT (adjacent to the base's left nav), object list to its RIGHT. */

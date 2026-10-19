@@ -3,6 +3,12 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-19
+
+- **Take off sits in the middle of the screen on Character and Craft** (client CSS). With no right column the
+  launch bar was centred in the work zone, so it sat right of the screen centre; `#mw-launch` is now shifted
+  left by half the left column + gap on the two-column stages. Missions and Loadout are unchanged.
+
 ## 2026-10-07
 
 - **The server-run brawl measured on prod** (docs). Live `?netbrawl` runs at 20 and 100 (M1 Chrome, Adreno 750
