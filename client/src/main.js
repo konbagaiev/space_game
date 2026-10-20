@@ -48,7 +48,7 @@ import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotI
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { makeIntroDirector } from './intro-director.js'; // the scripted Level-0 intro (the script is data on the descriptor)
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
-import { showMain, launchMission, refreshMissions, enterRoam, missionOffers, activeMissionId, mainBriefing, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers + roam entry
+import { showMain, enterMenu, launchMission, refreshMissions, enterRoam, missionOffers, activeMissionId, mainBriefing, mwItem, stagedActive } from './mainwindow.js'; // between-battles Main Window + model viewers + roam entry
 import { shopItemViewer, updateTakeoffGate, primeShopItemsSeen } from './shop.js'; // ?debug diagnostic: the item model spinning in the shop/loadout detail panel + the launch gate (32-star-system drives it) + the "(new)"-marker baseline
 import { showWelcome, applyTranslations, welcomeStaged } from './welcome.js'; // welcome screen + i18n UI glue
 import { initSentry, restoreSession, setPlayerShipsCache, getPlayerShips } from './account.js'; // auth block (bootstrap session restore + Sentry) + cached ships (intro → welcome fallback)
@@ -539,11 +539,7 @@ function openSystemMapScreen() {
     // already flying → re-route the autopilot in place (no re-entry into roam). A mission object carries
     // its offer id so arriving raises the "Start mission?" prompt; every other object just parks there.
     onPick: (obj) => engagePointAutopilot(obj.pos, obj.missionId || null),
-    onReturnToHangar: () => {
-      G.roam = false; G.gameStarted = false;
-      document.body.classList.add('menu');
-      showMain(null); // back to the base menu exactly as today
-    },
+    onReturnToHangar: () => showMain(null), // back to the base menu (showMain → enterMenu stops roam + the fight)
   });
 }
 window.__openSystemMap = openSystemMapScreen; // test/tool hook (also reachable via __game below)
@@ -1046,7 +1042,8 @@ function dropNetsim() {
   // `netRunAt` deliberately SURVIVES: it records which run a room was last told to play. Clearing it made
   // a reconnect look like a brand-new run, so winning a level — which advances `CATALOG.levelName` and
   // therefore reconnects — immediately started the NEXT level's fight while the player was still looking at
-  // the victory overlay. `G.gameStarted` stays true between fights, so it cannot be the gate.
+  // the victory overlay. `G.gameStarted` is false on every menu (mainwindow.js enterMenu) but true again from
+  // take-off until the next menu, so it cannot tell one run from the next — `G.gameStartTime` (`netRunAt`) does.
   netLink = null; netStarted = false; netRoomPaused = false; netLevel = null;
   clearNet(world, netState);
   netState.welcome = null; netState.ack = null;
@@ -2021,9 +2018,7 @@ function skipIntro() {
   intro = null; G.skipIntro = null;
   el.introLine.style.display = 'none'; el.introHelp.style.display = 'none';
   flushSession('quit');             // the abandoned intro session still reaches the funnel
-  G.gameStarted = false; G.roam = false;
-  document.body.classList.add('menu');
-  setPaused(false);
+  enterMenu();                      // stop the intro fight NOW (finishIntro awaits before showMain) + unpause + body.menu
   finishIntro();                    // advance 0 → 1, then showMain(level-1 briefing)
 }
 

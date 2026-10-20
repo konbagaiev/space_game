@@ -6896,3 +6896,37 @@ closes a hopeless link).
 **Known limitation:** the seeded stream is process-global, so a campaign room created during a brawl re-keys
 the brawl's pilots (and a brawl room re-seeds a running campaign room) — only an offline fingerprint
 comparison notices. Not fixed here.
+
+## 162. The base menu is a state, entered in one place
+
+**Date:** 2026-10-20. **Context:** prod report — after Back to base the fight kept running behind the Main
+Window once a Loadout action rebuilt an alive ship (plan `docs/plans/2026-10-20-1659-base-menu-idle.md`).
+
+**Decision.** "A menu is open" is one transition, `enterMenu()` in `mainwindow.js`, and every way into the
+base menu goes through it (`showMain`/`showWelcome` call it first; Skip intro calls it immediately because
+`finishIntro` awaits before it lands). The invariant it upholds: **while the Main Window or Welcome is up,
+`G.gameStarted === false` and `G.roam === false`.** Its mirror `leaveMenu()` is the one menu teardown the
+launchers share.
+
+- **Why a transition, not a patch to Back to base.** Six entry points reach the menu; three (the map's and
+  dock's return to hangar, Skip intro) upheld the invariant by hand, three (Back to base, Continue, login)
+  didn't. Patching the one reported handler would leave the other two broken, and the next new entry point
+  would forget it too. Now the hand copies are deleted and only `enterMenu` writes `gameStarted = false` /
+  adds `body.menu`.
+- **Why it also clears `returnToBase`, the mission zone, the autopilot and pause.** Each is fight/flight state
+  something reads while the menu is up once an alive ship exists: `returnToBase` (a death on the flight home
+  after a clear) drives the return hint and the clickable station; an armed zone would count down; a pause
+  would carry into the next take-off (Skip intro already unpaused by hand). Clearing them is safe — no sim is
+  running and the next launch's `reset()` re-initialises them.
+- **Why the guard is a visual scenario (`53-base-menu-idle`), not a unit test.** Nothing here is
+  node-loadable (`mainwindow.js` imports THREE-bound modules), and a pure "clears the flags" helper would only
+  test itself — the bug was callers not calling the shared step, which only an end-to-end run observes. The
+  scenario was run on the unfixed code first and failed.
+- **Netsim:** `gameStarted` no longer stays true between fights. Safe — a room's run is keyed to
+  `G.gameStartTime` (`netRunAt`), and `fightLive` going false in the menu is the "room must not keep stepping
+  in the hangar" exit the netsim code wants. Comment corrected; no logic change.
+
+**Not changed:** Welcome's Take off still launches straight into the fight (`reset()`), while the Main
+Window's goes through roam. Kept deliberately (maintainer, 2026-10-20); recorded as a known drift under audit
+A6. It now shares the launch gate (`canTakeOff()`) and `leaveMenu()`.
+

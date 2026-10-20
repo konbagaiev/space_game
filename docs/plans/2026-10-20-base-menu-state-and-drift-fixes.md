@@ -20,6 +20,8 @@ They stay in the audit.
 
 ## Phase 1 — One way into the base menu (the reported bug)
 
+**Done 2026-10-20** — implemented by [`2026-10-20-1659-base-menu-idle.md`](2026-10-20-1659-base-menu-idle.md) (`enterMenu`/`leaveMenu`, guard `53-base-menu-idle`).
+
 ### The bug (reproduced 2026-10-20, local, headless Playwright with `?debug`)
 
 Reported from prod: killed inside the zone on the **research-station side mission** → "Back to base" →
@@ -77,7 +79,7 @@ until take-off"): **while the Main Window or Welcome is up, `G.gameStarted === f
    path clear and take the union.
 2. **`showMain`** (`mainwindow.js:48`): call `enterMenu()` first; delete its own
    `el.overlay.style.display = 'none'` and `document.body.classList.add('menu')` lines (now in `enterMenu`).
-   Keep the trailing `reset()` — with `gameStarted` false it only re-places the idle world.
+   (Correction: there is no trailing `reset()` in `showMain` — this note described something that doesn't exist; none was added.)
 3. **`showWelcome`** (`client/src/welcome.js:56`): it lives in another module; export `enterMenu` from
    `mainwindow.js` and call it at the top of `showWelcome` (replacing its `document.body.classList.add('menu')`).
    Check for an import cycle (`welcome.js` ↔ `mainwindow.js`); if one appears, put `enterMenu` in a small

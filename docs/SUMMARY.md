@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-20 (**Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-20 (**Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`. Earlier today: **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -1966,13 +1966,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   session-recorded like every other campaign level and the seed is installed before `reset()` draws the
   spawn RNG. See *The scripted intro (Level 0)*. Once the intro is cleared, the normal landing resumes: (2) if the
   level has a **briefing** (level 2+, i.e. "Level 2"–"Level 4"), the client lands on the **Main Window**
-  showing that briefing (so a returning player sees *their* mission); (3) otherwise ("Level 1" / id 2, no
-  briefing) it shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"),
+  showing that briefing (so a returning player sees *their* mission); (3) otherwise — a **fallback** for a
+  briefing-less level (every campaign level 1–4 has a briefing in `catalog_seed.js` today, so it is rarely
+  reached) — it shows the **welcome screen** — a start overlay that greets the player ("Welcome, Sentinel"),
   frames the threat as a pirate raid, and offers **Take off**. Its layout is a **fixed grid** (`grid-template-rows:
   1fr auto`): a scrollable greeting/intro cell (`#welcome-scroll`) over a pinned footer (`#welcome-footer`,
   Take off + community link), so the Take off button is always on-screen regardless of content height (the
   scroll cell top-aligns + scrolls via auto margins on short viewports, avoiding the flex-center clip trap).
-  Either way the scene backdrop renders behind it and the level only starts on take-off.
+  Either way the scene backdrop renders behind it and the level only starts on take-off. Welcome's **Take off**
+  is gated by the same `canTakeOff()` as the Main Window's and launches **straight into the fight**
+  (`beginLiveSession()` + `reset()`), not via roam like the Main Window's — a known drift, kept deliberately
+  (audit A6 in `docs/plans/2026-10-20-duplication-audit.md`).
   - **Staged L1 welcome reveal** (`docs/plans/2026-07-05-1641-briefing-staged-reveal.md`): on the L1
     landing the greeting `h1` shows immediately, then the `.intro` briefing **types out over ~5 s at 26px**
     (matching the L2/L3 mission-briefing size; 16px on the `≤760px` mobile override), then the **Take off**
@@ -2408,10 +2412,17 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   shows **Restart**/retry); Continue opens the **Main Window** (see above) — the between-battles screen (also
   the landing/homepage). The campaign briefing shows as the **primary mission** in the work zone with a
   **Take off** button that launches the level. The same Main Window is used on page load and after a win
-  (and `launchCampaign` starts the loop the first time). **Once the shop is unlocked** (cleared the final
-  level), the **death overlay** also offers a secondary **Back to Hangar** button beside Restart (banked
+  (and `launchCampaign` starts the loop the first time). **Once the shop is unlocked** (`level-2`, i.e. after
+  clearing "Level 1" — `SHOP_MIN_LEVEL`, DECISIONS §90), the **death overlay** also offers a secondary **Back to Hangar** button beside Restart (banked
   credits already applied) → returns to the Main Window to shop / change loadout instead of an instant
   retry; before unlock only Restart shows. (The button keeps its i18n key `ui.gameover.back_to_hangar`.)
+  **Every way into the base menu** (Back to Hangar, Continue, the map's/dock's return to hangar, login,
+  skipping the intro) goes through **`enterMenu()`** (`mainwindow.js`; `showMain` and `showWelcome` call it
+  first), which stops the fight (`G.gameStarted`/`G.roam`/`G.returnToBase` false, no mission zone, no
+  autopilot, unpaused, overlay + out-of-bounds banner hidden, `body.menu`). Nothing ticks behind a menu, even
+  after a Loadout change rebuilds an alive ship. Launchers (`launchCampaign`, `launchMission`, `enterRoam`,
+  Welcome's Take off) tear the menu down through its mirror **`leaveMenu()`**. DECISIONS §162; guarded by
+  `53-base-menu-idle`.
 - **Between-level briefings** — a level descriptor can carry an optional **`briefing`** (`{ textKey,
   text, actions[] }`). When the player advances **into** a level, the server runs that briefing's
   `actions` (server-authoritative, once — progress only moves forward) and returns the message; the
@@ -5595,6 +5606,14 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `brawl-result`, nothing but `/api/perf` after arming, and the link closes at the card and stays closed;
   a bare `?netbrawl` shows the panel reading "Simulated by: server room" with no `__netsim` at all, and
   Start reloads into `?netbrawl=3`),
+  and **nothing runs behind the base menu** (`53-base-menu-idle.mjs` — the guard for DECISIONS §162: on a
+  level-2+ player with the campaign active, Take off → fly into the zone → the countdown engages → die → Back
+  to Hangar asserts `gameStarted`/`roam` false, no inline out-of-bounds banner, `body.menu`; a Loadout unequip
+  then rebuilds an ALIVE ship and 600 `stepSim` ticks leave `combatElapsed`/`enemyCount` unchanged with the
+  Main Window still up; a second launch, paused, then a forced win + Continue lands with `gameStarted`/`roam`
+  false and the pause dropped. It re-equips the removed item at the end. Seen FAILING on the pre-fix code —
+  `gameStarted` still true after Back to base, and with those asserts disabled the sim clock ran 1.0 → 11.0 s
+  behind the menu),
   and **the HUD's viewport cache** (`48-hud-viewport-cache.mjs` — the guard for DECISIONS §149. It shadows
   `window.innerWidth`/`innerHeight` with counting getters that delegate to the originals (own properties on
   `window`, so a read from ANY caller in the page counts — that is what makes a *sixth* HUD updater written
