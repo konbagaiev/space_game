@@ -3,6 +3,26 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-20
+
+- **Plan: base-menu state leak + the drifted-copy bugs** (docs,
+  `docs/plans/2026-10-20-base-menu-state-and-drift-fixes.md`). Reported from prod: after dying on a side
+  mission and pressing "Back to base", the fight kept running behind the Main Window ("You've left the
+  battlefield" over Loadout). Reproduced locally: that handler never clears `G.gameStarted`/`G.roam`, and any
+  Loadout action rebuilds an alive ship, so the sim resumes. The plan routes every base entry through one
+  `enterMenu()` and folds in the audit's drifted bugs (A1–A6, B1, B2, B5, B6) in five shippable phases.
+  Not implemented yet.
+- **Duplication audit written** (docs, `docs/plans/2026-10-20-duplication-audit.md`). Client + server
+  read-only audit of rules/constants/layout facts kept in sync by hand: 9 player-visible, 6 server/netsim/
+  replay drifted or latent, 17 sync risks, with file:line copies, a fix proposal and size each, and a
+  suggested order. Findings only; nothing fixed.
+- **Take off sits at the same spot on every base stage** (client HTML/CSS). The launch bar lived inside the
+  middle column, whose width differs per stage, so Take off drifted: 720 / 671 / 635 px (Character / Missions
+  / Loadout at 1440 wide). Yesterday's fix only patched Character/Craft by copying the column widths into
+  another rule. Now `#mw-launch` is a direct child of `#mainwin` on its own bottom grid row spanning all
+  columns (`grid-template-rows: minmax(0,1fr) auto`, menu and right column span both rows), and the copied
+  rule is gone. Measured on the real page: screen centre, same height, on all four stages, desktop and phone.
+
 ## 2026-10-19
 
 - **The Mobility skill card says what it does** (client i18n). "+5% engine & thruster speed · +5% max speed"

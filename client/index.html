@@ -122,13 +122,15 @@
          (populated by systemmap-ui.mountSystemNav). Its own action row carries Take off + Autopilot,
          so the global launch bar below is hidden while this view is open (#mainwin.map-open). -->
     <div class="mw-view" id="mw-view-map"></div>
-    <!-- Global launch bar: "Take off" is available on EVERY base-menu stage (free flight into the star
-         system — enterRoam(null)), gated by the same required-slots check as the mission launch. -->
-    <div id="mw-launch">
-      <button id="mw-takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
-      <div id="mw-takeoff-note"></div>
-    </div>
   </section>
+  <!-- Global launch bar: "Take off" is available on EVERY base-menu stage (free flight into the star
+       system — enterRoam(null)), gated by the same required-slots check as the mission launch. It is a
+       direct child of #mainwin on its own bottom grid row spanning ALL columns, so it sits at the same
+       screen-centre spot on every stage whatever the per-view column widths are. -->
+  <div id="mw-launch">
+    <button id="mw-takeoff" data-i18n="ui.button.take_off">Take off 🚀</button>
+    <div id="mw-takeoff-note"></div>
+  </div>
   <!-- Right column. Its contents are per-view and mutually exclusive (CSS-gated):
        · Missions (#mainwin.missions-open) → the mission list (campaign + side-mission cards).
        · Loadout  (#mainwin.bay-open)      → the ship-characteristics strip + the slot/shop context panel.

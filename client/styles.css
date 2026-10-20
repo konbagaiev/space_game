@@ -170,8 +170,11 @@
   #mainwin {
     position: fixed; inset: 0; z-index: 12; display: none;
     grid-template-columns: minmax(160px, 18%) 1fr;   /* base: 2 columns — Character / Map / Craft */
-    grid-template-rows: 100%;
-    gap: 14px; padding: 52px 14px 14px; box-sizing: border-box;
+    /* Row 2 is the global launch bar (#mw-launch), spanning every column so Take off is centred on the
+       SCREEN on every stage; the left menu and the right column span both rows, so only the work zone
+       gives up the bar's height. No row gap: the bar carries its own padding-top. */
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 0 14px; padding: 52px 14px 14px; box-sizing: border-box;
     background: radial-gradient(120% 90% at 50% 20%, rgba(20,32,60,.72), rgba(5,6,13,.92));
     color: #e8f1ff; font-family: system-ui, sans-serif; text-align: left;
   }
@@ -192,6 +195,10 @@
      (nickname / login-signup) block: the overflow viewport begins below it, so scrolled menu items are
      CLIPPED there instead of sliding up behind the auth block. The opaque #account-bar is a backstop
      for taller auth states. */
+  #mw-menu { grid-column: 1; grid-row: 1 / -1; }
+  #mw-work { grid-column: 2; grid-row: 1; }
+  #mw-ship-col { grid-column: 3; grid-row: 1 / -1; }
+  #mw-launch { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
   #mw-menu { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow-y: auto; margin-top: 34px; }
   #mw-menu .mw-row { display: flex; align-items: center; gap: 6px; }
   .mw-collapse {
@@ -385,8 +392,7 @@
   body.dev-phone .lp-model { height: 73px; } /* phone: short box for the weapon 3D model */
   body.dev-phone #mw-stub-title { font-size: 18px; }
   body.dev-phone #mw-stub-text { font-size: 12px; }
-  /* work zone (center): only the active view shows; the mission description is the only scroller.
-     Column layout so the global launch bar (#mw-launch) can sit pinned under whichever view is open. */
+  /* work zone (center): only the active view shows; the mission description is the only scroller. */
   #mw-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .mw-view { display: none; flex: 1; min-width: 0; min-height: 0; }
   .mw-view.active { display: flex; flex-direction: column; }
@@ -427,18 +433,11 @@
   #mw-mission-desc.show-item #mw-item-strut, #mw-mission-desc.show-item #mw-item { display: block; }
   #mw-mission-actions { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
   #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
-  /* Global launch bar — "Take off" on every stage. Hidden on Map, which carries its own Take off next to
-     "Autopilot to destination" inside the navigation component's action row. */
+  /* Global launch bar — "Take off" on every stage (placed on #mainwin's bottom row, see #mainwin). Hidden on
+     Map, which carries its own Take off next to "Autopilot to destination" inside the navigation component's
+     action row. */
   #mw-launch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 8px; }
   #mainwin.map-open #mw-launch { display: none; }
-  /* Two-column stages (Character / Craft — no right column): centering in the work zone would put Take off
-     right of the screen centre, so shift it left by half the left column + half the 14px gap. Column widths
-     mirror the #mainwin grid templates (18% of the 28px-padded content width, 240px / 160px-phone min). */
-  #mainwin:not(.missions-open):not(.bay-open) #mw-launch {
-    --mw-left-col: max(240px, calc((100vw - 28px) * .18));
-    transform: translateX(calc(var(--mw-left-col) / -2 - 7px));
-  }
-  body.dev-phone #mainwin:not(.missions-open):not(.bay-open) #mw-launch { --mw-left-col: max(160px, calc((100vw - 28px) * .18)); }
   #mw-takeoff-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
   /* ---- Shared star-system navigation component (systemmap-ui.mountSystemNav) ---- */
   /* Map pinned LEFT (adjacent to the base's left nav), object list to its RIGHT. */
