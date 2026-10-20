@@ -46,7 +46,7 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | A3 | Loadout ship stats ignore skills (Mobility) | drifted | player | M |
 | A4 | Launch gate in 3 places; "can't launch" note can show twice | drifted | player | S |
 | A5 | Shop "Owned" badge unstyled; ~120 lines of dead CSS | drifted | player | S |
-| A6 | Welcome screen = a second, drifted launch/menu path | drifted | player (edge) | M |
+| A6 | Welcome screen = a second, drifted launch/menu path | menu entry/exit **fixed** 2026-10-20; reveal dup + direct launch open | player (edge) | M |
 | A7 | Three breakpoint systems; vw/vh wrong under forced rotation | drifted (derived) | player (phone) | M |
 | A8 | `#mainwin` column widths ×6; xp-bar clearance hand-derived | sync risk (caused §0) | player | S |
 | A9 | Money: 3 units, 3 golds, 2 balance readouts on Loadout | drifted | player | S–M |
@@ -140,6 +140,14 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   `mainwindow.js:381-433`, both 5000/500 ms) with CSS `.25s` copies (`styles.css:161-162`, `:538-539`).
 - Fix: delete Welcome or route `showWelcome` → `showMain`; one `leaveMenu()` / `enterMenu()`.
   (Onboarding-flow call — ask the maintainer explicitly.)
+- **Fixed 2026-10-20 (menu entry/exit part)** — [`2026-10-20-1659-base-menu-idle.md`](2026-10-20-1659-base-menu-idle.md):
+  every menu entry goes through `enterMenu()`, every launcher through `leaveMenu()`; `showMain` hides
+  `#welcome`; Welcome's Take off has the `canTakeOff()` gate and clears `G.activeMission`/`G.pendingBriefing`;
+  SUMMARY's Level-1-lands-on-Welcome line corrected. Welcome itself is kept (DECISIONS §162).
+- **Known drift:** Welcome's Take off still launches straight into the fight (`reset()`), while the Main
+  Window's goes through roam (`launchCampaign` → `enterRoam`). Kept deliberately (maintainer, 2026-10-20).
+  Revisit if Welcome is deleted or a briefing-less level ships.
+- Still open: the staged text reveal written twice (bullet above).
 
 ### A7. Three breakpoint systems; viewport units under forced rotation — drifted (derived, not device-checked)
 - Most sizing keys off `body.dev-phone` (shortest edge < 600, `client/src/device.js:31-35`); briefing +

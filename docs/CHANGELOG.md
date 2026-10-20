@@ -5,6 +5,24 @@
 
 ## 2026-10-20
 
+- **Fix: the fight no longer keeps running behind the base menu** (client, `[2026-10-20-1659-base-menu-idle]`,
+  plan `docs/plans/2026-10-20-1659-base-menu-idle.md`). Reported from prod: die in the research-station zone,
+  press Back to base, open Loadout, and the fight carried on behind the Main Window — the "You've left the
+  battlefield" banner, enemies spawning, eventually a warp back in. Root cause: Back to base (and Continue
+  after a win, login, the intro landing) never cleared `G.gameStarted`/`G.roam`, and any Loadout action
+  rebuilds an ALIVE `G.player`, which reopened `update()`'s gate. Now every way into the menu goes through one
+  `enterMenu()` (`mainwindow.js`; called first by `showMain` and `showWelcome`, and by Skip intro at once):
+  it clears `gameStarted`/`roam`/`returnToBase`, the mission zone and the autopilot, unpauses, and hides the
+  overlay and the out-of-bounds banner. Its mirror `leaveMenu()` replaces the four hand-kept menu teardowns
+  in `launchCampaign`/`launchMission`/`enterRoam`/Welcome's Take off. Welcome's Take off now also has the
+  Main Window's launch gate (`canTakeOff()`, exported unchanged) and clears `G.activeMission`/
+  `G.pendingBriefing`; it still launches straight into the fight (known drift, audit A6). The stale netsim
+  comment claiming `gameStarted` stays true between fights is corrected (no logic change). New guard: visual
+  scenario `53-base-menu-idle` — FAILED on the old code (`gameStarted` still true after Back to base; with
+  that check disabled the sim clock ran 1.0 → 11.0 s behind the menu), passes now. Analytics side effect: the
+  `pagehide` → `track('quit')` drop-off event is gated on `G.gameStarted` (`client/src/main.js`); before, closing
+  the tab from the menu after Back to base or Continue still fired `quit` because the flag had leaked. Now it
+  doesn't, so `quit` counts only tabs closed mid-fight (or in roam), which is what the event always meant.
 - **Plan: base-menu state leak + the drifted-copy bugs** (docs,
   `docs/plans/2026-10-20-base-menu-state-and-drift-fixes.md`). Reported from prod: after dying on a side
   mission and pressing "Back to base", the fight kept running behind the Main Window ("You've left the

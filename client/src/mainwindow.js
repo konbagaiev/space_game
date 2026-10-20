@@ -17,7 +17,7 @@ import { fetchJson, clientLog } from './net.js';
 import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
 import { SKILL_RATES } from './sim-core/components.js'; // per-point skill rates → Character-card effect text (single source)
-import { reset, levelRunner, refreshMusic, engagePointAutopilot } from './sim.js';
+import { reset, levelRunner, refreshMusic, engagePointAutopilot, setPaused } from './sim.js';
 import { runCenter } from './sim-core/level-sim.js'; // where the current level fights (0,0 unless it names a centre)
 import { mountSystemNav, showStartMissionPrompt, showDockPrompt, objectForMission } from './systemmap-ui.js';
 import { objectForActiveMission } from './sim-core/system-map.js'; // where the active mission sits → roam HUD pointer + autopilot target
@@ -45,17 +45,47 @@ let stagedFullText = '';         // the briefing text being revealed (also used 
 let stagedCtl = null;            // active typewriter controller
 let stagedGoTimer = 0;           // the +0.5s Take-off reveal timeout handle
 
+// THE one transition into the base menu (Main Window or Welcome). Every way back to the base goes through
+// here — Back to base, Continue after a win, the map's / dock's "return to hangar", login, skipping the
+// intro — so "a menu is open" can never coexist with a running fight. update() early-returns on
+// !G.gameStarted, so nothing ticks behind the menu even after a Loadout action rebuilds an alive G.player.
+// Idempotent: skipIntro calls it at once (the intro must stop before finishIntro's await), showMain again.
+export function enterMenu() {
+  G.gameStarted = false;
+  G.roam = false;
+  G.returnToBase = false;            // the post-clear flight home is over — no return hint / clickable station
+  G.missionZone = null;              // a roam-armed campaign zone must not count down from the menu
+  G.autopilot.active = false; G.autopilot.target = null; // LOCAL world, deliberately not sim.js cancelAutopilot (that routes to a room)
+  if (G.paused) setPaused(false);    // a pause never carries from the menu into the next take-off
+  el.overlay.style.display = 'none';
+  el.oobWarn.style.display = 'none'; // DOM state: don't leave a stale inline 'block' for the next frame to fix
+  document.body.classList.add('menu');
+}
+// THE mirror of enterMenu: tear the base menu down before a launch. Callers are click handlers (except
+// launchCampaign's engage branch, which already called requestFullscreen outside a gesture before this
+// change — a no-op there). Each launcher keeps its own specifics (G.activeMission, G.pendingBriefing,
+// G.gameStarted/G.roam, beginLiveSession, reset) in its existing order.
+export function leaveMenu() {
+  if (Device.hasTouch) requestFullscreen(); // must stay inside the click gesture
+  mainEl.classList.remove('on');
+  document.getElementById('welcome').style.display = 'none';
+  stopLoadoutPreview();
+  settleBriefingReveal();                   // stop a stray timer/rAF from toggling classes after close
+  stopViewer(mwItem);                       // stop the work-zone item showcase too
+  document.body.classList.remove('menu');   // restore the in-game HUD
+}
+
 export function showMain(briefing) {
+  enterMenu();                         // stop the fight + hide the overlay + body.menu (the one menu transition)
+  document.getElementById('welcome').style.display = 'none'; // a login FROM Welcome must not draw the Main Window over it
   // The campaign (primary) row always reflects the CURRENT level's briefing. An explicit briefing
   // (the server-derived one stashed on /advance) wins; otherwise fall back to the current level's
   // descriptor briefing so returning from a side mission (showMain(null)) doesn't blank the campaign
   // mission to the "standby" default. briefingShowcase() reads either shape (showcase or raw actions).
   mainBriefing = briefing || (CATALOG.level && CATALOG.level.briefing) || null;
   resetBriefingReveal();
-  el.overlay.style.display = 'none';
   renderAccountBar();
   updateMenuCredits();                 // top-bar balance beside "Ships" (openBay refreshes it from the server)
-  document.body.classList.add('menu'); // hide the in-game HUD behind the Main Window
   refreshMusic();                      // menu → calmer hangar music
   mainEl.classList.add('on');
   mwMission = null;                    // default to the primary (campaign) mission
@@ -90,12 +120,7 @@ function launchCampaign({ engage = false, direct = false } = {}) {
   clientLog('takeoff:campaign', { level: CATALOG.level && CATALOG.level.title, name: CATALOG.levelName }); // TEMP debug: what level reset() will play
   G.pendingBriefing = null;
   G.activeMission = null;                       // the primary "Take off" plays the campaign level, not a side mission
-  if (Device.hasTouch) requestFullscreen();          // hide mobile browser chrome (must be in the click gesture)
-  mainEl.classList.remove('on');
-  stopLoadoutPreview();
-  settleBriefingReveal();                    // stop a stray timer/rAF from toggling classes after close
-  stopViewer(mwItem);                        // stop the work-zone item showcase too
-  document.body.classList.remove('menu');    // restore the in-game HUD
+  leaveMenu();
   G.gameStarted = true;                        // first launch from the landing Main Window starts the loop
   beginLiveSession();                          // arm the recorded live session (seeds the sim) BEFORE reset() draws the RNG
   // `engage` means you FLEW here and the countdown ran out. You are already at the fight IN a world that is
@@ -123,7 +148,7 @@ function leaveOverlay() {
 el.restart.addEventListener('click', leaveOverlay);
 // "Back to Main Window" on the death overlay (shop unlocked): banked credits already applied → go back
 // to the menu (shop/loadout), where Take off retries the mission.
-el.backHangar.addEventListener('click', () => { el.overlay.style.display = 'none'; showMain(null); });
+el.backHangar.addEventListener('click', () => showMain(null)); // showMain → enterMenu hides the overlay + stops the fight
 
 // ---- Left-menu navigation + the work-zone views ----
 // Show one work-zone view and highlight its menu item. 'missions' → the mission view (description +
@@ -332,7 +357,7 @@ function updateGoButton() {
 // ---- Take off (free flight into the star system) — available on EVERY base-menu stage ----
 // Gated by the SAME server-authoritative check as the mission launch: `launchable` is false when a required
 // slot (hull/armor, engine, thrusters) is empty, so a ship that can't fight can't wander off either.
-function canTakeOff() {
+export function canTakeOff() {
   const a = G.activeShip;
   return !a || a.launchable !== false;
 }
@@ -507,13 +532,7 @@ export function launchMission(m) {
   // was cleared, and `descriptor` only knows its flavor. Copy, don't mutate the cached offer.
   G.activeMission = { ...m.descriptor, missionId: m.id };
   G.pendingBriefing = null;
-  if (Device.hasTouch) requestFullscreen();
-  mainEl.classList.remove('on');
-  stopLoadoutPreview();
-  settleBriefingReveal();              // stop a stray timer/rAF from toggling classes after close
-  stopViewer(mwItem);                  // stop the work-zone item showcase too
-  document.getElementById('welcome').style.display = 'none';
-  document.body.classList.remove('menu');
+  leaveMenu();
   G.gameStarted = true;
   reset();
 }
@@ -524,13 +543,7 @@ export function launchMission(m) {
 // autopilot there; null → free manual cruise. beginLiveSession is intentionally NOT called (roam unrecorded).
 export async function enterRoam(dest) {
   G.activeMission = null; G.pendingBriefing = null;
-  if (Device.hasTouch) requestFullscreen();
-  mainEl.classList.remove('on');
-  document.getElementById('welcome').style.display = 'none';
-  stopLoadoutPreview();
-  settleBriefingReveal();
-  stopViewer(mwItem);
-  document.body.classList.remove('menu');
+  leaveMenu();
   await refreshMissions();           // ensure missionOffers is current for arrival prompts (Stage 3)
   // Arm the fly-into-it trigger for the ACTIVE campaign mission. Gated HERE because this is where
   // `activeMissionId` is known: the campaign must be the active choice (no side mission taken). The centre
@@ -580,7 +593,7 @@ G.onMissionArrival = (missionId) => {
 // rather than teleported. "Not yet" parks you at the station and you keep roaming.
 G.onBaseArrival = () => {
   showDockPrompt({
-    onYes: () => { G.roam = false; G.gameStarted = false; document.body.classList.add('menu'); showMain(null); },
+    onYes: () => showMain(null), // showMain → enterMenu stops roam + the fight
     onNo: () => {},
   });
 };

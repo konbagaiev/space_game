@@ -15,6 +15,7 @@ import { updateMenuCredits } from './hud.js';
 import { localizeSettings } from './settings.js';
 import { localizeCredits } from './credits.js';
 import { typeText } from './typewriter.js';
+import { enterMenu, leaveMenu, canTakeOff } from './mainwindow.js'; // the one menu enter/leave transition + the shared launch gate (called on show/click; ESM cycle resolves by call time)
 import { beginLiveSession } from './main.js'; // arm the always-on session recorder on the post-intro Level-1 take-off (called on click; ESM cycle resolves by call time)
 
 const welcomeEl = document.getElementById('welcome');
@@ -54,10 +55,10 @@ function startWelcomeReveal() {
 welcomeEl.querySelector('.intro').addEventListener('click', () => { if (welcomeStaged) revealWelcomeNow(); });
 
 export function showWelcome(playerShips) {
+  enterMenu();                         // stop any fight + body.menu (hides the in-game HUD) — the one menu transition
   selectedShip = playerShips[0] || null; // L1 owns exactly one ship; take-off needs a non-null selection
   renderAccountBar();
   updateMenuCredits();                 // top-bar balance beside "Ships" (shown on every menu screen)
-  document.body.classList.add('menu'); // hide the in-game HUD behind the welcome screen
   refreshMusic(); // menu → calmer hangar music
   welcomeEl.style.display = 'grid';
   startWelcomeReveal();
@@ -166,13 +167,12 @@ syncFsClass(); // initial state
 
 // ---------- Take off ----------
 function takeOff() {
-  if (!selectedShip) return;
-  if (Device.hasTouch) requestFullscreen(); // hide the browser chrome on mobile (landscape especially)
+  if (!selectedShip || !canTakeOff()) return;  // same launch gate as the Main Window's Take off
+  leaveMenu();                                 // requestFullscreen first — still inside the click gesture
   if (selectedShip.name !== G.currentShipName) buildPlayerFor(selectedShip);
-  welcomeEl.style.display = 'none';
-  document.body.classList.remove('menu'); // restore the in-game HUD
+  G.activeMission = null; G.pendingBriefing = null; // this button flies the campaign level (drift fix, audit A6)
   G.gameStarted = true;
   beginLiveSession(); // arm the recorded live session (seeds the sim) BEFORE reset() draws the spawn RNG
-  reset(); // position the player + start the level
+  reset();            // straight into the fight — Welcome keeps its direct launch (known drift, see the audit)
 }
 document.getElementById('takeoff').addEventListener('click', takeOff);
