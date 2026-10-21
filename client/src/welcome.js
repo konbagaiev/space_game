@@ -15,7 +15,8 @@ import { updateMenuCredits } from './hud.js';
 import { localizeSettings } from './settings.js';
 import { localizeCredits } from './credits.js';
 import { typeText } from './typewriter.js';
-import { enterMenu, leaveMenu, canTakeOff } from './mainwindow.js'; // the one menu enter/leave transition + the shared launch gate (called on show/click; ESM cycle resolves by call time)
+import { enterMenu, leaveMenu } from './mainwindow.js'; // the one menu enter/leave transition (called on show/click; ESM cycle resolves by call time)
+import { canLaunch } from './shop.js'; // the one launch gate
 import { beginLiveSession } from './main.js'; // arm the always-on session recorder on the post-intro Level-1 take-off (called on click; ESM cycle resolves by call time)
 
 const welcomeEl = document.getElementById('welcome');
@@ -167,7 +168,7 @@ syncFsClass(); // initial state
 
 // ---------- Take off ----------
 function takeOff() {
-  if (!selectedShip || !canTakeOff()) return;  // same launch gate as the Main Window's Take off
+  if (!selectedShip || !canLaunch()) return;   // the one launch gate (shop.js), same as the Main Window's
   leaveMenu();                                 // requestFullscreen first — still inside the click gesture
   if (selectedShip.name !== G.currentShipName) buildPlayerFor(selectedShip);
   G.activeMission = null; G.pendingBriefing = null; // this button flies the campaign level (drift fix, audit A6)

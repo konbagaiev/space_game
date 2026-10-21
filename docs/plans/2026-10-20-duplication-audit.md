@@ -31,7 +31,9 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   spanning all columns (`client/styles.css` `#mainwin` `grid-template-rows: minmax(0,1fr) auto`); the
   copied-column-width rule was deleted. Measured: screen centre, same height, on all four stages, desktop
   and phone. CHANGELOG 2026-10-20.
-- **Residual (not fixed):** by arithmetic the floating `#xp-bar` (fixed, `bottom: 6px`, 14px tall,
+- **Residual — fixed 2026-10-20** (`2026-10-20-1816-launch-gate`: `#mw-launch` `padding-bottom: 10px`; measured
+  overlap was 6px, note bottom 786 vs bar top 780 at 1280×800; guarded in `54-launch-gate`). Original finding:
+  by arithmetic the floating `#xp-bar` (fixed, `bottom: 6px`, 14px tall,
   z-index 13) overlaps the bottom ~6px of `#mw-takeoff-note`. The note is usually empty; it matters when
   "can't launch" shows. Pre-existing, unchanged by the move. See A8.
 
@@ -41,10 +43,10 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 
 | # | Finding | State | Visible to | Size |
 |---|---|---|---|---|
-| A1 | Map "Autopilot to destination" ignores the launch gate | **drifted** ✔ | player | S |
+| A1 | Map "Autopilot to destination" ignores the launch gate | **fixed 2026-10-20** | player | S |
 | A2 | Side-mission "Est. reward" / XP estimate is stale (~33 % low) | **drifted** ✔ | player | S |
 | A3 | Loadout ship stats ignore skills (Mobility) | drifted | player | M |
-| A4 | Launch gate in 3 places; "can't launch" note can show twice | drifted | player | S |
+| A4 | Launch gate in 3 places; "can't launch" note can show twice | **fixed 2026-10-20** | player | S |
 | A5 | Shop "Owned" badge unstyled; ~120 lines of dead CSS | drifted | player | S |
 | A6 | Welcome screen = a second, drifted launch/menu path | menu entry/exit **fixed** 2026-10-20; reveal dup + direct launch open | player (edge) | M |
 | A7 | Three breakpoint systems; vw/vh wrong under forced rotation | drifted (derived) | player (phone) | M |
@@ -79,6 +81,7 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 ## A. Base-menu UI
 
 ### A1. Map "Autopilot to destination" ignores the launch gate — **drifted ✔**
+**Fixed 2026-10-20** (`2026-10-20-1816-launch-gate`).
 - Map's Take off reads the gate when rendered (`client/src/mainwindow.js:171-172`); autopilot only checks
   selection/lock (`client/src/systemmap-ui.js:117`, `:263-267`) and its handler calls `enterRoam` unguarded
   (`mainwindow.js:173`). The comment at `client/src/shop.js:443` claims the Map's buttons read
@@ -111,6 +114,7 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   ship model instead of reading it.
 
 ### A4. Launch gate written three times; note can show twice — drifted
+**Fixed 2026-10-20** (`2026-10-20-1816-launch-gate`).
 - `!active || active.launchable !== false` at `mainwindow.js:335-338` and `shop.js:445`;
   `#mw-mission-nav.disabled` set at `mainwindow.js:328` and `shop.js:454`; `updateTakeoffGate` writes the
   same hint into `#mw-go-note` and `#mw-takeoff-note` (`shop.js:447-452`), and `updateGoButton` shows

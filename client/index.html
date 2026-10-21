@@ -87,12 +87,13 @@
            launching it is the same act as "Take off" (the always-available #mw-takeoff below, which flies
            you into the system and lets the mission zone start the fight). See DECISIONS §104.
            #mw-mission-nav autopilots to this mission's place in the system instead, where arriving raises
-           the "Start mission?" prompt; it is shown only for missions that HAVE a system object. -->
+           the "Start mission?" prompt; it is shown only for missions that HAVE a system object.
+           Their "can't launch" reason is not repeated here: it shows once, in #mw-takeoff-note under the
+           launch bar. -->
       <div id="mw-mission-actions">
         <button id="mw-go" data-i18n="ui.button.launch_mission" style="display:none">Launch mission ⚔</button>
         <button id="mw-mission-nav" data-i18n="ui.systemmap.autopilot">Autopilot to destination</button>
       </div>
-      <div id="mw-go-note" style="display:none"></div>
     </div>
     <!-- Loadout screen (docs/plans/2026-08-08-base-menu-redesign.md, Slice C): the ship sits centered with
          its equipment/weapon slots arranged around it; clicking a slot opens the right context panel

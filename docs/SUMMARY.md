@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-20 (**Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`. Earlier today: **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -1052,8 +1052,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   archive (§73). That exclusion is why this retune needed no re-recorded trace.
   A **required slot
   (hull/engine/thruster) may legitimately be empty** in the hangar (you can unequip it back into the
-  stash) — the active ship then reports `launchable: false` + `missingRequired`, the **Take-off button
-  is disabled** (`updateTakeoffGate`, "required slot empty" note), and the hangar preview build is
+  stash) — the active ship then reports `launchable: false` + `missingRequired`, **every base-menu
+  launch control is disabled and also checks `canLaunch()` (shop.js) in its own click handler** (the
+  "required slot empty" note shows once, under the launch bar), and the hangar preview build is
   null-safe (`buildPlayer` HP→0 on a null hull, `deriveDrive` accel→0 on a null engine) so the player
   can still reach Loadout/Stash to re-equip rather than crashing on a null component. The stats bar
   (shown **only on the Loadout screen**) paints **HP 0 red** (`#ship-stats .v.crit`) so the empty slot
@@ -1974,7 +1975,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Take off + community link), so the Take off button is always on-screen regardless of content height (the
   scroll cell top-aligns + scrolls via auto margins on short viewports, avoiding the flex-center clip trap).
   Either way the scene backdrop renders behind it and the level only starts on take-off. Welcome's **Take off**
-  is gated by the same `canTakeOff()` as the Main Window's and launches **straight into the fight**
+  is gated by the same `canLaunch()` (shop.js) as the Main Window's and launches **straight into the fight**
   (`beginLiveSession()` + `reset()`), not via roam like the Main Window's — a known drift, kept deliberately
   (audit A6 in `docs/plans/2026-10-20-duplication-audit.md`).
   - **Staged L1 welcome reveal** (`docs/plans/2026-07-05-1641-briefing-staged-reveal.md`): on the L1
@@ -2016,9 +2017,14 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **"Launch mission: <name>"**), which really is different: it drops straight into that mission's level.
   The briefing also offers **"Autopilot to destination"** (`#mw-mission-nav`, shown only
   for a mission that HAS a system object) to fly there and be asked "Start mission?" on arrival. All of them
-  share ONE gate: `updateTakeoffGate` (shop.js) reads the server's `launchable` flag and disables the fight
-  launch, Take off and Autopilot together — with the reason — when a required slot (hull/armor, engine,
-  thruster) is empty. DECISIONS §100.
+  share ONE gate: `canLaunch()` in shop.js is the only copy of the predicate (the server's `launchable` flag;
+  false when a required slot — hull/armor, engine, thruster — is empty). `updateTakeoffGate` (shop.js) is the
+  single writer that greys `#mw-go`/`#mw-takeoff`/`#mw-mission-nav`, and each launcher also checks
+  `canLaunch()` in its own click handler, so a forced click launches nothing. The Map's Take off **and**
+  Autopilot are greyed through `mountSystemNav`'s `autopilotDisabled` option. The reason shows **once**, in
+  `#mw-takeoff-note` under the launch bar (on Map, in the map's own hint); `#mw-launch` has
+  `padding-bottom: 10px` so that note clears the floating `#xp-bar` by 4px. The in-flight overlay map and the
+  arrival "Start mission?" prompt are not gated — the ship has already launched. DECISIONS §100.
   Left column = `minmax(160px, 18%)`, widened
   to `minmax(240px, 18%)` on **non-phone forms** (`body:not(.dev-phone)`) so it fully contains the
   fixed-position `#account-bar` floating over it — otherwise a long localized (RU) "guest / log in" string
@@ -2398,7 +2404,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
       `panByScreen`/`zoomAtScreen`/`pickAt`): zoom is clamped to `ZOOM_MIN..ZOOM_MAX` and the view centre to
       the system disc, so the map can never be panned into empty space or zoomed to a degenerate scale.
     - **"Autopilot to destination"** flies to the selection — `enterRoam({pos, missionId})` from the base,
-      `engagePointAutopilot(...)` when already flying (re-routes **in place**, no re-entry into roam).
+      `engagePointAutopilot(...)` when already flying (re-routes **in place**, no re-entry into roam). In the
+      base menu it is disabled while the ship can't launch (`autopilotDisabled`, the `canLaunch()` gate).
     The overlay is opened by the out-of-combat **Map** button (`#map-btn`, click + `touchstart`; it sits at
     **z-6**, above the full-screen `#stick-zone` inside `#touch` at z-5 — at an equal z-index the later
     element won the hit test and the button was dead to every tap on a phone) or a **tap on the mini-map**
@@ -5614,6 +5621,12 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   false and the pause dropped. It re-equips the removed item at the end. Seen FAILING on the pre-fix code —
   `gameStarted` still true after Back to base, and with those asserts disabled the sim clock ran 1.0 → 11.0 s
   behind the menu),
+  and **one launch gate** (`54-launch-gate.mjs` — audit A1 + A4: a level-4 player with a side mission active
+  removes the hull in Loadout; on Map, Autopilot and Take off are disabled, the map hint equals
+  `#mw-takeoff-note`, and a forced Autopilot click leaves `roam` false; on Missions there is exactly one visible
+  can't-launch line and it is `#mw-takeoff-note`, whose rect does not intersect `#xp-bar`'s; forced clicks on `#mw-go`/`#mw-mission-nav`/`#mw-takeoff`
+  launch nothing; the hull and the campaign are restored in `finally`. Seen FAILING on the pre-fix code at
+  "Map Autopilot is disabled"),
   and **the HUD's viewport cache** (`48-hud-viewport-cache.mjs` — the guard for DECISIONS §149. It shadows
   `window.innerWidth`/`innerHeight` with counting getters that delegate to the originals (own properties on
   `window`, so a read from ANY caller in the page counts — that is what makes a *sixth* HUD updater written

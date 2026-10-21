@@ -432,11 +432,14 @@
   #mw-item { display: none; float: right; clear: right; width: 46%; height: var(--gun-h); margin: 2px 0 6px 14px; }
   #mw-mission-desc.show-item #mw-item-strut, #mw-mission-desc.show-item #mw-item { display: block; }
   #mw-mission-actions { display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
-  #mw-go-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
   /* Global launch bar — "Take off" on every stage (placed on #mainwin's bottom row, see #mainwin). Hidden on
      Map, which carries its own Take off next to "Autopilot to destination" inside the navigation component's
-     action row. */
-  #mw-launch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 8px; }
+     action row. Its bottom edge (the red "can't launch" #mw-takeoff-note) would run under #xp-bar, which
+     floats over the base at z-index 13: the bar's top sits 20px off the viewport bottom (6px offset + 14px
+     border-box height) and #mainwin pads only 14px, so 6px of the note sat under it. padding-bottom 10px
+     → the note ends 24px off the bottom, 4px clear of the bar. Same on phone (neither #xp-bar nor
+     #mainwin's padding changes per form). Same arithmetic as #mw-view-map below. */
+  #mw-launch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; padding-top: 8px; padding-bottom: 10px; }
   #mainwin.map-open #mw-launch { display: none; }
   #mw-takeoff-note { font-size: 13px; color: #ff9a8a; min-height: 16px; text-align: center; }
   /* ---- Shared star-system navigation component (systemmap-ui.mountSystemNav) ---- */

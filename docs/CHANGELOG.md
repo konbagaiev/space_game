@@ -5,6 +5,28 @@
 
 ## 2026-10-20
 
+- **Fix: one launch gate — Map Autopilot no longer flies a ship that can't launch; the can't-launch note
+  shows once** (client, `[2026-10-20-1816-launch-gate]`, plan `docs/plans/2026-10-20-1816-launch-gate.md`;
+  audit A1 + A4). With the hull unequipped in Loadout (the server allows it and reports `launchable: false`),
+  the Map's Take off went grey with the "can't launch" note, but "Autopilot to destination" beside it still
+  flew the 0-HP ship out into the system. And with a side mission active, the Missions view showed the same
+  red "can't launch" line twice — it was written into both `#mw-go-note` and `#mw-takeoff-note`. Fix:
+  `canLaunch()` in `client/src/shop.js` is now the only copy of the predicate (replaces mainwindow's
+  `canTakeOff`; welcome.js imports it from shop.js); every launcher checks it in its own click handler —
+  Take off, `#mw-mission-nav`, the Map's Autopilot, Welcome's Take off, and `#mw-go`, whose handler had no
+  check at all and relied only on `disabled`; `mountSystemNav` gets an `autopilotDisabled` option the base
+  menu sets from the gate (the in-flight overlay map stays ungated — the ship has already launched);
+  `updateTakeoffGate` is the single writer of the three buttons' `disabled` state and the note; `#mw-go-note`
+  (element, CSS, writes) is removed, so the reason shows once in `#mw-takeoff-note`. That note used to sit
+  6px under the floating XP bar (`#xp-bar`, z-index 13, top 20px off the viewport bottom vs `#mainwin`'s 14px
+  padding); `#mw-launch` now has `padding-bottom: 10px`, so the red line ends 4px clear of the bar on every
+  form (closes the duplication audit's §0 residual). Guard: new visual
+  scenario `54-launch-gate` (removes the hull through the real Loadout UI, checks Map + Missions, forces
+  clicks on every disabled launcher, restores the shared player in `finally`). Negative-tested in three
+  steps: on the untouched code it failed at "Map Autopilot is disabled"; with only the Map gate in, at
+  "exactly one visible can't-launch line (saw 2)"; with the note removed but `#mw-go` ungated, at "#mw-go
+  forced click: the Main Window is still up"; with the full change it passes. Its note-vs-XP-bar overlap
+  assertion failed without the clearance (note bottom 786px vs bar top 780px on a 1280×800 frame).
 - **Fix: the fight no longer keeps running behind the base menu** (client, `[2026-10-20-1659-base-menu-idle]`,
   plan `docs/plans/2026-10-20-1659-base-menu-idle.md`). Reported from prod: die in the research-station zone,
   press Back to base, open Loadout, and the fight carried on behind the Main Window — the "You've left the
