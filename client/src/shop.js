@@ -2,7 +2,7 @@
 // stash + a simple shop, with a live ship-stats panel (HP / acceleration / maneuverability / weight) that
 // shows the delta vs the previous config. The server stays authoritative — every action posts to an
 // endpoint and re-renders from the response. A leaf module: the Main Window calls in (openBay/showBayView/
-// updateTakeoffGate/renderShipStatsBar/deriveShipStats); nothing here calls back out into the UI.
+// canLaunch/updateTakeoffGate/renderShipStatsBar/deriveShipStats); nothing here calls back out into the UI.
 import { esc, slotLabel, priceLabel, SELL_RATE } from './format.js';
 import { G, CATALOG } from './state.js';
 import { shipMass, deriveDrive } from './sim-core/components.js';
@@ -437,21 +437,26 @@ function renderShopPanel() {
 // The Loadout item always opens the same screen; reset to the slot panel + re-render (starts the viewer).
 export function showBayView() { panelMode = 'slot'; selectedSlot = null; selectedStashRef = null; if (shopData && shopData.activeShip) renderBay(); }
 
-// Gate EVERY launch control from one place: a missing required slot (sold hull/armor, engine or thruster)
-// blocks the mission launch (#mw-go), the always-available "Take off" into the system (#mw-takeoff) and the
-// mission's "Autopilot to destination" alike — a ship that can't fight must not be able to wander off
-// either. The Map view's own buttons read the same flag via mainwindow's canTakeOff().
+// THE launch gate (DECISIONS §100): a required slot (hull/armor, engine, thruster) left empty → the server
+// reports `launchable: false` and NOTHING in the base menu may take the ship out. This is the only copy of
+// the predicate; every launcher checks it in its own handler (mainwindow.js takeOff / #mw-go /
+// #mw-mission-nav / the Map's onAutopilot, welcome.js takeOff), and updateTakeoffGate mirrors it onto the
+// buttons. The in-flight overlay map is ungated on purpose: in roam the ship has already launched.
+export function canLaunch(active = G.activeShip) {
+  return !active || active.launchable !== false;
+}
+
+// Reflect the gate on the global launch controls: the side-mission launch (#mw-go), Take off (#mw-takeoff)
+// and the briefing's "Autopilot to destination" (#mw-mission-nav). The reason goes in ONE place,
+// #mw-takeoff-note under the launch bar (the Map view shows it via its own action note instead).
 export function updateTakeoffGate(active) {
-  const ok = !active || active.launchable !== false;
-  const hint = ok ? '' : t('ui.shop.cant_launch');
-  for (const [btnId, noteId] of [['mw-go', 'mw-go-note'], ['mw-takeoff', 'mw-takeoff-note']]) {
-    const btn = document.getElementById(btnId);
-    const note = document.getElementById(noteId);
+  const ok = canLaunch(active);
+  for (const id of ['mw-go', 'mw-takeoff', 'mw-mission-nav']) {
+    const btn = document.getElementById(id);
     if (btn) btn.disabled = !ok;
-    if (note) note.textContent = hint;
   }
-  const nav = document.getElementById('mw-mission-nav');
-  if (nav) nav.disabled = !ok;
+  const note = document.getElementById('mw-takeoff-note');
+  if (note) note.textContent = ok ? '' : t('ui.shop.cant_launch');
 }
 
 export function renderBay() {

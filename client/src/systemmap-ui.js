@@ -66,8 +66,9 @@ function describeObjects(missionOffers, activeMissionId = null, tNow = Date.now(
 //   opts.onAutopilot(obj)   fly to the selected object (host decides enterRoam vs engagePointAutopilot)
 //   opts.selectedId         initial selection
 //   opts.activeMissionId    the mission the player is ON (null = the campaign) — marks its object
+//   opts.autopilotDisabled  grey out "Autopilot to destination" (the base menu's launch gate; the in-flight overlay leaves it off)
 export function mountSystemNav(host, opts = {}) {
-  const { missionOffers = [], actions = [], onAutopilot } = opts;
+  const { missionOffers = [], actions = [], onAutopilot, autopilotDisabled = false } = opts;
   let activeMissionId = opts.activeMissionId ?? null;
   let objects = describeObjects(missionOffers, activeMissionId);
   let selectedId = opts.selectedId || null;
@@ -114,7 +115,7 @@ export function mountSystemNav(host, opts = {}) {
   // ---- actions row ----
   function renderActions() {
     const o = selected();
-    const canFly = !!o && !o.locked;
+    const canFly = !!o && !o.locked && !autopilotDisabled;
     const extra = actions.map((a) => `<button data-act="${esc(a.id)}" class="${esc(a.cls || '')}"`
       + `${a.disabled ? ' disabled' : ''}>${esc(t(a.labelKey))}</button>`).join('');
     actionsEl.innerHTML = extra

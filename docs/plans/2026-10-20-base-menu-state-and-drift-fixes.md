@@ -1,6 +1,6 @@
 # Base-menu state leak + the drifted-copy bugs from the duplication audit
 
-**Status:** planned, not started. **Date:** 2026-10-20.
+**Status:** Phases 1-2 done (`8f9e705`, `2026-10-20-1816-launch-gate`); 3-5 planned. **Date:** 2026-10-20.
 **Source:** a live bug report (below) plus the drifted findings of
 [`2026-10-20-duplication-audit.md`](2026-10-20-duplication-audit.md) (ids A1–A6, B1, B2, B5, B6 refer to it).
 **Execute** phase by phase; each phase is independently shippable and has its own guard. Offer
@@ -141,6 +141,9 @@ suite and the perf gate are opt-in — ask the maintainer.
 ---
 
 ## Phase 2 — One launch gate (audit A1 + A4)
+
+**Done 2026-10-20** — see `2026-10-20-1816-launch-gate.md` (adds the `#mw-go` handler gate; the guard is
+`54-launch-gate`, not an extension of 53).
 
 **Bug A1:** on the Map view, "Autopilot to destination" ignores the launch gate. `renderMapView`
 (`client/src/mainwindow.js:165-174`) gates only the Take off action (`disabled: !canTakeOff()`);
