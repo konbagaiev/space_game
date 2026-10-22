@@ -16,6 +16,7 @@ import { shipModelCfg } from './ship-factory.js';
 import { buildModelViewer, setViewerModel, startViewer, stopViewer, resizeViewer, disposeViewer, itemModelCfg, setTopDownView, enableOrbit } from './model-viewer.js';
 import { gatedRefs, hasNew, prune, primeSets, unseenSections, unseenItems, refOf, absorbRefs, GATE_KINDS, LEGACY_GATE_KINDS } from './shop-markers.js';
 import { GROUP_WEAPON_TYPE, slotAcceptsWeaponType } from './shop-slots.js';
+import { isShopItem } from './sim-core/shop-rules.js';
 
 let shopData = null;       // { credits, shopUnlocked, stash, activeShip } — last server state
 let panelMode = 'slot';   // right context panel: 'slot' (selected-slot detail) | 'shop' (the shop)
@@ -172,7 +173,7 @@ const itemUnlocked = (s) => {
   return true;
 };
 // Every row the shop would list right now (the same predicate renderShopPanel filters by, minus the type).
-const buyableNow = () => shopCatalog().filter((n) => (n.price ?? 0) > 0 && n.s?.buyable !== false && itemUnlocked(n.s));
+const buyableNow = () => shopCatalog().filter((n) => isShopItem(n.price, n.s) && itemUnlocked(n.s));
 
 // ---------- The gold "(new)" trail (client/src/shop-markers.js holds the pure logic) ----------
 // TWO marker keys, on purpose (DECISIONS §111), plus one housekeeping key:

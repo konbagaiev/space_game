@@ -6969,3 +6969,65 @@ Mobility points read lower numbers than the ship flew (plan `docs/plans/2026-10-
   the menu → same ship object; `showMain` → rebuilt with the new allocation), mutation-tested both ways.
 
 **Not changed:** the `?duel` / `?beam` dev overrides are not mirrored in the Loadout preview (dev-only flags).
+
+## 164. The server refuses what the shop never offers
+
+**Date:** 2026-10-22. **Context:** duplication audit B1 (`docs/plans/2026-10-20-duplication-audit.md`, plan
+`docs/plans/2026-10-22-1953-catalog-economy-guards.md`). `POST /api/players/:id/buy` sold any catalog row —
+price-0 boss parts (which then cost nothing) and the enemy gear the shop hides. The "is it for sale" rule was
+copied twice (shop list, rarity classifier) and enforced in neither place on the server.
+
+**Decision.** One predicate, `isShopItem(price, stats)` = price > 0 AND `stats.buyable !== false`, in
+`client/src/sim-core/shop-rules.js` (under `sim-core` because the server may import from `client/`, never
+the reverse — §136). The shop list (`shop.js buyableNow`), the drop-rarity classifier (`catalog_seed.js
+classifyRarity`) and `db.js buyItem` all import it. `buyItem` refuses a non-matching row with
+`403 { error: 'not for sale' }`, before the level/mission gates.
+
+- **This amends §40.6.** Its "`buyable:false` is not enforced server-side — fine since no UI path offers
+  those" is retired: the server must not rely on what the UI happens to show. §40's text is left as written.
+- **Price-0 rows were never covered by §40.6** and are blocked too (Medium/Boss hull, Boss engine,
+  Medium/Boss thrusters).
+- **Looting, selling and equipping a blocked row stay allowed** — that is how enemy gear is meant to reach a
+  stash and pay out its resale price.
+- **This closes the BUY hole only.** `/loot` is still client-trusted (§40): a crafted request can deposit any
+  row and sell it. Sealing loot is the separate server-sealed-rewards integrity item, not built here.
+
+## 165. `reset --all` deletes the S3 traces first, and truncates only if every delete succeeded
+
+**Date:** 2026-10-22. **Context:** duplication audit B2 (same plan as §164). `--all` truncated every
+player-scoped table except `gameplay_sessions`, leaving rows — and their S3 trace objects — for players that
+no longer existed.
+
+**Decision.** `resetAllPlayers` (`db.js`) reads every `s3_key`, deletes each object, and then truncates
+`PLAYER_SCOPED_TABLES` (now including `gameplay_sessions`; a test pins the list against
+`information_schema`).
+
+- **Abort on any failure, over best-effort.** If a single delete fails nothing is truncated and the CLI exits
+  1 with the failed keys. A best-effort wipe would drop the rows that are the only index of the surviving
+  objects, orphaning them for good; aborting keeps the rows so a re-run (S3 DELETE of a missing key is 204,
+  so it is idempotent) can finish the job.
+- **One DELETE per key, 8 at a time, over the batch `DeleteObjects` API.** Batch needs a `?delete` query
+  string (the hand-rolled signer canonicalises the query as empty), a Content-MD5 header and an XML body;
+  per-key reuses `s3Request` unchanged. `--all` is a rare manual wipe, so speed is irrelevant (§30).
+- **Key-prefix safety rail.** Only keys matching `recordings/sessions/<id>.json` are ever sent to S3; any
+  other key counts as a failure (abort). The bucket also holds the game's assets — the canonical intro trace
+  is `recordings/level0-intro.<hash>.json` (`scripts/assets-config.mjs` `PREFIX.recordings`), a direct
+  sibling of `recordings/sessions/` — and a corrupt row must never be able to delete one.
+- **No S3 creds: refuse, unless the caller explicitly opts out (maintainer's call).** Without
+  `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` the deletes cannot happen, so `resetAllPlayers` refuses and
+  touches nothing — no listing, no truncate — unless called with `skipS3: true` (`reset.js --all --no-s3`),
+  which truncates without touching S3 and prints a loud orphan warning. That flag is the local-dev form. A
+  host-based rule ("local DB without creds is fine") was built first and rejected: an SSH tunnel to prod
+  shows up as `localhost`, so it would wave through the most likely accident, wiping prod from a laptop and
+  orphaning every trace. An explicit flag puts the decision on the person, not on a guess about the URL. A
+  production `--all` runs inside the app container, where the server `.env` supplies the creds.
+- **Accepted race.** A session uploaded between listing the keys and the truncate loses its row and its
+  object is orphaned. Locking `gameplay_sessions` across network deletes would stall live uploads instead.
+- **Ops:** the server IAM key needs `s3:DeleteObject` on `recordings/sessions/*`. Without it a prod `--all`
+  aborts before truncating — safe, just not done.
+
+The per-player reset is unchanged: it still keeps `sessions`, `perf_samples` and `gameplay_sessions` (now an
+explicit, commented keep-list), and does not touch S3. Alongside, `NEW_PLAYER_DEFAULTS` (`db.js`) became the
+one source of a new player's starting values for the register INSERT (now explicit — prod's column defaults
+never move, since `ADD COLUMN IF NOT EXISTS … DEFAULT` is a no-op on an existing table), its response, the
+reset UPDATE and the fresh-DB DDL defaults.

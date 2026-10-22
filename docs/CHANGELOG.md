@@ -5,6 +5,35 @@
 
 ## 2026-10-22
 
+- **Server economy guards** (server, `[2026-10-22-1953-catalog-economy-guards]`, plan
+  `docs/plans/2026-10-22-1953-catalog-economy-guards.md`; duplication audit A2, B1, B2 — Phase 4 of the drift
+  fixes; DECISIONS §164, §165).
+  - **Side-mission estimate from the catalog.** The card's "Reward ≈ / XP ≈" came from constants written
+    before the enemy-reward rebalance (**~2360 credits / 1000 XP**); a full run actually pays ~3510 / ~2750.
+    `missions.js expectedRun()` now computes it from the phases' pool odds × the ship catalog (credits ×2 on
+    clear; XP = per-kill + the 1000 clear bonus), so the card shows **≈3510 / ≈2750** and follows any future
+    rebalance. Stale freighter-position comment fixed. New `server/src/missions.test.js`.
+  - **`/buy` refuses what the shop never offers.** One predicate, `isShopItem` (new
+    `client/src/sim-core/shop-rules.js`), now feeds the shop list, the drop-rarity classifier and the server's
+    `buyItem`, which returns `403 { error: 'not for sale' }` for price-0 boss parts and `buyable:false` enemy
+    gear (amends DECISIONS §40.6). Looted copies still deposit, sell and equip. The sell tests and the
+    `12-sell-confirm` scenario now stock Light hulls through `/loot` instead of buying them.
+  - **`reset.js --all` covers session recordings.** It deletes every `gameplay_sessions` row's S3 trace
+    (only `recordings/sessions/*.json` keys, 8 at a time) and then truncates `PLAYER_SCOPED_TABLES`, now
+    including `gameplay_sessions` (pinned against `information_schema` by a test). Any failed delete aborts
+    with nothing truncated (exit 1; re-run is safe). Without S3 creds it **refuses** (nothing touched)
+    unless given **`--no-s3`** — the local-dev form, which truncates without touching S3 and warns that any
+    traces are orphaned — so a prod wipe from a laptop (even over an SSH tunnel that looks like localhost)
+    can no longer orphan every trace. The per-player
+    reset is unchanged, with its keep-list now explicit. New `deleteTrace` / `s3Configured` in `s3.js`.
+  - **`NEW_PLAYER_DEFAULTS`** (`db.js`) is the one source of a new player's starting values: the register
+    INSERT (now writes them explicitly instead of relying on column defaults), its response, the reset UPDATE
+    and the fresh-DB DDL defaults. `server.test.js` no longer calls `resetAllPlayers()` at startup (it
+    truncates the player tables directly, leaving `gameplay_sessions` to the parallel sessions test file).
+  - **Ops:** the server IAM key needs `s3:DeleteObject` on `recordings/sessions/*` for `--all` (not yet
+    granted — without it a prod `--all` aborts safely before truncating). A production `--all` runs inside the
+    app container (`reset-progress` skill updated).
+
 - **Loadout shows the ship you fly** (client, `[2026-10-22-1334-loadout-skill-stats]`, plan
   `docs/plans/2026-10-22-1334-loadout-skill-stats.md`; duplication audit A3 + A5, DECISIONS §163). The
   Loadout stats bar re-derived HP / Accel / Turn / Weight by hand and never applied skills, so Mobility points

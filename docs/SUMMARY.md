@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-22 (**Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -917,10 +917,13 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   medium (ex-mini-boss) share the **same Scout engine**; fighter + rocketeer also share the Scout
   thrusters, while the medium has weak (Medium) thrusters → it's sluggish.
   - **Pirate/enemy parts are priced but not buyable.** Every enemy component/weapon carries a resale `price`
-    (e.g. Scout engine 250, Pirate MG 300, Second-boss hull 2000) **plus** `stats.buyable: false`, which the
-    client shop filter uses to **hide** them (`n.s.buyable !== false`). So looted enemy gear has real resale
-    value (`sell = floor(price·0.75)`) without ever appearing in the shop. Player/starter/ladder items have no
-    `buyable` key → shown.
+    (e.g. Scout engine 250, Pirate MG 300, Second-boss hull 2000) **plus** `stats.buyable: false`. ONE
+    predicate decides "for sale": `isShopItem(price, stats)` (price > 0 AND not `buyable:false`) in
+    `client/src/sim-core/shop-rules.js`, imported by the shop list (`shop.js buyableNow` — hides them), the
+    rarity classifier (`catalog_seed.js classifyRarity`) and the server's **`buyItem`, which refuses any other
+    row with `403 { error: 'not for sale' }`** (price-0 boss parts included; DECISIONS §164, amending §40.6).
+    So looted enemy gear has real resale value (`sell = floor(price·0.75)`) — looted copies still deposit,
+    sell and equip — without ever being purchasable. Player/starter/ladder items have no `buyable` key → shown.
   - **Player shop ladder** (priced; `docs/plans/economy-shop-v2.md`) adds buyable upgrades beyond the
     enemy/starter parts: **Heavy hull** (id 13: 200 hp / weight 50 / **6000** — the upgrade "ship": 2× HP for
     accel ~6.2 / turn ~1.2), **Solid-fuel engine** (id 15: power 21 / **1400**) + **Ion engine** (id 16: power
@@ -2544,7 +2547,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   total. Completing a level **doubles** Earned (`win` applies `earned ×= 2`). The separate **kill count**
   drives level thresholds. At the **end of each run — death OR victory — Earned is banked** into the
   player's persistent **Credits** balance (server-authoritative; closing the browser mid-run loses the
-  unbanked amount). New players start at **1000 credits**. HUD (top-right) shows one credits line —
+  unbanked amount). New players start at **1000 credits** (`NEW_PLAYER_DEFAULTS` in `db.js`). HUD (top-right) shows one credits line —
   `credits {total}/{earned} earned` (total persistent balance / Earned this run; `ui.hud.credits_line`,
   EN+RU), where the **Earned** number is rendered **green** (`.hud-earned`, `#77ee77`, matching the
   "+xx" kill popups) so live mission gain stands out — plus **Destroyed**. The live **Enemies** (alive) counter has been **removed**.
@@ -2608,7 +2611,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   once the player has reached the `level-4` row (`sideMissionsUnlocked`, resolved by level name, never by a
   raw id), **separate from the shop** which opens earlier (DECISIONS §91/§95). They render as **cards** on the central mission board (below the campaign card), each
   with **Take / Defer / Set active** and Active/Taken badges; selecting a card shows its flavor
-  description + est. reward, and **Take-off flies the ACTIVE** one (`renderMissionsBoard` /
+  description + est. reward / XP (computed server-side, see Side missions under Backend), and **Take-off flies the ACTIVE** one (`renderMissionsBoard` /
   `renderMissionView`). The **taken set + active mission are server-persisted** (`taken_missions` table +
   `players.active_mission_id`; endpoints `POST /api/players/:id/missions/take|defer|activate`, `GET
   /missions` returns `taken` + `activeMissionId` + `cleared`; one active at a time, defer-of-active →
@@ -3703,7 +3706,12 @@ first translation). See DECISIONS §10.
   seeded as `level-0`..`level-4`), played by the client's `levelRunner`. Served via `GET /api/maps/:name` and
   `GET /api/levels/:name`.
 - **Side missions:** `server/src/missions.js` is a stateless generator (`generateMissions()`) that emits
-  the 3 flavored side-mission descriptors (same composition; see Gameplay). `GET /api/players/:id/missions`
+  the 3 flavored side-mission descriptors (same composition; see Gameplay). Each card's **`estReward` /
+  `estXp`** comes from `expectedRun(phases)` — the expected per-kill credits/XP of one full run from the
+  phases' pool odds × the ship catalog's `reward`/`xp` (never restated by hand): `estReward = round10(2 ×
+  credits)` (clearing doubles the credits), `estXp = round10(xp + MISSION_XP 1000)` (per-kill XP is not
+  doubled). ≈**3510 / ≈2750** today; assumes the player lands every kill and ignores loot resale
+  (`missions.test.js` pins it against an independent recomputation). `GET /api/players/:id/missions`
   returns them, **gated by `sideMissionsUnlocked`** (progress has reached the `level-4` row, matched by
   name; 403 until the board opens — after clearing "Level 3", DECISIONS §91/§95 — decoupled from the shop,
   which opens earlier); the response
@@ -3728,7 +3736,8 @@ first translation). See DECISIONS §10.
   unlocks `stats.minMission` shop rows), `GET /api/health`, `GET /api/ships`, `GET /api/weapons`, `GET /api/components`,
   `GET /api/players/:id/active-ship`, `GET /api/players/:id/level`, `POST /api/players/:id/advance`,
   `POST /api/players/:id/reset` (player-initiated progress reset → new-player baseline; 404 if unknown),
-  `GET /api/players/:id/stash`, `POST /api/players/:id/buy`, `.../sell` (optional `qty`), `.../equip`, `.../unequip`
+  `GET /api/players/:id/stash`, `POST /api/players/:id/buy` (403 `not for sale` for a price-0 or
+  `buyable:false` row — `isShopItem`), `.../sell` (optional `qty`), `.../equip`, `.../unequip`
   (hangar shop; 403 until the shop is unlocked), `POST /api/players/:id/skills/spend` (character
   progression: spend one skill point on `{skill}`; 400 unknown skill, 409 no unspent points — not
   shop-gated), `POST /api/players/:id/loot` (victory loot deposit → stash;
@@ -3800,7 +3809,8 @@ first translation). See DECISIONS §10.
   **Known limitation:** a trace reproduces faithfully **only on its recorded `game_version`** (input-replay
   analytics) — admin shows a ✓/✗ match; no old-engine restoration. **Ops prerequisite:** the server IAM key
   needs `s3:PutObject`+`s3:GetObject` on `recordings/sessions/*` and `ASSETS_BUCKET` (+ region) in the server
-  `.env`, else uploads no-op and playback 404s.
+  `.env`, else uploads no-op and playback 404s — plus **`s3:DeleteObject`** on the same prefix for
+  `reset.js --all` (without it a prod `--all` aborts before truncating; see Player-data reset).
 - **Admin dashboard (`GET /admin`, `server/src/admin.js`):** a private, **server-rendered** HTML page
   listing every player (id short, username, email, email_verified, created_at, last_seen,
   **progress**, credits, games_played, referrer, **device**) plus per-player aggregates from `games`
@@ -4107,10 +4117,24 @@ first translation). See DECISIONS §10.
   seed-only-when-empty + migrations for changes.)
 - **Player-data reset (admin):** `server/src/reset.js` is a CLI for wiping *progress* (never the
   catalog). Two modes, in `db.js` (`resetPlayer` / `resetAllPlayers`, re-exported via `datastore.js`):
-  **`--player <id>`** clears one player's games, ships, stash and events and resets level/credits/shop
-  to the new-player baseline (re-granting the starter ship) while **keeping the account, login session
-  and language** (per-player SQL DELETEs); **`--all --yes`** wipes every player-scoped table
-  (`TRUNCATE … RESTART IDENTITY CASCADE`), leaving the catalog to re-seed on startup. Wrapped by the
+  **`--player <id>`** deletes one player's rows in `PER_PLAYER_RESET_DELETES` (games, ships, stash, events,
+  taken/cleared missions) and resets the gameplay columns to **`NEW_PLAYER_DEFAULTS`** (`db.js` — the one
+  source of a new player's starting values, also used by the `registerPlayer` INSERT + response and the
+  fresh-DB DDL defaults), re-granting the starter ship, while **keeping the account, login (`sessions`),
+  language, `perf_samples` and `gameplay_sessions`** (an explicit, commented keep-list). **`--all --yes`**
+  first deletes every `gameplay_sessions` row's **S3 trace object** (only keys matching
+  `recordings/sessions/<id>.json`, one DELETE per key, 8 at a time — the intro trace
+  `recordings/level0-intro.<hash>.json` sits right beside that prefix), then `TRUNCATE`s every table in
+  **`PLAYER_SCOPED_TABLES`** (incl. `gameplay_sessions`; `RESTART IDENTITY CASCADE`; a test pins the list
+  against `information_schema`), leaving the catalog to re-seed on startup. If any delete fails (or a row
+  holds a key outside that prefix) it **aborts with nothing truncated**, prints the failed keys and exits 1;
+  re-running is safe (a DELETE of a missing key is 204). **No S3 creds** in the env: it **refuses** (exit 1,
+  nothing listed or truncated, whatever the DB host — an SSH tunnel to prod looks like localhost) unless
+  given **`--no-s3`** (`resetAllPlayers({ skipS3: true })`), which truncates without touching S3 and warns
+  loudly that any trace objects are orphaned — the local-dev form is `node src/reset.js --all --yes
+  --no-s3`. A production `--all` runs **inside the app container** (`/opt/projects/spacegame`, `docker
+  compose exec app node src/reset.js --all --yes`), where the server `.env` supplies the creds. Accepted race: a session
+  uploaded mid-wipe can orphan one object (DECISIONS §165). Wrapped by the
   **`reset-progress`** skill (`.claude/skills/reset-progress/`). The **per-player**
   reset is also reachable by players themselves via **`POST /api/players/:id/reset`** (the settings
   "Reset my progress" control) — same `resetPlayer` op. See DECISIONS §19.
@@ -4192,8 +4216,9 @@ first translation). See DECISIONS §10.
 - **Server tests run against Postgres.** The `server.test.js` suite runs against a `postgres:16`
   service container in the CI `test` job (one pass). Locally, `npm test` targets
   `postgres://localhost:5432/spacegame_test`, and a `pretest` step drops+recreates that DB for a
-  clean schema each run (a direct `node --test` skips `pretest`, so the suite also
-  `resetAllPlayers()`-truncates up front for clean data; catalog kept). One file is the exception:
+  clean schema each run (a direct `node --test` skips `pretest`, so the suite also truncates
+  `PLAYER_SCOPED_TABLES` minus `gameplay_sessions` up front for clean data; catalog kept — not via
+  `resetAllPlayers()`, which would touch S3 and the table `gameplay-sessions.test.js` fills in parallel). One file is the exception:
   `levels_drift.test.js` creates and drops its **own** database (`spacegame_test_drift`) so it can
   re-number `levels` without racing the shared DB.
 - **Graceful shutdown:** on `SIGTERM`/`SIGINT` the server stops accepting new connections and lets

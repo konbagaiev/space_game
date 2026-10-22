@@ -7,11 +7,13 @@ export default async function ({ page, assert, shot }) {
   const pid = await page.evaluate(() => localStorage.getItem('playerId'));
   assert.ok(pid, 'a player id is present');
 
-  // Unlock the shop (clear the campaign) and stock 3× Light hull (component 2, price 150) in the stash.
+  // Unlock the shop (clear the campaign) and stock 3× Light hull (component 2, price 150) in the stash —
+  // LOOTED, the way enemy gear really gets there (the server refuses to sell buyable:false rows).
   await page.evaluate(async (pid) => {
     for (let i = 0; i < 4; i++) await fetch(`/api/players/${pid}/advance`, { method: 'POST' });
-    for (let i = 0; i < 3; i++) await fetch(`/api/players/${pid}/buy`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'component', refId: 2 }) });
+    await fetch(`/api/players/${pid}/loot`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: [1, 2, 3].map(() => ({ kind: 'component', refId: 2 })) }) });
   }, pid);
 
   await page.goto(page.url(), { waitUntil: 'load' });

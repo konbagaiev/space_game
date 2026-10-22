@@ -244,6 +244,8 @@ the ship flies.
 
 ## Phase 4 — Server-side drift (audit A2, B1, B2)
 
+**Status:** Shipped 2026-10-22 — see `2026-10-22-1953-catalog-economy-guards.md` (B2 decision changed: S3 traces ARE deleted).
+
 ### A2 — side-mission "Est. reward" / "XP" is stale
 
 `server/src/missions.js:36-42` hard-codes per-kill 40/40/100, boss 200, 14 wave kills. Reality

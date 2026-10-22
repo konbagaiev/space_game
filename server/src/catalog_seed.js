@@ -3,6 +3,8 @@ import { enemyTotalFromPhases } from './enemy_total.js';
 // server/ (DECISIONS §136) and sim-host.js already imports across the same boundary; the Dockerfile copies
 // client/ into the image, so this resolves in production too.
 import { SHIP_CLASSES } from '../../client/src/sim-core/ship-classes.js';
+// The "is it for sale" rule — shared with the shop list and the server's buy gate (db.js buyItem).
+import { isShopItem } from '../../client/src/sim-core/shop-rules.js';
 
 // Seed data for the ships/weapons catalog — a snapshot of the game's ship/weapon design.
 // The data layer seeds from this via an idempotent upsert on startup (see db.js),
@@ -341,11 +343,11 @@ export const WEAPONS = [
 ];
 
 // --- item rarity + color (drives the in-world drop glow + the pickup-log tint on the client).
-// Rule: a shop-available item (price>0 AND not buyable:false) is 'common'; everything else (pirate/enemy
-// gear + price-0 boss parts) is 'trash'; a row may set `rarity` explicitly to override (Triple spiral → 'rare').
+// Rule: a shop-available item (isShopItem: price>0 AND not buyable:false) is 'common'; everything else
+// (pirate/enemy gear + price-0 boss parts) is 'trash'; a row may set `rarity` explicitly to override
+// (Triple spiral → 'rare').
 const RARITY_COLOR = { trash: '#ffffff', common: '#59e0a0', rare: '#0000ff' };
-const classifyRarity = (row) =>
-  row.rarity || (((row.price ?? 0) > 0 && row.stats?.buyable !== false) ? 'common' : 'trash');
+const classifyRarity = (row) => row.rarity || (isShopItem(row.price, row.stats) ? 'common' : 'trash');
 for (const row of [...COMPONENTS, ...WEAPONS]) {
   row.rarity = classifyRarity(row);
   row.color = RARITY_COLOR[row.rarity];

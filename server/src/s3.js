@@ -1,4 +1,4 @@
-// Minimal S3 PutObject/GetObject over hand-rolled SigV4 (no @aws-sdk dep — same approach as ses.js).
+// Minimal S3 PutObject/GetObject/DeleteObject over hand-rolled SigV4 (no @aws-sdk dep — same approach as ses.js).
 // Used to store/serve gameplay session recordings (docs/plans/2026-08-03-1246-record-all-sessions.md).
 import crypto from 'node:crypto';
 
@@ -13,7 +13,7 @@ const haveCreds = () => !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECR
 // Encode each key segment but keep the '/' separators.
 const encKey = (key) => key.split('/').map(encodeURIComponent).join('/');
 
-// Sign + send one S3 request (virtual-hosted style). body is a Buffer (PUT) or null (GET). Returns the fetch Response.
+// Sign + send one S3 request (virtual-hosted style). body is a Buffer (PUT) or null (GET/DELETE). Returns the fetch Response.
 async function s3Request(method, key, body) {
   const region = REGION(), bucket = BUCKET(), service = 's3';
   const host = `${bucket}.s3.${region}.amazonaws.com`;
@@ -51,4 +51,17 @@ export async function getTrace(key) {
     if (!res.ok) return null;
     return await res.json();
   } catch (e) { console.warn('[s3] getTrace failed:', e?.message); return null; }
+}
+
+// Is S3 configured at all? (creds in the env — the same test putTrace/getTrace use to no-op.)
+export const s3Configured = () => haveCreds();
+
+// Delete one trace object (reset.js --all). Returns { ok, key, status }. S3 answers 204 for a missing key
+// too, so a re-run after a partial failure is safe (idempotent). Needs s3:DeleteObject on the key's prefix.
+export async function deleteTrace(key) {
+  if (!haveCreds()) return { ok: false, key, status: 0 };
+  try {
+    const res = await s3Request('DELETE', key, null);
+    return { ok: res.ok, key, status: res.status };
+  } catch (e) { console.warn('[s3] deleteTrace failed:', e?.message); return { ok: false, key, status: 0 }; }
 }

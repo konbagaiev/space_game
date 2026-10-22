@@ -14,8 +14,10 @@ const app = await createApp();
 // The suite runs against Postgres (the only backend). `pretest` drops+recreates spacegame_test for a
 // clean schema; a direct `node --test` skips that, so wipe the player-scoped tables here for clean
 // data too (the seeded catalog is kept). See package.json `pretest` + the Postgres CI job.
-const { resetAllPlayers } = await import('./datastore.js');
-await resetAllPlayers();
+// NOT resetAllPlayers(): that deletes S3 traces and truncates gameplay_sessions, which
+// gameplay-sessions.test.js fills in parallel (node --test runs the files concurrently).
+const { pool: pgPool, PLAYER_SCOPED_TABLES } = await import('./datastore.js');
+await pgPool.query(`TRUNCATE ${PLAYER_SCOPED_TABLES.filter((t) => t !== 'gameplay_sessions').join(', ')} RESTART IDENTITY CASCADE`);
 const server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
 const base = `http://localhost:${server.address().port}`;
 
@@ -1045,20 +1047,62 @@ test('shop: equip from stash swaps the displaced item back into the stash', asyn
 test('shop: buy adds to the stash; sell removes it; credits move by the item price', async () => {
   await clearCampaign('shop-trade');
   const start = (await getJson('/api/players/shop-trade/stash')).credits;
-  // buy a Light hull (component 2) — now priced 150 (enemy gear priced for resale; buyable:false only
-  // hides it from the CLIENT shop list, the server still allows a direct buy)
-  const bought = await (await post('/api/players/shop-trade/buy', { kind: 'component', refId: 2 })).json();
-  assert.equal(bought.credits, start - 150); // price 150 deducted
-  assert.ok(bought.stash.some((it) => it.kind === 'component' && it.refId === 2));
-  // sell it back — credit floor(150 * 0.75) = 112
-  const sold = await (await post('/api/players/shop-trade/sell', { kind: 'component', refId: 2 })).json();
-  assert.equal(sold.credits, start - 150 + 112);
-  assert.ok(!sold.stash.some((it) => it.kind === 'component' && it.refId === 2), 'sold item left the stash');
+  // buy a Basic hull (component 1, price 300 — a real shop row). Enemy gear (buyable:false) and price-0
+  // boss parts are refused by the server; see the "not for sale" test below.
+  const bought = await (await post('/api/players/shop-trade/buy', { kind: 'component', refId: 1 })).json();
+  assert.equal(bought.credits, start - 300); // price 300 deducted
+  assert.ok(bought.stash.some((it) => it.kind === 'component' && it.refId === 1));
+  // sell it back — credit floor(300 * 0.75) = 225
+  const sold = await (await post('/api/players/shop-trade/sell', { kind: 'component', refId: 1 })).json();
+  assert.equal(sold.credits, start - 300 + 225);
+  assert.ok(!sold.stash.some((it) => it.kind === 'component' && it.refId === 1), 'sold item left the stash');
+});
+
+// ---------- "Not for sale" (DECISIONS §40.6 as amended, §164): ONE predicate, isShopItem ----------
+test('shop: the server refuses price-0 and buyable:false rows (403 not for sale) and changes nothing', async () => {
+  await clearCampaign('nfs-1');
+  const { pool } = await import('./db.js');
+  await pool.query("UPDATE players SET credits = 50000 WHERE id = 'nfs-1'"); // credits are never the reason
+  // price 0: component 4 (Boss hull — comes free off the boss, never sold)
+  const r0 = await post('/api/players/nfs-1/buy', { kind: 'component', refId: 4 });
+  assert.equal(r0.status, 403);
+  assert.equal((await r0.json()).error, 'not for sale'); // the body matters: the shop-lock + level gates are 403 too
+  // buyable:false: weapon 2 (Kinetic pirate, price 120 — enemy gear, resale-only)
+  const r1 = await post('/api/players/nfs-1/buy', { kind: 'weapon', refId: 2 });
+  assert.equal(r1.status, 403);
+  assert.equal((await r1.json()).error, 'not for sale');
+  const st = await getJson('/api/players/nfs-1/stash');
+  assert.equal(st.credits, 50000, 'no credits moved');
+  assert.ok(!st.stash.some((it) => it.kind === 'component' && it.refId === 4), 'no Boss hull in the stash');
+  assert.ok(!st.stash.some((it) => it.kind === 'weapon' && it.refId === 2), 'no Kinetic pirate in the stash');
+  // a real shop row still sells to the same player (the guard is not a blanket refusal)
+  assert.equal((await post('/api/players/nfs-1/buy', { kind: 'component', refId: 1 })).status, 200);
+});
+
+test('catalog: the rarity classifier is exactly isShopItem (unless a row overrides its rarity)', async () => {
+  const { isShopItem } = await import('../../client/src/sim-core/shop-rules.js');
+  const { COMPONENTS, WEAPONS } = await import('./catalog_seed.js');
+  // The classifier writes row.rarity in place at import, so an override is any tier other than the two
+  // the rule produces. Every common/trash row must agree with the predicate: 'common' iff for sale.
+  let checked = 0;
+  for (const row of [...COMPONENTS, ...WEAPONS]) {
+    if (row.rarity !== 'common' && row.rarity !== 'trash') continue; // explicit override (e.g. 'rare')
+    assert.equal(row.rarity === 'common', isShopItem(row.price, row.stats), `${row.name}: rarity ${row.rarity}`);
+    checked++;
+  }
+  assert.ok(checked > 20, `classified ${checked} rows`);
+  assert.equal(WEAPONS.find((w) => w.id === 11).rarity, 'rare', 'Triple spiral rocket keeps its override');
+  // spot-check both sides of the rule on rows the B1 guard blocks / sells
+  assert.equal(COMPONENTS.find((c) => c.id === 4).rarity, 'trash');   // price 0
+  assert.equal(WEAPONS.find((w) => w.id === 2).rarity, 'trash');      // buyable:false
+  assert.equal(COMPONENTS.find((c) => c.id === 1).rarity, 'common');  // Basic hull, on sale
 });
 
 test('shop: sell honors a quantity, clamps to what is owned, and rejects a bad qty', async () => {
   await clearCampaign('sell-qty');
-  for (let i = 0; i < 3; i++) await post('/api/players/sell-qty/buy', { kind: 'component', refId: 2 }); // 3× Light hull (150 each)
+  // 3× Light hull (component 2, price 150) — looted, the way enemy gear really reaches a stash (the server
+  // refuses to SELL it in the shop: buyable:false).
+  await post('/api/players/sell-qty/loot', { items: [1, 2, 3].map(() => ({ kind: 'component', refId: 2 })) });
   const before = (await getJson('/api/players/sell-qty/stash')).credits;
   // sell 2 of the 3 → credit 2 × floor(150*0.75)=112 = 224; one left in the stash
   const sold2 = await (await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 2 })).json();
@@ -1497,4 +1541,138 @@ test('admin: accepts good credentials (200 + table)', async () => {
   assert.equal(r.status, 200);
   const html = await r.text();
   assert.ok(html.includes('<table'), 'renders the players table');
+});
+
+// ---------- reset --all orchestration (db.js resetAllPlayers) — every dependency injected: NO S3, NO truncate ----------
+// The suite shares one Postgres with sibling test files run concurrently, so these never truncate for real.
+function fakeReset({ configured = true, keys = [], failKeys = [] } = {}) {
+  const calls = { deleted: [], truncated: 0, logs: [], listed: 0 };
+  const deps = {
+    s3: {
+      configured: () => configured,
+      deleteTrace: async (k) => { calls.deleted.push(k); return { ok: !failKeys.includes(k), key: k, status: failKeys.includes(k) ? 403 : 204 }; },
+    },
+    listKeys: async () => { calls.listed++; return keys; },
+    truncate: async () => { calls.truncated++; calls.deletedBeforeTruncate = calls.deleted.length; },
+    log: (line) => calls.logs.push(line),
+  };
+  return { calls, deps };
+}
+const traceKeys = (n) => Array.from({ length: n }, (_, i) => `recordings/sessions/s${i}.json`);
+
+test('reset --all: S3 not configured → refuses, lists nothing, truncates nothing (whatever the DB host)', async () => {
+  const { resetAllPlayers } = await import('./datastore.js');
+  const { calls, deps } = fakeReset({ configured: false, keys: traceKeys(3) });
+  const r = await resetAllPlayers(deps);
+  assert.equal(r.ok, false);
+  assert.equal(r.refused, true);
+  assert.equal(r.truncated, false);
+  assert.equal(calls.listed, 0, 'the table is not even read');
+  assert.equal(calls.truncated, 0, 'nothing truncated');
+  assert.deepEqual(calls.deleted, []);
+});
+
+test('reset --all: S3 not configured + skipS3 (--no-s3) → truncates, never calls S3, logs the orphan count', async () => {
+  const { resetAllPlayers } = await import('./datastore.js');
+  const { calls, deps } = fakeReset({ configured: false, keys: traceKeys(3) });
+  const r = await resetAllPlayers({ ...deps, skipS3: true });
+  assert.equal(r.ok, true);
+  assert.equal(r.skippedS3, true);
+  assert.equal(r.deleted, 0);
+  assert.equal(calls.truncated, 1);
+  assert.deepEqual(calls.deleted, []);
+  assert.equal(calls.logs.length, 1);
+  assert.match(calls.logs[0], /--no-s3: 3 session trace/);
+});
+
+test('reset --all: skipS3 skips S3 even when creds ARE configured', async () => {
+  const { resetAllPlayers } = await import('./datastore.js');
+  const { calls, deps } = fakeReset({ configured: true, keys: traceKeys(2) });
+  const r = await resetAllPlayers({ ...deps, skipS3: true });
+  assert.equal(r.ok, true);
+  assert.deepEqual(calls.deleted, []);
+  assert.equal(calls.truncated, 1);
+});
+
+test('reset --all: S3 configured, every delete succeeds → each key deleted once, then truncate', async () => {
+  const { resetAllPlayers } = await import('./datastore.js');
+  const keys = traceKeys(3);
+  const { calls, deps } = fakeReset({ keys });
+  const r = await resetAllPlayers(deps);
+  assert.equal(r.ok, true);
+  assert.equal(r.deleted, 3);
+  assert.deepEqual([...calls.deleted].sort(), [...keys].sort());
+  assert.equal(calls.truncated, 1);
+  assert.equal(calls.deletedBeforeTruncate, 3, 'every delete happened BEFORE the truncate');
+});
+
+test('reset --all: more keys than one batch of 8 are all deleted', async () => {
+  const { resetAllPlayers } = await import('./datastore.js');
+  const keys = traceKeys(19);
+  const { calls, deps } = fakeReset({ keys });
+  const r = await resetAllPlayers(deps);
+  assert.equal(r.deleted, 19);
+  assert.equal(new Set(calls.deleted).size, 19);
+  assert.equal(calls.truncated, 1);
+});
+
+test('reset --all: one failed delete → ok:false, the key reported, NOTHING truncated', async () => {
+  const { resetAllPlayers } = await import('./datastore.js');
+  const keys = traceKeys(3);
+  const { calls, deps } = fakeReset({ keys, failKeys: [keys[1]] });
+  const r = await resetAllPlayers(deps);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.failed, [keys[1]]);
+  assert.equal(r.deleted, 2);
+  assert.equal(r.truncated, false);
+  assert.equal(calls.truncated, 0);
+});
+
+test('reset --all: a key outside recordings/sessions/ is never deleted and aborts the truncate', async () => {
+  const { resetAllPlayers } = await import('./datastore.js');
+  const bad = ['recordings/level0-intro.9fc4402d.json', 'assets/recordings/x.json', 'recordings/sessions/nested/x.json', 'recordings/sessions/x.txt'];
+  const { calls, deps } = fakeReset({ keys: [...traceKeys(2), ...bad] });
+  const r = await resetAllPlayers(deps);
+  assert.equal(r.ok, false);
+  for (const k of bad) {
+    assert.ok(!calls.deleted.includes(k), `${k} never sent to S3`);
+    assert.ok(r.failed.includes(k), `${k} reported as failed`);
+  }
+  assert.equal(calls.truncated, 0);
+});
+
+// ---------- Player-scoped table coverage (read-only) ----------
+test('PLAYER_SCOPED_TABLES covers every table with a player_id column (incl. gameplay_sessions)', async () => {
+  const { pool, PLAYER_SCOPED_TABLES, PER_PLAYER_RESET_DELETES } = await import('./datastore.js');
+  const { rows } = await pool.query(
+    "SELECT DISTINCT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'player_id'");
+  assert.ok(rows.length >= 9, `found ${rows.length} player_id tables`);
+  for (const r of rows) assert.ok(PLAYER_SCOPED_TABLES.includes(r.table_name), `${r.table_name} is in PLAYER_SCOPED_TABLES`);
+  assert.ok(PLAYER_SCOPED_TABLES.includes('gameplay_sessions'));
+  assert.ok(PLAYER_SCOPED_TABLES.includes('players'));
+  // The per-player reset list is unchanged (D4): it keeps the login, perf telemetry and the recordings.
+  assert.deepEqual([...PER_PLAYER_RESET_DELETES].sort(),
+    ['cleared_missions', 'events', 'games', 'player_ships', 'stash', 'taken_missions']);
+});
+
+// ---------- NEW_PLAYER_DEFAULTS: one source for register INSERT/return + reset UPDATE ----------
+test('NEW_PLAYER_DEFAULTS: a fresh player, a reset player and the register response all match it', async () => {
+  const { pool, NEW_PLAYER_DEFAULTS: D, NEW_PLAYER_LANGUAGE, resetPlayer } = await import('./datastore.js');
+  const cols = Object.keys(D);
+  const read = async (id) => (await pool.query(`SELECT ${cols.join(', ')}, language FROM players WHERE id = $1`, [id])).rows[0];
+  const expected = { ...D, language: NEW_PLAYER_LANGUAGE };
+
+  const reg = await (await post('/api/players/register', { playerId: 'np-fresh' })).json();
+  assert.equal(reg.credits, D.credits);
+  assert.equal(reg.currentProgress, D.current_progress);
+  assert.deepEqual(await read('np-fresh'), expected);
+
+  await post('/api/players/register', { playerId: 'np-dirty' });
+  await pool.query(`UPDATE players SET credits = 5, current_progress = 2, shop_unlocked = 1, active_mission_id = 'side-mining',
+    experience = 900, skill_kinetic = 1, skill_rocket = 1, skill_shields = 1, skill_maneuver = 1, skill_mobility = 1,
+    games_played = 3 WHERE id = 'np-dirty'`);
+  const dirty = await read('np-dirty');
+  for (const c of cols) assert.notDeepEqual(dirty[c], D[c], `${c} was dirtied`);
+  assert.deepEqual(await resetPlayer('np-dirty'), { found: true });
+  assert.deepEqual(await read('np-dirty'), expected);
 });
