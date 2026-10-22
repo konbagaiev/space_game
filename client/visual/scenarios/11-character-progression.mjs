@@ -73,4 +73,73 @@ export default async function ({ page, assert, shot }) {
   // the menu badge dropped to the 1 remaining free point
   assert.equal(await page.evaluate(() => document.getElementById('mw-char-badge').textContent), '1', 'the badge reflects the spent point');
   await shot('character-spent');
+
+  // ---- The Loadout stats bar shows the ship you FLY (docs/plans/2026-10-22-1334-loadout-skill-stats.md) ----
+  // Spend the last point on Mobility from the base: the flown ship must be rebuilt at once (skillSpend →
+  // buildPlayerFor — the first run after a spend used to fly the OLD allocation), and the Loadout numbers
+  // must be that ship's numbers (deriveShipStats → makePlayer, skills included).
+  const openLoadout = async () => {
+    await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());
+    await page.waitForFunction('document.querySelectorAll("#ship-stats .stat").length === 5', null, { timeout: 5000 });
+  };
+  await openLoadout();
+  const before = await page.evaluate(() => ({
+    acc: window.__game.player.acceleration, turn: window.__game.player.turnRate, msm: window.__game.player.maxSpeedMul,
+  }));
+  assert.ok(Math.abs(before.msm - 1) < 1e-9, `no Mobility yet → maxSpeedMul 1 (got ${before.msm})`);
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="character"]').click());
+  await page.waitForFunction('document.querySelectorAll("#mw-character .skill-card").length === 5', null, { timeout: 5000 });
+  await page.evaluate(() => document.querySelector('#mw-character .ch-plus[data-skill="mobility"]').click());
+  await page.waitForFunction('window.__game.activeShip.progression.skills.mobility === 1', null, { timeout: 5000 });
+  await openLoadout();
+  const mob = await page.evaluate(() => {
+    const num = (i) => { const v = document.querySelectorAll('#ship-stats .stat .v')[i]; return v ? v.firstChild.textContent : null; };
+    const p = window.__game.player;
+    return { acc: p.acceleration, turn: p.turnRate, msm: p.maxSpeedMul,
+      accText: num(1), turnText: num(2), topText: num(4),
+      topLabel: (document.querySelectorAll('#ship-stats .stat .k')[4] || {}).textContent };
+  });
+  // Step 4 regression guard: the spend rebuilt the flown ship (before the fix this read 1).
+  assert.ok(Math.abs(mob.msm - 1.05) < 1e-9, `the skill spend rebuilt the ship: maxSpeedMul ${mob.msm} ≈ 1.05`);
+  const rel = (a, b) => Math.abs(a - b) <= 1e-9 * Math.abs(b);
+  assert.ok(rel(mob.acc, before.acc * 1.05), `acceleration rose 5% (${before.acc} → ${mob.acc})`);
+  assert.ok(rel(mob.turn, before.turn * 1.05), `turn rate rose 5% (${before.turn} → ${mob.turn})`);
+  // …and the Loadout numbers ARE the flown ship's numbers.
+  assert.equal(mob.accText, mob.acc.toFixed(1), 'Loadout Accel = the flown ship\'s acceleration');
+  assert.equal(mob.turnText, mob.turn.toFixed(2), 'Loadout Turn = the flown ship\'s turn rate');
+  assert.equal(mob.topLabel, 'Top speed', 'the fifth stat is Top speed');
+  assert.equal(mob.topText, '31.5', 'Top speed = 30 × 1.05 with one Mobility point');
+  await shot('loadout-mobility');
+
+  // ---- A spend response that lands AFTER Take off must not rebuild the ship mid-flight ----
+  // (it would put a fresh, full-HP ship back at spawn). It is deferred to the next menu entry instead
+  // (rebuildActiveShip / flushActiveShipRebuild in ship-build.js), so the next launch still flies it.
+  // Bank one more level (cumulative 4500 XP → level 3 → one unspent point) for a third spend.
+  await page.evaluate(async (pid) => {
+    await fetch('/api/games', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: pid, credits: 0, kills: 0, durationMs: 100, xp: 2000 }) });
+  }, pid);
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="character"]').click());
+  await page.waitForFunction('document.querySelectorAll("#mw-character .skill-card").length === 5', null, { timeout: 5000 });
+  await page.evaluate(() => {
+    window.__flownShip = window.__game.player;            // the ship "in flight"
+    document.body.classList.remove('menu');                // the launch left the base menu (leaveMenu)
+    // The client still thinks the pool is empty (it was banked server-side only), so the "+" is disabled;
+    // enable it to fire the real skillSpend path — the server has the point.
+    const b = document.querySelector('#mw-character .ch-plus[data-skill="mobility"]');
+    b.disabled = false; b.click();
+  });
+  await page.waitForFunction('window.__game.activeShip.progression.skills.mobility === 2', null, { timeout: 5000 });
+  const midFlight = await page.evaluate(() => ({
+    same: window.__game.player === window.__flownShip, msm: window.__game.player.maxSpeedMul }));
+  assert.ok(midFlight.same, 'a spend landing off the menu does NOT rebuild (teleport/heal) the ship in flight');
+  assert.ok(Math.abs(midFlight.msm - 1.05) < 1e-9, `the in-flight ship keeps its allocation (maxSpeedMul ${midFlight.msm})`);
+  // back to the base menu → the deferred rebuild runs before the next launch
+  await page.evaluate(() => window.__game.showMain(null));
+  const reentered = await page.evaluate(() => ({
+    rebuilt: window.__game.player !== window.__flownShip, msm: window.__game.player.maxSpeedMul,
+    menu: document.body.classList.contains('menu') }));
+  assert.ok(reentered.menu, 'showMain re-entered the base menu');
+  assert.ok(reentered.rebuilt, 're-entering the menu ran the deferred rebuild');
+  assert.ok(Math.abs(reentered.msm - 1.10) < 1e-9, `the next launch flies the late spend (maxSpeedMul ${reentered.msm} ≈ 1.10)`);
 }

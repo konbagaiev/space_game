@@ -16,6 +16,7 @@ import { t } from './i18n.js';
 import { fetchJson, clientLog } from './net.js';
 import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
+import { rebuildActiveShip, flushActiveShipRebuild } from './ship-build.js'; // a skill spend rebuilds the flown ship (menu-only; deferred otherwise)
 import { SKILL_RATES } from './sim-core/components.js'; // per-point skill rates → Character-card effect text (single source)
 import { reset, levelRunner, refreshMusic, engagePointAutopilot, setPaused } from './sim.js';
 import { runCenter } from './sim-core/level-sim.js'; // where the current level fights (0,0 unless it names a centre)
@@ -60,6 +61,7 @@ export function enterMenu() {
   el.overlay.style.display = 'none';
   el.oobWarn.style.display = 'none'; // DOM state: don't leave a stale inline 'block' for the next frame to fix
   document.body.classList.add('menu');
+  flushActiveShipRebuild();          // a shop/skill change that landed after Take off reaches the ship now, before the next launch
 }
 // THE mirror of enterMenu: tear the base menu down before a launch. Callers are click handlers (except
 // launchCampaign's engage branch, which already called requestFullscreen outside a gesture before this
@@ -253,7 +255,14 @@ async function skillSpend(skill) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skill }) });
     if (!r.ok) return; // no points / unknown skill → ignore
     const j = await r.json().catch(() => ({}));
-    if (j.progression && G.activeShip) G.activeShip.progression = j.progression;
+    if (j.progression && G.activeShip) {
+      G.activeShip.progression = j.progression;
+      // Skills are baked into the ship at build time (makePlayer) — rebuild so the next take-off flies the
+      // points just spent, as applyShopState does after a shop change. Without it the first run after a
+      // spend flew the OLD allocation while its session trace recorded the new one. Menu-only: a response
+      // landing after Take off defers the rebuild to the next enterMenu (never mid-flight).
+      rebuildActiveShip();
+    }
     renderCharacter();
   } catch { /* network hiccup → leave the panel as-is */ }
 }

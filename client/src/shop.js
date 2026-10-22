@@ -1,12 +1,13 @@
 // Hangar shop + stash (docs/plans/hangar-shop.md). The "spend" side of the economy: equipped loadout +
-// stash + a simple shop, with a live ship-stats panel (HP / acceleration / maneuverability / weight) that
+// stash + a simple shop, with a live ship-stats panel (HP / acceleration / maneuverability / weight / top speed) that
 // shows the delta vs the previous config. The server stays authoritative — every action posts to an
 // endpoint and re-renders from the response. A leaf module: the Main Window calls in (openBay/showBayView/
 // canLaunch/updateTakeoffGate/renderShipStatsBar/deriveShipStats); nothing here calls back out into the UI.
 import { esc, slotLabel, priceLabel, SELL_RATE } from './format.js';
-import { G, CATALOG } from './state.js';
-import { shipMass, deriveDrive } from './sim-core/components.js';
-import { resolveComponents, buildPlayerFor } from './ship-build.js';
+import { G, CATALOG, world } from './state.js';
+import { rebuildActiveShip } from './ship-build.js';
+import { makePlayer } from './sim-core/ship-entity.js';
+import { PLAYER_MAX_SPEED } from './sim-core/step-player.js';
 import { updateHud, updateMenuCredits } from './hud.js';
 import { fetchJson, missionClearDone } from './net.js';
 import { API_BASE } from './api-base.js';
@@ -50,7 +51,7 @@ function statLine(kind, type, s, weight) {
   const add = (label, val) => { if (val != null && val !== 0) parts.push(`${t(label)} ${val}`); };
   if (kind === 'component') {
     if (type === 'hull') add('ui.shop.stat.hp', s.durability);
-    else if (type === 'engine') { add('ui.shop.stat.accel', s.power); add('ui.shop.stat.maxspeed', s.maxSpeed); }
+    else if (type === 'engine') add('ui.shop.stat.accel', s.power); // engine.maxSpeed caps ENEMIES only — the player's cap is the bar's Top speed
     else if (type === 'thruster') add('ui.shop.stat.maneuver', s.power);
     else if (type === 'repair') {
       parts.push(`${t('ui.shop.stat.heal')} +${s.repairPerTick}/${s.intervalSec}s`);
@@ -84,18 +85,22 @@ function statLine(kind, type, s, weight) {
   return parts.join(' · ');
 }
 
-// Derive the ship's HP / acceleration / maneuverability / weight client-side from a candidate config
-// (the server stays authoritative on the saved config; this is just for the live preview panel).
-export function deriveShipStats(components, mounts) {
-  const rc = resolveComponents(components);
-  const ship = {
-    hull: rc.hull, engine: rc.engine, thruster: rc.thruster, repair: rc.repair, grab: rc.grab, shield: rc.shield, // grab + shield weigh into mass — must be spread in explicitly (rc isn't spread)
-    mounts: (mounts || []).map((m) => ({ weapon: CATALOG.weapons.get(m.weapon) })).filter((m) => m.weapon),
-  };
-  const weight = shipMass(ship);
-  let acceleration = 0, turnRate = 0;
-  if (rc.engine) { deriveDrive(ship); acceleration = ship.acceleration; turnRate = ship.turnRate; }
-  return { hp: rc.hull ? rc.hull.durability : 0, acceleration, turnRate, weight };
+// The Loadout stats ARE the flown ship's: build the player entity exactly as a take-off would (makePlayer —
+// skills included) and read its numbers. No hand-kept copy to drift (audit A3, DECISIONS §163). makePlayer
+// draws no RNG and resolves fresh component/weapon copies, so calling it from a UI render is side-effect free.
+// `active` is the active-ship record { ship, loadout, components, progression }.
+// Top speed = the sim's own clamp (step-player.js): the flat pilot cap × the Mobility multiplier.
+export function deriveShipStats(active) {
+  // A record without its ship row can't be built — show zeros rather than throw and blank the Loadout.
+  if (!active || !active.ship || !active.ship.stats) return { hp: 0, acceleration: 0, turnRate: 0, weight: 0, topSpeed: 0 };
+  const p = makePlayer(world.catalog, {
+    ship: active.ship,
+    loadout: active.loadout || { mounts: [] },
+    components: active.components,
+    skills: active.progression ? active.progression.skills : null,
+  });
+  return { hp: p.maxHp, acceleration: p.acceleration, turnRate: p.turnRate, weight: p.mass,
+           topSpeed: PLAYER_MAX_SPEED * p.maxSpeedMul };
 }
 
 // Render the live stats bar with ▲/▼ deltas vs the previous config (green = better, red = worse;
@@ -108,6 +113,7 @@ export function renderShipStatsBar(st, hostId = 'ship-stats') {
     { key: 'acceleration', label: t('ui.shop.stat.accel'), dp: 1 },
     { key: 'turnRate', label: t('ui.shop.stat.maneuver'), dp: 2 },
     { key: 'weight', label: t('ui.shop.stat.weight'), dp: 0, lowerBetter: true },
+    { key: 'topSpeed', label: t('ui.shop.stat.topspeed'), dp: 1 }, // 1 dp: 31.5 must not round to a misleading 32
   ];
   host.innerHTML = defs.map((d) => {
     const cur = d.dp ? st[d.key].toFixed(d.dp) : Math.round(st[d.key]);
@@ -319,16 +325,24 @@ function renderSlots(active) {
   }).join('');
 }
 
-// One item's info block at the top of the panel (name + stat line + its 3D model + an action-button row).
-function itemInfo(n, actionsHtml) {
+// Name (+ "(owned ×N)" when n.owned > 0) and the stat line — the head of every item block.
+function itemHeader(n) {
   const stats = statLine(n.kind, n.type, n.s, n.weight);
-  const model = itemModel(n.kind, n.refId)
+  const owned = n.owned > 0 ? ` <span class="owned-badge">${esc(t('ui.shop.owned', { n: n.owned }))}</span>` : '';
+  return `<div class="lp-name">${esc(n.name)}${owned}</div>${stats ? `<div class="lp-stats">${esc(stats)}</div>` : ''}`;
+}
+// The item's 3D model canvas, or a graceful placeholder when it has no glb yet (most gear).
+function itemModelSlot(kind, refId) {
+  return itemModel(kind, refId)
     ? '<canvas id="shop-model" class="lp-model"></canvas>'
     : `<div class="lp-model lp-model-empty">${esc(t('ui.shop.no_model'))}</div>`;
+}
+
+// One item's info block at the top of the panel (name + stat line + its 3D model + an action-button row).
+function itemInfo(n, actionsHtml) {
   return `<div class="lp-item">
-    <div class="lp-name">${esc(n.name)}</div>
-    ${stats ? `<div class="lp-stats">${esc(stats)}</div>` : ''}
-    ${model}
+    ${itemHeader(n)}
+    ${itemModelSlot(n.kind, n.refId)}
     ${actionsHtml ? `<div class="lp-acts">${actionsHtml}</div>` : ''}
   </div>`;
 }
@@ -384,11 +398,8 @@ function renderPanel(active, unlocked) {
 
 // A shop list row — clickable (opens the detail card) with an inline Buy.
 function shopRow(n, gold = false) {
-  const stats = statLine(n.kind, n.type, n.s, n.weight);
-  const owned = n.owned > 0 ? ` <span class="owned-badge">${esc(t('ui.shop.owned', { n: n.owned }))}</span>` : '';
   return `<div class="lp-shop-item${gold ? ' new' : ''}" data-act="shop-item" data-kind="${n.kind}" data-ref-id="${n.refId}">
-    <div class="lp-name">${esc(n.name)}${owned}</div>
-    ${stats ? `<div class="lp-stats">${esc(stats)}</div>` : ''}
+    ${itemHeader(n)}
     <div class="lp-acts"><span class="price">${esc(priceLabel(n.price))}</span><button class="primary" data-act="buy" data-kind="${n.kind}" data-ref-id="${n.refId}">${esc(t('ui.shop.action.buy'))}</button></div>
   </div>`;
 }
@@ -401,16 +412,9 @@ function renderShopDetail() {
   const n = kind === 'weapon' ? normWeapon(it) : normComponent(it);
   if (!n) { selectedShopItem = null; return renderShopPanel(); }
   n.owned = ownedCount(kind, refId);
-  const stats = statLine(n.kind, n.type, n.s, n.weight);
-  const owned = n.owned > 0 ? ` <span class="owned-badge">${esc(t('ui.shop.owned', { n: n.owned }))}</span>` : '';
-  // Most gear has no glb yet → show the model when it exists, a graceful placeholder otherwise.
-  const model = itemModel(kind, refId)
-    ? '<canvas id="shop-model" class="lp-model"></canvas>'
-    : `<div class="lp-model lp-model-empty">${esc(t('ui.shop.no_model'))}</div>`;
   host.innerHTML = `<div class="lp-scroll"><div class="lp-detail">
-      <div class="lp-name">${esc(n.name)}${owned}</div>
-      ${stats ? `<div class="lp-stats">${esc(stats)}</div>` : ''}
-      ${model}
+      ${itemHeader(n)}
+      ${itemModelSlot(kind, refId)}
       <div class="lp-acts"><span class="price">${esc(priceLabel(n.price))}</span><button class="primary" data-act="buy" data-kind="${n.kind}" data-ref-id="${n.refId}">${esc(t('ui.shop.action.buy'))}</button></div>
     </div></div>
     <div class="lp-foot"><button data-act="shop-list">${esc(t('ui.shop.back'))}</button></div>`;
@@ -465,7 +469,7 @@ export function renderBay() {
   const unlocked = !!shopData.shopUnlocked;
   document.getElementById('bay-credits-val').textContent = shopData.credits ?? 0;
   updateMenuCredits(shopData.credits); // buying/selling moves the balance → refresh the top-bar readout too
-  renderShipStatsBar(deriveShipStats(active.components, active.loadout && active.loadout.mounts)); // right column, above the panel
+  renderShipStatsBar(deriveShipStats(active)); // right column, above the panel — the real build, skills included
   document.getElementById('mw-loadout-locked').style.display = unlocked ? 'none' : 'block';
   if (document.getElementById('mw-view-bay').classList.contains('active')) ensureLoadoutViewer(active); // spin the ship only while the screen is shown
   renderSlots(active);
@@ -483,7 +487,8 @@ function shopErr(status, j) {
 function applyShopState(j) {
   shopData = j;
   selectedStashRef = null; // the stash changed under us → re-evaluate the panel selection
-  if (j.activeShip) { G.activeShip = j.activeShip; G.balance = j.credits; if (j.activeShip.ship) buildPlayerFor(j.activeShip.ship); }
+  // rebuildActiveShip: immediate on the base menu, deferred to the next enterMenu if the response lands after Take off
+  if (j.activeShip) { G.activeShip = j.activeShip; G.balance = j.credits; rebuildActiveShip(); }
   updateHud();
   renderBay();
 }

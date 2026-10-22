@@ -47,7 +47,44 @@ export default async function ({ page, assert, shot }) {
   assert.ok(base.bayActive, 'the Loadout screen is shown in the work zone');
   assert.ok(base.slots >= 8, 'the ship shows its slot chips (6 components + weapon groups)');
   assert.ok(base.hasShipCanvas, 'the centered ship canvas is present');
-  assert.equal(base.stats, 4, 'four live ship-stats are shown (HP / accel / turn / weight)');
+  assert.equal(base.stats, 5, 'five live ship-stats are shown (HP / accel / turn / weight / top speed)');
+  // The fifth stat is the pilot's real top speed (PLAYER_MAX_SPEED × the Mobility multiplier), read from the
+  // same build the ship flies (deriveShipStats → makePlayer). The shared test player has spent no points here.
+  const top = await page.evaluate(() => {
+    const st = document.querySelectorAll('#ship-stats .stat')[4];
+    return { label: st.querySelector('.k').textContent, value: st.querySelector('.v').firstChild.textContent,
+      msm: window.__game.player.maxSpeedMul };
+  });
+  assert.equal(top.label, 'Top speed', 'the fifth stat is labelled Top speed');
+  assert.equal(top.value, (30 * top.msm).toFixed(1), 'Top speed = 30 × maxSpeedMul (1 dp)');
+  assert.equal(top.value, '30.0', 'no Mobility points → the flat pilot cap 30.0');
+  // Five pairs must never overflow the narrow right column: the strip wraps (flex-wrap) instead.
+  const fit = await page.evaluate(() => {
+    const host = document.getElementById('ship-stats').getBoundingClientRect();
+    const col = document.getElementById('mw-ship-col').getBoundingClientRect();
+    const statEls = [...document.querySelectorAll('#ship-stats .stat')];
+    const stats = statEls.map((e) => e.getBoundingClientRect());
+    const inside = (r, o) => r.left >= o.left - 1 && r.right <= o.right + 1 && r.top >= o.top - 1 && r.bottom <= o.bottom + 1;
+    // A squeezed (nowrap) strip shrinks the .stat boxes and lets their TEXT spill over the neighbours, so
+    // box containment alone can't see it: also require each label/value inside its own stat, and no two
+    // stats overlapping.
+    const textInStat = statEls.every((e, i) => [...e.querySelectorAll('.k, .v')].every((c) => inside(c.getBoundingClientRect(), stats[i])));
+    const noOverlap = stats.every((a, i) => stats.every((b, j) => i >= j
+      || a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1));
+    return {
+      textInStat, noOverlap,
+      desktop: document.body.classList.contains('dev-desktop'),
+      statsInHost: stats.every((r) => r.left >= host.left - 1 && r.right <= host.right + 1 && r.top >= host.top - 1 && r.bottom <= host.bottom + 1),
+      hostInCol: host.left >= col.left - 1 && host.right <= col.right + 1,
+      hostW: host.width,
+    };
+  });
+  assert.ok(fit.desktop, 'the 1280×800 run is classified dev-desktop (the ×2 stat fonts apply)');
+  assert.ok(fit.hostW > 0, '#ship-stats is laid out');
+  assert.ok(fit.textInStat, 'every stat label/value lies inside its own stat (no squeezed text spill)');
+  assert.ok(fit.noOverlap, 'no two stats overlap');
+  assert.ok(fit.statsInHost, 'every ship stat lies inside #ship-stats (wraps, never overflows)');
+  assert.ok(fit.hostInCol, '#ship-stats lies inside the right column horizontally');
   assert.ok(base.hasGunSlot, 'the gun weapon slot is present');
   // opening Loadout no longer clears the marker — it leads the player on to the Shop button, which carries
   // the same gold "(new)". Both persist through the Loadout screen until the shop is actually opened.
@@ -172,6 +209,16 @@ export default async function ({ page, assert, shot }) {
   assert.ok(shop.hasPrice, 'shop items show a price');
   assert.ok(shop.hasBuy, 'shop items have a Buy button');
   assert.ok(shop.ownedBadges.some((t) => /\(owned ×\d+\)/.test(t)), 'an owned weapon shows an "(owned ×N)" badge');
+  // …styled as a small green pill (its only rule used to target a class nothing emitted → plain text).
+  const badge = await page.evaluate(() => {
+    const b = document.querySelector('#loadout-panel .lp-name .owned-badge');
+    if (!b) return null;
+    const cs = getComputedStyle(b);
+    return { bg: cs.backgroundColor, fs: parseFloat(cs.fontSize), nameFs: parseFloat(getComputedStyle(b.parentElement).fontSize) };
+  });
+  assert.ok(badge, 'the owned badge sits inside the item name');
+  assert.notEqual(badge.bg, 'rgba(0, 0, 0, 0)', 'the owned badge has a background (styled pill)');
+  assert.ok(badge.fs < badge.nameFs, `the owned badge is smaller than the name (${badge.fs} < ${badge.nameFs})`);
   await shot('shop-weapons');
 
   // click the Machine Gun entry (it has a glb) → the detail card: stats at top, the 3D model, Buy, Back
@@ -245,6 +292,14 @@ export default async function ({ page, assert, shot }) {
   await openShopSection('engine');
   assert.ok(!(await shopRowNames()).some((n) => /Ion engine/.test(n)),
     'the mission-gated Ion engine is ABSENT from the engine list before "Research station" is cleared');
+  // An engine's catalog maxSpeed caps ENEMIES only — the player's cap is the Loadout Top speed — so the
+  // shop's engine line must not advertise it. Solid-fuel engine (maxSpeed 12) proves the check isn't vacuous.
+  const engineRows = await page.evaluate(() => [...document.querySelectorAll('#loadout-panel .lp-shop-item')]
+    .map((r) => ({ name: r.querySelector('.lp-name').textContent, stats: (r.querySelector('.lp-stats') || {}).textContent || '' })));
+  const solid = engineRows.find((r) => /Solid-fuel engine/.test(r.name));
+  assert.ok(solid, 'the Solid-fuel engine (catalog maxSpeed 12) is on the engine shelf');
+  assert.ok(/Accel 21/.test(solid.stats), `its stat line still shows its acceleration (${solid.stats})`);
+  assert.ok(engineRows.every((r) => !/Top speed/.test(r.stats)), 'no engine stat line shows a top speed');
 
   // clear the mission the way the victory path does (POST /missions/clear), then land again
   await page.evaluate(async (pid) => {

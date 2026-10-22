@@ -200,12 +200,6 @@
   #mw-ship-col { grid-column: 3; grid-row: 1 / -1; }
   #mw-launch { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
   #mw-menu { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-height: 0; overflow-y: auto; margin-top: 34px; }
-  #mw-menu .mw-row { display: flex; align-items: center; gap: 6px; }
-  .mw-collapse {
-    pointer-events: auto; cursor: pointer; flex: none; width: 30px; height: 38px; line-height: 1;
-    font-size: 14px; color: #cfe0ff; background: rgba(255,255,255,.05);
-    border: 1px solid rgba(160,190,255,.25); border-radius: 8px;
-  }
   .mw-item {
     pointer-events: auto; cursor: pointer; flex: 1 1 auto; text-align: left;
     font: inherit; font-size: 20px; letter-spacing: .5px; color: #cfe0ff;
@@ -214,29 +208,9 @@
   }
   .mw-item:hover { background: rgba(40,60,100,.5); }
   .mw-item.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
-  .mw-item.mw-hidden { display: none; }            /* Loadout/Stash/Shop hidden until the shop is unlocked */
-  /* Loadout/Stash/Shop: centered label + ~30% shorter than the Missions item. */
-  .mw-shop-item { text-align: center; padding-top: 5px; padding-bottom: 5px; line-height: 1.1; }
-  .mw-sublist { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 4px 36px; }
-  #mw-missions-group[data-collapsed="1"] .mw-sublist { display: none; }
-  .mw-sub {
-    pointer-events: auto; cursor: pointer; text-align: center; font: inherit; font-size: 15px; color: #bcd0ee;
-    background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.25); border-radius: 7px; padding: 8px 12px;
-  }
-  .mw-sub:hover { background: rgba(40,60,100,.6); }
-  .mw-sub.active { background: rgba(74,125,255,.35); border-color: #4a7dff; color: #fff; }
   /* Base hub menu: five sections, natural height + top-aligned (don't stretch to fill the column). */
   #mw-menu .mw-item { flex: 0 0 auto; }
-  /* in-bay tabs (Ship / Stash / Shop) — replace the former left-menu Loadout/Stash/Shop items */
-  .bay-tabs { display: flex; gap: 6px; margin-bottom: 8px; flex: none; }
-  .bay-tab {
-    pointer-events: auto; cursor: pointer; font: inherit; font-size: 14px; color: #bcd0ee;
-    background: rgba(20,30,55,.5); border: 1px solid rgba(140,175,255,.25); border-radius: 7px; padding: 6px 14px;
-  }
-  .bay-tab:hover { background: rgba(40,60,100,.6); }
-  .bay-tab.active { background: rgba(74,125,255,.35); border-color: #4a7dff; color: #fff; }
-  /* before the shop unlocks: only the Ship tab, and a hint (loadout stays read-only) */
-  .bay-tabs.locked .bay-tab[data-bay="stash"], .bay-tabs.locked .bay-tab[data-bay="shop"] { display: none; }
+  /* before the shop unlocks: a hint above the (read-only) loadout */
   #mw-loadout-locked { display: none; color: #9fb3d6; font-size: 14px; margin: 0 0 8px; flex: none; }
   /* mission list — the right column on the Missions view (campaign + side-mission cards, scrolls) */
   #mw-mission-board { display: none; }
@@ -335,6 +309,11 @@
   .lp-model { width: 100%; height: 220px; display: block; } /* transparent — the alpha WebGL canvas lets the starfield show through, like the centered ship */
   .lp-model-empty { display: flex; align-items: center; justify-content: center; color: #6f82a6; font-size: 13px; }
   .lp-name { font-size: 22px; color: #dfe9ff; }
+  /* "(owned ×N)" after a shop item's name — a small green pill; em-sized so it scales with the name. */
+  .lp-name .owned-badge {
+    font-size: .65em; padding: .1em .55em; border-radius: 1em; white-space: nowrap; vertical-align: middle;
+    background: rgba(110,226,154,.15); border: 1px solid rgba(110,226,154,.4); color: #9ff0b8;
+  }
   .lp-stats { font-size: 18px; color: #9fb3d6; margin-top: 3px; }
   .lp-acts { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
   .lp-acts .price { color: #ffcf5a; font-size: 20px; margin-right: auto; }
@@ -620,10 +599,11 @@
   #mw-view-bay .bay-credits { text-align: center; font-size: 20px; margin-bottom: 14px; }
   #mw-view-bay .bay-credits b { color: #ffd86b; }
   /* live ship-stats bar with deltas vs the previous config */
-  /* Ship characteristics — a compact one-line strip at the TOP of the right column (no boxes), half the
-     previous fonts, so HP / Accel / Turn / Weight fit on a single row under the "Ships" label. Loadout
-     only: every other view either hides the column or fills it with the mission list. */
-  #ship-stats { display: none; flex-wrap: nowrap; gap: 8px; justify-content: center; margin: 0 0 6px; }
+  /* Ship characteristics — a compact strip at the TOP of the right column (no boxes), half the previous
+     fonts: HP / Accel / Turn / Weight / Top speed under the "Ships" label, wrapping onto a second row when
+     the narrow column can't fit all five. Loadout only: every other view either hides the column or fills
+     it with the mission list. */
+  #ship-stats { display: none; flex-wrap: wrap; gap: 2px 8px; justify-content: center; margin: 0 0 6px; }
   #mainwin.bay-open #ship-stats { display: flex; }   /* ship characteristics live in Loadout only */
   #ship-stats .stat { display: flex; align-items: baseline; gap: 2px; background: none; border: 0; padding: 0; min-width: 0; }
   #ship-stats .stat .k { font-size: 8px; letter-spacing: .5px; text-transform: uppercase; opacity: .6; }
@@ -631,22 +611,7 @@
   #ship-stats .stat .v.crit { color: #ff5b5b; } /* e.g. HP 0 — a required slot is empty */
   #ship-stats .stat .d { font-size: 6px; margin-left: 2px; }
   #ship-stats .stat .d.up { color: #6ee29a; } #ship-stats .stat .d.down { color: #ff8a7a; }
-  /* Loadout / Stash / Shop are separate screens, switched by the left menu (not a nav strip). The
-     work zone bounds the height + scrolls, so the inner view needs no max-height of its own. */
-  .bay-view { display: none; background: rgba(12,18,34,.55); border: 1px solid rgba(120,150,210,.18);
-    border-radius: 12px; padding: 12px; }
-  .bay-view.active { display: block; }
-  /* Shop screen = two panes: a type list on the left, the items of the selected type on the right. */
-  .shop-pane { display: grid; grid-template-columns: 168px 1fr; gap: 14px; }
-  .shop-types { display: flex; flex-direction: column; gap: 6px; }
-  .shop-types button {
-    font: inherit; font-size: 13px; cursor: pointer; pointer-events: auto; color: #cfe0ff; text-align: left;
-    background: rgba(255,255,255,.05); border: 1px solid rgba(160,190,255,.25); border-radius: 7px; padding: 7px 11px;
-  }
-  .shop-types button.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
   @media (max-width: 760px) {
-    .shop-pane { grid-template-columns: 1fr; }
-    .shop-types { flex-direction: row; flex-wrap: wrap; }
     #mw-mission-desc { font-size: 14px; }
     #welcome .intro { font-size: 16px; }
   }
@@ -657,10 +622,6 @@
   /* B1 — larger briefing title + body text on desktop */
   body.dev-desktop #mw-mission-title, body.dev-desktop-lg #mw-mission-title { font-size: 32px; }
   body.dev-desktop #mw-mission-desc,  body.dev-desktop-lg #mw-mission-desc  { font-size: 26px; }
-
-  /* B2 — Loadout/Stash/Shop buttons: don't stretch to fill the column; fixed height slightly > Missions row.
-     Cause: the shared .mw-item base has `flex: 1 1 auto`, which grows in the #mw-menu column flex. */
-  body.dev-desktop .mw-shop-item, body.dev-desktop-lg .mw-shop-item { flex: 0 0 auto; height: 56px; }
 
   /* B3 — granted-item icon centered directly BELOW the mission text (drop the bottom-right float + strut).
      #mw-mission-desc becomes a flex column; the text keeps order 1, the item canvas takes order 2 and
@@ -681,69 +642,12 @@
   body.dev-desktop #mw-mission-desc.show-item #mw-item-strut,
   body.dev-desktop-lg #mw-mission-desc.show-item #mw-item-strut { display: none; }
 
-  /* B4 — ship characteristics (#ship-stats: P/Accel/Turn/Weight) fonts ×2 on desktop. Verified under
-     Playwright at 1440×900 that the four k/v pairs still fit on ONE line (no overflow), so the borderless
-     2×2 grid fallback stays unused. */
+  /* B4 — ship characteristics (#ship-stats: HP/Accel/Turn/Weight/Top speed) fonts ×2 on desktop. The strip
+     wraps to a second line when the five k/v pairs don't fit the column (flex-wrap above) — never overflows
+     (scenarios 05 desktop + 07 phone assert containment). */
   body.dev-desktop #ship-stats .stat .k, body.dev-desktop-lg #ship-stats .stat .k { font-size: 16px; }
   body.dev-desktop #ship-stats .stat .v, body.dev-desktop-lg #ship-stats .stat .v { font-size: 20px; }
   body.dev-desktop #ship-stats .stat .d, body.dev-desktop-lg #ship-stats .stat .d { font-size: 12px; }
-  /* one item card (loadout slot / stash item / shop item): text-in-rectangle, no art */
-  .bay-item {
-    background: rgba(26,36,60,.7); border: 1px solid rgba(120,150,210,.22);
-    border-radius: 9px; padding: 9px 10px; margin-bottom: 8px;
-    /* Desktop: head + foot share ONE line (name left, price/buttons right), stats wraps full-width below.
-       Touch phones stack into two rows instead — see `body.touch .bay-item` below. */
-    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
-  }
-  .bay-item.empty { opacity: .55; border-style: dashed; }
-  .bay-item.required-empty { border-color: rgba(255,120,100,.6); color: #ffb3a8; opacity: .9; }
-  /* header row: name (ellipsizes) · meta (slot tag / price) · (i) — each its own cell, never overlap */
-  .bay-item .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; }
-  .bay-item .head .info-btn { margin-left: -2px; } /* hug the title */
-  /* head row: [name][i] on the left, the slot tag (loadout) pushed to the right end. */
-  .bay-item .name-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
-  .bay-item .meta { flex: none; margin-left: auto; } /* margin-left:auto pushes the slot tag to the right end */
-  /* price + action button(s). Desktop: sits inline at the right of the head. Touch: its own centered row. */
-  .bay-item .foot { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; flex: 0 0 auto; }
-  .bay-item .foot .meta { margin-left: 0; } /* in the centered foot the price must not be pushed aside */
-  .bay-item .slot-tag { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; opacity: .5; }
-  .bay-item .price { color: #ffd86b; font-size: 13px; white-space: nowrap; }
-  .bay-item .owned-badge {
-    flex: none; font-size: 16px; padding: 2px 9px; border-radius: 11px; white-space: nowrap;
-    background: rgba(110,226,154,.15); border: 1px solid rgba(110,226,154,.4); color: #9ff0b8;
-  }
-  .bay-item .stats { font-size: 12px; opacity: .72; margin-top: 3px; line-height: 1.45; flex-basis: 100%; } /* desktop: own full-width line below head+foot */
-  .bay-item .stats.hidden { display: none; }
-  /* Touch phones: only the SHOP stacks a card into TWO rows — name on top, price + Buy centered below (a
-     long item name + price + Buy don't fit one line on a phone). Loadout/Stash stay on a SINGLE row
-     everywhere (simpler cards — the maintainer wants them one-line). Desktop keeps everything on one line. */
-  body.touch #view-shop .bay-item { flex-direction: column; align-items: stretch; }
-  body.touch #view-shop .bay-item .head, body.touch #view-shop .bay-item .foot, body.touch #view-shop .bay-item .stats { flex: 0 0 auto; }
-  /* characteristics show only when the (i) button is tapped (it toggles .hidden) — no hover reveal */
-  .bay-item .actions { display: inline-flex; gap: 6px; flex: none; }
-  .bay-item .actions button, .bay-item .info-btn {
-    font: inherit; font-size: 12px; cursor: pointer; pointer-events: auto;
-    background: rgba(255,255,255,.07); border: 1px solid rgba(160,190,255,.3);
-    color: #dce8ff; border-radius: 6px; padding: 4px 10px;
-  }
-  .bay-item .actions button:hover, .bay-item .info-btn:hover { background: rgba(255,255,255,.14); }
-  .bay-item .actions button.sell { border-color: rgba(255,160,120,.4); color: #ffcaa8; }
-  .bay-item .actions button.primary { border-color: #4a7dff; background: rgba(74,125,255,.25); }
-  .bay-item .info-btn { flex: none; align-self: center; padding: 1px 8px; line-height: 1.4; }
-  .bay-empty-note { font-size: 13px; opacity: .55; padding: 6px 2px; }
-  /* Per-screen sizing: Loadout/Stash/Shop item text (incl. the hover characteristics) 2×; buttons 1.5×
-     (Loadout) / 2× (Stash + Shop); the Shop type column 2×. The whole bay is then scaled DOWN ~1.5× by
-     `#mw-view-bay { zoom }` (so these are the pre-zoom sizes). The ship-characteristics strip is separate
-     now — it lives at the top of the right column, Loadout only, styled on #ship-stats above. */
-  #view-loadout .name-text, #view-stash .name-text, #view-shop .name-text { font-size: 28px; }
-  #view-loadout .slot-tag { font-size: 20px; }
-  #view-stash .price, #view-shop .price { font-size: 26px; }
-  #view-loadout .price { font-size: 22px; font-weight: 600; } /* resale value shown beside the slot's actions */
-  #view-loadout .stats, #view-stash .stats, #view-shop .stats { font-size: 24px; line-height: 1.4; }
-  #view-loadout .actions button, #view-loadout .info-btn { font-size: 18px; padding: 7px 15px; } /* 1.5× */
-  #view-stash .actions button, #view-stash .info-btn,
-  #view-shop  .actions button, #view-shop  .info-btn { font-size: 24px; padding: 8px 20px; } /* 2× */
-  #view-shop .shop-types button { font-size: 26px; padding: 14px 22px; } /* 2× type list */
   /* Telegram community / feedback link (welcome screen + result overlay) */
   .community-link {
     pointer-events: auto; display: inline-block; margin-top: 20px;

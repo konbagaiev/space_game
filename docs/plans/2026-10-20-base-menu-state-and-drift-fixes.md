@@ -1,6 +1,6 @@
 # Base-menu state leak + the drifted-copy bugs from the duplication audit
 
-**Status:** Phases 1-2 done (`8f9e705`, `2026-10-20-1816-launch-gate`); 3-5 planned. **Date:** 2026-10-20.
+**Status:** Phases 1-3 done (`8f9e705`, `2026-10-20-1816-launch-gate`, `2026-10-22-1334-loadout-skill-stats`); 4-5 planned. **Date:** 2026-10-20.
 **Source:** a live bug report (below) plus the drifted findings of
 [`2026-10-20-duplication-audit.md`](2026-10-20-duplication-audit.md) (ids A1–A6, B1, B2, B5, B6 refer to it).
 **Execute** phase by phase; each phase is independently shippable and has its own guard. Offer
@@ -188,6 +188,8 @@ Negative-test on current code (the autopilot assertion fails today).
 ---
 
 ## Phase 3 — Shop shows the ship it doesn't fly (audit A3, A5)
+
+> **Shipped 2026-10-22** per [`2026-10-22-1334-loadout-skill-stats.md`](2026-10-22-1334-loadout-skill-stats.md), which supersedes this section: the Loadout calls `makePlayer` itself (no `applySkillsToDrive` helper), adds a Top speed stat, and a skill spend rebuilds the ship.
 
 ### A3 — Loadout stats ignore skills
 

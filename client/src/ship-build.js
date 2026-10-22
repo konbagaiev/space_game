@@ -65,6 +65,24 @@ export function buildPlayerFor(ship, override = null) {
   scene.add(G.player.mesh);
 }
 
+// Rebuild the ACTIVE ship after a base-menu change to it (a shop mutation, a skill spend) — but only while the
+// base menu is open. A server response can land after Take off (the player clicked, then launched before the
+// POST returned); rebuilding then would put a fresh, full-HP ship back at spawn mid-flight. Off the menu the
+// rebuild is DEFERRED: the flag is consumed by enterMenu() (mainwindow.js), so the change still reaches the
+// ship before the next launch — every way back to the base menu goes through enterMenu (DECISIONS §162/§163).
+let activeRebuildPending = false;
+export function rebuildActiveShip() {
+  if (!G.activeShip || !G.activeShip.ship) return;
+  if (document.body.classList.contains('menu')) { activeRebuildPending = false; buildPlayerFor(G.activeShip.ship); }
+  else activeRebuildPending = true;
+}
+// Run a rebuild deferred by rebuildActiveShip (called from enterMenu). No-op when nothing is pending.
+export function flushActiveShipRebuild() {
+  if (!activeRebuildPending) return;
+  activeRebuildPending = false;
+  if (G.activeShip && G.activeShip.ship) buildPlayerFor(G.activeShip.ship);
+}
+
 // Build one enemy from a DB ship row (type 'enemy') into this tab's World. The entity's numbers come from
 // sim-core; its Three.js body is attached by the host (see sim.js). Kept here under its historical name so
 // the debug hooks and visual scenarios that call it are unchanged.

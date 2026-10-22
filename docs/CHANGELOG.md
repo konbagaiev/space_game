@@ -3,6 +3,30 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-22
+
+- **Loadout shows the ship you fly** (client, `[2026-10-22-1334-loadout-skill-stats]`, plan
+  `docs/plans/2026-10-22-1334-loadout-skill-stats.md`; duplication audit A3 + A5, DECISIONS §163). The
+  Loadout stats bar re-derived HP / Accel / Turn / Weight by hand and never applied skills, so Mobility points
+  didn't show. `deriveShipStats(active)` now calls `makePlayer` (the build a take-off uses, skills included) and
+  reads its numbers; the bar gains a fifth stat, **Top speed** (`PLAYER_MAX_SPEED × maxSpeedMul`: 30.0, 31.5
+  with one Mobility point), and the strip wraps onto a second row instead of overflowing the narrow column.
+  The engine's shop stat line no longer advertises the catalog `maxSpeed` (an enemy-only cap) — locale key
+  `ui.shop.stat.maxspeed` replaced by `ui.shop.stat.topspeed`. **Fix: a skill spent on the base now takes
+  effect on the very next take-off** — `skillSpend` rebuilds the ship (`buildPlayerFor`); before, the first run
+  after a spend flew the old allocation while its session trace recorded the new one, so its replay diverged.
+  Both that rebuild and the shop's (`applyShopState`) now go through `rebuildActiveShip()`: immediate on the
+  base menu, deferred to the next `enterMenu()` if the server response lands after Take off — previously a
+  late shop response could swap a fresh full-HP ship in at spawn mid-flight.
+  The "(owned ×N)" badge is now a small green pill (its only CSS rule targeted a class nothing emitted);
+  ~110 lines of dead shop/menu CSS removed (`.bay-*`, `.shop-pane`, `.shop-types`, `.mw-sub*`, `.mw-collapse`,
+  per-screen `#view-*` sizing); the item header + model markup is shared by `itemHeader` / `itemModelSlot`.
+  SUMMARY's replay docs corrected: record URL `?record=1&level=0`, trace **v4** shape (loadout, components,
+  skills, room), and trace storage (localStorage / `/recordings` / S3 session traces via the API). Guards: new
+  `client/src/sim-core/ship-entity.test.js`; visual `11-character-progression` (spend Mobility → the flown
+  ship's numbers rise and Loadout shows them — failed before the fix), `05-hangar-shop` + `07-mobile-hangar`
+  (Top speed stat, no overflow/overlap at desktop and phone, styled badge, no speed on engine lines).
+
 ## 2026-10-20
 
 - **Fix: one launch gate — Map Autopilot no longer flies a ship that can't launch; the can't-launch note

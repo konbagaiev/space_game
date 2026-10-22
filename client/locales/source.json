@@ -291,9 +291,9 @@
     "source": "Blast",
     "context": "Stat label — rocket blast/AoE radius. Short."
   },
-  "ui.shop.stat.maxspeed": {
+  "ui.shop.stat.topspeed": {
     "source": "Top speed",
-    "context": "Stat label — engine maximum speed cap. Short."
+    "context": "Stat label — the ship's top speed (the pilot's flat cap, raised only by the Mobility skill). Short."
   },
   "ui.shop.stat.heal": {
     "source": "Heal",
