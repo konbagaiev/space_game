@@ -7,6 +7,9 @@
 // does NOT advance the story counter (`current_progress`) — pure repeatable grind content.
 
 import { enemyTotalFromPhases } from './enemy_total.js';
+// The ship catalog, for the card's reward estimate (no cycle: catalog_seed.js imports only enemy_total.js
+// and client/src/sim-core modules).
+import { SHIPS } from './catalog_seed.js';
 
 // Enemy ship names (must match SHIPS in catalog_seed.js).
 const GUNNER = 'pirate gunner', ROCKETEER = 'basic rocket pirate', HEAVY = 'pirate mini boss', BOSS = 'first pirate boss';
@@ -33,12 +36,33 @@ function sideMissionPhases() {
   ];
 }
 
-// Rough est. reward shown on the card (per-kill ×2, doubled on victory): ~14 wave kills at a mixed
-// average + a 2-boss finale. The actual payout is whatever the player earns; this is just a hint.
-const WAVE_KILLS = 14, WAVE_AVG = 0.37 * 40 + 0.37 * 40 + 0.26 * 100; // gunner/rocketeer/heavy mix ≈ 56
-const EST_REWARD = Math.round(((WAVE_KILLS * WAVE_AVG + 2 * 200) * 2) / 10) * 10; // ×2 victory bonus, rounded
-// One-shot XP bonus banked on clearing any side mission (character progression); plus the per-kill XP the
-// client sums from each enemy's `xp`. Flat 1000 for all three flavors (same difficulty).
+// Expected credits/XP of one full run, from the phases and the ship catalog — never restated by hand, so a
+// rebalance of any enemy's reward/xp moves the card with it. Each phase contributes
+// `total × Σ(chance·value) / Σchance` (kept in that order so the sum stays exact — today 1752.5 — and the
+// card rounds the same way every time). Per-kill credit/XP read exactly like the live entity does
+// (ship-entity.js makeEnemyShell: `reward || 0`, `xp || 0`). Assumes the player lands every kill (an ally
+// kill pays nothing) and ignores loot resale: it is an "≈".
+export function expectedRun(phases, ships = SHIPS) {
+  let credits = 0, xp = 0;
+  for (const ph of phases) {
+    const sp = ph.spawn; if (!sp) continue;
+    let w = 0, c = 0, x = 0;
+    for (const p of sp.pool) {
+      const s = ships.find((r) => r.name === p.ship);
+      if (!s) throw new Error(`missions: pool ship "${p.ship}" is not in the catalog`); // fail loudly
+      w += p.chance; c += p.chance * (s.stats.reward || 0); x += p.chance * (s.stats.xp || 0);
+    }
+    credits += (sp.total * c) / w;
+    xp += (sp.total * x) / w;
+  }
+  return { credits, xp };
+}
+export const round10 = (n) => Math.round(n / 10) * 10;
+
+// One-shot XP bonus banked on clearing any side mission (character progression), on top of the per-kill
+// XP the client sums from each enemy's `xp`. Flat 1000 for all three flavors (same difficulty). The card's
+// "XP ≈" INCLUDES both: expected per-kill XP + this bonus. Its "Reward ≈" is the expected per-kill credits
+// ×2 (clearing a mission doubles the credits — level-runner.js; the XP is not doubled).
 const MISSION_XP = 1000;
 
 // The three flavors — same difficulty, different framing (i18n keyed; descriptions in the client catalog).
@@ -65,20 +89,20 @@ const FLAVORS = [
 // full descriptor the client plays directly. `sideMission: true` tells the client to bank-without-advance.
 // ONE shared world (map `home-system` holds all the set-pieces at fixed positions); a mission only changes
 // WHERE you fight — its `center` spawns the player + arena over the matching structure; the others are at
-// a distance. The mission centers match the set-piece positions in catalog_seed.js's `home-system`, EXCEPT
-// the freighter: its render position is intentionally offset +50 z (to -400) ahead of the mission center
-// (z -450) so the freighter + its ghost battle sit ahead of the player's forward-gliding spawn. The center
-// stays at -450 (balance-neutral: enemy/player spawns key off center, not the non-collidable freighter).
+// a distance. Each center matches its set-piece position in catalog_seed.js's `home-system`; the one
+// deliberate offset (the freighter's render pos, +50 z ahead of its center) is explained on FLAVORS above.
 export function generateMissions() {
   const phases = sideMissionPhases();
   const enemyTotal = enemyTotalFromPhases(phases);
+  const run = expectedRun(phases);
+  const estReward = round10(run.credits * 2), estXp = round10(run.xp + MISSION_XP);
   return FLAVORS.map((f) => ({
     id: `side-${f.type}`,
     type: f.type,
     titleKey: f.titleKey,
     descKey: f.descKey,
-    estReward: EST_REWARD,
-    estXp: MISSION_XP,
+    estReward,
+    estXp,
     descriptor: {
       title: f.type, map: 'home-system', sideMission: true, xpReward: MISSION_XP,
       // Same rule as every campaign level: the reward is granted when the arena is empty, not at the dock

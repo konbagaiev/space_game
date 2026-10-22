@@ -7,6 +7,9 @@ import { levelFromXp, unspentSkillPoints } from './progression.js';
 // where the rest of the catalog arrives through a function-local dynamic import. Safe — catalog_seed.js
 // imports only ./enemy_total.js, so there is no cycle back into this module.
 import { RESEARCH_GATE } from './catalog_seed.js';
+// The one "is it for sale" rule (shared with the shop list and the rarity classifier).
+import { isShopItem } from '../../client/src/sim-core/shop-rules.js';
+import { s3Configured, deleteTrace } from './s3.js';
 
 // The five skills, mapped to their `players.skill_*` columns. The order is the card order in the
 // Character screen; the keys are the wire names used by the /skills/spend endpoint and the client.
@@ -17,6 +20,17 @@ const SKILL_COL = Object.fromEntries(SKILLS.map((s) => [s, `skill_${s}`]));
 export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL || 'postgres://localhost:5432/spacegame',
 });
+
+// A new player's starting values — the ONE source for the registerPlayer INSERT + return, the per-player
+// reset UPDATE and the players DDL defaults. Keys are column names. language is NOT here: reset keeps it.
+// shop_unlocked is an INTEGER column — keep it the number 0, never `false`, or the reset UPDATE throws.
+// current_progress 0 = the intro, `level-0` (a level's id IS its 0-based campaign number, DECISIONS §95).
+export const NEW_PLAYER_DEFAULTS = Object.freeze({
+  games_played: 0, current_progress: 0, credits: 1000, shop_unlocked: 0, active_mission_id: null,
+  experience: 0, skill_kinetic: 0, skill_rocket: 0, skill_shields: 0, skill_maneuver: 0, skill_mobility: 0,
+});
+export const NEW_PLAYER_LANGUAGE = 'en';
+const D = NEW_PLAYER_DEFAULTS;
 
 // Progress gates are compared by the level's seed NAME, never by a raw `levels.id`. `levels.id` is a
 // BIGSERIAL and the startup upsert (`INSERT ... ON CONFLICT (name) DO UPDATE`) burns a sequence value on
@@ -104,20 +118,24 @@ export async function migrate() {
   const lock = await pool.connect();
   await lock.query('SELECT pg_advisory_lock($1)', [MIGRATE_LOCK_KEY]);
   try {
+  // The players column DEFAULTs below are interpolated from NEW_PLAYER_DEFAULTS / NEW_PLAYER_LANGUAGE. They only
+  // shape a FRESH database: `ADD COLUMN IF NOT EXISTS … DEFAULT x` is a no-op on an existing one, so a
+  // changed default would never reach prod's columns — which is why registerPlayer's INSERT writes every
+  // starting value explicitly instead of relying on these.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS players (
       id           TEXT PRIMARY KEY,
       created_at   BIGINT  NOT NULL,
       last_seen    BIGINT  NOT NULL,
-      games_played INTEGER NOT NULL DEFAULT 0,
-      language     TEXT    NOT NULL DEFAULT 'en',  -- UI/content language preference (resolution is client-side)
-      credits      INTEGER NOT NULL DEFAULT 1000,  -- persistent credit balance (new players start at 1000)
+      games_played INTEGER NOT NULL DEFAULT ${D.games_played},
+      language     TEXT    NOT NULL DEFAULT '${NEW_PLAYER_LANGUAGE}',  -- UI/content language preference (resolution is client-side)
+      credits      INTEGER NOT NULL DEFAULT ${D.credits},  -- persistent credit balance (NEW_PLAYER_DEFAULTS.credits)
       referrer     TEXT,                           -- where the player first came from (write-once at row creation)
       user_agent   TEXT,                           -- raw UA from the boot register call (latest-wins)
       device_model TEXT                            -- Sec-CH-UA-Model device code, latest-wins
     );
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en';
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS credits INTEGER NOT NULL DEFAULT 1000;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT '${NEW_PLAYER_LANGUAGE}';
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS credits INTEGER NOT NULL DEFAULT ${D.credits};
     ALTER TABLE players ADD COLUMN IF NOT EXISTS referrer TEXT;   -- where the player first came from (write-once)
     ALTER TABLE players ADD COLUMN IF NOT EXISTS user_agent   TEXT;   -- raw UA from the boot register call (latest-wins)
     ALTER TABLE players ADD COLUMN IF NOT EXISTS device_model TEXT;   -- Sec-CH-UA-Model device code, latest-wins
@@ -202,7 +220,7 @@ export async function migrate() {
     -- id, name and title are all the same 0-based number — see LEVELS in catalog_seed.js. On an existing
     -- DB this ALTER is a no-op (the column exists); the levels_zero_based_ids migration moves that
     -- database's default and values instead.
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS current_progress INTEGER NOT NULL DEFAULT 0 REFERENCES levels(id); -- DEFAULT 0 = the intro (level-0)
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS current_progress INTEGER NOT NULL DEFAULT ${D.current_progress} REFERENCES levels(id); -- DEFAULT 0 = the intro (level-0)
 
     -- authentication (DECISIONS §11): optional email/password credentials attached in place to the
     -- anonymous players row. Username is a non-unique display name; login is by email. Passwords are
@@ -296,7 +314,7 @@ export async function migrate() {
       UNIQUE (player_id, kind, ref_id)
     );
     CREATE INDEX IF NOT EXISTS idx_stash_player ON stash(player_id);
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS shop_unlocked INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS shop_unlocked INTEGER NOT NULL DEFAULT ${D.shop_unlocked};
 
     -- Side-mission log (docs/plans/2026-08-08-base-menu-redesign.md, Slice B): the set of side missions a
     -- player has "taken" (accepted onto their board). players.active_mission_id is the ONE mission the
@@ -327,12 +345,12 @@ export async function migrate() {
     -- enemy kill (= the enemy's credit reward) + a one-shot bonus per mission cleared. The character
     -- LEVEL and unspent skill points are DERIVED from experience (progression.js), never stored — the
     -- source of truth is experience plus the per-skill allocations below (each column = points invested).
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS experience     INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_kinetic  INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_rocket   INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_shields  INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_maneuver INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_mobility INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS experience     INTEGER NOT NULL DEFAULT ${D.experience};
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_kinetic  INTEGER NOT NULL DEFAULT ${D.skill_kinetic};
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_rocket   INTEGER NOT NULL DEFAULT ${D.skill_rocket};
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_shields  INTEGER NOT NULL DEFAULT ${D.skill_shields};
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_maneuver INTEGER NOT NULL DEFAULT ${D.skill_maneuver};
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_mobility INTEGER NOT NULL DEFAULT ${D.skill_mobility};
 
     -- SFX (docs/plans/sound-classes-and-mapping.md): sounds = asset registry (key->url+gain);
     -- sound_map = class-based routing (entity, class, event) -> sound key. Rows seeded below.
@@ -493,37 +511,94 @@ export async function registerPlayer(id, referrer = null, device = null) {
     return { id, isNew: false, gamesPlayed: rows[0].games_played, currentProgress: rows[0].current_progress, language: rows[0].language, credits: rows[0].credits, shopUnlocked: !!rows[0].shop_unlocked, createdAt: Number(rows[0].created_at) };
   }
   const ref = referrer ? String(referrer).slice(0, 512) : null;
-  await pool.query('INSERT INTO players (id, created_at, last_seen, referrer, user_agent, device_model) VALUES ($1, $2, $3, $4, $5, $6)', [id, now, now, ref, ua, model]);
+  // Every starting value is written explicitly from NEW_PLAYER_DEFAULTS (prod's column defaults are history
+  // and never move — see the comment above the players DDL).
+  const cols = ['id', 'created_at', 'last_seen', 'referrer', 'user_agent', 'device_model', 'language', ...Object.keys(D)];
+  const vals = [id, now, now, ref, ua, model, NEW_PLAYER_LANGUAGE, ...Object.values(D)];
+  await pool.query(`INSERT INTO players (${cols.join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})`, vals);
   await ensureDefaultShip(id);
-  return { id, isNew: true, gamesPlayed: 0, currentProgress: 0, language: 'en', credits: 1000, shopUnlocked: false, createdAt: now };
+  return { id, isNew: true, gamesPlayed: D.games_played, currentProgress: D.current_progress, language: NEW_PLAYER_LANGUAGE, credits: D.credits, shopUnlocked: !!D.shop_unlocked, createdAt: now };
 }
 
+// Every table holding per-player data (each has a player_id column), plus players itself. A test pins this
+// against information_schema, so a new player-scoped table cannot be forgotten by the --all wipe again.
+export const PLAYER_SCOPED_TABLES = ['players', 'games', 'player_ships', 'stash', 'events', 'sessions',
+  'perf_samples', 'gameplay_sessions', 'taken_missions', 'cleared_missions'];
+// What the PER-PLAYER reset deliberately keeps: the account row (players — its gameplay columns are reset
+// below), the login (sessions), device telemetry (perf_samples) and the session-recording archive
+// (gameplay_sessions — analytics of a real person replaying stays useful).
+const PER_PLAYER_RESET_KEEPS = ['players', 'sessions', 'perf_samples', 'gameplay_sessions'];
+export const PER_PLAYER_RESET_DELETES = PLAYER_SCOPED_TABLES.filter((t) => !PER_PLAYER_RESET_KEEPS.includes(t));
+
 // Reset ONE player's progress, keeping their account and active login intact.
-// Identity/auth columns and `sessions` rows are preserved, as is the
-// language preference; game history, ships, stash and events are wiped and the gameplay columns
-// reset to a new player's baseline, then the starter ship is re-granted. Returns { found }.
+// Identity/auth columns and `sessions` rows are preserved, as is the language preference; every table in
+// PER_PLAYER_RESET_DELETES (game history, ships, stash, events, taken/cleared missions) is wiped and the
+// gameplay columns reset to NEW_PLAYER_DEFAULTS, then the starter ship is re-granted. Returns { found }.
 export async function resetPlayer(playerId) {
   const { rows } = await pool.query('SELECT 1 FROM players WHERE id = $1', [playerId]);
   if (!rows[0]) return { found: false };
   // One transaction so a failure can't leave the account half-wiped (games/ships gone, progress kept).
   // shop_unlocked is an INTEGER column (see migration) — write 0, not a boolean, or the UPDATE throws.
   // `current_progress = 0` is the intro, `level-0`: since the 0-based renumbering an id IS the campaign
-  // level number on every database, so this literal reads as what it means. The FK would fail loudly (not
+  // level number on every database, so the default reads as what it means. The FK would fail loudly (not
   // silently) if level 0 ever stopped existing. The content gates stay name-based (DECISIONS §95, §30).
   await withTx(async (client) => {
-    for (const t of ['games', 'player_ships', 'stash', 'events', 'taken_missions', 'cleared_missions'])
+    for (const t of PER_PLAYER_RESET_DELETES)
       await client.query(`DELETE FROM ${t} WHERE player_id = $1`, [playerId]);
-    await client.query('UPDATE players SET games_played = 0, current_progress = 0, credits = 1000, shop_unlocked = 0, active_mission_id = NULL, experience = 0, skill_kinetic = 0, skill_rocket = 0, skill_shields = 0, skill_maneuver = 0, skill_mobility = 0 WHERE id = $1', [playerId]);
+    const cols = Object.keys(D);
+    await client.query(`UPDATE players SET ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')} WHERE id = $1`,
+      [playerId, ...Object.values(D)]);
     await ensureDefaultShip(playerId, client); // re-grant the starter ship so the reset account is playable
   });
   return { found: true };
 }
 
-// Reset ALL players: TRUNCATE every player-scoped table (CASCADE handles the FKs, RESTART IDENTITY
-// resets the serial counters), leaving the seeded reference catalog untouched — it is re-upserted
-// idempotently on the next startup. Single atomic statement.
-export async function resetAllPlayers() {
-  await pool.query('TRUNCATE players, games, player_ships, stash, events, sessions, perf_samples, taken_missions, cleared_missions RESTART IDENTITY CASCADE');
+// Only these S3 keys may ever be deleted by --all. The canonical intro trace lives right next door at
+// recordings/level0-intro.<hash>.json (scripts/assets-config.mjs PREFIX.recordings) — a sibling of
+// recordings/sessions/ — so a corrupt row must never be able to name it (or any other asset) for deletion.
+const SESSION_TRACE_KEY = /^recordings\/sessions\/[^/]+\.json$/;
+
+// Reset ALL players (reset.js --all): delete every gameplay_sessions row's S3 trace object, then TRUNCATE
+// every PLAYER_SCOPED_TABLES table (CASCADE handles the FKs, RESTART IDENTITY resets the serial counters).
+// The seeded reference catalog is untouched — it is re-upserted idempotently on the next startup.
+//  - Deletes run one request per key, 8 at a time. The truncate happens ONLY if every delete succeeded;
+//    on any failure nothing is truncated and { ok:false, failed } comes back. Re-running is safe: S3
+//    answers 204 for a key that is already gone.
+//  - A key outside recordings/sessions/ is never sent to S3; it counts as a failure (abort).
+//  - S3 not configured (no creds in the env): REFUSES — { ok:false, refused } — listing and truncating
+//    nothing, unless the caller opts out with `skipS3: true` (reset.js --all --no-s3, for a local dev DB),
+//    which truncates without touching S3 and orphans any trace objects. No host-based guess: an SSH tunnel
+//    to prod looks exactly like localhost. A production --all runs inside the app container, where the
+//    server .env supplies the creds.
+//  - Accepted race: a session uploaded between listing the keys and the truncate loses its row and its
+//    object is orphaned. --all is a rare manual wipe; locking gameplay_sessions across network deletes
+//    would stall live uploads instead.
+// Every dependency is injectable so the orchestration is testable without S3 and without truncating.
+export async function resetAllPlayers({
+  skipS3 = false,
+  s3 = { configured: s3Configured, deleteTrace },
+  listKeys = async () => (await pool.query('SELECT s3_key FROM gameplay_sessions')).rows.map((r) => r.s3_key),
+  truncate = () => pool.query(`TRUNCATE ${PLAYER_SCOPED_TABLES.join(', ')} RESTART IDENTITY CASCADE`),
+  log = console.log,
+} = {}) {
+  if (!skipS3 && !s3.configured()) {
+    return { ok: false, refused: true, deleted: 0, failed: [], truncated: false };
+  }
+  const keys = await listKeys();
+  let deleted = 0;
+  if (skipS3) {
+    log(`[reset] --no-s3: ${keys.length} session trace object(s) left in S3 (orphaned if this database is shared)`);
+  } else {
+    const failed = keys.filter((k) => !SESSION_TRACE_KEY.test(k));       // refuse, never delete
+    const todo = keys.filter((k) => SESSION_TRACE_KEY.test(k));
+    for (let i = 0; i < todo.length; i += 8) {                            // 8 at a time
+      const rs = await Promise.all(todo.slice(i, i + 8).map((k) => s3.deleteTrace(k)));
+      for (const r of rs) { if (r.ok) deleted++; else failed.push(r.key); }
+    }
+    if (failed.length) return { ok: false, deleted, failed, truncated: false };
+  }
+  await truncate();
+  return { ok: true, deleted, failed: [], truncated: true, skippedS3: skipS3, keys: keys.length };
 }
 
 // Persist a player's language preference (validated to a supported code by the caller/route).
@@ -977,6 +1052,10 @@ export async function buyItem(playerId, kind, refId) {
   const reg = await registerPlayer(playerId);
   const item = await catalogItem(kind, refId);
   if (!item) return { ok: false, status: 400, error: 'no such item' };
+  // Not on sale at all (price 0, or enemy gear marked buyable:false) — the shop never offers it, and the
+  // server does not trust the shop list for that (DECISIONS §40.6 as amended, §164). Looted copies still
+  // deposit, sell and equip.
+  if (!isShopItem(item.price, item.stats)) return { ok: false, status: 403, error: 'not for sale' };
   // Level-gated row (`stats.minLevel`, catalog_seed.js FACTORY_GATE): the client hides it, the server
   // refuses it — the shop list is not the gate, this is. Looting/equipping such an item stays allowed.
   const gate = item.stats && item.stats.minLevel;
