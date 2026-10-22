@@ -80,4 +80,36 @@ export default async function ({ page, assert, shot }) {
   assert.ok(fs.hiddenWhenFs, 'it hides once fullscreen (body.fs)');
   assert.equal(fs.text, '⛶', 'the button is icon-only (⛶ glyph, no words)');
   assert.ok(fs.label && /full screen/i.test(fs.label), 'the words live on aria-label/title');
+
+  // Loadout's ship stats (five pairs since Top speed joined) must fit the narrow 25% column on a phone:
+  // the strip wraps onto a second row instead of overflowing (docs/plans/2026-10-22-1334-loadout-skill-stats.md).
+  await page.evaluate(() => document.querySelector('.mw-item[data-mw="loadout"]').click());
+  await page.waitForFunction('document.querySelectorAll("#ship-stats .stat").length === 5', null, { timeout: 5000 });
+  const fit = await page.evaluate(() => {
+    const host = document.getElementById('ship-stats').getBoundingClientRect();
+    const col = document.getElementById('mw-ship-col').getBoundingClientRect();
+    const statEls = [...document.querySelectorAll('#ship-stats .stat')];
+    const stats = statEls.map((e) => e.getBoundingClientRect());
+    const inside = (r, o) => r.left >= o.left - 1 && r.right <= o.right + 1 && r.top >= o.top - 1 && r.bottom <= o.bottom + 1;
+    // A squeezed (nowrap) strip shrinks the .stat boxes and lets their TEXT spill over the neighbours, so
+    // box containment alone can't see it: also require each label/value inside its own stat, and no two
+    // stats overlapping.
+    const textInStat = statEls.every((e, i) => [...e.querySelectorAll('.k, .v')].every((c) => inside(c.getBoundingClientRect(), stats[i])));
+    const noOverlap = stats.every((a, i) => stats.every((b, j) => i >= j
+      || a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1));
+    return {
+      textInStat, noOverlap,
+      phone: document.body.classList.contains('dev-phone'),
+      statsInHost: stats.every((r) => r.left >= host.left - 1 && r.right <= host.right + 1 && r.top >= host.top - 1 && r.bottom <= host.bottom + 1),
+      hostInCol: host.left >= col.left - 1 && host.right <= col.right + 1,
+      hostW: host.width,
+    };
+  });
+  assert.ok(fit.phone, 'the 760×360 run is classified dev-phone');
+  assert.ok(fit.hostW > 0, '#ship-stats is laid out');
+  assert.ok(fit.textInStat, 'every stat label/value lies inside its own stat on a phone (no squeezed text spill)');
+  assert.ok(fit.noOverlap, 'no two stats overlap on a phone');
+  assert.ok(fit.statsInHost, 'every ship stat lies inside #ship-stats on a phone (wraps, never overflows)');
+  assert.ok(fit.hostInCol, '#ship-stats lies inside the right column horizontally on a phone');
+  await shot('loadout-stats-phone');
 }

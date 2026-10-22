@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-22 (**Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -640,8 +640,8 @@ positions — it captures the player's INPUT + the RNG seed, then re-runs the ac
 real bullet colors, smooth physics, real FX and real collisions). Consumers: the canonical Level-0
 determinism fixture (below), the admin session viewer, "watch a fight from another angle", video capture. Files: `client/src/replay.js`
 (pure core — URL parsing, trace shape, snapshot/apply/validate, unit-tested) + wiring in `main.js`.
-- **Record:** `/?record=1&level={id}` (bare number → seed name `level-{id}`, so `?record=1&level=1` is the
-  intro four-ship level; or pass a full name). Lands on the level with the **real ship idle**; a top bar
+- **Record:** `/?record=1&level={id}` (bare number → seed name `level-{id}`, so `?record=1&level=0` is the
+  intro four-ship level since the 0-based renumbering; or pass a full name). Lands on the level with the **real ship idle**; a top bar
   shows a **Start recording** button that unlocks once the ship `.glb` has loaded (no placeholder capture).
   Start installs a fresh captured seed (`Date.now()>>>0`), `reset()`s the level, and captures one input
   snapshot per sim tick. **Stop & Save** writes the trace and offers a **Play it ▶** link.
@@ -652,10 +652,13 @@ determinism fixture (below), the admin session viewer, "watch a fight from anoth
   the sector clears**, and stop the re-sim on the victory overlay. A trace records keys and touch, never the
   MOUSE CLICK that ends a mission, so without it a winning replay orbits a cleared sector forever. Opt-in and
   generic — it replaced the old `&cutscene` flag, which did the same thing as a side effect.
-- **Trace format v3** (`{version:3, kind:'input-replay', id, level, seed, dt, shipId, tickCount,
-  runs:[[{k,t}, repeatCount], …]}`): `k` = held key codes, `t` = `[heading,thrust]` when the touch stick is
-  active (**quantized** to 1e-3 rad / 1e-2 before storage). That is the ENTIRE recording — the determinism
-  audit found the sim needs only the seed (no wall-clock / Map-Set-order deps in the sim path).
+- **Trace format v4** (`{version:4, kind:'input-replay', id, level, seed, dt, shipId, loadout, components,
+  skills, room, tickCount, runs:[[{k,t}, repeatCount], …]}` — `makeTrace` in `replay.js`): `k` = held key
+  codes, `t` = `[heading,thrust]` when the touch stick is active (**quantized** to 1e-3 rad / 1e-2 before
+  storage). The recording is the input + the seed + **the build it was flown with** (loadout, components,
+  skill allocation; `room` for a duel) — the determinism audit found the sim needs nothing else (no
+  wall-clock / Map-Set-order deps in the sim path), and v4 added the build because a skilled ship replayed
+  on an unskilled one diverges within seconds (DECISIONS §125).
   Ticks are **run-length packed** (`packTicks`/`unpackTicks`): input changes ~2×/s against 60 captured
   ticks/s, measured **23.8×** smaller on a real 131 s session, and the live recorder packs *as it captures*
   so retained memory stays flat on weak devices (DECISIONS §87). **v1 traces** (flat `ticks:[…]` — the
@@ -737,9 +740,11 @@ determinism fixture (below), the admin session viewer, "watch a fight from anoth
   fetched — pinning that a replay reached by navigation still gets SAMPLED sfx rather than the synth
   fallback. Asserted at the network layer because headless Chromium has no audio out and the buffer cache is
   module-private. Deliberately gesture-free: adding a click re-hides the bug it exists for.
-- **Storage:** currently the trace is cached in `localStorage` (`replay:{id}` + `replay:last`) for the
-  same-browser record→playback loop, and downloaded as `{id}.json`. Planned: promote recordings to an **S3
-  asset** (like the ship `.glb`s — `assets:pull`/S3, referenced from seed on prod) so they sync prod↔local.
+- **Storage:** a dev `?record` trace is cached in `localStorage` (`replay:{id}` + `replay:last`) for the
+  same-browser record→playback loop, and downloaded as `{id}.json`. **Session** traces (every campaign run)
+  live on **S3** (see *Session recordings*). `loadTrace` (`main.js`) resolves an id in order: the
+  `localStorage` cache → a static `/recordings/{id}.json` (the pulled asset) → `GET /api/sessions/:id/trace`
+  (the admin viewer's ▶ play).
 - **`window.__replay`** console/automation hook (under either flag): `begin()` (== Start), `stop()`,
   `step(n)` (synchronous sim stepping, bypasses rAF — for tests + a background tab that throttles rAF),
   `hash()` (state hash), `status()` (`{recording, armed, ticks, playIndex, playDone, total}` — `armed` is the
@@ -2127,8 +2132,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
     — no longer stretched to fill the menu column); the **granted-item 3D icon centers directly below the mission
     text** (the bottom-right float + strut are dropped — `#mw-mission-desc` becomes a flex column, the item takes
     `order: 2`, `align-self: center`, 55% width) so **Take-off then sits under the item**; the **ship-stats strip
-    uses ×2 fonts** (k 16 / v 20 / d 12px) and **fits on one line** (measured at 1440×900, scrollWidth == clientWidth
-    → the borderless 2×2 grid fallback stays unused); and **Take-off follows the content** (`#mw-mission-desc`
+    uses ×2 fonts** (k 16 / v 20 / d 12px) and **wraps onto a second row** when its five pairs don't fit the
+    column (`flex-wrap: wrap`; scenarios 05 desktop + 07 phone assert no stat overflows or overlaps); and **Take-off follows the content** (`#mw-mission-desc`
     **and its scroll host** `flex: 0 1 auto`, still scrolling when the text is genuinely long). Mobile/touch layout is unchanged.
 - **The gold "(new)" trail — state model (DECISIONS §111).** The pure logic lives in
   **`client/src/shop-markers.js`** (unit-tested by `shop-markers.test.js`); `shop.js` keeps all
@@ -2225,7 +2230,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   and is drawn **only when dodge>0** (existing recordings replay unchanged — DECISIONS §73/§93), injected
   into the pure `resolveHostileBulletHit(...)`; a dodge pops an **"EVADE"** popup and deals no damage.
   Enemies carry a `dodge` stat too (all current = 0). Skills apply **only to the real active ship** — never
-  to previews or `?playback` overrides. The "+" cards POST `POST /api/players/:id/skills/spend`. Skills'
+  to previews or `?playback` overrides. The "+" cards POST `POST /api/players/:id/skills/spend`; **spending a
+  point rebuilds the ship immediately** (`skillSpend` → `rebuildActiveShip`, as a shop change does), so the next
+  take-off flies it. The rebuild runs only while the base menu is open (`body.menu`): a response that lands
+  after Take off is deferred to the next `enterMenu()` (`flushActiveShipRebuild` in `ship-build.js`) rather
+  than swapping a fresh full-HP ship in mid-flight (DECISIONS §163); and the **Loadout stats show the effect** (Mobility raises Accel / Turn / Top speed there). Skills'
   *gameplay effects* are live; the numbers are first-pass and tunable via `SKILL_RATES`. **Always-on HUD**
   (`hud.js updateProgressionHud`, per frame): a gold **free-skill-points badge** on the Character menu item
   (when > 0; shared `.mw-badge` pill — the Missions item uses the same one for its offer count, see the
@@ -2558,8 +2567,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   drone 500 / homing rocket 600) so each type's ladder starts low. The **Grab** tab sells the **Advanced grab**
   (2000); the base grab the player already owns. Each item's **full characteristics show
   on hover (desktop) or the (i) tap (mobile)** — for weapons: damage, RoF/reload, projectile speed, range,
-  blast, weight. A shop item the player **already owns shows an "(owned ×N)" badge** (N = total equipped on
-  the active ship **+** in the stash). **Price shown per screen:** the **Shop** shows the **full buy price**;
+  blast, weight; an **engine's line shows acceleration only** (its catalog `maxSpeed` caps enemies, never the
+  player). A shop item the player **already owns shows an "(owned ×N)" badge** — a small green pill
+  (`.lp-name .owned-badge`, em-sized to the name) — (N = total equipped on the active ship **+** in the stash).
+  Every item block's head (name + badge + stat line) and model slot come from two helpers in `shop.js`,
+  `itemHeader` / `itemModelSlot`. **Price shown per screen:** the **Shop** shows the **full buy price**;
   **Stash + Loadout** show the **resale value** (`floor(price*0.75)` — the amount the player actually gets on
   sale, computed client-side via `sellLabel`/`SELL_RATE` to mirror the server), so the player reads "what I'd
   get" right on the card. **Card layout:** Loadout/Stash item cards stay on a **single row** everywhere (incl.
@@ -2573,8 +2585,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   takes an optional `qty` and `sellItem` sells `min(qty, owned)` atomically. Equipped-item sells stay a
   single unit (no dialog). A **live ship-stats panel** (`#ship-stats`, at the top of the right column —
   **shown only on the Loadout screen**) shows **HP / acceleration /
-  maneuverability / weight** with a **▲/▼ delta vs the previous config** on every change (derived client-side;
-  the server stays authoritative on the saved config). **Required slots** (hull/engine/thruster) can't be
+  maneuverability / weight / top speed** with a **▲/▼ delta vs the previous config** on every change, read from
+  the **real build**: `deriveShipStats(active)` calls `makePlayer` (skills included — Mobility raises Accel /
+  Turn / Top speed here exactly as in flight), so the numbers are the flown ship's, not a re-derivation. **Top
+  speed** = `PLAYER_MAX_SPEED × maxSpeedMul` (30.0 unskilled, 1 decimal). The strip wraps onto a second row in a
+  narrow column. (The server stays authoritative on the saved config.) **Required slots** (hull/engine/thruster) can't be
   sold while equipped and **block take-off when empty** (the button greys out); **optional** equipped items
   (weapons, repair drone, grab) sell directly from the bay. **Looted enemy gear** deposited via `depositLoot`
   (the victory loot deposit) is equippable-from-stash like any part (engines/thrusters/weapons/grab) — hulls

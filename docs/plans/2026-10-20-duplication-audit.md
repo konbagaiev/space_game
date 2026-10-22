@@ -45,9 +45,9 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 |---|---|---|---|---|
 | A1 | Map "Autopilot to destination" ignores the launch gate | **fixed 2026-10-20** | player | S |
 | A2 | Side-mission "Est. reward" / XP estimate is stale (~33 % low) | **drifted** ✔ | player | S |
-| A3 | Loadout ship stats ignore skills (Mobility) | drifted | player | M |
+| A3 | Loadout ship stats ignore skills (Mobility) | **fixed 2026-10-22** | player | M |
 | A4 | Launch gate in 3 places; "can't launch" note can show twice | **fixed 2026-10-20** | player | S |
-| A5 | Shop "Owned" badge unstyled; ~120 lines of dead CSS | drifted | player | S |
+| A5 | Shop "Owned" badge unstyled; ~120 lines of dead CSS | **fixed 2026-10-22** | player | S |
 | A6 | Welcome screen = a second, drifted launch/menu path | menu entry/exit **fixed** 2026-10-20; reveal dup + direct launch open | player (edge) | M |
 | A7 | Three breakpoint systems; vw/vh wrong under forced rotation | drifted (derived) | player (phone) | M |
 | A8 | `#mainwin` column widths ×6; xp-bar clearance hand-derived | sync risk (caused §0) | player | S |
@@ -103,6 +103,7 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   `enemyTotalFromPhases`) + a test that recomputes it from the catalog.
 
 ### A3. Loadout ship stats ignore skills — drifted
+**Fixed 2026-10-22** (`2026-10-22-1334-loadout-skill-stats`).
 - `deriveShipStats` (`client/src/shop.js:89-99`) rebuilds the ship's numbers by hand; the real build
   `makePlayer` (`client/src/sim-core/ship-entity.js:66-118`) applies Mobility to engine/thruster power
   (`:73-74`). Players with Mobility see lower Accel/Turn in Loadout than they fly. `shop.js:92` shows this
@@ -123,6 +124,7 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 - Fix: one gate function + one note element under the launch bar; an `activeOffer()` helper.
 
 ### A5. "Owned" badge unstyled; dead CSS — drifted
+**Fixed 2026-10-22** (`2026-10-22-1334-loadout-skill-stats`).
 - `shop.js:388`, `:405` emit `<span class="owned-badge">`; the only rule is `.bay-item .owned-badge`
   (`client/styles.css:708`) and `.bay-item` is no longer emitted anywhere → plain text.
 - Unused selectors from earlier shop/menu versions: `.mw-collapse`/`.mw-sub*`/`.mw-row` (`:204-227`),

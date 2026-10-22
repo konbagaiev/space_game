@@ -6930,3 +6930,42 @@ launchers share.
 Window's goes through roam. Kept deliberately (maintainer, 2026-10-20); recorded as a known drift under audit
 A6. It now shares the launch gate (`canTakeOff()`) and `leaveMenu()`.
 
+
+## 163. The Loadout reads the flown ship, not a re-derivation
+
+**Date:** 2026-10-22. **Context:** duplication audit A3 (`docs/plans/2026-10-20-duplication-audit.md`) — the
+Loadout stats bar re-derived HP / Accel / Turn / Weight by hand and never applied skills, so a pilot with
+Mobility points read lower numbers than the ship flew (plan `docs/plans/2026-10-22-1334-loadout-skill-stats.md`).
+
+**Decision.** `deriveShipStats(active)` (`client/src/shop.js`) builds the player entity with the sim's own
+`makePlayer` from the active-ship record (skills included) and reads `maxHp` / `acceleration` / `turnRate` /
+`mass` off it. The hand-kept copy (`shipMass` + `deriveDrive` on a hand-assembled ship) is gone.
+
+- **Why `makePlayer`, not a narrow `applySkillsToDrive` helper (the earlier Phase-3 design).** The copy had
+  already drifted twice — grab + shield weight once, skills now. A helper that applies "the skills that
+  affect the drive" is a third copy waiting for the next skill. Reading the real build makes that drift
+  impossible. It is safe from a UI render: `makePlayer` draws no RNG (only `makeEnemy` does) and resolves
+  fresh component/weapon copies, so the shared catalog is never mutated (`ship-entity.test.js` pins this).
+  Cost: one entity build per Loadout render — negligible. Side effect worth knowing: with the engine removed
+  but thrusters fitted, the bar now shows the thrusters' real turn rate (the old copy showed 0 for both).
+- **Why Top speed is the pilot cap, not `engine.maxSpeed`.** The player's speed is clamped at
+  `PLAYER_MAX_SPEED × maxSpeedMul` (`step-player.js`); the catalog `maxSpeed` applies to enemies only
+  (`step-enemies.js`). The shop's engine line used to advertise that enemy-only number as "Top speed" — removed;
+  the field stays in the catalog for enemies. Shown with one decimal so 31.5 doesn't read as 32.
+- **Why a skill spend rebuilds the ship.** Skills are baked in at build time, and nothing between the base
+  menu and the fight rebuilt the player, so the first run after a spend flew the OLD allocation while its
+  session trace recorded the new one (its replay diverged). `skillSpend` now rebuilds, exactly as
+  `applyShopState` already did after every shop mutation — and like that precedent, the rebuild puts the
+  (idle, menu-side) ship back at spawn, which is harmless because no fight runs behind the base menu (§162)
+  and the next launch resets the position anyway. Confirmed failing first in `11-character-progression`.
+- **Why the rebuild is menu-only, deferred otherwise.** Both rebuilds fire from a server RESPONSE, and a
+  player can click "+" (or Buy) and Take off before it lands; rebuilding then would swap in a fresh, full-HP
+  ship at spawn mid-flight. So both go through `rebuildActiveShip()` (`ship-build.js`): it rebuilds at once
+  while `body.menu` is set, and otherwise only sets a pending flag that `enterMenu()` consumes
+  (`flushActiveShipRebuild`). Deferring to the menu, not to the launch, because `enterMenu` is the ONE entry
+  into the base menu (§162) — so the late change is in the ship before any next launch, with no launcher
+  having to remember it. Before this change `applyShopState` rebuilt unconditionally, so the same race
+  existed for shop mutations; it is closed for both. Guarded in `11-character-progression` (spend landed off
+  the menu → same ship object; `showMain` → rebuilt with the new allocation), mutation-tested both ways.
+
+**Not changed:** the `?duel` / `?beam` dev overrides are not mirrored in the Loadout preview (dev-only flags).
